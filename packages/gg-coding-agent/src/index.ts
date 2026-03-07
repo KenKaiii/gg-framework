@@ -22,9 +22,6 @@ export {
   persistMessage,
 } from "./session.js";
 
-// Interactive (legacy readline REPL)
-export { runInteractive } from "./interactive.js";
-
 // Core
 export {
   EventBus,

@@ -60,6 +60,7 @@ export class StreamResult implements AsyncIterable<StreamEvent> {
   readonly response: Promise<StreamResponse>;
   private resolveResponse!: (r: StreamResponse) => void;
   private rejectResponse!: (e: Error) => void;
+  private hasConsumer = false;
 
   constructor() {
     this.events = new EventStream<StreamEvent>();
@@ -84,6 +85,7 @@ export class StreamResult implements AsyncIterable<StreamEvent> {
   }
 
   [Symbol.asyncIterator](): AsyncIterator<StreamEvent> {
+    this.hasConsumer = true;
     return this.events[Symbol.asyncIterator]();
   }
 
@@ -97,6 +99,8 @@ export class StreamResult implements AsyncIterable<StreamEvent> {
   }
 
   private async drainEvents(): Promise<void> {
+    if (this.hasConsumer) return;
+    this.hasConsumer = true;
     for await (const _ of this.events) {
       // consume silently
     }

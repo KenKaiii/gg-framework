@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { generatePKCE } from "./pkce.js";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "./types.js";
 
@@ -9,6 +10,7 @@ const SCOPES = "org:create_api_key user:profile user:inference";
 
 export async function loginAnthropic(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
   const { verifier, challenge } = await generatePKCE();
+  const state = crypto.randomBytes(16).toString("hex");
 
   const params = new URLSearchParams({
     code: "true",
@@ -18,7 +20,7 @@ export async function loginAnthropic(callbacks: OAuthLoginCallbacks): Promise<OA
     scope: SCOPES,
     code_challenge: challenge,
     code_challenge_method: "S256",
-    state: verifier,
+    state,
   });
 
   const authUrl = `${AUTHORIZE_URL}?${params}`;
@@ -26,12 +28,12 @@ export async function loginAnthropic(callbacks: OAuthLoginCallbacks): Promise<OA
 
   const raw = await callbacks.onPromptCode("Paste the code from the browser (format: code#state):");
 
-  const [code, state] = raw.trim().split("#");
-  if (!code || state !== verifier) {
+  const parts = raw.trim().split("#");
+  if (parts.length !== 2 || !parts[0] || parts[1] !== state) {
     throw new Error("Invalid code or state mismatch. Please try again.");
   }
 
-  return exchangeAnthropicCode(code, state, verifier);
+  return exchangeAnthropicCode(parts[0], parts[1], verifier);
 }
 
 async function exchangeAnthropicCode(

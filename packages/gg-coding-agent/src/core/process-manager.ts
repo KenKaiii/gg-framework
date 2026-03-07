@@ -94,10 +94,10 @@ export class ProcessManager {
       if (stat.size > offset) {
         const buf = Buffer.alloc(stat.size - offset);
         const fh = await fsp.open(proc.logFile, "r");
-        await fh.read(buf, 0, buf.length, offset);
+        const { bytesRead } = await fh.read(buf, 0, buf.length, offset);
         await fh.close();
-        output = buf.toString("utf-8");
-        proc.lastReadOffset = stat.size;
+        output = buf.subarray(0, bytesRead).toString("utf-8");
+        proc.lastReadOffset = offset + bytesRead;
       }
     } catch {
       output = "(failed to read log file)";

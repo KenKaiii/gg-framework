@@ -21,6 +21,7 @@ export class AgentStream implements AsyncIterable<AgentEvent> {
   private resultPromise: Promise<AgentResult>;
   private resolveResult!: (r: AgentResult) => void;
   private rejectResult!: (e: Error) => void;
+  private hasConsumer = false;
 
   constructor(generator: AsyncGenerator<AgentEvent, AgentResult>, onDone: () => void) {
     this.events = new EventStream<AgentEvent>();
@@ -53,6 +54,7 @@ export class AgentStream implements AsyncIterable<AgentEvent> {
   }
 
   [Symbol.asyncIterator](): AsyncIterator<AgentEvent> {
+    this.hasConsumer = true;
     return this.events[Symbol.asyncIterator]();
   }
 
@@ -65,6 +67,8 @@ export class AgentStream implements AsyncIterable<AgentEvent> {
   }
 
   private async drainEvents(): Promise<void> {
+    if (this.hasConsumer) return;
+    this.hasConsumer = true;
     for await (const _ of this.events) {
       // consume silently
     }
