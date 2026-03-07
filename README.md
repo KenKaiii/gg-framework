@@ -13,15 +13,15 @@
 
 I built GG Coder because I got tired of waiting.
 
-Claude Code is great. I use it daily. But after spending enough time with it, you start to notice how much overhead it carries. Every single request ships with a massive system prompt, roughly ~15,000 tokens of instructions that the model re-reads on every turn. The Claude Agent SDK has the same issue since it's essentially Claude Code under the hood.
+Claude Code is great. I use it daily. But it ships ~15,000 tokens of system prompt on every single request. The Claude Agent SDK does the same thing since it's Claude Code under the hood.
 
-So I asked myself: what if we just... didn't do that?
+So I asked: what if we just... didn't do that?
 
 ---
 
 ## The system prompt problem
 
-This is the thing nobody talks about. Every token in the system prompt gets processed on **every single turn**. It's not a one-time cost. It's a tax on every request you make.
+Every token in the system prompt gets processed on **every single turn**. It's not a one-time cost. It's a tax on every request.
 
 | | **Claude Code / Agent SDK** | **GG Coder** |
 |---|---|---|
@@ -30,21 +30,18 @@ This is the thing nobody talks about. Every token in the system prompt gets proc
 
 ### Why you should care
 
-**It's slower.** More input tokens means longer time-to-first-token. You're sitting there waiting for the model to process instructions it already knows. Every turn. Every request. In a 30-turn coding session, that wait time adds up to minutes of your life you're not getting back.
+- **Slower responses.** More input tokens = longer time-to-first-token. In a 30-turn session, that wait adds up to minutes.
+- **Worse instruction following.** More rules = more things the model ignores. "Lost in the middle" is well-documented. A 1,100 token prompt gets read. A 15,000 token one gets skimmed.
+- **Context fills up faster.** ~15,000 tokens sitting in your window permanently. That's ~7.5% of a 200K model gone before you say hello. You hit compaction sooner, lose history faster, and the agent forgets what it was doing.
+- **Higher cost.** Input tokens aren't free. Every cache miss charges you for the full bloat. Smaller prompt = smaller bill.
 
-**The model follows instructions worse.** This one's counterintuitive but well-documented. The more stuff you cram into a system prompt, the worse the model follows any single instruction. Researchers call it "lost in the middle." Models pay attention to the start and end of their context, and everything in between gets fuzzy. A 15,000 token system prompt is a wall of rules competing for attention. A 1,100 token prompt is focused and clear. The model actually reads it.
-
-**You hit context limits way sooner.** That ~15,000 tokens of system prompt lives in your context window permanently. On a 200K context model, you've burned ~7.5% before you've even said hello. In a long session with file reads, tool calls, and back-and-forth, that overhead compounds. You hit compaction earlier, lose conversation history faster, and the agent forgets what it was doing mid-task.
-
-**It costs more.** Input tokens aren't free. Even with prompt caching, you pay for the bloat on every cache miss. And cache misses happen more than you'd think (new files read, tool results change, context shifts). Smaller prompt = smaller bill. Simple math.
-
-GG Coder keeps only what the model actually needs: how to approach work, what tools are available, and your project's context. That's it. No walls of edge-case rules. No formatting instructions the model ignores anyway. Just the stuff that matters.
+GG Coder sends only what the model needs: how to work, what tools it has, and your project context. No walls of rules. No formatting instructions. Just signal.
 
 ---
 
 ## Four providers, one agent
 
-Most coding agents lock you into one provider. GG Coder doesn't. You pick what works and switch mid-conversation with a slash command.
+Switch mid-conversation with `/model`. Not locked to anyone.
 
 | Provider | Models | Auth |
 |---|---|---|
@@ -53,36 +50,35 @@ Most coding agents lock you into one provider. GG Coder doesn't. You pick what w
 | **Z.AI (GLM)** | GLM-5, GLM-4.7 | API key |
 | **Moonshot** | Kimi K2.5 | API key |
 
-Anthropic and OpenAI use OAuth. Log in once, tokens refresh on their own. GLM and Moonshot take API keys. Either way you're up and running in seconds.
+OAuth for Anthropic and OpenAI (log in once, auto-refresh). API keys for GLM and Moonshot. Up and running in seconds either way.
 
 ---
 
-## Slash commands and custom workflows
+## Slash commands
 
-GG Coder runs on slash commands, not CLI flags. Everything happens inside the session.
+Everything runs through slash commands inside the session. Not CLI flags.
 
 ```bash
-# Switch models on the fly
-/model claude-opus-4-6
+/model claude-opus-4-6       # Switch models on the fly
 /model kimi-k2.5
-
-# Compact context when things get long
-/compact
+/compact                      # Compress context when it gets long
 
 # Built-in workflows
-/scan          # Find dead code, bugs, security issues (spawns 5 parallel agents)
-/verify        # Verify code against docs and best practices (8 parallel agents)
-/research      # Research best tools and patterns for your project
-/init          # Generate or update CLAUDE.md for your project
-/setup-lint    # Generate a /fix command tailored to your stack
+/scan          # Dead code, bugs, security issues (5 parallel agents)
+/verify        # Verify against docs and best practices (8 parallel agents)
+/research      # Research best tools and patterns for your stack
+/init          # Generate CLAUDE.md for your project
+/setup-lint    # Generate a /fix command for your stack
 /setup-commit  # Generate a /commit command with quality checks
-/setup-tests   # Set up testing infrastructure and generate /test
-/setup-update  # Generate an /update command for dependency management
+/setup-tests   # Set up testing + generate /test
+/setup-update  # Generate an /update command for deps
 ```
 
-### Custom commands per project
+---
 
-This is where it gets fun. Drop a markdown file in `.gg/commands/` and it becomes a slash command. Frontmatter sets the name, the body becomes the prompt.
+## Custom commands
+
+Drop a markdown file in `.gg/commands/` and it becomes a slash command.
 
 ```markdown
 ---
@@ -96,15 +92,26 @@ description: Build, test, and deploy to production
 4. Verify the deployment is healthy
 ```
 
-Now `/deploy` works in that project. Different projects get different commands. Your React app might have `/deploy` and `/storybook`. Your API might have `/migrate` and `/seed`. The agent adapts to how you actually work.
+Now `/deploy` works in that project. Your React app gets `/deploy` and `/storybook`. Your API gets `/migrate` and `/seed`. Different projects, different commands.
 
-### Skills
+---
 
-Same concept but for reusable behaviors across projects. Drop `.md` files in `~/.gg/skills/` (global) or `.gg/skills/` (per-project) and they get loaded into the system prompt. The agent just knows what it can do without you having to explain it every time.
+## Skills
 
-### Project guidelines with CLAUDE.md and AGENTS.md
+Reusable behaviors across projects. Drop `.md` files in:
 
-Want the agent to follow specific rules for your project? Drop a `CLAUDE.md` or `AGENTS.md` in your repo root (or any parent directory) and GG Coder picks it up automatically. Things like "always use pnpm", "run tests before committing", "never modify the database schema directly". Your rules, your project, the agent follows them.
+- `~/.gg/skills/` for global skills (available everywhere)
+- `.gg/skills/` for project-specific skills
+
+They get loaded into the system prompt automatically. The agent knows what it can do without you explaining it each session.
+
+---
+
+## Project guidelines
+
+Drop a `CLAUDE.md` or `AGENTS.md` in your repo root (or any parent directory). GG Coder picks it up automatically.
+
+Your rules. Your conventions. The agent follows them.
 
 ---
 
@@ -114,10 +121,10 @@ Want the agent to follow specific rules for your project? Drop a `CLAUDE.md` or 
 npm i -g @kenkaiiii/ggcoder
 ```
 
-1. Run `ggcoder login`
+1. `ggcoder login`
 2. Pick your provider
 3. Authenticate
-4. Start coding with `ggcoder`
+4. `ggcoder`
 
 That's it.
 
@@ -126,31 +133,26 @@ That's it.
 ## Usage
 
 ```bash
-# Interactive mode
-ggcoder
-
-# Pass a prompt directly
-ggcoder "fix the failing tests in src/utils"
-
-# Start with a different provider
-ggcoder -p moonshot
+ggcoder                                    # Interactive mode
+ggcoder "fix the failing tests in src"     # Pass a prompt directly
+ggcoder -p moonshot                        # Start with a different provider
 ```
 
-Everything else happens inside the session. Type `/help` to see what's available.
+Type `/help` inside a session to see everything available.
 
 ---
 
 ## The packages
 
-The whole stack is open source and composable. Three npm packages, each usable on its own.
+Three npm packages. Use them together or separately.
 
 | Package | What it does |
 |---|---|
-| [`@kenkaiiii/gg-ai`](https://www.npmjs.com/package/@kenkaiiii/gg-ai) | Unified streaming API across all four providers. One interface, differences handled internally. |
-| [`@kenkaiiii/gg-agent`](https://www.npmjs.com/package/@kenkaiiii/gg-agent) | Agent loop with multi-turn tool execution, Zod-validated parameters, error recovery. |
-| [`@kenkaiiii/ggcoder`](https://www.npmjs.com/package/@kenkaiiii/ggcoder) | The full CLI. Tools, sessions, UI, OAuth, everything. |
+| [`@kenkaiiii/gg-ai`](https://www.npmjs.com/package/@kenkaiiii/gg-ai) | Unified streaming API across all four providers |
+| [`@kenkaiiii/gg-agent`](https://www.npmjs.com/package/@kenkaiiii/gg-agent) | Agent loop with multi-turn tool execution |
+| [`@kenkaiiii/ggcoder`](https://www.npmjs.com/package/@kenkaiiii/ggcoder) | The full CLI |
 
-### Quick example: streaming API
+### Streaming API
 
 ```typescript
 import { stream } from "@kenkaiiii/gg-ai";
@@ -164,7 +166,7 @@ for await (const event of stream({
 }
 ```
 
-### Quick example: agent loop
+### Agent loop
 
 ```typescript
 import { Agent } from "@kenkaiiii/gg-agent";
@@ -200,7 +202,7 @@ pnpm install
 pnpm build
 ```
 
-Stack: TypeScript 5.9 + pnpm workspaces + Ink 6 + React 19 + Vitest 4 + Zod v4
+TypeScript 5.9 + pnpm workspaces + Ink 6 + React 19 + Vitest 4 + Zod v4
 
 ---
 
