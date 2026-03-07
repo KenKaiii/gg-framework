@@ -1,4 +1,4 @@
-# ggcoder
+# GG Coder
 
 <p align="center">
   <strong>The fast, lean coding agent. Four providers. Zero bloat.</strong>
@@ -11,25 +11,101 @@
   <a href="https://skool.com/kenkai"><img src="https://img.shields.io/badge/Skool-Community-7C3AED?style=for-the-badge" alt="Skool"></a>
 </p>
 
-I built ggcoder because I got tired of waiting. Claude Code is a great product, but it carries an enormous system prompt that eats tokens and slows everything down. The Claude Agent SDK has the same problem — it's essentially Claude Code under the hood. Every turn starts with thousands of tokens of instructions the model mostly ignores.
+I built GG Coder because I got tired of waiting.
 
-So I stripped it all out. ggcoder's system prompt is ~90 lines of what actually matters. The result is a coding agent that responds noticeably faster, burns fewer tokens per turn, and gets out of your way.
+Claude Code is a fantastic product. But every single request starts with a ~15,000 token system prompt. The Claude Agent SDK has the same problem — it's Claude Code under the hood. That's thousands of tokens of instructions the model has to wade through before it even looks at your code.
+
+That matters more than people realize.
 
 ---
 
-## Why this is different
+## The system prompt problem
 
-### It's actually fast
-The biggest bottleneck in coding agents isn't the model — it's how much context you shove into every request. Claude Code's system prompt alone is thousands of tokens. ggcoder cuts that down to the essentials. Less input = faster time-to-first-token, fewer wasted tokens, lower cost per turn.
+Every token in the system prompt gets processed on **every single turn**. A bloated system prompt doesn't just cost more — it actively makes the agent worse.
 
-### Four providers, one interface
-Not just Anthropic. Not just OpenAI. ggcoder supports **Claude** (Opus, Sonnet, Haiku), **GPT** (GPT-4.1, o3, o4-mini), **GLM** (GLM-5, GLM-4.7), and **Kimi** (K2.5). Switch between them mid-conversation with `/model`. Same tools, same UI, different brain. Use whatever model fits the task.
+| | **Claude Code / Agent SDK** | **GG Coder** |
+|---|---|---|
+| System prompt size | ~15,000 tokens | **~1,100 tokens** |
+| Ratio | baseline | **~13x smaller** |
 
-### OAuth for Anthropic & OpenAI, API keys for GLM & Moonshot
-No `.env` files for Claude and GPT — log in with OAuth once and it handles token refresh automatically. GLM and Moonshot use straightforward API keys. Either way, you're coding in under 30 seconds.
+### Why this matters
 
-### Open-source and composable
-The whole stack is three npm packages you can use independently. Want just the unified streaming API? Install `@kenkaiiii/gg-ai`. Need an agent loop for your own app? `@kenkaiiii/gg-agent`. Or use the full CLI. Everything is MIT licensed and available on npm.
+**Slower responses.** More input tokens = longer time-to-first-token. You're waiting for the model to re-read instructions it's already seen a hundred times. Every turn. Every request. That delay adds up fast during a multi-turn coding session.
+
+**Worse instruction following.** LLMs have a well-documented problem: the more text you put in the system prompt, the worse they follow any individual instruction. It's called "lost in the middle" — models pay attention to the beginning and end of context but lose track of what's in between. A 15,000 token system prompt is a wall of rules fighting for attention. A 1,100 token prompt is clear and focused.
+
+**Context limits hit faster.** That ~15,000 tokens sits in your context window permanently. On a 200K context model, you've already burned ~7.5% before you've even said hello. In a long session with lots of file reads and tool calls, that overhead compounds. You hit compaction sooner, lose conversation history earlier, and the agent starts forgetting what it was doing.
+
+**Higher cost per turn.** Input tokens aren't free. Even with prompt caching, you're paying for that bloat on every cache miss — and cache misses happen more often than you'd think (context changes, tool results, new files). Leaner prompt = lower bill.
+
+GG Coder keeps only what the model actually needs: how to work, what tools it has, and project context. No pages of edge-case rules. No redundant formatting instructions. No paragraphs about what not to do. Just the signal.
+
+---
+
+## Four providers, one agent
+
+Not locked to a single provider. GG Coder supports four, and you switch between them mid-conversation with slash commands.
+
+| Provider | Models | Auth |
+|---|---|---|
+| **Anthropic** | Claude Opus 4.6, Sonnet 4.6, Haiku 4.5 | OAuth |
+| **OpenAI** | GPT-4.1, o3, o4-mini | OAuth |
+| **Z.AI (GLM)** | GLM-5, GLM-4.7 | API key |
+| **Moonshot** | Kimi K2.5 | API key |
+
+OAuth for Anthropic and OpenAI — log in once, tokens refresh automatically. GLM and Moonshot use straightforward API keys. Either way, you're coding in under 30 seconds.
+
+---
+
+## Slash commands and custom workflows
+
+GG Coder is driven by slash commands, not CLI flags. Everything happens inside the session.
+
+```bash
+# Switch models on the fly
+/model claude-opus-4-6
+/model kimi-k2.5
+
+# Compact context when it gets long
+/compact
+
+# Session management
+/session list
+/session load my-feature
+/new
+
+# Built-in workflows
+/scan        # Find dead code, bugs, security issues (spawns 5 parallel agents)
+/verify      # Verify code against docs and best practices (8 parallel agents)
+/research    # Research best tools and patterns for your project
+/init        # Generate or update CLAUDE.md for your project
+/setup-lint  # Generate a /fix command tailored to your project
+/setup-commit # Generate a /commit command with quality checks
+/setup-tests # Set up testing infrastructure and generate /test
+/setup-update # Generate an /update command for dependency management
+```
+
+### Custom commands per project
+
+Drop a markdown file in `.gg/commands/` and it becomes a slash command. Frontmatter defines the name and description, the body becomes the prompt.
+
+```markdown
+---
+name: deploy
+description: Build, test, and deploy to production
+---
+
+1. Run the test suite
+2. Build for production
+3. Deploy using the project's deploy script
+4. Verify the deployment is healthy
+```
+
+Now `/deploy` works in that project. Different projects, different commands. The agent adapts to your workflow, not the other way around.
+
+### Skills (global and per-project)
+
+Same idea, but for reusable behaviors. Drop `.md` files in `~/.gg/skills/` (global) or `.gg/skills/` (per-project) and they get injected into the system prompt as available capabilities. The agent knows what it can do without you having to explain it every session.
 
 ---
 
@@ -59,37 +135,15 @@ ggcoder "fix the failing tests in src/utils"
 
 # Use a different provider
 ggcoder -p moonshot
-
-# Switch models mid-session
-/model claude-opus-4-6
-/model gpt-4.1
-/model kimi-k2.5
-
-# Manage sessions
-/session list
-/session load my-feature
-/new
-
-# Get help
-/help
 ```
 
----
-
-## Supported models
-
-| Provider | Models | Auth |
-|---|---|---|
-| **Anthropic** | Claude Opus 4.6, Sonnet 4.6, Haiku 4.5 | OAuth |
-| **OpenAI** | GPT-4.1, o3, o4-mini | OAuth |
-| **Z.AI (GLM)** | GLM-5, GLM-4.7 | API key |
-| **Moonshot** | Kimi K2.5 | API key |
+Everything else happens inside the session via slash commands. Type `/help` to see what's available.
 
 ---
 
 ## The packages
 
-The CLI is built on two standalone libraries. Use them separately if you want.
+The whole stack is open-source and composable. Three npm packages, each usable on its own.
 
 | Package | What it does |
 |---|---|
