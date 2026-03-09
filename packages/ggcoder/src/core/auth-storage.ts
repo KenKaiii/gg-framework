@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import { getAppPaths } from "../config.js";
 import type { OAuthCredentials } from "./oauth/types.js";
 import { refreshAnthropicToken } from "./oauth/anthropic.js";
@@ -64,9 +65,16 @@ export class AuthStorage {
     opts?: { forceRefresh?: boolean },
   ): Promise<OAuthCredentials> {
     await this.ensureLoaded();
-    const creds = this.data[provider];
+    let creds = this.data[provider];
     if (!creds) {
-      throw new NotLoggedInError(provider);
+      // Auto-discover credentials from other CLI tools on the machine
+      // (e.g. Claude Code stores OAuth tokens in ~/.claude/, Codex CLI in ~/.codex/)
+      creds = await this.discoverCredentials(provider);
+      if (!creds) {
+        throw new NotLoggedInError(provider);
+      }
+      this.data[provider] = creds;
+      await this.save();
     }
 
     // GLM and Moonshot use static API keys — no refresh needed
@@ -109,6 +117,54 @@ export class AuthStorage {
   async resolveToken(provider: string): Promise<string> {
     const creds = await this.resolveCredentials(provider);
     return creds.accessToken;
+  }
+
+  /**
+   * Try to find existing credentials from other CLI tools already installed
+   * on the machine. This avoids forcing users to re-authenticate when they
+   * already have valid sessions from Claude Code or Codex CLI.
+   */
+  private async discoverCredentials(provider: string): Promise<OAuthCredentials | null> {
+    const home = os.homedir();
+
+    if (provider === "anthropic") {
+      // Claude Code stores OAuth credentials at ~/.claude/.credentials.json
+      try {
+        const raw = await fs.readFile(`${home}/.claude/.credentials.json`, "utf-8");
+        const data = JSON.parse(raw);
+        const oauth = data?.claudeAiOauth;
+        if (oauth?.accessToken) {
+          return {
+            accessToken: oauth.accessToken,
+            refreshToken: oauth.refreshToken ?? "",
+            expiresAt: Date.now() + 3600_000, // Re-check in 1 hour
+          };
+        }
+      } catch {
+        // No Claude Code credentials found
+      }
+    }
+
+    if (provider === "openai") {
+      // Codex CLI stores OAuth credentials at ~/.codex/auth.json
+      try {
+        const raw = await fs.readFile(`${home}/.codex/auth.json`, "utf-8");
+        const data = JSON.parse(raw);
+        const token = data?.tokens?.access_token;
+        if (token) {
+          return {
+            accessToken: token,
+            refreshToken: data.tokens.refresh_token ?? "",
+            expiresAt: Date.now() + 3600_000,
+            accountId: data.tokens.account_id,
+          };
+        }
+      } catch {
+        // No Codex credentials found
+      }
+    }
+
+    return null;
   }
 
   private async save(): Promise<void> {
