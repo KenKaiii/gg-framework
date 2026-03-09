@@ -111,17 +111,38 @@ export function TaskOverlay({ cwd, onClose, onWorkOnTask, agentRunning }: TaskOv
     statusTimer.current = setTimeout(() => setStatus(""), 2500);
   }, []);
 
-  // Load tasks on mount
+  // Load tasks on mount and poll for external changes (e.g. from the tasks tool)
   useEffect(() => {
-    void loadTasks(cwd).then((t) => {
-      setTasks(t);
-      setLoaded(true);
-    });
+    let cancelled = false;
+    const load = () => {
+      void loadTasks(cwd).then((t) => {
+        if (cancelled) return;
+        setTasks((prev) => {
+          // Only update if the data actually changed (avoid clobbering user edits mid-flight)
+          const prevJson = JSON.stringify(prev);
+          const newJson = JSON.stringify(t);
+          if (prevJson === newJson) return prev;
+          return t;
+        });
+        setLoaded(true);
+      });
+    };
+    load();
+    const interval = setInterval(load, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [cwd]);
 
-  // Persist on change
+  // Persist on user-initiated change (debounced to avoid racing with poll)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (loaded) void saveTasks(cwd, tasks);
+    if (!loaded) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      void saveTasks(cwd, tasks);
+    }, 100);
   }, [tasks, cwd, loaded]);
 
   // Clamp index

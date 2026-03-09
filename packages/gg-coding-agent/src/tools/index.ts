@@ -11,6 +11,7 @@ import { createSubAgentTool } from "./subagent.js";
 import { createWebFetchTool } from "./web-fetch.js";
 import { createTaskOutputTool } from "./task-output.js";
 import { createTaskStopTool } from "./task-stop.js";
+import { createTasksTool } from "./tasks.js";
 import type { AgentDefinition } from "../core/agents.js";
 
 export interface CreateToolsOptions {
@@ -39,6 +40,7 @@ export function createTools(cwd: string, opts?: CreateToolsOptions): CreateTools
     createWebFetchTool(),
     createTaskOutputTool(processManager),
     createTaskStopTool(processManager),
+    createTasksTool(cwd),
   ];
 
   if (opts?.agents && opts.agents.length > 0 && opts.provider && opts.model) {
@@ -58,4 +60,5 @@ export { createLsTool } from "./ls.js";
 export { createWebFetchTool } from "./web-fetch.js";
 export { createTaskOutputTool } from "./task-output.js";
 export { createTaskStopTool } from "./task-stop.js";
+export { createTasksTool } from "./tasks.js";
 export { ProcessManager } from "../core/process-manager.js";

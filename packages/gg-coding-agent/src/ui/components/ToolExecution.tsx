@@ -174,6 +174,10 @@ function getToolHeaderParts(
       const trunc = url.length > 60 ? url.slice(0, 57) + "…" : url;
       return { label: displayName, detail: trunc };
     }
+    case "tasks": {
+      const action = String(args.action ?? "");
+      return { label: displayName, detail: action };
+    }
     default: {
       if (name.startsWith("mcp__")) {
         // mcp__grep__searchGitHub → show tool name + query arg
@@ -215,6 +219,8 @@ function toolDisplayName(name: string): string {
       return "Agent";
     case "web_fetch":
       return "Fetch";
+    case "tasks":
+      return "Task";
     default:
       return name.charAt(0).toUpperCase() + name.slice(1);
   }
@@ -246,6 +252,15 @@ function getInlineSummary(name: string, result: string, isError: boolean): strin
       const lines = result.split("\n").filter((l) => l.length > 0);
       if (result.startsWith("Error")) return result.split("\n")[0];
       return `${lines.length} line${lines.length !== 1 ? "s" : ""}`;
+    }
+    case "tasks": {
+      // Extract just the task text from results like 'Task added: "Fix bug" (id: abc…)'
+      const quoted = result.match(/"([^"]+)"/);
+      if (quoted) {
+        const text = quoted[1];
+        return text.length > 50 ? text.slice(0, 47) + "…" : text;
+      }
+      return result.split("\n")[0];
     }
     default: {
       if (name.startsWith("mcp__")) {
@@ -461,6 +476,17 @@ function buildResultBody(
       }
       return null; // compact display with inline summary
     }
+    case "tasks": {
+      const lines = result.split("\n").filter((l) => l.length > 0);
+      // Single-line results (add, done, remove) → compact inline display
+      if (lines.length <= 1) return null;
+      // Multi-line = list action → show styled task list
+      const display = lines.slice(0, MAX_OUTPUT_LINES);
+      return {
+        lines: display.map((l, i) => <TaskLine key={i} line={l} />),
+        totalLines: lines.length,
+      };
+    }
     default: {
       if (name.startsWith("mcp__")) {
         const lines = result.split("\n").filter((l) => l.length > 0);
@@ -608,6 +634,26 @@ function LsLine({ line }: { line: string }) {
     <Text>
       <Text color="#e5e7eb">{name}</Text>
       <Text color="#6b7280"> {size}</Text>
+    </Text>
+  );
+}
+
+// ── Task result line ────────────────────────────────────
+
+function TaskLine({ line }: { line: string }) {
+  // Format: "[✓] Task text  (id: abcd1234, done)" or "[ ] Task text  (id: ..., pending)"
+  const match = line.match(/^\[(.)\]\s+(.+?)\s{2}\(id:\s*(\w+),\s*(\S+)\)$/);
+  if (!match) return <Text color="#9ca3af">{line}</Text>;
+
+  const [, check, text, id] = match;
+  const isDone = check === "✓";
+  const isActive = check === "~";
+
+  return (
+    <Text>
+      <Text color={isDone ? "#4ade80" : isActive ? "#fbbf24" : "#6b7280"}>[{check}]</Text>
+      <Text color={isDone ? "#4ade80" : isActive ? "#fbbf24" : "#e5e7eb"}> {text}</Text>
+      <Text color="#6b7280"> {id}</Text>
     </Text>
   );
 }

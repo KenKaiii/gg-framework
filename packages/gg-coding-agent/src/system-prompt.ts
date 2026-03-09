@@ -63,6 +63,7 @@ export async function buildSystemPrompt(cwd: string, skills?: Skill[]): Promise<
       `- **task_output**: Read output from a background process by ID. Returns new output since last read (incremental). Use \`from_start=true\` to read from the beginning.\n` +
       `- **task_stop**: Stop a background process by ID. Sends SIGTERM, then SIGKILL after 5 seconds.\n` +
       `- **subagent**: Delegate focused, isolated subtasks (research, parallel exploration, independent fixes).\n` +
+      `- **tasks**: Manage the project task pane (visible to the user via Shift+\`). Use this to track work items you discover — TODOs, bugs, follow-ups, or improvements. Actions: \`add\` (text required), \`list\`, \`done\` (id required), \`remove\` (id required). Proactively add tasks when you notice issues or improvements while working, so the user can review and prioritize them later.\n` +
       `- **mcp__grep__searchGitHub**: Search real-world code across 1M+ public GitHub repos. Use to verify your implementation against production patterns — check correct API usage, library idioms, and common conventions before finalizing changes. Search for literal code patterns (e.g. \`StreamableHTTPClientTransport(\`, \`useEffect(() =>\`), not keywords.`,
   );
 
