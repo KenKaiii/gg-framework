@@ -382,8 +382,14 @@ export function InputArea({
   const displayLines = visualLines.slice(startLine, startLine + MAX_VISIBLE_LINES);
   const cursorDisplayLine = cursorLineInfo.line - startLine;
 
-  // Determine if the entire input is a slash command (for coloring)
+  // Determine if the input starts with a slash command and find command boundary
   const isCommand = value.startsWith("/");
+  // Command portion ends at first space (e.g., "/research" in "/research some args")
+  const commandEndIndex = isCommand
+    ? value.indexOf(" ") === -1
+      ? value.length
+      : value.indexOf(" ")
+    : 0;
 
   return (
     <Box flexDirection="column">
@@ -402,29 +408,81 @@ export function InputArea({
         {displayLines.map((line, i) => {
           const showCursor = !disabled && i === cursorDisplayLine;
           const col = cursorLineInfo.col;
-          const textColor = isCommand ? theme.commandColor : theme.text;
+
+          // Calculate the absolute character offset where this display line starts
+          let lineStartOffset = 0;
+          for (let j = 0; j < startLine + i; j++) {
+            lineStartOffset += visualLines[j].length;
+            // Account for newline characters between hard lines
+            // (visual lines from wrapping don't have newlines between them)
+          }
+          // Adjust for newlines: count how many hard-line boundaries precede this visual line
+          const hardLines = value.split("\n");
+          let offset = 0;
+          let vlIndex = 0;
+          for (let h = 0; h < hardLines.length && vlIndex <= startLine + i; h++) {
+            const wrapped = wrapLine(
+              hardLines[h],
+              contentWidth > 0 ? contentWidth : value.length + 1,
+            );
+            for (let w = 0; w < wrapped.length && vlIndex <= startLine + i; w++) {
+              if (vlIndex === startLine + i) {
+                lineStartOffset = offset;
+              }
+              offset += wrapped[w].length;
+              vlIndex++;
+            }
+            offset++; // newline
+          }
+
+          // Determine color for each character based on whether it's in the command portion
+          const renderSegments = (text: string, textStartOffset: number) => {
+            if (!isCommand || textStartOffset >= commandEndIndex) {
+              // Entirely normal text
+              return <Text color={theme.text}>{text}</Text>;
+            }
+            const cmdChars = Math.min(text.length, commandEndIndex - textStartOffset);
+            if (cmdChars >= text.length) {
+              // Entirely command text
+              return (
+                <Text color={theme.commandColor} bold>
+                  {text}
+                </Text>
+              );
+            }
+            // Split: command portion + normal portion
+            return (
+              <>
+                <Text color={theme.commandColor} bold>
+                  {text.slice(0, cmdChars)}
+                </Text>
+                <Text color={theme.text}>{text.slice(cmdChars)}</Text>
+              </>
+            );
+          };
+
           const before = showCursor ? line.slice(0, col) : line;
           const charUnderCursor = showCursor ? (col < line.length ? line[col] : " ") : "";
           const after = showCursor ? line.slice(col + (col < line.length ? 1 : 0)) : "";
+          const cursorCharOffset = lineStartOffset + col;
+          const cursorInCommand = isCommand && cursorCharOffset < commandEndIndex;
 
           return (
             <Box key={i}>
               <Text color={disabled ? theme.textDim : theme.inputPrompt} bold>
                 {i === 0 ? PROMPT : "  "}
               </Text>
-              <Text color={textColor} bold={isCommand}>
-                {before}
-              </Text>
+              {renderSegments(before, lineStartOffset)}
               {showCursor && (
-                <Text color={textColor} bold={isCommand} inverse={cursorVisible}>
+                <Text
+                  color={cursorInCommand ? theme.commandColor : theme.text}
+                  bold={cursorInCommand}
+                  inverse={cursorVisible}
+                >
                   {charUnderCursor}
                 </Text>
               )}
-              {after && (
-                <Text color={textColor} bold={isCommand}>
-                  {after}
-                </Text>
-              )}
+              {after && renderSegments(after, lineStartOffset + col + (col < line.length ? 1 : 0))}
             </Box>
           );
         })}

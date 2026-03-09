@@ -934,13 +934,19 @@ export function App(props: AppProps) {
 
       // Handle prompt-template commands (built-in + custom from .gg/commands/)
       if (trimmed.startsWith("/")) {
-        const cmdName = trimmed.slice(1).split(" ")[0];
+        const parts = trimmed.slice(1).split(" ");
+        const cmdName = parts[0];
+        const cmdArgs = parts.slice(1).join(" ").trim();
         const builtinCmd = getPromptCommand(cmdName);
         const customCmd = !builtinCmd ? customCommands.find((c) => c.name === cmdName) : undefined;
         const promptText = builtinCmd?.prompt ?? customCmd?.prompt;
 
         if (promptText) {
-          log("INFO", "command", `Prompt command: /${cmdName}`);
+          log(
+            "INFO",
+            "command",
+            `Prompt command: /${cmdName}${cmdArgs ? ` (args: ${cmdArgs})` : ""}`,
+          );
 
           // Move live items into history before starting
           setLiveItems((prev) => {
@@ -956,9 +962,12 @@ export function App(props: AppProps) {
           setDoneStatus(null);
           setLiveItems([userItem]);
 
-          // Send the full prompt to the agent
+          // Send the full prompt to the agent, with user args appended if provided
+          const fullPrompt = cmdArgs
+            ? `${promptText}\n\n## User Instructions\n\n${cmdArgs}`
+            : promptText;
           try {
-            await agentLoop.run(promptText);
+            await agentLoop.run(fullPrompt);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             log("ERROR", "error", msg);
