@@ -296,7 +296,6 @@ export function App(props: AppProps) {
   const [thinkingEnabled, setThinkingEnabled] = useState(!!props.thinking);
   const messagesRef = useRef<Message[]>(props.messages);
   const nextIdRef = useRef(0);
-  const wasRunningRef = useRef(false);
   const sessionManagerRef = useRef(
     props.sessionsDir ? new SessionManager(props.sessionsDir) : null,
   );
@@ -737,20 +736,14 @@ export function App(props: AppProps) {
     },
   );
 
-  // When agent finishes, move live items into Static history so the live area
-  // is minimal. This prevents scroll jumping caused by Ink re-rendering the
-  // entire live area on every timer tick (cursor blink, border pulse, etc.).
-  useEffect(() => {
-    if (wasRunningRef.current && !agentLoop.isRunning) {
-      setLiveItems((prev) => {
-        if (prev.length > 0) {
-          setHistory((h) => pruneHistory([...h, ...prev]));
-        }
-        return [];
-      });
-    }
-    wasRunningRef.current = agentLoop.isRunning;
-  }, [agentLoop.isRunning]);
+  // NOTE: We intentionally do NOT move liveItems to Static history when the
+  // agent finishes. Items stay in the live area and are flushed to Static
+  // when the next message is submitted (handleSubmit line ~884). Moving them
+  // on isRunning transition caused Ink cursor-math glitches — Ink
+  // miscalculates live-area height (doesn't account for wrapped lines), so
+  // the transition truncated or cut off the final response text. Keeping
+  // items in the live area is safe: no timers re-render it when the agent is
+  // idle (cursor blink and status-line pulse only run during agent runs).
 
   // Sync terminal title with agent loop state
   useEffect(() => {

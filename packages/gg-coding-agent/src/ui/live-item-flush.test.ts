@@ -317,6 +317,39 @@ describe("flush integration scenarios", () => {
     expect(history).toHaveLength(MAX_HISTORY_ITEMS);
   });
 
+  it("REGRESSION: liveItems retained after agent finishes, flushed on next submit", () => {
+    // After the agent finishes its last turn, the final AssistantItem stays
+    // in liveItems (NOT moved to Static via useEffect). This prevents Ink
+    // cursor-math glitches that caused text to get cut off during the
+    // live→Static transition. Items are flushed when the user submits the
+    // next message (simulated here by flushing before adding a new userItem).
+    let liveItems: FlushableItem[] = [];
+    let history: FlushableItem[] = [];
+
+    // Agent produces a response (turn 1)
+    const flushed1 = flushOnTurnText(liveItems);
+    if (flushed1.length > 0) history = pruneHistory([...history, ...flushed1]);
+    liveItems = [assistantItem()];
+
+    // Agent finishes — liveItems NOT cleared (no useEffect flush)
+    // The final response stays in liveItems
+    expect(liveItems).toHaveLength(1);
+    expect(liveItems[0].kind).toBe("assistant");
+
+    // User submits next message — NOW flush to Static
+    if (liveItems.length > 0) {
+      history = pruneHistory([...history, ...liveItems]);
+    }
+    liveItems = [userItem()];
+
+    // Previous AssistantItem is now in history
+    expect(history).toHaveLength(1);
+    expect(history[0].kind).toBe("assistant");
+    // New user message is in liveItems
+    expect(liveItems).toHaveLength(1);
+    expect(liveItems[0].kind).toBe("user");
+  });
+
   it("REGRESSION: without flush, liveItems would grow unbounded", () => {
     // This test documents the old behavior — liveItems would contain
     // ALL items from ALL turns. With 20 turns of 5 tools each, that's
