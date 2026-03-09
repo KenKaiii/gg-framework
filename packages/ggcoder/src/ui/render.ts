@@ -4,6 +4,7 @@ import type { Message, Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import type { ProcessManager } from "../core/process-manager.js";
 import type { MCPClientManager } from "../core/mcp/index.js";
+import type { ProviderStatus } from "../core/oauth/types.js";
 import { App, type CompletedItem } from "./App.js";
 import { ThemeContext, loadTheme } from "./theme/theme.js";
 
@@ -32,6 +33,7 @@ export interface RenderAppConfig {
   processManager?: ProcessManager;
   settingsFile?: string;
   mcpManager?: MCPClientManager;
+  providerStatuses?: ProviderStatus[];
 }
 
 export async function renderApp(config: RenderAppConfig): Promise<void> {
@@ -68,6 +70,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
         processManager: config.processManager,
         settingsFile: config.settingsFile,
         mcpManager: config.mcpManager,
+        providerStatuses: config.providerStatuses,
       }),
     ),
     {

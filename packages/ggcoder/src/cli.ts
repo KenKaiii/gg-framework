@@ -285,6 +285,8 @@ async function runInkTUI(opts: {
     }
   }
 
+  const providerStatuses = await authStorage.getProviderStatuses();
+
   // Discover agents and build tools
   const agents = await discoverAgents({
     globalAgentsDir: paths.agentsDir,
@@ -380,6 +382,7 @@ async function runInkTUI(opts: {
     processManager,
     settingsFile: paths.settingsFile,
     mcpManager,
+    providerStatuses,
   });
 
   closeLogger();
@@ -396,7 +399,8 @@ async function runLogin(): Promise<void> {
   await authStorage.load();
 
   // Phase 1: Ink-based provider selector
-  const provider = await renderLoginSelector();
+  const providerStatuses = await authStorage.getProviderStatuses();
+  const provider = await renderLoginSelector(providerStatuses);
   if (!provider) {
     console.log(chalk.hex("#6b7280")("Login cancelled."));
     return;

@@ -11,6 +11,7 @@ import type {
   Tool,
   ToolChoice,
 } from "../types.js";
+import { sanitizeJsonSchema } from "../utils/sanitize-schema.js";
 import { zodToJsonSchema } from "../utils/zod-to-json-schema.js";
 
 // ── Anthropic Transforms ───────────────────────────────────
@@ -321,37 +322,6 @@ export function toOpenAIMessages(messages: Message[]): OpenAI.ChatCompletionMess
   }
 
   return out;
-}
-
-/**
- * Recursively fix object schemas missing "properties".
- * Anthropic tolerates this, but OpenAI's API rejects it with a 400 error.
- * MCP servers (e.g. grep.app) sometimes return schemas like { type: "object" }
- * without a properties field, which is technically valid JSON Schema but
- * violates OpenAI's stricter validation.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function sanitizeJsonSchema(schema: any): any {
-  if (!schema || typeof schema !== "object") return schema;
-  const copy = { ...schema };
-  if (copy.type === "object" && !copy.properties) {
-    copy.properties = {};
-  }
-  if (copy.properties && typeof copy.properties === "object") {
-    const props = { ...copy.properties };
-    for (const key of Object.keys(props)) {
-      props[key] = sanitizeJsonSchema(props[key]);
-    }
-    copy.properties = props;
-  }
-  if (copy.items) copy.items = sanitizeJsonSchema(copy.items);
-  if (Array.isArray(copy.anyOf)) copy.anyOf = copy.anyOf.map(sanitizeJsonSchema);
-  if (Array.isArray(copy.oneOf)) copy.oneOf = copy.oneOf.map(sanitizeJsonSchema);
-  if (Array.isArray(copy.allOf)) copy.allOf = copy.allOf.map(sanitizeJsonSchema);
-  if (copy.additionalProperties && typeof copy.additionalProperties === "object") {
-    copy.additionalProperties = sanitizeJsonSchema(copy.additionalProperties);
-  }
-  return copy;
 }
 
 export function toOpenAITools(tools: Tool[]): OpenAI.ChatCompletionTool[] {

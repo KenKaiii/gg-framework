@@ -2,14 +2,14 @@ import React from "react";
 import { Box, Text } from "ink";
 import { useTheme } from "../theme/theme.js";
 import { getModel } from "../../core/model-registry.js";
-import type { Provider } from "@kenkaiiii/gg-ai";
+import type { ProviderStatus } from "../../core/oauth/types.js";
 
 interface BannerProps {
   version: string;
   model: string;
-  provider: Provider;
   cwd: string;
   taskCount?: number;
+  providerStatuses?: ProviderStatus[];
 }
 
 const LOGO_LINES = [
@@ -36,7 +36,7 @@ const GRADIENT = [
 
 const GAP = "   ";
 
-export function Banner({ version, model, cwd, taskCount }: BannerProps) {
+export function Banner({ version, model, cwd, taskCount, providerStatuses }: BannerProps) {
   const theme = useTheme();
   const modelInfo = getModel(model);
   const modelName = modelInfo?.name ?? model;
@@ -82,6 +82,23 @@ export function Banner({ version, model, cwd, taskCount }: BannerProps) {
         <Text>{GAP}</Text>
         <Text color={theme.textDim}>{displayPath}</Text>
       </Box>
+      {providerStatuses && providerStatuses.length > 0 && (
+        <Box flexDirection="column" marginTop={1}>
+          {providerStatuses.map((ps) => (
+            <Box key={ps.provider}>
+              <Text color={ps.connected ? theme.success : theme.textDim}>
+                {ps.connected ? "✓" : "✗"}
+              </Text>
+              <Text> </Text>
+              <Text color={theme.text}>{ps.provider.padEnd(10)}</Text>
+              <Text color={theme.textDim}>· </Text>
+              <Text color={ps.connected ? (theme.textMuted ?? theme.text) : theme.textDim}>
+                {ps.connected ? (ps.source ?? "connected") : "not connected"}
+              </Text>
+            </Box>
+          ))}
+        </Box>
+      )}
     </Box>
   );
 }
