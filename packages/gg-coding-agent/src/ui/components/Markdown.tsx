@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Text, Box, useStdout } from "ink";
 import { marked, type Token, type Tokens } from "marked";
 import { useTheme, type Theme } from "../theme/theme.js";
@@ -11,7 +11,7 @@ export function Markdown({ children }: { children: string }) {
   const theme = useTheme();
   const { stdout } = useStdout();
   const columns = stdout?.columns ?? 80;
-  const tokens = marked.lexer(children);
+  const tokens = useMemo(() => marked.lexer(children), [children]);
   return (
     <Box flexDirection="column" flexShrink={1}>
       {renderTokens(tokens, theme, columns)}

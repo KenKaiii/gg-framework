@@ -6,6 +6,7 @@ import type { ProcessManager } from "../core/process-manager.js";
 import { App, type CompletedItem } from "./App.js";
 import { SplashScreen } from "./components/SplashScreen.js";
 import { ThemeContext, loadTheme } from "./theme/theme.js";
+import { MOUSE_DISABLE } from "./hooks/useMouseScroll.js";
 
 export interface RenderAppConfig {
   provider: Provider;
@@ -133,6 +134,6 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
 
   process.stdout.off("resize", onResize);
 
-  // Reset scroll region and clear the shimmer line on exit
-  process.stdout.write("\x1b[r\x1b[1;1H\x1b[2K");
+  // Reset scroll region, disable mouse tracking, and clear the shimmer line on exit
+  process.stdout.write(MOUSE_DISABLE + "\x1b[r\x1b[1;1H\x1b[2K");
 }

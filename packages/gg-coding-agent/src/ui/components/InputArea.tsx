@@ -4,6 +4,7 @@ import { useTheme } from "../theme/theme.js";
 import type { ImageAttachment } from "../../utils/image.js";
 import { extractImagePaths, readImageFile, getClipboardImage } from "../../utils/image.js";
 import { SlashCommandMenu, filterCommands, type SlashCommandInfo } from "./SlashCommandMenu.js";
+import { log } from "../../core/logger.js";
 
 const MAX_VISIBLE_LINES = 5;
 const PROMPT = "❯ ";
@@ -158,6 +159,16 @@ export function InputArea({
 
   useInput(
     (input, key) => {
+      // DEBUG: log every useInput call to debug.log
+      const hex = [...input].map((c) => c.charCodeAt(0).toString(16).padStart(2, "0")).join(" ");
+      log("INFO", "useInput", `input=${JSON.stringify(input)} hex=[${hex}]`, {
+        ctrl: String(key.ctrl),
+        meta: String(key.meta),
+        shift: String(key.shift),
+        escape: String(key.escape),
+        return: String(key.return),
+      });
+
       if (disabled) {
         if ((key.ctrl && input === "c") || key.escape) {
           onAbort();
@@ -317,8 +328,12 @@ export function InputArea({
       }
 
       if (input) {
-        setValue((v) => v.slice(0, cursor) + input + v.slice(cursor));
-        setCursor((c) => c + input.length);
+        const cleaned = input.replace(/\[<\d+;\d+;\d+[Mm]/g, "");
+        log("INFO", "useInput:catchall", `raw=${JSON.stringify(input)} cleaned=${JSON.stringify(cleaned)}`);
+        if (cleaned) {
+          setValue((v) => v.slice(0, cursor) + cleaned + v.slice(cursor));
+          setCursor((c) => c + cleaned.length);
+        }
       }
     },
     { isActive },

@@ -2,6 +2,8 @@ import React, { useState, useMemo } from "react";
 import { Box, Text, useInput } from "ink";
 import { useTheme } from "../theme/theme.js";
 
+const MAX_VISIBLE_ITEMS = 10;
+
 interface SelectListItem {
   label: string;
   value: string;
@@ -28,6 +30,21 @@ export function SelectList({ items, onSelect, onCancel, initialIndex = 0 }: Sele
         item.label.toLowerCase().includes(lower) || item.value.toLowerCase().includes(lower),
     );
   }, [items, filter]);
+
+  // Viewport slicing — keep selectedIndex visible
+  const startIndex = useMemo(() => {
+    if (filtered.length <= MAX_VISIBLE_ITEMS) return 0;
+    const idealStart = Math.max(0, selectedIndex - MAX_VISIBLE_ITEMS + 1);
+    return Math.min(idealStart, filtered.length - MAX_VISIBLE_ITEMS);
+  }, [filtered.length, selectedIndex]);
+
+  const visibleItems = useMemo(
+    () => filtered.slice(startIndex, startIndex + MAX_VISIBLE_ITEMS),
+    [filtered, startIndex],
+  );
+
+  const itemsAbove = startIndex;
+  const itemsBelow = Math.max(0, filtered.length - startIndex - MAX_VISIBLE_ITEMS);
 
   useInput((input, key) => {
     if (key.escape) {
@@ -71,15 +88,20 @@ export function SelectList({ items, onSelect, onCancel, initialIndex = 0 }: Sele
           <Text color={theme.textDim}>Filter: {filter}</Text>
         </Box>
       )}
-      {filtered.map((item, index) => (
-        <Box key={item.value}>
-          <Text color={index === selectedIndex ? theme.primary : theme.text}>
-            {index === selectedIndex ? "❯ " : "  "}
-            {item.label}
-          </Text>
-          {item.description && <Text color={theme.textDim}> — {item.description}</Text>}
-        </Box>
-      ))}
+      {itemsAbove > 0 && <Text color={theme.textDim}> ↑ {itemsAbove} more</Text>}
+      {visibleItems.map((item, i) => {
+        const realIndex = startIndex + i;
+        return (
+          <Box key={item.value}>
+            <Text color={realIndex === selectedIndex ? theme.primary : theme.text}>
+              {realIndex === selectedIndex ? "❯ " : "  "}
+              {item.label}
+            </Text>
+            {item.description && <Text color={theme.textDim}> — {item.description}</Text>}
+          </Box>
+        );
+      })}
+      {itemsBelow > 0 && <Text color={theme.textDim}> ↓ {itemsBelow} more</Text>}
       {filtered.length === 0 && <Text color={theme.textDim}>No matches</Text>}
       <Box marginTop={1}>
         <Text color={theme.textDim}>↑↓ navigate · Enter select · Esc cancel</Text>

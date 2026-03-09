@@ -3,7 +3,7 @@ import { Text, Box } from "ink";
 import { useTheme } from "../theme/theme.js";
 import type { ActivityPhase } from "../hooks/useAgentLoop.js";
 
-import { SPINNER_FRAMES, SPINNER_INTERVAL } from "../spinner-frames.js";
+import { SPINNER_FRAMES } from "../spinner-frames.js";
 
 // ── Color pulse cycle ─────────────────────────────────────
 
@@ -16,12 +16,9 @@ const PULSE_COLORS = [
   "#38bdf8", // sky
   "#60a5fa", // blue (back)
 ];
-const PULSE_INTERVAL = 400;
-
 // ── Ellipsis animation ────────────────────────────────────
 
 const ELLIPSIS_FRAMES = ["", ".", "..", "..."];
-const ELLIPSIS_INTERVAL = 500;
 
 // ── Phrase rotation ───────────────────────────────────────
 
@@ -220,7 +217,6 @@ function buildMetaSuffix(
 // ── Shimmer effect ────────────────────────────────────────
 
 const SHIMMER_WIDTH = 3;
-const SHIMMER_INTERVAL = 100;
 
 const ShimmerText: React.FC<{ text: string; color: string; shimmerPos: number }> = ({
   text,
@@ -260,66 +256,36 @@ export function ActivityIndicator({
 }: ActivityIndicatorProps) {
   const theme = useTheme();
 
-  // Spinner frame
-  const [spinnerFrame, setSpinnerFrame] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setSpinnerFrame((f) => (f + 1) % SPINNER_FRAMES.length);
-    }, SPINNER_INTERVAL);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Color pulse
-  const [colorFrame, setColorFrame] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setColorFrame((f) => (f + 1) % PULSE_COLORS.length);
-    }, PULSE_INTERVAL);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Ellipsis
-  const [ellipsisFrame, setEllipsisFrame] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setEllipsisFrame((f) => (f + 1) % ELLIPSIS_FRAMES.length);
-    }, ELLIPSIS_INTERVAL);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Shimmer position
-  const [shimmerPos, setShimmerPos] = useState(-SHIMMER_WIDTH);
-
   // Phrase rotation — pick phrases based on phase + user message, shuffle, rotate
   const phrases = useMemo(
     () => shuffleArray(selectPhrases(phase, userMessage)),
     [phase, userMessage],
   );
   const phraseInterval = phase === "waiting" ? WAITING_PHRASE_INTERVAL : OTHER_PHRASE_INTERVAL;
-  const [phraseIndex, setPhraseIndex] = useState(0);
+
+  // Single tick counter drives all animations
+  const [tick, setTick] = useState(0);
   useEffect(() => {
-    setPhraseIndex(0);
+    setTick(0);
     const timer = setInterval(() => {
-      setPhraseIndex((i) => (i + 1) % phrases.length);
-    }, phraseInterval);
+      setTick((t) => t + 1);
+    }, 80);
     return () => clearInterval(timer);
   }, [phrases, phraseInterval]);
 
+  const spinnerFrame = tick % SPINNER_FRAMES.length;
+  const colorFrame = Math.floor(tick / 5) % PULSE_COLORS.length;
+  const ellipsisFrame = Math.floor(tick / 6) % ELLIPSIS_FRAMES.length;
+  const phraseIndex = Math.floor(tick / (phraseInterval / 80)) % phrases.length;
+
   const spinnerColor = PULSE_COLORS[colorFrame];
-  const phrase = phrases[phraseIndex % phrases.length] ?? phrases[0];
+  const phrase = phrases[phraseIndex] ?? phrases[0];
   const ellipsis = ELLIPSIS_FRAMES[ellipsisFrame];
 
-  // Shimmer animation — wraps across phrase text length
-  useEffect(() => {
-    setShimmerPos(-SHIMMER_WIDTH);
-    const timer = setInterval(() => {
-      setShimmerPos((pos) => {
-        const max = phrase.length + SHIMMER_WIDTH;
-        return pos >= max ? -SHIMMER_WIDTH : pos + 1;
-      });
-    }, SHIMMER_INTERVAL);
-    return () => clearInterval(timer);
-  }, [phrase]);
+  // Shimmer position derived from tick (~100ms per step)
+  const shimmerStep = Math.floor((tick * 80) / 100);
+  const shimmerRange = phrase.length + SHIMMER_WIDTH * 2;
+  const shimmerPos = shimmerRange > 0 ? (shimmerStep % shimmerRange) - SHIMMER_WIDTH : 0;
 
   // Pad ellipsis to prevent text from shifting
   const paddedEllipsis = ellipsis + " ".repeat(3 - ellipsis.length);

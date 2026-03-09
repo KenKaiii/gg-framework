@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { Box, Text, Static, useStdout } from "ink";
+import { Box, Text, Static, useStdout, useInput } from "ink";
 import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import crypto from "node:crypto";
 import type {
@@ -28,6 +28,9 @@ import { Banner } from "./components/Banner.js";
 import { ShimmerLine } from "./components/ShimmerLine.js";
 import { ModelSelector } from "./components/ModelSelector.js";
 import { BackgroundTasksBar } from "./components/BackgroundTasksBar.js";
+import { ScrollIndicator } from "./components/ScrollIndicator.js";
+import { useContentScroll } from "./hooks/useContentScroll.js";
+import { useMouseScroll } from "./hooks/useMouseScroll.js";
 import type { SlashCommandInfo } from "./components/SlashCommandMenu.js";
 import type { ProcessManager, BackgroundProcess } from "../core/process-manager.js";
 import { useTheme } from "./theme/theme.js";
@@ -258,6 +261,7 @@ export function App(props: AppProps) {
   }, [isRestoredSession, props.initialHistory]);
   // Items from the current/last turn — rendered in the live area so they stay visible
   const [liveItems, setLiveItems] = useState<CompletedItem[]>([]);
+  const contentScroll = useContentScroll({ items: liveItems });
   const [overlay, setOverlay] = useState<"model" | null>(null);
   const [lastUserMessage, setLastUserMessage] = useState("");
   const [doneStatus, setDoneStatus] = useState<{
@@ -472,6 +476,34 @@ export function App(props: AppProps) {
   const handleTaskNavigate = useCallback((index: number) => {
     setSelectedTaskIndex(index);
   }, []);
+
+  // ── Content area scroll (PageUp / PageDown) ────────────
+  useInput(
+    (_input, key) => {
+      if (key.pageUp) {
+        contentScroll.scrollUp(contentScroll.halfViewport);
+      } else if (key.pageDown) {
+        contentScroll.scrollDown(contentScroll.halfViewport);
+      }
+    },
+    { isActive: !taskBarFocused && overlay === null },
+  );
+
+  // ── Content area scroll (mouse / trackpad) ──────────────
+  const mouseScrollUp = useCallback(() => {
+    contentScroll.scrollUp(3);
+  }, [contentScroll]);
+  const mouseScrollDown = useCallback(() => {
+    contentScroll.scrollDown(3);
+  }, [contentScroll]);
+  // Only enable SGR mouse tracking when live area has scrollable content.
+  // Otherwise, let the terminal handle scrollback natively (iTerm2/VS Code).
+  const hasScrollableContent = liveItems.length > (contentScroll.halfViewport * 2);
+  useMouseScroll({
+    onScrollUp: mouseScrollUp,
+    onScrollDown: mouseScrollDown,
+    isActive: hasScrollableContent && !taskBarFocused && overlay === null,
+  });
 
   const agentLoop = useAgentLoop(
     messagesRef,
@@ -707,9 +739,10 @@ export function App(props: AppProps) {
         }
         return [];
       });
+      contentScroll.scrollToBottom();
     }
     wasRunningRef.current = agentLoop.isRunning;
-  }, [agentLoop.isRunning]);
+  }, [agentLoop.isRunning, contentScroll.scrollToBottom]);
 
   // Sync terminal title with agent loop state
   useEffect(() => {
@@ -971,96 +1004,104 @@ export function App(props: AppProps) {
     [customCommands],
   );
 
-  const renderItem = (item: CompletedItem) => {
-    switch (item.kind) {
-      case "banner":
-        return (
-          <Banner
-            key={item.id}
-            version={props.version}
-            model={props.model}
-            provider={props.provider}
-            cwd={props.cwd}
-          />
-        );
-      case "user":
-        return <UserMessage key={item.id} text={item.text} imageCount={item.imageCount} />;
-      case "assistant":
-        return (
-          <AssistantMessage
-            key={item.id}
-            text={item.text}
-            thinking={item.thinking}
-            thinkingMs={item.thinkingMs}
-            showThinking={props.showThinking}
-          />
-        );
-      case "tool_start":
-        return <ToolExecution key={item.id} status="running" name={item.name} args={item.args} />;
-      case "tool_done":
-        return (
-          <ToolExecution
-            key={item.id}
-            status="done"
-            name={item.name}
-            args={item.args}
-            result={item.result}
-            isError={item.isError}
-          />
-        );
-      case "server_tool_start":
-        return (
-          <ServerToolExecution key={item.id} status="running" name={item.name} input={item.input} />
-        );
-      case "server_tool_done":
-        return (
-          <ServerToolExecution
-            key={item.id}
-            status="done"
-            name={item.name}
-            input={item.input}
-            resultType={item.resultType}
-            data={item.data}
-          />
-        );
-      case "error":
-        return (
-          <Box key={item.id} marginTop={1}>
-            <Text color={theme.error}>{"✗ "}</Text>
-            <Text color={theme.error}>{item.message}</Text>
-          </Box>
-        );
-      case "info":
-        return (
-          <Box key={item.id} marginTop={1}>
-            <Text color={theme.textDim}>{item.text}</Text>
-          </Box>
-        );
-      case "compacting":
-        return <CompactionSpinner key={item.id} />;
-      case "compacted":
-        return (
-          <CompactionDone
-            key={item.id}
-            originalCount={item.originalCount}
-            newCount={item.newCount}
-            tokensBefore={item.tokensBefore}
-            tokensAfter={item.tokensAfter}
-          />
-        );
-      case "duration":
-        return (
-          <Box key={item.id} marginTop={1}>
-            <Text color={theme.textDim}>
-              {"✻ "}
-              {item.verb} {formatDuration(item.durationMs)}
-            </Text>
-          </Box>
-        );
-      case "subagent_group":
-        return <SubAgentPanel key={item.id} agents={item.agents} aborted={item.aborted} />;
-    }
-  };
+  const renderItem = useCallback(
+    (item: CompletedItem) => {
+      switch (item.kind) {
+        case "banner":
+          return (
+            <Banner
+              key={item.id}
+              version={props.version}
+              model={props.model}
+              provider={props.provider}
+              cwd={props.cwd}
+            />
+          );
+        case "user":
+          return <UserMessage key={item.id} text={item.text} imageCount={item.imageCount} />;
+        case "assistant":
+          return (
+            <AssistantMessage
+              key={item.id}
+              text={item.text}
+              thinking={item.thinking}
+              thinkingMs={item.thinkingMs}
+              showThinking={props.showThinking}
+            />
+          );
+        case "tool_start":
+          return <ToolExecution key={item.id} status="running" name={item.name} args={item.args} />;
+        case "tool_done":
+          return (
+            <ToolExecution
+              key={item.id}
+              status="done"
+              name={item.name}
+              args={item.args}
+              result={item.result}
+              isError={item.isError}
+            />
+          );
+        case "server_tool_start":
+          return (
+            <ServerToolExecution
+              key={item.id}
+              status="running"
+              name={item.name}
+              input={item.input}
+            />
+          );
+        case "server_tool_done":
+          return (
+            <ServerToolExecution
+              key={item.id}
+              status="done"
+              name={item.name}
+              input={item.input}
+              resultType={item.resultType}
+              data={item.data}
+            />
+          );
+        case "error":
+          return (
+            <Box key={item.id} marginTop={1}>
+              <Text color={theme.error}>{"✗ "}</Text>
+              <Text color={theme.error}>{item.message}</Text>
+            </Box>
+          );
+        case "info":
+          return (
+            <Box key={item.id} marginTop={1}>
+              <Text color={theme.textDim}>{item.text}</Text>
+            </Box>
+          );
+        case "compacting":
+          return <CompactionSpinner key={item.id} />;
+        case "compacted":
+          return (
+            <CompactionDone
+              key={item.id}
+              originalCount={item.originalCount}
+              newCount={item.newCount}
+              tokensBefore={item.tokensBefore}
+              tokensAfter={item.tokensAfter}
+            />
+          );
+        case "duration":
+          return (
+            <Box key={item.id} marginTop={1}>
+              <Text color={theme.textDim}>
+                {"✻ "}
+                {item.verb} {formatDuration(item.durationMs)}
+              </Text>
+            </Box>
+          );
+        case "subagent_group":
+          return <SubAgentPanel key={item.id} agents={item.agents} aborted={item.aborted} />;
+      }
+    },
+    [props.version, props.model, props.provider, props.cwd, props.showThinking, theme],
+  );
 
   return (
     <Box flexDirection="column">
@@ -1087,8 +1128,14 @@ export function App(props: AppProps) {
           when text wraps at the exact terminal edge */}
 
       <Box flexDirection="column" flexGrow={1} paddingRight={1}>
-        {/* Live items — current/last turn, stays visible */}
-        {liveItems.map((item) => renderItem(item))}
+        {/* Live items — current/last turn, viewport-sliced with scroll */}
+        {contentScroll.itemsAbove > 0 && (
+          <ScrollIndicator direction="up" count={contentScroll.itemsAbove} />
+        )}
+        {contentScroll.visibleItems.map((item) => renderItem(item))}
+        {contentScroll.itemsBelow > 0 && (
+          <ScrollIndicator direction="down" count={contentScroll.itemsBelow} />
+        )}
 
         {/* Streaming area — thinking text + response text */}
         <StreamingArea
@@ -1103,6 +1150,7 @@ export function App(props: AppProps) {
       {/* Pinned status line — activity indicator while running, duration summary when done */}
       {agentLoop.isRunning && agentLoop.activityPhase !== "idle" ? (
         <Box
+          flexShrink={0}
           marginTop={1}
           borderStyle={agentLoop.activityPhase === "thinking" ? "round" : undefined}
           borderColor={
@@ -1124,7 +1172,7 @@ export function App(props: AppProps) {
         </Box>
       ) : (
         doneStatus && (
-          <Box marginTop={1}>
+          <Box marginTop={1} flexShrink={0}>
             <Text color={doneFlash ? theme.success : theme.textDim}>
               {"✻ "}
               {doneStatus.verb} {formatDuration(doneStatus.durationMs)}
@@ -1134,45 +1182,51 @@ export function App(props: AppProps) {
       )}
 
       {/* Input + Footer/ModelSelector pinned at bottom */}
-      <InputArea
-        onSubmit={handleSubmit}
-        onAbort={handleAbort}
-        disabled={agentLoop.isRunning}
-        isActive={!taskBarFocused}
-        onDownAtEnd={handleFocusTaskBar}
-        onShiftTab={handleToggleThinking}
-        cwd={props.cwd}
-        commands={allCommands}
-      />
-      {overlay === "model" ? (
-        <ModelSelector
-          onSelect={handleModelSelect}
-          onCancel={() => setOverlay(null)}
-          loggedInProviders={props.loggedInProviders ?? [currentProvider]}
-          currentModel={currentModel}
-          currentProvider={currentProvider}
-        />
-      ) : (
-        <Footer
-          model={currentModel}
-          tokensIn={agentLoop.contextUsed}
+      <Box flexShrink={0}>
+        <InputArea
+          onSubmit={handleSubmit}
+          onAbort={handleAbort}
+          disabled={agentLoop.isRunning}
+          isActive={!taskBarFocused}
+          onDownAtEnd={handleFocusTaskBar}
+          onShiftTab={handleToggleThinking}
           cwd={props.cwd}
-          gitBranch={gitBranch}
-          thinkingEnabled={thinkingEnabled}
+          commands={allCommands}
         />
-      )}
+      </Box>
+      <Box flexShrink={0}>
+        {overlay === "model" ? (
+          <ModelSelector
+            onSelect={handleModelSelect}
+            onCancel={() => setOverlay(null)}
+            loggedInProviders={props.loggedInProviders ?? [currentProvider]}
+            currentModel={currentModel}
+            currentProvider={currentProvider}
+          />
+        ) : (
+          <Footer
+            model={currentModel}
+            tokensIn={agentLoop.contextUsed}
+            cwd={props.cwd}
+            gitBranch={gitBranch}
+            thinkingEnabled={thinkingEnabled}
+          />
+        )}
+      </Box>
       {bgTasks.length > 0 && (
-        <BackgroundTasksBar
-          tasks={bgTasks}
-          focused={taskBarFocused}
-          expanded={taskBarExpanded}
-          selectedIndex={selectedTaskIndex}
-          onExpand={handleTaskBarExpand}
-          onCollapse={handleTaskBarCollapse}
-          onKill={handleTaskKill}
-          onExit={handleTaskBarExit}
-          onNavigate={handleTaskNavigate}
-        />
+        <Box flexShrink={0}>
+          <BackgroundTasksBar
+            tasks={bgTasks}
+            focused={taskBarFocused}
+            expanded={taskBarExpanded}
+            selectedIndex={selectedTaskIndex}
+            onExpand={handleTaskBarExpand}
+            onCollapse={handleTaskBarCollapse}
+            onKill={handleTaskKill}
+            onExit={handleTaskBarExit}
+            onNavigate={handleTaskNavigate}
+          />
+        </Box>
       )}
     </Box>
   );

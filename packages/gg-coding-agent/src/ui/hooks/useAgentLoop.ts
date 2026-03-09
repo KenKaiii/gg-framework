@@ -158,16 +158,16 @@ export function useAgentLoop(
       // Aggressive catch-up prevents text from lagging behind the LLM.
       const buffered = pending.length;
       let charsPerTick: number;
-      if (buffered > 500) charsPerTick = 60;
-      else if (buffered > 200) charsPerTick = 30;
-      else if (buffered > 50) charsPerTick = 12;
-      else charsPerTick = 4;
+      if (buffered > 500) charsPerTick = 180;
+      else if (buffered > 200) charsPerTick = 90;
+      else if (buffered > 50) charsPerTick = 36;
+      else charsPerTick = 12;
 
       const reveal = pending.slice(0, charsPerTick);
       textPendingRef.current = pending.slice(charsPerTick);
       textVisibleRef.current += reveal;
       setStreamingText(textVisibleRef.current);
-    }, 10);
+    }, 33);
   }, []);
 
   const flushAllText = useCallback(() => {
