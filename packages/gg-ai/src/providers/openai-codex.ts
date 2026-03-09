@@ -9,6 +9,7 @@ import type {
 } from "../types.js";
 import { ProviderError } from "../errors.js";
 import { StreamResult } from "../utils/event-stream.js";
+import { sanitizeJsonSchema } from "../utils/sanitize-schema.js";
 import { zodToJsonSchema } from "../utils/zod-to-json-schema.js";
 
 const DEFAULT_BASE_URL = "https://chatgpt.com/backend-api";
@@ -355,33 +356,6 @@ function toCodexInput(messages: Message[]): { system: string | undefined; input:
 }
 
 // ── Tool Conversion ────────────────────────────────────────
-
-/**
- * Recursively fix object schemas missing "properties" (required by OpenAI).
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function sanitizeJsonSchema(schema: any): any {
-  if (!schema || typeof schema !== "object") return schema;
-  const copy = { ...schema };
-  if (copy.type === "object" && !copy.properties) {
-    copy.properties = {};
-  }
-  if (copy.properties && typeof copy.properties === "object") {
-    const props = { ...copy.properties };
-    for (const key of Object.keys(props)) {
-      props[key] = sanitizeJsonSchema(props[key]);
-    }
-    copy.properties = props;
-  }
-  if (copy.items) copy.items = sanitizeJsonSchema(copy.items);
-  if (Array.isArray(copy.anyOf)) copy.anyOf = copy.anyOf.map(sanitizeJsonSchema);
-  if (Array.isArray(copy.oneOf)) copy.oneOf = copy.oneOf.map(sanitizeJsonSchema);
-  if (Array.isArray(copy.allOf)) copy.allOf = copy.allOf.map(sanitizeJsonSchema);
-  if (copy.additionalProperties && typeof copy.additionalProperties === "object") {
-    copy.additionalProperties = sanitizeJsonSchema(copy.additionalProperties);
-  }
-  return copy;
-}
 
 function toCodexTools(tools: Tool[]): unknown[] {
   return tools.map((tool) => ({

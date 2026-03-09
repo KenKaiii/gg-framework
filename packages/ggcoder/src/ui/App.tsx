@@ -4,7 +4,7 @@ import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import crypto, { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { playNotificationSound } from "../utils/sound.js";
 import type {
   Message,
@@ -46,6 +46,8 @@ import { estimateConversationTokens } from "../core/compaction/token-estimator.j
 import { PROMPT_COMMANDS, getPromptCommand } from "../core/prompt-commands.js";
 import { loadCustomCommands, type CustomCommand } from "../core/custom-commands.js";
 import { pruneHistory, flushOnTurnText, flushOnTurnEnd } from "./live-item-flush.js";
+import type { ProviderStatus } from "../core/oauth/types.js";
+import { HookRunner, wrapToolsWithHooks } from "../core/hooks.js";
 
 // ── Completed Item Types ───────────────────────────────────
 
@@ -317,6 +319,7 @@ export interface AppProps {
   sessionPath?: string;
   processManager?: ProcessManager;
   settingsFile?: string;
+  providerStatuses?: ProviderStatus[];
 }
 
 // ── App Component ──────────────────────────────────────────
@@ -431,6 +434,39 @@ export function App(props: AppProps) {
       });
     }
   }, [props.settingsFile]);
+
+  // ── Hooks system ──────────────────────────────────────────
+  const [hookRunner, setHookRunner] = useState<HookRunner | null>(null);
+
+  useEffect(() => {
+    const sessionId = props.sessionPath
+      ? basename(props.sessionPath, ".json")
+      : crypto.randomUUID();
+    const runner = new HookRunner(props.cwd, sessionId);
+    const settingsPath = props.settingsFile ?? join(homedir(), ".gg", "settings.json");
+    runner
+      .loadConfig(settingsPath)
+      .then(() => {
+        setHookRunner(runner);
+        runner.runHooks("SessionStart").catch(() => {});
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fire SessionEnd hook on unmount
+  const hookRunnerRef = useRef<HookRunner | null>(null);
+  hookRunnerRef.current = hookRunner;
+  useEffect(() => {
+    return () => {
+      hookRunnerRef.current?.runHooksSync("SessionEnd");
+    };
+  }, []);
+
+  // Wrap tools with PreToolUse/PostToolUse hooks
+  const hookedTools = useMemo(() => {
+    if (!hookRunner) return props.tools;
+    return wrapToolsWithHooks(props.tools, hookRunner);
+  }, [props.tools, hookRunner]);
 
   const compactConversation = useCallback(
     async (messages: Message[]): Promise<Message[]> => {
@@ -579,7 +615,7 @@ export function App(props: AppProps) {
     {
       provider: currentProvider,
       model: currentModel,
-      tools: props.tools,
+      tools: hookedTools,
       serverTools: props.serverTools,
       maxTokens: props.maxTokens,
       thinking: thinkingEnabled ? (props.thinking ?? "medium") : undefined,
@@ -800,6 +836,7 @@ export function App(props: AppProps) {
         });
         setDoneStatus({ durationMs, toolsUsed, verb: pickDurationVerb(toolsUsed) });
         playNotificationSound();
+        hookRunnerRef.current?.runHooks("Stop").catch(() => {});
         // Two-phase flush to avoid Ink text clipping.
         // Phase 1 (here): clear the live area so Ink commits a render with
         // the smaller output and updates its internal line counter.
@@ -1134,9 +1171,9 @@ export function App(props: AppProps) {
             key={item.id}
             version={props.version}
             model={props.model}
-            provider={props.provider}
             cwd={props.cwd}
             taskCount={taskCount}
+            providerStatuses={props.providerStatuses}
           />
         );
       case "user":

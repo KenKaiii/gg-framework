@@ -3,6 +3,7 @@ import { render } from "ink";
 import type { Message, Provider, ServerToolDefinition, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import type { ProcessManager } from "../core/process-manager.js";
+import type { ProviderStatus } from "../core/oauth/types.js";
 import { App, type CompletedItem } from "./App.js";
 import { SplashScreen } from "./components/SplashScreen.js";
 import { ThemeContext, loadTheme } from "./theme/theme.js";
@@ -31,6 +32,7 @@ export interface RenderAppConfig {
   sessionPath?: string;
   processManager?: ProcessManager;
   settingsFile?: string;
+  providerStatuses?: ProviderStatus[];
 }
 
 export async function renderApp(config: RenderAppConfig): Promise<void> {
@@ -90,6 +92,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
         sessionPath: config.sessionPath,
         processManager: config.processManager,
         settingsFile: config.settingsFile,
+        providerStatuses: config.providerStatuses,
       }),
     ),
     {

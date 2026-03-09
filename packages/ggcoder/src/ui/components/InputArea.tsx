@@ -161,7 +161,7 @@ export function InputArea({
   useInput(
     (input, key) => {
       // Shift+` (tilde) toggles task overlay — works even while agent is running
-      if (input === "~") {
+      if (input === "~" && key.shift) {
         onToggleTasks?.();
         return;
       }
@@ -235,6 +235,23 @@ export function InputArea({
       }
       if (key.ctrl && input === "e") {
         setCursor(value.length);
+        return;
+      }
+
+      // Ctrl+U / Ctrl+W — delete word backward (Cmd+Backspace / Option+Backspace on macOS)
+      if (key.ctrl && (input === "u" || input === "w")) {
+        const before = value.slice(0, cursor);
+        const trimmed = before.replace(/\s+$/, "");
+        const lastSpace = trimmed.lastIndexOf(" ");
+        const newCursor = lastSpace === -1 ? 0 : lastSpace + 1;
+        setValue((v) => v.slice(0, newCursor) + v.slice(cursor));
+        setCursor(newCursor);
+        return;
+      }
+
+      // Ctrl+K — delete from cursor to end of line
+      if (key.ctrl && input === "k") {
+        setValue((v) => v.slice(0, cursor));
         return;
       }
 
