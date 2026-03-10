@@ -48,6 +48,8 @@ function resolvePath(filePath: string, cwd: string): string {
   if (resolved.startsWith("file://")) {
     resolved = resolved.slice(7);
   }
+  // Unescape backslash-escaped characters (e.g. "\ " → " ")
+  resolved = resolved.replace(/\\(.)/g, "$1");
   // Resolve home dir
   if (resolved.startsWith("~/")) {
     resolved = path.join(process.env.HOME ?? "/", resolved.slice(2));
@@ -74,8 +76,8 @@ export async function extractImagePaths(
     return { imagePaths: [wholePath], cleanText: "" };
   }
 
-  // Split on whitespace and check each token
-  const tokens = text.split(/\s+/);
+  // Split on unescaped whitespace (respect backslash-escaped spaces like "file\ name.png")
+  const tokens = text.match(/(?:[^\s\\]|\\.)+/g) ?? [];
   for (const token of tokens) {
     if (!token) continue;
     const resolved = resolvePath(token, cwd);
