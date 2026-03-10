@@ -4,7 +4,7 @@ import { useTheme } from "../theme/theme.js";
 import { Spinner } from "./Spinner.js";
 import { highlightCode, langFromPath } from "../utils/highlight.js";
 
-const MAX_OUTPUT_LINES = 4;
+const MAX_OUTPUT_LINES = 8;
 
 interface ToolRunningProps {
   status: "running";
@@ -48,7 +48,7 @@ export function ToolExecution(props: ToolExecutionProps) {
   const isDiff = name === "edit" && !isError && result.includes("---");
 
   const { label, detail } = getToolHeaderParts(name, args);
-  const body = isDiff ? buildDiffBody(result, args) : buildResultBody(name, result, isError);
+  const body = isDiff ? buildDiffBody(result, args) : buildResultBody(name, result, isError, args);
 
   const headerColor = isError ? theme.toolError : theme.toolName;
 
@@ -117,8 +117,7 @@ export function ToolExecution(props: ToolExecutionProps) {
           <Box>
             <Text color={theme.textDim}>
               {"   … +"}
-              {hiddenCount}
-              {" lines (ctrl+o to expand)"}
+              {hiddenCount} lines
             </Text>
           </Box>
         )}
@@ -181,17 +180,13 @@ function getToolHeaderParts(
     }
     default: {
       if (name.startsWith("mcp__")) {
-        // Show all args as key: "value" pairs
-        const argParts = Object.entries(args)
-          .filter(([, v]) => v !== undefined && v !== null && v !== "")
-          .map(([k, v]) => {
-            const s = String(v);
-            const truncated = s.length > 40 ? s.slice(0, 37) + "…" : s;
-            return `${k}: "${truncated}"`;
-          });
-        const detail = argParts.join(", ");
-        const truncDetail = detail.length > 80 ? detail.slice(0, 77) + "…" : detail;
-        return { label: displayName, detail: truncDetail };
+        // mcp__grep__searchGitHub → show tool name + query arg
+        const toolFn = name.split("__")[2] ?? "";
+        const query = String(args.query ?? args.pattern ?? args.q ?? "");
+        const detail = query
+          ? `${toolFn}: ${query.length > 50 ? query.slice(0, 47) + "…" : query}`
+          : toolFn;
+        return { label: displayName, detail };
       }
       return { label: displayName, detail: "" };
     }
@@ -200,11 +195,10 @@ function getToolHeaderParts(
 
 function toolDisplayName(name: string): string {
   if (name.startsWith("mcp__")) {
-    // mcp__grep__searchGitHub → "grep - searchGitHub (MCP)"
+    // mcp__grep__searchGitHub → "MCP:Grep"
     const parts = name.split("__");
     const server = parts[1] ?? "mcp";
-    const toolFn = parts[2] ?? "";
-    return `${server} - ${toolFn} (MCP)`;
+    return `MCP:${server.charAt(0).toUpperCase() + server.slice(1)}`;
   }
   switch (name) {
     case "bash":
@@ -271,10 +265,7 @@ function getInlineSummary(name: string, result: string, isError: boolean): strin
     default: {
       if (name.startsWith("mcp__")) {
         const lines = result.split("\n").filter((l) => l.length > 0);
-        if (lines.length === 0) return "no results";
-        // Show first meaningful line as summary for compact display
-        const first = lines[0].length > 50 ? lines[0].slice(0, 47) + "…" : lines[0];
-        return lines.length === 1 ? first : `${lines.length} lines`;
+        return `${lines.length} line${lines.length !== 1 ? "s" : ""}`;
       }
       return "";
     }
@@ -364,7 +355,12 @@ function buildDiffBody(result: string, args?: Record<string, unknown>): BodyCont
   };
 }
 
-function buildResultBody(name: string, result: string, isError: boolean): BodyContent | null {
+function buildResultBody(
+  name: string,
+  result: string,
+  isError: boolean,
+  args?: Record<string, unknown>,
+): BodyContent | null {
   if (isError) {
     const lines = result.split("\n");
     const display = lines.slice(0, MAX_OUTPUT_LINES);
@@ -398,8 +394,35 @@ function buildResultBody(name: string, result: string, isError: boolean): BodyCo
     }
     case "read":
       return null;
-    case "write":
-      return null;
+    case "write": {
+      const allLines = result.split("\n");
+      const summary = allLines[0]; // "Wrote 12 lines to random-info.md"
+      let contentLines = allLines.slice(1);
+      // Trim trailing empty line from content that ends with \n
+      if (contentLines.length > 0 && contentLines[contentLines.length - 1] === "") {
+        contentLines = contentLines.slice(0, -1);
+      }
+      if (contentLines.length === 0) return null;
+      // Highlight the full content, then split back into lines
+      const filePath = String(args?.file_path ?? "");
+      const lang = langFromPath(filePath);
+      const rawContent = contentLines.join("\n");
+      const highlighted = highlightCode(rawContent, lang);
+      const hlLines = highlighted.split("\n");
+      const displayLines = hlLines.slice(0, MAX_OUTPUT_LINES);
+      const padWidth = String(contentLines.length).length;
+      return {
+        lines: [
+          <Text key="summary" color="#9ca3af">
+            {summary}
+          </Text>,
+          ...displayLines.map((line, i) => (
+            <WrittenLine key={i + 1} lineNo={i + 1} content={line} padWidth={padWidth} />
+          )),
+        ],
+        totalLines: 1 + contentLines.length, // summary + all content lines
+      };
+    }
     case "grep": {
       const lines = result.split("\n").filter((l) => l.length > 0);
       if (lines.length === 0 || result === "No matches found.") return null;
@@ -468,8 +491,7 @@ function buildResultBody(name: string, result: string, isError: boolean): BodyCo
       if (name.startsWith("mcp__")) {
         const lines = result.split("\n").filter((l) => l.length > 0);
         if (lines.length === 0) return null;
-        const maxLines = 4;
-        const display = lines.slice(0, maxLines);
+        const display = lines.slice(0, MAX_OUTPUT_LINES);
         return {
           lines: display.map((l, i) => <MCPResultLine key={i} line={l} />),
           totalLines: lines.length,
@@ -519,6 +541,26 @@ function DiffLine({ line, padWidth }: { line: NumberedDiffLine; padWidth: number
         {"  "}
       </Text>
       {line.content}
+    </Text>
+  );
+}
+
+// ── Written line component ─────────────────────────────────
+
+function WrittenLine({
+  lineNo,
+  content,
+  padWidth,
+}: {
+  lineNo: number;
+  content: string;
+  padWidth: number;
+}) {
+  const num = String(lineNo).padStart(padWidth, " ");
+  return (
+    <Text>
+      <Text color="#6b7280">{num} </Text>
+      {content}
     </Text>
   );
 }
@@ -618,49 +660,18 @@ function TaskLine({ line }: { line: string }) {
 
 // ── MCP result line ─────────────────────────────────────
 
-const MAX_MCP_LINE_LENGTH = 120;
-
-function truncLine(s: string, max = MAX_MCP_LINE_LENGTH): string {
-  return s.length > max ? s.slice(0, max - 1) + "…" : s;
-}
-
 function MCPResultLine({ line }: { line: string }) {
-  // Key-value pattern: "Repository: value" or "Path: value" or "Title: value"
-  const kvMatch = line.match(/^([A-Z][A-Za-z_ ]+):\s+(.+)$/);
-  if (kvMatch) {
-    return (
-      <Text>
-        <Text color="#6b7280">{kvMatch[1]}: </Text>
-        <Text color="#60a5fa">{truncLine(kvMatch[2])}</Text>
-      </Text>
-    );
-  }
-  // URL on its own line
-  if (line.match(/^https?:\/\//)) {
-    return <Text color="#60a5fa">{truncLine(line)}</Text>;
-  }
-  // Numbered list item: "1. Title" or "- Item"
-  const listMatch = line.match(/^(\d+\.\s+|- )(.+)$/);
-  if (listMatch) {
-    return (
-      <Text>
-        <Text color="#6b7280">{listMatch[1]}</Text>
-        <Text color="#e5e7eb">{truncLine(listMatch[2])}</Text>
-      </Text>
-    );
-  }
-  // Dash-separated results: "repo/path — content"
+  // Detect code search results: "repo/path — content" or "file:line:content"
   const dashMatch = line.match(/^(.+?)\s+—\s+(.+)$/);
   if (dashMatch) {
     return (
       <Text>
-        <Text color="#60a5fa">{truncLine(dashMatch[1], 50)}</Text>
+        <Text color="#60a5fa">{dashMatch[1]}</Text>
         <Text color="#6b7280"> — </Text>
-        <Text color="#9ca3af">{truncLine(dashMatch[2], 60)}</Text>
+        <Text color="#9ca3af">{dashMatch[2]}</Text>
       </Text>
     );
   }
-  // Colon-separated: "file:lineNo:content"
   const colonMatch = line.match(/^([^:]+):(\d+):(.+)$/);
   if (colonMatch) {
     return (
@@ -669,10 +680,9 @@ function MCPResultLine({ line }: { line: string }) {
         <Text color="#6b7280">:</Text>
         <Text color="#fbbf24">{colonMatch[2]}</Text>
         <Text color="#6b7280">:</Text>
-        <Text color="#9ca3af">{truncLine(colonMatch[3], 80)}</Text>
+        <Text color="#9ca3af">{colonMatch[3]}</Text>
       </Text>
     );
   }
-  // Fallback: truncate long plain text
-  return <Text color="#9ca3af">{truncLine(line)}</Text>;
+  return <Text color="#9ca3af">{line}</Text>;
 }
