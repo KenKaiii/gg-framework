@@ -1,5 +1,5 @@
 import { agentLoop, type AgentEvent, type AgentTool } from "@kenkaiiii/gg-agent";
-import type { Message, Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
+import { ProviderError, type Message, type Provider, type ThinkingLevel } from "@kenkaiiii/gg-ai";
 import { EventBus } from "./event-bus.js";
 import {
   SlashCommandRegistry,
@@ -216,26 +216,41 @@ export class AgentSession {
       }
     }
 
-    // Resolve OAuth credentials
-    const creds = await this.authStorage.resolveCredentials(this.provider);
+    // Resolve OAuth credentials and run agent loop.
+    // On 401, force-refresh the token and retry once — the provider may have
+    // revoked the token server-side before the stored expiry (e.g. after a restart).
+    let creds = await this.authStorage.resolveCredentials(this.provider);
 
-    // Run agent loop
-    const generator = agentLoop(this.messages, {
-      provider: this.provider,
-      model: this.model,
-      tools: this.tools,
-      webSearch: true,
-      maxTokens: this.maxTokens,
-      thinking: this.thinkingLevel,
-      apiKey: creds.accessToken,
-      baseUrl: this.baseUrl,
-      signal: this.opts.signal,
-      accountId: creds.accountId,
-      cacheRetention: "short",
-    });
+    const runAgentLoop = async (apiKey: string, accountId?: string) => {
+      const generator = agentLoop(this.messages, {
+        provider: this.provider,
+        model: this.model,
+        tools: this.tools,
+        webSearch: true,
+        maxTokens: this.maxTokens,
+        thinking: this.thinkingLevel,
+        apiKey,
+        baseUrl: this.baseUrl,
+        signal: this.opts.signal,
+        accountId,
+        cacheRetention: "short",
+      });
 
-    for await (const event of generator as AsyncIterable<AgentEvent>) {
-      this.eventBus.forwardAgentEvent(event);
+      for await (const event of generator as AsyncIterable<AgentEvent>) {
+        this.eventBus.forwardAgentEvent(event);
+      }
+    };
+
+    try {
+      await runAgentLoop(creds.accessToken, creds.accountId);
+    } catch (err) {
+      if (err instanceof ProviderError && err.statusCode === 401) {
+        log("INFO", "auth", "Got 401, force-refreshing token and retrying");
+        creds = await this.authStorage.resolveCredentials(this.provider, { forceRefresh: true });
+        await runAgentLoop(creds.accessToken, creds.accountId);
+      } else {
+        throw err;
+      }
     }
 
     // Persist new messages

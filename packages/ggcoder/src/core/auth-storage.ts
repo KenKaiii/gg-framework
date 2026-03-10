@@ -53,22 +53,27 @@ export class AuthStorage {
 
   /**
    * Returns valid credentials, auto-refreshing if expired.
+   * If `forceRefresh` is true, refreshes even if the token hasn't expired
+   * (useful when the provider rejects a token with 401 before its stored expiry).
    * Throws if not logged in.
    */
-  async resolveCredentials(provider: string): Promise<OAuthCredentials> {
+  async resolveCredentials(
+    provider: string,
+    opts?: { forceRefresh?: boolean },
+  ): Promise<OAuthCredentials> {
     await this.ensureLoaded();
     const creds = this.data[provider];
     if (!creds) {
       throw new NotLoggedInError(provider);
     }
 
-    // Return if not expired
-    if (Date.now() < creds.expiresAt) {
+    // GLM and Moonshot use static API keys — no refresh needed
+    if (provider === "glm" || provider === "moonshot") {
       return creds;
     }
 
-    // GLM and Moonshot use static API keys — no refresh needed
-    if (provider === "glm" || provider === "moonshot") {
+    // Return if not expired and not force-refreshing
+    if (!opts?.forceRefresh && Date.now() < creds.expiresAt) {
       return creds;
     }
 
