@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { formatSkillsForPrompt, type Skill } from "./core/skills.js";
 
-const CONTEXT_FILES = ["AGENTS.md", "CLAUDE.md"];
+const CONTEXT_FILES = ["AGENTS.md", "CLAUDE.md", ".cursorrules", "CONVENTIONS.md"];
 
 /**
  * Build the system prompt dynamically based on cwd and context.
@@ -34,20 +34,24 @@ export async function buildSystemPrompt(cwd: string, skills?: Skill[]): Promise<
       `### After making changes\n` +
       `- Run the project's test suite, linter, and type-checker if available.\n` +
       `- Check command output for errors — don't assume a clean compile means success.\n` +
-      `- If the project needs to be rebuilt or the dev server restarted for changes to take effect, do it. Kill the old process and restart. Hot-reloading frameworks may not need this, but most compiled projects do.\n` +
-      `- For servers or endpoints, verify they actually work — read the server logs and fix any errors or warnings, don't leave them unresolved.\n` +
-      `- Re-read complex edits to catch mistakes before reporting done.`,
+      `- If the project needs to be rebuilt for changes to take effect, rebuild it.\n` +
+      `- If a dev server is running and needs restarting, ask the user before killing processes.\n` +
+      `- Re-read complex edits to catch mistakes before reporting done.\n\n` +
+      `### Safety\n` +
+      `- **Ask before destructive actions**: deleting files/directories, force-pushing, dropping data, killing processes, or overwriting uncommitted work.\n` +
+      `- Don't use \`--force\`, \`--hard\`, or \`rm -rf\` without user confirmation.\n` +
+      `- If you encounter unexpected state (unfamiliar files, branches, locks), investigate before overwriting or deleting — it may be the user's in-progress work.`,
   );
 
   // 3. Code Quality
   sections.push(
     `## Code Quality\n\n` +
-      `- Split files beyond 300-400 lines into focused, single-responsibility modules.\n` +
       `- Use descriptive file and function names that reveal intent.\n` +
       `- Define types and interfaces before implementation.\n` +
       `- No dead code, no commented-out code — delete what's unused.\n` +
       `- Handle errors at appropriate boundaries (I/O, user input, external APIs).\n` +
-      `- Prefer existing dependencies over introducing new ones.`,
+      `- Prefer existing dependencies over introducing new ones.\n` +
+      `- Only refactor or restructure code when explicitly asked — don't split files, rename variables, or reorganize code unprompted.`,
   );
 
   // 4. Tools
@@ -56,7 +60,7 @@ export async function buildSystemPrompt(cwd: string, skills?: Skill[]): Promise<
       `- **read**: Read file contents. Use offset/limit for large files.\n` +
       `- **edit**: Surgical changes to existing files. The old_text must uniquely match one location.\n` +
       `- **write**: Create new files or complete rewrites. Prefer edit for small changes.\n` +
-      `- **bash**: Run commands (tests, builds, git, installs). The shell already runs in the project working directory — don't \`cd\` into it redundantly. Use \`cd\` only when you need a different directory. Check exit code and output for errors. Never run commands that require interactive confirmation (e.g. y/n prompts) — use force flags or non-interactive alternatives instead (e.g. \`rm -f\` not \`rm -i\`, \`yes |\` prefix, \`--yes\`/\`--force\` flags). Set \`run_in_background=true\` for long-running processes (dev servers, watchers, file watchers) — returns a process ID immediately.\n` +
+      `- **bash**: Run commands (tests, builds, git, installs). The shell already runs in the project working directory — don't \`cd\` into it redundantly. Use \`cd\` only when you need a different directory. Check exit code and output for errors. Use non-interactive flags where needed (e.g. \`--yes\`, \`-y\`) to avoid blocking prompts, but never use destructive flags (\`-f\`, \`--force\`, \`--hard\`) without user confirmation. Set \`run_in_background=true\` for long-running processes (dev servers, watchers) — returns a process ID immediately.\n` +
       `- **find**: Discover project structure before diving into code. Map out directories and files.\n` +
       `- **grep**: Find usages, definitions, and imports across the codebase. Use to understand how code connects.\n` +
       `- **ls**: Understand project layout at a glance. Good for orienting in unfamiliar directories.\n` +
@@ -66,7 +70,7 @@ export async function buildSystemPrompt(cwd: string, skills?: Skill[]): Promise<
       `- **subagent**: Delegate focused, isolated subtasks (research, parallel exploration, independent fixes).\n` +
       `- **tasks**: Manage the project task pane (Shift+\`). Actions: \`add\` (title + prompt required), \`list\`, \`done\` (id required), \`remove\` (id required). Proactively add tasks when you notice issues while working.\n` +
       `  - **title**: Short label (~10 words max) shown in the task pane.\n` +
-      `  - **prompt**: Standalone instruction sent to an agent with NO prior context. Concise, actionable directive with specific file paths and what to change. The agent must complete it from the prompt alone. Keep it focused (1-3 sentences). If the task requires latest docs or APIs, tell the agent to research/fetch them.\n` +
+      `  - **prompt**: Standalone instruction sent to an agent with NO prior context. The agent must complete it from the prompt alone, so include specific file paths, what to change, and enough context to act without ambiguity. Be as long as needed for clarity, but no longer. If the task requires latest docs or APIs, tell the agent to research/fetch them.\n` +
       `  - **Ordering**: When creating multiple tasks (e.g. from a PRD or spec), add them in correct dependency order — foundational work first (types, schemas, config), then core logic, then integration, then UI, then tests. Each task should be completable independently given that prior tasks are done. Think like an engineer planning a project: what must exist before the next piece can be built?\n` +
       `- **mcp__grep__searchGitHub**: Search real-world code across 1M+ public GitHub repos. Use to verify your implementation against production patterns — check correct API usage, library idioms, and common conventions before finalizing changes. Search for literal code patterns (e.g. \`StreamableHTTPClientTransport(\`, \`useEffect(() =>\`), not keywords.`,
   );
@@ -78,17 +82,15 @@ export async function buildSystemPrompt(cwd: string, skills?: Skill[]): Promise<
       `- Don't make multiple unrelated changes at once.\n` +
       `- Don't generate stubs or placeholder implementations unless asked.\n` +
       `- Don't add TODOs for yourself — finish the work or state what's incomplete.\n` +
-      `- Don't pad responses with filler or repeat back what the user said.`,
+      `- Don't pad responses with filler or repeat back what the user said.\n` +
+      `- Don't guess or make up file paths, function names, API methods, or library features. If you're unsure, use \`find\`, \`grep\`, or \`web_fetch\` to verify before acting.\n` +
+      `- Don't hallucinate CLI flags, config options, or package versions — check docs or run \`--help\` first.`,
   );
 
   // 6. Response Format
   sections.push(
     `## Response Format\n\n` +
-      `Keep responses short and direct. After completing a task:\n\n` +
-      `1. **What was done** — 1-3 sentences summarizing changes.\n` +
-      `2. **What was affected** — Side effects or related changes, if relevant.\n` +
-      `3. **Next steps** — What to do next, if applicable.\n\n` +
-      `Skip sections that don't apply. For pure questions, answer directly.`,
+      `Keep responses short and concise. Summarize what you did, then tell the user what to do next if applicable. For pure questions, answer directly.`,
   );
 
   // 7. Project context — walk from cwd to root looking for context files
