@@ -298,9 +298,9 @@ async function runInkTUI(opts: {
   // Connect MCP servers
   const mcpManager = new MCPClientManager();
   try {
-    // Always connect GLM vision MCP if user has GLM credentials (available on provider switch)
-    const glmApiKey = credentialsByProvider["glm"]?.accessToken;
-    const mcpTools = await mcpManager.connectAll(getMCPServers("glm", glmApiKey));
+    const providerApiKey =
+      provider === "glm" ? credentialsByProvider["glm"]?.accessToken : undefined;
+    const mcpTools = await mcpManager.connectAll(getMCPServers(provider, providerApiKey));
     tools.push(...mcpTools);
   } catch (err) {
     log(
@@ -379,6 +379,7 @@ async function runInkTUI(opts: {
     sessionPath,
     processManager,
     settingsFile: paths.settingsFile,
+    mcpManager,
   });
 
   closeLogger();

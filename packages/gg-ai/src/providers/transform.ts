@@ -296,7 +296,7 @@ export function toOpenAIMessages(messages: Message[]): OpenAI.ChatCompletionMess
 
       const assistantMsg: OpenAI.ChatCompletionAssistantMessageParam = {
         role: "assistant",
-        content: parts ?? textParts ?? null,
+        content: parts || textParts || null,
         ...(toolCalls?.length ? { tool_calls: toolCalls } : {}),
       };
       // Attach reasoning_content for multi-turn coherence (non-standard field).

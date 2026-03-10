@@ -38,7 +38,39 @@ import { shouldCompact, compact } from "../core/compaction/compactor.js";
 import { estimateConversationTokens } from "../core/compaction/token-estimator.js";
 import { PROMPT_COMMANDS, getPromptCommand } from "../core/prompt-commands.js";
 import { loadCustomCommands, type CustomCommand } from "../core/custom-commands.js";
+import type { MCPClientManager } from "../core/mcp/index.js";
+import { getMCPServers } from "../core/mcp/index.js";
 import { pruneHistory, flushOnTurnText, flushOnTurnEnd } from "./live-item-flush.js";
+
+// ── Provider Error Hints ──────────────────────────────────
+
+/** Detect provider-side errors and return a user-facing hint. */
+function getProviderErrorHint(message: string): string | null {
+  const lower = message.toLowerCase();
+  if (lower.includes("overloaded") || lower.includes("engine_overloaded")) {
+    return "This is a provider-side issue — their servers are under heavy load. Try again in a moment.";
+  }
+  if (
+    lower.includes("rate limit") ||
+    lower.includes("too many requests") ||
+    lower.includes("429")
+  ) {
+    return "You've hit the provider's rate limit. Wait a moment before retrying.";
+  }
+  if (lower.includes("502") || lower.includes("bad gateway")) {
+    return "The provider returned a server error. This is not a ggcoder issue — try again shortly.";
+  }
+  if (lower.includes("503") || lower.includes("service unavailable")) {
+    return "The provider's service is temporarily unavailable. Try again in a moment.";
+  }
+  if (lower.includes("timeout") || lower.includes("timed out")) {
+    return "The request to the provider timed out. Their servers may be slow — try again.";
+  }
+  if (lower.includes("500") && lower.includes("internal server error")) {
+    return "The provider experienced an internal error. This is not a ggcoder issue.";
+  }
+  return null;
+}
 
 // ── Completed Item Types ───────────────────────────────────
 
@@ -310,6 +342,7 @@ export interface AppProps {
   sessionPath?: string;
   processManager?: ProcessManager;
   settingsFile?: string;
+  mcpManager?: MCPClientManager;
 }
 
 // ── App Component ──────────────────────────────────────────
@@ -358,6 +391,7 @@ export function App(props: AppProps) {
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [currentModel, setCurrentModel] = useState(props.model);
   const [currentProvider, setCurrentProvider] = useState(props.provider);
+  const [currentTools, setCurrentTools] = useState(props.tools);
   const [thinkingEnabled, setThinkingEnabled] = useState(!!props.thinking);
   const messagesRef = useRef<Message[]>(props.messages);
   const nextIdRef = useRef(0);
@@ -577,7 +611,7 @@ export function App(props: AppProps) {
     {
       provider: currentProvider,
       model: currentModel,
-      tools: props.tools,
+      tools: currentTools,
       webSearch: props.webSearch,
       maxTokens: props.maxTokens,
       thinking: thinkingEnabled ? (props.thinking ?? "medium") : undefined,
@@ -1108,7 +1142,42 @@ export function App(props: AppProps) {
       const newProvider = value.slice(0, colonIdx) as Provider;
       const newModelId = value.slice(colonIdx + 1);
       log("INFO", "model", `Model changed`, { provider: newProvider, model: newModelId });
-      setCurrentProvider(newProvider);
+
+      // Reconnect MCP servers when provider changes
+      setCurrentProvider((prevProvider) => {
+        if (newProvider !== prevProvider && props.mcpManager) {
+          void (async () => {
+            // Disconnect old MCP servers
+            await props.mcpManager!.dispose();
+
+            // Remove old MCP tools, connect new ones
+            let apiKey: string | undefined;
+            if (newProvider === "glm") {
+              apiKey = props.credentialsByProvider?.["glm"]?.accessToken;
+            }
+            try {
+              const mcpTools = await props.mcpManager!.connectAll(
+                getMCPServers(newProvider, apiKey),
+              );
+              setCurrentTools((prev) => [
+                ...prev.filter((t) => !t.name.startsWith("mcp__")),
+                ...mcpTools,
+              ]);
+              log("INFO", "mcp", `MCP servers reconnected for provider ${newProvider}`);
+            } catch (err) {
+              log(
+                "WARN",
+                "mcp",
+                `MCP reconnection failed: ${err instanceof Error ? err.message : String(err)}`,
+              );
+              // Still remove old MCP tools even if reconnection fails
+              setCurrentTools((prev) => prev.filter((t) => !t.name.startsWith("mcp__")));
+            }
+          })();
+        }
+        return newProvider;
+      });
+
       setCurrentModel(newModelId);
       const modelInfo = getModel(newModelId);
       const displayName = modelInfo?.name ?? newModelId;
@@ -1126,7 +1195,7 @@ export function App(props: AppProps) {
         });
       }
     },
-    [props.settingsFile],
+    [props.settingsFile, props.mcpManager, props.credentialsByProvider],
   );
 
   // All available slash commands for the command palette
@@ -1215,13 +1284,23 @@ export function App(props: AppProps) {
             data={item.data}
           />
         );
-      case "error":
+      case "error": {
+        const providerHint = getProviderErrorHint(item.message);
         return (
-          <Box key={item.id} marginTop={1}>
-            <Text color={theme.error}>{"✗ "}</Text>
-            <Text color={theme.error}>{item.message}</Text>
+          <Box key={item.id} marginTop={1} flexDirection="column">
+            <Text color={theme.error}>
+              {"✗ "}
+              {item.message}
+            </Text>
+            {providerHint && (
+              <Text color={theme.textDim}>
+                {"  Hint: "}
+                {providerHint}
+              </Text>
+            )}
           </Box>
         );
+      }
       case "info":
         return (
           <Box key={item.id} marginTop={1}>

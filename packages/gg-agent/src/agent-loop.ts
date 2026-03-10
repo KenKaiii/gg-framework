@@ -288,9 +288,15 @@ export async function* agentLoop(
     const abortHandler = () => eventStream.abort(new Error("aborted"));
     options.signal?.addEventListener("abort", abortHandler, { once: true });
 
-    // Close event stream when all tools complete
+    // Close event stream when all tools complete.
+    // Track whether the finally block has already consumed toolResults
+    // to prevent the race where .then() mutates toolResults after
+    // messages.push() has already captured the array by reference.
+    let toolResultsFinalized = false;
+
     Promise.all(executions)
       .then((results) => {
+        if (toolResultsFinalized) return;
         for (const tc of toolCalls) {
           const r = results.find((x) => x.toolCallId === tc.id)!;
           toolResults.push({
@@ -311,6 +317,10 @@ export async function* agentLoop(
       }
     } finally {
       options.signal?.removeEventListener("abort", abortHandler);
+
+      // Prevent the Promise.all .then() from mutating toolResults after
+      // we finalize and push them into messages.
+      toolResultsFinalized = true;
 
       // Ensure every tool_use has a matching tool_result, even on abort.
       // Without this, an aborted turn leaves an orphaned tool_use in the

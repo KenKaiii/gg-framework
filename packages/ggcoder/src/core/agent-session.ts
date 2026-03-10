@@ -120,15 +120,16 @@ export class AgentSession {
     // Connect MCP servers (non-blocking — failures are logged and skipped)
     this.mcpManager = new MCPClientManager();
     try {
-      // Always connect GLM vision MCP if credentials exist (available on provider switch)
-      let glmApiKey: string | undefined;
-      try {
-        const glmCreds = await this.authStorage.resolveCredentials("glm");
-        glmApiKey = glmCreds.accessToken;
-      } catch {
-        // GLM not configured — skip vision MCP
+      let apiKey: string | undefined;
+      if (this.provider === "glm") {
+        try {
+          const glmCreds = await this.authStorage.resolveCredentials("glm");
+          apiKey = glmCreds.accessToken;
+        } catch {
+          // GLM not configured — skip Z.AI MCP servers
+        }
       }
-      const mcpTools = await this.mcpManager.connectAll(getMCPServers("glm", glmApiKey));
+      const mcpTools = await this.mcpManager.connectAll(getMCPServers(this.provider, apiKey));
       this.tools.push(...mcpTools);
     } catch (err) {
       log(
@@ -245,9 +246,40 @@ export class AgentSession {
   }
 
   async switchModel(provider: string, model: string): Promise<void> {
+    const prevProvider = this.provider;
     if (provider) this.provider = provider as Provider;
     this.model = model;
     this.eventBus.emit("model_change", { provider: this.provider, model: this.model });
+
+    // Reconnect MCP servers when provider changes (e.g. GLM needs Z.AI tools, others don't)
+    if (provider && provider !== prevProvider && this.mcpManager) {
+      // Remove old MCP tools
+      this.tools = this.tools.filter((t) => !t.name.startsWith("mcp__"));
+
+      // Disconnect old MCP servers
+      await this.mcpManager.dispose();
+
+      // Connect new MCP servers for the new provider
+      try {
+        let apiKey: string | undefined;
+        if (this.provider === "glm") {
+          try {
+            const glmCreds = await this.authStorage.resolveCredentials("glm");
+            apiKey = glmCreds.accessToken;
+          } catch {
+            // GLM not configured — skip Z.AI MCP servers
+          }
+        }
+        const mcpTools = await this.mcpManager.connectAll(getMCPServers(this.provider, apiKey));
+        this.tools.push(...mcpTools);
+      } catch (err) {
+        log(
+          "WARN",
+          "mcp",
+          `MCP reconnection failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
   }
 
   async compact(): Promise<void> {
