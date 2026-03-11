@@ -11,7 +11,9 @@ export type HookEventName =
   | "Stop"
   | "SessionStart"
   | "SessionEnd"
-  | "Notification";
+  | "Notification"
+  | "WorktreeCreate"
+  | "WorktreeRemove";
 
 interface HookCommand {
   type: "command";
@@ -33,6 +35,8 @@ interface HookPayload {
   tool_name?: string;
   tool_input?: Record<string, unknown>;
   tool_output?: string;
+  name?: string;
+  worktree_path?: string;
 }
 
 interface PreToolUseResult {
@@ -165,6 +169,71 @@ export class HookRunner {
     }
   }
 
+  /**
+   * Run WorktreeCreate hook (blocking — returns worktree path from stdout).
+   */
+  async runWorktreeCreateHook(name: string): Promise<string | null> {
+    const entries = this.config["WorktreeCreate"];
+    if (!entries || entries.length === 0) return null;
+
+    const payload: HookPayload = {
+      hook_event_name: "WorktreeCreate",
+      session_id: this.sessionId,
+      cwd: this.cwd,
+    };
+    payload.name = name;
+
+    for (const entry of entries) {
+      if (!this.matchesPattern(entry.matcher, undefined)) continue;
+      for (const hook of entry.hooks) {
+        if (hook.type !== "command") continue;
+        const timeout = (hook.timeout ?? 10) * 1000;
+        try {
+          const output = await this.executeCommand(hook.command, payload, timeout, true);
+          if (typeof output === "string" && output.length > 0) {
+            return output;
+          }
+        } catch {
+          // Error already logged in executeCommand
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Run WorktreeRemove hook (blocking — returns whether a hook ran).
+   */
+  async runWorktreeRemoveHook(worktreePath: string): Promise<boolean> {
+    const entries = this.config["WorktreeRemove"];
+    if (!entries || entries.length === 0) return false;
+
+    const payload: HookPayload = {
+      hook_event_name: "WorktreeRemove",
+      session_id: this.sessionId,
+      cwd: this.cwd,
+    };
+    payload.worktree_path = worktreePath;
+
+    let ran = false;
+    for (const entry of entries) {
+      if (!this.matchesPattern(entry.matcher, undefined)) continue;
+      for (const hook of entry.hooks) {
+        if (hook.type !== "command") continue;
+        const timeout = (hook.timeout ?? 10) * 1000;
+        try {
+          await this.executeCommand(hook.command, payload, timeout, true);
+          ran = true;
+        } catch {
+          // Error already logged in executeCommand
+        }
+      }
+    }
+
+    return ran;
+  }
+
   private matchesPattern(pattern: string | undefined, toolName: string | undefined): boolean {
     if (!pattern || pattern.length === 0) return true;
     if (!toolName) return true; // Lifecycle events (Stop, SessionStart, etc.) match all entries
@@ -183,7 +252,7 @@ export class HookRunner {
     timeout: number,
     blocking: boolean,
   ): Promise<string | void> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       try {
         const ac = new AbortController();
         const timer = setTimeout(() => {
@@ -219,7 +288,10 @@ export class HookRunner {
           child.on("close", (code) => {
             clearTimeout(timer);
             if (code !== 0) {
-              log("WARN", "hooks", `Hook command exited with code ${String(code)}`, { command });
+              const msg = `Hook command exited with code ${String(code)}`;
+              log("WARN", "hooks", msg, { command });
+              reject(new Error(msg));
+              return;
             }
             const output = Buffer.concat(stdoutChunks).toString("utf-8").trim();
             resolve(output || undefined);
@@ -228,7 +300,7 @@ export class HookRunner {
           child.on("error", (err) => {
             clearTimeout(timer);
             log("ERROR", "hooks", `Hook command failed: ${err.message}`, { command });
-            resolve(undefined);
+            reject(err);
           });
         } else {
           // Fire-and-forget

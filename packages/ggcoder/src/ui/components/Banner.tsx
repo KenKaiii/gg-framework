@@ -19,7 +19,7 @@ const LOGO_LINES = [
 ];
 
 // Extended gradient with reverse path for smooth animation loop
-const GRADIENT = [
+const DARK_GRADIENT = [
   "#60a5fa",
   "#6da1f9",
   "#7a9df7",
@@ -32,6 +32,21 @@ const GRADIENT = [
   "#8799f5",
   "#7a9df7",
   "#6da1f9",
+];
+
+const LIGHT_GRADIENT = [
+  "#2563eb",
+  "#3358e0",
+  "#414dd5",
+  "#4f42ca",
+  "#5d37bf",
+  "#6b2cb4",
+  "#7c3aed",
+  "#6b2cb4",
+  "#5d37bf",
+  "#4f42ca",
+  "#414dd5",
+  "#3358e0",
 ];
 
 const GAP = "   ";
@@ -48,11 +63,12 @@ export function Banner({ version, model, cwd, taskCount, providerStatuses }: Ban
   // into Ink's Static area. Animating here would waste CPU and could cause
   // visual duplicates on terminal resize.
   const shift = 0;
+  const gradient = theme.name === "light" ? LIGHT_GRADIENT : DARK_GRADIENT;
 
   return (
     <Box flexDirection="column" marginTop={1} marginBottom={1}>
       <Box>
-        <GradientText text={LOGO_LINES[0]} shift={shift} />
+        <GradientText text={LOGO_LINES[0]} shift={shift} gradient={gradient} />
         <Text>{GAP}</Text>
         <Text color={theme.primary} bold>
           GG Coder
@@ -64,7 +80,7 @@ export function Banner({ version, model, cwd, taskCount, providerStatuses }: Ban
         </Text>
       </Box>
       <Box>
-        <GradientText text={LOGO_LINES[1]} shift={shift} />
+        <GradientText text={LOGO_LINES[1]} shift={shift} gradient={gradient} />
         <Text>{GAP}</Text>
         <Text color={theme.secondary}>{modelName}</Text>
         <Text color={theme.textDim}>{"  "}</Text>
@@ -78,7 +94,7 @@ export function Banner({ version, model, cwd, taskCount, providerStatuses }: Ban
         <Text color={theme.textDim}> thinking</Text>
       </Box>
       <Box>
-        <GradientText text={LOGO_LINES[2]} shift={shift} />
+        <GradientText text={LOGO_LINES[2]} shift={shift} gradient={gradient} />
         <Text>{GAP}</Text>
         <Text color={theme.textDim}>{displayPath}</Text>
       </Box>
@@ -103,7 +119,15 @@ export function Banner({ version, model, cwd, taskCount, providerStatuses }: Ban
   );
 }
 
-function GradientText({ text, shift = 0 }: { text: string; shift?: number }) {
+function GradientText({
+  text,
+  shift = 0,
+  gradient,
+}: {
+  text: string;
+  shift?: number;
+  gradient: string[];
+}) {
   const chars: React.ReactNode[] = [];
   let colorIdx = 0;
   for (let i = 0; i < text.length; i++) {
@@ -111,7 +135,7 @@ function GradientText({ text, shift = 0 }: { text: string; shift?: number }) {
     if (ch === " ") {
       chars.push(ch);
     } else {
-      const color = GRADIENT[(colorIdx + shift) % GRADIENT.length];
+      const color = gradient[(colorIdx + shift) % gradient.length];
       chars.push(
         <Text key={i} color={color}>
           {ch}

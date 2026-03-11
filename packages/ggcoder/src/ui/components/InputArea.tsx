@@ -165,8 +165,9 @@ export function InputArea({
 
   useInput(
     (input, key) => {
-      // Shift+` (tilde) toggles task overlay — works even while agent is running
-      if (input === "~" && key.shift) {
+      // Shift+` produces "~" — Ink can't detect key.shift for printable chars,
+      // so just check for "~" directly.
+      if (input === "~" && !key.ctrl && !key.meta) {
         onToggleTasks?.();
         return;
       }

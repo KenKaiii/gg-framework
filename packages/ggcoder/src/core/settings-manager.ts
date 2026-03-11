@@ -12,7 +12,7 @@ const SettingsSchema = z.object({
   maxTokens: z.number().int().min(256).default(16384),
   thinkingEnabled: z.boolean().default(false),
   thinkingLevel: z.enum(["low", "medium", "high", "max"]).optional(),
-  theme: z.enum(["dark", "light"]).default("dark"),
+  theme: z.enum(["dark", "light", "auto"]).default("auto"),
   showTokenUsage: z.boolean().default(true),
   showThinking: z.boolean().default(true),
   enabledTools: z.array(z.string()).optional(),
@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultProvider: "anthropic",
   maxTokens: 16384,
   thinkingEnabled: false,
-  theme: "dark",
+  theme: "auto",
   showTokenUsage: true,
   showThinking: true,
 };

@@ -6,7 +6,7 @@ import type { ProcessManager } from "../core/process-manager.js";
 import type { MCPClientManager } from "../core/mcp/index.js";
 import type { ProviderStatus } from "../core/oauth/types.js";
 import { App, type CompletedItem } from "./App.js";
-import { ThemeContext, loadTheme } from "./theme/theme.js";
+import { ThemeContext, loadTheme, type ThemeName } from "./theme/theme.js";
 
 export interface RenderAppConfig {
   provider: Provider;
@@ -21,7 +21,7 @@ export interface RenderAppConfig {
   accountId?: string;
   cwd: string;
   version: string;
-  theme?: "dark" | "light";
+  theme?: ThemeName;
   showThinking?: boolean;
   showTokenUsage?: boolean;
   onSlashCommand?: (input: string) => Promise<string | null>;
@@ -34,10 +34,16 @@ export interface RenderAppConfig {
   settingsFile?: string;
   mcpManager?: MCPClientManager;
   providerStatuses?: ProviderStatus[];
+  worktree?: {
+    path: string;
+    branchName: string;
+    repoRoot: string;
+    name: string;
+  };
 }
 
 export async function renderApp(config: RenderAppConfig): Promise<void> {
-  const theme = loadTheme(config.theme ?? "dark");
+  const theme = loadTheme(config.theme ?? "auto");
 
   // Clear screen
   process.stdout.write("\x1b[2J\x1b[H");
@@ -71,6 +77,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
         settingsFile: config.settingsFile,
         mcpManager: config.mcpManager,
         providerStatuses: config.providerStatuses,
+        worktree: config.worktree,
       }),
     ),
     {

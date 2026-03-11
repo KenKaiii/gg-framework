@@ -19,9 +19,6 @@ function formatThinkingDuration(ms: number): string {
   return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
 }
 
-const ACCENT_COLOR = "#818cf8";
-const BORDER_COLOR = "#4b5563";
-
 export function ThinkingBlock({
   text,
   durationMs,
@@ -59,7 +56,7 @@ export function ThinkingBlock({
     <Box flexDirection="column" marginBottom={1}>
       {/* Header line */}
       <Box>
-        <Text color={ACCENT_COLOR}>{"💭 "}</Text>
+        <Text color={theme.accent}>{"💭 "}</Text>
         <Text color={theme.textMuted} italic>
           {headerText}
         </Text>
@@ -75,7 +72,7 @@ export function ThinkingBlock({
           borderRight={false}
           borderTop={false}
           borderBottom={false}
-          borderLeftColor={streaming ? ACCENT_COLOR : BORDER_COLOR}
+          borderLeftColor={streaming ? theme.accent : theme.border}
           paddingLeft={1}
         >
           <Text color={theme.textDim} wrap="wrap">
