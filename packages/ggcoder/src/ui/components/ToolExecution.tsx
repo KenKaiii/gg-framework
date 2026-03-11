@@ -96,13 +96,8 @@ export function ToolExecution(props: ToolExecutionProps) {
   const { lines, totalLines } = body;
   const hiddenCount = totalLines - lines.length;
 
-  // Use the same reserved height as the running state so the transition
-  // from running → done doesn't shrink the live area if the result body
-  // is shorter than expected.
-  const doneMinHeight = BODY_TOOLS.has(name) ? RUNNING_MIN_HEIGHT : undefined;
-
   return (
-    <Box flexDirection="column" marginTop={1} minHeight={doneMinHeight}>
+    <Box flexDirection="column" marginTop={1}>
       {/* Header */}
       <Box>
         <Text>
