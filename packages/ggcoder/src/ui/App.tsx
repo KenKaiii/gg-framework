@@ -1,10 +1,10 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { Box, Text, Static, useStdout } from "ink";
+import { Box, Text, Static, useStdout, useInput } from "ink";
 import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import crypto, { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { playNotificationSound } from "../utils/sound.js";
 import type { Message, Provider, ThinkingLevel, TextContent, ImageContent } from "@kenkaiiii/gg-ai";
 import { extractImagePaths, type ImageAttachment } from "../utils/image.js";
@@ -41,6 +41,8 @@ import { PROMPT_COMMANDS, getPromptCommand } from "../core/prompt-commands.js";
 import { loadCustomCommands, type CustomCommand } from "../core/custom-commands.js";
 import type { MCPClientManager } from "../core/mcp/index.js";
 import { getMCPServers } from "../core/mcp/index.js";
+import { HookRunner, wrapToolsWithHooks } from "../core/hooks.js";
+import { isWorktreeDirty, removeWorktree } from "../core/worktree.js";
 import { pruneHistory, flushOnTurnText, flushOnTurnEnd } from "./live-item-flush.js";
 
 // ── Provider Error Hints ──────────────────────────────────
@@ -347,6 +349,12 @@ export interface AppProps {
   processManager?: ProcessManager;
   settingsFile?: string;
   mcpManager?: MCPClientManager;
+  worktree?: {
+    path: string;
+    branchName: string;
+    repoRoot: string;
+    name: string;
+  };
 }
 
 // ── App Component ──────────────────────────────────────────
@@ -547,6 +555,130 @@ export function App(props: AppProps) {
     [currentModel, compactConversation],
   );
 
+  // ── Hooks system ──────────────────────────────────────────
+  const [hookRunner, setHookRunner] = useState<HookRunner | null>(null);
+
+  useEffect(() => {
+    const sessionId = props.sessionPath
+      ? basename(props.sessionPath, ".json")
+      : crypto.randomUUID();
+    const runner = new HookRunner(props.cwd, sessionId);
+    const settingsPath = props.settingsFile ?? join(homedir(), ".gg", "settings.json");
+    runner
+      .loadConfig(settingsPath)
+      .then(() => {
+        setHookRunner(runner);
+        runner.runHooks("SessionStart").catch(() => {});
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fire SessionEnd hook on unmount
+  const hookRunnerRef = useRef<HookRunner | null>(null);
+  hookRunnerRef.current = hookRunner;
+  useEffect(() => {
+    return () => {
+      hookRunnerRef.current?.runHooksSync("SessionEnd");
+    };
+  }, []);
+
+  // Wrap tools with PreToolUse/PostToolUse hooks
+  const hookedTools = useMemo(() => {
+    if (!hookRunner) return currentTools;
+    return wrapToolsWithHooks(currentTools, hookRunner);
+  }, [currentTools, hookRunner]);
+
+  // ── Worktree cleanup on exit ─────────────────────────────
+  const [worktreeCleanupState, setWorktreeCleanupState] = useState<
+    "idle" | "pending" | "prompting" | "done"
+  >("idle");
+  const [worktreeCleanupMsg, setWorktreeCleanupMsg] = useState<string | null>(null);
+
+  const initiateExit = useCallback(async () => {
+    if (!props.worktree) {
+      process.exit(0);
+      return;
+    }
+
+    // Guard against re-entrancy (rapid Ctrl+C)
+    if (worktreeCleanupState !== "idle") return;
+
+    setWorktreeCleanupState("pending");
+    try {
+      const dirty = await isWorktreeDirty(props.worktree.path);
+      if (!dirty) {
+        // Clean worktree — fire hook if configured, otherwise remove directly
+        const hookRan = hookRunner
+          ? await hookRunner.runWorktreeRemoveHook(props.worktree.path)
+          : false;
+        if (!hookRan) {
+          await removeWorktree({
+            repoRoot: props.worktree.repoRoot,
+            worktreePath: props.worktree.path,
+            branchName: props.worktree.branchName,
+          });
+        }
+        setWorktreeCleanupState("done");
+      } else {
+        // Dirty worktree — ask the user
+        setWorktreeCleanupState("prompting");
+      }
+    } catch {
+      // If check fails, preserve worktree and inform user
+      setWorktreeCleanupMsg(
+        `Could not verify worktree state — preserved on branch "${props.worktree.branchName}" at ${props.worktree.path}`,
+      );
+      setWorktreeCleanupState("done");
+    }
+  }, [props.worktree, worktreeCleanupState]);
+
+  // Handle Y/n input during worktree cleanup prompt
+  useInput(
+    (input, key) => {
+      if (worktreeCleanupState !== "prompting" || !props.worktree) return;
+
+      const lower = input.toLowerCase();
+      if (key.return || lower === "y") {
+        // Keep the worktree
+        setWorktreeCleanupMsg(
+          `Worktree preserved on branch "${props.worktree.branchName}" at ${props.worktree.path}`,
+        );
+        setWorktreeCleanupState("done");
+      } else if (lower === "n") {
+        // Remove the worktree — fire hook if configured, otherwise remove directly
+        (async () => {
+          try {
+            const hookRan = hookRunner
+              ? await hookRunner.runWorktreeRemoveHook(props.worktree!.path)
+              : false;
+            if (!hookRan) {
+              await removeWorktree({
+                repoRoot: props.worktree!.repoRoot,
+                worktreePath: props.worktree!.path,
+                branchName: props.worktree!.branchName,
+              });
+            }
+          } catch {
+            // Best-effort cleanup
+          }
+          setWorktreeCleanupState("done");
+        })();
+      }
+    },
+    { isActive: worktreeCleanupState === "prompting" },
+  );
+
+  // Exit once worktree cleanup is done (runs BEFORE SessionEnd unmount hook)
+  useEffect(() => {
+    if (worktreeCleanupState === "done") {
+      if (worktreeCleanupMsg) {
+        // Write message directly to stdout so it survives process exit
+        stdout?.write(`\n${worktreeCleanupMsg}\n`);
+      }
+      process.exit(0);
+    }
+  }, [worktreeCleanupState, worktreeCleanupMsg, stdout]);
+
   // ── Background task bar state ───────────────────────────
   const [bgTasks, setBgTasks] = useState<BackgroundProcess[]>([]);
   const [taskBarFocused, setTaskBarFocused] = useState(false);
@@ -615,7 +747,7 @@ export function App(props: AppProps) {
     {
       provider: currentProvider,
       model: currentModel,
-      tools: currentTools,
+      tools: hookedTools,
       webSearch: props.webSearch,
       maxTokens: props.maxTokens,
       thinking: thinkingEnabled ? (props.thinking ?? "medium") : undefined,
@@ -852,6 +984,7 @@ export function App(props: AppProps) {
         });
         setDoneStatus({ durationMs, toolsUsed, verb: pickDurationVerb(toolsUsed) });
         playNotificationSound();
+        hookRunnerRef.current?.runHooks("Stop").catch(() => {});
         // Two-phase flush to avoid Ink text clipping.
         // Phase 1 (here): clear the live area so Ink commits a render with
         // the smaller output and updates its internal line counter.
@@ -968,7 +1101,8 @@ export function App(props: AppProps) {
 
       // Handle /quit — exit the agent
       if (trimmed === "/quit" || trimmed === "/q" || trimmed === "/exit") {
-        process.exit(0);
+        void initiateExit();
+        return;
       }
 
       // Handle /clear — reset session and clear terminal
@@ -1128,16 +1262,16 @@ export function App(props: AppProps) {
         ]);
       }
     },
-    [agentLoop, props.onSlashCommand, compactConversation],
+    [agentLoop, props.onSlashCommand, compactConversation, initiateExit],
   );
 
   const handleAbort = useCallback(() => {
     if (agentLoop.isRunning) {
       agentLoop.abort();
     } else {
-      process.exit(0);
+      void initiateExit();
     }
-  }, [agentLoop]);
+  }, [agentLoop, initiateExit]);
 
   const handleToggleThinking = useCallback(() => {
     setThinkingEnabled((prev) => {
@@ -1299,13 +1433,7 @@ export function App(props: AppProps) {
         );
       case "server_tool_start":
         return (
-          <ServerToolExecution
-            key={item.id}
-            status="running"
-            name={item.name}
-            input={item.input}
-            startedAt={item.startedAt}
-          />
+          <ServerToolExecution key={item.id} status="running" name={item.name} input={item.input} />
         );
       case "server_tool_done":
         return (
@@ -1314,7 +1442,8 @@ export function App(props: AppProps) {
             status="done"
             name={item.name}
             input={item.input}
-            durationMs={item.durationMs}
+            resultType={item.resultType}
+            data={item.data}
           />
         );
       case "error": {
@@ -1513,12 +1642,26 @@ export function App(props: AppProps) {
             )
           )}
 
+          {/* Worktree cleanup prompt */}
+          {worktreeCleanupState === "pending" && (
+            <Box marginTop={1}>
+              <Text color={theme.textDim}>Cleaning up worktree...</Text>
+            </Box>
+          )}
+          {worktreeCleanupState === "prompting" && (
+            <Box marginTop={1} flexDirection="column">
+              <Text color={theme.warning}>
+                Worktree has uncommitted changes. Keep for later? (Y/n)
+              </Text>
+            </Box>
+          )}
+
           {/* Input + Footer */}
           <InputArea
             onSubmit={handleSubmit}
             onAbort={handleAbort}
             disabled={agentLoop.isRunning}
-            isActive={!taskBarFocused && !overlay}
+            isActive={!taskBarFocused && !overlay && worktreeCleanupState === "idle"}
             onDownAtEnd={handleFocusTaskBar}
             onShiftTab={handleToggleThinking}
             onToggleTasks={() => {
