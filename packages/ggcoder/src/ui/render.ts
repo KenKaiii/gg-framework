@@ -32,6 +32,12 @@ export interface RenderAppConfig {
   processManager?: ProcessManager;
   settingsFile?: string;
   mcpManager?: MCPClientManager;
+  worktree?: {
+    path: string;
+    branchName: string;
+    repoRoot: string;
+    name: string;
+  };
 }
 
 export async function renderApp(config: RenderAppConfig): Promise<void> {
@@ -68,6 +74,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
         processManager: config.processManager,
         settingsFile: config.settingsFile,
         mcpManager: config.mcpManager,
+        worktree: config.worktree,
       }),
     ),
     {

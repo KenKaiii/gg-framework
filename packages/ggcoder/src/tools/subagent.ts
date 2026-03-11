@@ -1,8 +1,19 @@
 import { spawn } from "node:child_process";
+import { stat } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import { createInterface } from "node:readline";
 import { z } from "zod";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import type { AgentDefinition } from "../core/agents.js";
+import type { HookRunner } from "../core/hooks.js";
+import {
+  createWorktree,
+  removeWorktree,
+  isWorktreeDirty,
+  getRepoRoot,
+  generateWorktreeName,
+  sanitizeWorktreeName,
+} from "../core/worktree.js";
 import { truncateTail } from "./truncate.js";
 
 const SUB_AGENT_MAX_TURNS = 10;
@@ -35,6 +46,7 @@ export function createSubAgentTool(
   agents: AgentDefinition[],
   parentProvider: string,
   parentModel: string,
+  hookRunner?: HookRunner,
 ): AgentTool<typeof SubAgentParams> {
   const agentList = agents.map((a) => `- ${a.name}: ${a.description}`).join("\n");
   const agentDesc = agentList
@@ -80,10 +92,41 @@ export function createSubAgentTool(
       }
       cliArgs.push(args.task);
 
+      // Set up worktree isolation if requested
+      let childCwd = cwd;
+      let worktreeInfo: { repoRoot: string; name: string; path: string } | undefined;
+      let worktreeWarning = "";
+
+      if (agentDef?.isolation === "worktree") {
+        try {
+          const repoRoot = await getRepoRoot(cwd);
+          if (repoRoot) {
+            const wtName = sanitizeWorktreeName(generateWorktreeName());
+            const hookPath = await hookRunner?.runWorktreeCreateHook(wtName);
+            if (hookPath && isAbsolute(hookPath)) {
+              try {
+                await stat(hookPath);
+                childCwd = hookPath;
+                worktreeInfo = { repoRoot, name: wtName, path: hookPath };
+              } catch {
+                // Hook path doesn't exist, fall through to createWorktree
+              }
+            }
+            if (!worktreeInfo) {
+              const wtPath = await createWorktree({ repoRoot, name: wtName });
+              childCwd = wtPath;
+              worktreeInfo = { repoRoot, name: wtName, path: wtPath };
+            }
+          }
+        } catch (err) {
+          worktreeWarning = `[Worktree creation failed, running without isolation: ${err instanceof Error ? err.message : String(err)}]\n`;
+        }
+      }
+
       // Spawn child process using same binary
       const binPath = process.argv[1];
       const child = spawn(process.execPath, [binPath, ...cliArgs], {
-        cwd,
+        cwd: childCwd,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env },
       });
@@ -168,7 +211,7 @@ export function createSubAgentTool(
           }
         });
 
-        child.on("close", (code) => {
+        child.on("close", async (code) => {
           rl.close();
           context.signal.removeEventListener("abort", abortHandler);
           const durationMs = Date.now() - startTime;
@@ -178,9 +221,35 @@ export function createSubAgentTool(
             durationMs,
           };
 
+          // Worktree cleanup
+          let worktreeNote = "";
+          if (worktreeInfo) {
+            try {
+              const dirty = await isWorktreeDirty(worktreeInfo.path);
+              if (!dirty) {
+                const hookHandled =
+                  (await hookRunner?.runWorktreeRemoveHook(worktreeInfo.path)) ?? false;
+                if (!hookHandled) {
+                  await removeWorktree({
+                    repoRoot: worktreeInfo.repoRoot,
+                    worktreePath: worktreeInfo.path,
+                    branchName: `worktree-${worktreeInfo.name}`,
+                  });
+                }
+              } else {
+                worktreeNote = `\n[Worktree preserved: branch worktree-${worktreeInfo.name} at ${worktreeInfo.path}]`;
+              }
+            } catch {
+              // Best-effort cleanup — don't fail the result
+            }
+          }
+
           if (code !== 0 && !textOutput) {
             resolve({
-              content: `Sub-agent failed (exit ${code}): ${stderr.trim() || "unknown error"}`,
+              content:
+                worktreeWarning +
+                `Sub-agent failed (exit ${code}): ${stderr.trim() || "unknown error"}` +
+                worktreeNote,
               details,
             });
             return;
@@ -189,10 +258,13 @@ export function createSubAgentTool(
           // Truncate output to prevent blowing up parent's context
           const raw = textOutput || "(no output)";
           const result = truncateTail(raw, SUB_AGENT_MAX_OUTPUT_LINES, SUB_AGENT_MAX_OUTPUT_CHARS);
-          const content = result.truncated
-            ? `[Sub-agent output truncated: ${result.totalLines} total lines, showing last ${result.keptLines}]\n\n` +
-              result.content
-            : result.content;
+          const content =
+            worktreeWarning +
+            (result.truncated
+              ? `[Sub-agent output truncated: ${result.totalLines} total lines, showing last ${result.keptLines}]\n\n` +
+                result.content
+              : result.content) +
+            worktreeNote;
 
           resolve({ content, details });
         });

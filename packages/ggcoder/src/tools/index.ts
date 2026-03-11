@@ -12,12 +12,15 @@ import { createWebFetchTool } from "./web-fetch.js";
 import { createTaskOutputTool } from "./task-output.js";
 import { createTaskStopTool } from "./task-stop.js";
 import { createTasksTool } from "./tasks.js";
+import { createWorktreeTool } from "./worktree-tool.js";
 import type { AgentDefinition } from "../core/agents.js";
+import type { HookRunner } from "../core/hooks.js";
 
 export interface CreateToolsOptions {
   agents?: AgentDefinition[];
   provider?: string;
   model?: string;
+  hookRunner?: HookRunner;
 }
 
 export interface CreateToolsResult {
@@ -41,10 +44,11 @@ export function createTools(cwd: string, opts?: CreateToolsOptions): CreateTools
     createTaskOutputTool(processManager),
     createTaskStopTool(processManager),
     createTasksTool(cwd),
+    createWorktreeTool(cwd, opts?.hookRunner),
   ];
 
   if (opts?.agents && opts.agents.length > 0 && opts.provider && opts.model) {
-    tools.push(createSubAgentTool(cwd, opts.agents, opts.provider, opts.model));
+    tools.push(createSubAgentTool(cwd, opts.agents, opts.provider, opts.model, opts.hookRunner));
   }
 
   return { tools, processManager };
@@ -61,4 +65,5 @@ export { createWebFetchTool } from "./web-fetch.js";
 export { createTaskOutputTool } from "./task-output.js";
 export { createTaskStopTool } from "./task-stop.js";
 export { createTasksTool } from "./tasks.js";
+export { createWorktreeTool } from "./worktree-tool.js";
 export { ProcessManager } from "../core/process-manager.js";

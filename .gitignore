@@ -7,6 +7,9 @@ dist/
 .env.*
 ~/.gg/
 
+# Worktrees
+.gg/worktrees/
+
 # OS
 .DS_Store
 Thumbs.db
