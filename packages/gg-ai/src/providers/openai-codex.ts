@@ -285,9 +285,23 @@ async function* parseSSE(
 
 // ── Message Conversion ─────────────────────────────────────
 
+/**
+ * Remap tool call IDs that don't match Codex API's expected prefix.
+ * Codex expects IDs starting with `fc_` — Anthropic uses `toolu_*` which gets rejected.
+ */
+function remapCodexId(id: string, idMap: Map<string, string>): string {
+  if (id.startsWith("fc_") || id.startsWith("fc-")) return id;
+  const existing = idMap.get(id);
+  if (existing) return existing;
+  const mapped = `fc_${id.replace(/^toolu_/, "")}`;
+  idMap.set(id, mapped);
+  return mapped;
+}
+
 function toCodexInput(messages: Message[]): { system: string | undefined; input: unknown[] } {
   let system: string | undefined;
   const input: unknown[] = [];
+  const idMap = new Map<string, string>();
 
   for (const msg of messages) {
     if (msg.role === "system") {
@@ -336,8 +350,8 @@ function toCodexInput(messages: Message[]): { system: string | undefined; input:
             : [part.id, part.id];
           input.push({
             type: "function_call",
-            id: itemId,
-            call_id: callId,
+            id: remapCodexId(itemId, idMap),
+            call_id: remapCodexId(callId, idMap),
             name: part.name,
             arguments: JSON.stringify(part.args),
           });
@@ -354,7 +368,7 @@ function toCodexInput(messages: Message[]): { system: string | undefined; input:
           : [result.toolCallId];
         input.push({
           type: "function_call_output",
-          call_id: callId,
+          call_id: remapCodexId(callId, idMap),
           output: result.content,
         });
       }
