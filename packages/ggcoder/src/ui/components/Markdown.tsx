@@ -131,16 +131,27 @@ function renderToken(token: Token, theme: Theme, key: number, columns: number): 
     case "code": {
       const lang = (token as Tokens.Code).lang ?? "";
       const raw = (token as Tokens.Code).text;
+
+      // No language tag → likely prose dumped in backticks; render as wrapped text
+      if (!lang) {
+        return (
+          <Box key={key} marginTop={gap} paddingLeft={1}>
+            <Text color={theme.border}>{"▎ "}</Text>
+            <Box flexShrink={1}>
+              <Text color={theme.text}>{raw.replace(/\n/g, " ")}</Text>
+            </Box>
+          </Box>
+        );
+      }
+
       const highlighted = highlightCode(raw, lang);
       return (
         <Box key={key} marginTop={gap} paddingLeft={1}>
           <Text color={theme.border}>{"▎ "}</Text>
           <Box flexDirection="column" flexShrink={1}>
-            {lang && (
-              <Text color={theme.textDim} italic>
-                {lang}
-              </Text>
-            )}
+            <Text color={theme.textDim} italic>
+              {lang}
+            </Text>
             {highlighted.split("\n").map((line: string, idx: number) => (
               <Text key={idx}>{line}</Text>
             ))}

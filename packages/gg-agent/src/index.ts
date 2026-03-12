@@ -1,6 +1,6 @@
 // Core
 export { Agent, AgentStream } from "./agent.js";
-export { agentLoop, isContextOverflow } from "./agent-loop.js";
+export { agentLoop, isContextOverflow, isBillingError } from "./agent-loop.js";
 
 // Types
 export type {

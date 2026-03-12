@@ -38,6 +38,8 @@ export interface AgentLoopOptions {
   apiKey?: string;
   baseUrl?: string;
   accountId?: string;
+  /** Resolve fresh credentials before each run (e.g. OAuth token refresh). */
+  resolveCredentials?: () => Promise<{ apiKey: string; accountId?: string }>;
   transformContext?: (
     messages: Message[],
     options?: { force?: boolean },
@@ -127,6 +129,9 @@ export function useAgentLoop(
   const textPendingRef = useRef("");
   const textVisibleRef = useRef("");
   const thinkingBufferRef = useRef("");
+  const thinkingPendingRef = useRef("");
+  const thinkingVisibleRef = useRef("");
+  const thinkingRevealTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const runStartRef = useRef(0);
   const toolsUsedRef = useRef<Set<string>>(new Set());
   const revealTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -188,15 +193,70 @@ export function useAgentLoop(
     }, 33);
   }, [stopReveal]);
 
+  // ── Thinking reveal (throttled like text reveal) ──────────
+  // Without this, every thinking_delta event triggers setStreamingThinking
+  // immediately, causing rapid live-area height changes as text wraps to
+  // new lines — which makes Ink's cursor math misalign and the viewport jump.
+  const thinkingEmptyTicksRef = useRef(0);
+
+  const stopThinkingReveal = useCallback(() => {
+    if (thinkingRevealTimerRef.current) {
+      clearInterval(thinkingRevealTimerRef.current);
+      thinkingRevealTimerRef.current = null;
+    }
+  }, []);
+
+  const startThinkingReveal = useCallback(() => {
+    if (thinkingRevealTimerRef.current) return;
+    thinkingEmptyTicksRef.current = 0;
+    thinkingRevealTimerRef.current = setInterval(() => {
+      const pending = thinkingPendingRef.current;
+      if (pending.length === 0) {
+        thinkingEmptyTicksRef.current++;
+        if (thinkingEmptyTicksRef.current >= 3) {
+          stopThinkingReveal();
+        }
+        return;
+      }
+      thinkingEmptyTicksRef.current = 0;
+
+      // Larger chunks than text reveal — thinking text is dimmed/secondary
+      // so smooth animation matters less than keeping re-renders low.
+      const buffered = pending.length;
+      const charsPerTick = Math.max(20, Math.min(300, Math.ceil(buffered * 0.4)));
+
+      let endIndex = Math.min(charsPerTick, buffered);
+      if (endIndex < buffered) {
+        const breakChars = " \n.,;:`')]}>";
+        for (let i = endIndex; i >= Math.max(1, endIndex - 20); i--) {
+          if (breakChars.includes(pending[i])) {
+            endIndex = i + 1;
+            break;
+          }
+        }
+      }
+
+      const reveal = pending.slice(0, endIndex);
+      thinkingPendingRef.current = pending.slice(endIndex);
+      thinkingVisibleRef.current += reveal;
+      setStreamingThinking(thinkingVisibleRef.current);
+    }, 33);
+  }, [stopThinkingReveal]);
+
   const flushAllText = useCallback(() => {
     stopReveal();
+    stopThinkingReveal();
     if (textPendingRef.current.length > 0) {
       textVisibleRef.current += textPendingRef.current;
       textPendingRef.current = "";
     }
+    if (thinkingPendingRef.current.length > 0) {
+      thinkingVisibleRef.current += thinkingPendingRef.current;
+      thinkingPendingRef.current = "";
+    }
     setStreamingText(textVisibleRef.current);
-    setStreamingThinking(thinkingBufferRef.current);
-  }, [stopReveal]);
+    setStreamingThinking(thinkingVisibleRef.current);
+  }, [stopReveal, stopThinkingReveal]);
 
   const abort = useCallback(() => {
     abortRef.current?.abort();
@@ -227,6 +287,8 @@ export function useAgentLoop(
       textPendingRef.current = "";
       textVisibleRef.current = "";
       thinkingBufferRef.current = "";
+      thinkingPendingRef.current = "";
+      thinkingVisibleRef.current = "";
       runStartRef.current = Date.now();
       toolsUsedRef.current = new Set();
       charCountRef.current = 0;
@@ -275,6 +337,15 @@ export function useAgentLoop(
       const startIndex = messages.current.length;
 
       try {
+        // Resolve fresh credentials (handles OAuth token refresh)
+        let apiKey = options.apiKey;
+        let accountId = options.accountId;
+        if (options.resolveCredentials) {
+          const creds = await options.resolveCredentials();
+          apiKey = creds.apiKey;
+          accountId = creds.accountId;
+        }
+
         const generator = agentLoop(messages.current, {
           provider: options.provider,
           model: options.model,
@@ -282,9 +353,9 @@ export function useAgentLoop(
           webSearch: options.webSearch,
           maxTokens: options.maxTokens,
           thinking: options.thinking,
-          apiKey: options.apiKey,
+          apiKey,
           baseUrl: options.baseUrl,
-          accountId: options.accountId,
+          accountId,
           signal: ac.signal,
           transformContext: options.transformContext,
         });
@@ -304,8 +375,9 @@ export function useAgentLoop(
 
             case "thinking_delta":
               thinkingBufferRef.current += event.text;
+              thinkingPendingRef.current += event.text;
               charCountRef.current += event.text.length;
-              setStreamingThinking(thinkingBufferRef.current);
+              startThinkingReveal();
               if (phaseRef.current !== "thinking") {
                 thinkingStartRef.current = Date.now();
                 setIsThinking(true);
@@ -414,6 +486,8 @@ export function useAgentLoop(
               textPendingRef.current = "";
               textVisibleRef.current = "";
               thinkingBufferRef.current = "";
+              thinkingPendingRef.current = "";
+              thinkingVisibleRef.current = "";
               setStreamingText("");
               setStreamingThinking("");
               break;
@@ -446,6 +520,7 @@ export function useAgentLoop(
         setIsRunning(false);
         abortRef.current = null;
         stopReveal();
+        stopThinkingReveal();
         if (elapsedTimerRef.current) {
           clearInterval(elapsedTimerRef.current);
           elapsedTimerRef.current = null;
@@ -481,6 +556,8 @@ export function useAgentLoop(
       onAborted,
       startReveal,
       stopReveal,
+      startThinkingReveal,
+      stopThinkingReveal,
       flushAllText,
     ],
   );
@@ -489,6 +566,7 @@ export function useAgentLoop(
   useEffect(() => {
     return () => {
       stopReveal();
+      stopThinkingReveal();
       abortRef.current?.abort();
       if (elapsedTimerRef.current) {
         clearInterval(elapsedTimerRef.current);

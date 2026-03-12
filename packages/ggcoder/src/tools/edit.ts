@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
-import { resolvePath } from "./path-utils.js";
+import { resolvePath, rejectSymlink } from "./path-utils.js";
 import { fuzzyFindText, countOccurrences, generateDiff } from "./edit-diff.js";
 
 const EditParams = z.object({
@@ -20,6 +20,7 @@ export function createEditTool(cwd: string, readFiles?: Set<string>): AgentTool<
     parameters: EditParams,
     async execute({ file_path, old_text, new_text }) {
       const resolved = resolvePath(cwd, file_path);
+      await rejectSymlink(resolved);
 
       if (readFiles && !readFiles.has(resolved)) {
         throw new Error("File must be read first before editing. Use the read tool first.");

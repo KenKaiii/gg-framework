@@ -248,7 +248,8 @@ export class SessionManager {
 
   async getMostRecent(cwd: string): Promise<string | null> {
     const sessions = await this.list(cwd);
-    return sessions.length > 0 ? sessions[0].path : null;
+    const withMessages = sessions.find((s) => s.messageCount > 0);
+    return withMessages?.path ?? null;
   }
 
   async appendEntry(sessionPath: string, entry: SessionEntry): Promise<void> {

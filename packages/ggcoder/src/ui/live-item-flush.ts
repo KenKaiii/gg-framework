@@ -21,7 +21,15 @@ export interface FlushableItem {
  * to stdout, so pruned items remain visible in terminal scrollback — we just
  * release the JS object references to avoid unbounded memory growth.
  */
-export const MAX_HISTORY_ITEMS = 500;
+export const MAX_HISTORY_ITEMS = 200;
+
+/**
+ * Max characters to keep in a tool result string after the item has been
+ * flushed to Static history. Ink already rendered the full result, so we
+ * only need enough for potential re-renders (which shouldn't happen for
+ * Static items, but keep a small buffer for safety).
+ */
+const MAX_RESULT_CHARS_IN_HISTORY = 2_000;
 
 /**
  * Prune history to keep at most MAX_HISTORY_ITEMS. Oldest items are dropped
@@ -30,6 +38,64 @@ export const MAX_HISTORY_ITEMS = 500;
 export function pruneHistory<T>(items: T[]): T[] {
   if (items.length <= MAX_HISTORY_ITEMS) return items;
   return items.slice(items.length - MAX_HISTORY_ITEMS);
+}
+
+/** Truncate a string if it exceeds the history limit. */
+function truncateResult(s: string): string {
+  if (s.length <= MAX_RESULT_CHARS_IN_HISTORY) return s;
+  return s.slice(0, MAX_RESULT_CHARS_IN_HISTORY) + "\n… (truncated)";
+}
+
+/**
+ * Trim large payload data from items that have been flushed to Static history.
+ * Ink already rendered them to the terminal — we only keep a truncated version
+ * to prevent multi-GB memory retention from tool results, server tool data, and
+ * sub-agent results.
+ *
+ * Works with any item shape via duck-typing: truncates `result` strings,
+ * clears `input`/`data` fields, and trims sub-agent result strings.
+ */
+export function trimFlushedItems<T extends FlushableItem>(items: T[]): T[] {
+  return items.map((item) => {
+    const rec = item as Record<string, unknown>;
+    const patches: Record<string, unknown> = {};
+    let changed = false;
+
+    // Truncate tool result strings (ToolDoneItem, SubAgentInfo, etc.)
+    if (typeof rec.result === "string" && rec.result.length > MAX_RESULT_CHARS_IN_HISTORY) {
+      patches.result = truncateResult(rec.result);
+      changed = true;
+    }
+
+    // Clear server tool input/data — potentially large JSON payloads
+    if (rec.input !== undefined && rec.kind === "server_tool_done") {
+      patches.input = undefined;
+      changed = true;
+    }
+    if (rec.data !== undefined && rec.kind === "server_tool_done") {
+      patches.data = undefined;
+      changed = true;
+    }
+
+    // Trim sub-agent group results
+    if (rec.kind === "subagent_group" && Array.isArray(rec.agents)) {
+      const agents = rec.agents as { result?: string }[];
+      let agentsChanged = false;
+      const trimmedAgents = agents.map((a) => {
+        if (typeof a.result === "string" && a.result.length > MAX_RESULT_CHARS_IN_HISTORY) {
+          agentsChanged = true;
+          return { ...a, result: truncateResult(a.result) };
+        }
+        return a;
+      });
+      if (agentsChanged) {
+        patches.agents = trimmedAgents;
+        changed = true;
+      }
+    }
+
+    return changed ? { ...item, ...patches } : item;
+  });
 }
 
 /**

@@ -21,6 +21,7 @@ const GrepParams = z.object({
 });
 
 const DEFAULT_MAX_RESULTS = 50;
+const MAX_LINE_LENGTH = 500;
 
 export function createGrepTool(cwd: string): AgentTool<typeof GrepParams> {
   return {
@@ -95,10 +96,19 @@ async function searchFile(
     try {
       for await (const line of rl) {
         lineNum++;
+
+        // Bail out if line contains null bytes (binary file not caught by extension check)
+        if (lineNum <= 5 && line.includes("\0")) {
+          break;
+        }
+
         // Reset lastIndex for global regex
         regex.lastIndex = 0;
         if (regex.test(line)) {
-          results.push(`${relPath}:${lineNum}:${line}`);
+          // Truncate long lines to prevent massive output from binary/minified files
+          const truncatedLine =
+            line.length > MAX_LINE_LENGTH ? line.slice(0, MAX_LINE_LENGTH) + "…" : line;
+          results.push(`${relPath}:${lineNum}:${truncatedLine}`);
           if (results.length >= maxResults) {
             break;
           }

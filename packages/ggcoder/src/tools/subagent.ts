@@ -172,12 +172,6 @@ export function createSubAgentTool(
                 });
                 break;
               case "tool_call_end":
-                currentActivity = undefined;
-                context.onUpdate?.({
-                  toolUseCount,
-                  tokenUsage: { ...tokenUsage },
-                  currentActivity,
-                });
                 break;
               case "turn_end": {
                 const usage = event.usage as

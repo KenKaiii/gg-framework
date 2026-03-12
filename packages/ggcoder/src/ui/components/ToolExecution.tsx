@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, memo } from "react";
 import { Text, Box } from "ink";
-import { useTheme, type Theme } from "../theme/theme.js";
+import { useTheme } from "../theme/theme.js";
 import { Spinner } from "./Spinner.js";
 import { highlightCode, langFromPath } from "../utils/highlight.js";
 
-const MAX_OUTPUT_LINES = 8;
+const MAX_OUTPUT_LINES = 4;
 
 interface ToolRunningProps {
   status: "running";
@@ -48,9 +48,7 @@ export function ToolExecution(props: ToolExecutionProps) {
   const isDiff = name === "edit" && !isError && result.includes("---");
 
   const { label, detail } = getToolHeaderParts(name, args);
-  const body = isDiff
-    ? buildDiffBody(result, args, theme)
-    : buildResultBody(name, result, isError, args, theme);
+  const body = isDiff ? buildDiffBody(result, args) : buildResultBody(name, result, isError);
 
   const headerColor = isError ? theme.toolError : theme.toolName;
 
@@ -119,7 +117,8 @@ export function ToolExecution(props: ToolExecutionProps) {
           <Box>
             <Text color={theme.textDim}>
               {"   … +"}
-              {hiddenCount} lines
+              {hiddenCount}
+              {" lines (ctrl+o to expand)"}
             </Text>
           </Box>
         )}
@@ -182,13 +181,17 @@ function getToolHeaderParts(
     }
     default: {
       if (name.startsWith("mcp__")) {
-        // mcp__grep__searchGitHub → show tool name + query arg
-        const toolFn = name.split("__")[2] ?? "";
-        const query = String(args.query ?? args.pattern ?? args.q ?? "");
-        const detail = query
-          ? `${toolFn}: ${query.length > 50 ? query.slice(0, 47) + "…" : query}`
-          : toolFn;
-        return { label: displayName, detail };
+        // Show all args as key: "value" pairs
+        const argParts = Object.entries(args)
+          .filter(([, v]) => v !== undefined && v !== null && v !== "")
+          .map(([k, v]) => {
+            const s = String(v);
+            const truncated = s.length > 40 ? s.slice(0, 37) + "…" : s;
+            return `${k}: "${truncated}"`;
+          });
+        const detail = argParts.join(", ");
+        const truncDetail = detail.length > 80 ? detail.slice(0, 77) + "…" : detail;
+        return { label: displayName, detail: truncDetail };
       }
       return { label: displayName, detail: "" };
     }
@@ -197,10 +200,11 @@ function getToolHeaderParts(
 
 function toolDisplayName(name: string): string {
   if (name.startsWith("mcp__")) {
-    // mcp__grep__searchGitHub → "MCP:Grep"
+    // mcp__grep__searchGitHub → "grep - searchGitHub (MCP)"
     const parts = name.split("__");
     const server = parts[1] ?? "mcp";
-    return `MCP:${server.charAt(0).toUpperCase() + server.slice(1)}`;
+    const toolFn = parts[2] ?? "";
+    return `${server} - ${toolFn} (MCP)`;
   }
   switch (name) {
     case "bash":
@@ -267,7 +271,10 @@ function getInlineSummary(name: string, result: string, isError: boolean): strin
     default: {
       if (name.startsWith("mcp__")) {
         const lines = result.split("\n").filter((l) => l.length > 0);
-        return `${lines.length} line${lines.length !== 1 ? "s" : ""}`;
+        if (lines.length === 0) return "no results";
+        // Show first meaningful line as summary for compact display
+        const first = lines[0].length > 50 ? lines[0].slice(0, 47) + "…" : lines[0];
+        return lines.length === 1 ? first : `${lines.length} lines`;
       }
       return "";
     }
@@ -317,11 +324,7 @@ function parseDiffWithLineNumbers(result: string): NumberedDiffLine[] {
   return numbered;
 }
 
-function buildDiffBody(
-  result: string,
-  args: Record<string, unknown> | undefined,
-  theme: Theme,
-): BodyContent {
+function buildDiffBody(result: string, args?: Record<string, unknown>): BodyContent {
   const added = (result.match(/^\+[^+]/gm) ?? []).length;
   const removed = (result.match(/^-[^-]/gm) ?? []).length;
 
@@ -352,7 +355,7 @@ function buildDiffBody(
 
   return {
     lines: [
-      <Text key="summary" color={theme.textMuted}>
+      <Text key="summary" color="#9ca3af">
         {summaryText}
       </Text>,
       ...rendered,
@@ -361,19 +364,13 @@ function buildDiffBody(
   };
 }
 
-function buildResultBody(
-  name: string,
-  result: string,
-  isError: boolean,
-  args: Record<string, unknown> | undefined,
-  theme: Theme,
-): BodyContent | null {
+function buildResultBody(name: string, result: string, isError: boolean): BodyContent | null {
   if (isError) {
     const lines = result.split("\n");
     const display = lines.slice(0, MAX_OUTPUT_LINES);
     return {
       lines: display.map((l, i) => (
-        <Text key={i} color={theme.error}>
+        <Text key={i} color="#f87171">
           {l}
         </Text>
       )),
@@ -392,7 +389,7 @@ function buildResultBody(
       const display = outputLines.slice(0, MAX_OUTPUT_LINES);
       return {
         lines: display.map((l, i) => (
-          <Text key={i} color={exitCode !== "0" ? theme.warning : theme.textMuted}>
+          <Text key={i} color={exitCode !== "0" ? "#fbbf24" : "#9ca3af"}>
             {l}
           </Text>
         )),
@@ -401,35 +398,8 @@ function buildResultBody(
     }
     case "read":
       return null;
-    case "write": {
-      const allLines = result.split("\n");
-      const summary = allLines[0]; // "Wrote 12 lines to random-info.md"
-      let contentLines = allLines.slice(1);
-      // Trim trailing empty line from content that ends with \n
-      if (contentLines.length > 0 && contentLines[contentLines.length - 1] === "") {
-        contentLines = contentLines.slice(0, -1);
-      }
-      if (contentLines.length === 0) return null;
-      // Highlight the full content, then split back into lines
-      const filePath = String(args?.file_path ?? "");
-      const lang = langFromPath(filePath);
-      const rawContent = contentLines.join("\n");
-      const highlighted = highlightCode(rawContent, lang);
-      const hlLines = highlighted.split("\n");
-      const displayLines = hlLines.slice(0, MAX_OUTPUT_LINES);
-      const padWidth = String(contentLines.length).length;
-      return {
-        lines: [
-          <Text key="summary" color={theme.textMuted}>
-            {summary}
-          </Text>,
-          ...displayLines.map((line, i) => (
-            <WrittenLine key={i + 1} lineNo={i + 1} content={line} padWidth={padWidth} />
-          )),
-        ],
-        totalLines: 1 + contentLines.length, // summary + all content lines
-      };
-    }
+    case "write":
+      return null;
     case "grep": {
       const lines = result.split("\n").filter((l) => l.length > 0);
       if (lines.length === 0 || result === "No matches found.") return null;
@@ -463,7 +433,7 @@ function buildResultBody(
       const display = lines.slice(0, MAX_OUTPUT_LINES);
       return {
         lines: display.map((l, i) => (
-          <Text key={i} color={theme.textMuted}>
+          <Text key={i} color="#9ca3af">
             {l}
           </Text>
         )),
@@ -474,7 +444,7 @@ function buildResultBody(
       if (result.startsWith("Error")) {
         return {
           lines: [
-            <Text key={0} color={theme.error}>
+            <Text key={0} color="#f87171">
               {result.split("\n")[0]}
             </Text>,
           ],
@@ -498,7 +468,8 @@ function buildResultBody(
       if (name.startsWith("mcp__")) {
         const lines = result.split("\n").filter((l) => l.length > 0);
         if (lines.length === 0) return null;
-        const display = lines.slice(0, MAX_OUTPUT_LINES);
+        const maxLines = 4;
+        const display = lines.slice(0, maxLines);
         return {
           lines: display.map((l, i) => <MCPResultLine key={i} line={l} />),
           totalLines: lines.length,
@@ -511,8 +482,13 @@ function buildResultBody(
 
 // ── Diff line component ────────────────────────────────────
 
-function DiffLine({ line, padWidth }: { line: NumberedDiffLine; padWidth: number }) {
-  const theme = useTheme();
+const DiffLine = memo(function DiffLine({
+  line,
+  padWidth,
+}: {
+  line: NumberedDiffLine;
+  padWidth: number;
+}) {
   // Flash animation: changed lines briefly appear brighter on mount
   const [isNew, setIsNew] = useState(line.type !== "context");
   useEffect(() => {
@@ -526,7 +502,7 @@ function DiffLine({ line, padWidth }: { line: NumberedDiffLine; padWidth: number
 
   if (line.type === "add") {
     return (
-      <Text backgroundColor={isNew ? theme.success : theme.diffAdded} color="#ffffff" bold={isNew}>
+      <Text backgroundColor={isNew ? "#22c55e" : "#16a34a"} color="#ffffff" bold={isNew}>
         {lineNo}
         {"  "}
         {line.content}
@@ -535,7 +511,7 @@ function DiffLine({ line, padWidth }: { line: NumberedDiffLine; padWidth: number
   }
   if (line.type === "remove") {
     return (
-      <Text backgroundColor={isNew ? theme.error : theme.diffRemoved} color="#ffffff" bold={isNew}>
+      <Text backgroundColor={isNew ? "#ef4444" : "#dc2626"} color="#ffffff" bold={isNew}>
         {lineNo}
         {"  "}
         {line.content}
@@ -544,46 +520,24 @@ function DiffLine({ line, padWidth }: { line: NumberedDiffLine; padWidth: number
   }
   return (
     <Text>
-      <Text color={theme.textDim}>
+      <Text color="#6b7280">
         {lineNo}
         {"  "}
       </Text>
       {line.content}
     </Text>
   );
-}
-
-// ── Written line component ─────────────────────────────────
-
-function WrittenLine({
-  lineNo,
-  content,
-  padWidth,
-}: {
-  lineNo: number;
-  content: string;
-  padWidth: number;
-}) {
-  const theme = useTheme();
-  const num = String(lineNo).padStart(padWidth, " ");
-  return (
-    <Text>
-      <Text color={theme.textDim}>{num} </Text>
-      {content}
-    </Text>
-  );
-}
+});
 
 // ── Grep result line ───────────────────────────────────────
 
-function GrepLine({ line }: { line: string }) {
-  const theme = useTheme();
+const GrepLine = memo(function GrepLine({ line }: { line: string }) {
   // Format: filepath:lineNo:content
   const firstColon = line.indexOf(":");
-  if (firstColon === -1) return <Text color={theme.textMuted}>{line}</Text>;
+  if (firstColon === -1) return <Text color="#9ca3af">{line}</Text>;
 
   const secondColon = line.indexOf(":", firstColon + 1);
-  if (secondColon === -1) return <Text color={theme.textMuted}>{line}</Text>;
+  if (secondColon === -1) return <Text color="#9ca3af">{line}</Text>;
 
   const file = line.slice(0, firstColon);
   const lineNo = line.slice(firstColon + 1, secondColon);
@@ -591,72 +545,69 @@ function GrepLine({ line }: { line: string }) {
 
   return (
     <Text>
-      <Text color={theme.primary}>{file}</Text>
-      <Text color={theme.textDim}>:</Text>
-      <Text color={theme.warning}>{lineNo}</Text>
-      <Text color={theme.textDim}>:</Text>
-      <Text color={theme.textMuted}>{content}</Text>
+      <Text color="#60a5fa">{file}</Text>
+      <Text color="#6b7280">:</Text>
+      <Text color="#fbbf24">{lineNo}</Text>
+      <Text color="#6b7280">:</Text>
+      <Text color="#9ca3af">{content}</Text>
     </Text>
   );
-}
+});
 
 // ── Find result line ───────────────────────────────────────
 
-function FindLine({ line }: { line: string }) {
-  const theme = useTheme();
+const FindLine = memo(function FindLine({ line }: { line: string }) {
   const trimmed = line.trim();
   if (trimmed.endsWith("/")) {
-    return <Text color={theme.primary}>{trimmed}</Text>;
+    return <Text color="#60a5fa">{trimmed}</Text>;
   }
   // Highlight the filename, dim the path
   const lastSlash = trimmed.lastIndexOf("/");
   if (lastSlash === -1) {
-    return <Text color={theme.text}>{trimmed}</Text>;
+    return <Text color="#e5e7eb">{trimmed}</Text>;
   }
   return (
     <Text>
-      <Text color={theme.textDim}>{trimmed.slice(0, lastSlash + 1)}</Text>
-      <Text color={theme.text}>{trimmed.slice(lastSlash + 1)}</Text>
+      <Text color="#6b7280">{trimmed.slice(0, lastSlash + 1)}</Text>
+      <Text color="#e5e7eb">{trimmed.slice(lastSlash + 1)}</Text>
     </Text>
   );
-}
+});
 
 // ── Ls result line ─────────────────────────────────────────
 
-function LsLine({ line }: { line: string }) {
-  const theme = useTheme();
+const LsLine = memo(function LsLine({ line }: { line: string }) {
   // Format: "d  -        dirname/" or "f  1.2K     filename"
   const parts = line.match(/^([dfl])\s+(\S+)\s+(.+)$/);
-  if (!parts) return <Text color={theme.textMuted}>{line}</Text>;
+  if (!parts) return <Text color="#9ca3af">{line}</Text>;
 
   const [, type, size, name] = parts;
 
   if (type === "d") {
     return (
       <Text>
-        <Text color={theme.primary} bold>
+        <Text color="#60a5fa" bold>
           {name}
         </Text>
-        <Text color={theme.textDim}> {size === "-" ? "" : size}</Text>
+        <Text color="#6b7280"> {size === "-" ? "" : size}</Text>
       </Text>
     );
   }
   // File or symlink
   return (
     <Text>
-      <Text color={theme.text}>{name}</Text>
-      <Text color={theme.textDim}> {size}</Text>
+      <Text color="#e5e7eb">{name}</Text>
+      <Text color="#6b7280"> {size}</Text>
     </Text>
   );
-}
+});
 
 // ── Task result line ────────────────────────────────────
 
-function TaskLine({ line }: { line: string }) {
-  const theme = useTheme();
+const TaskLine = memo(function TaskLine({ line }: { line: string }) {
   // Format: "[✓] Task text  (id: abcd1234, done)" or "[ ] Task text  (id: ..., pending)"
   const match = line.match(/^\[(.)\]\s+(.+?)\s{2}\(id:\s*(\w+),\s*(\S+)\)$/);
-  if (!match) return <Text color={theme.textMuted}>{line}</Text>;
+  if (!match) return <Text color="#9ca3af">{line}</Text>;
 
   const [, check, text, id] = match;
   const isDone = check === "✓";
@@ -664,41 +615,70 @@ function TaskLine({ line }: { line: string }) {
 
   return (
     <Text>
-      <Text color={isDone ? theme.success : isActive ? theme.warning : theme.textDim}>
-        [{check}]
-      </Text>
-      <Text color={isDone ? theme.success : isActive ? theme.warning : theme.text}> {text}</Text>
-      <Text color={theme.textDim}> {id}</Text>
+      <Text color={isDone ? "#4ade80" : isActive ? "#fbbf24" : "#6b7280"}>[{check}]</Text>
+      <Text color={isDone ? "#4ade80" : isActive ? "#fbbf24" : "#e5e7eb"}> {text}</Text>
+      <Text color="#6b7280"> {id}</Text>
     </Text>
   );
-}
+});
 
 // ── MCP result line ─────────────────────────────────────
 
-function MCPResultLine({ line }: { line: string }) {
-  const theme = useTheme();
-  // Detect code search results: "repo/path — content" or "file:line:content"
+const MAX_MCP_LINE_LENGTH = 120;
+
+function truncLine(s: string, max = MAX_MCP_LINE_LENGTH): string {
+  return s.length > max ? s.slice(0, max - 1) + "…" : s;
+}
+
+const MCPResultLine = memo(function MCPResultLine({ line }: { line: string }) {
+  // Key-value pattern: "Repository: value" or "Path: value" or "Title: value"
+  const kvMatch = line.match(/^([A-Z][A-Za-z_ ]+):\s+(.+)$/);
+  if (kvMatch) {
+    return (
+      <Text>
+        <Text color="#6b7280">{kvMatch[1]}: </Text>
+        <Text color="#60a5fa">{truncLine(kvMatch[2])}</Text>
+      </Text>
+    );
+  }
+  // URL on its own line
+  if (line.match(/^https?:\/\//)) {
+    return <Text color="#60a5fa">{truncLine(line)}</Text>;
+  }
+  // Numbered list item: "1. Title" or "- Item"
+  const listMatch = line.match(/^(\d+\.\s+|- )(.+)$/);
+  if (listMatch) {
+    return (
+      <Text>
+        <Text color="#6b7280">{listMatch[1]}</Text>
+        <Text color="#e5e7eb">{truncLine(listMatch[2])}</Text>
+      </Text>
+    );
+  }
+  // Dash-separated results: "repo/path — content"
   const dashMatch = line.match(/^(.+?)\s+—\s+(.+)$/);
   if (dashMatch) {
     return (
       <Text>
-        <Text color={theme.primary}>{dashMatch[1]}</Text>
-        <Text color={theme.textDim}> — </Text>
-        <Text color={theme.textMuted}>{dashMatch[2]}</Text>
+        <Text color="#60a5fa">{truncLine(dashMatch[1], 50)}</Text>
+        <Text color="#6b7280"> — </Text>
+        <Text color="#9ca3af">{truncLine(dashMatch[2], 60)}</Text>
       </Text>
     );
   }
+  // Colon-separated: "file:lineNo:content"
   const colonMatch = line.match(/^([^:]+):(\d+):(.+)$/);
   if (colonMatch) {
     return (
       <Text>
-        <Text color={theme.primary}>{colonMatch[1]}</Text>
-        <Text color={theme.textDim}>:</Text>
-        <Text color={theme.warning}>{colonMatch[2]}</Text>
-        <Text color={theme.textDim}>:</Text>
-        <Text color={theme.textMuted}>{colonMatch[3]}</Text>
+        <Text color="#60a5fa">{colonMatch[1]}</Text>
+        <Text color="#6b7280">:</Text>
+        <Text color="#fbbf24">{colonMatch[2]}</Text>
+        <Text color="#6b7280">:</Text>
+        <Text color="#9ca3af">{truncLine(colonMatch[3], 80)}</Text>
       </Text>
     );
   }
-  return <Text color={theme.textMuted}>{line}</Text>;
-}
+  // Fallback: truncate long plain text
+  return <Text color="#9ca3af">{truncLine(line)}</Text>;
+});

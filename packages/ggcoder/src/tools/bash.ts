@@ -11,6 +11,57 @@ import { truncateTail } from "./truncate.js";
 const DEFAULT_TIMEOUT = 120_000; // 120 seconds
 const MAX_OUTPUT_BYTES = 10 * 1024 * 1024; // 10 MB — cap buffered output to prevent OOM
 
+/** Environment variables safe to inherit. Everything else is stripped to prevent leaking secrets to LLM. */
+const ENV_ALLOWLIST = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TMPDIR",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_RUNTIME_DIR",
+  "EDITOR",
+  "VISUAL",
+  "PAGER",
+  "CLICOLOR",
+  "CLICOLOR_FORCE",
+  "NO_COLOR",
+  "FORCE_COLOR",
+  // Development toolchains
+  "NODE_PATH",
+  "NVM_DIR",
+  "NPM_CONFIG_PREFIX",
+  "PNPM_HOME",
+  "GOPATH",
+  "GOROOT",
+  "CARGO_HOME",
+  "RUSTUP_HOME",
+  "PYENV_ROOT",
+  "VIRTUAL_ENV",
+  "CONDA_DEFAULT_ENV",
+  "CONDA_PREFIX",
+  "JAVA_HOME",
+  "ANDROID_HOME",
+  "ANDROID_SDK_ROOT",
+  "RUBY_VERSION",
+  "GEM_HOME",
+  "RBENV_ROOT",
+]);
+
+function getSafeEnv(): Record<string, string> {
+  const env: Record<string, string> = { TERM: "dumb" };
+  for (const key of ENV_ALLOWLIST) {
+    if (process.env[key]) env[key] = process.env[key]!;
+  }
+  return env;
+}
+
 const BashParams = z.object({
   command: z.string().describe("The bash command to execute"),
   timeout: z
@@ -62,7 +113,7 @@ export function createBashTool(
           cwd,
           detached: true,
           stdio: ["ignore", "pipe", "pipe"],
-          env: { ...process.env, TERM: "dumb" },
+          env: getSafeEnv(),
         });
 
         const chunks: Buffer[] = [];

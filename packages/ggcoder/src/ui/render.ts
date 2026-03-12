@@ -4,9 +4,10 @@ import type { Message, Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import type { ProcessManager } from "../core/process-manager.js";
 import type { MCPClientManager } from "../core/mcp/index.js";
-import type { ProviderStatus } from "../core/oauth/types.js";
+import type { AuthStorage } from "../core/auth-storage.js";
 import { App, type CompletedItem } from "./App.js";
-import { ThemeContext, loadTheme, type ThemeName } from "./theme/theme.js";
+import { ThemeContext, loadTheme } from "./theme/theme.js";
+import { detectTheme } from "./theme/detect-theme.js";
 
 export interface RenderAppConfig {
   provider: Provider;
@@ -21,7 +22,7 @@ export interface RenderAppConfig {
   accountId?: string;
   cwd: string;
   version: string;
-  theme?: ThemeName;
+  theme?: "auto" | "dark" | "light";
   showThinking?: boolean;
   showTokenUsage?: boolean;
   onSlashCommand?: (input: string) => Promise<string | null>;
@@ -33,7 +34,7 @@ export interface RenderAppConfig {
   processManager?: ProcessManager;
   settingsFile?: string;
   mcpManager?: MCPClientManager;
-  providerStatuses?: ProviderStatus[];
+  authStorage?: AuthStorage;
   worktree?: {
     path: string;
     branchName: string;
@@ -43,7 +44,9 @@ export interface RenderAppConfig {
 }
 
 export async function renderApp(config: RenderAppConfig): Promise<void> {
-  const theme = loadTheme(config.theme ?? "auto");
+  const themeSetting = config.theme ?? "auto";
+  const resolvedTheme = themeSetting === "auto" ? await detectTheme() : themeSetting;
+  const theme = loadTheme(resolvedTheme);
 
   // Clear screen
   process.stdout.write("\x1b[2J\x1b[H");
@@ -76,7 +79,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
         processManager: config.processManager,
         settingsFile: config.settingsFile,
         mcpManager: config.mcpManager,
-        providerStatuses: config.providerStatuses,
+        authStorage: config.authStorage,
         worktree: config.worktree,
       }),
     ),

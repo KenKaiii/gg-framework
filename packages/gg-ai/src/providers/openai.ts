@@ -25,16 +25,18 @@ async function runStream(options: StreamOptions, result: StreamResult): Promise<
   // GLM and Moonshot use a custom `thinking` body param instead of `reasoning_effort`
   const usesThinkingParam = options.provider === "glm" || options.provider === "moonshot";
 
-  const messages = toOpenAIMessages(options.messages);
+  const messages = toOpenAIMessages(options.messages, { provider: options.provider });
+
+  // GLM models default to 0.6 temperature when not in thinking mode
+  const defaultTemp = options.provider === "glm" ? 0.6 : undefined;
+  const effectiveTemp = options.temperature ?? defaultTemp;
 
   const params: OpenAI.ChatCompletionCreateParams = {
     model: options.model,
     messages,
     stream: true,
     ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}),
-    ...(options.temperature != null && !options.thinking
-      ? { temperature: options.temperature }
-      : {}),
+    ...(effectiveTemp != null && !options.thinking ? { temperature: effectiveTemp } : {}),
     ...(options.topP != null ? { top_p: options.topP } : {}),
     ...(options.stop ? { stop: options.stop } : {}),
     ...(options.thinking && !usesThinkingParam

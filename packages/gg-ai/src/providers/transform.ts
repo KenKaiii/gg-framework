@@ -232,8 +232,30 @@ export function toAnthropicThinking(
 
 // ── OpenAI Transforms ──────────────────────────────────────
 
-export function toOpenAIMessages(messages: Message[]): OpenAI.ChatCompletionMessageParam[] {
+/**
+ * Remap tool call IDs that don't match OpenAI's expected prefix.
+ * Anthropic uses `toolu_*` IDs which OpenAI rejects — we need `call_*` prefixed IDs.
+ * The mapping is consistent within a single conversion so assistant tool_call IDs
+ * match their corresponding tool result references.
+ */
+function remapToolCallId(id: string, idMap: Map<string, string>): string {
+  if (id.startsWith("call_")) return id;
+  const existing = idMap.get(id);
+  if (existing) return existing;
+  const mapped = `call_${id.replace(/^toolu_/, "")}`;
+  idMap.set(id, mapped);
+  return mapped;
+}
+
+export function toOpenAIMessages(
+  messages: Message[],
+  options?: { provider?: string },
+): OpenAI.ChatCompletionMessageParam[] {
   const out: OpenAI.ChatCompletionMessageParam[] = [];
+  const idMap = new Map<string, string>();
+  // GLM drops reasoning_content when a user message follows tool results.
+  // Merge user text into the last tool message to preserve thinking context.
+  const mergeToolResultText = options?.provider === "glm";
 
   for (const msg of messages) {
     if (msg.role === "system") {
@@ -241,6 +263,23 @@ export function toOpenAIMessages(messages: Message[]): OpenAI.ChatCompletionMess
       continue;
     }
     if (msg.role === "user") {
+      // For GLM: if the previous message is a tool result, merge text into it
+      // to avoid a standalone user message that causes reasoning_content to be dropped.
+      if (mergeToolResultText && out.length > 0 && out[out.length - 1]!.role === "tool") {
+        const userText =
+          typeof msg.content === "string"
+            ? msg.content
+            : msg.content
+                .filter((p): p is TextContent => p.type === "text")
+                .map((p) => p.text)
+                .join("");
+        if (userText) {
+          // Append text to the last tool message's content
+          const lastTool = out[out.length - 1] as OpenAI.ChatCompletionToolMessageParam;
+          lastTool.content = (lastTool.content ?? "") + "\n\n" + userText;
+          continue;
+        }
+      }
       if (typeof msg.content === "string") {
         out.push({ role: "user", content: msg.content });
       } else {
@@ -273,7 +312,7 @@ export function toOpenAIMessages(messages: Message[]): OpenAI.ChatCompletionMess
               )
               .map(
                 (tc): OpenAI.ChatCompletionMessageToolCall => ({
-                  id: tc.id,
+                  id: remapToolCallId(tc.id, idMap),
                   type: "function",
                   function: { name: tc.name, arguments: JSON.stringify(tc.args) },
                 }),
@@ -314,7 +353,7 @@ export function toOpenAIMessages(messages: Message[]): OpenAI.ChatCompletionMess
       for (const result of msg.content) {
         out.push({
           role: "tool",
-          tool_call_id: result.toolCallId,
+          tool_call_id: remapToolCallId(result.toolCallId, idMap),
           content: result.content,
         });
       }

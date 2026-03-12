@@ -7,7 +7,6 @@ new PerformanceObserver(() => {}).observe({ entryTypes: ["measure", "mark"] });
 import { parseArgs } from "node:util";
 import fs from "node:fs";
 import readline from "node:readline/promises";
-import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { runPrintMode } from "./modes/print-mode.js";
@@ -30,9 +29,6 @@ import { loginOpenAI } from "./core/oauth/openai.js";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "./core/oauth/types.js";
 import chalk from "chalk";
 import { checkAndAutoUpdate } from "./core/auto-update.js";
-import { SettingsManager } from "./core/settings-manager.js";
-import { getRepoRoot, createWorktree, generateWorktreeName, sanitizeWorktreeName } from "./core/worktree.js";
-import { HookRunner } from "./core/hooks.js";
 
 const _require = createRequire(import.meta.url);
 const CLI_VERSION = (_require("../package.json") as { version: string }).version;
@@ -53,8 +49,6 @@ Options:
       --thinking <level>    Thinking level (low, medium, high, max)
       --max-turns <n>       Maximum agent loop turns [default: 40]
   -s, --session <path>      Resume a specific session file
-  -w, --worktree            Run in a git worktree (auto-generates name)
-      --worktree-name <n>   Name for the worktree (used with -w)
       --print               Print mode: one-shot, output to stdout, then exit
       --json                JSON mode: one-shot, output NDJSON events to stdout
   -v, --version             Show version number
@@ -113,8 +107,6 @@ function main(): void {
       thinking: { type: "string" },
       "max-turns": { type: "string" },
       session: { type: "string", short: "s" },
-      worktree: { type: "boolean", short: "w" },
-      "worktree-name": { type: "string" },
       print: { type: "boolean" },
       json: { type: "boolean" },
       version: { type: "boolean", short: "v" },
@@ -138,11 +130,14 @@ function main(): void {
   let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | undefined;
   let savedModel: string | undefined;
   let savedThinkingEnabled = false;
+  let savedTheme: "auto" | "dark" | "light" = "auto";
   try {
     const raw = JSON.parse(fs.readFileSync(getAppPaths().settingsFile, "utf-8"));
     if (raw.defaultProvider) savedProvider = raw.defaultProvider;
     if (raw.defaultModel) savedModel = raw.defaultModel;
     if (raw.thinkingEnabled === true) savedThinkingEnabled = true;
+    if (raw.theme === "dark" || raw.theme === "light" || raw.theme === "auto")
+      savedTheme = raw.theme;
   } catch {
     // No settings file or invalid JSON — use defaults
   }
@@ -172,12 +167,6 @@ function main(): void {
   const thinkingLevel: ThinkingLevel | undefined =
     (values.thinking as ThinkingLevel | undefined) ?? (savedThinkingEnabled ? "medium" : undefined);
   const maxTurns = values["max-turns"] ? parseInt(values["max-turns"], 10) : undefined;
-
-  // --worktree is only supported in interactive mode
-  if (values.worktree && (values.print || values.json)) {
-    console.error("Error: --worktree is only supported in interactive mode (not with --print or --json)");
-    process.exit(1);
-  }
 
   // Print mode
   if (values.print) {
@@ -243,8 +232,7 @@ function main(): void {
     systemPrompt: values["system-prompt"],
     continueRecent,
     sessionPath: values.session,
-    worktree: values.worktree ? (values["worktree-name"] || undefined) : undefined,
-    useWorktree: values.worktree,
+    theme: savedTheme,
   }).catch((err) => {
     log("ERROR", "fatal", err instanceof Error ? err.message : String(err));
     closeLogger();
@@ -264,11 +252,9 @@ async function runInkTUI(opts: {
   systemPrompt?: string;
   continueRecent?: boolean;
   sessionPath?: string;
-  worktree?: string;
-  useWorktree?: boolean;
+  theme?: "auto" | "dark" | "light";
 }): Promise<void> {
-  const { provider, model } = opts;
-  let { cwd } = opts;
+  const { provider, model, cwd } = opts;
 
   // Resolve auth
   const paths = await ensureAppDirs();
@@ -304,49 +290,6 @@ async function runInkTUI(opts: {
     }
   }
 
-  const providerStatuses = await authStorage.getProviderStatuses();
-
-  // Load settings for theme preference
-  const settingsManager = new SettingsManager(paths.settingsFile);
-  await settingsManager.load();
-
-  // Set up worktree hook runner (used for CLI worktree creation + subagent worktrees)
-  const hookRunner = new HookRunner(cwd, crypto.randomUUID());
-  await hookRunner.loadConfig(paths.settingsFile);
-
-  // Set up worktree if requested
-  let worktreeMeta:
-    | { path: string; branchName: string; repoRoot: string; name: string }
-    | undefined;
-
-  if (opts.useWorktree) {
-    const repoRoot = await getRepoRoot(cwd);
-    if (!repoRoot) {
-      throw new Error("--worktree requires a git repository, but no git repo was found");
-    }
-
-    const rawName = opts.worktree || generateWorktreeName();
-    const name = sanitizeWorktreeName(rawName);
-
-    // Fire WorktreeCreate hook if configured, otherwise use git default
-    const hookPath = await hookRunner.runWorktreeCreateHook(name);
-    const worktreePath = hookPath ?? await createWorktree({ repoRoot, name });
-    cwd = worktreePath;
-
-    worktreeMeta = {
-      path: worktreePath,
-      branchName: `worktree-${name}`,
-      repoRoot,
-      name,
-    };
-
-    log("INFO", "worktree", `Created worktree`, {
-      name,
-      path: worktreePath,
-      repoRoot,
-    });
-  }
-
   // Discover agents and build tools
   const agents = await discoverAgents({
     globalAgentsDir: paths.agentsDir,
@@ -355,7 +298,7 @@ async function runInkTUI(opts: {
 
   // Build system prompt & tools (with sub-agent support)
   const systemPrompt = opts.systemPrompt ?? (await buildSystemPrompt(cwd));
-  const { tools, processManager } = createTools(cwd, { agents, provider, model, hookRunner });
+  const { tools, processManager } = createTools(cwd, { agents, provider, model });
 
   // Connect MCP servers
   const mcpManager = new MCPClientManager();
@@ -408,13 +351,8 @@ async function runInkTUI(opts: {
             id: `restore-info`,
           });
         }
-      } catch (err) {
-        // Session file corrupt, missing, or worktree deleted — start fresh
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes("Worktree directory no longer exists")) {
-          console.error(`⚠ ${msg}\nStarting a new session.`);
-        }
-        log("WARN", "session", `Could not restore session: ${msg}`);
+      } catch {
+        // Session file corrupt or missing — start fresh
       }
     }
   }
@@ -433,13 +371,13 @@ async function runInkTUI(opts: {
     webSearch: true,
     messages,
     version: CLI_VERSION,
-    theme: settingsManager.get("theme"),
     maxTokens: 16384,
     thinking: opts.thinkingLevel,
     apiKey: creds.accessToken,
     baseUrl: opts.baseUrl,
     accountId: creds.accountId,
     cwd,
+    theme: opts.theme,
     loggedInProviders,
     credentialsByProvider,
     initialHistory,
@@ -448,8 +386,7 @@ async function runInkTUI(opts: {
     processManager,
     settingsFile: paths.settingsFile,
     mcpManager,
-    providerStatuses,
-    worktree: worktreeMeta,
+    authStorage,
   });
 
   closeLogger();
@@ -466,8 +403,7 @@ async function runLogin(): Promise<void> {
   await authStorage.load();
 
   // Phase 1: Ink-based provider selector
-  const providerStatuses = await authStorage.getProviderStatuses();
-  const provider = await renderLoginSelector(providerStatuses);
+  const provider = await renderLoginSelector();
   if (!provider) {
     console.log(chalk.hex("#6b7280")("Login cancelled."));
     return;

@@ -7,7 +7,7 @@ import { SPINNER_FRAMES, SPINNER_INTERVAL } from "../spinner-frames.js";
 
 // ── Color pulse cycle ─────────────────────────────────────
 
-const DARK_PULSE_COLORS = [
+const PULSE_COLORS = [
   "#60a5fa", // blue
   "#818cf8", // indigo
   "#a78bfa", // violet
@@ -15,16 +15,6 @@ const DARK_PULSE_COLORS = [
   "#60a5fa", // blue (back)
   "#38bdf8", // sky
   "#60a5fa", // blue (back)
-];
-
-const LIGHT_PULSE_COLORS = [
-  "#2563eb", // blue
-  "#4f46e5", // indigo
-  "#7c3aed", // violet
-  "#4f46e5", // indigo (back)
-  "#2563eb", // blue (back)
-  "#0284c7", // sky
-  "#2563eb", // blue (back)
 ];
 const PULSE_INTERVAL = 400;
 
@@ -351,36 +341,27 @@ export function ActivityIndicator({
 }: ActivityIndicatorProps) {
   const theme = useTheme();
 
-  // Spinner frame
-  const [spinnerFrame, setSpinnerFrame] = useState(0);
+  // ── Single animation tick ────────────────────────────────
+  // Instead of 5 separate setIntervals (spinner, pulse, ellipsis, shimmer,
+  // phrase), we use ONE timer at the fastest cadence (SHIMMER_INTERVAL=100ms)
+  // and derive all animation frames via modular arithmetic.  This reduces
+  // Ink re-renders from ~5 independent state updates to 1 batched update
+  // per tick, which prevents live-area height miscalculations that cause
+  // viewport jumping.
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => {
-      setSpinnerFrame((f) => (f + 1) % SPINNER_FRAMES.length);
-    }, SPINNER_INTERVAL);
+      setTick((t) => t + 1);
+    }, SHIMMER_INTERVAL);
     return () => clearInterval(timer);
   }, []);
 
-  // Color pulse
-  const pulseColors = theme.name === "light" ? LIGHT_PULSE_COLORS : DARK_PULSE_COLORS;
-  const [colorFrame, setColorFrame] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setColorFrame((f) => (f + 1) % pulseColors.length);
-    }, PULSE_INTERVAL);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Ellipsis
-  const [ellipsisFrame, setEllipsisFrame] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setEllipsisFrame((f) => (f + 1) % ELLIPSIS_FRAMES.length);
-    }, ELLIPSIS_INTERVAL);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Shimmer position
-  const [shimmerPos, setShimmerPos] = useState(-SHIMMER_WIDTH);
+  // Derive all animation frames from the single tick counter
+  const spinnerFrame =
+    Math.floor((tick * SHIMMER_INTERVAL) / SPINNER_INTERVAL) % SPINNER_FRAMES.length;
+  const colorFrame = Math.floor((tick * SHIMMER_INTERVAL) / PULSE_INTERVAL) % PULSE_COLORS.length;
+  const ellipsisFrame =
+    Math.floor((tick * SHIMMER_INTERVAL) / ELLIPSIS_INTERVAL) % ELLIPSIS_FRAMES.length;
 
   // Phrase rotation — pick phrases based on phase + user message + active tools, shuffle, rotate
   const toolNamesKey = activeToolNames.sort().join(",");
@@ -389,30 +370,15 @@ export function ActivityIndicator({
     [phase, userMessage, toolNamesKey], // activeToolNames captured via stable string key
   );
   const phraseInterval = phase === "waiting" ? WAITING_PHRASE_INTERVAL : OTHER_PHRASE_INTERVAL;
-  const [phraseIndex, setPhraseIndex] = useState(0);
-  useEffect(() => {
-    setPhraseIndex(0);
-    const timer = setInterval(() => {
-      setPhraseIndex((i) => (i + 1) % phrases.length);
-    }, phraseInterval);
-    return () => clearInterval(timer);
-  }, [phrases, phraseInterval]);
+  const phraseIndex = Math.floor((tick * SHIMMER_INTERVAL) / phraseInterval) % phrases.length;
 
-  const spinnerColor = pulseColors[colorFrame];
-  const phrase = phrases[phraseIndex % phrases.length] ?? phrases[0];
+  const spinnerColor = PULSE_COLORS[colorFrame];
+  const phrase = phrases[phraseIndex] ?? phrases[0];
   const ellipsis = ELLIPSIS_FRAMES[ellipsisFrame];
 
-  // Shimmer animation — wraps across phrase text length
-  useEffect(() => {
-    setShimmerPos(-SHIMMER_WIDTH);
-    const timer = setInterval(() => {
-      setShimmerPos((pos) => {
-        const max = phrase.length + SHIMMER_WIDTH;
-        return pos >= max ? -SHIMMER_WIDTH : pos + 1;
-      });
-    }, SHIMMER_INTERVAL);
-    return () => clearInterval(timer);
-  }, [phrase]);
+  // Shimmer — derive position from tick, wrapping across phrase length
+  const shimmerCycle = phrase.length + SHIMMER_WIDTH * 2;
+  const shimmerPos = (tick % shimmerCycle) - SHIMMER_WIDTH;
 
   // Pad ellipsis to prevent text from shifting
   const paddedEllipsis = ellipsis + " ".repeat(3 - ellipsis.length);

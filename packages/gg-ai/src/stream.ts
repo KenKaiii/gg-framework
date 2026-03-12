@@ -33,7 +33,7 @@ export function stream(options: StreamOptions): StreamResult {
     case "glm":
       return streamOpenAI({
         ...options,
-        baseUrl: options.baseUrl ?? "https://api.z.ai/api/paas/v4",
+        baseUrl: options.baseUrl ?? "https://api.z.ai/api/coding/paas/v4",
       });
     case "moonshot":
       return streamOpenAI({

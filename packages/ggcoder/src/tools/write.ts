@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
-import { resolvePath } from "./path-utils.js";
+import { resolvePath, rejectSymlink } from "./path-utils.js";
 
 const WriteParams = z.object({
   file_path: z.string().describe("The file path to write to"),
@@ -21,6 +21,7 @@ export function createWriteTool(
     parameters: WriteParams,
     async execute({ file_path, content }) {
       const resolved = resolvePath(cwd, file_path);
+      await rejectSymlink(resolved);
 
       // Block overwriting existing files that haven't been read
       if (readFiles && !readFiles.has(resolved)) {

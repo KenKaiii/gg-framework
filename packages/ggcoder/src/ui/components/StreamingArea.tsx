@@ -26,19 +26,21 @@ export function StreamingArea({
   // so we show a static cursor and avoid the extra re-renders from blinking.
   const [cursorVisible, setCursorVisible] = useState(true);
   const prevTextRef = useRef(streamingText);
-  const textChangingRef = useRef(false);
   const staleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Track whether text is actively changing
+  // Track whether text is actively changing.  The stale flag is promoted to
+  // React state so it can gate the blink interval — when text is actively
+  // streaming we skip the blink entirely (no interval running = no extra
+  // re-renders).
+  const [textStale, setTextStale] = useState(false);
+
   useEffect(() => {
     if (streamingText !== prevTextRef.current) {
       prevTextRef.current = streamingText;
-      textChangingRef.current = true;
-      // Clear any existing stale timer
+      setTextStale(false);
       if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
-      // Mark text as "not changing" if no update for 600ms
       staleTimerRef.current = setTimeout(() => {
-        textChangingRef.current = false;
+        setTextStale(true);
       }, 600);
     }
     return () => {
@@ -47,18 +49,15 @@ export function StreamingArea({
   }, [streamingText]);
 
   useEffect(() => {
-    if (!isRunning) return;
-    setCursorVisible(true);
+    if (!isRunning || !textStale) {
+      setCursorVisible(true);
+      return;
+    }
     const timer = setInterval(() => {
-      // Only blink when text has stopped changing (waiting for LLM)
-      if (!textChangingRef.current) {
-        setCursorVisible((v) => !v);
-      } else {
-        setCursorVisible(true);
-      }
+      setCursorVisible((v) => !v);
     }, 800);
     return () => clearInterval(timer);
-  }, [isRunning]);
+  }, [isRunning, textStale]);
 
   // Return null when there is nothing to display.  Previously this kept an
   // empty <Box marginTop={1}> alive while isRunning was true, adding phantom

@@ -32,6 +32,19 @@ export function formatUserError(err: unknown): string {
     return chalk.red('Session expired or invalid. Run "ggcoder login" to re-authenticate.');
   }
 
+  // Billing/quota errors (GLM returns 429 for these)
+  if (
+    lowerMsg.includes("insufficient balance") ||
+    lowerMsg.includes("no resource package") ||
+    lowerMsg.includes("quota exceeded") ||
+    lowerMsg.includes("recharge")
+  ) {
+    const name = displayProvider(provider);
+    return chalk.red(
+      `${name} reports a billing or quota issue. Check your account balance or resource package.`,
+    );
+  }
+
   // Rate limiting
   if (statusCode === 429 || lowerMsg.includes("rate limit")) {
     const name = displayProvider(provider);

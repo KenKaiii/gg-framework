@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { Text, Box, useInput, useStdout } from "ink";
+import { Text, Box, useInput, useStdout, useStdin } from "ink";
+import type { EventEmitter } from "events";
 import { useTheme } from "../theme/theme.js";
 import type { ImageAttachment } from "../../utils/image.js";
 import { extractImagePaths, readImageFile, getClipboardImage } from "../../utils/image.js";
@@ -162,6 +163,38 @@ export function InputArea({
     }, 300);
     return () => clearTimeout(timer);
   }, [value, cwd, disabled]);
+
+  // Normalize numpad Enter (kpenter) to regular Enter.  With the kitty
+  // keyboard protocol enabled, numpad Enter sends codepoint 57414 which Ink
+  // parses as "kpenter" instead of "return", so key.return is never set.
+  // We listen on Ink's internal event emitter and re-emit the sequence as
+  // a plain carriage return (\r) that Ink recognises as key.return.
+  const { internal_eventEmitter } = useStdin() as ReturnType<typeof useStdin> & {
+    internal_eventEmitter: EventEmitter;
+  };
+  useEffect(() => {
+    if (!isActive || !internal_eventEmitter) return;
+    // Matches ESC[57414u  or  ESC[57414;Nu  (N = modifier) — numpad Enter
+    // in the kitty keyboard protocol.
+    // eslint-disable-next-line no-control-regex
+    const kpEnterRe = /^\x1b\[57414(;\d+)?u$/;
+    const onInput = (data: string): void => {
+      if (kpEnterRe.test(data)) {
+        // Determine modifier flags from the sequence
+        const modMatch = /;(\d+)u$/.exec(data);
+        const mod = modMatch ? Math.max(0, parseInt(modMatch[1], 10) - 1) : 0;
+        const hasShift = !!(mod & 1);
+        const hasMeta = !!(mod & 10);
+        // Re-emit as regular Enter, preserving shift/meta for newline insertion
+        const synth = hasShift ? "\x1b[13;2u" : hasMeta ? "\x1b\r" : "\r";
+        internal_eventEmitter.emit("input", synth);
+      }
+    };
+    internal_eventEmitter.on("input", onInput);
+    return () => {
+      internal_eventEmitter.removeListener("input", onInput);
+    };
+  }, [isActive, internal_eventEmitter]);
 
   useInput(
     (input, key) => {

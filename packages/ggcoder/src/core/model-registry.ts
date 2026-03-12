@@ -85,6 +85,16 @@ export const MODELS: ModelInfo[] = [
     supportsImages: false,
     costTier: "low",
   },
+  {
+    id: "glm-4.7-flash",
+    name: "GLM-4.7 Flash",
+    provider: "glm",
+    contextWindow: 128_000,
+    maxOutputTokens: 16_384,
+    supportsThinking: true,
+    supportsImages: false,
+    costTier: "low",
+  },
   // ── Moonshot (Kimi) ──────────────────────────────────────
   {
     id: "kimi-k2.5",
@@ -122,16 +132,17 @@ export function getContextWindow(modelId: string): number {
  * Get the model to use for compaction summarization.
  * - Anthropic: always Sonnet 4.6
  * - OpenAI: cheapest (Codex Mini)
- * - GLM / Moonshot: use the current model (no cheap alternative)
+ * - GLM: GLM-4.7 Flash (cheap alternative)
+ * - Moonshot: use the current model (no cheap alternative)
  */
 export function getSummaryModel(provider: Provider, currentModelId: string): ModelInfo {
   if (provider === "anthropic") {
     return MODELS.find((m) => m.id === "claude-sonnet-4-6")!;
   }
-  if (provider === "openai") {
+  if (provider === "openai" || provider === "glm") {
     const low = getModelsForProvider(provider).find((m) => m.costTier === "low");
     if (low) return low;
   }
-  // GLM, Moonshot, or fallback: use current model
+  // Moonshot or fallback: use current model
   return getModel(currentModelId) ?? getDefaultModel(provider);
 }
