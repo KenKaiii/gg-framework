@@ -476,6 +476,55 @@ Replace all placeholders with the actual commands for the detected project type 
 Report that /update is now available with dependency updates, security audits, and deprecation fixes.`,
   },
   {
+    name: "worktree",
+    aliases: ["wt"],
+    description: "Create an isolated worktree and explore the focus area",
+    prompt: `Create an isolated git worktree for focused work and explore the relevant code.
+
+## Special case: "list"
+
+If the user's argument is "list", use the worktree tool with action "list" and display the results. Do NOT create a new worktree. Stop here.
+
+## Special case: "remove"
+
+If the user's argument starts with "remove", use the worktree tool with action "remove" and path set to the worktree path the user specifies. The tool handles hook integration and cleanup. Stop here.
+
+## Creating a new worktree
+
+The user's argument describes what they're working on (e.g. "refactoring the auth flow", "adding pagination to the API").
+
+### Step 1: Generate a slug
+
+From the description, generate a short kebab-case slug (e.g. "auth-flow", "api-pagination"). Use only lowercase letters, numbers, and hyphens. Keep it under 30 characters.
+
+### Step 2: Create the worktree
+
+Use the worktree tool with action "create" and name set to the generated slug. The tool handles sanitization, hook integration, and git operations. It returns JSON with { path, name, branch, baseBranch }.
+
+### Step 3: Change working directory
+
+Change your working directory to the path returned by the worktree tool.
+
+### Step 4: Explore the focus area in parallel
+
+Spawn 2 sub-agents in parallel using the subagent tool (call the subagent tool 2 times in a single response):
+
+**Agent 1 — Structure**: Explore the codebase to map out files, directories, components, and dependencies related to the described focus area. Use grep, glob, and read tools to find relevant code. Build a map of which files and modules are involved, how they're organized, and what depends on what.
+
+**Agent 2 — Context**: Read key files in the focus area. Understand the current implementation, identify patterns, entry points, data flow, and any existing tests. Look for coding conventions, error handling patterns, and integration points.
+
+### Step 5: Synthesize and present
+
+After both agents complete, synthesize their findings into a concise summary:
+
+- **Key files and their roles** — List each important file with a one-line description
+- **Current implementation overview** — How the feature/area works today
+- **Dependencies and relationships** — What depends on what, internal and external
+- **Existing tests** — Any test files found, what they cover
+
+Present this summary, then tell the user they are now working in the worktree at \`.gg/worktrees/<slug>/\` on branch \`worktree-<slug>\`, and ask what they'd like to do.`,
+  },
+  {
     name: "compare",
     aliases: [],
     description: "Compare code against real-world implementations via Grep MCP",

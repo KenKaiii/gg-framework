@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import type { Message, Provider } from "@kenkaiiii/gg-ai";
@@ -182,6 +183,16 @@ export class SessionManager {
 
     if (!header) {
       throw new Error(`Invalid session file: no header found in ${sessionPath}`);
+    }
+
+    // Guard: verify the session's working directory still exists on disk.
+    // This prevents crashes when resuming sessions whose worktree was deleted.
+    if (!existsSync(header.cwd)) {
+      throw new Error(
+        `Worktree directory no longer exists: ${header.cwd}\n` +
+          `The working directory for this session has been removed. ` +
+          `You may need to start a new session or recreate the worktree.`,
+      );
     }
 
     return { header, entries };

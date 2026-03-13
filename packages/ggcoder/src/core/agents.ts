@@ -5,6 +5,8 @@ export interface AgentDefinition {
   name: string;
   description: string;
   tools: string[];
+  model?: string;
+  isolation?: "worktree";
   systemPrompt: string;
   source: "global" | "project";
 }
@@ -80,6 +82,8 @@ export function parseAgentFile(raw: string, source: "global" | "project"): Agent
   let name = "";
   let description = "";
   let tools: string[] = [];
+  let model: string | undefined;
+  let isolation: "worktree" | undefined;
   let systemPrompt = raw;
 
   if (raw.startsWith("---")) {
@@ -101,10 +105,11 @@ export function parseAgentFile(raw: string, source: "global" | "project"): Agent
             .split(",")
             .map((t) => t.trim())
             .filter(Boolean);
-        }
+        } else if (key === "model") model = value;
+        else if (key === "isolation" && value === "worktree") isolation = value;
       }
     }
   }
 
-  return { name, description, tools, systemPrompt, source };
+  return { name, description, tools, model, isolation, systemPrompt, source };
 }

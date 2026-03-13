@@ -81,7 +81,7 @@ function renderToken(token: Token, theme: Theme, key: number, columns: number): 
     case "heading": {
       // h1 = bright + bold, h2 = bold, h3+ = regular weight
       const depth = (token as Tokens.Heading).depth;
-      const color = depth === 1 ? "#93c5fd" : depth === 2 ? theme.primary : theme.secondary;
+      const color = depth === 1 ? theme.primary : depth === 2 ? theme.secondary : theme.accent;
       return (
         <Box key={key} marginTop={gap} flexShrink={1}>
           <Text bold color={color}>
@@ -251,7 +251,7 @@ function renderToken(token: Token, theme: Theme, key: number, columns: number): 
         }
       }
 
-      const borderColor = "white";
+      const borderColor = theme.text;
       const hLine = (left: string, mid: string, right: string) =>
         left + colWidths.map((w) => "━".repeat(w + 2)).join(mid) + right;
 
@@ -375,7 +375,7 @@ function renderInline(tokens: Token[], theme: Theme, parentStyle?: InlineStyle):
 
       case "codespan":
         return (
-          <Text key={i} color="#e2b553">
+          <Text key={i} color={theme.codeSpan}>
             {(token as Tokens.Codespan).text}
           </Text>
         );

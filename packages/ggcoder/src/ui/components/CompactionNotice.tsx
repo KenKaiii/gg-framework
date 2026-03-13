@@ -3,7 +3,7 @@ import { Text, Box } from "ink";
 import { useTheme } from "../theme/theme.js";
 import { SPINNER_FRAMES, SPINNER_INTERVAL } from "../spinner-frames.js";
 
-const ACCENT_COLOR = "#fbbf24"; // warning/amber
+// Accent color derived from theme.warning at render time
 
 function formatTokenCount(n: number): string {
   if (n >= 1000) {
@@ -34,10 +34,10 @@ export function CompactionSpinner() {
         borderRight={false}
         borderTop={false}
         borderBottom={false}
-        borderLeftColor={ACCENT_COLOR}
+        borderLeftColor={theme.warning}
         paddingLeft={1}
       >
-        <Text color={ACCENT_COLOR}>{SPINNER_FRAMES[frame]} </Text>
+        <Text color={theme.warning}>{SPINNER_FRAMES[frame]} </Text>
         <Text color={theme.textMuted} italic>
           Compacting conversation
         </Text>
@@ -73,12 +73,12 @@ export function CompactionDone({
         borderRight={false}
         borderTop={false}
         borderBottom={false}
-        borderLeftColor={ACCENT_COLOR}
+        borderLeftColor={theme.warning}
         paddingLeft={1}
         flexDirection="column"
       >
         <Box>
-          <Text color={ACCENT_COLOR}>{"⟳ "}</Text>
+          <Text color={theme.warning}>{"⟳ "}</Text>
           <Text color={theme.textMuted}>Conversation compacted</Text>
         </Box>
         <Box marginLeft={2}>

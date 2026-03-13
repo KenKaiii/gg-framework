@@ -35,6 +35,12 @@ export interface RenderAppConfig {
   settingsFile?: string;
   mcpManager?: MCPClientManager;
   authStorage?: AuthStorage;
+  worktree?: {
+    path: string;
+    branchName: string;
+    repoRoot: string;
+    name: string;
+  };
 }
 
 export async function renderApp(config: RenderAppConfig): Promise<void> {
@@ -74,6 +80,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
         settingsFile: config.settingsFile,
         mcpManager: config.mcpManager,
         authStorage: config.authStorage,
+        worktree: config.worktree,
       }),
     ),
     {

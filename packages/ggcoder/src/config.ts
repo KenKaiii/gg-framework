@@ -32,7 +32,7 @@ export function getAppPaths(): AppPaths {
 
 export async function ensureAppDirs(): Promise<AppPaths> {
   const paths = getAppPaths();
-  await fs.mkdir(paths.agentDir, { recursive: true });
+  await fs.mkdir(paths.agentDir, { recursive: true, mode: 0o700 });
   await fs.mkdir(paths.sessionsDir, { recursive: true });
   await fs.mkdir(paths.skillsDir, { recursive: true });
   await fs.mkdir(paths.extensionsDir, { recursive: true });

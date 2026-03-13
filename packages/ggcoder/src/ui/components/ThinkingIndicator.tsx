@@ -6,7 +6,7 @@ import { SPINNER_FRAMES, SPINNER_INTERVAL } from "../spinner-frames.js";
 
 // ── Color pulse cycle ─────────────────────────────────────
 
-const PULSE_COLORS = [
+const DARK_PULSE_COLORS = [
   "#60a5fa", // blue
   "#818cf8", // indigo
   "#a78bfa", // violet
@@ -14,6 +14,16 @@ const PULSE_COLORS = [
   "#60a5fa", // blue (back)
   "#38bdf8", // sky
   "#60a5fa", // blue (back)
+];
+
+const LIGHT_PULSE_COLORS = [
+  "#2563eb", // blue
+  "#4f46e5", // indigo
+  "#7c3aed", // violet
+  "#4f46e5", // indigo (back)
+  "#2563eb", // blue (back)
+  "#0284c7", // sky
+  "#2563eb", // blue (back)
 ];
 const PULSE_INTERVAL = 400;
 
@@ -158,10 +168,11 @@ export function ThinkingIndicator({ userMessage = "" }: ThinkingIndicatorProps) 
   }, []);
 
   // Color pulse
+  const pulseColors = theme.name === "light" ? LIGHT_PULSE_COLORS : DARK_PULSE_COLORS;
   const [colorFrame, setColorFrame] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => {
-      setColorFrame((f) => (f + 1) % PULSE_COLORS.length);
+      setColorFrame((f) => (f + 1) % pulseColors.length);
     }, PULSE_INTERVAL);
     return () => clearInterval(timer);
   }, []);
@@ -186,7 +197,7 @@ export function ThinkingIndicator({ userMessage = "" }: ThinkingIndicatorProps) 
     return () => clearInterval(timer);
   }, [phrases]);
 
-  const spinnerColor = PULSE_COLORS[colorFrame];
+  const spinnerColor = pulseColors[colorFrame];
   const phrase = phrases[phraseIndex];
   const ellipsis = ELLIPSIS_FRAMES[ellipsisFrame];
   // Pad ellipsis to prevent text from shifting

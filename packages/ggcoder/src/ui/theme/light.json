@@ -4,10 +4,10 @@
   "secondary": "#7c3aed",
   "success": "#16a34a",
   "error": "#dc2626",
-  "warning": "#d97706",
+  "warning": "#b45309",
   "text": "#1f2937",
-  "textDim": "#9ca3af",
-  "textMuted": "#6b7280",
+  "textDim": "#4b5563",
+  "textMuted": "#374151",
   "border": "#d1d5db",
   "background": "",
   "accent": "#4f46e5",
@@ -16,9 +16,10 @@
   "toolError": "#dc2626",
   "diffAdded": "#16a34a",
   "diffRemoved": "#dc2626",
-  "diffContext": "#9ca3af",
+  "diffContext": "#6b7280",
   "spinnerColor": "#2563eb",
   "inputPrompt": "#2563eb",
-  "footerText": "#9ca3af",
-  "commandColor": "#4f46e5"
+  "footerText": "#6b7280",
+  "commandColor": "#4f46e5",
+  "codeSpan": "#9a3412"
 }

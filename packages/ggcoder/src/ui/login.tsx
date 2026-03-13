@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import type { Provider } from "@kenkaiiii/gg-ai";
+import type { ProviderStatus } from "../core/oauth/types.js";
 
 const LOGO_LINES = [" ▄▀▀▀ ▄▀▀▀", " █ ▀█ █ ▀█", " ▀▄▄▀ ▀▄▄▀"];
 const GRADIENT = ["#60a5fa", "#6da1f9", "#7a9df7", "#8799f5", "#9495f3", "#a18ff1", "#a78bfa"];
@@ -31,7 +32,7 @@ function gradientLine(text: string): string {
   return result;
 }
 
-function renderScreen(selectedIndex: number): string {
+function renderScreen(selectedIndex: number, providerStatuses?: ProviderStatus[]): string {
   const lines: string[] = [];
 
   lines.push(gradientLine(LOGO_LINES[0]) + GAP + chalk.hex(PRIMARY).bold("Login"));
@@ -39,13 +40,29 @@ function renderScreen(selectedIndex: number): string {
   lines.push(gradientLine(LOGO_LINES[2]));
   lines.push("");
 
+  if (providerStatuses && providerStatuses.length > 0) {
+    for (const ps of providerStatuses) {
+      const icon = ps.connected ? chalk.hex("#4ade80")("✓") : chalk.hex("#ef4444")("✗");
+      const label = ps.provider.padEnd(10);
+      const detail = ps.connected
+        ? chalk.hex(TEXT_DIM)(ps.source ?? "connected")
+        : chalk.hex(TEXT_DIM)("not connected");
+      lines.push(`  ${icon} ${chalk.hex(TEXT)(label)} ${detail}`);
+    }
+    lines.push("");
+  }
+
   for (let i = 0; i < PROVIDERS.length; i++) {
     const item = PROVIDERS[i];
     const selected = i === selectedIndex;
     const marker = selected ? "❯ " : "  ";
     const labelColor = selected ? PRIMARY : TEXT;
+    const isConnected = providerStatuses?.find((ps) => ps.provider === item.value)?.connected;
+    const reconnectTag = isConnected ? chalk.hex(TEXT_DIM)(" (reconnect)") : "";
     lines.push(
-      chalk.hex(labelColor)(marker + item.label) + chalk.hex(TEXT_DIM)(` — ${item.description}`),
+      chalk.hex(labelColor)(marker + item.label) +
+        reconnectTag +
+        chalk.hex(TEXT_DIM)(` — ${item.description}`),
     );
   }
 
@@ -55,13 +72,13 @@ function renderScreen(selectedIndex: number): string {
   return lines.join("\n");
 }
 
-export function renderLoginSelector(): Promise<Provider | null> {
+export function renderLoginSelector(providerStatuses?: ProviderStatus[]): Promise<Provider | null> {
   return new Promise((resolve) => {
     let selectedIndex = 0;
 
     const draw = () => {
       // Restore saved cursor position, clear everything below, then draw
-      process.stdout.write("\x1b[u\x1b[J" + renderScreen(selectedIndex) + "\n");
+      process.stdout.write("\x1b[u\x1b[J" + renderScreen(selectedIndex, providerStatuses) + "\n");
     };
 
     // Save cursor position, then draw
