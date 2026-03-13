@@ -49,7 +49,10 @@ export function ThinkingBlock({
       ? `Thought for ${durationLabel}`
       : "Thought";
 
-  const showContent = streaming || !collapsed;
+  // Never show content while streaming — it causes scroll fighting in the
+  // live area because every reveal tick re-renders a growing block.  The full
+  // text is available once the block moves to Static history (collapsed).
+  const showContent = !streaming && !collapsed;
   const chevron = showContent ? " ▼" : " ▶";
 
   return (

@@ -12,7 +12,8 @@ import {
 
 export function streamOpenAI(options: StreamOptions): StreamResult {
   const result = new StreamResult();
-  runStream(options, result).catch((err) => result.abort(toError(err)));
+  const providerName = options.provider ?? "openai";
+  runStream(options, result).catch((err) => result.abort(toError(err, providerName)));
   return result;
 }
 
@@ -189,7 +190,7 @@ async function runStream(options: StreamOptions, result: StreamResult): Promise<
   result.complete(response);
 }
 
-function toError(err: unknown): ProviderError {
+function toError(err: unknown, provider: string = "openai"): ProviderError {
   if (err instanceof OpenAI.APIError) {
     // Include full error body for debugging — GLM/Moonshot use non-standard error shapes
     let msg = err.message;
@@ -198,13 +199,13 @@ function toError(err: unknown): ProviderError {
       // Append raw error body so debug logs capture the exact API response
       msg += ` | body: ${JSON.stringify(body)}`;
     }
-    return new ProviderError("openai", msg, {
+    return new ProviderError(provider, msg, {
       statusCode: err.status,
       cause: err,
     });
   }
   if (err instanceof Error) {
-    return new ProviderError("openai", err.message, { cause: err });
+    return new ProviderError(provider, err.message, { cause: err });
   }
-  return new ProviderError("openai", String(err));
+  return new ProviderError(provider, String(err));
 }

@@ -1,6 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
+import sharp from "sharp";
+
+/** Anthropic's maximum image size in bytes (5 MB). */
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
 const TEXT_EXTENSIONS = new Set([".md", ".txt"]);
@@ -122,6 +126,64 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+/**
+ * Downscale an image buffer so it fits within MAX_IMAGE_BYTES.
+ * Preserves format (PNG→PNG, JPEG→JPEG, etc.) and aspect ratio.
+ * Progressively reduces dimensions by 25% until under the limit.
+ */
+async function shrinkToFit(
+  buffer: Buffer,
+  mediaType: string,
+): Promise<{ buffer: Buffer; mediaType: string }> {
+  if (buffer.length <= MAX_IMAGE_BYTES) return { buffer, mediaType };
+
+  let img = sharp(buffer);
+  const meta = await img.metadata();
+  let width = meta.width ?? 4096;
+  let height = meta.height ?? 4096;
+
+  // Determine output format from mediaType
+  const formatMap: Record<string, keyof sharp.FormatEnum> = {
+    "image/png": "png",
+    "image/jpeg": "jpeg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/bmp": "png", // convert BMP to PNG (sharp doesn't output BMP)
+  };
+  let outFormat = formatMap[mediaType] ?? "png";
+  let outMediaType = mediaType === "image/bmp" ? "image/png" : mediaType;
+
+  // Try progressively smaller sizes (75% each step)
+  for (let attempt = 0; attempt < 10; attempt++) {
+    width = Math.round(width * 0.75);
+    height = Math.round(height * 0.75);
+    if (width < 1 || height < 1) break;
+
+    img = sharp(buffer).resize(width, height, { fit: "inside", withoutEnlargement: true });
+    const result = await img.toFormat(outFormat).toBuffer();
+
+    if (result.length <= MAX_IMAGE_BYTES) {
+      return { buffer: result, mediaType: outMediaType };
+    }
+
+    // If PNG is still too big after 3 attempts, switch to JPEG for better compression
+    if (attempt === 2 && outFormat === "png") {
+      outFormat = "jpeg";
+      outMediaType = "image/jpeg";
+    }
+  }
+
+  // Last resort: aggressive JPEG compression at small size
+  const result = await sharp(buffer)
+    .resize(Math.round(width * 0.5), Math.round(height * 0.5), {
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: 60 })
+    .toBuffer();
+  return { buffer: result, mediaType: "image/jpeg" };
+}
+
 /** Read a file and return an attachment (base64 for images, raw text for text files). */
 export async function readImageFile(filePath: string): Promise<ImageAttachment> {
   const ext = path.extname(filePath).toLowerCase();
@@ -137,8 +199,12 @@ export async function readImageFile(filePath: string): Promise<ImageAttachment> 
     };
   }
 
-  const mediaType = MEDIA_TYPES[ext] ?? "image/png";
-  const buffer = await fs.readFile(filePath);
+  let mediaType = MEDIA_TYPES[ext] ?? "image/png";
+  const rawBuffer = await fs.readFile(filePath);
+
+  const { buffer, mediaType: finalMediaType } = await shrinkToFit(rawBuffer, mediaType);
+  mediaType = finalMediaType;
+
   const data = buffer.toString("base64");
   return {
     kind: "image",
@@ -186,14 +252,18 @@ export function getClipboardImage(): Promise<ImageAttachment | null> {
           return;
         }
         try {
-          const buffer = await fs.readFile(tmpPath);
+          const rawBuffer = await fs.readFile(tmpPath);
           await fs.unlink(tmpPath).catch(() => {});
+          const { buffer: finalBuffer, mediaType: finalMediaType } = await shrinkToFit(
+            rawBuffer,
+            mediaType,
+          );
           resolve({
             kind: "image",
             fileName: `clipboard.${ext}`,
             filePath: tmpPath,
-            mediaType,
-            data: buffer.toString("base64"),
+            mediaType: finalMediaType,
+            data: finalBuffer.toString("base64"),
           });
         } catch {
           resolve(null);

@@ -42,12 +42,7 @@ import { loadCustomCommands, type CustomCommand } from "../core/custom-commands.
 import type { MCPClientManager } from "../core/mcp/index.js";
 import { getMCPServers } from "../core/mcp/index.js";
 import type { AuthStorage } from "../core/auth-storage.js";
-import {
-  pruneHistory,
-  trimFlushedItems,
-  flushOnTurnText,
-  flushOnTurnEnd,
-} from "./live-item-flush.js";
+import { trimFlushedItems, flushOnTurnText, flushOnTurnEnd } from "./live-item-flush.js";
 
 // ── Provider Error Hints ──────────────────────────────────
 
@@ -83,6 +78,13 @@ function getProviderErrorHint(message: string): string | null {
   }
   if (lower.includes("500") && lower.includes("internal server error")) {
     return "The provider experienced an internal error. This is not a ggcoder issue.";
+  }
+  if (
+    lower.includes("does not recognize the requested model") ||
+    (lower.includes("model") &&
+      (lower.includes("not exist") || lower.includes("not found") || lower.includes("no access")))
+  ) {
+    return "Use /model to switch to a different model, or check that your account has access to the requested model.";
   }
   return null;
 }
@@ -210,8 +212,7 @@ export type CompletedItem =
   | BannerItem
   | SubAgentGroupItem;
 
-// pruneHistory, flushOnTurnText, flushOnTurnEnd, MAX_HISTORY_ITEMS
-// are imported from ./live-item-flush.ts
+// flushOnTurnText, flushOnTurnEnd are imported from ./live-item-flush.ts
 
 // ── Duration summary ─────────────────────────────────────
 
@@ -389,7 +390,7 @@ export function App(props: AppProps) {
   useEffect(() => {
     if (isRestoredSession && !restoredRef.current) {
       restoredRef.current = true;
-      setHistory((prev) => pruneHistory([...prev, ...trimFlushedItems(props.initialHistory!)]));
+      setHistory((prev) => [...prev, ...trimFlushedItems(props.initialHistory!)]);
     }
   }, [isRestoredSession, props.initialHistory]);
   // Items from the current/last turn — rendered in the live area so they stay visible
@@ -668,7 +669,7 @@ export function App(props: AppProps) {
         setLiveItems((prev) => {
           const flushed = flushOnTurnText(prev);
           if (flushed.length > 0) {
-            setHistory((h) => pruneHistory([...h, ...trimFlushedItems(flushed)]));
+            setHistory((h) => [...h, ...trimFlushedItems(flushed)]);
           }
           return [{ kind: "assistant", text, thinking, thinkingMs, id: getId() }];
         });
@@ -871,7 +872,7 @@ export function App(props: AppProps) {
           setLiveItems((prev) => {
             const { flushed, remaining } = flushOnTurnEnd(prev, stopReason);
             if (flushed.length > 0) {
-              setHistory((h) => pruneHistory([...h, ...trimFlushedItems(flushed)]));
+              setHistory((h) => [...h, ...trimFlushedItems(flushed)]);
             }
             return remaining;
           });
@@ -938,7 +939,7 @@ export function App(props: AppProps) {
     if (pendingFlushRef.current.length > 0) {
       const items = pendingFlushRef.current;
       pendingFlushRef.current = [];
-      setHistory((h) => pruneHistory([...h, ...trimFlushedItems(items)]));
+      setHistory((h) => [...h, ...trimFlushedItems(items)]);
     }
   });
 
@@ -1037,7 +1038,7 @@ export function App(props: AppProps) {
           // Move live items into history before starting
           setLiveItems((prev) => {
             if (prev.length > 0) {
-              setHistory((h) => pruneHistory([...h, ...trimFlushedItems(prev)]));
+              setHistory((h) => [...h, ...trimFlushedItems(prev)]);
             }
             return [];
           });
@@ -1083,7 +1084,7 @@ export function App(props: AppProps) {
       // Move any remaining live items into history (Static) before starting new turn
       setLiveItems((prev) => {
         if (prev.length > 0) {
-          setHistory((h) => pruneHistory([...h, ...trimFlushedItems(prev)]));
+          setHistory((h) => [...h, ...trimFlushedItems(prev)]);
         }
         return [];
       });

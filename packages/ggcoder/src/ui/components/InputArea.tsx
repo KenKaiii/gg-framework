@@ -125,14 +125,19 @@ export function InputArea({
     return () => clearInterval(timer);
   }, [disabled, borderPulseColors]);
 
-  // Cursor blink — always active so user can type while agent is busy
+  // Cursor blink — only tick while the input is active to avoid
+  // unnecessary Ink re-renders when the CLI sits idle for hours.
   const [cursorVisible, setCursorVisible] = useState(true);
   useEffect(() => {
+    if (!isActive) {
+      setCursorVisible(true);
+      return;
+    }
     const timer = setInterval(() => {
       setCursorVisible((v) => !v);
     }, 530);
     return () => clearInterval(timer);
-  }, []);
+  }, [isActive]);
 
   // Auto-detect image paths as they're pasted/typed — debounce so full paste arrives
   const extractingRef = useRef(false);

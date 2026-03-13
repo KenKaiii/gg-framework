@@ -312,7 +312,19 @@ export class AgentSession {
     });
 
     this.messages = result.messages;
-    this.lastPersistedIndex = 0; // Re-persist all after compaction
+
+    // Persist compacted messages to a new session file so `ggcoder continue`
+    // picks up the compacted state instead of the full original history.
+    const session = await this.sessionManager.create(this.cwd, this.provider, this.model);
+    this.sessionId = session.id;
+    this.sessionPath = session.path;
+
+    // Write compacted messages (skip system — it's rebuilt on load)
+    for (const msg of this.messages) {
+      if (msg.role === "system") continue;
+      await this.persistMessage(msg);
+    }
+    this.lastPersistedIndex = this.messages.length;
 
     this.eventBus.emit("compaction_end", {
       originalCount: result.result.originalCount,

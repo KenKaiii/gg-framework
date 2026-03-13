@@ -69,6 +69,22 @@ export function formatUserError(err: unknown): string {
     return chalk.red(`Cannot reach ${name} API. Check your internet connection.`);
   }
 
+  // Model not found (404) — provider says the model doesn't exist or account lacks access
+  if (
+    statusCode === 404 ||
+    lowerMsg.includes("model_not_found") ||
+    lowerMsg.includes("does not exist") ||
+    /model.*not.*exist/.test(lowerMsg) ||
+    /not have access.*model/.test(lowerMsg)
+  ) {
+    const name = displayProvider(provider);
+    const modelMatch = message.match(/model[:\s]+["']?([^\s"',)]+)/i);
+    const modelHint = modelMatch ? ` (${modelMatch[1]})` : "";
+    return chalk.red(
+      `${name} does not recognize the requested model${modelHint}. It may not exist or your account may not have access. Check the model name and your account permissions.`,
+    );
+  }
+
   // Bad request (400)
   if (statusCode === 400) {
     const name = displayProvider(provider);
@@ -129,8 +145,12 @@ function displayProvider(provider: string | undefined): string {
       return "Anthropic";
     case "openai":
       return "OpenAI";
+    case "glm":
+      return "Z.AI (GLM)";
+    case "moonshot":
+      return "Moonshot";
     default:
-      return "the provider";
+      return "The provider";
   }
 }
 
