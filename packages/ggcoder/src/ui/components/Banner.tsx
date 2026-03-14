@@ -10,6 +10,7 @@ interface BannerProps {
   provider: Provider;
   cwd: string;
   taskCount?: number;
+  planMode?: string | null;
 }
 
 const LOGO_LINES = [
@@ -36,7 +37,7 @@ const GRADIENT = [
 
 const GAP = "   ";
 
-export function Banner({ version, model, cwd, taskCount }: BannerProps) {
+export function Banner({ version, model, cwd, taskCount, planMode }: BannerProps) {
   const theme = useTheme();
   const modelInfo = getModel(model);
   const modelName = modelInfo?.name ?? model;
@@ -67,6 +68,16 @@ export function Banner({ version, model, cwd, taskCount }: BannerProps) {
         <GradientText text={LOGO_LINES[1]} shift={shift} />
         <Text>{GAP}</Text>
         <Text color={theme.secondary}>{modelName}</Text>
+        {planMode && (
+          <>
+            <Text color={theme.textDim}>{"  "}</Text>
+            <Text color={theme.warning} bold>
+              Plan
+            </Text>
+            <Text color={theme.textDim}>{" · "}</Text>
+            <Text color={theme.warning}>{planMode}</Text>
+          </>
+        )}
         <Text color={theme.textDim}>{"  "}</Text>
         <Text color={theme.primary}>Shift+`</Text>
         <Text color={theme.textDim}> tasks</Text>
