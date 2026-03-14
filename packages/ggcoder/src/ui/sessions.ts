@@ -2,13 +2,32 @@ import chalk from "chalk";
 import { readFile } from "node:fs/promises";
 import { SessionManager, type SessionInfo } from "../core/session-manager.js";
 
-const LOGO_LINES = [" ▄▀▀▀ ▄▀▀▀", " █ ▀█ █ ▀█", " ▀▄▄▀ ▀▄▄▀"];
-const GRADIENT = ["#a78bfa", "#9b8af6", "#8f89f1", "#8388ec", "#7787e7", "#6b86e2", "#60a5fa"];
+const LOGO_LINES = [
+  " \u2584\u2580\u2580\u2580 \u2584\u2580\u2580\u2580",
+  " \u2588 \u2580\u2588 \u2588 \u2580\u2588",
+  " \u2580\u2584\u2584\u2580 \u2580\u2584\u2584\u2580",
+];
+const GRADIENT = [
+  "#60a5fa",
+  "#6da1f9",
+  "#7a9df7",
+  "#8799f5",
+  "#9495f3",
+  "#a18ff1",
+  "#a78bfa",
+  "#a18ff1",
+  "#9495f3",
+  "#8799f5",
+  "#7a9df7",
+  "#6da1f9",
+];
 const GAP = "   ";
 
 const PRIMARY = "#a78bfa";
 const TEXT = "#e2e8f0";
 const TEXT_DIM = "#64748b";
+
+let _version = "";
 
 const MAX_PROMPT_LEN = 40;
 
@@ -91,11 +110,18 @@ async function extractFirstPrompt(sessionPath: string): Promise<string> {
 function renderScreen(sessions: SessionDisplay[], selectedIndex: number): string {
   const lines: string[] = [];
 
-  lines.push(gradientLine(LOGO_LINES[0]!) + GAP + chalk.hex(PRIMARY).bold("Sessions"));
   lines.push(
-    gradientLine(LOGO_LINES[1]!) + GAP + chalk.hex(TEXT_DIM)("Select a session to resume"),
+    gradientLine(LOGO_LINES[0]!) +
+      GAP +
+      chalk.hex("#60a5fa").bold("GG Coder") +
+      (_version ? chalk.hex(TEXT_DIM)(` v${_version}`) : "") +
+      chalk.hex(TEXT_DIM)(" · By ") +
+      chalk.hex(TEXT).bold("Ken Kai"),
   );
-  lines.push(gradientLine(LOGO_LINES[2]!));
+  lines.push(gradientLine(LOGO_LINES[1]!) + GAP + chalk.hex(PRIMARY)("Sessions"));
+  lines.push(
+    gradientLine(LOGO_LINES[2]!) + GAP + chalk.hex(TEXT_DIM)("Select a session to resume"),
+  );
   lines.push("");
 
   if (sessions.length === 0) {
@@ -123,7 +149,9 @@ function renderScreen(sessions: SessionDisplay[], selectedIndex: number): string
 export async function renderSessionSelector(
   sessionsDir: string,
   cwd: string,
+  version?: string,
 ): Promise<string | null> {
+  _version = version ?? "";
   const manager = new SessionManager(sessionsDir);
   const allSessions = await manager.list(cwd);
   const top5 = allSessions.slice(0, 5);

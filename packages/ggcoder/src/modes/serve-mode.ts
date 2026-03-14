@@ -14,6 +14,7 @@ export interface ServeModeOptions {
   provider: Provider;
   model: string;
   cwd: string;
+  version: string;
   thinkingLevel?: ThinkingLevel;
   telegram: {
     botToken: string;
@@ -199,9 +200,18 @@ export async function runServeMode(options: ServeModeOptions): Promise<void> {
       if (tool) {
         const icon = isError ? "✗" : "✓";
         const argsStr = formatArgs(tool.args);
-        bot
-          .send(chatId, `${icon} \`${tool.name}\` ${argsStr}  _${formatDuration(durationMs)}_`)
-          .catch(() => {});
+        const msg = `${icon} \`${tool.name}\` ${argsStr}  _${formatDuration(durationMs)}_`;
+        bot.send(chatId, msg).catch((err) => {
+          log(
+            "WARN",
+            "telegram",
+            `Failed to send tool message for ${tool.name}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          // Retry without markdown formatting
+          bot
+            .sendPlain(chatId, `${icon} ${tool.name} ${argsStr} ${formatDuration(durationMs)}`)
+            .catch(() => {});
+        });
       }
     });
 
@@ -235,7 +245,13 @@ export async function runServeMode(options: ServeModeOptions): Promise<void> {
     });
 
     session.eventBus.on("compaction_end", ({ originalCount, newCount }) => {
-      bot.send(chatId, `✓ *Compacted* — ${originalCount} → ${newCount} messages`).catch(() => {});
+      bot.send(chatId, `✓ *Compacted* — ${originalCount} → ${newCount} messages`).catch((err) => {
+        log(
+          "WARN",
+          "telegram",
+          `Failed to send compaction message: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
     });
   }
 
@@ -415,6 +431,10 @@ export async function runServeMode(options: ServeModeOptions): Promise<void> {
       const state = chatStates.get(chatId);
       if (state?.isProcessing) {
         state.ac.abort();
+        // Replace AbortController so the session's next prompt gets a fresh signal
+        const newAc = new AbortController();
+        state.ac = newAc;
+        state.session.setSignal(newAc.signal);
         await bot.send(chatId, "Cancelled.");
       } else {
         await bot.send(chatId, "_Nothing to cancel._");
@@ -595,9 +615,26 @@ export async function runServeMode(options: ServeModeOptions): Promise<void> {
     const displayPath =
       home && options.cwd.startsWith(home) ? "~" + options.cwd.slice(home.length) : options.cwd;
 
-    // GG logo with gradient
-    const LOGO = [" ▄▀▀▀ ▄▀▀▀", " █ ▀█ █ ▀█", " ▀▄▄▀ ▀▄▄▀"];
-    const GRADIENT = ["#60a5fa", "#7a9df7", "#9495f3", "#a78bfa"];
+    // GG logo with gradient (matches Banner.tsx)
+    const LOGO = [
+      " \u2584\u2580\u2580\u2580 \u2584\u2580\u2580\u2580",
+      " \u2588 \u2580\u2588 \u2588 \u2580\u2588",
+      " \u2580\u2584\u2584\u2580 \u2580\u2584\u2584\u2580",
+    ];
+    const GRADIENT = [
+      "#60a5fa",
+      "#6da1f9",
+      "#7a9df7",
+      "#8799f5",
+      "#9495f3",
+      "#a18ff1",
+      "#a78bfa",
+      "#a18ff1",
+      "#9495f3",
+      "#8799f5",
+      "#7a9df7",
+      "#6da1f9",
+    ];
 
     function gradientText(text: string): string {
       let colorIdx = 0;
@@ -616,13 +653,17 @@ export async function runServeMode(options: ServeModeOptions): Promise<void> {
     console.log(
       `  ${gradientText(LOGO[0]!)}${GAP}` +
         chalk.hex("#60a5fa").bold("GG Coder") +
-        chalk.hex("#6b7280")(" · serve"),
+        chalk.hex("#6b7280")(` v${options.version}`) +
+        chalk.hex("#6b7280")(" · By ") +
+        chalk.white.bold("Ken Kai"),
     );
     console.log(`  ${gradientText(LOGO[1]!)}${GAP}` + chalk.hex("#a78bfa")(modelName));
     console.log(`  ${gradientText(LOGO[2]!)}${GAP}` + chalk.hex("#6b7280")(displayPath));
     console.log();
     console.log(
-      chalk.hex("#6b7280")("  User      ") +
+      chalk.hex("#6b7280")("  Mode      ") +
+        chalk.hex("#a78bfa")("Telegram") +
+        chalk.hex("#6b7280")("  ·  User ") +
         chalk.white(String(options.telegram.userId)) +
         (linkedCount > 0 ? chalk.hex("#6b7280")(`  ·  ${linkedCount} linked chat(s)`) : ""),
     );
@@ -675,7 +716,9 @@ function formatArgs(args: Record<string, unknown>): string {
   const [_key, value] = entries[0]!;
   const str = typeof value === "string" ? value : JSON.stringify(value);
   const truncated = str.length > 60 ? str.slice(0, 57) + "..." : str;
-  return `\`${truncated}\``;
+  // Strip backticks to avoid breaking Telegram markdown code spans
+  const safe = truncated.replace(/`/g, "'");
+  return `\`${safe}\``;
 }
 
 function formatDuration(ms: number): string {

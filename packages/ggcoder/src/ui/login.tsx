@@ -1,13 +1,32 @@
 import chalk from "chalk";
 import type { Provider } from "@kenkaiiii/gg-ai";
 
-const LOGO_LINES = [" ▄▀▀▀ ▄▀▀▀", " █ ▀█ █ ▀█", " ▀▄▄▀ ▀▄▄▀"];
-const GRADIENT = ["#60a5fa", "#6da1f9", "#7a9df7", "#8799f5", "#9495f3", "#a18ff1", "#a78bfa"];
+const LOGO_LINES = [
+  " \u2584\u2580\u2580\u2580 \u2584\u2580\u2580\u2580",
+  " \u2588 \u2580\u2588 \u2588 \u2580\u2588",
+  " \u2580\u2584\u2584\u2580 \u2580\u2584\u2584\u2580",
+];
+const GRADIENT = [
+  "#60a5fa",
+  "#6da1f9",
+  "#7a9df7",
+  "#8799f5",
+  "#9495f3",
+  "#a18ff1",
+  "#a78bfa",
+  "#a18ff1",
+  "#9495f3",
+  "#8799f5",
+  "#7a9df7",
+  "#6da1f9",
+];
 const GAP = "   ";
 
 const PRIMARY = "#60a5fa";
 const TEXT = "#e2e8f0";
 const TEXT_DIM = "#64748b";
+
+let _version = "";
 
 const PROVIDERS: { label: string; value: Provider; description: string }[] = [
   { label: "Anthropic", value: "anthropic", description: "Claude Opus, Sonnet, Haiku" },
@@ -34,9 +53,16 @@ function gradientLine(text: string): string {
 function renderScreen(selectedIndex: number): string {
   const lines: string[] = [];
 
-  lines.push(gradientLine(LOGO_LINES[0]) + GAP + chalk.hex(PRIMARY).bold("Login"));
-  lines.push(gradientLine(LOGO_LINES[1]) + GAP + chalk.hex(TEXT_DIM)("Select a provider"));
-  lines.push(gradientLine(LOGO_LINES[2]));
+  lines.push(
+    gradientLine(LOGO_LINES[0]!) +
+      GAP +
+      chalk.hex(PRIMARY).bold("GG Coder") +
+      (_version ? chalk.hex(TEXT_DIM)(` v${_version}`) : "") +
+      chalk.hex(TEXT_DIM)(" · By ") +
+      chalk.hex(TEXT).bold("Ken Kai"),
+  );
+  lines.push(gradientLine(LOGO_LINES[1]!) + GAP + chalk.hex("#a78bfa")("Login"));
+  lines.push(gradientLine(LOGO_LINES[2]!) + GAP + chalk.hex(TEXT_DIM)("Select a provider"));
   lines.push("");
 
   for (let i = 0; i < PROVIDERS.length; i++) {
@@ -55,7 +81,8 @@ function renderScreen(selectedIndex: number): string {
   return lines.join("\n");
 }
 
-export function renderLoginSelector(): Promise<Provider | null> {
+export function renderLoginSelector(version?: string): Promise<Provider | null> {
+  _version = version ?? "";
   return new Promise((resolve) => {
     let selectedIndex = 0;
 

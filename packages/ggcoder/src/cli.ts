@@ -396,7 +396,7 @@ async function runLogin(): Promise<void> {
   await authStorage.load();
 
   // Phase 1: Ink-based provider selector
-  const provider = await renderLoginSelector();
+  const provider = await renderLoginSelector(CLI_VERSION);
   if (!provider) {
     console.log(chalk.hex("#6b7280")("Login cancelled."));
     return;
@@ -481,7 +481,7 @@ async function runSessions(): Promise<void> {
   log("INFO", "session", "Sessions selector started");
 
   const cwd = process.cwd();
-  const selectedPath = await renderSessionSelector(paths.sessionsDir, cwd);
+  const selectedPath = await renderSessionSelector(paths.sessionsDir, cwd, CLI_VERSION);
 
   if (!selectedPath) {
     console.log(chalk.hex("#6b7280")("No session selected."));
@@ -563,7 +563,49 @@ async function runTelegramSetup(): Promise<void> {
 
   const existing = await loadTelegramConfig();
 
-  console.log(chalk.hex("#60a5fa").bold("\n  Telegram Remote Control Setup\n"));
+  // Banner (matches Banner.tsx)
+  const LOGO = [
+    " \u2584\u2580\u2580\u2580 \u2584\u2580\u2580\u2580",
+    " \u2588 \u2580\u2588 \u2588 \u2580\u2588",
+    " \u2580\u2584\u2584\u2580 \u2580\u2584\u2584\u2580",
+  ];
+  const GRADIENT = [
+    "#60a5fa",
+    "#6da1f9",
+    "#7a9df7",
+    "#8799f5",
+    "#9495f3",
+    "#a18ff1",
+    "#a78bfa",
+    "#a18ff1",
+    "#9495f3",
+    "#8799f5",
+    "#7a9df7",
+    "#6da1f9",
+  ];
+  function gradientText(text: string): string {
+    let colorIdx = 0;
+    return text
+      .split("")
+      .map((ch) => {
+        if (ch === " ") return ch;
+        const color = GRADIENT[colorIdx++ % GRADIENT.length]!;
+        return chalk.hex(color)(ch);
+      })
+      .join("");
+  }
+  const GAP = "   ";
+  console.log();
+  console.log(
+    `  ${gradientText(LOGO[0]!)}${GAP}` +
+      chalk.hex("#60a5fa").bold("GG Coder") +
+      chalk.hex("#6b7280")(` v${CLI_VERSION}`) +
+      chalk.hex("#6b7280")(" · By ") +
+      chalk.white.bold("Ken Kai"),
+  );
+  console.log(`  ${gradientText(LOGO[1]!)}${GAP}` + chalk.hex("#a78bfa")("Telegram Setup"));
+  console.log(`  ${gradientText(LOGO[2]!)}${GAP}` + chalk.hex("#6b7280")("Remote Control"));
+  console.log();
 
   if (existing) {
     console.log(
@@ -741,6 +783,7 @@ async function runServe(): Promise<void> {
     provider,
     model,
     cwd: process.cwd(),
+    version: CLI_VERSION,
     thinkingLevel,
     telegram: { botToken, userId },
   });

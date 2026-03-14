@@ -20,6 +20,7 @@ import { createTools, type ProcessManager } from "../tools/index.js";
 import { MCPClientManager, getMCPServers } from "./mcp/index.js";
 import { log } from "./logger.js";
 import { setEstimatorModel } from "./compaction/token-estimator.js";
+import { discoverAgents } from "./agents.js";
 import crypto from "node:crypto";
 
 // ── Options ────────────────────────────────────────────────
@@ -118,8 +119,16 @@ export class AgentSession {
     const basePrompt = this.customSystemPrompt ?? (await buildSystemPrompt(this.cwd, this.skills));
     this.messages = [{ role: "system", content: basePrompt }];
 
-    // Create tools
-    const { tools, processManager } = createTools(this.cwd);
+    // Discover agents and create tools (with sub-agent support)
+    const agents = await discoverAgents({
+      globalAgentsDir: paths.agentsDir,
+      projectDir: this.cwd,
+    });
+    const { tools, processManager } = createTools(this.cwd, {
+      agents,
+      provider: this.provider,
+      model: this.model,
+    });
     this.tools = tools;
     this.processManager = processManager;
 
@@ -414,6 +423,11 @@ export class AgentSession {
 
   getMessages(): Message[] {
     return this.messages;
+  }
+
+  /** Replace the abort signal (e.g. after cancellation). */
+  setSignal(signal: AbortSignal): void {
+    this.opts = { ...this.opts, signal };
   }
 
   async dispose(): Promise<void> {

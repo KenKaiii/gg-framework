@@ -136,6 +136,17 @@ export class TelegramBot {
     }
   }
 
+  /** Send a plain text message (no markdown parsing) to a specific chat. */
+  async sendPlain(chatId: number, text: string): Promise<void> {
+    const chunks = splitMessage(text);
+    for (const chunk of chunks) {
+      await this.apiCall("sendMessage", {
+        chat_id: chatId,
+        text: chunk,
+      });
+    }
+  }
+
   /** Send a typing indicator to a specific chat. */
   async sendTyping(chatId: number): Promise<void> {
     await this.apiCall("sendChatAction", {
