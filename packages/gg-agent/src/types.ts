@@ -102,6 +102,11 @@ export interface AgentServerToolResultEvent {
   data: unknown;
 }
 
+export interface AgentSteeringMessageEvent {
+  type: "steering_message";
+  content: Message["content"];
+}
+
 export type AgentEvent =
   | AgentTextDeltaEvent
   | AgentThinkingDeltaEvent
@@ -110,6 +115,7 @@ export type AgentEvent =
   | AgentToolCallEndEvent
   | AgentServerToolCallEvent
   | AgentServerToolResultEvent
+  | AgentSteeringMessageEvent
   | AgentTurnEndEvent
   | AgentDoneEvent
   | AgentErrorEvent;
@@ -150,6 +156,13 @@ export interface AgentOptions {
     messages: Message[],
     options?: { force?: boolean },
   ) => Message[] | Promise<Message[]>;
+  /**
+   * Polled after tool execution completes each turn. Returns user messages
+   * to inject into the conversation before the next LLM call (steering).
+   * Return null/empty to inject nothing. Messages are consumed (cleared)
+   * on read.
+   */
+  getSteeringMessages?: () => Promise<Message[] | null> | Message[] | null;
 }
 
 // ── Agent Result ────────────────────────────────────────────

@@ -249,10 +249,22 @@ export async function* agentLoop(
       // Extract tool calls — separate client-executed from provider built-in (e.g. Moonshot $web_search)
       const allToolCalls = extractToolCalls(response.message.content);
 
-      // If no tool calls to execute, we're done.
+      // If no tool calls to execute, check for steering messages before stopping.
       // Check content (not just stopReason) because some providers (e.g. GLM)
       // return finish_reason="stop" even when tool calls are present.
       if (response.stopReason !== "tool_use" && allToolCalls.length === 0) {
+        // Check for queued steering messages — if present, inject and continue
+        // the loop instead of returning (follow-up pattern).
+        if (options.getSteeringMessages) {
+          const steering = await options.getSteeringMessages();
+          if (steering && steering.length > 0) {
+            for (const msg of steering) {
+              yield { type: "steering_message" as const, content: msg.content };
+              messages.push(msg);
+            }
+            continue; // Next iteration will call LLM with injected messages
+          }
+        }
         yield {
           type: "agent_done" as const,
           totalTurns: turn,
@@ -408,6 +420,18 @@ export async function* agentLoop(
 
       // Exit loop after cleaning up aborted tools
       if (toolsAborted) break;
+
+      // ── Steering messages: inject user messages queued during tool execution ──
+      // Polled after tools complete so the next LLM call sees them in context.
+      if (options.getSteeringMessages) {
+        const steering = await options.getSteeringMessages();
+        if (steering && steering.length > 0) {
+          for (const msg of steering) {
+            yield { type: "steering_message" as const, content: msg.content };
+            messages.push(msg);
+          }
+        }
+      }
     }
   } finally {
     // Sanitize orphaned server_tool_use blocks on abort.

@@ -199,8 +199,8 @@ export function InputArea({
           onAbort();
           return;
         }
-        // When disabled (agent running), allow typing but block submission
-        if (key.return) return;
+        // When disabled (agent running), allow typing AND submission.
+        // Submitted messages will be queued by the parent component.
       }
 
       if (key.return && (key.shift || key.meta)) {

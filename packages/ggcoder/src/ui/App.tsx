@@ -9,7 +9,7 @@ import { playNotificationSound } from "../utils/sound.js";
 import type { Message, Provider, ThinkingLevel, TextContent, ImageContent } from "@kenkaiiii/gg-ai";
 import { extractImagePaths, type ImageAttachment } from "../utils/image.js";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
-import { useAgentLoop, type ActivityPhase } from "./hooks/useAgentLoop.js";
+import { useAgentLoop, type ActivityPhase, type UserContent } from "./hooks/useAgentLoop.js";
 import { UserMessage } from "./components/UserMessage.js";
 import type { PasteInfo } from "./components/InputArea.js";
 import { AssistantMessage } from "./components/AssistantMessage.js";
@@ -145,6 +145,13 @@ interface InfoItem {
   id: string;
 }
 
+interface QueuedItem {
+  kind: "queued";
+  text: string;
+  imageCount?: number;
+  id: string;
+}
+
 interface CompactingItem {
   kind: "compacting";
   id: string;
@@ -231,6 +238,7 @@ export type CompletedItem =
   | ServerToolDoneItem
   | ErrorItem
   | InfoItem
+  | QueuedItem
   | CompactingItem
   | CompactedItem
   | DurationItem
@@ -1056,6 +1064,36 @@ export function App(props: AppProps) {
           return [...next, { kind: "info", text: "Request was stopped.", id: getId() }];
         });
       }, []),
+      onQueuedStart: useCallback((content: UserContent) => {
+        // When a queued message starts processing, show it as a UserItem
+        // and flush prior items to history
+        const displayText =
+          typeof content === "string"
+            ? content
+            : content
+                .filter((c): c is TextContent => c.type === "text")
+                .map((c) => c.text)
+                .join("\n");
+        const imageCount =
+          typeof content === "string"
+            ? undefined
+            : content.filter((c) => c.type === "image").length || undefined;
+        setLiveItems((prev) => {
+          if (prev.length > 0) {
+            setHistory((h) => compactHistory([...h, ...trimFlushedItems(prev)]));
+          }
+          return [];
+        });
+        const userItem: UserItem = {
+          kind: "user",
+          text: displayText,
+          imageCount,
+          id: getId(),
+        };
+        setLastUserMessage(displayText);
+        setDoneStatus(null);
+        setLiveItems([userItem]);
+      }, []),
     },
   );
 
@@ -1199,33 +1237,8 @@ export function App(props: AppProps) {
         }
       }
 
-      // Move any remaining live items into history (Static) before starting new turn
-      setLiveItems((prev) => {
-        if (prev.length > 0) {
-          setHistory((h) => compactHistory([...h, ...trimFlushedItems(prev)]));
-        }
-        return [];
-      });
-
-      // Build display text — strip image paths, show badges instead
+      // ── Build user content (shared by normal + queued paths) ──
       const hasImages = inputImages.length > 0;
-      let displayText = input;
-      if (hasImages) {
-        const { cleanText } = await extractImagePaths(input, props.cwd);
-        displayText = cleanText;
-      }
-      const userItem: UserItem = {
-        kind: "user",
-        text: displayText,
-        imageCount: hasImages ? inputImages.length : undefined,
-        pasteInfo,
-        id: getId(),
-      };
-      setLastUserMessage(input);
-      setDoneStatus(null);
-      setLiveItems([userItem]);
-
-      // Build user content — plain string or content array with images
       const modelInfo = getModel(currentModel);
       const modelSupportsImages = modelInfo?.supportsImages ?? true;
       let userContent: string | (TextContent | ImageContent)[];
@@ -1266,6 +1279,54 @@ export function App(props: AppProps) {
         userContent = input;
       }
 
+      // ── Queue message if agent is already running ──
+      if (agentLoop.isRunning) {
+        log(
+          "INFO",
+          "queue",
+          `Queued message: ${trimmed.length > 80 ? trimmed.slice(0, 80) + "..." : trimmed}`,
+        );
+        agentLoop.queueMessage(userContent);
+        let displayText = input;
+        if (hasImages) {
+          const { cleanText } = await extractImagePaths(input, props.cwd);
+          displayText = cleanText;
+        }
+        const queuedItem: QueuedItem = {
+          kind: "queued",
+          text: displayText,
+          imageCount: hasImages ? inputImages.length : undefined,
+          id: getId(),
+        };
+        setLiveItems((prev) => [...prev, queuedItem]);
+        return;
+      }
+
+      // Move any remaining live items into history (Static) before starting new turn
+      setLiveItems((prev) => {
+        if (prev.length > 0) {
+          setHistory((h) => compactHistory([...h, ...trimFlushedItems(prev)]));
+        }
+        return [];
+      });
+
+      // Build display text — strip image paths, show badges instead
+      let displayText = input;
+      if (hasImages) {
+        const { cleanText } = await extractImagePaths(input, props.cwd);
+        displayText = cleanText;
+      }
+      const userItem: UserItem = {
+        kind: "user",
+        text: displayText,
+        imageCount: hasImages ? inputImages.length : undefined,
+        pasteInfo,
+        id: getId(),
+      };
+      setLastUserMessage(input);
+      setDoneStatus(null);
+      setLiveItems([userItem]);
+
       // Run agent
       try {
         await agentLoop.run(userContent);
@@ -1286,6 +1347,7 @@ export function App(props: AppProps) {
 
   const handleAbort = useCallback(() => {
     if (agentLoop.isRunning) {
+      agentLoop.clearQueue();
       agentLoop.abort();
     } else {
       process.exit(0);
@@ -1507,6 +1569,20 @@ export function App(props: AppProps) {
             </Text>
           </Box>
         );
+      case "queued":
+        return (
+          <Box key={item.id} marginTop={1}>
+            <Text color={theme.accent} bold>
+              {"⏳ Queued: "}
+            </Text>
+            <Text color={theme.text} wrap="wrap">
+              {item.text}
+              {item.imageCount
+                ? ` (+${item.imageCount} image${item.imageCount > 1 ? "s" : ""})`
+                : ""}
+            </Text>
+          </Box>
+        );
       case "compacting":
         return <CompactionSpinner key={item.id} />;
       case "compacted":
@@ -1680,6 +1756,16 @@ export function App(props: AppProps) {
                 </Text>
               </Box>
             )
+          )}
+
+          {/* Queue indicator */}
+          {agentLoop.queuedCount > 0 && (
+            <Box marginTop={1}>
+              <Text color={theme.accent}>
+                {"⏳ "}
+                {agentLoop.queuedCount} message{agentLoop.queuedCount > 1 ? "s" : ""} queued
+              </Text>
+            </Box>
           )}
 
           {/* Input + Footer */}
