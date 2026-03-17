@@ -9,6 +9,7 @@ interface FooterProps {
   cwd: string;
   gitBranch?: string | null;
   thinkingEnabled?: boolean;
+  planMode?: string | null;
 }
 
 // Model ID → short display name
@@ -61,7 +62,14 @@ const PARTIAL_BLOCKS = [
   "\u2588",
 ];
 
-export function Footer({ model, tokensIn, cwd, gitBranch, thinkingEnabled }: FooterProps) {
+export function Footer({
+  model,
+  tokensIn,
+  cwd,
+  gitBranch,
+  thinkingEnabled,
+  planMode,
+}: FooterProps) {
   const theme = useTheme();
   const { stdout } = useStdout();
   const columns = stdout?.columns ?? 80;
@@ -110,9 +118,11 @@ export function Footer({ model, tokensIn, cwd, gitBranch, thinkingEnabled }: Foo
   const thinkingLen = thinkingText.length + 3 + 3; // " │ " separator + " ⇧⇹"
 
   // Truncate path if footer would overflow
+  const planLen = planMode ? 3 + 4 : 0; // " │ " + "Plan"
   const rightLen =
     modelName.length +
     thinkingLen +
+    planLen +
     3 +
     barWidth +
     1 +
@@ -154,6 +164,14 @@ export function Footer({ model, tokensIn, cwd, gitBranch, thinkingEnabled }: Foo
         {sep}
         <Text color={thinkingEnabled ? theme.accent : theme.textDim}>{thinkingText}</Text>
         <Text color={theme.border}>{" \u21E7\u21B9"}</Text>
+        {planMode && (
+          <>
+            {sep}
+            <Text color={theme.warning} bold>
+              Plan
+            </Text>
+          </>
+        )}
       </Box>
     </Box>
   );

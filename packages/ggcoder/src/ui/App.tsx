@@ -41,6 +41,13 @@ import { shouldCompact, compact } from "../core/compaction/compactor.js";
 import { estimateConversationTokens } from "../core/compaction/token-estimator.js";
 import { PROMPT_COMMANDS, getPromptCommand } from "../core/prompt-commands.js";
 import { loadCustomCommands, type CustomCommand } from "../core/custom-commands.js";
+import {
+  buildPlanModeSystemPrompt,
+  filterToolsForPlanMode,
+  ensurePlanDir,
+  loadPlanDocuments,
+  listPlans,
+} from "../core/plan-mode.js";
 import type { MCPClientManager } from "../core/mcp/index.js";
 import { getMCPServers } from "../core/mcp/index.js";
 import type { AuthStorage } from "../core/auth-storage.js";
@@ -469,7 +476,14 @@ export function App(props: AppProps) {
   const [currentProvider, setCurrentProvider] = useState(props.provider);
   const [currentTools, setCurrentTools] = useState(props.tools);
   const [thinkingEnabled, setThinkingEnabled] = useState(!!props.thinking);
+  const [planMode, setPlanMode] = useState<string | null>(null);
+  const planModeRef = useRef<string | null>(null);
+  const originalToolsRef = useRef<AgentTool[]>(props.tools);
   const messagesRef = useRef<Message[]>(props.messages);
+  // Capture the original system prompt (messages[0]) for restoring after plan mode
+  const originalSystemPromptRef = useRef<string>(
+    messagesRef.current[0]?.role === "user" ? (messagesRef.current[0].content as string) : "",
+  );
   const nextIdRef = useRef(0);
   const sessionManagerRef = useRef(
     props.sessionsDir ? new SessionManager(props.sessionsDir) : null,
@@ -1161,7 +1175,7 @@ export function App(props: AppProps) {
         process.exit(0);
       }
 
-      // Handle /clear — reset session and clear terminal
+      // Handle /clear — reset session and clear terminal (also exits plan mode)
       if (trimmed === "/clear") {
         // Clear terminal screen + scrollback — needed because Ink's <Static>
         // writes directly to stdout and can't be removed by clearing React state
@@ -1169,9 +1183,108 @@ export function App(props: AppProps) {
         setHistory([{ kind: "banner", id: "banner" }]);
         setLiveItems([]);
         setDoneStatus(null);
+        // Exit plan mode if active — restore original system prompt and tools
+        if (planModeRef.current) {
+          messagesRef.current[0] = { role: "user", content: originalSystemPromptRef.current };
+          setCurrentTools(originalToolsRef.current);
+          setPlanMode(null);
+          planModeRef.current = null;
+        }
         messagesRef.current = messagesRef.current.slice(0, 1); // keep system prompt
         agentLoop.reset();
         setLiveItems([{ kind: "info", text: "Session cleared.", id: getId() }]);
+        return;
+      }
+
+      // Handle /plan — enter plan mode
+      if (trimmed === "/plan" || trimmed.startsWith("/plan ")) {
+        const planArg = trimmed === "/plan" ? "" : trimmed.slice(6).trim();
+
+        if (!planArg) {
+          // No name provided — list plans or show usage
+          const plans = await listPlans(props.cwd);
+          if (plans.length > 0) {
+            const planList = plans.map((p) => `  · ${p.name}`).join("\n");
+            setLiveItems((prev) => [
+              ...prev,
+              {
+                kind: "info",
+                text: `Usage: /plan <name>\n\nExisting plans:\n${planList}`,
+                id: getId(),
+              },
+            ]);
+          } else {
+            setLiveItems((prev) => [
+              ...prev,
+              {
+                kind: "info",
+                text: "Usage: /plan <name>\n\nNo existing plans. Provide a name to start one.",
+                id: getId(),
+              },
+            ]);
+          }
+          return;
+        }
+
+        // Slugify the plan name
+        const planName = planArg
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "")
+          .slice(0, 30);
+
+        if (!planName) {
+          setLiveItems((prev) => [
+            ...prev,
+            { kind: "info", text: "Invalid plan name.", id: getId() },
+          ]);
+          return;
+        }
+
+        // Ensure plan directory exists
+        await ensurePlanDir(props.cwd, planName);
+
+        // Build plan mode system prompt
+        const planSystemPrompt = await buildPlanModeSystemPrompt(props.cwd, planName);
+
+        // Save original system prompt if not already in plan mode
+        if (!planModeRef.current) {
+          originalSystemPromptRef.current =
+            messagesRef.current[0]?.role === "user"
+              ? (messagesRef.current[0].content as string)
+              : "";
+          originalToolsRef.current = currentTools;
+        }
+
+        // Swap system prompt and filter tools
+        messagesRef.current[0] = { role: "user", content: planSystemPrompt };
+        setCurrentTools(filterToolsForPlanMode(originalToolsRef.current));
+        setPlanMode(planName);
+        planModeRef.current = planName;
+
+        // Clear conversation for fresh plan session
+        stdout?.write("\x1b[2J\x1b[3J\x1b[H");
+        setHistory([{ kind: "banner", id: "banner" }]);
+        messagesRef.current = messagesRef.current.slice(0, 1);
+        agentLoop.reset();
+        persistedIndexRef.current = messagesRef.current.length;
+
+        // Check if plan already exists — load context for resume
+        const docs = await loadPlanDocuments(props.cwd, planName);
+        if (docs["context.md"] || docs["plan.md"]) {
+          // Resuming an existing plan — inject context as a user message
+          let resumeContext = `Resuming plan "${planName}". Here are the existing plan documents:\n\n`;
+          for (const [file, content] of Object.entries(docs)) {
+            resumeContext += `### ${file}\n\`\`\`markdown\n${content}\n\`\`\`\n\n`;
+          }
+          resumeContext += `Review the plan documents above and continue from where we left off. Check context.md for the current state and next steps.`;
+
+          setLiveItems([{ kind: "info", text: `Plan mode: ${planName} (resumed)`, id: getId() }]);
+          // Run the agent with the resume context
+          void agentLoop.run(resumeContext);
+        } else {
+          setLiveItems([{ kind: "info", text: `Plan mode: ${planName} (new plan)`, id: getId() }]);
+        }
         return;
       }
 
@@ -1342,7 +1455,7 @@ export function App(props: AppProps) {
         ]);
       }
     },
-    [agentLoop, props.onSlashCommand, compactConversation],
+    [agentLoop, props.onSlashCommand, compactConversation, currentTools],
   );
 
   const handleAbort = useCallback(() => {
@@ -1447,6 +1560,7 @@ export function App(props: AppProps) {
       { name: "model", aliases: ["m"], description: "Switch model" },
       { name: "compact", aliases: ["c"], description: "Compact conversation" },
       { name: "clear", aliases: [], description: "Clear session and terminal" },
+      { name: "plan", aliases: ["p"], description: "Enter plan mode" },
       { name: "quit", aliases: ["q", "exit"], description: "Exit the agent" },
       ...PROMPT_COMMANDS.map((cmd) => ({
         name: cmd.name,
@@ -1475,6 +1589,7 @@ export function App(props: AppProps) {
             provider={props.provider}
             cwd={props.cwd}
             taskCount={taskCount}
+            planMode={planMode}
           />
         );
       case "user":
@@ -1798,6 +1913,7 @@ export function App(props: AppProps) {
               cwd={props.cwd}
               gitBranch={gitBranch}
               thinkingEnabled={thinkingEnabled}
+              planMode={planMode}
             />
           )}
           {bgTasks.length > 0 && (
