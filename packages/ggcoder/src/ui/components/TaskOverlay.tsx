@@ -220,6 +220,16 @@ export function TaskOverlay({
       return;
     }
 
+    // Jump to top (g) / bottom (G)
+    if (input === "g") {
+      setSelectedIndex(0);
+      return;
+    }
+    if (input === "G") {
+      setSelectedIndex(tasks.length - 1);
+      return;
+    }
+
     if (key.upArrow || input === "k") {
       setSelectedIndex((i) => Math.max(0, i - 1));
       return;
@@ -373,7 +383,9 @@ export function TaskOverlay({
       <Box marginTop={1}>
         <Text color={theme.textDim}>
           <Text color={theme.primary}>↑↓</Text>
-          {" move · ("}
+          {" move · "}
+          <Text color={theme.primary}>g/G</Text>
+          {" jump · ("}
           <Text color={theme.primary}>a</Text>
           {")dd · ("}
           <Text color={theme.primary}>e</Text>
