@@ -1,7 +1,16 @@
 import React, { useState } from "react";
 import { Text, Box, useInput } from "ink";
 import { useTheme } from "../theme/theme.js";
+import { useTerminalSize } from "../hooks/useTerminalSize.js";
 import { Markdown } from "./Markdown.js";
+
+// Minimum inner width needed for the ASCII art lines (39 content chars inside ║…║)
+const FRAME_CONTENT_WIDTH = 39;
+const FRAME_OVERHEAD = 4; // ║ + space on each side
+
+function hLine(char: string, width: number): string {
+  return char.repeat(width);
+}
 
 interface PlanApprovalProps {
   planPath: string;
@@ -11,6 +20,7 @@ interface PlanApprovalProps {
 
 export function PlanApproval({ planPath, planContent, onDecision }: PlanApprovalProps) {
   const theme = useTheme();
+  const { columns } = useTerminalSize();
   const [mode, setMode] = useState<"prompt" | "feedback">("prompt");
   const [feedback, setFeedback] = useState("");
 
@@ -47,14 +57,30 @@ export function PlanApproval({ planPath, planContent, onDecision }: PlanApproval
   });
 
   return (
-    <Box flexDirection="column" marginTop={1}>
+    <Box flexDirection="column" marginTop={1} width={columns}>
       {/* ASCII art header */}
-      <Text color={theme.planPrimary}>{"╔═══════════════════════════════════════╗"}</Text>
-      <Text color={theme.planPrimary}>{"║ ▀█▀ █ █ █▀▀   █▀█ █   █▀█ █▄ █      ║"}</Text>
-      <Text color={theme.planPrimary}>{"║  █  █▀█ ██▄   █▀▀ █▄▄ █▀█ █ ▀█      ║"}</Text>
-      <Text color={theme.planPrimary}>{"╠═══════════════════════════════════════╣"}</Text>
-      <Text color={theme.planPrimary}>{"║  Review plan · Awaiting your decision ║"}</Text>
-      <Text color={theme.planPrimary}>{"╚═══════════════════════════════════════╝"}</Text>
+      {(() => {
+        const innerWidth = Math.max(FRAME_CONTENT_WIDTH, columns - FRAME_OVERHEAD);
+        const artPad = innerWidth - FRAME_CONTENT_WIDTH;
+        const statusLine = "Review plan · Awaiting your decision";
+        const statusPad = Math.max(0, innerWidth - 2 - statusLine.length);
+        return (
+          <>
+            <Text color={theme.planPrimary}>{"╔" + hLine("═", innerWidth + 2) + "╗"}</Text>
+            <Text color={theme.planPrimary}>
+              {"║ ▀█▀ █ █ █▀▀   █▀█ █   █▀█ █▄ █" + " ".repeat(artPad + 6) + "║"}
+            </Text>
+            <Text color={theme.planPrimary}>
+              {"║  █  █▀█ ██▄   █▀▀ █▄▄ █▀█ █ ▀█" + " ".repeat(artPad + 6) + "║"}
+            </Text>
+            <Text color={theme.planPrimary}>{"╠" + hLine("═", innerWidth + 2) + "╣"}</Text>
+            <Text color={theme.planPrimary}>
+              {"║  " + statusLine + " ".repeat(statusPad) + "  ║"}
+            </Text>
+            <Text color={theme.planPrimary}>{"╚" + hLine("═", innerWidth + 2) + "╝"}</Text>
+          </>
+        );
+      })()}
 
       {/* Plan path */}
       <Box marginTop={1}>

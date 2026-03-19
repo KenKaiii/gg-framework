@@ -43,7 +43,7 @@ export function Markdown({ children, width: explicitWidth }: { children: string;
       ? explicitWidth
       : measuredWidth > 0
         ? measuredWidth
-        : Math.max(40, (stdout?.columns ?? 80) - 4);
+        : Math.max(40, (stdout?.columns || 80) - 4);
 
   // Stabilise table rendering during streaming: if the text ends with an
   // incomplete table row (starts with `|` but doesn't end with `|`), strip

@@ -7,6 +7,13 @@ interface TerminalSizeValue {
   resizeKey: number;
 }
 
+// Minimum terminal dimensions — below these values layout calculations can
+// produce zero/negative widths that cause Ink to enter infinite re-render
+// loops with ghost/duplicate content.  Every consumer of useTerminalSize()
+// is guaranteed at least these values.
+const MIN_COLUMNS = 40;
+const MIN_ROWS = 10;
+
 const TerminalSizeContext = createContext<TerminalSizeValue | null>(null);
 
 /**
@@ -20,8 +27,8 @@ const TerminalSizeContext = createContext<TerminalSizeValue | null>(null);
 export function TerminalSizeProvider({ children }: { children: React.ReactNode }) {
   const { stdout } = useStdout();
   const [size, setSize] = useState({
-    columns: stdout?.columns ?? 80,
-    rows: stdout?.rows ?? 24,
+    columns: Math.max(MIN_COLUMNS, stdout?.columns ?? 80),
+    rows: Math.max(MIN_ROWS, stdout?.rows ?? 24),
   });
   const [resizeKey, setResizeKey] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -45,7 +52,10 @@ export function TerminalSizeProvider({ children }: { children: React.ReactNode }
           "\x1b[3J" + // clear scrollback buffer
           "\x1b[H", // cursor home
       );
-      setSize({ columns: stdout.columns ?? 80, rows: stdout.rows ?? 24 });
+      setSize({
+        columns: Math.max(MIN_COLUMNS, stdout.columns ?? 80),
+        rows: Math.max(MIN_ROWS, stdout.rows ?? 24),
+      });
       setResizeKey((k) => k + 1);
     }, 300);
   }, [stdout]);

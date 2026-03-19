@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { useTheme } from "../theme/theme.js";
+import { useTerminalSize } from "../hooks/useTerminalSize.js";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -95,6 +96,8 @@ const GRADIENT = [
 ];
 
 const GAP = "   ";
+const LOGO_WIDTH = 9;
+const SIDE_BY_SIDE_MIN = LOGO_WIDTH + GAP.length + 20;
 
 function SkillGradientText({ text }: { text: string }) {
   const chars: React.ReactNode[] = [];
@@ -125,6 +128,7 @@ interface SkillsOverlayProps {
 
 export function SkillsOverlay({ cwd, onClose }: SkillsOverlayProps) {
   const theme = useTheme();
+  const { columns } = useTerminalSize();
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loaded, setLoaded] = useState(false);
@@ -188,22 +192,19 @@ export function SkillsOverlay({ cwd, onClose }: SkillsOverlayProps) {
   return (
     <Box flexDirection="column">
       {/* Banner */}
-      <Box flexDirection="column" marginTop={1} marginBottom={1}>
-        <Box>
+      {columns < SIDE_BY_SIDE_MIN ? (
+        <Box flexDirection="column" marginTop={1} marginBottom={1} width={columns}>
           <SkillGradientText text={SKILL_LOGO[0]} />
-          <Text>{GAP}</Text>
-          <Text color="#a78bfa" bold>
-            Skills Pane
-          </Text>
-        </Box>
-        <Box>
           <SkillGradientText text={SKILL_LOGO[1]} />
-          <Text>{GAP}</Text>
-          <Text color={theme.textDim}>{displayPath}</Text>
-        </Box>
-        <Box>
           <SkillGradientText text={SKILL_LOGO[2]} />
-          <Text>{GAP}</Text>
+          <Box marginTop={1}>
+            <Text color="#a78bfa" bold>
+              Skills Pane
+            </Text>
+          </Box>
+          <Text color={theme.textDim} wrap="truncate">
+            {displayPath}
+          </Text>
           <Text>
             <Text color="#a78bfa">{projectCount} project</Text>
             <Text color={theme.textDim}> · </Text>
@@ -212,7 +213,35 @@ export function SkillsOverlay({ cwd, onClose }: SkillsOverlayProps) {
             <Text color={theme.text}>{skills.length} total</Text>
           </Text>
         </Box>
-      </Box>
+      ) : (
+        <Box flexDirection="column" marginTop={1} marginBottom={1} width={columns}>
+          <Box>
+            <SkillGradientText text={SKILL_LOGO[0]} />
+            <Text>{GAP}</Text>
+            <Text color="#a78bfa" bold>
+              Skills Pane
+            </Text>
+          </Box>
+          <Box>
+            <SkillGradientText text={SKILL_LOGO[1]} />
+            <Text>{GAP}</Text>
+            <Text color={theme.textDim} wrap="truncate">
+              {displayPath}
+            </Text>
+          </Box>
+          <Box>
+            <SkillGradientText text={SKILL_LOGO[2]} />
+            <Text>{GAP}</Text>
+            <Text>
+              <Text color="#a78bfa">{projectCount} project</Text>
+              <Text color={theme.textDim}> · </Text>
+              <Text color="#60a5fa">{globalCount} global</Text>
+              <Text color={theme.textDim}> · </Text>
+              <Text color={theme.text}>{skills.length} total</Text>
+            </Text>
+          </Box>
+        </Box>
+      )}
 
       {loaded && skills.length === 0 && (
         <Box flexDirection="column">

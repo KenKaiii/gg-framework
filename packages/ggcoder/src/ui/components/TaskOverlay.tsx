@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { useTheme } from "../theme/theme.js";
+import { useTerminalSize } from "../hooks/useTerminalSize.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -75,6 +76,8 @@ const GRADIENT = [
 ];
 
 const GAP = "   ";
+const LOGO_WIDTH = 9;
+const SIDE_BY_SIDE_MIN = LOGO_WIDTH + GAP.length + 20;
 
 function TaskGradientText({ text }: { text: string }) {
   const chars: React.ReactNode[] = [];
@@ -114,6 +117,7 @@ export function TaskOverlay({
   agentRunning,
 }: TaskOverlayProps) {
   const theme = useTheme();
+  const { columns } = useTerminalSize();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [mode, setMode] = useState<"normal" | "adding" | "editing">("normal");
@@ -306,23 +310,20 @@ export function TaskOverlay({
   return (
     <Box flexDirection="column">
       {/* Banner */}
-      <Box flexDirection="column" marginTop={1} marginBottom={1}>
-        <Box>
+      {columns < SIDE_BY_SIDE_MIN ? (
+        <Box flexDirection="column" marginTop={1} marginBottom={1} width={columns}>
           <TaskGradientText text={TASK_LOGO[0]} />
-          <Text>{GAP}</Text>
-          <Text color="#4ade80" bold>
-            Task Pane
-          </Text>
-          {agentRunning && <Text color="#fbbf24"> (agent running)</Text>}
-        </Box>
-        <Box>
           <TaskGradientText text={TASK_LOGO[1]} />
-          <Text>{GAP}</Text>
-          <Text color={theme.textDim}>{displayPath}</Text>
-        </Box>
-        <Box>
           <TaskGradientText text={TASK_LOGO[2]} />
-          <Text>{GAP}</Text>
+          <Box marginTop={1}>
+            <Text color="#4ade80" bold>
+              Task Pane
+            </Text>
+            {agentRunning && <Text color="#fbbf24"> (agent running)</Text>}
+          </Box>
+          <Text color={theme.textDim} wrap="truncate">
+            {displayPath}
+          </Text>
           <Text>
             <Text color="#4ade80">{doneCount} done</Text>
             <Text color={theme.textDim}> · </Text>
@@ -331,7 +332,36 @@ export function TaskOverlay({
             <Text color={theme.text}>{pendingCount} pending</Text>
           </Text>
         </Box>
-      </Box>
+      ) : (
+        <Box flexDirection="column" marginTop={1} marginBottom={1} width={columns}>
+          <Box>
+            <TaskGradientText text={TASK_LOGO[0]} />
+            <Text>{GAP}</Text>
+            <Text color="#4ade80" bold>
+              Task Pane
+            </Text>
+            {agentRunning && <Text color="#fbbf24"> (agent running)</Text>}
+          </Box>
+          <Box>
+            <TaskGradientText text={TASK_LOGO[1]} />
+            <Text>{GAP}</Text>
+            <Text color={theme.textDim} wrap="truncate">
+              {displayPath}
+            </Text>
+          </Box>
+          <Box>
+            <TaskGradientText text={TASK_LOGO[2]} />
+            <Text>{GAP}</Text>
+            <Text>
+              <Text color="#4ade80">{doneCount} done</Text>
+              <Text color={theme.textDim}> · </Text>
+              <Text color="#fbbf24">{inProgressCount} active</Text>
+              <Text color={theme.textDim}> · </Text>
+              <Text color={theme.text}>{pendingCount} pending</Text>
+            </Text>
+          </Box>
+        </Box>
+      )}
 
       {tasks.length === 0 && mode === "normal" && (
         <Text color={theme.textDim}>

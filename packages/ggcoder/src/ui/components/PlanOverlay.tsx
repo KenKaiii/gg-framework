@@ -65,6 +65,8 @@ const AMBER_GRADIENT = [
 ];
 
 const GAP = "   ";
+const LOGO_WIDTH = 9;
+const SIDE_BY_SIDE_MIN = LOGO_WIDTH + GAP.length + 20;
 
 function PlanGradientText({ text }: { text: string }) {
   const chars: React.ReactNode[] = [];
@@ -316,8 +318,31 @@ export function PlanOverlay({
         <Static items={staticItems}>
           {(item) => {
             if (item.kind === "banner") {
-              return (
-                <Box key={item.id} flexDirection="column" marginTop={1} marginBottom={1}>
+              return columns < SIDE_BY_SIDE_MIN ? (
+                <Box
+                  key={item.id}
+                  flexDirection="column"
+                  marginTop={1}
+                  marginBottom={1}
+                  width={columns}
+                >
+                  <PlanGradientText text={PLAN_LOGO[0]} />
+                  <PlanGradientText text={PLAN_LOGO[1]} />
+                  <PlanGradientText text={PLAN_LOGO[2]} />
+                  <Box marginTop={1}>
+                    <Text color={theme.planPrimary} bold>
+                      Plan Pane
+                    </Text>
+                  </Box>
+                </Box>
+              ) : (
+                <Box
+                  key={item.id}
+                  flexDirection="column"
+                  marginTop={1}
+                  marginBottom={1}
+                  width={columns}
+                >
                   <Box>
                     <PlanGradientText text={PLAN_LOGO[0]} />
                     <Text>{GAP}</Text>
@@ -410,25 +435,41 @@ export function PlanOverlay({
   return (
     <Box flexDirection="column">
       {/* Banner */}
-      <Box flexDirection="column" marginTop={1} marginBottom={1}>
-        <Box>
+      {columns < SIDE_BY_SIDE_MIN ? (
+        <Box flexDirection="column" marginTop={1} marginBottom={1} width={columns}>
           <PlanGradientText text={PLAN_LOGO[0]} />
-          <Text>{GAP}</Text>
-          <Text color={theme.planPrimary} bold>
-            Plan Pane
-          </Text>
-        </Box>
-        <Box>
           <PlanGradientText text={PLAN_LOGO[1]} />
-          <Text>{GAP}</Text>
+          <PlanGradientText text={PLAN_LOGO[2]} />
+          <Box marginTop={1}>
+            <Text color={theme.planPrimary} bold>
+              Plan Pane
+            </Text>
+          </Box>
           <Text color={theme.textDim}>
             {plans.length} plan{plans.length !== 1 ? "s" : ""} in .gg/plans/
           </Text>
         </Box>
-        <Box>
-          <PlanGradientText text={PLAN_LOGO[2]} />
+      ) : (
+        <Box flexDirection="column" marginTop={1} marginBottom={1} width={columns}>
+          <Box>
+            <PlanGradientText text={PLAN_LOGO[0]} />
+            <Text>{GAP}</Text>
+            <Text color={theme.planPrimary} bold>
+              Plan Pane
+            </Text>
+          </Box>
+          <Box>
+            <PlanGradientText text={PLAN_LOGO[1]} />
+            <Text>{GAP}</Text>
+            <Text color={theme.textDim}>
+              {plans.length} plan{plans.length !== 1 ? "s" : ""} in .gg/plans/
+            </Text>
+          </Box>
+          <Box>
+            <PlanGradientText text={PLAN_LOGO[2]} />
+          </Box>
         </Box>
-      </Box>
+      )}
 
       {loaded && plans.length === 0 && (
         <Box flexDirection="column">

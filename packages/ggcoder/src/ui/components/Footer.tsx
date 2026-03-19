@@ -115,40 +115,85 @@ export function Footer({
 
   // "Plan on" / "Plan off" + key hint (^P)
   const planText = planMode ? "Plan on" : "Plan off";
-  const planLen = planText.length + 3 + 3; // " │ " separator + " ^P"
 
   // "Thinking on" / "Thinking off" + key hint (⇧⇹)
   const thinkingText = thinkingEnabled ? "Thinking on" : "Thinking off";
-  const thinkingLen = thinkingText.length + 3 + 3; // " │ " separator + " ⇧⇹"
 
-  // Truncate path if footer would overflow
+  // Calculate whether everything fits on one line.
+  // Left: path + separator + branch.  Right: tokens + bar + model + plan + thinking.
+  const leftLen = displayPath.length + 2 + (gitBranch ? gitBranch.length + 5 : 0); // 2 = paddingLeft+Right
   const rightLen =
-    modelName.length +
-    planLen +
-    thinkingLen +
-    3 +
+    formatTokens(tokensIn).length +
+    3 + // sep
     barWidth +
     1 +
     String(contextPct).length +
-    1 +
-    (gitBranch ? gitBranch.length + 5 : 0) +
-    formatTokens(tokensIn).length +
-    3 +
-    10;
-  const maxPath = columns - rightLen - 4;
+    1 + // " N%"
+    3 + // sep
+    modelName.length +
+    3 + // sep
+    planText.length +
+    3 + // " ^P"
+    3 + // sep
+    thinkingText.length +
+    3; // " ⇧⇹"
+  const availableWidth = columns - 2; // paddingLeft + paddingRight
+  const fitsOnOneLine = leftLen + rightLen <= availableWidth;
+
+  // Truncate path only when single-line and it's the path that's too long
+  const maxPath = fitsOnOneLine ? availableWidth - rightLen - 2 : availableWidth;
   const truncPath =
     displayPath.length > maxPath && maxPath > 10
       ? "\u2026" + displayPath.slice(displayPath.length - maxPath + 1)
       : displayPath;
 
+  if (fitsOnOneLine) {
+    // Single-line layout: left grows, right is fixed
+    return (
+      <Box paddingLeft={1} paddingRight={1} width={columns}>
+        <Box flexGrow={1}>
+          <Text color={theme.textDim}>{truncPath}</Text>
+          {gitBranch && (
+            <>
+              {sep}
+              <Text color={theme.secondary}>
+                {"\u2387 "}
+                {gitBranch}
+              </Text>
+            </>
+          )}
+        </Box>
+        <Box flexShrink={0}>
+          <Text color={theme.textDim}>{formatTokens(tokensIn)}</Text>
+          {sep}
+          <Text>{barChars}</Text>
+          <Text color={contextColor}> {contextPct}%</Text>
+          {sep}
+          <Text color={theme.primary} bold>
+            {modelName}
+          </Text>
+          {sep}
+          <Text color={planMode ? theme.planPrimary : theme.textDim}>{planText}</Text>
+          <Text color={theme.border}>{" ^P"}</Text>
+          {sep}
+          <Text color={thinkingEnabled ? theme.accent : theme.textDim}>{thinkingText}</Text>
+          <Text color={theme.border}>{" \u21E7\u21B9"}</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  // Two-line layout: wrap right-side items below the left side
   return (
-    <Box paddingLeft={1} paddingRight={1}>
-      <Box flexGrow={1}>
-        <Text color={theme.textDim}>{truncPath}</Text>
+    <Box flexDirection="column" paddingLeft={1} paddingRight={1} width={columns}>
+      <Box>
+        <Text color={theme.textDim} wrap="truncate">
+          {truncPath}
+        </Text>
         {gitBranch && (
           <>
             {sep}
-            <Text color={theme.secondary}>
+            <Text color={theme.secondary} wrap="truncate">
               {"\u2387 "}
               {gitBranch}
             </Text>

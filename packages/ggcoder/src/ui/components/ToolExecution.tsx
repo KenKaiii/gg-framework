@@ -636,7 +636,7 @@ const GrepLine = memo(function GrepLine({ line }: { line: string }) {
   const lineNo = line.slice(firstColon + 1, secondColon);
   const rawContent = line.slice(secondColon + 1);
   // Truncate so the full line fits within ~1 terminal row
-  const cols = process.stdout.columns || 80;
+  const cols = Math.max(40, process.stdout.columns || 80);
   const prefixLen = file.length + lineNo.length + 2; // 2 = colons
   const content = truncateLine(rawContent, cols, prefixLen + 6);
 

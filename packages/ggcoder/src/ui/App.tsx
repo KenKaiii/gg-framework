@@ -434,7 +434,7 @@ export interface AppProps {
 export function App(props: AppProps) {
   const theme = useTheme();
   const { stdout } = useStdout();
-  const { resizeKey } = useTerminalSize();
+  const { columns, resizeKey } = useTerminalSize();
 
   // Terminal title — updated later after agentLoop is created
   // (hoisted here so the hook is always called in the same order)
@@ -1775,7 +1775,7 @@ export function App(props: AppProps) {
   const isOverlayView = isTaskView || isSkillsView || isPlanView;
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" width={columns}>
       {/* History — scrolled up, managed by Ink Static. */}
       <Static
         key={`${resizeKey}-${staticKey}`}
@@ -1917,6 +1917,7 @@ export function App(props: AppProps) {
               }
               paddingLeft={1}
               paddingRight={1}
+              width={columns}
             >
               <ActivityIndicator
                 phase={agentLoop.activityPhase}

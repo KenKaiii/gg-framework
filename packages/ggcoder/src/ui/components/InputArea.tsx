@@ -33,6 +33,9 @@ interface InputAreaProps {
 
 // Border (1 each side) + padding (1 each side) = 4 characters of overhead
 const BOX_OVERHEAD = 4;
+// Minimum content width to prevent zero/negative values that cause infinite
+// re-render loops when Ink tries to wrap text wider than available space.
+const MIN_CONTENT_WIDTH = 10;
 
 /**
  * Split text into visual lines based on terminal width.
@@ -64,8 +67,7 @@ function wrapLine(text: string, contentWidth: number): string[] {
 }
 
 function getVisualLines(text: string, columns: number): string[] {
-  const contentWidth = columns - PROMPT.length - BOX_OVERHEAD;
-  if (contentWidth <= 0) return [text];
+  const contentWidth = Math.max(MIN_CONTENT_WIDTH, columns - PROMPT.length - BOX_OVERHEAD);
   if (text.length === 0) return [""];
 
   // Split on real newlines first, then wrap each
@@ -415,7 +417,7 @@ export function InputArea({
 
   // Calculate visual lines and cap at MAX_VISIBLE_LINES (scroll to cursor)
   const visualLines = getVisualLines(value, columns);
-  const contentWidth = columns - PROMPT.length - BOX_OVERHEAD;
+  const contentWidth = Math.max(MIN_CONTENT_WIDTH, columns - PROMPT.length - BOX_OVERHEAD);
 
   // Find which visual line and column the cursor is on
   const cursorLineInfo = useMemo(() => {
@@ -423,7 +425,7 @@ export function InputArea({
     const hardLines = value.split("\n");
     let visualLineIndex = 0;
     for (let h = 0; h < hardLines.length; h++) {
-      const wrapped = wrapLine(hardLines[h], contentWidth > 0 ? contentWidth : value.length + 1);
+      const wrapped = wrapLine(hardLines[h], contentWidth);
       for (let w = 0; w < wrapped.length; w++) {
         const lineLen = wrapped[w].length;
         const lineStart = pos;
@@ -473,7 +475,7 @@ export function InputArea({
     : 0;
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" width={columns}>
       <Box
         flexDirection="column"
         borderStyle="round"
