@@ -42,6 +42,8 @@ export interface ToolResult {
   type: "tool_result";
   toolCallId: string;
   content: string;
+  /** Optional image attachments returned by image-aware tools (e.g. read). */
+  images?: ImageContent[];
   isError?: boolean;
 }
 

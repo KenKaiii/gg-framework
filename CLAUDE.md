@@ -140,6 +140,7 @@ Fix ALL errors before continuing. Quick fixes:
 - **OAuth-only auth**: no API keys, PKCE OAuth flows, tokens in `~/.gg/auth.json`
 - **Zod schemas**: tool parameters defined with Zod, converted to JSON Schema at provider boundary
 - **Debug logging**: `~/.gg/debug.log` — timestamped log of startup, auth, tool calls, turn completions, errors. Truncated on each CLI restart. Singleton logger in `src/core/logger.ts`
+- **Image tool results**: `ToolResult` has an optional `images?: ImageContent[]` field. The `read` tool returns visual content for image files (.png, .jpg, .gif, .webp, .bmp) via `readImageFile()` in `utils/image.ts`. Anthropic transforms merge images into tool_result content arrays natively. OpenAI/GLM fall back to a text note since they don't support images in tool results. Token estimator counts ~1600 tokens per image. Compaction strips images from old tool results.
 
 ## Slash Commands
 

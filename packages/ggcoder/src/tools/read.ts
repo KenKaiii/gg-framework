@@ -4,6 +4,11 @@ import type { AgentTool } from "@kenkaiiii/gg-agent";
 import { resolvePath, rejectSymlink } from "./path-utils.js";
 import { truncateHead } from "./truncate.js";
 import { localOperations, type ToolOperations } from "./operations.js";
+import { readImageFile } from "../utils/image.js";
+import { log } from "../core/logger.js";
+
+/** Raster image formats the read tool can return as visual content. */
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
 
 export const BINARY_EXTENSIONS = new Set([
   ".png",
@@ -75,19 +80,40 @@ export function createReadTool(
   cwd: string,
   readFiles?: Set<string>,
   ops: ToolOperations = localOperations,
+  options?: { supportsImages?: boolean },
 ): AgentTool<typeof ReadParams> {
+  const imageSupport = options?.supportsImages ?? true;
   return {
     name: "read",
     description:
       "Read a file's contents. Returns numbered lines (cat -n style). " +
       "Output is capped at ~25,000 tokens. If truncated, use offset/limit to read remaining sections. " +
-      "Binary files return a notice instead of content.",
+      "Image files (.png, .jpg, .gif, .webp, .bmp) return visual content. " +
+      "Other binary files return a notice instead of content.",
     parameters: ReadParams,
     async execute({ file_path, offset, limit }) {
       const resolved = resolvePath(cwd, file_path);
       await rejectSymlink(resolved);
       readFiles?.add(resolved);
       const ext = path.extname(resolved).toLowerCase();
+
+      // Return visual content for image files (when the model supports it)
+      if (IMAGE_EXTENSIONS.has(ext)) {
+        if (!imageSupport) {
+          const stat = await ops.stat(resolved);
+          log("INFO", "read", `Image skipped (model lacks vision): ${resolved}`);
+          return `Image file: ${resolved} (${ext}, ${stat.size} bytes). This model does not support image vision — use bash to extract text or metadata if needed.`;
+        }
+        const attachment = await readImageFile(resolved);
+        log("INFO", "read", `Image attached: ${resolved}`, {
+          mediaType: attachment.mediaType,
+          base64Bytes: String(attachment.data.length),
+        });
+        return {
+          content: `Image file: ${resolved} (${attachment.mediaType})`,
+          images: [{ mediaType: attachment.mediaType, data: attachment.data }],
+        };
+      }
 
       if (BINARY_EXTENSIONS.has(ext)) {
         const stat = await ops.stat(resolved);

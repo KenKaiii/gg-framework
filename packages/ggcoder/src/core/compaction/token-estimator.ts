@@ -65,6 +65,8 @@ export function estimateMessageTokens(message: Message): number {
       } else if ("type" in part && part.type === "tool_result") {
         const tr = part as unknown as ToolResult;
         tokens += estimateTokens(tr.content);
+        // ~1600 tokens per image (Anthropic vision estimate)
+        if (tr.images?.length) tokens += tr.images.length * 1600;
       }
     }
   }

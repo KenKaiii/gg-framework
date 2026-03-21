@@ -106,12 +106,40 @@ export function toAnthropicMessages(
     if (msg.role === "tool") {
       out.push({
         role: "user",
-        content: msg.content.map((result) => ({
-          type: "tool_result" as const,
-          tool_use_id: result.toolCallId,
-          content: result.content,
-          is_error: result.isError,
-        })),
+        content: msg.content.map((result) => {
+          // When images are attached, build a content array with text + image blocks
+          if (result.images?.length) {
+            const parts: (Anthropic.TextBlockParam | Anthropic.ImageBlockParam)[] = [
+              { type: "text" as const, text: result.content },
+              ...result.images.map(
+                (img): Anthropic.ImageBlockParam => ({
+                  type: "image" as const,
+                  source: {
+                    type: "base64" as const,
+                    media_type: img.mediaType as
+                      | "image/jpeg"
+                      | "image/png"
+                      | "image/gif"
+                      | "image/webp",
+                    data: img.data,
+                  },
+                }),
+              ),
+            ];
+            return {
+              type: "tool_result" as const,
+              tool_use_id: result.toolCallId,
+              content: parts,
+              is_error: result.isError,
+            };
+          }
+          return {
+            type: "tool_result" as const,
+            tool_use_id: result.toolCallId,
+            content: result.content,
+            is_error: result.isError,
+          };
+        }),
       });
     }
   }
@@ -350,10 +378,15 @@ export function toOpenAIMessages(
     }
     if (msg.role === "tool") {
       for (const result of msg.content) {
+        // OpenAI doesn't support images in tool results — append a note instead
+        let content = result.content;
+        if (result.images?.length) {
+          content += `\n[${result.images.length} image(s) attached — not visible to this provider]`;
+        }
         out.push({
           role: "tool",
           tool_call_id: remapToolCallId(result.toolCallId, idMap),
-          content: result.content,
+          content,
         });
       }
     }

@@ -147,15 +147,15 @@ function extractFileOperations(messages: Message[]): { read: Set<string>; modifi
  */
 export function prepareMessagesForSummary(msgs: Message[]): Message[] {
   return msgs.map((msg): Message => {
-    // Tool result messages — truncate long results
+    // Tool result messages — truncate long results and strip images
     if (msg.role === "tool") {
       const results = msg.content as ToolResult[];
       return {
         role: "tool",
-        content: results.map((tr) => ({
-          ...tr,
-          content: truncateString(tr.content, TOOL_RESULT_MAX_CHARS),
-        })),
+        content: results.map((tr) => {
+          const { images: _images, ...rest } = tr;
+          return { ...rest, content: truncateString(tr.content, TOOL_RESULT_MAX_CHARS) };
+        }),
       };
     }
 

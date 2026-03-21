@@ -14,6 +14,7 @@ import { createTaskStopTool } from "./task-stop.js";
 import { createTasksTool } from "./tasks.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 import type { AgentDefinition } from "../core/agents.js";
+import { getModel } from "../core/model-registry.js";
 
 export interface CreateToolsOptions {
   agents?: AgentDefinition[];
@@ -33,8 +34,10 @@ export function createTools(cwd: string, opts?: CreateToolsOptions): CreateTools
   const processManager = new ProcessManager();
   const ops = opts?.operations ?? localOperations;
 
+  const modelInfo = opts?.model ? getModel(opts.model) : undefined;
+
   const tools: AgentTool[] = [
-    createReadTool(cwd, readFiles, ops),
+    createReadTool(cwd, readFiles, ops, { supportsImages: modelInfo?.supportsImages }),
     createWriteTool(cwd, readFiles, ops),
     createEditTool(cwd, readFiles, ops),
     createBashTool(cwd, processManager, ops),

@@ -4,6 +4,7 @@ import {
   type Message,
   type ToolCall,
   type ToolResult,
+  type ImageContent,
   type Usage,
   type ContentPart,
   type AssistantMessage,
@@ -278,6 +279,7 @@ export async function* agentLoop(
         });
 
         let resultContent: string;
+        let resultImages: ImageContent[] | undefined;
         let details: unknown;
         let isError = false;
 
@@ -303,6 +305,13 @@ export async function* agentLoop(
             const normalized = normalizeToolResult(raw);
             resultContent = normalized.content;
             details = normalized.details;
+            if (normalized.images?.length) {
+              resultImages = normalized.images.map((img) => ({
+                type: "image" as const,
+                mediaType: img.mediaType,
+                data: img.data,
+              }));
+            }
           } catch (err) {
             isError = true;
             resultContent = err instanceof Error ? err.message : String(err);
@@ -320,7 +329,7 @@ export async function* agentLoop(
           durationMs,
         });
 
-        return { toolCallId: toolCall.id, content: resultContent, isError };
+        return { toolCallId: toolCall.id, content: resultContent, images: resultImages, isError };
       });
 
       // Abort the tool event stream when the signal fires so Ctrl+C
@@ -344,6 +353,7 @@ export async function* agentLoop(
               type: "tool_result",
               toolCallId: tc.id,
               content: r.content,
+              images: r.images,
               isError: r.isError || undefined,
             });
           }

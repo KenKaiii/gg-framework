@@ -13,6 +13,8 @@ import type {
 
 export interface StructuredToolResult {
   content: string;
+  /** Optional image attachments (base64). Passed through to ToolResult.images. */
+  images?: { mediaType: string; data: string }[];
   details?: unknown;
 }
 
