@@ -438,7 +438,9 @@ export function InputArea({
           let vlIndex = 0;
           let found = false;
           for (let h = 0; h < hardLines.length; h++) {
-            const wrapped = wrapLine(hardLines[h], cw > 0 ? cw : val.length + 1);
+            const hardLine = hardLines[h];
+            const wrapped = wrapLine(hardLine, cw > 0 ? cw : val.length + 1);
+            let hardLinePos = 0;
             for (let w = 0; w < wrapped.length; w++) {
               if (vlIndex === sl + clickedDisplayLine) {
                 setCursor(Math.min(charOffset + col, val.length));
@@ -447,6 +449,16 @@ export function InputArea({
                 break;
               }
               charOffset += wrapped[w].length;
+              hardLinePos += wrapped[w].length;
+              // Account for the space consumed by word-wrap break
+              if (
+                w < wrapped.length - 1 &&
+                hardLinePos < hardLine.length &&
+                hardLine[hardLinePos] === " "
+              ) {
+                charOffset++;
+                hardLinePos++;
+              }
               vlIndex++;
             }
             if (found) break;
@@ -849,22 +861,26 @@ export function InputArea({
     const hardLines = value.split("\n");
     let visualLineIndex = 0;
     for (let h = 0; h < hardLines.length; h++) {
-      const wrapped = wrapLine(hardLines[h], contentWidth);
+      const hardLine = hardLines[h];
+      const wrapped = wrapLine(hardLine, contentWidth);
+      let hardLinePos = 0; // track position within the original hard line
       for (let w = 0; w < wrapped.length; w++) {
         const lineLen = wrapped[w].length;
         const lineStart = pos;
         const lineEnd = pos + lineLen;
-        // Cursor is on this visual line if it falls within [lineStart, lineEnd]
-        // For the last wrapped segment of a hard line, also include the newline position
-        const isLastWrap = w === wrapped.length - 1;
-        const effectiveEnd = isLastWrap ? lineEnd : lineEnd;
-        if (cursor >= lineStart && cursor <= effectiveEnd) {
+        if (cursor >= lineStart && cursor <= lineEnd) {
           return { line: visualLineIndex, col: cursor - lineStart };
         }
         pos += lineLen;
+        hardLinePos += lineLen;
         // Account for the space consumed by word-wrap break
-        if (!isLastWrap) {
-          // wrapped lines don't consume extra chars unless word-broken
+        if (
+          w < wrapped.length - 1 &&
+          hardLinePos < hardLine.length &&
+          hardLine[hardLinePos] === " "
+        ) {
+          pos++;
+          hardLinePos++;
         }
         visualLineIndex++;
       }
@@ -970,22 +986,29 @@ export function InputArea({
 
             // Calculate the absolute character offset where this display line starts
             let lineStartOffset = 0;
-            for (let j = 0; j < startLine + i; j++) {
-              lineStartOffset += visualLines[j].length;
-            }
             const hardLines = value.split("\n");
             let offset = 0;
             let vlIndex = 0;
             for (let h = 0; h < hardLines.length && vlIndex <= startLine + i; h++) {
-              const wrapped = wrapLine(
-                hardLines[h],
-                contentWidth > 0 ? contentWidth : value.length + 1,
-              );
+              const hardLine = hardLines[h];
+              const cw = contentWidth > 0 ? contentWidth : value.length + 1;
+              const wrapped = wrapLine(hardLine, cw);
+              let hardLinePos = 0;
               for (let w = 0; w < wrapped.length && vlIndex <= startLine + i; w++) {
                 if (vlIndex === startLine + i) {
                   lineStartOffset = offset;
                 }
                 offset += wrapped[w].length;
+                hardLinePos += wrapped[w].length;
+                // Account for the space consumed by word-wrap break
+                if (
+                  w < wrapped.length - 1 &&
+                  hardLinePos < hardLine.length &&
+                  hardLine[hardLinePos] === " "
+                ) {
+                  offset++;
+                  hardLinePos++;
+                }
                 vlIndex++;
               }
               offset++; // newline
