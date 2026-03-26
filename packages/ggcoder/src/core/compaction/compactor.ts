@@ -95,7 +95,26 @@ export function findRecentCutPoint(messages: Message[], tokenBudget: number): nu
   }
 
   // Never cut before index 1 (preserve system message at 0)
-  return Math.max(1, cutIndex);
+  cutIndex = Math.max(1, cutIndex);
+
+  // Always keep at least the last user→assistant exchange so that compaction
+  // never produces an empty recentMessages array. Without this, the trailing-
+  // assistant-pop can strip the compaction ack, leaving only the summary and
+  // making `ggcoder continue` restore just 1 message.
+  if (cutIndex >= messages.length && messages.length > 2) {
+    // Find the last user message and keep everything from there onward
+    for (let i = messages.length - 1; i >= 1; i--) {
+      if (messages[i].role === "user") {
+        cutIndex = i;
+        break;
+      }
+    }
+    // Fallback: at minimum keep the last 2 messages
+    cutIndex = Math.min(cutIndex, messages.length - 2);
+    cutIndex = Math.max(1, cutIndex);
+  }
+
+  return cutIndex;
 }
 
 /**
@@ -647,7 +666,10 @@ export async function compact(
   // Ensure the conversation doesn't end with an assistant message.
   // Some models reject "assistant prefill" — the conversation must end
   // with a user (or tool) message so the LLM can generate a fresh response.
-  while (newMessages.length > 1 && newMessages[newMessages.length - 1].role === "assistant") {
+  // But never pop below 3 messages (system + summary + ack) — removing the
+  // compaction ack would leave only the summary, causing `ggcoder continue`
+  // to restore just 1 message instead of the full session.
+  while (newMessages.length > 3 && newMessages[newMessages.length - 1].role === "assistant") {
     newMessages.pop();
   }
 
