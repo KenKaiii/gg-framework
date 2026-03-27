@@ -260,6 +260,10 @@ export class TelegramBot {
       body: body ? JSON.stringify(body) : undefined,
     });
 
+    if (!response.ok) {
+      return { ok: false };
+    }
+
     return response.json() as Promise<{ ok: boolean; result?: unknown }>;
   }
 }
