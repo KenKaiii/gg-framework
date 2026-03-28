@@ -42,7 +42,7 @@ Tool parameters are Zod schemas. Converted to JSON Schema at the provider bounda
 |---|---|---|
 | `anthropic` | Claude Opus 4.6, Sonnet 4.6, Haiku 4.5 | Extended thinking, prompt caching, server-side compaction |
 | `openai` | GPT-4.1, o3, o4-mini | Supports OAuth (codex endpoint) and API keys |
-| `glm` | GLM-5, GLM-4.7 | Z.AI platform, OpenAI-compatible |
+| `glm` | GLM-5.1, GLM-4.7 | Z.AI platform, OpenAI-compatible |
 | `moonshot` | Kimi K2.5 | Moonshot platform, OpenAI-compatible |
 
 ---

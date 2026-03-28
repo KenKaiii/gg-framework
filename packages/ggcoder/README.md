@@ -74,7 +74,7 @@ Switch mid-conversation with `/model`. Not locked to anyone.
 |---|---|---|
 | **Anthropic** | Claude Opus 4.6, Sonnet 4.6, Haiku 4.5 | OAuth |
 | **OpenAI** | GPT-4.1, o3, o4-mini | OAuth |
-| **Z.AI (GLM)** | GLM-5, GLM-4.7 | API key |
+| **Z.AI (GLM)** | GLM-5.1, GLM-4.7 | API key |
 | **Moonshot** | Kimi K2.5 | API key |
 
 ---
