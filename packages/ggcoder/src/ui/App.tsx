@@ -49,7 +49,6 @@ import { PROMPT_COMMANDS, getPromptCommand } from "../core/prompt-commands.js";
 import { loadCustomCommands, type CustomCommand } from "../core/custom-commands.js";
 import { buildSystemPrompt } from "../system-prompt.js";
 import type { Skill } from "../core/skills.js";
-import { PlanProgress } from "./components/PlanProgress.js";
 import {
   extractPlanSteps,
   findCompletedMarkers,
@@ -229,12 +228,6 @@ interface PlanTransitionItem {
   id: string;
 }
 
-interface PlanProgressItem {
-  kind: "plan_progress";
-  steps: PlanStep[];
-  id: string;
-}
-
 interface TombstoneItem {
   kind: "tombstone";
   id: string;
@@ -276,7 +269,6 @@ export type CompletedItem =
   | SubAgentGroupItem
   | ToolGroupItem
   | PlanTransitionItem
-  | PlanProgressItem
   | TombstoneItem;
 
 /**
@@ -868,7 +860,7 @@ export function App(props: AppProps) {
             setHistory((h) => compactHistory([...h, ...trimFlushedItems(flushed)]));
           }
           const displayText = planStepsRef.current.length > 0 ? stripDoneMarkers(text) : text;
-        return [{ kind: "assistant", text: displayText, thinking, thinkingMs, id: getId() }];
+          return [{ kind: "assistant", text: displayText, thinking, thinkingMs, id: getId() }];
         });
       }, []),
       onToolStart: useCallback(
@@ -1795,8 +1787,6 @@ export function App(props: AppProps) {
             </Text>
           </Box>
         );
-      case "plan_progress":
-        return <PlanProgress key={item.id} steps={item.steps} />;
       case "queued":
         return (
           <Box key={item.id} marginTop={1}>
@@ -2029,7 +2019,6 @@ export function App(props: AppProps) {
           {/* Content area */}
           <Box flexDirection="column" flexGrow={1} paddingRight={1}>
             {liveItems.map((item) => renderItem(item))}
-            {planSteps.length > 0 && agentLoop.isRunning && <PlanProgress steps={planSteps} />}
             <StreamingArea
               isRunning={agentLoop.isRunning}
               streamingText={agentLoop.streamingText}
@@ -2066,6 +2055,8 @@ export function App(props: AppProps) {
                 activeToolNames={agentLoop.activeToolCalls.map((tc) => tc.name)}
                 planMode={planMode}
                 retryInfo={agentLoop.retryInfo}
+                planDone={planSteps.filter((s) => s.completed).length}
+                planTotal={planSteps.length}
               />
             </Box>
           ) : (

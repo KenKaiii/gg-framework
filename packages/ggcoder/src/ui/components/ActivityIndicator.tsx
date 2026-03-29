@@ -114,6 +114,8 @@ interface ActivityIndicatorProps {
   activeToolNames?: string[];
   planMode?: boolean;
   retryInfo?: RetryInfo | null;
+  planDone?: number;
+  planTotal?: number;
 }
 
 const RETRY_REASON_LABELS: Record<RetryInfo["reason"], string> = {
@@ -133,6 +135,8 @@ export function ActivityIndicator({
   activeToolNames = [],
   planMode,
   retryInfo,
+  planDone = 0,
+  planTotal = 0,
 }: ActivityIndicatorProps) {
   const theme = useTheme();
 
@@ -175,6 +179,14 @@ export function ActivityIndicator({
 
   const meta = buildMetaSuffix(elapsedMs, thinkingMs, isThinking, tokenEstimate);
 
+  // ── Plan progress bar ──────────────────────────────────
+  const planBar = useMemo(() => {
+    if (planTotal <= 0) return null;
+    const barWidth = Math.min(planTotal, 20);
+    const filledWidth = Math.round((planDone / planTotal) * barWidth);
+    return "\u2588".repeat(filledWidth) + "\u2591".repeat(barWidth - filledWidth);
+  }, [planDone, planTotal]);
+
   // ── Retry display ──────────────────────────────────────
   if (phase === "retrying" && retryInfo) {
     const retryLabel = RETRY_REASON_LABELS[retryInfo.reason];
@@ -211,6 +223,16 @@ export function ActivityIndicator({
           {"  ("}
           {meta}
           {")"}
+        </Text>
+      )}
+      {planBar && (
+        <Text>
+          {"  "}
+          <Text color={planDone === planTotal ? theme.success : theme.planPrimary}>{planBar}</Text>
+          <Text color={theme.textDim}>
+            {" "}
+            {planDone}/{planTotal}
+          </Text>
         </Text>
       )}
     </Box>
