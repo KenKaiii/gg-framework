@@ -79,10 +79,9 @@ describe("shouldCompact", () => {
     expect(shouldCompact(messages, estimated, 0.5)).toBe(true);
   });
 
-  it("triggers compaction when switching from large to small context model", () => {
-    // Simulate a conversation that's at ~400k tokens (40% of Opus 1M, but >100% of Kimi 128k)
-    // Each message: ~10000 chars = ~2500 tokens + 4 overhead ≈ 2504 tokens
-    // 160 pairs ≈ 160 × 2 × 2504 ≈ 801k tokens — well over Kimi's 128k threshold
+  it("respects per-model context window for compaction threshold", () => {
+    // Each message: ~10000 chars / 3.5 ≈ 2857 tokens + 4 overhead ≈ 2861 tokens
+    // 160 pairs ≈ 160 × 2 × 2861 ≈ 916k tokens
     const messages: Message[] = [makeMessage("system", "sys")];
     for (let i = 0; i < 160; i++) {
       messages.push(makeMessage("user", `msg ${i} ${"x".repeat(10_000)}`));
@@ -93,18 +92,104 @@ describe("shouldCompact", () => {
     const opusContext = getContextWindow("claude-opus-4-6");
     const kimiContext = getContextWindow("kimi-k2.5");
 
-    // Sanity: Opus has 1M, Kimi has 128k
+    // Sanity: Opus has 1M, Kimi has 200k
     expect(opusContext).toBe(1_000_000);
-    expect(kimiContext).toBe(128_000);
+    expect(kimiContext).toBe(200_000);
 
-    // Under Opus (1M): conversation is well under 80% threshold — no compaction
+    // Under Opus (1M): conversation is under 80% threshold (800k) — no compaction
     expect(shouldCompact(messages, opusContext, 0.8)).toBe(false);
     expect(estimated).toBeLessThan(opusContext * 0.8);
 
-    // Under Kimi (128k): same conversation exceeds 80% threshold — must compact
+    // Under Kimi (200k): same conversation exceeds 80% threshold (160k) — must compact
     expect(shouldCompact(messages, kimiContext, 0.8)).toBe(true);
     expect(estimated).toBeGreaterThan(kimiContext * 0.8);
   });
+
+  it("prefers actual API tokens over char-based estimate", () => {
+    const messages = [makeMessage("system", "sys"), makeMessage("user", "hello")];
+    // Char-based estimate is tiny, but actualTokens says we're over
+    expect(shouldCompact(messages, 200_000, 0.8, 170_000)).toBe(true);
+    // actualTokens under threshold — no compact despite same messages
+    expect(shouldCompact(messages, 200_000, 0.8, 100_000)).toBe(false);
+  });
+
+  it("falls back to char-based estimate when actualTokens is undefined", () => {
+    const content = "x".repeat(1000);
+    const messages = [makeMessage("user", content)];
+    const estimated = estimateConversationTokens(messages);
+    // Set contextWindow so estimated is just over 80%
+    const contextWindow = Math.floor(estimated / 0.85);
+    expect(shouldCompact(messages, contextWindow, 0.8)).toBe(true);
+    expect(shouldCompact(messages, contextWindow, 0.8, undefined)).toBe(true);
+  });
+});
+
+// ── Cross-model compaction thresholds ─────────────────────
+
+describe("compaction thresholds across all models", () => {
+  // Helper: build a conversation of approximately `targetTokens` tokens
+  function buildConversationOfSize(targetTokens: number): Message[] {
+    const messages: Message[] = [makeMessage("system", "System prompt.")];
+    const charsPerMsg = 1000;
+    // ~1000 chars / 3.5 ≈ 290 tokens per message pair (user + assistant overhead)
+    const tokensPerPair = estimateConversationTokens([
+      makeMessage("user", "x".repeat(charsPerMsg)),
+      makeMessage("assistant", "ok"),
+    ]);
+    const pairs = Math.ceil(targetTokens / tokensPerPair);
+    for (let i = 0; i < pairs; i++) {
+      messages.push(makeMessage("user", `msg ${i} ${"x".repeat(charsPerMsg)}`));
+      messages.push(makeMessage("assistant", `response ${i}`));
+    }
+    return messages;
+  }
+
+  const modelThresholds: { model: string; contextWindow: number }[] = [
+    { model: "claude-opus-4-6", contextWindow: 1_000_000 },
+    { model: "claude-sonnet-4-6", contextWindow: 1_000_000 },
+    { model: "claude-haiku-4-5-20251001", contextWindow: 200_000 },
+    { model: "gpt-5.3-codex", contextWindow: 400_000 },
+    { model: "gpt-5.1-codex-mini", contextWindow: 200_000 },
+    { model: "glm-5.1", contextWindow: 204_800 },
+    { model: "glm-4.7", contextWindow: 200_000 },
+    { model: "glm-4.7-flash", contextWindow: 200_000 },
+    { model: "kimi-k2.5", contextWindow: 200_000 },
+  ];
+
+  it("model registry returns correct context windows for all models", () => {
+    for (const { model, contextWindow } of modelThresholds) {
+      expect(getContextWindow(model), `${model} context window`).toBe(contextWindow);
+    }
+  });
+
+  it("unknown models fall back to 200k context window", () => {
+    expect(getContextWindow("some-unknown-model")).toBe(200_000);
+  });
+
+  for (const { model, contextWindow } of modelThresholds) {
+    const threshold80 = contextWindow * 0.8;
+
+    it(`${model} (${contextWindow / 1000}k): does NOT compact at 70% context`, () => {
+      const tokens70 = Math.floor(contextWindow * 0.7);
+      const messages = buildConversationOfSize(tokens70);
+      // Use actualTokens to precisely control the value
+      expect(shouldCompact(messages, contextWindow, 0.8, tokens70)).toBe(false);
+    });
+
+    it(`${model} (${contextWindow / 1000}k): DOES compact at 85% context`, () => {
+      const tokens85 = Math.floor(contextWindow * 0.85);
+      const messages = buildConversationOfSize(tokens85);
+      expect(shouldCompact(messages, contextWindow, 0.8, tokens85)).toBe(true);
+    });
+
+    it(`${model} (${contextWindow / 1000}k): compaction threshold is exactly ${threshold80 / 1000}k tokens`, () => {
+      const messages = [makeMessage("user", "x")];
+      // 1 token under threshold — no compact
+      expect(shouldCompact(messages, contextWindow, 0.8, threshold80 - 1)).toBe(false);
+      // 1 token over threshold — compact
+      expect(shouldCompact(messages, contextWindow, 0.8, threshold80 + 1)).toBe(true);
+    });
+  }
 });
 
 // ── findRecentCutPoint ─────────────────────────────────────
@@ -162,14 +247,16 @@ describe("findRecentCutPoint", () => {
     expect(cut).toBe(1);
   });
 
-  it("returns length when budget is 0", () => {
+  it("keeps at least last user→assistant exchange when budget is 0", () => {
     const messages = [
       makeMessage("system", "sys"),
       makeMessage("user", "hello"),
       makeMessage("assistant", "hi"),
     ];
     const cut = findRecentCutPoint(messages, 0);
-    expect(cut).toBe(messages.length);
+    // Budget 0 means nothing fits, but the guard ensures we always keep
+    // the last user→assistant pair so compaction never produces empty recent messages.
+    expect(cut).toBe(1);
   });
 });
 
