@@ -15,7 +15,7 @@ Three packages. Each one works on its own. Stack them together and you get a ful
 
 | Package | What it does | README |
 |---|---|---|
-| [`@kenkaiiii/gg-ai`](https://www.npmjs.com/package/@kenkaiiii/gg-ai) | Unified LLM streaming API across four providers | [packages/gg-ai](packages/gg-ai/README.md) |
+| [`@kenkaiiii/gg-ai`](https://www.npmjs.com/package/@kenkaiiii/gg-ai) | Unified LLM streaming API across five providers | [packages/gg-ai](packages/gg-ai/README.md) |
 | [`@kenkaiiii/gg-agent`](https://www.npmjs.com/package/@kenkaiiii/gg-agent) | Agent loop with multi-turn tool execution | [packages/gg-agent](packages/gg-agent/README.md) |
 | [`@kenkaiiii/ggcoder`](https://www.npmjs.com/package/@kenkaiiii/ggcoder) | CLI coding agent with OAuth, tools, and TUI | [packages/ggcoder](packages/ggcoder/README.md) |
 
@@ -72,7 +72,7 @@ MIT
 ---
 
 <p align="center">
-  <strong>Less bloat. More coding. Four providers. Three packages. One framework.</strong>
+  <strong>Less bloat. More coding. Five providers. Three packages. One framework.</strong>
 </p>
 
 <p align="center">

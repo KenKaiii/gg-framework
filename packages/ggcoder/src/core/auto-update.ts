@@ -67,6 +67,11 @@ function compareVersions(a: string, b: string): number {
 function detectInstallInfo(): InstallInfo {
   const scriptPath = (process.argv[1] ?? "").replace(/\\/g, "/");
 
+  // npm link / local dev — skip (managed via git pull + pnpm build)
+  if (scriptPath.includes("/gg-framework/")) {
+    return { packageManager: PackageManager.UNKNOWN, updateCommand: null };
+  }
+
   // npx — skip (ephemeral)
   if (scriptPath.includes("/_npx/")) {
     return { packageManager: PackageManager.UNKNOWN, updateCommand: null };
