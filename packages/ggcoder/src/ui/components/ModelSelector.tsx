@@ -1,6 +1,6 @@
 import React from "react";
 import type { Provider } from "@kenkaiiii/gg-ai";
-import { MODELS } from "../../core/model-registry.js";
+import { getAllModels } from "../../core/model-registry.js";
 import { SelectList } from "./SelectList.js";
 
 interface ModelSelectorProps {
@@ -18,7 +18,7 @@ export function ModelSelector({
   currentModel,
   currentProvider,
 }: ModelSelectorProps) {
-  const filtered = MODELS.filter((m) => loggedInProviders.includes(m.provider));
+  const filtered = getAllModels().filter((m) => loggedInProviders.includes(m.provider));
 
   const currentValue = `${currentProvider}:${currentModel}`;
 

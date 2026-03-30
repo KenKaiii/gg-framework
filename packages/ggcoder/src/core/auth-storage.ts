@@ -73,8 +73,8 @@ export class AuthStorage {
       throw new NotLoggedInError(provider);
     }
 
-    // GLM and Moonshot use static API keys — no refresh needed
-    if (provider === "glm" || provider === "moonshot") {
+    // GLM, Moonshot, and Venice use static API keys — no refresh needed
+    if (provider === "glm" || provider === "moonshot" || provider === "venice") {
       return creds;
     }
 

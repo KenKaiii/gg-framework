@@ -46,7 +46,7 @@ import { buildSystemPrompt } from "./system-prompt.js";
 import { createTools } from "./tools/index.js";
 import { shouldCompact, compact } from "./core/compaction/compactor.js";
 import { setEstimatorModel } from "./core/compaction/token-estimator.js";
-import { getContextWindow } from "./core/model-registry.js";
+import { getContextWindow, registerCustomModels } from "./core/model-registry.js";
 import { MCPClientManager, getMCPServers } from "./core/mcp/index.js";
 import { discoverAgents } from "./core/agents.js";
 import { discoverSkills } from "./core/skills.js";
@@ -143,7 +143,7 @@ function printHelp(): void {
   const opts: [string, string][] = [
     ["-h, --help", "Show this help message"],
     ["-v, --version", "Show version number"],
-    ["--provider <name>", "AI provider (anthropic, openai, glm, moonshot)"],
+    ["--provider <name>", "AI provider (anthropic, openai, glm, moonshot, venice)"],
     ["--model <name>", "Model to use (e.g. claude-sonnet-4-6, gpt-4.1)"],
     ["--max-turns <n>", "Maximum agent turns per prompt"],
     ["--system-prompt <text>", "Override the system prompt"],
@@ -326,7 +326,7 @@ function main(): void {
   }
 
   // Load saved settings for model/provider persistence
-  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | undefined;
+  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | "venice" | undefined;
   let savedModel: string | undefined;
   let savedThinkingEnabled = false;
   let savedTheme: "auto" | "dark" | "light" = "auto";
@@ -337,16 +337,21 @@ function main(): void {
     if (raw.thinkingEnabled === true) savedThinkingEnabled = true;
     if (raw.theme === "dark" || raw.theme === "light" || raw.theme === "auto")
       savedTheme = raw.theme;
+    // Load user-defined custom models into the registry
+    if (Array.isArray(raw.customModels) && raw.customModels.length > 0) {
+      registerCustomModels(raw.customModels);
+    }
   } catch {
     // No settings file or invalid JSON — use defaults
   }
 
-  const provider: "anthropic" | "openai" | "glm" | "moonshot" = savedProvider ?? "anthropic";
+  const provider: "anthropic" | "openai" | "glm" | "moonshot" | "venice" = savedProvider ?? "anthropic";
 
   function getHardcodedDefault(p: string): string {
     if (p === "openai") return "gpt-5.3-codex";
     if (p === "glm") return "glm-5.1";
     if (p === "moonshot") return "kimi-k2.5";
+    if (p === "venice") return "qwen3-coder-480b-a35b-instruct";
     return "claude-opus-4-6";
   }
 
@@ -402,7 +407,7 @@ async function runInkTUI(opts: {
   const creds = await authStorage.resolveCredentials(provider);
 
   // Detect all logged-in providers and preload their credentials
-  const allProviders: Provider[] = ["anthropic", "openai", "glm", "moonshot"];
+  const allProviders: Provider[] = ["anthropic", "openai", "glm", "moonshot", "venice"];
   const loggedInProviders: Provider[] = [];
   const credentialsByProvider: Record<string, { accessToken: string; accountId?: string }> = {};
 
@@ -624,8 +629,8 @@ async function runLogin(): Promise<void> {
     };
 
     let creds;
-    if (provider === "glm" || provider === "moonshot") {
-      const keyLabel = provider === "glm" ? "Z.AI" : "Moonshot";
+    if (provider === "glm" || provider === "moonshot" || provider === "venice") {
+      const keyLabel = provider === "glm" ? "Z.AI" : provider === "venice" ? "Venice" : "Moonshot";
       const apiKey = await rl.question(chalk.hex("#60a5fa")(`Paste your ${keyLabel} API key: `));
       if (!apiKey.trim()) {
         console.log(chalk.hex("#ef4444")("No API key provided. Login cancelled."));
@@ -683,7 +688,7 @@ async function runSessions(): Promise<void> {
   }
 
   // Load saved settings for provider/model/theme
-  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | undefined;
+  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | "venice" | undefined;
   let savedModel: string | undefined;
   let savedThinkingEnabled = false;
   let savedTheme: "auto" | "dark" | "light" = "auto";
@@ -698,7 +703,7 @@ async function runSessions(): Promise<void> {
     // No settings file — use defaults
   }
 
-  const provider: "anthropic" | "openai" | "glm" | "moonshot" = savedProvider ?? "anthropic";
+  const provider: "anthropic" | "openai" | "glm" | "moonshot" | "venice" = savedProvider ?? "anthropic";
 
   function getDefault(p: string): string {
     if (p === "openai") return "gpt-5.3-codex";
@@ -938,7 +943,7 @@ async function runServe(): Promise<void> {
   }
 
   // Load saved settings
-  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | undefined;
+  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | "venice" | undefined;
   let savedModel: string | undefined;
   let savedThinkingEnabled = false;
   try {
@@ -988,6 +993,7 @@ function displayName(provider: Provider): string {
   if (provider === "anthropic") return "Anthropic";
   if (provider === "glm") return "Z.AI (GLM)";
   if (provider === "moonshot") return "Moonshot";
+  if (provider === "venice") return "Venice";
   return "OpenAI";
 }
 
