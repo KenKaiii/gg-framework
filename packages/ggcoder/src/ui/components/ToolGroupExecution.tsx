@@ -1,7 +1,6 @@
 import React, { useMemo } from "react";
 import { Text, Box } from "ink";
-import { useTheme } from "../theme/theme.js";
-import { Spinner } from "./Spinner.js";
+import { ToolUseLoader } from "./ToolUseLoader.js";
 import type { ToolGroupItem } from "../App.js";
 
 type ToolGroupTool = ToolGroupItem["tools"][number];
@@ -42,20 +41,30 @@ function buildGroupSummary(tools: ToolGroupTool[], allDone: boolean): SummarySeg
     );
   }
   if (counts.read) {
-    const n = counts.read;
+    // Show abbreviated file paths instead of just counts
+    const readTools = tools.filter((t) => t.name === "read");
+    const paths = readTools
+      .map((t) => {
+        const fp = String(t.args?.file_path ?? "");
+        const segs = fp.split("/");
+        return segs.length <= 2 ? fp : "…/" + segs.slice(-2).join("/");
+      })
+      .filter(Boolean);
+    const maxPaths = 3;
+    const shown = paths.slice(0, maxPaths);
+    const extra = paths.length - maxPaths;
+
     parts.push(
       allDone
         ? [
-            { text: "read", bold: true, color: BLUE },
-            { text: " ", bold: false },
-            { text: String(n), bold: true },
-            { text: ` file${n !== 1 ? "s" : ""}`, bold: false },
+            { text: "Read ", bold: true, color: BLUE },
+            { text: shown.join(", "), bold: false },
+            ...(extra > 0 ? [{ text: ` +${extra} more`, bold: false }] : []),
           ]
         : [
-            { text: "reading", bold: true, color: BLUE },
-            { text: " ", bold: false },
-            { text: String(n), bold: true },
-            { text: ` file${n !== 1 ? "s" : ""}`, bold: false },
+            { text: "Reading ", bold: true, color: BLUE },
+            { text: shown.join(", "), bold: false },
+            ...(extra > 0 ? [{ text: ` +${extra} more`, bold: false }] : []),
           ],
     );
   }
@@ -130,12 +139,7 @@ function SummaryText({ segments }: { segments: SummarySegment[] }) {
   );
 }
 
-function summaryToString(segments: SummarySegment[]): string {
-  return segments.map((s) => s.text).join("");
-}
-
 export function ToolGroupExecution({ tools }: { tools: ToolGroupTool[] }) {
-  const theme = useTheme();
   const allDone = tools.every((t) => t.status === "done");
   const doneCount = tools.filter((t) => t.status === "done").length;
   const toolNames = tools.map((t) => t.name).join(",");
@@ -147,16 +151,19 @@ export function ToolGroupExecution({ tools }: { tools: ToolGroupTool[] }) {
 
   if (!allDone) {
     return (
-      <Box marginTop={1}>
-        <Spinner label={summaryToString(segments)} />
+      <Box marginTop={1} flexDirection="row">
+        <ToolUseLoader status="running" />
+        <Text wrap="wrap">
+          <SummaryText segments={segments} />
+        </Text>
       </Box>
     );
   }
 
   return (
-    <Box marginTop={1} flexShrink={1}>
+    <Box marginTop={1} flexDirection="row" flexShrink={1}>
+      <ToolUseLoader status="done" />
       <Text wrap="wrap">
-        <Text color={theme.primary}>{"⏺ "}</Text>
         <SummaryText segments={segments} />
       </Text>
     </Box>

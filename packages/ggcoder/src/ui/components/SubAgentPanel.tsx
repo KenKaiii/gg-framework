@@ -4,6 +4,7 @@ import { useTheme } from "../theme/theme.js";
 import { SPINNER_FRAMES, SPINNER_INTERVAL } from "../spinner-frames.js";
 import { useAnimationTick, useAnimationActive, deriveFrame } from "./AnimationContext.js";
 import { useTerminalSize } from "../hooks/useTerminalSize.js";
+import { ToolUseLoader } from "./ToolUseLoader.js";
 
 export interface SubAgentInfo {
   toolCallId: string;
@@ -146,7 +147,6 @@ const AgentRow = React.memo(
 );
 
 export function SubAgentPanel({ agents, aborted = false }: SubAgentPanelProps) {
-  const theme = useTheme();
   const { columns } = useTerminalSize();
 
   if (agents.length === 0) return null;
@@ -154,7 +154,7 @@ export function SubAgentPanel({ agents, aborted = false }: SubAgentPanelProps) {
   const runningCount = agents.filter((a) => a.status === "running").length;
   const allDone = runningCount === 0;
 
-  // "⏺ " prefix = 2 chars — content area gets the rest
+  // ToolUseLoader minWidth={2} = 2 chars
   const HEADER_PREFIX = 2;
   const contentColumns = Math.max(10, columns - HEADER_PREFIX);
 
@@ -164,11 +164,11 @@ export function SubAgentPanel({ agents, aborted = false }: SubAgentPanelProps) {
       ? `${agents.length} agent${agents.length !== 1 ? "s" : ""} completed`
       : `${agents.length} agent${agents.length !== 1 ? "s" : ""} launched`;
 
+  const dotStatus = aborted ? "error" : allDone ? "done" : "running";
+
   return (
     <Box marginTop={1} flexDirection="row">
-      <Box width={HEADER_PREFIX} flexShrink={0}>
-        <Text color={theme.primary}>{"⏺ "}</Text>
-      </Box>
+      <ToolUseLoader status={dotStatus} />
       <Box flexDirection="column" flexGrow={1} width={contentColumns}>
         <Text bold wrap="wrap">
           {headerText}

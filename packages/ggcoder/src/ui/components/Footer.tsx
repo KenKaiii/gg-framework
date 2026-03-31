@@ -3,10 +3,15 @@ import { Text, Box } from "ink";
 import { useTheme } from "../theme/theme.js";
 import { useTerminalSize } from "../hooks/useTerminalSize.js";
 import { getContextWindow } from "../../core/model-registry.js";
+import { PARTIAL_BLOCKS, LIGHT_SHADE, DOWN_ARROW, UP_ARROW } from "../constants/figures.js";
 
 interface FooterProps {
   model: string;
   tokensIn: number;
+  tokensOut?: number;
+  sessionCost?: number;
+  linesAdded?: number;
+  linesRemoved?: number;
   cwd: string;
   gitBranch?: string | null;
   thinkingEnabled?: boolean;
@@ -42,23 +47,25 @@ function getContextColor(pct: number, theme: ReturnType<typeof useTheme>): strin
   return theme.success;
 }
 
-// ── Partial block gauge ───────────────────────────────────
+function formatTokens(n: number): string {
+  if (n === 0) return "0";
+  if (n < 1000) return String(n);
+  if (n < 10_000) return (n / 1000).toFixed(1) + "k";
+  return Math.round(n / 1000) + "k";
+}
 
-const PARTIAL_BLOCKS = [
-  " ",
-  "\u258F",
-  "\u258E",
-  "\u258D",
-  "\u258C",
-  "\u258B",
-  "\u258A",
-  "\u2589",
-  "\u2588",
-];
+function formatCost(cost: number): string {
+  if (cost < 0.01) return "$0.00";
+  return "$" + cost.toFixed(2);
+}
 
 export function Footer({
   model,
   tokensIn,
+  tokensOut = 0,
+  sessionCost = 0,
+  linesAdded = 0,
+  linesRemoved = 0,
   cwd,
   gitBranch,
   thinkingEnabled,
@@ -99,15 +106,20 @@ export function Footer({
     } else {
       barChars.push(
         <Text key={i} color={theme.textDim}>
-          {"\u2591"}
+          {LIGHT_SHADE}
         </Text>,
       );
     }
   }
 
-  // Plan/Thinking labels — no keyboard shortcut hints
+  // Plan/Thinking labels
   const planText = planMode ? "Plan on" : "Plan off";
   const thinkingText = thinkingEnabled ? "Thinking on" : "Thinking off";
+
+  // Token/cost/lines info segments
+  const tokenInfo = `${DOWN_ARROW}${formatTokens(tokensIn)} ${UP_ARROW}${formatTokens(tokensOut)}`;
+  const costInfo = sessionCost > 0 ? formatCost(sessionCost) : "";
+  const hasLines = linesAdded > 0 || linesRemoved > 0;
 
   // Calculate whether everything fits on one line
   const leftLen = displayPath.length + 2 + (gitBranch ? gitBranch.length + 5 : 0);
@@ -118,6 +130,10 @@ export function Footer({
     1 +
     3 +
     modelName.length +
+    3 +
+    tokenInfo.length +
+    (costInfo ? 3 + costInfo.length : 0) +
+    (hasLines ? 3 + String(linesAdded).length + 2 + String(linesRemoved).length : 0) +
     3 +
     planText.length +
     3 +
@@ -130,6 +146,38 @@ export function Footer({
     displayPath.length > maxPath && maxPath > 10
       ? "\u2026" + displayPath.slice(displayPath.length - maxPath + 1)
       : displayPath;
+
+  // Shared right-side content
+  const rightContent = (
+    <>
+      <Text>{barChars}</Text>
+      <Text color={contextColor}> {contextPct}%</Text>
+      {sep}
+      <Text color={theme.primary} bold>
+        {modelName}
+      </Text>
+      {sep}
+      <Text color={theme.textDim}>{tokenInfo}</Text>
+      {costInfo && (
+        <>
+          {sep}
+          <Text color={theme.textDim}>{costInfo}</Text>
+        </>
+      )}
+      {hasLines && (
+        <>
+          {sep}
+          <Text color={theme.success}>+{linesAdded}</Text>
+          <Text color={theme.textDim}>/</Text>
+          <Text color={theme.error}>-{linesRemoved}</Text>
+        </>
+      )}
+      {sep}
+      <Text color={planMode ? theme.planPrimary : theme.textDim}>{planText}</Text>
+      {sep}
+      <Text color={thinkingEnabled ? theme.accent : theme.textDim}>{thinkingText}</Text>
+    </>
+  );
 
   if (fitsOnOneLine) {
     return (
@@ -146,18 +194,7 @@ export function Footer({
             </>
           )}
         </Box>
-        <Box flexShrink={0}>
-          <Text>{barChars}</Text>
-          <Text color={contextColor}> {contextPct}%</Text>
-          {sep}
-          <Text color={theme.primary} bold>
-            {modelName}
-          </Text>
-          {sep}
-          <Text color={planMode ? theme.planPrimary : theme.textDim}>{planText}</Text>
-          {sep}
-          <Text color={thinkingEnabled ? theme.accent : theme.textDim}>{thinkingText}</Text>
-        </Box>
+        <Box flexShrink={0}>{rightContent}</Box>
       </Box>
     );
   }
@@ -179,18 +216,7 @@ export function Footer({
           </>
         )}
       </Box>
-      <Box>
-        <Text>{barChars}</Text>
-        <Text color={contextColor}> {contextPct}%</Text>
-        {sep}
-        <Text color={theme.primary} bold>
-          {modelName}
-        </Text>
-        {sep}
-        <Text color={planMode ? theme.planPrimary : theme.textDim}>{planText}</Text>
-        {sep}
-        <Text color={thinkingEnabled ? theme.accent : theme.textDim}>{thinkingText}</Text>
-      </Box>
+      <Box>{rightContent}</Box>
     </Box>
   );
 }

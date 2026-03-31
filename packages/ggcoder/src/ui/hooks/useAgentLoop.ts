@@ -107,6 +107,8 @@ export interface UseAgentLoopReturn {
   thinkingMs: number;
   isThinking: boolean;
   streamedTokenEstimate: number;
+  sessionCost: number;
+  linesChanged: { added: number; removed: number };
 }
 
 export function useAgentLoop(
@@ -167,6 +169,8 @@ export function useAgentLoop(
   const [isThinking, setIsThinking] = useState(false);
   const [streamedTokenEstimate, setStreamedTokenEstimate] = useState(0);
   const [retryInfo, setRetryInfo] = useState<RetryInfo | null>(null);
+  const [sessionCost, setSessionCost] = useState(0);
+  const [linesChanged, setLinesChanged] = useState({ added: 0, removed: 0 });
 
   const abortRef = useRef<AbortController | null>(null);
   const queueRef = useRef<UserContent[]>([]);
@@ -395,6 +399,19 @@ export function useAgentLoop(
                   durationMs,
                   event.details,
                 );
+                // Track lines changed for edit tools
+                if (toolName === "edit" && !event.isError) {
+                  const diff =
+                    (event.details as { diff?: string } | undefined)?.diff ?? event.result;
+                  const addedLines = (diff.match(/^\+[^+]/gm) ?? []).length;
+                  const removedLines = (diff.match(/^-[^-]/gm) ?? []).length;
+                  if (addedLines > 0 || removedLines > 0) {
+                    setLinesChanged((prev) => ({
+                      added: prev.added + addedLines,
+                      removed: prev.removed + removedLines,
+                    }));
+                  }
+                }
                 activeToolCallsRef.current = activeToolCallsRef.current.filter(
                   (t) => t.toolCallId !== event.toolCallId,
                 );
@@ -450,6 +467,22 @@ export function useAgentLoop(
                 realTokensAccumRef.current += event.usage.outputTokens;
                 charCountRef.current = 0;
                 setStreamedTokenEstimate(realTokensAccumRef.current);
+                // Accumulate session cost (per-million pricing)
+                const costInput = event.usage.inputTokens;
+                const costOutput = event.usage.outputTokens;
+                const costCacheRead = event.usage.cacheRead ?? 0;
+                // Rough pricing: Anthropic $3/$15 per 1M, cache read $0.30/1M
+                // OpenAI GPT-4.1 $2/$8 per 1M
+                const isAnthropic = options.provider === "anthropic";
+                const inRate = isAnthropic ? 3.0 : 2.0;
+                const outRate = isAnthropic ? 15.0 : 8.0;
+                const cacheRate = isAnthropic ? 0.3 : 0;
+                const turnCost =
+                  ((costInput - costCacheRead) * inRate +
+                    costCacheRead * cacheRate +
+                    costOutput * outRate) /
+                  1_000_000;
+                setSessionCost((prev) => prev + Math.max(0, turnCost));
                 // Reset phase for next turn
                 phaseRef.current = "waiting";
                 setActivityPhase("waiting");
@@ -600,5 +633,7 @@ export function useAgentLoop(
     thinkingMs,
     isThinking,
     streamedTokenEstimate,
+    sessionCost,
+    linesChanged,
   };
 }

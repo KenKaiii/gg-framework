@@ -2,16 +2,19 @@ import React, { memo } from "react";
 import { Text, Box } from "ink";
 import { useTheme } from "../theme/theme.js";
 import { Spinner } from "./Spinner.js";
+import { ToolUseLoader } from "./ToolUseLoader.js";
+import { MessageResponse } from "./MessageResponse.js";
 import { highlightCode, langFromPath } from "../utils/highlight.js";
 import { useTerminalSize } from "../hooks/useTerminalSize.js";
 import { computeWordDiff, type WordSegment } from "../utils/word-diff.js";
+import { DASHED_H } from "../constants/figures.js";
 
 const MAX_OUTPUT_LINES = 4; // max lines shown per tool result
 
-// "⏺ " prefix = 2 chars
+// ToolUseLoader minWidth={2} = 2 chars
 const HEADER_PREFIX = 2;
-// Body is indented paddingLeft={2} + "⎿  " or "   " = 3 chars
-const BODY_PREFIX = 5;
+// MessageResponse gutter: "  ⎿  " = 6 chars
+const BODY_PREFIX = 6;
 
 /** Truncate a line so it fits within ~1 terminal row. */
 function truncateLine(line: string, cols: number, reservedChars = 6): string {
@@ -44,18 +47,24 @@ export function ToolExecution(props: ToolExecutionProps) {
   const { columns } = useTerminalSize();
 
   if (props.status === "running") {
-    // Compact tools get a summary label while running
+    // Compact tools get a blinking dot + summary label
     if (COMPACT_TOOLS.has(props.name)) {
       const summary = getCompactRunningLabel(props.name, props.args);
       return (
-        <Box marginTop={1}>
-          <Spinner label={`${summary} (ctrl+o to expand)`} />
+        <Box marginTop={1} flexDirection="row">
+          <ToolUseLoader status="running" />
+          <Text color={theme.toolName} bold>
+            {summary}
+          </Text>
+          <Text color={theme.textDim}>{" (ctrl+o to expand)"}</Text>
         </Box>
       );
     }
+    // Non-compact tools keep the sparkle spinner with a blinking dot prefix
     const { label, detail } = getToolHeaderParts(props.name, props.args);
     return (
-      <Box marginTop={1}>
+      <Box marginTop={1} flexDirection="row">
+        <ToolUseLoader status="running" />
         <Spinner label={detail ? `${label}(${detail})` : label} />
       </Box>
     );
@@ -70,9 +79,7 @@ export function ToolExecution(props: ToolExecutionProps) {
     const summary = getCompactDoneLabel(name, args, result);
     return (
       <Box marginTop={1} flexDirection="row">
-        <Box width={HEADER_PREFIX} flexShrink={0}>
-          <Text color={theme.primary}>{"⏺ "}</Text>
-        </Box>
+        <ToolUseLoader status="done" />
         <Box flexGrow={1} width={headerContentWidth}>
           <Text bold color={theme.toolName} wrap="wrap">
             {summary}
@@ -99,9 +106,7 @@ export function ToolExecution(props: ToolExecutionProps) {
     const inline = getInlineSummary(name, result, isError);
     return (
       <Box marginTop={1} flexDirection="row">
-        <Box width={HEADER_PREFIX} flexShrink={0}>
-          <Text color={theme.primary}>{"⏺ "}</Text>
-        </Box>
+        <ToolUseLoader status={isError ? "error" : "done"} />
         <Box flexGrow={1} width={headerContentWidth}>
           <Text wrap="wrap">
             <Text bold color={headerColor}>
@@ -126,11 +131,9 @@ export function ToolExecution(props: ToolExecutionProps) {
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      {/* Header: fixed prefix + wrapping content */}
+      {/* Header: status dot + wrapping content */}
       <Box flexDirection="row">
-        <Box width={HEADER_PREFIX} flexShrink={0}>
-          <Text color={theme.primary}>{"⏺ "}</Text>
-        </Box>
+        <ToolUseLoader status={isError ? "error" : "done"} />
         <Box flexGrow={1} width={headerContentWidth}>
           <Text wrap="wrap">
             <Text bold color={headerColor}>
@@ -146,28 +149,23 @@ export function ToolExecution(props: ToolExecutionProps) {
           </Text>
         </Box>
       </Box>
-      {/* Body with ⎿ connector: fixed prefix + wrapping content */}
-      <Box flexDirection="column" paddingLeft={2}>
-        {lines.map((line, i) => (
-          <Box key={i} flexDirection="row">
-            <Box width={3} flexShrink={0}>
-              <Text color={theme.textDim}>{i === 0 ? "⎿  " : "   "}</Text>
-            </Box>
-            <Box flexGrow={1} width={bodyContentWidth}>
+      {/* Body with ⎿ bracket via MessageResponse */}
+      <MessageResponse>
+        <Box flexDirection="column">
+          {lines.map((line, i) => (
+            <Box key={i} flexGrow={1} width={bodyContentWidth}>
               {line}
             </Box>
-          </Box>
-        ))}
-        {hiddenCount > 0 && (
-          <Box>
+          ))}
+          {hiddenCount > 0 && (
             <Text color={theme.textDim} wrap="wrap">
-              {"   … +"}
+              {"… +"}
               {hiddenCount}
               {" lines (ctrl+o to expand)"}
             </Text>
-          </Box>
-        )}
-      </Box>
+          )}
+        </Box>
+      </MessageResponse>
     </Box>
   );
 }
@@ -466,12 +464,21 @@ function buildDiffBody(
     <DiffLine key={i} line={line} padWidth={padWidth} />
   ));
 
+  // Wrap diff lines in a dashed border frame (top/bottom only)
+  const diffFrame = (
+    <Box key="diff-frame" flexDirection="column">
+      <Text color="#4b5563">{DASHED_H.repeat(40)}</Text>
+      {rendered}
+      <Text color="#4b5563">{DASHED_H.repeat(40)}</Text>
+    </Box>
+  );
+
   return {
     lines: [
       <Text key="summary" color="#9ca3af">
         {summaryText}
       </Text>,
-      ...rendered,
+      diffFrame,
     ],
     totalLines: focused.length + 1,
   };

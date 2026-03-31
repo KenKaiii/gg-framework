@@ -22,5 +22,6 @@
   "footerText": "#9ca3af",
   "commandColor": "#4f46e5",
   "planPrimary": "#d97706",
-  "planBorder": "#b45309"
+  "planBorder": "#b45309",
+  "subtle": "#d1d5db"
 }

@@ -1,12 +1,13 @@
 import React, { memo, useMemo } from "react";
 import { Text, Box } from "ink";
 import { useTheme } from "../theme/theme.js";
-import { Markdown } from "./Markdown.js";
+import { StreamingMarkdown } from "./Markdown.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
 import { useTerminalSize } from "../hooks/useTerminalSize.js";
 import { stripDoneMarkers } from "../../utils/plan-steps.js";
+import { BLACK_CIRCLE, PLAN_SYMBOL } from "../constants/figures.js";
 
-// "⏺ " prefix = 2 chars
+// BLACK_CIRCLE + " " = 2 chars
 const PREFIX_WIDTH = 2;
 
 interface StreamingAreaProps {
@@ -52,12 +53,12 @@ export const StreamingArea = memo(function StreamingArea({
         <Box flexDirection="row">
           <Box width={PREFIX_WIDTH} flexShrink={0}>
             <Text color={planMode ? theme.planPrimary : theme.primary}>
-              {planMode ? "⊞ " : "⏺ "}
+              {planMode ? PLAN_SYMBOL + " " : BLACK_CIRCLE + " "}
             </Text>
           </Box>
           <Box flexDirection="column" flexGrow={1} width={contentWidth}>
-            {/* Pass width directly to avoid measureElement on every streaming tick. */}
-            <Markdown width={contentWidth}>{displayText.trimStart()}</Markdown>
+            {/* Stable/unstable split: only re-parses the tail block. */}
+            <StreamingMarkdown width={contentWidth}>{displayText.trimStart()}</StreamingMarkdown>
           </Box>
         </Box>
       )}
