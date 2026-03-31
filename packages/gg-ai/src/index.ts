@@ -45,3 +45,21 @@ export type {
 // Classes
 export { StreamResult, EventStream } from "./utils/event-stream.js";
 export { GGAIError, ProviderError } from "./errors.js";
+
+// Palsu provider (testing)
+export {
+  registerPalsuProvider,
+  palsuText,
+  palsuThinking,
+  palsuToolCall,
+  palsuAssistantMessage,
+} from "./providers/palsu.js";
+export type {
+  PalsuProviderHandle,
+  PalsuProviderConfig,
+  PalsuProviderState,
+  PalsuResponse,
+  PalsuResponseFactory,
+  PalsuModelConfig,
+  PalsuModelHandle,
+} from "./providers/palsu.js";

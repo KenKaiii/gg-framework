@@ -81,6 +81,8 @@ export class Agent {
   private messages: Message[] = [];
   private _running = false;
   private options: AgentOptions;
+  private steeringQueue: Message[] = [];
+  private followUpQueue: Message[] = [];
 
   constructor(options: AgentOptions) {
     this.options = options;
@@ -93,6 +95,16 @@ export class Agent {
     return this._running;
   }
 
+  /** Queue a steering message for injection after current tool execution completes. */
+  steer(msg: Message): void {
+    this.steeringQueue.push(msg);
+  }
+
+  /** Queue a follow-up message for injection when the agent would otherwise stop. */
+  followUp(msg: Message): void {
+    this.followUpQueue.push(msg);
+  }
+
   prompt(content: string): AgentStream {
     if (this._running) {
       throw new Error("Agent is already running");
@@ -101,7 +113,23 @@ export class Agent {
 
     this.messages.push({ role: "user", content });
 
-    const generator = agentLoop(this.messages, this.options);
+    const optionsWithQueues: AgentOptions = {
+      ...this.options,
+      getSteeringMessages: async () => {
+        const callerResult = (await this.options.getSteeringMessages?.()) ?? [];
+        const queued = this.steeringQueue.splice(0);
+        const all = [...(callerResult ?? []), ...queued];
+        return all.length > 0 ? all : null;
+      },
+      getFollowUpMessages: async () => {
+        const callerResult = (await this.options.getFollowUpMessages?.()) ?? [];
+        const queued = this.followUpQueue.splice(0);
+        const all = [...(callerResult ?? []), ...queued];
+        return all.length > 0 ? all : null;
+      },
+    };
+
+    const generator = agentLoop(this.messages, optionsWithQueues);
     return new AgentStream(generator, () => {
       this._running = false;
     });

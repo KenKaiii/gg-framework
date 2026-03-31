@@ -1757,7 +1757,10 @@ export function App(props: AppProps) {
       if (props.settingsFile) {
         const sm = new SettingsManager(props.settingsFile);
         sm.load().then(async () => {
-          await sm.set("defaultProvider", newProvider);
+          await sm.set(
+            "defaultProvider",
+            newProvider as "anthropic" | "openai" | "glm" | "moonshot",
+          );
           await sm.set("defaultModel", newModelId);
         });
       }

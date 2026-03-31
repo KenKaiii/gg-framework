@@ -231,6 +231,106 @@ describe("agentLoop", () => {
     );
   });
 
+  it("polls getSteeringMessages before the first LLM call", async () => {
+    mockStream.mockReturnValueOnce(mockOkResult("Reply") as unknown as ReturnType<typeof stream>);
+
+    const messages: Message[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "test" },
+    ];
+
+    let callCount = 0;
+    const getSteeringMessages = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return [{ role: "user" as const, content: "extra context" }];
+      }
+      return null;
+    });
+
+    const { events } = await collectLoop(messages, {
+      provider: "anthropic",
+      model: "test",
+      getSteeringMessages,
+    });
+
+    // Steering should be called at least once (initial poll)
+    expect(getSteeringMessages).toHaveBeenCalled();
+    // The steering message should be in the conversation
+    expect(messages.some((m) => m.role === "user" && m.content === "extra context")).toBe(true);
+    expect(events.some((e) => e.type === "steering_message")).toBe(true);
+  });
+
+  it("injects follow-up messages when agent would stop", async () => {
+    // First call: agent responds with text (would stop)
+    // Second call: after follow-up, agent responds again
+    mockStream
+      .mockReturnValueOnce(mockOkResult("First reply") as unknown as ReturnType<typeof stream>)
+      .mockReturnValueOnce(mockOkResult("After follow-up") as unknown as ReturnType<typeof stream>);
+
+    const messages: Message[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "test" },
+    ];
+
+    let followUpCalled = false;
+    const getFollowUpMessages = vi.fn().mockImplementation(() => {
+      if (!followUpCalled) {
+        followUpCalled = true;
+        return [{ role: "user" as const, content: "follow up" }];
+      }
+      return null;
+    });
+
+    const { events, result } = await collectLoop(messages, {
+      provider: "anthropic",
+      model: "test",
+      getFollowUpMessages,
+    });
+
+    expect(getFollowUpMessages).toHaveBeenCalled();
+    expect(events.some((e) => e.type === "follow_up_message")).toBe(true);
+    expect(result.totalTurns).toBe(2);
+  });
+
+  it("steering takes priority over follow-up at pre-completion", async () => {
+    // First call: agent responds (would stop) -> steering fires
+    // Second call: agent responds (would stop) -> no steering, no follow-up
+    mockStream
+      .mockReturnValueOnce(mockOkResult("First") as unknown as ReturnType<typeof stream>)
+      .mockReturnValueOnce(mockOkResult("Second") as unknown as ReturnType<typeof stream>);
+
+    const messages: Message[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "test" },
+    ];
+
+    let steeringCallCount = 0;
+    const getSteeringMessages = vi.fn().mockImplementation(() => {
+      steeringCallCount++;
+      // Return steering only on the pre-completion check (2nd call — after initial poll)
+      if (steeringCallCount === 2) {
+        return [{ role: "user" as const, content: "steering" }];
+      }
+      return null;
+    });
+
+    // Follow-up should never fire because steering takes priority
+    const getFollowUpMessages = vi.fn().mockReturnValue(null);
+
+    const { events } = await collectLoop(messages, {
+      provider: "anthropic",
+      model: "test",
+      getSteeringMessages,
+      getFollowUpMessages,
+    });
+
+    expect(events.some((e) => e.type === "steering_message")).toBe(true);
+    expect(events.some((e) => e.type === "follow_up_message")).toBe(false);
+    // Follow-up was only checked on the second stop (after steering was consumed)
+    expect(getFollowUpMessages).toHaveBeenCalled();
+  });
+
   it("throws on non-overflow errors even with transformContext", async () => {
     const otherErr = new Error("authentication failed");
     mockStream.mockReturnValueOnce(

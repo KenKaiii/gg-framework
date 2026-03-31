@@ -115,6 +115,11 @@ export interface AgentSteeringMessageEvent {
   content: Message["content"];
 }
 
+export interface AgentFollowUpMessageEvent {
+  type: "follow_up_message";
+  content: Message["content"];
+}
+
 export type AgentEvent =
   | AgentTextDeltaEvent
   | AgentThinkingDeltaEvent
@@ -124,6 +129,7 @@ export type AgentEvent =
   | AgentServerToolCallEvent
   | AgentServerToolResultEvent
   | AgentSteeringMessageEvent
+  | AgentFollowUpMessageEvent
   | AgentRetryEvent
   | AgentTurnEndEvent
   | AgentDoneEvent
@@ -176,6 +182,14 @@ export interface AgentOptions {
    * on read.
    */
   getSteeringMessages?: () => Promise<Message[] | null> | Message[] | null;
+  /**
+   * Polled when the agent would otherwise stop (no tool calls, no steering).
+   * Returns messages to inject and continue the loop. Lower priority than
+   * steering — only checked after getSteeringMessages returns empty.
+   * Return null/empty to inject nothing. Messages are consumed (cleared)
+   * on read.
+   */
+  getFollowUpMessages?: () => Promise<Message[] | null> | Message[] | null;
 }
 
 // ── Agent Result ────────────────────────────────────────────
