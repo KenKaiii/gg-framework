@@ -38,6 +38,7 @@ import {
   deriveFrame,
 } from "./components/AnimationContext.js";
 import { useTerminalTitle } from "./hooks/useTerminalTitle.js";
+import { useTerminalProgress } from "./hooks/useTerminalProgress.js";
 import { getGitBranch } from "../utils/git.js";
 import { getModel, getContextWindow } from "../core/model-registry.js";
 import { SessionManager, type MessageEntry } from "../core/session-manager.js";
@@ -1383,6 +1384,9 @@ export function App(props: AppProps) {
     setTitleRunning(agentLoop.isRunning);
     setTitleToolNames(agentLoop.activeToolCalls.map((tc) => tc.name));
   }, [agentLoop.activityPhase, agentLoop.isRunning, activeToolNamesKey]);
+
+  // Terminal progress bar (OSC 9;4) — pulsing bar in supported terminals
+  useTerminalProgress(agentLoop.isRunning, agentLoop.activeToolCalls.length > 0);
 
   // Animated thinking border — derived from global animation tick
   useAnimationActive();
