@@ -9,7 +9,7 @@ import { playNotificationSound } from "../utils/sound.js";
 import type { Message, Provider, ThinkingLevel, TextContent, ImageContent } from "@kenkaiiii/gg-ai";
 import { extractImagePaths, type ImageAttachment } from "../utils/image.js";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
-import { useAgentLoop, type ActivityPhase, type UserContent } from "./hooks/useAgentLoop.js";
+import { useAgentLoop, type UserContent } from "./hooks/useAgentLoop.js";
 import { UserMessage } from "./components/UserMessage.js";
 import type { PasteInfo } from "./components/InputArea.js";
 import { AssistantMessage } from "./components/AssistantMessage.js";
@@ -43,6 +43,7 @@ import { getGitBranch } from "../utils/git.js";
 import { getModel, getContextWindow } from "../core/model-registry.js";
 import { SessionManager, type MessageEntry } from "../core/session-manager.js";
 import { log } from "../core/logger.js";
+import { generateSessionTitle } from "../utils/session-title.js";
 import { SettingsManager } from "../core/settings-manager.js";
 import { shouldCompact, compact } from "../core/compaction/compactor.js";
 import { estimateConversationTokens } from "../core/compaction/token-estimator.js";
@@ -504,15 +505,12 @@ export function App(props: AppProps) {
 
   // Terminal title — updated later after agentLoop is created
   // (hoisted here so the hook is always called in the same order)
-  const [titlePhase, setTitlePhase] = useState<ActivityPhase>("idle");
   const [titleRunning, setTitleRunning] = useState(false);
-  const [titleToolNames, setTitleToolNames] = useState<string[]>([]);
+  const [sessionTitle, setSessionTitle] = useState<string | undefined>(undefined);
+  const sessionTitleGeneratedRef = useRef(false);
   useTerminalTitle({
-    phase: titlePhase,
     isRunning: titleRunning,
-    userMessage: lastUserMessage,
-    activeToolNames: titleToolNames,
-    planMode,
+    sessionTitle,
   });
 
   // Items scrolled into Static (history).  For restored sessions, skip the
@@ -912,7 +910,63 @@ export function App(props: AppProps) {
             }
           })();
         }
-      }, [persistNewMessages, planMode, props.cwd, props.skills]),
+
+        // Generate session title after the first turn (background, best-effort)
+        if (!sessionTitleGeneratedRef.current) {
+          sessionTitleGeneratedRef.current = true;
+          const msgs = messagesRef.current;
+          // Find the first user message and first assistant text
+          const userMsg = msgs.find((m) => m.role === "user");
+          const assistantMsg = msgs.find((m) => m.role === "assistant");
+          const userText =
+            typeof userMsg?.content === "string"
+              ? userMsg.content
+              : Array.isArray(userMsg?.content)
+                ? userMsg.content
+                    .filter((c): c is { type: "text"; text: string } => c.type === "text")
+                    .map((c) => c.text)
+                    .join(" ")
+                : "";
+          const assistantText =
+            typeof assistantMsg?.content === "string"
+              ? assistantMsg.content
+              : Array.isArray(assistantMsg?.content)
+                ? assistantMsg.content
+                    .filter((c): c is { type: "text"; text: string } => c.type === "text")
+                    .map((c) => c.text)
+                    .join(" ")
+                : "";
+          if (userText) {
+            generateSessionTitle({
+              provider: currentProvider,
+              userMessage: userText,
+              assistantPreview: assistantText.slice(0, 200),
+              apiKey: activeApiKey,
+              baseUrl: props.baseUrl,
+              accountId: activeAccountId,
+              resolveCredentials,
+            }).then(
+              (title) => {
+                setSessionTitle(title);
+                log("INFO", "title", `Session title generated: ${title}`);
+              },
+              () => {
+                // Best-effort — silently ignore failures
+              },
+            );
+          }
+        }
+      }, [
+        persistNewMessages,
+        planMode,
+        props.cwd,
+        props.skills,
+        currentProvider,
+        activeApiKey,
+        activeAccountId,
+        props.baseUrl,
+        resolveCredentials,
+      ]),
       onTurnText: useCallback((text: string, thinking: string, thinkingMs: number) => {
         // Track [DONE:n] markers for plan step progress
         if (planStepsRef.current.length > 0) {
@@ -1378,12 +1432,9 @@ export function App(props: AppProps) {
   });
 
   // Sync terminal title with agent loop state
-  const activeToolNamesKey = agentLoop.activeToolCalls.map((tc) => tc.name).join(",");
   useEffect(() => {
-    setTitlePhase(agentLoop.activityPhase);
     setTitleRunning(agentLoop.isRunning);
-    setTitleToolNames(agentLoop.activeToolCalls.map((tc) => tc.name));
-  }, [agentLoop.activityPhase, agentLoop.isRunning, activeToolNamesKey]);
+  }, [agentLoop.isRunning]);
 
   // Terminal progress bar (OSC 9;4) — pulsing bar in supported terminals
   useTerminalProgress(agentLoop.isRunning, agentLoop.activeToolCalls.length > 0);
@@ -1449,6 +1500,8 @@ export function App(props: AppProps) {
           messagesRef.current = [{ role: "system" as const, content: newPrompt }];
         })();
         agentLoop.reset();
+        setSessionTitle(undefined);
+        sessionTitleGeneratedRef.current = false;
         setLiveItems([{ kind: "info", text: "Session cleared.", id: getId() }]);
         return;
       }
