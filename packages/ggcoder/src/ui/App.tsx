@@ -2328,8 +2328,6 @@ export function App(props: AppProps) {
             <Footer
               model={currentModel}
               tokensIn={agentLoop.contextUsed}
-              linesAdded={agentLoop.linesChanged.added}
-              linesRemoved={agentLoop.linesChanged.removed}
               cwd={props.cwd}
               gitBranch={gitBranch}
               thinkingEnabled={thinkingEnabled}

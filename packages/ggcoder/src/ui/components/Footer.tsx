@@ -8,8 +8,6 @@ import { PARTIAL_BLOCKS, LIGHT_SHADE } from "../constants/figures.js";
 interface FooterProps {
   model: string;
   tokensIn: number;
-  linesAdded?: number;
-  linesRemoved?: number;
   cwd: string;
   gitBranch?: string | null;
   thinkingEnabled?: boolean;
@@ -48,8 +46,6 @@ function getContextColor(pct: number, theme: ReturnType<typeof useTheme>): strin
 export function Footer({
   model,
   tokensIn,
-  linesAdded = 0,
-  linesRemoved = 0,
   cwd,
   gitBranch,
   thinkingEnabled,
@@ -100,8 +96,6 @@ export function Footer({
   const planText = planMode ? "Plan on" : "Plan off";
   const thinkingText = thinkingEnabled ? "Thinking on" : "Thinking off";
 
-  const hasLines = linesAdded > 0 || linesRemoved > 0;
-
   // Calculate whether everything fits on one line
   const leftLen = displayPath.length + 2 + (gitBranch ? gitBranch.length + 5 : 0);
   const rightLen =
@@ -111,7 +105,6 @@ export function Footer({
     1 +
     3 +
     modelName.length +
-    (hasLines ? 3 + String(linesAdded).length + 2 + String(linesRemoved).length : 0) +
     3 +
     planText.length +
     3 +
@@ -134,14 +127,6 @@ export function Footer({
       <Text color={theme.primary} bold>
         {modelName}
       </Text>
-      {hasLines && (
-        <>
-          {sep}
-          <Text color={theme.success}>+{linesAdded}</Text>
-          <Text color={theme.textDim}>/</Text>
-          <Text color={theme.error}>-{linesRemoved}</Text>
-        </>
-      )}
       {sep}
       <Text color={planMode ? theme.planPrimary : theme.textDim}>{planText}</Text>
       {sep}
