@@ -68,7 +68,7 @@ function detectInstallInfo(): InstallInfo {
   const scriptPath = (process.argv[1] ?? "").replace(/\\/g, "/");
 
   // npm link / local dev — skip (managed via git pull + pnpm build)
-  if (scriptPath.includes("/gg-framework/")) {
+  if (scriptPath.includes("/gg-framework")) {
     return { packageManager: PackageManager.UNKNOWN, updateCommand: null };
   }
 
