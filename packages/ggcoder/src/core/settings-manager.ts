@@ -4,10 +4,23 @@ import { getAppPaths } from "../config.js";
 
 // ── Settings Schema ────────────────────────────────────────
 
+const CustomModelSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  provider: z.enum(["anthropic", "openai", "glm", "moonshot", "venice"]),
+  contextWindow: z.number().int().min(1024),
+  maxOutputTokens: z.number().int().min(256),
+  supportsThinking: z.boolean().default(false),
+  supportsImages: z.boolean().default(false),
+  costTier: z.enum(["low", "medium", "high"]).default("medium"),
+});
+
 const SettingsSchema = z.object({
   autoCompact: z.boolean().default(true),
   compactThreshold: z.number().min(0.1).max(1.0).default(0.8),
-  defaultProvider: z.enum(["anthropic", "openai", "glm", "moonshot"]).default("anthropic"),
+  defaultProvider: z
+    .enum(["anthropic", "openai", "glm", "moonshot", "venice"])
+    .default("anthropic"),
   defaultModel: z.string().optional(),
   maxTokens: z.number().int().min(256).default(16384),
   thinkingEnabled: z.boolean().default(false),
@@ -16,6 +29,9 @@ const SettingsSchema = z.object({
   showTokenUsage: z.boolean().default(true),
   showThinking: z.boolean().default(true),
   enabledTools: z.array(z.string()).optional(),
+  /** User-defined models — add any Venice (or other provider) model here.
+   *  See: curl https://api.venice.ai/api/v1/models for available Venice model IDs. */
+  customModels: z.array(CustomModelSchema).optional(),
   buddyEnabled: z.boolean().default(false),
 });
 

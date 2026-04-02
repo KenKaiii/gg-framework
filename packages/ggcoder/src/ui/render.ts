@@ -6,6 +6,7 @@ import type { ProcessManager } from "../core/process-manager.js";
 import type { MCPClientManager } from "../core/mcp/index.js";
 import type { AuthStorage } from "../core/auth-storage.js";
 import type { Skill } from "../core/skills.js";
+import type { RemoteControlServer } from "../core/remote-control.js";
 import { App, type CompletedItem } from "./App.js";
 import { ThemeContext, loadTheme } from "./theme/theme.js";
 import { detectTheme } from "./theme/detect-theme.js";
@@ -42,6 +43,7 @@ export interface RenderAppConfig {
   onEnterPlanRef?: { current: (reason?: string) => void };
   onExitPlanRef?: { current: (planPath: string) => Promise<string> };
   skills?: Skill[];
+  remoteControl?: RemoteControlServer;
 }
 
 export async function renderApp(config: RenderAppConfig): Promise<void> {
@@ -91,6 +93,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
             onEnterPlanRef: config.onEnterPlanRef,
             onExitPlanRef: config.onExitPlanRef,
             skills: config.skills,
+            remoteControl: config.remoteControl,
           }),
         ),
       ),

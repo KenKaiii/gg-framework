@@ -41,6 +41,9 @@ export interface BusEventMap {
   // Input events
   user_input: { content: string };
   slash_command: { name: string; args: string };
+
+  // Remote control events
+  remote_prompt: { content: string; commandId: string };
 }
 
 type EventKey = keyof BusEventMap;

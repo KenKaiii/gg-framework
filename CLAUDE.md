@@ -110,6 +110,82 @@ ggcoder --help                                # verify CLI works
 
 If `npm i` gets ETARGET after publishing, clear cache: `npm cache clean --force`
 
+## Fork Workflow (dao-du/gg-framework)
+
+This is a fork of `KenKaiii/gg-framework`. We added **Venice as a fifth provider** for privacy, anonymity, and uncensored model access. The upstream npm package doesn't have our changes, so we install globally from this local build — not from npm.
+
+### Remotes
+
+| Remote | Repo | Purpose |
+|---|---|---|
+| `upstream` | `KenKaiii/gg-framework` | Original repo — pull updates from here |
+| `fork` | `dao-du/gg-framework` | Our fork — push our merged changes here |
+
+### Our Custom Features (not in upstream)
+
+| Feature | Branch | Key Files |
+|---|---|---|
+| **Venice provider** | `main` | config.ts, cli.ts, model-registry.ts, agent-session.ts, login.tsx, stream.ts, types.ts |
+| **Remote Control (RC)** | `feat/remote-control` (merge into main) | remote-control.ts, event-bus.ts, App.tsx, cli.ts, useAgentLoop.ts, RemoteControlBanner.tsx |
+
+### Syncing upstream updates while keeping our features
+
+```bash
+cd ~/gg-framework-rc
+git checkout main
+
+# Make sure RC is merged into main first (one-time)
+# git merge feat/remote-control
+
+# Pull upstream
+git fetch upstream
+git merge upstream/main
+# Resolve conflicts if any
+# Venice touched: config.ts, cli.ts, model-registry.ts,
+#   agent-session.ts, auth-storage.ts, auto-update.ts, serve-mode.ts,
+#   ModelSelector.tsx, login.tsx, stream.ts, types.ts
+# RC touched: cli.ts, App.tsx, useAgentLoop.ts, render.ts, agent-session.ts
+#   (new files like remote-control.ts, event-bus.ts won't conflict)
+
+# Rebuild and reinstall globally
+pnpm install && pnpm build
+cd packages/ggcoder && npm install -g .
+
+# Push to our fork
+cd ~/gg-framework-rc && git push fork main
+```
+
+### Why not just `npm i -g @kenkaiiii/ggcoder`?
+
+ggcoder auto-updates from npm on launch. That pulls the upstream version which **does not have Venice or RC**, wiping our changes. Installing from the local build (`npm install -g .`) symlinks to our source, and the `auto-update.ts` change skips auto-update for local installs.
+
+### ⚠️ If the global install gets wiped (auto-update or accidental npm install)
+
+This WILL happen when ggcoder auto-updates. Quick recovery:
+
+```bash
+# One command to get our features back:
+cd ~/gg-framework-rc/packages/ggcoder && npm install -g .
+```
+
+To check if you have the right version:
+```bash
+ls -la $(which ggcoder)
+# Should symlink to gg-framework-rc, NOT to @kenkaiiii/ggcoder
+ggcoder --version
+# Should be 4.2.84 (our version), not a higher upstream version
+```
+
+### If you need to rebuild from scratch (after upstream merge)
+
+```bash
+cd ~/gg-framework-rc
+pnpm install && pnpm build
+cd packages/ggcoder && npm install -g .
+ggcoder --version  # verify
+ggcoder --rc       # verify RC works (should show socket banner)
+```
+
 ## Organization Rules
 
 - Types → `types.ts` in each package

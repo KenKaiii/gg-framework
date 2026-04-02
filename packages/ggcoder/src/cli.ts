@@ -47,7 +47,7 @@ import { buildSystemPrompt } from "./system-prompt.js";
 import { createTools } from "./tools/index.js";
 import { shouldCompact, compact } from "./core/compaction/compactor.js";
 import { setEstimatorModel } from "./core/compaction/token-estimator.js";
-import { getContextWindow } from "./core/model-registry.js";
+import { getContextWindow, registerCustomModels } from "./core/model-registry.js";
 import { MCPClientManager, getMCPServers } from "./core/mcp/index.js";
 import { discoverAgents } from "./core/agents.js";
 import { discoverSkills } from "./core/skills.js";
@@ -57,6 +57,7 @@ import { loginOpenAI } from "./core/oauth/openai.js";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "./core/oauth/types.js";
 import chalk from "chalk";
 import { checkAndAutoUpdate } from "./core/auto-update.js";
+import { RemoteControlServer, installCleanupHandlers } from "./core/remote-control.js";
 
 const _require = createRequire(import.meta.url);
 const CLI_VERSION = (_require("../package.json") as { version: string }).version;
@@ -146,12 +147,13 @@ function printHelp(): void {
   const opts: [string, string][] = [
     ["-h, --help", "Show this help message"],
     ["-v, --version", "Show version number"],
-    ["--provider <name>", "AI provider (anthropic, openai, glm, moonshot)"],
+    ["--provider <name>", "AI provider (anthropic, openai, glm, moonshot, venice)"],
     ["--model <name>", "Model to use (e.g. claude-sonnet-4-6, gpt-4.1)"],
     ["--max-turns <n>", "Maximum agent turns per prompt"],
     ["--system-prompt <text>", "Override the system prompt"],
     ["--json", "JSON output mode (for sub-agents)"],
     ["--rpc", "JSON-RPC mode (for IDE integrations)"],
+    ["--rc, --remote-control", "Enable remote control via Unix socket"],
   ];
   for (const [flag, desc] of opts) {
     console.log(`  ${accent(flag.padEnd(24))} ${dim(desc)}`);
@@ -290,6 +292,8 @@ function main(): void {
       version: { type: "boolean", short: "v" },
       json: { type: "boolean" },
       rpc: { type: "boolean" },
+      "remote-control": { type: "boolean" },
+      rc: { type: "boolean" },
       provider: { type: "string" },
       model: { type: "string" },
       "max-turns": { type: "string" },
@@ -350,7 +354,7 @@ function main(): void {
   }
 
   // Load saved settings for model/provider persistence
-  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | undefined;
+  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | "venice" | undefined;
   let savedModel: string | undefined;
   let savedThinkingEnabled = false;
   let savedTheme: "auto" | "dark" | "light" = "auto";
@@ -361,16 +365,22 @@ function main(): void {
     if (raw.thinkingEnabled === true) savedThinkingEnabled = true;
     if (raw.theme === "dark" || raw.theme === "light" || raw.theme === "auto")
       savedTheme = raw.theme;
+    // Load user-defined custom models into the registry
+    if (Array.isArray(raw.customModels) && raw.customModels.length > 0) {
+      registerCustomModels(raw.customModels);
+    }
   } catch {
     // No settings file or invalid JSON — use defaults
   }
 
-  const provider: "anthropic" | "openai" | "glm" | "moonshot" = savedProvider ?? "anthropic";
+  const provider: "anthropic" | "openai" | "glm" | "moonshot" | "venice" =
+    savedProvider ?? "anthropic";
 
   function getHardcodedDefault(p: string): string {
     if (p === "openai") return "gpt-5.3-codex";
     if (p === "glm") return "glm-5.1";
     if (p === "moonshot") return "kimi-k2.5";
+    if (p === "venice") return "qwen3-coder-480b-a35b-instruct";
     return "claude-opus-4-6";
   }
 
@@ -380,6 +390,7 @@ function main(): void {
   // Interactive mode (Ink TUI)
   const cwd = process.cwd();
   const continueRecent = subcommand === "continue";
+  const remoteControl = values["remote-control"] || values.rc;
 
   runInkTUI({
     provider,
@@ -388,6 +399,7 @@ function main(): void {
     thinkingLevel,
     continueRecent,
     theme: savedTheme,
+    remoteControl,
   }).catch((err) => {
     log("ERROR", "fatal", err instanceof Error ? err.message : String(err));
     closeLogger();
@@ -406,6 +418,7 @@ async function runInkTUI(opts: {
   continueRecent?: boolean;
   resumeSessionPath?: string;
   theme?: "auto" | "dark" | "light";
+  remoteControl?: boolean;
 }): Promise<void> {
   const { provider, model, cwd } = opts;
 
@@ -426,7 +439,7 @@ async function runInkTUI(opts: {
   const creds = await authStorage.resolveCredentials(provider);
 
   // Detect all logged-in providers and preload their credentials
-  const allProviders: Provider[] = ["anthropic", "openai", "glm", "moonshot"];
+  const allProviders: Provider[] = ["anthropic", "openai", "glm", "moonshot", "venice"];
   const loggedInProviders: Provider[] = [];
   const credentialsByProvider: Record<string, { accessToken: string; accountId?: string }> = {};
 
@@ -570,6 +583,16 @@ async function runInkTUI(opts: {
     log("INFO", "session", `New session created`, { path: sessionPath });
   }
 
+  // Start remote control socket server if --rc / --remote-control was passed
+  let rcServer: RemoteControlServer | undefined;
+  let rcCleanup: (() => void) | undefined;
+  if (opts.remoteControl) {
+    rcServer = new RemoteControlServer();
+    const socketPath = await rcServer.start();
+    rcCleanup = installCleanupHandlers(rcServer);
+    log("INFO", "remote-control", `Remote control active at ${socketPath}`);
+  }
+
   await renderApp({
     provider,
     model,
@@ -596,7 +619,14 @@ async function runInkTUI(opts: {
     onEnterPlanRef,
     onExitPlanRef,
     skills,
+    remoteControl: rcServer,
   });
+
+  // Clean up remote control server
+  if (rcServer) {
+    await rcServer.close();
+    rcCleanup?.();
+  }
 
   closeLogger();
 }
@@ -648,8 +678,8 @@ async function runLogin(): Promise<void> {
     };
 
     let creds;
-    if (provider === "glm" || provider === "moonshot") {
-      const keyLabel = provider === "glm" ? "Z.AI" : "Moonshot";
+    if (provider === "glm" || provider === "moonshot" || provider === "venice") {
+      const keyLabel = provider === "glm" ? "Z.AI" : provider === "venice" ? "Venice" : "Moonshot";
       const apiKey = await rl.question(chalk.hex("#60a5fa")(`Paste your ${keyLabel} API key: `));
       if (!apiKey.trim()) {
         console.log(chalk.hex("#ef4444")("No API key provided. Login cancelled."));
@@ -707,7 +737,7 @@ async function runSessions(): Promise<void> {
   }
 
   // Load saved settings for provider/model/theme
-  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | undefined;
+  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | "venice" | undefined;
   let savedModel: string | undefined;
   let savedThinkingEnabled = false;
   let savedTheme: "auto" | "dark" | "light" = "auto";
@@ -722,7 +752,8 @@ async function runSessions(): Promise<void> {
     // No settings file — use defaults
   }
 
-  const provider: "anthropic" | "openai" | "glm" | "moonshot" = savedProvider ?? "anthropic";
+  const provider: "anthropic" | "openai" | "glm" | "moonshot" | "venice" =
+    savedProvider ?? "anthropic";
 
   function getDefault(p: string): string {
     if (p === "openai") return "gpt-5.3-codex";
@@ -962,7 +993,7 @@ async function runServe(): Promise<void> {
   }
 
   // Load saved settings
-  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | undefined;
+  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | "venice" | undefined;
   let savedModel: string | undefined;
   let savedThinkingEnabled = false;
   try {
@@ -1200,6 +1231,7 @@ function displayName(provider: Provider): string {
   if (provider === "anthropic") return "Anthropic";
   if (provider === "glm") return "Z.AI (GLM)";
   if (provider === "moonshot") return "Moonshot";
+  if (provider === "venice") return "Venice";
   return "OpenAI";
 }
 

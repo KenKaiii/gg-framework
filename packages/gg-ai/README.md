@@ -13,6 +13,8 @@ One function. Flat options. Switch providers by changing a string. No adapters, 
 
 Part of the [GG Framework](../../README.md) monorepo.
 
+Five providers out of the box. Extensible via `providerRegistry.register()` for any OpenAI-compatible endpoint.
+
 ---
 
 ## Install
@@ -44,6 +46,7 @@ Tool parameters are Zod schemas. Converted to JSON Schema at the provider bounda
 | `openai` | GPT-4.1, o3, o4-mini | Supports OAuth (codex endpoint) and API keys |
 | `glm` | GLM-5.1, GLM-4.7 | Z.AI platform, OpenAI-compatible |
 | `moonshot` | Kimi K2.5 | Moonshot platform, OpenAI-compatible |
+| `venice` | Qwen3 Coder, DeepSeek V3.2, Venice Uncensored | No data retention, uncensored, OpenAI-compatible |
 
 ---
 
@@ -66,7 +69,7 @@ Tool parameters are Zod schemas. Converted to JSON Schema at the provider bounda
 
 | Option | Type | Description |
 |---|---|---|
-| `provider` | `"anthropic" \| "openai" \| "glm" \| "moonshot"` | Required |
+| `provider` | `"anthropic" \| "openai" \| "glm" \| "moonshot" \| "venice"` | Required |
 | `model` | `string` | Required |
 | `messages` | `Message[]` | Required |
 | `tools` | `Tool[]` | Tool definitions with Zod schemas |

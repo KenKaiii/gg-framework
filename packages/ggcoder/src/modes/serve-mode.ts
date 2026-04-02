@@ -9,7 +9,7 @@ import chalk from "chalk";
 import { formatUserError } from "../utils/error-handler.js";
 import { log, closeLogger } from "../core/logger.js";
 import { getAppPaths } from "../config.js";
-import { MODELS, getContextWindow } from "../core/model-registry.js";
+import { getAllModels, getContextWindow } from "../core/model-registry.js";
 import { estimateConversationTokens } from "../core/compaction/token-estimator.js";
 import { PROMPT_COMMANDS } from "../core/prompt-commands.js";
 import { loadCustomCommands } from "../core/custom-commands.js";
@@ -290,14 +290,14 @@ export async function runServeMode(options: ServeModeOptions): Promise<void> {
     "model",
   ]);
   /** Chats waiting for a model number selection. */
-  const pendingModelSelections = new Map<number, typeof MODELS>();
+  const pendingModelSelections = new Map<number, ReturnType<typeof getAllModels>>();
 
   async function buildHelpText(chatId: number): Promise<string> {
     const projectPath = resolveProjectPath(chatId);
     const linked = config.chats[String(chatId)];
     const state = chatStates.get(chatId);
     const currentModel = state?.session.getState().model ?? options.model;
-    const modelInfo = MODELS.find((m) => m.id === currentModel);
+    const modelInfo = getAllModels().find((m) => m.id === currentModel);
 
     let text = `*ggcoder* — remote coding agent\n\n`;
     text += `Project: \`${path.basename(projectPath)}\`\n`;
@@ -454,7 +454,7 @@ export async function runServeMode(options: ServeModeOptions): Promise<void> {
       }
 
       const sessionState = state.session.getState();
-      const modelInfo = MODELS.find((m) => m.id === sessionState.model);
+      const modelInfo = getAllModels().find((m) => m.id === sessionState.model);
       const contextWindow = getContextWindow(sessionState.model);
       const contextTokens = estimateConversationTokens(state.session.getMessages());
       const statusPctRaw = (contextTokens / contextWindow) * 100;
@@ -554,8 +554,8 @@ export async function runServeMode(options: ServeModeOptions): Promise<void> {
       if (args) {
         // Direct switch: /m 3 (number) or /m opus (name fragment)
         const num = parseInt(args, 10);
-        if (!isNaN(num) && num >= 1 && num <= MODELS.length) {
-          const selected = MODELS[num - 1]!;
+        if (!isNaN(num) && num >= 1 && num <= getAllModels().length) {
+          const selected = getAllModels()[num - 1]!;
           const projectPath = resolveProjectPath(chatId);
           const chatState = await getOrCreateChat(chatId, projectPath);
           await chatState.session.switchModel(selected.provider, selected.id);
@@ -564,7 +564,7 @@ export async function runServeMode(options: ServeModeOptions): Promise<void> {
         }
         // Try matching by name fragment
         const lower = args.toLowerCase();
-        const match = MODELS.find(
+        const match = getAllModels().find(
           (m) => m.name.toLowerCase().includes(lower) || m.id.toLowerCase().includes(lower),
         );
         if (match) {
@@ -581,7 +581,7 @@ export async function runServeMode(options: ServeModeOptions): Promise<void> {
       // No args — show numbered list grouped by provider
       let listText = "*Models*\n";
       let lastProvider = "";
-      const modelList = [...MODELS];
+      const modelList = [...getAllModels()];
       modelList.forEach((m, i) => {
         if (m.provider !== lastProvider) {
           lastProvider = m.provider;
@@ -592,7 +592,9 @@ export async function runServeMode(options: ServeModeOptions): Promise<void> {
                 ? "OpenAI"
                 : m.provider === "glm"
                   ? "Z.AI"
-                  : "Moonshot";
+                  : m.provider === "venice"
+                    ? "Venice"
+                    : "Moonshot";
           listText += `\n_${providerName}_\n`;
         }
         const active = m.id === currentModel ? "  ←" : "";
@@ -736,7 +738,7 @@ export async function runServeMode(options: ServeModeOptions): Promise<void> {
     process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
 
     const linkedCount = Object.keys(config.chats).length;
-    const modelInfo = MODELS.find((m) => m.id === options.model);
+    const modelInfo = getAllModels().find((m) => m.id === options.model);
     const modelName = modelInfo?.name ?? options.model;
     const home = process.env.HOME ?? "";
     const displayPath =

@@ -146,6 +146,8 @@ export function useAgentLoop(
     onAborted?: () => void;
     /** Called when a queued message starts processing (after the previous run completes). */
     onQueuedStart?: (content: UserContent) => void;
+    /** Called for every raw AgentEvent — used by remote control to broadcast events. */
+    onRawEvent?: (event: AgentEvent) => void;
   },
 ): UseAgentLoopReturn {
   const onComplete = callbacks?.onComplete;
@@ -159,6 +161,7 @@ export function useAgentLoop(
   const onDone = callbacks?.onDone;
   const onAborted = callbacks?.onAborted;
   const onQueuedStart = callbacks?.onQueuedStart;
+  const onRawEvent = callbacks?.onRawEvent;
   const [isRunning, setIsRunning] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
@@ -322,6 +325,7 @@ export function useAgentLoop(
           });
 
           for await (const event of generator as AsyncIterable<AgentEvent>) {
+            onRawEvent?.(event);
             switch (event.type) {
               case "text_delta":
                 textVisibleRef.current += event.text;

@@ -14,7 +14,7 @@ import { SessionManager, type MessageEntry, type BranchInfo } from "./session-ma
 import { ExtensionLoader } from "./extensions/loader.js";
 import type { ExtensionContext } from "./extensions/types.js";
 import { shouldCompact, compact } from "./compaction/compactor.js";
-import { getContextWindow, MODELS } from "./model-registry.js";
+import { getContextWindow, getAllModels } from "./model-registry.js";
 import { discoverSkills, type Skill } from "./skills.js";
 import { ensureAppDirs } from "../config.js";
 import { buildSystemPrompt } from "../system-prompt.js";
@@ -604,9 +604,9 @@ export class AgentSession {
       },
       getModelList: () => {
         const current = `Current: ${this.provider}:${this.model}\n\nAvailable models:\n`;
-        const list = MODELS.map((m) => `  ${m.provider}:${m.id} — ${m.name} (${m.costTier})`).join(
-          "\n",
-        );
+        const list = getAllModels()
+          .map((m) => `  ${m.provider}:${m.id} — ${m.name} (${m.costTier})`)
+          .join("\n");
         return current + list;
       },
       quit: () => {

@@ -41,6 +41,14 @@ providerRegistry.register("moonshot", {
     }),
 });
 
+providerRegistry.register("venice", {
+  stream: (options) =>
+    streamOpenAI({
+      ...options,
+      baseUrl: options.baseUrl ?? "https://api.venice.ai/api/v1",
+    }),
+});
+
 // ── Public API ─────────────────────────────────────────────
 
 /**

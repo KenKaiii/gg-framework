@@ -1,7 +1,7 @@
 # @kenkaiiii/ggcoder
 
 <p align="center">
-  <strong>The fast, lean coding agent. Four providers. Zero bloat.</strong>
+  <strong>The fast, lean coding agent. Five providers. Zero bloat.</strong>
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@ ggcoder login    # Pick provider, authenticate
 ggcoder          # Start coding
 ```
 
-OAuth for Anthropic and OpenAI (log in once, auto-refresh). API keys for GLM and Moonshot. Up and running in seconds either way.
+OAuth for Anthropic and OpenAI (log in once, auto-refresh). API keys for GLM, Moonshot, and Venice. Up and running in seconds either way.
 
 ---
 
@@ -66,7 +66,7 @@ You can still add your own MCPs if you need them. But start with less. You'll ge
 
 ---
 
-## Four providers, one agent
+## Five providers, one agent
 
 Switch mid-conversation with `/model`. Not locked to anyone.
 
@@ -76,6 +76,36 @@ Switch mid-conversation with `/model`. Not locked to anyone.
 | **OpenAI** | GPT-4.1, o3, o4-mini | OAuth |
 | **Z.AI (GLM)** | GLM-5.1, GLM-4.7 | API key |
 | **Moonshot** | Kimi K2.5 | API key |
+| **[Venice](https://venice.ai)** | Claude Opus/Sonnet, GPT-5.4, GPT-5.3 Codex, Qwen3 Coder, DeepSeek V3.2, Venice Uncensored + more | API key |
+
+### Why Venice?
+
+> *"Build AI with no data retention, permissionless access, and compute you permanently own."* — venice.ai
+
+Venice proxies top-tier models (Claude, GPT, Qwen, DeepSeek, Grok, Gemini) through privacy-first infrastructure with zero data retention. Use it when you need uncensored models for red-team testing, unfiltered creative work, or when privacy and anonymity matter. OpenAI-compatible API — same tool calling, same streaming, same interface.
+
+### Adding more Venice models
+
+Venice has 50+ models. The most popular are built in. Add any others via `~/.gg/settings.json`:
+
+```json
+{
+  "customModels": [
+    {
+      "id": "grok-4-20-beta",
+      "name": "Grok 4",
+      "provider": "venice",
+      "contextWindow": 2000000,
+      "maxOutputTokens": 128000,
+      "supportsThinking": true,
+      "supportsImages": false,
+      "costTier": "high"
+    }
+  ]
+}
+```
+
+Browse available models: `curl https://api.venice.ai/api/v1/models`
 
 ---
 
@@ -143,6 +173,26 @@ GG Coder comes with a focused set of tools:
 | `subagent` | Spawn parallel sub-agents |
 
 Plus the [Grep MCP](https://grep.dev) for searching across 1M+ public GitHub repos.
+
+---
+
+## Remote Control
+
+Control ggcoder programmatically from external agents, scripts, or orchestrators. A Unix domain socket server speaks NDJSON — send prompts, receive real-time events for everything the agent does. Human and agent share the same session.
+
+```bash
+# Start with remote control enabled
+ggcoder --rc
+
+# Or activate mid-session
+/rc
+
+# Connect from another terminal
+echo '{"id":"1","command":"prompt","text":"Fix the failing tests"}' \
+  | socat - UNIX-CONNECT:$HOME/.gg/rc-$(pgrep -f ggcoder).sock
+```
+
+See **[REMOTE-CONTROL.md](REMOTE-CONTROL.md)** for the full protocol reference, client examples (Node.js, Python, socat), troubleshooting, and ACP/[acpx](https://github.com/openclaw/acpx) integration roadmap.
 
 ---
 
