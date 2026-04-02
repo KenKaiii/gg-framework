@@ -18,7 +18,9 @@ const CustomModelSchema = z.object({
 const SettingsSchema = z.object({
   autoCompact: z.boolean().default(true),
   compactThreshold: z.number().min(0.1).max(1.0).default(0.8),
-  defaultProvider: z.enum(["anthropic", "openai", "glm", "moonshot", "venice"]).default("anthropic"),
+  defaultProvider: z
+    .enum(["anthropic", "openai", "glm", "moonshot", "venice"])
+    .default("anthropic"),
   defaultModel: z.string().optional(),
   maxTokens: z.number().int().min(256).default(16384),
   thinkingEnabled: z.boolean().default(false),

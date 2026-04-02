@@ -271,8 +271,7 @@ export function getDefaultModel(provider: Provider): ModelInfo {
   if (provider === "openai") return MODELS.find((m) => m.id === "gpt-5.3-codex")!;
   if (provider === "glm") return MODELS.find((m) => m.id === "glm-5.1")!;
   if (provider === "moonshot") return MODELS.find((m) => m.id === "kimi-k2.5")!;
-  if (provider === "venice")
-    return MODELS.find((m) => m.id === "qwen3-coder-480b-a35b-instruct")!;
+  if (provider === "venice") return MODELS.find((m) => m.id === "qwen3-coder-480b-a35b-instruct")!;
   return MODELS.find((m) => m.id === "claude-sonnet-4-6")!;
 }
 
