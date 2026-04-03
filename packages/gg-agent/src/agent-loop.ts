@@ -101,12 +101,12 @@ export async function* agentLoop(
   let stallRetries = 0;
   const MAX_OVERFLOW_RETRIES = 3;
   const MAX_OVERLOAD_RETRIES = 10;
-  const MAX_EMPTY_RESPONSE_RETRIES = 3;
-  const MAX_STALL_RETRIES = 3;
+  const MAX_EMPTY_RESPONSE_RETRIES = 2;
+  const MAX_STALL_RETRIES = 2;
   const OVERLOAD_BASE_DELAY_MS = 2_000;
   const OVERLOAD_MAX_DELAY_MS = 30_000;
-  const STREAM_IDLE_TIMEOUT_MS = 90_000; // 90s without any stream event = stall
-  const STREAM_HARD_TIMEOUT_MS = 300_000; // 5min absolute cap per LLM call
+  const STREAM_IDLE_TIMEOUT_MS = 45_000; // 45s without any stream event = stall
+  const STREAM_HARD_TIMEOUT_MS = 120_000; // 2min absolute cap per LLM call
 
   try {
     while (turn < maxTurns) {
@@ -267,9 +267,9 @@ export async function* agentLoop(
             reason: "stream_stall" as const,
             attempt: stallRetries,
             maxAttempts: MAX_STALL_RETRIES,
-            delayMs: 2_000,
+            delayMs: 1_000,
           };
-          await new Promise((r) => setTimeout(r, 2_000));
+          await new Promise((r) => setTimeout(r, 1_000));
           turn--; // Don't count the failed turn
           continue;
         }
