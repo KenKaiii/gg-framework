@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useStdout } from "ink";
 
 /**
@@ -73,28 +73,35 @@ function isProgressReportingAvailable(): boolean {
 
 const available = isProgressReportingAvailable();
 
-export function useTerminalProgress(isRunning: boolean, hasActiveTools: boolean): void {
+// Re-assert the progress bar periodically while running.
+// Terminal operations (tool output with escape sequences, Ink re-renders)
+// can silently clear the OSC 9;4 progress state.  Without periodic
+// re-assertion the bar disappears mid-run and never comes back.
+const REASSERT_INTERVAL_MS = 5_000;
+
+export function useTerminalProgress(isRunning: boolean, _hasActiveTools: boolean): void {
   const { stdout } = useStdout();
-  const prevStateRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!available || !stdout) return;
 
-    const state = isRunning
-      ? hasActiveTools
-        ? "indeterminate"
-        : "indeterminate" // show indeterminate for any running state (thinking, generating, tools)
-      : "completed";
-
-    if (prevStateRef.current === state) return;
-    prevStateRef.current = state;
-
-    if (state === "indeterminate") {
-      stdout.write(wrapForMultiplexer(buildProgressSequence(PROGRESS_INDETERMINATE)));
-    } else {
+    if (!isRunning) {
       stdout.write(wrapForMultiplexer(buildProgressSequence(PROGRESS_CLEAR)));
+      return;
     }
-  }, [stdout, isRunning, hasActiveTools]);
+
+    // Send immediately when the run starts
+    const seq = wrapForMultiplexer(buildProgressSequence(PROGRESS_INDETERMINATE));
+    stdout.write(seq);
+
+    // Re-assert on an interval so the bar survives terminal resets
+    const timer = setInterval(() => stdout.write(seq), REASSERT_INTERVAL_MS);
+
+    return () => {
+      clearInterval(timer);
+      stdout.write(wrapForMultiplexer(buildProgressSequence(PROGRESS_CLEAR)));
+    };
+  }, [stdout, isRunning]);
 
   // Clear on unmount
   useEffect(() => {
