@@ -147,7 +147,7 @@ function printHelp(): void {
   const opts: [string, string][] = [
     ["-h, --help", "Show this help message"],
     ["-v, --version", "Show version number"],
-    ["--provider <name>", "AI provider (anthropic, openai, glm, moonshot)"],
+    ["--provider <name>", "AI provider (anthropic, xiaomi, openai, glm, moonshot)"],
     ["--model <name>", "Model to use (e.g. claude-sonnet-4-6, gpt-4.1)"],
     ["--max-turns <n>", "Maximum agent turns per prompt"],
     ["--system-prompt <text>", "Override the system prompt"],
@@ -432,7 +432,7 @@ async function runInkTUI(opts: {
   const creds = await authStorage.resolveCredentials(provider);
 
   // Detect all logged-in providers and preload their credentials
-  const allProviders: Provider[] = ["anthropic", "openai", "glm", "moonshot"];
+  const allProviders: Provider[] = ["anthropic", "xiaomi", "openai", "glm", "moonshot"];
   const loggedInProviders: Provider[] = [];
   const credentialsByProvider: Record<string, { accessToken: string; accountId?: string }> = {};
 
@@ -654,8 +654,9 @@ async function runLogin(): Promise<void> {
     };
 
     let creds;
-    if (provider === "glm" || provider === "moonshot") {
-      const keyLabel = provider === "glm" ? "Z.AI" : "Moonshot";
+    if (provider === "glm" || provider === "moonshot" || provider === "xiaomi") {
+      const keyLabel =
+        provider === "glm" ? "Z.AI" : provider === "xiaomi" ? "Xiaomi MiMo" : "Moonshot";
       const apiKey = await rl.question(chalk.hex("#60a5fa")(`Paste your ${keyLabel} API key: `));
       if (!apiKey.trim()) {
         console.log(chalk.hex("#ef4444")("No API key provided. Login cancelled."));
@@ -1204,6 +1205,7 @@ async function runAgentHome(): Promise<void> {
 
 function displayName(provider: Provider): string {
   if (provider === "anthropic") return "Anthropic";
+  if (provider === "xiaomi") return "Xiaomi (MiMo)";
   if (provider === "glm") return "Z.AI (GLM)";
   if (provider === "moonshot") return "Moonshot";
   return "OpenAI";

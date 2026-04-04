@@ -5,9 +5,9 @@ import { execFileSync } from "node:child_process";
  *
  * Detection chain (first match wins):
  * 1. VSCODE_THEME_KIND env var (VS Code integrated terminal)
- * 2. OSC 11 escape sequence query (most modern terminals)
- * 3. COLORFGBG env var (rxvt, some other terminals)
- * 4. macOS system dark mode (defaults read -g AppleInterfaceStyle)
+ * 2. macOS system dark mode (defaults read -g AppleInterfaceStyle)
+ * 3. OSC 11 escape sequence query (most modern terminals)
+ * 4. COLORFGBG env var (rxvt, some other terminals)
  * 5. Default to "dark"
  */
 export async function detectTheme(): Promise<"dark" | "light"> {
@@ -17,22 +17,7 @@ export async function detectTheme(): Promise<"dark" | "light"> {
     return vscodeTheme.includes("light") ? "light" : "dark";
   }
 
-  // 2. OSC 11 — query actual terminal background color
-  const osc = await queryOSC11();
-  if (osc !== null) return osc;
-
-  // 3. COLORFGBG — "fg;bg" ANSI color indices
-  const colorfgbg = process.env["COLORFGBG"];
-  if (colorfgbg) {
-    const parts = colorfgbg.split(";");
-    const bg = parseInt(parts[parts.length - 1]!, 10);
-    if (!isNaN(bg)) {
-      // ANSI colors: 0-6 and 8 are dark, 7 and 9-15 are light
-      return bg === 7 || (bg >= 9 && bg <= 15) ? "light" : "dark";
-    }
-  }
-
-  // 4. macOS system dark mode
+  // 2. macOS system dark mode — fast, no escape-sequence side effects
   if (process.platform === "darwin") {
     try {
       const result = execFileSync("defaults", ["read", "-g", "AppleInterfaceStyle"], {
@@ -47,6 +32,21 @@ export async function detectTheme(): Promise<"dark" | "light"> {
     }
   }
 
+  // 3. OSC 11 — query actual terminal background color
+  const osc = await queryOSC11();
+  if (osc !== null) return osc;
+
+  // 4. COLORFGBG — "fg;bg" ANSI color indices
+  const colorfgbg = process.env["COLORFGBG"];
+  if (colorfgbg) {
+    const parts = colorfgbg.split(";");
+    const bg = parseInt(parts[parts.length - 1]!, 10);
+    if (!isNaN(bg)) {
+      // ANSI colors: 0-6 and 8 are dark, 7 and 9-15 are light
+      return bg === 7 || (bg >= 9 && bg <= 15) ? "light" : "dark";
+    }
+  }
+
   // 5. Default
   return "dark";
 }
@@ -54,13 +54,17 @@ export async function detectTheme(): Promise<"dark" | "light"> {
 /**
  * Send OSC 11 query to the terminal and parse the background color response.
  * Returns "dark" | "light" based on luminance, or null if unsupported.
+ *
+ * Note: does NOT send the ESC[6n cursor position sentinel — that response
+ * (ESC[row;colR) can leak into stdin if not drained before Ink takes over,
+ * causing "[2;1R" to appear in the chat input. Instead we rely on a simple
+ * timeout to detect unsupported terminals.
  */
 // ESC character built without a literal escape so ESLint's no-control-regex is satisfied
 const ESC = String.fromCharCode(27);
 const oscResponsePattern = new RegExp(
   ESC + "\\]11;rgb:([0-9a-fA-F]+)/([0-9a-fA-F]+)/([0-9a-fA-F]+)",
 );
-const cursorPositionPattern = new RegExp(ESC + "\\[\\d+;\\d+R");
 
 function queryOSC11(): Promise<"dark" | "light" | null> {
   return new Promise((resolve) => {
@@ -79,7 +83,6 @@ function queryOSC11(): Promise<"dark" | "light" | null> {
 
     const wasRaw = process.stdin.isRaw;
     let settled = false;
-    let buffer = "";
 
     const cleanup = () => {
       if (settled) return;
@@ -90,8 +93,6 @@ function queryOSC11(): Promise<"dark" | "light" | null> {
       } catch {
         // ignore
       }
-      // When we pause stdin after raw mode, Node's readline may lose
-      // the stream. Only pause if we turned raw mode on ourselves.
       if (!wasRaw) {
         try {
           process.stdin.pause();
@@ -107,10 +108,10 @@ function queryOSC11(): Promise<"dark" | "light" | null> {
     }, 200);
 
     const onData = (data: Buffer) => {
-      buffer += data.toString();
+      const str = data.toString();
 
       // Look for OSC 11 response: ESC]11;rgb:RRRR/GGGG/BBBB followed by BEL or ST
-      const match = buffer.match(oscResponsePattern);
+      const match = str.match(oscResponsePattern);
       if (match) {
         clearTimeout(timeout);
         cleanup();
@@ -123,15 +124,6 @@ function queryOSC11(): Promise<"dark" | "light" | null> {
         // Relative luminance (ITU-R BT.709)
         const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
         resolve(luminance < 0.5 ? "dark" : "light");
-        return;
-      }
-
-      // If we get a cursor position response (ESC[row;colR) without
-      // an OSC response, the terminal doesn't support OSC 11
-      if (buffer.match(cursorPositionPattern)) {
-        clearTimeout(timeout);
-        cleanup();
-        resolve(null);
       }
     };
 
@@ -140,8 +132,9 @@ function queryOSC11(): Promise<"dark" | "light" | null> {
       process.stdin.resume();
       process.stdin.on("data", onData);
 
-      // Send OSC 11 query + cursor position query as sentinel
-      process.stdout.write("\x1b]11;?\x1b\\\x1b[6n");
+      // Send only the OSC 11 query — no ESC[6n sentinel to avoid
+      // cursor position responses leaking into Ink's input
+      process.stdout.write("\x1b]11;?\x1b\\");
     } catch {
       clearTimeout(timeout);
       cleanup();

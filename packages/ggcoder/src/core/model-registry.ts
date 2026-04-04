@@ -43,6 +43,17 @@ export const MODELS: ModelInfo[] = [
     supportsImages: true,
     costTier: "low",
   },
+  // ── Xiaomi (MiMo) ──────────────────────────────────────
+  {
+    id: "mimo-v2-pro",
+    name: "MiMo-V2-Pro",
+    provider: "xiaomi",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: false,
+    costTier: "medium",
+  },
   // ── OpenAI (Codex) ─────────────────────────────────────
   {
     id: "gpt-5.3-codex",
@@ -127,6 +138,7 @@ export function getModelsForProvider(provider: Provider): ModelInfo[] {
 }
 
 export function getDefaultModel(provider: Provider): ModelInfo {
+  if (provider === "xiaomi") return MODELS.find((m) => m.id === "mimo-v2-pro")!;
   if (provider === "openai") return MODELS.find((m) => m.id === "gpt-5.3-codex")!;
   if (provider === "glm") return MODELS.find((m) => m.id === "glm-5.1")!;
   if (provider === "moonshot") return MODELS.find((m) => m.id === "kimi-k2.5")!;

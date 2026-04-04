@@ -15,6 +15,15 @@ providerRegistry.register("anthropic", {
   stream: (options) => streamAnthropic(options),
 });
 
+providerRegistry.register("xiaomi", {
+  stream: (options) =>
+    streamOpenAI({
+      ...options,
+      baseUrl: options.baseUrl ?? "https://api.xiaomimimo.com/v1",
+      webSearch: false,
+    }),
+});
+
 providerRegistry.register("openai", {
   stream: (options) => {
     // Use codex endpoint for OAuth tokens (have accountId)

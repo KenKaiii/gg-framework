@@ -106,6 +106,10 @@ export function toAnthropicMessages(
                 return null as unknown as Anthropic.ContentBlockParam;
               })
               .filter(Boolean);
+      // Skip assistant messages with no content blocks (can happen when all
+      // blocks are filtered — e.g. thinking-only responses from non-Anthropic
+      // providers where signature is missing and text is empty)
+      if (Array.isArray(content) && content.length === 0) continue;
       out.push({ role: "assistant", content });
       continue;
     }

@@ -30,7 +30,8 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   });
 
   // GLM and Moonshot use a custom `thinking` body param instead of `reasoning_effort`
-  const usesThinkingParam = options.provider === "glm" || options.provider === "moonshot";
+  const usesThinkingParam =
+    options.provider === "glm" || options.provider === "moonshot" || options.provider === "xiaomi";
 
   const messages = toOpenAIMessages(options.messages, { provider: options.provider });
 
@@ -64,15 +65,20 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
       tools.push({ type: "builtin_function", function: { name: "$web_search" } });
       raw.tools = tools;
     }
+    // Xiaomi: web search + max_completion_tokens handled via fetch wrapper
+    // in stream.ts to bypass OpenAI SDK validation of non-standard tool types.
     // GLM (Z.AI): web search is provided via MCP servers, not inline tools
     // OpenAI: Chat Completions API does not support web search
   }
 
-  // Inject custom thinking param for GLM/Moonshot (not part of OpenAI spec)
+  // Inject custom thinking param for GLM/Moonshot/Xiaomi (not part of OpenAI spec)
   if (usesThinkingParam) {
-    (params as unknown as Record<string, unknown>).thinking = options.thinking
-      ? { type: "enabled" }
-      : { type: "disabled" };
+    if (options.thinking) {
+      (params as unknown as Record<string, unknown>).thinking = { type: "enabled" };
+    } else if (options.provider !== "xiaomi") {
+      // GLM/Moonshot require explicit disabled; Xiaomi prefers omission
+      (params as unknown as Record<string, unknown>).thinking = { type: "disabled" };
+    }
   }
 
   // Dump request body for stall diagnosis when GGAI_DUMP_REQUEST is set

@@ -74,7 +74,7 @@ export class AuthStorage {
     }
 
     // GLM and Moonshot use static API keys — no refresh needed
-    if (provider === "glm" || provider === "moonshot") {
+    if (provider === "glm" || provider === "moonshot" || provider === "xiaomi") {
       return creds;
     }
 
