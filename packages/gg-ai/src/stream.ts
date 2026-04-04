@@ -19,7 +19,7 @@ providerRegistry.register("xiaomi", {
   stream: (options) =>
     streamOpenAI({
       ...options,
-      baseUrl: options.baseUrl ?? "https://api.xiaomimimo.com/v1",
+      baseUrl: options.baseUrl ?? "https://token-plan-sgp.xiaomimimo.com/v1",
       webSearch: false,
     }),
 });

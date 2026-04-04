@@ -478,7 +478,7 @@ export interface AppProps {
   showTokenUsage?: boolean;
   onSlashCommand?: (input: string) => Promise<string | null>;
   loggedInProviders?: Provider[];
-  credentialsByProvider?: Record<string, { accessToken: string; accountId?: string }>;
+  credentialsByProvider?: Record<string, { accessToken: string; accountId?: string; baseUrl?: string }>;
   initialHistory?: CompletedItem[];
   sessionsDir?: string;
   sessionPath?: string;
@@ -583,6 +583,7 @@ export function App(props: AppProps) {
   const currentCreds = props.credentialsByProvider?.[currentProvider];
   const activeApiKey = currentCreds?.accessToken ?? props.apiKey;
   const activeAccountId = currentCreds?.accountId ?? props.accountId;
+  const activeBaseUrl = currentCreds?.baseUrl ?? props.baseUrl;
 
   // Load git branch
   useEffect(() => {
@@ -900,7 +901,7 @@ export function App(props: AppProps) {
       maxTokens: props.maxTokens,
       thinking: thinkingEnabled ? (props.thinking ?? "medium") : undefined,
       apiKey: activeApiKey,
-      baseUrl: props.baseUrl,
+      baseUrl: activeBaseUrl,
       accountId: activeAccountId,
       resolveCredentials,
       transformContext,
@@ -954,7 +955,7 @@ export function App(props: AppProps) {
               userMessage: userText,
               assistantPreview: assistantText.slice(0, 200),
               apiKey: activeApiKey,
-              baseUrl: props.baseUrl,
+              baseUrl: activeBaseUrl,
               accountId: activeAccountId,
               resolveCredentials,
             }).then(
@@ -976,7 +977,7 @@ export function App(props: AppProps) {
         currentProvider,
         activeApiKey,
         activeAccountId,
-        props.baseUrl,
+        activeBaseUrl,
         resolveCredentials,
       ]),
       onTurnText: useCallback((text: string, thinking: string, thinkingMs: number) => {

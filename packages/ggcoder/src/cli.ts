@@ -434,7 +434,10 @@ async function runInkTUI(opts: {
   // Detect all logged-in providers and preload their credentials
   const allProviders: Provider[] = ["anthropic", "xiaomi", "openai", "glm", "moonshot"];
   const loggedInProviders: Provider[] = [];
-  const credentialsByProvider: Record<string, { accessToken: string; accountId?: string }> = {};
+  const credentialsByProvider: Record<
+    string,
+    { accessToken: string; accountId?: string; baseUrl?: string }
+  > = {};
 
   for (const p of allProviders) {
     const stored = await authStorage.getCredentials(p);
@@ -445,6 +448,7 @@ async function runInkTUI(opts: {
         credentialsByProvider[p] = {
           accessToken: resolved.accessToken,
           accountId: resolved.accountId,
+          baseUrl: resolved.baseUrl,
         };
       } catch {
         // Token refresh failed — still mark as logged in
@@ -662,10 +666,22 @@ async function runLogin(): Promise<void> {
         console.log(chalk.hex("#ef4444")("No API key provided. Login cancelled."));
         return;
       }
+      let baseUrl: string | undefined;
+      if (provider === "xiaomi") {
+        const urlInput = await rl.question(
+          chalk.hex("#60a5fa")(
+            `Base URL ${chalk.hex("#6b7280")("(Enter for default, or paste token plan URL)")}: `,
+          ),
+        );
+        if (urlInput.trim()) {
+          baseUrl = urlInput.trim();
+        }
+      }
       creds = {
         accessToken: apiKey.trim(),
         refreshToken: "",
         expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000 * 100, // ~100 years
+        ...(baseUrl ? { baseUrl } : {}),
       } satisfies OAuthCredentials;
     } else {
       creds =
