@@ -139,6 +139,8 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   let cacheWrite: number | undefined;
   let stopReason: string | null = null;
 
+  const keepalive = { type: "keepalive" as const };
+
   try {
     for await (const event of stream as AsyncIterable<Anthropic.MessageStreamEvent>) {
       switch (event.type) {
@@ -152,6 +154,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
           if (usageAny.cache_creation_input_tokens != null) {
             cacheWrite = usageAny.cache_creation_input_tokens as number;
           }
+          yield keepalive;
           break;
         }
 
@@ -184,6 +187,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
           }
 
           blocks.set(idx, accum);
+          yield keepalive;
           break;
         }
 
@@ -229,6 +233,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
               text: accum.thinking,
               signature: accum.signature,
             });
+            yield keepalive;
           } else if (accum.type === "tool_use") {
             let args: Record<string, unknown> = {};
             try {
@@ -268,6 +273,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
             // The Anthropic API requires redacted_thinking blocks to be sent back
             // verbatim in subsequent requests when thinking is enabled.
             contentParts.push({ type: "raw", data: accum.raw });
+            yield keepalive;
           } else {
             // Retrieve the full block from the SDK's accumulated message
             // for block types we don't explicitly accumulate (e.g. web_search_tool_result)
@@ -311,10 +317,17 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
           if (usage?.output_tokens != null) {
             outputTokens = usage.output_tokens as number;
           }
+          yield keepalive;
           break;
         }
 
         // message_stop — loop exits naturally
+
+        default:
+          // Unhandled event types (e.g. "ping" heartbeats) — yield keepalive
+          // so the idle timer in the agent loop resets on any API activity.
+          yield keepalive;
+          break;
       }
     }
   } catch (err) {

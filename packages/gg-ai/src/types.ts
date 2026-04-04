@@ -168,6 +168,10 @@ export interface ServerToolResultEvent {
   data: unknown;
 }
 
+export interface KeepaliveEvent {
+  type: "keepalive";
+}
+
 export type StreamEvent =
   | TextDeltaEvent
   | ThinkingDeltaEvent
@@ -176,7 +180,8 @@ export type StreamEvent =
   | ServerToolCallEvent
   | ServerToolResultEvent
   | DoneEvent
-  | ErrorEvent;
+  | ErrorEvent
+  | KeepaliveEvent;
 
 // ── Stop Reasons ───────────────────────────────────────────
 

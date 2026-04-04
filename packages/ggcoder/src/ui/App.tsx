@@ -478,7 +478,10 @@ export interface AppProps {
   showTokenUsage?: boolean;
   onSlashCommand?: (input: string) => Promise<string | null>;
   loggedInProviders?: Provider[];
-  credentialsByProvider?: Record<string, { accessToken: string; accountId?: string; baseUrl?: string }>;
+  credentialsByProvider?: Record<
+    string,
+    { accessToken: string; accountId?: string; baseUrl?: string }
+  >;
   initialHistory?: CompletedItem[];
   sessionsDir?: string;
   sessionPath?: string;
