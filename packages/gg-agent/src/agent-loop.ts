@@ -129,6 +129,10 @@ export async function* agentLoop(
   const STREAM_FIRST_EVENT_TIMEOUT_MS = 45_000; // 45s to get first event (Opus thinks long)
   const STREAM_IDLE_TIMEOUT_MS = 10_000; // 10s between events once streaming starts
   const STREAM_HARD_TIMEOUT_MS = 90_000; // 90s absolute cap per LLM call
+  // Reasoning models (MiMo) can pause 3-5 minutes between thinking and output
+  // generation.  Once we've seen thinking events, extend timeouts significantly.
+  const STREAM_THINKING_IDLE_TIMEOUT_MS = 300_000; // 5min idle after thinking
+  const STREAM_THINKING_HARD_TIMEOUT_MS = 600_000; // 10min hard cap with thinking
 
   try {
     while (turn < maxTurns) {
@@ -196,20 +200,31 @@ export async function* agentLoop(
       const forwardAbort = () => streamController.abort();
       options.signal?.addEventListener("abort", forwardAbort, { once: true });
 
-      // Two-phase idle timeout:
+      // Three-phase idle timeout:
       //  - Before first event: STREAM_FIRST_EVENT_TIMEOUT_MS (45s) — Opus can
       //    take 30s+ to start on large contexts, that's not a stall.
-      //  - After first event: STREAM_IDLE_TIMEOUT_MS (10s) — once streaming has
-      //    started, 10s of silence is a dead connection. Retry fast.
+      //  - After output event (text_delta, server_toolcall): STREAM_IDLE_TIMEOUT_MS
+      //    (10s) — once output is streaming, 10s of silence is dead. Retry fast.
+      //  - After thinking events only: STREAM_THINKING_IDLE_TIMEOUT_MS (5min) —
+      //    reasoning models (MiMo) can pause minutes between thinking and output.
       let hasReceivedEvent = false;
+      let hasReceivedThinking = false;
       const resetIdleTimer = () => {
         if (idleTimer) clearTimeout(idleTimer);
-        const timeoutMs = hasReceivedEvent ? STREAM_IDLE_TIMEOUT_MS : STREAM_FIRST_EVENT_TIMEOUT_MS;
+        const timeoutMs = hasReceivedEvent
+          ? STREAM_IDLE_TIMEOUT_MS
+          : hasReceivedThinking
+            ? STREAM_THINKING_IDLE_TIMEOUT_MS
+            : STREAM_FIRST_EVENT_TIMEOUT_MS;
         idleTimer = setTimeout(() => {
           diag("idle_timeout_fired", {
             events: streamEventCount,
             sinceLastEventMs: Date.now() - lastEventTime,
-            phase: hasReceivedEvent ? "mid_stream" : "first_event",
+            phase: hasReceivedEvent
+              ? "mid_stream"
+              : hasReceivedThinking
+                ? "post_thinking"
+                : "first_event",
           });
           idleTimedOut = true;
           streamController.abort();
@@ -218,13 +233,15 @@ export async function* agentLoop(
 
       // Hard timeout: absolute cap per LLM call. Safety net for streams that
       // keep sending sparse events (e.g. keep-alive pings) but never complete.
+      // Extended dynamically when thinking events arrive (see thinking_delta handler).
+      let hardTimeoutMs = STREAM_HARD_TIMEOUT_MS;
       hardTimer = setTimeout(() => {
         diag("hard_timeout_fired", {
           events: typeof streamEventCount !== "undefined" ? streamEventCount : 0,
         });
         idleTimedOut = true;
         streamController.abort();
-      }, STREAM_HARD_TIMEOUT_MS);
+      }, hardTimeoutMs);
 
       try {
         diag("stream_call");
@@ -260,10 +277,33 @@ export async function* agentLoop(
         resetIdleTimer();
         for await (const event of result) {
           streamEventCount++;
-          if (!hasReceivedEvent) {
+
+          // Only flip to mid-stream timeout on confirmed output events — text
+          // deltas and completed tool calls.  Everything else (keepalive,
+          // thinking_delta, toolcall_delta, toolcall_done, done) keeps the
+          // longer first-event / post-thinking timeout.  Reasoning models
+          // (MiMo) can stream hundreds of thinking events then pause minutes
+          // before producing output.
+          if (
+            (event.type === "text_delta" || event.type === "server_toolcall") &&
+            !hasReceivedEvent
+          ) {
             hasReceivedEvent = true;
-            // Switch to the shorter mid-stream timeout now that events are flowing
           }
+          // Track thinking events — extends idle timeout and hard timeout
+          // so reasoning models aren't killed during thinking→output transition.
+          if (event.type === "thinking_delta" && !hasReceivedThinking) {
+            hasReceivedThinking = true;
+            // Extend the hard timeout now that we know the model is reasoning
+            if (hardTimer) clearTimeout(hardTimer);
+            hardTimeoutMs = STREAM_THINKING_HARD_TIMEOUT_MS;
+            hardTimer = setTimeout(() => {
+              diag("hard_timeout_fired", { events: streamEventCount });
+              idleTimedOut = true;
+              streamController.abort();
+            }, hardTimeoutMs);
+          }
+
           const now = Date.now();
           const gap = now - lastEventTime;
           // Log first event and any suspiciously long gaps
@@ -352,19 +392,45 @@ export async function* agentLoop(
           continue;
         }
         // Stream stall: the API connection hung mid-stream without closing.
-        // Retry with exponential backoff — the server may need time to recover
-        // (especially during Anthropic capacity issues that affect many clients).
+        // Two recovery strategies:
+        //  1. Zero events (connection-level hang): the request itself may be
+        //     problematic.  Force-compact the context to change the payload
+        //     before retrying — the same request will likely hang again.
+        //  2. Partial events: transient network blip — simple retry with backoff.
         if (idleTimedOut && !options.signal?.aborted && stallRetries < MAX_STALL_RETRIES) {
           stallRetries++;
-          const delayMs = STALL_DELAY_MS;
-          yield {
-            type: "retry" as const,
-            reason: "stream_stall" as const,
-            attempt: stallRetries,
-            maxAttempts: MAX_STALL_RETRIES,
-            delayMs,
-          };
-          await new Promise((r) => setTimeout(r, delayMs));
+          const zeroEvents = streamEventCount === 0;
+          // Force-compact on zero-event stalls to change the request payload.
+          // Only attempt once (first zero-event stall) to avoid thrashing.
+          if (zeroEvents && stallRetries <= 2 && options.transformContext) {
+            diag("stall_compact", { attempt: stallRetries, events: streamEventCount });
+            yield {
+              type: "retry" as const,
+              reason: "stream_stall" as const,
+              attempt: stallRetries,
+              maxAttempts: MAX_STALL_RETRIES,
+              delayMs: 0,
+            };
+            const transformed = await options.transformContext(messages, { force: true });
+            if (transformed !== messages) {
+              diag("stall_compact_done", {
+                before: messages.length,
+                after: transformed.length,
+              });
+              messages.length = 0;
+              messages.push(...transformed);
+            }
+          } else {
+            const delayMs = Math.min(STALL_DELAY_MS * 2 ** (stallRetries - 1), 8_000);
+            yield {
+              type: "retry" as const,
+              reason: "stream_stall" as const,
+              attempt: stallRetries,
+              maxAttempts: MAX_STALL_RETRIES,
+              delayMs,
+            };
+            await new Promise((r) => setTimeout(r, delayMs));
+          }
           turn--; // Don't count the failed turn
           continue;
         }
@@ -398,13 +464,17 @@ export async function* agentLoop(
       stallRetries = 0;
 
       // Detect empty/degenerate responses — the API occasionally returns 0 tokens
-      // with no content (e.g. stream interruption, transient server issue).
-      // Retry instead of treating as completion.
-      if (
-        response.usage.outputTokens === 0 &&
-        (response.message.content === "" ||
-          (Array.isArray(response.message.content) && response.message.content.length === 0))
-      ) {
+      // with no content, or "thinks" without producing actionable output.
+      // Reasoning models (MiMo, DeepSeek) may report outputTokens > 0 from
+      // thinking alone while producing no text or tool calls — still a dud.
+      const contentArr = Array.isArray(response.message.content) ? response.message.content : null;
+      const hasActionableContent =
+        response.message.content !== "" &&
+        contentArr !== null &&
+        contentArr.some(
+          (p) => p.type === "text" || p.type === "tool_call" || p.type === "server_tool_call",
+        );
+      if (!hasActionableContent) {
         if (emptyResponseRetries < MAX_EMPTY_RESPONSE_RETRIES) {
           emptyResponseRetries++;
           yield {

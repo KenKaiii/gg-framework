@@ -16,6 +16,24 @@ import {
   toOpenAITools,
 } from "./transform.js";
 
+// Cache OpenAI clients by config fingerprint (same rationale as Anthropic —
+// avoid polluting the global HTTP connection pool with per-turn clients).
+const clientCache = new Map<string, OpenAI>();
+
+function getOrCreateClient(options: StreamOptions): OpenAI {
+  const key = `${options.apiKey ?? ""}|${options.baseUrl ?? ""}`;
+  let client = clientCache.get(key);
+  if (!client) {
+    client = new OpenAI({
+      apiKey: options.apiKey,
+      ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+    });
+    clientCache.set(key, client);
+  }
+  return client;
+}
+
 export function streamOpenAI(options: StreamOptions): StreamResult {
   return new StreamResult(runStream(options));
 }
@@ -23,11 +41,7 @@ export function streamOpenAI(options: StreamOptions): StreamResult {
 async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, StreamResponse> {
   const providerName = options.provider ?? "openai";
 
-  const client = new OpenAI({
-    apiKey: options.apiKey,
-    ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
-    ...(options.fetch ? { fetch: options.fetch } : {}),
-  });
+  const client = getOrCreateClient(options);
 
   // GLM and Moonshot use a custom `thinking` body param instead of `reasoning_effort`
   const usesThinkingParam =
@@ -43,11 +57,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     model: options.model,
     messages,
     stream: true,
-    ...(options.maxTokens
-      ? options.provider === "xiaomi"
-        ? { max_completion_tokens: options.maxTokens }
-        : { max_tokens: options.maxTokens }
-      : {}),
+    ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}),
     ...(effectiveTemp != null && !options.thinking ? { temperature: effectiveTemp } : {}),
     ...(options.topP != null ? { top_p: options.topP } : {}),
     ...(options.stop ? { stop: options.stop } : {}),
@@ -78,8 +88,11 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   if (usesThinkingParam) {
     if (options.thinking) {
       (params as unknown as Record<string, unknown>).thinking = { type: "enabled" };
-    } else if (options.provider !== "xiaomi") {
-      // GLM/Moonshot require explicit disabled; Xiaomi prefers omission
+    } else {
+      // All providers (GLM, Moonshot, Xiaomi MiMo) support explicit disabled.
+      // MiMo is an always-on reasoning model — without { type: "disabled" } it
+      // returns reasoning_content and may produce thinking-only responses with
+      // no actionable output, causing the agent loop to silently end.
       (params as unknown as Record<string, unknown>).thinking = { type: "disabled" };
     }
   }
@@ -140,11 +153,18 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
 
     const delta = choice.delta;
 
-    // Reasoning/thinking delta (GLM, Moonshot)
+    // Reasoning/thinking delta (GLM, Moonshot, Xiaomi MiMo, DeepSeek)
+    // Always accumulate reasoning_content for round-tripping in multi-turn
+    // conversations (models like DeepSeek Reasoner require it on assistant
+    // messages).  Only yield thinking_delta to the UI when thinking is enabled
+    // — reasoning models like MiMo always return reasoning_content even when
+    // thinking is "off", which would cause a permanent "Thinking" indicator.
     const reasoningContent = (delta as Record<string, unknown>).reasoning_content;
     if (typeof reasoningContent === "string" && reasoningContent) {
       thinkingAccum += reasoningContent;
-      yield { type: "thinking_delta", text: reasoningContent };
+      if (options.thinking) {
+        yield { type: "thinking_delta", text: reasoningContent };
+      }
     }
 
     // Text delta
@@ -180,7 +200,9 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     }
   }
 
-  // Finalize thinking content (GLM, Moonshot reasoning_content)
+  // Finalize thinking content (GLM, Moonshot, Xiaomi reasoning_content)
+  // Always include in response for multi-turn round-tripping, even when
+  // thinking display is off — toOpenAIMessages sends it as reasoning_content.
   if (thinkingAccum) {
     contentParts.push({ type: "thinking", text: thinkingAccum });
   }

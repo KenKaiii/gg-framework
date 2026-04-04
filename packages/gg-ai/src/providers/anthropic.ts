@@ -19,28 +19,50 @@ import {
   toAnthropicTools,
 } from "./transform.js";
 
+// Cache Anthropic clients by config fingerprint so the same client (and its
+// underlying HTTP/2 connection pool) is reused across turns.  Creating a new
+// client per turn pollutes the global connection pool — after ~10 rapid
+// streaming requests the pool can accumulate stale HTTP/2 state, causing
+// subsequent requests to hang with zero events from the API.
+const clientCache = new Map<string, Anthropic>();
+
+function getOrCreateClient(options: StreamOptions): Anthropic {
+  const isOAuth = options.apiKey?.startsWith("sk-ant-oat");
+  // Key on the fields that affect client construction
+  const key = `${options.apiKey ?? ""}|${options.baseUrl ?? ""}|${isOAuth}`;
+  let client = clientCache.get(key);
+  if (!client) {
+    client = new Anthropic({
+      ...(isOAuth
+        ? { apiKey: null as unknown as string, authToken: options.apiKey }
+        : { apiKey: options.apiKey }),
+      ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+      // Disable SDK-level retries — the agent loop handles retries itself with
+      // stall detection and context compaction.  SDK retries on abort just cycle
+      // through the already-aborted signal, wasting time.
+      maxRetries: 0,
+      ...(isOAuth
+        ? {
+            defaultHeaders: {
+              "user-agent": "claude-cli/2.1.75",
+              "x-app": "cli",
+            },
+          }
+        : {}),
+    });
+    clientCache.set(key, client);
+  }
+  return client;
+}
+
 export function streamAnthropic(options: StreamOptions): StreamResult {
   return new StreamResult(runStream(options));
 }
 
 async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, StreamResponse> {
+  const client = getOrCreateClient(options);
   const isOAuth = options.apiKey?.startsWith("sk-ant-oat");
-
-  const client = new Anthropic({
-    ...(isOAuth
-      ? { apiKey: null as unknown as string, authToken: options.apiKey }
-      : { apiKey: options.apiKey }),
-    ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
-    ...(options.fetch ? { fetch: options.fetch } : {}),
-    ...(isOAuth
-      ? {
-          defaultHeaders: {
-            "user-agent": "claude-cli/2.1.75",
-            "x-app": "cli",
-          },
-        }
-      : {}),
-  });
 
   const cacheControl = toAnthropicCacheControl(options.cacheRetention, options.baseUrl);
   const { system: rawSystem, messages } = toAnthropicMessages(options.messages, cacheControl);

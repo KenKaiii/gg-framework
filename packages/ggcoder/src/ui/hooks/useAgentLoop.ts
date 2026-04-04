@@ -354,6 +354,14 @@ export function useAgentLoop(
           for await (const event of generator as AsyncIterable<AgentEvent>) {
             switch (event.type) {
               case "text_delta":
+                // First text_delta in a turn — flush any buffered thinking to
+                // the visible display.  This ensures ThinkingBlock only appears
+                // when the model actually produces text output, not on
+                // tool-call-only turns where reasoning models think silently.
+                if (!textVisibleRef.current && thinkingBufferRef.current) {
+                  thinkingVisibleRef.current = thinkingBufferRef.current;
+                  streamThinkingDirty = true;
+                }
                 textVisibleRef.current += event.text;
                 charCountRef.current += event.text.length;
                 streamTextDirty = true;
@@ -368,10 +376,12 @@ export function useAgentLoop(
 
               case "thinking_delta":
                 thinkingBufferRef.current += event.text;
-                thinkingVisibleRef.current += event.text;
+                // Don't push to thinkingVisibleRef yet — defer display until
+                // we know text output follows.  Reasoning models (MiMo) think
+                // on every turn including tool-call-only turns, which causes a
+                // persistent "Thinking" block in the UI.  The visible ref is
+                // flushed when the first text_delta arrives (see below).
                 charCountRef.current += event.text.length;
-                streamThinkingDirty = true;
-                scheduleStreamFlush();
                 if (phaseRef.current !== "thinking") {
                   thinkingStartRef.current = Date.now();
                   setIsThinking(true);
