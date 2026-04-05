@@ -50,6 +50,20 @@ providerRegistry.register("moonshot", {
     }),
 });
 
+providerRegistry.register("minimax", {
+  stream: (options) =>
+    streamAnthropic({
+      ...options,
+      baseUrl: options.baseUrl ?? "https://api.minimax.io/anthropic",
+      // MiniMax's Anthropic-compatible API does not support Anthropic-specific
+      // server tools (web_search), context_management, or server-side tools.
+      webSearch: false,
+      compaction: false,
+      clearToolUses: false,
+      serverTools: undefined,
+    }),
+});
+
 // ── Public API ─────────────────────────────────────────────
 
 /**

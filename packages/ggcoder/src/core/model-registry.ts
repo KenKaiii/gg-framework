@@ -126,6 +126,27 @@ export const MODELS: ModelInfo[] = [
     supportsImages: false,
     costTier: "low",
   },
+  // ── MiniMax ───────────────────────────────────────────────
+  {
+    id: "MiniMax-M2.7",
+    name: "MiniMax M2.7",
+    provider: "minimax",
+    contextWindow: 204_800,
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: false,
+    costTier: "medium",
+  },
+  {
+    id: "MiniMax-M2.7-highspeed",
+    name: "MiniMax M2.7 Highspeed",
+    provider: "minimax",
+    contextWindow: 204_800,
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: false,
+    costTier: "medium",
+  },
   // ── Moonshot (Kimi) ──────────────────────────────────────
   {
     id: "kimi-k2.5",
@@ -152,6 +173,7 @@ export function getDefaultModel(provider: Provider): ModelInfo {
   if (provider === "openai") return MODELS.find((m) => m.id === "gpt-5.4")!;
   if (provider === "glm") return MODELS.find((m) => m.id === "glm-5.1")!;
   if (provider === "moonshot") return MODELS.find((m) => m.id === "kimi-k2.5")!;
+  if (provider === "minimax") return MODELS.find((m) => m.id === "MiniMax-M2.7")!;
   return MODELS.find((m) => m.id === "claude-sonnet-4-6")!;
 }
 

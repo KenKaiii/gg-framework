@@ -351,7 +351,7 @@ function main(): void {
   }
 
   // Load saved settings for model/provider persistence
-  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | undefined;
+  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | "minimax" | undefined;
   let savedModel: string | undefined;
   let savedThinkingEnabled = false;
   let savedTheme: "auto" | "dark" | "light" = "auto";
@@ -366,12 +366,14 @@ function main(): void {
     // No settings file or invalid JSON — use defaults
   }
 
-  const provider: "anthropic" | "openai" | "glm" | "moonshot" = savedProvider ?? "anthropic";
+  const provider: "anthropic" | "openai" | "glm" | "moonshot" | "minimax" =
+    savedProvider ?? "anthropic";
 
   function getHardcodedDefault(p: string): string {
     if (p === "openai") return "gpt-5.4";
     if (p === "glm") return "glm-5.1";
     if (p === "moonshot") return "kimi-k2.5";
+    if (p === "minimax") return "MiniMax-M2.7";
     return "claude-opus-4-6";
   }
 
@@ -432,7 +434,7 @@ async function runInkTUI(opts: {
   const creds = await authStorage.resolveCredentials(provider);
 
   // Detect all logged-in providers and preload their credentials
-  const allProviders: Provider[] = ["anthropic", "xiaomi", "openai", "glm", "moonshot"];
+  const allProviders: Provider[] = ["anthropic", "xiaomi", "openai", "glm", "moonshot", "minimax"];
   const loggedInProviders: Provider[] = [];
   const credentialsByProvider: Record<
     string,
@@ -658,9 +660,20 @@ async function runLogin(): Promise<void> {
     };
 
     let creds;
-    if (provider === "glm" || provider === "moonshot" || provider === "xiaomi") {
+    if (
+      provider === "glm" ||
+      provider === "moonshot" ||
+      provider === "xiaomi" ||
+      provider === "minimax"
+    ) {
       const keyLabel =
-        provider === "glm" ? "Z.AI" : provider === "xiaomi" ? "Xiaomi MiMo" : "Moonshot";
+        provider === "glm"
+          ? "Z.AI"
+          : provider === "xiaomi"
+            ? "Xiaomi MiMo"
+            : provider === "minimax"
+              ? "MiniMax"
+              : "Moonshot";
       const apiKey = await rl.question(chalk.hex("#60a5fa")(`Paste your ${keyLabel} API key: `));
       if (!apiKey.trim()) {
         console.log(chalk.hex("#ef4444")("No API key provided. Login cancelled."));
@@ -730,7 +743,7 @@ async function runSessions(): Promise<void> {
   }
 
   // Load saved settings for provider/model/theme
-  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | undefined;
+  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | "minimax" | undefined;
   let savedModel: string | undefined;
   let savedThinkingEnabled = false;
   let savedTheme: "auto" | "dark" | "light" = "auto";
@@ -745,12 +758,14 @@ async function runSessions(): Promise<void> {
     // No settings file — use defaults
   }
 
-  const provider: "anthropic" | "openai" | "glm" | "moonshot" = savedProvider ?? "anthropic";
+  const provider: "anthropic" | "openai" | "glm" | "moonshot" | "minimax" =
+    savedProvider ?? "anthropic";
 
   function getDefault(p: string): string {
     if (p === "openai") return "gpt-5.4";
     if (p === "glm") return "glm-5.1";
     if (p === "moonshot") return "kimi-k2.5";
+    if (p === "minimax") return "MiniMax-M2.7";
     return "claude-opus-4-6";
   }
 
@@ -985,7 +1000,7 @@ async function runServe(): Promise<void> {
   }
 
   // Load saved settings
-  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | undefined;
+  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | "minimax" | undefined;
   let savedModel: string | undefined;
   let savedThinkingEnabled = false;
   try {
@@ -1004,6 +1019,7 @@ async function runServe(): Promise<void> {
     if (p === "openai") return "gpt-5.4";
     if (p === "glm") return "glm-5.1";
     if (p === "moonshot") return "kimi-k2.5";
+    if (p === "minimax") return "MiniMax-M2.7";
     return "claude-opus-4-6";
   }
 
@@ -1173,7 +1189,7 @@ async function runAgentHome(): Promise<void> {
   }
 
   // Load saved settings
-  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | undefined;
+  let savedProvider: "anthropic" | "openai" | "glm" | "moonshot" | "minimax" | undefined;
   let savedModel: string | undefined;
   let savedThinkingEnabled = false;
   try {
@@ -1192,6 +1208,7 @@ async function runAgentHome(): Promise<void> {
     if (p === "openai") return "gpt-5.4";
     if (p === "glm") return "glm-5.1";
     if (p === "moonshot") return "kimi-k2.5";
+    if (p === "minimax") return "MiniMax-M2.7";
     return "claude-opus-4-6";
   }
 
@@ -1224,6 +1241,7 @@ function displayName(provider: Provider): string {
   if (provider === "xiaomi") return "Xiaomi (MiMo)";
   if (provider === "glm") return "Z.AI (GLM)";
   if (provider === "moonshot") return "Moonshot";
+  if (provider === "minimax") return "MiniMax";
   return "OpenAI";
 }
 
