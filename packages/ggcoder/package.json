@@ -1,6 +1,6 @@
 {
   "name": "@kenkaiiii/ggcoder",
-  "version": "4.3.4",
+  "version": "4.3.5",
   "type": "module",
   "description": "CLI coding agent with OAuth authentication for Anthropic and OpenAI",
   "license": "MIT",
