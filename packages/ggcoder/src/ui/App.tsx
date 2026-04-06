@@ -886,13 +886,16 @@ export function App(props: AppProps) {
 
   // Resolve fresh OAuth credentials before each agent loop run.
   // Falls back to the static props when authStorage is not available.
-  const resolveCredentials = useCallback(async () => {
-    if (props.authStorage) {
-      const creds = await props.authStorage.resolveCredentials(currentProvider);
-      return { apiKey: creds.accessToken, accountId: creds.accountId };
-    }
-    return { apiKey: activeApiKey!, accountId: activeAccountId };
-  }, [props.authStorage, currentProvider, activeApiKey, activeAccountId]);
+  const resolveCredentials = useCallback(
+    async (opts?: { forceRefresh?: boolean }) => {
+      if (props.authStorage) {
+        const creds = await props.authStorage.resolveCredentials(currentProvider, opts);
+        return { apiKey: creds.accessToken, accountId: creds.accountId };
+      }
+      return { apiKey: activeApiKey!, accountId: activeAccountId };
+    },
+    [props.authStorage, currentProvider, activeApiKey, activeAccountId],
+  );
 
   const agentLoop = useAgentLoop(
     messagesRef,
@@ -2199,30 +2202,36 @@ export function App(props: AppProps) {
 
             // Rebuild system prompt with the approved plan, then reset the session
             void (async () => {
-              const newPrompt = await buildSystemPrompt(props.cwd, props.skills, false, planPath);
-              messagesRef.current = [{ role: "system" as const, content: newPrompt }];
-              agentLoop.reset();
-              persistedIndexRef.current = messagesRef.current.length;
+              try {
+                const newPrompt = await buildSystemPrompt(props.cwd, props.skills, false, planPath);
+                messagesRef.current = [{ role: "system" as const, content: newPrompt }];
+                agentLoop.reset();
+                persistedIndexRef.current = messagesRef.current.length;
 
-              // Create a new session file
-              const sm = sessionManagerRef.current;
-              if (sm) {
-                const s = await sm.create(props.cwd, currentProvider, currentModel);
-                sessionPathRef.current = s.path;
+                // Create a new session file
+                const sm = sessionManagerRef.current;
+                if (sm) {
+                  const s = await sm.create(props.cwd, currentProvider, currentModel);
+                  sessionPathRef.current = s.path;
+                }
+
+                // Start implementation with a clean context
+                setLiveItems([
+                  {
+                    kind: "info",
+                    text: "Plan approved — starting fresh session for implementation",
+                    id: getId(),
+                  },
+                ]);
+                setDoneStatus(null);
+                await agentLoop.run(
+                  "The plan has been approved. Implement it now, following each step in order.",
+                );
+              } catch (err) {
+                const errMsg = err instanceof Error ? err.message : String(err);
+                log("ERROR", "error", errMsg);
+                setLiveItems((prev) => [...prev, { kind: "error", message: errMsg, id: getId() }]);
               }
-
-              // Start implementation with a clean context
-              setLiveItems([
-                {
-                  kind: "info",
-                  text: "Plan approved — starting fresh session for implementation",
-                  id: getId(),
-                },
-              ]);
-              setDoneStatus(null);
-              await agentLoop.run(
-                "The plan has been approved. Implement it now, following each step in order.",
-              );
             })();
           }}
           onReject={(planPath, feedback) => {
@@ -2240,7 +2249,11 @@ export function App(props: AppProps) {
               ...prev,
               { kind: "info", text: `Plan rejected — "${feedback}"`, id: getId() },
             ]);
-            void agentLoop.run(msg);
+            void agentLoop.run(msg).catch((err: unknown) => {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              log("ERROR", "error", errMsg);
+              setLiveItems((prev) => [...prev, { kind: "error", message: errMsg, id: getId() }]);
+            });
           }}
         />
       ) : (
