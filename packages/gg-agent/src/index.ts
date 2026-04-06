@@ -20,6 +20,7 @@ export type {
   AgentToolCallStartEvent,
   AgentToolCallUpdateEvent,
   AgentToolCallEndEvent,
+  AgentToolCallDeltaEvent,
   AgentServerToolCallEvent,
   AgentServerToolResultEvent,
   AgentSteeringMessageEvent,

@@ -91,6 +91,11 @@ export interface AgentRetryEvent {
   delayMs: number;
 }
 
+export interface AgentToolCallDeltaEvent {
+  type: "toolcall_delta";
+  chars: number;
+}
+
 export interface AgentErrorEvent {
   type: "error";
   error: Error;
@@ -126,6 +131,7 @@ export type AgentEvent =
   | AgentToolCallStartEvent
   | AgentToolCallUpdateEvent
   | AgentToolCallEndEvent
+  | AgentToolCallDeltaEvent
   | AgentServerToolCallEvent
   | AgentServerToolResultEvent
   | AgentSteeringMessageEvent

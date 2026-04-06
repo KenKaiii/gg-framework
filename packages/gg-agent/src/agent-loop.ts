@@ -325,14 +325,15 @@ export async function* agentLoop(
           eventTypeCounts[event.type] = (eventTypeCounts[event.type] ?? 0) + 1;
           lastEventType = event.type;
 
-          // Only flip to mid-stream timeout on confirmed output events — text
-          // deltas and completed tool calls.  Everything else (keepalive,
-          // thinking_delta, toolcall_delta, toolcall_done, done) keeps the
-          // longer first-event / post-thinking timeout.  Reasoning models
-          // (MiMo) can stream hundreds of thinking events then pause minutes
-          // before producing output.
+          // Flip to mid-stream timeout on confirmed output events — text
+          // deltas, completed tool calls, and tool call deltas (large file
+          // writes can stream toolcall_delta for minutes without any text_delta).
+          // Reasoning models (MiMo) are handled separately below — they can
+          // stream hundreds of thinking events then pause minutes before output.
           if (
-            (event.type === "text_delta" || event.type === "server_toolcall") &&
+            (event.type === "text_delta" ||
+              event.type === "server_toolcall" ||
+              event.type === "toolcall_delta") &&
             !hasReceivedEvent
           ) {
             hasReceivedEvent = true;
@@ -395,6 +396,11 @@ export async function* agentLoop(
               toolUseId: event.toolUseId,
               resultType: event.resultType,
               data: event.data,
+            };
+          } else if (event.type === "toolcall_delta") {
+            yield {
+              type: "toolcall_delta" as const,
+              chars: event.argsJson?.length ?? 0,
             };
           }
           lastYieldEndTime = Date.now();

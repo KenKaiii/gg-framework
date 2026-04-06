@@ -391,6 +391,20 @@ export function useAgentLoop(
                 }
                 break;
 
+              case "toolcall_delta":
+                // Tool call args being streamed — tick the char counter so the
+                // token estimate updates, and switch to "generating" phase so the
+                // user sees progress instead of a frozen "waiting" spinner.
+                charCountRef.current += event.chars;
+                streamTextDirty = true;
+                scheduleStreamFlush();
+                if (phaseRef.current === "waiting" || phaseRef.current === "thinking") {
+                  if (phaseRef.current === "thinking") freezeThinking();
+                  phaseRef.current = "generating";
+                  setActivityPhase("generating");
+                }
+                break;
+
               case "tool_call_start": {
                 // Flush any pending throttled text BEFORE the tool call renders.
                 // Without this, text accumulated in textVisibleRef since the last
