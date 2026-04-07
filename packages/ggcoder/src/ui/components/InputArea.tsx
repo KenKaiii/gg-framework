@@ -8,6 +8,17 @@ import type { ImageAttachment } from "../../utils/image.js";
 import { extractImagePaths, readImageFile, getClipboardImage } from "../../utils/image.js";
 import { SlashCommandMenu, filterCommands, type SlashCommandInfo } from "./SlashCommandMenu.js";
 import { log } from "../../core/logger.js";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import {
+  readFileSync,
+  writeFileSync,
+  appendFileSync,
+  mkdirSync,
+  renameSync,
+  unlinkSync,
+  existsSync,
+} from "node:fs";
 
 const MAX_VISIBLE_LINES = 5;
 const PROMPT = "❯ ";
@@ -121,6 +132,59 @@ function yankPop(): { text: string; start: number; length: number } | null {
   return result;
 }
 
+// ── Persistent Input History ─────────────────────────────
+const HISTORY_FILE = join(homedir(), ".gg", "input-history.jsonl");
+const MAX_HISTORY = 500;
+// Compact when file has 50% more lines than the cap
+const COMPACT_THRESHOLD = MAX_HISTORY + Math.floor(MAX_HISTORY * 0.5);
+let lineCountEstimate = 0;
+
+function loadHistory(): string[] {
+  try {
+    const data = readFileSync(HISTORY_FILE, "utf-8");
+    const lines = data.trim().split("\n").filter(Boolean);
+    lineCountEstimate = lines.length;
+    return lines.map((l) => JSON.parse(l) as string).slice(-MAX_HISTORY);
+  } catch {
+    return [];
+  }
+}
+
+function appendHistory(entry: string, history: string[]): void {
+  // Skip consecutive duplicates
+  if (history.length > 0 && history[history.length - 1] === entry) return;
+
+  try {
+    mkdirSync(join(homedir(), ".gg"), { recursive: true });
+    appendFileSync(HISTORY_FILE, JSON.stringify(entry) + "\n");
+    lineCountEstimate++;
+    if (lineCountEstimate > COMPACT_THRESHOLD) {
+      compactHistory();
+    }
+  } catch {
+    // Silently ignore write failures
+  }
+}
+
+function compactHistory(): void {
+  const tempPath = `${HISTORY_FILE}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    const data = readFileSync(HISTORY_FILE, "utf-8");
+    const lines = data.trim().split("\n").filter(Boolean);
+    const trimmed = lines.slice(-MAX_HISTORY);
+    writeFileSync(tempPath, trimmed.map((l) => l + "\n").join(""));
+    renameSync(tempPath, HISTORY_FILE);
+    lineCountEstimate = trimmed.length;
+  } catch {
+    // Clean up temp file on failure
+    try {
+      if (existsSync(tempPath)) unlinkSync(tempPath);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+}
+
 export interface PasteInfo {
   offset: number; // char index where paste starts in value
   length: number; // char length of pasted content
@@ -209,8 +273,9 @@ export function InputArea({
   cursorRef.current = cursor;
   const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
   const [images, setImages] = useState<ImageAttachment[]>([]);
-  const historyRef = useRef<string[]>([]);
+  const historyRef = useRef<string[]>(loadHistory());
   const historyIndexRef = useRef(-1);
+  const draftRef = useRef("");
 
   // ── Ctrl+R history search state ──────────────────────────
   const [searchMode, setSearchMode] = useState(false);
@@ -594,6 +659,12 @@ export function InputArea({
       const isYankKey = (key.ctrl && input === "y") || (key.meta && input === "y");
       if (!isYankKey) lastActionWasYank = false;
 
+      // Reset history navigation when any non-arrow key is pressed while browsing
+      if (historyIndexRef.current !== -1 && !key.upArrow && !key.downArrow) {
+        historyIndexRef.current = -1;
+        draftRef.current = "";
+      }
+
       // ── Ctrl+R history search mode ───────────────────────
       if (key.ctrl && input === "r" && !disabled) {
         if (!searchMode) {
@@ -705,7 +776,9 @@ export function InputArea({
           const selected = filteredCommands[Math.min(menuIndex, filteredCommands.length - 1)];
           const cmd = "/" + selected.name;
           // Submit the command directly
-          historyRef.current.push(cmd);
+          const hist = historyRef.current;
+          if (hist[hist.length - 1] !== cmd) hist.push(cmd);
+          appendHistory(cmd, hist);
           historyIndexRef.current = -1;
           onSubmit(cmd, []);
           clearInput();
@@ -714,7 +787,11 @@ export function InputArea({
 
         const trimmed = value.trim();
         if (trimmed || images.length > 0) {
-          if (trimmed) historyRef.current.push(trimmed);
+          if (trimmed) {
+            const hist = historyRef.current;
+            if (hist[hist.length - 1] !== trimmed) hist.push(trimmed);
+            appendHistory(trimmed, hist);
+          }
           historyIndexRef.current = -1;
           // Compute paste info adjusted for trimming
           const trimLeading = value.length - value.trimStart().length;
@@ -860,9 +937,35 @@ export function InputArea({
           setMenuIndex((i) => Math.max(0, i - 1));
           return;
         }
+
+        // If there's multi-line text, try moving cursor up first
+        if (value.includes("\n") && historyIndexRef.current === -1) {
+          const before = value.slice(0, cursor);
+          const lineStart = before.lastIndexOf("\n");
+          if (lineStart !== -1) {
+            // Move cursor to same column on previous line
+            const col = cursor - lineStart - 1;
+            const prevLineStart = before.lastIndexOf("\n", lineStart - 1);
+            const prevLineLen = lineStart - (prevLineStart + 1);
+            setCursor(prevLineStart + 1 + Math.min(col, prevLineLen));
+            setSelectionAnchor(null);
+            return;
+          }
+          // Cursor is on the first line — fall through to history
+        }
+
+        // Only navigate history when input is empty or already browsing history
+        if (value && historyIndexRef.current === -1) return;
+
         setSelectionAnchor(null);
         const history = historyRef.current;
         if (history.length === 0) return;
+
+        // Save draft when first entering history mode
+        if (historyIndexRef.current === -1) {
+          draftRef.current = value;
+        }
+
         const newIndex =
           historyIndexRef.current === -1
             ? history.length - 1
@@ -879,6 +982,29 @@ export function InputArea({
           setMenuIndex((i) => Math.min(filteredCommands.length - 1, i + 1));
           return;
         }
+
+        // If there's multi-line text, try moving cursor down first
+        if (value.includes("\n") && historyIndexRef.current === -1) {
+          const before = value.slice(0, cursor);
+          const after = value.slice(cursor);
+          const nextNewline = after.indexOf("\n");
+          if (nextNewline !== -1) {
+            // Move cursor to same column on next line
+            const lineStart = before.lastIndexOf("\n") + 1;
+            const col = cursor - lineStart;
+            const nextLineStart = cursor + nextNewline + 1;
+            const nextLineEnd = value.indexOf("\n", nextLineStart);
+            const nextLineLen = (nextLineEnd === -1 ? value.length : nextLineEnd) - nextLineStart;
+            setCursor(nextLineStart + Math.min(col, nextLineLen));
+            setSelectionAnchor(null);
+            return;
+          }
+          // Cursor is on the last line — fall through, but don't navigate history
+          // since we have actual content typed
+          if (onDownAtEnd) onDownAtEnd();
+          return;
+        }
+
         setSelectionAnchor(null);
         const history = historyRef.current;
         if (historyIndexRef.current === -1) {
@@ -888,8 +1014,9 @@ export function InputArea({
         const newIndex = historyIndexRef.current + 1;
         if (newIndex >= history.length) {
           historyIndexRef.current = -1;
-          setValue("");
-          setCursor(0);
+          setValue(draftRef.current);
+          setCursor(draftRef.current.length);
+          draftRef.current = "";
         } else {
           historyIndexRef.current = newIndex;
           setValue(history[newIndex]);
