@@ -18,7 +18,7 @@ import { getContextWindow, getModel, MODELS } from "./model-registry.js";
 import { discoverSkills, type Skill } from "./skills.js";
 import { ensureAppDirs } from "../config.js";
 import { buildSystemPrompt } from "../system-prompt.js";
-import { createTools, type ProcessManager } from "../tools/index.js";
+import { createTools, createWebSearchTool, type ProcessManager } from "../tools/index.js";
 import { MCPClientManager, getMCPServers } from "./mcp/index.js";
 import { log } from "./logger.js";
 import { setEstimatorModel } from "./compaction/token-estimator.js";
@@ -358,33 +358,47 @@ export class AgentSession {
     setEstimatorModel(model);
     this.eventBus.emit("model_change", { provider: this.provider, model: this.model });
 
-    // Reconnect MCP servers when provider changes (e.g. GLM needs Z.AI tools, others don't)
-    if (provider && provider !== prevProvider && this.mcpManager) {
-      // Remove old MCP tools
-      this.tools = this.tools.filter((t) => !t.name.startsWith("mcp__"));
+    // Update provider-specific tools when provider changes
+    if (provider && provider !== prevProvider) {
+      // Add/remove client-side web_search tool based on provider.
+      // Anthropic has native server-side web search; all other providers need the client tool.
+      const hasWebSearch = this.tools.some((t) => t.name === "web_search");
+      if (this.provider === "anthropic" && hasWebSearch) {
+        // Switching TO anthropic — remove client-side web_search (server-side handles it)
+        this.tools = this.tools.filter((t) => t.name !== "web_search");
+      } else if (this.provider !== "anthropic" && !hasWebSearch) {
+        // Switching FROM anthropic — add client-side web_search
+        this.tools.push(createWebSearchTool());
+      }
 
-      // Disconnect old MCP servers
-      await this.mcpManager.dispose();
+      // Reconnect MCP servers (e.g. GLM needs Z.AI tools, others don't)
+      if (this.mcpManager) {
+        // Remove old MCP tools
+        this.tools = this.tools.filter((t) => !t.name.startsWith("mcp__"));
 
-      // Connect new MCP servers for the new provider
-      try {
-        let apiKey: string | undefined;
-        if (this.provider === "glm") {
-          try {
-            const glmCreds = await this.authStorage.resolveCredentials("glm");
-            apiKey = glmCreds.accessToken;
-          } catch {
-            // GLM not configured — skip Z.AI MCP servers
+        // Disconnect old MCP servers
+        await this.mcpManager.dispose();
+
+        // Connect new MCP servers for the new provider
+        try {
+          let apiKey: string | undefined;
+          if (this.provider === "glm") {
+            try {
+              const glmCreds = await this.authStorage.resolveCredentials("glm");
+              apiKey = glmCreds.accessToken;
+            } catch {
+              // GLM not configured — skip Z.AI MCP servers
+            }
           }
+          const mcpTools = await this.mcpManager.connectAll(getMCPServers(this.provider, apiKey));
+          this.tools.push(...mcpTools);
+        } catch (err) {
+          log(
+            "WARN",
+            "mcp",
+            `MCP reconnection failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
-        const mcpTools = await this.mcpManager.connectAll(getMCPServers(this.provider, apiKey));
-        this.tools.push(...mcpTools);
-      } catch (err) {
-        log(
-          "WARN",
-          "mcp",
-          `MCP reconnection failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
       }
     }
   }
