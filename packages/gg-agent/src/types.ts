@@ -89,6 +89,8 @@ export interface AgentRetryEvent {
   attempt: number;
   maxAttempts: number;
   delayMs: number;
+  /** When true, the retry should not be shown to the user (hidden retry). */
+  silent?: boolean;
 }
 
 export interface AgentToolCallDeltaEvent {

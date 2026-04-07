@@ -516,15 +516,19 @@ export function useAgentLoop(
                 break;
 
               case "retry":
-                phaseRef.current = "retrying";
-                setActivityPhase("retrying");
-                setStallError(null); // clear any previous error on retry
-                setRetryInfo({
-                  reason: event.reason,
-                  attempt: event.attempt,
-                  maxAttempts: event.maxAttempts,
-                  delayMs: event.delayMs,
-                });
+                // Hidden retries (silent) don't update the UI — the user
+                // only sees retry indicators after silent attempts are exhausted.
+                if (!event.silent) {
+                  phaseRef.current = "retrying";
+                  setActivityPhase("retrying");
+                  setStallError(null); // clear any previous error on retry
+                  setRetryInfo({
+                    reason: event.reason,
+                    attempt: event.attempt,
+                    maxAttempts: event.maxAttempts,
+                    delayMs: event.delayMs,
+                  });
+                }
                 break;
 
               case "turn_end": {
