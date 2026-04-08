@@ -5,6 +5,7 @@ import type { OAuthCredentials } from "./oauth/types.js";
 import { refreshAnthropicToken } from "./oauth/anthropic.js";
 import { refreshOpenAIToken } from "./oauth/openai.js";
 import { withFileLock } from "./file-lock.js";
+import { log } from "./logger.js";
 
 type AuthData = Record<string, OAuthCredentials>;
 
@@ -24,8 +25,22 @@ export class AuthStorage {
       try {
         const content = await fs.readFile(this.filePath, "utf-8");
         this.data = JSON.parse(content) as AuthData;
-      } catch {
+        log("INFO", "auth", `Loaded credentials from ${this.filePath}`, {
+          providers: Object.keys(this.data).join(",") || "(none)",
+        });
+      } catch (err) {
         this.data = {};
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") {
+          log("INFO", "auth", `No auth file found at ${this.filePath} (first run)`);
+        } else {
+          log(
+            "ERROR",
+            "auth",
+            `Failed to load auth file: ${err instanceof Error ? err.message : String(err)}`,
+            { path: this.filePath, code: code ?? "unknown" },
+          );
+        }
       }
     });
     this.loaded = true;
