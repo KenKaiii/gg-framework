@@ -69,6 +69,21 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   // Moonshot's $web_search was previously injected here but it returns opaque
   // results and triggers reasoning_content validation errors with thinking mode.
 
+  // prompt_cache_key helps bucket similar requests for better cache hit rates.
+  // Only send to providers known to support it (OpenAI, Moonshot/Kimi) — unknown
+  // params may cause errors on other OpenAI-compatible providers like GLM or Xiaomi.
+  if (options.provider === "openai" || options.provider === "moonshot") {
+    const paramsAny = params as unknown as Record<string, unknown>;
+    paramsAny.prompt_cache_key = "ggcoder";
+
+    // Map cacheRetention to OpenAI's prompt_cache_retention param.
+    // "long" → "24h" keeps cached prefixes active up to 24 hours (OpenAI feature).
+    const retention = options.cacheRetention ?? "short";
+    if (retention === "long") {
+      paramsAny.prompt_cache_retention = "24h";
+    }
+  }
+
   // Inject custom thinking param for GLM/Moonshot/Xiaomi (not part of OpenAI spec)
   if (usesThinkingParam) {
     if (options.thinking) {
@@ -124,6 +139,12 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
       const details = chunk.usage.prompt_tokens_details;
       if (details?.cached_tokens) {
         cacheRead = details.cached_tokens;
+      }
+      // Kimi K2/K2.5 reports cached_tokens at the top level of usage
+      // rather than nested under prompt_tokens_details.
+      const usageAny = chunk.usage as unknown as Record<string, unknown>;
+      if (!cacheRead && typeof usageAny.cached_tokens === "number" && usageAny.cached_tokens > 0) {
+        cacheRead = usageAny.cached_tokens as number;
       }
       // OpenAI's prompt_tokens includes cached tokens; subtract to match
       // Anthropic's convention where inputTokens excludes cache hits.
