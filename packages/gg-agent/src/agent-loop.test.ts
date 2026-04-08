@@ -181,38 +181,35 @@ describe("agentLoop", () => {
     expect(original[1]).toEqual(compacted[1]);
   });
 
-  it("retries once on context overflow when transformContext is provided", async () => {
+  it("throws immediately on context overflow without retrying or compacting", async () => {
     const overflowErr = new Error("prompt is too long: 250000 tokens > 200000 maximum");
 
-    mockStream
-      .mockReturnValueOnce(mockErrorResult(overflowErr) as unknown as ReturnType<typeof stream>)
-      .mockReturnValueOnce(mockOkResult("Recovered") as unknown as ReturnType<typeof stream>);
+    mockStream.mockReturnValueOnce(
+      mockErrorResult(overflowErr) as unknown as ReturnType<typeof stream>,
+    );
 
     const messages: Message[] = [
       { role: "system", content: "sys" },
       { role: "user", content: "test" },
     ];
 
-    const compacted: Message[] = [
-      { role: "system", content: "sys" },
-      { role: "user", content: "test" },
-    ];
+    const transformContext = vi.fn().mockImplementation((msgs: Message[]) => msgs);
 
-    const transformContext = vi.fn().mockImplementation(() => compacted);
+    await expect(
+      collectLoop(messages, {
+        provider: "anthropic",
+        model: "test",
+        transformContext,
+      }),
+    ).rejects.toThrow("prompt is too long");
 
-    const { events, result } = await collectLoop(messages, {
-      provider: "anthropic",
-      model: "test",
-      transformContext,
-    });
-
-    // transformContext called 3 times: pre-call, on overflow, pre-retry
-    expect(transformContext).toHaveBeenCalledTimes(3);
-    expect(mockStream).toHaveBeenCalledTimes(2);
-    expect(result.totalTurns).toBe(1);
-
-    const textEvents = events.filter((e) => e.type === "text_delta");
-    expect(textEvents).toHaveLength(1);
+    // Should NOT have called transformContext with force: true
+    const forceCalls = transformContext.mock.calls.filter(
+      (c: unknown[]) => (c[1] as { force?: boolean })?.force === true,
+    );
+    expect(forceCalls.length).toBe(0);
+    // Should only have been called once (the pre-turn check)
+    expect(mockStream).toHaveBeenCalledTimes(1);
   });
 
   it("throws on context overflow when no transformContext is provided", async () => {

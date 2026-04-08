@@ -79,7 +79,7 @@ export interface AgentLoopOptions {
 export type ActivityPhase = "waiting" | "thinking" | "generating" | "tools" | "retrying" | "idle";
 
 export interface RetryInfo {
-  reason: "overloaded" | "rate_limit" | "empty_response" | "context_overflow" | "stream_stall";
+  reason: "overloaded" | "rate_limit" | "empty_response" | "stream_stall";
   attempt: number;
   maxAttempts: number;
   delayMs: number;
@@ -205,6 +205,8 @@ export function useAgentLoop(
   }, []);
 
   const reset = useCallback(() => {
+    // Abort any running agent loop first — this kills in-flight subagent processes
+    abortRef.current?.abort();
     setCurrentTurn(0);
     setTotalTokens({ input: 0, output: 0 });
     setContextUsed(0);

@@ -9,6 +9,7 @@ const SUB_AGENT_MAX_TURNS = 10;
 const SUB_AGENT_MAX_OUTPUT_CHARS = 100_000; // ~25k tokens, matches other tool limits
 const SUB_AGENT_MAX_OUTPUT_LINES = 500;
 const SUB_AGENT_MAX_STDERR_CHARS = 10_000; // Cap stderr to prevent unbounded growth
+const SUB_AGENT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minute hard timeout
 
 const SubAgentParams = z.object({
   task: z.string().describe("The task to delegate to the sub-agent"),
@@ -98,16 +99,29 @@ export function createSubAgentTool(
       let currentActivity: string | undefined;
       let textOutput = "";
 
-      // Handle abort signal
-      const abortHandler = () => {
+      // Track whether the child has actually exited
+      let childExited = false;
+
+      const killChild = () => {
+        if (childExited) return;
         child.kill("SIGTERM");
         setTimeout(() => {
-          if (!child.killed) child.kill("SIGKILL");
+          if (!childExited) child.kill("SIGKILL");
         }, 3000);
       };
+
+      // Handle abort signal
+      const abortHandler = () => killChild();
       context.signal.addEventListener("abort", abortHandler, { once: true });
 
+      // If already aborted (e.g. reset happened before we got here), kill immediately
+      if (context.signal.aborted) killChild();
+
       return new Promise((resolve) => {
+        // Hard timeout to prevent subagents from hanging indefinitely
+        const timeout = setTimeout(() => {
+          killChild();
+        }, SUB_AGENT_TIMEOUT_MS);
         // Read NDJSON from stdout
         const rl = createInterface({ input: child.stdout! });
         rl.on("line", (line) => {
@@ -170,6 +184,8 @@ export function createSubAgentTool(
         });
 
         child.on("close", (code) => {
+          childExited = true;
+          clearTimeout(timeout);
           rl.close();
           context.signal.removeEventListener("abort", abortHandler);
           const durationMs = Date.now() - startTime;
@@ -199,6 +215,8 @@ export function createSubAgentTool(
         });
 
         child.on("error", (err) => {
+          childExited = true;
+          clearTimeout(timeout);
           rl.close();
           context.signal.removeEventListener("abort", abortHandler);
           resolve({

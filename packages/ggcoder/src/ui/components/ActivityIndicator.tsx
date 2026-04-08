@@ -133,7 +133,6 @@ const RETRY_REASON_LABELS: Record<RetryInfo["reason"], string> = {
   overloaded: "Provider overloaded",
   rate_limit: "Rate limited",
   empty_response: "Empty response",
-  context_overflow: "Context overflow, compacting",
   stream_stall: "Provider stream stalled",
 };
 

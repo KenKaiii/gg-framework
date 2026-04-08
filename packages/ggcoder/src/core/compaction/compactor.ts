@@ -45,6 +45,10 @@ const COMPACTION_USER_PROMPT =
   "Summarize the conversation above into a concise summary following the instructions. Output only the summary, nothing else.";
 
 export interface CompactionResult {
+  /** Whether messages were actually reduced. */
+  compacted: boolean;
+  /** Why compaction was skipped (only set when compacted is false). */
+  reason?: string;
   originalCount: number;
   newCount: number;
   tokensBeforeEstimate: number;
@@ -57,6 +61,9 @@ export interface CompactionResult {
  * Matches the widely-used Pi / Grok-CLI default of 16 384 tokens.
  */
 export const COMPACTION_RESERVE_TOKENS = 16_384;
+
+/** Minimum messages before compaction is attempted (Mysti uses 4). */
+const COMPACTION_MIN_MESSAGES = 4;
 
 /**
  * Check if compaction should be triggered.
@@ -75,6 +82,14 @@ export function shouldCompact(
   /** Fixed token reserve subtracted from contextWindow. Defaults to 16 384. */
   reserveTokens = COMPACTION_RESERVE_TOKENS,
 ): boolean {
+  // Don't attempt compaction with too few messages — compact() would bail
+  // anyway (middleMessages <= 2), but this avoids the spinner + LLM auth dance.
+  // Skip the guard when actualTokens is provided (force-compact / overflow paths
+  // where the caller has precise token info regardless of message count).
+  if (actualTokens == null && messages.length < COMPACTION_MIN_MESSAGES) {
+    log("INFO", "compaction", `Context check: skipping — only ${messages.length} messages`);
+    return false;
+  }
   const estimated = actualTokens ?? estimateConversationTokens(messages);
   const percentageLimit = contextWindow * threshold;
   // Only apply the fixed reserve when the context window is large enough
@@ -531,6 +546,8 @@ export async function compact(
     return {
       messages: [...messages],
       result: {
+        compacted: false,
+        reason: "too_few_messages",
         originalCount,
         newCount: messages.length,
         tokensBeforeEstimate,
@@ -728,6 +745,7 @@ export async function compact(
   return {
     messages: newMessages,
     result: {
+      compacted: true,
       originalCount,
       newCount: newMessages.length,
       tokensBeforeEstimate,
