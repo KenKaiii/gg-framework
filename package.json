@@ -23,6 +23,9 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "onnxruntime-node"
-    ]
+    ],
+    "overrides": {
+      "global-agent": "^4.1.3"
+    }
   }
 }
