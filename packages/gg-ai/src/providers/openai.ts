@@ -30,6 +30,7 @@ export function streamOpenAI(options: StreamOptions): StreamResult {
 
 async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, StreamResponse> {
   const providerName = options.provider ?? "openai";
+  const useStreaming = options.streaming !== false;
 
   const client = createClient(options);
 
@@ -49,7 +50,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   const params: OpenAI.ChatCompletionCreateParams = {
     model: options.model,
     messages,
-    stream: true,
+    stream: useStreaming,
     ...(options.maxTokens ? { max_completion_tokens: options.maxTokens } : {}),
     ...(effectiveTemp != null && !options.thinking ? { temperature: effectiveTemp } : {}),
     ...(options.topP != null ? { top_p: options.topP } : {}),
@@ -61,7 +62,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     ...(options.toolChoice && options.tools?.length
       ? { tool_choice: toOpenAIToolChoice(options.toolChoice) }
       : {}),
-    stream_options: { include_usage: true },
+    ...(useStreaming ? { stream_options: { include_usage: true } } : {}),
   };
 
   // Native web search is disabled for OpenAI-compatible providers — ggcoder
@@ -111,6 +112,22 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
       "/tmp/ggai-requests.log",
       `[${ts}] ${dumpPath} messages=${params.messages.length}\n`,
     );
+  }
+
+  // Non-streaming fallback: issue a single request/response and synthesize
+  // stream events from the final ChatCompletion. Used by the agent loop after
+  // the streaming transport has stalled repeatedly -- flipping to a plain
+  // request/response often recovers from broken SSE connections.
+  if (!useStreaming) {
+    try {
+      const completion = (await client.chat.completions.create(params, {
+        signal: options.signal ?? undefined,
+      })) as OpenAI.ChatCompletion;
+      yield* synthesizeEventsFromCompletion(completion, !!options.thinking);
+      return completionToResponse(completion);
+    } catch (err) {
+      throw toError(err, providerName);
+    }
   }
 
   let stream: AsyncIterable<OpenAI.ChatCompletionChunk>;
@@ -254,6 +271,136 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
 
   yield { type: "done", stopReason };
   return response;
+}
+
+/**
+ * Walk a non-streaming OpenAI ChatCompletion and yield the same StreamEvents
+ * that the streaming path would produce. Emits one large delta per field so
+ * the agent loop consumer observes identical behaviour to streaming mode.
+ */
+function* synthesizeEventsFromCompletion(
+  completion: OpenAI.ChatCompletion,
+  thinkingEnabled: boolean,
+): Generator<StreamEvent, void> {
+  const choice = completion.choices?.[0];
+  if (!choice) {
+    yield { type: "done", stopReason: normalizeOpenAIStopReason(null) };
+    return;
+  }
+
+  const msg = choice.message as unknown as Record<string, unknown>;
+
+  // Reasoning / thinking content (GLM, Moonshot, DeepSeek)
+  const reasoning = msg.reasoning_content;
+  if (typeof reasoning === "string" && reasoning && thinkingEnabled) {
+    yield { type: "thinking_delta", text: reasoning };
+  }
+
+  // Text content
+  if (typeof msg.content === "string" && msg.content) {
+    yield { type: "text_delta", text: msg.content };
+  }
+
+  // Tool calls
+  const toolCalls = msg.tool_calls as
+    | Array<{ id: string; function: { name: string; arguments: string } }>
+    | undefined;
+  if (toolCalls) {
+    for (const tc of toolCalls) {
+      const argsJson = tc.function?.arguments ?? "";
+      if (argsJson) {
+        yield {
+          type: "toolcall_delta",
+          id: tc.id,
+          name: tc.function?.name ?? "",
+          argsJson,
+        };
+      }
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(argsJson) as Record<string, unknown>;
+      } catch {
+        // malformed JSON -- keep empty
+      }
+      yield {
+        type: "toolcall_done",
+        id: tc.id,
+        name: tc.function?.name ?? "",
+        args,
+      };
+    }
+  }
+
+  yield { type: "done", stopReason: normalizeOpenAIStopReason(choice.finish_reason ?? null) };
+}
+
+/** Convert a non-streaming OpenAI ChatCompletion into our StreamResponse shape. */
+function completionToResponse(completion: OpenAI.ChatCompletion): StreamResponse {
+  const choice = completion.choices?.[0];
+  const contentParts: ContentPart[] = [];
+  let textAccum = "";
+
+  if (choice) {
+    const msg = choice.message as unknown as Record<string, unknown>;
+
+    // Reasoning content -- always included for multi-turn round-tripping
+    const reasoning = msg.reasoning_content;
+    if (typeof reasoning === "string" && reasoning) {
+      contentParts.push({ type: "thinking", text: reasoning });
+    }
+
+    if (typeof msg.content === "string" && msg.content) {
+      textAccum = msg.content;
+      contentParts.push({ type: "text", text: msg.content });
+    }
+
+    const toolCalls = msg.tool_calls as
+      | Array<{ id: string; function: { name: string; arguments: string } }>
+      | undefined;
+    if (toolCalls) {
+      for (const tc of toolCalls) {
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(tc.function?.arguments ?? "{}") as Record<string, unknown>;
+        } catch {
+          // malformed JSON -- keep empty
+        }
+        const toolCall: ToolCall = {
+          type: "tool_call",
+          id: tc.id,
+          name: tc.function?.name ?? "",
+          args,
+        };
+        contentParts.push(toolCall);
+      }
+    }
+  }
+
+  // Usage -- match streaming path accounting (inputTokens excludes cache hits).
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheRead = 0;
+  if (completion.usage) {
+    outputTokens = completion.usage.completion_tokens;
+    const details = completion.usage.prompt_tokens_details;
+    if (details?.cached_tokens) cacheRead = details.cached_tokens;
+    const usageAny = completion.usage as unknown as Record<string, unknown>;
+    if (!cacheRead && typeof usageAny.cached_tokens === "number" && usageAny.cached_tokens > 0) {
+      cacheRead = usageAny.cached_tokens as number;
+    }
+    inputTokens = completion.usage.prompt_tokens - cacheRead;
+  }
+
+  const stopReason = normalizeOpenAIStopReason(choice?.finish_reason ?? null);
+
+  return {
+    message: {
+      role: "assistant",
+      content: contentParts.length > 0 ? contentParts : textAccum,
+    },
+    stopReason,
+    usage: { inputTokens, outputTokens, ...(cacheRead > 0 && { cacheRead }) },
+  };
 }
 
 function toError(err: unknown, provider: string = "openai"): ProviderError {

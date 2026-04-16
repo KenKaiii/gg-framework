@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { isContextOverflow, agentLoop } from "./agent-loop.js";
 import type { AgentEvent, AgentResult } from "./types.js";
-import type { Message } from "@kenkaiiii/gg-ai";
+import type { Message, StreamOptions } from "@kenkaiiii/gg-ai";
 
 // ── Mock stream ────────────────────────────────────────────
 
@@ -345,6 +345,66 @@ describe("agentLoop", () => {
       collectLoop(messages, { provider: "anthropic", model: "test", transformContext }),
     ).rejects.toThrow("authentication failed");
   });
+
+  it("flips to non-streaming fallback after repeated stream stalls", async () => {
+    vi.useFakeTimers();
+
+    // First 2 calls stall (never yield, never resolve) and abort when signal fires.
+    // 3rd call returns a real response -- we assert it was made with streaming: false.
+    const capturedOpts: StreamOptions[] = [];
+    let callIndex = 0;
+    mockStream.mockImplementation((opts: StreamOptions) => {
+      capturedOpts.push(opts);
+      callIndex++;
+      if (callIndex <= 2) {
+        // Stalling stream: aborts only when the per-attempt signal fires
+        const abortPromise = new Promise<never>((_, reject) => {
+          opts.signal?.addEventListener(
+            "abort",
+            () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+            { once: true },
+          );
+        });
+        abortPromise.catch(() => {});
+        return {
+          [Symbol.asyncIterator]: async function* () {
+            yield* [];
+            await abortPromise;
+          },
+          response: abortPromise,
+        } as unknown as ReturnType<typeof stream>;
+      }
+      return mockOkResult("Recovered!") as unknown as ReturnType<typeof stream>;
+    });
+
+    const messages: Message[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "hi" },
+    ];
+
+    const loopPromise = collectLoop(messages, { provider: "anthropic", model: "test" });
+
+    // Advance past first-event idle timeout (45s) three times to drive through
+    // the two stalls + their exponential-backoff retry delays.
+    // 1st stall: 45s idle -> abort -> 1s retry delay
+    // 2nd stall: 45s idle -> abort -> 2s retry delay -> flag flips -> 3rd call succeeds
+    for (let i = 0; i < 5; i++) {
+      await vi.advanceTimersByTimeAsync(50_000);
+    }
+
+    const { events, result } = await loopPromise;
+    vi.useRealTimers();
+
+    expect(mockStream).toHaveBeenCalledTimes(3);
+    // First two calls: streaming mode (flag undefined => default true)
+    expect(capturedOpts[0].streaming).toBeUndefined();
+    expect(capturedOpts[1].streaming).toBeUndefined();
+    // Third call: non-streaming fallback explicitly set
+    expect(capturedOpts[2].streaming).toBe(false);
+
+    expect(events.some((e) => e.type === "agent_done")).toBe(true);
+    expect(result.totalTurns).toBe(1); // stall retries don't count as turns
+  }, 30_000);
 
   it("respects maxTurns", async () => {
     // Return tool_use to force looping, but cap at 2 turns

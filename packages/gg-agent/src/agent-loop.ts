@@ -139,10 +139,18 @@ export async function* agentLoop(
   let overloadRetries = 0;
   let emptyResponseRetries = 0;
   let stallRetries = 0;
+  // Non-streaming fallback mode. After repeated stream stalls, flip to a
+  // plain non-streaming request/response -- often survives broken SSE
+  // connections (transient CDN / proxy issues) that streaming retries cannot.
+  let useNonStreamingFallback = false;
   const MAX_OVERLOAD_RETRIES = 10;
   const MAX_EMPTY_RESPONSE_RETRIES = 2;
   const MAX_STALL_RETRIES = 5;
-  const STALL_DELAY_MS = 1_000; // Brief pause before retry — just enough to avoid tight loops
+  // After this many streaming stalls in a row, switch to non-streaming mode
+  // for the remaining stall retries. Keeps the first two retries fast (the
+  // cheap "transient glitch" case) before paying for a full response round-trip.
+  const STALL_RETRIES_BEFORE_NON_STREAMING = 2;
+  const STALL_DELAY_MS = 1_000; // Brief pause before retry -- just enough to avoid tight loops
   const OVERLOAD_BASE_DELAY_MS = 2_000;
   const OVERLOAD_MAX_DELAY_MS = 30_000;
   const STREAM_FIRST_EVENT_TIMEOUT_MS = 45_000; // 45s to get first event (Opus thinks long)
@@ -152,13 +160,19 @@ export async function* agentLoop(
   // and caused false "stream stalled" errors, especially in plan mode.
   const STREAM_HARD_TIMEOUT_MS = 90_000; // 90s absolute cap before output starts
   // Once output events (text_delta) are actively streaming, extend the hard
-  // timeout — long responses (plan mode, detailed explanations) can legitimately
+  // timeout -- long responses (plan mode, detailed explanations) can legitimately
   // take 2-3+ minutes while events flow continuously.
   const STREAM_OUTPUT_HARD_TIMEOUT_MS = 300_000; // 5min hard cap once output is flowing
   // Reasoning models (MiMo) can pause 3-5 minutes between thinking and output
   // generation.  Once we've seen thinking events, extend timeouts significantly.
   const STREAM_THINKING_IDLE_TIMEOUT_MS = 300_000; // 5min idle after thinking
   const STREAM_THINKING_HARD_TIMEOUT_MS = 600_000; // 10min hard cap with thinking
+  // Non-streaming mode has no per-event idle -- the entire response arrives in
+  // one HTTP round-trip. Use a single generous hard cap instead. This matches
+  // Claude Code's v2.1.110/111 behaviour: cap non-streaming retries so API
+  // unreachability doesn't cause multi-minute hangs, but not so aggressively
+  // that slow-but-healthy backends get killed.
+  const NON_STREAMING_HARD_TIMEOUT_MS = 300_000; // 5min for full non-streaming response
 
   try {
     while (turn < maxTurns) {
@@ -240,15 +254,20 @@ export async function* agentLoop(
       options.signal?.addEventListener("abort", forwardAbort, { once: true });
 
       // Three-phase idle timeout:
-      //  - Before first event: STREAM_FIRST_EVENT_TIMEOUT_MS (45s) — Opus can
+      //  - Before first event: STREAM_FIRST_EVENT_TIMEOUT_MS (45s) -- Opus can
       //    take 30s+ to start on large contexts, that's not a stall.
       //  - After output event (text_delta, server_toolcall): STREAM_IDLE_TIMEOUT_MS
-      //    (10s) — once output is streaming, 10s of silence is dead. Retry fast.
-      //  - After thinking events only: STREAM_THINKING_IDLE_TIMEOUT_MS (5min) —
+      //    (10s) -- once output is streaming, 10s of silence is dead. Retry fast.
+      //  - After thinking events only: STREAM_THINKING_IDLE_TIMEOUT_MS (5min) --
       //    reasoning models (MiMo) can pause minutes between thinking and output.
+      //
+      // In non-streaming fallback mode the entire response arrives in a single
+      // HTTP round-trip, so the idle timer is disabled -- only the hard timeout
+      // applies. Synthesized events all arrive at once when the response returns.
       let hasReceivedEvent = false;
       let hasReceivedThinking = false;
       const resetIdleTimer = () => {
+        if (useNonStreamingFallback) return; // no inter-event idle in non-streaming mode
         if (idleTimer) clearTimeout(idleTimer);
         const timeoutMs = hasReceivedEvent
           ? STREAM_IDLE_TIMEOUT_MS
@@ -276,17 +295,22 @@ export async function* agentLoop(
       // Hard timeout: absolute cap per LLM call. Safety net for streams that
       // keep sending sparse events (e.g. keep-alive pings) but never complete.
       // Extended dynamically when thinking events arrive (see thinking_delta handler).
-      let hardTimeoutMs = STREAM_HARD_TIMEOUT_MS;
+      // Non-streaming fallback uses a single larger cap since there's no stream
+      // to observe -- just wait for the full response up to the cap.
+      let hardTimeoutMs = useNonStreamingFallback
+        ? NON_STREAMING_HARD_TIMEOUT_MS
+        : STREAM_HARD_TIMEOUT_MS;
       hardTimer = setTimeout(() => {
         diag("hard_timeout_fired", {
           events: typeof streamEventCount !== "undefined" ? streamEventCount : 0,
+          nonStreaming: useNonStreamingFallback,
         });
         idleTimedOut = true;
         streamController.abort();
       }, hardTimeoutMs);
 
       try {
-        diag("stream_call");
+        diag("stream_call", { nonStreaming: useNonStreamingFallback });
         streamCallStart = Date.now();
         const result = stream({
           provider: options.provider,
@@ -305,6 +329,8 @@ export async function* agentLoop(
           cacheRetention: options.cacheRetention,
           compaction: options.compaction,
           clearToolUses: options.clearToolUses,
+          // Flip to non-streaming fallback after repeated stream stalls.
+          ...(useNonStreamingFallback ? { streaming: false } : {}),
         });
         diag("stream_created", { setupMs: Date.now() - streamCallStart });
 
@@ -462,10 +488,21 @@ export async function* agentLoop(
           continue;
         }
         // Stream stall: the API connection hung without closing.
-        // Retry with exponential backoff — most stalls are transient server-side
+        // Retry with exponential backoff -- most stalls are transient server-side
         // issues, not payload-dependent. First 2 retries are silent (hidden retries).
+        // After STALL_RETRIES_BEFORE_NON_STREAMING consecutive streaming stalls,
+        // flip to non-streaming mode for subsequent retries -- broken SSE
+        // connections often recover when replayed as a plain HTTP response.
         if (idleTimedOut && !options.signal?.aborted && stallRetries < MAX_STALL_RETRIES) {
           stallRetries++;
+          if (!useNonStreamingFallback && stallRetries >= STALL_RETRIES_BEFORE_NON_STREAMING) {
+            useNonStreamingFallback = true;
+            diag("non_streaming_fallback_enabled", {
+              stallRetries,
+              provider: options.provider,
+              model: options.model,
+            });
+          }
           const delayMs = Math.min(STALL_DELAY_MS * 2 ** (stallRetries - 1), 8_000);
           diag("retry", {
             reason: "stream_stall",
@@ -473,6 +510,7 @@ export async function* agentLoop(
             maxAttempts: MAX_STALL_RETRIES,
             delayMs,
             events: streamEventCount,
+            nonStreaming: useNonStreamingFallback,
           });
           yield {
             type: "retry" as const,
@@ -532,9 +570,13 @@ export async function* agentLoop(
         options.signal?.removeEventListener("abort", forwardAbort);
       }
 
-      // Reset retry counters after successful call
+      // Reset retry counters after successful call. The non-streaming flag
+      // is *also* reset -- a successful non-streaming round-trip means the
+      // upstream problem has resolved, so the next turn should try streaming
+      // again (cheaper and provides live output).
       overloadRetries = 0;
       stallRetries = 0;
+      useNonStreamingFallback = false;
 
       // Detect empty/degenerate responses — the API occasionally returns 0 tokens
       // with no content, or "thinks" without producing actionable output.

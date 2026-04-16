@@ -255,4 +255,10 @@ export interface StreamOptions {
    *  where the default `globalThis.fetch` doesn't support streaming properly.
    *  Passed directly to the underlying provider SDK. */
   fetch?: typeof globalThis.fetch;
+  /** Use streaming transport (default: true). When false, providers issue a
+   *  single non-streaming request and synthesize events from the full response.
+   *  The agent loop flips this to `false` as a fallback after repeated stream
+   *  stalls — broken SSE connections (transient CDN / proxy issues) often
+   *  recover when the same request is issued over a plain HTTP request/response. */
+  streaming?: boolean;
 }

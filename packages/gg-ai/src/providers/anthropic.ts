@@ -49,6 +49,7 @@ export function streamAnthropic(options: StreamOptions): StreamResult {
 async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, StreamResponse> {
   const client = createClient(options);
   const isOAuth = options.apiKey?.startsWith("sk-ant-oat");
+  const useStreaming = options.streaming !== false;
 
   const cacheControl = toAnthropicCacheControl(options.cacheRetention, options.baseUrl);
   const { system: rawSystem, messages } = toAnthropicMessages(options.messages, cacheControl);
@@ -108,7 +109,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
       ];
       return contextEdits.length ? { context_management: { edits: contextEdits } } : {};
     })(),
-    stream: true,
+    stream: useStreaming,
   } as Anthropic.MessageCreateParams;
 
   // Adaptive thinking models (Opus 4.7, Opus 4.6, Sonnet 4.6) don't need the
@@ -129,10 +130,29 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     ...(!hasAdaptiveThinking ? ["interleaved-thinking-2025-05-14"] : []),
   ];
 
-  const stream = client.messages.stream(params, {
+  const requestOptions = {
     signal: options.signal ?? undefined,
     ...(betaHeaders.length ? { headers: { "anthropic-beta": betaHeaders.join(",") } } : {}),
-  });
+  };
+
+  // Non-streaming fallback: issue a single request/response and synthesize
+  // stream events from the final Message. Used by the agent loop after the
+  // SSE stream has stalled repeatedly -- broken streaming connections often
+  // recover when the request is replayed over a plain HTTP response.
+  if (!useStreaming) {
+    try {
+      const message = (await client.messages.create(
+        { ...params, stream: false } as Anthropic.MessageCreateParamsNonStreaming,
+        requestOptions,
+      )) as Anthropic.Message;
+      yield* synthesizeEventsFromMessage(message);
+      return messageToResponse(message);
+    } catch (err) {
+      throw toError(err);
+    }
+  }
+
+  const stream = client.messages.stream(params, requestOptions);
 
   // ── Accumulation state ──────────────────────────────────
   const contentParts: ContentPart[] = [];
@@ -369,6 +389,121 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
 
   yield { type: "done", stopReason: normalizedStop };
   return response;
+}
+
+/**
+ * Walk a non-streaming Anthropic Message and yield the same StreamEvents
+ * that the streaming path would produce. Emits one large delta per block
+ * rather than token-by-token -- the agent loop consumer doesn't care about
+ * granularity, only completeness.
+ */
+function* synthesizeEventsFromMessage(message: Anthropic.Message): Generator<StreamEvent, void> {
+  for (const block of message.content) {
+    const blk = block as unknown as Record<string, unknown>;
+    const type = blk.type as string;
+
+    if (type === "text") {
+      const text = blk.text as string;
+      if (text) yield { type: "text_delta", text };
+    } else if (type === "thinking") {
+      const text = blk.thinking as string;
+      if (text) yield { type: "thinking_delta", text };
+    } else if (type === "tool_use") {
+      const argsJson = JSON.stringify(blk.input ?? {});
+      yield {
+        type: "toolcall_delta",
+        id: blk.id as string,
+        name: blk.name as string,
+        argsJson,
+      };
+      yield {
+        type: "toolcall_done",
+        id: blk.id as string,
+        name: blk.name as string,
+        args: (blk.input as Record<string, unknown> | undefined) ?? {},
+      };
+    } else if (type === "server_tool_use") {
+      yield {
+        type: "server_toolcall",
+        id: blk.id as string,
+        name: blk.name as string,
+        input: blk.input,
+      };
+    } else if (type === "web_search_tool_result") {
+      yield {
+        type: "server_toolresult",
+        toolUseId: blk.tool_use_id as string,
+        resultType: type,
+        data: blk,
+      };
+    }
+    // Other block types (redacted_thinking, compaction blocks) are preserved
+    // in the response via messageToResponse but don't emit events.
+  }
+  yield { type: "done", stopReason: normalizeAnthropicStopReason(message.stop_reason) };
+}
+
+/** Convert a non-streaming Anthropic Message into our StreamResponse shape. */
+function messageToResponse(message: Anthropic.Message): StreamResponse {
+  const contentParts: ContentPart[] = [];
+  for (const block of message.content) {
+    const blk = block as unknown as Record<string, unknown>;
+    const type = blk.type as string;
+
+    if (type === "text") {
+      contentParts.push({ type: "text", text: blk.text as string });
+    } else if (type === "thinking") {
+      contentParts.push({
+        type: "thinking",
+        text: blk.thinking as string,
+        signature: (blk.signature as string) ?? "",
+      });
+    } else if (type === "tool_use") {
+      contentParts.push({
+        type: "tool_call",
+        id: blk.id as string,
+        name: blk.name as string,
+        args: (blk.input as Record<string, unknown> | undefined) ?? {},
+      });
+    } else if (type === "server_tool_use") {
+      contentParts.push({
+        type: "server_tool_call",
+        id: blk.id as string,
+        name: blk.name as string,
+        input: blk.input,
+      });
+    } else if (type === "web_search_tool_result") {
+      contentParts.push({
+        type: "server_tool_result",
+        toolUseId: blk.tool_use_id as string,
+        resultType: type,
+        data: blk,
+      });
+    } else {
+      // Preserve unknown blocks (redacted_thinking, compaction) for round-tripping
+      contentParts.push({ type: "raw", data: blk });
+    }
+  }
+
+  const usage = message.usage as unknown as Record<string, unknown>;
+  const inputTokens = (usage.input_tokens as number) ?? 0;
+  const outputTokens = (usage.output_tokens as number) ?? 0;
+  const cacheRead = usage.cache_read_input_tokens as number | undefined;
+  const cacheWrite = usage.cache_creation_input_tokens as number | undefined;
+
+  return {
+    message: {
+      role: "assistant",
+      content: contentParts.length > 0 ? contentParts : "",
+    },
+    stopReason: normalizeAnthropicStopReason(message.stop_reason),
+    usage: {
+      inputTokens,
+      outputTokens,
+      ...(cacheRead != null && { cacheRead }),
+      ...(cacheWrite != null && { cacheWrite }),
+    },
+  };
 }
 
 function toError(err: unknown): ProviderError {
