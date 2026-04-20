@@ -251,7 +251,6 @@ describe("buildSystemPrompt with plan mode", () => {
     const prompt = await buildSystemPrompt(tmpDir, [], true);
 
     expect(prompt).toContain("Plan Mode (ACTIVE)");
-    expect(prompt).toContain("read-only");
     expect(prompt).toContain("exit_plan");
     expect(prompt).toContain(".gg/plans/");
   });
@@ -262,11 +261,18 @@ describe("buildSystemPrompt with plan mode", () => {
     expect(prompt).not.toContain("Plan Mode (ACTIVE)");
   });
 
-  it("includes enter_plan and exit_plan tool descriptions", async () => {
+  it("includes enter_plan (not exit_plan) when not in plan mode", async () => {
     const prompt = await buildSystemPrompt(tmpDir, [], false);
 
     expect(prompt).toContain("enter_plan");
+    expect(prompt).not.toContain("- **exit_plan**");
+  });
+
+  it("includes exit_plan (not enter_plan) when in plan mode", async () => {
+    const prompt = await buildSystemPrompt(tmpDir, [], true);
+
     expect(prompt).toContain("exit_plan");
+    expect(prompt).not.toContain("- **enter_plan**");
   });
 
   it("includes approved plan when approvedPlanPath is set", async () => {
@@ -281,7 +287,7 @@ describe("buildSystemPrompt with plan mode", () => {
     expect(prompt).toContain("approved.md");
     expect(prompt).toContain("# My Plan");
     expect(prompt).toContain("Do this");
-    expect(prompt).toContain("Follow the plan");
+    expect(prompt).toContain("Follow step order");
   });
 
   it("does not include approved plan section when no path is set", async () => {
