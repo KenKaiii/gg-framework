@@ -123,6 +123,23 @@ export function isOverloaded(err: unknown): boolean {
   );
 }
 
+/**
+ * Detect malformed-stream errors — the SDK's SSE decoder threw a JSON parse
+ * error mid-stream, typically because a chunk was truncated or corrupted by
+ * an intermediary (CDN, proxy).  Same class of transport failure as a stall:
+ * replaying the request — and ideally flipping to non-streaming — recovers.
+ */
+export function isMalformedStream(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === "SyntaxError") return true;
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause instanceof Error && cause.name === "SyntaxError") return true;
+  const msg = err.message;
+  // V8 JSON.parse error messages: "Expected ... in JSON at position N"
+  // and "Unexpected token ... in JSON at position N"
+  return /\bin JSON at position \d+/i.test(msg);
+}
+
 export async function* agentLoop(
   messages: Message[],
   options: AgentOptions,
@@ -488,12 +505,13 @@ export async function* agentLoop(
           continue;
         }
         // Stream stall: the API connection hung without closing.
-        // Retry with exponential backoff -- most stalls are transient server-side
-        // issues, not payload-dependent. First 2 retries are silent (hidden retries).
-        // After STALL_RETRIES_BEFORE_NON_STREAMING consecutive streaming stalls,
-        // flip to non-streaming mode for subsequent retries -- broken SSE
-        // connections often recover when replayed as a plain HTTP response.
-        if (idleTimedOut && !options.signal?.aborted && stallRetries < MAX_STALL_RETRIES) {
+        // Malformed stream: the SDK's SSE decoder hit truncated/corrupted JSON.
+        // Both are transport failures — retry with exponential backoff and flip
+        // to non-streaming mode after STALL_RETRIES_BEFORE_NON_STREAMING attempts,
+        // since broken SSE often recovers when replayed as plain HTTP.
+        const malformed = isMalformedStream(err);
+        const transportFailure = (idleTimedOut || malformed) && !options.signal?.aborted;
+        if (transportFailure && stallRetries < MAX_STALL_RETRIES) {
           stallRetries++;
           if (!useNonStreamingFallback && stallRetries >= STALL_RETRIES_BEFORE_NON_STREAMING) {
             useNonStreamingFallback = true;
@@ -501,11 +519,12 @@ export async function* agentLoop(
               stallRetries,
               provider: options.provider,
               model: options.model,
+              cause: malformed ? "malformed_stream" : "stream_stall",
             });
           }
           const delayMs = Math.min(STALL_DELAY_MS * 2 ** (stallRetries - 1), 8_000);
           diag("retry", {
-            reason: "stream_stall",
+            reason: malformed ? "malformed_stream" : "stream_stall",
             attempt: stallRetries,
             maxAttempts: MAX_STALL_RETRIES,
             delayMs,
@@ -526,7 +545,7 @@ export async function* agentLoop(
         }
         // Stream stall retries exhausted — surface a clear error so the UI
         // can distinguish "gave up after stalls" from "completed normally".
-        if (idleTimedOut && !options.signal?.aborted) {
+        if (transportFailure) {
           diag("stall_exhausted", {
             stallRetries: MAX_STALL_RETRIES,
             provider: options.provider,

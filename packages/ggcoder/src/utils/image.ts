@@ -184,35 +184,54 @@ async function shrinkToFit(
   return { buffer: result, mediaType: "image/jpeg" };
 }
 
-/** Read a file and return an attachment (base64 for images, raw text for text files). */
+/**
+ * Read a file and return an attachment (base64 for images, raw text for text files).
+ *
+ * Image decode / shrink failures degrade to a text placeholder instead of throwing,
+ * so a corrupt or unsupported image doesn't crash the turn. The caller sees a
+ * `kind: "text"` attachment the model can read as `<file>…</file>` context.
+ */
 export async function readImageFile(filePath: string): Promise<ImageAttachment> {
   const ext = path.extname(filePath).toLowerCase();
+  const fileName = path.basename(filePath);
 
   if (TEXT_EXTENSIONS.has(ext)) {
-    const content = await fs.readFile(filePath, "utf-8");
-    return {
-      kind: "text",
-      fileName: path.basename(filePath),
-      filePath,
-      mediaType: "text/plain",
-      data: content,
-    };
+    try {
+      const content = await fs.readFile(filePath, "utf-8");
+      return { kind: "text", fileName, filePath, mediaType: "text/plain", data: content };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      return {
+        kind: "text",
+        fileName,
+        filePath,
+        mediaType: "text/plain",
+        data: `[file ${fileName} could not be read: ${reason}]`,
+      };
+    }
   }
 
-  let mediaType = MEDIA_TYPES[ext] ?? "image/png";
-  const rawBuffer = await fs.readFile(filePath);
-
-  const { buffer, mediaType: finalMediaType } = await shrinkToFit(rawBuffer, mediaType);
-  mediaType = finalMediaType;
-
-  const data = buffer.toString("base64");
-  return {
-    kind: "image",
-    fileName: path.basename(filePath),
-    filePath,
-    mediaType,
-    data,
-  };
+  try {
+    const mediaType = MEDIA_TYPES[ext] ?? "image/png";
+    const rawBuffer = await fs.readFile(filePath);
+    const { buffer, mediaType: finalMediaType } = await shrinkToFit(rawBuffer, mediaType);
+    return {
+      kind: "image",
+      fileName,
+      filePath,
+      mediaType: finalMediaType,
+      data: buffer.toString("base64"),
+    };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return {
+      kind: "text",
+      fileName,
+      filePath,
+      mediaType: "text/plain",
+      data: `[image ${fileName} could not be loaded: ${reason}]`,
+    };
+  }
 }
 
 /**
