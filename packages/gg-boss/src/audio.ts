@@ -168,6 +168,11 @@ function trySpawn(cmd: string, args: string[]): Promise<boolean> {
  * Either is a robust signal — both are set by every WSL2 distro.
  */
 function isWsl(): boolean {
+  // Guard against false positives on native Windows: WSL env vars can leak
+  // into a Windows shell that was launched from a WSL session, but
+  // process.platform stays "win32" — in which case the existing win32 branch
+  // already handles playback and we should not take this path.
+  if (process.platform !== "linux") return false;
   return !!process.env.WSL_DISTRO_NAME || fs.existsSync("/proc/sys/fs/binfmt_misc/WSLInterop");
 }
 
@@ -207,7 +212,12 @@ async function tryPlayOnWindowsHost(file: string): Promise<boolean> {
     if (!inDist && !inAssets) {
       return false;
     }
-    const winPath = execFileSync("wslpath", ["-w", resolved], { encoding: "utf8" }).trim();
+    // 2s is generous for a path-translation call but bounds a misbehaving
+    // wslpath so the splash flow can't hang on startup.
+    const winPath = execFileSync("wslpath", ["-w", resolved], {
+      encoding: "utf8",
+      timeout: 2000,
+    }).trim();
     const script = [
       "Add-Type -AssemblyName presentationCore;",
       "$p = New-Object System.Windows.Media.MediaPlayer;",
