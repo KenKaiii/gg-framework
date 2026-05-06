@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
 import { log } from "./logger.js";
 
 /**
@@ -115,6 +116,80 @@ interface PlayResult {
 }
 
 /**
+ * On WSL2, native Linux audio binaries can't reach the Windows audio device
+ * through WSLg's bridge in any useful way for streaming — `ffplay` accepts
+ * the spawn (so we report "Now playing" to the user) but no audio actually
+ * comes out. Returning a successful spawn handle that doesn't produce sound
+ * is worse than failing fast: the user thinks it's working and goes off to
+ * troubleshoot their speakers / VPN / firewall.
+ *
+ * Detect WSL via $WSL_DISTRO_NAME or /proc/sys/fs/binfmt_misc/WSLInterop.
+ */
+function isWsl(): boolean {
+  return !!process.env.WSL_DISTRO_NAME || existsSync("/proc/sys/fs/binfmt_misc/WSLInterop");
+}
+
+/**
+ * Stream a station through powershell.exe + WPF MediaPlayer on the Windows
+ * host instead of a Linux binary. Returns the ChildProcess or null if the
+ * spawn failed — caller falls through to the native Linux candidates so a
+ * WSL user with mpv installed and WSLg audio working keeps the existing
+ * behaviour.
+ *
+ * Why a Dispatcher::Run() at the end of the script: WPF's MediaPlayer is
+ * async — Open() and Play() return immediately and the actual playback runs
+ * on a background thread that needs the COM message loop pumped. Without
+ * Dispatcher::Run(), powershell.exe exits seconds later, the MediaPlayer
+ * gets garbage-collected, and you hear silence. Pumping the dispatcher
+ * keeps the player alive until stopRadio() kills the powershell process.
+ *
+ * Security:
+ *  - station.url is double-checked against the in-process RADIO_STATIONS
+ *    allowlist before spawning, even though the only call site already
+ *    looked it up there. Belt-and-suspenders against any future code path
+ *    that constructs a station object outside the constant array.
+ *  - Scheme is enforced as http/https so a future entry can't slip a
+ *    file:// or javascript: URL through.
+ *  - The URL is passed via GGBOSS_RADIO_URL env, never string-interpolated
+ *    into the PowerShell -Command argument. WSLENV lists the var so it
+ *    actually crosses the WSL→Windows process boundary (custom env vars
+ *    don't propagate by default — powershell.exe just sees them as empty
+ *    without WSLENV). Existing $WSLENV is preserved.
+ *  - powershell.exe runs -NoProfile -WindowStyle Hidden.
+ */
+function tryPlayOnWindowsHost(station: RadioStation): ChildProcess | null {
+  const allowedUrls = new Set(RADIO_STATIONS.map((s) => s.url));
+  if (!allowedUrls.has(station.url)) return null;
+  if (!/^https?:\/\//i.test(station.url)) return null;
+  const psScript = [
+    "Add-Type -AssemblyName presentationCore;",
+    "Add-Type -AssemblyName WindowsBase;",
+    "$p = New-Object System.Windows.Media.MediaPlayer;",
+    "$p.Open([uri]$env:GGBOSS_RADIO_URL);",
+    "$p.Play();",
+    "[System.Windows.Threading.Dispatcher]::Run();",
+  ].join(" ");
+  try {
+    const child = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-WindowStyle", "Hidden", "-Command", psScript],
+      {
+        detached: true,
+        stdio: "ignore",
+        env: {
+          ...process.env,
+          GGBOSS_RADIO_URL: station.url,
+          WSLENV: (process.env.WSLENV ? process.env.WSLENV + ":" : "") + "GGBOSS_RADIO_URL",
+        },
+      },
+    );
+    return child;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Spawn a streaming player for the given station. If one is already playing,
  * it's killed first. Returns ok=false with a hint if no compatible player is
  * installed — caller should surface the error to the user.
@@ -125,6 +200,30 @@ export function playRadio(stationId: string): PlayResult {
 
   // Always stop the previous stream before starting a new one.
   stopRadio();
+
+  // WSL2: route through the Windows host before falling back to native
+  // Linux players. Without this, ffplay reports a successful spawn but
+  // produces no audio (WSLg audio bridge is fragile for streaming).
+  if (isWsl()) {
+    const child = tryPlayOnWindowsHost(station);
+    if (child) {
+      let errored = false;
+      child.once("error", () => {
+        errored = true;
+      });
+      if (child.pid && !errored) {
+        currentChild = child;
+        currentStationId = stationId;
+        log("INFO", "radio", "playing", {
+          station: station.id,
+          player: "powershell.exe (wsl→host)",
+          url: station.url,
+        });
+        child.unref();
+        return { ok: true };
+      }
+    }
+  }
 
   for (const player of PLAYERS) {
     try {
