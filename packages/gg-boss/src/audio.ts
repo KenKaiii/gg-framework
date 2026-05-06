@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import fs from "node:fs";
@@ -157,6 +157,114 @@ function trySpawn(cmd: string, args: string[]): Promise<boolean> {
 }
 
 /**
+ * `process.platform` reports `"linux"` on WSL2, but native Linux audio
+ * binaries can't reach the Windows audio device through WSLg's bridge in
+ * any useful timeframe — ffplay, for example, enumerates dead ALSA/Pulse
+ * outputs for ~2 minutes before audio finally emerges from a 1.5s clip.
+ * By the time it's audible, the splash animation is long gone and the
+ * sound bursts out on top of whatever the user is doing now.
+ *
+ * Detect WSL via $WSL_DISTRO_NAME or /proc/sys/fs/binfmt_misc/WSLInterop.
+ * Either is a robust signal — both are set by every WSL2 distro.
+ */
+function isWsl(): boolean {
+  return !!process.env.WSL_DISTRO_NAME || fs.existsSync("/proc/sys/fs/binfmt_misc/WSLInterop");
+}
+
+/**
+ * Play an MP3 from WSL2 by routing it through powershell.exe + WPF
+ * MediaPlayer on the Windows host. End-to-end latency drops from ~120s
+ * (ffplay on WSLg) to ~4s.
+ *
+ * Security:
+ *  - The asset path is containment-checked against the gg-boss install
+ *    directory before spawning anything. Today's call sites always pass
+ *    a hardcoded asset path, but this gate fails closed if a future code
+ *    path leaks an attacker-controlled string into `playFile()`.
+ *  - The path is passed via `GGBOSS_AUDIO_PATH` env var, never string-
+ *    interpolated into the PowerShell command. WSLENV lists the var name
+ *    so it actually crosses the WSL→Windows process boundary (custom
+ *    env vars don't propagate by default — that's a real WSL gotcha,
+ *    powershell.exe just sees the var as empty without WSLENV).
+ *  - PowerShell runs `-NoProfile -WindowStyle Hidden`, so no profile
+ *    scripts execute and no window flashes.
+ *
+ * Returns true if the spawn succeeded — the caller falls through to the
+ * native Linux candidates if this returns false (e.g. wslpath not on
+ * PATH, or the install layout is unexpected).
+ */
+async function tryPlayOnWindowsHost(file: string): Promise<boolean> {
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const devAssets = path.resolve(here, "..", "assets");
+    const resolved = path.resolve(file);
+    // The bundled location is `dist/` (== here at runtime); the dev fallback
+    // is `../assets/`. Anything outside both is rejected — even though every
+    // current call site passes a hardcoded asset name, this gate fails closed
+    // if a future code path leaks an attacker-controlled string in.
+    const inDist = resolved === here || resolved.startsWith(here + path.sep);
+    const inAssets = resolved === devAssets || resolved.startsWith(devAssets + path.sep);
+    if (!inDist && !inAssets) {
+      return false;
+    }
+    const winPath = execFileSync("wslpath", ["-w", resolved], { encoding: "utf8" }).trim();
+    const script = [
+      "Add-Type -AssemblyName presentationCore;",
+      "$p = New-Object System.Windows.Media.MediaPlayer;",
+      "$p.Open([uri]$env:GGBOSS_AUDIO_PATH);",
+      "$p.Play();",
+      // Same reason as the win32 branch: MediaPlayer is async, so we have
+      // to keep powershell.exe alive long enough to actually emit audio.
+      "Start-Sleep -Seconds 5;",
+    ].join(" ");
+    return new Promise<boolean>((resolve) => {
+      let resolved2 = false;
+      try {
+        const child = spawn(
+          "powershell.exe",
+          ["-NoProfile", "-WindowStyle", "Hidden", "-Command", script],
+          {
+            detached: true,
+            stdio: "ignore",
+            env: {
+              ...process.env,
+              GGBOSS_AUDIO_PATH: winPath,
+              // WSLENV propagates listed vars across the WSL→Windows boundary.
+              // Append rather than replace so we don't clobber existing rules.
+              WSLENV: (process.env.WSLENV ? process.env.WSLENV + ":" : "") + "GGBOSS_AUDIO_PATH",
+            },
+          },
+        );
+        child.once("error", () => {
+          if (!resolved2) {
+            resolved2 = true;
+            resolve(false);
+          }
+        });
+        child.once("spawn", () => {
+          if (!resolved2) {
+            resolved2 = true;
+            child.unref();
+            resolve(true);
+          }
+        });
+        setTimeout(() => {
+          if (!resolved2) {
+            resolved2 = true;
+            child.unref();
+            resolve(true);
+          }
+        }, 50);
+      } catch {
+        resolve(false);
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Cross-platform fire-and-forget MP3 playback. Tries the most likely binary
  * for the host OS first, then a small chain of common Linux fallbacks.
  *
@@ -165,6 +273,9 @@ function trySpawn(cmd: string, args: string[]): Promise<boolean> {
  *  - Windows: PowerShell + WPF MediaPlayer is built-in and supports MP3 via
  *             DirectShow / MediaFoundation. Doesn't pop up a window because
  *             the script runs sync inside powershell.exe with -NoProfile.
+ *  - WSL2:    Same PowerShell trick as Windows, with the asset path crossed
+ *             over via wslpath + WSLENV. Falls through to the Linux chain
+ *             if PowerShell is unreachable.
  *  - Linux:   No single guaranteed binary. Try mpv → ffplay → mpg123 → cvlc.
  *             If none are installed, give up silently — Linux desktop audio
  *             is fragmented enough that we don't want to bloat the package
@@ -195,6 +306,9 @@ async function playFile(file: string): Promise<void> {
     await trySpawn("powershell.exe", ["-NoProfile", "-WindowStyle", "Hidden", "-Command", script]);
     return;
   }
+
+  // WSL2: route through the Windows host before falling back to native Linux.
+  if (isWsl() && (await tryPlayOnWindowsHost(file))) return;
 
   // Linux + everything else: walk the candidates.
   const linuxCandidates: { cmd: string; args: string[] }[] = [
