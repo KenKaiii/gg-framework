@@ -2724,7 +2724,12 @@ export function App(props: AppProps) {
           cwd={props.cwd}
           agentRunning={agentLoop.isRunning}
           onClose={() => {
-            if (props.resetUI && props.sessionStore) {
+            // Skip the unmount/remount when the agent is mid-run — the
+            // unmount fires useAgentLoop's cleanup which aborts the
+            // stream. Soft path (ANSI clear + Static recreate +
+            // setOverlay) preserves the live agent. Cursor-math drift
+            // recovers on the next idle close.
+            if (props.resetUI && props.sessionStore && !agentLoop.isRunning) {
               props.sessionStore.overlay = null;
               props.resetUI();
             } else {
@@ -2753,7 +2758,9 @@ export function App(props: AppProps) {
           version={props.version}
           agentRunning={agentLoop.isRunning}
           onClose={() => {
-            if (props.resetUI && props.sessionStore) {
+            // See TaskOverlay onClose — soft close while a run is
+            // in-flight so the unmount doesn't abort the stream.
+            if (props.resetUI && props.sessionStore && !agentLoop.isRunning) {
               props.sessionStore.overlay = null;
               props.resetUI();
             } else {
@@ -2778,7 +2785,9 @@ export function App(props: AppProps) {
         <SkillsOverlay
           cwd={props.cwd}
           onClose={() => {
-            if (props.resetUI && props.sessionStore) {
+            // See TaskOverlay onClose — soft close while a run is
+            // in-flight so the unmount doesn't abort the stream.
+            if (props.resetUI && props.sessionStore && !agentLoop.isRunning) {
               props.sessionStore.overlay = null;
               props.resetUI();
             } else {
@@ -2792,7 +2801,9 @@ export function App(props: AppProps) {
         <EyesOverlay
           cwd={props.cwd}
           onClose={() => {
-            if (props.resetUI && props.sessionStore) {
+            // See TaskOverlay onClose — soft close while a run is
+            // in-flight so the unmount doesn't abort the stream.
+            if (props.resetUI && props.sessionStore && !agentLoop.isRunning) {
               props.sessionStore.overlay = null;
               props.resetUI();
             } else {
@@ -2814,7 +2825,9 @@ export function App(props: AppProps) {
           autoExpandNewest={planAutoExpand}
           onClose={() => {
             planOverlayPendingRef.current = false;
-            if (props.resetUI && props.sessionStore) {
+            // See TaskOverlay onClose — soft close while a run is
+            // in-flight so the unmount doesn't abort the stream.
+            if (props.resetUI && props.sessionStore && !agentLoop.isRunning) {
               props.sessionStore.overlay = null;
               props.sessionStore.planAutoExpand = false;
               props.resetUI();
@@ -3026,7 +3039,11 @@ export function App(props: AppProps) {
             onDownAtEnd={handleFocusTaskBar}
             onShiftTab={handleToggleThinking}
             onToggleTasks={() => {
-              if (props.resetUI && props.sessionStore) {
+              // Soft path while the agent is running — see TaskOverlay
+              // onClose. resetUI()'s unmount aborts the in-flight stream;
+              // we'd rather keep the run alive and accept a small cursor
+              // drift that recovers on the next idle close.
+              if (props.resetUI && props.sessionStore && !agentLoop.isRunning) {
                 props.sessionStore.overlay = "tasks";
                 props.resetUI();
               } else {
@@ -3035,7 +3052,7 @@ export function App(props: AppProps) {
               }
             }}
             onToggleSkills={() => {
-              if (props.resetUI && props.sessionStore) {
+              if (props.resetUI && props.sessionStore && !agentLoop.isRunning) {
                 props.sessionStore.overlay = "skills";
                 props.resetUI();
               } else {
@@ -3044,7 +3061,7 @@ export function App(props: AppProps) {
               }
             }}
             onTogglePixel={() => {
-              if (props.resetUI && props.sessionStore) {
+              if (props.resetUI && props.sessionStore && !agentLoop.isRunning) {
                 props.sessionStore.overlay = "pixel";
                 props.resetUI();
               } else {
