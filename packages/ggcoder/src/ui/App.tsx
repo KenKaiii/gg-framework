@@ -588,6 +588,8 @@ export interface AppProps {
     sessionTitleGenerated: boolean;
     overlay?: "model" | "tasks" | "skills" | "plan" | "theme" | "eyes" | "pixel" | null;
     planAutoExpand?: boolean;
+    runAllTasks?: boolean;
+    runAllPixel?: boolean;
     pendingAction?: { prompt: string; infoText?: string };
   };
 }
@@ -651,10 +653,13 @@ export function App(props: AppProps) {
   const [updatePending, setUpdatePending] = useState<boolean>(
     () => getPendingUpdate(props.version) !== null,
   );
-  const [runAllTasks, setRunAllTasks] = useState(false);
-  const runAllTasksRef = useRef(false);
+  // runAllTasks must survive the unmount/remount that startTask triggers
+  // for each task (wipeSession: true gives every task a fresh session).
+  // Seed from sessionStore so the chain keeps going after task #1.
+  const [runAllTasks, setRunAllTasks] = useState(props.sessionStore?.runAllTasks ?? false);
+  const runAllTasksRef = useRef(props.sessionStore?.runAllTasks ?? false);
   const startTaskRef = useRef<(title: string, prompt: string, taskId: string) => void>(() => {});
-  const runAllPixelRef = useRef(false);
+  const runAllPixelRef = useRef(props.sessionStore?.runAllPixel ?? false);
   const currentPixelFixRef = useRef<PreparedPixelFix | null>(null);
   const startPixelFixRef = useRef<(errorId: string) => void>(() => {});
   const cwdRef = useRef(props.cwd);
@@ -2612,7 +2617,8 @@ export function App(props: AppProps) {
   startTaskRef.current = startTask;
   useEffect(() => {
     runAllTasksRef.current = runAllTasks;
-  }, [runAllTasks]);
+    if (props.sessionStore) props.sessionStore.runAllTasks = runAllTasks;
+  }, [runAllTasks, props.sessionStore]);
 
   const startPixelFix = useCallback(
     (errorId: string) => {
@@ -2692,10 +2698,12 @@ export function App(props: AppProps) {
   );
   startPixelFixRef.current = startPixelFix;
 
-  const [runAllPixel, setRunAllPixel] = useState(false);
+  // See runAllTasks above — same persistence story for pixel run-all.
+  const [runAllPixel, setRunAllPixel] = useState(props.sessionStore?.runAllPixel ?? false);
   useEffect(() => {
     runAllPixelRef.current = runAllPixel;
-  }, [runAllPixel]);
+    if (props.sessionStore) props.sessionStore.runAllPixel = runAllPixel;
+  }, [runAllPixel, props.sessionStore]);
 
   const isTaskView = overlay === "tasks";
   const isSkillsView = overlay === "skills";

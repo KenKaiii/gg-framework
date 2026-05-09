@@ -91,6 +91,16 @@ export interface SessionStore {
   /** Plan overlay auto-expand-newest flag (only meaningful when overlay==='plan'). */
   planAutoExpand?: boolean;
   /**
+   * "Run all" chained-execution flags. Persist across the unmount/remount
+   * triggered by `startTask` / `startPixelFix` (each task gets a fresh
+   * session via `wipeSession: true`). Without persistence, the new App
+   * boots with `useState(false)` and the chain dies after task #1.
+   * Deliberately NOT cleared by `wipeSession` — the whole point is for
+   * them to span per-task resets.
+   */
+  runAllTasks?: boolean;
+  runAllPixel?: boolean;
+  /**
    * Action to run on the next mount (consumed once). Used by paths that
    * remount AND immediately drive the agent — plan accept / reject,
    * startTask, etc. The new App reads this on mount, fires the agent,
@@ -181,6 +191,8 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
     sessionTitleGenerated: false,
     overlay: config.initialOverlay ?? null,
     planAutoExpand: false,
+    runAllTasks: false,
+    runAllPixel: false,
     pendingAction: undefined,
   };
 
