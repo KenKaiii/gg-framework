@@ -10,6 +10,23 @@ const REDIRECT_URI = "http://localhost:1455/auth/callback";
 const SCOPE = "openid profile email offline_access";
 const JWT_CLAIM_PATH = "https://api.openai.com/auth";
 
+/**
+ * Detect headless / remote-server environments where a browser-based
+ * localhost callback cannot work. Returns true when:
+ *  - No graphical display is available ($DISPLAY / $WAYLAND_DISPLAY unset), or
+ *  - The process is running inside an SSH session ($SSH_CLIENT / $SSH_TTY set)
+ *    without X11 forwarding.
+ */
+function isHeadless(): boolean {
+  const hasDisplay = Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+  const isSsh = Boolean(process.env.SSH_CLIENT || process.env.SSH_TTY);
+  // In an SSH session without X11 forwarding, a browser can't open locally.
+  if (isSsh && !hasDisplay) return true;
+  // No display at all (e.g. a plain server, Docker, CI).
+  if (!hasDisplay) return true;
+  return false;
+}
+
 export async function loginOpenAI(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
   const { verifier, challenge } = await generatePKCE();
   const state = crypto.randomBytes(16).toString("hex");
@@ -28,19 +45,16 @@ export async function loginOpenAI(callbacks: OAuthLoginCallbacks): Promise<OAuth
 
   let code: string;
 
-  try {
-    code = await loginWithServer(url.toString(), state, callbacks);
-  } catch {
-    // Fallback: manual code paste
-    callbacks.onOpenUrl(url.toString());
-    const raw = await callbacks.onPromptCode(
-      "Could not start local server. Paste the callback URL or code from the browser:",
-    );
-    const parsed = parseAuthorizationInput(raw);
-    if (!parsed.code) {
-      throw new Error("No authorization code found in input.");
+  // On headless / remote servers the local callback server is unreachable from
+  // the user's browser, so skip straight to the manual-paste flow.
+  if (isHeadless()) {
+    code = await manualPasteFlow(url.toString(), callbacks);
+  } else {
+    try {
+      code = await loginWithServer(url.toString(), state, callbacks);
+    } catch {
+      code = await manualPasteFlow(url.toString(), callbacks);
     }
-    code = parsed.code;
   }
 
   const creds = await exchangeOpenAICode(code, verifier);
@@ -106,6 +120,36 @@ function getAccountId(accessToken: string): string | null {
   return typeof accountId === "string" && accountId.length > 0 ? accountId : null;
 }
 
+/**
+ * Manual-paste fallback used on headless servers and when the local callback
+ * server fails. Prints the auth URL and asks the user to paste either:
+ *  - The full redirect URL  (http://localhost:1455/auth/callback?code=…&state=…)
+ *  - Or just the bare authorization code
+ */
+async function manualPasteFlow(authUrl: string, callbacks: OAuthLoginCallbacks): Promise<string> {
+  callbacks.onOpenUrl(authUrl);
+  callbacks.onStatus(
+    "\nRunning on a headless/remote server — the browser callback cannot reach localhost.\n" +
+      "Steps:\n" +
+      "  1. Open the URL above in a browser on your local machine.\n" +
+      "  2. Complete the OpenAI sign-in.\n" +
+      "  3. After you are redirected, copy the FULL address-bar URL\n" +
+      "     (it looks like: http://localhost:1455/auth/callback?code=…&state=…)\n" +
+      "  4. Paste it below.\n",
+  );
+  const raw = await callbacks.onPromptCode("Paste the full redirect URL (or bare code):");
+  const parsed = parseAuthorizationInput(raw);
+  if (!parsed.code) {
+    throw new Error(
+      "No authorization code found in the pasted input.\n" +
+        "Expected a full redirect URL such as:\n" +
+        "  http://localhost:1455/auth/callback?code=<code>&state=<state>\n" +
+        "or just the bare code value.",
+    );
+  }
+  return parsed.code;
+}
+
 async function loginWithServer(
   authUrl: string,
   expectedState: string,
@@ -158,7 +202,7 @@ async function loginWithServer(
       if (!receivedCode) {
         server.close();
       }
-    }, 120_000);
+    }, 30_000);
   });
 }
 

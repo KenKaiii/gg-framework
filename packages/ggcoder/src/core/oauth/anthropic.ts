@@ -26,15 +26,49 @@ export async function loginAnthropic(callbacks: OAuthLoginCallbacks): Promise<OA
 
   const authUrl = `${AUTHORIZE_URL}?${params}`;
   callbacks.onOpenUrl(authUrl);
+  callbacks.onStatus(
+    "\nAfter authorizing, claude.ai will show a code on the page.\n" +
+      "Copy the entire value — it looks like:  <code>#<state>\n",
+  );
 
-  const raw = await callbacks.onPromptCode("Paste the code from the browser (format: code#state):");
+  const raw = await callbacks.onPromptCode("Paste the code from the browser:");
 
-  const parts = raw.trim().split("#");
-  if (parts.length !== 2 || !parts[0] || parts[1] !== state) {
-    throw new Error("Invalid code or state mismatch. Please try again.");
+  const trimmed = raw.trim();
+  const hashIdx = trimmed.indexOf("#");
+
+  let code: string;
+  let receivedState: string | undefined;
+
+  if (hashIdx !== -1) {
+    code = trimmed.slice(0, hashIdx);
+    receivedState = trimmed.slice(hashIdx + 1);
+  } else {
+    // User pasted only the code without the state — accept it with a warning.
+    code = trimmed;
+    receivedState = undefined;
   }
 
-  return exchangeAnthropicCode(parts[0], parts[1], verifier);
+  if (!code) {
+    throw new Error(
+      "No authorization code found.\n" +
+        "Expected the value shown on the claude.ai callback page, e.g.:\n" +
+        "  abc123def456#" +
+        state.slice(0, 8) +
+        "…\n" +
+        "Run `ggcoder login` to try again.",
+    );
+  }
+
+  // Validate state when present — skip silently if the user omitted it.
+  if (receivedState !== undefined && receivedState !== state) {
+    throw new Error(
+      "State mismatch — the pasted code does not match this login session.\n" +
+        "This can happen if you copied from a previous login attempt.\n" +
+        "Run `ggcoder login` to start a fresh session.",
+    );
+  }
+
+  return exchangeAnthropicCode(code, state, verifier);
 }
 
 async function exchangeAnthropicCode(
