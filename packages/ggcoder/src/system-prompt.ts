@@ -65,7 +65,7 @@ export async function buildSystemPrompt(
         `You are in PLAN MODE. Research and design an implementation plan before writing any code.\n\n` +
         `### Workflow\n` +
         `1. Explore: read, grep, find, ls to understand the codebase\n` +
-        `2. Research: web_search + web_fetch for docs, mcp__kencode-search__searchCode for real code samples (any pattern — APIs, configs, shell, Markdown, project layouts; peek=true for cheap triage)\n` +
+        `2. Research: \`web_search\` + \`web_fetch\` for docs; \`mcp__kencode-search__searchCode\` for real code samples — literal text or RE2 regex (NOT semantic); start with \`peek: true\` for paths+counts, then drill in narrowed by \`repo\` + \`path\` (full usage in Research & Verification below)\n` +
         `3. Draft: write the plan to .gg/plans/<name>.md\n` +
         `4. Submit: call exit_plan with the plan path\n\n` +
         `### Rules\n` +
@@ -103,14 +103,19 @@ export async function buildSystemPrompt(
     `## Research & Verification\n\n` +
       `Your training data may be outdated. Do not assume — verify.\n\n` +
       `- **Docs first**: \`web_search\` → \`web_fetch\`.\n` +
-      `- **Real code second**: \`mcp__kencode-search__searchCode\` — searches 2M+ public repos. ` +
-      `Use for ANYTHING you can grep: API/library usage, config-file layouts (vite.config.ts, ` +
-      `tsconfig, Dockerfile, GitHub Actions YAML, package.json scripts), shell idioms, build scripts, ` +
-      `Markdown/README structure, error message wording, schema shapes. Filter with \`language\`, ` +
-      `\`repo\` ("owner/name"), \`path\` ("src/components/"). Use \`peek: true\` first for cheap ` +
-      `triage on noisy queries, then call again on the file you want with full context. Regex is ` +
-      `RE2 — no lookahead/lookbehind/backrefs; multi-line patterns need \`(?s)\`.\n` +
-      `- Applies to everything — APIs, CLI flags, configs, versions, conventions. Not just "unfamiliar" code.`,
+      `- **Real code second**: \`mcp__kencode-search__searchCode\` — literal-text or RE2-regex search across 2M+ public repos. **Not semantic.**\n` +
+      `  - **Concept → query recipe.** If you only have a concept ("karaoke captions", "spring animation"), DO NOT search the concept. Anchor on a literal token a matching file would contain:\n` +
+      `    1. A library import — \`from "remotion"\`, \`import { spring }\`, \`from "@remotion/captions"\`\n` +
+      `    2. A known identifier/prop/hook — \`useVideoConfig\`, \`interpolate(\`, \`<Sequence\`, \`SubtitlePage\`\n` +
+      `    3. A unique config key — \`"defaultExport":\`, \`assetsInclude:\`\n` +
+      `    Bad: \`karaoke word animation subtitle\` → zero hits, every time. Good: \`from "@remotion/captions"\` + \`peek: true\` → real files; then narrow with \`repo\` + \`path\` and read them.\n` +
+      `  - **Filename + topic ≠ query.** \`Page.tsx tiktok\` won't match. Use \`path: "Page.tsx"\` + \`repo: "remotion-dev"\` + a literal token in \`query\`.\n` +
+      `  - Filters: \`language: ["TypeScript"]\`, \`repo: "owner/name"\` (substring), \`path: "src/components/"\` (substring), \`matchCase\`, \`useRegexp\`.\n` +
+      `  - Workflow: \`peek: true\` first → paths + match counts only (cheap triage). Then call again narrowed by \`repo\` + \`path\` for full snippets. Paginate with \`offset\`.\n` +
+      `  - Defaults exclude tests, \`node_modules\`, vendored, build, and generated files — pass \`includeTests: true\` or \`includeVendored: true\` to widen.\n` +
+      `  - Token budget: \`maxResults\` defaults to 10 (cap 200), \`contextLines\` defaults to 5 (range 0–20). Keep both small unless you need more.\n` +
+      `  - RE2 regex only: no lookahead/lookbehind/backrefs; multi-line patterns need \`(?s)\` prefix.\n` +
+      `- Applies to everything — APIs, CLI flags, configs (vite.config.ts, package.json, Dockerfile, GH Actions), shell idioms, schema shapes, error wording, conventions. Not just "unfamiliar" code.`,
   );
 
   // 4. Code Quality

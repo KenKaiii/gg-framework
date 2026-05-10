@@ -7,11 +7,7 @@ import { GGBoss } from "./orchestrator.js";
 import { loadLinks } from "./links.js";
 import { tasksStore } from "./tasks-store.js";
 import { saveSettings } from "./settings.js";
-import {
-  transcribeVoice,
-  isModelLoaded,
-  setProgressCallback,
-} from "./voice-transcriber.js";
+import { transcribeVoice, isModelLoaded, setProgressCallback } from "./voice-transcriber.js";
 import {
   subscribeToBossStore,
   getBossState,
@@ -262,10 +258,7 @@ export async function runBossServeMode(options: BossServeOptions): Promise<void>
    * via Telegram. Used by both the picker reply path and the direct
    * `/m <name>` arg path.
    */
-  async function applyModelChoice(
-    target: "boss" | "workers",
-    selected: ModelInfo,
-  ): Promise<void> {
+  async function applyModelChoice(target: "boss" | "workers", selected: ModelInfo): Promise<void> {
     try {
       if (target === "boss") {
         await boss.switchBossModel(selected.provider, selected.id);
@@ -378,8 +371,7 @@ export async function runBossServeMode(options: BossServeOptions): Promise<void>
           match = MODELS[num - 1]!;
         } else {
           match = MODELS.find(
-            (m) =>
-              m.name.toLowerCase().includes(arg) || m.id.toLowerCase().includes(arg),
+            (m) => m.name.toLowerCase().includes(arg) || m.id.toLowerCase().includes(arg),
           );
         }
         if (!match) {
@@ -447,11 +439,7 @@ export async function runBossServeMode(options: BossServeOptions): Promise<void>
 
     if (cmd === "status") {
       const state = getBossState();
-      const lines: string[] = [
-        `*${BRAND}* — ${state.bossModel}`,
-        `Scope  *${state.scope}*`,
-        "",
-      ];
+      const lines: string[] = [`*${BRAND}* — ${state.bossModel}`, `Scope  *${state.scope}*`, ""];
       lines.push("*Workers*");
       for (const w of state.workers) {
         const dot = w.status === "working" ? "●" : w.status === "error" ? "✗" : "○";

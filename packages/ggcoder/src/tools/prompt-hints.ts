@@ -21,7 +21,7 @@ export const TOOL_PROMPT_HINTS: Record<string, string> = {
   subagent: "Delegate focused, isolated subtasks (research, parallel exploration).",
   skill: "Invoke a named skill for specialized instructions.",
   "mcp__kencode-search__searchCode":
-    'Literal/regex search across 2M+ public repos (Sourcegraph). Use for ANY pattern in source: APIs, config layouts (vite.config.ts, package.json), shell idioms, markdown structure, project conventions. Filters: language[], repo ("owner/name"), path. Tip: peek=true returns just paths+counts for cheap triage. Regex is RE2 — no lookahead/lookbehind/backrefs; multi-line needs (?s).',
+    'Literal-text or RE2-regex search across 2M+ public repos. NOT semantic. Have only a concept? Anchor on a literal token a matching file would contain — a library import (`from "remotion"`), a known identifier/hook/prop (`useVideoConfig`, `<Sequence`), or a config key. Filename + topic in `query` does NOT work — put filenames in `path`, topics in `repo`. Filters: `language: ["TypeScript"]`, `repo: "owner/name"`, `path: "src/components/"`. Workflow: `peek: true` → paths+counts; then narrow with `repo` + `path` for full snippets. Defaults exclude tests/vendored/generated — set `includeTests` or `includeVendored` to widen. RE2: no lookahead/lookbehind/backrefs; multi-line needs `(?s)`.',
   enter_plan: "Enter plan mode for read-only research + planning on complex multi-file tasks.",
   exit_plan: "Submit your plan for user review and exit plan mode.",
 };
