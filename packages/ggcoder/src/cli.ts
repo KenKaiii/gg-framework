@@ -1,4 +1,10 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --max-old-space-size=8192 --expose-gc
+// Default V8 heap (~1.5–4GB depending on Node version) can fatal-OOM on
+// long sessions — tool results are capped at 50KB each but accumulate
+// across thousands of turns, and Ink/React state plus the SDK clients
+// share the same heap. 8GB gives ample headroom; --expose-gc is unused
+// today but matches gg-boss for consistency. NODE_OPTIONS overrides via
+// Node's standard flag merge.
 
 // Catch stray abort-related promise rejections that escape the normal error
 // handling chain (e.g. race conditions during Ctrl+C). Without this, Node.js
