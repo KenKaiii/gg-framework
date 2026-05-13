@@ -408,22 +408,27 @@ function completionToResponse(completion: OpenAI.ChatCompletion): StreamResponse
 
 function toError(err: unknown, provider: string = "openai"): ProviderError {
   if (err instanceof OpenAI.APIError) {
-    // Include full error body for debugging — GLM/Moonshot use non-standard error shapes
-    let msg = err.message;
     const body = err.error as Record<string, unknown> | undefined;
-    if (body) {
-      // Friendly message for codex-mini-latest requiring Pro/Max subscription
-      const modelName = (body.model as string) || "";
-      const _code = (body.code as string) || "";
-      const message = (body.message as string) || "";
-      if (modelName === "codex-mini-latest" || message.includes("codex-mini-latest")) {
-        msg = `codex-mini-latest requires an OpenAI Pro or Max subscription. You currently have access to GPT-5.4 and GPT-5.4 Mini with your account.`;
-      }
-      // Append raw error body so debug logs capture the exact API response
-      msg += ` | body: ${JSON.stringify(body)}`;
+    const bodyMessage =
+      typeof body?.message === "string" && body.message.trim() ? body.message.trim() : undefined;
+    const modelName = typeof body?.model === "string" ? body.model : "";
+    const cleanMessage = bodyMessage ?? err.message;
+
+    let hint: string | undefined;
+    if (modelName === "codex-mini-latest" || cleanMessage.includes("codex-mini-latest")) {
+      hint =
+        "codex-mini-latest requires an OpenAI Pro or Max subscription. " +
+        "Your account currently has access to GPT-5.4 and GPT-5.4 Mini.";
     }
-    return new ProviderError(provider, msg, {
+
+    const requestId =
+      (err as unknown as { request_id?: string }).request_id ??
+      (typeof body?.request_id === "string" ? body.request_id : undefined);
+
+    return new ProviderError(provider, cleanMessage, {
       statusCode: err.status,
+      ...(requestId ? { requestId } : {}),
+      ...(hint ? { hint } : {}),
       cause: err,
     });
   }

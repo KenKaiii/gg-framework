@@ -510,8 +510,14 @@ function messageToResponse(message: Anthropic.Message): StreamResponse {
 
 function toError(err: unknown): ProviderError {
   if (err instanceof Anthropic.APIError) {
+    // Anthropic surfaces request IDs on the APIError itself (`request_id`)
+    // and sometimes inside the body. Prefer the structured field.
+    const requestId =
+      (err as unknown as { request_id?: string }).request_id ??
+      ((err.error as Record<string, unknown> | undefined)?.request_id as string | undefined);
     return new ProviderError("anthropic", err.message, {
       statusCode: err.status,
+      ...(requestId ? { requestId } : {}),
       cause: err,
     });
   }

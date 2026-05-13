@@ -75,25 +75,30 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    let message = `Codex API error (${response.status}): ${text}`;
+    const parsed = parseCodexErrorBody(text);
+    const message = parsed.message ?? `Codex API returned HTTP ${response.status}.`;
+    const requestId =
+      parsed.requestId ??
+      response.headers.get("x-request-id") ??
+      response.headers.get("openai-request-id") ??
+      undefined;
 
-    // Add helpful context for common errors
+    let hint: string | undefined;
     if (response.status === 400 && text.includes("not supported")) {
-      message +=
-        `\n\nHint: Codex models require a ChatGPT Plus ($20/mo) or Pro ($200/mo) subscription. ` +
-        `The "codex-spark" variants require ChatGPT Pro. ` +
-        `Ensure your account has an active subscription at https://chatgpt.com/settings`;
-    }
-
-    // Friendly hint for codex-mini-latest requiring Pro/Max subscription
-    if (response.status === 404 && text.includes("does not exist")) {
-      message +=
-        `\n\nHint: codex-mini-latest requires an OpenAI Pro ($200/mo) or Max subscription. ` +
-        `GPT-5.4 and GPT-5.4 Mini work with any active ChatGPT plan.`;
+      hint =
+        "Codex models require a ChatGPT Plus ($20/mo) or Pro ($200/mo) subscription. " +
+        'The "codex-spark" variants require ChatGPT Pro. ' +
+        "Check your subscription at https://chatgpt.com/settings.";
+    } else if (response.status === 404 && text.includes("does not exist")) {
+      hint =
+        "codex-mini-latest requires an OpenAI Pro ($200/mo) or Max subscription. " +
+        "GPT-5.4 and GPT-5.4 Mini work with any active ChatGPT plan.";
     }
 
     throw new ProviderError("openai", message, {
       statusCode: response.status,
+      ...(requestId ? { requestId } : {}),
+      ...(hint ? { hint } : {}),
     });
   }
 
@@ -112,14 +117,38 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     if (!type) continue;
 
     if (type === "error") {
-      const msg = (event.message as string) || JSON.stringify(event);
-      throw new ProviderError("openai", `Codex error: ${msg}`);
+      // Codex Responses streams two error shapes:
+      //   { type:"error", error:{ type, code, message, param }, sequence_number }
+      //   { type:"error", code, message, param, sequence_number }
+      // Pick the first message field we find; fall back to the chunk code/type
+      // rather than dumping the raw JSON at the user.
+      const nested = (event.error as Record<string, unknown> | undefined) ?? undefined;
+      const message =
+        (nested?.message as string | undefined) ??
+        (event.message as string | undefined) ??
+        "Codex stream emitted an error chunk without a message.";
+      const code =
+        (nested?.code as string | undefined) ??
+        (nested?.type as string | undefined) ??
+        (event.code as string | undefined) ??
+        "server_error";
+      // OpenAI sometimes embeds the request ID inside the human-readable
+      // message ("…request ID abc123 in your message"); fish it out so the
+      // FormattedError can surface it on its own line.
+      const requestId = extractCodexRequestId(message) ?? (event.request_id as string | undefined);
+      throw new ProviderError("openai", message, {
+        ...(requestId != null ? { requestId } : {}),
+        ...(code === "server_error" ? { statusCode: 500 } : {}),
+      });
     }
 
     if (type === "response.failed") {
-      const msg =
-        ((event.error as Record<string, unknown>)?.message as string) || "Codex response failed";
-      throw new ProviderError("openai", msg);
+      const nested = event.error as Record<string, unknown> | undefined;
+      const message = (nested?.message as string | undefined) ?? "Codex response failed.";
+      const requestId = extractCodexRequestId(message) ?? (event.request_id as string | undefined);
+      throw new ProviderError("openai", message, {
+        ...(requestId != null ? { requestId } : {}),
+      });
     }
 
     // Text delta
@@ -431,4 +460,34 @@ function toCodexTools(tools: Tool[]): unknown[] {
     parameters: tool.rawInputSchema ?? zodToJsonSchema(tool.parameters),
     strict: null,
   }));
+}
+
+// OpenAI's server_error messages embed the request ID inline ("…request ID
+// abc123 in your message"). Pull it out so we can surface it as a structured
+// field rather than leaving it buried in the message.
+function extractCodexRequestId(message: string): string | undefined {
+  const match = message.match(/request ID ([a-z0-9-]{8,})/i);
+  return match?.[1];
+}
+
+// HTTP error bodies come back as JSON or plain text. Try to extract a clean
+// message string + request_id so we never spill the raw JSON into the UI.
+function parseCodexErrorBody(text: string): { message?: string; requestId?: string } {
+  if (!text) return {};
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    const error = parsed.error as Record<string, unknown> | undefined;
+    const message =
+      (error?.message as string | undefined) ?? (parsed.message as string | undefined);
+    const requestId =
+      (parsed.request_id as string | undefined) ??
+      (error?.request_id as string | undefined) ??
+      (message ? extractCodexRequestId(message) : undefined);
+    return { ...(message ? { message } : {}), ...(requestId ? { requestId } : {}) };
+  } catch {
+    // Non-JSON body — return the trimmed text directly, capped so we never
+    // splat a huge HTML error page.
+    const trimmed = text.trim().slice(0, 240);
+    return trimmed ? { message: trimmed } : {};
+  }
 }

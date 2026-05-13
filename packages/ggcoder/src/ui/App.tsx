@@ -17,7 +17,14 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { playNotificationSound } from "../utils/sound.js";
-import type { Message, Provider, ThinkingLevel, TextContent, ImageContent } from "@kenkaiiii/gg-ai";
+import {
+  formatError,
+  type Message,
+  type Provider,
+  type ThinkingLevel,
+  type TextContent,
+  type ImageContent,
+} from "@kenkaiiii/gg-ai";
 import { extractImagePaths, type ImageAttachment } from "../utils/image.js";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import { useAgentLoop, type UserContent } from "./hooks/useAgentLoop.js";
@@ -102,49 +109,30 @@ import {
   flushOverflow,
 } from "./live-item-flush.js";
 
-// ── Provider Error Hints ──────────────────────────────────
+/** Where ggcoder bugs should be reported. Surfaced in the guidance line. */
+const GGCODER_BUG_REPORT_URL = "github.com/kenkaiiii/gg-framework/issues";
 
-/** Detect provider-side errors and return a user-facing hint. */
-function getProviderErrorHint(message: string): string | null {
-  const lower = message.toLowerCase();
-  if (lower.includes("overloaded") || lower.includes("engine_overloaded")) {
-    return "This is a provider-side issue — their servers are under heavy load. Try again in a moment.";
-  }
-  if (
-    lower.includes("insufficient balance") ||
-    lower.includes("no resource package") ||
-    lower.includes("quota exceeded") ||
-    lower.includes("recharge")
-  ) {
-    return "The provider reports a billing or quota issue. Check your account balance or resource package.";
-  }
-  if (
-    lower.includes("rate limit") ||
-    lower.includes("too many requests") ||
-    lower.includes("429")
-  ) {
-    return "You've hit the provider's rate limit. Wait a moment before retrying.";
-  }
-  if (lower.includes("502") || lower.includes("bad gateway")) {
-    return "The provider returned a server error. This is not a ggcoder issue — try again shortly.";
-  }
-  if (lower.includes("503") || lower.includes("service unavailable")) {
-    return "The provider's service is temporarily unavailable. Try again in a moment.";
-  }
-  if (lower.includes("timeout") || lower.includes("timed out")) {
-    return "The request to the provider timed out. Their servers may be slow — try again.";
-  }
-  if (lower.includes("500") && lower.includes("internal server error")) {
-    return "The provider experienced an internal error. This is not a ggcoder issue.";
-  }
-  if (
-    lower.includes("does not recognize the requested model") ||
-    (lower.includes("model") &&
-      (lower.includes("not exist") || lower.includes("not found") || lower.includes("no access")))
-  ) {
-    return "Use /model to switch to a different model, or check that your account has access to the requested model.";
-  }
-  return null;
+/**
+ * Build an ErrorItem from any thrown value. Centralises headline / message /
+ * guidance extraction so every error answers the same question for the user:
+ *   "Should I retry, or is this a ggcoder bug to report?"
+ */
+function toErrorItem(err: unknown, id: string, contextPrefix?: string): ErrorItem {
+  const f = formatError(err);
+  const headline = contextPrefix ? `${contextPrefix} — ${f.headline}` : f.headline;
+  // For ggcoder bugs, swap the generic "see /help" guidance for an actual URL
+  // so users have a clear place to send the report.
+  const guidance =
+    f.source === "ggcoder"
+      ? `This looks like a ggcoder bug — please send it to the dev at ${GGCODER_BUG_REPORT_URL}.`
+      : f.guidance;
+  return {
+    kind: "error",
+    headline,
+    message: f.message,
+    guidance,
+    id,
+  };
 }
 
 // ── Completed Item Types ───────────────────────────────────
@@ -195,7 +183,12 @@ interface ToolDoneItem {
 
 interface ErrorItem {
   kind: "error";
+  /** Plain-English headline, e.g. "OpenAI returned an error." */
+  headline: string;
+  /** Detailed message body (clean, no JSON). */
   message: string;
+  /** Action line — "Retry, this is an OpenAI issue" / "Report this ggcoder bug …". */
+  guidance: string;
   id: string;
 }
 
@@ -1186,9 +1179,7 @@ export function App(props: AppProps) {
         // Replace spinner with error
         setLiveItems((prev) =>
           prev.map((item) =>
-            item.id === spinId
-              ? ({ kind: "error", message: `Compaction failed: ${msg}`, id: spinId } as ErrorItem)
-              : item,
+            item.id === spinId ? toErrorItem(err, spinId, "Compaction failed") : item,
           ),
         );
         return messages; // Return unchanged on failure
@@ -1989,7 +1980,7 @@ export function App(props: AppProps) {
         ...prev,
         isAbort
           ? { kind: "stopped", text: "Auto-setup cancelled.", id: getId() }
-          : { kind: "error", message: msg, id: getId() },
+          : toErrorItem(err, getId()),
       ]);
     }
   };
@@ -2062,7 +2053,7 @@ export function App(props: AppProps) {
     void agentLoop.run(action.prompt).catch((err: unknown) => {
       const errMsg = err instanceof Error ? err.message : String(err);
       log("ERROR", "error", errMsg);
-      setLiveItems((prev) => [...prev, { kind: "error", message: errMsg, id: getId() }]);
+      setLiveItems((prev) => [...prev, toErrorItem(err, getId())]);
     });
     // Intentional one-shot: run once on mount, never re-fire on re-render.
   }, []);
@@ -2317,7 +2308,7 @@ export function App(props: AppProps) {
               ...prev,
               isAbort
                 ? { kind: "stopped", text: "Request was stopped.", id: getId() }
-                : { kind: "error", message: msg, id: getId() },
+                : toErrorItem(err, getId()),
             ]);
           }
           // Reload custom commands in case a setup command created new ones
@@ -2446,7 +2437,7 @@ export function App(props: AppProps) {
           ...prev,
           isAbort
             ? { kind: "stopped", text: "Request was stopped.", id: getId() }
-            : { kind: "error", message: msg, id: getId() },
+            : toErrorItem(err, getId()),
         ]);
       }
     },
@@ -2815,19 +2806,21 @@ export function App(props: AppProps) {
           />
         );
       case "error": {
-        const providerHint = getProviderErrorHint(item.message);
+        const showMessage = item.message && item.message !== item.headline;
         return (
           <Box key={item.id} marginTop={1} flexDirection="column" flexShrink={1}>
             <Text color={theme.error} wrap="wrap">
               {"✗ "}
-              {item.message}
+              {item.headline}
             </Text>
-            {providerHint && (
+            {showMessage && (
               <Text color={theme.textDim} wrap="wrap">
-                {"  Hint: "}
-                {providerHint}
+                {`  ${item.message}`}
               </Text>
             )}
+            <Text color={theme.textDim} wrap="wrap">
+              {`  → ${item.guidance}`}
+            </Text>
           </Box>
         );
       }
@@ -3080,7 +3073,7 @@ export function App(props: AppProps) {
             ...prev,
             isAbort
               ? { kind: "stopped", text: "Request was stopped.", id: getId() }
-              : { kind: "error", message: msg, id: getId() },
+              : toErrorItem(err, getId()),
           ]);
           setRunAllTasks(false);
         }
@@ -3184,7 +3177,7 @@ export function App(props: AppProps) {
           log("ERROR", "pixel", msg);
           currentPixelFixRef.current = null;
           setRunAllPixel(false);
-          setLiveItems((prev) => [...prev, { kind: "error", message: msg, id: getId() }]);
+          setLiveItems((prev) => [...prev, toErrorItem(err, getId())]);
         }
       })();
     },
@@ -3421,7 +3414,7 @@ export function App(props: AppProps) {
               } catch (err) {
                 const errMsg = err instanceof Error ? err.message : String(err);
                 log("ERROR", "error", errMsg);
-                setLiveItems((prev) => [...prev, { kind: "error", message: errMsg, id: getId() }]);
+                setLiveItems((prev) => [...prev, toErrorItem(err, getId())]);
               }
             })();
           }}
@@ -3455,7 +3448,7 @@ export function App(props: AppProps) {
             void agentLoop.run(rejectionMsg).catch((err: unknown) => {
               const errMsg = err instanceof Error ? err.message : String(err);
               log("ERROR", "error", errMsg);
-              setLiveItems((prev) => [...prev, { kind: "error", message: errMsg, id: getId() }]);
+              setLiveItems((prev) => [...prev, toErrorItem(err, getId())]);
             });
           }}
         />
