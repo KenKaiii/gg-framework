@@ -10,6 +10,7 @@ import { PROMPT_COMMANDS, getPromptCommand } from "./prompt-commands.js";
 import { loadCustomCommands } from "./custom-commands.js";
 import { SettingsManager } from "./settings-manager.js";
 import { AuthStorage } from "./auth-storage.js";
+import { getClaudeCliUserAgent } from "./claude-code-version.js";
 import { SessionManager, type MessageEntry, type BranchInfo } from "./session-manager.js";
 import { ExtensionLoader } from "./extensions/loader.js";
 import type { ExtensionContext } from "./extensions/types.js";
@@ -299,6 +300,8 @@ export class AgentSession {
     // revoked the token server-side before the stored expiry (e.g. after a restart).
     let creds = await this.authStorage.resolveCredentials(this.provider);
 
+    const userAgent = this.provider === "anthropic" ? await getClaudeCliUserAgent() : undefined;
+
     const runAgentLoop = async (apiKey: string, accountId?: string) => {
       const modelInfo = getModel(this.model);
       const generator = agentLoop(this.messages, {
@@ -315,6 +318,7 @@ export class AgentSession {
         cacheRetention: "short",
         promptCacheKey: this.getPromptCacheKey(),
         supportsImages: modelInfo?.supportsImages,
+        userAgent,
         // clearToolUses disabled — causes model to output unsolicited context summaries
         // Single tool result shouldn't exceed 30% of context window (in chars)
         maxToolResultChars: Math.floor(getContextWindow(this.model) * 3.5 * 0.3),

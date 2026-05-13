@@ -272,4 +272,10 @@ export interface StreamOptions {
    *  stalls — broken SSE connections (transient CDN / proxy issues) often
    *  recover when the same request is issued over a plain HTTP request/response. */
   streaming?: boolean;
+  /** Override the User-Agent sent with OAuth-authenticated Anthropic requests.
+   *  Anthropic's OAuth edge rejects requests whose claude-cli version lags too
+   *  far behind the real Claude Code release; callers that track the live
+   *  version should pass it here. Ignored for non-Anthropic providers and for
+   *  Anthropic requests using a regular API key. */
+  userAgent?: string;
 }

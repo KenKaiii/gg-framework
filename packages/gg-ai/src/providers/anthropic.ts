@@ -35,7 +35,10 @@ function createClient(options: StreamOptions): Anthropic {
     ...(isOAuth
       ? {
           defaultHeaders: {
-            "user-agent": "claude-cli/2.1.75",
+            // Anthropic's OAuth edge validates the claude-cli version. Callers
+            // (ggcoder) resolve the live version at runtime; the literal here
+            // is the offline fallback for direct gg-ai consumers.
+            "user-agent": options.userAgent ?? "claude-cli/2.1.75 (external, cli)",
             "x-app": "cli",
           },
         }

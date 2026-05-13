@@ -165,6 +165,8 @@ export interface AgentOptions {
   cacheRetention?: StreamOptions["cacheRetention"];
   /** Stable per-session cache routing key for providers that support it. */
   promptCacheKey?: StreamOptions["promptCacheKey"];
+  /** Override the User-Agent sent with OAuth-authenticated Anthropic requests. */
+  userAgent?: StreamOptions["userAgent"];
   /** OpenAI service tier for latency-sensitive first-party API requests. */
   serviceTier?: StreamOptions["serviceTier"];
   /** Whether the target model supports image input. When false, image blocks

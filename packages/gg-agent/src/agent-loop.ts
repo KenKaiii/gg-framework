@@ -400,6 +400,7 @@ export async function* agentLoop(
           supportsImages: options.supportsImages,
           compaction: options.compaction,
           clearToolUses: options.clearToolUses,
+          userAgent: options.userAgent,
           // Flip to non-streaming fallback after repeated stream stalls.
           ...(useNonStreamingFallback ? { streaming: false } : {}),
         });

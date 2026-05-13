@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { agentLoop, type AgentEvent, type AgentTool } from "@kenkaiiii/gg-agent";
 import { ProviderError } from "@kenkaiiii/gg-ai";
 import type { Message, Provider, ThinkingLevel, TextContent, ImageContent } from "@kenkaiiii/gg-ai";
+import { getClaudeCliUserAgent } from "../../core/claude-code-version.js";
 
 /** Rough token estimate from message content (~4 chars per token). */
 function estimateTokens(msgs: Message[]): number {
@@ -340,6 +341,9 @@ export function useAgentLoop(
             accountId = creds.accountId;
           }
 
+          const userAgent =
+            options.provider === "anthropic" ? await getClaudeCliUserAgent() : undefined;
+
           const generator = agentLoop(messages.current, {
             provider: options.provider,
             model: options.model,
@@ -351,6 +355,7 @@ export function useAgentLoop(
             baseUrl: options.baseUrl,
             accountId,
             signal: ac.signal,
+            userAgent,
             transformContext: options.transformContext,
             // Drain queued messages as steering — injected between tool calls
             // and before the agent would stop, so the LLM sees user guidance
