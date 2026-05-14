@@ -37,6 +37,10 @@ export async function runJsonMode(options: JsonModeOptions): Promise<void> {
     maxTurns: options.maxTurns,
     signal: ac.signal,
     enableSubAgents: false, // Prevent infinite recursion
+    // Subagent runs are one-shot, NDJSON-streamed to the parent over stdout,
+    // and have no resumable identity. Skip writing a `.jsonl` so the spawn
+    // doesn't show up in `ggcoder continue` for the parent project.
+    transient: true,
   };
 
   const session = new AgentSession(sessionOpts);

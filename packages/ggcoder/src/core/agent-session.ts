@@ -43,6 +43,14 @@ export interface AgentSessionOptions {
   signal?: AbortSignal;
   /** Prefix used for provider prompt-cache routing keys. */
   promptCacheKeyPrefix?: string;
+  /**
+   * If true, this session does NOT create a `.jsonl` session file or persist
+   * any messages. Used by subagent spawns (`--json` mode) so their transcripts
+   * don't leak into `ggcoder continue` for the parent project. Subagent runs
+   * are one-shot, NDJSON-streamed to the parent over stdout, and have no
+   * resumable identity.
+   */
+  transient?: boolean;
 }
 
 // ── State ──────────────────────────────────────────────────
@@ -168,8 +176,12 @@ export class AgentSession {
       );
     }
 
-    // Load or create session
-    if (this.opts.sessionId) {
+    // Load or create session. Transient sessions (subagent spawns) never
+    // touch the session store — sessionPath stays empty and persistMessage
+    // is a no-op so their transcripts can't pollute `ggcoder continue`.
+    if (this.opts.transient) {
+      this.lastPersistedIndex = this.messages.length;
+    } else if (this.opts.sessionId) {
       await this.loadExistingSession(this.opts.sessionId);
     } else if (this.opts.continueRecent) {
       const recentPath = await this.sessionManager.getMostRecent(this.cwd);
@@ -605,6 +617,8 @@ export class AgentSession {
   }
 
   private async persistMessage(message: Message): Promise<void> {
+    // Transient sessions (subagent spawns) have no session file — skip.
+    if (!this.sessionPath) return;
     const entryId = crypto.randomUUID();
     const entry: MessageEntry = {
       type: "message",
