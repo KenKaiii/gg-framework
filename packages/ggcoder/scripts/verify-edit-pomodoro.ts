@@ -148,6 +148,85 @@ async function main(): Promise<void> {
       mixedOk && /2 edits/.test(mixedSummary),
       `summary=${mixedSummary}`,
     );
+
+    // 4. The user's reported scenario: a 19-edit refactor where 2 edits drift.
+    //    Old behavior: the whole batch is rolled back, the model wastes minutes
+    //    re-doing the other 17. New behavior: 17 land, model only retries 2.
+    const bigPath = path.join(tmpDir, "StartingYourAgency.tsx");
+    const bigLines = Array.from(
+      { length: 19 },
+      (_, i) => `      <div className="card-${i}">Section ${i}</div>`,
+    );
+    await fs.writeFile(bigPath, bigLines.join("\n") + "\n");
+
+    const bigEdits = bigLines.map((line, i) => ({
+      old_text: line,
+      new_text: line.replace("card-", "glass-card-"),
+    }));
+    // Drift edit 8 and edit 14 the same way the model paraphrases.
+    bigEdits[7] = {
+      old_text: `      <div className="card-7">Section 7</div>`.replace("card-", "Card-"),
+      new_text: `      <div className="glass-card-7">Section 7</div>`,
+    };
+    bigEdits[13] = {
+      old_text: `      <div className="card-13">Section thirteen</div>`,
+      new_text: `      <div className="glass-card-13">Section 13</div>`,
+    };
+
+    const bigResult = await tool.execute(
+      { file_path: "StartingYourAgency.tsx", edits: bigEdits },
+      ctx,
+    );
+    const bigSummary =
+      typeof bigResult === "string" ? bigResult : (bigResult as { content: string }).content;
+    const bigAfter = await fs.readFile(bigPath, "utf-8");
+    const landed = (bigAfter.match(/glass-card-/g) ?? []).length;
+    const stillUnchanged =
+      bigAfter.includes(`className="card-7"`) && bigAfter.includes(`className="card-13"`);
+    const namesOnlyFailed = /edit 8\/19/.test(bigSummary) && /edit 14\/19/.test(bigSummary);
+    record(
+      "19-edit batch with 2 drifted edits lands the other 17 (partial-apply)",
+      landed === 17 && stillUnchanged && namesOnlyFailed && /Applied 17 of 19/.test(bigSummary),
+      `landed=${landed}; summary first line=${bigSummary.split("\n")[0]}`,
+    );
+
+    // 5. Same call shape with atomic: true must throw and write nothing.
+    await fs.writeFile(bigPath, bigLines.join("\n") + "\n");
+    let atomicCaught: Error | null = null;
+    try {
+      await tool.execute(
+        { file_path: "StartingYourAgency.tsx", edits: bigEdits, atomic: true },
+        ctx,
+      );
+    } catch (err) {
+      atomicCaught = err as Error;
+    }
+    const atomicAfter = await fs.readFile(bigPath, "utf-8");
+    const atomicUntouched = atomicAfter === bigLines.join("\n") + "\n";
+    record(
+      "atomic: true reverts to all-or-nothing — same batch throws and writes nothing",
+      atomicCaught !== null && atomicUntouched && /no changes written/.test(atomicCaught?.message ?? ""),
+      atomicCaught ? `error first line=${atomicCaught.message.split("\n")[0]}` : "no error thrown",
+    );
+
+    // 6. Aider issue #25 — leading blank line in old_text. Should still match.
+    const blankPath = path.join(tmpDir, "blank.ts");
+    await fs.writeFile(blankPath, "function foo() {\n  return 42;\n}\n");
+    const blankResult = await tool.execute(
+      {
+        file_path: "blank.ts",
+        edits: [{ old_text: "\n  return 42;", new_text: "\n  return 100;" }],
+      },
+      ctx,
+    );
+    const blankSummary =
+      typeof blankResult === "string" ? blankResult : (blankResult as { content: string }).content;
+    const blankAfter = await fs.readFile(blankPath, "utf-8");
+    record(
+      "leading-blank-line in old_text is auto-stripped and the edit lands",
+      /Successfully/.test(blankSummary) && blankAfter === "function foo() {\n  return 100;\n}\n",
+      `summary=${blankSummary}; after=${JSON.stringify(blankAfter)}`,
+    );
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }

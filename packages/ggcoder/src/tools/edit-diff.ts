@@ -15,6 +15,181 @@ function normalizeForFuzzyMatch(text: string): string {
 }
 
 /**
+ * Aider's `match_but_for_leading_whitespace`: returns the uniform leading
+ * whitespace prefix that — if prepended to every non-blank line of `partLines`
+ * — would make them equal to `wholeLines`. Returns null when:
+ *   - line counts differ
+ *   - any line's non-whitespace content doesn't match
+ *   - the leading whitespace delta isn't uniform across all non-blank lines
+ *
+ * This is the precision check that anchors `applyMissingLeadingWhitespace`.
+ */
+function matchButForLeadingWhitespace(wholeLines: string[], partLines: string[]): string | null {
+  if (wholeLines.length !== partLines.length) return null;
+
+  for (let i = 0; i < wholeLines.length; i++) {
+    if (wholeLines[i].trimStart() !== partLines[i].trimStart()) return null;
+  }
+
+  const prefixes = new Set<string>();
+  for (let i = 0; i < wholeLines.length; i++) {
+    if (wholeLines[i].trim() === "") continue;
+    const wholeLead = wholeLines[i].length - wholeLines[i].trimStart().length;
+    const partLead = partLines[i].length - partLines[i].trimStart().length;
+    if (wholeLead < partLead) return null;
+    prefixes.add(wholeLines[i].slice(0, wholeLead - partLead));
+  }
+
+  if (prefixes.size !== 1) return null;
+  return [...prefixes][0];
+}
+
+/**
+ * Aider's `replace_part_with_missing_leading_whitespace` (~10k stars between
+ * aider/devon/codemcp/qwen-coder use this exact pattern). Models very often
+ * mess up leading whitespace — uniformly across both old_text and new_text.
+ * Strategy:
+ *   1. Outdent old/new uniformly by the smallest leading-whitespace count
+ *      across all non-blank lines (handles "model included some but not all").
+ *   2. Scan the file for a window where every line matches when stripped AND
+ *      the file's actual leading prefix is uniform across non-blank lines.
+ *   3. Re-apply that uniform file-prefix to every non-blank line of new_text
+ *      before substituting.
+ *
+ * Returns the rewritten file content on success, null when no unique match.
+ */
+export function applyMissingLeadingWhitespace(
+  working: string,
+  old: string,
+  next: string,
+): string | null {
+  const workingLines = working.split("\n");
+  let oldLines = old.split("\n");
+  let newLines = next.split("\n");
+
+  if (oldLines.length === 0) return null;
+
+  // Outdent both uniformly by the min leading-whitespace count across all
+  // non-blank lines in either old or new. Handles the common case where the
+  // model wrote SOME indentation but less than the file's actual amount.
+  const nonBlank = [...oldLines, ...newLines].filter((l) => l.trim() !== "");
+  if (nonBlank.length > 0) {
+    const minLead = Math.min(...nonBlank.map((l) => l.length - l.trimStart().length));
+    if (minLead > 0) {
+      oldLines = oldLines.map((l) => (l.trim() !== "" ? l.slice(minLead) : l));
+      newLines = newLines.map((l) => (l.trim() !== "" ? l.slice(minLead) : l));
+    }
+  }
+
+  const numOld = oldLines.length;
+  let matchIdx = -1;
+  let matchPrefix: string | null = null;
+  let matchCount = 0;
+
+  for (let i = 0; i + numOld <= workingLines.length; i++) {
+    const window = workingLines.slice(i, i + numOld);
+    const prefix = matchButForLeadingWhitespace(window, oldLines);
+    if (prefix !== null) {
+      matchCount++;
+      if (matchIdx === -1) {
+        matchIdx = i;
+        matchPrefix = prefix;
+      }
+      // Two matches → ambiguous; let the caller fall through to the not_found
+      // path so the model adds context. (Same safety bar as our other matchers.)
+      if (matchCount > 1) return null;
+    }
+  }
+
+  if (matchIdx === -1 || matchPrefix === null) return null;
+
+  const newWithPrefix = newLines.map((l) => (l.trim() !== "" ? matchPrefix + l : l));
+  const result = [
+    ...workingLines.slice(0, matchIdx),
+    ...newWithPrefix,
+    ...workingLines.slice(matchIdx + numOld),
+  ];
+  return result.join("\n");
+}
+
+/**
+ * Aider-style `...` elision matching: when `old_text` contains lines that are
+ * just `...`, treat them as "skip whatever's here" placeholders. The model
+ * writes:
+ *
+ *   old:  function foo() {
+ *           ...
+ *           return bar;
+ *         }
+ *   new:  function foo() {
+ *           ...
+ *           return baz;
+ *         }
+ *
+ * We split both `old` and `next` on the `...` lines, then anchor the bookend
+ * pieces in `working` (greedy, in order). The elided middle from `working` is
+ * preserved verbatim and stitched in between the new bookends. Returns the
+ * rewritten buffer on success, null when:
+ *   - `old` has no `...` lines (caller should try other strategies)
+ *   - piece counts differ between `old` and `next` (ambiguous elision)
+ *   - any piece is empty (means dots at start/end or adjacent — too risky)
+ *   - any old piece doesn't appear in `working` after the previous one
+ *
+ * Greedy first-match-then-forward. We DO NOT support `replace_all` with
+ * elision — `...` is intrinsically a single edit.
+ */
+export function applyDotdotdots(working: string, old: string, next: string): string | null {
+  const dotLineRe = /^[ \t]*\.\.\.[ \t]*$/m;
+  if (!dotLineRe.test(old)) return null;
+
+  // Split consumes the dot line including its trailing newline (if present),
+  // so the next piece starts cleanly at its first real character.
+  const splitRe = /^[ \t]*\.\.\.[ \t]*\r?\n?/m;
+  const oldPieces = old.split(splitRe);
+  const newPieces = next.split(splitRe);
+
+  if (oldPieces.length !== newPieces.length) return null;
+  if (oldPieces.length < 2) return null;
+  if (oldPieces.some((p) => p === "") || newPieces.some((p) => p === "")) return null;
+
+  let cursor = 0;
+  const positions: { start: number; end: number }[] = [];
+  for (const piece of oldPieces) {
+    const idx = working.indexOf(piece, cursor);
+    if (idx === -1) return null;
+    positions.push({ start: idx, end: idx + piece.length });
+    cursor = idx + piece.length;
+  }
+
+  let result = working.slice(0, positions[0].start);
+  for (let i = 0; i < oldPieces.length; i++) {
+    result += newPieces[i];
+    if (i < oldPieces.length - 1) {
+      // The elided middle from the original file is preserved verbatim —
+      // that's the whole point of the `...` placeholder.
+      result += working.slice(positions[i].end, positions[i + 1].start);
+    }
+  }
+  result += working.slice(positions[positions.length - 1].end);
+  return result;
+}
+
+/**
+ * Models often add a spurious leading blank line to `old_text` (e.g. when
+ * copying a code block out of fenced markdown). Aider noticed this back at
+ * its issue #25. If the first line is blank, return the same text minus that
+ * line so the caller can retry the match. Returns null when no leading blank
+ * line exists, so callers can cheaply skip the retry.
+ */
+export function stripLeadingBlankLine(text: string): string | null {
+  if (!text) return null;
+  const newlineIdx = text.indexOf("\n");
+  if (newlineIdx === -1) return null;
+  if (text.slice(0, newlineIdx).trim() !== "") return null;
+  return text.slice(newlineIdx + 1);
+}
+
+/**
  * Find text in content, trying exact match first then fuzzy.
  */
 export function fuzzyFindText(

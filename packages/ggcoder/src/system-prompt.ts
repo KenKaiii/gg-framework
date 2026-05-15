@@ -52,6 +52,7 @@ export async function buildSystemPrompt(
   sections.push(
     `## How to Work\n\n` +
       `- **Read before \`edit\`/\`write\`.** No edit/write without a prior read this session — missed reads waste the payload.\n` +
+      `- **Compute in bash, write with \`edit\`.** When a task needs computation (word counts, regex, padding, structural validation), use bash for the computation and the \`edit\` tool to apply the result. Shelling out to \`python -c '... f.write(...)'\` or \`sed -i\` loses read-tracking, partial-apply, indent forgiveness, and actionable error messages — and a mid-script crash leaves the file in unknown state.\n` +
       `- **Match the neighbors.** Before any user-visible change: find the closest existing equivalent, reuse components/tokens, mirror tone. No sibling? Stop and ask. Generic-looking output is a regression.\n` +
       `- **Edits stay small.** Plan multi-file work first. After: run tests/typecheck/lint, read errors, rebuild.\n` +
       `- **Just do it.** Routine follow-up (build, migrate, seed, re-run) is yours — don't ask.\n` +

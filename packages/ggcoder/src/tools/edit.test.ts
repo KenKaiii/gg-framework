@@ -92,7 +92,7 @@ describe("createEditTool", () => {
     expect(written).toBe("baz\n");
   });
 
-  it("reports edit index on failure within a multi-edit batch", async () => {
+  it("reports edit index on failure within a multi-edit batch (atomic mode)", async () => {
     const filePath = path.join(tmpDir, "batch.txt");
     await fs.writeFile(filePath, "one two three\n");
 
@@ -105,6 +105,7 @@ describe("createEditTool", () => {
             { old_text: "one", new_text: "1" },
             { old_text: "missing", new_text: "x" },
           ],
+          atomic: true,
         },
         { signal: new AbortController().signal, toolCallId: "test-batch" },
       ),
@@ -236,7 +237,7 @@ describe("createEditTool", () => {
     ).rejects.toThrow(/Closest match in file:[\s\S]*useState\(0\)/);
   });
 
-  it("aggregates multiple edit failures into one error", async () => {
+  it("aggregates multiple edit failures into one error (atomic mode)", async () => {
     const filePath = path.join(tmpDir, "agg.txt");
     await fs.writeFile(filePath, "alpha\nbeta\ngamma\n");
 
@@ -250,14 +251,370 @@ describe("createEditTool", () => {
             { old_text: "MISSING", new_text: "X" },
             { old_text: "ALSO_MISSING", new_text: "Y" },
           ],
+          atomic: true,
         },
         { signal: new AbortController().signal, toolCallId: "test-agg" },
       ),
-    ).rejects.toThrow(/2 of 3 edits failed[\s\S]*\[1\][\s\S]*\[2\]/);
+    ).rejects.toThrow(/2 of 3 edits failed[\s\S]*edit 2\/3[\s\S]*edit 3\/3/);
 
     // Atomic — nothing written.
     const written = await fs.readFile(filePath, "utf-8");
     expect(written).toBe("alpha\nbeta\ngamma\n");
+  });
+
+  it("partial-apply (default): keeps successful edits and reports failures for retry", async () => {
+    const filePath = path.join(tmpDir, "partial.txt");
+    await fs.writeFile(filePath, "alpha\nbeta\ngamma\n");
+
+    const tool = createEditTool(tmpDir);
+    const result = await tool.execute(
+      {
+        file_path: "partial.txt",
+        edits: [
+          { old_text: "alpha", new_text: "ALPHA" },
+          { old_text: "MISSING", new_text: "X" },
+          { old_text: "gamma", new_text: "GAMMA" },
+        ],
+      },
+      { signal: new AbortController().signal, toolCallId: "test-partial" },
+    );
+
+    const summary = typeof result === "string" ? result : (result as { content: string }).content;
+    expect(summary).toMatch(/Applied 2 of 3 edits/);
+    expect(summary).toMatch(/re-issue ONLY these/);
+    expect(summary).toMatch(/edit 2\/3/);
+    expect(summary).not.toMatch(/edit 1\/3/);
+    expect(summary).not.toMatch(/edit 3\/3/);
+
+    // Successful edits landed; failed one didn't.
+    const written = await fs.readFile(filePath, "utf-8");
+    expect(written).toBe("ALPHA\nbeta\nGAMMA\n");
+  });
+
+  it("partial-apply on a 19-edit batch with 2 failures lands the other 17", async () => {
+    const filePath = path.join(tmpDir, "big.css");
+    const lines = Array.from({ length: 19 }, (_, i) => `.cls${i} { color: red; }`);
+    await fs.writeFile(filePath, lines.join("\n") + "\n");
+
+    const edits = lines.map((line, i) => ({
+      old_text: line,
+      // Two of them deliberately drift so the batch sees real failures.
+      new_text:
+        i === 7 || i === 13
+          ? line.replace("color: red", "color: blue")
+          : line.replace("red", "green"),
+    }));
+    // Corrupt edits 8 (index 7) and 14 (index 13) by paraphrasing old_text.
+    edits[7] = { old_text: ".cls7 { colour: red; }", new_text: ".cls7 { color: blue; }" };
+    edits[13] = { old_text: ".cls13 { colur: red; }", new_text: ".cls13 { color: blue; }" };
+
+    const tool = createEditTool(tmpDir);
+    const result = await tool.execute(
+      { file_path: "big.css", edits },
+      { signal: new AbortController().signal, toolCallId: "test-19" },
+    );
+
+    const summary = typeof result === "string" ? result : (result as { content: string }).content;
+    expect(summary).toMatch(/Applied 17 of 19 edits/);
+    expect(summary).toMatch(/edit 8\/19/);
+    expect(summary).toMatch(/edit 14\/19/);
+
+    const written = await fs.readFile(filePath, "utf-8");
+    // 17 lines should have green, the two failed ones still red.
+    expect((written.match(/color: green/g) ?? []).length).toBe(17);
+    expect(written).toContain(".cls7 { color: red; }");
+    expect(written).toContain(".cls13 { color: red; }");
+  });
+
+  it("throws when every edit fails even in partial-apply mode", async () => {
+    const filePath = path.join(tmpDir, "all-fail.txt");
+    await fs.writeFile(filePath, "untouched\n");
+
+    const tool = createEditTool(tmpDir);
+    await expect(
+      tool.execute(
+        {
+          file_path: "all-fail.txt",
+          edits: [
+            { old_text: "MISSING1", new_text: "X" },
+            { old_text: "MISSING2", new_text: "Y" },
+          ],
+        },
+        { signal: new AbortController().signal, toolCallId: "test-all-fail" },
+      ),
+    ).rejects.toThrow(/2 of 2 edits failed/);
+
+    const written = await fs.readFile(filePath, "utf-8");
+    expect(written).toBe("untouched\n");
+  });
+
+  it("suppresses Closest-match snippet in partial-apply when other edits succeeded", async () => {
+    // Mirrors the StartingYourAgency.tsx scenario: token-heavy lines where
+    // findClosestSnippet returns noisy top-of-file regions. When 17 of 19
+    // edits succeed, those diffs already give the model context — the
+    // snippet would just be noise.
+    const filePath = path.join(tmpDir, "noisy.tsx");
+    const lines = Array.from(
+      { length: 6 },
+      (_, i) => `      <div className="card-${i}">Section ${i}</div>`,
+    );
+    await fs.writeFile(filePath, lines.join("\n") + "\n");
+
+    const edits = lines.map((line) => ({
+      old_text: line,
+      new_text: line.replace("card-", "glass-card-"),
+    }));
+    // Drift edit 4 — paraphrase the case so it doesn't match.
+    edits[3] = {
+      old_text: `      <div className="Card-3">Section 3</div>`,
+      new_text: `      <div className="glass-card-3">Section 3</div>`,
+    };
+
+    const tool = createEditTool(tmpDir);
+    const result = await tool.execute(
+      { file_path: "noisy.tsx", edits },
+      { signal: new AbortController().signal, toolCallId: "test-suppress" },
+    );
+
+    const summary = typeof result === "string" ? result : (result as { content: string }).content;
+    expect(summary).toMatch(/Applied 5 of 6/);
+    expect(summary).toMatch(/edit 4\/6/);
+    // The snippet would be ~3-7 lines starting with "Closest match in file:".
+    // In partial-apply with successes, we suppress it.
+    expect(summary).not.toMatch(/Closest match in file:/);
+  });
+
+  it("keeps Closest-match snippet when no other edit succeeded", async () => {
+    // Single-edit call — no surrounding context for the model, so the snippet
+    // is genuinely useful and must remain. Use overlapping tokens so the
+    // closest-snippet heuristic actually fires.
+    const filePath = path.join(tmpDir, "lonely.tsx");
+    await fs.writeFile(
+      filePath,
+      "function Counter() {\n  const [count, setCount] = useState(0);\n  return count;\n}\n",
+    );
+
+    const tool = createEditTool(tmpDir);
+    await expect(
+      tool.execute(
+        {
+          file_path: "lonely.tsx",
+          edits: [
+            {
+              old_text: "const [count, setCount] = useState(1);",
+              new_text: "const [count, setCount] = useState(2);",
+            },
+          ],
+        },
+        { signal: new AbortController().signal, toolCallId: "test-keep" },
+      ),
+    ).rejects.toThrow(/Closest match in file:[\s\S]*useState\(0\)/);
+  });
+
+  it("atomic mode keeps Closest-match snippet (model retries against unchanged file)", async () => {
+    const filePath = path.join(tmpDir, "atomic-snippet.tsx");
+    const lines = Array.from(
+      { length: 4 },
+      (_, i) => `      <div className="card-${i}">Section ${i}</div>`,
+    );
+    await fs.writeFile(filePath, lines.join("\n") + "\n");
+
+    const edits = lines.map((line) => ({
+      old_text: line,
+      new_text: line.replace("card-", "glass-card-"),
+    }));
+    edits[2] = {
+      old_text: `      <div className="Card-2">Section 2</div>`,
+      new_text: `      <div className="glass-card-2">Section 2</div>`,
+    };
+
+    const tool = createEditTool(tmpDir);
+    await expect(
+      tool.execute(
+        { file_path: "atomic-snippet.tsx", edits, atomic: true },
+        { signal: new AbortController().signal, toolCallId: "test-atomic-snippet" },
+      ),
+    ).rejects.toThrow(/Closest match in file:/);
+  });
+
+  it("indent-flex: model omits indentation entirely; file has 4-space prefix — applies it", async () => {
+    const filePath = path.join(tmpDir, "indent.ts");
+    await fs.writeFile(filePath, "    const x = 1;\n    const y = 2;\n    const z = 3;\n");
+
+    const tool = createEditTool(tmpDir);
+    const result = await tool.execute(
+      {
+        file_path: "indent.ts",
+        edits: [
+          {
+            old_text: "const x = 1;\nconst y = 2;\nconst z = 3;",
+            new_text: "const x = 10;\nconst y = 20;\nconst z = 30;",
+          },
+        ],
+      },
+      { signal: new AbortController().signal, toolCallId: "test-indent-flex" },
+    );
+
+    const summary = typeof result === "string" ? result : (result as { content: string }).content;
+    expect(summary).toMatch(/Successfully/);
+
+    const written = await fs.readFile(filePath, "utf-8");
+    expect(written).toBe("    const x = 10;\n    const y = 20;\n    const z = 30;\n");
+  });
+
+  it("indent-flex: model used 2-space but file uses 4 — outdents both, re-indents new", async () => {
+    const filePath = path.join(tmpDir, "mixed-indent.ts");
+    await fs.writeFile(filePath, "    if (x) {\n      return y;\n    }\n");
+
+    const tool = createEditTool(tmpDir);
+    const result = await tool.execute(
+      {
+        file_path: "mixed-indent.ts",
+        edits: [
+          {
+            old_text: "  if (x) {\n    return y;\n  }",
+            new_text: "  if (x) {\n    return z;\n  }",
+          },
+        ],
+      },
+      { signal: new AbortController().signal, toolCallId: "test-mixed-indent" },
+    );
+
+    const summary = typeof result === "string" ? result : (result as { content: string }).content;
+    expect(summary).toMatch(/Successfully/);
+
+    const written = await fs.readFile(filePath, "utf-8");
+    expect(written).toBe("    if (x) {\n      return z;\n    }\n");
+  });
+
+  it("dotdotdots: model elides middle with `...`, edit lands and middle preserved", async () => {
+    const filePath = path.join(tmpDir, "elide.ts");
+    await fs.writeFile(
+      filePath,
+      [
+        "function pomodoro() {",
+        "  const timer = startTimer();",
+        "  trackPomodoro(timer);",
+        "  scheduleBreak();",
+        "  return timer;",
+        "}",
+      ].join("\n") + "\n",
+    );
+
+    const tool = createEditTool(tmpDir);
+    const result = await tool.execute(
+      {
+        file_path: "elide.ts",
+        edits: [
+          {
+            old_text: "function pomodoro() {\n  ...\n  return timer;\n}",
+            new_text: "function pomodoro(): Timer {\n  ...\n  return timer;\n}",
+          },
+        ],
+      },
+      { signal: new AbortController().signal, toolCallId: "test-elide" },
+    );
+
+    const summary = typeof result === "string" ? result : (result as { content: string }).content;
+    expect(summary).toMatch(/Successfully/);
+
+    const written = await fs.readFile(filePath, "utf-8");
+    expect(written).toContain("function pomodoro(): Timer {");
+    // Middle preserved verbatim.
+    expect(written).toContain("trackPomodoro(timer);");
+    expect(written).toContain("scheduleBreak();");
+  });
+
+  it("dotdotdots: failed elision falls through to standard not_found error", async () => {
+    const filePath = path.join(tmpDir, "elide-fail.ts");
+    await fs.writeFile(filePath, "function actuallyExists() { return 1; }\n");
+
+    const tool = createEditTool(tmpDir);
+    await expect(
+      tool.execute(
+        {
+          file_path: "elide-fail.ts",
+          edits: [
+            {
+              // Bookends don't exist in the file.
+              old_text: "function nonexistent() {\n  ...\n  return x;\n}",
+              new_text: "function nonexistent() {\n  ...\n  return y;\n}",
+            },
+          ],
+        },
+        { signal: new AbortController().signal, toolCallId: "test-elide-fail" },
+      ),
+    ).rejects.toThrow(/old_text not found/);
+  });
+
+  it("rejects no-op edits where old_text equals new_text", async () => {
+    const filePath = path.join(tmpDir, "noop.txt");
+    await fs.writeFile(filePath, "hello world\n");
+
+    const tool = createEditTool(tmpDir);
+    await expect(
+      tool.execute(
+        {
+          file_path: "noop.txt",
+          edits: [{ old_text: "hello", new_text: "hello" }],
+        },
+        { signal: new AbortController().signal, toolCallId: "test-noop" },
+      ),
+    ).rejects.toThrow(/identical[\s\S]*no-op/);
+
+    // File untouched — confirms we didn't write a no-op.
+    const written = await fs.readFile(filePath, "utf-8");
+    expect(written).toBe("hello world\n");
+  });
+
+  it("no-op edit in a partial-apply batch still lets the other edits land", async () => {
+    const filePath = path.join(tmpDir, "noop-batch.txt");
+    await fs.writeFile(filePath, "alpha\nbeta\n");
+
+    const tool = createEditTool(tmpDir);
+    const result = await tool.execute(
+      {
+        file_path: "noop-batch.txt",
+        edits: [
+          { old_text: "alpha", new_text: "ALPHA" },
+          { old_text: "beta", new_text: "beta" }, // no-op
+        ],
+      },
+      { signal: new AbortController().signal, toolCallId: "test-noop-batch" },
+    );
+
+    const summary = typeof result === "string" ? result : (result as { content: string }).content;
+    expect(summary).toMatch(/Applied 1 of 2/);
+    expect(summary).toMatch(/identical[\s\S]*no-op/);
+
+    const written = await fs.readFile(filePath, "utf-8");
+    expect(written).toBe("ALPHA\nbeta\n");
+  });
+
+  it("strips a spurious leading blank line in old_text and still matches", async () => {
+    const filePath = path.join(tmpDir, "blank.ts");
+    await fs.writeFile(filePath, "function foo() {\n  return 42;\n}\n");
+
+    const tool = createEditTool(tmpDir);
+    const result = await tool.execute(
+      {
+        file_path: "blank.ts",
+        edits: [
+          {
+            // Note the leading blank line — the model often pastes one in.
+            old_text: "\n  return 42;",
+            new_text: "\n  return 100;",
+          },
+        ],
+      },
+      { signal: new AbortController().signal, toolCallId: "test-blank" },
+    );
+
+    const summary = typeof result === "string" ? result : (result as { content: string }).content;
+    expect(summary).toMatch(/Successfully/);
+
+    const written = await fs.readFile(filePath, "utf-8");
+    expect(written).toBe("function foo() {\n  return 100;\n}\n");
   });
 
   it("throws when old_text is not found", async () => {
