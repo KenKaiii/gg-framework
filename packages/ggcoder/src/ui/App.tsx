@@ -126,6 +126,16 @@ function toErrorItem(err: unknown, id: string, contextPrefix?: string): ErrorIte
     f.source === "ggcoder"
       ? `This looks like a ggcoder bug — please send it to the dev at ${GGCODER_BUG_REPORT_URL}.`
       : f.guidance;
+  // Mirror every user-visible error into ~/.gg/debug.log so reports can be
+  // diagnosed even after the terminal scrollback is gone.
+  log("ERROR", "ui-error", headline, {
+    source: f.source,
+    message: f.message,
+    ...(f.provider ? { provider: f.provider } : {}),
+    ...(f.statusCode != null ? { statusCode: String(f.statusCode) } : {}),
+    ...(f.requestId ? { requestId: f.requestId } : {}),
+    ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
+  });
   return {
     kind: "error",
     headline,
