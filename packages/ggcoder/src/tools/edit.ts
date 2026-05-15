@@ -92,7 +92,7 @@ function tryMatch(working: string, old: string, next: string, replaceAll: boolea
 
 type FailureKind =
   | { reason: "noop" }
-  | { reason: "not_found"; closestSnippet: string | null }
+  | { reason: "not_found"; closestSnippet: string | null; closestLine: number | null }
   | { reason: "ambiguous"; occurrences: number; matchLines: string; more: string };
 
 interface EditOutcome {
@@ -194,11 +194,13 @@ export function createEditTool(
           // Capture the closest-match snippet eagerly against the current
           // working buffer; we'll decide whether to render it post-loop based
           // on whether other edits in this batch succeeded.
+          const closest = findClosestSnippet(working, normalizedOld);
           outcomes[i] = {
             ok: false,
             failure: {
               reason: "not_found",
-              closestSnippet: findClosestSnippet(working, normalizedOld),
+              closestSnippet: closest?.snippet ?? null,
+              closestLine: closest?.topLine ?? null,
             },
           };
         } else {
@@ -218,6 +220,7 @@ export function createEditTool(
         .map((o, i) => (o.ok || !o.failure ? null : { index: i, failure: o.failure }))
         .filter((x): x is { index: number; failure: FailureKind } => x !== null);
       const successCount = outcomes.length - failures.length;
+      const hasNotFound = failures.some((f) => f.failure.reason === "not_found");
 
       // Closest-match snippets only get suppressed when successes will ACTUALLY
       // be persisted (partial-apply with at least one win). In atomic mode we
@@ -240,9 +243,17 @@ export function createEditTool(
         }
         const base =
           `old_text not found in ${fileName}. ` +
-          "Text must match verbatim — do not paraphrase. Re-read the file if unsure.";
-        if (willPersistSuccesses || !f.closestSnippet) return base;
-        return `${base}\nClosest match in file:\n${f.closestSnippet}`;
+          "Text must match verbatim — do not paraphrase. " +
+          "The cached read for this file has been invalidated; call `read` before another edit.";
+        // Build a bounded read suggestion around the closest-match line so the
+        // model can re-read just that region (e.g. ±25 lines) instead of the
+        // whole file. Skipped when willPersistSuccesses — see comment above.
+        const readHint =
+          f.closestLine !== null && !willPersistSuccesses
+            ? `\nSuggested re-read: \`read file_path="${file_path}" offset=${Math.max(1, f.closestLine - 25)} limit=50\``
+            : "";
+        if (willPersistSuccesses || !f.closestSnippet) return base + readHint;
+        return `${base}${readHint}\nClosest match in file:\n${f.closestSnippet}`;
       };
 
       const formatFailures = (): string => {
@@ -258,6 +269,11 @@ export function createEditTool(
       // succeeded. Either way nothing should be written and we throw to make
       // the model retry the whole batch.
       if (failures.length > 0 && (atomic || successCount === 0)) {
+        // Hard guardrail: a not_found failure means the model's mental model
+        // of the file is wrong. Invalidate the tracker so the next edit fails
+        // with "File must be read first" — forces a re-read instead of
+        // letting the model burn turns retrying paraphrased variants.
+        if (hasNotFound) readFiles?.delete(resolved);
         const header =
           atomic && failures.length > 0
             ? `${failures.length} of ${edits.length} edit${edits.length === 1 ? "" : "s"} failed; no changes written (atomic).\n\n`
@@ -270,6 +286,10 @@ export function createEditTool(
       const finalContent = hasCRLF ? working.replace(/\n/g, "\r\n") : working;
       await ops.writeFile(resolved, finalContent);
       await recordWrite(readFiles, resolved, finalContent, ops);
+      // Partial-apply with a not_found in the mix: recordWrite just refreshed
+      // the tracker, but we still want to force a re-read for the next batch
+      // because the model's view of at least one region is wrong.
+      if (hasNotFound) readFiles?.delete(resolved);
 
       const relPath = path.relative(cwd, resolved);
       const diff = generateDiff(originalNormalized, working, relPath);

@@ -237,6 +237,32 @@ describe("createEditTool", () => {
     ).rejects.toThrow(/Closest match in file:[\s\S]*useState\(0\)/);
   });
 
+  it("suggests a bounded re-read around the closest match when not_found", async () => {
+    const filePath = path.join(tmpDir, "rehint.txt");
+    await fs.writeFile(
+      filePath,
+      "import { useState } from 'react';\n\nexport function Counter() {\n  const [count, setCount] = useState(0);\n  return <div>{count}</div>;\n}\n",
+    );
+
+    const tool = createEditTool(tmpDir);
+    // The closest match is on line 4. With ±25 lines, offset clamps to 1 and
+    // limit stays at 50. The hint uses the same file_path the model passed.
+    await expect(
+      tool.execute(
+        {
+          file_path: "rehint.txt",
+          edits: [
+            {
+              old_text: "const [count, setCount] = useState(1);",
+              new_text: "const [count, setCount] = useState(2);",
+            },
+          ],
+        },
+        { signal: new AbortController().signal, toolCallId: "rehint-1" },
+      ),
+    ).rejects.toThrow(/Suggested re-read: `read file_path="rehint\.txt" offset=1 limit=50`/);
+  });
+
   it("aggregates multiple edit failures into one error (atomic mode)", async () => {
     const filePath = path.join(tmpDir, "agg.txt");
     await fs.writeFile(filePath, "alpha\nbeta\ngamma\n");
@@ -632,6 +658,68 @@ describe("createEditTool", () => {
         { signal: new AbortController().signal, toolCallId: "test-5" },
       ),
     ).rejects.toThrow("old_text not found");
+  });
+
+  it("invalidates the read tracker after a not_found failure to force a re-read", async () => {
+    const filePath = path.join(tmpDir, "guardrail.txt");
+    await fs.writeFile(filePath, "the actual content\n");
+
+    const tracker: ReadTracker = new Map();
+    await markRead(tracker, filePath);
+
+    const tool = createEditTool(tmpDir, tracker);
+
+    // First edit fails with not_found — tracker entry should be invalidated.
+    await expect(
+      tool.execute(
+        {
+          file_path: "guardrail.txt",
+          edits: [{ old_text: "the wrong content", new_text: "anything" }],
+        },
+        { signal: new AbortController().signal, toolCallId: "guardrail-1" },
+      ),
+    ).rejects.toThrow(/old_text not found/);
+
+    expect(tracker.has(filePath)).toBe(false);
+
+    // Second edit on the same file — even with valid old_text — must fail
+    // because the tracker was cleared. Model is forced to call `read` first.
+    await expect(
+      tool.execute(
+        {
+          file_path: "guardrail.txt",
+          edits: [{ old_text: "the actual content", new_text: "replaced" }],
+        },
+        { signal: new AbortController().signal, toolCallId: "guardrail-2" },
+      ),
+    ).rejects.toThrow(/File must be read first/);
+  });
+
+  it("invalidates the read tracker on partial-apply when any not_found occurs", async () => {
+    const filePath = path.join(tmpDir, "partial.txt");
+    await fs.writeFile(filePath, "alpha\nbeta\ngamma\n");
+
+    const tracker: ReadTracker = new Map();
+    await markRead(tracker, filePath);
+
+    const tool = createEditTool(tmpDir, tracker);
+
+    // One edit succeeds (alpha → ALPHA), one fails with not_found (missing).
+    // File gets written with the success — but tracker must still be cleared.
+    await tool.execute(
+      {
+        file_path: "partial.txt",
+        edits: [
+          { old_text: "alpha", new_text: "ALPHA" },
+          { old_text: "missing", new_text: "replacement" },
+        ],
+      },
+      { signal: new AbortController().signal, toolCallId: "partial-1" },
+    );
+
+    const written = await fs.readFile(filePath, "utf-8");
+    expect(written).toBe("ALPHA\nbeta\ngamma\n");
+    expect(tracker.has(filePath)).toBe(false);
   });
 
   it("throws when old_text matches multiple times", async () => {

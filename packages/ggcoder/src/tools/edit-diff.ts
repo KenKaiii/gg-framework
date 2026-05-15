@@ -278,12 +278,20 @@ function tokenize(line: string): string[] {
  * expected location(s) — multiple results help disambiguate when several
  * regions look similar (e.g. repeated function bodies).
  */
+export interface ClosestSnippet {
+  snippet: string;
+  // 1-based line number of the strongest candidate — used by callers to build
+  // a targeted re-read suggestion (`read offset=X limit=Y`) so the model
+  // doesn't have to slurp the whole file just to recover from one bad edit.
+  topLine: number;
+}
+
 export function findClosestSnippet(
   content: string,
   oldText: string,
   contextLines = 3,
   maxResults = 3,
-): string | null {
+): ClosestSnippet | null {
   const oldFirstLine = oldText.split("\n").find((l) => l.trim().length > 0);
   if (!oldFirstLine) return null;
   const oldTokens = new Set(tokenize(oldFirstLine));
@@ -303,6 +311,7 @@ export function findClosestSnippet(
 
   candidates.sort((a, b) => b.score - a.score || a.line - b.line);
   const bestScore = candidates[0].score;
+  const topLine = candidates[0].line + 1;
   // Drop candidates that are dramatically weaker than the best match —
   // keeps the snippet focused instead of dumping the whole file.
   const minScore = Math.max(1, Math.ceil(bestScore / 3));
@@ -320,7 +329,7 @@ export function findClosestSnippet(
       .join("\n");
   };
 
-  return top.map((c) => renderRange(c.line)).join("\n---\n");
+  return { snippet: top.map((c) => renderRange(c.line)).join("\n---\n"), topLine };
 }
 
 /**
