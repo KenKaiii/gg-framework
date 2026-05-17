@@ -268,22 +268,20 @@ After the tables, ask exactly:
 What should I do?
 A) Create tasks for all P0/P1 gaps
 B) Create tasks for only the top priority gap from each category
-C) Create an implementation plan first
-D) Skip
+C) Skip
 
 Do not start implementing until the user chooses.
 
-If the user chooses A, B, or C, do not implement gaps or write the plan directly. Instead, use the tasks tool:
-
-- For A or B: create one implementation task per selected gap, ordered by dependency and priority.
-- For C: create one planning task that produces the implementation plan, with enough source evidence and local anchors to be standalone.
+If the user chooses A or B, do not implement gaps directly. Instead, use the tasks tool to create one implementation task per selected gap, ordered by dependency and priority.
 
 Each task prompt must be standalone and include:
 
-1. The specific gap or planning scope, including relevant local files/anchors and source evidence from the /expand report.
+1. The specific gap, including relevant local files/anchors and source evidence from the /expand report.
 2. Instructions to compare the implementation approach with kencode search before editing, using literal code tokens and current real-world examples.
-3. Instructions to implement the gap or plan the implementation in the local codebase.
-4. Instructions to verify correctness after implementation by running project checks and by comparing the final implementation with kencode search again before marking the task complete. For planning tasks, require kencode-backed implementation references in the plan.
+3. Instructions to implement the gap in the local codebase.
+4. Instructions to verify correctness after implementation by running project checks and by comparing the final implementation with kencode search again before marking the task complete.
+
+Do not create planning tasks, do not instruct tasks to use planning-only workflows, and do not create or write implementation plans from /expand selections.
 
 After creating tasks, tell the user exactly: "Tasks created. Press CTRL + T to open the Tasks Pane and press R to run all tasks." Do not begin executing them unless the user explicitly starts a task.`,
   },
