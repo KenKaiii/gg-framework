@@ -34,6 +34,10 @@ function parseToolArguments(argsJson: string): Record<string, unknown> {
   }
 }
 
+function outputTextKey(itemId: string | undefined, contentIndex: number | undefined): string {
+  return `${itemId ?? ""}:${contentIndex ?? 0}`;
+}
+
 export function streamOpenAICodex(options: StreamOptions): StreamResult {
   return new StreamResult(runStream(options));
 }
@@ -150,6 +154,8 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   const contentParts: ContentPart[] = [];
   let textAccum = "";
   const toolCalls = new Map<string, { id: string; name: string; argsJson: string }>();
+  const outputItemTypes = new Map<string, string>();
+  const outputTextByPart = new Map<string, string>();
   let inputTokens = 0;
   let outputTokens = 0;
   let cacheRead = 0;
@@ -204,15 +210,52 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
       });
     }
 
-    // Text delta
+    // Text delta. Some Codex streams attach output_text deltas to a reasoning
+    // item; route those through thinking_delta so model reasoning never leaks
+    // into the assistant's visible text transcript.
     if (type === "response.output_text.delta") {
       const delta = event.delta as string;
-      textAccum += delta;
-      yield { type: "text_delta", text: delta };
+      const itemId = event.item_id as string | undefined;
+      const contentIndex = event.content_index as number | undefined;
+      const key = outputTextKey(itemId, contentIndex);
+      outputTextByPart.set(key, `${outputTextByPart.get(key) ?? ""}${delta}`);
+      if (itemId && outputItemTypes.get(itemId) === "reasoning") {
+        yield { type: "thinking_delta", text: delta };
+      } else {
+        textAccum += delta;
+        yield { type: "text_delta", text: delta };
+      }
+    }
+
+    // Text done. The final event can contain text not seen in deltas; emit only
+    // the missing suffix so consumers don't see duplicate visible output.
+    if (type === "response.output_text.done") {
+      const fullText = event.text as string | undefined;
+      if (fullText) {
+        const itemId = event.item_id as string | undefined;
+        const contentIndex = event.content_index as number | undefined;
+        const key = outputTextKey(itemId, contentIndex);
+        const streamedText = outputTextByPart.get(key) ?? "";
+        const missingText = streamedText ? fullText.slice(streamedText.length) : fullText;
+        outputTextByPart.set(key, fullText);
+        if (missingText && fullText.startsWith(streamedText)) {
+          if (itemId && outputItemTypes.get(itemId) === "reasoning") {
+            yield { type: "thinking_delta", text: missingText };
+          } else {
+            textAccum += missingText;
+            yield { type: "text_delta", text: missingText };
+          }
+        }
+      }
     }
 
     // Thinking delta
-    if (type === "response.reasoning_summary_text.delta") {
+    if (
+      type === "response.reasoning_summary_text.delta" ||
+      type === "response.reasoning_summary.delta" ||
+      type === "response.reasoning_text.delta" ||
+      type === "response.reasoning.delta"
+    ) {
       const delta = event.delta as string;
       yield { type: "thinking_delta", text: delta };
     }
@@ -223,7 +266,12 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     // (Codex emits this at ~1s vs reasoning_summary_text.delta at ~4–10s.)
     if (type === "response.output_item.added") {
       const item = event.item as Record<string, unknown>;
-      if (item?.type === "reasoning") {
+      const itemId = item?.id as string | undefined;
+      const itemType = item?.type as string | undefined;
+      if (itemId && itemType) {
+        outputItemTypes.set(itemId, itemType);
+      }
+      if (itemType === "reasoning") {
         yield { type: "thinking_delta", text: "" };
       }
     }
