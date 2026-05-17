@@ -31,8 +31,10 @@ export interface StackFrame {
   in_app: boolean;
 }
 
+const DEBUG_BUILD = process.env.NODE_ENV !== "production";
 const COMMON_BUILD_DIRS = ["dist", "build", ".next", "out", "public", ".vite"];
 const MAX_DEPTH = 4;
+const MAX_ENTRIES = 50;
 
 interface MapCacheEntry {
   trace: TraceMap;
@@ -41,6 +43,7 @@ interface MapCacheEntry {
 
 export class SourceMapResolver {
   private readonly cache = new Map<string, MapCacheEntry | null>();
+  private readonly accessOrder: string[] = [];
 
   constructor(private readonly projectDir: string) {}
 
@@ -76,9 +79,21 @@ export class SourceMapResolver {
 
   private findMap(minifiedName: string): MapCacheEntry | null {
     const cached = this.cache.get(minifiedName);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+      // Move to end (most recently used)
+      const idx = this.accessOrder.indexOf(minifiedName);
+      if (idx !== -1) this.accessOrder.splice(idx, 1);
+      this.accessOrder.push(minifiedName);
+      return cached;
+    }
     const result = this.searchForMap(minifiedName);
     this.cache.set(minifiedName, result);
+    this.accessOrder.push(minifiedName);
+    if (this.cache.size > MAX_ENTRIES) {
+      // Evict oldest (front of accessOrder)
+      const evictKey = this.accessOrder.shift()!;
+      this.cache.delete(evictKey);
+    }
     return result;
   }
 
@@ -91,6 +106,9 @@ export class SourceMapResolver {
     }
     const rootCandidate = join(this.projectDir, minifiedName + ".map");
     if (existsSync(rootCandidate)) return loadMap(rootCandidate);
+    if (DEBUG_BUILD) {
+      console.warn(`[source-maps] map not found for: ${minifiedName}`);
+    }
     return null;
   }
 }
@@ -135,7 +153,14 @@ function loadMap(mapPath: string): MapCacheEntry | null {
   try {
     const raw = readFileSync(mapPath, "utf8");
     const parsed = JSON.parse(raw) as object;
-    return { trace: new TraceMap(parsed as never), mapDir: dirname(mapPath) };
+    try {
+      return { trace: new TraceMap(parsed as never), mapDir: dirname(mapPath) };
+    } catch (parseErr) {
+      if (DEBUG_BUILD) {
+        console.warn("[source-maps] TraceMap parse failure:", parseErr);
+      }
+      return null;
+    }
   } catch {
     return null;
   }

@@ -108,16 +108,24 @@ export class TelegramBot {
       throw new Error(`Invalid bot token: ${JSON.stringify(me)}`);
     }
 
+    let attempt = 0;
     while (this.running) {
       try {
         const updates = await this.getUpdates();
         for (const update of updates) {
           await this.handleUpdate(update);
+          // Advance offset only after successfully handling this update.
+          // If handleUpdate throws, do NOT advance — so it will be retried.
+          this.offset = update.update_id + 1;
         }
+        attempt = 0;
       } catch (err) {
         if (!this.running) break;
         console.error(`[telegram] Poll error: ${err instanceof Error ? err.message : err}`);
-        await sleep(3000);
+        const delay = Math.min(3000 * 2 ** attempt, 30_000);
+        const jitter = delay * (0.8 + Math.random() * 0.4);
+        await sleep(jitter);
+        attempt++;
       }
     }
   }
@@ -146,7 +154,7 @@ export class TelegramBot {
       await this.apiCall("sendMessage", {
         chat_id: chatId,
         text: chunks[i],
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
         ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       });
     }
@@ -182,19 +190,18 @@ export class TelegramBot {
   // ── Private ───────────────────────────────────────────
 
   private async getUpdates(): Promise<TelegramUpdate[]> {
-    const result = await this.apiCall("getUpdates", {
-      offset: this.offset,
-      timeout: 30,
-      allowed_updates: ["message", "callback_query", "my_chat_member"],
-    });
+    const result = await this.apiCall(
+      "getUpdates",
+      {
+        offset: this.offset,
+        timeout: 30,
+        allowed_updates: ["message", "callback_query", "my_chat_member"],
+      },
+      { signal: AbortSignal.timeout(35_000) },
+    );
 
     if (!result.ok || !Array.isArray(result.result)) return [];
-
-    const updates = result.result as TelegramUpdate[];
-    if (updates.length > 0) {
-      this.offset = updates[updates.length - 1]!.update_id + 1;
-    }
-    return updates;
+    return result.result as TelegramUpdate[];
   }
 
   private async handleUpdate(update: TelegramUpdate): Promise<void> {
@@ -251,6 +258,7 @@ export class TelegramBot {
   private async apiCall(
     method: string,
     body?: Record<string, unknown>,
+    fetchInit?: RequestInit,
   ): Promise<{ ok: boolean; result?: unknown }> {
     const url = `${TELEGRAM_API}/bot${this.token}/${method}`;
 
@@ -258,6 +266,7 @@ export class TelegramBot {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
+      ...fetchInit,
     });
 
     if (!response.ok) {
@@ -271,10 +280,10 @@ export class TelegramBot {
 // ── Markdown Conversion ──────────────────────────────────
 
 /**
- * Convert GitHub-flavored markdown to Telegram-compatible Markdown.
+ * Convert GitHub-flavored markdown to Telegram-compatible HTML.
  *
- * Telegram supports: *bold*, _italic_, `code`, ```pre```, [link](url)
- * Does NOT support: headings, horizontal rules, tables, HTML tags, images
+ * Telegram supports HTML: <b>, <i>, <code>, <pre>, <a href>
+ * Does NOT support: headings, horizontal rules, tables, images
  */
 function toTelegramMarkdown(text: string): string {
   const lines = text.split("\n");
@@ -298,7 +307,7 @@ function toTelegramMarkdown(text: string): string {
     // Headings → bold text
     const headingMatch = transformed.match(/^(#{1,6})\s+(.+)$/);
     if (headingMatch) {
-      transformed = `*${headingMatch[2]}*`;
+      transformed = `<b>${headingMatch[2]}</b>`;
       result.push(transformed);
       continue;
     }
@@ -309,8 +318,17 @@ function toTelegramMarkdown(text: string): string {
       continue;
     }
 
-    // **bold** → *bold*
-    transformed = transformed.replace(/\*\*(.+?)\*\*/g, "*$1*");
+    // **bold** → <b>…</b>
+    transformed = transformed.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+
+    // _italic_ → <i>…</i>
+    transformed = transformed.replace(/(?<!\*)_(.+?)_(?!\*)/g, "<i>$1</i>");
+
+    // `code` → <code>…</code>
+    transformed = transformed.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+    // [text](url) GFM links → just the link text (no raw link syntax)
+    transformed = transformed.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
 
     result.push(transformed);
   }

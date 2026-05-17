@@ -74,7 +74,13 @@ export async function fixError(errorId: string, opts: FixOptions = {}): Promise<
   const owner = await resolveErrorOwner(fetchFn, ingestUrl, errorId, home);
   const { error, project, secret } = owner;
 
-  const branch = `fix/pixel-${error.id}`;
+  const baseBranch = `fix/pixel-${error.id}`;
+  const branch = await buildRetryBranch(
+    baseBranch,
+    error.branch,
+    opts.spawnFn ?? spawn,
+    project.path,
+  );
   await patchError(fetchFn, ingestUrl, error.id, { status: "in_progress", branch }, secret);
 
   const exitCode = await runAgent({
@@ -137,6 +143,7 @@ export async function runQueue(opts: QueueOptions = {}): Promise<{
     try {
       const res = await fetchFn(`${ingestUrl}/api/projects/${projectId}/errors?status=open`, {
         headers: { authorization: `Bearer ${project.secret}` },
+        signal: AbortSignal.timeout(30_000),
       });
       if (!res.ok) continue;
       const body = (await res.json()) as { errors: Array<{ id: string }> };
@@ -193,7 +200,7 @@ export interface PreparedPixelFix {
   prompt: string;
 }
 
-export interface PrepareOptions {
+export interface PrepareOptions extends FixOptions {
   ingestUrl?: string;
   homeDir?: string;
   fetchFn?: typeof fetch;
@@ -207,20 +214,40 @@ export async function preparePixelFix(
   const fetchFn = opts.fetchFn ?? fetch;
   const home = opts.homeDir ?? homedir();
 
-  const owner = await resolveErrorOwner(fetchFn, ingestUrl, errorId, home);
-  const { error, project, secret } = owner;
-  const branch = `fix/pixel-${error.id}`;
+  let owner: Awaited<ReturnType<typeof resolveErrorOwner>> | undefined;
+  try {
+    owner = await resolveErrorOwner(fetchFn, ingestUrl, errorId, home);
+    const { error, project, secret } = owner;
 
-  await patchError(fetchFn, ingestUrl, error.id, { status: "in_progress", branch }, secret);
+    const baseBranch = `fix/pixel-${error.id}`;
+    const branch = await buildRetryBranch(
+      baseBranch,
+      error.branch,
+      opts.spawnFn ?? spawn,
+      project.path,
+    );
 
-  return {
-    errorId: error.id,
-    projectId: error.project_id,
-    projectName: project.name,
-    projectPath: project.path,
-    branch,
-    prompt: buildAgentPrompt(error, branch, project.path),
-  };
+    await patchError(fetchFn, ingestUrl, error.id, { status: "in_progress", branch }, secret);
+
+    return {
+      errorId: error.id,
+      projectId: error.project_id,
+      projectName: project.name,
+      projectPath: project.path,
+      branch,
+      prompt: buildAgentPrompt(error, branch, project.path),
+    };
+  } catch (err) {
+    // Rollback: if we resolved the owner and set in_progress, revert to open.
+    if (owner) {
+      try {
+        await patchError(fetchFn, ingestUrl, owner.error.id, { status: "open" }, owner.secret);
+      } catch {
+        // rollback failed — log and continue; original error is more relevant
+      }
+    }
+    throw err;
+  }
 }
 
 export interface FinalizeOptions extends PrepareOptions {
@@ -352,12 +379,21 @@ async function resolveErrorOwner(
   for (const [, project] of ownersWithSecret) {
     const res = await fetchFn(`${ingestUrl}/api/errors/${errorId}`, {
       headers: { authorization: `Bearer ${project.secret}` },
+      signal: AbortSignal.timeout(30_000),
     });
+    if (res.status === 401) {
+      console.warn(
+        chalk.hex("#fbbf24")(
+          `⚠ 401 for project ${project.name} — secret may need refresh. Run \`ggcoder pixel install\` to refresh.`,
+        ),
+      );
+      continue;
+    }
     if (res.ok) {
       const error = (await res.json()) as ErrorRow;
       return { error, project, secret: project.secret! };
     }
-    // 401/403/404 → not this project; keep scanning.
+    // 403/404 → not this project; keep scanning.
   }
   throw new Error(
     `Error ${errorId} was not found in any registered project. Ensure the project is installed (\`ggcoder pixel install\`).`,
@@ -400,6 +436,7 @@ async function patchError(
       authorization: `Bearer ${secret}`,
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`PATCH /api/errors/${errorId} failed: ${res.status}`);
 }
@@ -428,8 +465,37 @@ async function runAgent(opts: AgentRunOptions): Promise<number> {
       cwd: opts.cwd,
       stdio: opts.inheritStdio ? "inherit" : ["ignore", "pipe", "pipe"],
     });
-    child.on("error", reject);
-    child.on("exit", (code) => resolve(code ?? 1));
+
+    const cleanup = () => {
+      try {
+        child.kill();
+      } catch {
+        /* already dead */
+      }
+    };
+
+    const onSignal = (signal: string) => {
+      cleanup();
+      reject(new Error(`Received ${signal} — agent killed`));
+    };
+
+    const onError = (err: Error) => {
+      cleanup();
+      reject(err);
+    };
+    const onExit = (code: number | null) => {
+      process.removeListener("SIGTERM", sigtermHandler);
+      process.removeListener("SIGINT", sigintHandler);
+      resolve(code ?? 1);
+    };
+
+    const sigtermHandler = () => onSignal("SIGTERM");
+    const sigintHandler = () => onSignal("SIGINT");
+    process.on("SIGTERM", sigtermHandler);
+    process.on("SIGINT", sigintHandler);
+
+    child.on("error", onError);
+    child.on("exit", onExit);
   });
 }
 
@@ -437,6 +503,43 @@ interface ObservedOutcome {
   branchExists: boolean;
   hasCommits: boolean;
   commitCount: number;
+  pushable: boolean;
+}
+
+/**
+ * Parse the retry attempt number from a branch name like "fix/pixel-abc-retry-3".
+ * Returns 0 if no retry suffix is present.
+ */
+function parseRetryAttempt(branch: string | null): number {
+  if (!branch) return 0;
+  const m = branch.match(/-retry-(\d+)$/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+/**
+ * Build the next branch name for a given base and the error's current branch field.
+ * If the current branch has no retry suffix or no such local branch exists, return
+ * the base name. Otherwise increment the attempt counter.
+ */
+function buildRetryBranch(
+  baseBranch: string,
+  currentBranch: string | null,
+  spawnFn: SpawnFn,
+  cwd: string,
+): Promise<string> {
+  const attempt = parseRetryAttempt(currentBranch ?? "");
+  if (attempt === 0) return Promise.resolve(baseBranch);
+  const candidate = `${baseBranch}-retry-${attempt + 1}`;
+  // Check if this branch already exists locally.
+  const child = spawnFn("git", ["show-ref", "--verify", `refs/heads/${candidate}`], {
+    cwd,
+    stdio: ["ignore", "pipe", "pipe"],
+    signal: AbortSignal.timeout(10_000),
+  });
+  return new Promise<{ branch: string; exists: boolean }>((resolve) => {
+    child.on("exit", (code) => resolve({ branch: candidate, exists: code === 0 }));
+    child.on("error", () => resolve({ branch: candidate, exists: false }));
+  }).then(({ exists }) => (exists ? `${baseBranch}-retry-${attempt + 1}` : baseBranch));
 }
 
 async function observeOutcome(
@@ -445,7 +548,8 @@ async function observeOutcome(
   spawnFn: SpawnFn,
 ): Promise<ObservedOutcome> {
   const exists = await runGit(cwd, ["show-ref", "--verify", `refs/heads/${branch}`], spawnFn);
-  if (exists.code !== 0) return { branchExists: false, hasCommits: false, commitCount: 0 };
+  if (exists.code !== 0)
+    return { branchExists: false, hasCommits: false, commitCount: 0, pushable: false };
 
   let baseBranch: string | null = null;
   for (const candidate of ["main", "master"]) {
@@ -455,11 +559,18 @@ async function observeOutcome(
       break;
     }
   }
-  if (!baseBranch) return { branchExists: true, hasCommits: false, commitCount: 0 };
+  if (!baseBranch)
+    return { branchExists: true, hasCommits: false, commitCount: 0, pushable: false };
 
   const ahead = await runGit(cwd, ["rev-list", "--count", `${baseBranch}..${branch}`], spawnFn);
   const count = ahead.code === 0 ? parseInt(ahead.stdout.trim(), 10) || 0 : 0;
-  return { branchExists: true, hasCommits: count > 0, commitCount: count };
+
+  // Check pushability via ls-remote.
+  const pushable = await runGit(cwd, ["ls-remote", "--heads", "origin", branch], spawnFn)
+    .then((r) => r.code === 0)
+    .catch(() => false);
+
+  return { branchExists: true, hasCommits: count > 0, commitCount: count, pushable };
 }
 
 interface GitResult {
@@ -470,7 +581,11 @@ interface GitResult {
 
 function runGit(cwd: string, args: string[], spawnFn: SpawnFn): Promise<GitResult> {
   return new Promise((resolve) => {
-    const child = spawnFn("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawnFn("git", args, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      signal: AbortSignal.timeout(10_000),
+    });
     let stdout = "";
     let stderr = "";
     child.stdout?.on("data", (b: Buffer) => (stdout += b.toString()));

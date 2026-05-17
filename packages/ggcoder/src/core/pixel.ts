@@ -94,7 +94,17 @@ export async function fetchPixelEntries(opts: ListOptions = {}): Promise<PixelFe
     try {
       const res = await fetchFn(`${ingestUrl}/api/projects/${id}/errors`, {
         headers: { authorization: `Bearer ${project.secret}` },
+        signal: AbortSignal.timeout(30_000),
       });
+      if (res.status === 401) {
+        console.warn(
+          chalk.hex("#fbbf24")(
+            `⚠ 401 for project ${project.name} — secret may need refresh. Run \`ggcoder pixel install\` to refresh.`,
+          ),
+        );
+        unreachable.push(project.name);
+        continue;
+      }
       if (!res.ok) {
         unreachable.push(project.name);
         continue;
