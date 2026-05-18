@@ -58,6 +58,54 @@ describe("createWebSearchTool", () => {
     expect(result).not.toContain("ad_domain");
   });
 
+  it("parses DuckDuckGo result blocks with titles and snippets", async () => {
+    const html = `
+      <div class="result results_links results_links_deep web-result">
+        <h2 class="result__title">
+          <a class="result__a" href="/l/?uddg=https%3A%2F%2Fwww.typescriptlang.org%2Fdocs%2F">TypeScript Documentation</a>
+        </h2>
+        <a class="result__snippet">TypeScript documentation and handbook.</a>
+      </div>
+    `;
+    globalThis.fetch = vi.fn(async () => new Response(html, { status: 200 })) as typeof fetch;
+
+    const result = await createWebSearchTool().execute(
+      { query: "typescript docs", max_results: 5 },
+      context(),
+    );
+
+    expect(result).toContain("TypeScript Documentation");
+    expect(result).toContain("https://www.typescriptlang.org/docs/");
+    expect(result).toContain("TypeScript documentation and handbook.");
+  });
+
+  it("parses Google result blocks and unwraps Google redirect URLs", async () => {
+    const emptyHtml = "<html></html>";
+    const googleHtml = `
+      <div class="g">
+        <a href="/url?q=https%3A%2F%2Fdeveloper.mozilla.org%2Fen-US%2Fdocs%2FWeb%2FAPI%2FFetch_API&sa=U"><h3>Fetch API - MDN</h3></a>
+        <div class="VwiC3b">The Fetch API provides an interface for fetching resources.</div>
+      </div>
+    `;
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(emptyHtml, { status: 200 }))
+      .mockResolvedValueOnce(new Response(emptyHtml, { status: 200 }))
+      .mockResolvedValueOnce(new Response(emptyHtml, { status: 200 }))
+      .mockResolvedValueOnce(new Response(emptyHtml, { status: 200 }))
+      .mockResolvedValueOnce(new Response(googleHtml, { status: 200 })) as typeof fetch;
+
+    const result = await createWebSearchTool().execute(
+      { query: "fetch api mdn", max_results: 5 },
+      context(),
+    );
+
+    expect(result).toContain("Fetch API - MDN");
+    expect(result).toContain("https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API");
+    expect(result).toContain("The Fetch API provides an interface for fetching resources.");
+    expect(result).toContain("from Google");
+  });
+
   it("falls back to the next search engine when one returns only ads", async () => {
     const adOnlyHtml = `
       <a class="result__a" href="https://duckduckgo.com/y.js?ad_domain=oneclearwinner.com&ad_provider=bingv7aa&ad_type=txad">Cheap laptops for sale</a>
@@ -84,5 +132,34 @@ describe("createWebSearchTool", () => {
     expect(result).toContain("https://example.com/organic");
     expect(result).toContain("from Brave");
     expect(result).not.toContain("Cheap laptops for sale");
+  });
+
+  it("uses Bing as a fallback and unwraps Bing redirect URLs", async () => {
+    const blockedHtml = "<html>captcha blocked challenge-form</html>";
+    const bingURL = `https://www.bing.com/ck/a?u=a1${Buffer.from(
+      "https://www.typescriptlang.org/docs/",
+      "utf8",
+    ).toString("base64url")}`;
+    const bingHtml = `
+      <li class="b_algo">
+        <h2><a href="${bingURL}">TypeScript Documentation</a></h2>
+        <div class="b_caption"><p>Learn TypeScript from the official docs.</p></div>
+      </li>
+    `;
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(blockedHtml, { status: 202 }))
+      .mockResolvedValueOnce(new Response(blockedHtml, { status: 202 }))
+      .mockResolvedValueOnce(new Response(blockedHtml, { status: 429 }))
+      .mockResolvedValueOnce(new Response(bingHtml, { status: 200 })) as typeof fetch;
+
+    const result = await createWebSearchTool().execute(
+      { query: "TypeScript official documentation", max_results: 5 },
+      context(),
+    );
+
+    expect(result).toContain("TypeScript Documentation");
+    expect(result).toContain("https://www.typescriptlang.org/docs/");
+    expect(result).toContain("from Bing");
   });
 });
