@@ -19,6 +19,7 @@ export function createEnterPlanTool(
       "before implementation. In plan mode, destructive tools (bash, edit, write, subagent) are " +
       "restricted — only read-only tools and writing to .gg/plans/ are allowed.",
     parameters: EnterPlanParams,
+    executionMode: "sequential",
     async execute({ reason }) {
       onEnterPlan(reason);
       return (

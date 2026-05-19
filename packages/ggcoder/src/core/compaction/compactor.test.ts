@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   shouldCompact,
+  getCompactionReserveTokens,
   findRecentCutPoint,
   prepareMessagesForSummary,
   selectMessagesInBudget,
@@ -152,6 +153,20 @@ describe("shouldCompact", () => {
     expect(shouldCompact(messages, contextWindow, 0.8)).toBe(false);
     // But with explicit actualTokens, the guard is bypassed
     expect(shouldCompact(messages, contextWindow, 0.8, 200)).toBe(true);
+  });
+
+  it("uses requested output cap for reserve instead of theoretical model max", () => {
+    const messages = [makeMessage("system", "sys"), makeMessage("user", "hello")];
+    const contextWindow = 272_000;
+    const reserveTokens = getCompactionReserveTokens(16_384);
+
+    expect(reserveTokens).toBe(21_384);
+    expect(shouldCompact(messages, contextWindow, 0.8, 133_000, reserveTokens)).toBe(false);
+    expect(shouldCompact(messages, contextWindow, 0.8, 218_000, reserveTokens)).toBe(true);
+  });
+
+  it("keeps the fixed 16k minimum reserve for tiny output caps", () => {
+    expect(getCompactionReserveTokens(4_096)).toBe(16_384);
   });
 });
 

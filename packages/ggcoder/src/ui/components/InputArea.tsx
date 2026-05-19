@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Text, Box, useInput, useStdin } from "ink";
 import type { EventEmitter } from "events";
 import { useTheme } from "../theme/theme.js";
-import { useAnimationTick, useAnimationActive, deriveFrame } from "./AnimationContext.js";
+import { useFocusedAnimation, deriveFrame } from "./AnimationContext.js";
 import { useTerminalSize } from "../hooks/useTerminalSize.js";
 import type { ImageAttachment } from "../../utils/image.js";
 import { extractImagePaths, readImageFile, getClipboardImage } from "../../utils/image.js";
@@ -39,6 +39,10 @@ const DISABLE_MOUSE = "\x1b[?1006l\x1b[?1000l";
 // Some terminals or multiplexers send these even without mouse tracking enabled.
 function isMouseEscapeSequence(input: string): boolean {
   return input.includes("[<") && /\[<\d+;\d+;\d+[Mm]/.test(input);
+}
+
+function stripTerminalFocusSequences(input: string): string {
+  return input.replaceAll("\x1b[I", "").replaceAll("\x1b[O", "");
 }
 
 // Option+Arrow escape sequences — terminals send these as raw input strings
@@ -362,12 +366,15 @@ export function InputArea({
     [theme.primary, theme.accent, theme.secondary],
   );
 
-  // Derive border pulse and cursor blink from global animation tick
-  useAnimationActive();
-  const tick = useAnimationTick();
-  const borderFrame = disabled ? 0 : deriveFrame(tick, 800, borderPulseColors.length);
+  // Derive border pulse and cursor blink from global animation tick.
+  // Disable it while the agent owns the terminal; otherwise the idle input's
+  // cursor/border animation keeps repainting the live area during long runs,
+  // which makes terminal scrollback snap back to the bottom.
+  const inputAnimationEnabled = !disabled && isActive;
+  const { active: inputAnimationActive, tick } = useFocusedAnimation(inputAnimationEnabled);
+  const borderFrame = inputAnimationActive ? deriveFrame(tick, 800, borderPulseColors.length) : 0;
   // Cursor blink: ~530ms period → visible for ~500ms, hidden for ~500ms
-  const cursorVisible = !isActive || deriveFrame(tick, 530, 2) === 0;
+  const cursorVisible = !inputAnimationActive || deriveFrame(tick, 530, 2) === 0;
 
   // Auto-detect image paths as they're pasted/typed — debounce so full paste arrives
   const extractingRef = useRef(false);
@@ -435,13 +442,16 @@ export function InputArea({
       if (event === "input" && typeof args[0] === "string") {
         const data = args[0] as string;
 
-        if (kpEnterRe.test(data)) {
-          const modMatch = /;(\d+)u$/.exec(data);
+        const withoutFocusReports = stripTerminalFocusSequences(data);
+        if (!withoutFocusReports) return true;
+
+        if (kpEnterRe.test(withoutFocusReports)) {
+          const modMatch = /;(\d+)u$/.exec(withoutFocusReports);
           const mod = modMatch ? Math.max(0, parseInt(modMatch[1], 10) - 1) : 0;
           return originalEmit("input", synthForEnter(mod));
         }
 
-        const xtermMatch = xtermModifyRe.exec(data);
+        const xtermMatch = xtermModifyRe.exec(withoutFocusReports);
         if (xtermMatch) {
           const mod = Math.max(0, parseInt(xtermMatch[1], 10) - 1);
           const keycode = parseInt(xtermMatch[2], 10);
@@ -455,6 +465,10 @@ export function InputArea({
           // Unknown keycode in this form — swallow so the raw bytes
           // don't end up in the text field.
           return true;
+        }
+
+        if (withoutFocusReports !== data) {
+          return originalEmit("input", withoutFocusReports);
         }
       }
       return originalEmit(event, ...args);
@@ -553,8 +567,9 @@ export function InputArea({
     internal_eventEmitter.emit = (event: string | symbol, ...args: any[]): boolean => {
       if (event === "input" && typeof args[0] === "string") {
         const data = args[0] as string;
-        // Strip all SGR mouse sequences from the data
-        const stripped = data.replace(SGR_MOUSE_RE_G, "");
+        // Strip all terminal focus reports and SGR mouse sequences from the data
+        const dataWithoutFocusReports = stripTerminalFocusSequences(data);
+        const stripped = dataWithoutFocusReports.replace(SGR_MOUSE_RE_G, "");
 
         // Process each mouse sequence for click handling
         let match: RegExpExecArray | null;
@@ -735,9 +750,13 @@ export function InputArea({
   useInput(
     (input, key) => {
       // Filter out stray mouse escape sequences so they don't get inserted as text
-      if (isMouseEscapeSequence(input)) return;
+      const inputWithoutFocusReports = stripTerminalFocusSequences(input);
+      if (!inputWithoutFocusReports && input) return;
+      if (isMouseEscapeSequence(inputWithoutFocusReports)) return;
 
       // Reset kill ring accumulation for non-kill keys
+      input = inputWithoutFocusReports;
+
       const isKillKey = key.ctrl && (input === "k" || input === "u" || input === "w");
       if (!isKillKey) lastActionWasKill = false;
       const isYankKey = (key.ctrl && input === "y") || (key.meta && input === "y");

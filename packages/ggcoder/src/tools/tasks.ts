@@ -94,6 +94,7 @@ export function createTasksTool(cwd: string): AgentTool<typeof TasksParams> {
       "When adding multiple tasks, order them by dependency — foundational work " +
       "first, then core logic, integration, UI, and tests.",
     parameters: TasksParams,
+    executionMode: "sequential",
     execute({ action, title, prompt, id }) {
       return enqueue(async () => {
         switch (action) {

@@ -14,6 +14,7 @@ export type {
   StructuredToolResult,
   ToolExecuteResult,
   ToolContext,
+  ToolExecutionMode,
   AgentTool,
   AgentTextDeltaEvent,
   AgentThinkingDeltaEvent,

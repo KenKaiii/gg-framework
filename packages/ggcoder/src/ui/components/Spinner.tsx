@@ -3,8 +3,7 @@ import { Text } from "ink";
 import { useTheme } from "../theme/theme.js";
 import { SPINNER_FRAMES, SPINNER_INTERVAL, REDUCED_MOTION_DOT } from "../spinner-frames.js";
 import {
-  useAnimationTick,
-  useAnimationActive,
+  useFocusedAnimation,
   deriveFrame,
   useReducedMotion,
   TICK_INTERVAL,
@@ -45,16 +44,34 @@ interface SpinnerProps {
   isStalled?: boolean;
   /** How long (in ms) the spinner has been stalled. Controls transition speed. */
   stallDurationMs?: number;
+  /** Disable decorative frame ticks so terminal scrollback remains usable. */
+  staticDisplay?: boolean;
 }
 
-export function Spinner({ label, isStalled, stallDurationMs = 0 }: SpinnerProps) {
+export function Spinner({ label, isStalled, stallDurationMs = 0, staticDisplay }: SpinnerProps) {
   const theme = useTheme();
   const reducedMotion = useReducedMotion();
-  useAnimationActive();
-  const tick = useAnimationTick();
+  const enabled = !staticDisplay && (!reducedMotion || !!isStalled);
+  const { active: animationActive, tick } = useFocusedAnimation(enabled);
 
   // Smoothed stall intensity via exponential lerp (matches CC: 0.1 step)
   const intensityRef = useRef(0);
+
+  if (staticDisplay) {
+    return (
+      <Text color={theme.spinnerColor} wrap="wrap">
+        {SPINNER_FRAMES[0]} {label && <Text dimColor>{label}</Text>}
+      </Text>
+    );
+  }
+
+  if (!animationActive) {
+    return (
+      <Text color={theme.spinnerColor} wrap="wrap">
+        {SPINNER_FRAMES[0]} {label && <Text dimColor>{label}</Text>}
+      </Text>
+    );
+  }
 
   if (reducedMotion) {
     // Static filled circle with slow dim/undim cycle (2s)

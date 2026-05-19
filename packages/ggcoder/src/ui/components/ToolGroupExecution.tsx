@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Text, Box } from "ink";
 import { ToolUseLoader } from "./ToolUseLoader.js";
 import type { ToolGroupItem } from "../App.js";
@@ -167,16 +167,46 @@ interface ToolGroupExecutionProps {
   tools: ToolGroupTool[];
 }
 
+function useStaticAfter(animateUntil: number | undefined): boolean {
+  const [isStatic, setIsStatic] = useState(
+    () => animateUntil == null || Date.now() >= animateUntil,
+  );
+
+  useEffect(() => {
+    if (animateUntil == null) {
+      setIsStatic(true);
+      return undefined;
+    }
+
+    const remainingMs = animateUntil - Date.now();
+    if (remainingMs <= 0) {
+      setIsStatic(true);
+      return undefined;
+    }
+
+    setIsStatic(false);
+    const timer = setTimeout(() => setIsStatic(true), remainingMs);
+    return () => clearTimeout(timer);
+  }, [animateUntil]);
+
+  return isStatic;
+}
+
 export function ToolGroupExecution({ tools }: ToolGroupExecutionProps) {
   const allDone = tools.every((t) => t.status === "done");
   const hasError = tools.some((t) => t.isError);
   const status = allDone ? (hasError ? "error" : "done") : "running";
+  const latestAnimateUntil = Math.max(0, ...tools.map((tool) => tool.animateUntil ?? 0));
+  const staticAfterDeadline = useStaticAfter(
+    latestAnimateUntil > 0 ? latestAnimateUntil : undefined,
+  );
+  const staticDisplay = status !== "running" || staticAfterDeadline;
 
   const segments = useMemo(() => buildGroupSummary(tools, allDone), [tools, allDone]);
 
   return (
     <Box marginTop={1} flexDirection="row">
-      <ToolUseLoader status={status} />
+      <ToolUseLoader status={status} staticDisplay={staticDisplay} />
       <Text wrap="wrap">
         <SummaryText segments={segments} />
       </Text>

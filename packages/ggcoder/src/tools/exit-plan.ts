@@ -18,6 +18,7 @@ export function createExitPlanTool(
       "Submit your plan for user review and exit plan mode. " +
       "The plan file must be under .gg/plans/. The user will approve, reject with feedback, or cancel.",
     parameters: ExitPlanParams,
+    executionMode: "sequential",
     async execute({ plan_path }) {
       const resolved = resolvePath(cwd, plan_path);
       const plansDir = path.join(cwd, ".gg", "plans");

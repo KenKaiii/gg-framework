@@ -7,7 +7,7 @@ import {
   extractContextOverflowDetails,
   isContextOverflow,
 } from "./agent-loop.js";
-import type { AgentEvent, AgentResult } from "./types.js";
+import type { AgentEvent, AgentResult, AgentTool } from "./types.js";
 import type { Message, StreamOptions } from "@kenkaiiii/gg-ai";
 
 // ── Mock stream ────────────────────────────────────────────
@@ -20,6 +20,7 @@ vi.mock("@kenkaiiii/gg-ai", async (importOriginal) => {
 
 import { stream } from "@kenkaiiii/gg-ai";
 const mockStream = vi.mocked(stream);
+const emptyParams = z.object({});
 
 function makeResponse(text: string, stopReason = "end_turn") {
   return {
@@ -53,6 +54,14 @@ function mockErrorResult(error: Error) {
     },
     response: p,
   };
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
 }
 
 async function collectLoop(
@@ -536,6 +545,128 @@ describe("agentLoop", () => {
     expect(events.some((e) => e.type === "agent_done")).toBe(true);
     expect(result.totalTurns).toBe(1); // stall retries don't count as turns
   }, 30_000);
+
+  it("runs parallel tools concurrently by default", async () => {
+    const firstStarted = deferred();
+    const releaseFirst = deferred();
+    const calls: string[] = [];
+
+    mockStream
+      .mockReturnValueOnce({
+        [Symbol.asyncIterator]: async function* () {
+          yield* [];
+        },
+        response: Promise.resolve({
+          message: {
+            role: "assistant" as const,
+            content: [
+              { type: "tool_call" as const, id: "t1", name: "slow", args: {} },
+              { type: "tool_call" as const, id: "t2", name: "fast", args: {} },
+            ],
+          },
+          stopReason: "tool_use",
+          usage: { inputTokens: 50, outputTokens: 25 },
+        }),
+      } as unknown as ReturnType<typeof stream>)
+      .mockReturnValueOnce(mockOkResult("done") as unknown as ReturnType<typeof stream>);
+
+    const slowTool: AgentTool<typeof emptyParams> = {
+      name: "slow",
+      description: "slow test tool",
+      parameters: emptyParams,
+      async execute() {
+        calls.push("slow:start");
+        firstStarted.resolve();
+        await releaseFirst.promise;
+        calls.push("slow:end");
+        return "slow done";
+      },
+    };
+    const fastTool: AgentTool<typeof emptyParams> = {
+      name: "fast",
+      description: "fast test tool",
+      parameters: emptyParams,
+      async execute() {
+        await firstStarted.promise;
+        calls.push("fast");
+        releaseFirst.resolve();
+        return "fast done";
+      },
+    };
+
+    await collectLoop(
+      [
+        { role: "system", content: "sys" },
+        { role: "user", content: "test" },
+      ],
+      {
+        provider: "anthropic",
+        model: "test",
+        tools: [slowTool, fastTool],
+      },
+    );
+
+    expect(calls).toEqual(["slow:start", "fast", "slow:end"]);
+  });
+
+  it("runs the entire tool batch sequentially when any tool opts in", async () => {
+    const calls: string[] = [];
+
+    mockStream
+      .mockReturnValueOnce({
+        [Symbol.asyncIterator]: async function* () {
+          yield* [];
+        },
+        response: Promise.resolve({
+          message: {
+            role: "assistant" as const,
+            content: [
+              { type: "tool_call" as const, id: "t1", name: "mutate", args: {} },
+              { type: "tool_call" as const, id: "t2", name: "read_after", args: {} },
+            ],
+          },
+          stopReason: "tool_use",
+          usage: { inputTokens: 50, outputTokens: 25 },
+        }),
+      } as unknown as ReturnType<typeof stream>)
+      .mockReturnValueOnce(mockOkResult("done") as unknown as ReturnType<typeof stream>);
+
+    const mutateTool: AgentTool<typeof emptyParams> = {
+      name: "mutate",
+      description: "mutating test tool",
+      parameters: emptyParams,
+      executionMode: "sequential",
+      async execute() {
+        calls.push("mutate:start");
+        await Promise.resolve();
+        calls.push("mutate:end");
+        return "mutated";
+      },
+    };
+    const readAfterTool: AgentTool<typeof emptyParams> = {
+      name: "read_after",
+      description: "read-after test tool",
+      parameters: emptyParams,
+      async execute() {
+        calls.push("read_after");
+        return "read";
+      },
+    };
+
+    await collectLoop(
+      [
+        { role: "system", content: "sys" },
+        { role: "user", content: "test" },
+      ],
+      {
+        provider: "anthropic",
+        model: "test",
+        tools: [mutateTool, readAfterTool],
+      },
+    );
+
+    expect(calls).toEqual(["mutate:start", "mutate:end", "read_after"]);
+  });
 
   it("stops after repeated invalid tool arguments", async () => {
     const toolResponse = (id: string) => ({

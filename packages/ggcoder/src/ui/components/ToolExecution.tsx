@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useEffect, useState } from "react";
 import { Text, Box } from "ink";
 import { useTheme } from "../theme/theme.js";
 import { Spinner } from "./Spinner.js";
@@ -51,6 +51,8 @@ interface ToolRunningProps {
   args: Record<string, unknown>;
   /** Live progress output (e.g., bash streaming stdout). */
   progressOutput?: string;
+  /** Animate the running indicator until this timestamp, then settle static. */
+  animateUntil?: number;
   formatters?: ToolExecutionFormatters;
 }
 
@@ -72,9 +74,35 @@ const COMPACT_TOOLS = new Set(["read", "grep", "find", "ls"]);
 /** Tools rendered with the server-tool style (spinner + summary, no output). */
 const SERVER_STYLE_TOOLS = new Set(["web_search"]);
 
+function useStaticAfter(animateUntil: number | undefined): boolean {
+  const [isStatic, setIsStatic] = useState(
+    () => animateUntil == null || Date.now() >= animateUntil,
+  );
+
+  useEffect(() => {
+    if (animateUntil == null) {
+      setIsStatic(true);
+      return undefined;
+    }
+
+    const remainingMs = animateUntil - Date.now();
+    if (remainingMs <= 0) {
+      setIsStatic(true);
+      return undefined;
+    }
+
+    setIsStatic(false);
+    const timer = setTimeout(() => setIsStatic(true), remainingMs);
+    return () => clearTimeout(timer);
+  }, [animateUntil]);
+
+  return isStatic;
+}
+
 export function ToolExecution(props: ToolExecutionProps) {
   const theme = useTheme();
   const { columns } = useTerminalSize();
+  const staticDisplay = useStaticAfter(props.status === "running" ? props.animateUntil : undefined);
 
   if (props.status === "running") {
     // Server-style tools (web_search) — blinking dot + spinner "Searching..."
@@ -89,7 +117,7 @@ export function ToolExecution(props: ToolExecutionProps) {
       return (
         <Box flexDirection="column" marginTop={1}>
           <Box flexDirection="row">
-            <ToolUseLoader status="running" />
+            <ToolUseLoader status="running" staticDisplay={staticDisplay} />
             <Box flexGrow={1} width={headerContentWidth}>
               <Text wrap="wrap">
                 <Text bold color={theme.toolName}>
@@ -108,7 +136,7 @@ export function ToolExecution(props: ToolExecutionProps) {
             </Box>
           </Box>
           <MessageResponse>
-            <Spinner label="Searching..." />
+            <Spinner label="Searching..." staticDisplay={staticDisplay} />
           </MessageResponse>
         </Box>
       );
@@ -118,7 +146,7 @@ export function ToolExecution(props: ToolExecutionProps) {
       const summary = getCompactRunningLabel(props.name, props.args);
       return (
         <Box marginTop={1} flexDirection="row">
-          <ToolUseLoader status="running" />
+          <ToolUseLoader status="running" staticDisplay={staticDisplay} />
           <Text color={theme.toolName} bold>
             {summary}
           </Text>
@@ -136,8 +164,8 @@ export function ToolExecution(props: ToolExecutionProps) {
       return (
         <Box marginTop={1} flexDirection="column">
           <Box flexDirection="row">
-            <ToolUseLoader status="running" />
-            <Spinner label={detail ? `${label}(${detail})` : label} />
+            <ToolUseLoader status="running" staticDisplay={staticDisplay} />
+            <Spinner label={detail ? `${label}(${detail})` : label} staticDisplay={staticDisplay} />
           </Box>
           <MessageResponse>
             <Box flexDirection="column">
@@ -154,8 +182,8 @@ export function ToolExecution(props: ToolExecutionProps) {
 
     return (
       <Box marginTop={1} flexDirection="row">
-        <ToolUseLoader status="running" />
-        <Spinner label={detail ? `${label}(${detail})` : label} />
+        <ToolUseLoader status="running" staticDisplay={staticDisplay} />
+        <Spinner label={detail ? `${label}(${detail})` : label} staticDisplay={staticDisplay} />
       </Box>
     );
   }

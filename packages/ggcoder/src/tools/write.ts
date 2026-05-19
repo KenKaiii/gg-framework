@@ -24,6 +24,7 @@ export function createWriteTool(
       "Write content to a file. Creates parent directories if needed. " +
       "Existing files must be read first before overwriting. Use for new files or complete rewrites.",
     parameters: WriteParams,
+    executionMode: "sequential",
     async execute({ file_path, content }) {
       const resolved = resolvePath(cwd, file_path);
       await rejectSymlink(resolved);

@@ -38,6 +38,12 @@ describe("createWriteTool", () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
+  it("opts into sequential agent-loop execution", () => {
+    const tool = createWriteTool(tmpDir);
+
+    expect(tool.executionMode).toBe("sequential");
+  });
+
   it("writes file and returns line count with absolute path", async () => {
     const tool = createWriteTool(tmpDir);
     const content = "line1\nline2\nline3\n";

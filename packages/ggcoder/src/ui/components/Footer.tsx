@@ -5,7 +5,7 @@ import { useTheme } from "../theme/theme.js";
 import { useTerminalSize } from "../hooks/useTerminalSize.js";
 import { getContextWindow, type ContextWindowOptions } from "../../core/model-registry.js";
 import { PARTIAL_BLOCKS, LIGHT_SHADE } from "../constants/figures.js";
-import { useAnimationActive, useAnimationTick, useReducedMotion } from "./AnimationContext.js";
+import { useFocusedAnimation, useReducedMotion } from "./AnimationContext.js";
 
 interface FooterProps {
   model: string;
@@ -98,11 +98,10 @@ function getThinkingColor(
  * rest stay in the base color. Subscribes to the global animation tick so
  * the timer only runs while xhigh is visible.
  */
-const XhighShimmer: React.FC<{ text: string }> = ({ text }) => {
-  useAnimationActive();
-  const tick = useAnimationTick();
+const XhighShimmer: React.FC<{ text: string; active?: boolean }> = ({ text, active = true }) => {
+  const { active: animationActive, tick } = useFocusedAnimation(active);
   const cycle = text.length + SHIMMER_WIDTH * 2;
-  const pos = (tick % cycle) - SHIMMER_WIDTH;
+  const pos = animationActive ? (tick % cycle) - SHIMMER_WIDTH : -SHIMMER_WIDTH;
   return (
     <Text>
       {text.split("").map((ch, i) => {
@@ -222,7 +221,7 @@ export function Footer({
       ) : null}
       {sep}
       {shimmerXhigh ? (
-        <XhighShimmer text={thinkingText} />
+        <XhighShimmer text={thinkingText} active={!exitPending} />
       ) : (
         <Text color={thinkingColor} bold={thinkingLevel === "high"}>
           {thinkingText}

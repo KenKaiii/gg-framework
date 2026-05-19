@@ -56,11 +56,6 @@ import { BackgroundTasksBar } from "./components/BackgroundTasksBar.js";
 import type { SlashCommandInfo } from "./components/SlashCommandMenu.js";
 import type { ProcessManager } from "../core/process-manager.js";
 import { useTheme, useSetTheme, type ThemeName } from "./theme/theme.js";
-import {
-  useAnimationTick,
-  useAnimationActive,
-  deriveFrame,
-} from "./components/AnimationContext.js";
 import { useTerminalTitle } from "./hooks/useTerminalTitle.js";
 import { getGitBranch } from "../utils/git.js";
 import { getModel, getContextWindow, getMaxThinkingLevel } from "../core/model-registry.js";
@@ -77,7 +72,11 @@ import {
 } from "../core/auto-update.js";
 import { generateSessionTitle } from "../utils/session-title.js";
 import { SettingsManager, type Settings } from "../core/settings-manager.js";
-import { shouldCompact, compact } from "../core/compaction/compactor.js";
+import {
+  shouldCompact,
+  compact,
+  getCompactionReserveTokens,
+} from "../core/compaction/compactor.js";
 import { estimateConversationTokens } from "../core/compaction/token-estimator.js";
 import { PROMPT_COMMANDS, getPromptCommand } from "../core/prompt-commands.js";
 import {
@@ -193,6 +192,8 @@ interface ToolStartItem {
   name: string;
   args: Record<string, unknown>;
   id: string;
+  startedAt: number;
+  animateUntil: number;
   /** Live progress output (e.g., bash streaming stdout). */
   progressOutput?: string;
 }
@@ -297,6 +298,7 @@ interface ServerToolStartItem {
   name: string;
   input: unknown;
   startedAt: number;
+  animateUntil: number;
   id: string;
 }
 
@@ -363,12 +365,14 @@ interface StepDoneItem {
 
 /** Tools that get aggregated into a single compact group when concurrent. */
 const AGGREGATABLE_TOOLS = new Set(["read", "grep", "find", "ls"]);
+const RUNNING_INDICATOR_ANIMATION_MS = 1_200;
 
 interface ToolGroupTool {
   toolCallId: string;
   name: string;
   args: Record<string, unknown>;
   status: "running" | "done";
+  animateUntil?: number;
   result?: string;
   isError?: boolean;
 }
@@ -1377,8 +1381,7 @@ export function App(props: AppProps) {
       }
 
       const contextWindow = getContextWindow(currentModel, contextWindowOptions);
-      const modelInfo = getModel(currentModel);
-      const reserveTokens = (modelInfo?.maxOutputTokens ?? 0) + 5_000;
+      const reserveTokens = getCompactionReserveTokens(props.maxTokens);
       const tokensFresh = lastActualTokensTimestampRef.current > lastCompactionTimeRef.current;
       const actualTokens =
         lastActualTokensRef.current > 0 && tokensFresh ? lastActualTokensRef.current : undefined;
@@ -1604,6 +1607,8 @@ export function App(props: AppProps) {
       onToolStart: useCallback(
         (toolCallId: string, name: string, args: Record<string, unknown>) => {
           log("INFO", "tool", `Tool call started: ${name}`, { id: toolCallId });
+          const startedAt = Date.now();
+          const animateUntil = startedAt + RUNNING_INDICATOR_ANIMATION_MS;
 
           // Flush completed items (assistant text, finished tools) to Static
           // before adding tool UI. Keeping both in the live area makes it tall
@@ -1653,7 +1658,10 @@ export function App(props: AppProps) {
                 const next = [...prev];
                 next[groupIdx] = {
                   ...group,
-                  tools: [...group.tools, { toolCallId, name, args, status: "running" }],
+                  tools: [
+                    ...group.tools,
+                    { toolCallId, name, args, status: "running", animateUntil },
+                  ],
                 };
                 return next;
               }
@@ -1661,7 +1669,7 @@ export function App(props: AppProps) {
                 ...prev,
                 {
                   kind: "tool_group",
-                  tools: [{ toolCallId, name, args, status: "running" }],
+                  tools: [{ toolCallId, name, args, status: "running", animateUntil }],
                   id: getId(),
                 },
               ];
@@ -1669,7 +1677,7 @@ export function App(props: AppProps) {
           } else {
             setLiveItems((prev) => [
               ...prev,
-              { kind: "tool_start", toolCallId, name, args, id: getId() },
+              { kind: "tool_start", toolCallId, name, args, id: getId(), startedAt, animateUntil },
             ]);
           }
         },
@@ -1843,6 +1851,8 @@ export function App(props: AppProps) {
       ),
       onServerToolCall: useCallback((id: string, name: string, input: unknown) => {
         log("INFO", "server_tool", `Server tool call: ${name}`, { id });
+        const startedAt = Date.now();
+        const animateUntil = startedAt + RUNNING_INDICATOR_ANIMATION_MS;
         // Flush completed items (including assistant text) to Static before
         // adding server tool UI — same rationale as onToolStart.
         setLiveItems((prev) => {
@@ -1857,7 +1867,8 @@ export function App(props: AppProps) {
               serverToolCallId: id,
               name,
               input,
-              startedAt: Date.now(),
+              startedAt,
+              animateUntil,
               id: getId(),
             },
           ];
@@ -2244,14 +2255,6 @@ export function App(props: AppProps) {
       );
     }
   }, [agentLoop.isRunning, props.cwd]);
-
-  // Animated thinking border — derived from global animation tick
-  useAnimationActive();
-  const animTick = useAnimationTick();
-  const thinkingBorderFrame =
-    agentLoop.activityPhase === "thinking"
-      ? deriveFrame(animTick, 1000, THINKING_BORDER_COLORS.length)
-      : 0;
 
   const handleSubmit = useCallback(
     async (input: string, inputImages: ImageAttachment[] = [], pasteInfo?: PasteInfo) => {
@@ -2986,6 +2989,7 @@ export function App(props: AppProps) {
             name={item.name}
             args={item.args}
             progressOutput={(item as ToolStartItem).progressOutput}
+            animateUntil={item.animateUntil}
           />
         );
       case "tool_done":
@@ -3010,6 +3014,7 @@ export function App(props: AppProps) {
             name={item.name}
             input={item.input}
             startedAt={item.startedAt}
+            animateUntil={item.animateUntil}
           />
         );
       case "server_tool_done":
@@ -3076,15 +3081,7 @@ export function App(props: AppProps) {
           </Box>
         );
       case "thinking_transition": {
-        // Borderless. While in liveItems the glyph color cycles through the
-        // shared TRANSITION_COLORS gradient (~500ms per color). Once the item
-        // flushes to <Static>, its last-rendered color sticks — re-renders
-        // don't propagate into scrollback. Cheap: the animation timer is
-        // already running for the activity indicator.
-        const glyphFrame = item.active
-          ? deriveFrame(animTick, 500, THINKING_BORDER_COLORS.length)
-          : 0;
-        const glyphColor = item.active ? THINKING_BORDER_COLORS[glyphFrame] : theme.textDim;
+        const glyphColor = item.active ? THINKING_BORDER_COLORS[0] : theme.textDim;
         return (
           <Box key={item.id} marginTop={1} flexShrink={1}>
             <Text color={glyphColor} bold>
@@ -3097,11 +3094,7 @@ export function App(props: AppProps) {
         );
       }
       case "model_transition": {
-        // Same animated-gradient pattern as thinking_transition, distinct
-        // glyph (▸) and primary-blue model name so the two transitions read
-        // as related but different.
-        const glyphFrame = deriveFrame(animTick, 500, THINKING_BORDER_COLORS.length);
-        const glyphColor = THINKING_BORDER_COLORS[glyphFrame];
+        const glyphColor = THINKING_BORDER_COLORS[0];
         return (
           <Box key={item.id} marginTop={1} flexShrink={1}>
             <Text color={glyphColor} bold>
@@ -3115,10 +3108,7 @@ export function App(props: AppProps) {
         );
       }
       case "theme_transition": {
-        // Same family as model/thinking transitions. The ◐ glyph (half-filled
-        // circle) reads as the light/dark dichotomy.
-        const glyphFrame = deriveFrame(animTick, 500, THINKING_BORDER_COLORS.length);
-        const glyphColor = THINKING_BORDER_COLORS[glyphFrame];
+        const glyphColor = THINKING_BORDER_COLORS[0];
         return (
           <Box key={item.id} marginTop={1} flexShrink={1}>
             <Text color={glyphColor} bold>
@@ -3194,7 +3184,7 @@ export function App(props: AppProps) {
           </Box>
         );
       case "compacting":
-        return <CompactionSpinner key={item.id} />;
+        return <CompactionSpinner key={item.id} staticDisplay />;
       case "compacted":
         return (
           <CompactionDone
@@ -3689,17 +3679,16 @@ export function App(props: AppProps) {
             />
           </Box>
 
-          {/* Pinned status line — always use "round" border but make it
-              transparent when not thinking, so the Box height stays constant
-              across phase transitions and Ink's cursor math stays aligned. */}
+          {/* Pinned status line — keep the border geometry stable across
+              phase transitions, but avoid color animation while the agent is
+              working. Repainting the live area on every decorative tick makes
+              terminal scrollback snap back to the bottom. */}
           {agentLoop.isRunning && agentLoop.activityPhase !== "idle" ? (
             <Box
               marginTop={1}
               borderStyle="round"
               borderColor={
-                agentLoop.activityPhase === "thinking"
-                  ? THINKING_BORDER_COLORS[thinkingBorderFrame]
-                  : "transparent"
+                agentLoop.activityPhase === "thinking" ? THINKING_BORDER_COLORS[0] : "transparent"
               }
               paddingLeft={1}
               paddingRight={1}
@@ -3721,6 +3710,7 @@ export function App(props: AppProps) {
                 retryInfo={agentLoop.retryInfo}
                 planDone={planSteps.filter((s) => s.completed).length}
                 planTotal={planSteps.length}
+                staticDisplay
               />
             </Box>
           ) : agentLoop.stallError ? (

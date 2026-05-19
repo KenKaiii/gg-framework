@@ -94,6 +94,7 @@ export function createBashTool(
       "Set run_in_background=true for long-running processes (dev servers, watchers). " +
       "Use task_output/task_stop to interact with background processes.",
     parameters: BashParams,
+    executionMode: "sequential",
     async execute({ command, timeout: timeoutMs, run_in_background }, context) {
       if (planModeRef?.current) {
         return "Error: bash is restricted in plan mode. Use read-only tools (read, grep, find, ls) to explore the codebase.";

@@ -2,6 +2,8 @@ export {
   AnimationProvider,
   useAnimationTick,
   useAnimationActive,
+  useTerminalFocus,
+  useFocusedAnimation,
   deriveFrame,
 } from "./AnimationContext.js";
 export { Spinner } from "./Spinner.js";

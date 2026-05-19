@@ -29,8 +29,16 @@ export interface ToolContext {
 
 // ── Agent Tool ──────────────────────────────────────────────
 
+export type ToolExecutionMode = "parallel" | "sequential";
+
 export interface AgentTool<T extends z.ZodType = z.ZodType> extends Tool {
   parameters: T;
+  /**
+   * Per-tool execution hint for batches of tool calls from one assistant turn.
+   * Tools default to parallel. If any requested tool is sequential, the whole
+   * batch runs in source order so stateful mutations cannot race each other.
+   */
+  executionMode?: ToolExecutionMode;
   execute: (
     args: z.infer<T>,
     context: ToolContext,

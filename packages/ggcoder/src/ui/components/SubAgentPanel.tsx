@@ -2,7 +2,7 @@ import React from "react";
 import { Text, Box } from "ink";
 import { useTheme } from "../theme/theme.js";
 import { SPINNER_FRAMES, SPINNER_INTERVAL } from "../spinner-frames.js";
-import { useAnimationTick, useAnimationActive, deriveFrame } from "./AnimationContext.js";
+import { useFocusedAnimation, deriveFrame } from "./AnimationContext.js";
 import { useTerminalSize } from "../hooks/useTerminalSize.js";
 import { ToolUseLoader } from "./ToolUseLoader.js";
 
@@ -58,9 +58,8 @@ const AgentRow = React.memo(
     const isRunning = agent.status === "running" && !aborted;
 
     // Derive spinner frame from global animation tick
-    useAnimationActive();
-    const tick = useAnimationTick();
-    const frame = deriveFrame(tick, SPINNER_INTERVAL, SPINNER_FRAMES.length);
+    const { active: animationActive, tick } = useFocusedAnimation(isRunning);
+    const frame = animationActive ? deriveFrame(tick, SPINNER_INTERVAL, SPINNER_FRAMES.length) : 0;
 
     const branch = isLast ? "└─" : "├─";
     const continuation = isLast ? "   " : "│  ";

@@ -2,7 +2,7 @@ import React from "react";
 import { Text, Box } from "ink";
 import { useTheme } from "../theme/theme.js";
 import { SPINNER_FRAMES, SPINNER_INTERVAL } from "../spinner-frames.js";
-import { useAnimationTick, useAnimationActive, deriveFrame } from "./AnimationContext.js";
+import { useFocusedAnimation, deriveFrame } from "./AnimationContext.js";
 
 const ACCENT_COLOR = "#fbbf24"; // warning/amber
 
@@ -16,11 +16,15 @@ function formatTokenCount(n: number): string {
 
 // ── In-progress (animated spinner) ──────────────────────
 
-export function CompactionSpinner() {
+interface CompactionSpinnerProps {
+  /** Disable decorative ticks so terminal scrollback remains usable during active runs. */
+  staticDisplay?: boolean;
+}
+
+export function CompactionSpinner({ staticDisplay = false }: CompactionSpinnerProps) {
   const theme = useTheme();
-  useAnimationActive();
-  const tick = useAnimationTick();
-  const frame = deriveFrame(tick, SPINNER_INTERVAL, SPINNER_FRAMES.length);
+  const { active: animationActive, tick } = useFocusedAnimation(!staticDisplay);
+  const frame = animationActive ? deriveFrame(tick, SPINNER_INTERVAL, SPINNER_FRAMES.length) : 0;
 
   return (
     <Box marginTop={1}>

@@ -31,6 +31,12 @@ describe("createEditTool", () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
+  it("opts into sequential agent-loop execution", () => {
+    const tool = createEditTool(tmpDir);
+
+    expect(tool.executionMode).toBe("sequential");
+  });
+
   it("replaces exact text and returns a diff", async () => {
     const filePath = path.join(tmpDir, "hello.txt");
     await fs.writeFile(filePath, "hello world\n");

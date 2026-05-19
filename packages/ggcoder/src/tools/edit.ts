@@ -116,6 +116,7 @@ export function createEditTool(
       "Partial-apply by default: failed edits are listed for retry, successful ones are still written — " +
       "re-issue ONLY the listed failures, not the whole batch. Returns a unified diff.",
     parameters: EditParams,
+    executionMode: "sequential",
     async execute({ file_path, edits, atomic = false }) {
       if (planModeRef?.current) {
         return "Error: edit is restricted in plan mode. Use read-only tools to explore the codebase, then write your plan to .gg/plans/.";

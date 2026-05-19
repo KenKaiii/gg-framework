@@ -62,6 +62,22 @@ export interface CompactionResult {
  */
 export const COMPACTION_RESERVE_TOKENS = 16_384;
 
+/** Extra non-output headroom for prompt/cache/accounting overhead. */
+export const COMPACTION_OVERHEAD_RESERVE_TOKENS = 5_000;
+
+/**
+ * Calculate the context headroom to reserve before auto-compaction.
+ *
+ * Use the requested output cap, not the model registry's theoretical maximum.
+ * GPT-5.5 over OpenAI Codex has a 272K effective input window but advertises a
+ * 128K max output capability; reserving that full amount would compact at
+ * ~139K tokens even though the CLI currently requests 16K output tokens.
+ */
+export function getCompactionReserveTokens(maxTokens: number): number {
+  const safeMaxTokens = Number.isFinite(maxTokens) && maxTokens > 0 ? Math.ceil(maxTokens) : 0;
+  return Math.max(COMPACTION_RESERVE_TOKENS, safeMaxTokens + COMPACTION_OVERHEAD_RESERVE_TOKENS);
+}
+
 /** Minimum messages before compaction is attempted (Mysti uses 4). */
 const COMPACTION_MIN_MESSAGES = 4;
 

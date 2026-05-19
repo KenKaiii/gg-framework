@@ -203,6 +203,7 @@ const INK_OPTIONS = {
 // enabling kitty enhancement flags. Cleared again on exit so we don't leave
 // the terminal in an unusual state.
 const DISABLE_MODIFY_OTHER_KEYS = "\x1b[>4;0m";
+const DISABLE_FOCUS_REPORTING = "\x1b[?1004l";
 const SCREEN_CLEAR = DISABLE_MODIFY_OTHER_KEYS + "\x1b[2J\x1b[3J\x1b[H";
 
 export async function renderApp(config: RenderAppConfig): Promise<void> {
@@ -220,7 +221,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
   // that confuse the parent shell.
   const onProcessExit = (): void => {
     try {
-      process.stdout.write(DISABLE_MODIFY_OTHER_KEYS);
+      process.stdout.write(DISABLE_MODIFY_OTHER_KEYS + DISABLE_FOCUS_REPORTING);
     } catch {
       // stdout may already be torn down; nothing useful to do here.
     }
@@ -397,7 +398,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
     // but writing here ensures the disable lands before Node tears stdout
     // down on process termination.
     try {
-      process.stdout.write(DISABLE_MODIFY_OTHER_KEYS);
+      process.stdout.write(DISABLE_MODIFY_OTHER_KEYS + DISABLE_FOCUS_REPORTING);
     } catch {
       // ignored
     }

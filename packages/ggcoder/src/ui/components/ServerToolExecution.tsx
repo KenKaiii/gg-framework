@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Text, Box } from "ink";
 import { useTheme } from "../theme/theme.js";
 import { Spinner } from "./Spinner.js";
@@ -11,6 +11,7 @@ interface ServerToolRunningProps {
   name: string;
   input: unknown;
   startedAt: number;
+  animateUntil?: number;
 }
 
 interface ServerToolDoneProps {
@@ -26,10 +27,36 @@ type ServerToolExecutionProps = ServerToolRunningProps | ServerToolDoneProps;
 // ToolUseLoader minWidth={2} = 2 chars
 const HEADER_PREFIX = 2;
 
+function useStaticAfter(animateUntil: number | undefined): boolean {
+  const [isStatic, setIsStatic] = useState(
+    () => animateUntil == null || Date.now() >= animateUntil,
+  );
+
+  useEffect(() => {
+    if (animateUntil == null) {
+      setIsStatic(true);
+      return undefined;
+    }
+
+    const remainingMs = animateUntil - Date.now();
+    if (remainingMs <= 0) {
+      setIsStatic(true);
+      return undefined;
+    }
+
+    setIsStatic(false);
+    const timer = setTimeout(() => setIsStatic(true), remainingMs);
+    return () => clearTimeout(timer);
+  }, [animateUntil]);
+
+  return isStatic;
+}
+
 export function ServerToolExecution(props: ServerToolExecutionProps) {
   const theme = useTheme();
   const { columns } = useTerminalSize();
   const { label, detail } = getHeader(props.name, props.input);
+  const staticDisplay = useStaticAfter(props.status === "running" ? props.animateUntil : undefined);
 
   const headerContentWidth = Math.max(10, columns - HEADER_PREFIX);
 
@@ -54,13 +81,13 @@ export function ServerToolExecution(props: ServerToolExecutionProps) {
     return (
       <Box flexDirection="column" marginTop={1}>
         <Box flexDirection="row">
-          <ToolUseLoader status="running" />
+          <ToolUseLoader status="running" staticDisplay={staticDisplay} />
           <Box flexGrow={1} width={headerContentWidth}>
             {headerContent}
           </Box>
         </Box>
         <MessageResponse>
-          <Spinner label="Searching..." />
+          <Spinner label="Searching..." staticDisplay={staticDisplay} />
         </MessageResponse>
       </Box>
     );
