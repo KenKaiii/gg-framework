@@ -25,11 +25,18 @@ import { log } from "./logger.js";
 import { setEstimatorModel } from "./compaction/token-estimator.js";
 import { discoverAgents } from "./agents.js";
 import {
+  FOCUSED_REPO_MAP_MAX_CHARS,
+  FIRST_TURN_REPO_MAP_MAX_CHARS,
   buildRepoMap,
   createRepoMapCache,
   type RepoMapCache,
   type RepoMapSnapshot,
 } from "./repomap.js";
+import {
+  getLatestUserText,
+  injectRepoMapContextMessages,
+  stripRepoMapContextMessages,
+} from "./repomap-context.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -99,6 +106,7 @@ export class AgentSession {
   private repoMapMarkdown = "";
   private repoMapSnapshot?: RepoMapSnapshot;
   private repoMapChangedFiles = new Set<string>();
+  private repoMapReadFiles = new Set<string>();
   private repoMapCache: RepoMapCache = createRepoMapCache();
 
   private provider: Provider;
@@ -169,6 +177,7 @@ export class AgentSession {
       // Lazy — sessionId isn't assigned yet when createTools() runs, so we
       // must defer reading the cache key until the sub-agent actually fires.
       getCacheKey: () => this.getPromptCacheKey(),
+      onFileRead: (filePath) => this.markRepoMapRead(filePath),
       onFileMutated: (filePath) => this.markRepoMapDirty(filePath),
     });
     this.tools = tools;
@@ -629,8 +638,9 @@ export class AgentSession {
   ): Promise<{ markdown: string; snapshot: RepoMapSnapshot }> {
     const rendered = await buildRepoMap({
       cwd: this.cwd,
-      maxChars: 6000,
+      maxChars: this.getRepoMapBudget(),
       changedFiles: [...this.repoMapChangedFiles],
+      readFiles: [...this.repoMapReadFiles],
       focusTerms: latestUserPrompt ? [latestUserPrompt] : [],
       cache: this.repoMapCache,
     });
@@ -708,9 +718,26 @@ export class AgentSession {
   }
 
   private markRepoMapDirty(filePath: string): void {
-    const relativePath = path.relative(this.cwd, filePath).split(path.sep).join("/");
+    const relativePath = this.relativeRepoMapPath(filePath);
     this.repoMapChangedFiles.add(relativePath);
+    this.repoMapReadFiles.add(relativePath);
     this.repoMapDirty = true;
+  }
+
+  private markRepoMapRead(filePath: string): void {
+    this.repoMapReadFiles.add(this.relativeRepoMapPath(filePath));
+    this.repoMapDirty = true;
+  }
+
+  private relativeRepoMapPath(filePath: string): string {
+    return path.relative(this.cwd, filePath).split(path.sep).join("/");
+  }
+
+  private getRepoMapBudget(): number {
+    const userTurns = this.messages.filter((message) => message.role === "user").length;
+    if (userTurns <= 1 && this.repoMapReadFiles.size === 0) return FIRST_TURN_REPO_MAP_MAX_CHARS;
+    if (this.repoMapReadFiles.size > 0) return FOCUSED_REPO_MAP_MAX_CHARS;
+    return FOCUSED_REPO_MAP_MAX_CHARS + 1000;
   }
 
   private async prepareDynamicContext(latestUserPrompt?: string): Promise<Message[]> {
@@ -719,14 +746,11 @@ export class AgentSession {
       await this.refreshRepoMap(latestUserPrompt);
     }
     if (!this.repoMapMarkdown) return this.stripDynamicMessages(this.messages);
-    const [systemMessage, ...rest] = this.stripDynamicMessages(this.messages);
-    if (!systemMessage) return this.stripDynamicMessages(this.messages);
-    const repoMapMessage: Message = { role: "user", content: this.repoMapMarkdown };
-    return [systemMessage, repoMapMessage, ...rest];
+    return injectRepoMapContextMessages(this.messages, this.repoMapMarkdown);
   }
 
   private stripDynamicMessages(messages: readonly Message[]): Message[] {
-    return messages.filter((message) => !isRepoMapMessage(message));
+    return stripRepoMapContextMessages(messages);
   }
 
   private async persistMessage(message: Message): Promise<void> {
@@ -812,18 +836,6 @@ export class AgentSession {
   }
 }
 
-function isRepoMapMessage(message: Message): boolean {
-  return message.role === "user" && messageToText(message).startsWith("<!-- gg-repomap -->");
-}
-
-function getLatestUserText(messages: readonly Message[]): string | undefined {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index];
-    if (message?.role === "user") return messageToText(message);
-  }
-  return undefined;
-}
-
 function formatRepoMapCommandOutput(
   enabled: boolean,
   markdown: string,
@@ -834,21 +846,4 @@ function formatRepoMapCommandOutput(
     ? `Dynamic repo map refreshed · injection: ${status}`
     : `Dynamic repo map · injection: ${status}`;
   return `${prefix}\n\n${markdown}`;
-}
-
-function messageToText(message: Message): string {
-  if (typeof message.content === "string") return message.content;
-  if (Array.isArray(message.content)) {
-    return message.content
-      .map((block) => {
-        if (typeof block === "string") return block;
-        if (block && typeof block === "object" && "text" in block) {
-          const text = (block as { text?: unknown }).text;
-          return typeof text === "string" ? text : "";
-        }
-        return "";
-      })
-      .join("\n");
-  }
-  return "";
 }

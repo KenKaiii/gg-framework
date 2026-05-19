@@ -15,6 +15,7 @@ import { ProviderError } from "../errors.js";
 import { StreamResult } from "../utils/event-stream.js";
 import { providerDiag } from "../utils/diag.js";
 import { zodToJsonSchema } from "../utils/zod-to-json-schema.js";
+import { normalizePromptCacheKey } from "./prompt-cache-key.js";
 import { downgradeUnsupportedImages } from "./transform.js";
 
 const DEFAULT_BASE_URL = "https://chatgpt.com/backend-api";
@@ -58,6 +59,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     tool_choice: "auto",
     parallel_tool_calls: true,
     include: ["reasoning.encrypted_content"],
+    ...(options.maxTokens ? { max_output_tokens: options.maxTokens } : {}),
   };
 
   if (options.tools?.length) {
@@ -68,7 +70,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   // backend hashes only the request body, so cache hits for shared
   // system+tool prefixes across separate sub-agent processes are accidental
   // rather than guaranteed.
-  body.prompt_cache_key = options.promptCacheKey ?? "ggcoder";
+  body.prompt_cache_key = normalizePromptCacheKey(options.promptCacheKey ?? "ggcoder");
   // Map cacheRetention to OpenAI's prompt_cache_retention. "long" pins the
   // cached prefix for up to 24h (vs the default 5–10 min in-memory window).
   if (options.cacheRetention === "long") {

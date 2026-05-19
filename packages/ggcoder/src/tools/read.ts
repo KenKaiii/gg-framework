@@ -73,6 +73,7 @@ export function createReadTool(
   cwd: string,
   readFiles?: ReadTracker,
   ops: ToolOperations = localOperations,
+  onFileRead?: (filePath: string) => void | Promise<void>,
 ): AgentTool<typeof ReadParams> {
   return {
     name: "read",
@@ -133,6 +134,7 @@ export function createReadTool(
       }
       const stat = await ops.stat(resolved);
       recordRead(readFiles, resolved, raw, stat.mtimeMs);
+      await onFileRead?.(resolved);
       let lines = raw.split("\n");
 
       // Apply offset/limit

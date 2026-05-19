@@ -72,6 +72,43 @@ describe("streamOpenAICodex", () => {
     });
   });
 
+  it("passes maxTokens as the Responses max_output_tokens cap", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        createSseResponse([
+          {
+            type: "response.completed",
+            response: { usage: { input_tokens: 10, output_tokens: 5 } },
+          },
+        ]),
+      ),
+    );
+
+    const fetchMock = vi.mocked(fetch);
+    const result = streamOpenAICodex({
+      provider: "openai",
+      model: "gpt-5.5",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "token",
+      accountId: "acct",
+      maxTokens: 16384,
+    });
+
+    for await (const _event of result) {
+      // consume stream
+    }
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as Record<
+      string,
+      unknown
+    >;
+    expect(body.max_output_tokens).toBe(16384);
+    await expect(result.response).resolves.toMatchObject({
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+  });
+
   it("requests no reasoning and suppresses reasoning events when thinking is off", async () => {
     vi.stubGlobal(
       "fetch",

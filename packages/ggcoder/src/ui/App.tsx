@@ -91,11 +91,18 @@ import {
 } from "../core/language-detector.js";
 import { detectVerifyCommands } from "../core/verify-commands.js";
 import {
+  FOCUSED_REPO_MAP_MAX_CHARS,
+  FIRST_TURN_REPO_MAP_MAX_CHARS,
   buildRepoMap,
   createRepoMapCache,
   type RepoMapCache,
   type RepoMapSnapshot,
 } from "../core/repomap.js";
+import {
+  getLatestUserText,
+  injectRepoMapContextMessages,
+  stripRepoMapContextMessages,
+} from "../core/repomap-context.js";
 import type { Skill } from "../core/skills.js";
 import {
   extractPlanSteps,
@@ -619,6 +626,7 @@ export interface AppProps {
   initialOverlay?: "pixel";
   rebuildToolsForCwd?: (cwd: string) => AgentTool[];
   repoMapChangedFilesRef?: { current: Set<string> };
+  repoMapReadFilesRef?: { current: Set<string> };
   /**
    * Wired by `renderApp`. Tears down the current Ink instance and renders
    * a fresh one. Patching Ink's internal frame tracking in place is
@@ -1235,26 +1243,47 @@ export function App(props: AppProps) {
     [currentModel, currentProvider, activeApiKey],
   );
 
+  const getRepoMapSignalCount = useCallback((): number => {
+    return (
+      (props.repoMapChangedFilesRef?.current.size ?? 0) +
+      (props.repoMapReadFilesRef?.current.size ?? 0)
+    );
+  }, [props.repoMapChangedFilesRef, props.repoMapReadFilesRef]);
+
+  const getRepoMapBudget = useCallback((): number => {
+    const userTurns = messagesRef.current.filter((message) => message.role === "user").length;
+    const readCount = props.repoMapReadFilesRef?.current.size ?? 0;
+    if (userTurns <= 1 && readCount === 0) return FIRST_TURN_REPO_MAP_MAX_CHARS;
+    if (readCount > 0) return FOCUSED_REPO_MAP_MAX_CHARS;
+    return FOCUSED_REPO_MAP_MAX_CHARS + 1000;
+  }, [props.repoMapReadFilesRef]);
+
   const refreshRepoMap = useCallback(
     async (latestUserPrompt?: string): Promise<string> => {
       const rendered = await buildRepoMap({
         cwd: cwdRef.current,
-        maxChars: 6000,
+        maxChars: getRepoMapBudget(),
         changedFiles: [...(props.repoMapChangedFilesRef?.current ?? new Set<string>())],
+        readFiles: [...(props.repoMapReadFilesRef?.current ?? new Set<string>())],
         focusTerms: latestUserPrompt ? [latestUserPrompt] : [],
         cache: repoMapCacheRef.current,
       });
       repoMapMarkdownRef.current = rendered.markdown;
       repoMapSnapshotRef.current = rendered.snapshot;
-      repoMapChangedCountRef.current = props.repoMapChangedFilesRef?.current.size ?? 0;
+      repoMapChangedCountRef.current = getRepoMapSignalCount();
       repoMapDirtyRef.current = false;
       return rendered.markdown;
     },
-    [props.repoMapChangedFilesRef],
+    [
+      getRepoMapBudget,
+      getRepoMapSignalCount,
+      props.repoMapChangedFilesRef,
+      props.repoMapReadFilesRef,
+    ],
   );
 
   const stripRepoMapMessages = useCallback((messages: readonly Message[]): Message[] => {
-    return messages.filter((message) => !isRepoMapMessage(message));
+    return stripRepoMapContextMessages(messages);
   }, []);
 
   const injectRepoMapContext = useCallback(
@@ -1262,45 +1291,42 @@ export function App(props: AppProps) {
       if (!repoMapInjectionEnabledRef.current) return stripRepoMapMessages(messages);
       const stripped = stripRepoMapMessages(messages);
       const latestUserPrompt = getLatestUserText(stripped);
-      const changedCount = props.repoMapChangedFilesRef?.current.size ?? 0;
-      if (changedCount !== repoMapChangedCountRef.current) repoMapDirtyRef.current = true;
+      const signalCount = getRepoMapSignalCount();
+      if (signalCount !== repoMapChangedCountRef.current) repoMapDirtyRef.current = true;
       if (repoMapDirtyRef.current || !repoMapMarkdownRef.current) {
         await refreshRepoMap(latestUserPrompt);
       }
       if (!repoMapMarkdownRef.current) return stripped;
-      const [systemMessage, ...rest] = stripped;
-      if (!systemMessage) return stripped;
-      const repoMapMessage: Message = { role: "user", content: repoMapMarkdownRef.current };
-      return [systemMessage, repoMapMessage, ...rest];
+      return injectRepoMapContextMessages(stripped, repoMapMarkdownRef.current);
     },
-    [props.repoMapChangedFilesRef, refreshRepoMap, stripRepoMapMessages],
+    [props.repoMapChangedFilesRef, props.repoMapReadFilesRef, refreshRepoMap, stripRepoMapMessages],
   );
 
   /**
    * transformContext callback for the agent loop.
    * Called before each LLM call and on context overflow.
-   * Injects the dynamic repo map, then checks if auto-compaction is needed.
+   * Compacts persistent chat only, then injects the dynamic repo map transiently.
    */
   const transformContext = useCallback(
     async (messages: Message[], options?: { force?: boolean }): Promise<Message[]> => {
-      const withRepoMap = await injectRepoMapContext(messages);
+      const stripped = stripRepoMapMessages(messages);
       const settings = settingsRef.current;
       const autoCompact = settings?.get("autoCompact") ?? true;
       const threshold = settings?.get("compactThreshold") ?? 0.8;
 
       // Force-compact on context overflow regardless of settings
       if (options?.force) {
-        const result = await compactConversation(withRepoMap);
+        const result = await compactConversation(stripped);
         lastCompactionTimeRef.current = Date.now();
-        return stripRepoMapMessages(result);
+        return injectRepoMapContext(result);
       }
 
-      if (!autoCompact) return withRepoMap;
+      if (!autoCompact) return injectRepoMapContext(stripped);
 
       // Time-based cooldown: skip if compaction ran within the last 30 seconds
       if (Date.now() - lastCompactionTimeRef.current < 30_000) {
         log("INFO", "compaction", `Skipping compaction — cooldown active`);
-        return withRepoMap;
+        return injectRepoMapContext(stripped);
       }
 
       const contextWindow = getContextWindow(currentModel);
@@ -1309,14 +1335,12 @@ export function App(props: AppProps) {
       const tokensFresh = lastActualTokensTimestampRef.current > lastCompactionTimeRef.current;
       const actualTokens =
         lastActualTokensRef.current > 0 && tokensFresh ? lastActualTokensRef.current : undefined;
-      if (shouldCompact(withRepoMap, contextWindow, threshold, actualTokens, reserveTokens)) {
-        const before = withRepoMap.length;
-        const result = await compactConversation(withRepoMap);
+      if (shouldCompact(stripped, contextWindow, threshold, actualTokens, reserveTokens)) {
+        const result = await compactConversation(stripped);
         lastCompactionTimeRef.current = Date.now();
-        if (result.length === before) return withRepoMap;
-        return stripRepoMapMessages(result);
+        return injectRepoMapContext(result);
       }
-      return withRepoMap;
+      return injectRepoMapContext(stripped);
     },
     [currentModel, compactConversation, injectRepoMapContext, stripRepoMapMessages],
   );
@@ -3262,6 +3286,7 @@ export function App(props: AppProps) {
           repoMapChangedCountRef.current = 0;
           repoMapCacheRef.current = createRepoMapCache();
           props.repoMapChangedFilesRef?.current.clear();
+          props.repoMapReadFilesRef?.current.clear();
           setDisplayedCwd(prep.projectPath);
           let toolsForPixelFix = currentToolsRef.current;
           if (props.rebuildToolsForCwd) {
@@ -3812,18 +3837,6 @@ export function App(props: AppProps) {
   );
 }
 
-function isRepoMapMessage(message: Message): boolean {
-  return message.role === "user" && messageToText(message).startsWith("<!-- gg-repomap -->");
-}
-
-function getLatestUserText(messages: readonly Message[]): string | undefined {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index];
-    if (message?.role === "user" && !isRepoMapMessage(message)) return messageToText(message);
-  }
-  return undefined;
-}
-
 function formatRepoMapCommandOutput(
   enabled: boolean,
   markdown: string,
@@ -3834,21 +3847,4 @@ function formatRepoMapCommandOutput(
     ? `Dynamic repo map refreshed · injection: ${status}`
     : `Dynamic repo map · injection: ${status}`;
   return `${prefix}\n\n${markdown}`;
-}
-
-function messageToText(message: Message): string {
-  if (typeof message.content === "string") return message.content;
-  if (Array.isArray(message.content)) {
-    return message.content
-      .map((block) => {
-        if (typeof block === "string") return block;
-        if (block && typeof block === "object" && "text" in block) {
-          const text = (block as { text?: unknown }).text;
-          return typeof text === "string" ? text : "";
-        }
-        return "";
-      })
-      .join("\n");
-  }
-  return "";
 }

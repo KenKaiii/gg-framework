@@ -34,6 +34,8 @@ export interface CreateToolsOptions {
   onEnterPlan?: (reason?: string) => void;
   /** Callback when the LLM exits plan mode. Returns approval result string. */
   onExitPlan?: (planPath: string) => Promise<string>;
+  /** Callback after read tool successfully reads a text file. */
+  onFileRead?: (filePath: string) => void | Promise<void>;
   /** Callback after write/edit tools successfully mutate a file. */
   onFileMutated?: (filePath: string) => void | Promise<void>;
   /**
@@ -59,7 +61,7 @@ export function createTools(cwd: string, opts?: CreateToolsOptions): CreateTools
   const planModeRef = opts?.planModeRef;
 
   const tools: AgentTool[] = [
-    createReadTool(cwd, readFiles, ops),
+    createReadTool(cwd, readFiles, ops, opts?.onFileRead),
     createWriteTool(cwd, readFiles, ops, planModeRef, opts?.onFileMutated),
     createEditTool(cwd, readFiles, ops, planModeRef, opts?.onFileMutated),
     createBashTool(cwd, processManager, ops, planModeRef),

@@ -613,9 +613,16 @@ async function runInkTUI(opts: {
     current: () => Promise.resolve("cancelled"),
   };
   const repoMapChangedFilesRef: { current: Set<string> } = { current: new Set() };
+  const repoMapReadFilesRef: { current: Set<string> } = { current: new Set() };
+  const toRepoMapPath = (root: string, filePath: string): string =>
+    path.relative(root, filePath).split(path.sep).join("/");
+  const markRepoMapRead = (root: string, filePath: string): void => {
+    repoMapReadFilesRef.current.add(toRepoMapPath(root, filePath));
+  };
   const markRepoMapDirty = (root: string, filePath: string): void => {
-    const relativePath = path.relative(root, filePath).split(path.sep).join("/");
+    const relativePath = toRepoMapPath(root, filePath);
     repoMapChangedFilesRef.current.add(relativePath);
+    repoMapReadFilesRef.current.add(relativePath);
   };
 
   const { tools, processManager } = createTools(cwd, {
@@ -626,6 +633,7 @@ async function runInkTUI(opts: {
     planModeRef,
     onEnterPlan: (reason) => onEnterPlanRef.current(reason),
     onExitPlan: (planPath) => onExitPlanRef.current(planPath),
+    onFileRead: (filePath) => markRepoMapRead(cwd, filePath),
     onFileMutated: (filePath) => markRepoMapDirty(cwd, filePath),
   });
 
@@ -641,6 +649,7 @@ async function runInkTUI(opts: {
       planModeRef,
       onEnterPlan: (reason) => onEnterPlanRef.current(reason),
       onExitPlan: (planPath) => onExitPlanRef.current(planPath),
+      onFileRead: (filePath) => markRepoMapRead(newCwd, filePath),
       onFileMutated: (filePath) => markRepoMapDirty(newCwd, filePath),
     });
     return rebuilt;
@@ -784,6 +793,7 @@ async function runInkTUI(opts: {
     initialOverlay: opts.initialOverlay,
     rebuildToolsForCwd,
     repoMapChangedFilesRef,
+    repoMapReadFilesRef,
   });
 
   closeLogger();

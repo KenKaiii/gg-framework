@@ -51,6 +51,7 @@ export interface RenderAppConfig {
   initialOverlay?: "pixel";
   rebuildToolsForCwd?: (cwd: string) => AgentTool[];
   repoMapChangedFilesRef?: { current: Set<string> };
+  repoMapReadFilesRef?: { current: Set<string> };
 }
 
 /**
@@ -299,6 +300,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
             initialOverlay: config.initialOverlay,
             rebuildToolsForCwd: config.rebuildToolsForCwd,
             repoMapChangedFilesRef: config.repoMapChangedFilesRef,
+            repoMapReadFilesRef: config.repoMapReadFilesRef,
             resetUI,
             onRuntimeStateChange,
             sessionStore,

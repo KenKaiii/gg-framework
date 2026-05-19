@@ -1,0 +1,63 @@
+{
+  "name": "@kenkaiiii/gg-voice",
+  "version": "4.3.190",
+  "type": "module",
+  "description": "Provider-agnostic realtime voice orchestration for GG tools and agents",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kenkaiiii/gg-framework.git",
+    "directory": "packages/gg-voice"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./providers/openai-realtime": {
+      "types": "./dist/providers/openai-realtime.d.ts",
+      "import": "./dist/providers/openai-realtime.js",
+      "require": "./dist/providers/openai-realtime.cjs"
+    },
+    "./providers/openai-codex-realtime": {
+      "types": "./dist/providers/openai-codex-realtime.d.ts",
+      "import": "./dist/providers/openai-codex-realtime.js",
+      "require": "./dist/providers/openai-codex-realtime.cjs"
+    },
+    "./bridges/ggcoder-rpc": {
+      "types": "./dist/bridges/ggcoder-rpc.d.ts",
+      "import": "./dist/bridges/ggcoder-rpc.js",
+      "require": "./dist/bridges/ggcoder-rpc.cjs"
+    },
+    "./bridges/ggboss": {
+      "types": "./dist/bridges/ggboss.d.ts",
+      "import": "./dist/bridges/ggboss.js",
+      "require": "./dist/bridges/ggboss.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kenkaiiii/gg-agent": "workspace:*",
+    "@kenkaiiii/gg-ai": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
