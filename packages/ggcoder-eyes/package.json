@@ -1,6 +1,6 @@
 {
   "name": "@kenkaiiii/ggcoder-eyes",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "Project-agnostic perception probes for coding agents — screenshots, logs, APIs, capture sinks",
   "license": "MIT",
