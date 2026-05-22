@@ -378,6 +378,25 @@ export function App(props: AppProps) {
     setHistoryItems((prev) => [...prev, ...items]);
   }, [flushGeneration]);
 
+  const runAgentTurn = useCallback(
+    (displayText: string, agentText: string) => {
+      lastUserMessageRef.current = displayText;
+      setLastUserMessage(displayText);
+      setHistoryItems((items) => [...items, { id: nextId(), kind: "user", text: displayText }]);
+      void agentLoop.run(agentText).catch((err: unknown) => {
+        setHistoryItems((items) => [
+          ...items,
+          {
+            id: nextId(),
+            kind: "assistant",
+            text: formatAgentError(err),
+          },
+        ]);
+      });
+    },
+    [agentLoop],
+  );
+
   // ── Slash + submit handling ─────────────────────────────────────────
   const handleSubmit = useCallback(
     (value: string) => {
@@ -446,20 +465,14 @@ export function App(props: AppProps) {
           // Show the user's literal /command invocation in scrollback so the
           // history stays a faithful transcript; the expanded prompt itself
           // goes to the agent loop only.
-          lastUserMessageRef.current = value;
-          setLastUserMessage(value);
-          setHistoryItems((items) => [...items, { id: nextId(), kind: "user", text: value }]);
-          void agentLoop.run(fullPrompt);
+          runAgentTurn(value, fullPrompt);
           return;
         }
       }
 
-      lastUserMessageRef.current = value;
-      setLastUserMessage(value);
-      setHistoryItems((items) => [...items, { id: nextId(), kind: "user", text: value }]);
-      void agentLoop.run(value);
+      runAgentTurn(value, value);
     },
-    [agentLoop, exit, props],
+    [exit, props, runAgentTurn],
   );
 
   // Double-press exit — first Ctrl+C / ESC sets pending; second within 800ms
@@ -486,24 +499,25 @@ export function App(props: AppProps) {
   }, []);
 
   // Apply a /model selection.
-  const handleModelSelect = useCallback((modelId: string) => {
-    // ModelSelector hands us a bare model id; provider is implicit. Look it
-    // up in the registry to know which provider to switch to.
+  const handleModelSelect = useCallback((value: string) => {
+    setOverlay(null);
+    const selection = parseModelSelection(value);
+    if (!selection) return;
+
     import("@kenkaiiii/ggcoder/models").then(({ getModel }) => {
-      const info = getModel(modelId);
-      if (info) {
-        setCurrentProvider(info.provider as Provider);
-        setCurrentModel(modelId);
-        setHistoryItems((items) => [
-          ...items,
-          {
-            id: nextId(),
-            kind: "assistant",
-            text: `_Switched to **${info.name}**._`,
-          },
-        ]);
-      }
-      setOverlay(null);
+      const info = getModel(selection.model);
+      const provider = selection.provider ?? info?.provider;
+      if (!provider || (info && info.provider !== provider)) return;
+      setCurrentProvider(provider as Provider);
+      setCurrentModel(selection.model);
+      setHistoryItems((items) => [
+        ...items,
+        {
+          id: nextId(),
+          kind: "assistant",
+          text: `_Switched to **${info?.name ?? selection.model}**._`,
+        },
+      ]);
     });
   }, []);
 
@@ -775,4 +789,21 @@ function messageToHistoryItems(msg: Message, baseId: number): HistoryItem[] {
     return items;
   }
   return [];
+}
+
+export function parseModelSelection(
+  value: string,
+): { provider?: Provider; model: string } | undefined {
+  if (!value) return undefined;
+  const colonIdx = value.indexOf(":");
+  if (colonIdx === -1) return { model: value };
+  const provider = value.slice(0, colonIdx);
+  const model = value.slice(colonIdx + 1);
+  if (!provider || !model) return undefined;
+  return { provider: provider as Provider, model };
+}
+
+export function formatAgentError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  return `⚠ Agent request failed: ${message}\n\nYour session is still open. Try /model to switch providers, or run /quit if you want to exit.`;
 }
