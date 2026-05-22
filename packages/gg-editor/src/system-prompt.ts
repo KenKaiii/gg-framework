@@ -41,11 +41,14 @@ export interface StaticPromptOptions {
 export async function buildEditorHostBlock(host: VideoHost): Promise<string> {
   const c = await host.capabilities();
   const why = c.unavailableReason ? `  why="${c.unavailableReason}"` : "";
+  const version = c.version ? ` version=${c.version}` : "";
+  const warnings = c.warnings?.length
+    ? `\nwarnings:\n${c.warnings.map((w) => `- ${w}`).join("\n")}\n`
+    : "";
   return `# Host
 
-host=${host.name}  ok=${c.isAvailable}${why}
-caps: move=${c.canMoveClips} color=${c.canScriptColor} audio=${c.canScriptAudio} ai=${c.canTriggerAI} import=${c.preferredImportFormat}
-
+host=${host.name}  ok=${c.isAvailable}${version}${why}
+caps: move=${c.canMoveClips} color=${c.canScriptColor} audio=${c.canScriptAudio} ai=${c.canTriggerAI} import=${c.preferredImportFormat}${warnings}
 Host identity is dynamic. The user can open / close their NLE mid-session
 and the next tool call will see the new state. If \`host=none\` here but
 the user says they have Resolve open, call host_info — the live adapter
@@ -105,11 +108,11 @@ When a host is connected (host=resolve / host=premiere), you EDIT THE LIVE TIMEL
 | Color | \`apply_lut\` / \`set_primary_correction\` / \`copy_grade\` (Resolve) | (live API) |
 | Markers / decisions | \`add_marker\` | (live API) |
 
-**The few file-only tools that genuinely have no scriptable equivalent** (Fairlight is closed, no scriptable retimes / face-reframe / stabilization): when you call them, you MUST \`import_to_media_pool\` the result + \`replace_clip\` the source clip on the timeline so the user sees it. The list of unavoidable file-only ops:
+**The few file-first tools that gg-editor cannot currently perform as full live timeline operations**: when you call them, you MUST \`import_to_media_pool\` the result + \`replace_clip\` the source clip on the timeline so the user sees it. Resolve exposes some Fairlight/AI APIs in newer versions, but coverage is version-, Studio-, page-, and project-state-sensitive; do not promise end-to-end automation until a named tool or \`host_eval\` proves the exact call works locally. The current unavoidable file-first ops:
 
-- \`normalize_loudness\`, \`mix_audio\`, \`clean_audio\`, \`duck_audio\`, \`bleep_words\` (Fairlight closed)
+- \`normalize_loudness\`, \`mix_audio\`, \`clean_audio\`, \`duck_audio\`, \`bleep_words\` (gg-editor uses ffmpeg pipelines; Resolve Fairlight scripting is partial and not a complete mix bus replacement yet)
 - \`speed_ramp\` (no scriptable speed curves)
-- \`face_reframe\`, \`stabilize_video\` (no scriptable equivalent)
+- \`face_reframe\`, \`stabilize_video\` (use Resolve Smart Reframe only when host capabilities/tooling prove Studio support; otherwise file-first)
 - \`burn_subtitles\` (only when the user wants pixel-baked vertical captions — default to sidecar SRT instead)
 - \`loop_match_short\` (only meaningful at final delivery)
 
@@ -150,8 +153,8 @@ cwd=${cwd}
 | Reorder clips        | NO (no MoveItem)        | NO (no scriptable move)    | reorder_timeline → import_edl |
 | Multi-track / lanes  | partial (insert_broll)  | partial (insert_broll)     | compose_layered → import_edl |
 | Keyframes (opacity / pos / scale / volume) | NO  | NO     | write_fcpxml with keyframes → import_edl |
-| Title cards / lower-thirds | NO scriptable | NO scriptable     | write_lower_third / write_title_card → burn_subtitles |
-| Audio EQ / comp / gate | NO (Fairlight closed) | NO (Fairlight closed)   | mix_audio |
+| Title cards / lower-thirds | partial (Fusion/title import; version-sensitive) | NO scriptable     | write_lower_third / write_title_card → burn_subtitles or FCPXML titles |
+| Audio EQ / comp / gate | partial in Resolve docs; gg-editor uses file-first mix pipeline today | NO (Fairlight closed)   | mix_audio |
 | Speed ramps          | NO (constant only)      | NO (constant only)        | speed_ramp |
 | Ken-Burns zoom on stills | NO              | NO                        | ken_burns |
 | Transitions (xfade)  | NO scriptable           | NO scriptable             | crossfade_videos / transition_videos |

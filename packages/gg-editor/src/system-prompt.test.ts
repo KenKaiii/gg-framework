@@ -73,6 +73,15 @@ describe("buildEditorHostBlock", () => {
     const block = await buildEditorHostBlock(new NoneAdapter());
     expect(block).toMatch(/dynamic|re-detect|host_info/i);
   });
+
+  it("surfaces capability warnings from the host", async () => {
+    const host = new NoneAdapter();
+    const original = host.capabilities.bind(host);
+    host.capabilities = async () => ({ ...(await original()), warnings: ["test warning"] });
+    const block = await buildEditorHostBlock(host);
+    expect(block).toContain("warnings:");
+    expect(block).toContain("- test warning");
+  });
 });
 
 describe("spliceHostBlock", () => {

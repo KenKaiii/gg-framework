@@ -64,6 +64,10 @@ export interface HostCapabilities {
   canTriggerAI: boolean;
   /** Preferred timeline interchange format for bulk operations. */
   preferredImportFormat: "edl" | "fcpxml" | "aaf" | "xml";
+  /** Host/product version if cheaply detectable; undefined when not probed. */
+  version?: string;
+  /** Capability honesty notes the agent should surface before risky/limited workflows. */
+  warnings?: string[];
   /** Whether the host is reachable right now (process running, API enabled). */
   isAvailable: boolean;
   /** Why a host is unavailable, if relevant. */

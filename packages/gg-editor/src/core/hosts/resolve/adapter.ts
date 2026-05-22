@@ -36,8 +36,10 @@ import { findPython, ResolveBridge, resolveEnv } from "./bridge.js";
  * Capability map (verified against Resolve 20 API docs):
  *   - canMoveClips: false (API only supports append-to-end)
  *   - canScriptColor: true (nodes, LUTs, CDLs, primary corrections)
- *   - canScriptAudio: false (Fairlight is essentially closed)
- *   - canTriggerAI: partial (Magic Mask trigger only; transcribe returns bool)
+ *   - canScriptAudio: false at gg-editor's tool level (Resolve exposes some
+ *     Fairlight APIs, but not the full mix/EQ/ducking pipeline we need yet)
+ *   - canTriggerAI: partial / Studio-sensitive (Smart Reframe and similar calls
+ *     may require Studio and runtime confirmation)
  *   - preferredImportFormat: edl (also FCPXML, AAF, DRT)
  */
 export class ResolveAdapter implements VideoHost {
@@ -57,6 +59,11 @@ export class ResolveAdapter implements VideoHost {
       preferredImportFormat: "edl",
       isAvailable: reachable.ok,
       unavailableReason: reachable.ok ? undefined : reachable.reason,
+      warnings: [
+        "Resolve scripting is version-sensitive; installed Resolve Developer/Scripting docs are the authority on this machine.",
+        "Fine-grained trim/move/keyframe editing is not exposed as direct Resolve API calls; prefer EDL/FCPXML rebuilds for bulk timeline mutation.",
+        "Some Resolve AI/Fairlight operations are Studio-, page-, or project-state-sensitive; verify with host_eval or a named tool before promising A-Z automation.",
+      ],
       // Resolve uses Blackmagic's first-party Python scripting API — no
       // deprecation pressure, unlike the Adobe CEP/UXP situation.
       runtime: "native",
