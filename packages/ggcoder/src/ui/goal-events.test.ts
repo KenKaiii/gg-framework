@@ -80,9 +80,9 @@ describe("goal event formatting", () => {
     expect(event).toContain("user_prerequisites: (none)");
     expect(event).toContain("tasks:\n(none)");
     expect(event).toContain("summary:\nChanged: web output cleaner");
-    expect(event).toContain("orchestrator_instructions:");
+    expect(event).toContain("coordinator_instructions:");
     expect(event).toContain('Call goals({ action: "status", run_id }) before deciding.');
-    expect(event).toContain("Briefly say what the orchestrator is doing");
+    expect(event).toContain("Briefly say what you are doing as the coordinator");
     expect(isGoalSyntheticEvent(event)).toBe(true);
     expect(parseGoalSyntheticEvent(event)).toMatchObject({
       kind: "worker",
@@ -244,6 +244,7 @@ describe("goal event formatting", () => {
     expect(event).toContain("exit_code=1");
     expect(event).toContain("Verifier failed");
     expect(event).toContain("Inspect durable tasks, verifier state, blockers, and evidence.");
+    expect(event).not.toContain("what the orchestrator is doing");
     expect(parseGoalSyntheticEvent(event)).toMatchObject({
       kind: "verifier",
       runId: "goal-12345678",

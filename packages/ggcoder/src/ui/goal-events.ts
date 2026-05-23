@@ -117,9 +117,9 @@ export interface GoalSyntheticEventInfo {
   payload?: GoalSyntheticEventPayload;
 }
 
-const GOAL_ORCHESTRATOR_INSTRUCTIONS = `orchestrator_instructions:
+const GOAL_ORCHESTRATOR_INSTRUCTIONS = `coordinator_instructions:
 1. Call goals({ action: "status", run_id }) before deciding.
-2. Briefly say what the orchestrator is doing so the chat shows progress.
+2. Briefly say what you are doing as the coordinator so the chat shows progress.
 3. Inspect durable tasks, verifier state, blockers, and evidence.
 4. Take exactly one next control-loop action: add/update the next Goal task, run/record verification, pause/block with evidence, or complete only if verifier evidence proves the success criteria.
 5. Do not merely narrate and do not ask the user to open the Goal pane.`;

@@ -17,7 +17,7 @@ export const PROMPT_COMMANDS: PromptCommand[] = [
     description: "Create a programmatic goal loop",
     prompt: `# Goal: Programmatic Goal Loop
 
-You are creating a durable Goal run: a programmatic control loop that lets the user rely on the agent while they are not watching. The run should keep the main orchestrator focused on the objective while workers build, instrument, diagnose, and gather evidence.
+You are creating a durable Goal run: a programmatic control loop that lets the user rely on you while they are not watching. In this workflow, you remain the coordinator: keep yourself focused on the objective while worker agents build, instrument, diagnose, and gather evidence.
 
 ## User objective
 
@@ -47,7 +47,7 @@ For each Goal, identify:
 
 Any examples you consider are inspiration, not a checklist. Borrow verification ideas from any domain when useful, but choose only the senses/signals that fit the user's actual objective.
 
-## Orchestrator responsibilities
+## Coordinator responsibilities
 
 1. Translate the user's objective into:
    - a short title,
@@ -57,7 +57,7 @@ Any examples you consider are inspiration, not a checklist. Borrow verification 
    - an evidence plan describing the goal-specific sensory proof required,
    - harness or observability items that workers may need to build,
    - a verifier command when already obvious, otherwise a verifier description or task to define one.
-2. Plan first; do not build during initial Goal creation. The orchestrator must perform cheap local prerequisite checks needed to determine whether the Goal is blocked, but worker agents should build instruments, implementation changes, harnesses, diagnostics, and verifier commands after the user starts the Goal. If implementation work is needed, capture it as a Goal task instead of doing it yourself.
+2. Plan first; do not build during initial Goal creation. You must perform cheap local prerequisite checks needed to determine whether the Goal is blocked, but worker agents should build instruments, implementation changes, harnesses, diagnostics, and verifier commands after the user starts the Goal. If implementation work is needed, capture it as a Goal task instead of doing it yourself.
 3. Before creating or updating the run, identify every prerequisite and check each one that can be checked locally with the available tools. Examples are non-exhaustive and should not anchor the plan: required credentials or permissions, local capabilities, app/runtime availability, fixture/assets/test data, devices/emulators, network or service access, or domain-specific inputs. Record checked prerequisites as \`met\` only with concise non-secret evidence, record failed local checks as \`missing\` with exact remediation, and leave \`unknown\` only for true external inputs that cannot be checked locally in this setup turn.
 4. Prefer local/free capabilities already available in the project or environment. Do not require paid services, signups, new external accounts, private assets, or physical access unless unavoidable for this specific objective.
 5. Only ask the user for true external blockers after checking what you can do yourself. If a missing input cannot be generated or verified locally, record the exact minimal prerequisite and ask once in chat; do not ask for broad lists of things you could inspect or create yourself.
@@ -76,7 +76,7 @@ Any examples you consider are inspiration, not a checklist. Borrow verification 
 
 Initial /goal turn order: understand intended experience → imagine relevant failures → choose required senses/signals → plan proportional instruments → persist the run/tasks/evidence plan → stop.
 
-After the user starts a Goal from the Goal pane with (R), worker and verifier completions are sent back to you as hidden synthetic events. On each event, call \`goals({ action: "status", run_id })\`, inspect current state, briefly say what the orchestrator is doing so the chat shows progress, and take the next durable control-loop action rather than merely narrating. The UI keeps auto-continuing until the run is passed, blocked, paused, or failed. Even during auto-continuation, do not switch into hands-on implementation; if work is needed, create or update Goal tasks and let workers/verifiers do it.
+After the user starts a Goal from the Goal pane with (R), worker and verifier completions are sent back to you as hidden synthetic events. On each event, call \`goals({ action: "status", run_id })\`, inspect current state, briefly say what you are doing as the coordinator so the chat shows progress, and take the next durable control-loop action rather than merely narrating. The UI keeps auto-continuing until the run is passed, blocked, paused, or failed. Even during auto-continuation, do not switch into hands-on implementation; if work is needed, create or update Goal tasks and let workers/verifiers do it.
 
 If no verifier command exists yet, create a task to define one. If an evidence path or harness is only planned, create a worker task to build the missing instrument, then later workers can reuse that instrument for subsequent slices. If the verifier fails, persist the failure evidence and add the next Goal task that addresses the failure. Cap runaway loops by pausing and recording evidence when repeated attempts stop making progress.
 

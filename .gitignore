@@ -41,6 +41,7 @@ packages/gg-editor/src/skills.ts
 
 # Goal audit generated evidence
 .goal-artifacts/
+.goal-evidence/
 packages/ggcoder/.goal-evidence/
 scripts/goal-deep-audit/*.json
 scripts/goal-deep-audit/*.log

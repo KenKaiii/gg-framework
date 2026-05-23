@@ -46,6 +46,7 @@ import { PerformanceObserver, performance } from "node:perf_hooks";
   }).observe({ entryTypes: allTypes });
 }
 
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import fs from "node:fs";
 import readline from "node:readline/promises";
@@ -58,7 +59,8 @@ import { runServeMode } from "./modes/serve-mode.js";
 import { runAgentHomeMode } from "./modes/agent-home-mode.js";
 import { renderLoginSelector } from "./ui/login.js";
 import { renderSessionSelector } from "./ui/sessions.js";
-import type { CompletedItem } from "./ui/App.js";
+import type { CompletedItem, GoalProgressDraft } from "./ui/App.js";
+import { segmentDisplayText, stripDoneMarkers } from "./utils/plan-steps.js";
 import { formatUserError } from "./utils/error-handler.js";
 import type { Message, Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import type { ThemeName } from "./ui/theme/theme.js";
@@ -94,6 +96,7 @@ import { loginGemini } from "./core/oauth/gemini.js";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "./core/oauth/types.js";
 import chalk from "chalk";
 import { checkAndAutoUpdate } from "./core/auto-update.js";
+import { parseGoalSyntheticEvent } from "./ui/goal-events.js";
 
 const _require = createRequire(import.meta.url);
 const CLI_VERSION = (_require("../package.json") as { version: string }).version;
@@ -1880,9 +1883,95 @@ function extractText(content: string | Array<{ type: string; text?: string }>): 
     .join("\n");
 }
 
-function messagesToHistoryItems(msgs: Message[]): CompletedItem[] {
+function goalCompletionDetail(summary: string): string | undefined {
+  const lines = summary
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && line !== "[agent_done]");
+  const statusLine = lines.find((line) => /^Status:/i.test(line));
+  const changedLine = lines.find((line) =>
+    /^(Changed|Implemented|Fixed|Added|Key findings|Full verifier)/i.test(line),
+  );
+  const verificationLine = lines.find((line) => /^(Verification|Verified|Result):/i.test(line));
+  return statusLine ?? changedLine ?? verificationLine ?? lines[0];
+}
+
+function goalProgressFromSyntheticText(text: string): GoalProgressDraft | null {
+  const eventInfo = parseGoalSyntheticEvent(text.trimStart());
+  if (!eventInfo) return null;
+  const summary = eventInfo.summary ?? "";
+  const terminalStatus = eventInfo.goalState?.status;
+  if (
+    terminalStatus === "passed" ||
+    terminalStatus === "failed" ||
+    terminalStatus === "blocked" ||
+    terminalStatus === "paused"
+  ) {
+    const terminalTitle =
+      terminalStatus === "passed"
+        ? "Goal passed"
+        : terminalStatus === "failed"
+          ? "Goal failed"
+          : terminalStatus === "blocked"
+            ? "Goal blocked"
+            : "Goal paused";
+    return {
+      kind: "goal_progress",
+      phase: "terminal",
+      title: `${terminalTitle}: ${eventInfo.goal ?? "Goal"}`,
+      detail: goalCompletionDetail(summary),
+      status: terminalStatus,
+    };
+  }
+  if (eventInfo.kind === "worker") {
+    const titlePrefix = eventInfo.status === "done" ? "Done" : "Failed";
+    return {
+      kind: "goal_progress",
+      phase: "worker_finished",
+      title: `${titlePrefix}: ${eventInfo.task ?? "Goal worker"}`,
+      detail: goalCompletionDetail(summary),
+      workerId: eventInfo.worker,
+      status: eventInfo.status,
+    };
+  }
+  return {
+    kind: "goal_progress",
+    phase: "verifier_finished",
+    title: `Verifier ${eventInfo.status ?? "finished"}: ${eventInfo.goal ?? "Goal"}`,
+    detail: goalCompletionDetail(summary),
+    status: eventInfo.status,
+  };
+}
+
+export function messagesToHistoryItems(msgs: Message[]): CompletedItem[] {
   const items: CompletedItem[] = [];
   let id = 0;
+
+  const pushGoalProgress = (draft: GoalProgressDraft) => {
+    items.push({ ...draft, id: `restore-${id++}` });
+  };
+
+  const pushRestoredAssistantText = (text: string) => {
+    const segments = segmentDisplayText(text, []);
+    if (segments.length === 0) {
+      const stripped = stripDoneMarkers(text);
+      if (stripped) items.push({ kind: "assistant", text: stripped, id: `restore-${id++}` });
+      return;
+    }
+    for (const segment of segments) {
+      if (segment.kind === "text") {
+        const stripped = stripDoneMarkers(segment.text).trimStart();
+        if (stripped) items.push({ kind: "assistant", text: stripped, id: `restore-${id++}` });
+      } else {
+        items.push({
+          kind: "step_done",
+          stepNum: segment.stepNum,
+          description: segment.description,
+          id: `restore-${id++}`,
+        });
+      }
+    }
+  };
 
   // Index tool results by toolCallId for pairing with tool calls
   const toolResults = new Map<string, { content: string; isError: boolean }>();
@@ -1911,11 +2000,17 @@ function messagesToHistoryItems(msgs: Message[]): CompletedItem[] {
 
     if (msg.role === "user") {
       const text = extractText(msg.content);
-      if (text) items.push({ kind: "user", text, id: `restore-${id++}` });
+      if (!text) continue;
+      const goalProgress = goalProgressFromSyntheticText(text);
+      if (goalProgress) {
+        pushGoalProgress(goalProgress);
+      } else {
+        items.push({ kind: "user", text, id: `restore-${id++}` });
+      }
     } else if (msg.role === "assistant") {
       const content = msg.content;
       if (typeof content === "string") {
-        if (content) items.push({ kind: "assistant", text: content, id: `restore-${id++}` });
+        if (content) pushRestoredAssistantText(content);
         continue;
       }
       for (const block of content) {
@@ -1938,7 +2033,7 @@ function messagesToHistoryItems(msgs: Message[]): CompletedItem[] {
       let textBuf = "";
       const flushText = () => {
         if (textBuf) {
-          items.push({ kind: "assistant", text: textBuf, id: `restore-${id++}` });
+          pushRestoredAssistantText(textBuf);
           textBuf = "";
         }
       };
@@ -2003,4 +2098,6 @@ function openBrowser(url: string): void {
   });
 }
 
-main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  main();
+}

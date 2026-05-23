@@ -67,7 +67,9 @@ describe("prompt commands", () => {
     expect(prompt).toContain('goals({ action: "evidence"');
     expect(prompt).toContain("creating or updating the next implementation task");
     expect(prompt).toContain("persist the run/tasks/evidence plan → stop");
-    expect(prompt).toContain("briefly say what the orchestrator is doing");
+    expect(prompt).toContain("briefly say what you are doing as the coordinator");
+    expect(prompt).not.toContain("main orchestrator");
+    expect(prompt).not.toContain("what the orchestrator is doing");
     expect(prompt).toContain(
       "take the next durable control-loop action rather than merely narrating",
     );

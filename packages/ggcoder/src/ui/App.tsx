@@ -822,16 +822,24 @@ export function getScrollStabilizationDecision({
   isUserScrolled,
   hasNewOutput,
   hasTallLiveUserMessage = false,
+  hasParagraphBreakLiveUserMessage = false,
 }: {
   isUserScrolled: boolean;
   hasNewOutput: boolean;
   hasTallLiveUserMessage?: boolean;
+  hasParagraphBreakLiveUserMessage?: boolean;
 }): ScrollStabilizationDecision {
-  const shouldStabilize = isUserScrolled || hasTallLiveUserMessage;
+  const shouldPreserveStatic =
+    isUserScrolled || hasTallLiveUserMessage || hasParagraphBreakLiveUserMessage;
+  const shouldAutoFollow = !(isUserScrolled || hasTallLiveUserMessage);
   return {
-    preserveStatic: shouldStabilize && hasNewOutput,
-    autoFollow: !shouldStabilize,
+    preserveStatic: shouldPreserveStatic && hasNewOutput,
+    autoFollow: shouldAutoFollow,
   };
+}
+
+export function hasParagraphBreakLiveUserMessage(text: string): boolean {
+  return /\n[ \t]*\n/.test(text);
 }
 
 export function isTallLiveUserMessage(text: string, rows: number): boolean {
@@ -1117,7 +1125,7 @@ export interface AppProps {
 export function App(props: AppProps) {
   const theme = useTheme();
   const switchTheme = useSetTheme();
-  const { columns, resizeKey } = useTerminalSize();
+  const { columns, rows, resizeKey } = useTerminalSize();
 
   // Hoisted before terminal title hook so it can reference them
   const [lastUserMessage, setLastUserMessage] = useState("");
@@ -4651,21 +4659,48 @@ export function App(props: AppProps) {
     overlayPane: overlay,
     isAgentRunning: agentLoop.isRunning,
   });
+  const liveUserItems = liveItems.filter((item): item is UserItem => item.kind === "user");
+  const lastLiveUserItem = liveUserItems.at(-1);
+  const hasTallLiveUserMessage = Boolean(
+    lastLiveUserItem && isTallLiveUserMessage(lastLiveUserItem.text, rows),
+  );
+  const hasParagraphBreakLiveUserMessageInLiveItem = Boolean(
+    lastLiveUserItem && hasParagraphBreakLiveUserMessage(lastLiveUserItem.text),
+  );
+  const historyWithoutLiveSubmittedPrompt = hasTallLiveUserMessage
+    ? history.filter(
+        (item) =>
+          item.kind !== "user" ||
+          item.id !== lastLiveUserItem?.id ||
+          item.text !== lastLiveUserItem.text,
+      )
+    : history;
   const staticItems = shouldHideStaticItemsForOverlayView({
     shouldHideHistoryForOverlay,
     stabilizeOverlayPaneRerender,
   })
     ? []
-    : history;
+    : historyWithoutLiveSubmittedPrompt;
+  const scrollStabilizationDecision = getScrollStabilizationDecision({
+    // There is no portable scroll-position signal from Ink here; treat tall live
+    // submitted prompts and prompts with blank-line paragraph breaks as Static
+    // preservation triggers so resize/remount churn cannot replay history before
+    // assistant output. Paragraph-break prompts remain eligible for auto-follow
+    // because they are not necessarily tall enough to imply user scrollback.
+    isUserScrolled: false,
+    hasNewOutput:
+      liveItems.length > 0 || Boolean(agentLoop.streamingText || agentLoop.streamingThinking),
+    hasTallLiveUserMessage,
+    hasParagraphBreakLiveUserMessage: hasParagraphBreakLiveUserMessageInLiveItem,
+  });
+  const staticHistoryKey = scrollStabilizationDecision.preserveStatic
+    ? getStaticHistoryKey({ resizeKey: 0 })
+    : getStaticHistoryKey({ resizeKey });
 
   return (
     <Box flexDirection="column" width={columns}>
       {/* History — scrolled up, managed by Ink Static. */}
-      <Static
-        key={getStaticHistoryKey({ resizeKey })}
-        items={staticItems}
-        style={{ width: "100%" }}
-      >
+      <Static key={staticHistoryKey} items={staticItems} style={{ width: "100%" }}>
         {(item) => (
           <Box key={item.id} flexDirection="column" paddingRight={1}>
             {renderItem(item)}
