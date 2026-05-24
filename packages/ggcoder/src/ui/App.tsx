@@ -675,11 +675,20 @@ function summarizeGoalCompletion(summary: string): string | undefined {
   return statusLine ?? changedLine ?? verificationLine ?? lines[0];
 }
 
+const GOAL_PROGRESS_TEXT_LIMIT = 72;
+
+export function truncateGoalProgressText(text: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= GOAL_PROGRESS_TEXT_LIMIT) return normalized;
+  return `${normalized.slice(0, GOAL_PROGRESS_TEXT_LIMIT - 1).trimEnd()}…`;
+}
+
 function formatGoalWorkerFinishedTitle(
   taskTitle: string,
   status: GoalWorkerCompletion["status"],
 ): string {
-  return status === "done" ? `Done: ${taskTitle}` : `Failed: ${taskTitle}`;
+  const prefix = status === "done" ? "Done" : "Failed";
+  return truncateGoalProgressText(`${prefix}: ${taskTitle}`);
 }
 
 function goalProgressLoaderStatus(item: GoalProgressItem): "running" | "done" | "error" {
@@ -3913,7 +3922,7 @@ export function App(props: AppProps) {
                 {"▶ "}
               </Text>
               <Text color={theme.textDim}>{"Goal: "}</Text>
-              <Text color={theme.success}>{item.title}</Text>
+              <Text color={theme.success}>{truncateGoalProgressText(item.title)}</Text>
               {item.workerId ? <Text color={theme.textDim}> · worker {item.workerId}</Text> : null}
             </Text>
           </Box>
@@ -3933,7 +3942,7 @@ export function App(props: AppProps) {
               <Box flexGrow={1} width={headerContentWidth}>
                 <Text wrap="wrap">
                   <Text color={color} bold>
-                    {item.title}
+                    {truncateGoalProgressText(item.title)}
                   </Text>
                   {item.workerId ? (
                     <Text color={theme.textDim}> · worker {item.workerId}</Text>
@@ -3946,14 +3955,16 @@ export function App(props: AppProps) {
                 <Box flexDirection="column" flexShrink={1}>
                   {item.detail ? (
                     <Text color={theme.textDim} wrap="wrap">
-                      {item.detail}
+                      {truncateGoalProgressText(item.detail)}
                     </Text>
                   ) : null}
                   {item.summaryRows?.map((row) => (
                     <Text key={row.label} wrap="truncate">
                       <Text color={theme.textDim}>{row.label.padEnd(12)}</Text>
-                      <Text color={theme.text}>{row.value}</Text>
-                      {row.detail ? <Text color={theme.textDim}> · {row.detail}</Text> : null}
+                      <Text color={theme.text}>{truncateGoalProgressText(row.value)}</Text>
+                      {row.detail ? (
+                        <Text color={theme.textDim}> · {truncateGoalProgressText(row.detail)}</Text>
+                      ) : null}
                     </Text>
                   ))}
                   {item.summarySections?.map((section) => (
@@ -3967,7 +3978,7 @@ export function App(props: AppProps) {
                           color={theme.text}
                           wrap="wrap"
                         >
-                          {`• ${line}`}
+                          {`• ${truncateGoalProgressText(line)}`}
                         </Text>
                       ))}
                     </Box>

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S pnpm exec tsx
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
@@ -99,7 +99,7 @@ const targeted = spawnSync(
     "--filter",
     "@kenkaiiii/ggcoder",
     "test",
-    "--",
+    "--run",
     "src/core/goal-controller.test.ts",
     "src/core/goal-prerequisites.test.ts",
     "src/core/goal-store.test.ts",

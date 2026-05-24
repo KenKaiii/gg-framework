@@ -6,6 +6,7 @@ import {
   completedItemsWithDurableGoalTerminalProgress,
   formatGoalTerminalProgress,
   nextGoalModeAfterAgentDone,
+  truncateGoalProgressText,
   type CompletedItem,
 } from "./App.js";
 
@@ -145,6 +146,15 @@ function applyCompletionAudit(run: GoalRun): GoalRun {
 }
 
 describe("/goal UI orchestration lifecycle", () => {
+  it("truncates long Goal progress text before it wraps across the TUI", () => {
+    const text =
+      "Choosing next Goal step: A-Z /goal system test, refinement, leak-safety, and report";
+
+    expect(truncateGoalProgressText(text)).toBe(
+      "Choosing next Goal step: A-Z /goal system test, refinement, leak-safety…",
+    );
+  });
+
   it("dedupes adjacent identical Goal progress rows", () => {
     const draft = {
       kind: "goal_progress" as const,
