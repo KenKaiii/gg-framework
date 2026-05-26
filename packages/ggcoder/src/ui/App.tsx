@@ -156,6 +156,7 @@ import {
 import { canCompleteGoalRun, decideGoalNextAction } from "../core/goal-controller.js";
 import { runGoalPrerequisiteChecks } from "../core/goal-prerequisites.js";
 import { runGoalVerifierCommand } from "../core/goal-verifier.js";
+import { checkGoalWorktreeIntegration } from "../core/goal-worktree.js";
 import {
   listGoalWorkers,
   startGoalWorker,
@@ -3583,13 +3584,19 @@ export function App(props: AppProps) {
       });
       runGoalSyntheticEvent(eventText);
       void (async () => {
-        if (listGoalWorkers(completion.worker.cwd).some((worker) => worker.status === "running"))
+        if (
+          listGoalWorkers(completion.worker.projectPath).some(
+            (worker) => worker.status === "running",
+          )
+        )
           return;
         if (activeVerifierRunIdsRef.current.size > 0) return;
-        const runs = await loadGoalRuns(completion.worker.cwd);
-        const queued = runs.find(
-          (item) => item.continueRequestedAt && !goalHasBlockingPrerequisites(item),
-        );
+        const runs = await loadGoalRuns(completion.worker.projectPath);
+        const latestRun = runs.find((item) => item.id === completion.worker.goalRunId);
+        const queued =
+          latestRun && !goalHasBlockingPrerequisites(latestRun)
+            ? latestRun
+            : runs.find((item) => item.continueRequestedAt && !goalHasBlockingPrerequisites(item));
         if (queued) setTimeout(() => continueGoalRun(queued.id), 750);
       })().catch((err: unknown) =>
         log("ERROR", "goal", err instanceof Error ? err.message : String(err)),
@@ -3868,6 +3875,32 @@ export function App(props: AppProps) {
           phase: "terminal",
           title: `Goal blocked: ${run.title}`,
           detail: "No verifier command is configured.",
+          status: "blocked",
+        });
+        runningGoalIdsRef.current.delete(run.id);
+        clearGoalStatusEntry(run.id);
+        clearGoalModeIfIdle();
+        return;
+      }
+
+      const integration = await checkGoalWorktreeIntegration(props.cwd, run);
+      if (!integration.ok) {
+        const runWithEvidence =
+          (await appendGoalEvidence(props.cwd, run.id, {
+            kind: "summary",
+            label: "Goal worktree integration required",
+            content: integration.summary,
+          })) ?? run;
+        await upsertGoalRun(props.cwd, {
+          ...runWithEvidence,
+          status: "blocked",
+          blockers: Array.from(new Set([...runWithEvidence.blockers, integration.summary])),
+        });
+        appendGoalProgress({
+          kind: "goal_progress",
+          phase: "terminal",
+          title: `Goal blocked before verifier: ${run.title}`,
+          detail: integration.summary,
           status: "blocked",
         });
         runningGoalIdsRef.current.delete(run.id);

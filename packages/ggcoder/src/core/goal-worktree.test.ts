@@ -2,12 +2,43 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type { GoalRun } from "./goal-store.js";
 import {
+  checkGoalWorktreeIntegration,
   createGoalWorkerWorktree,
   goalWorktreeRoot,
   sanitizeWorktreeToken,
 } from "./goal-worktree.js";
 import type { GoalWorktreeCommandRunner } from "./goal-worktree.js";
+
+function goalRun(overrides: Partial<GoalRun> = {}): GoalRun {
+  return {
+    id: "goal-a",
+    title: "Integrate workers",
+    goal: "Ensure worker artifacts reach main checkout before verifier.",
+    status: "ready",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+    projectPath: "/tmp/project",
+    successCriteria: ["Verifier sees worker artifacts"],
+    prerequisites: [],
+    harness: [],
+    evidencePlan: [],
+    tasks: [],
+    evidence: [],
+    blockers: [],
+    ...overrides,
+  };
+}
+
+function runnerFor(statusByCwd: Record<string, string>): GoalWorktreeCommandRunner {
+  return {
+    async execFile(_file, args, options) {
+      expect(args).toEqual(["status", "--porcelain"]);
+      return { stdout: statusByCwd[options.cwd] ?? "", stderr: "" };
+    },
+  };
+}
 
 describe("goal worktree helpers", () => {
   let tmpDir: string;
@@ -120,5 +151,122 @@ describe("goal worktree helpers", () => {
         commandRunner: runner,
       }),
     ).rejects.toThrow("Cannot launch isolated Goal worker from a dirty checkout");
+  });
+
+  it("passes integration check when completed worker worktrees are clean", async () => {
+    const result = await checkGoalWorktreeIntegration(
+      "/tmp/project",
+      goalRun({
+        tasks: [
+          {
+            id: "task-a",
+            title: "Clean candidate",
+            prompt: "Do work",
+            status: "done",
+            attempts: 1,
+            workerId: "worker-a",
+            worktree: {
+              baseRef: "base",
+              branchName: "goal/a/task-a-worker-a",
+              path: "/tmp/worktree-a",
+              status: "created",
+            },
+          },
+        ],
+      }),
+      runnerFor({ "/tmp/worktree-a": "" }),
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      issues: [],
+      summary: "All completed Goal worktree tasks are integrated or clean.",
+    });
+  });
+
+  it("blocks verifier when a completed worker still has unintegrated files", async () => {
+    const result = await checkGoalWorktreeIntegration(
+      "/tmp/project",
+      goalRun({
+        tasks: [
+          {
+            id: "task-a",
+            title: "Verifier harness",
+            prompt: "Create verifier",
+            status: "done",
+            attempts: 1,
+            workerId: "worker-a",
+            mergeStrategy: "after_dependencies",
+            worktree: {
+              baseRef: "base",
+              branchName: "goal/a/task-a-worker-a",
+              path: "/tmp/worktree-a",
+              status: "created",
+            },
+          },
+        ],
+      }),
+      runnerFor({
+        "/tmp/worktree-a":
+          "?? packages/ggcoder/scripts/verify-goal-overhead-harness.ts\n M packages/ggcoder/package.json\n",
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0]).toMatchObject({
+      taskId: "task-a",
+      taskTitle: "Verifier harness",
+      workerId: "worker-a",
+      worktreePath: "/tmp/worktree-a",
+      files: [
+        "packages/ggcoder/package.json",
+        "packages/ggcoder/scripts/verify-goal-overhead-harness.ts",
+      ],
+    });
+    expect(result.summary).toContain("stranded in isolated worktrees");
+  });
+
+  it("ignores pending tasks and manual merge candidates during integration check", async () => {
+    const result = await checkGoalWorktreeIntegration(
+      "/tmp/project",
+      goalRun({
+        tasks: [
+          {
+            id: "manual-task",
+            title: "Manual candidate",
+            prompt: "Do work",
+            status: "done",
+            attempts: 1,
+            mergeStrategy: "manual",
+            worktree: {
+              baseRef: "base",
+              branchName: "goal/a/manual",
+              path: "/tmp/manual",
+              status: "created",
+            },
+          },
+          {
+            id: "pending-task",
+            title: "Pending candidate",
+            prompt: "Do work",
+            status: "pending",
+            attempts: 0,
+            worktree: {
+              baseRef: "base",
+              branchName: "goal/a/pending",
+              path: "/tmp/pending",
+              status: "created",
+            },
+          },
+        ],
+      }),
+      runnerFor({
+        "/tmp/manual": "?? stranded.ts\n",
+        "/tmp/pending": "?? stranded.ts\n",
+      }),
+    );
+
+    expect(result.ok).toBe(true);
   });
 });
