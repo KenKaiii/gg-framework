@@ -56,7 +56,7 @@ export const StreamingArea = memo(function StreamingArea({
   const hasThinking = showThinking && !!streamingThinking;
 
   if (!trimmedDisplay && !hasThinking) {
-    return reserveSpacing ? <Box marginBottom={1} /> : null;
+    return reserveSpacing ? <Box height={1} /> : null;
   }
   if (!isRunning && !trimmedDisplay) return null;
 

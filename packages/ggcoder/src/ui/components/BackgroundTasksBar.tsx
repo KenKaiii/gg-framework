@@ -115,20 +115,19 @@ export function BackgroundTasksBar({
 
   const count = tasks.length;
   const label = `Background task${count !== 1 ? "s" : ""}`;
+  const collapsedTextColor = focused ? theme.commandColor : theme.textDim;
 
   // Collapsed: single summary line
   if (!expanded) {
     return (
       <Box paddingLeft={1} paddingRight={1}>
-        <Text color={focused ? theme.primary : theme.textMuted}>{"● "}</Text>
-        <Text color={theme.accent} bold>
-          ({count})
-        </Text>
-        <Text color={focused ? theme.text : theme.textMuted}> {compact ? "bg tasks" : label}</Text>
+        <Text color={collapsedTextColor}>{"● "}</Text>
+        <Text color={collapsedTextColor}>({count})</Text>
+        <Text color={collapsedTextColor}> {compact ? "bg tasks" : label}</Text>
         {focused && !compact && (
           <Text color={theme.textDim}>
             {" \u00B7 "}
-            <Text color={theme.accent}>Enter</Text> to view
+            <Text color={theme.commandColor}>Enter</Text> to view
           </Text>
         )}
       </Box>
@@ -141,56 +140,48 @@ export function BackgroundTasksBar({
 
   return (
     <Box flexDirection="column" paddingLeft={1} paddingRight={1}>
-      <Box>
-        <Text color={theme.textMuted}>{"● "}</Text>
-        <Text color={theme.accent} bold>
-          ({count})
-        </Text>
-        <Text color={theme.text}> {label}</Text>
-      </Box>
+      <Text color={theme.textDim}>
+        -- {label.toLowerCase()} ({count}) --
+      </Text>
       {visible.map((task, i) => {
         const isSelected = i === selectedIndex;
-        const prefix = isSelected ? "\u276F " : "  ";
+        const textColor = isSelected ? theme.commandColor : theme.textDim;
         const cmd = truncateCommand(task.command, 50);
         const isRunning = task.exitCode === null;
         const dot = isRunning ? "\u25CF" : "\u25CB";
-        const statusColor = isRunning ? theme.success : theme.error;
         const statusLabel = isRunning ? "running" : `exit ${task.exitCode}`;
 
         return (
-          <Box key={task.id}>
-            <Text color={isSelected ? theme.primary : theme.textDim} bold={isSelected}>
-              {prefix}
-            </Text>
-            <Text color={isSelected ? theme.accent : theme.textMuted}>{task.id}</Text>
-            <Text>{"  "}</Text>
-            <Box flexGrow={1}>
-              <Text color={isSelected ? theme.text : theme.textMuted} bold={isSelected}>
+          <Box
+            key={task.id}
+            flexDirection="row"
+            backgroundColor={isSelected ? theme.border : undefined}
+          >
+            <Box width={9} flexShrink={0}>
+              <Text color={textColor}>{task.id}</Text>
+            </Box>
+            <Box flexGrow={1} paddingLeft={1}>
+              <Text color={textColor} wrap="truncate">
                 {cmd}
               </Text>
             </Box>
-            <Text color={statusColor} bold>
-              {dot} {statusLabel}
-            </Text>
+            <Box paddingLeft={2} flexShrink={0}>
+              <Text color={textColor}>
+                {dot} {statusLabel}
+              </Text>
+            </Box>
           </Box>
         );
       })}
-      {hidden > 0 && (
-        <Box>
-          <Text color={theme.textMuted}>
-            {"  "}+{hidden} more
-          </Text>
-        </Box>
-      )}
-      <Box>
-        <Text color={theme.textDim}>
-          {"  \u2191\u2193 navigate \u00B7 "}
-          <Text color={theme.accent}>K</Text>
-          {" kill \u00B7 "}
-          <Text color={theme.accent}>Esc</Text>
-          {" back"}
-        </Text>
-      </Box>
+      {hidden > 0 && <Text color={theme.textDim}>+{hidden} more</Text>}
+      <Text color={theme.textDim}>
+        <Text color={theme.primary}>↑↓</Text>
+        {" navigate · "}
+        <Text color={theme.primary}>K</Text>
+        {" kill · "}
+        <Text color={theme.primary}>Esc</Text>
+        {" back"}
+      </Text>
     </Box>
   );
 }

@@ -123,6 +123,7 @@ export function createTerminalHistoryPrinter({
             isAgentSpacingKind(previousPrintedKind) &&
             isAgentSpacingKind(item.kind),
           trailingBlankLine: endsWithBlankLine,
+          trailingNewlines: item.kind === "user" ? 0 : undefined,
         });
         if (formatted.length === 0) continue;
         printed.add(item.id);

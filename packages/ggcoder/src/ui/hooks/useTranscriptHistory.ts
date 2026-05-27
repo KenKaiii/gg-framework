@@ -17,6 +17,7 @@ interface UseTranscriptHistoryOptions {
   sessionPathRef: React.RefObject<string | undefined>;
   sessionManagerRef: React.RefObject<SessionManager | null>;
   sessionStore?: SessionStoreLike;
+  history: readonly CompletedItem[];
   setHistory: React.Dispatch<React.SetStateAction<CompletedItem[]>>;
   setLiveItems: React.Dispatch<React.SetStateAction<CompletedItem[]>>;
 }
@@ -26,6 +27,8 @@ interface UseTranscriptHistoryResult {
   streamedAssistantFlushRef: React.RefObject<{ flushedChars: number; text: string }>;
   printHistoryItems: (items: readonly CompletedItem[], options?: { force?: boolean }) => void;
   queueFlush: (items: CompletedItem[]) => void;
+  finalizeSubmittedUserItem: (item: CompletedItem) => void;
+  clearPendingHistory: () => void;
 }
 
 export function useTranscriptHistory({
@@ -35,6 +38,7 @@ export function useTranscriptHistory({
   sessionPathRef,
   sessionManagerRef,
   sessionStore,
+  history,
   setHistory,
   setLiveItems,
 }: UseTranscriptHistoryOptions): UseTranscriptHistoryResult {
@@ -95,6 +99,10 @@ export function useTranscriptHistory({
   );
 
   useEffect(() => {
+    printHistoryItems(history);
+  }, [history, printHistoryItems]);
+
+  useEffect(() => {
     const flushed = pendingHistoryFlushRef.current;
     if (flushed.length === 0) return;
     pendingHistoryFlushRef.current = [];
@@ -111,10 +119,28 @@ export function useTranscriptHistory({
     });
   }, [historyFlushGeneration, printHistoryItems, sessionStore, setHistory, setLiveItems]);
 
+  const finalizeSubmittedUserItem = useCallback(
+    (item: CompletedItem) => {
+      streamedAssistantFlushRef.current = { flushedChars: 0, text: "" };
+      setLiveItems((prev) => {
+        if (prev.length > 0) queueFlush(prev);
+        return [item];
+      });
+    },
+    [queueFlush, setLiveItems],
+  );
+
+  const clearPendingHistory = useCallback(() => {
+    pendingHistoryFlushRef.current = [];
+    terminalHistoryPrinter?.clear();
+  }, [terminalHistoryPrinter]);
+
   return {
     pendingHistoryFlushRef,
     streamedAssistantFlushRef,
     printHistoryItems,
     queueFlush,
+    finalizeSubmittedUserItem,
+    clearPendingHistory,
   };
 }
