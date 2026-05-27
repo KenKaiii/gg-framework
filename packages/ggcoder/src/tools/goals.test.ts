@@ -899,7 +899,9 @@ describe("goals tool state guards", () => {
     });
     const run = await getGoalRun(tmpProject, "goal-evidence-plan-upsert");
 
-    expect(result).toBe('Evidence-plan items upserted for "Proof plan upsert": 1 added, 1 updated.');
+    expect(result).toBe(
+      'Evidence-plan items upserted for "Proof plan upsert": 1 added, 1 updated.',
+    );
     expect(run?.evidencePlan).toEqual([
       expect.objectContaining({
         id: "manual-proof",

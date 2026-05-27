@@ -5,6 +5,7 @@ import { Spinner } from "./Spinner.js";
 import type { ToolGroupItem } from "../App.js";
 import { useTheme } from "../theme/theme.js";
 import { buildToolGroupSummary, type SummarySegment } from "../tool-group-summary.js";
+import { toolTonePalette } from "../transcript/tool-presentation.js";
 
 type ToolGroupTool = ToolGroupItem["tools"][number];
 const RESPONSE_LEFT_PADDING = 1;
@@ -12,10 +13,15 @@ const RESPONSE_LEFT_PADDING = 1;
 // ── Components ───────────────────────────────────────────
 
 function SummaryText({ segments, color }: { segments: SummarySegment[]; color: string }) {
+  const theme = useTheme();
   return (
     <>
       {segments.map((seg, i) => (
-        <Text key={i} bold={seg.bold} color={seg.color ?? color}>
+        <Text
+          key={i}
+          bold={seg.bold}
+          color={seg.tone ? toolTonePalette(theme, seg.tone).primary : color}
+        >
           {seg.text}
         </Text>
       ))}

@@ -1,6 +1,12 @@
 import type { GoalMode } from "../core/runtime-mode.js";
 import type { FooterStatusLayoutDecision } from "./components/BackgroundTasksBar.js";
 import type { CompletedItem } from "./app-items.js";
+import {
+  isTranscriptSpacingItem,
+  shouldTopSpaceAfterPrintedTranscriptBoundary,
+  shouldTopSpaceAssistantAfterToolBoundary as shouldTopSpaceAssistantAfterToolBoundaryFromTranscript,
+  shouldTopSpaceStreamingAssistant as shouldTopSpaceStreamingAssistantFromTranscript,
+} from "./transcript/spacing.js";
 
 export type OverlayPaneKind = "model" | "goal" | "skills" | "plan" | "theme" | "pixel";
 
@@ -185,98 +191,13 @@ const GOAL_STATUS_ROWS = 1;
 const COLLAPSED_FOOTER_STATUS_ROWS = 1;
 const MAX_EXPANDED_BACKGROUND_TASK_ROWS = 7;
 
-function isAgentSpacingKind(kind: CompletedItem["kind"]): boolean {
-  return [
-    "assistant",
-    "queued",
-    "task",
-    "goal",
-    "goal_progress",
-    "tool_start",
-    "tool_done",
-    "tool_group",
-    "server_tool_start",
-    "server_tool_done",
-    "subagent_group",
-    "info",
-    "error",
-    "stopped",
-    "plan_transition",
-    "goal_agent_transition",
-    "model_transition",
-    "theme_transition",
-    "plan_event",
-    "update_notice",
-    "compacting",
-    "compacted",
-    "duration",
-    "step_done",
-    "style_pack",
-    "setup_hint",
-  ].includes(kind);
-}
-
-function isLiveAssistantBoundaryKind(kind: CompletedItem["kind"]): boolean {
-  return [
-    "goal_progress",
-    "tool_start",
-    "tool_done",
-    "tool_group",
-    "server_tool_start",
-    "server_tool_done",
-    "subagent_group",
-    "plan_transition",
-    "goal_agent_transition",
-  ].includes(kind);
-}
-
 export function isAgentSpacingItem(item: CompletedItem): boolean {
-  return isAgentSpacingKind(item.kind);
+  return isTranscriptSpacingItem(item);
 }
 
-export function shouldTopSpaceAfterPrintedAgentBoundary({
-  currentKind,
-  previousLiveItem,
-  lastPendingHistoryItem,
-  lastHistoryItem,
-}: {
-  currentKind: CompletedItem["kind"];
-  previousLiveItem?: CompletedItem;
-  lastPendingHistoryItem?: CompletedItem;
-  lastHistoryItem?: CompletedItem;
-}): boolean {
-  const needsExternalSpacing = isAgentSpacingKind(currentKind);
-  if (!needsExternalSpacing) return false;
-  if (previousLiveItem !== undefined) return false;
-  const previousKind = lastPendingHistoryItem?.kind ?? lastHistoryItem?.kind;
-  return previousKind !== undefined && isAgentSpacingKind(previousKind);
-}
-
-export function shouldTopSpaceAssistantAfterToolBoundary({
-  text,
-  previousLiveItem,
-  lastPendingHistoryItem,
-  lastHistoryItem,
-}: {
-  text: string;
-  previousLiveItem?: CompletedItem;
-  lastPendingHistoryItem?: CompletedItem;
-  lastHistoryItem?: CompletedItem;
-}): boolean {
-  if (text.trim().length === 0) return false;
-  if (
-    shouldTopSpaceAfterPrintedAgentBoundary({
-      currentKind: "assistant",
-      previousLiveItem,
-      lastPendingHistoryItem,
-      lastHistoryItem,
-    })
-  ) {
-    return true;
-  }
-  const previousKind = previousLiveItem?.kind;
-  return previousKind !== undefined && isLiveAssistantBoundaryKind(previousKind);
-}
+export const shouldTopSpaceAfterPrintedAgentBoundary = shouldTopSpaceAfterPrintedTranscriptBoundary;
+export const shouldTopSpaceAssistantAfterToolBoundary =
+  shouldTopSpaceAssistantAfterToolBoundaryFromTranscript;
 
 export function shouldTopSpaceStreamingAssistant({
   visibleStreamingText,
@@ -289,9 +210,9 @@ export function shouldTopSpaceStreamingAssistant({
   lastPendingHistoryItem?: CompletedItem;
   lastHistoryItem?: CompletedItem;
 }): boolean {
-  return shouldTopSpaceAssistantAfterToolBoundary({
-    text: visibleStreamingText,
-    previousLiveItem: lastLiveItem,
+  return shouldTopSpaceStreamingAssistantFromTranscript({
+    visibleStreamingText,
+    lastLiveItem,
     lastPendingHistoryItem,
     lastHistoryItem,
   });

@@ -1,5 +1,4 @@
-import { LANGUAGE_DISPLAY_NAMES, type LanguageId } from "../core/language-detector.js";
-import { UPDATE_NOTICE_TEXT } from "./app-items.js";
+import type { LanguageId } from "../core/language-detector.js";
 import type { TerminalHistoryContext } from "./terminal-history.js";
 import { BLACK_CIRCLE } from "./constants/figures.js";
 import {
@@ -14,6 +13,13 @@ import {
   renderRoundBorderBox,
   wrapPlain,
 } from "./terminal-history-format.js";
+import {
+  presentError,
+  presentSetupHint,
+  presentStepDone,
+  presentStylePack,
+  presentUpdateNotice,
+} from "./transcript/presentation.js";
 
 export function renderStatusLine(
   glyph: string,
@@ -45,11 +51,18 @@ export function renderError(
   guidance: string,
   context: TerminalHistoryContext,
 ): string {
-  const lines = [color(context.theme.error, `✗ ${headline}`)];
-  if (message && message !== headline) {
-    lines.push(dim(context, indent(wrapPlain(message, context.columns - 4), "  ")));
+  const presentation = presentError({
+    kind: "error",
+    headline,
+    message,
+    guidance,
+    id: "history-error",
+  });
+  const lines = [color(context.theme.error, `${presentation.glyph}${presentation.headline}`)];
+  if (presentation.message) {
+    lines.push(dim(context, indent(wrapPlain(presentation.message, context.columns - 4), "  ")));
   }
-  lines.push(dim(context, indent(wrapPlain(`→ ${guidance}`, context.columns - 4), "  ")));
+  lines.push(dim(context, indent(wrapPlain(presentation.guidance, context.columns - 4), "  ")));
   return indent(block(lines), RESPONSE_LEFT_PADDING);
 }
 
@@ -58,28 +71,33 @@ export function renderStylePack(
   showSetupHint: boolean,
   context: TerminalHistoryContext,
 ): string {
-  const names = added.map((id) => LANGUAGE_DISPLAY_NAMES[id] ?? id).join(", ");
-  const headerLabel = added.length > 1 ? "STYLE PACKS ACTIVE" : "STYLE PACK ACTIVE";
+  const presentation = presentStylePack({
+    kind: "style_pack",
+    added,
+    showSetupHint,
+    id: "history-style-pack",
+  });
   const lines = [
-    `${color(context.theme.language, "◆ ", true)}${color(context.theme.language, headerLabel, true)}`,
-    color(context.theme.text, names, true),
+    `${color(context.theme.language, "◆ ", true)}${color(context.theme.language, presentation.headerLabel, true)}`,
+    color(context.theme.text, presentation.names, true),
   ];
-  if (showSetupHint) {
+  if (presentation.showSetupHint) {
     lines.push(
       "",
-      `${dim(context, "Tip: run ")}${color(context.theme.language, "/setup", true)}${dim(context, " to audit this project against the active pack(s)")}`,
+      `${dim(context, "Tip: run ")}${color(context.theme.language, "/setup", true)}${dim(context, presentation.setupHint)}`,
     );
   }
   return renderRoundBorderBox(lines, context, context.theme.language);
 }
 
 export function renderSetupHint(context: TerminalHistoryContext): string {
+  const presentation = presentSetupHint();
   return renderRoundBorderBox(
     [
-      `${color(context.theme.language, "◆ ", true)}${color(context.theme.language, "NO STYLE PACKS DETECTED", true)}`,
-      dim(context, "This directory has no recognized language manifest at its root."),
+      `${color(context.theme.language, "◆ ", true)}${color(context.theme.language, presentation.headerLabel, true)}`,
+      dim(context, presentation.body),
       "",
-      `${dim(context, "Tip: run ")}${color(context.theme.language, "/setup", true)}${dim(context, " to audit project hygiene or bootstrap a new project from scratch")}`,
+      `${dim(context, "Tip: run ")}${color(context.theme.language, "/setup", true)}${dim(context, presentation.setupHint)}`,
     ],
     context,
     context.theme.language,
@@ -87,8 +105,9 @@ export function renderSetupHint(context: TerminalHistoryContext): string {
 }
 
 export function renderUpdateNotice(_text: string, context: TerminalHistoryContext): string {
+  const presentation = presentUpdateNotice();
   return renderRoundBorderBox(
-    [color(context.theme.commandColor, UPDATE_NOTICE_TEXT, true)],
+    [color(context.theme.commandColor, presentation.text, true)],
     context,
     context.theme.commandColor,
   );
@@ -144,7 +163,13 @@ export function renderStepDone(
   description: string,
   context: TerminalHistoryContext,
 ): string {
-  return `${RESPONSE_LEFT_PADDING}${color(context.theme.success, "✓", true)} ${color(context.theme.success, `Step ${stepNum} done`, true)}${description ? dim(context, ` — ${description}`) : ""}`;
+  const presentation = presentStepDone({
+    kind: "step_done",
+    stepNum,
+    description,
+    id: "history-step-done",
+  });
+  return `${RESPONSE_LEFT_PADDING}${color(context.theme.success, presentation.glyph.trim(), true)} ${color(context.theme.success, presentation.text, true)}${presentation.description ? dim(context, presentation.description) : ""}`;
 }
 
 export { BLACK_CIRCLE, normalizeStatusText };

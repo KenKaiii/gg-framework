@@ -24,7 +24,7 @@ interface CompactionSpinnerProps {
 
 export function CompactionSpinner({
   staticDisplay = false,
-  marginTop = 1,
+  marginTop = 0,
 }: CompactionSpinnerProps) {
   const theme = useTheme();
   const { active: animationActive, tick } = useFocusedAnimation(!staticDisplay);
@@ -66,7 +66,7 @@ export function CompactionDone({
   newCount,
   tokensBefore,
   tokensAfter,
-  marginTop = 1,
+  marginTop = 0,
 }: CompactionDoneProps) {
   const theme = useTheme();
   const reduction = tokensBefore > 0 ? Math.round((1 - tokensAfter / tokensBefore) * 100) : 0;

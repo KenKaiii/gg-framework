@@ -9,8 +9,8 @@ export interface ToolGroupSummaryTool {
 export interface SummarySegment {
   text: string;
   bold: boolean;
-  /** If set, use this color instead of default text color. */
-  color?: string;
+  /** Semantic tool tone. Resolved to theme colors by each renderer. */
+  tone?: "read" | "search" | "write" | "run" | "web" | "agent" | "state" | "source" | "default";
 }
 
 type GroupRenderer = (
@@ -87,9 +87,9 @@ function renderGrepGroup(
   return [
     allDone
       ? [
-          { text: "Searched", bold: true },
+          { text: "Searched", bold: true, tone: "search" },
           { text: " for ", bold: false },
-          { text: String(count), bold: true },
+          { text: String(count), bold: true, tone: "search" },
           {
             text: ` ${plural(count, "pattern")}${detailSuffix(
               tools.map((tool) => String(tool.args.pattern ?? "")),
@@ -99,9 +99,9 @@ function renderGrepGroup(
           },
         ]
       : [
-          { text: "Searching", bold: true },
+          { text: "Searching", bold: true, tone: "search" },
           { text: " for ", bold: false },
-          { text: String(count), bold: true },
+          { text: String(count), bold: true, tone: "search" },
           {
             text: ` ${plural(count, "pattern")}${detailSuffix(
               tools.map((tool) => String(tool.args.pattern ?? "")),
@@ -122,18 +122,18 @@ function renderReadGroup(
   return [
     allDone
       ? [
-          { text: "Read", bold: true },
+          { text: "Read", bold: true, tone: "read" },
           { text: " ", bold: false },
-          { text: String(fileCount), bold: true },
+          { text: String(fileCount), bold: true, tone: "read" },
           {
             text: ` ${plural(fileCount, "file")}${detailSuffix(tools.map((tool) => basename(String(tool.args.file_path ?? ""))))}`,
             bold: false,
           },
         ]
       : [
-          { text: "Reading", bold: true },
+          { text: "Reading", bold: true, tone: "read" },
           { text: " ", bold: false },
-          { text: String(fileCount), bold: true },
+          { text: String(fileCount), bold: true, tone: "read" },
           {
             text: ` ${plural(fileCount, "file")}${detailSuffix(tools.map((tool) => basename(String(tool.args.file_path ?? ""))))}`,
             bold: false,
@@ -150,9 +150,9 @@ function renderFindGroup(
   return [
     allDone
       ? [
-          { text: "Found", bold: true },
+          { text: "Found", bold: true, tone: "search" },
           { text: " files for ", bold: false },
-          { text: String(count), bold: true },
+          { text: String(count), bold: true, tone: "search" },
           {
             text: ` ${plural(count, "pattern")}${detailSuffix(
               tools.map((tool) => String(tool.args.pattern ?? "")),
@@ -162,9 +162,9 @@ function renderFindGroup(
           },
         ]
       : [
-          { text: "Finding", bold: true },
+          { text: "Finding", bold: true, tone: "search" },
           { text: " files for ", bold: false },
-          { text: String(count), bold: true },
+          { text: String(count), bold: true, tone: "search" },
           {
             text: ` ${plural(count, "pattern")}${detailSuffix(
               tools.map((tool) => String(tool.args.pattern ?? "")),
@@ -184,9 +184,9 @@ function renderLsGroup(
   return [
     allDone
       ? [
-          { text: "Listed", bold: true },
+          { text: "Listed", bold: true, tone: "read" },
           { text: " ", bold: false },
-          { text: String(count), bold: true },
+          { text: String(count), bold: true, tone: "read" },
           {
             text: ` ${plural(count, "directory", "directories")}${detailSuffix(
               tools.map((tool) => String(tool.args.path ?? ".")),
@@ -196,9 +196,9 @@ function renderLsGroup(
           },
         ]
       : [
-          { text: "Listing", bold: true },
+          { text: "Listing", bold: true, tone: "read" },
           { text: " ", bold: false },
-          { text: String(count), bold: true },
+          { text: String(count), bold: true, tone: "read" },
           {
             text: ` ${plural(count, "directory", "directories")}${detailSuffix(
               tools.map((tool) => String(tool.args.path ?? ".")),
@@ -218,9 +218,9 @@ function renderKencodeQueryGroup(
   const count = tools.length;
   return [
     [
-      { text: allDone ? labels.done : labels.running, bold: true },
+      { text: allDone ? labels.done : labels.running, bold: true, tone: "web" },
       { text: " with ", bold: false },
-      { text: String(count), bold: true },
+      { text: String(count), bold: true, tone: "web" },
       {
         text: ` ${plural(count, "query", "queries")}${detailSuffix(
           tools.map((tool) =>

@@ -14,29 +14,18 @@ import {
 } from "./stores/taskbar-store.js";
 import { playNotificationSound } from "../utils/sound.js";
 import {
-  formatError,
   type Message,
   type Provider,
   type ThinkingLevel,
   type TextContent,
 } from "@kenkaiiii/gg-ai";
 import { extractImagePaths, type ImageAttachment } from "../utils/image.js";
-import {
-  buildGoalReferenceContext,
-  formatGoalReferencesForPrompt,
-} from "../core/goal-references.js";
+import { buildGoalReferenceContext } from "../core/goal-references.js";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import { useAgentLoop, type StreamSnapshot, type UserContent } from "./hooks/useAgentLoop.js";
-import { UserMessage } from "./components/UserMessage.js";
+import { useTranscriptHistory } from "./hooks/useTranscriptHistory.js";
 import type { PasteInfo } from "./components/InputArea.js";
-import { AssistantMessage } from "./components/AssistantMessage.js";
-import { MessageResponse } from "./components/MessageResponse.js";
-import { ToolExecution } from "./components/ToolExecution.js";
-import { ToolUseLoader } from "./components/ToolUseLoader.js";
-import { ToolGroupExecution } from "./components/ToolGroupExecution.js";
-import { ServerToolExecution } from "./components/ServerToolExecution.js";
-import { SubAgentPanel, type SubAgentInfo } from "./components/SubAgentPanel.js";
-import { CompactionSpinner, CompactionDone } from "./components/CompactionNotice.js";
+import type { SubAgentInfo } from "./components/SubAgentPanel.js";
 import type { SubAgentUpdate, SubAgentDetails } from "../tools/subagent.js";
 import { createWebSearchTool } from "../tools/web-search.js";
 import { StreamingArea } from "./components/StreamingArea.js";
@@ -50,7 +39,6 @@ import {
   syncGoalStatusEntries,
   type GoalStatusEntry,
 } from "./components/GoalStatusBar.js";
-import { Banner } from "./components/Banner.js";
 import { PlanOverlay } from "./components/PlanOverlay.js";
 import { ModelSelector } from "./components/ModelSelector.js";
 import { PixelOverlay } from "./components/PixelOverlay.js";
@@ -67,8 +55,7 @@ import { useTheme, useSetTheme, type ThemeName } from "./theme/theme.js";
 import { useTerminalTitle } from "./hooks/useTerminalTitle.js";
 import { getGitBranch } from "../utils/git.js";
 import { getModel, getContextWindow } from "../core/model-registry.js";
-import { BLACK_CIRCLE } from "./constants/figures.js";
-import { DISPLAY_ITEM_CUSTOM_KIND, SessionManager } from "../core/session-manager.js";
+import { SessionManager } from "../core/session-manager.js";
 import {
   appendMessagesToSession as appendSessionMessages,
   createCompactedSessionCheckpoint,
@@ -96,11 +83,7 @@ import {
 } from "../core/setup-history.js";
 import { loadCustomCommands, type CustomCommand } from "../core/custom-commands.js";
 import { buildSystemPrompt } from "../system-prompt.js";
-import {
-  detectLanguages,
-  LANGUAGE_DISPLAY_NAMES,
-  type LanguageId,
-} from "../core/language-detector.js";
+import { detectLanguages, type LanguageId } from "../core/language-detector.js";
 import { detectVerifyCommands } from "../core/verify-commands.js";
 import type { Skill } from "../core/skills.js";
 import {
@@ -130,7 +113,6 @@ import {
   loadGoalRunsSync,
   reconcileActiveGoalRuns,
   saveGoalRuns,
-  saveGoalRunsSync,
   updateGoalTask,
   upsertGoalRun,
   type GoalReference,
@@ -143,19 +125,10 @@ import {
   saveTasksSync,
   type TaskRecord,
 } from "../core/tasks-store.js";
-import {
-  APPLY_INTEGRATION_TO_MAIN_TASK_TITLE,
-  COMMIT_INTEGRATED_GOAL_CHANGES_TASK_TITLE,
-  canCompleteGoalRun,
-  decideGoalNextAction,
-} from "../core/goal-controller.js";
+import { canCompleteGoalRun, decideGoalNextAction } from "../core/goal-controller.js";
 import { runGoalPrerequisiteChecks } from "../core/goal-prerequisites.js";
 import { runGoalVerifierCommand } from "../core/goal-verifier.js";
-import {
-  checkGoalWorktreeIntegration,
-  isGoalWorktreeDirtyError,
-  type GoalWorktreeDirtyError,
-} from "../core/goal-worktree.js";
+import { checkGoalWorktreeIntegration, isGoalWorktreeDirtyError } from "../core/goal-worktree.js";
 import {
   listGoalWorkers,
   startGoalWorker,
@@ -170,7 +143,7 @@ import {
   parseGoalSyntheticEvent,
 } from "./goal-events.js";
 import type { GoalMode } from "../core/runtime-mode.js";
-import type { TerminalHistoryContext, TerminalHistoryPrinter } from "./terminal-history.js";
+import type { TerminalHistoryPrinter } from "./terminal-history.js";
 import {
   buildUserContentWithAttachments,
   isGoalPromptCommandName,
@@ -187,20 +160,33 @@ import {
   goalTerminalProgressId,
   routeGoalSyntheticEvent,
   summarizeGoalCompletion,
-  truncateGoalProgressText,
 } from "./goal-progress.js";
 import {
   getChatControlsLayoutDecision,
   getDoneFlushDecision,
   getGoalSetupPaneTransitionAfterRun,
-  isAgentSpacingItem,
   MIN_LIVE_AREA_ROWS,
   nextGoalModeAfterAgentDone,
   shouldTopSpaceAfterPrintedAgentBoundary,
-  shouldTopSpaceAssistantAfterToolBoundary,
   shouldTopSpaceStreamingAssistant,
   type DoneStatus,
 } from "./layout-decisions.js";
+import { isTranscriptSpacingItem } from "./transcript/spacing.js";
+import { renderTranscriptItem } from "./transcript/TranscriptRenderer.js";
+import { formatDuration } from "./duration-format.js";
+import { pickDurationVerb } from "./duration-summary.js";
+import { toErrorItem } from "./error-item.js";
+import {
+  buildGoalDirtyWorktreePauseRun,
+  buildGoalDirtyWorktreeUserPrompt,
+  buildGoalTaskPromptWithReferences,
+  buildGoalUserPauseRun,
+  goalDirtyWorktreeInfoText,
+  goalRunNeedsExplicitContinuationAfterWorker,
+  goalTaskProgress,
+  shouldKeepGoalRunTrackedAfterDecision,
+  shouldRunGoalTaskInMainCheckout,
+} from "./goal-run-helpers.js";
 import {
   compactHistory,
   getNextGeneratedItemId,
@@ -212,14 +198,11 @@ import {
   removeItemsWithIds,
   uniqueItemsById,
 } from "./item-helpers.js";
-import { UPDATE_NOTICE_TEXT } from "./app-items.js";
 import type {
   CompletedItem,
   CompactedItem,
-  ErrorItem,
   GoalItem,
   GoalProgressDraft,
-  GoalProgressItem,
   QueuedItem,
   TaskItem,
   ServerToolDoneItem,
@@ -280,42 +263,15 @@ export {
   partitionCompleted,
   pinStreamingTextBeforeToolBoundary,
 } from "./item-helpers.js";
-
-/** Where ggcoder bugs should be reported. Surfaced in the guidance line. */
-const GGCODER_BUG_REPORT_URL = "github.com/kenkaiiii/gg-framework/issues";
-
-/**
- * Build an ErrorItem from any thrown value. Centralises headline / message /
- * guidance extraction so every error answers the same question for the user:
- *   "Should I retry, or is this a ggcoder bug to report?"
- */
-function toErrorItem(err: unknown, id: string, contextPrefix?: string): ErrorItem {
-  const f = formatError(err);
-  const headline = contextPrefix ? `${contextPrefix} — ${f.headline}` : f.headline;
-  // For ggcoder bugs, swap the generic "see /help" guidance for an actual URL
-  // so users have a clear place to send the report.
-  const guidance =
-    f.source === "ggcoder"
-      ? `This looks like a ggcoder bug — please send it to the dev at ${GGCODER_BUG_REPORT_URL}.`
-      : f.guidance;
-  // Mirror every user-visible error into ~/.gg/debug.log so reports can be
-  // diagnosed even after the terminal scrollback is gone.
-  log("ERROR", "ui-error", headline, {
-    source: f.source,
-    message: f.message,
-    ...(f.provider ? { provider: f.provider } : {}),
-    ...(f.statusCode != null ? { statusCode: String(f.statusCode) } : {}),
-    ...(f.requestId ? { requestId: f.requestId } : {}),
-    ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
-  });
-  return {
-    kind: "error",
-    headline,
-    message: f.message,
-    guidance,
-    id,
-  };
-}
+export {
+  buildGoalDirtyWorktreePauseRun,
+  buildGoalDirtyWorktreeUserPrompt,
+  buildGoalUserPauseRun,
+  goalDirtyWorktreeInfoText,
+  goalRunNeedsExplicitContinuationAfterWorker,
+  shouldKeepGoalRunTrackedAfterDecision,
+  shouldRunGoalTaskInMainCheckout,
+} from "./goal-run-helpers.js";
 
 /** Tools that get aggregated into a single compact group when possible. */
 const AGGREGATABLE_TOOLS = new Set([
@@ -329,174 +285,6 @@ const AGGREGATABLE_TOOLS = new Set([
 ]);
 
 const RUNNING_INDICATOR_ANIMATION_MS = 1_200;
-
-function buildGoalTaskPromptWithReferences(run: GoalRun, taskPrompt: string): string {
-  if (taskPrompt.includes("## Goal References (MANDATORY)")) return taskPrompt;
-  const references = formatGoalReferencesForPrompt(run.references ?? []);
-  return references ? `${references}\n\n${taskPrompt}` : taskPrompt;
-}
-
-export function shouldRunGoalTaskInMainCheckout(taskTitle: string): boolean {
-  return (
-    taskTitle === APPLY_INTEGRATION_TO_MAIN_TASK_TITLE ||
-    taskTitle === COMMIT_INTEGRATED_GOAL_CHANGES_TASK_TITLE
-  );
-}
-
-function goalTaskProgress(
-  run: GoalRun,
-  task: GoalRun["tasks"][number] | undefined,
-): { taskNumber: number; taskTotal: number } | undefined {
-  if (!task) return undefined;
-  const taskIndex = run.tasks.findIndex((item) => item.id === task.id);
-  if (taskIndex < 0 || run.tasks.length === 0) return undefined;
-  return { taskNumber: taskIndex + 1, taskTotal: run.tasks.length };
-}
-
-export function buildGoalDirtyWorktreeUserPrompt(error: GoalWorktreeDirtyError): string {
-  return (
-    `A Goal worker could not start because the project needs a clean working tree before GG Coder can create an isolated Goal worktree.\n\n` +
-    `Dirty files from \`git status --porcelain\`:\n${error.dirtyStatus}\n\n` +
-    `Explain this clearly to the user in one short message. Ask whether they want you to commit the current changes, stash them, or pause the Goal. If the user chooses commit, inspect \`git status --porcelain\`, stage only the listed dirty files the user approved, run an appropriate git commit command, then resume/continue the Goal only after the working tree is clean. Do not run git commit, git stash, or discard changes unless the user explicitly chooses one.`
-  );
-}
-
-export function goalDirtyWorktreeInfoText(): string {
-  return "Goal paused: your working tree has uncommitted changes. Asking whether to commit or stash them before starting isolated Goal workers.";
-}
-
-function summarizeDirtyStatusForBlocker(dirtyStatus: string): string {
-  return dirtyStatus
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .join("; ");
-}
-
-function buildGoalPauseRun(run: GoalRun, blocker: string): GoalRun {
-  return {
-    ...run,
-    status: "paused",
-    activeWorkerId: undefined,
-    continueRequestedAt: undefined,
-    blockers: Array.from(new Set([...run.blockers, blocker])),
-  };
-}
-
-export function buildGoalDirtyWorktreePauseRun(
-  run: GoalRun,
-  error: GoalWorktreeDirtyError,
-): GoalRun {
-  return buildGoalPauseRun(
-    run,
-    `Goal worker startup is awaiting a human choice because the working tree has uncommitted changes: ${summarizeDirtyStatusForBlocker(error.dirtyStatus)}. Commit the current changes, stash them, or keep the Goal paused before starting isolated Goal workers.`,
-  );
-}
-
-export function buildGoalUserPauseRun(run: GoalRun): GoalRun {
-  return buildGoalPauseRun(
-    run,
-    "Goal paused by user from the mini TUI; auto-continuation is stopped until resumed.",
-  );
-}
-
-export function goalRunNeedsExplicitContinuationAfterWorker(run: GoalRun | undefined): boolean {
-  return !!run?.continueRequestedAt && !goalHasBlockingPrerequisites(run);
-}
-
-export function shouldKeepGoalRunTrackedAfterDecision(
-  decision: ReturnType<typeof decideGoalNextAction>,
-): boolean {
-  return (
-    decision.kind === "start_worker" ||
-    decision.kind === "run_verifier" ||
-    decision.kind === "create_task" ||
-    (decision.kind === "wait" && decision.workerId !== undefined)
-  );
-}
-
-function goalProgressLoaderStatus(item: GoalProgressItem): "running" | "done" | "error" {
-  if (item.status === "failed" || item.status === "fail" || item.status === "blocked") {
-    return "error";
-  }
-  if (
-    item.phase === "worker_finished" ||
-    item.phase === "verifier_finished" ||
-    item.phase === "terminal"
-  ) {
-    return "done";
-  }
-  return "running";
-}
-
-function goalProgressColor(item: GoalProgressItem, theme: ReturnType<typeof useTheme>): string {
-  const isError = item.status === "failed" || item.status === "fail" || item.status === "blocked";
-  if (isError) return theme.error;
-  if (item.phase === "worker_finished" || item.phase === "terminal") return theme.success;
-  if (item.phase === "verifier_finished" || item.phase === "verifier_started") return theme.accent;
-  if (item.phase === "orchestrator_reviewing" || item.phase === "orchestrator_working") {
-    return theme.secondary;
-  }
-  if (item.phase === "continuing") return theme.warning;
-  return theme.primary;
-}
-
-// ── Duration summary ─────────────────────────────────────
-
-function formatDuration(ms: number): string {
-  const totalSec = Math.round(ms / 1000);
-  if (totalSec < 60) return `${totalSec}s`;
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
-}
-
-function pickDurationVerb(toolsUsed: string[]): string {
-  const has = (name: string) => toolsUsed.includes(name);
-  const hasAny = (...names: string[]) => names.some(has);
-  const writing = has("edit") || has("write");
-  const reading = has("read") || has("grep") || has("find") || has("ls");
-
-  // Multi-tool combos (most specific first)
-  if (has("subagent") && writing) return "Orchestrated changes for";
-  if (has("subagent")) return "Delegated work for";
-  if (has("web-fetch") && writing) return "Researched & coded for";
-  if (has("web-fetch") && reading) return "Researched for";
-  if (has("web-fetch")) return "Fetched the web for";
-  if (has("bash") && writing) return "Built & ran for";
-  if (has("edit") && has("write")) return "Crafted code for";
-  if (has("edit") && has("bash")) return "Refactored & tested for";
-  if (has("edit") && reading) return "Refactored for";
-  if (has("edit")) return "Refactored for";
-  if (has("write") && has("bash")) return "Wrote & ran for";
-  if (has("write") && reading) return "Wrote code for";
-  if (has("write")) return "Wrote code for";
-  if (has("bash") && has("grep")) return "Hacked away for";
-  if (has("bash") && reading) return "Ran & investigated for";
-  if (has("bash")) return "Executed commands for";
-  if (hasAny("task-output", "task-stop")) return "Managed background processes for";
-  if (has("grep") && has("read")) return "Investigated for";
-  if (has("grep") && has("find")) return "Scoured the codebase for";
-  if (has("grep")) return "Searched for";
-  if (has("read") && has("find")) return "Explored for";
-  if (has("read")) return "Studied the code for";
-  if (has("find") || has("ls")) return "Browsed files for";
-
-  // No tools used — pure text response
-  const phrases = [
-    "Pondered for",
-    "Thought for",
-    "Reasoned for",
-    "Mulled it over for",
-    "Noodled on it for",
-    "Brewed up a response in",
-    "Cooked up an answer in",
-    "Worked out a reply in",
-    "Channeled wisdom for",
-    "Conjured a response in",
-  ];
-  return phrases[Math.floor(Math.random() * phrases.length)];
-}
 
 // ── App Props ──────────────────────────────────────────────
 
@@ -790,76 +578,24 @@ export function App(props: AppProps) {
 
   const sessionStore = props.sessionStore;
 
-  const terminalHistoryContextRef = useRef<TerminalHistoryContext>({
-    theme,
-    columns,
-    version: props.version,
-    model: currentModel,
-    provider: currentProvider,
-    cwd: displayedCwd,
-  });
-  useEffect(() => {
-    terminalHistoryContextRef.current = {
-      theme,
-      columns,
-      version: props.version,
-      model: currentModel,
-      provider: currentProvider,
-      cwd: displayedCwd,
-    };
-  }, [theme, columns, props.version, currentModel, currentProvider, displayedCwd]);
-
-  const printHistoryItems = useCallback(
-    (items: readonly CompletedItem[], options?: { force?: boolean }) => {
-      if (!props.terminalHistoryPrinter || items.length === 0) return;
-      props.terminalHistoryPrinter.print(items, terminalHistoryContextRef.current, {
-        ...options,
-        write: writeStdout,
-      });
-    },
-    [props.terminalHistoryPrinter, writeStdout],
-  );
-
-  const pendingHistoryFlushRef = useRef<CompletedItem[]>([]);
-  const persistedDisplayItemIdsRef = useRef<Set<string>>(new Set());
-  const streamedAssistantFlushRef = useRef<{ flushedChars: number; text: string }>({
-    flushedChars: 0,
-    text: "",
-  });
-  const [historyFlushGeneration, setHistoryFlushGeneration] = useState(0);
-
-  const queueFlush = useCallback(
-    (items: CompletedItem[]) => {
-      const flushed = trimFlushedItems(items);
-      if (flushed.length === 0) return;
-      pendingHistoryFlushRef.current = [...pendingHistoryFlushRef.current, ...flushed];
-      const sessionPath = sessionPathRef.current;
-      const sessionManager = sessionManagerRef.current;
-      if (sessionPath && sessionManager) {
-        for (const item of flushed) {
-          if (persistedDisplayItemIdsRef.current.has(item.id)) continue;
-          persistedDisplayItemIdsRef.current.add(item.id);
-          void sessionManager.appendEntry(sessionPath, {
-            type: "custom",
-            kind: DISPLAY_ITEM_CUSTOM_KIND,
-            data: { version: 1, item },
-            id: `display-${item.id}`,
-            parentId: null,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      }
-      if (sessionStore) {
-        const queuedIds = new Set(items.map((item) => item.id));
-        sessionStore.liveItems = removeItemsWithIds(
-          uniqueItemsById(sessionStore.liveItems ?? []),
-          queuedIds,
-        );
-      }
-      setHistoryFlushGeneration((generation) => generation + 1);
-    },
-    [sessionStore],
-  );
+  const { pendingHistoryFlushRef, streamedAssistantFlushRef, printHistoryItems, queueFlush } =
+    useTranscriptHistory({
+      terminalHistoryPrinter: props.terminalHistoryPrinter,
+      terminalHistoryContext: {
+        theme,
+        columns,
+        version: props.version,
+        model: currentModel,
+        provider: currentProvider,
+        cwd: displayedCwd,
+      },
+      writeStdout,
+      sessionPathRef,
+      sessionManagerRef,
+      sessionStore,
+      setHistory,
+      setLiveItems,
+    });
 
   const finalizeSubmittedUserItem = useCallback(
     (item: UserItem) => {
@@ -897,23 +633,6 @@ export function App(props: AppProps) {
   useEffect(() => {
     printHistoryItems(history);
   }, [history, printHistoryItems]);
-
-  useEffect(() => {
-    const flushed = pendingHistoryFlushRef.current;
-    if (flushed.length === 0) return;
-    pendingHistoryFlushRef.current = [];
-    printHistoryItems(flushed);
-    const flushedIds = new Set(flushed.map((item) => item.id));
-    setLiveItems((prev) => prev.filter((item) => !flushedIds.has(item.id)));
-    setHistory((prev) => {
-      const existingIds = new Set(prev.map((item) => item.id));
-      const nextItems = flushed.filter((item) => !existingIds.has(item.id));
-      if (nextItems.length === 0) return prev;
-      const next = compactHistory([...prev, ...nextItems]);
-      if (sessionStore) sessionStore.history = next;
-      return next;
-    });
-  }, [historyFlushGeneration, printHistoryItems, sessionStore]);
 
   // Mirror session state into renderApp's closure so resetUI() can re-seed
   // the conversation on remount. Each panel that previously did a bare ANSI
@@ -2910,491 +2629,22 @@ export function App(props: AppProps) {
     ];
   }, [customCommands]);
 
-  const normalizeStatusText = (text: string): string =>
-    text.replace(/\\n/g, "\n").replace(/^\n+|\n+$/g, "");
-
-  const renderStatusMessage = (
-    key: string,
-    glyph: string,
-    content: React.ReactNode,
-    glyphColor = theme.commandColor,
-    options: { bold?: boolean; muted?: boolean; marginTop?: number } = {},
-  ) => (
-    <Box
-      key={key}
-      flexDirection="row"
-      paddingLeft={1}
-      marginTop={options.marginTop ?? 0}
-      flexShrink={1}
-    >
-      <Box width={2} flexShrink={0}>
-        <Text color={glyphColor} bold={options.bold ?? true}>
-          {glyph}
-        </Text>
-      </Box>
-      <Box flexDirection="column" flexGrow={1}>
-        <Text
-          color={options.muted ? theme.textDim : theme.commandColor}
-          bold={options.bold}
-          wrap="wrap"
-        >
-          {content}
-        </Text>
-      </Box>
-    </Box>
-  );
-
-  const renderItem = (item: CompletedItem, index: number, items: CompletedItem[]) => {
-    const previousLiveItem = index > 0 ? items[index - 1] : undefined;
-    const transcriptMarginTop =
-      item.kind === "assistant"
-        ? shouldTopSpaceAssistantAfterToolBoundary({
-            text: item.text,
-            previousLiveItem,
-            lastPendingHistoryItem: pendingHistoryFlushRef.current.at(-1),
-            lastHistoryItem: history.at(-1),
-          })
-          ? 1
-          : 0
-        : isAgentSpacingItem(item)
-          ? 1
-          : 0;
-    const withTranscriptSpacing = (node: React.ReactNode): React.ReactNode =>
-      transcriptMarginTop > 0 ? (
-        <Box
-          key={`${item.id}-transcript-spacing`}
-          flexDirection="column"
-          marginTop={transcriptMarginTop}
-        >
-          {node}
-        </Box>
-      ) : (
-        node
-      );
-
-    switch (item.kind) {
-      case "tombstone":
-        return null;
-      case "banner":
-        return (
-          <Banner
-            key={item.id}
-            version={props.version}
-            model={currentModel}
-            provider={currentProvider}
-            cwd={displayedCwd}
-          />
-        );
-      case "user":
-        return (
-          <UserMessage
-            key={item.id}
-            text={item.text}
-            imageCount={item.imageCount}
-            pasteInfo={item.pasteInfo}
-          />
-        );
-      case "goal": {
-        const workerSuffix = item.workerId ? ` · worker ${item.workerId}` : "";
-        const text = `▶ Goal: ${item.title}${workerSuffix}`;
-        return withTranscriptSpacing(
-          <Box key={item.id} paddingLeft={1} width={columns} flexShrink={1}>
-            <Text color={theme.success} wrap="truncate">
-              {truncateGoalProgressText(text, Math.max(8, columns - 2))}
-            </Text>
-          </Box>,
-        );
-      }
-      case "goal_progress": {
-        const color = goalProgressColor(item, theme);
-        const loaderStatus = goalProgressLoaderStatus(item);
-        const workerSuffix = item.workerId ? ` · worker ${item.workerId}` : "";
-        const titleText = `${item.title}${workerSuffix}`;
-        const hasResponseBody =
-          !!item.detail || !!item.summaryRows?.length || !!item.summarySections?.length;
-        return withTranscriptSpacing(
-          <Box key={item.id} flexDirection="column" width={columns}>
-            <Box flexDirection="row" paddingLeft={1} width={columns}>
-              <ToolUseLoader status={loaderStatus} staticDisplay color={color} />
-              <Text color={color} bold wrap="truncate">
-                {truncateGoalProgressText(titleText, Math.max(8, columns - 4))}
-              </Text>
-            </Box>
-            {hasResponseBody ? (
-              <MessageResponse>
-                <Box flexDirection="column" flexShrink={1}>
-                  {item.detail ? (
-                    <Text color={theme.textDim} wrap="wrap">
-                      {item.detail}
-                    </Text>
-                  ) : null}
-                  {item.summaryRows?.map((row) => (
-                    <Text key={`${item.id}-${row.label}`} wrap="wrap">
-                      <Text color={theme.textDim}>{row.label.padEnd(12)}</Text>
-                      <Text color={theme.text}>{row.value}</Text>
-                      {row.detail ? <Text color={theme.textDim}>{` · ${row.detail}`}</Text> : null}
-                    </Text>
-                  ))}
-                  {item.summarySections?.map((section) => (
-                    <Box key={`${item.id}-${section.title}`} flexDirection="column" flexShrink={1}>
-                      <Text color={theme.textDim}>{section.title}</Text>
-                      {section.lines.map((line, lineIndex) => (
-                        <Text
-                          key={`${item.id}-${section.title}-${lineIndex}`}
-                          color={theme.text}
-                          wrap="wrap"
-                        >
-                          {`• ${line}`}
-                        </Text>
-                      ))}
-                    </Box>
-                  ))}
-                </Box>
-              </MessageResponse>
-            ) : null}
-          </Box>,
-        );
-      }
-      case "style_pack": {
-        const names = item.added.map((id) => LANGUAGE_DISPLAY_NAMES[id]);
-        const headerLabel = item.added.length > 1 ? "STYLE PACKS ACTIVE" : "STYLE PACK ACTIVE";
-        return withTranscriptSpacing(
-          <Box key={item.id} paddingLeft={1} flexShrink={1}>
-            <Box
-              flexShrink={1}
-              flexDirection="column"
-              borderStyle="round"
-              borderColor={theme.language}
-              paddingX={1}
-            >
-              <Text wrap="wrap">
-                <Text color={theme.language} bold>
-                  {"◆ "}
-                </Text>
-                <Text color={theme.language} bold>
-                  {headerLabel}
-                </Text>
-              </Text>
-              <Text color={theme.text} bold wrap="wrap">
-                {names.join(", ")}
-              </Text>
-              {item.showSetupHint && (
-                <Box marginTop={1}>
-                  <Text wrap="wrap">
-                    <Text color={theme.textMuted}>{"Tip: run "}</Text>
-                    <Text color={theme.language} bold>
-                      {"/setup"}
-                    </Text>
-                    <Text color={theme.textMuted}>
-                      {" to audit this project against the active pack(s)"}
-                    </Text>
-                  </Text>
-                </Box>
-              )}
-            </Box>
-          </Box>,
-        );
-      }
-      case "setup_hint":
-        return withTranscriptSpacing(
-          <Box key={item.id} paddingLeft={1} flexShrink={1}>
-            <Box
-              flexShrink={1}
-              flexDirection="column"
-              borderStyle="round"
-              borderColor={theme.language}
-              paddingX={1}
-            >
-              <Text wrap="wrap">
-                <Text color={theme.language} bold>
-                  {"◆ "}
-                </Text>
-                <Text color={theme.language} bold>
-                  {"NO STYLE PACKS DETECTED"}
-                </Text>
-              </Text>
-              <Text color={theme.textMuted} wrap="wrap">
-                {"This directory has no recognized language manifest at its root."}
-              </Text>
-              <Box marginTop={1}>
-                <Text wrap="wrap">
-                  <Text color={theme.textMuted}>{"Tip: run "}</Text>
-                  <Text color={theme.language} bold>
-                    {"/setup"}
-                  </Text>
-                  <Text color={theme.textMuted}>
-                    {" to audit project hygiene or bootstrap a new project from scratch"}
-                  </Text>
-                </Text>
-              </Box>
-            </Box>
-          </Box>,
-        );
-      case "assistant":
-        return withTranscriptSpacing(
-          <AssistantMessage
-            key={item.id}
-            text={item.text}
-            thinking={item.thinking}
-            thinkingMs={item.thinkingMs}
-            renderMarkdown={renderMarkdown}
-            availableTerminalHeight={measuredLiveAreaRows}
-            marginTop={0}
-          />,
-        );
-      case "tool_start":
-        return withTranscriptSpacing(
-          <ToolExecution
-            key={item.id}
-            status="running"
-            name={item.name}
-            args={item.args}
-            progressOutput={(item as ToolStartItem).progressOutput}
-            animateUntil={item.animateUntil}
-            marginTop={0}
-          />,
-        );
-      case "tool_done":
-        return withTranscriptSpacing(
-          <ToolExecution
-            key={item.id}
-            status="done"
-            name={item.name}
-            args={item.args}
-            result={item.result}
-            isError={item.isError}
-            details={item.details}
-            marginTop={0}
-          />,
-        );
-      case "tool_group":
-        return withTranscriptSpacing(
-          <ToolGroupExecution key={item.id} tools={item.tools} marginTop={0} />,
-        );
-      case "server_tool_start":
-        return withTranscriptSpacing(
-          <ServerToolExecution
-            key={item.id}
-            status="running"
-            name={item.name}
-            input={item.input}
-            startedAt={item.startedAt}
-            animateUntil={item.animateUntil}
-            marginTop={0}
-          />,
-        );
-      case "server_tool_done":
-        return withTranscriptSpacing(
-          <ServerToolExecution
-            key={item.id}
-            status="done"
-            name={item.name}
-            input={item.input}
-            durationMs={item.durationMs}
-            resultType={item.resultType}
-            marginTop={0}
-          />,
-        );
-      case "error": {
-        const showMessage = item.message && item.message !== item.headline;
-        return withTranscriptSpacing(
-          <Box key={item.id} flexDirection="row" paddingLeft={1} flexShrink={1}>
-            <Box width={2} flexShrink={0}>
-              <Text color={theme.error} bold>
-                {"✗ "}
-              </Text>
-            </Box>
-            <Box flexDirection="column" flexGrow={1}>
-              <Text color={theme.error} wrap="wrap">
-                {item.headline}
-              </Text>
-              {showMessage && (
-                <Text color={theme.textDim} wrap="wrap">
-                  {item.message}
-                </Text>
-              )}
-              <Text color={theme.textDim} wrap="wrap">{`→ ${item.guidance}`}</Text>
-            </Box>
-          </Box>,
-        );
-      }
-      case "info":
-        return withTranscriptSpacing(
-          renderStatusMessage(item.id, "○ ", item.text, theme.commandColor, { muted: true }),
-        );
-      case "update_notice":
-        return withTranscriptSpacing(
-          <Box key={item.id} paddingLeft={1} flexShrink={1}>
-            <Box flexShrink={1} borderStyle="round" borderColor={theme.commandColor} paddingX={1}>
-              <Text color={theme.commandColor} bold wrap="wrap">
-                {UPDATE_NOTICE_TEXT}
-              </Text>
-            </Box>
-          </Box>,
-        );
-      case "plan_transition":
-        return withTranscriptSpacing(
-          renderStatusMessage(
-            item.id,
-            `${BLACK_CIRCLE} `,
-            normalizeStatusText(item.text),
-            theme.commandColor,
-            { bold: true },
-          ),
-        );
-      case "goal_agent_transition":
-        return withTranscriptSpacing(
-          renderStatusMessage(
-            item.id,
-            `${BLACK_CIRCLE} `,
-            normalizeStatusText(item.text),
-            theme.commandColor,
-            { bold: true },
-          ),
-        );
-      case "task":
-        return withTranscriptSpacing(
-          renderStatusMessage(
-            item.id,
-            "▸ ",
-            <>
-              <Text color={theme.textDim}>{"Task: "}</Text>
-              <Text color={theme.commandColor} bold>
-                {item.title}
-              </Text>
-            </>,
-            theme.commandColor,
-            { bold: true },
-          ),
-        );
-      case "model_transition":
-        return withTranscriptSpacing(
-          renderStatusMessage(
-            item.id,
-            "▸ ",
-            <>
-              <Text color={theme.textDim}>{"Switched to "}</Text>
-              <Text color={theme.commandColor} bold>
-                {item.modelName}
-              </Text>
-            </>,
-            theme.commandColor,
-            { bold: true },
-          ),
-        );
-      case "theme_transition":
-        return withTranscriptSpacing(
-          renderStatusMessage(
-            item.id,
-            "◐ ",
-            <>
-              <Text color={theme.textDim}>{"Theme switched to "}</Text>
-              <Text color={theme.commandColor} bold>
-                {item.themeName}
-              </Text>
-            </>,
-            theme.commandColor,
-            { bold: true },
-          ),
-        );
-      case "plan_event": {
-        // Plan-domain status changes (approve / reject / dismiss). Use the
-        // command accent so transient TUI status rows share one purple voice.
-        const label =
-          item.event === "approved"
-            ? "Plan approved"
-            : item.event === "rejected"
-              ? "Plan rejected"
-              : "Plan dismissed";
-        return withTranscriptSpacing(
-          renderStatusMessage(
-            item.id,
-            "○ ",
-            <>
-              <Text>{label}</Text>
-              {item.detail ? <Text color={theme.textDim}>{` — "${item.detail}"`}</Text> : null}
-            </>,
-            theme.commandColor,
-            { bold: true },
-          ),
-        );
-      }
-      case "stopped":
-        // Cancellation / abort acknowledgement (ESC, auto-setup cancel, etc.).
-        // Muted dim treatment — this is an ack, not a state change worth a
-        // gradient. Glyph `⊘` reads as "stop" without being alarming.
-        return withTranscriptSpacing(
-          renderStatusMessage(item.id, "⊘ ", normalizeStatusText(item.text), theme.commandColor, {
-            bold: true,
-          }),
-        );
-      case "step_done":
-        return withTranscriptSpacing(
-          <Box key={item.id} paddingLeft={1} flexShrink={1}>
-            <Text wrap="wrap">
-              <Text color={theme.success} bold>
-                {"✓ "}
-              </Text>
-              <Text color={theme.success} bold>
-                {`Step ${item.stepNum} done`}
-              </Text>
-              {item.description ? (
-                <Text color={theme.textDim}>{` — ${item.description}`}</Text>
-              ) : null}
-            </Text>
-          </Box>,
-        );
-      case "queued": {
-        const suffix = item.imageCount
-          ? ` (+${item.imageCount} image${item.imageCount > 1 ? "s" : ""})`
-          : "";
-        return withTranscriptSpacing(
-          <Box key={item.id} flexDirection="row" paddingLeft={1} flexShrink={1}>
-            <Box width={2} flexShrink={0}>
-              <Text color={theme.warning} bold>
-                {"• "}
-              </Text>
-            </Box>
-            <Box flexDirection="column" flexGrow={1}>
-              <Text color={theme.text} wrap="wrap">
-                <Text color={theme.textDim}>Queued: </Text>
-                {item.text || "(empty)"}
-                {suffix}
-              </Text>
-            </Box>
-          </Box>,
-        );
-      }
-      case "compacting":
-        return withTranscriptSpacing(
-          <CompactionSpinner key={item.id} staticDisplay marginTop={0} />,
-        );
-      case "compacted":
-        return withTranscriptSpacing(
-          <CompactionDone
-            key={item.id}
-            originalCount={item.originalCount}
-            newCount={item.newCount}
-            tokensBefore={item.tokensBefore}
-            tokensAfter={item.tokensAfter}
-            marginTop={0}
-          />,
-        );
-      case "duration":
-        return withTranscriptSpacing(
-          <Box key={item.id} paddingLeft={1}>
-            <Text color={theme.textDim}>
-              {"✻ "}
-              {item.verb} {formatDuration(item.durationMs)}
-            </Text>
-          </Box>,
-        );
-      case "subagent_group":
-        return withTranscriptSpacing(
-          <SubAgentPanel key={item.id} agents={item.agents} aborted={item.aborted} marginTop={0} />,
-        );
-    }
-  };
+  const renderItem = (item: CompletedItem, index: number, items: CompletedItem[]) =>
+    renderTranscriptItem({
+      item,
+      index,
+      items,
+      pendingHistoryFlushLastItem: pendingHistoryFlushRef.current.at(-1),
+      historyLastItem: history.at(-1),
+      version: props.version,
+      currentModel,
+      currentProvider,
+      displayedCwd,
+      columns,
+      theme,
+      renderMarkdown,
+      measuredLiveAreaRows,
+    });
 
   const openOverlay = useCallback(
     (kind: "goal" | "skills" | "plan" | "pixel") => {
@@ -4427,7 +3677,7 @@ export function App(props: AppProps) {
   const shouldReserveStreamingSpacing =
     agentLoop.isRunning &&
     !hasLiveAssistantItem &&
-    (visibleStreamingText.trim().length > 0 || liveItems.some(isAgentSpacingItem));
+    (visibleStreamingText.trim().length > 0 || liveItems.some(isTranscriptSpacingItem));
   const lastLiveItem = liveItems.at(-1);
   const lastPendingHistoryItem = pendingHistoryFlushRef.current.at(-1);
   const lastHistoryItem = history.at(-1);

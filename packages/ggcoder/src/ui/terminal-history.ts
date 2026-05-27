@@ -9,7 +9,7 @@ import { BLACK_CIRCLE, RETURN_SYMBOL } from "./constants/figures.js";
 import { SPINNER_FRAMES } from "./spinner-frames.js";
 import type { Theme } from "./theme/theme.js";
 import { getUserMessageDisplayParts } from "./utils/user-message-display.js";
-import { buildToolGroupSummary, segmentsToPlainText } from "./tool-group-summary.js";
+import { buildToolGroupSummary } from "./tool-group-summary.js";
 import { renderMarkdownToAnsiLines } from "./utils/markdown-renderer.js";
 import { isAgentSpacingKind } from "./terminal-history-spacing.js";
 import {
@@ -34,18 +34,29 @@ import {
   wrapPlain,
 } from "./terminal-history-format.js";
 import {
-  normalizeStatusText,
   renderCompacted,
   renderCompacting,
   renderError,
   renderGoal,
-  renderPlanEvent,
   renderSetupHint,
   renderStatusLine,
   renderStepDone,
   renderStylePack,
   renderUpdateNotice,
 } from "./terminal-history-status-renderers.js";
+import {
+  presentDuration,
+  presentGoalAgentTransition,
+  presentInfo,
+  presentModelTransition,
+  presentPlanEvent,
+  presentPlanTransition,
+  presentQueued,
+  presentStopped,
+  presentTask,
+  presentThemeTransition,
+} from "./transcript/presentation.js";
+import { toolTonePalette } from "./transcript/tool-presentation.js";
 
 const LOGO_LINES = [" ▄▀▀▀ ▄▀▀▀", " █ ▀█ █ ▀█", " ▀▄▄▀ ▀▄▄▀"];
 const GRADIENT = [
@@ -167,27 +178,31 @@ export function serializeCompletedItemToTerminalHistory(
       return renderSubAgentGroup(item.agents, item.aborted, context);
     case "goal":
       return renderGoal(item.title, item.workerId, context);
-    case "task":
+    case "task": {
+      const presentation = presentTask(item);
       return renderStatusLine(
-        "▸",
-        `${dim(context, "Task: ")}${color(context.theme.commandColor, item.title, true)}`,
+        presentation.glyph.trim(),
+        `${dim(context, presentation.label ?? "")}${color(context.theme.commandColor, presentation.text, true)}`,
         context,
         context.theme.commandColor,
-        true,
+        presentation.bold,
         true,
       );
+    }
     case "goal_progress":
       return renderGoalProgress(item, context);
     case "error":
       return renderError(item.headline, item.message, item.guidance, context);
-    case "info":
+    case "info": {
+      const presentation = presentInfo(item);
       return renderStatusLine(
-        "○",
-        normalizeStatusText(item.text),
+        presentation.glyph.trim(),
+        presentation.text,
         context,
         context.theme.commandColor,
-        false,
+        presentation.bold,
       );
+    }
     case "style_pack":
       return renderStylePack(item.added, item.showSetupHint, context);
     case "setup_hint":
@@ -204,55 +219,76 @@ export function serializeCompletedItemToTerminalHistory(
         item.tokensAfter,
         context,
       );
-    case "duration":
+    case "duration": {
+      const presentation = presentDuration(item);
       return indent(
-        dim(context, `✻ ${item.verb} ${formatDuration(item.durationMs)}`),
+        dim(context, `${presentation.glyph}${presentation.text}`),
         RESPONSE_LEFT_PADDING,
       );
-    case "plan_transition":
+    }
+    case "plan_transition": {
+      const presentation = presentPlanTransition(item);
       return renderStatusLine(
-        BLACK_CIRCLE,
-        normalizeStatusText(item.text),
+        presentation.glyph.trim(),
+        presentation.text,
         context,
         context.theme.commandColor,
-        true,
+        presentation.bold,
       );
-    case "goal_agent_transition":
+    }
+    case "goal_agent_transition": {
+      const presentation = presentGoalAgentTransition(item);
       return renderStatusLine(
-        BLACK_CIRCLE,
-        normalizeStatusText(item.text),
+        presentation.glyph.trim(),
+        presentation.text,
         context,
         context.theme.commandColor,
-        true,
+        presentation.bold,
       );
-    case "model_transition":
+    }
+    case "model_transition": {
+      const presentation = presentModelTransition(item);
       return renderStatusLine(
-        "▸",
-        `${dim(context, "Switched to ")}${color(context.theme.commandColor, item.modelName, true)}`,
+        presentation.glyph.trim(),
+        `${dim(context, presentation.label ?? "")}${color(context.theme.commandColor, presentation.text, true)}`,
         context,
         context.theme.commandColor,
-        true,
+        presentation.bold,
         true,
       );
-    case "theme_transition":
+    }
+    case "theme_transition": {
+      const presentation = presentThemeTransition(item);
       return renderStatusLine(
-        "◐",
-        `${dim(context, "Theme switched to ")}${color(context.theme.commandColor, item.themeName, true)}`,
+        presentation.glyph.trim(),
+        `${dim(context, presentation.label ?? "")}${color(context.theme.commandColor, presentation.text, true)}`,
         context,
         context.theme.commandColor,
-        true,
+        presentation.bold,
         true,
       );
-    case "plan_event":
-      return renderPlanEvent(item.event, item.detail, context);
-    case "stopped":
+    }
+    case "plan_event": {
+      const presentation = presentPlanEvent(item);
       return renderStatusLine(
-        "⊘",
-        normalizeStatusText(item.text),
+        presentation.glyph.trim(),
+        `${color(context.theme.commandColor, presentation.text, true)}${presentation.detail ? dim(context, presentation.detail) : ""}`,
         context,
         context.theme.commandColor,
+        presentation.bold,
         true,
       );
+    }
+    case "stopped": {
+      const presentation = presentStopped(item);
+      return renderStatusLine(
+        presentation.glyph.trim(),
+        presentation.text,
+        context,
+        context.theme.commandColor,
+        presentation.bold,
+      );
+    }
     case "step_done":
       return renderStepDone(item.stepNum, item.description, context);
     case "tombstone":
@@ -338,13 +374,13 @@ function renderQueued(
   imageCount: number | undefined,
   context: TerminalHistoryContext,
 ): string {
-  const suffix = imageCount ? ` (+${imageCount} image${imageCount > 1 ? "s" : ""})` : "";
+  const presentation = presentQueued({ kind: "queued", text, imageCount, id: "history-queued" });
   return prefixFirstLine(
     wrapPlain(
-      `${dim(context, "Queued: ")}${color(context.theme.text, text || "(empty)")}${color(context.theme.text, suffix)}`,
+      `${dim(context, presentation.label)}${color(context.theme.text, presentation.text)}${color(context.theme.text, presentation.suffix)}`,
       context.columns - 4,
     ),
-    ` ${color(context.theme.warning, "•", true)} `,
+    ` ${color(context.theme.warning, presentation.glyph.trim(), true)} `,
     "   ",
   );
 }
@@ -465,9 +501,12 @@ function renderToolGroup(
   const status = allDone ? (hasError ? "error" : "done") : "running";
   return toolHeader(
     status,
-    segmentsToPlainText(buildToolGroupSummary(tools, allDone)),
+    renderSummarySegments(buildToolGroupSummary(tools, allDone), context),
     "",
     context,
+    {
+      labelAlreadyStyled: true,
+    },
   );
 }
 
@@ -686,7 +725,13 @@ function toolHeader(
   label: string,
   detail: string,
   context: TerminalHistoryContext,
-  options: { suffix?: string; quoteDetail?: boolean; dotColor?: string; indicator?: string } = {},
+  options: {
+    suffix?: string;
+    quoteDetail?: boolean;
+    dotColor?: string;
+    indicator?: string;
+    labelAlreadyStyled?: boolean;
+  } = {},
 ): string {
   const dotColor =
     options.dotColor ??
@@ -709,7 +754,21 @@ function toolHeader(
       )
     : "";
   const suffixText = options.suffix ? dim(context, ` ${options.suffix}`) : "";
-  return `${RESPONSE_LEFT_PADDING}${color(dotColor, indicator)} ${color(labelColor, label, true)}${detailText}${suffixText}`;
+  const labelText = options.labelAlreadyStyled ? label : color(labelColor, label, true);
+  return `${RESPONSE_LEFT_PADDING}${color(dotColor, indicator)} ${labelText}${detailText}${suffixText}`;
+}
+
+function renderSummarySegments(
+  segments: ReturnType<typeof buildToolGroupSummary>,
+  context: TerminalHistoryContext,
+): string {
+  return segments
+    .map((segment) =>
+      segment.tone
+        ? color(toolTonePalette(context.theme, segment.tone).primary, segment.text, segment.bold)
+        : color(context.theme.text, segment.text, segment.bold),
+    )
+    .join("");
 }
 
 function stateToolHeader(

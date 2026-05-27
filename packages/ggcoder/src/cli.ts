@@ -686,7 +686,10 @@ async function runInkTUI(opts: {
         }
 
         const restoredMessages = getRestoredMessagesForDisplay(messages);
-        const restoredDisplayItems = sessionManager.getDisplayItems(loaded.entries, loaded.header.leafId);
+        const restoredDisplayItems = sessionManager.getDisplayItems(
+          loaded.entries,
+          loaded.header.leafId,
+        );
         initialHistory =
           restoredDisplayItems.length > 0
             ? restoredDisplayItems
@@ -1798,7 +1801,11 @@ function restoredPromptCommandDisplayText(text: string): string | null {
     if (text === command.prompt) return `/${command.name}`;
     const prefix = `${command.prompt}\n\n## User Instructions\n\n`;
     if (text.startsWith(prefix)) {
-      const args = text.slice(prefix.length).split(/^## Goal References \(MANDATORY\)\s*$/m)[0]?.trim() ?? "";
+      const args =
+        text
+          .slice(prefix.length)
+          .split(/^## Goal References \(MANDATORY\)\s*$/m)[0]
+          ?.trim() ?? "";
       return args ? `/${command.name} ${args}` : `/${command.name}`;
     }
   }
@@ -1915,7 +1922,11 @@ export function messagesToHistoryItems(msgs: Message[]): CompletedItem[] {
       if (goalProgress) {
         pushGoalProgress(goalProgress);
       } else {
-        items.push({ kind: "user", text: restoredPromptCommandDisplayText(text) ?? text, id: `restore-${id++}` });
+        items.push({
+          kind: "user",
+          text: restoredPromptCommandDisplayText(text) ?? text,
+          id: `restore-${id++}`,
+        });
       }
     } else if (msg.role === "assistant") {
       const content = msg.content;

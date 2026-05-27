@@ -9,6 +9,7 @@ import { useTerminalSize } from "../hooks/useTerminalSize.js";
 import { computeWordDiff, type WordSegment } from "../utils/word-diff.js";
 import { DiffFrame } from "./DiffFrame.js";
 import { NoSelect } from "./NoSelect.js";
+import { toolAccentColor, toolNameColor } from "../transcript/tool-presentation.js";
 
 const MAX_OUTPUT_LINES = 4; // max lines shown per tool result
 const RESPONSE_LEFT_PADDING = 1;
@@ -82,7 +83,7 @@ export function ToolExecution(props: ToolExecutionProps) {
   const theme = useTheme();
   const { columns } = useTerminalSize();
   const staticDisplay = props.status === "running" ? false : true;
-  const marginTop = props.marginTop ?? 1;
+  const marginTop = props.marginTop ?? 0;
 
   if (props.status === "running") {
     // Server-style tools (web_search) — blinking dot + spinner "Searching..."
@@ -133,7 +134,7 @@ export function ToolExecution(props: ToolExecutionProps) {
           <Box width={HEADER_PREFIX} flexShrink={0}>
             <Spinner staticDisplay={staticDisplay} />
           </Box>
-          <Text color={theme.toolName} bold>
+          <Text color={toolNameColor(theme, props.name)} bold>
             {summary}
           </Text>
         </Box>
@@ -146,7 +147,7 @@ export function ToolExecution(props: ToolExecutionProps) {
           <Box width={HEADER_PREFIX} flexShrink={0}>
             <Spinner staticDisplay={staticDisplay} />
           </Box>
-          <Text color={theme.toolName} bold>
+          <Text color={toolNameColor(theme, props.name)} bold>
             {label}
           </Text>
           {detail ? <Text color={theme.textDim}> {detail}</Text> : null}
@@ -189,7 +190,7 @@ export function ToolExecution(props: ToolExecutionProps) {
         <Box width={HEADER_PREFIX} flexShrink={0}>
           <Spinner staticDisplay={staticDisplay} />
         </Box>
-        <Text color={theme.toolName} bold wrap="wrap">
+        <Text color={toolNameColor(theme, props.name)} bold wrap="wrap">
           {detail ? `${label}(${detail})` : label}
         </Text>
       </Box>
@@ -218,7 +219,7 @@ export function ToolExecution(props: ToolExecutionProps) {
           <ToolUseLoader status={isError ? "error" : "done"} />
           <Box flexGrow={1} width={headerContentWidth}>
             <Text wrap="wrap">
-              <Text bold color={isError ? theme.error : theme.success}>
+              <Text bold color={isError ? theme.error : toolNameColor(theme, name)}>
                 {label}
               </Text>
               {detail && (
@@ -249,7 +250,7 @@ export function ToolExecution(props: ToolExecutionProps) {
       <Box paddingLeft={RESPONSE_LEFT_PADDING} marginTop={marginTop} flexDirection="row">
         <ToolUseLoader status="done" />
         <Box flexGrow={1} width={headerContentWidth}>
-          <Text bold color={theme.success} wrap="wrap">
+          <Text bold color={toolNameColor(theme, name)} wrap="wrap">
             {summary}
           </Text>
         </Box>
@@ -265,7 +266,7 @@ export function ToolExecution(props: ToolExecutionProps) {
         <ToolUseLoader status={isError ? "error" : "done"} />
         <Box flexGrow={1} width={headerContentWidth}>
           <Text wrap="wrap">
-            <Text bold color={isError ? theme.error : theme.success}>
+            <Text bold color={isError ? theme.error : toolNameColor(theme, name)}>
               {label}
             </Text>
             {detail ? <Text color={theme.textDim}> {detail}</Text> : null}
@@ -291,7 +292,7 @@ export function ToolExecution(props: ToolExecutionProps) {
     ? buildDiffBody(diffText!, args, columns)
     : buildResultBody(name, result, isError, columns);
 
-  const headerColor = isError ? theme.error : theme.success;
+  const headerColor = isError ? theme.error : toolNameColor(theme, name);
 
   // Compact display — no body to show, but show inline summary
   if (!body) {
@@ -299,7 +300,8 @@ export function ToolExecution(props: ToolExecutionProps) {
       props.formatters?.formatInline?.(name, result, isError) ??
       getInlineSummary(name, result, isError);
     const inlineText = typeof inline === "string" ? inline : inline?.text;
-    const inlineColor = inline && typeof inline === "object" ? inline.color : theme.textDim;
+    const inlineColor =
+      inline && typeof inline === "object" ? inline.color : toolAccentColor(theme, name);
     return (
       <Box paddingLeft={RESPONSE_LEFT_PADDING} marginTop={marginTop} flexDirection="row">
         <ToolUseLoader status={isError ? "error" : "done"} />

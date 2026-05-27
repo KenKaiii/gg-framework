@@ -151,7 +151,7 @@ const AgentRow = React.memo(
   },
 );
 
-export function SubAgentPanel({ agents, aborted = false, marginTop = 1 }: SubAgentPanelProps) {
+export function SubAgentPanel({ agents, aborted = false, marginTop = 0 }: SubAgentPanelProps) {
   const { columns } = useTerminalSize();
 
   if (agents.length === 0) return null;

@@ -846,7 +846,9 @@ describe("goal controller", () => {
     expect(prompt).toContain("what failure it catches");
     expect(prompt).toContain("what signal proves it");
     expect(prompt).toContain("Build only the proportional instrument needed");
-    expect(prompt).toContain("If the verifier artifact exists only in your isolated worker worktree");
+    expect(prompt).toContain(
+      "If the verifier artifact exists only in your isolated worker worktree",
+    );
     expect(prompt).toContain("set verifier_cwd to that worktree path");
     expect(prompt).toContain("copy/integrate the verifier artifact into the main checkout");
     expect(prompt).toContain("not use narrative-only verification or human visual inspection");

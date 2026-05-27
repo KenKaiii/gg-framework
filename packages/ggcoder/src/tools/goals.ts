@@ -129,7 +129,9 @@ const GoalsParams = z.object({
   verifier_cwd: z
     .string()
     .optional()
-    .describe("Working directory for the verifier command; use a worker worktree path only when the verifier artifact lives there"),
+    .describe(
+      "Working directory for the verifier command; use a worker worktree path only when the verifier artifact lives there",
+    ),
   task_id: z.string().optional().describe("Goal task id to update"),
   task_title: z.string().optional().describe("Short worker task title"),
   task_prompt: z
@@ -856,7 +858,8 @@ export function createGoalsTool(
             return `Evidence-plan items upserted for "${updated.title}": ${added} added, ${updatedCount} updated.`;
           }
           const evidencePlanItemId = args.evidence_plan_item_id;
-          if (!evidencePlanItemId) return "Error: evidence_plan_item_id or evidence_plan is required.";
+          if (!evidencePlanItemId)
+            return "Error: evidence_plan_item_id or evidence_plan is required.";
           const index = evidencePlan.findIndex(
             (item) => item.id === evidencePlanItemId || item.id.startsWith(evidencePlanItemId),
           );
