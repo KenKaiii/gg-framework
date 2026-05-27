@@ -1,0 +1,121 @@
+{
+  "referenceCoverage": {
+    "mandatoryReference": "[original-goal-prompt]",
+    "plannerEvidence": "GOAL_PLAN",
+    "objective": "Audit the /goal system while actively using it; identify bottlenecks, over-engineering, simplification opportunities, speed and token improvements."
+  },
+  "sourceScope": [
+    {
+      "path": "packages/ggcoder/src/ui/App.tsx",
+      "area": "UI orchestration, setup/continue/worker/verifier lifecycle",
+      "overheadSignals": ["large coordinator surface", "direct continuation plus synthetic-event paths", "worktree and verifier integration branches"]
+    },
+    {
+      "path": "packages/ggcoder/src/ui/prompt-routing.ts",
+      "area": "/goal prompt routing and planner-to-setup handoff",
+      "overheadSignals": ["two agent turns before work starts", "planner output collection", "GOAL_PLAN preservation"]
+    },
+    {
+      "path": "packages/ggcoder/src/system-prompt.ts",
+      "area": "planner/setup/coordinator system instructions",
+      "overheadSignals": ["repeated proof contract", "mode-specific system prompt token floor"]
+    },
+    {
+      "path": "packages/ggcoder/src/core/goal-controller.ts",
+      "area": "next-action and completion gates",
+      "overheadSignals": ["proof-gate multiplication", "instrumentation tasks", "verifier/final-audit sequencing"]
+    },
+    {
+      "path": "packages/ggcoder/src/core/goal-store.ts",
+      "area": "durable state and evidence persistence",
+      "overheadSignals": ["large durable state snapshots", "cross-process evidence merging requirements"]
+    },
+    {
+      "path": "packages/ggcoder/src/core/goal-worker.ts",
+      "area": "isolated worker prompt/process lifecycle",
+      "overheadSignals": ["worker system prompt/candidate-packet contract", "separate process startup", "evidence logging"]
+    },
+    {
+      "path": "packages/ggcoder/src/core/goal-overhead-harness.ts",
+      "area": "synthetic overhead measurement harness",
+      "overheadSignals": ["stageCount", "promptChars", "taskCount", "blockerCount", "requiredProofGates"]
+    },
+    {
+      "path": "packages/ggcoder/scripts/verify-goal-overhead-harness.ts",
+      "area": "local overhead-harness verifier",
+      "overheadSignals": ["simple-vs-complex scenario comparison", "artifact generation"]
+    }
+  ],
+  "measuredEvidence": {
+    "source": "packages/ggcoder/src/core/goal-overhead-harness.ts and previous local harness artifacts",
+    "simpleScenario": {
+      "stageCount": 4,
+      "promptChars": 10585,
+      "taskCount": 1,
+      "blockerCount": 0,
+      "requiredProofGates": 4
+    },
+    "complexScenario": {
+      "stageCount": 6,
+      "promptChars": 11090,
+      "taskCount": 8,
+      "blockerCount": 4,
+      "requiredProofGates": 14
+    },
+    "deltas": {
+      "stageCount": 2,
+      "promptChars": 505,
+      "taskCount": 7,
+      "blockerCount": 4,
+      "requiredProofGates": 10
+    },
+    "interpretation": "The fixed prompt floor is already high for simple goals; complexity mainly multiplies tasks, blockers, and proof gates."
+  },
+  "rankedRecommendations": [
+    {
+      "rank": 1,
+      "title": "Add a fast-path for simple local goals after setup quality is met",
+      "impact": "high",
+      "risk": "medium",
+      "rationale": "Avoid extra instrumentation tasks when durable success criteria, one local proof path, and verifier are already present."
+    },
+    {
+      "rank": 2,
+      "title": "Compact repeated Goal proof instructions across system/worker prompts",
+      "impact": "high",
+      "risk": "medium",
+      "rationale": "The simple scenario still pays a large fixed prompt floor before useful work starts."
+    },
+    {
+      "rank": 3,
+      "title": "Normalize artifact names and verifier contracts",
+      "impact": "medium",
+      "risk": "low",
+      "rationale": "Previous audit handoffs showed naming drift and stale literal verifier checks that cost extra turns."
+    },
+    {
+      "rank": 4,
+      "title": "Make blocker classification distinguish required vs optional/local-free proof",
+      "impact": "medium",
+      "risk": "medium",
+      "rationale": "Optional external prerequisites should not block local/free evidence paths requested by [original-goal-prompt]."
+    },
+    {
+      "rank": 5,
+      "title": "Keep current final verifier/audit gates but make them less verbose once satisfied",
+      "impact": "medium",
+      "risk": "low",
+      "rationale": "Verifier and final audit protect durable completion; optimization should compact, not remove, these gates."
+    }
+  ],
+  "rejectedCandidateContent": [
+    {
+      "source": "unrelated sibling candidate packets",
+      "reason": "Contained fixes.md or provider-filtering work from other Goal runs, outside expected changed scope for this integration task."
+    },
+    {
+      "source": "untracked goal-overhead-harness.test.ts candidate",
+      "reason": "Useful measurement concept, but current checkout already has production harness/script. Integrated measured signals into docs instead of adding redundant test-only harness."
+    }
+  ]
+}
