@@ -227,6 +227,8 @@ export function serializeCompletedItemToTerminalHistory(
         RESPONSE_LEFT_PADDING,
       );
     }
+    case "session_summary":
+      return renderSessionSummary(item.summary, context);
     case "plan_transition": {
       const presentation = presentPlanTransition(item);
       return renderStatusLine(
@@ -295,6 +297,47 @@ export function serializeCompletedItemToTerminalHistory(
     case "tombstone":
       return "";
   }
+}
+
+function renderSessionSummary(
+  summary: Extract<CompletedItem, { kind: "session_summary" }>["summary"],
+  context: TerminalHistoryContext,
+): string {
+  const cacheTokens = (summary.usage.cacheRead ?? 0) + (summary.usage.cacheWrite ?? 0);
+  const successRate =
+    summary.tools.totalCalls > 0
+      ? (summary.tools.totalSuccess / summary.tools.totalCalls) * 100
+      : null;
+  const topTools = Object.entries(summary.tools.byName)
+    .sort(([, a], [, b]) => b.calls - a.calls || b.durationMs - a.durationMs)
+    .slice(0, 5)
+    .map(([name, stats]) => `${name} ×${stats.calls}`)
+    .join(", ");
+  const lines = [
+    color(context.theme.secondary, summary.title, true),
+    "",
+    `${color(context.theme.text, "Session", true)}`,
+    summary.sessionId
+      ? `${color(context.theme.link, "ID:")} ${dim(context, summary.sessionId)}`
+      : undefined,
+    `${color(context.theme.link, "Model:")} ${summary.provider}:${summary.model}`,
+    `${color(context.theme.link, "Directory:")} ${dim(context, summary.cwd)}`,
+    "",
+    `${color(context.theme.text, "Usage", true)}`,
+    `${color(context.theme.link, "Wall time:")} ${formatDuration(summary.wallDurationMs)}`,
+    `${color(context.theme.link, "Turns:")} ${summary.turns.toLocaleString()}`,
+    `${color(context.theme.link, "Tokens:")} ${summary.usage.inputTokens.toLocaleString()} in / ${summary.usage.outputTokens.toLocaleString()} out${cacheTokens > 0 ? dim(context, ` / ${cacheTokens.toLocaleString()} cache`) : ""}`,
+    "",
+    `${color(context.theme.text, "Work", true)}`,
+    `${color(context.theme.link, "Tool calls:")} ${summary.tools.totalCalls.toLocaleString()} (${color(context.theme.success, `✓ ${summary.tools.totalSuccess.toLocaleString()}`)} ${color(context.theme.error, `× ${summary.tools.totalFail.toLocaleString()}`)}${successRate == null ? "" : dim(context, ` · ${successRate.toFixed(1)}%`)})`,
+    `${color(context.theme.link, "Top tools:")} ${dim(context, topTools || "none")}`,
+    summary.linesChanged.added > 0 || summary.linesChanged.removed > 0
+      ? `${color(context.theme.link, "Code changes:")} ${color(context.theme.success, `+${summary.linesChanged.added.toLocaleString()}`)} ${color(context.theme.error, `-${summary.linesChanged.removed.toLocaleString()}`)}`
+      : undefined,
+    summary.footer ? "" : undefined,
+    summary.footer ? dim(context, summary.footer) : undefined,
+  ].filter((line): line is string => line !== undefined);
+  return indent(lines.join("\n"), RESPONSE_LEFT_PADDING);
 }
 
 function renderBanner(context: TerminalHistoryContext): string {

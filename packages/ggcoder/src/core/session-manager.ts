@@ -294,6 +294,11 @@ export class SessionManager {
     return withMessages?.path ?? null;
   }
 
+  async findById(cwd: string, sessionId: string): Promise<string | null> {
+    const sessions = await this.list(cwd);
+    return sessions.find((session) => session.id === sessionId)?.path ?? null;
+  }
+
   async appendEntry(sessionPath: string, entry: SessionEntry): Promise<void> {
     await fs.appendFile(sessionPath, JSON.stringify(entry) + "\n", "utf-8");
   }

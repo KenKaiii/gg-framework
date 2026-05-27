@@ -32,6 +32,7 @@ import type { SubAgentUpdate, SubAgentDetails } from "../tools/subagent.js";
 import { createWebSearchTool } from "../tools/web-search.js";
 import { ChatScreen } from "./components/ChatScreen.js";
 import { FullScreenOverlayRouter } from "./components/FullScreenOverlayRouter.js";
+import { SessionSummaryDisplay } from "./components/SessionSummary.js";
 import {
   reconcileGoalStatusEntriesWithRuns,
   removeGoalStatusEntry,
@@ -153,6 +154,15 @@ import { formatDuration } from "./duration-format.js";
 import { pickDurationVerb } from "./duration-summary.js";
 import { toErrorItem } from "./error-item.js";
 import {
+  addLinesChanged,
+  buildSessionSummary,
+  createSessionStats,
+  recordServerToolCall,
+  recordToolEnd,
+  recordTurnEnd,
+  type SessionStats,
+} from "./session-summary.js";
+import {
   buildGoalDirtyWorktreePauseRun,
   buildGoalDirtyWorktreeUserPrompt,
   buildGoalTaskPromptWithReferences,
@@ -180,6 +190,7 @@ import type {
   GoalItem,
   GoalProgressDraft,
   QueuedItem,
+  SessionSummaryItem,
   TaskItem,
   ServerToolDoneItem,
   ServerToolStartItem,
@@ -288,6 +299,7 @@ export interface AppProps {
   initialHistory?: CompletedItem[];
   sessionsDir?: string;
   sessionPath?: string;
+  sessionId?: string;
   processManager?: ProcessManager;
   settingsFile?: string;
   mcpManager?: MCPClientManager;
@@ -354,6 +366,7 @@ export interface AppProps {
     approvedPlanPath?: string;
     planSteps: PlanStep[];
     sessionPath?: string;
+    sessionId?: string;
     sessionTitle?: string;
     sessionTitleGenerated: boolean;
     overlay?: "model" | "goal" | "skills" | "plan" | "theme" | "pixel" | null;
@@ -372,6 +385,7 @@ export interface AppProps {
     goalStatusEntries?: GoalStatusEntry[];
     goalMode?: GoalMode;
     planMode?: boolean;
+    sessionStats?: SessionStats;
   };
 }
 
@@ -386,6 +400,9 @@ export function App(props: AppProps) {
   // Hoisted before terminal title hook so it can reference them
   const [lastUserMessage, setLastUserMessage] = useState("");
   const [exitPending, setExitPending] = useState(false);
+  const [quittingSummary, setQuittingSummary] = useState<SessionSummaryItem["summary"] | null>(
+    null,
+  );
   const [goalMode, setGoalMode] = useState<GoalMode>(
     props.sessionStore?.goalMode ?? props.goalModeRef?.current ?? "off",
   );
@@ -499,6 +516,10 @@ export function App(props: AppProps) {
   );
   const sessionPathRef = useRef(props.sessionStore?.sessionPath ?? props.sessionPath);
   const persistedIndexRef = useRef(messagesRef.current.length);
+  const sessionStatsRef = useRef(
+    props.sessionStore?.sessionStats ??
+      createSessionStats({ sessionId: props.sessionStore?.sessionId ?? props.sessionId }),
+  );
   /** Last actual API-reported input token count (from turn_end). */
   const lastActualTokensRef = useRef(0);
   /** Timestamp (ms) when lastActualTokensRef was last updated by turn_end. */
@@ -646,6 +667,9 @@ export function App(props: AppProps) {
   useEffect(() => {
     if (sessionStore) sessionStore.planMode = planMode;
   }, [planMode, sessionStore]);
+  useEffect(() => {
+    if (sessionStore) sessionStore.sessionStats = sessionStatsRef.current;
+  }, [sessionStore]);
 
   // pendingAction is consumed via a useEffect AFTER agentLoop is created
   // — see below where useAgentLoop is set up.
@@ -953,9 +977,11 @@ export function App(props: AppProps) {
         messages: compactedMessages,
       });
       sessionPathRef.current = session.path;
+      sessionStatsRef.current.sessionId = session.id;
       persistedIndexRef.current = compactedMessages.length;
       if (sessionStore) {
         sessionStore.sessionPath = session.path;
+        sessionStore.sessionId = session.id;
         sessionStore.messages = [...compactedMessages];
       }
       log("INFO", "compaction", "Persisted compacted session checkpoint", { path: session.path });
@@ -972,6 +998,7 @@ export function App(props: AppProps) {
     if (sessionStore) {
       sessionStore.messages = [...allMsgs];
       sessionStore.sessionPath = sp;
+      sessionStore.sessionId = sessionStatsRef.current.sessionId;
     }
   }, [appendMessagesToSession, sessionStore]);
 
@@ -1525,6 +1552,14 @@ export function App(props: AppProps) {
           durationMs: number,
           details?: unknown,
         ) => {
+          recordToolEnd(sessionStatsRef.current, name, isError, durationMs);
+          if (name === "edit" && !isError) {
+            const diff = (details as { diff?: string } | undefined)?.diff ?? result;
+            addLinesChanged(sessionStatsRef.current, {
+              added: (diff.match(/^\+[^+]/gm) ?? []).length,
+              removed: (diff.match(/^-[^-]/gm) ?? []).length,
+            });
+          }
           // Language-pack detection — gated on `write`/`bash` inside the
           // helper; cheap to call unconditionally. Fire-and-forget; the next
           // LLM turn picks up the swapped system prompt automatically.
@@ -1641,6 +1676,7 @@ export function App(props: AppProps) {
       ),
       onServerToolCall: useCallback(
         (id: string, name: string, input: unknown, stream: StreamSnapshot) => {
+          recordServerToolCall(sessionStatsRef.current);
           log("INFO", "server_tool", `Server tool call: ${name}`, { id });
           const startedAt = Date.now();
           const animateUntil = startedAt + RUNNING_INDICATOR_ANIMATION_MS;
@@ -1730,6 +1766,7 @@ export function App(props: AppProps) {
             cacheWrite?: number;
           },
         ) => {
+          recordTurnEnd(sessionStatsRef.current, usage);
           log("INFO", "turn", `Turn ${turn} ended`, {
             stopReason,
             inputTokens: String(usage.inputTokens),
@@ -2054,6 +2091,25 @@ export function App(props: AppProps) {
     }
   }, [agentLoop.isRunning, sessionStore, props.resetUI]);
 
+  const showSessionSummaryAndExit = useCallback(() => {
+    const summary = buildSessionSummary({
+      stats: sessionStatsRef.current,
+      provider: currentProvider,
+      model: currentModel,
+      cwd: displayedCwd,
+      footer: sessionStatsRef.current.sessionId
+        ? `To resume this session: ggcoder --resume ${sessionStatsRef.current.sessionId}`
+        : undefined,
+    });
+    setDoneStatus(null);
+    setExitPending(false);
+    setOverlay(null);
+    setLiveItems([]);
+    setQuittingSummary(summary);
+    writeStdout("\x1b[2J\x1b[3J\x1b[H");
+    setTimeout(() => process.exit(0), 150);
+  }, [currentModel, currentProvider, displayedCwd, writeStdout]);
+
   // Consume pending post-remount work once on mount. Set by resetUI options
   // for paths that remount AND immediately drive work (plan accept/reject,
   // pixel fix, Goal approval). The work survives the unmount because
@@ -2127,7 +2183,7 @@ export function App(props: AppProps) {
             }
             if (compactionAbortRef.current === ac) compactionAbortRef.current = null;
           },
-          quit: () => process.exit(0),
+          quit: showSessionSummaryAndExit,
           clearSession: () => {
             if (props.resetUI) {
               void (async () => {
@@ -2303,6 +2359,7 @@ export function App(props: AppProps) {
       props.resetUI,
       props.sessionStore,
       rebuildSystemPrompt,
+      showSessionSummaryAndExit,
       reloadCustomCommands,
       replaceSystemPrompt,
       setActiveGoalReferences,
@@ -2310,7 +2367,7 @@ export function App(props: AppProps) {
     ],
   );
 
-  const handleDoubleExit = useDoublePress(setExitPending, () => process.exit(0));
+  const handleDoubleExit = useDoublePress(setExitPending, showSessionSummaryAndExit);
 
   const handleAbort = useCallback(() => {
     if (agentLoop.isRunning) {
@@ -3850,6 +3907,14 @@ export function App(props: AppProps) {
       : isPlanView
         ? "plan"
         : null;
+
+  if (quittingSummary) {
+    return (
+      <Box flexDirection="column" width={columns} flexShrink={0} flexGrow={0}>
+        <SessionSummaryDisplay summary={quittingSummary} />
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" width={columns} flexShrink={0} flexGrow={0}>

@@ -45,6 +45,7 @@ export interface RenderAppConfig {
   initialHistory?: CompletedItem[];
   sessionsDir?: string;
   sessionPath?: string;
+  sessionId?: string;
   processManager?: ProcessManager;
   settingsFile?: string;
   mcpManager?: MCPClientManager;
@@ -98,6 +99,7 @@ export interface SessionStore {
   approvedPlanPath?: string;
   planSteps: PlanStep[];
   sessionPath?: string;
+  sessionId?: string;
   sessionTitle?: string;
   sessionTitleGenerated: boolean;
   /** Which overlay (Goal, Skills, Plan, Pixel, Theme, Model) is open. */
@@ -272,6 +274,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
     approvedPlanPath: undefined,
     planSteps: [],
     sessionPath: config.sessionPath,
+    sessionId: config.sessionId,
     sessionTitle: undefined,
     sessionTitleGenerated: false,
     overlay: config.initialOverlay ?? null,
@@ -317,6 +320,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
             initialHistory: sessionStore.history,
             sessionsDir: config.sessionsDir,
             sessionPath: sessionStore.sessionPath,
+            sessionId: sessionStore.sessionId,
             processManager: config.processManager,
             settingsFile: config.settingsFile,
             mcpManager: config.mcpManager,
@@ -370,6 +374,9 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
     }
     if (options?.planSteps !== undefined) sessionStore.planSteps = options.planSteps;
     if (options?.sessionPath !== undefined) sessionStore.sessionPath = options.sessionPath;
+    if (options?.sessionPath !== undefined && !sessionStore.sessionId) {
+      sessionStore.sessionId = config.sessionId;
+    }
     if (options?.pendingAction) sessionStore.pendingAction = options.pendingAction;
 
     old.unmount();

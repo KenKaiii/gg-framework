@@ -2,6 +2,7 @@ import type { PasteInfo } from "./components/InputArea.js";
 import type { SubAgentInfo } from "./components/SubAgentPanel.js";
 import type { GoalSummaryRow, GoalSummarySection } from "./goal-summary.js";
 import type { LanguageId } from "../core/language-detector.js";
+import type { SessionSummary } from "./session-summary.js";
 
 export interface UserItem {
   kind: "user";
@@ -151,6 +152,12 @@ export interface DurationItem {
   id: string;
 }
 
+export interface SessionSummaryItem {
+  kind: "session_summary";
+  summary: SessionSummary;
+  id: string;
+}
+
 export interface BannerItem {
   kind: "banner";
   id: string;
@@ -269,6 +276,7 @@ export type CompletedItem =
   | CompactingItem
   | CompactedItem
   | DurationItem
+  | SessionSummaryItem
   | BannerItem
   | SubAgentGroupItem
   | ToolGroupItem

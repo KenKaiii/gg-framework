@@ -29,6 +29,7 @@ import {
   presentThemeTransition,
 } from "./presentation.js";
 import { StatusRow } from "./StatusRow.js";
+import { SessionSummaryDisplay } from "../components/SessionSummary.js";
 import {
   ServerToolDoneRow,
   ServerToolStartRow,
@@ -181,6 +182,8 @@ export function renderTranscriptItem({
       );
     case "duration":
       return withTranscriptSpacing(<DurationRow item={item} />);
+    case "session_summary":
+      return withTranscriptSpacing(<SessionSummaryDisplay summary={item.summary} />);
     case "subagent_group":
       return withTranscriptSpacing(<SubAgentGroupRow item={item} />);
   }

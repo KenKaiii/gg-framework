@@ -210,6 +210,7 @@ function printHelp(): void {
     ["--max-turns <n>", "Maximum agent turns per prompt"],
     ["--system-prompt <text>", "Override the system prompt"],
     ["--thinking <level>", "Enable thinking level (low, medium, high, xhigh)"],
+    ["--resume <id>", "Resume a session by id"],
     ["--json", "JSON output mode (for sub-agents)"],
     ["--rpc", "JSON-RPC mode (for IDE integrations)"],
   ];
@@ -314,6 +315,7 @@ function main(): void {
       "system-prompt": { type: "string" },
       "prompt-cache-key": { type: "string" },
       thinking: { type: "string" },
+      resume: { type: "string" },
     },
     allowPositionals: true,
     strict: true,
@@ -405,6 +407,7 @@ function main(): void {
     cwd,
     thinkingLevel,
     continueRecent,
+    resumeSessionPath: values.resume,
     theme: savedTheme,
   }).catch((err) => {
     log("ERROR", "fatal", err instanceof Error ? err.message : String(err));
@@ -638,12 +641,17 @@ async function runInkTUI(opts: {
   // Session management — create or reuse session file
   const sessionManager = new SessionManager(paths.sessionsDir);
   let sessionPath: string | undefined;
+  let sessionId: string | undefined;
   let initialHistory: CompletedItem[] | undefined;
 
   // Determine which session to resume (explicit path or most recent)
+  const explicitResumePath = opts.resumeSessionPath
+    ? opts.resumeSessionPath.includes("/")
+      ? opts.resumeSessionPath
+      : await sessionManager.findById(cwd, opts.resumeSessionPath)
+    : null;
   const resumePath =
-    opts.resumeSessionPath ??
-    (opts.continueRecent ? await sessionManager.getMostRecent(cwd) : null);
+    explicitResumePath ?? (opts.continueRecent ? await sessionManager.getMostRecent(cwd) : null);
 
   if (resumePath) {
     try {
@@ -653,6 +661,7 @@ async function runInkTUI(opts: {
       if (loadedMessages.length > 0) {
         messages.push(...loadedMessages);
         sessionPath = resumePath;
+        sessionId = loaded.header.id;
         log("INFO", "session", `Restored session`, {
           path: resumePath,
           messageCount: String(loadedMessages.length),
@@ -687,6 +696,7 @@ async function runInkTUI(opts: {
               messages: compacted.messages,
             });
             sessionPath = compactedSession.path;
+            sessionId = compactedSession.id;
             messages.length = 0;
             messages.push(...compacted.messages);
             log("INFO", "session", `Auto-compaction complete`, {
@@ -723,6 +733,7 @@ async function runInkTUI(opts: {
   if (!sessionPath) {
     const session = await sessionManager.create(cwd, provider, model);
     sessionPath = session.path;
+    sessionId = session.id;
     log("INFO", "session", `New session created`, { path: sessionPath });
   }
 
@@ -745,6 +756,7 @@ async function runInkTUI(opts: {
     initialHistory,
     sessionsDir: paths.sessionsDir,
     sessionPath,
+    sessionId,
     processManager,
     settingsFile: paths.settingsFile,
     mcpManager,

@@ -19,6 +19,7 @@ import { LANGUAGE_DISPLAY_NAMES } from "../core/language-detector.js";
 import { AssistantMessage } from "./components/AssistantMessage.js";
 import { UserMessage } from "./components/UserMessage.js";
 import { Banner } from "./components/Banner.js";
+import { SessionSummaryDisplay } from "./components/SessionSummary.js";
 import { BLACK_CIRCLE } from "./constants/figures.js";
 
 const TERMINAL_COLUMNS = 68;
@@ -63,8 +64,19 @@ function renderHistory(item: CompletedItem): string[] {
   return cleanLines(serializeCompletedItemToTerminalHistory(item, context));
 }
 
+function normalizeSessionSummaryLine(line: string): string | null {
+  if (/^[\s╭╰─╮╯]+$/u.test(line)) return null;
+  const boxed = line.match(/│(.*)│/u)?.[1] ?? line;
+  const trimmed = boxed.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\s{2,}/gu, ": ").replace(/^([^:]+): (.+)$/u, "$1: $2");
+}
+
 function normalizeParityLines(kind: CompletedItem["kind"], lines: readonly string[]): string[] {
   if (kind === "user") return lines.map((line) => line.trimEnd());
+  if (kind === "session_summary") {
+    return lines.map(normalizeSessionSummaryLine).filter((line): line is string => line !== null);
+  }
   if (kind === "style_pack" || kind === "setup_hint" || kind === "update_notice") {
     return lines.map((line) => line.replace(/─/g, "").replace(/ +(?=│$)/u, ""));
   }
@@ -523,6 +535,8 @@ function liveElementFor(item: CompletedItem): React.ReactElement | null {
           <Text color={theme.textDim}>{`✻ ${item.verb} 2m 3s`}</Text>
         </Box>
       );
+    case "session_summary":
+      return <SessionSummaryDisplay summary={item.summary} />;
     case "tombstone":
       return null;
     default:
@@ -659,6 +673,30 @@ const parityCaseByKind = {
     durationMs: 123000,
     toolsUsed: ["bash"],
     verb: "Executed commands for",
+  },
+  session_summary: {
+    kind: "session_summary",
+    id: "session-summary",
+    summary: {
+      title: "GG Coder is powering down. Goodbye!",
+      sessionId: "session.jsonl",
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      cwd: "/tmp/project",
+      wallDurationMs: 123000,
+      turns: 2,
+      usage: { inputTokens: 1000, outputTokens: 250, cacheRead: 50 },
+      tools: {
+        totalCalls: 2,
+        totalSuccess: 1,
+        totalFail: 1,
+        totalDurationMs: 3000,
+        byName: { bash: { calls: 2, success: 1, fail: 1, durationMs: 3000 } },
+      },
+      serverToolCalls: 0,
+      linesChanged: { added: 3, removed: 1 },
+      footer: "To resume this session: ggcoder --resume session.jsonl",
+    },
   },
 } satisfies ParityCaseByKind;
 
