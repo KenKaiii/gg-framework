@@ -1,6 +1,6 @@
 {
   "name": "@kenkaiiii/gg-editor-premiere-panel",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "type": "module",
   "description": "Adobe Premiere Pro extension that lets gg-editor drive Premiere. Ships both a UXP plugin (Premiere 25.6+) and a legacy CEP panel (sunset Sept 2026).",
   "license": "MIT",
