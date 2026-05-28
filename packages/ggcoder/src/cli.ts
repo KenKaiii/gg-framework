@@ -50,14 +50,11 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import fs from "node:fs";
 import readline from "node:readline/promises";
-import { execFile } from "node:child_process";
-import { createRequire } from "node:module";
 import { renderApp } from "./ui/render.js";
 import { runJsonMode } from "./modes/json-mode.js";
 import { runRpcMode } from "./modes/rpc-mode.js";
 import { runServeMode } from "./modes/serve-mode.js";
 import { runAgentHomeMode } from "./modes/agent-home-mode.js";
-import { renderLoginSelector } from "./ui/login.js";
 import { renderSessionSelector } from "./ui/sessions.js";
 import type { CompletedItem, GoalProgressDraft } from "./ui/app-items.js";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
@@ -88,13 +85,19 @@ import {
   getModel,
 } from "./core/model-registry.js";
 import { MCPClientManager, getMCPServers } from "./core/mcp/index.js";
+import { runPixel } from "./cli/pixel.js";
+import { runLogin, runLogout, runDoctor } from "./cli/auth.js";
+import {
+  CLI_VERSION,
+  LOGO_LINES,
+  clearVisibleScreen,
+  displayName,
+  gradientLine,
+  requireInteractiveTTY,
+} from "./cli/shared.js";
 import { discoverAgents } from "./core/agents.js";
 import { discoverSkills } from "./core/skills.js";
 import path from "node:path";
-import { loginAnthropic } from "./core/oauth/anthropic.js";
-import { loginOpenAI } from "./core/oauth/openai.js";
-import { loginGemini } from "./core/oauth/gemini.js";
-import type { OAuthCredentials, OAuthLoginCallbacks } from "./core/oauth/types.js";
 import chalk from "chalk";
 import { checkAndAutoUpdate } from "./core/auto-update.js";
 import { parseGoalSyntheticEvent } from "./ui/goal-events.js";
@@ -102,8 +105,6 @@ import type { GoalReference } from "./core/goal-store.js";
 import type { GoalMode } from "./core/runtime-mode.js";
 import { routeCliCommandInput, type CliSubcommandName } from "./cli/command-routing.js";
 
-const _require = createRequire(import.meta.url);
-const CLI_VERSION = (_require("../package.json") as { version: string }).version;
 const THINKING_LEVELS = new Set<ThinkingLevel>(["low", "medium", "high", "xhigh", "max"]);
 
 export function parseThinkingLevel(value: string | undefined): ThinkingLevel | undefined {
@@ -112,45 +113,6 @@ export function parseThinkingLevel(value: string | undefined): ThinkingLevel | u
   throw new Error(
     `Invalid --thinking value "${value}". Expected low, medium, high, xhigh, or max.`,
   );
-}
-
-// ── Logo + gradient (mirrors Banner.tsx) ────────────────────────────
-const LOGO_LINES = [
-  " \u2584\u2580\u2580\u2580 \u2584\u2580\u2580\u2580",
-  " \u2588 \u2580\u2588 \u2588 \u2580\u2588",
-  " \u2580\u2584\u2584\u2580 \u2580\u2584\u2584\u2580",
-];
-const GRADIENT = [
-  "#60a5fa",
-  "#6da1f9",
-  "#7a9df7",
-  "#8799f5",
-  "#9495f3",
-  "#a18ff1",
-  "#a78bfa",
-  "#a18ff1",
-  "#9495f3",
-  "#8799f5",
-  "#7a9df7",
-  "#6da1f9",
-];
-
-function gradientLine(text: string): string {
-  let result = "";
-  let colorIdx = 0;
-  for (const ch of text) {
-    if (ch === " ") {
-      result += ch;
-    } else {
-      result += chalk.hex(GRADIENT[colorIdx % GRADIENT.length])(ch);
-      colorIdx++;
-    }
-  }
-  return result;
-}
-
-function clearVisibleScreen(): void {
-  process.stdout.write("\x1b[2J\x1b[H");
 }
 
 function printHelp(): void {
@@ -268,7 +230,7 @@ function createCliSubcommandHandlers(): Record<CliSubcommandName, () => void> {
   };
 
   return {
-    pixel: () => runWithStandardErrorHandling(runPixel, true),
+    pixel: () => runWithStandardErrorHandling(() => runPixel({ runInkTUI }), true),
     login: () => runWithStandardErrorHandling(runLogin),
     logout: () => runWithStandardErrorHandling(runLogout),
     sessions: () => runWithStandardErrorHandling(runSessions),
@@ -420,22 +382,6 @@ function main(): void {
 }
 
 // ── Ink TUI ───────────────────────────────────────────────
-
-/**
- * Bail with a friendly message if stdin isn't a TTY. Ink's raw-mode crash is
- * cryptic; this catches the common case (piped stdin, API shells, CI).
- */
-function requireInteractiveTTY(): void {
-  if (process.stdin.isTTY) return;
-  process.stderr.write(
-    chalk.red("ggcoder needs an interactive terminal — your stdin isn't a TTY.\n") +
-      chalk.hex("#6b7280")(
-        "Run ggcoder directly in your terminal (not piped or through an API shell). " +
-          'For headless use try "ggcoder --json \'<prompt>\'" or "ggcoder --rpc".\n',
-      ),
-  );
-  process.exit(1);
-}
 
 async function runInkTUI(opts: {
   provider: Provider;
@@ -776,376 +722,6 @@ async function runInkTUI(opts: {
   closeLogger();
 }
 
-// ── Login ──────────────────────────────────────────────────
-
-async function runLogin(): Promise<void> {
-  requireInteractiveTTY();
-  clearVisibleScreen();
-  const paths = await ensureAppDirs();
-  initLogger(paths.logFile, { version: CLI_VERSION });
-  log("INFO", "auth", "Login flow started");
-
-  const authStorage = new AuthStorage();
-  await authStorage.load();
-
-  // Phase 1: Ink-based provider selector
-  const provider = await renderLoginSelector(CLI_VERSION);
-  if (!provider) {
-    console.log(chalk.hex("#6b7280")("Login cancelled."));
-    return;
-  }
-
-  console.log(
-    chalk.hex("#60a5fa").bold("\nLogging in to ") +
-      chalk.hex("#a78bfa")(displayName(provider)) +
-      chalk.hex("#60a5fa").bold("...\n"),
-  );
-
-  // Phase 2: OAuth flow (readline needed for Anthropic code paste)
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-
-  try {
-    const callbacks: OAuthLoginCallbacks = {
-      onOpenUrl: (url) => {
-        console.log(chalk.hex("#60a5fa").bold("Opening browser..."));
-        openBrowser(url);
-        console.log(
-          chalk.hex("#6b7280")("\nIf the browser didn't open, visit:\n") +
-            chalk.hex("#6b7280")(url) +
-            "\n",
-        );
-      },
-      onPromptCode: async (message) => {
-        return rl.question(message + " ");
-      },
-      onStatus: (message) => {
-        console.log(chalk.hex("#6b7280")(message));
-      },
-    };
-
-    let creds;
-    if (
-      provider === "glm" ||
-      provider === "moonshot" ||
-      provider === "xiaomi" ||
-      provider === "minimax" ||
-      provider === "deepseek" ||
-      provider === "openrouter"
-    ) {
-      const keyLabel =
-        provider === "glm"
-          ? "Z.AI"
-          : provider === "xiaomi"
-            ? "Xiaomi MiMo"
-            : provider === "minimax"
-              ? "MiniMax"
-              : provider === "deepseek"
-                ? "DeepSeek"
-                : provider === "openrouter"
-                  ? "OpenRouter"
-                  : "Moonshot";
-      const apiKey = await rl.question(chalk.hex("#60a5fa")(`Paste your ${keyLabel} API key: `));
-      if (!apiKey.trim()) {
-        console.log(chalk.hex("#ef4444")("No API key provided. Login cancelled."));
-        return;
-      }
-      creds = {
-        accessToken: apiKey.trim(),
-        refreshToken: "",
-        expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000 * 100, // ~100 years
-        ...(provider === "xiaomi" ? { baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1" } : {}),
-      } satisfies OAuthCredentials;
-    } else {
-      creds =
-        provider === "anthropic"
-          ? await loginAnthropic(callbacks)
-          : provider === "gemini"
-            ? await loginGemini(callbacks)
-            : await loginOpenAI(callbacks);
-    }
-
-    await authStorage.setCredentials(provider, creds);
-    log("INFO", "auth", `Login succeeded for ${displayName(provider)}`);
-    console.log(chalk.hex("#4ade80")(`\n✓ Logged in to ${displayName(provider)} successfully!`));
-  } finally {
-    rl.close();
-    closeLogger();
-  }
-}
-
-// ── Doctor ─────────────────────────────────────────────────
-
-async function runDoctor(): Promise<void> {
-  clearVisibleScreen();
-
-  const os = await import("node:os");
-  const fsP = await import("node:fs/promises");
-
-  const dim = chalk.hex("#6b7280");
-  const primary = chalk.hex("#60a5fa");
-  const accent = chalk.hex("#a78bfa");
-  const good = chalk.hex("#4ade80");
-  const warn = chalk.hex("#fbbf24");
-  const bad = chalk.hex("#ef4444");
-
-  // ── Banner ──────────────────────────────────────────────────
-  const LOGO = LOGO_LINES;
-  const GAP = "   ";
-  console.log();
-  console.log(
-    `  ${gradientLine(LOGO[0]!)}${GAP}` +
-      primary.bold("GG Coder") +
-      dim(` v${CLI_VERSION}`) +
-      dim(" · By ") +
-      chalk.white.bold("Ken Kai"),
-  );
-  console.log(`  ${gradientLine(LOGO[1]!)}${GAP}` + accent("Doctor"));
-  console.log(`  ${gradientLine(LOGO[2]!)}${GAP}` + dim("Diagnose & Fix"));
-  console.log();
-
-  const home = os.homedir();
-  const ggDir = path.join(home, ".gg");
-  const authFile = path.join(ggDir, "auth.json");
-  const lockFile = authFile + ".lock";
-  const myUid = process.getuid!();
-  let fixed = 0;
-
-  // ── Environment ─────────────────────────────────────────────
-  console.log(accent("  Environment\n"));
-  console.log(dim(`    Home:      ${home}`));
-  console.log(dim(`    $HOME:     ${process.env.HOME ?? "(not set)"}`));
-  console.log(dim(`    Node.js:   ${process.version}`));
-  console.log(dim(`    Platform:  ${process.platform} ${process.arch}`));
-  console.log(dim(`    UID:       ${myUid}  EUID: ${process.geteuid!()}`));
-
-  if (process.env.HOME && process.env.HOME !== home) {
-    console.log(warn("\n    ⚠ $HOME differs from os.homedir() — this can cause auth mismatches"));
-  }
-  if (myUid !== process.geteuid!()) {
-    console.log(warn("    ⚠ uid ≠ euid — running with elevated privileges (sudo?)"));
-    console.log(dim("      Running ggcoder with sudo can cause ownership issues."));
-    console.log(dim("      Use without sudo, or fix after: sudo chown -R $(whoami) ~/.gg"));
-  }
-  console.log();
-
-  // ── Config Directory ────────────────────────────────────────
-  console.log(accent("  Config Directory\n"));
-
-  try {
-    const stat = await fsP.stat(ggDir);
-    const mode = stat.mode & 0o777;
-    console.log(dim(`    Path:  ${ggDir}`));
-    console.log(dim(`    Mode:  0o${mode.toString(8)}  UID: ${stat.uid}`));
-
-    // Fix ownership
-    if (stat.uid !== myUid) {
-      console.log(warn(`    ⚠ Owned by uid ${stat.uid}, expected ${myUid}`));
-      try {
-        await fsP.chown(ggDir, myUid, process.getgid!());
-        console.log(good("    ✓ Fixed directory ownership"));
-        fixed++;
-      } catch {
-        console.log(bad(`    ✗ Cannot fix — try: sudo chown -R $(whoami) ${ggDir}`));
-      }
-    }
-
-    // Fix permissions (should be 0o700)
-    if (mode !== 0o700) {
-      try {
-        await fsP.chmod(ggDir, 0o700);
-        console.log(good("    ✓ Fixed directory permissions → 0o700"));
-        fixed++;
-      } catch {
-        console.log(bad(`    ✗ Cannot fix — try: chmod 700 ${ggDir}`));
-      }
-    }
-  } catch {
-    console.log(warn(`    ${ggDir} missing — creating...`));
-    try {
-      await fsP.mkdir(ggDir, { recursive: true, mode: 0o700 });
-      console.log(good(`    ✓ Created ${ggDir}`));
-      fixed++;
-    } catch (mkErr) {
-      console.log(
-        bad(`    ✗ Cannot create: ${mkErr instanceof Error ? mkErr.message : String(mkErr)}`),
-      );
-      console.log();
-      return;
-    }
-  }
-  console.log();
-
-  // ── Lock File ───────────────────────────────────────────────
-  try {
-    const lockStat = await fsP.stat(lockFile);
-    const ageMs = Date.now() - lockStat.mtimeMs;
-    console.log(accent("  Lock File\n"));
-    console.log(warn(`    ⚠ Stale lock found (age: ${Math.round(ageMs / 1000)}s)`));
-    await fsP.unlink(lockFile);
-    console.log(good("    ✓ Removed"));
-    fixed++;
-    console.log();
-  } catch {
-    // No lock file — good, skip section entirely
-  }
-
-  // ── Auth File ───────────────────────────────────────────────
-  console.log(accent("  Auth File\n"));
-
-  let authData: Record<string, unknown> | null = null;
-  let authNeedsRewrite = false;
-
-  try {
-    const stat = await fsP.stat(authFile);
-    const mode = stat.mode & 0o777;
-    console.log(dim(`    Path:  ${authFile}`));
-    console.log(
-      dim(`    Size:  ${stat.size} bytes  Mode: 0o${mode.toString(8)}  UID: ${stat.uid}`),
-    );
-
-    // Fix ownership
-    if (stat.uid !== myUid) {
-      console.log(warn(`    ⚠ Owned by uid ${stat.uid}, expected ${myUid}`));
-      try {
-        await fsP.chown(authFile, myUid, process.getgid!());
-        console.log(good("    ✓ Fixed file ownership"));
-        fixed++;
-      } catch {
-        console.log(bad(`    ✗ Cannot fix — try: sudo chown $(whoami) ${authFile}`));
-      }
-    }
-
-    // Fix permissions (should be 0o600)
-    if (mode !== 0o600) {
-      try {
-        await fsP.chmod(authFile, 0o600);
-        console.log(good("    ✓ Fixed file permissions → 0o600"));
-        fixed++;
-      } catch {
-        console.log(bad(`    ✗ Cannot fix — try: chmod 600 ${authFile}`));
-      }
-    }
-
-    // Try to read and parse
-    try {
-      const content = await fsP.readFile(authFile, "utf-8");
-      try {
-        authData = JSON.parse(content) as Record<string, unknown>;
-      } catch {
-        console.log(bad("    ✗ Invalid JSON — backing up and resetting"));
-        const backupName = `auth.json.corrupt.${Date.now()}`;
-        await fsP.copyFile(authFile, path.join(ggDir, backupName));
-        await fsP.writeFile(authFile, "{}", { encoding: "utf-8", mode: 0o600 });
-        console.log(good(`    ✓ Corrupt file backed up as ${backupName}`));
-        console.log(dim('      Run "ggcoder login" to re-authenticate'));
-        authData = {};
-        fixed++;
-      }
-    } catch (readErr) {
-      const code = (readErr as NodeJS.ErrnoException).code;
-      if (code === "EACCES") {
-        console.log(bad("    ✗ Permission denied reading auth.json"));
-        console.log(dim(`      Try: sudo chown $(whoami) ${authFile} && chmod 600 ${authFile}`));
-      } else {
-        console.log(
-          bad(`    ✗ Read error: ${readErr instanceof Error ? readErr.message : String(readErr)}`),
-        );
-      }
-    }
-  } catch {
-    console.log(dim(`    Path:  ${authFile}`));
-    console.log(warn('    Not found — run "ggcoder login" to authenticate'));
-  }
-  console.log();
-
-  // ── Credentials ─────────────────────────────────────────────
-  if (authData && Object.keys(authData).length > 0) {
-    console.log(accent("  Credentials\n"));
-
-    for (const p of Object.keys(authData)) {
-      const cred = authData[p] as Record<string, unknown> | undefined;
-      if (!cred || typeof cred !== "object") {
-        console.log(bad(`    ✗ ${p}: invalid entry — removing`));
-        delete authData[p];
-        authNeedsRewrite = true;
-        fixed++;
-        continue;
-      }
-      if (!cred.accessToken || typeof cred.accessToken !== "string") {
-        console.log(bad(`    ✗ ${p}: missing accessToken — removing`));
-        delete authData[p];
-        authNeedsRewrite = true;
-        fixed++;
-        continue;
-      }
-      const token = String(cred.accessToken);
-      const masked = token.slice(0, 8) + "..." + token.slice(-4);
-      const expires =
-        typeof cred.expiresAt === "number" ? new Date(cred.expiresAt).toISOString() : "unknown";
-      const expired = typeof cred.expiresAt === "number" && Date.now() > cred.expiresAt;
-      if (expired) {
-        console.log(warn(`    ⚠ ${p}: ${masked}  expired ${expires}`));
-      } else {
-        console.log(good(`    ✓ ${p}: ${masked}  expires ${expires}`));
-      }
-    }
-
-    if (authNeedsRewrite) {
-      try {
-        await fsP.writeFile(authFile, JSON.stringify(authData, null, 2), {
-          encoding: "utf-8",
-          mode: 0o600,
-        });
-        console.log(good("    ✓ Cleaned up auth.json"));
-      } catch {
-        console.log(bad("    ✗ Failed to write cleaned auth.json"));
-      }
-    }
-    console.log();
-  }
-
-  // ── Temp Files ──────────────────────────────────────────────
-  try {
-    const entries = await fsP.readdir(ggDir);
-    const tmpFiles = entries.filter((e) => e.startsWith("auth.json.") && e.endsWith(".tmp"));
-    if (tmpFiles.length > 0) {
-      console.log(accent("  Temp Files\n"));
-      console.log(warn(`    ⚠ ${tmpFiles.length} orphaned temp file(s) from interrupted writes`));
-      for (const tmp of tmpFiles) {
-        await fsP.unlink(path.join(ggDir, tmp)).catch(() => {});
-      }
-      console.log(good(`    ✓ Removed ${tmpFiles.length} file(s)`));
-      fixed++;
-      console.log();
-    }
-  } catch {
-    // Can't read directory — already flagged above
-  }
-
-  // ── Summary ─────────────────────────────────────────────────
-  if (fixed > 0) {
-    console.log(good(`  ✓ Fixed ${fixed} issue${fixed > 1 ? "s" : ""}.`));
-  } else {
-    console.log(good("  ✓ Everything looks good."));
-  }
-  console.log();
-}
-
-// ── Logout ─────────────────────────────────────────────────
-
-async function runLogout(): Promise<void> {
-  const paths = await ensureAppDirs();
-  initLogger(paths.logFile, { version: CLI_VERSION });
-  log("INFO", "auth", "Logout requested");
-
-  const authStorage = new AuthStorage();
-  await authStorage.load();
-  await authStorage.clearAll();
-  log("INFO", "auth", "Logout succeeded");
-  closeLogger();
-  console.log(chalk.green("Logged out successfully."));
-}
-
 // ── Sessions ──────────────────────────────────────────────
 
 async function runSessions(): Promise<void> {
@@ -1480,35 +1056,18 @@ async function runAgentHomeLogin(): Promise<void> {
   const existing = await loadAgentHomeConfig();
 
   // Banner
-  const LOGO = [
-    " \u2584\u2580\u2580\u2580 \u2584\u2580\u2580\u2580",
-    " \u2588 \u2580\u2588 \u2588 \u2580\u2588",
-    " \u2580\u2584\u2584\u2580 \u2580\u2584\u2584\u2580",
-  ];
-  function gradientTextLocal(text: string): string {
-    let colorIdx = 0;
-    return text
-      .split("")
-      .map((ch) => {
-        if (ch === " ") return ch;
-        const color = GRADIENT[colorIdx++ % GRADIENT.length]!;
-        return chalk.hex(color)(ch);
-      })
-      .join("");
-  }
+  const LOGO = LOGO_LINES;
   const GAP = "   ";
   console.log();
   console.log(
-    `  ${gradientTextLocal(LOGO[0]!)}${GAP}` +
+    `  ${gradientLine(LOGO[0]!)}${GAP}` +
       chalk.hex("#60a5fa").bold("GG Coder") +
       chalk.hex("#6b7280")(` v${CLI_VERSION}`) +
       chalk.hex("#6b7280")(" \u00b7 By ") +
       chalk.white.bold("Ken Kai"),
   );
-  console.log(`  ${gradientTextLocal(LOGO[1]!)}${GAP}` + chalk.hex("#a78bfa")("Agent Home Setup"));
-  console.log(
-    `  ${gradientTextLocal(LOGO[2]!)}${GAP}` + chalk.hex("#6b7280")("Remote Control via iOS"),
-  );
+  console.log(`  ${gradientLine(LOGO[1]!)}${GAP}` + chalk.hex("#a78bfa")("Agent Home Setup"));
+  console.log(`  ${gradientLine(LOGO[2]!)}${GAP}` + chalk.hex("#6b7280")("Remote Control via iOS"));
   console.log();
 
   if (existing) {
@@ -1627,120 +1186,6 @@ async function runAgentHome(): Promise<void> {
 
 // ── Pixel ──────────────────────────────────────────────────
 
-async function runPixel(): Promise<void> {
-  const sub = process.argv[3];
-  const rest = process.argv.slice(4);
-
-  if (sub === "install") {
-    const { runPixelInstall } = await import("./core/pixel.js");
-    const opts = parsePixelInstallArgs(rest);
-    await runPixelInstall(opts);
-    return;
-  }
-
-  if (sub === "fix") {
-    const errorId = rest[0];
-    if (!errorId) {
-      process.stderr.write("Usage: ggcoder pixel fix <error_id>\n");
-      process.exit(1);
-    }
-    const { fixError } = await import("./core/pixel-fix.js");
-    const result = await fixError(errorId);
-    if (result.outcome === "awaiting_review") {
-      console.log(chalk.hex("#4ade80")(`✓ ${result.reason}`));
-    } else {
-      console.log(chalk.hex("#ef4444")(`✗ ${result.reason}`));
-      process.exit(1);
-    }
-    return;
-  }
-
-  if (sub === "run") {
-    const { runQueue } = await import("./core/pixel-fix.js");
-    const result = await runQueue();
-    console.log(
-      chalk.bold(`${result.fixed} fixed · ${result.failed} failed · ${result.total} total`),
-    );
-    if (result.failed > 0) process.exit(1);
-    return;
-  }
-
-  if (sub === "--help" || sub === "-h") {
-    printPixelHelp();
-    return;
-  }
-
-  if (sub === "list") {
-    const { listAllErrors } = await import("./core/pixel.js");
-    await listAllErrors();
-    return;
-  }
-
-  if (sub) {
-    process.stderr.write(`Unknown pixel subcommand: ${sub}\n`);
-    printPixelHelp();
-    process.exit(1);
-  }
-
-  // No subcommand → launch the Ink TUI with the pixel overlay open. The fix
-  // flow runs through the same agent loop, streaming live in the chat instead
-  // of spawning a subprocess.
-  // Non-TTY (CI, piped) → fall back to text list.
-  if (!process.stdin.isTTY) {
-    const { listAllErrors } = await import("./core/pixel.js");
-    await listAllErrors();
-    return;
-  }
-
-  const saved = loadSavedSettings();
-  const provider: Provider = saved.provider ?? "anthropic";
-  const model: string = saved.model ?? defaultModelFor(provider);
-  await runInkTUI({
-    provider,
-    model,
-    cwd: process.cwd(),
-    thinkingLevel: saved.thinkingEnabled ? (saved.thinkingLevel ?? "medium") : undefined,
-    theme: saved.theme,
-    initialOverlay: "pixel",
-  });
-}
-
-function defaultModelFor(p: Provider): string {
-  return getDefaultModel(p).id;
-}
-
-interface ParsedInstall {
-  ingestUrl?: string;
-  name?: string;
-  skipPackageInstall: boolean;
-}
-
-function parsePixelInstallArgs(args: string[]): ParsedInstall {
-  const out: ParsedInstall = { skipPackageInstall: false };
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === "--ingest-url") out.ingestUrl = args[++i];
-    else if (a === "--name") out.name = args[++i];
-    else if (a === "--skip-install") out.skipPackageInstall = true;
-  }
-  return out;
-}
-
-function printPixelHelp(): void {
-  console.log(`ggcoder pixel — error tracking + auto-fix queue
-
-Usage:
-  ggcoder pixel                  List open errors across every registered project
-  ggcoder pixel install          Register the current project and wire up the SDK
-  ggcoder pixel fix <error_id>   Fix one specific error end-to-end
-  ggcoder pixel run              Auto-fix every open error across all projects
-
-  ggcoder pixel install --name <name>      Override the project name
-  ggcoder pixel install --ingest-url <url> Use a custom backend URL
-  ggcoder pixel install --skip-install     Don't run the package manager
-`);
-}
-
 // ── Helpers ────────────────────────────────────────────────
 
 /**
@@ -1791,18 +1236,6 @@ async function resolveActiveProvider(
   // belonged to a provider the user can no longer reach).
   const provider = loggedInProviders[0]!;
   return { provider, model: getDefaultModel(provider).id, loggedInProviders };
-}
-
-function displayName(provider: Provider): string {
-  if (provider === "anthropic") return "Anthropic";
-  if (provider === "xiaomi") return "Xiaomi (MiMo)";
-  if (provider === "gemini") return "Gemini";
-  if (provider === "glm") return "Z.AI (GLM)";
-  if (provider === "moonshot") return "Moonshot";
-  if (provider === "minimax") return "MiniMax";
-  if (provider === "deepseek") return "DeepSeek";
-  if (provider === "openrouter") return "OpenRouter";
-  return "OpenAI";
 }
 
 function extractText(content: string | Array<{ type: string; text?: string }>): string {
@@ -2038,15 +1471,6 @@ export function messagesToHistoryItems(msgs: Message[]): CompletedItem[] {
   });
 
   return items;
-}
-
-function openBrowser(url: string): void {
-  const cmd =
-    process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-
-  execFile(cmd, [url], () => {
-    // Ignore errors — user can copy URL manually
-  });
 }
 
 if (

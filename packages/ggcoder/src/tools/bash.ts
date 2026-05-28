@@ -6,6 +6,7 @@ import { truncateTail } from "./truncate.js";
 import { writeOverflow } from "./overflow.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 import { getSafeToolEnv } from "./safe-env.js";
+import { isReadOnlyCommand } from "./read-only-bash.js";
 import {
   getActiveGoalMode,
   isPlanModeActive,
@@ -53,7 +54,7 @@ export function createBashTool(
     parameters: BashParams,
     executionMode: "sequential",
     async execute({ command, timeout: timeoutMs, run_in_background }, context) {
-      if (isPlanModeActive(planModeRef)) {
+      if (isPlanModeActive(planModeRef) && !isReadOnlyCommand(command)) {
         return planModeRestriction("bash");
       }
       const goalMode = getActiveGoalMode(goalModeRef);

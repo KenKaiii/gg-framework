@@ -92,7 +92,7 @@ describe("plan mode", () => {
     const editTool = tools.find((tool) => tool.name === "edit");
     const subagentTool = tools.find((tool) => tool.name === "subagent");
 
-    expect(String(await bashTool!.execute({ command: "echo hi" }, context))).toContain(
+    expect(String(await bashTool!.execute({ command: "echo hi > f" }, context))).toContain(
       "bash is restricted in plan mode",
     );
     expect(String(await editTool!.execute({ file_path: "x", edits: [] }, context))).toContain(
@@ -101,6 +101,21 @@ describe("plan mode", () => {
     expect(String(await subagentTool!.execute({ task: "x" }, context))).toContain(
       "subagent is restricted in plan mode",
     );
+
+    processManager.shutdownAll();
+  });
+
+  it("allows read-only bash while plan mode is active", async () => {
+    const cwd = await makeTempDir();
+    const planModeRef = { current: true };
+    const { tools, processManager } = createTools(cwd, { planModeRef });
+    const bashTool = tools.find((tool) => tool.name === "bash");
+    expect(bashTool).toBeDefined();
+
+    const result = String(await bashTool!.execute({ command: "echo hi" }, toolContext()));
+    expect(result).not.toContain("bash is restricted in plan mode");
+    expect(result).toContain("Exit code: 0");
+    expect(result).toContain("hi");
 
     processManager.shutdownAll();
   });

@@ -64,9 +64,9 @@ function renderPlanModeSection(): string {
     `## Plan Mode (ACTIVE)\n\n` +
     `You are in PLAN MODE. Research and design an implementation plan before writing implementation code.\n\n` +
     `### Plan-mode flow\n` +
-    `Explore with read/search/docs tools, draft a structured markdown plan at \`.gg/plans/<name>.md\`, then call \`exit_plan\` with that path for user review.\n\n` +
+    `Explore with read/search/docs tools and read-only bash (e.g. \`git log\`, \`git diff\`, \`grep\`, \`wc -l\`, \`find\`, \`cat\`), draft a structured markdown plan at \`.gg/plans/<name>.md\`, then call \`exit_plan\` with that path for user review.\n\n` +
     `### Rules\n` +
-    `- Do not implement yet: no code edits outside \`.gg/plans/\`, no bash, no subagent, no task/goal orchestration.\n` +
+    `- Do not implement yet: no code edits outside \`.gg/plans/\`, no mutating bash (read-only shell for exploration is allowed), no subagent, no task/goal orchestration.\n` +
     `- Be specific: list exact file paths, functions, dependencies, risks, and verification criteria.\n` +
     `- Keep investigating until the plan is actionable, then stop after \`exit_plan\`.`
   );
