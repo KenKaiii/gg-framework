@@ -78,6 +78,41 @@ describe("goals tool state guards", () => {
     expect(run?.prerequisites[0]?.evidence).toContain("exited 0");
   });
 
+  it("persists prerequisite kind and keeps a create with an unmet external prerequisite blocked", async () => {
+    await executeGoals({
+      action: "create",
+      run_id: "kind-create",
+      title: "Kind create",
+      goal: "Prerequisite kind must round-trip",
+      success_criteria: ["kind persisted"],
+      evidence_plan: [
+        {
+          id: "kind-proof",
+          label: "Kind proof",
+          mechanism: "command",
+          description: "Confirm kind",
+          status: "ready",
+          command: "true",
+          evidence: "ok",
+        },
+      ],
+      verifier_command: "true",
+      prerequisites: [
+        {
+          id: "secret",
+          label: "Production secret",
+          status: "missing",
+          kind: "external",
+          instructions: "Provide PROD_SECRET.",
+        },
+      ],
+    });
+
+    const run = await getGoalRun(tmpProject, "kind-create");
+    expect(run?.prerequisites[0]).toMatchObject({ id: "secret", kind: "external" });
+    expect(run?.status).toBe("blocked");
+  });
+
   it("rejects unsafe prerequisite check commands without executing them", async () => {
     const marker = path.join(tmpProject, "unsafe-marker.txt");
 
@@ -111,7 +146,9 @@ describe("goals tool state guards", () => {
 
     const run = await getGoalRun(tmpProject, "unsafe-prereq");
     await expect(fs.stat(marker)).rejects.toMatchObject({ code: "ENOENT" });
-    expect(run?.status).toBe("blocked");
+    // A check_command implies a locally-resolvable prerequisite, so an unmet one
+    // no longer blocks the run; the controller schedules a resolve task instead.
+    expect(run?.status).toBe("ready");
     expect(run?.prerequisites[0]).toMatchObject({
       id: "unsafe",
       status: "missing",

@@ -209,10 +209,7 @@ export {
   pinStreamingTextBeforeToolBoundary,
 } from "./item-helpers.js";
 export {
-  buildGoalDirtyWorktreePauseRun,
-  buildGoalDirtyWorktreeUserPrompt,
   buildGoalUserPauseRun,
-  goalDirtyWorktreeInfoText,
   goalRunNeedsExplicitContinuationAfterWorker,
   shouldKeepGoalRunTrackedAfterDecision,
   shouldRunGoalTaskInMainCheckout,

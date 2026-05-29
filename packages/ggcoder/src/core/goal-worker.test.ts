@@ -241,6 +241,7 @@ describe("goal worker failure propagation", () => {
     expect(spawnOptions.env.GG_GOAL_PROJECT_PATH).toBe(tmpProject);
     expect(worktreeCalls).toEqual([
       ["status", "--porcelain"],
+      ["status", "--porcelain"],
       ["worktree", "add", "-b", `goal/goal-a/task-a-${record.id}`, record.cwd, "base-sha"],
     ]);
     expect(run?.tasks[0]?.worktree).toMatchObject({
@@ -291,7 +292,61 @@ describe("goal worker failure propagation", () => {
     expect(systemPrompt).toContain("main checkout");
   });
 
-  it("leaves a task retryable when isolated worktree creation only needs a clean checkout", async () => {
+  it("auto-checkpoints a dirty working tree, records evidence, and proceeds", async () => {
+    let committed = false;
+    const worktreeCalls: Array<readonly string[]> = [];
+    const runner: GoalWorktreeCommandRunner = {
+      execFile: vi.fn(async (_file, args) => {
+        worktreeCalls.push(args);
+        if (args[0] === "status") {
+          return committed
+            ? { stdout: "", stderr: "" }
+            : { stdout: " M packages/dirty.ts\n", stderr: "" };
+        }
+        if (args[0] === "commit") {
+          committed = true;
+          return { stdout: "", stderr: "" };
+        }
+        if (args[0] === "rev-parse") return { stdout: "checkpoint-sha\n", stderr: "" };
+        return { stdout: "", stderr: "" };
+      }),
+    };
+    const mod = await import("./goal-worker.js");
+
+    const record = await mod.startGoalWorker({
+      cwd: tmpProject,
+      provider: "anthropic",
+      model: "claude-test",
+      goalRunId: "goal-a",
+      goalTaskId: "task-a",
+      prompt: "Do deterministic work",
+      worktreeBaseRef: "base-sha",
+      worktreesRoot: path.join(tmpProject, "worktrees"),
+      worktreeCommandRunner: runner,
+    });
+
+    expect(spawnMock).toHaveBeenCalled();
+    expect(record.worktree).toBeDefined();
+    expect(worktreeCalls).toEqual([
+      ["status", "--porcelain"],
+      ["add", "-A"],
+      ["commit", "-m", `goal(goal-a): checkpoint uncommitted work before worker ${record.id}`],
+      ["rev-parse", "HEAD"],
+      ["status", "--porcelain"],
+      ["worktree", "add", "-b", `goal/goal-a/task-a-${record.id}`, record.cwd, "base-sha"],
+    ]);
+    const run = await getGoalRun(tmpProject, "goal-a");
+    expect(run?.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Goal working tree checkpoint",
+          content: expect.stringContaining("checkpoint-sha"),
+        }),
+      ]),
+    );
+  });
+
+  it("fails the task when the checkpoint commit cannot clean the working tree", async () => {
     const runner: GoalWorktreeCommandRunner = {
       execFile: vi.fn(async (_file, args) =>
         args[0] === "status"
@@ -316,7 +371,7 @@ describe("goal worker failure propagation", () => {
     const run = await getGoalRun(tmpProject, "goal-a");
     expect(spawnMock).not.toHaveBeenCalled();
     expect(run?.tasks[0]).toMatchObject({
-      status: "pending",
+      status: "failed",
       lastSummary: expect.stringContaining("clean working tree"),
     });
     expect(run?.evidence).toEqual(

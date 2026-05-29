@@ -165,6 +165,44 @@ export async function checkGoalWorktreeIntegration(
   };
 }
 
+export interface GoalCheckpointResult {
+  committed: boolean;
+  status: string;
+  sha?: string;
+  files?: string[];
+}
+
+/**
+ * Commit any uncommitted work in the project as a checkpoint before an isolated
+ * Goal worker worktree is created. This is the rollback guarantee that licenses
+ * unattended Goal autonomy: the auto-commit is clearly prefixed and reversible.
+ */
+export async function checkpointGoalWorkingTree({
+  projectPath,
+  message,
+  commandRunner,
+}: {
+  projectPath: string;
+  message: string;
+  commandRunner?: GoalWorktreeCommandRunner;
+}): Promise<GoalCheckpointResult> {
+  const runner = commandRunner ?? { execFile: defaultGoalWorktreeCommandRunner };
+  // Preserve the leading porcelain status codes (e.g. " M file"); only trim the
+  // trailing newline so parseChangedFiles can slice each line correctly.
+  let rawStatus: string;
+  try {
+    const result = await runner.execFile("git", ["status", "--porcelain"], { cwd: projectPath });
+    rawStatus = result.stdout.replace(/\s+$/u, "");
+  } catch (error) {
+    throw new Error(`git status --porcelain failed: ${formatGitError(error)}`, { cause: error });
+  }
+  if (rawStatus.length === 0) return { committed: false, status: "" };
+  await gitStdout(runner, projectPath, ["add", "-A"]);
+  await gitStdout(runner, projectPath, ["commit", "-m", message]);
+  const sha = await gitStdout(runner, projectPath, ["rev-parse", "HEAD"]);
+  return { committed: true, sha, status: rawStatus, files: parseChangedFiles(rawStatus) };
+}
+
 export async function createGoalWorkerWorktree({
   projectPath,
   goalRunId,

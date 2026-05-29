@@ -38,6 +38,12 @@ const PrerequisiteInput = z.object({
   id: z.string().optional().describe("Stable prerequisite id"),
   label: z.string().describe("Human-readable prerequisite label"),
   status: z.enum(["unknown", "met", "missing"]).optional(),
+  kind: z
+    .enum(["local", "external"])
+    .optional()
+    .describe(
+      "'local' = agent can satisfy it locally (default when check_command is set); 'external' = genuinely user-supplied input (paid creds, secrets, approvals, devices) that blocks the Goal. Reserve 'external' for true user prerequisites.",
+    ),
   check_command: z.string().optional().describe("Optional command used to check this prerequisite"),
   instructions: z.string().optional().describe("What the user must provide when missing"),
   evidence: z.string().optional().describe("Short evidence, never secret values"),
@@ -199,12 +205,14 @@ async function normalizePrerequisiteInput(
 ): Promise<GoalRun["prerequisites"][number]> {
   const requestedStatus = asPrerequisiteStatus(item.status);
   const id = item.id ?? randomUUID();
+  const kindField = item.kind ? { kind: item.kind } : {};
   if (item.check_command && requiresPrerequisiteCheck(requestedStatus, item.evidence)) {
     const result = await runGoalPrerequisiteCheckCommand({ cwd, command: item.check_command });
     return {
       id,
       label: item.label,
       status: result.status,
+      ...kindField,
       checkCommand: item.check_command,
       evidence: result.evidence,
       ...(result.status === "missing" || item.instructions
@@ -216,6 +224,7 @@ async function normalizePrerequisiteInput(
     id,
     label: item.label,
     status: requestedStatus,
+    ...kindField,
     ...(item.check_command ? { checkCommand: item.check_command } : {}),
     ...(item.instructions ? { instructions: item.instructions } : {}),
     ...(item.evidence ? { evidence: item.evidence } : {}),
@@ -1097,7 +1106,6 @@ export function createGoalsTool(
                 decision.kind === "terminal" ||
                 decision.kind === "complete" ||
                 decision.kind === "create_task" ||
-                decision.kind === "pause" ||
                 decision.kind === "start_worker" ||
                 decision.kind === "run_verifier"
                   ? decision.reason

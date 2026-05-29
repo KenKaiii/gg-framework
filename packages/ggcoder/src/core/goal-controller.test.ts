@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GoalRun } from "./goal-store.js";
 import {
+  buildGoalFailureDiagnosis,
   canCompleteGoalRun,
   decideGoalNextAction,
   formatGoalControllerDecision,
@@ -239,10 +240,11 @@ describe("goal controller", () => {
       mergeStrategy: "after_dependencies" as const,
     };
 
-    expect(decideGoalNextAction(goalRun({ tasks: [uiTask] }))).toEqual({
-      kind: "blocked",
-      reason: 'Goal task "Change UI" depends on missing task(s): schema-task.',
-    });
+    const missingDepDecision = decideGoalNextAction(goalRun({ tasks: [uiTask] }));
+    expect(missingDepDecision).toMatchObject({ kind: "terminal", status: "failed" });
+    expect(missingDepDecision.reason).toContain(
+      "depends on missing task(s) that cannot be synthesized: schema-task",
+    );
     expect(decideGoalNextAction(goalRun({ tasks: [uiTask, schemaTask] }))).toEqual({
       kind: "start_worker",
       task: schemaTask,
@@ -637,11 +639,10 @@ describe("goal controller", () => {
         },
       }),
     );
-    expect(decision).toEqual({
-      kind: "blocked",
-      reason:
-        "Verifier passed, but final completion audit did not reconcile the Goal evidence plan after bounded attempts.",
-    });
+    expect(decision).toMatchObject({ kind: "terminal", status: "failed" });
+    expect(decision.reason).toContain(
+      "Verifier passed, but the final completion audit could not reconcile the Goal evidence plan after bounded attempts.",
+    );
   });
 
   it("creates a main-checkout apply task before verifier when integration worktree changes exist", () => {
@@ -986,10 +987,11 @@ describe("goal controller", () => {
         },
       ],
     });
-    expect(decideGoalNextAction(run)).toEqual({
-      kind: "blocked",
+    expect(decideGoalNextAction(run)).toMatchObject({
+      kind: "create_task",
+      title: "Re-strategize Goal approach",
       reason:
-        "Verifier produced the same failure repeatedly; pause for diagnosis before creating more fix tasks.",
+        "Verifier produced the same failure repeatedly; re-strategizing with a fundamentally different approach. (1/2)",
     });
   });
 
@@ -1186,21 +1188,96 @@ describe("goal controller", () => {
     expect(shouldClearGoalContinuation(decision)).toBe(true);
   });
 
-  it("pauses after repeated non-progress rather than looping forever", () => {
+  it("re-strategizes on no-progress repeats, then fails with a diagnosis past the strategy limit", () => {
     const task = {
       id: "task-a",
       title: "Flaky repair",
       prompt: "Do work",
       status: "failed" as const,
       attempts: 5,
+      workerId: "worker-a",
     };
+    const repeatedEvidence = [
+      {
+        id: "e1",
+        kind: "log" as const,
+        label: "Worker worker-a failed",
+        content: "same crash",
+        createdAt: "2024-01-01T00:00:00.000Z",
+      },
+      {
+        id: "e2",
+        kind: "log" as const,
+        label: "Worker worker-a failed",
+        content: "same crash",
+        createdAt: "2024-01-01T00:00:01.000Z",
+      },
+    ];
 
-    expect(decideGoalNextAction(goalRun({ tasks: [task] }))).toEqual({
-      kind: "pause",
-      task,
-      attempts: 6,
-      reason: "Attempt limit reached for task Flaky repair.",
+    // No-progress repeat below the strategy limit -> create a re-strategy task.
+    const reStrategy = decideGoalNextAction(goalRun({ tasks: [task], evidence: repeatedEvidence }));
+    expect(reStrategy).toMatchObject({
+      kind: "create_task",
+      title: "Re-strategize Goal approach",
     });
+
+    // Past the bounded strategy limit (with done re-strategy tasks) -> terminal failed.
+    const exhausted = decideGoalNextAction(
+      goalRun({
+        tasks: [
+          task,
+          {
+            id: "s1",
+            title: "Re-strategize Goal approach",
+            prompt: "x",
+            status: "done",
+            attempts: 1,
+          },
+          {
+            id: "s2",
+            title: "Re-strategize Goal approach",
+            prompt: "x",
+            status: "done",
+            attempts: 1,
+          },
+        ],
+        evidence: repeatedEvidence,
+      }),
+    );
+    expect(exhausted).toMatchObject({ kind: "terminal", status: "failed" });
+    expect(exhausted.reason).toContain("GOAL_FAILURE_DIAGNOSIS");
+    expect(exhausted.reason).toContain("Flaky repair");
+  });
+
+  it("keeps retrying past the soft attempt limit while still making progress", () => {
+    const task = {
+      id: "task-a",
+      title: "Improving repair",
+      prompt: "Do work",
+      status: "failed" as const,
+      attempts: 5,
+      workerId: "worker-a",
+    };
+    const progressingEvidence = [
+      {
+        id: "e1",
+        kind: "log" as const,
+        label: "Worker worker-a failed",
+        content: "error A",
+        createdAt: "2024-01-01T00:00:00.000Z",
+      },
+      {
+        id: "e2",
+        kind: "log" as const,
+        label: "Worker worker-a failed",
+        content: "error B (different)",
+        createdAt: "2024-01-01T00:00:01.000Z",
+      },
+    ];
+
+    expect(
+      decideGoalNextAction(goalRun({ tasks: [task], evidence: progressingEvidence })),
+    ).toMatchObject({ kind: "start_worker", attempts: 6 });
   });
 
   it("does not create duplicate auto evidence or harness tasks", () => {
@@ -1301,10 +1378,98 @@ describe("goal controller", () => {
       },
     });
 
-    expect(decideGoalNextAction(run)).toEqual({
-      kind: "blocked",
+    expect(decideGoalNextAction(run)).toMatchObject({
+      kind: "create_task",
+      title: "Re-strategize Goal approach",
       reason:
-        "A blocked verifier-fix task already exists; not creating another fix worker until the existing blocker is reconciled.",
+        "A blocked verifier-fix task exists; re-strategizing the verifier fix with a different approach. (1/2)",
+    });
+  });
+
+  it("builds a structured failure diagnosis brief", () => {
+    const diagnosis = buildGoalFailureDiagnosis(
+      goalRun({
+        goal: "Ship the widget",
+        tasks: [
+          { id: "task-a", title: "Build widget", prompt: "x", status: "failed", attempts: 6 },
+        ],
+        prerequisites: [
+          {
+            id: "key",
+            label: "Vendor API key",
+            status: "missing",
+            kind: "external",
+            instructions: "Provide VENDOR_KEY.",
+          },
+        ],
+        verifier: {
+          description: "check",
+          command: "pnpm test",
+          lastResult: {
+            status: "fail",
+            summary: "2 failing tests",
+            checkedAt: "2024-01-01T00:00:00.000Z",
+            exitCode: 1,
+          },
+        },
+        evidence: [
+          {
+            id: "e1",
+            kind: "command",
+            label: "Verifier fail",
+            content: "2 failing tests",
+            createdAt: "2024-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+      "Bounded re-strategy exhausted.",
+    );
+    expect(diagnosis).toContain("GOAL_FAILURE_DIAGNOSIS");
+    expect(diagnosis).toContain("objective=Ship the widget");
+    expect(diagnosis).toContain("reason=Bounded re-strategy exhausted.");
+    expect(diagnosis).toContain("Build widget (task-a): status=failed; attempts=6");
+    expect(diagnosis).toContain("2 failing tests");
+    expect(diagnosis).toContain("Vendor API key: Provide VENDOR_KEY.");
+  });
+
+  it("resolves unmet local prerequisites with a worker task instead of blocking", () => {
+    const decision = decideGoalNextAction(
+      goalRun({
+        prerequisites: [
+          {
+            id: "node",
+            label: "Node toolchain",
+            status: "missing",
+            checkCommand: "node --version",
+          },
+        ],
+      }),
+    );
+    expect(decision).toMatchObject({
+      kind: "create_task",
+      title: "Resolve local Goal prerequisites",
+    });
+    expect(decision.kind === "create_task" ? decision.prompt : "").toContain("Node toolchain");
+  });
+
+  it("still blocks on unmet external prerequisites", () => {
+    expect(
+      decideGoalNextAction(
+        goalRun({
+          prerequisites: [
+            {
+              id: "api-key",
+              label: "Demo API key",
+              status: "missing",
+              kind: "external",
+              instructions: "Provide DEMO_API_KEY in the local environment.",
+            },
+          ],
+        }),
+      ),
+    ).toEqual({
+      kind: "blocked",
+      reason: "Demo API key: Provide DEMO_API_KEY in the local environment.",
     });
   });
 });

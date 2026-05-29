@@ -22,119 +22,84 @@ export const PROMPT_COMMANDS: PromptCommand[] = [
   {
     name: "expand",
     aliases: [],
-    description: "Find high-value project gaps",
-    prompt: `# Expand: Current Competitive Gap Review
+    description: "Find exciting new features to add",
+    prompt: `# Expand: Exciting Feature Discovery
 
-Find high-value gaps by comparing this project to similar, adjacent, and best-in-class repositories/tools/websites/services. This command is project-agnostic: infer what THIS project is before choosing comparisons. This command is report-first: do not edit, install, or implement anything until the user chooses an option at the end.
+Find the most exciting new features this project should add by comparing it to similar, adjacent, and best-in-class repositories/tools/products/services. This command is project-agnostic: infer what THIS project is before choosing comparisons. This command is report-first and feature-first — the only deliverable is a single ranked table of exciting, user-facing features. Do not edit, install, or implement anything until the user chooses an option at the end.
+
+Focus on what users actually get excited about: the new, killer, user-facing capabilities that make a product stand out. Security audits, refactors, code-quality cleanups, tests, CI, and ops/DX hygiene are OUT OF SCOPE here — exclude them unless a specific item is itself an exciting user-facing feature.
 
 ## Phase 0: Profile this project first
 
 Before external research, inspect the local project and write a private working profile:
 
-- What the project does, who it serves, and how it ships/runs.
-- Core workflows, entrypoints, packages/modules, integrations, and user-facing surfaces.
-- Existing features, security controls, developer tooling, docs, tests, release/ops setup, and architecture patterns.
-- The most relevant comparison categories for THIS project. Do not assume this is an AI-agent app unless the repo proves it.
+- What the project does, who its users are, and how they use it.
+- Core user-facing surfaces, workflows, commands/routes/screens, and the features that already exist.
+- The feature categories most relevant to THIS project. Do not assume a stack or product type.
 
-Use this profile to decide what kinds of external projects are relevant. If the user passed arguments to /expand, treat them as a focus area and prioritize that lens while still validating project relevance.
+Use this profile to decide which features are relevant and genuinely missing. If the user passed arguments to /expand, treat them as a focus area and prioritize that lens while still validating relevance.
 
-## Phase 1: Parallel expansion research
+## Phase 1: Parallel feature research
 
-Spawn exactly 5 sub-agents in parallel using the subagent tool (call the subagent tool 5 times in a single response). Give each sub-agent the project profile and a different comparison lens. Adapt the lenses to the project, but cover these defaults unless clearly irrelevant:
+Spawn exactly 5 sub-agents in parallel using the subagent tool (call the subagent tool 5 times in a single response). Give each sub-agent the project profile and a different feature-hunting lens:
 
-**Agent 1 - Direct peers & product features**: Find actively maintained projects/tools/services closest to this project. Look for user-facing capabilities, workflows, integrations, onboarding, and monetizable/retention-driving features they have that this project lacks.
+**Agent 1 - Direct competitor killer features**: The standout, most-loved user-facing features in the closest peer projects/tools/products that this project lacks.
 
-**Agent 2 - Security, privacy & recent incidents**: Find recent security/privacy hardening, dependency ecosystem changes, advisories, exploit mitigations, auth/session patterns, sandboxing, supply-chain defenses, and issue/PR fixes from comparable projects that this project should consider.
+**Agent 2 - Adjacent & emerging tools**: Exciting user-facing features from adjacent products that would translate well to this project.
 
-**Agent 3 - Architecture, code quality & implementation shape**: Compare code organization, APIs, extensibility, agent/runtime loops, data models, concurrency, error handling, configuration, plugin systems, and maintainability patterns. Include cleaner implementation ideas only when they produce concrete user/developer value.
+**Agent 3 - User demand signals**: Highly requested or trending features — top-voted issues, roadmap items, community asks, reviews, discussions — that point at what users want next.
 
-**Agent 4 - Developer experience, ops & release maturity**: Compare tests, CI/CD, docs, examples, templates, telemetry/observability, migrations, upgrade paths, packaging, installation, local dev, debugging, and support workflows.
+**Agent 4 - Platform & ecosystem trends**: New user-facing capabilities unlocked by recent framework/API/model/platform releases that this project has not adopted yet.
 
-**Agent 5 - Ecosystem, trends & adjacent inspiration**: Look beyond direct peers to adjacent current tools, libraries, SaaS products, standards, RFCs, framework releases, and recent commits/releases that suggest important missing directions.
+**Agent 5 - Differentiators & wow-factor**: Novel or innovative features that would make this project stand out, even if no single peer has shipped them yet.
 
 Each sub-agent must:
 
-1. Use current sources: prefer repos/releases/commits/docs/articles updated within the last 6 months. Drop old or stale sources unless they are canonical and still actively maintained.
-2. Return only candidates that appear absent or materially weaker in this project.
-3. Include source names/URLs, freshness date (commit/release/article/doc date), and the local search anchors they used or recommend to verify absence.
-4. Separate findings into useful categories for the final report, such as Security, Product, Architecture, Developer Experience, Operations, or Ecosystem.
-5. Avoid generic wishlist items. Every candidate must be grounded in an external comparison and relevant to this project profile.
+1. Use current sources: prefer repos/releases/changelogs/docs/articles updated within the last 6 months. Drop old or stale sources unless they are canonical and still actively maintained.
+2. Return only user-facing FEATURES that appear absent in this project — not refactors, hardening, tooling, tests, or internal cleanup.
+3. Include source names/URLs, freshness date (commit/release/article/doc date), and the local search anchors they used or recommend to verify the feature is absent.
+4. Rank its own candidates by how exciting and valuable they would be to users, and state why each is exciting.
+5. Avoid generic wishlist items. Every feature must be grounded in an external comparison or a real user-demand signal and relevant to this project profile.
 
 ## Phase 2: Main-agent validation against this repo
 
 For every candidate from the sub-agents, validate it yourself before reporting:
 
 1. Confirm the external source is relevant to this project and fresh enough (normally within 6 months).
-2. Search this repo with grep/find and language-aware anchors to check whether the feature/pattern/control already exists under another name.
-3. Check manifests, docs, configs, package exports, routes, CLI commands, tests, CI, examples, and framework conventions before calling something missing.
-4. Use mcp__kencode-search__searchCode when code-level comparison would clarify whether the external implementation is materially cleaner or more complete. Use literal imports, functions, config keys, CLI flags, route names, or package names — not conceptual phrases.
-5. Drop anything already present, not applicable, too vague, too stale, or unsupported by evidence.
-6. Keep the report short: prioritize the highest-value gaps over completeness.
-
-## What counts as a reportable gap
-
-Report only gaps that are:
-
-- **Missing capability**: A relevant current peer has a feature, integration, workflow, or user-facing behavior this project lacks.
-- **Security/privacy hardening**: A current source addressed a meaningful risk this project has not addressed.
-- **Operational maturity**: A relevant project has CI, release, observability, packaging, migration, or support practices this project lacks.
-- **Developer experience**: A relevant project has docs, examples, tests, debugging, local dev, extension points, or generated commands that would materially improve this project.
-- **Implementation quality**: A comparable codebase handles a shared concern more simply, safely, extensibly, or robustly, and this repo lacks that pattern.
-- **Ecosystem alignment**: A recent framework/API/standard/release changed expectations and this project has not caught up.
-
-Do not report:
-
-- Ideas not tied to a real current source.
-- Things this repo already has, even if named differently.
-- Stale comparisons with no activity in the last 6 months unless canonical and still relevant.
-- Pure taste or style preferences.
-- Massive rewrites unless there is a specific incremental gap to implement.
-- Low-confidence guesses.
-
-## Priority levels
-
-- **P0**: Critical gap: security exposure, data loss risk, broken compatibility, major missing core workflow, or urgent ecosystem change.
-- **P1**: High-value gap: important feature/hardening/DX/ops improvement with strong external evidence and clear fit.
-- **P2**: Useful gap: meaningful but not urgent, or requires a scoped design decision before implementation.
-- **P3**: Exploratory gap: promising but lower confidence or lower immediate impact. Use sparingly.
+2. Search this repo with grep/find and language-aware anchors to confirm the feature is not already present under another name.
+3. Check routes, CLI commands, UI surfaces, package exports, config, docs, and examples before calling a feature missing.
+4. Use mcp__kencode-search__searchCode when a code-level look clarifies how peers actually ship the feature. Use literal imports, functions, config keys, CLI flags, route names, or package names — not conceptual phrases.
+5. Drop anything already present, irrelevant, too vague, too stale, or that is not a real user-facing feature.
+6. Merge duplicates and keep only the most exciting 5–10 features.
 
 ## Final output
 
-Output separate category sections only for categories with findings. No prose before the first section. Each section must use a table with exactly these 3 columns:
+Output ONLY a single table, ranked most exciting (rank 1) to least exciting. No prose before or after the table except the options below. Include 5–10 rows. The table must have exactly 3 columns:
 
-| Repo/tool/source | Feature or gap | Priority |
+| Rank | Feature | Why it's exciting + evidence |
 |---|---|---|
-| name + fresh date | concise gap, evidence, and why this repo lacks it | P0/P1/P2/P3 |
+| 1 | concise feature name + what it does | why users would love it, which peers/tools have it, source + fresh date, and local proof it is missing |
 
 Rules:
 
-- The table must have exactly 3 columns. Put source URL/date/evidence and local absence proof inside the first two cells, not extra columns.
-- Sort rows by priority within each category: P0, then P1, then P2, then P3.
+- 5–10 rows, ordered most exciting first (rank 1 = most exciting).
+- Only user-facing features. No security, refactor, ops, tooling, or test rows.
+- The table must have exactly 3 columns. Put source URL/date/evidence and local absence proof inside the cells, not extra columns.
 - Keep each cell concise but specific enough to be actionable.
-- If no validated gaps are found, output one table row saying no fresh validated gaps were found.
-- Do not include implementation prose after the tables except the options below.
+- If no exciting validated features are found, output one row saying no fresh validated features were found.
 
-After the tables, ask exactly:
+After the table, ask exactly:
 
 What should I do?
-A) Create a Goal for all P0/P1 gaps
-B) Create a Goal for only the top priority gap from each category
-C) Skip
+A) Build all of these features in plan mode
+B) Build only the top priority ones in plan mode
+C) Other
 
 Do not start implementing until the user chooses.
 
-If the user chooses A or B, do not implement gaps directly. Instead, create one durable Goal with one implementation worker task per selected gap, ordered by dependency and priority.
+If the user chooses A or B, do not implement directly. First call the enter_plan tool, then research and design an implementation plan for the selected features (all of them for A; the top 3 most exciting — ranks 1-3 — for B). The plan must cover, per feature: the user-facing behavior, the local files/anchors it touches, the implementation approach (compared against real-world examples via kencode search using literal code tokens), and how it will be verified. Write the plan to .gg/plans/<name>.md, then call exit_plan with the plan path so the user can review and approve it. Do not begin implementing until the user approves the plan.
 
-Each worker prompt must be standalone and include:
-
-1. The specific gap, including relevant local files/anchors and source evidence from the /expand report.
-2. Instructions to compare the implementation approach with kencode search before editing, using literal code tokens and current real-world examples.
-3. Instructions to implement the gap in the local codebase.
-4. Instructions to verify correctness after implementation by running project checks and by comparing the final implementation with kencode search again before marking the Goal task complete.
-
-Do not create planning-only Goal tasks, do not instruct workers to use planning-only workflows, and do not create or write implementation plans from /expand selections.
-
-After creating the Goal, tell the user exactly: "Goal created. Press CTRL + G to open the Goal pane and run it." Do not begin executing it unless the user explicitly starts the Goal.`,
+If the user chooses C, ask what they would like — pick specific features by rank, refine or re-scope the list, or skip — and do not implement anything until they say so.`,
   },
   {
     name: "bullet-proof",

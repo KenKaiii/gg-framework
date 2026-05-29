@@ -5,6 +5,7 @@ import path from "node:path";
 import type { GoalRun } from "./goal-store.js";
 import {
   checkGoalWorktreeIntegration,
+  checkpointGoalWorkingTree,
   createGoalWorkerWorktree,
   goalWorktreeRoot,
   sanitizeWorktreeToken,
@@ -151,6 +152,56 @@ describe("goal worktree helpers", () => {
         commandRunner: runner,
       }),
     ).rejects.toThrow("Goal workers need a clean working tree");
+  });
+
+  it("checkpoint is a no-op on a clean working tree", async () => {
+    const calls: Array<readonly string[]> = [];
+    const runner: GoalWorktreeCommandRunner = {
+      execFile: vi.fn(async (_file, args) => {
+        calls.push(args);
+        return { stdout: "", stderr: "" };
+      }),
+    };
+
+    const result = await checkpointGoalWorkingTree({
+      projectPath: "/repo/main",
+      message: "goal(g): checkpoint",
+      commandRunner: runner,
+    });
+
+    expect(result).toEqual({ committed: false, status: "" });
+    expect(calls).toEqual([["status", "--porcelain"]]);
+  });
+
+  it("checkpoint commits a dirty working tree and returns sha and files", async () => {
+    const calls: Array<readonly string[]> = [];
+    const runner: GoalWorktreeCommandRunner = {
+      execFile: vi.fn(async (_file, args) => {
+        calls.push(args);
+        if (args[0] === "status") return { stdout: " M src/b.ts\n?? src/a.ts\n", stderr: "" };
+        if (args[0] === "rev-parse") return { stdout: "checkpoint-sha\n", stderr: "" };
+        return { stdout: "", stderr: "" };
+      }),
+    };
+
+    const result = await checkpointGoalWorkingTree({
+      projectPath: "/repo/main",
+      message: "goal(g): checkpoint uncommitted work before worker w1",
+      commandRunner: runner,
+    });
+
+    expect(result).toEqual({
+      committed: true,
+      sha: "checkpoint-sha",
+      status: " M src/b.ts\n?? src/a.ts",
+      files: ["src/a.ts", "src/b.ts"],
+    });
+    expect(calls).toEqual([
+      ["status", "--porcelain"],
+      ["add", "-A"],
+      ["commit", "-m", "goal(g): checkpoint uncommitted work before worker w1"],
+      ["rev-parse", "HEAD"],
+    ]);
   });
 
   it("passes integration check when completed worker worktrees are clean", async () => {

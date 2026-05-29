@@ -164,7 +164,6 @@ export function getGoalContinuationChoiceKey({
     case "create_task":
       return `${runId}:create_task:${decision.title}:${decision.prompt}`;
     case "start_worker":
-    case "pause":
       return `${runId}:${decision.kind}:${decision.task.id}:${decision.attempts}`;
     case "run_verifier":
       return `${runId}:run_verifier:${decision.command}`;

@@ -36,5 +36,8 @@
       "ink@6.8.0": "patches/ink@6.8.0.patch",
       "ink@7.0.2": "patches/ink@7.0.2.patch"
     }
+  },
+  "dependencies": {
+    "playwright": "^1.60.0"
   }
 }

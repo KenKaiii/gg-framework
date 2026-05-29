@@ -4,6 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import type { GoalRun } from "./goal-store.js";
 import {
+  goalHasBlockingPrerequisites,
+  goalHasUnmetLocalPrerequisites,
+  isBlockingGoalPrerequisite,
+  prerequisiteKind,
+} from "./goal-store.js";
+import {
   runGoalPrerequisiteCheckCommand,
   runGoalPrerequisiteChecks,
   shouldRunGoalPrerequisiteCheck,
@@ -105,6 +111,45 @@ describe("goal prerequisite checks", () => {
     ).toBe(true);
   });
 
+  it("infers prerequisite kind and keeps explicit kind", () => {
+    expect(prerequisiteKind({ id: "a", label: "a", status: "unknown", checkCommand: "true" })).toBe(
+      "local",
+    );
+    expect(prerequisiteKind({ id: "b", label: "b", status: "unknown" })).toBe("external");
+    expect(
+      prerequisiteKind({
+        id: "c",
+        label: "c",
+        status: "unknown",
+        kind: "external",
+        checkCommand: "true",
+      }),
+    ).toBe("external");
+    expect(prerequisiteKind({ id: "d", label: "d", status: "unknown", kind: "local" })).toBe(
+      "local",
+    );
+  });
+
+  it("local unmet prerequisites do not block; external unmet ones do", () => {
+    const localPrereq = {
+      id: "node",
+      label: "Node",
+      status: "missing" as const,
+      checkCommand: "node --version",
+    };
+    const externalPrereq = { id: "key", label: "API key", status: "missing" as const };
+
+    expect(isBlockingGoalPrerequisite(localPrereq)).toBe(false);
+    expect(isBlockingGoalPrerequisite(externalPrereq)).toBe(true);
+
+    const localOnly = goalRun({ prerequisites: [localPrereq] });
+    expect(goalHasBlockingPrerequisites(localOnly)).toBe(false);
+    expect(goalHasUnmetLocalPrerequisites(localOnly)).toBe(true);
+
+    const withExternal = goalRun({ prerequisites: [localPrereq, externalPrereq] });
+    expect(goalHasBlockingPrerequisites(withExternal)).toBe(true);
+  });
+
   it("updates a Goal run with checked prerequisite statuses before workers start", async () => {
     const tmpProject = await fs.mkdtemp(path.join(os.tmpdir(), "goal-prereq-test-project-"));
     try {
@@ -112,7 +157,13 @@ describe("goal prerequisite checks", () => {
         tmpProject,
         goalRun({
           prerequisites: [
-            { id: "pass", label: "Passing check", status: "unknown", checkCommand: "true" },
+            {
+              id: "pass",
+              label: "Passing check",
+              status: "unknown",
+              kind: "local",
+              checkCommand: "true",
+            },
             { id: "fail", label: "Failing check", status: "unknown", checkCommand: "false" },
           ],
         }),
@@ -123,6 +174,7 @@ describe("goal prerequisite checks", () => {
         expect.objectContaining({
           id: "pass",
           status: "met",
+          kind: "local",
           evidence: expect.stringContaining("exited 0"),
         }),
         expect.objectContaining({

@@ -77,7 +77,7 @@ describe("prompt commands", () => {
     }
   });
 
-  it("defines /expand as a fresh, repo-validated comparison command", () => {
+  it("defines /expand as a fresh, repo-validated, feature-first plan-mode command", () => {
     const expand = PROMPT_COMMANDS.find((command) => command.name === "expand");
 
     expect(expand).toBeDefined();
@@ -86,10 +86,13 @@ describe("prompt commands", () => {
     expect(expand?.prompt).toContain("validate it yourself before reporting");
     expect(expand?.prompt).toContain("The table must have exactly 3 columns");
     expect(expand?.prompt).toContain("Do not start implementing until the user chooses");
-    expect(expand?.prompt).toContain("Do not create planning-only Goal tasks");
-    expect(expand?.prompt).not.toContain("Create an implementation plan first");
-    expect(expand?.prompt).not.toContain("create one planning task");
-    expect(expand?.prompt).not.toContain("plan mode");
+    expect(expand?.prompt).toContain("A) Build all of these features in plan mode");
+    expect(expand?.prompt).toContain("B) Build only the top priority ones in plan mode");
+    expect(expand?.prompt).toContain("C) Other");
+    expect(expand?.prompt).toContain("call the enter_plan tool");
+    expect(expand?.prompt).toContain("call exit_plan with the plan path");
+    expect(expand?.prompt).not.toContain("Create a Goal");
+    expect(expand?.prompt).not.toContain("planning-only Goal tasks");
   });
 
   it("keeps /init focused on project-specific CLAUDE.md content", () => {

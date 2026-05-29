@@ -16,8 +16,8 @@ import {
   type GoalRun,
 } from "./goal-store.js";
 import {
+  checkpointGoalWorkingTree,
   createGoalWorkerWorktree,
-  isGoalWorktreeDirtyError,
   type GoalWorktreeCommandRunner,
   type GoalWorktreeCandidate,
 } from "./goal-worktree.js";
@@ -212,6 +212,18 @@ export async function startGoalWorker(options: StartGoalWorkerOptions): Promise<
   let worktree: GoalWorktreeCandidate | undefined;
   if (options.isolateWorktree !== false) {
     try {
+      const checkpoint = await checkpointGoalWorkingTree({
+        projectPath,
+        message: `goal(${options.goalRunId}): checkpoint uncommitted work before worker ${workerId}`,
+        ...(options.worktreeCommandRunner ? { commandRunner: options.worktreeCommandRunner } : {}),
+      });
+      if (checkpoint.committed) {
+        await appendGoalEvidence(projectPath, options.goalRunId, {
+          kind: "summary",
+          label: "Goal working tree checkpoint",
+          content: `Auto-committed uncommitted work before worker ${workerId} (reversible). sha=${checkpoint.sha}; files=${(checkpoint.files ?? []).join(", ")}`,
+        });
+      }
       worktree = await createGoalWorkerWorktree({
         projectPath,
         goalRunId: options.goalRunId,
@@ -224,7 +236,7 @@ export async function startGoalWorker(options: StartGoalWorkerOptions): Promise<
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await updateGoalTask(projectPath, options.goalRunId, options.goalTaskId, {
-        status: isGoalWorktreeDirtyError(error) ? "pending" : "blocked",
+        status: "failed",
         workerId,
         lastSummary: message,
       });

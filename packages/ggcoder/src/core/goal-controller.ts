@@ -1,6 +1,8 @@
 import {
   formatGoalBlockingPrerequisites,
   goalHasBlockingPrerequisites,
+  goalHasUnmetLocalPrerequisites,
+  unmetLocalGoalPrerequisites,
   type GoalReference,
   type GoalRun,
   type GoalTask,
@@ -12,9 +14,12 @@ import {
 
 export const DEFAULT_GOAL_TASK_ATTEMPT_LIMIT = 5;
 export const DEFAULT_GOAL_VERIFIER_FIX_LIMIT = 5;
+export const DEFAULT_GOAL_STRATEGY_LIMIT = 2;
 
 export const APPLY_INTEGRATION_TO_MAIN_TASK_TITLE = "Apply integrated worktree to main";
 export const COMMIT_INTEGRATED_GOAL_CHANGES_TASK_TITLE = "Commit integrated goal changes";
+export const RESOLVE_LOCAL_PREREQUISITES_TASK_TITLE = "Resolve local Goal prerequisites";
+export const RE_STRATEGIZE_GOAL_TASK_TITLE = "Re-strategize Goal approach";
 const FINAL_COMPLETION_AUDIT_TASK_TITLE = "Audit Goal completion evidence";
 const BUILD_GOAL_EVIDENCE_PATH_TASK_TITLE = "Build Goal evidence path";
 const BUILD_GOAL_VERIFICATION_HARNESS_TASK_TITLE = "Build Goal verification harness";
@@ -50,12 +55,6 @@ export type GoalControllerDecision =
       reason: string;
     }
   | {
-      kind: "pause";
-      task: GoalTask;
-      attempts: number;
-      reason: string;
-    }
-  | {
       kind: "run_verifier";
       command: string;
       reason: string;
@@ -73,6 +72,7 @@ export interface GoalCompletionCheck {
 export interface GoalControllerOptions {
   taskAttemptLimit?: number;
   verifierFixLimit?: number;
+  strategyLimit?: number;
 }
 
 function needsHarnessInstrumentation(run: GoalRun): boolean {
@@ -696,13 +696,166 @@ function buildVerifierFailureTaskPrompt(run: GoalRun): string {
   );
 }
 
+function buildResolveLocalPrerequisitesTaskPrompt(run: GoalRun): string {
+  const items = unmetLocalGoalPrerequisites(run)
+    .map(
+      (item) =>
+        `- ${item.label} (${item.status})${item.checkCommand ? `; check: ${item.checkCommand}` : ""}${item.instructions ? `; instructions: ${item.instructions}` : ""}`,
+    )
+    .join("\n");
+  return (
+    `Goal: ${run.goal}\n\n` +
+    referencePromptSection(run.references) +
+    `Resolve the following local Goal prerequisites so the Goal can proceed unattended. These are not user-supplied external inputs; satisfy each one locally with free tools.\n\n` +
+    `${items || "- none recorded"}\n\n` +
+    `For each prerequisite, make its check pass locally (install/configure/build as needed using local/free tooling), then record durable evidence and update the prerequisite to status=met with the goals tool (action="prerequisite"). If a prerequisite turns out to genuinely require user-supplied external input, mark it kind=external with exact user instructions instead of guessing.`
+  );
+}
+
+function isReStrategizeTask(task: GoalTask): boolean {
+  return task.title.startsWith(RE_STRATEGIZE_GOAL_TASK_TITLE);
+}
+
+export function goalStrategyTaskCount(run: GoalRun): number {
+  return run.tasks.filter(isReStrategizeTask).length;
+}
+
+function workerEvidenceContentsForTask(run: GoalRun, task: GoalTask): string[] {
+  if (!task.workerId) return [];
+  return run.evidence
+    .filter((item) => {
+      const match = /^Worker\s+(\S+)\s+/.exec(item.label);
+      return match?.[1] === task.workerId;
+    })
+    .map((item) => (item.content ?? "").trim())
+    .filter(Boolean);
+}
+
+/**
+ * No-progress signal for an implementation task: the latest two worker evidence
+ * contents for the task's worker are identical, so re-running the same approach
+ * is unlikely to make progress.
+ */
+export function taskFailureRepeatedWithoutProgress(run: GoalRun, task: GoalTask): boolean {
+  const contents = workerEvidenceContentsForTask(run, task);
+  if (contents.length < 2) return false;
+  return contents[contents.length - 1] === contents[contents.length - 2];
+}
+
+function buildReStrategizeTaskPrompt(run: GoalRun, focus?: GoalTask): string {
+  const priorContents = focus
+    ? workerEvidenceContentsForTask(run, focus)
+    : run.evidence
+        .filter((item) => item.label.startsWith("Verifier"))
+        .map((item) => (item.content ?? "").trim())
+        .filter(Boolean);
+  const priorSummaries = priorContents
+    .slice(-3)
+    .map((content) => `- ${content.slice(0, 500)}`)
+    .join("\n");
+  const what = focus ? `task "${focus.title}" (${focus.id})` : "the configured verifier";
+  return (
+    `Original objective: ${run.goal}\n\n` +
+    referencePromptSection(run.references) +
+    `Prior attempts at ${what} repeatedly failed without progress.\n\n` +
+    `Prior attempt summaries:\n${priorSummaries || "- none recorded"}\n\n` +
+    `Analyze why the prior attempts failed, then take a fundamentally different approach to accomplish the original objective. Do not repeat the same strategy. Use local/free tools, record durable evidence with the goals tool, and update task status.${focus ? ` When you accomplish the objective, also mark the original failing task ${focus.id} done with the goals tool so the Goal can proceed.` : ""} If the objective genuinely requires user-supplied external input, record it as an external prerequisite with exact instructions.`
+  );
+}
+
+/**
+ * Bounded re-strategy escalation: run an existing recoverable re-strategy task,
+ * else create one (up to the strategy limit), else terminate the run in
+ * `failed` with a structured diagnosis brief. Replaces the former pause/block
+ * dead-ends so the loop always either changes state or resolves.
+ */
+function reStrategizeOrFailDecision(
+  run: GoalRun,
+  options: GoalControllerOptions,
+  context: { focus?: GoalTask; startReason: string; failReason: string },
+): GoalControllerDecision {
+  const attemptLimit = options.taskAttemptLimit ?? DEFAULT_GOAL_TASK_ATTEMPT_LIMIT;
+  // Run an existing recoverable re-strategy task, but only while it still has
+  // attempt budget left, so a perpetually-failing strategy task cannot loop.
+  const recoverableStrategy = run.tasks.find(
+    (item) => isReStrategizeTask(item) && recoverableTask(item) && item.attempts < attemptLimit,
+  );
+  if (recoverableStrategy) {
+    return {
+      kind: "start_worker",
+      task: recoverableStrategy,
+      attempts: recoverableStrategy.attempts + 1,
+      reason: context.startReason,
+    };
+  }
+  const strategyLimit = options.strategyLimit ?? DEFAULT_GOAL_STRATEGY_LIMIT;
+  const strategyCount = goalStrategyTaskCount(run);
+  if (strategyCount < strategyLimit) {
+    // Distinct titles per attempt so the orchestrator creates a fresh task
+    // instead of reusing an exhausted same-title one.
+    const title =
+      strategyCount === 0
+        ? RE_STRATEGIZE_GOAL_TASK_TITLE
+        : `${RE_STRATEGIZE_GOAL_TASK_TITLE} (${strategyCount + 1})`;
+    return {
+      kind: "create_task",
+      title,
+      prompt: buildReStrategizeTaskPrompt(run, context.focus),
+      reason: `${context.startReason} (${strategyCount + 1}/${strategyLimit})`,
+    };
+  }
+  return {
+    kind: "terminal",
+    status: "failed",
+    reason: buildGoalFailureDiagnosis(run, context.failReason),
+  };
+}
+
+/**
+ * Structured diagnosis brief recorded when a Goal terminates in `failed` so the
+ * run ends resolved (not spinning, not silently paused) with an honest verdict.
+ */
+export function buildGoalFailureDiagnosis(run: GoalRun, reason: string): string {
+  const attempts = run.tasks
+    .map(
+      (task) =>
+        `- ${task.title} (${task.id}): status=${task.status}; attempts=${task.attempts}${task.lastSummary ? `; last=${task.lastSummary.slice(0, 240)}` : ""}`,
+    )
+    .join("\n");
+  const failureSignatures = Array.from(
+    new Set(
+      run.evidence
+        .filter((item) => item.label === "Verifier fail" || item.label === "Verifier result")
+        .map((item) => (item.content ?? "").trim())
+        .filter(Boolean),
+    ),
+  )
+    .slice(-5)
+    .map((signature) => `- ${signature.slice(0, 240)}`)
+    .join("\n");
+  const verifier = run.verifier?.lastResult;
+  const externalNeeds = run.prerequisites
+    .filter((item) => (item.status !== "met" || !item.evidence?.trim()) && item.kind === "external")
+    .map((item) => `- ${item.label}: ${item.instructions ?? "user-supplied input required"}`)
+    .join("\n");
+  return [
+    "GOAL_FAILURE_DIAGNOSIS",
+    `objective=${run.goal}`,
+    `reason=${reason}`,
+    `tasks:\n${attempts || "- none"}`,
+    `distinct_failure_signatures:\n${failureSignatures || "- none"}`,
+    `latest_verifier=${verifier ? `${verifier.status} (exit ${verifier.exitCode ?? "unknown"}): ${verifier.summary?.slice(0, 240) ?? ""}` : "none"}`,
+    `human_decision_needed:\n${externalNeeds || "- none"}`,
+  ].join("\n");
+}
+
 export function formatGoalControllerDecision(decision: GoalControllerDecision): {
   label: string;
   content: string;
 } {
   const parts = [`kind=${decision.kind}`];
   if ("reason" in decision) parts.push(`reason=${decision.reason}`);
-  if (decision.kind === "start_worker" || decision.kind === "pause") {
+  if (decision.kind === "start_worker") {
     parts.push(
       `task=${decision.task.id}`,
       `title=${decision.task.title}`,
@@ -770,17 +923,42 @@ export function decideGoalNextAction(
     };
   }
 
+  if (goalHasUnmetLocalPrerequisites(run)) {
+    const duplicateDecision = duplicateAutoTaskDecision(
+      run,
+      RESOLVE_LOCAL_PREREQUISITES_TASK_TITLE,
+      "Local Goal prerequisites must be satisfied locally before implementation.",
+    );
+    if (duplicateDecision) return duplicateDecision;
+    return {
+      kind: "create_task",
+      title: RESOLVE_LOCAL_PREREQUISITES_TASK_TITLE,
+      prompt: buildResolveLocalPrerequisitesTaskPrompt(run),
+      reason: `Resolving ${unmetLocalGoalPrerequisites(run).length} local Goal prerequisite(s) locally instead of blocking.`,
+    };
+  }
+
   const task = nextRunnableTask(run);
   if (task) {
     const attempts = task.attempts + 1;
     const limit = options.taskAttemptLimit ?? DEFAULT_GOAL_TASK_ATTEMPT_LIMIT;
     if (attempts > limit) {
-      return {
-        kind: "pause",
-        task,
-        attempts,
-        reason: `Attempt limit reached for task ${task.title}.`,
-      };
+      // Past the soft attempt limit: keep retrying while the failure signature
+      // keeps changing (still making progress); on a no-progress repeat,
+      // re-strategize a bounded number of times, then fail with a diagnosis.
+      if (!isReStrategizeTask(task) && !taskFailureRepeatedWithoutProgress(run, task)) {
+        return {
+          kind: "start_worker",
+          task,
+          attempts,
+          reason: `Goal task "${task.title}" passed the soft attempt limit but is still making progress; continuing attempt ${attempts}.`,
+        };
+      }
+      return reStrategizeOrFailDecision(run, options, {
+        focus: task,
+        startReason: `Re-strategizing "${task.title}" with a fundamentally different approach.`,
+        failReason: `Task "${task.title}" could not be completed after ${task.attempts} attempt(s) and the bounded re-strategy limit.`,
+      });
     }
     return {
       kind: "start_worker",
@@ -797,8 +975,12 @@ export function decideGoalNextAction(
     );
     if (missingDependencies.length > 0) {
       return {
-        kind: "blocked",
-        reason: `Goal task "${dependencyBlockedTask.task.title}" depends on missing task(s): ${missingDependencies.join(", ")}.`,
+        kind: "terminal",
+        status: "failed",
+        reason: buildGoalFailureDiagnosis(
+          run,
+          `Goal task "${dependencyBlockedTask.task.title}" depends on missing task(s) that cannot be synthesized: ${missingDependencies.join(", ")}.`,
+        ),
       };
     }
     return {
@@ -856,9 +1038,12 @@ export function decideGoalNextAction(
         };
       }
       return {
-        kind: "blocked",
-        reason:
-          "Verifier passed, but final completion audit did not reconcile the Goal evidence plan after bounded attempts.",
+        kind: "terminal",
+        status: "failed",
+        reason: buildGoalFailureDiagnosis(
+          run,
+          "Verifier passed, but the final completion audit could not reconcile the Goal evidence plan after bounded attempts.",
+        ),
       };
     }
     const duplicateDecision = duplicateAutoTaskDecision(
@@ -893,20 +1078,22 @@ export function decideGoalNextAction(
 
   if (run.verifier?.lastResult?.status === "fail") {
     if (hasRepeatedVerifierFailure(run)) {
-      return {
-        kind: "blocked",
-        reason:
-          "Verifier produced the same failure repeatedly; pause for diagnosis before creating more fix tasks.",
-      };
+      return reStrategizeOrFailDecision(run, options, {
+        startReason:
+          "Verifier produced the same failure repeatedly; re-strategizing with a fundamentally different approach.",
+        failReason:
+          "Verifier produced the same failure repeatedly and bounded re-strategy attempts were exhausted.",
+      });
     }
     const limit = options.verifierFixLimit ?? DEFAULT_GOAL_VERIFIER_FIX_LIMIT;
     const blockedFixTask = existingBlockedTaskWithTitle(run, FIX_VERIFIER_FAILURE_TASK_TITLE);
     if (blockedFixTask) {
-      return {
-        kind: "blocked",
-        reason:
-          "A blocked verifier-fix task already exists; not creating another fix worker until the existing blocker is reconciled.",
-      };
+      return reStrategizeOrFailDecision(run, options, {
+        startReason:
+          "A blocked verifier-fix task exists; re-strategizing the verifier fix with a different approach.",
+        failReason:
+          "A verifier-fix task was blocked and bounded re-strategy attempts were exhausted.",
+      });
     }
     if (shouldCreateVerifierFixTask(run, limit)) {
       return {
@@ -917,16 +1104,12 @@ export function decideGoalNextAction(
       };
     }
     return {
-      kind: "pause",
-      task: {
-        id: "verifier-fix-limit",
-        title: FIX_VERIFIER_FAILURE_TASK_TITLE,
-        prompt: "Verifier fix attempt limit reached.",
-        status: "blocked",
-        attempts: limit,
-      },
-      attempts: limit,
-      reason: `Verifier fix task limit reached (${limit}).`,
+      kind: "terminal",
+      status: "failed",
+      reason: buildGoalFailureDiagnosis(
+        run,
+        `Verifier failed and the bounded verifier-fix limit (${limit}) was reached without a pass.`,
+      ),
     };
   }
 
@@ -940,8 +1123,12 @@ export function decideGoalNextAction(
       };
     }
     return {
-      kind: "blocked",
-      reason: "Verifier passed, but final completion audit did not pass after bounded attempts.",
+      kind: "terminal",
+      status: "failed",
+      reason: buildGoalFailureDiagnosis(
+        run,
+        "Verifier passed, but the final completion audit did not pass after bounded attempts.",
+      ),
     };
   }
 

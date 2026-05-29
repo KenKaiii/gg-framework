@@ -6,7 +6,6 @@ import {
   canCompleteGoalRun,
   decideGoalNextAction,
 } from "../core/goal-controller.js";
-import { GoalWorktreeDirtyError } from "../core/goal-worktree.js";
 import type { CompletedItem } from "./app-items.js";
 import {
   appendGoalProgressDraft,
@@ -17,10 +16,7 @@ import {
 } from "./goal-progress.js";
 import { nextGoalModeAfterAgentDone } from "./layout-decisions.js";
 import {
-  buildGoalDirtyWorktreePauseRun,
-  buildGoalDirtyWorktreeUserPrompt,
   buildGoalUserPauseRun,
-  goalDirtyWorktreeInfoText,
   goalRunNeedsExplicitContinuationAfterWorker,
   shouldKeepGoalRunTrackedAfterDecision,
   shouldRunGoalTaskInMainCheckout,
@@ -166,44 +162,6 @@ describe("/goal UI orchestration lifecycle", () => {
     expect(shouldRunGoalTaskInMainCheckout(APPLY_INTEGRATION_TO_MAIN_TASK_TITLE)).toBe(true);
     expect(shouldRunGoalTaskInMainCheckout(COMMIT_INTEGRATED_GOAL_CHANGES_TASK_TITLE)).toBe(true);
     expect(shouldRunGoalTaskInMainCheckout("Implement isolated feature")).toBe(false);
-  });
-
-  it("turns dirty worktree launch failures into a durable human-choice pause", () => {
-    const error = new GoalWorktreeDirtyError(" M packages/ggcoder/src/ui/App.tsx\n?? scratch.md");
-
-    expect(goalDirtyWorktreeInfoText()).toContain("working tree has uncommitted changes");
-    const prompt = buildGoalDirtyWorktreeUserPrompt(error);
-    expect(prompt).toContain("needs a clean working tree");
-    expect(prompt).toContain("M packages/ggcoder/src/ui/App.tsx");
-    expect(prompt).toContain("commit the current changes");
-    expect(prompt).toContain("stash them");
-    expect(prompt).toContain("pause the Goal");
-    expect(prompt).toContain("If the user chooses commit");
-    expect(prompt).toContain("stage only the listed dirty files the user approved");
-    expect(prompt).toContain("resume/continue the Goal only after the working tree is clean");
-    expect(prompt).toContain("Do not run git commit, git stash, or discard changes");
-
-    const pausedRun = buildGoalDirtyWorktreePauseRun(
-      goalRun({
-        activeWorkerId: "worker-stale",
-        continueRequestedAt: "2024-01-01T00:00:00.000Z",
-        blockers: ["existing blocker"],
-        tasks: [task({ workerId: "worker-stale", status: "pending" })],
-      }),
-      error,
-    );
-    expect(pausedRun.status).toBe("paused");
-    expect(pausedRun.activeWorkerId).toBeUndefined();
-    expect(pausedRun.continueRequestedAt).toBeUndefined();
-    expect(pausedRun.blockers).toEqual([
-      "existing blocker",
-      "Goal worker startup is awaiting a human choice because the working tree has uncommitted changes: M packages/ggcoder/src/ui/App.tsx; ?? scratch.md. Commit the current changes, stash them, or keep the Goal paused before starting isolated Goal workers.",
-    ]);
-    expect(decideGoalNextAction(pausedRun)).toMatchObject({
-      kind: "terminal",
-      status: "paused",
-    });
-    expect(shouldKeepGoalRunTrackedAfterDecision(decideGoalNextAction(pausedRun))).toBe(false);
   });
 
   it("truncates long Goal progress text before it wraps across the TUI", () => {
@@ -639,7 +597,7 @@ describe("/goal UI orchestration lifecycle", () => {
     expect(run.tasks.filter((item) => item.title === "Fix verifier failure")).toHaveLength(1);
   });
 
-  it("attempt-limit repeated verifier failure persists paused/blocked evidence instead of unreachable terminal failed", () => {
+  it("re-strategizes on repeated identical verifier failure instead of stopping", () => {
     const run = goalRun({
       status: "ready",
       tasks: [task({ status: "done", attempts: 1 })],
@@ -672,55 +630,15 @@ describe("/goal UI orchestration lifecycle", () => {
     });
 
     const decision = decideGoalNextAction(run, { verifierFixLimit: 1 });
-    expect(decision).toEqual({
-      kind: "blocked",
-      reason:
-        "Verifier produced the same failure repeatedly; pause for diagnosis before creating more fix tasks.",
+    expect(decision).toMatchObject({
+      kind: "create_task",
+      title: "Re-strategize Goal approach",
     });
-    const taskUpdatedRun = {
-      ...run,
-      tasks: run.tasks.map((item) =>
-        item.id === "task-a"
-          ? {
-              ...item,
-              status: "blocked" as const,
-              attempts: 2,
-              lastSummary: "Paused after verifier loop.",
-            }
-          : item,
-      ),
-    };
-    const persisted = {
-      ...taskUpdatedRun,
-      status: "blocked" as const,
-      continueRequestedAt: undefined,
-      blockers: [decision.reason],
-      evidence: [
-        ...taskUpdatedRun.evidence,
-        {
-          id: "pause",
-          createdAt: "2024-01-01T00:00:02.000Z",
-          kind: "summary" as const,
-          label: "Goal paused",
-          content: decision.reason,
-        },
-      ],
-    };
-    expect(persisted.status).toBe("blocked");
-    expect(persisted.status).not.toBe("failed");
-    expect(persisted.tasks[0]).toMatchObject({
-      status: "blocked",
-      attempts: 2,
-      lastSummary: "Paused after verifier loop.",
-    });
-    expect(persisted.evidence).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ label: "Goal paused", content: decision.reason }),
-      ]),
-    );
+    // create_task keeps the run tracked so the loop continues unattended.
+    expect(shouldKeepGoalRunTrackedAfterDecision(decision)).toBe(true);
   });
 
-  it("attempt-limit pauses after bounded verifier fix tasks without terminal failed", () => {
+  it("fails with a diagnosis once the bounded verifier-fix limit is reached", () => {
     const run = goalRun({
       status: "ready",
       tasks: [
@@ -756,23 +674,8 @@ describe("/goal UI orchestration lifecycle", () => {
     });
 
     const decision = decideGoalNextAction(run, { verifierFixLimit: 1 });
-    expect(decision).toMatchObject({
-      kind: "pause",
-      task: expect.objectContaining({
-        id: "verifier-fix-limit",
-        title: "Fix verifier failure",
-        status: "blocked",
-      }),
-      attempts: 1,
-      reason: "Verifier fix task limit reached (1).",
-    });
-    const persisted = {
-      ...run,
-      status: "paused" as const,
-      continueRequestedAt: undefined,
-      blockers: [decision.reason],
-    };
-    expect(persisted.status).toBe("paused");
-    expect(persisted.status).not.toBe("failed");
+    expect(decision).toMatchObject({ kind: "terminal", status: "failed" });
+    expect(decision.reason).toContain("GOAL_FAILURE_DIAGNOSIS");
+    expect(shouldKeepGoalRunTrackedAfterDecision(decision)).toBe(false);
   });
 });

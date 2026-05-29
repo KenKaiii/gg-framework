@@ -25,6 +25,8 @@ export type GoalTaskMergeStrategy =
 
 export type GoalPrerequisiteStatus = "unknown" | "met" | "missing";
 
+export type GoalPrerequisiteKind = "local" | "external";
+
 export type GoalEvidenceKind = "log" | "command" | "screenshot" | "file" | "summary";
 
 export type GoalVerificationStatus = "pass" | "fail" | "unknown";
@@ -50,6 +52,12 @@ export interface GoalPrerequisite {
   id: string;
   label: string;
   status: GoalPrerequisiteStatus;
+  /**
+   * Whether the agent can satisfy this prerequisite locally ("local") or it
+   * genuinely requires user-supplied external input ("external"). When omitted,
+   * {@link prerequisiteKind} infers it: a runnable checkCommand implies local.
+   */
+  kind?: GoalPrerequisiteKind;
   checkCommand?: string;
   instructions?: string;
   evidence?: string;
@@ -363,6 +371,10 @@ function isPrerequisiteStatus(value: unknown): value is GoalPrerequisiteStatus {
   return value === "unknown" || value === "met" || value === "missing";
 }
 
+function isPrerequisiteKind(value: unknown): value is GoalPrerequisiteKind {
+  return value === "local" || value === "external";
+}
+
 function isEvidenceKind(value: unknown): value is GoalEvidenceKind {
   return (
     value === "log" ||
@@ -428,6 +440,7 @@ function normalizePrerequisite(value: unknown): GoalPrerequisite | null {
     id: typeof value.id === "string" ? value.id : randomUUID(),
     label,
     status: isPrerequisiteStatus(value.status) ? value.status : "unknown",
+    ...(isPrerequisiteKind(value.kind) ? { kind: value.kind } : {}),
     ...(optionalString(value.checkCommand)
       ? { checkCommand: optionalString(value.checkCommand) }
       : {}),
@@ -1208,8 +1221,39 @@ export async function updateGoalTask(
   });
 }
 
-export function isBlockingGoalPrerequisite(item: GoalPrerequisite): boolean {
+/**
+ * Infer whether a prerequisite is locally resolvable by the agent or genuinely
+ * external (user-supplied). An explicit `kind` wins; otherwise a runnable
+ * `checkCommand` implies the agent can both check and satisfy it locally.
+ */
+export function prerequisiteKind(item: GoalPrerequisite): GoalPrerequisiteKind {
+  if (item.kind) return item.kind;
+  return item.checkCommand?.trim() ? "local" : "external";
+}
+
+function isUnmetGoalPrerequisite(item: GoalPrerequisite): boolean {
   return item.status !== "met" || !item.evidence?.trim();
+}
+
+/**
+ * Local unmet prerequisites no longer block the Goal — the controller schedules
+ * a worker task to resolve them. Only unmet **external** prerequisites (true
+ * user-supplied inputs) are blocking.
+ */
+export function isBlockingGoalPrerequisite(item: GoalPrerequisite): boolean {
+  return isUnmetGoalPrerequisite(item) && prerequisiteKind(item) === "external";
+}
+
+export function isUnmetLocalGoalPrerequisite(item: GoalPrerequisite): boolean {
+  return isUnmetGoalPrerequisite(item) && prerequisiteKind(item) === "local";
+}
+
+export function unmetLocalGoalPrerequisites(run: GoalRun): GoalPrerequisite[] {
+  return run.prerequisites.filter(isUnmetLocalGoalPrerequisite);
+}
+
+export function goalHasUnmetLocalPrerequisites(run: GoalRun): boolean {
+  return run.prerequisites.some(isUnmetLocalGoalPrerequisite);
 }
 
 export function hasBlockingGoalPrerequisites(prerequisites: readonly GoalPrerequisite[]): boolean {

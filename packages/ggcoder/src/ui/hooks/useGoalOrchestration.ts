@@ -48,11 +48,8 @@ import {
   summarizeGoalCompletion,
 } from "../goal-progress.js";
 import {
-  buildGoalDirtyWorktreePauseRun,
-  buildGoalDirtyWorktreeUserPrompt,
   buildGoalTaskPromptWithReferences,
   buildGoalUserPauseRun,
-  goalDirtyWorktreeInfoText,
   goalRunNeedsExplicitContinuationAfterWorker,
   goalTaskProgress,
   shouldKeepGoalRunTrackedAfterDecision,
@@ -249,25 +246,25 @@ export function useGoalOrchestration({
             if (now - startedAt > 60_000) goalContinuationRecentChoicesRef.current.delete(key);
           }
         }
-        if (
-          decision.kind === "terminal" ||
-          decision.kind === "blocked" ||
-          decision.kind === "pause"
-        ) {
-          const status =
-            decision.kind === "terminal"
-              ? decision.status
-              : decision.kind === "blocked"
-                ? "blocked"
-                : "paused";
+        if (decision.kind === "terminal" || decision.kind === "blocked") {
+          const status = decision.kind === "terminal" ? decision.status : "blocked";
+          let runWithDiagnosis = latestRun;
+          if (decision.kind === "terminal" && status === "failed") {
+            runWithDiagnosis =
+              (await appendGoalEvidence(cwd, latestRun.id, {
+                kind: "summary",
+                label: "Goal failure diagnosis",
+                content: decision.reason,
+              })) ?? latestRun;
+          }
           const nextRun = {
-            ...latestRun,
+            ...runWithDiagnosis,
             status,
             continueRequestedAt: undefined,
             blockers:
-              decision.kind === "blocked" || decision.kind === "pause"
-                ? Array.from(new Set([...latestRun.blockers, decision.reason]))
-                : latestRun.blockers,
+              decision.kind === "blocked" || status === "failed"
+                ? Array.from(new Set([...runWithDiagnosis.blockers, decision.reason]))
+                : runWithDiagnosis.blockers,
           } as GoalRun;
           await upsertGoalRun(cwd, nextRun);
           await appendGoalDecision(cwd, latestRun.id, {
@@ -454,15 +451,31 @@ export function useGoalOrchestration({
           runningGoalIdsRef.current.delete(checkedRun.id);
         }
         if (decision.kind === "terminal") {
-          const terminalProgress = formatGoalTerminalProgress(checkedRun);
+          let terminalRun = checkedRun;
+          if (decision.status === "failed") {
+            const runWithDiagnosis =
+              (await appendGoalEvidence(cwd, checkedRun.id, {
+                kind: "summary",
+                label: "Goal failure diagnosis",
+                content: decision.reason,
+              })) ?? checkedRun;
+            terminalRun = await upsertGoalRun(cwd, {
+              ...runWithDiagnosis,
+              status: "failed",
+              activeWorkerId: undefined,
+              continueRequestedAt: undefined,
+              blockers: Array.from(new Set([...runWithDiagnosis.blockers, decision.reason])),
+            });
+          }
+          const terminalProgress = formatGoalTerminalProgress(terminalRun);
           if (terminalProgress) {
-            const item = { ...terminalProgress, id: goalTerminalProgressId(checkedRun) };
+            const item = { ...terminalProgress, id: goalTerminalProgressId(terminalRun) };
             setLiveItems((prev) =>
-              completedItemsWithDurableGoalTerminalProgress([...prev, item], [checkedRun]),
+              completedItemsWithDurableGoalTerminalProgress([...prev, item], [terminalRun]),
             );
           }
-          runningGoalIdsRef.current.delete(checkedRun.id);
-          clearGoalStatusEntry(checkedRun.id);
+          runningGoalIdsRef.current.delete(terminalRun.id);
+          clearGoalStatusEntry(terminalRun.id);
           clearGoalModeIfIdle();
           return;
         }
@@ -573,38 +586,6 @@ export function useGoalOrchestration({
           clearGoalModeIfIdle();
           return;
         }
-        if (decision.kind === "pause") {
-          const runWithBlockedTask =
-            (await updateGoalTask(cwd, checkedRun.id, decision.task.id, {
-              status: "blocked",
-              attempts: decision.attempts,
-              lastSummary: "Paused after worker attempt limit.",
-            })) ?? checkedRun;
-          const runWithPauseEvidence =
-            (await appendGoalEvidence(cwd, checkedRun.id, {
-              kind: "summary",
-              label: "Goal paused",
-              content: decision.reason,
-            })) ?? runWithBlockedTask;
-          await upsertGoalRun(cwd, {
-            ...runWithPauseEvidence,
-            status: "paused",
-            continueRequestedAt: undefined,
-            blockers: Array.from(new Set([...runWithPauseEvidence.blockers, decision.reason])),
-          });
-          appendGoalProgress({
-            kind: "goal_progress",
-            phase: "terminal",
-            title: `Goal paused: ${checkedRun.title}`,
-            detail: decision.reason,
-            status: "paused",
-          });
-          runningGoalIdsRef.current.delete(checkedRun.id);
-          clearGoalStatusEntry(checkedRun.id);
-          clearGoalModeIfIdle();
-          return;
-        }
-
         const runWithAttempt =
           (await updateGoalTask(cwd, checkedRun.id, decision.task.id, {
             attempts: decision.attempts,
@@ -657,26 +638,27 @@ export function useGoalOrchestration({
         log("ERROR", "goal", err instanceof Error ? err.message : String(err));
         if (isGoalWorktreeDirtyError(err)) {
           const latestRun = (await loadGoalRuns(cwd)).find((item) => item.id === run.id) ?? run;
-          const pausedRun = await upsertGoalRun(
-            cwd,
-            buildGoalDirtyWorktreePauseRun(latestRun, err),
-          );
-          runningGoalIdsRef.current.delete(pausedRun.id);
+          const reason = `Goal worker startup could not establish a clean working tree even after an auto-checkpoint commit: ${err.message}`;
+          const runWithEvidence =
+            (await appendGoalEvidence(cwd, latestRun.id, {
+              kind: "summary",
+              label: "Goal failure diagnosis",
+              content: reason,
+            })) ?? latestRun;
+          const failedRun = await upsertGoalRun(cwd, {
+            ...runWithEvidence,
+            status: "failed",
+            activeWorkerId: undefined,
+            continueRequestedAt: undefined,
+            blockers: Array.from(new Set([...runWithEvidence.blockers, reason])),
+          });
+          runningGoalIdsRef.current.delete(failedRun.id);
           appendGoalProgress({
             kind: "goal_progress",
             phase: "terminal",
-            title: `Goal paused: ${pausedRun.title}`,
-            detail:
-              "Working tree has uncommitted changes; waiting for the user to choose commit, stash, or pause.",
-            status: "paused",
-          });
-          setLiveItems((prev) => [
-            ...prev,
-            { kind: "info", text: goalDirtyWorktreeInfoText(), id: getId() },
-          ]);
-          void agentLoop.run(buildGoalDirtyWorktreeUserPrompt(err)).catch((agentErr: unknown) => {
-            log("ERROR", "goal", agentErr instanceof Error ? agentErr.message : String(agentErr));
-            setLiveItems((prev) => [...prev, toErrorItem(agentErr, getId(), "Goal")]);
+            title: `Goal failed: ${failedRun.title}`,
+            detail: reason,
+            status: "failed",
           });
           return;
         }
