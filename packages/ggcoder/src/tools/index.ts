@@ -16,6 +16,7 @@ import { createTaskStopTool } from "./task-stop.js";
 import { createTasksTool } from "./tasks.js";
 import { createGoalsTool } from "./goals.js";
 import { createSkillTool } from "./skill.js";
+import { createScreenshotTool } from "./screenshot.js";
 import { createEnterPlanTool } from "./enter-plan.js";
 import { createExitPlanTool } from "./exit-plan.js";
 import { localOperations, type ToolOperations } from "./operations.js";
@@ -44,6 +45,12 @@ export interface CreateToolsOptions {
   onFileRead?: (filePath: string) => void | Promise<void>;
   /** Callback after write/edit tools successfully mutate a file. */
   onFileMutated?: (filePath: string) => void | Promise<void>;
+  /**
+   * Callback fired by write/edit BEFORE the on-disk write, so a checkpoint store
+   * can snapshot the file's prior content for /rewind. Receives the resolved
+   * absolute path.
+   */
+  onPreFileMutation?: (filePath: string) => void | Promise<void>;
   /** Getter for active /goal reference context while setup persists durable Goal state. */
   getGoalReferences?: () => readonly GoalReference[] | undefined;
   /**
@@ -71,8 +78,24 @@ export function createTools(cwd: string, opts?: CreateToolsOptions): CreateTools
 
   const tools: AgentTool[] = [
     createReadTool(cwd, readFiles, ops, opts?.onFileRead),
-    createWriteTool(cwd, readFiles, ops, goalModeRef, planModeRef, opts?.onFileMutated),
-    createEditTool(cwd, readFiles, ops, goalModeRef, planModeRef, opts?.onFileMutated),
+    createWriteTool(
+      cwd,
+      readFiles,
+      ops,
+      goalModeRef,
+      planModeRef,
+      opts?.onFileMutated,
+      opts?.onPreFileMutation,
+    ),
+    createEditTool(
+      cwd,
+      readFiles,
+      ops,
+      goalModeRef,
+      planModeRef,
+      opts?.onFileMutated,
+      opts?.onPreFileMutation,
+    ),
     createBashTool(cwd, processManager, ops, goalModeRef, planModeRef),
     createFindTool(cwd),
     createGrepTool(cwd, ops),
@@ -83,6 +106,7 @@ export function createTools(cwd: string, opts?: CreateToolsOptions): CreateTools
     createTaskStopTool(processManager),
     createTasksTool(cwd),
     createGoalsTool(cwd, goalModeRef, opts?.getGoalReferences),
+    createScreenshotTool(cwd),
   ];
 
   // Add web search tool for providers without reliable native web search
@@ -134,6 +158,7 @@ export { createTaskStopTool } from "./task-stop.js";
 export { createTasksTool } from "./tasks.js";
 export { createGoalsTool } from "./goals.js";
 export { createSkillTool } from "./skill.js";
+export { createScreenshotTool } from "./screenshot.js";
 export { createEnterPlanTool } from "./enter-plan.js";
 export { createExitPlanTool } from "./exit-plan.js";
 export { ProcessManager } from "../core/process-manager.js";

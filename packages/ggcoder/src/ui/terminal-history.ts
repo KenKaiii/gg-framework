@@ -10,7 +10,12 @@ import { SPINNER_FRAMES } from "./spinner-frames.js";
 import type { Theme } from "./theme/theme.js";
 import { getUserMessageDisplayParts } from "./utils/user-message-display.js";
 import { buildToolGroupSummary } from "./tool-group-summary.js";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { renderMarkdownToAnsiLines } from "./utils/markdown-renderer.js";
+import { detectGraphicsProtocol, encodeInlineImage } from "./utils/terminal-graphics.js";
+import { createHyperlink } from "./utils/hyperlink.js";
+import { supportsHyperlinks } from "./utils/supports-hyperlinks.js";
 import { shouldSeparateTranscriptItems } from "./transcript/spacing.js";
 import {
   MAX_OUTPUT_LINES,
@@ -155,6 +160,35 @@ export function createTerminalHistoryPrinter({
         if (formatted.length === 0) continue;
         printed.add(item.id);
         writeOutput(formatted);
+        // Inline image previews render in the Static scrollback region (straight
+        // to the stream, above Ink's live frame). Only emit graphics escapes on
+        // terminals that support them; everything else keeps the text-only line.
+        const previews =
+          (item.kind === "tool_done" || item.kind === "user") && item.imagePreviews
+            ? item.imagePreviews
+            : undefined;
+        if (previews && previews.length > 0) {
+          const protocol = detectGraphicsProtocol();
+          // Indent the image to the message text column (after the `⏺ ` dot),
+          // matching assistant/tool label alignment. Graphics protocols anchor
+          // the image at the cursor column, so leading spaces shift it right.
+          const imageLeftPad = "   ";
+          const canLink = supportsHyperlinks();
+          for (const preview of previews) {
+            if (protocol !== "none") {
+              writeOutput(`\n${imageLeftPad}${encodeInlineImage(preview.base64, protocol)}\n`);
+            }
+            // Clickable "open" affordance — Cmd/Ctrl-click opens the file in the
+            // OS default viewer. The pixels themselves aren't clickable, so the
+            // path is the open handle.
+            if (preview.path && canLink) {
+              const fileUrl = pathToFileURL(preview.path).href;
+              const linkLabel = `↗ ${path.basename(preview.path)}`;
+              const lead = protocol === "none" ? "\n" : "";
+              writeOutput(`${lead}${imageLeftPad}${createHyperlink(fileUrl, linkLabel)}\n`);
+            }
+          }
+        }
         previousPrintedKind = item.kind;
       }
     },
@@ -526,6 +560,14 @@ function renderToolDone(
 
   if (COMPACT_TOOLS.has(name) && !isError) {
     return toolHeader("done", getCompactDoneLabel(name, args, result), "", context);
+  }
+
+  // Screenshot collapses to a single header line, e.g. `Screenshot (image/png)`.
+  // The inline image is appended separately by the printer; the multi-line
+  // "Captured …" text would be redundant above it.
+  if (name === "screenshot" && !isError) {
+    const mediaType = result.match(/\[(image\/[a-z0-9.+-]+)\]/i)?.[1] ?? "image";
+    return toolHeader("done", "Screenshot", mediaType, context);
   }
 
   if (STATE_TOOLS.has(name)) {

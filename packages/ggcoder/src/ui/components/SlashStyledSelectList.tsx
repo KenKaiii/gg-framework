@@ -16,6 +16,12 @@ interface SlashStyledSelectListProps {
   onCancel: () => void;
   initialIndex?: number;
   maxItemsToShow?: number;
+  /**
+   * Explicit content width. Defaults to the full terminal width. Pass a smaller
+   * value when rendering inside a bordered/padded container (e.g. Overlay) so
+   * the list doesn't overflow the terminal and corrupt Ink's frame.
+   */
+  width?: number;
 }
 
 const DEFAULT_MAX_ITEMS_TO_SHOW = 8;
@@ -26,6 +32,7 @@ export function SlashStyledSelectList({
   onCancel,
   initialIndex = 0,
   maxItemsToShow = DEFAULT_MAX_ITEMS_TO_SHOW,
+  width: widthOverride,
 }: SlashStyledSelectListProps) {
   const theme = useTheme();
   const { columns } = useTerminalSize();
@@ -89,7 +96,7 @@ export function SlashStyledSelectList({
       : Math.max(0, Math.min(idx - Math.floor(maxItemsToShow / 2), total - maxItemsToShow));
   const end = Math.min(start + maxItemsToShow, total);
   const visible = filtered.slice(start, end);
-  const width = Math.max(20, columns);
+  const width = widthOverride ?? Math.max(20, columns);
   const maxLabelLength = Math.max(0, ...filtered.map((item) => item.label.length));
   const labelColumnWidth = Math.min(maxLabelLength, Math.floor(width * 0.5));
 

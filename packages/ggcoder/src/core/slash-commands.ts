@@ -190,6 +190,16 @@ export function createBuiltinCommands(): SlashCommand[] {
       },
     },
     {
+      name: "rewind",
+      aliases: [],
+      description: "Restore files/conversation to an earlier checkpoint",
+      usage: "/rewind — pick a checkpoint, then code / conversation / both",
+      execute() {
+        // Handled in App.tsx (needs React state); listed here for /help.
+        return "Use /rewind to open the checkpoint picker.";
+      },
+    },
+    {
       name: "help",
       aliases: ["h", "?"],
       description: "Show available commands",

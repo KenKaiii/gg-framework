@@ -71,6 +71,7 @@ import { setProviderDiagnostic } from "@kenkaiiii/gg-ai";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { PROMPT_COMMANDS } from "./core/prompt-commands.js";
 import { createTools } from "./tools/index.js";
+import { CheckpointStore } from "./core/checkpoint-store.js";
 import { shouldCompact, compact } from "./core/compaction/compactor.js";
 import {
   createCompactedSessionCheckpoint,
@@ -522,6 +523,12 @@ async function runInkTUI(opts: {
     onExitPlan?: (planPath: string) => Promise<string>;
   } = {};
 
+  // Holder so the (cwd-bound) tools can snapshot pre-mutation file state for
+  // /rewind. The store is created once the session id is known (below).
+  const checkpointRef: { current: CheckpointStore | null } = { current: null };
+  const onPreFileMutation = (filePath: string): Promise<void> =>
+    checkpointRef.current?.recordPreMutation(filePath) ?? Promise.resolve();
+
   const { tools, processManager } = createTools(cwd, {
     agents,
     skills,
@@ -529,6 +536,7 @@ async function runInkTUI(opts: {
     model,
     goalModeRef,
     planModeRef,
+    onPreFileMutation,
     onEnterPlan: (reason) => planToolCallbacks.onEnterPlan?.(reason),
     onExitPlan: (planPath) =>
       planToolCallbacks.onExitPlan?.(planPath) ?? Promise.resolve("Plan review is unavailable."),
@@ -546,6 +554,7 @@ async function runInkTUI(opts: {
       model,
       goalModeRef,
       planModeRef,
+      onPreFileMutation,
       onEnterPlan: (reason) => planToolCallbacks.onEnterPlan?.(reason),
       onExitPlan: (planPath) =>
         planToolCallbacks.onExitPlan?.(planPath) ?? Promise.resolve("Plan review is unavailable."),
@@ -686,6 +695,11 @@ async function runInkTUI(opts: {
     log("INFO", "session", `New session created`, { path: sessionPath });
   }
 
+  // Now that the session id is finalized, back /rewind with a checkpoint store.
+  if (sessionId) {
+    checkpointRef.current = new CheckpointStore({ sessionId, cwd });
+  }
+
   await renderApp({
     provider,
     model,
@@ -714,6 +728,7 @@ async function runInkTUI(opts: {
     planModeRef,
     goalReferencesRef,
     skills,
+    checkpointStore: checkpointRef.current ?? undefined,
     initialOverlay: opts.initialOverlay,
     rebuildToolsForCwd,
     connectInitialMcpTools,

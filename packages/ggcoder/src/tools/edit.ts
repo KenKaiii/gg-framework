@@ -138,6 +138,7 @@ export function createEditTool(
   goalModeRefOrOnFileMutated?: { current: GoalMode } | MutationCallback,
   planModeRefOrOnFileMutated?: { current: boolean } | MutationCallback,
   onFileMutated?: MutationCallback,
+  onPreFileMutation?: MutationCallback,
 ): AgentTool<typeof EditParams> {
   const goalModeRef = isMutationCallback(goalModeRefOrOnFileMutated)
     ? undefined
@@ -338,6 +339,8 @@ export function createEditTool(
 
       if (changed) {
         const finalContent = hasCRLF ? working.replace(/\n/g, "\r\n") : working;
+        // Snapshot the pre-mutation on-disk state for /rewind before writing.
+        await onPreFileMutation?.(resolved);
         await ops.writeFile(resolved, finalContent);
         await recordWrite(readFiles, resolved, finalContent, ops);
         await mutationCallback?.(resolved);

@@ -89,6 +89,10 @@ describe("createReadTool", () => {
         { type: "text", text: expect.stringContaining("Read image file") },
         { type: "image", mediaType: "image/png", data: expect.any(String) },
       ],
+      // Carries an inline terminal preview so the printer can render the image.
+      details: {
+        imagePreviews: [{ base64: expect.any(String), mediaType: "image/png" }],
+      },
     });
   });
 

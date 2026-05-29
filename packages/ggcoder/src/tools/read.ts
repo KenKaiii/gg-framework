@@ -7,7 +7,12 @@ import { truncateHead } from "./truncate.js";
 import { writeOverflow } from "./overflow.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 import { recordRead, type ReadTracker } from "./read-tracker.js";
-import { IMAGE_EXTENSIONS, IMAGE_MEDIA_TYPES, shrinkToFit } from "../utils/image.js";
+import {
+  IMAGE_EXTENSIONS,
+  IMAGE_MEDIA_TYPES,
+  downscaleForPreview,
+  shrinkToFit,
+} from "../utils/image.js";
 
 export const BINARY_EXTENSIONS = new Set([
   ".ico",
@@ -99,6 +104,10 @@ export function createReadTool(
             buffer.length < rawBuffer.length
               ? ` (resized from ${rawBuffer.length} to ${buffer.length} bytes)`
               : "";
+          // Smaller copy for the inline terminal preview (kitty/iTerm2). Kept
+          // separate from the full-res copy the model sees. Cosmetic — a
+          // preview failure must never break the read.
+          const previewBuffer = await downscaleForPreview(buffer);
           return {
             content: [
               {
@@ -107,6 +116,15 @@ export function createReadTool(
               },
               { type: "image", mediaType: finalMediaType, data: buffer.toString("base64") },
             ],
+            details: {
+              imagePreviews: [
+                {
+                  base64: previewBuffer.toString("base64"),
+                  mediaType: finalMediaType,
+                  path: resolved,
+                },
+              ],
+            },
           };
         } catch (err: unknown) {
           const code = (err as NodeJS.ErrnoException).code;

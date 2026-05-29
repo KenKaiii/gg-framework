@@ -27,7 +27,7 @@ import {
   type ThinkingLevel,
   type TextContent,
 } from "@kenkaiiii/gg-ai";
-import { extractImagePaths, type ImageAttachment } from "../utils/image.js";
+import { downscaleForPreview, extractImagePaths, type ImageAttachment } from "../utils/image.js";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import { useAgentLoop, type StreamSnapshot, type UserContent } from "./hooks/useAgentLoop.js";
 import { useTranscriptHistory } from "./hooks/useTranscriptHistory.js";
@@ -71,6 +71,8 @@ import { loadCustomCommands, type CustomCommand } from "../core/custom-commands.
 import { detectLanguages, type LanguageId } from "../core/language-detector.js";
 import { detectVerifyCommands } from "../core/verify-commands.js";
 import type { Skill } from "../core/skills.js";
+import type { CheckpointInfo, CheckpointStore, RestoreMode } from "../core/checkpoint-store.js";
+import { RewindOverlay } from "./components/RewindOverlay.js";
 import {
   extractPlanSteps,
   findCompletedMarkers,
@@ -145,6 +147,7 @@ import {
 import type {
   CompletedItem,
   GoalProgressDraft,
+  ImagePreview,
   QueuedItem,
   SessionSummaryItem,
   ServerToolDoneItem,
@@ -262,6 +265,8 @@ export interface AppProps {
   goalModeRef?: { current: GoalMode };
   planModeRef?: { current: boolean };
   skills?: Skill[];
+  /** Per-session file checkpoint store backing the /rewind command. */
+  checkpointStore?: CheckpointStore;
   initialOverlay?: "pixel" | "goal";
   rebuildToolsForCwd?: (cwd: string) => AgentTool[];
   goalReferencesRef?: { current: readonly GoalReference[] | undefined };
@@ -346,6 +351,25 @@ export interface AppProps {
 
 // ── App Component ──────────────────────────────────────────
 
+/**
+ * Extract inline image previews carried on a tool result's `details` payload.
+ * Image-producing tools (e.g. screenshot) attach `{ imagePreviews: [...] }` so
+ * the terminal-history printer can render the captured pixels inline.
+ */
+function extractToolImagePreviews(details: unknown): ImagePreview[] | undefined {
+  if (!details || typeof details !== "object") return undefined;
+  const previews = (details as { imagePreviews?: unknown }).imagePreviews;
+  if (!Array.isArray(previews)) return undefined;
+  const valid = previews.filter(
+    (p): p is ImagePreview =>
+      typeof p === "object" &&
+      p !== null &&
+      typeof (p as ImagePreview).base64 === "string" &&
+      typeof (p as ImagePreview).mediaType === "string",
+  );
+  return valid.length > 0 ? valid : undefined;
+}
+
 export function App(props: AppProps) {
   const theme = useTheme();
   const switchTheme = useSetTheme();
@@ -422,6 +446,10 @@ export function App(props: AppProps) {
   const startPixelFixRef = useRef<(errorId: string) => void>(() => {});
   const cwdRef = useRef(props.cwd);
   const [displayedCwd, setDisplayedCwd] = useState(props.cwd);
+  // /rewind overlay: holds the checkpoint list while the picker is open.
+  const [rewindCheckpoints, setRewindCheckpoints] = useState<CheckpointInfo[] | null>(null);
+  // Monotonic user-turn counter keying per-turn checkpoints.
+  const rewindTurnRef = useRef(0);
   const taskPicker = useTaskPickerController({
     displayedCwd,
     onStartTask: (title, prompt, taskId) => startTaskRef.current(title, prompt, taskId),
@@ -1378,6 +1406,7 @@ export function App(props: AppProps) {
                     isError,
                     durationMs,
                     details,
+                    imagePreviews: extractToolImagePreviews(details),
                     id: startItem.id,
                   };
                   updated = [...prev];
@@ -1394,6 +1423,7 @@ export function App(props: AppProps) {
                       isError,
                       durationMs,
                       details,
+                      imagePreviews: extractToolImagePreviews(details),
                       id: getId(),
                     },
                   ];
@@ -1923,6 +1953,32 @@ export function App(props: AppProps) {
         await applyLanguageDetectionRef.current("input");
       }
 
+      // /rewind — open the checkpoint picker (needs React state + the store).
+      if (trimmed === "/rewind") {
+        const store = props.checkpointStore;
+        if (!store) {
+          setLiveItems((prev) => [
+            ...prev,
+            { kind: "info", text: "Checkpoints are not available in this session.", id: getId() },
+          ]);
+          return;
+        }
+        const cps = await store.listCheckpoints();
+        if (cps.length === 0) {
+          setLiveItems((prev) => [
+            ...prev,
+            {
+              kind: "info",
+              text: "No checkpoints yet \u2014 edit a file through ggcoder first.",
+              id: getId(),
+            },
+          ]);
+          return;
+        }
+        setRewindCheckpoints(cps);
+        return;
+      }
+
       if (
         await handleUiSlashCommand(trimmed, {
           openModelSelector: () => setOverlay("model"),
@@ -2069,10 +2125,23 @@ export function App(props: AppProps) {
         const { cleanText } = await extractImagePaths(input, props.cwd);
         displayText = cleanText;
       }
+      let imagePreviews: ImagePreview[] | undefined;
+      if (hasImages) {
+        const built = await Promise.all(
+          inputImages
+            .filter((img) => img.kind === "image")
+            .map(async (img): Promise<ImagePreview> => {
+              const downscaled = await downscaleForPreview(Buffer.from(img.data, "base64"));
+              return { base64: downscaled.toString("base64"), mediaType: img.mediaType };
+            }),
+        );
+        imagePreviews = built.length > 0 ? built : undefined;
+      }
       const userItem: UserItem = {
         kind: "user",
         text: displayText,
         imageCount: hasImages ? inputImages.length : undefined,
+        imagePreviews,
         pasteInfo,
         id: getId(),
       };
@@ -2085,6 +2154,18 @@ export function App(props: AppProps) {
         setPlanSteps([]);
       }
       finalizeSubmittedUserItem(userItem);
+
+      // Open a per-turn checkpoint capturing the conversation position right
+      // before this exchange, so /rewind can restore pre-turn code/chat state.
+      if (props.checkpointStore) {
+        rewindTurnRef.current += 1;
+        await props.checkpointStore
+          .openCheckpoint({
+            turnIndex: rewindTurnRef.current,
+            messageIndex: messagesRef.current.length,
+          })
+          .catch(() => {});
+      }
 
       // Run agent
       try {
@@ -2329,6 +2410,12 @@ export function App(props: AppProps) {
       { name: "compact", aliases: ["c"], description: "Compact context", sectionTitle: "built-in" },
       { name: "clear", aliases: [], description: "Clear session", sectionTitle: "built-in" },
       { name: "theme", aliases: ["t"], description: "Switch theme", sectionTitle: "built-in" },
+      {
+        name: "rewind",
+        aliases: [],
+        description: "Restore files/conversation to a checkpoint",
+        sectionTitle: "built-in",
+      },
       ...orderedPromptCommands,
       ...remainingPromptCommands,
       ...customCommands.map((cmd) => ({
@@ -2561,6 +2648,58 @@ export function App(props: AppProps) {
       lastPendingHistoryItem,
       lastHistoryItem,
     });
+
+  const handleRewindCancel = useCallback(() => setRewindCheckpoints(null), []);
+
+  const handleRewindRestore = useCallback(
+    (id: string, mode: RestoreMode) => {
+      const store = props.checkpointStore;
+      setRewindCheckpoints(null);
+      if (!store) return;
+      void (async () => {
+        try {
+          const result = await store.restore(id, mode);
+          const turnNum = id.replace(/^cp-0*/, "") || id;
+          const detailParts: string[] = [];
+          if (mode === "code" || mode === "both") {
+            detailParts.push(
+              `${result.filesRestored} file${result.filesRestored === 1 ? "" : "s"} restored`,
+            );
+          }
+          if (mode === "conversation" || mode === "both") detailParts.push("conversation rewound");
+          const infoText = `Rewound to checkpoint #${turnNum} (${detailParts.join(", ")}).`;
+
+          if (mode === "conversation" || mode === "both") {
+            const truncated = messagesRef.current.slice(0, Math.max(1, result.messageIndex));
+            messagesRef.current = truncated;
+            persistedIndexRef.current = truncated.length;
+            agentLoop.reset();
+            // Remount in lockstep so the banner + confirmation re-render cleanly
+            // after the conversation context is truncated (CLAUDE.md pattern).
+            if (props.resetUI) {
+              props.resetUI({
+                wipeSession: true,
+                messages: truncated,
+                history: [
+                  { kind: "banner", id: "banner" },
+                  { kind: "info", text: infoText, id: getId() },
+                ],
+              });
+              return;
+            }
+          }
+          setLiveItems((prev) => [...prev, { kind: "info", text: infoText, id: getId() }]);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setLiveItems((prev) => [
+            ...prev,
+            { kind: "info", text: `Rewind failed: ${msg}`, id: getId() },
+          ]);
+        }
+      })();
+    },
+    [props.checkpointStore, props.resetUI, agentLoop, messagesRef, persistedIndexRef],
+  );
 
   const handleCloseRemountableOverlay = () => {
     if (props.resetUI && props.sessionStore && !agentLoop.isRunning) {
@@ -2838,7 +2977,13 @@ export function App(props: AppProps) {
 
   return (
     <Box flexDirection="column" width={columns} flexShrink={0} flexGrow={0}>
-      {fullScreenOverlay ? (
+      {rewindCheckpoints ? (
+        <RewindOverlay
+          checkpoints={rewindCheckpoints}
+          onRestore={handleRewindRestore}
+          onCancel={handleRewindCancel}
+        />
+      ) : fullScreenOverlay ? (
         <FullScreenOverlayRouter
           overlay={fullScreenOverlay}
           version={props.version}

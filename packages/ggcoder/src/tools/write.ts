@@ -38,6 +38,7 @@ export function createWriteTool(
   goalModeRefOrOnFileMutated?: { current: GoalMode } | MutationCallback,
   planModeRefOrOnFileMutated?: { current: boolean } | MutationCallback,
   onFileMutated?: MutationCallback,
+  onPreFileMutation?: MutationCallback,
 ): AgentTool<typeof WriteParams> {
   const goalModeRef = isMutationCallback(goalModeRefOrOnFileMutated)
     ? undefined
@@ -84,6 +85,8 @@ export function createWriteTool(
           await assertFresh(readFiles, resolved, ops);
         }
       }
+      // Snapshot the pre-mutation on-disk state for /rewind before writing.
+      await onPreFileMutation?.(resolved);
       await ops.writeFile(resolved, content);
       await recordWrite(readFiles, resolved, content, ops);
       await mutationCallback?.(resolved);

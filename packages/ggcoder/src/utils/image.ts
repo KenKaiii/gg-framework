@@ -30,6 +30,8 @@ async function loadSharp(): Promise<SharpFn> {
 
 /** Anthropic's maximum image size in bytes (5 MB). */
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/** Max width (px) for inline terminal-graphics previews so scrollback stays small. */
+const PREVIEW_MAX_WIDTH = 480;
 /** Anthropic's hard per-dimension cap for many-image requests. Exceeding this
  *  in either dimension causes a 400 even if the byte size is fine. */
 const MAX_IMAGE_DIMENSION = 2000;
@@ -255,6 +257,28 @@ export async function shrinkToFit(
     .jpeg({ quality: 60 })
     .toBuffer();
   return { buffer: result, mediaType: "image/jpeg" };
+}
+
+/**
+ * Downscale an image buffer for an inline terminal preview, capping its width
+ * at PREVIEW_MAX_WIDTH so previews stay small in scrollback. The full-resolution
+ * copy is kept separately for the model. Preserves format and aspect ratio.
+ *
+ * On any sharp failure the original buffer is returned unchanged — a preview is
+ * cosmetic and must never break the turn.
+ */
+export async function downscaleForPreview(buffer: Buffer): Promise<Buffer> {
+  try {
+    const sharp = await loadSharp();
+    const meta = await sharp(buffer).metadata();
+    const width = meta.width ?? 0;
+    if (width > 0 && width <= PREVIEW_MAX_WIDTH) return buffer;
+    return await sharp(buffer)
+      .resize(PREVIEW_MAX_WIDTH, undefined, { fit: "inside", withoutEnlargement: true })
+      .toBuffer();
+  } catch {
+    return buffer;
+  }
 }
 
 /**

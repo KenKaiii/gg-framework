@@ -557,6 +557,107 @@ describe("terminal history", () => {
     expect(stripAnsi(output)).not.toMatch(/Previous answer\.\n\n▄+/);
   });
 
+  it("renders a screenshot result as a single Screenshot (media-type) line", () => {
+    const item: CompletedItem = {
+      kind: "tool_done",
+      id: "tool-screenshot-1",
+      name: "screenshot",
+      args: { url: "http://localhost:3000" },
+      result: "Captured http://localhost:3000 → /tmp/shot.png [image/png] (1280×800)",
+      isError: false,
+      durationMs: 1,
+    };
+
+    const rendered = stripAnsi(serializeCompletedItemToTerminalHistory(item, context));
+
+    expect(rendered).toMatch(/^ [⏺●] Screenshot\(image\/png\)$/);
+    expect(rendered).not.toContain("Captured");
+    expect(rendered).not.toContain("/tmp/shot.png");
+  });
+
+  it("writes an inline graphics sequence after an image-bearing item on kitty terminals", () => {
+    const prevKitty = process.env.KITTY_WINDOW_ID;
+    const prevTmux = process.env.TMUX;
+    process.env.KITTY_WINDOW_ID = "1";
+    delete process.env.TMUX;
+    const ttyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+    Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+    try {
+      let output = "";
+      const stream = {
+        write(chunk: string) {
+          output += chunk;
+          return true;
+        },
+      } as NodeJS.WriteStream;
+      const printer = createTerminalHistoryPrinter({ stream });
+      const item: CompletedItem = {
+        kind: "tool_done",
+        id: "tool-image-1",
+        name: "read",
+        args: { file_path: "shot.png" },
+        result: "Read image file shot.png [image/png]",
+        isError: false,
+        durationMs: 1,
+        imagePreviews: [{ base64: "QUJD", mediaType: "image/png" }],
+      };
+
+      printer.print([item], context);
+
+      expect(stripAnsi(output)).toContain("Read shot.png");
+      // kitty APC graphics sequence with the base64 payload.
+      expect(output).toContain("\u001b_Gf=100,a=T,m=0;QUJD\u001b\\");
+    } finally {
+      if (prevKitty === undefined) delete process.env.KITTY_WINDOW_ID;
+      else process.env.KITTY_WINDOW_ID = prevKitty;
+      if (prevTmux === undefined) delete process.env.TMUX;
+      else process.env.TMUX = prevTmux;
+      if (ttyDescriptor) Object.defineProperty(process.stdout, "isTTY", ttyDescriptor);
+    }
+  });
+
+  it("writes only the text line for image items when no graphics terminal is detected", () => {
+    const prevKitty = process.env.KITTY_WINDOW_ID;
+    const prevTermProgram = process.env.TERM_PROGRAM;
+    const prevTerm = process.env.TERM;
+    delete process.env.KITTY_WINDOW_ID;
+    delete process.env.TERM_PROGRAM;
+    process.env.TERM = "xterm-256color";
+    try {
+      let output = "";
+      const stream = {
+        write(chunk: string) {
+          output += chunk;
+          return true;
+        },
+      } as NodeJS.WriteStream;
+      const printer = createTerminalHistoryPrinter({ stream });
+      const item: CompletedItem = {
+        kind: "tool_done",
+        id: "tool-image-2",
+        name: "read",
+        args: { file_path: "shot.png" },
+        result: "Read image file shot.png [image/png]",
+        isError: false,
+        durationMs: 1,
+        imagePreviews: [{ base64: "QUJD", mediaType: "image/png" }],
+      };
+
+      printer.print([item], context);
+
+      expect(stripAnsi(output)).toContain("Read shot.png");
+      expect(output).not.toContain("\u001b_G");
+      expect(output).not.toContain("\u001b]1337");
+    } finally {
+      if (prevKitty === undefined) delete process.env.KITTY_WINDOW_ID;
+      else process.env.KITTY_WINDOW_ID = prevKitty;
+      if (prevTermProgram === undefined) delete process.env.TERM_PROGRAM;
+      else process.env.TERM_PROGRAM = prevTermProgram;
+      if (prevTerm === undefined) delete process.env.TERM;
+      else process.env.TERM = prevTerm;
+    }
+  });
+
   it("can intentionally clear printed ids for a fresh session", () => {
     let output = "";
     const stream = {

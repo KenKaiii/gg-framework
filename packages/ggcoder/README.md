@@ -126,6 +126,7 @@ Everything runs through slash commands inside the session. Not CLI flags.
 | `/session` (`/s`) | Resume a prior session |
 | `/branch` (`/b`) | Branch the current conversation |
 | `/branches` | List branches of the current session |
+| `/rewind` | Restore files and/or conversation to an earlier checkpoint |
 | `/buddy` | Spin up a second model to review the current chat |
 | `/settings` (`/config`) | Open settings |
 | `/help` (`/h`, `/?`) | Show all commands |
@@ -158,7 +159,10 @@ GG Coder comes with a focused set of tools. Each one is small, well-described, a
 | `find` | Find files by glob pattern |
 | `ls` | List directory contents |
 | `web_fetch` | Fetch URL content |
+| `screenshot` | Open a URL / dev server in a headless browser and capture a PNG so the agent can see the rendered page |
 | `subagent` | Spawn parallel sub-agents |
+
+The `screenshot` tool needs the optional `playwright` dependency plus a one-time `npx playwright install chromium`. Without it the tool returns an install hint instead of failing the turn. Captured images render inline in graphics-capable terminals (kitty, Ghostty, WezTerm, iTerm2); other terminals show a text line.
 
 Plus the [Grep MCP](https://grep.dev) for searching across 1M+ public GitHub repos. Add your own MCPs in settings if you need more — but start lean.
 
@@ -167,6 +171,14 @@ Plus the [Grep MCP](https://grep.dev) for searching across 1M+ public GitHub rep
 ## 🪄 Custom commands
 
 Drop a markdown file in `.gg/commands/` and it becomes a slash command. Your React app gets `/deploy` and `/storybook`. Your API gets `/migrate` and `/seed`. Different projects, different commands.
+
+---
+
+## ⏪ Checkpoints & `/rewind`
+
+Before every file the agent writes or edits, GG Coder snapshots the prior on-disk content into a per-session checkpoint (stored under `~/.gg/checkpoints/`, never in your repo). Run `/rewind` to pick an earlier checkpoint and restore **code only**, **conversation only**, or **both**.
+
+Only edits made through ggcoder's `write`/`edit` tools are tracked — changes made by `bash` (e.g. `sed`, `rm`, codegen) are **not** captured.
 
 ---
 

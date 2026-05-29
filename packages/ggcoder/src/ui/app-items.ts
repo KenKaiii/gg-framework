@@ -4,11 +4,21 @@ import type { GoalSummaryRow, GoalSummarySection } from "./goal-summary.js";
 import type { LanguageId } from "../core/language-detector.js";
 import type { SessionSummary } from "./session-summary.js";
 
+/** Decoded image bytes for inline terminal-graphics preview (kitty/iTerm2). */
+export interface ImagePreview {
+  base64: string;
+  mediaType: string;
+  /** Absolute path to the on-disk image, rendered as a clickable OSC 8 link. */
+  path?: string;
+}
+
 export interface UserItem {
   kind: "user";
   text: string;
   imageCount?: number;
   pasteInfo?: PasteInfo;
+  /** Inline previews for attached images, rendered after the user row. */
+  imagePreviews?: ImagePreview[];
   id: string;
 }
 
@@ -76,6 +86,8 @@ export interface ToolDoneItem {
   isError: boolean;
   durationMs: number;
   details?: unknown;
+  /** Inline previews for image-bearing tool results (read/screenshot). */
+  imagePreviews?: ImagePreview[];
   id: string;
 }
 

@@ -6,6 +6,7 @@ import type { ProcessManager } from "../core/process-manager.js";
 import type { MCPClientManager } from "../core/mcp/index.js";
 import type { AuthStorage } from "../core/auth-storage.js";
 import type { Skill } from "../core/skills.js";
+import type { CheckpointStore } from "../core/checkpoint-store.js";
 import { App, type CompletedItem, type DoneStatus } from "./App.js";
 import { createTerminalHistoryPrinter } from "./terminal-history.js";
 import type { GoalStatusEntry } from "./components/GoalStatusBar.js";
@@ -53,6 +54,7 @@ export interface RenderAppConfig {
   goalModeRef?: { current: GoalMode };
   planModeRef?: { current: boolean };
   skills?: Skill[];
+  checkpointStore?: CheckpointStore;
   initialOverlay?: "pixel" | "goal";
   rebuildToolsForCwd?: (cwd: string) => AgentTool[];
   goalReferencesRef?: { current: readonly GoalReference[] | undefined };
@@ -328,6 +330,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
             goalModeRef: config.goalModeRef,
             planModeRef: config.planModeRef,
             skills: config.skills,
+            checkpointStore: config.checkpointStore,
             initialOverlay: config.initialOverlay,
             rebuildToolsForCwd: config.rebuildToolsForCwd,
             goalReferencesRef: config.goalReferencesRef,
