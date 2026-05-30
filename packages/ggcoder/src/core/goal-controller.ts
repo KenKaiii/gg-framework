@@ -15,12 +15,18 @@ import {
 export const DEFAULT_GOAL_TASK_ATTEMPT_LIMIT = 5;
 export const DEFAULT_GOAL_VERIFIER_FIX_LIMIT = 5;
 export const DEFAULT_GOAL_STRATEGY_LIMIT = 2;
+/**
+ * Hard ceiling on total controller decisions per run. A safety net that
+ * guarantees termination even if some unforeseen state oscillates without
+ * tripping the per-dimension attempt/strategy/verifier/audit limits. Set high
+ * enough that legitimate large goals never hit it.
+ */
+export const DEFAULT_GOAL_DECISION_LIMIT = 300;
 
 export const APPLY_INTEGRATION_TO_MAIN_TASK_TITLE = "Apply integrated worktree to main";
-export const COMMIT_INTEGRATED_GOAL_CHANGES_TASK_TITLE = "Commit integrated goal changes";
 export const RESOLVE_LOCAL_PREREQUISITES_TASK_TITLE = "Resolve local Goal prerequisites";
 export const RE_STRATEGIZE_GOAL_TASK_TITLE = "Re-strategize Goal approach";
-const FINAL_COMPLETION_AUDIT_TASK_TITLE = "Audit Goal completion evidence";
+export const FINAL_COMPLETION_AUDIT_TASK_TITLE = "Audit Goal completion evidence";
 const BUILD_GOAL_EVIDENCE_PATH_TASK_TITLE = "Build Goal evidence path";
 const BUILD_GOAL_VERIFICATION_HARNESS_TASK_TITLE = "Build Goal verification harness";
 const DEFINE_GOAL_VERIFIER_TASK_TITLE = "Define Goal verifier";
@@ -73,6 +79,12 @@ export interface GoalControllerOptions {
   taskAttemptLimit?: number;
   verifierFixLimit?: number;
   strategyLimit?: number;
+  decisionLimit?: number;
+}
+
+/** Count of controller decisions already recorded as durable evidence. */
+export function goalDecisionCount(run: GoalRun): number {
+  return run.evidence.filter((item) => item.label.startsWith("Goal decision:")).length;
 }
 
 function needsHarnessInstrumentation(run: GoalRun): boolean {
@@ -263,51 +275,57 @@ function hasApplyIntegrationTask(run: GoalRun): boolean {
   return run.tasks.some((task) => task.title === APPLY_INTEGRATION_TO_MAIN_TASK_TITLE);
 }
 
-function hasCommitIntegratedChangesTask(run: GoalRun): boolean {
-  return run.tasks.some((task) => task.title === COMMIT_INTEGRATED_GOAL_CHANGES_TASK_TITLE);
-}
-
-function pendingAfterDependenciesImplementationTasks(run: GoalRun): GoalTask[] {
+/**
+ * Done worktree tasks whose committed candidate changes must reach the main
+ * checkout. Ordering is expressed by dependsOn; this gate only excludes tasks
+ * explicitly marked integration="manual". Read-only tasks (audit, etc.)
+ * produce no candidate changes and are excluded.
+ */
+function pendingWorktreeIntegrationTasks(run: GoalRun): GoalTask[] {
   return run.tasks.filter(
     (task) =>
-      task.status === "done" && task.mergeStrategy === "after_dependencies" && !!task.worktree,
+      task.status === "done" &&
+      !!task.worktree &&
+      task.integration !== "manual" &&
+      (task.candidate?.changedFiles?.length ?? 0) > 0,
   );
 }
 
-function appliedIntegrationEvidence(run: GoalRun): boolean {
-  return run.evidence.some(
-    (item) =>
-      item.label === "Integrated worktree applied to main" ||
-      item.label === "Goal decision: apply_integration_to_main",
-  );
+/** Typed integration gate: candidates reached main (applied or committed). */
+function integrationApplied(run: GoalRun): boolean {
+  return run.integration?.status === "applied" || run.integration?.status === "committed";
 }
 
-function committedIntegrationEvidence(run: GoalRun): boolean {
-  return run.evidence.some((item) => item.label === "Integrated Goal changes committed");
+/** Typed integration gate: integrated changes are committed in main. */
+function integrationCommitted(run: GoalRun): boolean {
+  return run.integration?.status === "committed";
 }
 
 function hasIntegratedWorktreeChanges(run: GoalRun): boolean {
   return (
-    pendingAfterDependenciesImplementationTasks(run).length > 0 || appliedIntegrationEvidence(run)
+    pendingWorktreeIntegrationTasks(run).length > 0 ||
+    (run.integration != null && run.integration.status !== "none")
+  );
+}
+
+/**
+ * True when the latest verifier result predates the most recent substantive
+ * (non-audit, non-integration) worker completion, so the verifier evidence is
+ * stale and must be re-run before the audit/completion gates can trust it.
+ */
+function verifierStaleAfterWorker(run: GoalRun): boolean {
+  return (
+    !!run.verifier?.lastResult?.checkedAt &&
+    !!run.lastSubstantiveWorkerAt &&
+    run.lastSubstantiveWorkerAt > run.verifier.lastResult.checkedAt
   );
 }
 
 function needsMainIntegrationApplyTask(run: GoalRun): boolean {
   return (
-    pendingAfterDependenciesImplementationTasks(run).length > 0 &&
+    pendingWorktreeIntegrationTasks(run).length > 0 &&
     !hasApplyIntegrationTask(run) &&
-    !appliedIntegrationEvidence(run)
-  );
-}
-
-function needsIntegratedGoalChangesCommitTask(run: GoalRun): boolean {
-  return (
-    hasIntegratedWorktreeChanges(run) &&
-    appliedIntegrationEvidence(run) &&
-    run.verifier?.lastResult?.status === "pass" &&
-    !latestNonAuditWorkerEvidenceAfterVerifier(run) &&
-    !hasCommitIntegratedChangesTask(run) &&
-    !committedIntegrationEvidence(run)
+    !integrationApplied(run)
   );
 }
 
@@ -318,65 +336,16 @@ function shouldCreateFinalAuditTask(
   return finalAuditTaskCount(run) < limit;
 }
 
-function isFinalAuditWorkerEvidence(run: GoalRun, label: string): boolean {
-  const match = /^Worker\s+(\S+)\s+/.exec(label);
-  const workerId = match?.[1];
-  if (!workerId) return false;
-  return run.tasks.some(
-    (task) => task.title === FINAL_COMPLETION_AUDIT_TASK_TITLE && task.workerId === workerId,
-  );
-}
-
-function isCompletionAuditDecision(label: string): boolean {
-  return label === "Goal decision: completion_audit";
-}
-
-function latestMatchingEvidence(
-  evidence: readonly GoalRun["evidence"][number][],
-  predicate: (item: GoalRun["evidence"][number]) => boolean,
-): GoalRun["evidence"][number] | undefined {
-  return evidence.filter(predicate).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-}
-
-function latestNonAuditWorkerEvidenceAfterVerifier(
-  run: GoalRun,
-): GoalRun["evidence"][number] | undefined {
-  const verifierCheckedAt = run.verifier?.lastResult?.checkedAt;
-  if (!verifierCheckedAt) return undefined;
-  return latestMatchingEvidence(
-    run.evidence,
-    (item) =>
-      item.createdAt > verifierCheckedAt &&
-      item.label.startsWith("Worker ") &&
-      !isFinalAuditWorkerEvidence(run, item.label),
-  );
-}
-
-function latestCompletionRelevantEvidenceAfterVerifier(
-  run: GoalRun,
-): GoalRun["evidence"][number] | undefined {
-  const verifierCheckedAt = run.verifier?.lastResult?.checkedAt;
-  if (!verifierCheckedAt) return undefined;
-  return latestMatchingEvidence(run.evidence, (item) => {
-    if (item.createdAt <= verifierCheckedAt) return false;
-    if (isFinalAuditWorkerEvidence(run, item.label)) return false;
-    if (isCompletionAuditDecision(item.label)) return false;
-    if (item.label === "Verifier result" || item.label.startsWith("Verifier ")) return false;
-    return item.label.startsWith("Worker ") || item.label.startsWith("Goal decision:");
-  });
-}
-
 export function hasFreshGoalCompletionAudit(run: GoalRun): GoalCompletionCheck {
   const verifierResult = run.verifier?.lastResult;
   if (!verifierResult || verifierResult.status !== "pass") {
     return { ok: false, reason: "Goal has no passing verifier result to audit." };
   }
 
-  const postVerifierWorkerEvidence = latestNonAuditWorkerEvidenceAfterVerifier(run);
-  if (postVerifierWorkerEvidence) {
+  if (verifierStaleAfterWorker(run)) {
     return {
       ok: false,
-      reason: `Latest verifier result is stale after later Goal worker evidence: ${postVerifierWorkerEvidence.label}.`,
+      reason: "Latest verifier result is stale after a later substantive Goal worker completion.",
     };
   }
 
@@ -387,19 +356,7 @@ export function hasFreshGoalCompletionAudit(run: GoalRun): GoalCompletionCheck {
   if (audit.status !== "pass") {
     return { ok: false, reason: `Final completion audit status is ${audit.status}.` };
   }
-  if (!audit.summary.startsWith("FINAL_AUDIT_PASS")) {
-    return {
-      ok: false,
-      reason: "Final completion audit pass summary must start with FINAL_AUDIT_PASS.",
-    };
-  }
-  if (!audit.summary.includes(`verifier_checked_at=${verifierResult.checkedAt}`)) {
-    return {
-      ok: false,
-      reason: "Final completion audit pass summary must include latest verifier_checked_at.",
-    };
-  }
-  if (!audit.outputPath && !audit.summary.match(/(?:output|artifact|log|path)=\S+/)) {
+  if (!audit.outputPath) {
     return {
       ok: false,
       reason: "Final completion audit pass must reference verifier output or artifacts.",
@@ -415,14 +372,6 @@ export function hasFreshGoalCompletionAudit(run: GoalRun): GoalCompletionCheck {
     return {
       ok: false,
       reason: "Final completion audit is older than the latest verifier result.",
-    };
-  }
-
-  const newerEvidence = latestCompletionRelevantEvidenceAfterVerifier(run);
-  if (newerEvidence && newerEvidence.createdAt > audit.checkedAt) {
-    return {
-      ok: false,
-      reason: `Final completion audit is stale after later Goal evidence: ${newerEvidence.label}.`,
     };
   }
 
@@ -454,7 +403,7 @@ function buildVerifierTaskPrompt(run: GoalRun): string {
 }
 
 function buildApplyIntegrationToMainTaskPrompt(run: GoalRun): string {
-  const integrationTasks = pendingAfterDependenciesImplementationTasks(run)
+  const integrationTasks = pendingWorktreeIntegrationTasks(run)
     .map(
       (task) =>
         `- ${task.id} / ${task.title}: worktree=${task.worktree?.path ?? "unknown"}; branch=${task.worktree?.branchName ?? "unknown"}; base=${task.worktree?.baseRef ?? "unknown"}; summary=${task.lastSummary?.slice(0, 600) ?? "none"}`,
@@ -463,19 +412,9 @@ function buildApplyIntegrationToMainTaskPrompt(run: GoalRun): string {
   return (
     `Goal: ${run.goal}\n\n` +
     referencePromptSection(run.references) +
-    `Apply accepted integration worktree changes into the user's main checkout before any release, verifier, final audit, commit, or completion. This task intentionally runs in the main checkout, not a new isolated worktree.\n\n` +
-    `Integrated/after-dependencies worker outputs to apply:\n${integrationTasks || "- none recorded"}\n\n` +
-    `For each integrated worktree, inspect its candidate packet, patch, diffstat, changed files, base SHA, verification logs, and risk notes. Apply or port only accepted changes to the main checkout; reject stale/risky/unrelated artifacts with durable evidence. Preserve user work. Run targeted checks in the main checkout after applying. Record durable evidence with label "Integrated worktree applied to main" containing the source worktree(s), accepted/rejected artifacts, changed files, diffstat, commands/results, and restart-needed note. Do not commit changes in this task; the controller will schedule a separate commit task after main-checkout verification evidence exists. Do not mark the whole Goal complete.`
-  );
-}
-
-function buildCommitIntegratedGoalChangesTaskPrompt(run: GoalRun): string {
-  return (
-    `Goal: ${run.goal}\n\n` +
-    referencePromptSection(run.references) +
-    `Commit verified integrated Goal changes in the user's main checkout before final audit or completion. This task intentionally runs in the main checkout, not a new isolated worktree.\n\n` +
-    `Before committing, inspect git status and recent durable evidence to confirm accepted worktree changes were applied to main and main-checkout verification passed. Preserve user work: commit only files that belong to this Goal's accepted integrated changes, and do not stage unrelated user edits. If unrelated dirty files exist, block with exact paths and instructions instead of committing them.\n\n` +
-    `Run a targeted pre-commit check appropriate to the changed files if no fresh main-checkout verification evidence exists. Create one git commit with a concise message describing the Goal changes. Record durable evidence with label "Integrated Goal changes committed" containing the commit hash, staged/committed files, verification command/result used for confidence, and any restart-needed note. Do not mark the whole Goal complete.`
+    `Apply accepted integration worktree changes into the user's main checkout before any release, verifier, final audit, or completion. This task intentionally runs in the main checkout, not a new isolated worktree.\n\n` +
+    `Integrated candidate worker outputs to apply:\n${integrationTasks || "- none recorded"}\n\n` +
+    `For each integrated worktree, inspect its candidate packet, patch, diffstat, changed files, base SHA, verification logs, and risk notes. Apply or port only accepted changes to the main checkout; reject stale/risky/unrelated artifacts with durable evidence. Preserve user work. Run targeted checks in the main checkout after applying. Record durable evidence with label "Integrated worktree applied to main" containing the source worktree(s), accepted/rejected artifacts, changed files, diffstat, commands/results, and restart-needed note. The orchestrator will deterministically commit/confirm accepted changes after this worker exits. Do not mark the whole Goal complete.`
   );
 }
 
@@ -595,7 +534,7 @@ export function canCompleteGoalRun(run: GoalRun): GoalCompletionCheck {
   const requiredEvidence = hasRequiredGoalEvidence(run);
   if (!requiredEvidence.ok) return requiredEvidence;
 
-  if (hasIntegratedWorktreeChanges(run) && !committedIntegrationEvidence(run)) {
+  if (hasIntegratedWorktreeChanges(run) && !integrationCommitted(run)) {
     return {
       ok: false,
       reason: "Integrated Goal changes have not been committed in the main checkout.",
@@ -667,7 +606,7 @@ function buildFinalCompletionAuditTaskPrompt(run: GoalRun): string {
     `Latest verifier: status=${verifier?.status ?? "unknown"}; checkedAt=${verifier?.checkedAt ?? "unknown"}; command=${verifier?.command ?? run.verifier?.command ?? "not recorded"}; output=${verifier?.outputPath ?? "not recorded"}; summary=${verifier?.summary ?? "not recorded"}\n\n` +
     `Evidence plan:\n${evidencePlanItems || "- none"}\n\n` +
     `Recent durable evidence:\n${recentEvidence || "- none"}\n\n` +
-    `Read the referenced report/log/source artifacts and compare them with the latest verifier result. The coordinator schedules and records decisions/state; the verifier path/UI/controller executes the configured verifier command as the final pre-audit gate and records goals verify evidence; this final audit records goals audit only after comparing the latest verifier output and references, including [original-goal-prompt] and durable GOAL_PLAN evidence. If an evidence-plan item is still planned but already matched by durable verifier/source/file evidence, update that evidence_plan item to status=ready with a concise evidence summary before recording the audit; if proof is missing, create a new pending Goal task with exact fix instructions and do not pass the audit. If everything matches, record a passing completion audit with the goals tool by using action=audit, verification_status=pass, output_path matching the verifier output when available, and a summary that starts with "FINAL_AUDIT_PASS" and includes "verifier_checked_at=${verifier?.checkedAt ?? "unknown"}", "original-goal-prompt", and "GOAL_PLAN". If anything is missing, stale, contradictory, or unverified, create a new pending Goal task with exact instructions to fix it, record evidence describing the mismatch, and leave the audit failing or absent so the coordinator resumes a worker until fixed.`
+    `Read the referenced report/log/source artifacts and compare them with the latest verifier result. The coordinator schedules and records decisions/state; the verifier path/UI/controller executes the configured verifier command as the final pre-audit gate and records goals verify evidence; this final audit records goals audit only after comparing the latest verifier output and references, including [original-goal-prompt] and durable GOAL_PLAN evidence. If an evidence-plan item is still planned but already matched by durable verifier/source/file evidence, update that evidence_plan item to status=ready with a concise evidence summary before recording the audit; if proof is missing, create a new pending Goal task with exact fix instructions and do not pass the audit. If everything matches, record a passing completion audit with the goals tool using action=audit and verification_status=pass: write a plain-prose summary of which durable artifacts you compared and reference any mandatory non-prompt Goal references (and, when this Goal uses GOAL_PLAN planning, mention original-goal-prompt and GOAL_PLAN). The system auto-stamps FINAL_AUDIT_PASS and verifier_checked_at and fills output_path from the recorded verifier run, so do not transcribe the timestamp; any remaining contract gaps are returned all at once. If anything is missing, stale, contradictory, or unverified, create a new pending Goal task with exact instructions to fix it, record evidence describing the mismatch, and leave the audit failing or absent so the coordinator resumes a worker until fixed.`
   );
 }
 
@@ -868,7 +807,7 @@ export function formatGoalControllerDecision(decision: GoalControllerDecision): 
     if (decision.task.expectedChangedScope?.length) {
       parts.push(`expected_changed_scope=${decision.task.expectedChangedScope.join(",")}`);
     }
-    if (decision.task.mergeStrategy) parts.push(`merge_strategy=${decision.task.mergeStrategy}`);
+    if (decision.task.integration) parts.push(`integration=${decision.task.integration}`);
   }
   if (decision.kind === "wait" && decision.workerId) parts.push(`worker=${decision.workerId}`);
   if (decision.kind === "run_verifier") parts.push(`verifier=${decision.command}`);
@@ -891,6 +830,21 @@ export function decideGoalNextAction(
       };
     }
     return { kind: "complete", reason: completion.reason };
+  }
+
+  // Hard termination guarantee: if a run somehow keeps making decisions without
+  // completing or hitting a narrower limit, fail with a diagnosis rather than
+  // loop forever.
+  const decisionLimit = options.decisionLimit ?? DEFAULT_GOAL_DECISION_LIMIT;
+  if (goalDecisionCount(run) > decisionLimit) {
+    return {
+      kind: "terminal",
+      status: "failed",
+      reason: buildGoalFailureDiagnosis(
+        run,
+        `Goal exceeded the maximum of ${decisionLimit} controller decisions without completing; stopping to avoid an unbounded loop.`,
+      ),
+    };
   }
 
   if (goalHasBlockingPrerequisites(run)) {
@@ -1004,19 +958,9 @@ export function decideGoalNextAction(
     };
   }
 
-  if (needsIntegratedGoalChangesCommitTask(run)) {
-    return {
-      kind: "create_task",
-      title: COMMIT_INTEGRATED_GOAL_CHANGES_TASK_TITLE,
-      prompt: buildCommitIntegratedGoalChangesTaskPrompt(run),
-      reason:
-        "Verified integrated Goal changes must be committed in the user's main checkout before final audit or completion.",
-    };
-  }
-
   if (
     run.verifier?.lastResult?.status === "pass" &&
-    latestNonAuditWorkerEvidenceAfterVerifier(run) &&
+    verifierStaleAfterWorker(run) &&
     run.verifier?.command
   ) {
     return {

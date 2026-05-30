@@ -217,6 +217,86 @@ describe("Anthropic transform", () => {
       { type: "text", text: "answer" },
     ]);
   });
+
+  it("strips thinking from non-latest assistant turns but keeps the latest verbatim", () => {
+    // Anthropic only validates the latest assistant turn's thinking blocks.
+    // Keeping signed thinking on older turns makes the history fragile, so they
+    // are stripped (tool_use survives); the latest turn is preserved.
+    const messages: Message[] = [
+      { role: "user", content: "go" },
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", text: "old reasoning", signature: "sig-old" },
+          { type: "tool_call", id: "call_1", name: "read_file", args: { filePath: "a.ts" } },
+        ],
+      },
+      { role: "tool", content: [{ type: "tool_result", toolCallId: "call_1", content: "ok" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", text: "latest reasoning", signature: "sig-new" },
+          { type: "text", text: "done" },
+        ],
+      },
+    ];
+
+    const { messages: out } = toAnthropicMessages(messages);
+    const assistants = out.filter((m) => m.role === "assistant");
+    const first = assistants[0]?.content as unknown as Array<Record<string, unknown>>;
+    const last = assistants[1]?.content as unknown as Array<Record<string, unknown>>;
+
+    // Older assistant: no thinking, tool_use survives.
+    expect(first.map((b) => b.type)).toEqual(["tool_use"]);
+    // Latest assistant: thinking preserved with its signature.
+    expect(last).toEqual([
+      { type: "thinking", thinking: "latest reasoning", signature: "sig-new" },
+      { type: "text", text: "done" },
+    ]);
+  });
+
+  it("strips redacted_thinking (raw) from non-latest assistant turns", () => {
+    const messages: Message[] = [
+      { role: "user", content: "go" },
+      {
+        role: "assistant",
+        content: [
+          { type: "raw", data: { type: "redacted_thinking", data: "encrypted" } },
+          { type: "tool_call", id: "c1", name: "read_file", args: { filePath: "a" } },
+        ],
+      },
+      { role: "tool", content: [{ type: "tool_result", toolCallId: "c1", content: "ok" }] },
+      { role: "assistant", content: [{ type: "text", text: "done" }] },
+    ];
+
+    const { messages: out } = toAnthropicMessages(messages);
+    const first = out.filter((m) => m.role === "assistant")[0]?.content as unknown as Array<
+      Record<string, unknown>
+    >;
+    expect(first.map((b) => b.type)).toEqual(["tool_use"]);
+  });
+
+  it("downgrades a whitespace-only signature to a text block (interrupted-stream guard)", () => {
+    // A signature_delta that never fully arrived can leave a blank/whitespace
+    // signature. Sending it as a real thinking block triggers Anthropic's
+    // "cannot be modified" rejection, so it must become plain text.
+    const messages: Message[] = [
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", text: "partial reasoning", signature: "   " },
+          { type: "text", text: "answer" },
+        ],
+      },
+    ];
+
+    const { messages: out } = toAnthropicMessages(messages);
+    const content = out[0]?.content as unknown as Array<Record<string, unknown>>;
+    expect(content).toEqual([
+      { type: "text", text: "partial reasoning" },
+      { type: "text", text: "answer" },
+    ]);
+  });
 });
 
 describe("OpenAI transform", () => {

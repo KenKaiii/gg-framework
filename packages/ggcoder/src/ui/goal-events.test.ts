@@ -338,7 +338,7 @@ describe("goal event formatting", () => {
           dependsOn: ["task-setup"],
           parallelGroup: "frontend",
           expectedChangedScope: ["packages/ggcoder/src/ui/**"],
-          mergeStrategy: "after_dependencies",
+          integration: "candidate",
         },
       ],
       evidence: [
@@ -374,7 +374,7 @@ describe("goal event formatting", () => {
             dependsOn: ["task-setup"],
             parallelGroup: "frontend",
             expectedChangedScope: ["packages/ggcoder/src/ui/**"],
-            mergeStrategy: "after_dependencies",
+            integration: "candidate",
           }),
         ],
       }),

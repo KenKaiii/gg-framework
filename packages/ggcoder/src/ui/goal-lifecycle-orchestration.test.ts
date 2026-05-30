@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { GoalRun, GoalTask } from "../core/goal-store.js";
 import {
   APPLY_INTEGRATION_TO_MAIN_TASK_TITLE,
-  COMMIT_INTEGRATED_GOAL_CHANGES_TASK_TITLE,
   canCompleteGoalRun,
   decideGoalNextAction,
 } from "../core/goal-controller.js";
@@ -158,9 +157,8 @@ function applyCompletionAudit(run: GoalRun): GoalRun {
 }
 
 describe("/goal UI orchestration lifecycle", () => {
-  it("runs integration apply and commit tasks in the main checkout", () => {
+  it("runs integration apply tasks in the main checkout", () => {
     expect(shouldRunGoalTaskInMainCheckout(APPLY_INTEGRATION_TO_MAIN_TASK_TITLE)).toBe(true);
-    expect(shouldRunGoalTaskInMainCheckout(COMMIT_INTEGRATED_GOAL_CHANGES_TASK_TITLE)).toBe(true);
     expect(shouldRunGoalTaskInMainCheckout("Implement isolated feature")).toBe(false);
   });
 

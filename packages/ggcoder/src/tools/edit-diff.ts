@@ -1,17 +1,31 @@
 import { diffLines } from "diff";
 
 /**
- * Normalize text for fuzzy matching:
- * - Strip trailing whitespace per line
- * - Replace smart quotes with straight quotes
- * - Replace unicode dashes with hyphens
+ * Normalize text for fuzzy matching. Layered so each transform handles a
+ * different class of model/copy-paste drift:
+ * - NFKC: the agnostic layer — folds compatibility variants generically
+ *   (fullwidth/halfwidth forms, ligatures like ﬁ→fi, compatibility ideographs,
+ *   and most exotic spaces such as NBSP/ideographic → ASCII) without enumerating
+ *   codepoints. Matches the proven approach in the sibling edit tool.
+ * - Strip zero-width / format chars NFKC leaves behind (ZWSP/ZWJ/ZWNJ/WJ/BOM).
+ * - Map the few unicode spaces NFKC doesn't fold → regular space.
+ * - Strip trailing whitespace per line.
+ * - Smart quotes and dashes: Unicode keeps these semantically distinct (no NFKC
+ *   decomposition), so they must be enumerated — these are the only inherently
+ *   non-agnostic substitutions.
+ *
+ * Only affects MATCHING (locating old_text); the bytes written are the model's
+ * new_text verbatim, so normalization can never corrupt the file.
  */
 function normalizeForFuzzyMatch(text: string): string {
   return text
+    .normalize("NFKC")
+    .replace(/\u200B|\u200C|\u200D|\u2060|\uFEFF/g, "") // zero-width space/joiner/non-joiner, word-joiner, BOM
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ") // unicode spaces -> space
     .replace(/[^\S\n]+$/gm, "") // trailing whitespace per line
-    .replace(/[\u2018\u2019]/g, "'") // smart single quotes
-    .replace(/[\u201C\u201D]/g, '"') // smart double quotes
-    .replace(/[\u2013\u2014]/g, "-"); // en/em dashes
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'") // smart single quotes
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"') // smart double quotes
+    .replace(/[\u2010-\u2015\u2212]/g, "-"); // hyphen, dashes, horizontal bar, minus
 }
 
 /**
@@ -27,8 +41,18 @@ function normalizeForFuzzyMatch(text: string): string {
 function matchButForLeadingWhitespace(wholeLines: string[], partLines: string[]): string | null {
   if (wholeLines.length !== partLines.length) return null;
 
+  // Compare line CONTENT through the fuzzy normalizer (quotes, dashes, unicode
+  // spaces, trailing whitespace) so indentation drift combined with any of those
+  // — a very common pairing — still matches. Leading-whitespace deltas are
+  // computed from the raw lines below so the file's real indentation is what
+  // gets re-applied to new_text.
   for (let i = 0; i < wholeLines.length; i++) {
-    if (wholeLines[i].trimStart() !== partLines[i].trimStart()) return null;
+    if (
+      normalizeForFuzzyMatch(wholeLines[i]).trimStart() !==
+      normalizeForFuzzyMatch(partLines[i]).trimStart()
+    ) {
+      return null;
+    }
   }
 
   const prefixes = new Set<string>();
@@ -208,18 +232,57 @@ function commonSuffixLength(a: string, b: string): number {
 }
 
 /**
- * Models often add a spurious leading blank line to `old_text` (e.g. when
+ * Models often add spurious leading blank line(s) to `old_text` (e.g. when
  * copying a code block out of fenced markdown). Aider noticed this back at
- * its issue #25. If the first line is blank, return the same text minus that
- * line so the caller can retry the match. Returns null when no leading blank
- * line exists, so callers can cheaply skip the retry.
+ * its issue #25. Strips ALL consecutive leading blank/whitespace-only lines so
+ * the caller can retry the match — one strip wasn't enough when a model prepends
+ * several blank lines combined with other drift. Returns null when there is no
+ * leading blank line, so callers can cheaply skip the retry.
  */
 export function stripLeadingBlankLine(text: string): string | null {
   if (!text) return null;
-  const newlineIdx = text.indexOf("\n");
-  if (newlineIdx === -1) return null;
-  if (text.slice(0, newlineIdx).trim() !== "") return null;
-  return text.slice(newlineIdx + 1);
+  let result = text;
+  let stripped = false;
+  while (true) {
+    const newlineIdx = result.indexOf("\n");
+    if (newlineIdx === -1) break;
+    if (result.slice(0, newlineIdx).trim() !== "") break;
+    result = result.slice(newlineIdx + 1);
+    stripped = true;
+  }
+  return stripped ? result : null;
+}
+
+/**
+ * Symmetric to `stripLeadingBlankLine`: strips ALL trailing blank/whitespace-only
+ * lines. Models commonly append a stray newline or blank line to `old_text`
+ * (e.g. a trailing newline left in when copying a block). Returns null when
+ * there is no trailing blank line.
+ */
+export function stripTrailingBlankLine(text: string): string | null {
+  if (!text) return null;
+  let result = text;
+  let stripped = false;
+  while (true) {
+    const newlineIdx = result.lastIndexOf("\n");
+    if (newlineIdx === -1) break;
+    if (result.slice(newlineIdx + 1).trim() !== "") break;
+    result = result.slice(0, newlineIdx);
+    stripped = true;
+  }
+  return stripped ? result : null;
+}
+
+/**
+ * Strip spurious blank lines from BOTH edges of `old_text`. Returns null when
+ * neither edge had a blank line (so callers can cheaply skip the retry).
+ */
+export function stripBlankEdges(text: string): string | null {
+  const lead = stripLeadingBlankLine(text);
+  const afterLead = lead ?? text;
+  const trail = stripTrailingBlankLine(afterLead);
+  if (lead === null && trail === null) return null;
+  return trail ?? afterLead;
 }
 
 /**

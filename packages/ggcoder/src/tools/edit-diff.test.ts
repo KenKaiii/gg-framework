@@ -6,6 +6,8 @@ import {
   findClosestSnippet,
   findOccurrenceLines,
   stripLeadingBlankLine,
+  stripTrailingBlankLine,
+  stripBlankEdges,
   applyDotdotdots,
   applyMissingLeadingWhitespace,
 } from "./edit-diff.js";
@@ -323,6 +325,11 @@ describe("stripLeadingBlankLine", () => {
     expect(stripLeadingBlankLine("\nfoo\nbar")).toBe("foo\nbar");
   });
 
+  it("strips multiple consecutive leading blank lines", () => {
+    expect(stripLeadingBlankLine("\n\n\nfoo\nbar")).toBe("foo\nbar");
+    expect(stripLeadingBlankLine("\n  \n\tfoo")).toBe("\tfoo");
+  });
+
   it("strips a leading whitespace-only line", () => {
     expect(stripLeadingBlankLine("   \nfoo")).toBe("foo");
   });
@@ -333,6 +340,38 @@ describe("stripLeadingBlankLine", () => {
 
   it("returns null when the text is a single line", () => {
     expect(stripLeadingBlankLine("only one line")).toBeNull();
+  });
+});
+
+describe("stripTrailingBlankLine", () => {
+  it("strips a single trailing newline", () => {
+    expect(stripTrailingBlankLine("foo\nbar\n")).toBe("foo\nbar");
+  });
+
+  it("strips multiple trailing blank/whitespace-only lines", () => {
+    expect(stripTrailingBlankLine("foo\nbar\n\n\n")).toBe("foo\nbar");
+    expect(stripTrailingBlankLine("foo\n  \n\t\n")).toBe("foo");
+  });
+
+  it("returns null when there is no trailing blank line", () => {
+    expect(stripTrailingBlankLine("foo\nbar")).toBeNull();
+    expect(stripTrailingBlankLine("single")).toBeNull();
+    expect(stripTrailingBlankLine("")).toBeNull();
+  });
+});
+
+describe("stripBlankEdges", () => {
+  it("strips spurious blank lines from both edges", () => {
+    expect(stripBlankEdges("\n\n  code();\n  more();\n\n")).toBe("  code();\n  more();");
+  });
+
+  it("strips only the edge that has blanks", () => {
+    expect(stripBlankEdges("\nfoo\nbar")).toBe("foo\nbar");
+    expect(stripBlankEdges("foo\nbar\n\n")).toBe("foo\nbar");
+  });
+
+  it("returns null when neither edge has a blank line", () => {
+    expect(stripBlankEdges("foo\nbar")).toBeNull();
   });
 });
 

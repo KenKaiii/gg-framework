@@ -227,14 +227,14 @@ describe("goal store persistence", () => {
       dependsOn: ["task-a"],
       parallelGroup: "verify",
       expectedChangedScope: ["packages/ggcoder/src/core/goal-store.ts"],
-      mergeStrategy: "after_dependencies",
+      integration: "candidate",
     });
     expect(appendedRun?.tasks.map((item) => item.id)).toEqual(["task-a", "task-b"]);
     expect(appendedRun?.tasks[1]).toMatchObject({
       dependsOn: ["task-a"],
       parallelGroup: "verify",
       expectedChangedScope: ["packages/ggcoder/src/core/goal-store.ts"],
-      mergeStrategy: "after_dependencies",
+      integration: "candidate",
     });
   });
 
@@ -510,5 +510,125 @@ describe("goal store persistence", () => {
     expect(counts.passed).toBe(1);
     expect(counts.failed).toBe(1);
     expect(counts.active).toBe(1);
+  });
+
+  it("preserves every interleaved mutation without lost updates", async () => {
+    await upsertGoalRun(tmpProject, {
+      id: "race",
+      title: "Race",
+      goal: "Concurrent mutations must not clobber each other",
+      status: "running",
+    });
+    await updateGoalTask(tmpProject, "race", "task-a", {
+      id: "task-a",
+      title: "Worker task",
+      prompt: "Do work",
+      status: "running",
+      attempts: 0,
+    });
+
+    // Interleave evidence appends, a decision, and a task update the way the
+    // parent orchestrator and a worker subprocess would race in a real run.
+    await Promise.all([
+      ...Array.from({ length: 12 }, (_unused, index) =>
+        appendGoalEvidence(tmpProject, "race", {
+          kind: "log",
+          label: `Concurrent evidence ${index}`,
+          content: `entry-${index}`,
+        }),
+      ),
+      appendGoalDecision(tmpProject, "race", { kind: "start_worker", reason: "racing" }),
+      updateGoalTask(tmpProject, "race", "task-a", { status: "done", attempts: 1 }),
+    ]);
+
+    const run = (await loadGoalRuns(tmpProject)).find((item) => item.id === "race");
+    const labels = new Set((run?.evidence ?? []).map((item) => item.label));
+    for (let index = 0; index < 12; index += 1) {
+      expect(labels.has(`Concurrent evidence ${index}`)).toBe(true);
+    }
+    expect(labels.has("Goal decision: start_worker")).toBe(true);
+    expect(run?.tasks[0]).toMatchObject({ id: "task-a", status: "done", attempts: 1 });
+  });
+
+  it("carries typed integration and lastSubstantiveWorkerAt through persistence", async () => {
+    await upsertGoalRun(tmpProject, {
+      id: "typed-state",
+      title: "Typed state",
+      goal: "Persist typed integration state",
+      integration: {
+        status: "committed",
+        headSha: "abc1234",
+        baseRef: "base-sha",
+        files: ["src/x.ts"],
+        updatedAt: "2024-01-01T00:00:05.000Z",
+      },
+      lastSubstantiveWorkerAt: "2024-01-01T00:00:04.000Z",
+    });
+    const run = (await loadGoalRuns(tmpProject)).find((item) => item.id === "typed-state");
+    expect(run?.integration).toEqual({
+      status: "committed",
+      headSha: "abc1234",
+      baseRef: "base-sha",
+      files: ["src/x.ts"],
+      updatedAt: "2024-01-01T00:00:05.000Z",
+    });
+    expect(run?.lastSubstantiveWorkerAt).toBe("2024-01-01T00:00:04.000Z");
+  });
+
+  it("infers typed integration and lastSubstantiveWorkerAt from legacy evidence labels", async () => {
+    // A run persisted before typed integration/lastSubstantiveWorkerAt existed:
+    // only evidence labels record what happened. The normalizer migrates it once.
+    const dir = projectDir(tmpProject);
+    await fs.mkdir(dir, { recursive: true });
+    const legacyRun = {
+      id: "legacy",
+      title: "Legacy run",
+      goal: "Legacy goal",
+      status: "ready",
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+      projectPath: path.resolve(tmpProject),
+      successCriteria: [],
+      prerequisites: [],
+      harness: [],
+      evidencePlan: [],
+      references: [],
+      tasks: [],
+      evidence: [
+        {
+          id: "worker-done",
+          kind: "log",
+          label: "Worker abc123 done",
+          content: "impl complete",
+          createdAt: "2024-01-01T00:00:02.000Z",
+        },
+        {
+          id: "applied",
+          kind: "summary",
+          label: "Integrated worktree applied to main",
+          content: "applied",
+          createdAt: "2024-01-01T00:00:03.000Z",
+        },
+        {
+          id: "committed",
+          kind: "summary",
+          label: "Integrated Goal changes committed",
+          content: "committed",
+          createdAt: "2024-01-01T00:00:04.000Z",
+        },
+      ],
+      blockers: [],
+    };
+    await fs.writeFile(
+      path.join(dir, "goals.json"),
+      JSON.stringify([legacyRun], null, 2) + "\n",
+      "utf-8",
+    );
+    const run = (await loadGoalRuns(tmpProject)).find((item) => item.id === "legacy");
+    expect(run?.integration).toEqual({
+      status: "committed",
+      updatedAt: "2024-01-01T00:00:04.000Z",
+    });
+    expect(run?.lastSubstantiveWorkerAt).toBe("2024-01-01T00:00:02.000Z");
   });
 });

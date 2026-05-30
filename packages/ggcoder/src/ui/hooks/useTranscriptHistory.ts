@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DISPLAY_ITEM_CUSTOM_KIND, type SessionManager } from "../../core/session-manager.js";
 import { compactHistory } from "../item-helpers.js";
 import { trimFlushedItems } from "../live-item-flush.js";
@@ -44,7 +44,7 @@ export interface UseTranscriptHistoryResult<TItem extends TranscriptHistoryItem>
   streamedAssistantFlushRef: React.RefObject<{ flushedChars: number; text: string }>;
   printHistoryItems: (items: readonly TItem[], options?: { force?: boolean }) => void;
   queueFlush: (items: TItem[]) => void;
-  finalizeSubmittedUserItem: (item: TItem) => void;
+  finalizeSubmittedUserItem: (item: TItem, deferredLiveItems?: readonly TItem[]) => void;
   clearPendingHistory: () => void;
 }
 
@@ -64,6 +64,7 @@ export function useTranscriptHistory<TItem extends TranscriptHistoryItem = Compl
 }: UseTranscriptHistoryOptions<TItem>): UseTranscriptHistoryResult<TItem> {
   const terminalHistoryContextRef = useRef<TerminalHistoryContext>(terminalHistoryContext);
   const pendingHistoryFlushRef = useRef<TItem[]>([]);
+  const drainedHistoryFlushRef = useRef<TItem[]>([]);
   const persistedDisplayItemIdsRef = useRef<Set<string>>(new Set());
   const streamedAssistantFlushRef = useRef<{ flushedChars: number; text: string }>({
     flushedChars: 0,
@@ -122,13 +123,25 @@ export function useTranscriptHistory<TItem extends TranscriptHistoryItem = Compl
     printHistoryItems(history);
   }, [history, printHistoryItems]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const flushed = pendingHistoryFlushRef.current;
     if (flushed.length === 0) return;
+    // Keep the visible row continuous during finalization: write the completed
+    // transcript into terminal history while Ink still knows about the current
+    // live frame, then remove those live rows. Doing this in the opposite order
+    // collapses the live frame to the controls first, so a large final history
+    // write scrolls underneath the footer/input and visibly pushes them upward.
     pendingHistoryFlushRef.current = [];
+    drainedHistoryFlushRef.current = flushed;
     printHistoryItems(flushed);
     const flushedIds = new Set(flushed.map((item) => item.id));
     setLiveItems((prev) => prev.filter((item) => !flushedIds.has(item.id)));
+  }, [historyFlushGeneration, printHistoryItems, setLiveItems]);
+
+  useEffect(() => {
+    const flushed = drainedHistoryFlushRef.current;
+    if (flushed.length === 0) return;
+    drainedHistoryFlushRef.current = [];
     setHistory((prev) => {
       const existingIds = new Set(prev.map((item) => item.id));
       const nextItems = flushed.filter((item) => !existingIds.has(item.id));
@@ -137,21 +150,22 @@ export function useTranscriptHistory<TItem extends TranscriptHistoryItem = Compl
       if (sessionStore) sessionStore.history = next;
       return next;
     });
-  }, [historyFlushGeneration, printHistoryItems, sessionStore, setHistory, setLiveItems]);
+  }, [historyFlushGeneration, printHistoryItems, sessionStore, setHistory]);
 
   const finalizeSubmittedUserItem = useCallback(
-    (item: TItem) => {
+    (item: TItem, deferredLiveItems: readonly TItem[] = []) => {
       streamedAssistantFlushRef.current = { flushedChars: 0, text: "" };
-      const finalizedItems = [item];
+      const priorLiveItems = trimFlushItems([...deferredLiveItems]);
+      const finalizedItems = [...priorLiveItems, item];
       queueFlush(finalizedItems);
-      // Print synchronously so the submitted prompt is anchored in terminal
-      // scrollback before assistant streaming starts. The queued flush still
-      // persists it and updates React history; the printer dedupes by id when
+      // Print synchronously so deferred final assistant output is anchored in
+      // scrollback before the next prompt clears the live frame. The queued flush
+      // still persists and updates React history; the printer dedupes by id when
       // the effect drains the queue.
       printHistoryItems(finalizedItems);
       setLiveItems([]);
     },
-    [printHistoryItems, queueFlush, setLiveItems],
+    [printHistoryItems, queueFlush, setLiveItems, trimFlushItems],
   );
 
   const clearPendingHistory = useCallback(() => {

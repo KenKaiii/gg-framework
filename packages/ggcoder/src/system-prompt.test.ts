@@ -242,7 +242,7 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("depends_on");
     expect(prompt).toContain("parallel_group");
     expect(prompt).toContain("expected_changed_scope");
-    expect(prompt).toContain("merge_strategy");
+    expect(prompt).toContain("integration");
     expect(prompt).not.toContain("## Approved Plan");
     expect(prompt).not.toContain("## Plan Mode (ACTIVE)");
     expect(prompt).not.toContain("Restricted: bash, edit, write except .gg/plans/");

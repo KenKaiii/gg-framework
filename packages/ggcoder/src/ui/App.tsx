@@ -1583,15 +1583,14 @@ export function App(props: AppProps) {
             setDoneStatus({ durationMs, toolsUsed, verb: pickDurationVerb(toolsUsed) });
             playNotificationSound();
           }
-          // Finalize rows. Do NOT clear the live area here — keep the items
-          // mounted and let the flush drain effect write them to scrollback
-          // FIRST and only then remove them from the live area. Clearing live
-          // up front (return []) erases the rows a frame before the sink writes
-          // them back into scrollback, which makes each finalized item blink
-          // out and the TUI jump as the agent finishes. Write-then-clear keeps
-          // every row continuously on screen (live → scrollback), matching how
-          // Ink's <Static> moves a finalized item in a single atomic frame.
-          if (doneDecision.flushLiveItems) {
+          // Keep the final assistant response mounted in the live frame after a
+          // normal chat turn finishes. Moving a large final response to terminal
+          // history at this moment writes many scrollback rows while the footer is
+          // still mounted, which visibly pushes the input/footer upward. The final
+          // response is flushed on the next submit before the new prompt is shown.
+          // Non-chat overlay transitions still flush so setup/plan/goal output
+          // does not vanish during remounts.
+          if (doneDecision.flushLiveItems && !doneDecision.showDoneStatus) {
             setLiveItems((prev) => {
               if (prev.length > 0) queueFlush(prev);
               return prev;
@@ -2150,7 +2149,7 @@ export function App(props: AppProps) {
         planStepsRef.current = [];
         setPlanSteps([]);
       }
-      finalizeSubmittedUserItem(userItem);
+      finalizeSubmittedUserItem(userItem, liveItems);
 
       // Open a per-turn checkpoint capturing the conversation position right
       // before this exchange, so /rewind can restore pre-turn code/chat state.
@@ -2185,6 +2184,7 @@ export function App(props: AppProps) {
       compactConversation,
       currentModel,
       finalizeSubmittedUserItem,
+      liveItems,
       props.cwd,
       props.onSlashCommand,
       props.resetUI,
@@ -2435,8 +2435,8 @@ export function App(props: AppProps) {
       item,
       index,
       items,
-      pendingHistoryFlushLastItem: pendingHistoryFlushRef.current.at(-1),
-      historyLastItem: history.at(-1),
+      pendingHistoryFlushLastItem: index === 0 ? pendingHistoryFlushRef.current.at(-1) : undefined,
+      historyLastItem: index === 0 ? history.at(-1) : undefined,
       version: props.version,
       currentModel,
       currentProvider,

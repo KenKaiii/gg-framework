@@ -6,6 +6,7 @@ import {
   classifyOverload,
   extractContextOverflowDetails,
   isContextOverflow,
+  isThinkingBlockError,
   isUsageLimitError,
 } from "./agent-loop.js";
 import type { AgentEvent, AgentResult, AgentTool } from "./types.js";
@@ -84,6 +85,39 @@ async function collectLoop(
 }
 
 // ── Tests ──────────────────────────────────────────────────
+
+describe("isThinkingBlockError", () => {
+  it("detects the latest-assistant-message modification error", () => {
+    expect(
+      isThinkingBlockError(
+        new Error(
+          "messages.3.content.257: `thinking` or `redacted_thinking` blocks in the latest " +
+            "assistant message cannot be modified. These blocks must remain as they were " +
+            "in the original response.",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("detects an invalid thinking signature error", () => {
+    expect(isThinkingBlockError(new Error("Invalid `signature` in `thinking` block"))).toBe(true);
+  });
+
+  it("detects a thinking block type/position error", () => {
+    expect(
+      isThinkingBlockError(
+        new Error("Expected `thinking` or `redacted_thinking`, but found `text`"),
+      ),
+    ).toBe(true);
+  });
+
+  it("returns false for unrelated errors and non-Error values", () => {
+    expect(isThinkingBlockError(new Error("tool_use ids found without tool_result"))).toBe(false);
+    expect(isThinkingBlockError(new Error("rate limit exceeded"))).toBe(false);
+    expect(isThinkingBlockError("cannot be modified")).toBe(false);
+    expect(isThinkingBlockError(null)).toBe(false);
+  });
+});
 
 describe("isContextOverflow", () => {
   it("detects Anthropic overflow error", () => {

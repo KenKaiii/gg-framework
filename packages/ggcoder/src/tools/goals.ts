@@ -13,6 +13,7 @@ import {
   appendGoalDecision,
   appendGoalEvidence,
   createGoalEvidence,
+  foldGoalTaskIntegration,
   formatGoalBlockingPrerequisiteList,
   formatGoalBlockingPrerequisites,
   getActiveGoalRun,
@@ -27,10 +28,11 @@ import {
   type GoalReference,
   type GoalRun,
   type GoalRunStatus,
-  type GoalTaskMergeStrategy,
+  type GoalTaskIntegration,
   type GoalTaskStatus,
   type GoalVerificationStatus,
 } from "../core/goal-store.js";
+import { removeGoalRunWorktrees } from "../core/goal-worktree.js";
 import { referencesRequiringAcknowledgement } from "../core/goal-references.js";
 import { getActiveGoalMode, type GoalMode } from "../core/runtime-mode.js";
 
@@ -160,13 +162,26 @@ const GoalsParams = z.object({
     .array(z.string())
     .optional()
     .describe("Expected file paths or globs this task is allowed or expected to change"),
+  integration: z
+    .enum(["candidate", "manual"])
+    .optional()
+    .describe(
+      "Whether this task's committed candidate should be auto-integrated into main or handled manually",
+    ),
   merge_strategy: z
     .enum(["parallel_candidate", "after_dependencies", "serial", "manual"])
     .optional()
-    .describe("How the coordinator should integrate this task's candidate changes"),
+    .describe(
+      "Deprecated legacy integration field; use integration='candidate' or integration='manual'. Legacy non-manual values fold to candidate.",
+    ),
   worker_id: z.string().optional().describe("Worker id associated with a task"),
   attempts: z.number().int().min(0).optional().describe("Task attempt count"),
-  summary: z.string().optional().describe("Short summary or verification note"),
+  summary: z
+    .string()
+    .optional()
+    .describe(
+      "Short summary or verification note. For action='audit' with verification_status='pass', just describe in plain prose which durable artifacts you compared and reference any mandatory non-prompt Goal references: the system auto-stamps FINAL_AUDIT_PASS and verifier_checked_at and fills output_path from the recorded verifier run, so do NOT transcribe the timestamp yourself. Any remaining contract gaps are returned all at once.",
+    ),
   evidence_kind: z
     .enum(["log", "command", "screenshot", "file", "summary"])
     .optional()
@@ -248,14 +263,18 @@ function asTaskStatus(value: string | undefined): GoalTaskStatus {
   return "pending";
 }
 
-function asTaskMergeStrategy(value: string | undefined): GoalTaskMergeStrategy | undefined {
+function asTaskIntegration(
+  integration: string | undefined,
+  legacyMergeStrategy: string | undefined,
+): GoalTaskIntegration | undefined {
+  if (integration === "candidate" || integration === "manual") return integration;
   if (
-    value === "parallel_candidate" ||
-    value === "after_dependencies" ||
-    value === "serial" ||
-    value === "manual"
+    legacyMergeStrategy === "parallel_candidate" ||
+    legacyMergeStrategy === "after_dependencies" ||
+    legacyMergeStrategy === "serial" ||
+    legacyMergeStrategy === "manual"
   ) {
-    return value;
+    return foldGoalTaskIntegration(legacyMergeStrategy);
   }
   return undefined;
 }
@@ -360,7 +379,7 @@ function resolveTaskDependencyIds(
     if (matches.length === 0) {
       return {
         ok: false,
-        error: `depends_on entry "${trimmed}" does not match an existing task id/prefix. Add dependency tasks first, then reference their id.`,
+        error: `depends_on entry "${trimmed}" does not match an existing task id, id prefix, or exact title. Add the dependency task first (its id is returned when you add it), then reference that id or its exact title — not a parallel_group name.`,
       };
     }
     if (matches.length > 1) {
@@ -489,6 +508,27 @@ function statusAfterSetupCheck(run: GoalRun, setupBlockers: readonly string[]): 
   return goalHasBlockingPrerequisites(run) ? "blocked" : "ready";
 }
 
+/**
+ * Stamp the structured tokens the system already owns into a pass-audit summary
+ * so the agent never has to transcribe them: an explicit FINAL_AUDIT_PASS marker
+ * and the exact verifier_checked_at timestamp from the recorded verifier run.
+ */
+function normalizePassAuditSummary(verifierCheckedAt: string, summary: string): string {
+  let next = summary.trim() || "Final completion audit passed.";
+  if (!next.startsWith("FINAL_AUDIT_PASS")) next = `FINAL_AUDIT_PASS ${next}`;
+  if (!next.includes(`verifier_checked_at=${verifierCheckedAt}`)) {
+    next = `${next} verifier_checked_at=${verifierCheckedAt}`;
+  }
+  return next;
+}
+
+/**
+ * Validate a pass-audit summary against the completion contract. Returns every
+ * unmet requirement at once (not one at a time) so the caller can fix them in a
+ * single follow-up instead of round-tripping per rule. Expects the summary to
+ * already be normalized via {@link normalizePassAuditSummary}, so in practice
+ * only the semantic requirements (reference acknowledgement, GOAL_PLAN) remain.
+ */
 function validatePassAuditContract(
   run: GoalRun,
   summary: string,
@@ -496,13 +536,15 @@ function validatePassAuditContract(
 ): string | undefined {
   const verifier = run.verifier?.lastResult;
   if (!verifier) return "cannot audit completion before a verifier result exists.";
-  if (!summary.startsWith("FINAL_AUDIT_PASS"))
-    return "pass audit summary must start with FINAL_AUDIT_PASS.";
+  const violations: string[] = [];
+  if (!summary.startsWith("FINAL_AUDIT_PASS")) {
+    violations.push("summary must start with FINAL_AUDIT_PASS");
+  }
   if (!summary.includes(`verifier_checked_at=${verifier.checkedAt}`)) {
-    return `pass audit summary must include verifier_checked_at=${verifier.checkedAt}.`;
+    violations.push(`summary must include verifier_checked_at=${verifier.checkedAt}`);
   }
   if (!outputPath && !summary.match(/(?:output|artifact|log|path)=\S+/)) {
-    return "pass audit must include output_path or an output/artifact/log/path reference in the summary.";
+    violations.push("provide output_path, or reference an output/artifact/log/path in the summary");
   }
   const contractFields = [
     run.goal,
@@ -514,15 +556,18 @@ function validatePassAuditContract(
   ].join("\n");
   const requiresReliabilityContract = /GOAL_PLAN/.test(contractFields);
   if (requiresReliabilityContract && !summary.includes("original-goal-prompt")) {
-    return "pass audit summary must explicitly reference original-goal-prompt.";
+    violations.push("summary must explicitly reference original-goal-prompt");
   }
   if (requiresReliabilityContract && !summary.includes("GOAL_PLAN")) {
-    return "pass audit summary must explicitly reference durable GOAL_PLAN evidence.";
+    violations.push("summary must explicitly reference durable GOAL_PLAN evidence");
   }
   if (!referencesAcknowledged(run.references, [summary, outputPath ?? ""])) {
-    return "pass audit summary or output_path must explicitly reference every non-prompt Goal reference id, label, URL, or path.";
+    violations.push(
+      "summary or output_path must explicitly reference every non-prompt Goal reference id, label, URL, or path",
+    );
   }
-  return undefined;
+  if (violations.length === 0) return undefined;
+  return violations.map((violation, index) => `(${index + 1}) ${violation}`).join("; ");
 }
 
 async function resolveRun(cwd: string, id?: string): Promise<GoalRun | null> {
@@ -761,7 +806,7 @@ export function createGoalsTool(
             }
           }
           const taskStatus = asTaskStatus(args.task_status);
-          const mergeStrategy = asTaskMergeStrategy(args.merge_strategy);
+          const taskIntegration = asTaskIntegration(args.integration, args.merge_strategy);
           const resolvedDependencies = resolveTaskDependencyIds(run, args.depends_on, taskId);
           if (!resolvedDependencies.ok) return `Error: ${resolvedDependencies.error}`;
           const updated = await updateGoalTask(storageCwd, run.id, taskId, {
@@ -776,7 +821,7 @@ export function createGoalsTool(
             ...(args.expected_changed_scope
               ? { expectedChangedScope: args.expected_changed_scope }
               : {}),
-            ...(mergeStrategy ? { mergeStrategy } : {}),
+            ...(taskIntegration ? { integration: taskIntegration } : {}),
             ...(args.summary ? { lastSummary: args.summary } : {}),
           });
           const recovered = updated
@@ -798,7 +843,7 @@ export function createGoalsTool(
             (task) =>
               task.id === existingTask?.id || task.id === taskId || task.id.startsWith(taskId),
           );
-          return `Goal task ${taskExisted ? "updated" : "added"}: "${updatedTask?.title ?? args.task_title ?? taskId}".`;
+          return `Goal task ${taskExisted ? "updated" : "added"}: "${updatedTask?.title ?? args.task_title ?? taskId}" (id: ${updatedTask?.id ?? taskId}). Reference this id (or the exact title) in another task's depends_on.`;
         }
 
         case "evidence": {
@@ -983,12 +1028,16 @@ export function createGoalsTool(
             return "Error: cannot audit completion before a passing verifier result exists.";
           }
           const auditStatus = asVerificationStatus(args.verification_status);
-          const auditSummary = args.summary ?? "Final completion audit recorded.";
           const auditOutputPath = args.output_path ?? verifierResult.outputPath;
+          let auditSummary = args.summary ?? "Final completion audit recorded.";
           if (auditStatus === "pass") {
+            // Auto-stamp the tokens the system already owns, then report any
+            // remaining contract gaps all at once instead of one per call.
+            auditSummary = normalizePassAuditSummary(verifierResult.checkedAt, auditSummary);
             const contractError = validatePassAuditContract(run, auditSummary, auditOutputPath);
-            if (contractError)
-              return `Error: invalid final completion audit pass contract: ${contractError}`;
+            if (contractError) {
+              return `Error: final completion audit pass is missing required proof: ${contractError}.`;
+            }
           }
           const completionAudit = {
             status: auditStatus,
@@ -1125,6 +1174,13 @@ export function createGoalsTool(
             status = "passed";
           }
           const updated = await upsertGoalRun(storageCwd, { ...run, status });
+          if (status === "passed") {
+            try {
+              await removeGoalRunWorktrees(storageCwd, updated);
+            } catch {
+              // Worktree cleanup is best-effort hygiene; never block completion.
+            }
+          }
           return `Goal "${updated.title}" is now ${updated.status}.`;
         }
       }

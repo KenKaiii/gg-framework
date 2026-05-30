@@ -375,7 +375,9 @@ describe("goals tool state guards", () => {
       );
 
       const run = await getGoalRun(runProject, "099c9f7f");
-      expect(taskResult).toBe('Goal task added: "Worker callback".');
+      expect(taskResult).toBe(
+        'Goal task added: "Worker callback" (id: worker-task). Reference this id (or the exact title) in another task\'s depends_on.',
+      );
       expect(evidenceResult).toBe('Evidence added to "Explicit run".');
       expect(run?.tasks).toEqual(
         expect.arrayContaining([
@@ -464,7 +466,7 @@ describe("goals tool state guards", () => {
     expect(missingReferenceResult).toContain("task_prompt must explicitly include");
     expect(missingReferenceResult).toContain("repo-reference, doc-reference");
     expect(referencedTaskResult).toBe(
-      'Goal task added: "Implement UI from repo-reference and doc-reference".',
+      'Goal task added: "Implement UI from repo-reference and doc-reference" (id: reference-task). Reference this id (or the exact title) in another task\'s depends_on.',
     );
     expect(run?.status).toBe("ready");
     expect(run?.references).toEqual(
@@ -630,7 +632,7 @@ describe("goals tool state guards", () => {
       depends_on: ["schema-task"],
       parallel_group: "frontend",
       expected_changed_scope: ["packages/ggcoder/src/ui/**"],
-      merge_strategy: "after_dependencies",
+      integration: "candidate",
     });
     const updateResult = await executeGoals({
       action: "task",
@@ -641,8 +643,12 @@ describe("goals tool state guards", () => {
     });
 
     const updated = await getGoalRun(tmpProject, "dag-goal");
-    expect(addResult).toBe('Goal task added: "Build UI candidate".');
-    expect(updateResult).toBe('Goal task updated: "Build UI candidate".');
+    expect(addResult).toBe(
+      'Goal task added: "Build UI candidate" (id: ui-task). Reference this id (or the exact title) in another task\'s depends_on.',
+    );
+    expect(updateResult).toBe(
+      'Goal task updated: "Build UI candidate" (id: ui-task). Reference this id (or the exact title) in another task\'s depends_on.',
+    );
     expect(updated?.tasks.find((task) => task.id === "ui-task")).toEqual(
       expect.objectContaining({
         id: "ui-task",
@@ -653,7 +659,7 @@ describe("goals tool state guards", () => {
         dependsOn: ["schema-task"],
         parallelGroup: "frontend",
         expectedChangedScope: ["packages/ggcoder/src/ui/**"],
-        mergeStrategy: "after_dependencies",
+        integration: "candidate",
       }),
     );
     const status = await executeGoals({ action: "status", run_id: "dag-goal" });
@@ -693,7 +699,7 @@ describe("goals tool state guards", () => {
       task_status: "done",
       parallel_group: "analysis",
       expected_changed_scope: ["packages/ggcoder/src/tools/goals.ts"],
-      merge_strategy: "manual",
+      integration: "manual",
     });
 
     const result = await executeGoals({ action: "status", run_id: "compact-status-goal" });
@@ -755,9 +761,11 @@ describe("goals tool state guards", () => {
     const run = await getGoalRun(tmpProject, "dag-title-goal");
 
     expect(missingResult).toContain(
-      'depends_on entry "Missing task title" does not match an existing task id/prefix',
+      'depends_on entry "Missing task title" does not match an existing task id, id prefix, or exact title',
     );
-    expect(titleResult).toBe('Goal task added: "Simplify goal routing/controller".');
+    expect(titleResult).toBe(
+      'Goal task added: "Simplify goal routing/controller" (id: implementation-task). Reference this id (or the exact title) in another task\'s depends_on.',
+    );
     expect(run?.tasks.find((task) => task.id === "blocked-task")).toBeUndefined();
     expect(run?.tasks.find((task) => task.id === "implementation-task")?.dependsOn).toEqual([
       "audit-task",
@@ -766,6 +774,54 @@ describe("goals tool state guards", () => {
       kind: "start_worker",
       task: expect.objectContaining({ id: "implementation-task" }),
     });
+  });
+
+  it("returns the generated task id so dependents can reference it by id", async () => {
+    await executeGoals({
+      action: "create",
+      run_id: "dag-id-goal",
+      title: "Returned ids",
+      goal: "Adding a task returns its id for depends_on wiring",
+      success_criteria: ["task id is returned"],
+      prerequisites: [],
+      verifier_command: "pnpm test",
+      evidence_plan: [
+        {
+          id: "id-proof",
+          label: "Id proof",
+          mechanism: "test",
+          description: "Adding a task echoes its id.",
+          status: "ready",
+          evidence: "configured",
+        },
+      ],
+    });
+
+    // No task_id supplied -> the tool generates one and must echo it back.
+    const added = await executeGoals({
+      action: "task",
+      run_id: "dag-id-goal",
+      task_title: "Baseline investigation",
+      task_prompt: "Investigate first.",
+      task_status: "done",
+    });
+    const match = /\(id: ([^)]+)\)/.exec(String(added));
+    expect(match).not.toBeNull();
+    const baselineId = match![1]!;
+
+    // The dependent task can wire depends_on using the returned id.
+    await executeGoals({
+      action: "task",
+      run_id: "dag-id-goal",
+      task_id: "dependent-task",
+      task_title: "Dependent work",
+      task_prompt: "Runs after baseline.",
+      depends_on: [baselineId],
+    });
+    const run = await getGoalRun(tmpProject, "dag-id-goal");
+    expect(run?.tasks.find((task) => task.id === "dependent-task")?.dependsOn).toEqual([
+      baselineId,
+    ]);
   });
 
   it("status resolves full UUID, short ID, and completed latest fallback", async () => {
@@ -1262,7 +1318,9 @@ describe("goals tool state guards", () => {
     });
     const run = await getGoalRun(tmpProject, "goal-a");
 
-    expect(result).toBe('Goal task added: "Repair verifier failure".');
+    expect(result).toBe(
+      'Goal task added: "Repair verifier failure" (id: repair-a). Reference this id (or the exact title) in another task\'s depends_on.',
+    );
     expect(run?.status).toBe("ready");
     expect(run?.tasks).toEqual(
       expect.arrayContaining([
@@ -1532,5 +1590,59 @@ describe("goals tool state guards", () => {
     expect(result).toBe('Goal "Complete safely" is now passed.');
     expect(run?.status).toBe("passed");
     expect(run?.completionAudit).toMatchObject({ status: "pass" });
+  });
+
+  it("auto-stamps FINAL_AUDIT_PASS and verifier_checked_at so a plain prose pass audit succeeds", async () => {
+    await executeGoals({
+      action: "create",
+      run_id: "autostamp-goal",
+      title: "Auto stamp",
+      goal: "Pass audits should not require transcribing structured tokens",
+      success_criteria: ["audit passes from plain prose"],
+      evidence_plan: [
+        {
+          id: "proof",
+          label: "Proof",
+          mechanism: "command",
+          description: "Verifier log",
+          status: "ready",
+          path: "artifacts/verifier.log",
+          evidence: "recorded",
+        },
+      ],
+      verifier_command: "true",
+    });
+    await executeGoals({
+      action: "task",
+      run_id: "autostamp-goal",
+      task_id: "task-a",
+      task_title: "Done",
+      task_prompt: "Do work",
+      task_status: "done",
+    });
+    await executeGoals({
+      action: "verify",
+      run_id: "autostamp-goal",
+      verification_status: "pass",
+      summary: "Verifier passed",
+      exit_code: 0,
+      output_path: "artifacts/verifier.log",
+    });
+
+    // Plain prose summary: no FINAL_AUDIT_PASS prefix, no transcribed timestamp.
+    const auditResult = await executeGoals({
+      action: "audit",
+      run_id: "autostamp-goal",
+      verification_status: "pass",
+      summary: "Compared the verifier log against the success criteria; everything matches.",
+    });
+
+    expect(auditResult).toBe('Completion audit recorded for "Auto stamp": pass.');
+    const run = await getGoalRun(tmpProject, "autostamp-goal");
+    const checkedAt = run?.verifier?.lastResult?.checkedAt;
+    expect(run?.completionAudit?.status).toBe("pass");
+    expect(run?.completionAudit?.summary).toMatch(/^FINAL_AUDIT_PASS/);
+    expect(run?.completionAudit?.summary).toContain(`verifier_checked_at=${checkedAt}`);
+    expect(run?.completionAudit?.outputPath).toBe("artifacts/verifier.log");
   });
 });

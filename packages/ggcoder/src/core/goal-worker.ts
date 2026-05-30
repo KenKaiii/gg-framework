@@ -14,10 +14,13 @@ import {
   upsertGoalRun,
   getGoalRun,
   type GoalRun,
+  type GoalTaskCandidate,
 } from "./goal-store.js";
 import {
   checkpointGoalWorkingTree,
+  commitGoalWorkerCandidate,
   createGoalWorkerWorktree,
+  isGitWorktreeViable,
   type GoalWorktreeCommandRunner,
   type GoalWorktreeCandidate,
 } from "./goal-worktree.js";
@@ -111,7 +114,7 @@ export function buildGoalWorkerSystemPrompt(context: GoalWorkerContext): string 
     "Proof rule: model the intended experience, choose the required senses/signals for goal-specific failures, then create the simplest local/free proof path. Use tests, CLIs, logs, screenshots/video, generated assets, protocol traces, database/API/contract/perf checks, or source/docs comparison only when they directly observe those signals; do not default to generic artifacts and do not rely on narrative or human visual inspection.",
     "Background processes are worker-owned and must be cleaned up before exit; if a later verifier needs a server, record exact orchestrator instructions instead of leaving your server running.",
     locationContract,
-    "Preserve task-graph metadata from the prompt: depends_on, parallel_group, expected_changed_scope, merge_strategy.",
+    "Do not change the task-graph metadata the coordinator owns (depends_on, parallel_group, expected_changed_scope, integration); never pass these to the goals tool. Record only your status, evidence, and candidate packet.",
     `Record durable proof and task status with goals({ action: "evidence" | "task", run_id: "${context.goalRunId}", task_id: "${context.goalTaskId}", ... }) using command/file/screenshot/log evidence, not narrative-only claims.`,
     "Do not mark the whole goal complete; only the coordinator/verifier can complete it.",
   ].join(" ");
@@ -210,7 +213,22 @@ export async function startGoalWorker(options: StartGoalWorkerOptions): Promise<
   const workerId = randomUUID().slice(0, 8);
   const projectPath = options.cwd;
   let worktree: GoalWorktreeCandidate | undefined;
-  if (options.isolateWorktree !== false) {
+  // Worktree isolation requires a usable git repo with a resolvable HEAD. In
+  // non-git or git-less environments, degrade gracefully to running in the main
+  // checkout instead of hard-crashing worker startup.
+  const wantsIsolation = options.isolateWorktree !== false;
+  const canIsolate =
+    wantsIsolation &&
+    (await isGitWorktreeViable(projectPath, options.worktreeCommandRunner ?? undefined));
+  if (wantsIsolation && !canIsolate) {
+    await appendGoalEvidence(projectPath, options.goalRunId, {
+      kind: "summary",
+      label: `Worker ${workerId} isolation skipped`,
+      content:
+        "No usable git repository (work tree + at least one commit) was found; running this Goal worker in the main checkout without worktree isolation.",
+    });
+  }
+  if (canIsolate) {
     try {
       const checkpoint = await checkpointGoalWorkingTree({
         projectPath,
@@ -401,6 +419,26 @@ export async function startGoalWorker(options: StartGoalWorkerOptions): Promise<
       const emptySuccessfulExit =
         code === 0 && !summary.trim() && !stderr.trim() && !hasDurableProofTool;
       record.status = !timedOut && code === 0 && !emptySuccessfulExit ? "done" : "failed";
+      let candidate: GoalTaskCandidate | undefined;
+      if (record.status === "done" && worktree) {
+        try {
+          candidate = await commitGoalWorkerCandidate({
+            worktreePath: worktree.path,
+            branchName: worktree.branchName,
+            baseRef: worktree.baseRef,
+            message: `goal(${options.goalRunId}): candidate ${options.goalTaskId} (worker ${workerId})`,
+            ...(options.worktreeCommandRunner
+              ? { commandRunner: options.worktreeCommandRunner }
+              : {}),
+          });
+        } catch (err) {
+          log(
+            "ERROR",
+            "goal-worker",
+            `Worker ${workerId} candidate commit failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
       const finalSummary = timedOut
         ? `Worker timed out after ${timeoutMs}ms and its process tree was terminated.`
         : emptySuccessfulExit
@@ -413,6 +451,7 @@ export async function startGoalWorker(options: StartGoalWorkerOptions): Promise<
         status: record.status,
         workerId,
         lastSummary: finalSummary,
+        ...(candidate ? { candidate } : {}),
       });
       await appendGoalEvidence(projectPath, options.goalRunId, {
         kind: "log",
@@ -420,6 +459,14 @@ export async function startGoalWorker(options: StartGoalWorkerOptions): Promise<
         content: finalSummary,
         path: logFile,
       });
+      if (candidate) {
+        await appendGoalEvidence(projectPath, options.goalRunId, {
+          kind: "summary",
+          label: `Worker ${workerId} candidate`,
+          content: `branch=${candidate.branchName}; base=${candidate.baseRef}; head=${candidate.headSha}; files=${candidate.changedFiles.join(", ")}`,
+          ...(worktree ? { path: worktree.path } : {}),
+        });
+      }
       await setRunWorker(projectPath, options.goalRunId, undefined);
       const completion: GoalWorkerCompletion = {
         worker: { ...record },

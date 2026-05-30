@@ -705,7 +705,7 @@ describe("createEditTool", () => {
     ).rejects.toThrow("old_text not found");
   });
 
-  it("invalidates the read tracker after a not_found failure to force a re-read", async () => {
+  it("keeps the read tracker valid after a not_found failure so the model can retry immediately", async () => {
     const filePath = path.join(tmpDir, "guardrail.txt");
     await fs.writeFile(filePath, "the actual content\n");
 
@@ -714,7 +714,9 @@ describe("createEditTool", () => {
 
     const tool = createEditTool(tmpDir, tracker);
 
-    // First edit fails with not_found — tracker entry should be invalidated.
+    // First edit fails with not_found. Nothing was written, so the file is
+    // unchanged and the tracker must stay valid — invalidating it here used to
+    // surface a misleading "File must be read first" on the next edit.
     await expect(
       tool.execute(
         {
@@ -725,22 +727,22 @@ describe("createEditTool", () => {
       ),
     ).rejects.toThrow(/old_text not found/);
 
-    expect(tracker.has(filePath)).toBe(false);
+    expect(tracker.has(filePath)).toBe(true);
 
-    // Second edit on the same file — even with valid old_text — must fail
-    // because the tracker was cleared. Model is forced to call `read` first.
-    await expect(
-      tool.execute(
-        {
-          file_path: "guardrail.txt",
-          edits: [{ old_text: "the actual content", new_text: "replaced" }],
-        },
-        { signal: new AbortController().signal, toolCallId: "guardrail-2" },
-      ),
-    ).rejects.toThrow(/File must be read first/);
+    // Second edit with corrected old_text succeeds without a forced re-read.
+    const result = await tool.execute(
+      {
+        file_path: "guardrail.txt",
+        edits: [{ old_text: "the actual content", new_text: "replaced" }],
+      },
+      { signal: new AbortController().signal, toolCallId: "guardrail-2" },
+    );
+    const summary = typeof result === "string" ? result : (result as { content: string }).content;
+    expect(summary).toMatch(/Successfully replaced/);
+    expect(await fs.readFile(filePath, "utf-8")).toBe("replaced\n");
   });
 
-  it("invalidates the read tracker on partial-apply when any not_found occurs", async () => {
+  it("refreshes (not clears) the tracker on partial-apply so retries validate against the written content", async () => {
     const filePath = path.join(tmpDir, "partial.txt");
     await fs.writeFile(filePath, "alpha\nbeta\ngamma\n");
 
@@ -750,7 +752,7 @@ describe("createEditTool", () => {
     const tool = createEditTool(tmpDir, tracker);
 
     // One edit succeeds (alpha → ALPHA), one fails with not_found (missing).
-    // File gets written with the success — but tracker must still be cleared.
+    // The success is written and the tracker is refreshed to the new content.
     await tool.execute(
       {
         file_path: "partial.txt",
@@ -762,9 +764,20 @@ describe("createEditTool", () => {
       { signal: new AbortController().signal, toolCallId: "partial-1" },
     );
 
-    const written = await fs.readFile(filePath, "utf-8");
-    expect(written).toBe("ALPHA\nbeta\ngamma\n");
-    expect(tracker.has(filePath)).toBe(false);
+    expect(await fs.readFile(filePath, "utf-8")).toBe("ALPHA\nbeta\ngamma\n");
+    expect(tracker.has(filePath)).toBe(true);
+
+    // A follow-up edit against the just-written content applies without a re-read.
+    const result = await tool.execute(
+      {
+        file_path: "partial.txt",
+        edits: [{ old_text: "beta", new_text: "BETA" }],
+      },
+      { signal: new AbortController().signal, toolCallId: "partial-2" },
+    );
+    const summary = typeof result === "string" ? result : (result as { content: string }).content;
+    expect(summary).toMatch(/Successfully replaced/);
+    expect(await fs.readFile(filePath, "utf-8")).toBe("ALPHA\nBETA\ngamma\n");
   });
 
   it("throws when old_text matches multiple times", async () => {

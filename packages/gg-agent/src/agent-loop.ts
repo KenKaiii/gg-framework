@@ -185,6 +185,26 @@ export function isToolPairingError(err: unknown): boolean {
 }
 
 /**
+ * Detect Anthropic's thinking-block integrity errors. These 400s fire when a
+ * signed `thinking`/`redacted_thinking` block in the latest assistant message
+ * can't be validated — typically a partial/invalid signature from an
+ * interrupted stream, or a block whose position shifted. Recoverable once by
+ * stripping thinking blocks from the message history and re-sending.
+ */
+export function isThinkingBlockError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  if (!msg.includes("thinking")) return false;
+  return (
+    msg.includes("cannot be modified") ||
+    msg.includes("must remain as they were") ||
+    (msg.includes("signature") && msg.includes("invalid")) ||
+    // "Expected `thinking` or `redacted_thinking`, but found `text`"
+    (msg.includes("expected") && msg.includes("but found"))
+  );
+}
+
+/**
  * Distinguish rate-limit (HTTP 429), server-side overload (HTTP 529), and
  * transient provider 5xx/API failures. Returns null for errors that should not
  * enter the retry bucket. All kinds use the same backoff schedule, but the UI
@@ -337,6 +357,7 @@ export async function* agentLoop(
   let firstTurn = true;
   let consecutivePauses = 0;
   let toolPairingRepaired = false;
+  let thinkingBlocksStripped = false;
   let overloadRetries = 0;
   let emptyResponseRetries = 0;
   let stallRetries = 0;
@@ -923,6 +944,17 @@ export async function* agentLoop(
           toolPairingRepaired = true;
           diag("tool_pairing_repair", { error: errMsg.slice(0, 200) });
           repairToolPairingAdjacent(messages);
+          turn--;
+          continue;
+        }
+        // Thinking-block integrity 400: a signed thinking block in the latest
+        // assistant message couldn't be validated (commonly a partial signature
+        // from an interrupted stream). Strip thinking from history — preserving
+        // the reasoning as text — and retry once.
+        if (isThinkingBlockError(err) && !thinkingBlocksStripped) {
+          thinkingBlocksStripped = true;
+          diag("thinking_block_repair", { error: errMsg.slice(0, 200) });
+          stripThinkingBlocks(messages);
           turn--;
           continue;
         }
@@ -1576,5 +1608,31 @@ function repairToolPairingAdjacent(messages: Message[]): void {
         (msg as { content: ToolResult[] }).content = filtered;
       }
     }
+  }
+}
+
+/**
+ * Strip thinking / redacted_thinking content from every assistant message in
+ * place. Last-resort recovery when Anthropic rejects the request for a
+ * thinking-block integrity violation (e.g. a corrupt signature from an
+ * interrupted stream). Reasoning text is preserved as a plain text block so no
+ * conversational context is lost; tool_call/tool_result pairing is untouched.
+ */
+function stripThinkingBlocks(messages: Message[]): void {
+  for (const msg of messages) {
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+    const next: ContentPart[] = [];
+    for (const part of msg.content as ContentPart[]) {
+      if (part.type === "thinking") {
+        if (part.text) next.push({ type: "text", text: part.text });
+        continue;
+      }
+      if (part.type === "raw") {
+        const t = (part.data as { type?: string }).type;
+        if (t === "thinking" || t === "redacted_thinking") continue;
+      }
+      next.push(part);
+    }
+    (msg as { content: ContentPart[] }).content = next;
   }
 }

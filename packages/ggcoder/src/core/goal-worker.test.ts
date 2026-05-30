@@ -160,7 +160,7 @@ describe("goal worker failure propagation", () => {
     expect(prompt).toContain("depends_on");
     expect(prompt).toContain("parallel_group");
     expect(prompt).toContain("expected_changed_scope");
-    expect(prompt).toContain("merge_strategy");
+    expect(prompt).toContain("integration");
     expect(prompt).toContain(
       'goals({ action: "evidence" | "task", run_id: "goal-a", task_id: "task-a"',
     );
@@ -208,6 +208,10 @@ describe("goal worker failure propagation", () => {
     const runner: GoalWorktreeCommandRunner = {
       execFile: vi.fn(async (_file, args) => {
         worktreeCalls.push(args);
+        if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree")
+          return { stdout: "true\n", stderr: "" };
+        if (args[0] === "rev-parse" && args[1] === "--verify")
+          return { stdout: "base-sha\n", stderr: "" };
         return { stdout: "", stderr: "" };
       }),
     };
@@ -240,6 +244,8 @@ describe("goal worker failure propagation", () => {
     expect(spawnOptions.cwd).toBe(record.cwd);
     expect(spawnOptions.env.GG_GOAL_PROJECT_PATH).toBe(tmpProject);
     expect(worktreeCalls).toEqual([
+      ["rev-parse", "--is-inside-work-tree"],
+      ["rev-parse", "--verify", "HEAD"],
       ["status", "--porcelain"],
       ["status", "--porcelain"],
       ["worktree", "add", "-b", `goal/goal-a/task-a-${record.id}`, record.cwd, "base-sha"],
@@ -298,6 +304,10 @@ describe("goal worker failure propagation", () => {
     const runner: GoalWorktreeCommandRunner = {
       execFile: vi.fn(async (_file, args) => {
         worktreeCalls.push(args);
+        if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree")
+          return { stdout: "true\n", stderr: "" };
+        if (args[0] === "rev-parse" && args[1] === "--verify")
+          return { stdout: "base-sha\n", stderr: "" };
         if (args[0] === "status") {
           return committed
             ? { stdout: "", stderr: "" }
@@ -328,6 +338,8 @@ describe("goal worker failure propagation", () => {
     expect(spawnMock).toHaveBeenCalled();
     expect(record.worktree).toBeDefined();
     expect(worktreeCalls).toEqual([
+      ["rev-parse", "--is-inside-work-tree"],
+      ["rev-parse", "--verify", "HEAD"],
       ["status", "--porcelain"],
       ["add", "-A"],
       ["commit", "-m", `goal(goal-a): checkpoint uncommitted work before worker ${record.id}`],
@@ -348,11 +360,15 @@ describe("goal worker failure propagation", () => {
 
   it("fails the task when the checkpoint commit cannot clean the working tree", async () => {
     const runner: GoalWorktreeCommandRunner = {
-      execFile: vi.fn(async (_file, args) =>
-        args[0] === "status"
+      execFile: vi.fn(async (_file, args) => {
+        if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree")
+          return { stdout: "true\n", stderr: "" };
+        if (args[0] === "rev-parse" && args[1] === "--verify")
+          return { stdout: "base-sha\n", stderr: "" };
+        return args[0] === "status"
           ? { stdout: " M packages/dirty.ts\n", stderr: "" }
-          : { stdout: "", stderr: "" },
-      ),
+          : { stdout: "", stderr: "" };
+      }),
     };
     const mod = await import("./goal-worker.js");
 

@@ -17,11 +17,42 @@ export type GoalRunStatus =
 
 export type GoalTaskStatus = "pending" | "running" | "verifying" | "done" | "failed" | "blocked";
 
+/**
+ * Whether a task's committed candidate is auto-integrated into main
+ * (`candidate`) or left for manual handling (`manual`). Ordering is expressed by
+ * `dependsOn`, not this axis.
+ */
+export type GoalTaskIntegration = "candidate" | "manual";
+
+/**
+ * @deprecated Legacy four-way axis. Inputs are folded to {@link GoalTaskIntegration}
+ * on normalize: `manual` → `manual`; everything else → `candidate`.
+ */
 export type GoalTaskMergeStrategy =
   | "parallel_candidate"
   | "after_dependencies"
   | "serial"
   | "manual";
+
+export function foldGoalTaskIntegration(
+  value: GoalTaskIntegration | GoalTaskMergeStrategy | undefined,
+): GoalTaskIntegration {
+  return value === "manual" ? "manual" : "candidate";
+}
+
+export type GoalIntegrationStatus = "none" | "applied" | "committed";
+
+export interface GoalIntegrationState {
+  status: GoalIntegrationStatus;
+  /** main HEAD after integration. */
+  headSha?: string;
+  /** integration base the candidates branched from. */
+  baseRef?: string;
+  /** integrated file paths (for the journal/diagnosis). */
+  files?: string[];
+  /** ISO; injected clock, never Date.now() inline in pure code. */
+  updatedAt: string;
+}
 
 export type GoalPrerequisiteStatus = "unknown" | "met" | "missing";
 
@@ -119,6 +150,19 @@ export interface GoalTaskWorktree {
   error?: string;
 }
 
+/**
+ * Structured, committed candidate packet produced by a worktree worker. Lets
+ * integration read exactly what changed (committed commit + changed files)
+ * instead of reverse-engineering a dirty worktree.
+ */
+export interface GoalTaskCandidate {
+  baseRef: string;
+  headSha: string;
+  branchName: string;
+  changedFiles: string[];
+  committed: boolean;
+}
+
 export interface GoalTask {
   id: string;
   title: string;
@@ -129,8 +173,9 @@ export interface GoalTask {
   dependsOn?: string[];
   parallelGroup?: string;
   expectedChangedScope?: string[];
-  mergeStrategy?: GoalTaskMergeStrategy;
+  integration?: GoalTaskIntegration;
   worktree?: GoalTaskWorktree;
+  candidate?: GoalTaskCandidate;
   verification?: GoalVerificationResult;
   lastSummary?: string;
 }
@@ -168,6 +213,13 @@ export interface GoalRun {
   evidence: GoalEvidence[];
   verifier?: GoalVerifier;
   completionAudit?: GoalCompletionAudit;
+  integration?: GoalIntegrationState;
+  /**
+   * ISO time of the most recent NON-audit, NON-integration worker completion.
+   * Drives verifier/audit staleness deterministically (replaces the
+   * "Worker ... after verifier" evidence scans).
+   */
+  lastSubstantiveWorkerAt?: string;
   blockers: string[];
   activeWorkerId?: string;
   continueRequestedAt?: string;
@@ -208,6 +260,8 @@ export interface GoalRunInput {
   evidence?: GoalEvidence[];
   verifier?: GoalVerifier;
   completionAudit?: GoalCompletionAudit;
+  integration?: GoalIntegrationState;
+  lastSubstantiveWorkerAt?: string;
   blockers?: string[];
   activeWorkerId?: string;
   continueRequestedAt?: string;
@@ -223,8 +277,11 @@ export interface GoalTaskInput {
   dependsOn?: string[];
   parallelGroup?: string;
   expectedChangedScope?: string[];
+  integration?: GoalTaskIntegration;
+  /** @deprecated legacy input; folded to {@link integration} on normalize. */
   mergeStrategy?: GoalTaskMergeStrategy;
   worktree?: GoalTaskWorktree;
+  candidate?: GoalTaskCandidate;
   verification?: GoalVerificationResult;
   lastSummary?: string;
 }
@@ -271,7 +328,7 @@ function mergeGoalTasks(existing: GoalTask[], input: GoalTask[] | undefined): Go
       dependsOn: task.dependsOn ?? next.dependsOn,
       parallelGroup: task.parallelGroup ?? next.parallelGroup,
       expectedChangedScope: task.expectedChangedScope ?? next.expectedChangedScope,
-      mergeStrategy: task.mergeStrategy ?? next.mergeStrategy,
+      integration: task.integration ?? next.integration,
       verification: task.verification ?? next.verification,
       lastSummary: task.lastSummary ?? next.lastSummary,
     };
@@ -358,13 +415,8 @@ function isTaskStatus(value: unknown): value is GoalTaskStatus {
   );
 }
 
-function isTaskMergeStrategy(value: unknown): value is GoalTaskMergeStrategy {
-  return (
-    value === "parallel_candidate" ||
-    value === "after_dependencies" ||
-    value === "serial" ||
-    value === "manual"
-  );
+function isTaskIntegration(value: unknown): value is GoalTaskIntegration {
+  return value === "candidate" || value === "manual";
 }
 
 function isPrerequisiteStatus(value: unknown): value is GoalPrerequisiteStatus {
@@ -522,6 +574,21 @@ function normalizeTaskWorktree(value: unknown): GoalTaskWorktree | undefined {
   };
 }
 
+function normalizeTaskCandidate(value: unknown): GoalTaskCandidate | undefined {
+  if (!isObject(value)) return undefined;
+  const baseRef = optionalString(value.baseRef);
+  const headSha = optionalString(value.headSha);
+  const branchName = optionalString(value.branchName);
+  if (!baseRef || !headSha || !branchName) return undefined;
+  return {
+    baseRef,
+    headSha,
+    branchName,
+    changedFiles: stringArray(value.changedFiles),
+    committed: value.committed !== false,
+  };
+}
+
 function normalizeTask(value: unknown): GoalTask | null {
   if (!isObject(value)) return null;
   const title = typeof value.title === "string" ? value.title : "Goal task";
@@ -540,9 +607,18 @@ function normalizeTask(value: unknown): GoalTask | null {
     ...(stringArray(value.expectedChangedScope).length > 0
       ? { expectedChangedScope: stringArray(value.expectedChangedScope) }
       : {}),
-    ...(isTaskMergeStrategy(value.mergeStrategy) ? { mergeStrategy: value.mergeStrategy } : {}),
+    integration: foldGoalTaskIntegration(
+      isTaskIntegration(value.integration)
+        ? value.integration
+        : typeof value.mergeStrategy === "string"
+          ? (value.mergeStrategy as GoalTaskMergeStrategy)
+          : undefined,
+    ),
     ...(normalizeTaskWorktree(value.worktree)
       ? { worktree: normalizeTaskWorktree(value.worktree) }
+      : {}),
+    ...(normalizeTaskCandidate(value.candidate)
+      ? { candidate: normalizeTaskCandidate(value.candidate) }
       : {}),
     ...(normalizeVerification(value.verification)
       ? { verification: normalizeVerification(value.verification) }
@@ -579,6 +655,57 @@ function normalizeVerifier(value: unknown): GoalVerifier | undefined {
   };
 }
 
+function isIntegrationStatus(value: unknown): value is GoalIntegrationStatus {
+  return value === "none" || value === "applied" || value === "committed";
+}
+
+function normalizeIntegration(value: unknown): GoalIntegrationState | undefined {
+  if (!isObject(value)) return undefined;
+  if (!isIntegrationStatus(value.status)) return undefined;
+  return {
+    status: value.status,
+    ...(optionalString(value.headSha) ? { headSha: optionalString(value.headSha) } : {}),
+    ...(optionalString(value.baseRef) ? { baseRef: optionalString(value.baseRef) } : {}),
+    ...(stringArray(value.files).length > 0 ? { files: stringArray(value.files) } : {}),
+    updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : nowIso(),
+  };
+}
+
+/**
+ * Back-compat shim: infer the typed integration state from legacy evidence
+ * labels for runs persisted before {@link GoalIntegrationState} existed. This is
+ * the ONLY place label-matching is allowed to survive; it migrates old runs once.
+ */
+function inferIntegrationFromEvidence(
+  evidence: readonly GoalEvidence[],
+): GoalIntegrationState | undefined {
+  const committed = evidence.find((item) => item.label === "Integrated Goal changes committed");
+  const applied = evidence.find(
+    (item) =>
+      item.label === "Integrated worktree applied to main" ||
+      item.label === "Goal decision: apply_integration_to_main",
+  );
+  if (!committed && !applied) return undefined;
+  const source = committed ?? applied!;
+  return {
+    status: committed ? "committed" : "applied",
+    updatedAt: source.createdAt,
+  };
+}
+
+/**
+ * Back-compat shim: infer the most recent non-audit worker completion time from
+ * legacy "Worker <id> done/failed" evidence for runs persisted before
+ * {@link GoalRun.lastSubstantiveWorkerAt} existed.
+ */
+function inferLastSubstantiveWorkerAt(evidence: readonly GoalEvidence[]): string | undefined {
+  const workerEvidence = evidence
+    .filter((item) => /^Worker\s+\S+\s+(done|failed)$/.test(item.label))
+    .map((item) => item.createdAt)
+    .sort((a, b) => b.localeCompare(a));
+  return workerEvidence[0];
+}
+
 function normalizeCompletionAudit(value: unknown): GoalCompletionAudit | undefined {
   if (!isObject(value)) return undefined;
   return {
@@ -611,6 +738,13 @@ function normalizeRun(value: unknown, fallbackProjectPath: string): GoalRun | nu
     isRunStatus(value.status) ? value.status : "draft",
     prerequisites,
   );
+  const evidence = Array.isArray(value.evidence)
+    ? value.evidence.map(normalizeEvidence).filter((item): item is GoalEvidence => !!item)
+    : [];
+  const integration =
+    normalizeIntegration(value.integration) ?? inferIntegrationFromEvidence(evidence);
+  const lastSubstantiveWorkerAt =
+    optionalString(value.lastSubstantiveWorkerAt) ?? inferLastSubstantiveWorkerAt(evidence);
 
   return {
     id: typeof value.id === "string" ? value.id : randomUUID(),
@@ -634,13 +768,13 @@ function normalizeRun(value: unknown, fallbackProjectPath: string): GoalRun | nu
       ? value.references.map(normalizeReference).filter((item): item is GoalReference => !!item)
       : [],
     tasks,
-    evidence: Array.isArray(value.evidence)
-      ? value.evidence.map(normalizeEvidence).filter((item): item is GoalEvidence => !!item)
-      : [],
+    evidence,
     ...(normalizeVerifier(value.verifier) ? { verifier: normalizeVerifier(value.verifier) } : {}),
     ...(normalizeCompletionAudit(value.completionAudit)
       ? { completionAudit: normalizeCompletionAudit(value.completionAudit) }
       : {}),
+    ...(integration ? { integration } : {}),
+    ...(lastSubstantiveWorkerAt ? { lastSubstantiveWorkerAt } : {}),
     blockers: dedupeGoalBlockers(stringArray(value.blockers)),
     ...(optionalString(value.activeWorkerId)
       ? { activeWorkerId: optionalString(value.activeWorkerId) }
@@ -708,48 +842,87 @@ function enqueueWrite<T>(fn: () => Promise<T>): Promise<T> {
   return result;
 }
 
+/**
+ * Persist runs to disk. MUST be called while holding the goal-store lock (it is
+ * not reentrant). Re-reads on-disk state for the omitted-active-run guard, then
+ * writes goals.json + meta.json + journals atomically.
+ */
+async function writeGoalRunsFileCore(
+  normalizedCwd: string,
+  runs: readonly GoalRun[],
+): Promise<void> {
+  const dir = projectDir(normalizedCwd);
+  await mkdir(dir, { recursive: true });
+  const goalsPath = join(dir, "goals.json");
+  const existingRuns = await readGoalRunsFile(normalizedCwd);
+  const omittedActive = omittedActiveGoalRuns(existingRuns, runs);
+  if (omittedActive.length > 0) {
+    const timestamp = nowIso();
+    const rejectedIds = new Set(omittedActive.map((run) => run.id));
+    const repairedRuns = existingRuns.map((run) =>
+      rejectedIds.has(run.id)
+        ? {
+            ...run,
+            evidence: [
+              ...run.evidence,
+              createGoalEvidence({
+                kind: "summary",
+                label: "Goal store write rejected",
+                content:
+                  "Rejected an attempted Goal overwrite that omitted active work; preserving existing durable state.",
+                createdAt: timestamp,
+              }),
+            ],
+            updatedAt: timestamp,
+          }
+        : run,
+    );
+    await atomicWriteJson(goalsPath, sortNewestFirst(repairedRuns));
+    await Promise.all(
+      repairedRuns.map((run) => writeGoalProgressJournalFromRun(normalizedCwd, run)),
+    );
+    return;
+  }
+  const sorted = sortNewestFirst([...runs]);
+  await atomicWriteJson(goalsPath, sorted);
+  await atomicWriteJson(join(dir, "meta.json"), {
+    path: normalizedCwd,
+    name: basename(normalizedCwd),
+  });
+  await Promise.all(sorted.map((run) => writeGoalProgressJournalFromRun(normalizedCwd, run)));
+}
+
 async function writeGoalRunsFile(cwd: string, runs: readonly GoalRun[]): Promise<void> {
   const normalizedCwd = normalizeProjectPath(cwd);
   const dir = projectDir(normalizedCwd);
-  await withGoalStoreLock(dir, async () => {
-    await mkdir(dir, { recursive: true });
-    const goalsPath = join(dir, "goals.json");
-    const existingRuns = await readGoalRunsFile(normalizedCwd);
-    const omittedActive = omittedActiveGoalRuns(existingRuns, runs);
-    if (omittedActive.length > 0) {
-      const timestamp = nowIso();
-      const rejectedIds = new Set(omittedActive.map((run) => run.id));
-      const repairedRuns = existingRuns.map((run) =>
-        rejectedIds.has(run.id)
-          ? {
-              ...run,
-              evidence: [
-                ...run.evidence,
-                createGoalEvidence({
-                  kind: "summary",
-                  label: "Goal store write rejected",
-                  content:
-                    "Rejected an attempted Goal overwrite that omitted active work; preserving existing durable state.",
-                  createdAt: timestamp,
-                }),
-              ],
-              updatedAt: timestamp,
-            }
-          : run,
-      );
-      await atomicWriteJson(goalsPath, sortNewestFirst(repairedRuns));
-      await Promise.all(
-        repairedRuns.map((run) => writeGoalProgressJournalFromRun(normalizedCwd, run)),
-      );
-      return;
-    }
-    const sorted = sortNewestFirst([...runs]);
-    await atomicWriteJson(goalsPath, sorted);
-    await atomicWriteJson(join(dir, "meta.json"), {
-      path: normalizedCwd,
-      name: basename(normalizedCwd),
+  await withGoalStoreLock(dir, () => writeGoalRunsFileCore(normalizedCwd, runs));
+}
+
+/**
+ * Cross-process-atomic read-modify-write. Reads the current runs INSIDE the
+ * store lock, applies `mutate`, and writes the result before releasing the lock
+ * so concurrent processes (the parent orchestrator and worker subprocesses both
+ * writing via the goals tool) can never lose each other's field-level updates.
+ */
+async function mutateGoalRunsLocked<T>(
+  cwd: string,
+  mutate: (
+    runs: GoalRun[],
+  ) =>
+    | { runs: readonly GoalRun[]; result: T; write?: boolean }
+    | Promise<{ runs: readonly GoalRun[]; result: T; write?: boolean }>,
+): Promise<T> {
+  return enqueueWrite(async () => {
+    const normalizedCwd = normalizeProjectPath(cwd);
+    const dir = projectDir(normalizedCwd);
+    return withGoalStoreLock(dir, async () => {
+      const runs = await readGoalRunsFile(normalizedCwd);
+      const outcome = await mutate(runs);
+      if (outcome.write !== false) {
+        await writeGoalRunsFileCore(normalizedCwd, outcome.runs);
+      }
+      return outcome.result;
     });
-    await Promise.all(sorted.map((run) => writeGoalProgressJournalFromRun(normalizedCwd, run)));
   });
 }
 
@@ -892,8 +1065,9 @@ export function createGoalTask(input: GoalTaskInput): GoalTask {
     ...(input.expectedChangedScope && input.expectedChangedScope.length > 0
       ? { expectedChangedScope: input.expectedChangedScope }
       : {}),
-    ...(input.mergeStrategy ? { mergeStrategy: input.mergeStrategy } : {}),
+    integration: foldGoalTaskIntegration(input.integration ?? input.mergeStrategy),
     ...(input.worktree ? { worktree: input.worktree } : {}),
+    ...(input.candidate ? { candidate: input.candidate } : {}),
     ...(input.verification ? { verification: input.verification } : {}),
     ...(input.lastSummary ? { lastSummary: input.lastSummary } : {}),
   };
@@ -932,6 +1106,10 @@ export function createGoalRun(cwd: string, input: GoalRunInput): GoalRun {
     evidence: input.evidence ?? [],
     ...(input.verifier ? { verifier: input.verifier } : {}),
     ...(input.completionAudit ? { completionAudit: input.completionAudit } : {}),
+    ...(input.integration ? { integration: input.integration } : {}),
+    ...(input.lastSubstantiveWorkerAt
+      ? { lastSubstantiveWorkerAt: input.lastSubstantiveWorkerAt }
+      : {}),
     blockers: dedupeGoalBlockers(input.blockers ?? []),
     ...(input.activeWorkerId ? { activeWorkerId: input.activeWorkerId } : {}),
     ...(input.continueRequestedAt ? { continueRequestedAt: input.continueRequestedAt } : {}),
@@ -976,8 +1154,7 @@ export async function reconcileActiveGoalRuns(
   cwd: string,
   options: ReconcileActiveGoalRunsOptions = {},
 ): Promise<GoalReconciliationResult> {
-  return enqueueWrite(async () => {
-    const runs = await loadGoalRuns(cwd);
+  return mutateGoalRunsLocked(cwd, (runs) => {
     const timestamp = nowIso();
     const repairedRunIds: string[] = [];
     let evidenceCount = 0;
@@ -1063,14 +1240,16 @@ export async function reconcileActiveGoalRuns(
       };
     });
 
-    if (repairedRunIds.length > 0) await writeGoalRunsFile(cwd, nextRuns);
-    return { runs: sortNewestFirst(nextRuns), repairedRunIds, evidenceCount };
+    return {
+      runs: nextRuns,
+      write: repairedRunIds.length > 0,
+      result: { runs: sortNewestFirst(nextRuns), repairedRunIds, evidenceCount },
+    };
   });
 }
 
 export async function upsertGoalRun(cwd: string, input: GoalRun | GoalRunInput): Promise<GoalRun> {
-  return enqueueWrite(async () => {
-    const runs = await loadGoalRuns(cwd);
+  return mutateGoalRunsLocked(cwd, (runs) => {
     const existingIndex = input.id ? runs.findIndex((run) => run.id === input.id) : -1;
     const existing = existingIndex >= 0 ? runs[existingIndex] : undefined;
     const merged: GoalRun = existing
@@ -1100,8 +1279,7 @@ export async function upsertGoalRun(cwd: string, input: GoalRun | GoalRunInput):
 
     const nextRuns = existingIndex >= 0 ? [...runs] : [merged, ...runs];
     if (existingIndex >= 0) nextRuns[existingIndex] = merged;
-    await writeGoalRunsFile(cwd, nextRuns);
-    return merged;
+    return { runs: nextRuns, result: merged };
   });
 }
 
@@ -1156,10 +1334,9 @@ export async function appendGoalEvidence(
 ): Promise<GoalRun | null> {
   const discovered = await getGoalRun(cwd, runId);
   const writeCwd = discovered?.projectPath ?? cwd;
-  return enqueueWrite(async () => {
-    const runs = await loadGoalRuns(writeCwd);
+  return mutateGoalRunsLocked(writeCwd, (runs) => {
     const index = runs.findIndex((run) => run.id === runId || run.id.startsWith(runId));
-    if (index === -1) return null;
+    if (index === -1) return { runs, result: null, write: false };
     const run = runs[index];
     const updated: GoalRun = {
       ...run,
@@ -1168,8 +1345,7 @@ export async function appendGoalEvidence(
     };
     const nextRuns = [...runs];
     nextRuns[index] = updated;
-    await writeGoalRunsFile(writeCwd, nextRuns);
-    return updated;
+    return { runs: nextRuns, result: updated };
   });
 }
 
@@ -1181,10 +1357,9 @@ export async function updateGoalTask(
 ): Promise<GoalRun | null> {
   const discovered = await getGoalRun(cwd, runId);
   const writeCwd = discovered?.projectPath ?? cwd;
-  return enqueueWrite(async () => {
-    const runs = await loadGoalRuns(writeCwd);
+  return mutateGoalRunsLocked(writeCwd, (runs) => {
     const runIndex = runs.findIndex((run) => run.id === runId || run.id.startsWith(runId));
-    if (runIndex === -1) return null;
+    if (runIndex === -1) return { runs, result: null, write: false };
     const run = runs[runIndex];
     const taskIndex = run.tasks.findIndex(
       (task) => task.id === taskId || task.id.startsWith(taskId),
@@ -1200,7 +1375,7 @@ export async function updateGoalTask(
           }),
         );
       } else {
-        return null;
+        return { runs, result: null, write: false };
       }
     } else {
       const existingTask = tasks[taskIndex];
@@ -1216,8 +1391,51 @@ export async function updateGoalTask(
     const updated: GoalRun = { ...run, tasks, updatedAt: nowIso() };
     const nextRuns = [...runs];
     nextRuns[runIndex] = updated;
-    await writeGoalRunsFile(writeCwd, nextRuns);
-    return updated;
+    return { runs: nextRuns, result: updated };
+  });
+}
+
+/**
+ * Record the typed integration state from code (git truth), so the controller
+ * never has to parse evidence labels to know whether candidates reached main.
+ */
+export async function setGoalIntegrationState(
+  cwd: string,
+  runId: string,
+  state: GoalIntegrationState,
+): Promise<GoalRun | null> {
+  const discovered = await getGoalRun(cwd, runId);
+  const writeCwd = discovered?.projectPath ?? cwd;
+  return mutateGoalRunsLocked(writeCwd, (runs) => {
+    const index = runs.findIndex((run) => run.id === runId || run.id.startsWith(runId));
+    if (index === -1) return { runs, result: null, write: false };
+    const run = runs[index];
+    const updated: GoalRun = { ...run, integration: state, updatedAt: nowIso() };
+    const nextRuns = [...runs];
+    nextRuns[index] = updated;
+    return { runs: nextRuns, result: updated };
+  });
+}
+
+/**
+ * Stamp the most recent substantive (non-audit, non-integration) worker
+ * completion time, driving verifier/audit staleness deterministically.
+ */
+export async function recordGoalSubstantiveWorker(
+  cwd: string,
+  runId: string,
+  atIso: string,
+): Promise<GoalRun | null> {
+  const discovered = await getGoalRun(cwd, runId);
+  const writeCwd = discovered?.projectPath ?? cwd;
+  return mutateGoalRunsLocked(writeCwd, (runs) => {
+    const index = runs.findIndex((run) => run.id === runId || run.id.startsWith(runId));
+    if (index === -1) return { runs, result: null, write: false };
+    const run = runs[index];
+    const updated: GoalRun = { ...run, lastSubstantiveWorkerAt: atIso, updatedAt: nowIso() };
+    const nextRuns = [...runs];
+    nextRuns[index] = updated;
+    return { runs: nextRuns, result: updated };
   });
 }
 

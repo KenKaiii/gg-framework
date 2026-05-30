@@ -22,7 +22,7 @@ export interface GoalTaskStateSnapshot {
   dependsOn?: string[];
   parallelGroup?: string;
   expectedChangedScope?: string[];
-  mergeStrategy?: GoalRun["tasks"][number]["mergeStrategy"];
+  integration?: GoalRun["tasks"][number]["integration"];
 }
 
 export interface GoalPrerequisiteStateSnapshot {
@@ -220,7 +220,7 @@ export function buildGoalStateSnapshot(run: GoalRun): GoalStateSnapshot {
       ...(task.expectedChangedScope?.length
         ? { expectedChangedScope: task.expectedChangedScope }
         : {}),
-      ...(task.mergeStrategy ? { mergeStrategy: task.mergeStrategy } : {}),
+      ...(task.integration ? { integration: task.integration } : {}),
     })),
     evidenceCount: run.evidence.length,
     ...(latestEvidence
@@ -245,7 +245,7 @@ function formatGoalState(snapshot: GoalStateSnapshot): string {
           task.expectedChangedScope?.length
             ? `expected_changed_scope=${task.expectedChangedScope.join(",")}`
             : undefined,
-          task.mergeStrategy ? `merge_strategy=${task.mergeStrategy}` : undefined,
+          task.integration ? `integration=${task.integration}` : undefined,
         ]
           .filter((item): item is string => item !== undefined)
           .join("; ");

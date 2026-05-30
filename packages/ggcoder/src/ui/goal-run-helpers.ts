@@ -1,9 +1,6 @@
 import { formatGoalReferencesForPrompt } from "../core/goal-references.js";
 import { goalHasBlockingPrerequisites, type GoalRun } from "../core/goal-store.js";
-import {
-  APPLY_INTEGRATION_TO_MAIN_TASK_TITLE,
-  COMMIT_INTEGRATED_GOAL_CHANGES_TASK_TITLE,
-} from "../core/goal-controller.js";
+import { APPLY_INTEGRATION_TO_MAIN_TASK_TITLE } from "../core/goal-controller.js";
 import type { decideGoalNextAction } from "../core/goal-controller.js";
 
 export function buildGoalTaskPromptWithReferences(run: GoalRun, taskPrompt: string): string {
@@ -13,10 +10,7 @@ export function buildGoalTaskPromptWithReferences(run: GoalRun, taskPrompt: stri
 }
 
 export function shouldRunGoalTaskInMainCheckout(taskTitle: string): boolean {
-  return (
-    taskTitle === APPLY_INTEGRATION_TO_MAIN_TASK_TITLE ||
-    taskTitle === COMMIT_INTEGRATED_GOAL_CHANGES_TASK_TITLE
-  );
+  return taskTitle === APPLY_INTEGRATION_TO_MAIN_TASK_TITLE;
 }
 
 export function goalTaskProgress(

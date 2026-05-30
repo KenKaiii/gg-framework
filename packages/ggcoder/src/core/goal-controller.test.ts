@@ -226,7 +226,7 @@ describe("goal controller", () => {
       attempts: 0,
       parallelGroup: "model",
       expectedChangedScope: ["packages/ggcoder/src/core/**"],
-      mergeStrategy: "parallel_candidate" as const,
+      integration: "candidate" as const,
     };
     const uiTask = {
       id: "ui-task",
@@ -237,7 +237,7 @@ describe("goal controller", () => {
       dependsOn: ["schema-task"],
       parallelGroup: "frontend",
       expectedChangedScope: ["packages/ggcoder/src/ui/**"],
-      mergeStrategy: "after_dependencies" as const,
+      integration: "candidate" as const,
     };
 
     const missingDepDecision = decideGoalNextAction(goalRun({ tasks: [uiTask] }));
@@ -656,12 +656,19 @@ describe("goal controller", () => {
               prompt: "Integrate accepted candidates",
               status: "done",
               attempts: 1,
-              mergeStrategy: "after_dependencies",
+              integration: "candidate",
               worktree: {
                 baseRef: "base-sha",
                 branchName: "goal/a/integrate-worker",
                 path: "/tmp/worktrees/integrate-worker",
                 status: "created",
+              },
+              candidate: {
+                baseRef: "base-sha",
+                headSha: "head-sha",
+                branchName: "goal/a/integrate-worker",
+                changedFiles: ["src/x.ts"],
+                committed: true,
               },
               lastSummary: "Integrated accepted candidate patches and wrote integration.patch.",
             },
@@ -677,19 +684,26 @@ describe("goal controller", () => {
     });
   });
 
-  it("runs verifier after main integration, then requires a commit before final audit and completion", () => {
+  it("runs verifier after main integration, then completes when typed integration is committed", () => {
     const integratedTask = {
       id: "integrate",
       title: "Integrate candidates and verify",
       prompt: "Integrate accepted candidates",
       status: "done" as const,
       attempts: 1,
-      mergeStrategy: "after_dependencies" as const,
+      integration: "candidate" as const,
       worktree: {
         baseRef: "base-sha",
         branchName: "goal/a/integrate-worker",
         path: "/tmp/worktrees/integrate-worker",
         status: "created" as const,
+      },
+      candidate: {
+        baseRef: "base-sha",
+        headSha: "head-sha",
+        branchName: "goal/a/integrate-worker",
+        changedFiles: ["src/x.ts"],
+        committed: true,
       },
     };
     const appliedEvidence = {
@@ -723,42 +737,6 @@ describe("goal controller", () => {
       reason: "All Goal tasks are done; running configured verifier for real completion evidence.",
     });
 
-    const verifierPassed = goalRun({
-      tasks: [
-        integratedTask,
-        {
-          id: "apply",
-          title: "Apply integrated worktree to main",
-          prompt: "Apply accepted changes",
-          status: "done",
-          attempts: 1,
-        },
-      ],
-      evidence: [durablePlanEvidence, appliedEvidence],
-      verifier: {
-        description: "Full check",
-        command: "pnpm test",
-        lastResult: {
-          status: "pass",
-          summary: "main checkout verifier passed",
-          command: "pnpm test",
-          outputPath: ".goal-evidence/verifier.log",
-          checkedAt: "2024-01-01T00:00:02.000Z",
-        },
-      },
-    });
-
-    expect(canCompleteGoalRun(withPassingCompletionAudit(verifierPassed))).toEqual({
-      ok: false,
-      reason: "Integrated Goal changes have not been committed in the main checkout.",
-    });
-    expect(decideGoalNextAction(verifierPassed)).toMatchObject({
-      kind: "create_task",
-      title: "Commit integrated goal changes",
-      reason:
-        "Verified integrated Goal changes must be committed in the user's main checkout before final audit or completion.",
-    });
-
     const committed = withPassingCompletionAudit(
       goalRun({
         tasks: [
@@ -770,26 +748,24 @@ describe("goal controller", () => {
             status: "done",
             attempts: 1,
           },
-          {
-            id: "commit",
-            title: "Commit integrated goal changes",
-            prompt: "Commit accepted changes",
-            status: "done",
-            attempts: 1,
-          },
         ],
-        evidence: [
-          durablePlanEvidence,
-          appliedEvidence,
-          {
-            id: "commit-evidence",
-            kind: "command",
-            label: "Integrated Goal changes committed",
-            content: "Committed accepted Goal changes as abc1234.",
-            createdAt: "2024-01-01T00:00:03.000Z",
+        evidence: [durablePlanEvidence, appliedEvidence],
+        integration: {
+          status: "committed",
+          headSha: "abc1234",
+          updatedAt: "2024-01-01T00:00:03.000Z",
+        },
+        verifier: {
+          description: "Full check",
+          command: "pnpm test",
+          lastResult: {
+            status: "pass",
+            summary: "main checkout verifier passed",
+            command: "pnpm test",
+            outputPath: ".goal-evidence/verifier.log",
+            checkedAt: "2024-01-01T00:00:02.000Z",
           },
-        ],
-        verifier: verifierPassed.verifier,
+        },
       }),
     );
 
@@ -1053,11 +1029,11 @@ describe("goal controller", () => {
 
     expect(hasFreshGoalCompletionAudit(run)).toEqual({
       ok: false,
-      reason: "Final completion audit pass summary must include latest verifier_checked_at.",
+      reason: "Final completion audit does not match the latest verifier result.",
     });
     expect(canCompleteGoalRun(run)).toEqual({
       ok: false,
-      reason: "Final completion audit pass summary must include latest verifier_checked_at.",
+      reason: "Final completion audit does not match the latest verifier result.",
     });
   });
 
@@ -1071,6 +1047,7 @@ describe("goal controller", () => {
           status: "pass",
           summary: "passed original-goal-prompt GOAL_PLAN",
           checkedAt: "2024-01-01T00:00:00.000Z",
+          outputPath: "out.log",
         },
       },
     });
@@ -1096,18 +1073,10 @@ describe("goal controller", () => {
     });
   });
 
-  it("reruns the verifier when a non-audit worker changed evidence after the latest verifier pass", () => {
+  it("reruns the verifier when a substantive worker completed after the latest verifier pass", () => {
     const run = goalRun({
       tasks: [{ id: "task-a", title: "Done", prompt: "Done", status: "done", attempts: 1 }],
-      evidence: [
-        {
-          id: "post-verifier-worker",
-          kind: "log",
-          label: "Worker fix123 done",
-          content: "Updated final report after the verifier pass.",
-          createdAt: "2024-01-01T00:00:02.000Z",
-        },
-      ],
+      lastSubstantiveWorkerAt: "2024-01-01T00:00:02.000Z",
       verifier: {
         description: "Full check",
         command: "pnpm test",
@@ -1116,6 +1085,7 @@ describe("goal controller", () => {
           summary: "passed original-goal-prompt GOAL_PLAN",
           command: "pnpm test",
           checkedAt: "2024-01-01T00:00:00.000Z",
+          outputPath: "out.log",
         },
       },
       completionAudit: {
@@ -1124,13 +1094,13 @@ describe("goal controller", () => {
           "FINAL_AUDIT_PASS verifier_checked_at=2024-01-01T00:00:00.000Z original-goal-prompt GOAL_PLAN",
         checkedAt: "2024-01-01T00:00:03.000Z",
         verifierCheckedAt: "2024-01-01T00:00:00.000Z",
+        outputPath: "out.log",
       },
     });
 
     expect(hasFreshGoalCompletionAudit(run)).toEqual({
       ok: false,
-      reason:
-        "Latest verifier result is stale after later Goal worker evidence: Worker fix123 done.",
+      reason: "Latest verifier result is stale after a later substantive Goal worker completion.",
     });
     expect(decideGoalNextAction(run)).toEqual({
       kind: "run_verifier",
@@ -1450,6 +1420,25 @@ describe("goal controller", () => {
       title: "Resolve local Goal prerequisites",
     });
     expect(decision.kind === "create_task" ? decision.prompt : "").toContain("Node toolchain");
+  });
+
+  it("hard-fails with a diagnosis once the decision ceiling is exceeded", () => {
+    const decisionEvidence = Array.from({ length: 4 }, (_unused, index) => ({
+      id: `d${index}`,
+      kind: "summary" as const,
+      label: "Goal decision: start_worker",
+      content: `decision ${index}`,
+      createdAt: `2024-01-01T00:00:0${index}.000Z`,
+    }));
+    const decision = decideGoalNextAction(
+      goalRun({
+        tasks: [{ id: "t", title: "T", prompt: "x", status: "pending", attempts: 0 }],
+        evidence: decisionEvidence,
+      }),
+      { decisionLimit: 3 },
+    );
+    expect(decision).toMatchObject({ kind: "terminal", status: "failed" });
+    expect(decision.reason).toContain("maximum of 3 controller decisions");
   });
 
   it("still blocks on unmet external prerequisites", () => {

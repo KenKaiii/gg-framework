@@ -6,8 +6,11 @@ import type { GoalRun } from "./goal-store.js";
 import {
   checkGoalWorktreeIntegration,
   checkpointGoalWorkingTree,
+  commitGoalWorkerCandidate,
   createGoalWorkerWorktree,
   goalWorktreeRoot,
+  isGitWorktreeViable,
+  removeGoalRunWorktrees,
   sanitizeWorktreeToken,
 } from "./goal-worktree.js";
 import type { GoalWorktreeCommandRunner } from "./goal-worktree.js";
@@ -204,6 +207,197 @@ describe("goal worktree helpers", () => {
     ]);
   });
 
+  it("detects git worktree viability (work tree + resolvable HEAD)", async () => {
+    const viable: GoalWorktreeCommandRunner = {
+      execFile: vi.fn(async (_file, args) =>
+        args[1] === "--is-inside-work-tree"
+          ? { stdout: "true\n", stderr: "" }
+          : { stdout: "sha\n", stderr: "" },
+      ),
+    };
+    const notWorkTree: GoalWorktreeCommandRunner = {
+      execFile: vi.fn(async () => ({ stdout: "false\n", stderr: "" })),
+    };
+    const gitMissing: GoalWorktreeCommandRunner = {
+      execFile: vi.fn(async () => {
+        throw new Error("spawn git ENOENT");
+      }),
+    };
+    const noCommits: GoalWorktreeCommandRunner = {
+      execFile: vi.fn(async (_file, args) => {
+        if (args[1] === "--is-inside-work-tree") return { stdout: "true\n", stderr: "" };
+        throw new Error("fatal: needed a single revision");
+      }),
+    };
+
+    expect(await isGitWorktreeViable("/repo", viable)).toBe(true);
+    expect(await isGitWorktreeViable("/repo", notWorkTree)).toBe(false);
+    expect(await isGitWorktreeViable("/repo", gitMissing)).toBe(false);
+    expect(await isGitWorktreeViable("/repo", noCommits)).toBe(false);
+  });
+
+  it("retries the checkpoint commit with a fallback identity when none is configured", async () => {
+    const calls: Array<readonly string[]> = [];
+    const runner: GoalWorktreeCommandRunner = {
+      execFile: vi.fn(async (_file, args) => {
+        calls.push(args);
+        if (args[0] === "status") return { stdout: " M a.ts\n", stderr: "" };
+        if (args[0] === "config") throw new Error("unset"); // no user.email/name
+        if (args.includes("commit") && !args.includes("-c")) {
+          throw new Error("Please tell me who you are");
+        }
+        if (args.includes("commit")) return { stdout: "", stderr: "" };
+        if (args[0] === "rev-parse") return { stdout: "sha\n", stderr: "" };
+        return { stdout: "", stderr: "" };
+      }),
+    };
+
+    const result = await checkpointGoalWorkingTree({
+      projectPath: "/repo",
+      message: "goal(g): checkpoint",
+      commandRunner: runner,
+    });
+
+    expect(result.committed).toBe(true);
+    const retried = calls.find((args) => args.includes("-c") && args.includes("commit"));
+    expect(retried).toBeDefined();
+    expect(retried?.join(" ")).toContain("user.email=goal@ggcoder.local");
+  });
+
+  it("commits a dirty worktree into a typed candidate packet", async () => {
+    const runner: GoalWorktreeCommandRunner = {
+      execFile: vi.fn(async (_file, args) => {
+        if (args[0] === "status") return { stdout: " M src/core/a.ts\n", stderr: "" };
+        if (args[0] === "rev-parse") return { stdout: "candidate-sha\n", stderr: "" };
+        if (args[0] === "diff") return { stdout: "src/core/a.ts\n", stderr: "" };
+        return { stdout: "", stderr: "" };
+      }),
+    };
+
+    const candidate = await commitGoalWorkerCandidate({
+      worktreePath: "/wt",
+      branchName: "goal/g/task",
+      baseRef: "base-sha",
+      message: "goal(g): candidate task",
+      commandRunner: runner,
+    });
+
+    expect(candidate).toEqual({
+      baseRef: "base-sha",
+      headSha: "candidate-sha",
+      branchName: "goal/g/task",
+      changedFiles: ["src/core/a.ts"],
+      committed: true,
+    });
+  });
+
+  it("returns no candidate when a worker produced no changes", async () => {
+    const runner: GoalWorktreeCommandRunner = {
+      execFile: vi.fn(async (_file, args) => {
+        if (args[0] === "status") return { stdout: "", stderr: "" };
+        if (args[0] === "rev-parse") return { stdout: "base-sha\n", stderr: "" };
+        return { stdout: "", stderr: "" };
+      }),
+    };
+
+    const candidate = await commitGoalWorkerCandidate({
+      worktreePath: "/wt",
+      branchName: "goal/g/task",
+      baseRef: "base-sha",
+      message: "goal(g): candidate task",
+      commandRunner: runner,
+    });
+
+    expect(candidate).toBeUndefined();
+  });
+
+  it("removes a completed run's worktrees, branches, and prunes", async () => {
+    const calls: Array<readonly string[]> = [];
+    const runner: GoalWorktreeCommandRunner = {
+      execFile: vi.fn(async (_file, args) => {
+        calls.push(args);
+        return { stdout: "", stderr: "" };
+      }),
+    };
+
+    const result = await removeGoalRunWorktrees(
+      "/main",
+      goalRun({
+        tasks: [
+          {
+            id: "task-a",
+            title: "A",
+            prompt: "x",
+            status: "done",
+            attempts: 1,
+            worktree: {
+              baseRef: "b",
+              branchName: "goal/a/task-a",
+              path: "/wt-a",
+              status: "created",
+            },
+          },
+          {
+            id: "task-b",
+            title: "B",
+            prompt: "x",
+            status: "done",
+            attempts: 1,
+            worktree: {
+              baseRef: "b",
+              branchName: "goal/a/task-b",
+              path: "/wt-b",
+              status: "created",
+            },
+          },
+          { id: "task-c", title: "C", prompt: "x", status: "done", attempts: 1 },
+        ],
+      }),
+      runner,
+    );
+
+    expect(result.removedPaths).toEqual(["/wt-a", "/wt-b"]);
+    expect(result.removedBranches).toEqual(["goal/a/task-a", "goal/a/task-b"]);
+    expect(calls).toContainEqual(["worktree", "remove", "--force", "/wt-a"]);
+    expect(calls).toContainEqual(["branch", "-D", "goal/a/task-b"]);
+    expect(calls).toContainEqual(["worktree", "prune"]);
+  });
+
+  it("tolerates already-removed worktrees during cleanup", async () => {
+    const runner: GoalWorktreeCommandRunner = {
+      execFile: vi.fn(async (_file, args) => {
+        if (args[0] === "worktree" && args[1] === "remove") throw new Error("not a working tree");
+        if (args[0] === "branch") throw new Error("branch not found");
+        return { stdout: "", stderr: "" };
+      }),
+    };
+
+    const result = await removeGoalRunWorktrees(
+      "/main",
+      goalRun({
+        tasks: [
+          {
+            id: "task-a",
+            title: "A",
+            prompt: "x",
+            status: "done",
+            attempts: 1,
+            worktree: {
+              baseRef: "b",
+              branchName: "goal/a/task-a",
+              path: "/wt-a",
+              status: "created",
+            },
+          },
+        ],
+      }),
+      runner,
+    );
+
+    expect(result.removedPaths).toEqual([]);
+    expect(result.removedBranches).toEqual([]);
+  });
+
   it("passes integration check when completed worker worktrees are clean", async () => {
     const result = await checkGoalWorktreeIntegration(
       "/tmp/project",
@@ -247,7 +441,7 @@ describe("goal worktree helpers", () => {
             status: "done",
             attempts: 1,
             workerId: "worker-a",
-            mergeStrategy: "after_dependencies",
+            integration: "candidate",
             worktree: {
               baseRef: "base",
               branchName: "goal/a/task-a-worker-a",
@@ -278,7 +472,7 @@ describe("goal worktree helpers", () => {
     expect(result.summary).toContain("stranded in isolated worktrees");
   });
 
-  it("ignores pending tasks and manual merge candidates during integration check", async () => {
+  it("ignores pending tasks and manual integration candidates during integration check", async () => {
     const result = await checkGoalWorktreeIntegration(
       "/tmp/project",
       goalRun({
@@ -289,7 +483,7 @@ describe("goal worktree helpers", () => {
             prompt: "Do work",
             status: "done",
             attempts: 1,
-            mergeStrategy: "manual",
+            integration: "manual",
             worktree: {
               baseRef: "base",
               branchName: "goal/a/manual",

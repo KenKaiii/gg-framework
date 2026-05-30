@@ -14,16 +14,31 @@ import {
   goalHasBlockingPrerequisites,
   loadGoalRuns,
   reconcileActiveGoalRuns,
+  recordGoalSubstantiveWorker,
+  setGoalIntegrationState,
   updateGoalTask,
   upsertGoalRun,
   type GoalRun,
 } from "../../core/goal-store.js";
-import { canCompleteGoalRun, decideGoalNextAction } from "../../core/goal-controller.js";
+import {
+  APPLY_INTEGRATION_TO_MAIN_TASK_TITLE,
+  FINAL_COMPLETION_AUDIT_TASK_TITLE,
+  canCompleteGoalRun,
+  decideGoalNextAction,
+} from "../../core/goal-controller.js";
+import {
+  confirmAndCommitMainIntegration,
+  discardStagedIntegration,
+  finalizeStagedIntegration,
+  stageGoalIntegration,
+  type GoalStagedContext,
+} from "../../core/goal-integration.js";
 import { runGoalPrerequisiteChecks } from "../../core/goal-prerequisites.js";
 import { runGoalVerifierCommand } from "../../core/goal-verifier.js";
 import {
   checkGoalWorktreeIntegration,
   isGoalWorktreeDirtyError,
+  removeGoalRunWorktrees,
 } from "../../core/goal-worktree.js";
 import {
   listGoalWorkers,
@@ -33,11 +48,7 @@ import {
   type GoalWorkerCompletion,
 } from "../../core/goal-worker.js";
 import type { SessionManager } from "../../core/session-manager.js";
-import {
-  formatGoalVerifierCompletionEvent,
-  formatGoalWorkerCompletionEvent,
-  parseGoalSyntheticEvent,
-} from "../goal-events.js";
+import { parseGoalSyntheticEvent } from "../goal-events.js";
 import {
   completedItemsWithDurableGoalTerminalProgress,
   formatGoalTerminalProgress,
@@ -120,7 +131,7 @@ export interface GoalOrchestration {
   continueGoalRun: (runId: string) => void;
   handleGoalWorkerComplete: (run: GoalRun, completion: GoalWorkerCompletion) => void;
   startGoalRun: (run: GoalRun) => void;
-  verifyGoalRun: (run: GoalRun) => Promise<void>;
+  verifyGoalRun: (run: GoalRun, staging?: GoalStagedContext) => Promise<void>;
   pauseGoalRun: (run: GoalRun) => void;
   startTask: (title: string, prompt: string, taskId: string) => void;
 }
@@ -335,7 +346,6 @@ export function useGoalOrchestration({
       const taskTitle =
         run.tasks.find((task) => task.id === completion.worker.goalTaskId)?.title ??
         completion.worker.goalTaskId;
-      const eventText = formatGoalWorkerCompletionEvent(run, taskTitle, completion);
       appendGoalProgress({
         kind: "goal_progress",
         phase: "worker_finished",
@@ -358,8 +368,70 @@ export function useGoalOrchestration({
         goalNumber: goalNumberForRun(run.id),
         ...taskProgress,
       });
-      runGoalSyntheticEvent(eventText);
       void (async () => {
+        // Deterministic integration gate: if an apply-integration worker just
+        // finished, confirm via git that main actually contains the changes,
+        // commit anything left uncommitted, and record canonical applied/
+        // committed evidence ourselves — never trust the worker to emit exact
+        // evidence labels. This must happen before the continuation re-decides.
+        const completedTask = run.tasks.find((task) => task.id === completion.worker.goalTaskId);
+        if (
+          completion.status === "done" &&
+          completedTask?.title === APPLY_INTEGRATION_TO_MAIN_TASK_TITLE
+        ) {
+          const baseRef = run.tasks
+            .map((task) => task.candidate?.baseRef)
+            .find((value): value is string => !!value);
+          if (baseRef) {
+            try {
+              const confirmed = await confirmAndCommitMainIntegration({
+                projectPath: completion.worker.projectPath,
+                baseRef,
+                message: `goal(${run.id}): commit integrated changes`,
+              });
+              if (confirmed.applied) {
+                await setGoalIntegrationState(completion.worker.projectPath, run.id, {
+                  status: confirmed.committed ? "committed" : "applied",
+                  baseRef,
+                  ...(confirmed.sha ? { headSha: confirmed.sha } : {}),
+                  files: confirmed.files,
+                  updatedAt: new Date().toISOString(),
+                });
+                await appendGoalEvidence(completion.worker.projectPath, run.id, {
+                  kind: "summary",
+                  label: "Integrated worktree applied to main",
+                  content: `Deterministically confirmed main contains the integrated changes; commit=${confirmed.sha ?? ""}; files=${confirmed.files.join(", ")}`,
+                });
+                await appendGoalEvidence(completion.worker.projectPath, run.id, {
+                  kind: "summary",
+                  label: "Integrated Goal changes committed",
+                  content: `Deterministic integration commit=${confirmed.sha ?? ""}.`,
+                });
+              }
+            } catch (err) {
+              log(
+                "ERROR",
+                "goal",
+                `Integration finalize failed: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
+          }
+        }
+        // Stamp the substantive-worker clock for any worker that is neither the
+        // final read-only audit nor an integration task, so verifier/audit
+        // staleness is driven by typed state instead of evidence-label scans.
+        const completedTitle = completedTask?.title;
+        if (
+          completedTitle &&
+          completedTitle !== FINAL_COMPLETION_AUDIT_TASK_TITLE &&
+          !shouldRunGoalTaskInMainCheckout(completedTitle)
+        ) {
+          await recordGoalSubstantiveWorker(
+            completion.worker.projectPath,
+            run.id,
+            new Date().toISOString(),
+          );
+        }
         if (
           listGoalWorkers(completion.worker.projectPath).some(
             (worker) => worker.status === "running",
@@ -374,13 +446,7 @@ export function useGoalOrchestration({
         log("ERROR", "goal", err instanceof Error ? err.message : String(err)),
       );
     },
-    [
-      appendGoalProgress,
-      continueGoalRun,
-      goalNumberForRun,
-      runGoalSyntheticEvent,
-      upsertGoalStatusEntry,
-    ],
+    [appendGoalProgress, continueGoalRun, goalNumberForRun, upsertGoalStatusEntry],
   );
 
   useEffect(() => {
@@ -513,6 +579,22 @@ export function useGoalOrchestration({
         }
         if (decision.kind === "complete") {
           await upsertGoalRun(cwd, { ...checkedRun, status: "passed" });
+          try {
+            const cleanup = await removeGoalRunWorktrees(cwd, checkedRun);
+            if (cleanup.removedPaths.length > 0) {
+              await appendGoalEvidence(cwd, checkedRun.id, {
+                kind: "summary",
+                label: "Goal worktrees cleaned up",
+                content: `Removed ${cleanup.removedPaths.length} worktree(s) and ${cleanup.removedBranches.length} branch(es) after the Goal passed.`,
+              });
+            }
+          } catch (cleanupErr) {
+            log(
+              "WARN",
+              "goal",
+              `Worktree cleanup failed: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+            );
+          }
           appendGoalProgress({
             kind: "goal_progress",
             phase: "terminal",
@@ -530,6 +612,35 @@ export function useGoalOrchestration({
           return;
         }
         if (decision.kind === "create_task") {
+          if (decision.title === APPLY_INTEGRATION_TO_MAIN_TASK_TITLE) {
+            // Stage the deterministic integration on a throwaway branch, verify it
+            // there, and only fast-forward main on pass — main never holds
+            // unverified changes. Ambiguous cases fall through to the LLM apply task.
+            const staged = await stageGoalIntegration({ projectPath: cwd, run: checkedRun });
+            if (staged.status === "staged") {
+              const stagedRun =
+                (await appendGoalEvidence(cwd, checkedRun.id, {
+                  kind: "summary",
+                  label: "Integration staged",
+                  content: `Staged ${staged.integratedTaskIds.length} candidate(s) on ${staged.stagingBranch} for verify-before-fast-forward; files=${staged.changedFiles.join(", ")}.`,
+                  path: staged.stagingPath,
+                })) ?? checkedRun;
+              await verifyGoalRun(stagedRun, {
+                stagingBranch: staged.stagingBranch,
+                stagingPath: staged.stagingPath,
+                mainBase: staged.mainBase,
+                integratedTaskIds: staged.integratedTaskIds,
+                changedFiles: staged.changedFiles,
+              });
+              return;
+            }
+            if (staged.status === "fallback") {
+              await appendGoalDecision(cwd, checkedRun.id, {
+                kind: "staged_integration_fallback",
+                reason: staged.reason,
+              });
+            }
+          }
           const latestRunBeforeCreate =
             (await loadGoalRuns(cwd)).find((item) => item.id === checkedRun.id) ?? checkedRun;
           const existingSameTitleTask = latestRunBeforeCreate.tasks.find(
@@ -681,7 +792,7 @@ export function useGoalOrchestration({
   );
 
   const verifyGoalRun = useCallback(
-    async (run: GoalRun) => {
+    async (run: GoalRun, staging?: GoalStagedContext) => {
       await setGoalModeAndPrompt("coordinator");
       if (!run.verifier?.command) {
         await appendGoalEvidence(cwd, run.id, {
@@ -757,7 +868,7 @@ export function useGoalOrchestration({
         goalNumber: goalNumberForRun(run.id),
       });
       void runGoalVerifierCommand({
-        cwd: run.verifier.cwd ?? cwd,
+        cwd: staging?.stagingPath ?? run.verifier.cwd ?? cwd,
         runId: run.id,
         command: run.verifier.command,
         timeoutMs: verifierTimeoutMs,
@@ -768,6 +879,47 @@ export function useGoalOrchestration({
           const status = verification.status;
           const summary = verification.summary;
           const outputPath = verification.outputPath;
+          // Verify-then-fast-forward: only advance main once the staged
+          // integration verifies green; on failure main is left untouched.
+          if (staging) {
+            if (status === "pass") {
+              try {
+                const ff = await finalizeStagedIntegration({ projectPath: cwd, staging });
+                await setGoalIntegrationState(cwd, run.id, {
+                  status: "committed",
+                  headSha: ff.commitSha,
+                  baseRef: staging.mainBase,
+                  files: staging.changedFiles,
+                  updatedAt: new Date().toISOString(),
+                });
+                await appendGoalEvidence(cwd, run.id, {
+                  kind: "summary",
+                  label: "Integrated worktree applied to main",
+                  content: `Verified staged integration fast-forwarded to main. tasks=${staging.integratedTaskIds.join(", ")}; files=${staging.changedFiles.join(", ")}; commit=${ff.commitSha}`,
+                });
+                await appendGoalEvidence(cwd, run.id, {
+                  kind: "summary",
+                  label: "Integrated Goal changes committed",
+                  content: `Fast-forwarded ${staging.changedFiles.length} file(s) to main; commit=${ff.commitSha}.`,
+                });
+              } catch (ffErr) {
+                await discardStagedIntegration({ projectPath: cwd, staging });
+                await appendGoalEvidence(cwd, run.id, {
+                  kind: "summary",
+                  label: "Integration fast-forward failed",
+                  content: `Staged integration verified but main could not fast-forward; will retry or apply. ${ffErr instanceof Error ? ffErr.message : String(ffErr)}`,
+                });
+              }
+            } else {
+              await discardStagedIntegration({ projectPath: cwd, staging });
+              await appendGoalEvidence(cwd, run.id, {
+                kind: "summary",
+                label: "Staged integration discarded",
+                content:
+                  "Verifier failed on the staged integration; discarded the staging branch and left main unchanged.",
+              });
+            }
+          }
           const latestRun = (await loadGoalRuns(cwd)).find((item) => item.id === run.id) ?? run;
           const runWithVerifier: GoalRun = {
             ...latestRun,
@@ -775,7 +927,7 @@ export function useGoalOrchestration({
               ...latestRun.verifier,
               description: latestRun.verifier?.description ?? "Goal verifier",
               command: run.verifier?.command,
-              ...(run.verifier?.cwd ? { cwd: run.verifier.cwd } : {}),
+              ...(!staging && run.verifier?.cwd ? { cwd: run.verifier.cwd } : {}),
               lastResult: verification,
             },
             ...(status === "pass"
@@ -791,7 +943,7 @@ export function useGoalOrchestration({
               : {}),
           };
           const completionCheck = canCompleteGoalRun(runWithVerifier);
-          const verifiedRun = await upsertGoalRun(cwd, {
+          await upsertGoalRun(cwd, {
             ...runWithVerifier,
             continueRequestedAt: latestRun.continueRequestedAt,
             status: status === "pass" && completionCheck.ok ? "passed" : "ready",
@@ -822,14 +974,6 @@ export function useGoalOrchestration({
             detail: status === "pass" ? "reviewing verifier evidence" : "verifier failed",
             goalNumber: goalNumberForRun(run.id),
           });
-          const eventText = formatGoalVerifierCompletionEvent(
-            verifiedRun,
-            status === "pass" ? "pass" : "fail",
-            run.verifier?.command ?? "",
-            verification.exitCode ?? 1,
-            summary,
-          );
-          runGoalSyntheticEvent(eventText);
           const continuationRun = (await loadGoalRuns(cwd)).find((item) => item.id === run.id);
           if (continuationRun?.continueRequestedAt || status === "fail" || status === "pass") {
             setTimeout(() => continueGoalRun(run.id), 500);
@@ -849,7 +993,6 @@ export function useGoalOrchestration({
       clearGoalModeIfIdle,
       clearGoalStatusEntry,
       goalNumberForRun,
-      runGoalSyntheticEvent,
       setGoalModeAndPrompt,
       upsertGoalStatusEntry,
     ],

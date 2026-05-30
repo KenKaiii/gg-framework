@@ -58,6 +58,9 @@ export type { ErrorSource, FormattedError } from "./errors.js";
 export { setProviderDiagnostic } from "./utils/diag.js";
 export type { ProviderDiagnosticFn } from "./utils/diag.js";
 
+// Provider request transforms (exposed for request-building + verification)
+export { toAnthropicMessages, toOpenAIMessages } from "./providers/transform.js";
+
 // Palsu provider (testing)
 export {
   registerPalsuProvider,
