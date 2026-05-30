@@ -5,6 +5,7 @@ export interface TranscriptSpacingItem {
   kind: string;
   text?: string;
   tools?: unknown;
+  continuation?: boolean;
 }
 
 export const TRANSCRIPT_SPACING_KINDS = [
@@ -160,6 +161,12 @@ export function getTranscriptItemMarginTop({
   const previousKind =
     previousLiveItem?.kind ?? lastPendingHistoryItem?.kind ?? lastHistoryItem?.kind;
   if (item.kind === "assistant") {
+    // A continuation chunk is the next paragraph of a response whose earlier
+    // paragraphs were already flushed mid-stream. assistant→assistant is
+    // otherwise compact (0 margin), but the paragraphs were separated by a
+    // blank line in the original response, so re-insert it. Mirrors the
+    // fullscreen serializer's `leadingSeparator: true` for continuations.
+    if (item.continuation === true && previousKind === "assistant") return 1;
     return shouldTopSpaceAssistantAfterToolBoundary({
       text: typeof item.text === "string" ? item.text : "",
       previousLiveItem,

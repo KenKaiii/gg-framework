@@ -21,9 +21,11 @@ function stripAnsi(v: string): string {
 function Harness({
   liveItems,
   streamingText,
+  streamingThinking = "",
 }: {
   liveItems: CompletedItem[];
   streamingText: string;
+  streamingThinking?: string;
 }) {
   const theme = useTheme();
   const renderItem = (item: CompletedItem, index: number, items: CompletedItem[]) =>
@@ -47,8 +49,8 @@ function Harness({
         renderItem={renderItem}
         isRunning
         visibleStreamingText={streamingText}
-        streamingThinking=""
-        thinkingMs={0}
+        streamingThinking={streamingThinking}
+        thinkingMs={streamingThinking ? 800 : 0}
         reserveStreamingSpacing={false}
         renderMarkdown
         measuredLiveAreaRows={measuredLiveAreaRows}
@@ -111,6 +113,24 @@ describe("live area clamp", () => {
       <Harness
         liveItems={[{ kind: "assistant", id: "a1", text: longText }]}
         streamingText={longText}
+      />,
+    );
+    expect(height).toBeLessThan(ROWS);
+  });
+
+  it("keeps a finalized block plus streaming text and active thinking below the terminal height", () => {
+    // Worst live-frame case on the native-scrollback default: a finalized turn
+    // is still in the live area while the next turn streams BOTH a thinking
+    // block and visible text. This is the tallest the live frame ever gets, so
+    // it must still stay strictly below rows or Ink's clearTerminal redraw
+    // snaps the footer to the top.
+    const height = frameHeight(
+      <Harness
+        liveItems={[{ kind: "assistant", id: "a1", text: longText }]}
+        streamingText={longText}
+        streamingThinking={Array.from({ length: 20 }, (_, i) => `thinking line ${i + 1}`).join(
+          "\n",
+        )}
       />,
     );
     expect(height).toBeLessThan(ROWS);

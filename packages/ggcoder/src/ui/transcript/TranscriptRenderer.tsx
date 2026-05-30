@@ -130,6 +130,7 @@ export function renderTranscriptItem({
           text={item.text}
           thinking={item.thinking}
           thinkingMs={item.thinkingMs}
+          continuation={item.continuation}
           renderMarkdown={renderMarkdown}
           availableTerminalHeight={assistantLiveBudget}
         />,

@@ -1,8 +1,14 @@
 diff --git a/build/ink.js b/build/ink.js
-index 30019a0..1410e74 100644
+index 30019a073d38ed05dca08f6221af187c429a536b..80d9de5601b4e22d205eb27857508aedc60f0b9d 100644
 --- a/build/ink.js
 +++ b/build/ink.js
-@@ -324,7 +324,7 @@ export default class Ink {
+@@ -319,12 +319,12 @@ export default class Ink {
+         // Only apply when writing to a real TTY — piped output always gets trailing newlines.
+         const isFullscreen = this.options.stdout.isTTY && outputHeight >= this.options.stdout.rows;
+         const outputToRender = isFullscreen ? output : output + '\n';
+-        if (this.lastOutputHeight >= this.options.stdout.rows) {
++        if (isFullscreen && this.lastOutputHeight >= this.options.stdout.rows) {
+             const sync = shouldSynchronize(this.options.stdout);
              if (sync) {
                  this.options.stdout.write(bsu);
              }

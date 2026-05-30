@@ -176,6 +176,43 @@ describe("transcript spacing", () => {
     ).toBe(0);
   });
 
+  it("re-inserts the paragraph gap before a continuation assistant chunk", () => {
+    // A response whose earlier paragraphs were flushed mid-stream commits its
+    // trailing paragraph with continuation:true. assistant→assistant is
+    // otherwise compact, but the original paragraphs were blank-line separated,
+    // so the continuation chunk must get a 1-row top margin (and no dot).
+    const item: CompletedItem = {
+      kind: "assistant",
+      id: "assistant-2",
+      text: "final paragraph",
+      continuation: true,
+    };
+    const previous: CompletedItem = {
+      kind: "assistant",
+      id: "assistant-1",
+      text: "earlier paragraph",
+    };
+
+    expect(
+      getTranscriptItemMarginTop({
+        item,
+        previousLiveItem: previous,
+      }),
+    ).toBe(1);
+  });
+
+  it("keeps non-continuation stacked assistant rows compact", () => {
+    const item: CompletedItem = { kind: "assistant", id: "assistant-2", text: "second answer" };
+    const previous: CompletedItem = { kind: "assistant", id: "assistant-1", text: "first answer" };
+
+    expect(
+      getTranscriptItemMarginTop({
+        item,
+        previousLiveItem: previous,
+      }),
+    ).toBe(0);
+  });
+
   it("does not add a top gap to a queued placeholder immediately after its user row", () => {
     const item: CompletedItem = { kind: "queued", id: "queued", text: "Next prompt." };
     const previous: CompletedItem = { kind: "user", id: "user", text: "Next prompt." };

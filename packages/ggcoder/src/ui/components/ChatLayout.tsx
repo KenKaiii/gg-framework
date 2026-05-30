@@ -3,6 +3,13 @@ import { Box, type DOMElement } from "ink";
 
 interface ChatLayoutProps {
   columns: number;
+  /**
+   * When set, the layout root claims the full terminal height. Used by the
+   * fullscreen alt-screen viewport so the bounded transcript region (flexGrow)
+   * fills everything above the pinned controls, giving the footer a fixed
+   * position at the very bottom of the screen.
+   */
+  rows?: number;
   children: React.ReactNode;
 }
 
@@ -27,7 +34,14 @@ interface ChatInputFooterStackProps {
   children: React.ReactNode;
 }
 
-export function ChatLayout({ columns, children }: ChatLayoutProps) {
+export function ChatLayout({ columns, rows, children }: ChatLayoutProps) {
+  if (rows !== undefined) {
+    return (
+      <Box flexDirection="column" width={columns} height={rows} flexShrink={0} flexGrow={0}>
+        {children}
+      </Box>
+    );
+  }
   return (
     <Box flexDirection="column" width={columns} flexShrink={0} flexGrow={0}>
       {children}

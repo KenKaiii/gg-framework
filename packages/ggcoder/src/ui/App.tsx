@@ -120,6 +120,9 @@ import {
   type DoneStatus,
 } from "./layout-decisions.js";
 import { isTranscriptSpacingItem } from "./transcript/spacing.js";
+import { buildTranscriptLines } from "./transcript/transcript-lines.js";
+import { useTranscriptScroll } from "./hooks/useTranscriptScroll.js";
+import { scrollTranscriptByLines } from "./stores/transcript-scroll-store.js";
 import { renderTranscriptItem } from "./transcript/TranscriptRenderer.js";
 import { formatDuration } from "./duration-format.js";
 import { pickDurationVerb } from "./duration-summary.js";
@@ -274,6 +277,14 @@ export interface AppProps {
   };
   terminalHistoryPrinter?: TerminalHistoryPrinter;
   /**
+   * When true, the UI runs in the alternate-screen fullscreen viewport: the
+   * transcript is rendered inside Ink as a bounded, app-scrolled region above a
+   * pinned controls region, and nothing is written to native scrollback. This
+   * is what keeps the footer a truly fixed bottom region. Defaults off (legacy
+   * scrollback path) for non-TTY / CI / print modes.
+   */
+  fullscreen?: boolean;
+  /**
    * Wired by `renderApp`. Tears down the current Ink instance and renders
    * a fresh one. Patching Ink's internal frame tracking in place is
    * unreliable (the live area drifts on subsequent streaming responses);
@@ -375,6 +386,9 @@ export function App(props: AppProps) {
 
   // Hoisted before terminal title hook so it can reference them
   const [lastUserMessage, setLastUserMessage] = useState("");
+  // Bumped on every prompt submit; the fullscreen transcript scroll controller
+  // watches this to snap back to the bottom so the newest output is visible.
+  const [scrollResetToken, setScrollResetToken] = useState(0);
   const [exitPending, setExitPending] = useState(false);
   const [quittingSummary, setQuittingSummary] = useState<SessionSummaryItem["summary"] | null>(
     null,
@@ -593,7 +607,12 @@ export function App(props: AppProps) {
     finalizeSubmittedUserItem,
     clearPendingHistory,
   } = useTranscriptHistory({
-    terminalHistoryPrinter: props.terminalHistoryPrinter,
+    // In fullscreen alt-screen mode the transcript renders inside Ink (the
+    // viewport), so we must NOT write completed rows to native scrollback —
+    // doing so would scroll the live frame. Dropping the printer keeps history
+    // accumulating in React state (still flushed + persisted) without any
+    // stdout writes. The legacy scrollback path keeps the printer.
+    terminalHistoryPrinter: props.fullscreen ? undefined : props.terminalHistoryPrinter,
     terminalHistoryContext: {
       theme,
       columns,
@@ -2142,6 +2161,7 @@ export function App(props: AppProps) {
         id: getId(),
       };
       setLastUserMessage(input);
+      setScrollResetToken((token) => token + 1);
       setDoneStatus(null);
       // Clear stale plan progress if there's no active approved plan
       // (avoids lingering progress from a completed or abandoned plan run)
@@ -2554,6 +2574,7 @@ export function App(props: AppProps) {
     statusSlotVisible,
     mainControlsRef,
     measuredLiveAreaRows,
+    viewportRows,
   } = useChatLayoutMeasurements({
     rows,
     columns,
@@ -2635,6 +2656,58 @@ export function App(props: AppProps) {
   // mid-stream, the live remainder is the next paragraph — re-insert the blank
   // line that separated them so the live tail lines up with the flushed history.
   const streamingContinuesFlushed = streamedAssistantFlushRef.current.flushedChars > 0;
+
+  // ── Fullscreen alt-screen transcript ───────────────────
+  // Flatten history + live items + in-flight streaming into the flat ANSI line
+  // buffer the viewport renders. Reuses the same serializer the legacy
+  // scrollback printer used, so the transcript looks identical. Only computed
+  // when fullscreen is active (the legacy path renders items through Ink).
+  const transcriptContext = useMemo(
+    () => ({
+      theme,
+      columns,
+      version: props.version,
+      model: currentModel,
+      provider: currentProvider,
+      cwd: displayedCwd,
+    }),
+    [theme, columns, props.version, currentModel, currentProvider, displayedCwd],
+  );
+  const transcriptLines = useMemo(() => {
+    if (!props.fullscreen) return [];
+    const items: CompletedItem[] = [...history, ...uniqueItemsById(liveItems)];
+    const hasStreaming = visibleStreamingText.length > 0 || agentLoop.streamingThinking.length > 0;
+    if (hasStreaming) {
+      items.push({
+        kind: "assistant",
+        text: visibleStreamingText,
+        thinking: agentLoop.streamingThinking,
+        thinkingMs: agentLoop.thinkingMs,
+        continuation: streamingContinuesFlushed,
+        id: "__streaming__",
+      });
+    }
+    return buildTranscriptLines(items, transcriptContext);
+  }, [
+    props.fullscreen,
+    history,
+    liveItems,
+    visibleStreamingText,
+    agentLoop.streamingThinking,
+    agentLoop.thinkingMs,
+    streamingContinuesFlushed,
+    transcriptContext,
+  ]);
+  // Keyboard + bounds controller. The offset itself lives in the external
+  // transcript-scroll store; the viewport subscribes to it directly so scroll
+  // re-renders only the viewport, not this whole component.
+  useTranscriptScroll({
+    totalLines: transcriptLines.length,
+    viewportRows,
+    active: !!props.fullscreen && !overlay && !taskBarFocused,
+    resetToken: scrollResetToken,
+  });
+
   const visibleQueuedCount = liveItems.filter((item) => item.kind === "queued").length;
   const hiddenQueuedCount = Math.max(0, agentLoop.queuedCount - visibleQueuedCount);
   const shouldTopSpaceQueueIndicator =
@@ -3007,6 +3080,10 @@ export function App(props: AppProps) {
           reserveStreamingSpacing={shouldReserveStreamingSpacing}
           renderMarkdown={renderMarkdown}
           measuredLiveAreaRows={measuredLiveAreaRows}
+          fullscreen={props.fullscreen}
+          rows={rows}
+          transcriptLines={transcriptLines}
+          viewportRows={viewportRows}
           assistantMarginTop={shouldTopSpaceStreamingText || streamingContinuesFlushed ? 1 : 0}
           streamingContinuation={streamingContinuesFlushed}
           controlsRef={mainControlsRef}
@@ -3045,6 +3122,8 @@ export function App(props: AppProps) {
             onToggleMarkdown: () => setRenderMarkdown((prev) => !prev),
             cwd: props.cwd,
             commands: allCommands,
+            mouseScroll: props.fullscreen,
+            onScroll: scrollTranscriptByLines,
           }}
           taskPicker={{
             open: taskPicker.open,

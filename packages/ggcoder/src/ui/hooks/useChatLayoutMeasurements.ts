@@ -43,6 +43,14 @@ interface ChatLayoutMeasurements {
   statusSlotVisible: boolean;
   mainControlsRef: (node: DOMElement | null) => void;
   measuredLiveAreaRows: number;
+  /**
+   * Transcript region height for the fullscreen alt-screen viewport. Unlike
+   * `measuredLiveAreaRows` (which subtracts a 2-row cushion to keep Ink out of
+   * its fullscreen clear path in the legacy scrollback model), the fullscreen
+   * viewport intentionally owns the full screen, so this is simply
+   * `rows - controlsRows` (floored at MIN_LIVE_AREA_ROWS).
+   */
+  viewportRows: number;
 }
 
 export function useChatLayoutMeasurements({
@@ -123,6 +131,7 @@ export function useChatLayoutMeasurements({
   // even with rounding from the ResizeObserver-measured controlsHeight, keeping
   // Ink out of its fullscreen clearTerminal path that snaps the controls upward.
   const measuredLiveAreaRows = Math.max(MIN_LIVE_AREA_ROWS, rows - stableControlsRows - 2);
+  const viewportRows = Math.max(MIN_LIVE_AREA_ROWS, rows - stableControlsRows);
 
   return {
     footerStatusLayout,
@@ -132,5 +141,6 @@ export function useChatLayoutMeasurements({
     statusSlotVisible,
     mainControlsRef,
     measuredLiveAreaRows,
+    viewportRows,
   };
 }

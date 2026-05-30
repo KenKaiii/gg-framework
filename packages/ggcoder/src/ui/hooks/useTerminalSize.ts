@@ -27,6 +27,7 @@ const TerminalSizeContext = createContext<TerminalSizeValue | null>(null);
 export function TerminalSizeProvider({
   children,
   isAgentRunning,
+  fullscreen = false,
 }: React.PropsWithChildren<{
   /**
    * Optional getter — when it returns true, the resize debounce skips its
@@ -35,6 +36,13 @@ export function TerminalSizeProvider({
    * visual cost of skipping here is minimal.
    */
   isAgentRunning?: () => boolean;
+  /**
+   * Fullscreen alt-screen mode. Ink owns the whole screen and repaints the
+   * full-height frame in place, so on resize we only re-measure dimensions —
+   * no manual screen clear (which would flash) and no resizeKey bump (the
+   * full-height layout reflows on the dimension change alone).
+   */
+  fullscreen?: boolean;
 }>) {
   const { stdout } = useStdout();
   const [size, setSize] = useState({
@@ -68,6 +76,16 @@ export function TerminalSizeProvider({
         });
         return;
       }
+      if (fullscreen) {
+        // Alt screen: re-measure only. The full-height frame reflows to the new
+        // dimensions on this state change; Ink repaints it in place with no
+        // native scrollback to disturb, so there's nothing to clear.
+        setSize({
+          columns: Math.max(MIN_COLUMNS, stdout.columns ?? 80),
+          rows: Math.max(MIN_ROWS, stdout.rows ?? 24),
+        });
+        return;
+      }
       // Clear visible screen only. Completed chat rows are real terminal
       // scrollback now; preserve them while dropping malformed live frames left
       // behind by resize reflow.
@@ -78,7 +96,7 @@ export function TerminalSizeProvider({
       });
       setResizeKey((k) => k + 1);
     }, 300);
-  }, [stdout]);
+  }, [stdout, fullscreen]);
 
   useEffect(() => {
     if (!stdout) return;

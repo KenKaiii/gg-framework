@@ -14,6 +14,7 @@ import { ChatControls, ChatLayout } from "./ChatLayout.js";
 import { ChatFooterPane } from "./ChatFooterPane.js";
 import { ChatInputStack } from "./ChatInputStack.js";
 import { ChatLivePane } from "./ChatLivePane.js";
+import { TranscriptViewport } from "./TranscriptViewport.js";
 import { QueueIndicator } from "./QueueIndicator.js";
 import { InputArea, type PasteInfo } from "./InputArea.js";
 import { type GoalStatusEntry } from "./GoalStatusBar.js";
@@ -35,6 +36,9 @@ interface ChatInputControls {
   onToggleMarkdown: () => void;
   cwd: string;
   commands: SlashCommandInfo[];
+  /** Fullscreen alt-screen: route mouse-wheel to the transcript scroll. */
+  mouseScroll?: boolean;
+  onScroll?: (deltaLines: number) => void;
 }
 
 interface TaskPickerControls {
@@ -66,6 +70,16 @@ interface ChatScreenProps {
   reserveStreamingSpacing: boolean;
   renderMarkdown: boolean;
   measuredLiveAreaRows: number;
+  /**
+   * Fullscreen alt-screen viewport mode. When true, the transcript is rendered
+   * inside Ink (history + liveItems + streaming) as a bounded, app-scrolled
+   * region, and the controls below it are pinned to the bottom of a full-height
+   * frame. When false, the legacy scrollback `ChatLivePane` tail is used.
+   */
+  fullscreen?: boolean;
+  rows: number;
+  transcriptLines: readonly string[];
+  viewportRows: number;
   assistantMarginTop: number;
   streamingContinuation: boolean;
   controlsRef: (node: DOMElement | null) => void;
@@ -133,6 +147,10 @@ export function ChatScreen({
   reserveStreamingSpacing,
   renderMarkdown,
   measuredLiveAreaRows,
+  fullscreen,
+  rows,
+  transcriptLines,
+  viewportRows,
   assistantMarginTop,
   streamingContinuation,
   controlsRef,
@@ -189,20 +207,24 @@ export function ChatScreen({
   onTaskNavigate,
 }: ChatScreenProps) {
   return (
-    <ChatLayout columns={columns}>
-      <ChatLivePane
-        liveItems={liveItems}
-        renderItem={renderItem}
-        isRunning={isRunning}
-        visibleStreamingText={visibleStreamingText}
-        streamingThinking={streamingThinking}
-        thinkingMs={thinkingMs}
-        reserveStreamingSpacing={reserveStreamingSpacing}
-        renderMarkdown={renderMarkdown}
-        measuredLiveAreaRows={measuredLiveAreaRows}
-        assistantMarginTop={assistantMarginTop}
-        streamingContinuation={streamingContinuation}
-      />
+    <ChatLayout columns={columns} rows={fullscreen ? rows : undefined}>
+      {fullscreen ? (
+        <TranscriptViewport lines={transcriptLines} columns={columns} viewportRows={viewportRows} />
+      ) : (
+        <ChatLivePane
+          liveItems={liveItems}
+          renderItem={renderItem}
+          isRunning={isRunning}
+          visibleStreamingText={visibleStreamingText}
+          streamingThinking={streamingThinking}
+          thinkingMs={thinkingMs}
+          reserveStreamingSpacing={reserveStreamingSpacing}
+          renderMarkdown={renderMarkdown}
+          measuredLiveAreaRows={measuredLiveAreaRows}
+          assistantMarginTop={assistantMarginTop}
+          streamingContinuation={streamingContinuation}
+        />
+      )}
 
       <ChatControls controlsRef={controlsRef}>
         <QueueIndicator
@@ -262,6 +284,8 @@ export function ChatScreen({
           onToggleMarkdown={inputControls.onToggleMarkdown}
           cwd={inputControls.cwd}
           commands={inputControls.commands}
+          mouseScroll={inputControls.mouseScroll}
+          onScroll={inputControls.onScroll}
         />
         <ChatFooterPane
           overlay={overlay}
