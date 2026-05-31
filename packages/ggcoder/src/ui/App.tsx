@@ -134,6 +134,7 @@ import type {
   ServerToolDoneItem,
   ServerToolStartItem,
   SubAgentGroupItem,
+  TaskItem,
   ToolDoneItem,
   ToolGroupItem,
   ToolStartItem,
@@ -2350,6 +2351,76 @@ export function App(props: AppProps) {
     getId,
     initialRunAllPixel: props.sessionStore?.runAllPixel ?? false,
   });
+
+  // Starts a single task: opens a fresh session + chat and runs the task
+  // prompt through the agent loop. Wired into startTaskRef so both the task
+  // picker (Enter = start one, r = run all) and the run-all auto-advance in
+  // onDone can invoke it from stale closures.
+  const startTask = useCallback(
+    (title: string, prompt: string, taskId: string) => {
+      const taskCwd = cwdRef.current;
+      const shortId = taskId.slice(0, 8);
+      const completionHint =
+        `\n\n---\nWhen you have fully completed this task, call the tasks tool to mark it done:\n` +
+        `tasks({ action: "done", id: "${shortId}" })`;
+      const fullPrompt = prompt + completionHint;
+
+      if (props.resetUI && props.sessionStore) {
+        const sysMsg = messagesRef.current[0];
+        const newMessages: Message[] =
+          sysMsg && sysMsg.role === "system" ? [sysMsg] : messagesRef.current.slice(0, 1);
+        const taskItem: TaskItem = { kind: "task", title, id: getId() };
+        const sm = sessionManagerRef.current;
+
+        void (async () => {
+          let newSessionPath: string | undefined;
+          if (sm) {
+            try {
+              const session = await sm.create(taskCwd, currentProvider, currentModel);
+              newSessionPath = session.path;
+              log("INFO", "tasks", "New session for task", { path: session.path });
+            } catch {
+              // Session creation is best-effort.
+            }
+          }
+          if (props.sessionStore) props.sessionStore.overlay = null;
+          props.resetUI?.({
+            wipeSession: true,
+            messages: newMessages,
+            history: [{ kind: "banner", id: "banner" }, taskItem],
+            sessionPath: newSessionPath,
+            pendingAction: { prompt: fullPrompt },
+          });
+        })();
+        return;
+      }
+
+      clearPendingHistory();
+      setHistory([{ kind: "banner", id: "banner" }]);
+      setLiveItems([]);
+      messagesRef.current = messagesRef.current.slice(0, 1);
+      agentLoop.reset();
+      persistedIndexRef.current = messagesRef.current.length;
+      const sm = sessionManagerRef.current;
+      if (sm) {
+        void sm.create(taskCwd, currentProvider, currentModel).then((session) => {
+          sessionPathRef.current = session.path;
+          log("INFO", "tasks", "New session for task", { path: session.path });
+        });
+      }
+      const taskItem: TaskItem = { kind: "task", title, id: getId() };
+      setLastUserMessage(title);
+      setDoneStatus(null);
+      setLiveItems([taskItem]);
+      void agentLoop.run(fullPrompt).catch((err: unknown) => {
+        setLiveItems((prev) => [...prev, toErrorItem(err, getId())]);
+      });
+    },
+    [agentLoop, currentModel, currentProvider, props],
+  );
+  // Keep the ref in sync so stale closures (task picker, onDone run-all) can
+  // start a task without being recreated each render.
+  startTaskRef.current = startTask;
 
   // Reset the live tool feed at the start of each run so the pinned panel only
   // ever reflects the current turn's activity, not the previous one's.
