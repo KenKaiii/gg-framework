@@ -109,6 +109,7 @@ export function BossChatScreen({
           statusSlotVisible={statusSlotVisible}
           activityVisible={activityVisible}
           stallStatusVisible={stallStatusVisible}
+          liveToolFeed={[]}
           doneStatus={doneStatus}
           activityPhase={state.activityPhase}
           elapsedMs={elapsedMs}

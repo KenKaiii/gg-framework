@@ -1223,10 +1223,9 @@ export function App(props: AppProps) {
           // Feed the pinned LiveToolPanel. Keep a small tail (panel shows the
           // last few rows) so memory stays bounded across long sessions.
           setLiveToolFeed((prev) =>
-            [
-              ...prev,
-              { id: toolCallId, name, args, status: "running" as const },
-            ].slice(-(LIVE_TOOL_PANEL_ROWS * 2)),
+            [...prev, { id: toolCallId, name, args, status: "running" as const }].slice(
+              -(LIVE_TOOL_PANEL_ROWS * 2),
+            ),
           );
 
           const appendToolStart = (prev: CompletedItem[]): CompletedItem[] => {
@@ -2682,11 +2681,25 @@ export function App(props: AppProps) {
     exitPending,
     taskBarExpanded,
     goalStatusEntryCount: goalStatusEntries.length,
+    liveToolFeedCount: liveToolFeed.length,
   });
   const isPixelView = overlay === "pixel";
   const hasLiveAssistantItem = liveItems.some((item) => item.kind === "assistant");
   const rawVisibleStreamingText =
     goalModeStateRef.current === "planner" || hasLiveAssistantItem ? "" : agentLoop.streamingText;
+  // Compute the prospective paragraph flush DURING render so the live frame
+  // immediately drops the prefix that is about to be written to scrollback.
+  // The queueFlush below runs in an effect (after paint), so if the live text
+  // were sliced only by the already-committed `flushedChars`, the just-flushed
+  // paragraph would render BOTH in scrollback and live for one frame — that
+  // transient extra height is what shoves the footer up and then back down on
+  // every chunk boundary. Slicing by the prospective flush here keeps the live
+  // frame height monotonic, so the footer never bounces.
+  const alreadyFlushedChars = streamedAssistantFlushRef.current.flushedChars;
+  const pendingFlushChars = rawVisibleStreamingText
+    ? splitAssistantStreamingText(rawVisibleStreamingText.slice(alreadyFlushedChars)).flushedText
+        .length
+    : 0;
   useEffect(() => {
     if (!rawVisibleStreamingText) {
       streamedAssistantFlushRef.current = { flushedChars: 0, text: "" };
@@ -2717,7 +2730,7 @@ export function App(props: AppProps) {
     };
   }, [rawVisibleStreamingText, queueFlush]);
   const visibleStreamingText = stripDoneMarkers(
-    rawVisibleStreamingText.slice(streamedAssistantFlushRef.current.flushedChars),
+    rawVisibleStreamingText.slice(alreadyFlushedChars + pendingFlushChars),
   );
   const lastLiveItem = liveItems.at(-1);
   const lastPendingHistoryItem = pendingHistoryFlushRef.current.at(-1);
@@ -2743,7 +2756,7 @@ export function App(props: AppProps) {
   // When earlier paragraphs of THIS response were already flushed to scrollback
   // mid-stream, the live remainder is the next paragraph — re-insert the blank
   // line that separated them so the live tail lines up with the flushed history.
-  const streamingContinuesFlushed = streamedAssistantFlushRef.current.flushedChars > 0;
+  const streamingContinuesFlushed = alreadyFlushedChars + pendingFlushChars > 0;
 
   // ── Fullscreen alt-screen transcript ───────────────────
   // Flatten history + live items + in-flight streaming into the flat ANSI line

@@ -190,6 +190,8 @@ const FOOTER_TWO_LINE_ROWS = 2;
 const GOAL_STATUS_ROWS = 1;
 const COLLAPSED_FOOTER_STATUS_ROWS = 1;
 const MAX_EXPANDED_BACKGROUND_TASK_ROWS = 7;
+/** Rolling window the LiveToolPanel renders at most (see LIVE_TOOL_PANEL_ROWS). */
+const MAX_LIVE_TOOL_PANEL_ROWS = 3;
 
 export function isAgentSpacingItem(item: CompletedItem): boolean {
   return isTranscriptSpacingItem(item);
@@ -230,6 +232,13 @@ export interface ChatControlsLayoutOptions {
   taskBarExpanded: boolean;
   goalStatusEntryCount: number;
   footerFitsOnOneLine: boolean;
+  /**
+   * Rows the pinned LiveToolPanel currently occupies inside the controls block
+   * (0 when hidden). Folding this into the budget makes the live area shrink in
+   * the SAME render the tool feed grows, so the panel growing row-by-row never
+   * transiently overflows the terminal and bounces the footer.
+   */
+  liveToolPanelRows: number;
 }
 
 export interface ChatControlsLayoutDecision {
@@ -239,20 +248,19 @@ export interface ChatControlsLayoutDecision {
 
 export function getChatControlsLayoutDecision({
   rows,
-  agentRunning,
-  activityVisible,
-  doneStatusVisible,
-  stallStatusVisible,
   exitPending,
   footerStatusLayout,
   taskBarExpanded,
   goalStatusEntryCount,
   footerFitsOnOneLine,
+  liveToolPanelRows,
 }: ChatControlsLayoutOptions): ChatControlsLayoutDecision {
-  const statusRows =
-    activityVisible || stallStatusVisible || doneStatusVisible || agentRunning
-      ? STATUS_SLOT_ROWS
-      : 0;
+  // The status slot is always reserved so the controls block height is identical
+  // idle vs running. Idle it renders ReadyStatus ("Ready to go.."); running it
+  // renders the activity bar / done status. Keeping it constant means starting or
+  // stopping a turn never changes controlsRows — so the live-area budget and the
+  // footer row stay put (matches Gemini's constant composer height).
+  const statusRows = STATUS_SLOT_ROWS;
   const footerRows =
     exitPending || footerFitsOnOneLine ? FOOTER_ONE_LINE_ROWS : FOOTER_TWO_LINE_ROWS;
   const goalRows = !exitPending && goalStatusEntryCount > 0 ? GOAL_STATUS_ROWS : 0;
@@ -265,8 +273,15 @@ export function getChatControlsLayoutDecision({
     taskBarExpanded && footerStatusLayout.hasBackgroundTasks
       ? MAX_EXPANDED_BACKGROUND_TASK_ROWS - COLLAPSED_FOOTER_STATUS_ROWS
       : 0;
+  const toolPanelRows = Math.max(0, Math.min(liveToolPanelRows, MAX_LIVE_TOOL_PANEL_ROWS));
   const controlsRows =
-    statusRows + INPUT_AREA_ROWS + footerRows + goalRows + footerStatusRows + expandedTaskRows;
+    statusRows +
+    INPUT_AREA_ROWS +
+    footerRows +
+    goalRows +
+    footerStatusRows +
+    expandedTaskRows +
+    toolPanelRows;
   const maxControlsRows = Math.max(1, rows - MIN_LIVE_AREA_ROWS);
   const boundedControlsRows = Math.min(controlsRows, maxControlsRows);
 

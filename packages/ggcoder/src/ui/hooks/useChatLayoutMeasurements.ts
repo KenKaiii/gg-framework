@@ -33,6 +33,8 @@ interface UseChatLayoutMeasurementsOptions {
   exitPending: boolean;
   taskBarExpanded: boolean;
   goalStatusEntryCount: number;
+  /** Current LiveToolPanel feed length; the panel renders min(count, 3) rows. */
+  liveToolFeedCount: number;
 }
 
 interface ChatLayoutMeasurements {
@@ -72,6 +74,7 @@ export function useChatLayoutMeasurements({
   exitPending,
   taskBarExpanded,
   goalStatusEntryCount,
+  liveToolFeedCount,
 }: UseChatLayoutMeasurementsOptions): ChatLayoutMeasurements {
   const footerStatusLayout = getFooterStatusLayoutDecision({
     columns,
@@ -79,6 +82,10 @@ export function useChatLayoutMeasurements({
     updatePending,
   });
   const activityVisible = agentRunning && activityPhase !== "idle";
+  // The pinned LiveToolPanel renders only while the activity bar is visible and
+  // there is at least one tool in the feed, capped at a 3-row rolling window.
+  const liveToolPanelRows =
+    activityVisible && liveToolFeedCount > 0 ? Math.min(liveToolFeedCount, 3) : 0;
   const stallStatusVisible = !activityVisible && !!stallError;
   const doneStatusVisible =
     !activityVisible && !stallStatusVisible && !!doneStatus && !agentRunning;
@@ -125,8 +132,25 @@ export function useChatLayoutMeasurements({
     taskBarExpanded,
     goalStatusEntryCount,
     footerFitsOnOneLine,
+    liveToolPanelRows,
   });
-  const stableControlsRows = controlsHeight > 0 ? controlsHeight : chatControlsLayout.controlsRows;
+  // Mirror Gemini's stableControlsHeight: while a turn is active, never let the
+  // measured controls height shrink (transient ResizeObserver dips would grow the
+  // live budget for one frame and bounce the footer). Reset to the live value at
+  // idle so legitimate shrink (e.g. background task finished) is picked up.
+  const prevControlsHeightRef = useRef(0);
+  const measuredControlsRows =
+    controlsHeight > 0 ? controlsHeight : chatControlsLayout.controlsRows;
+  // While running, take the max of: the carried-forward height, the measured
+  // height, and the freshly computed formula (which now includes the live tool
+  // panel rows). The formula updates synchronously with the tool feed, so it
+  // acts as a proactive floor that shrinks the live area in the SAME render the
+  // panel grows — beating the one-frame ResizeObserver lag that otherwise lets
+  // the frame overflow the terminal and bounce the footer on each tool step.
+  const stableControlsRows = agentRunning
+    ? Math.max(prevControlsHeightRef.current, measuredControlsRows, chatControlsLayout.controlsRows)
+    : measuredControlsRows;
+  prevControlsHeightRef.current = stableControlsRows;
   // Subtract a 2-row cushion (not 1) so the total live frame stays <= rows - 1
   // even with rounding from the ResizeObserver-measured controlsHeight, keeping
   // Ink out of its fullscreen clearTerminal path that snaps the controls upward.

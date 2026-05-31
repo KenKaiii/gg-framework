@@ -57,7 +57,6 @@ const COMPACT_TRANSCRIPT_BOUNDARIES = new Set<string>([
 // blank line before reaching this compact check — so paragraph breaks are not
 // affected by this exclusion.
 
-
 export function shouldSeparateTranscriptItems({
   previousKind,
   currentKind,

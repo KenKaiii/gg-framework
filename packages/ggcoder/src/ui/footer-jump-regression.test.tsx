@@ -98,7 +98,7 @@ function SimTui({
   );
 }
 
-type Phase = "stream-short" | "stream-fill" | "done";
+type Phase = "idle" | "stream-short" | "stream-fill" | "done";
 
 function Driver({ phase }: { phase: Phase }) {
   const { write: writeStdout } = useStdout();
@@ -130,12 +130,9 @@ function Driver({ phase }: { phase: Phase }) {
   if (phase === "stream-short") streamingText = shortStreaming;
   if (phase === "stream-fill") streamingText = longResponse;
 
+  const controlsLabel = phase === "done" || phase === "idle" ? "SIM_DONE" : "SIM_STREAMING";
   return (
-    <SimTui
-      liveItems={liveItems}
-      streamingText={streamingText}
-      controlsLabel={phase === "done" ? "SIM_DONE" : "SIM_STREAMING"}
-    />
+    <SimTui liveItems={liveItems} streamingText={streamingText} controlsLabel={controlsLabel} />
   );
 }
 
@@ -194,13 +191,17 @@ describe("footer jump reproduction", () => {
       frames.push({ label, lines: viewport(recorder), repaints: countFullRepaints(slice) });
     };
 
-    const mounted = render(<Driver phase="stream-short" />, {
+    const mounted = render(<Driver phase="idle" />, {
       stdout,
       columns: COLUMNS,
       rows: ROWS,
       patchConsole: false,
       maxFps: 1000,
     });
+    await tick();
+    capture("Z: idle (before first turn)");
+
+    mounted.rerender(<Driver phase="stream-short" />);
     await tick();
     capture("A: short streaming");
 
@@ -230,5 +231,12 @@ describe("footer jump reproduction", () => {
     // streaming, but committing the finalized response must not repaint.
     const doneFrame = frames.find((f) => f.label.startsWith("C:"));
     expect(doneFrame?.repaints, "done transition full-screen repaints").toBe(0);
+
+    // THE START JUMP: with the status slot reserved unconditionally and the
+    // controls height held constant, starting the first turn (idle → first
+    // stream) must not trigger a full-screen repaint either — the footer stays
+    // put as native scrollback grows beneath it.
+    const firstStreamFrame = frames.find((f) => f.label.startsWith("A:"));
+    expect(firstStreamFrame?.repaints, "idle→first-stream full-screen repaints").toBe(0);
   });
 });

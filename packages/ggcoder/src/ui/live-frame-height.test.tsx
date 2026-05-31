@@ -37,6 +37,7 @@ const idleControlsRows = getChatControlsLayoutDecision({
   taskBarExpanded: false,
   goalStatusEntryCount: 0,
   footerFitsOnOneLine: true,
+  liveToolPanelRows: 0,
 }).controlsRows;
 
 // Mirror useChatLayoutMeasurements: rows - controlsRows - 2 (the widened cushion).
@@ -114,5 +115,33 @@ describe("live frame height", () => {
     const lines = renderFrameLineCount(item);
 
     expect(lines + idleControlsRows).toBeLessThanOrEqual(ROWS - 1);
+  });
+
+  it("reserves identical controls and live-area rows idle vs running (constant footer)", () => {
+    const baseInputs = {
+      rows: ROWS,
+      columns: COLUMNS,
+      doneStatusVisible: false,
+      stallStatusVisible: false,
+      exitPending: false,
+      footerStatusLayout: noFooterStatus,
+      taskBarExpanded: false,
+      goalStatusEntryCount: 0,
+      footerFitsOnOneLine: true,
+      liveToolPanelRows: 0,
+    };
+    const idle = getChatControlsLayoutDecision({
+      ...baseInputs,
+      agentRunning: false,
+      activityVisible: false,
+    });
+    const running = getChatControlsLayoutDecision({
+      ...baseInputs,
+      agentRunning: true,
+      activityVisible: true,
+    });
+
+    expect(idle.controlsRows).toBe(running.controlsRows);
+    expect(idle.liveAreaRows).toBe(running.liveAreaRows);
   });
 });
