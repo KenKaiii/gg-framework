@@ -19,8 +19,6 @@ export const TOOL_PROMPT_HINTS: Record<string, string> = {
     "Fetch page content as Markdown (or text/html). Pass `urls` to fetch many at once; reads PDFs, follows safe redirects, and prefers a site's /llms.txt for docs.",
   task_output: "Read new output from a background process by id.",
   task_stop: "Stop a background process by id.",
-  goals:
-    "Manage durable Goal runs for /goal and Ctrl+G workflows. Use for Goal setup, coordinator evidence, worker tasks, verifier records, final completion audits, blockers, and completion state.",
   enter_plan:
     "Enter read-only plan mode for complex/risky tasks before implementation; draft a plan under .gg/plans/.",
   exit_plan: "Submit a .gg/plans/ markdown plan for user approval and leave plan mode.",
@@ -47,7 +45,6 @@ export const DEFAULT_TOOL_NAMES: readonly string[] = [
   "web_fetch",
   "task_output",
   "task_stop",
-  "goals",
   "enter_plan",
   "exit_plan",
   "subagent",

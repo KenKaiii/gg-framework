@@ -1,10 +1,8 @@
 import React from "react";
 import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import type { ContextWindowOptions } from "../../core/model-registry.js";
-import type { GoalMode } from "../../core/runtime-mode.js";
 import type { ThemeName } from "../theme/theme.js";
 import { Footer } from "./Footer.js";
-import { GoalStatusBar, type GoalStatusEntry } from "./GoalStatusBar.js";
 import { ModelSelector } from "./ModelSelector.js";
 import { ThemeSelector } from "./ThemeSelector.js";
 
@@ -23,11 +21,9 @@ interface ChatFooterPaneProps {
   displayedCwd: string;
   gitBranch?: string | null;
   thinkingLevel?: ThinkingLevel;
-  goalMode: GoalMode;
   planMode: boolean;
   exitPending: boolean;
   renderMarkdown: boolean;
-  goalStatusEntries: GoalStatusEntry[];
 }
 
 export function ChatFooterPane({
@@ -45,11 +41,9 @@ export function ChatFooterPane({
   displayedCwd,
   gitBranch,
   thinkingLevel,
-  goalMode,
   planMode,
   exitPending,
   renderMarkdown,
-  goalStatusEntries,
 }: ChatFooterPaneProps) {
   if (overlay === "model") {
     return (
@@ -74,20 +68,16 @@ export function ChatFooterPane({
   }
 
   return (
-    <>
-      <Footer
-        model={currentModel}
-        tokensIn={contextUsed}
-        contextWindowOptions={contextWindowOptions}
-        cwd={displayedCwd}
-        gitBranch={gitBranch}
-        thinkingLevel={thinkingLevel}
-        goalMode={goalMode}
-        planMode={planMode}
-        exitPending={exitPending}
-        renderMarkdown={renderMarkdown}
-      />
-      {!exitPending && <GoalStatusBar entries={goalStatusEntries} />}
-    </>
+    <Footer
+      model={currentModel}
+      tokensIn={contextUsed}
+      contextWindowOptions={contextWindowOptions}
+      cwd={displayedCwd}
+      gitBranch={gitBranch}
+      thinkingLevel={thinkingLevel}
+      planMode={planMode}
+      exitPending={exitPending}
+      renderMarkdown={renderMarkdown}
+    />
   );
 }

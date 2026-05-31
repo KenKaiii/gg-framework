@@ -6,7 +6,6 @@ interface UiSlashCommandActions {
   openThemeSelector: () => void;
   toggleMarkdown: () => void;
   clearApprovedPlan: () => void;
-  openGoalsPicker: () => void;
 }
 
 export async function handleUiSlashCommand(
@@ -45,11 +44,6 @@ export async function handleUiSlashCommand(
 
   if (trimmed === "/clearplan") {
     actions.clearApprovedPlan();
-    return true;
-  }
-
-  if (trimmed === "/goals") {
-    actions.openGoalsPicker();
     return true;
   }
 

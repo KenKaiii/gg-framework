@@ -14,7 +14,7 @@ import type { PreparedPixelFix } from "../../core/pixel-fix.js";
 import type { SessionManager } from "../../core/session-manager.js";
 import type { UseAgentLoopReturn } from "./useAgentLoop.js";
 import type { RebuildSystemPromptOptions } from "./useModeState.js";
-import type { CompletedItem, GoalItem } from "../app-items.js";
+import type { CompletedItem, TaskItem } from "../app-items.js";
 import type { DoneStatus } from "../layout-decisions.js";
 import { toErrorItem } from "../error-item.js";
 
@@ -165,10 +165,10 @@ export function usePixelFixFlow({
           }
 
           const title = `Fix ${errorId.slice(0, 12)}… in ${prep.projectName}`;
-          const goalItem: GoalItem = { kind: "goal", title, id: getId() };
+          const taskItem: TaskItem = { kind: "task", title, id: getId() };
           setLastUserMessage(title);
           setDoneStatus(null);
-          setLiveItems([goalItem]);
+          setLiveItems([taskItem]);
 
           await agentLoop.run(prep.prompt);
         } catch (err) {

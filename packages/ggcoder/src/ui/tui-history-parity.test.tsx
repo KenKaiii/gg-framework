@@ -11,8 +11,6 @@ import { TerminalSizeProvider } from "./hooks/useTerminalSize.js";
 import { ToolExecution } from "./components/ToolExecution.js";
 import { ToolGroupExecution } from "./components/ToolGroupExecution.js";
 import { ServerToolExecution } from "./components/ServerToolExecution.js";
-import { MessageResponse } from "./components/MessageResponse.js";
-import { ToolUseLoader } from "./components/ToolUseLoader.js";
 import { SubAgentPanel } from "./components/SubAgentPanel.js";
 import { CompactionDone, CompactionSpinner } from "./components/CompactionNotice.js";
 import { LANGUAGE_DISPLAY_NAMES } from "../core/language-detector.js";
@@ -22,7 +20,6 @@ import { UserMessage } from "./components/UserMessage.js";
 import { Banner } from "./components/Banner.js";
 import { SessionSummaryDisplay } from "./components/SessionSummary.js";
 import { PlanModeLogo } from "./components/PlanModeLogo.js";
-import { BLACK_CIRCLE } from "./constants/figures.js";
 
 const TERMINAL_COLUMNS = 68;
 const theme = loadTheme("dark");
@@ -103,83 +100,6 @@ function renderQueuedLiveItem(item: Extract<CompletedItem, { kind: "queued" }>, 
           {suffix}
         </Text>
       </Box>
-    </Box>
-  );
-}
-
-function renderGoalProgressLive(
-  item: Extract<CompletedItem, { kind: "goal_progress" }>,
-  itemTheme: Theme,
-) {
-  const isError = item.status === "failed" || item.status === "fail" || item.status === "blocked";
-  const status = isError
-    ? "error"
-    : item.phase === "worker_finished" ||
-        item.phase === "verifier_finished" ||
-        item.phase === "terminal"
-      ? "done"
-      : "running";
-  const color = isError
-    ? itemTheme.error
-    : item.phase === "worker_finished" || item.phase === "terminal"
-      ? itemTheme.success
-      : item.phase === "verifier_finished" || item.phase === "verifier_started"
-        ? itemTheme.accent
-        : item.phase === "orchestrator_reviewing" || item.phase === "orchestrator_working"
-          ? itemTheme.secondary
-          : item.phase === "continuing"
-            ? itemTheme.warning
-            : itemTheme.primary;
-  const hasBody =
-    !!item.detail ||
-    (item.summaryRows !== undefined && item.summaryRows.length > 0) ||
-    (item.summarySections !== undefined && item.summarySections.length > 0);
-
-  return (
-    <Box flexDirection="column" paddingLeft={1} marginTop={1} flexShrink={1}>
-      <Box flexDirection="row">
-        <ToolUseLoader status={status} staticDisplay color={color} />
-        <Box flexGrow={1} width={Math.max(10, TERMINAL_COLUMNS - 3)}>
-          <Text wrap="wrap">
-            <Text color={color} bold>
-              {item.title}
-            </Text>
-            {item.workerId ? (
-              <Text color={itemTheme.textDim}> · worker {item.workerId}</Text>
-            ) : null}
-          </Text>
-        </Box>
-      </Box>
-      {hasBody ? (
-        <MessageResponse>
-          <Box flexDirection="column" flexShrink={1}>
-            {item.detail ? (
-              <Text color={itemTheme.textDim} wrap="wrap">
-                {item.detail}
-              </Text>
-            ) : null}
-            {item.summaryRows?.map((row) => (
-              <Text key={row.label} wrap="truncate">
-                <Text color={itemTheme.textDim}>{row.label.padEnd(12)}</Text>
-                <Text color={itemTheme.text}>{row.value}</Text>
-                {row.detail ? <Text color={itemTheme.textDim}> · {row.detail}</Text> : null}
-              </Text>
-            ))}
-            {item.summarySections?.map((section) => (
-              <Box key={section.title} flexDirection="column" marginTop={1} flexShrink={1}>
-                <Text color={itemTheme.textDim} bold>
-                  {section.title}
-                </Text>
-                {section.lines.map((line, index) => (
-                  <Text key={`${section.title}-${index}`} color={itemTheme.text} wrap="wrap">
-                    {`• ${line}`}
-                  </Text>
-                ))}
-              </Box>
-            ))}
-          </Box>
-        </MessageResponse>
-      ) : null}
     </Box>
   );
 }
@@ -332,19 +252,6 @@ function liveElementFor(item: CompletedItem): React.ReactElement | null {
       );
     case "ideal_hook":
       return <IdealHookMessage text={item.text} />;
-    case "goal":
-      return (
-        <Box paddingLeft={1} marginTop={1}>
-          <Text wrap="wrap">
-            <Text color={theme.success} bold>
-              {"▶ "}
-            </Text>
-            <Text color={theme.textDim}>{"Goal: "}</Text>
-            <Text color={theme.success}>{item.title}</Text>
-            {item.workerId ? <Text color={theme.textDim}> · worker {item.workerId}</Text> : null}
-          </Text>
-        </Box>
-      );
     case "task":
       return renderStatusLive(
         "▸ ",
@@ -405,8 +312,6 @@ function liveElementFor(item: CompletedItem): React.ReactElement | null {
       );
     case "subagent_group":
       return <SubAgentPanel agents={item.agents} aborted={item.aborted} />;
-    case "goal_progress":
-      return renderGoalProgressLive(item, theme);
     case "style_pack":
       return renderStylePackLive(item, theme);
     case "setup_hint":
@@ -451,14 +356,6 @@ function liveElementFor(item: CompletedItem): React.ReactElement | null {
       return renderStatusLive("○ ", item.text, theme.commandColor, theme, { muted: true });
     case "plan_transition":
       return <PlanModeLogo />;
-    case "goal_agent_transition":
-      return renderStatusLive(
-        `${BLACK_CIRCLE} `,
-        item.text.replace(/\\n/g, "\n").replace(/^\n+|\n+$/g, ""),
-        theme.commandColor,
-        theme,
-        { bold: true },
-      );
     case "model_transition":
       return renderStatusLive(
         "▸ ",
@@ -556,7 +453,6 @@ const parityCaseByKind = {
     id: "ideal-hook-1",
     text: "Hook engaged \u2014 running an ideal review before finalizing.",
   },
-  goal: { kind: "goal", id: "goal-1", title: "Ship the TUI polish", workerId: "worker-1" },
   task: { kind: "task", id: "task-1", title: "Restore task pane" },
   queued: { kind: "queued", id: "queued-1", text: "next prompt with wrapping words" },
   tool_start: {
@@ -623,17 +519,6 @@ const parityCaseByKind = {
       },
     ],
   },
-  goal_progress: {
-    kind: "goal_progress",
-    id: "goal-progress",
-    phase: "worker_finished",
-    title: "Worker finished",
-    detail: "Completed the audit.",
-    workerId: "worker-1",
-    status: "done",
-    summaryRows: [{ label: "tests", value: "passed", detail: "3 files" }],
-    summarySections: [{ title: "Evidence", lines: ["unit test passed"] }],
-  },
   style_pack: {
     kind: "style_pack",
     id: "style-pack",
@@ -664,7 +549,6 @@ const parityCaseByKind = {
   },
   info: { kind: "info", id: "info", text: "Configuration saved" },
   plan_transition: { kind: "plan_transition", id: "plan", text: "Plan mode ON", active: true },
-  goal_agent_transition: { kind: "goal_agent_transition", id: "goal-agent", text: "Goal agent ON" },
   model_transition: { kind: "model_transition", id: "model", modelName: "Claude Sonnet" },
   theme_transition: { kind: "theme_transition", id: "theme", themeName: "dark" },
   plan_event: { kind: "plan_event", id: "plan-event", event: "approved", detail: "ship it" },

@@ -35,7 +35,6 @@ const VERBS: Record<string, VerbPair> = {
   skill: { running: "Loading skill", done: "Loaded skill" },
   source_path: { running: "Resolving", done: "Resolved" },
   tasks: { running: "Updating tasks", done: "Updated tasks" },
-  goals: { running: "Updating goal", done: "Updated goal" },
   screenshot: { running: "Capturing", done: "Captured" },
   enter_plan: { running: "Entering plan", done: "Entered plan" },
   exit_plan: { running: "Submitting plan", done: "Submitted plan" },

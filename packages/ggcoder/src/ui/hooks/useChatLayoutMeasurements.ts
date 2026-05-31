@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { type DOMElement } from "ink";
 import type { ThinkingLevel } from "@kenkaiiii/gg-ai";
 import type { ContextWindowOptions } from "../../core/model-registry.js";
-import type { GoalMode } from "../../core/runtime-mode.js";
 import { doesFooterFitOnOneLine } from "../components/Footer.js";
 import {
   getFooterStatusLayoutDecision,
@@ -29,10 +28,8 @@ interface UseChatLayoutMeasurementsOptions {
   displayedCwd: string;
   gitBranch?: string | null;
   thinkingLevel?: ThinkingLevel;
-  goalMode: GoalMode;
   exitPending: boolean;
   taskBarExpanded: boolean;
-  goalStatusEntryCount: number;
   /** Current LiveToolPanel feed length; the panel renders min(count, 3) rows. */
   liveToolFeedCount: number;
 }
@@ -70,10 +67,8 @@ export function useChatLayoutMeasurements({
   displayedCwd,
   gitBranch,
   thinkingLevel,
-  goalMode,
   exitPending,
   taskBarExpanded,
-  goalStatusEntryCount,
   liveToolFeedCount,
 }: UseChatLayoutMeasurementsOptions): ChatLayoutMeasurements {
   const footerStatusLayout = getFooterStatusLayoutDecision({
@@ -82,10 +77,15 @@ export function useChatLayoutMeasurements({
     updatePending,
   });
   const activityVisible = agentRunning && activityPhase !== "idle";
-  // The pinned LiveToolPanel renders only while the activity bar is visible and
-  // there is at least one tool in the feed, capped at a 3-row rolling window.
+  // The pinned LiveToolPanel renders while the activity bar is visible, there is
+  // at least one tool in the feed, and the agent is NOT yet streaming its reply.
+  // Once the model transitions to "generating", the panel is hidden so the reply
+  // area above the activity bar keeps its full breathing height instead of being
+  // clamped smaller by the panel's rows. Keep this predicate identical to
+  // ChatInputStack's render gate so the budget and the rendered rows never differ.
+  const liveToolPanelVisible = activityVisible && activityPhase !== "generating";
   const liveToolPanelRows =
-    activityVisible && liveToolFeedCount > 0 ? Math.min(liveToolFeedCount, 3) : 0;
+    liveToolPanelVisible && liveToolFeedCount > 0 ? Math.min(liveToolFeedCount, 3) : 0;
   const stallStatusVisible = !activityVisible && !!stallError;
   const doneStatusVisible =
     !activityVisible && !stallStatusVisible && !!doneStatus && !agentRunning;
@@ -118,7 +118,6 @@ export function useChatLayoutMeasurements({
     cwd: displayedCwd,
     gitBranch,
     thinkingLevel,
-    goalMode,
   });
   const chatControlsLayout = getChatControlsLayoutDecision({
     rows,
@@ -130,7 +129,6 @@ export function useChatLayoutMeasurements({
     exitPending,
     footerStatusLayout,
     taskBarExpanded,
-    goalStatusEntryCount,
     footerFitsOnOneLine,
     liveToolPanelRows,
   });

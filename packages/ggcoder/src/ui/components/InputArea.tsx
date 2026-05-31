@@ -9,9 +9,7 @@ import { extractImagePaths, readImageFile, getClipboardImage } from "../../utils
 import { SlashCommandMenu, filterCommands, type SlashCommandInfo } from "./SlashCommandMenu.js";
 import { TaskPickerMenu } from "./TaskPickerMenu.js";
 import { stripTerminalFocusSequences } from "../utils/terminal-input.js";
-import { GoalPickerMenu } from "./GoalPickerMenu.js";
 import type { TaskRecord } from "../../core/tasks-store.js";
-import type { GoalRun } from "../../core/goal-store.js";
 import { log } from "../../core/logger.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -230,13 +228,6 @@ interface InputAreaProps {
   onStartTask?: (task: TaskRecord) => void;
   onRunAllTasks?: (task?: TaskRecord) => void;
   onDeleteTask?: (task: TaskRecord) => void;
-  goalPickerOpen?: boolean;
-  goals?: readonly GoalRun[];
-  onCloseGoalPicker?: () => void;
-  onRunGoal?: (goal: GoalRun) => void;
-  onDeleteGoal?: (goal: GoalRun) => void;
-  onPauseGoal?: (goal: GoalRun) => void;
-  onToggleGoal?: () => void;
   onToggleSkills?: () => void;
   onTogglePixel?: () => void;
   onToggleMarkdown?: () => void;
@@ -348,13 +339,6 @@ export function InputArea({
   onStartTask,
   onRunAllTasks,
   onDeleteTask,
-  goalPickerOpen = false,
-  goals = [],
-  onCloseGoalPicker,
-  onRunGoal,
-  onDeleteGoal,
-  onPauseGoal,
-  onToggleGoal,
   onToggleSkills,
   onTogglePixel,
   onToggleMarkdown,
@@ -419,7 +403,6 @@ export function InputArea({
   const { columns } = useTerminalSize();
   const [menuIndex, setMenuIndex] = useState(0);
   const [taskPickerIndex, setTaskPickerIndex] = useState(0);
-  const [goalPickerIndex, setGoalPickerIndex] = useState(0);
   const [pasteText, setPasteText] = useState(""); // accumulated pasted content
   const [pasteOffset, setPasteOffset] = useState(0); // where in value the paste starts
   const pasteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -432,7 +415,6 @@ export function InputArea({
     [isSlashMode, commands, slashFilter],
   );
   const runnableTasks = useMemo(() => tasks.filter((task) => task.status !== "done"), [tasks]);
-  const selectableGoals = useMemo(() => [...goals], [goals]);
 
   // Reset menu index when filter changes
   useEffect(() => {
@@ -442,10 +424,6 @@ export function InputArea({
   useEffect(() => {
     setTaskPickerIndex((index) => Math.min(index, Math.max(0, runnableTasks.length - 1)));
   }, [runnableTasks.length]);
-
-  useEffect(() => {
-    setGoalPickerIndex((index) => Math.min(index, Math.max(0, selectableGoals.length - 1)));
-  }, [selectableGoals.length]);
 
   // Border color pulse (when idle/waiting for input)
   const borderPulseColors = useMemo(
@@ -1030,41 +1008,6 @@ export function InputArea({
       // Ctrl+T toggles task picker
       if (key.ctrl && input === "t") {
         onToggleTasks?.();
-        return;
-      }
-
-      if (goalPickerOpen) {
-        if (key.escape || (key.ctrl && input === "g")) {
-          onCloseGoalPicker?.();
-          return;
-        }
-        if (key.upArrow) {
-          setGoalPickerIndex((i) => Math.max(0, i - 1));
-          return;
-        }
-        if (key.downArrow) {
-          setGoalPickerIndex((i) => Math.min(selectableGoals.length - 1, i + 1));
-          return;
-        }
-        const goal = selectableGoals[Math.min(goalPickerIndex, selectableGoals.length - 1)];
-        if (input.toLowerCase() === "d") {
-          if (goal) onDeleteGoal?.(goal);
-          return;
-        }
-        if (input.toLowerCase() === "p") {
-          if (goal) onPauseGoal?.(goal);
-          return;
-        }
-        if (isReturnKey) {
-          if (goal) onRunGoal?.(goal);
-          return;
-        }
-        return;
-      }
-
-      // Ctrl+G toggles goal picker in normal input mode. In search mode it cancels search above.
-      if (key.ctrl && input === "g") {
-        onToggleGoal?.();
         return;
       }
 
@@ -2012,15 +1955,7 @@ export function InputArea({
         })()}
       </Box>
       {renderInputEdge(backgroundColor ? INPUT_BOTTOM_FILL : "─")}
-      {goalPickerOpen ? (
-        <Box paddingRight={2}>
-          <GoalPickerMenu
-            goals={goals}
-            selectedIndex={goalPickerIndex}
-            width={Math.max(20, columns)}
-          />
-        </Box>
-      ) : taskPickerOpen ? (
+      {taskPickerOpen ? (
         <Box paddingRight={2}>
           <TaskPickerMenu
             tasks={tasks}

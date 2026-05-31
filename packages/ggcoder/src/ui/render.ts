@@ -9,11 +9,7 @@ import type { Skill } from "../core/skills.js";
 import type { CheckpointStore } from "../core/checkpoint-store.js";
 import { App, type CompletedItem, type DoneStatus } from "./App.js";
 import { createTerminalHistoryPrinter } from "./terminal-history.js";
-import type { GoalStatusEntry } from "./components/GoalStatusBar.js";
-import { shutdownGoalWorkers } from "../core/goal-worker.js";
 import type { PlanStep } from "../utils/plan-steps.js";
-import type { GoalReference, GoalRun } from "../core/goal-store.js";
-import type { GoalMode } from "../core/runtime-mode.js";
 import { ThemeContext, SetThemeContext, loadTheme, type ThemeName } from "./theme/theme.js";
 import { detectTheme } from "./theme/detect-theme.js";
 import { AnimationProvider } from "./components/AnimationContext.js";
@@ -52,13 +48,11 @@ export interface RenderAppConfig {
   settingsFile?: string;
   mcpManager?: MCPClientManager;
   authStorage?: AuthStorage;
-  goalModeRef?: { current: GoalMode };
   planModeRef?: { current: boolean };
   skills?: Skill[];
   checkpointStore?: CheckpointStore;
-  initialOverlay?: "pixel" | "goal";
+  initialOverlay?: "pixel";
   rebuildToolsForCwd?: (cwd: string) => AgentTool[];
-  goalReferencesRef?: { current: readonly GoalReference[] | undefined };
   connectInitialMcpTools?: () => Promise<AgentTool[]>;
   planCallbacks?: {
     onEnterPlan?: (reason?: string) => void | Promise<void>;
@@ -90,7 +84,7 @@ interface RuntimeState {
  * as our reset mechanism (the only thing that actually escapes Ink's
  * cumulative live-area drift).
  */
-type OverlayKind = "model" | "goal" | "skills" | "plan" | "theme" | "pixel" | null;
+type OverlayKind = "model" | "skills" | "plan" | "theme" | "pixel" | null;
 
 export interface SessionStore {
   messages: Message[];
@@ -105,7 +99,7 @@ export interface SessionStore {
   sessionId?: string;
   sessionTitle?: string;
   sessionTitleGenerated: boolean;
-  /** Which overlay (Goal, Skills, Plan, Pixel, Theme, Model) is open. */
+  /** Which overlay (Skills, Plan, Pixel, Theme, Model) is open. */
   overlay?: OverlayKind;
   /** Plan overlay auto-expand-newest flag (only meaningful when overlay==='plan'). */
   planAutoExpand?: boolean;
@@ -122,8 +116,6 @@ export interface SessionStore {
      *  plan_event item instead of the bland info row. */
     planEvent?: { event: "approved" | "rejected" | "dismissed"; detail?: string };
   };
-  /** Goal run to activate immediately after a visual remount clears review scrollback. */
-  pendingGoalRun?: GoalRun;
   /**
    * True while the agent loop is running. Mirrored by App.tsx so renderApp's
    * resize handler can skip the unmount/remount that would abort the agent
@@ -145,10 +137,6 @@ export interface SessionStore {
    * Without this, the second fix onward loses the chaining intent.
    */
   runAllPixel?: boolean;
-  /** Active goal status bar entries. Preserved across Goal pane open/close remounts. */
-  goalStatusEntries?: GoalStatusEntry[];
-  /** Goal orchestration mode display state. */
-  goalMode?: GoalMode;
   /** Plan mode display/restriction state. */
   planMode?: boolean;
   /** Whether pre-final ideal review is enabled for this UI session. */
@@ -336,9 +324,6 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
     overlay: config.initialOverlay ?? null,
     planAutoExpand: false,
     pendingAction: undefined,
-    pendingGoalRun: undefined,
-    goalStatusEntries: [],
-    goalMode: config.goalModeRef?.current ?? "off",
     planMode: config.planModeRef?.current ?? false,
     idealReviewEnabled: config.idealReviewEnabled ?? true,
   };
@@ -384,13 +369,11 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
             settingsFile: config.settingsFile,
             mcpManager: config.mcpManager,
             authStorage: config.authStorage,
-            goalModeRef: config.goalModeRef,
             planModeRef: config.planModeRef,
             skills: config.skills,
             checkpointStore: config.checkpointStore,
             initialOverlay: config.initialOverlay,
             rebuildToolsForCwd: config.rebuildToolsForCwd,
-            goalReferencesRef: config.goalReferencesRef,
             connectInitialMcpTools: config.connectInitialMcpTools,
             planCallbacks: config.planCallbacks,
             terminalHistoryPrinter,
@@ -422,8 +405,6 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
       sessionStore.planSteps = [];
       sessionStore.sessionTitle = undefined;
       sessionStore.sessionTitleGenerated = false;
-      sessionStore.goalStatusEntries = [];
-      if (config.goalReferencesRef) config.goalReferencesRef.current = undefined;
     }
     if (options?.messages) sessionStore.messages = options.messages;
     if (options?.history) {
@@ -518,7 +499,6 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
     process.stdout.off("resize", onTerminalResize);
     if (resizeTimer) clearTimeout(resizeTimer);
     process.off("exit", onProcessExit);
-    shutdownGoalWorkers(config.cwd);
     // Final cleanup on normal exit — also covered by the "exit" handler,
     // but writing here ensures the disable lands before Node tears stdout
     // down on process termination.

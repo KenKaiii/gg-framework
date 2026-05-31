@@ -26,7 +26,7 @@ export function createEnterPlanTool(
         "Allowed actions:\n" +
         "- Use read, grep, find, ls, source_path, web_fetch/web_search, and code search tools to investigate\n" +
         "- Write the implementation plan to .gg/plans/<name>.md\n\n" +
-        "Restricted: bash, edit, write outside .gg/plans/, subagent, task mutation, and goal orchestration.\n\n" +
+        "Restricted: bash, edit, write outside .gg/plans/, subagent, and task mutation.\n\n" +
         "When the plan is ready, call exit_plan with the plan file path."
       );
     },

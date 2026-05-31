@@ -550,8 +550,6 @@ function toolDisplayName(name: string): string {
       return "Source";
     case "tasks":
       return "Task";
-    case "goals":
-      return "Goal";
     default:
       // snake_case → Title Case so downstream consumers (gg-editor's 91 tools,
       // future MCP tools, custom tools) get readable names without each

@@ -37,14 +37,6 @@ export function renderStatusLine(
   return prefixFirstLine(body, prefix, continuation);
 }
 
-export function renderGoal(
-  title: string,
-  workerId: string | undefined,
-  context: TerminalHistoryContext,
-): string {
-  return `${RESPONSE_LEFT_PADDING}${color(context.theme.success, "▶", true)} ${dim(context, "Goal: ")}${color(context.theme.success, title)}${workerId ? dim(context, ` · worker ${workerId}`) : ""}`;
-}
-
 export function renderError(
   headline: string,
   message: string,

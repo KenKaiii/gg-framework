@@ -5,12 +5,7 @@ import type { AgentTool } from "@kenkaiiii/gg-agent";
 import { resolvePath, rejectSymlink } from "./path-utils.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 import { assertFresh, recordWrite, type ReadTracker } from "./read-tracker.js";
-import {
-  goalModeRestriction,
-  isGoalModeActive,
-  isPlanModeActive,
-  type GoalMode,
-} from "../core/runtime-mode.js";
+import { isPlanModeActive } from "../core/runtime-mode.js";
 
 type MutationCallback = (filePath: string) => void | Promise<void>;
 
@@ -35,22 +30,16 @@ export function createWriteTool(
   cwd: string,
   readFiles?: ReadTracker,
   ops: ToolOperations = localOperations,
-  goalModeRefOrOnFileMutated?: { current: GoalMode } | MutationCallback,
   planModeRefOrOnFileMutated?: { current: boolean } | MutationCallback,
   onFileMutated?: MutationCallback,
   onPreFileMutation?: MutationCallback,
 ): AgentTool<typeof WriteParams> {
-  const goalModeRef = isMutationCallback(goalModeRefOrOnFileMutated)
-    ? undefined
-    : goalModeRefOrOnFileMutated;
   const planModeRef = isPlanModeRef(planModeRefOrOnFileMutated)
     ? planModeRefOrOnFileMutated
     : undefined;
-  const mutationCallback = isMutationCallback(goalModeRefOrOnFileMutated)
-    ? goalModeRefOrOnFileMutated
-    : isMutationCallback(planModeRefOrOnFileMutated)
-      ? planModeRefOrOnFileMutated
-      : onFileMutated;
+  const mutationCallback = isMutationCallback(planModeRefOrOnFileMutated)
+    ? planModeRefOrOnFileMutated
+    : onFileMutated;
   return {
     name: "write",
     description:
@@ -62,9 +51,6 @@ export function createWriteTool(
       const resolved = resolvePath(cwd, file_path);
       await rejectSymlink(resolved);
 
-      if (isGoalModeActive(goalModeRef)) {
-        return goalModeRestriction("write", "Goal metadata, evidence plans, and task creation");
-      }
       if (isPlanModeActive(planModeRef)) {
         const plansDir = path.join(cwd, ".gg", "plans");
         const relative = path.relative(plansDir, resolved);

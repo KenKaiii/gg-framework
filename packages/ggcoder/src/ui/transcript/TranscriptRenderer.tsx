@@ -7,10 +7,9 @@ import { CompactionDone, CompactionSpinner } from "../components/CompactionNotic
 import { Banner } from "../components/Banner.js";
 import type { useTheme } from "../theme/theme.js";
 import type { CompletedItem } from "../app-items.js";
-import { isPanelReplacedToolItem } from "../app-items.js";
+import { isPanelReplacedToolItem, lastVisibleTranscriptItem } from "../app-items.js";
 import { TranscriptItemFrame } from "./TranscriptItemFrame.js";
 import { getTranscriptItemMarginTop } from "./spacing.js";
-import { GoalProgressRow, GoalRow } from "./GoalRows.js";
 import {
   DurationRow,
   ErrorRow,
@@ -21,7 +20,6 @@ import {
   UpdateNoticeRow,
 } from "./MiscRows.js";
 import {
-  presentGoalAgentTransition,
   presentInfo,
   presentModelTransition,
   presentPlanEvent,
@@ -67,12 +65,15 @@ export function renderTranscriptItem({
   currentModel,
   currentProvider,
   displayedCwd,
-  columns,
+  columns: _columns,
   theme: _theme,
   renderMarkdown,
   measuredLiveAreaRows,
 }: RenderTranscriptItemOptions): React.ReactNode {
-  const previousLiveItem = index > 0 ? items[index - 1] : undefined;
+  // Skip panel-replaced tool rows (they render null) when looking back for the
+  // spacing boundary — otherwise the assistant gets a blank separator above an
+  // invisible row, leaving a phantom gap.
+  const previousLiveItem = index > 0 ? lastVisibleTranscriptItem(items.slice(0, index)) : undefined;
   const transcriptMarginTop = getTranscriptItemMarginTop({
     item,
     previousLiveItem,
@@ -107,10 +108,6 @@ export function renderTranscriptItem({
           pasteInfo={item.pasteInfo}
         />,
       );
-    case "goal":
-      return withTranscriptSpacing(<GoalRow item={item} columns={columns} />);
-    case "goal_progress":
-      return withTranscriptSpacing(<GoalProgressRow item={item} columns={columns} />);
     case "style_pack":
       return withTranscriptSpacing(<StylePackRow item={item} />);
     case "setup_hint":
@@ -165,10 +162,6 @@ export function renderTranscriptItem({
     case "plan_transition":
       if (item.active) return withTranscriptSpacing(<PlanModeLogo key={item.id} />);
       return null;
-    case "goal_agent_transition":
-      return withTranscriptSpacing(
-        <StatusRow id={item.id} presentation={presentGoalAgentTransition(item)} />,
-      );
     case "task":
       return withTranscriptSpacing(<StatusRow id={item.id} presentation={presentTask(item)} />);
     case "model_transition":

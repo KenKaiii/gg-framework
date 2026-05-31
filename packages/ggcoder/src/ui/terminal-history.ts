@@ -43,7 +43,6 @@ import {
   renderCompacted,
   renderCompacting,
   renderError,
-  renderGoal,
   renderSetupHint,
   renderStatusLine,
   renderStepDone,
@@ -52,7 +51,6 @@ import {
 } from "./terminal-history-status-renderers.js";
 import {
   presentDuration,
-  presentGoalAgentTransition,
   presentInfo,
   presentModelTransition,
   presentPlanEvent,
@@ -97,7 +95,7 @@ const GAP = "   ";
 const LOGO_WIDTH = 9;
 const SIDE_BY_SIDE_MIN = LOGO_WIDTH + GAP.length + 62;
 const COMPACT_TOOLS = new Set(["read", "grep", "find", "ls", "source_path"]);
-const STATE_TOOLS = new Set(["tasks", "goals"]);
+const STATE_TOOLS = new Set(["tasks"]);
 const SERVER_STYLE_TOOLS = new Set(["web_search"]);
 
 export interface TerminalHistoryPrinter {
@@ -247,8 +245,6 @@ export function serializeCompletedItemToTerminalHistory(
       return renderServerToolDone(item.name, item.input, item.resultType, item.durationMs, context);
     case "subagent_group":
       return renderSubAgentGroup(item.agents, item.aborted, context);
-    case "goal":
-      return renderGoal(item.title, item.workerId, context);
     case "task": {
       const presentation = presentTask(item);
       return renderStatusLine(
@@ -260,8 +256,6 @@ export function serializeCompletedItemToTerminalHistory(
         true,
       );
     }
-    case "goal_progress":
-      return renderGoalProgress(item, context);
     case "error":
       return renderError(item.headline, item.message, item.guidance, context);
     case "info": {
@@ -301,16 +295,6 @@ export function serializeCompletedItemToTerminalHistory(
       return renderSessionSummary(item.summary, context);
     case "plan_transition":
       return renderPlanModeLogo(context);
-    case "goal_agent_transition": {
-      const presentation = presentGoalAgentTransition(item);
-      return renderStatusLine(
-        presentation.glyph.trim(),
-        presentation.text,
-        context,
-        context.theme.commandColor,
-        presentation.bold,
-      );
-    }
     case "model_transition": {
       const presentation = presentModelTransition(item);
       return renderStatusLine(
@@ -410,7 +394,7 @@ function renderBanner(context: TerminalHistoryContext): string {
     home && context.cwd.startsWith(home) ? `~${context.cwd.slice(home.length)}` : context.cwd;
   const logo = LOGO_LINES.map((lineText) => gradientLine(lineText, GRADIENT));
 
-  const shortcuts = `${color(context.theme.primary, "/goal")} ${dim(context, "start goal · ")}${color(context.theme.primary, "Ctrl+T")} ${dim(context, "tasks · ")}${color(context.theme.primary, "Shift+Tab")} ${dim(context, "toggle thinking")}`;
+  const shortcuts = `${color(context.theme.primary, "Ctrl+T")} ${dim(context, "tasks · ")}${color(context.theme.primary, "Ctrl+S")} ${dim(context, "skills · ")}${color(context.theme.primary, "Shift+Tab")} ${dim(context, "toggle thinking")}`;
 
   if (context.columns < SIDE_BY_SIDE_MIN) {
     return block([
@@ -694,51 +678,6 @@ function renderSubAgentGroup(
   return block(lines);
 }
 
-function renderGoalProgress(
-  item: Extract<CompletedItem, { kind: "goal_progress" }>,
-  context: TerminalHistoryContext,
-): string {
-  const isError = item.status === "failed" || item.status === "fail" || item.status === "blocked";
-  const status = isError
-    ? "error"
-    : item.phase === "worker_finished" ||
-        item.phase === "verifier_finished" ||
-        item.phase === "terminal"
-      ? "done"
-      : "running";
-  const labelColor = isError
-    ? context.theme.error
-    : item.phase === "worker_finished" || item.phase === "terminal"
-      ? context.theme.success
-      : item.phase === "verifier_finished" || item.phase === "verifier_started"
-        ? context.theme.accent
-        : item.phase === "orchestrator_reviewing" || item.phase === "orchestrator_working"
-          ? context.theme.secondary
-          : item.phase === "continuing"
-            ? context.theme.warning
-            : context.theme.primary;
-  const header = `${toolHeader(status, color(labelColor, item.title, true), "", context, {
-    dotColor: labelColor,
-    indicator: BLACK_CIRCLE,
-  })}${item.workerId ? dim(context, ` · worker ${item.workerId}`) : ""}`;
-  const bodyLines: string[] = [];
-  if (item.detail) {
-    bodyLines.push(dim(context, wrapPlain(item.detail, context.columns - 8)));
-  }
-  for (const row of item.summaryRows ?? []) {
-    bodyLines.push(
-      `${dim(context, row.label.padEnd(12))}${color(context.theme.text, row.value)}${row.detail ? dim(context, ` · ${row.detail}`) : ""}`,
-    );
-  }
-  for (const section of item.summarySections ?? []) {
-    bodyLines.push(dim(context, section.title));
-    for (const sectionLine of section.lines) {
-      bodyLines.push(`${color(context.theme.text, "• ")}${color(context.theme.text, sectionLine)}`);
-    }
-  }
-  return block([header, ...messageResponse(bodyLines, context)]);
-}
-
 function renderServerStyleToolDone(
   name: string,
   args: Record<string, unknown>,
@@ -980,7 +919,6 @@ function getToolHeaderParts(
       return { label: displayName, detail: url.length > 60 ? `${url.slice(0, 57)}…` : url };
     }
     case "tasks":
-    case "goals":
       return { label: displayName, detail: String(args.action ?? "") };
     default:
       return { label: displayName, detail: name.startsWith("mcp__") ? getMCPDetailArg(args) : "" };
@@ -1023,8 +961,6 @@ function toolDisplayName(name: string): string {
       return "Source";
     case "tasks":
       return "Task";
-    case "goals":
-      return "Goal";
     default:
       return snakeToTitle(name);
   }
@@ -1135,8 +1071,7 @@ function getInlineSummary(name: string, result: string, isError: boolean): strin
       return extractSourcePath(result) ? shortenPath(extractSourcePath(result) ?? "") : "resolved";
     case "task_stop":
       return result.split("\n")[0] ?? "stopped";
-    case "tasks":
-    case "goals": {
+    case "tasks": {
       const quoted = result.match(/"([^"]+)"/)?.[1];
       if (quoted) return quoted.length > 50 ? `${quoted.slice(0, 47)}…` : quoted;
       const firstLine = result.split("\n")[0] ?? "";

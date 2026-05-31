@@ -14,13 +14,7 @@ import {
 } from "./edit-diff.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 import { assertFresh, recordWrite, type ReadTracker } from "./read-tracker.js";
-import {
-  goalModeRestriction,
-  isGoalModeActive,
-  isPlanModeActive,
-  planModeRestriction,
-  type GoalMode,
-} from "../core/runtime-mode.js";
+import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
 
 type MutationCallback = (filePath: string) => void | Promise<void>;
 
@@ -135,22 +129,16 @@ export function createEditTool(
   cwd: string,
   readFiles?: ReadTracker,
   ops: ToolOperations = localOperations,
-  goalModeRefOrOnFileMutated?: { current: GoalMode } | MutationCallback,
   planModeRefOrOnFileMutated?: { current: boolean } | MutationCallback,
   onFileMutated?: MutationCallback,
   onPreFileMutation?: MutationCallback,
 ): AgentTool<typeof EditParams> {
-  const goalModeRef = isMutationCallback(goalModeRefOrOnFileMutated)
-    ? undefined
-    : goalModeRefOrOnFileMutated;
   const planModeRef = isPlanModeRef(planModeRefOrOnFileMutated)
     ? planModeRefOrOnFileMutated
     : undefined;
-  const mutationCallback = isMutationCallback(goalModeRefOrOnFileMutated)
-    ? goalModeRefOrOnFileMutated
-    : isMutationCallback(planModeRefOrOnFileMutated)
-      ? planModeRefOrOnFileMutated
-      : onFileMutated;
+  const mutationCallback = isMutationCallback(planModeRefOrOnFileMutated)
+    ? planModeRefOrOnFileMutated
+    : onFileMutated;
   return {
     name: "edit",
     description:
@@ -162,9 +150,6 @@ export function createEditTool(
     parameters: EditParams,
     executionMode: "sequential",
     async execute({ file_path, edits, atomic = false }) {
-      if (isGoalModeActive(goalModeRef)) {
-        return goalModeRestriction("edit", "Goal metadata, evidence plans, and task creation");
-      }
       if (isPlanModeActive(planModeRef)) {
         return planModeRestriction("edit");
       }

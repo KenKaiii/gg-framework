@@ -70,8 +70,20 @@ export function ChatInputStack({
         width={columns}
         height={0}
       />
-      {activityVisible && liveToolFeed.length > 0 && (
-        <LiveToolPanel entries={liveToolFeed} columns={columns} />
+      {activityVisible && activityPhase !== "generating" && liveToolFeed.length > 0 && (
+        <>
+          <LiveToolPanel entries={liveToolFeed} columns={columns} />
+          <Box
+            borderStyle="single"
+            borderTop
+            borderBottom={false}
+            borderLeft={false}
+            borderRight={false}
+            borderColor={theme.textDim}
+            width={columns}
+            height={0}
+          />
+        </>
       )}
       <ChatStatusRow
         visible={statusSlotVisible}

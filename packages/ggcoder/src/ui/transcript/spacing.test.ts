@@ -19,10 +19,6 @@ function itemForKind(kind: CompletedItem["kind"], id: string = kind): CompletedI
       return { kind, id, text: "queued" };
     case "task":
       return { kind, id, title: "task" };
-    case "goal":
-      return { kind, id, title: "goal" };
-    case "goal_progress":
-      return { kind, id, phase: "worker_started", title: "goal progress" };
     case "tool_start":
       return { kind, id, toolCallId: id, name: "read", args: {}, startedAt: 0, animateUntil: 0 };
     case "tool_done":
@@ -59,8 +55,6 @@ function itemForKind(kind: CompletedItem["kind"], id: string = kind): CompletedI
       return { kind, id, text: "stopped" };
     case "plan_transition":
       return { kind, id, text: "plan", active: true };
-    case "goal_agent_transition":
-      return { kind, id, text: "goal agent" };
     case "model_transition":
       return { kind, id, modelName: "model" };
     case "theme_transition":

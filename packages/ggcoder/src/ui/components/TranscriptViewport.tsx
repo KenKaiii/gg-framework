@@ -22,7 +22,7 @@ interface TranscriptViewportProps {
  *
  * Sizing: `height={viewportRows}` is the PREFERRED height, but the box is
  * `flexShrink={1}` so it yields when the controls region grows taller than
- * expected — e.g. when the slash-command menu or a task/goal picker opens below
+ * expected — e.g. when the slash-command menu or a task picker opens below
  * the input. Without this the menu would overflow off the bottom of the screen
  * (it's pinned). `justifyContent="flex-end"` + `overflowY="hidden"` means any
  * shrink clips the OLDEST rows at the top, keeping the newest output and the

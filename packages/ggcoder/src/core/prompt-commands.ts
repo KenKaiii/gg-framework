@@ -12,14 +12,6 @@ export interface PromptCommand {
 
 export const PROMPT_COMMANDS: PromptCommand[] = [
   {
-    name: "goal",
-    aliases: ["g"],
-    description: "Create a durable programmatic goal loop",
-    // Contract anchors for the audit verifier: /goal setup is setup-only.
-    // Do not implement; plan/research as needed first, then define success criteria, evidence_plan, verifier, and goals metadata, then stop.
-    prompt: `Create a Goal run for the following objective. First plan/research only if needed; Goal setup will consume that plan and create durable Goal state.`,
-  },
-  {
     name: "expand",
     aliases: [],
     description: "Find exciting new features to add",
@@ -236,14 +228,14 @@ Threat model: [from recon]
 After the report, ask:
 
 > Which (if any) should I fix? Options:
-> - A) Create a Goal for all Critical + High
-> - B) Create a Goal for specific findings (give IDs, e.g. "BP-001, BP-004")
-> - C) Create a Goal for a category (auth, supply chain, secrets, …)
+> - A) Add tasks for all Critical + High
+> - B) Add tasks for specific findings (give IDs, e.g. "BP-001, BP-004")
+> - C) Add tasks for a category (auth, supply chain, secrets, …)
 > - D) None — report only
 
 **Do not start fixing until the user picks.**
 
-If the user chooses A, B, or C, do not fix directly. Instead, create one durable Goal with one worker task per selected finding or tightly coupled finding group, ordered by severity, exploitability, and dependency. Each worker prompt must include the finding ID, vulnerability scenario, affected local files/anchors, concrete remediation, instructions to compare security-sensitive implementation details with kencode search or authoritative docs before editing, project verification commands, and instructions to compare the final fix with kencode search or authoritative docs again before marking the Goal task complete. After creating the Goal, tell the user exactly: "Goal created. Press CTRL + G to open the Goal pane and run it." Do not begin executing it unless the user explicitly starts the Goal.
+If the user chooses A, B, or C, do not fix directly. Instead, add one task per selected finding or tightly coupled finding group using the \`tasks\` tool (action=add), ordered by severity, exploitability, and dependency. Each task needs a short title and a standalone prompt that includes the finding ID, vulnerability scenario, affected local files/anchors, concrete remediation, instructions to compare security-sensitive implementation details with kencode search or authoritative docs before editing, project verification commands, and instructions to compare the final fix with kencode search or authoritative docs again before completing the task. After adding the tasks, tell the user exactly: "Tasks added. Press Ctrl+T to open the task list and run them." Do not begin executing them unless the user explicitly says so.
 
 ## Threat reference (May 2026)
 
@@ -603,16 +595,16 @@ At the end:
 <N> gaps in hygiene, <N> in tooling, <N> in verify pipeline, <N> in style-pack alignment.
 
 Which (if any) would you like me to fix? Options:
-- A) Create a Goal for all [GAP] items that are safe + additive (no overwrites)
-- B) Create a Goal for a category: hygiene / tooling / verify / style-pack alignment
-- C) Create a Goal for specific items — tell me which
+- A) Add tasks for all [GAP] items that are safe + additive (no overwrites)
+- B) Add tasks for a category: hygiene / tooling / verify / style-pack alignment
+- C) Add tasks for specific items — tell me which
 - D) None — just the report
 \`\`\`
 
 ## Rules
 
 - **Report only.** No edits, no installs, no commits without explicit user confirmation after the report.
-- **Goal handoff for fixes.** If the user chooses A, B, or C, do not fix directly. Create one durable Goal with standalone worker tasks for the selected gap or tightly coupled gap groups. Each worker prompt must include the gap, affected files/configs, safe-additive constraints, implementation instructions, project verification commands, and instructions to verify relevant tool/config semantics against official docs before marking the Goal task complete. Use kencode search only for code-level examples, not as proof of scaffolding requirements. After creating the Goal, tell the user exactly: "Goal created. Press CTRL + G to open the Goal pane and run it." Do not begin executing it unless the user explicitly starts the Goal.
+- **Task handoff for fixes.** If the user chooses A, B, or C, do not fix directly. Add one task per selected gap or tightly coupled gap group using the \`tasks\` tool (action=add). Each task needs a short title and a standalone prompt that includes the gap, affected files/configs, safe-additive constraints, implementation instructions, project verification commands, and instructions to verify relevant tool/config semantics against official docs before completing the task. Use kencode search only for code-level examples, not as proof of scaffolding requirements. After adding the tasks, tell the user exactly: "Tasks added. Press Ctrl+T to open the task list and run them." Do not begin executing them unless the user explicitly says so.
 - **No code refactors recommended.** This audit is about scaffolding/tooling, not code review. Use \`/scan\` or \`/verify\` for code-level findings.
 - **No dependency installations in the report.** Listing them as observations is fine; recommending installation is not — that's the user's call.
 - **Skip empty categories.** If a category has no findings, omit it.

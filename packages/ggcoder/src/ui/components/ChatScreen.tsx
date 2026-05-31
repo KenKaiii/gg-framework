@@ -2,9 +2,7 @@ import React from "react";
 import type { DOMElement } from "ink";
 import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import type { ContextWindowOptions } from "../../core/model-registry.js";
-import type { GoalMode } from "../../core/runtime-mode.js";
 import type { TaskRecord } from "../../core/tasks-store.js";
-import type { GoalRun } from "../../core/goal-store.js";
 import type { SlashCommandInfo } from "./SlashCommandMenu.js";
 import type { ImageAttachment } from "../../utils/image.js";
 import type { CompletedItem } from "../app-items.js";
@@ -17,7 +15,6 @@ import { ChatLivePane } from "./ChatLivePane.js";
 import { TranscriptViewport } from "./TranscriptViewport.js";
 import { QueueIndicator } from "./QueueIndicator.js";
 import { InputArea, type PasteInfo } from "./InputArea.js";
-import { type GoalStatusEntry } from "./GoalStatusBar.js";
 import { FooterStatusRow } from "./FooterStatusRow.js";
 import type { LiveToolEntry } from "./LiveToolPanel.js";
 import type { ActivityPhase, RetryInfo } from "../hooks/useAgentLoop.js";
@@ -31,7 +28,6 @@ interface ChatInputControls {
   onDownAtEnd: () => void;
   onShiftTab: () => void;
   onToggleTasks: () => void;
-  onToggleGoal: () => void;
   onToggleSkills: () => void;
   onTogglePixel: () => void;
   onToggleMarkdown: () => void;
@@ -49,15 +45,6 @@ interface TaskPickerControls {
   onStart: (task: TaskRecord) => void;
   onRunAll: (task?: TaskRecord) => void;
   onDelete: (task: TaskRecord) => void;
-}
-
-interface GoalPickerControls {
-  open: boolean;
-  goals: readonly GoalRun[];
-  onClose: () => void;
-  onRun: (run: GoalRun) => void;
-  onDelete: (run: GoalRun) => void;
-  onPause: (run: GoalRun) => void;
 }
 
 interface ChatScreenProps {
@@ -108,7 +95,6 @@ interface ChatScreenProps {
   formatDuration: (durationMs: number) => string;
   inputControls: ChatInputControls;
   taskPicker: TaskPickerControls;
-  goalPicker: GoalPickerControls;
   overlay: string | null;
   onModelSelect: (modelId: string) => void;
   onModelCancel: () => void;
@@ -122,10 +108,8 @@ interface ChatScreenProps {
   contextWindowOptions?: ContextWindowOptions;
   displayedCwd: string;
   gitBranch?: string | null;
-  goalMode: GoalMode;
   planMode: boolean;
   exitPending: boolean;
-  goalStatusEntries: GoalStatusEntry[];
   footerStatusLayout: FooterStatusLayoutDecision;
   backgroundTasks: BackgroundProcess[];
   taskBarFocused: boolean;
@@ -180,7 +164,6 @@ export function ChatScreen({
   formatDuration,
   inputControls,
   taskPicker,
-  goalPicker,
   overlay,
   onModelSelect,
   onModelCancel,
@@ -194,10 +177,8 @@ export function ChatScreen({
   contextWindowOptions,
   displayedCwd,
   gitBranch,
-  goalMode,
   planMode,
   exitPending,
-  goalStatusEntries,
   footerStatusLayout,
   backgroundTasks,
   taskBarFocused,
@@ -276,13 +257,6 @@ export function ChatScreen({
           onStartTask={taskPicker.onStart}
           onRunAllTasks={taskPicker.onRunAll}
           onDeleteTask={taskPicker.onDelete}
-          goalPickerOpen={goalPicker.open}
-          goals={goalPicker.goals}
-          onCloseGoalPicker={goalPicker.onClose}
-          onRunGoal={goalPicker.onRun}
-          onDeleteGoal={goalPicker.onDelete}
-          onPauseGoal={goalPicker.onPause}
-          onToggleGoal={inputControls.onToggleGoal}
           onToggleSkills={inputControls.onToggleSkills}
           onTogglePixel={inputControls.onTogglePixel}
           onToggleMarkdown={inputControls.onToggleMarkdown}
@@ -306,11 +280,9 @@ export function ChatScreen({
           displayedCwd={displayedCwd}
           gitBranch={gitBranch}
           thinkingLevel={thinkingLevel}
-          goalMode={goalMode}
           planMode={planMode}
           exitPending={exitPending}
           renderMarkdown={renderMarkdown}
-          goalStatusEntries={goalStatusEntries}
         />
         <FooterStatusRow
           columns={columns}

@@ -259,40 +259,6 @@ describe("terminal history", () => {
     expect(rendered).not.toContain("| --- | --- | --- |");
   });
 
-  it("serializes goal progress rows with tool-style gutter and agent spacing", () => {
-    let output = "";
-    const stream = {
-      write(chunk: string) {
-        output += chunk;
-        return true;
-      },
-    } as NodeJS.WriteStream;
-    const printer = createTerminalHistoryPrinter({ stream });
-    const items: CompletedItem[] = [
-      { kind: "assistant", text: "Coordinator update", id: "assistant-before-goal" },
-      {
-        kind: "goal_progress",
-        phase: "worker_started",
-        title: "Worker started: Audit /goal role contracts",
-        detail: "Task is running in the background.",
-        workerId: "worker-1",
-        status: "running",
-        id: "goal-progress-worker",
-      },
-    ];
-
-    printer.print(items, context);
-    const rendered = stripAnsi(output);
-
-    expect(rendered).toMatch(
-      /Coordinator update\n\n [⏺●] Worker started: Audit \/goal role contracts/,
-    );
-    expect(rendered).not.toContain(" · Worker started");
-    expect(rendered).toContain(" · worker worker-1");
-    expect(rendered).toContain("  ⎿  Task is running in the background.");
-    expect(rendered).not.toContain("↻ Worker started");
-  });
-
   it("serializes subagent groups as the live tree panel shape", () => {
     const item: CompletedItem = {
       kind: "subagent_group",

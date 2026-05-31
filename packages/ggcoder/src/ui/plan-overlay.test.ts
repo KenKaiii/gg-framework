@@ -47,7 +47,7 @@ async function loadPlanEntries(cwd: string): Promise<PlanEntry[]> {
 // ── State helpers (avoid lint issues with bare let reassignments) ──
 
 interface AppState {
-  overlay: "model" | "goal" | "skills" | "plan" | null;
+  overlay: "model" | "skills" | "plan" | null;
   planAutoExpand: boolean;
   pending: boolean;
   pendingResetUI: boolean;
@@ -345,7 +345,7 @@ describe("plan file reading edge cases", () => {
 
 describe("overlay state transitions", () => {
   it("opening plan overlay replaces any existing overlay", () => {
-    const state = createAppState({ overlay: "goal" });
+    const state = createAppState({ overlay: "skills" });
     state.overlay = "plan";
     expect(state.overlay).toBe("plan");
   });

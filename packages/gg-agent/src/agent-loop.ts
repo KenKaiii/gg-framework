@@ -20,7 +20,7 @@ import type {
   StructuredToolResult,
 } from "./types.js";
 
-const DEFAULT_MAX_TURNS = 200;
+const DEFAULT_MAX_TURNS = 300;
 
 /**
  * Lightweight stream diagnostic callback. When set, the agent loop calls this
@@ -380,7 +380,13 @@ export async function* agentLoop(
   const OVERLOAD_BASE_DELAY_MS = 2_000;
   const OVERLOAD_MAX_DELAY_MS = 30_000;
   const STREAM_FIRST_EVENT_TIMEOUT_MS = 45_000; // 45s to get first event (Opus thinks long)
-  const STREAM_IDLE_TIMEOUT_MS = 30_000; // 30s between events once streaming starts
+  // 90s of true API silence between events once streaming starts. This measures
+  // only time the *API* was quiet -- the timer is armed after we finish yielding
+  // each event downstream, so slow UI/consumer render time is excluded (see the
+  // resetIdleTimer() call after the yield, below). 30s here previously caused
+  // false aborts on large `write`/`edit` tool-call streams when the Ink UI lagged
+  // tens of seconds behind. 90s matches Claude Code's default idle watchdog.
+  const STREAM_IDLE_TIMEOUT_MS = 90_000; // 90s of API silence between events
   // Anthropic models can pause 10-20s mid-stream while computing the next chunk
   // (e.g. generating tool call args for a large write).  10s was too aggressive
   // and caused false "stream stalled" errors, especially in plan mode.
@@ -662,7 +668,14 @@ export async function* agentLoop(
             });
           }
           lastEventTime = now;
-          resetIdleTimer();
+          // The event is in hand -- the API has proven liveness, so stop the idle
+          // timer for the duration of downstream processing. We re-arm it after
+          // the yield completes (see below) so the idle window measures only API
+          // silence, never the time our consumer/UI spent rendering this event.
+          if (idleTimer) {
+            clearTimeout(idleTimer);
+            idleTimer = null;
+          }
           if (event.type === "text_delta") {
             yield { type: "text_delta" as const, text: event.text };
           } else if (event.type === "thinking_delta") {
@@ -708,6 +721,9 @@ export async function* agentLoop(
             };
           }
           lastYieldEndTime = Date.now();
+          // Re-arm the idle timer only now that we're done yielding -- the
+          // countdown to the next event excludes the render time above.
+          resetIdleTimer();
         }
 
         diag("stream_done", {

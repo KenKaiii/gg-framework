@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getFooterStatusLayoutDecision } from "./components/BackgroundTasksBar.js";
-import {
-  getFooterRightLength,
-  getGoalFooterLabel,
-  getThinkingFooterLabel,
-} from "./components/Footer.js";
+import { getFooterRightLength, getThinkingFooterLabel } from "./components/Footer.js";
 
 describe("footer status layout decisions", () => {
   it("keeps a single wide row when footer status indicators are present", () => {
@@ -65,7 +61,7 @@ describe("footer status layout decisions", () => {
   });
 });
 
-describe("main footer Goal mode layout", () => {
+describe("main footer mode layout", () => {
   it("labels the active thinking effort for the footer", () => {
     expect(getThinkingFooterLabel("medium")).toBe("Thinking medium");
     expect(getThinkingFooterLabel("high")).toBe("Thinking high");
@@ -76,15 +72,7 @@ describe("main footer Goal mode layout", () => {
     expect(getThinkingFooterLabel(undefined)).toBe("Thinking off");
   });
 
-  it("labels Goal mode states compactly", () => {
-    expect(getGoalFooterLabel(undefined)).toBe("Goal off");
-    expect(getGoalFooterLabel("off")).toBe("Goal off");
-    expect(getGoalFooterLabel("planner")).toBe("Goal plan");
-    expect(getGoalFooterLabel("setup")).toBe("Goal setup");
-    expect(getGoalFooterLabel("coordinator")).toBe("Goal coord");
-  });
-
-  it("includes Goal and Plan labels plus separators in right-side width calculations", () => {
+  it("includes the Plan label plus separators in right-side width calculations", () => {
     const withoutModeWidth = 8 + 1 + 2 + 1 + 3 + "Sonnet".length + 3 + "Thinking off".length;
 
     expect(
@@ -92,10 +80,9 @@ describe("main footer Goal mode layout", () => {
         barWidth: 8,
         contextPct: 12,
         modelName: "Sonnet",
-        goalText: "Goal coord",
         planText: "Plan on",
         thinkingText: "Thinking off",
       }),
-    ).toBe(withoutModeWidth + 3 + "Goal coord".length + 3 + "Plan on".length);
+    ).toBe(withoutModeWidth + 3 + "Plan on".length);
   });
 });

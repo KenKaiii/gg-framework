@@ -104,7 +104,7 @@ Run `ggcoder` directly when you're heads-down on one project. Switch to `ggboss`
 
 | Key | What it does |
 |---|---|
-| <kbd>Ctrl+G</kbd> | Open the Goal pane |
+| <kbd>Ctrl+T</kbd> | Open the Task pane |
 | <kbd>Ctrl+S</kbd> | Open the Skills pane |
 | <kbd>Shift+Tab</kbd> | Cycle extended thinking (off / low / medium / high / max) |
 | <kbd>Esc</kbd> | Interrupt the agent mid-turn |
@@ -135,7 +135,6 @@ Everything runs through slash commands inside the session. Not CLI flags.
 Plus built-in workflows that ship with the binary:
 
 ```bash
-/goal          # Set up a durable Goal run
 /expand        # Compare against current alternatives and report gaps
 /bullet-proof  # Run a defensive security review
 /init          # Generate CLAUDE.md for your project

@@ -4,9 +4,6 @@ import { formatDuration } from "../duration-format.js";
 import type {
   DurationItem,
   ErrorItem,
-  GoalAgentTransitionItem,
-  GoalItem,
-  GoalProgressItem,
   InfoItem,
   ModelTransitionItem,
   PlanEventItem,
@@ -29,21 +26,6 @@ export interface StatusPresentation {
   detail?: string;
   bold: boolean;
   muted?: boolean;
-}
-
-export interface GoalPresentation {
-  glyph: string;
-  label: string;
-  title: string;
-  workerSuffix: string;
-  text: string;
-}
-
-export interface GoalProgressPresentation {
-  titleText: string;
-  hasResponseBody: boolean;
-  isError: boolean;
-  loaderStatus: "running" | "done" | "error";
 }
 
 export interface StylePackPresentation {
@@ -92,32 +74,6 @@ export function normalizeTranscriptStatusText(text: string): string {
   return text.replace(/\\n/g, "\n").replace(/^\n+|\n+$/g, "");
 }
 
-export function presentGoal(item: GoalItem): GoalPresentation {
-  const workerSuffix = item.workerId ? ` · worker ${item.workerId}` : "";
-  return {
-    glyph: "▶",
-    label: "Goal: ",
-    title: item.title,
-    workerSuffix,
-    text: `▶ Goal: ${item.title}${workerSuffix}`,
-  };
-}
-
-export function presentGoalProgress(item: GoalProgressItem): GoalProgressPresentation {
-  const workerSuffix = item.workerId ? ` · worker ${item.workerId}` : "";
-  const isError = item.status === "failed" || item.status === "fail" || item.status === "blocked";
-  const isDone =
-    item.phase === "worker_finished" ||
-    item.phase === "verifier_finished" ||
-    item.phase === "terminal";
-  return {
-    titleText: `${item.title}${workerSuffix}`,
-    hasResponseBody: !!item.detail || !!item.summaryRows?.length || !!item.summarySections?.length,
-    isError,
-    loaderStatus: isError ? "error" : isDone ? "done" : "running",
-  };
-}
-
 export function presentStylePack(item: StylePackItem): StylePackPresentation {
   return {
     headerLabel: item.added.length > 1 ? "STYLE PACKS ACTIVE" : "STYLE PACK ACTIVE",
@@ -153,10 +109,6 @@ export function presentTask(item: TaskItem): StatusPresentation {
 }
 
 export function presentPlanTransition(item: PlanTransitionItem): StatusPresentation {
-  return { glyph: `${BLACK_CIRCLE} `, text: normalizeTranscriptStatusText(item.text), bold: true };
-}
-
-export function presentGoalAgentTransition(item: GoalAgentTransitionItem): StatusPresentation {
   return { glyph: `${BLACK_CIRCLE} `, text: normalizeTranscriptStatusText(item.text), bold: true };
 }
 

@@ -3,7 +3,6 @@ import {
   getScrollStabilizationDecision,
   getStaticHistoryKey,
   isTallLiveUserMessage,
-  shouldStabilizeOverlayPaneRerender,
 } from "./layout-decisions.js";
 
 describe("getScrollStabilizationDecision", () => {
@@ -86,20 +85,5 @@ describe("getScrollStabilizationDecision", () => {
         hasNewOutput: false,
       }),
     ).toEqual({ preserveStatic: false, autoFollow: false });
-  });
-
-  it("identifies long polling overlay panes that need rerender stabilization while an agent runs", () => {
-    expect(shouldStabilizeOverlayPaneRerender({ overlayPane: "goal", isAgentRunning: true })).toBe(
-      true,
-    );
-    expect(shouldStabilizeOverlayPaneRerender({ overlayPane: "plan", isAgentRunning: true })).toBe(
-      false,
-    );
-    expect(
-      shouldStabilizeOverlayPaneRerender({ overlayPane: "skills", isAgentRunning: true }),
-    ).toBe(false);
-    expect(shouldStabilizeOverlayPaneRerender({ overlayPane: "goal", isAgentRunning: false })).toBe(
-      false,
-    );
   });
 });

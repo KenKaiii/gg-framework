@@ -115,11 +115,11 @@ function ShortcutHints() {
 
   return (
     <Box>
-      <Text color={theme.primary}>/goal</Text>
-      <Text color={theme.textDim}> start goal</Text>
-      <Text color={theme.textDim}> · </Text>
       <Text color={theme.primary}>Ctrl+T</Text>
       <Text color={theme.textDim}> tasks</Text>
+      <Text color={theme.textDim}> · </Text>
+      <Text color={theme.primary}>Ctrl+S</Text>
+      <Text color={theme.textDim}> skills</Text>
       <Text color={theme.textDim}> · </Text>
       <Text color={theme.primary}>Shift+Tab</Text>
       <Text color={theme.textDim}> toggle thinking</Text>

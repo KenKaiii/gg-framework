@@ -32,7 +32,7 @@ export function getToolTone(name: string): ToolTone {
   )
     return "web";
   if (["subagent", "skill"].includes(name)) return "agent";
-  if (["tasks", "goals"].includes(name)) return "state";
+  if (["tasks"].includes(name)) return "state";
   if (["source_path"].includes(name)) return "source";
   if (name.startsWith("mcp__")) return "web";
   return "default";

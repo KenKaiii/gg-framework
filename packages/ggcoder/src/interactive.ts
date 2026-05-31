@@ -58,7 +58,6 @@ export async function runInteractive(config: CliConfig): Promise<void> {
       undefined,
       tools.map((tool) => tool.name),
       undefined,
-      "off",
       provider,
     ));
   process.on("exit", () => processManager.shutdownAll());

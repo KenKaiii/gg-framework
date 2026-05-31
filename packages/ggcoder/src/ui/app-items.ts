@@ -1,6 +1,5 @@
 import type { PasteInfo } from "./components/InputArea.js";
 import type { SubAgentInfo } from "./components/SubAgentPanel.js";
-import type { GoalSummaryRow, GoalSummarySection } from "./goal-summary.js";
 import type { LanguageId } from "../core/language-detector.js";
 import type { SessionSummary } from "./session-summary.js";
 
@@ -22,40 +21,11 @@ export interface UserItem {
   id: string;
 }
 
-export interface GoalItem {
-  kind: "goal";
-  title: string;
-  workerId?: string;
-  id: string;
-}
-
 export interface TaskItem {
   kind: "task";
   title: string;
   id: string;
 }
-
-export interface GoalProgressItem {
-  kind: "goal_progress";
-  phase:
-    | "worker_started"
-    | "worker_finished"
-    | "orchestrator_reviewing"
-    | "orchestrator_working"
-    | "continuing"
-    | "verifier_started"
-    | "verifier_finished"
-    | "terminal";
-  title: string;
-  detail?: string;
-  summaryRows?: GoalSummaryRow[];
-  summarySections?: GoalSummarySection[];
-  workerId?: string;
-  status?: string;
-  id: string;
-}
-
-export type GoalProgressDraft = Omit<GoalProgressItem, "id">;
 
 export interface AssistantItem {
   kind: "assistant";
@@ -224,12 +194,6 @@ export interface PlanTransitionItem {
   id: string;
 }
 
-export interface GoalAgentTransitionItem {
-  kind: "goal_agent_transition";
-  text: string;
-  id: string;
-}
-
 export interface ModelTransitionItem {
   kind: "model_transition";
   modelName: string;
@@ -310,11 +274,26 @@ export function isPanelReplacedToolItem(item: {
   return !(item.imagePreviews && item.imagePreviews.length > 0);
 }
 
+/**
+ * The last item in a transcript slice that actually renders a row. Panel-replaced
+ * tool items (now shown only in the LiveToolPanel) render `null`, so they must be
+ * skipped when deriving the "previous item" for spacing decisions — otherwise a
+ * tool→assistant boundary inserts a blank separator above an invisible row,
+ * leaving a phantom gap above the response.
+ */
+export function lastVisibleTranscriptItem<
+  T extends { kind: string; imagePreviews?: readonly unknown[] },
+>(items: readonly T[]): T | undefined {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item && !isPanelReplacedToolItem(item)) return item;
+  }
+  return undefined;
+}
+
 export type CompletedItem =
   | UserItem
-  | GoalItem
   | TaskItem
-  | GoalProgressItem
   | AssistantItem
   | IdealHookItem
   | ToolStartItem
@@ -335,7 +314,6 @@ export type CompletedItem =
   | SubAgentGroupItem
   | ToolGroupItem
   | PlanTransitionItem
-  | GoalAgentTransitionItem
   | ModelTransitionItem
   | ThemeTransitionItem
   | PlanEventItem

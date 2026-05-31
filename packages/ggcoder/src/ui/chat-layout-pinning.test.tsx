@@ -385,7 +385,6 @@ describe("chat controls layout", () => {
       exitPending: false,
       footerStatusLayout: noFooterStatus,
       taskBarExpanded: false,
-      goalStatusEntryCount: 0,
       footerFitsOnOneLine: true,
       liveToolPanelRows: 0,
     });
@@ -404,7 +403,6 @@ describe("chat controls layout", () => {
       exitPending: false,
       footerStatusLayout: noFooterStatus,
       taskBarExpanded: false,
-      goalStatusEntryCount: 0,
       footerFitsOnOneLine: true,
       liveToolPanelRows: 0,
     });
@@ -418,7 +416,6 @@ describe("chat controls layout", () => {
       exitPending: false,
       footerStatusLayout: noFooterStatus,
       taskBarExpanded: false,
-      goalStatusEntryCount: 0,
       footerFitsOnOneLine: true,
       liveToolPanelRows: 0,
     });
@@ -437,7 +434,6 @@ describe("chat controls layout", () => {
       exitPending: false,
       footerStatusLayout: noFooterStatus,
       taskBarExpanded: false,
-      goalStatusEntryCount: 0,
       footerFitsOnOneLine: true,
       liveToolPanelRows: 0,
     });
@@ -451,7 +447,6 @@ describe("chat controls layout", () => {
       exitPending: false,
       footerStatusLayout: noFooterStatus,
       taskBarExpanded: false,
-      goalStatusEntryCount: 0,
       footerFitsOnOneLine: true,
       liveToolPanelRows: 0,
     });
@@ -471,7 +466,6 @@ describe("chat controls layout", () => {
       exitPending: false,
       footerStatusLayout: noFooterStatus,
       taskBarExpanded: false,
-      goalStatusEntryCount: 0,
       footerFitsOnOneLine: true,
     };
     const noPanel = getChatControlsLayoutDecision({ ...base, liveToolPanelRows: 0 });
@@ -497,7 +491,6 @@ describe("chat controls layout", () => {
       exitPending: false,
       footerStatusLayout: noFooterStatus,
       taskBarExpanded: false,
-      goalStatusEntryCount: 0,
       footerFitsOnOneLine: true,
     };
     const threeRows = getChatControlsLayoutDecision({ ...base, liveToolPanelRows: 3 });
@@ -522,7 +515,6 @@ describe("chat controls layout", () => {
         stack: true,
       },
       taskBarExpanded: true,
-      goalStatusEntryCount: 1,
       footerFitsOnOneLine: false,
       liveToolPanelRows: 0,
     });

@@ -14,7 +14,6 @@ import { createSourcePathTool } from "./source-path.js";
 import { createTaskOutputTool } from "./task-output.js";
 import { createTaskStopTool } from "./task-stop.js";
 import { createTasksTool } from "./tasks.js";
-import { createGoalsTool } from "./goals.js";
 import { createSkillTool } from "./skill.js";
 import { createScreenshotTool } from "./screenshot.js";
 import { createEnterPlanTool } from "./enter-plan.js";
@@ -23,8 +22,6 @@ import { localOperations, type ToolOperations } from "./operations.js";
 import type { ReadTracker } from "./read-tracker.js";
 import type { AgentDefinition } from "../core/agents.js";
 import type { Skill } from "../core/skills.js";
-import type { GoalReference } from "../core/goal-store.js";
-import type { GoalMode } from "../core/runtime-mode.js";
 
 export interface CreateToolsOptions {
   agents?: AgentDefinition[];
@@ -33,8 +30,6 @@ export interface CreateToolsOptions {
   model?: string;
   /** Custom I/O operations for remote execution (SSH, Docker, etc.). Defaults to local filesystem. */
   operations?: ToolOperations;
-  /** Ref for checking Goal orchestration mode inside tool execute functions. */
-  goalModeRef?: { current: GoalMode };
   /** Ref for checking plan mode inside tool execute functions. */
   planModeRef?: { current: boolean };
   /** Callback when the LLM enters plan mode. */
@@ -51,8 +46,6 @@ export interface CreateToolsOptions {
    * absolute path.
    */
   onPreFileMutation?: (filePath: string) => void | Promise<void>;
-  /** Getter for active /goal reference context while setup persists durable Goal state. */
-  getGoalReferences?: () => readonly GoalReference[] | undefined;
   /**
    * Getter for parent's prompt-cache routing key, evaluated lazily at
    * sub-agent spawn time. Returning a stable key from this getter lets every
@@ -73,30 +66,13 @@ export function createTools(cwd: string, opts?: CreateToolsOptions): CreateTools
   const readFiles: ReadTracker = new Map();
   const processManager = new ProcessManager();
   const ops = opts?.operations ?? localOperations;
-  const goalModeRef = opts?.goalModeRef;
   const planModeRef = opts?.planModeRef;
 
   const tools: AgentTool[] = [
     createReadTool(cwd, readFiles, ops, opts?.onFileRead),
-    createWriteTool(
-      cwd,
-      readFiles,
-      ops,
-      goalModeRef,
-      planModeRef,
-      opts?.onFileMutated,
-      opts?.onPreFileMutation,
-    ),
-    createEditTool(
-      cwd,
-      readFiles,
-      ops,
-      goalModeRef,
-      planModeRef,
-      opts?.onFileMutated,
-      opts?.onPreFileMutation,
-    ),
-    createBashTool(cwd, processManager, ops, goalModeRef, planModeRef),
+    createWriteTool(cwd, readFiles, ops, planModeRef, opts?.onFileMutated, opts?.onPreFileMutation),
+    createEditTool(cwd, readFiles, ops, planModeRef, opts?.onFileMutated, opts?.onPreFileMutation),
+    createBashTool(cwd, processManager, ops, planModeRef),
     createFindTool(cwd),
     createGrepTool(cwd, ops),
     createLsTool(cwd, ops),
@@ -105,7 +81,6 @@ export function createTools(cwd: string, opts?: CreateToolsOptions): CreateTools
     createTaskOutputTool(processManager),
     createTaskStopTool(processManager),
     createTasksTool(cwd),
-    createGoalsTool(cwd, goalModeRef, opts?.getGoalReferences),
     createScreenshotTool(cwd),
   ];
 
@@ -121,7 +96,6 @@ export function createTools(cwd: string, opts?: CreateToolsOptions): CreateTools
         opts.agents,
         opts.provider,
         opts.model,
-        goalModeRef,
         opts.getCacheKey,
         planModeRef,
       ),
@@ -156,7 +130,6 @@ export { createSourcePathTool } from "./source-path.js";
 export { createTaskOutputTool } from "./task-output.js";
 export { createTaskStopTool } from "./task-stop.js";
 export { createTasksTool } from "./tasks.js";
-export { createGoalsTool } from "./goals.js";
 export { createSkillTool } from "./skill.js";
 export { createScreenshotTool } from "./screenshot.js";
 export { createEnterPlanTool } from "./enter-plan.js";

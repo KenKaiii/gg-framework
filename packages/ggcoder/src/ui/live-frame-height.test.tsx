@@ -35,7 +35,6 @@ const idleControlsRows = getChatControlsLayoutDecision({
   exitPending: false,
   footerStatusLayout: noFooterStatus,
   taskBarExpanded: false,
-  goalStatusEntryCount: 0,
   footerFitsOnOneLine: true,
   liveToolPanelRows: 0,
 }).controlsRows;
@@ -126,7 +125,6 @@ describe("live frame height", () => {
       exitPending: false,
       footerStatusLayout: noFooterStatus,
       taskBarExpanded: false,
-      goalStatusEntryCount: 0,
       footerFitsOnOneLine: true,
       liveToolPanelRows: 0,
     };

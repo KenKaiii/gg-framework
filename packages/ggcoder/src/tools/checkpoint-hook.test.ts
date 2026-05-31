@@ -36,7 +36,7 @@ describe("onPreFileMutation hook", () => {
     const readFiles: ReadTracker = new Map();
     recordRead(readFiles, target, "before", Date.now());
 
-    const tool = createWriteTool(cwd, readFiles, undefined, undefined, undefined, undefined, onPre);
+    const tool = createWriteTool(cwd, readFiles, undefined, undefined, undefined, onPre);
     await tool.execute({ file_path: "out.txt", content: "after" }, ctx());
 
     expect(onPre).toHaveBeenCalledTimes(1);
@@ -58,7 +58,7 @@ describe("onPreFileMutation hook", () => {
       contentAtHook = await fs.readFile(filePath, "utf-8");
     });
 
-    const tool = createEditTool(cwd, readFiles, undefined, undefined, undefined, undefined, onPre);
+    const tool = createEditTool(cwd, readFiles, undefined, undefined, undefined, onPre);
     await tool.execute(
       { file_path: "code.ts", edits: [{ old_text: "const x = 1;", new_text: "const x = 2;" }] },
       ctx(),
@@ -76,7 +76,7 @@ describe("onPreFileMutation hook", () => {
     recordRead(readFiles, target, "const x = 1;\n", Date.now());
 
     const onPre = vi.fn();
-    const tool = createEditTool(cwd, readFiles, undefined, undefined, undefined, undefined, onPre);
+    const tool = createEditTool(cwd, readFiles, undefined, undefined, undefined, onPre);
     await tool.execute(
       { file_path: "code.ts", edits: [{ old_text: "const x = 1;", new_text: "const x = 1;" }] },
       ctx(),

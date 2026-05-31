@@ -1,4 +1,3 @@
-import type { GoalMode } from "../core/runtime-mode.js";
 import type { FooterStatusLayoutDecision } from "./components/BackgroundTasksBar.js";
 import type { CompletedItem } from "./app-items.js";
 import {
@@ -8,7 +7,7 @@ import {
   shouldTopSpaceStreamingAssistant as shouldTopSpaceStreamingAssistantFromTranscript,
 } from "./transcript/spacing.js";
 
-export type OverlayPaneKind = "model" | "goal" | "skills" | "plan" | "theme" | "pixel";
+export type OverlayPaneKind = "model" | "skills" | "plan" | "theme" | "pixel";
 
 export function shouldHideHistoryForOverlayView(
   isOverlayView: boolean,
@@ -20,13 +19,13 @@ export function shouldHideHistoryForOverlayView(
 }
 
 export function shouldStabilizeOverlayPaneRerender({
-  overlayPane,
-  isAgentRunning,
+  overlayPane: _overlayPane,
+  isAgentRunning: _isAgentRunning,
 }: {
   overlayPane: OverlayPaneKind | null;
   isAgentRunning: boolean;
 }): boolean {
-  return isAgentRunning && overlayPane === "goal";
+  return false;
 }
 
 export function shouldHideStaticItemsForOverlayView({
@@ -46,48 +45,13 @@ export interface DoneFlushDecision {
 
 export function getDoneFlushDecision({
   planOverlayPending,
-  goalMode,
-  goalAutoExpand,
 }: {
   planOverlayPending: boolean;
-  goalMode: GoalMode;
-  goalAutoExpand: boolean;
 }): DoneFlushDecision {
   return {
-    showDoneStatus: !(
-      planOverlayPending ||
-      goalMode === "planner" ||
-      goalMode === "setup" ||
-      goalAutoExpand
-    ),
+    showDoneStatus: !planOverlayPending,
     flushLiveItems: true,
   };
-}
-
-export interface GoalSetupPaneTransition {
-  overlay: "goal";
-  goalAutoExpand: true;
-  planAutoExpand: false;
-  suppressDoneStatus: true;
-}
-
-export function getGoalSetupFinishedPaneTransition(): GoalSetupPaneTransition {
-  return {
-    overlay: "goal",
-    goalAutoExpand: true,
-    planAutoExpand: false,
-    suppressDoneStatus: true,
-  };
-}
-
-export function getGoalSetupPaneTransitionAfterRun({
-  isGoalSetupCommand,
-  setupPanePending,
-}: {
-  isGoalSetupCommand: boolean;
-  setupPanePending: boolean;
-}): GoalSetupPaneTransition | null {
-  return isGoalSetupCommand && setupPanePending ? getGoalSetupFinishedPaneTransition() : null;
 }
 
 export function shouldResetUIForSetupPaneTransition({
@@ -101,19 +65,6 @@ export function shouldResetUIForSetupPaneTransition({
   // flip hides history in the virtual tree, but it does not reset Ink/log-update's
   // already-written terminal frame, so the pane can render below prior chat.
   return hasResetUI && hasSessionStore;
-}
-
-export const shouldResetUIForGoalSetupPaneTransition = shouldResetUIForSetupPaneTransition;
-
-export interface GoalActivationPaneTransition {
-  overlay: null;
-  goalAutoExpand: false;
-  planAutoExpand: false;
-  resetReviewScreen: boolean;
-}
-
-export function getGoalActivationPaneTransition(): GoalActivationPaneTransition {
-  return { overlay: null, goalAutoExpand: false, planAutoExpand: false, resetReviewScreen: true };
 }
 
 export interface ScrollStabilizationDecision {
@@ -149,27 +100,6 @@ export function getScrollStabilizationDecision({
   };
 }
 
-export function nextGoalModeAfterAgentDone({
-  currentMode,
-  runningGoalIds,
-  queuedSyntheticEvents,
-  activeContinuationFlights = 0,
-  wasGoalSetupTurn,
-}: {
-  currentMode: GoalMode;
-  runningGoalIds: number;
-  queuedSyntheticEvents: number;
-  activeContinuationFlights?: number;
-  wasGoalSetupTurn?: boolean;
-}): GoalMode {
-  if (wasGoalSetupTurn) return "off";
-  if (currentMode === "planner" || currentMode === "setup") return currentMode;
-  if (queuedSyntheticEvents > 0) return "coordinator";
-  if (activeContinuationFlights > 0) return "coordinator";
-  if (currentMode === "coordinator" && runningGoalIds > 0) return "coordinator";
-  return "off";
-}
-
 export function hasParagraphBreakLiveUserMessage(text: string): boolean {
   return /\n[ \t]*\n/.test(text);
 }
@@ -187,7 +117,6 @@ const INPUT_AREA_ROWS = 3;
 const STATUS_SLOT_ROWS = 2;
 const FOOTER_ONE_LINE_ROWS = 1;
 const FOOTER_TWO_LINE_ROWS = 2;
-const GOAL_STATUS_ROWS = 1;
 const COLLAPSED_FOOTER_STATUS_ROWS = 1;
 const MAX_EXPANDED_BACKGROUND_TASK_ROWS = 7;
 /** Rolling window the LiveToolPanel renders at most (see LIVE_TOOL_PANEL_ROWS). */
@@ -230,7 +159,6 @@ export interface ChatControlsLayoutOptions {
   exitPending: boolean;
   footerStatusLayout: FooterStatusLayoutDecision;
   taskBarExpanded: boolean;
-  goalStatusEntryCount: number;
   footerFitsOnOneLine: boolean;
   /**
    * Rows the pinned LiveToolPanel currently occupies inside the controls block
@@ -251,7 +179,6 @@ export function getChatControlsLayoutDecision({
   exitPending,
   footerStatusLayout,
   taskBarExpanded,
-  goalStatusEntryCount,
   footerFitsOnOneLine,
   liveToolPanelRows,
 }: ChatControlsLayoutOptions): ChatControlsLayoutDecision {
@@ -263,7 +190,6 @@ export function getChatControlsLayoutDecision({
   const statusRows = STATUS_SLOT_ROWS;
   const footerRows =
     exitPending || footerFitsOnOneLine ? FOOTER_ONE_LINE_ROWS : FOOTER_TWO_LINE_ROWS;
-  const goalRows = !exitPending && goalStatusEntryCount > 0 ? GOAL_STATUS_ROWS : 0;
   const footerStatusRows = footerStatusLayout.stack
     ? Number(footerStatusLayout.hasBackgroundTasks) + Number(footerStatusLayout.hasUpdateNotice)
     : footerStatusLayout.hasBackgroundTasks || footerStatusLayout.hasUpdateNotice
@@ -275,13 +201,7 @@ export function getChatControlsLayoutDecision({
       : 0;
   const toolPanelRows = Math.max(0, Math.min(liveToolPanelRows, MAX_LIVE_TOOL_PANEL_ROWS));
   const controlsRows =
-    statusRows +
-    INPUT_AREA_ROWS +
-    footerRows +
-    goalRows +
-    footerStatusRows +
-    expandedTaskRows +
-    toolPanelRows;
+    statusRows + INPUT_AREA_ROWS + footerRows + footerStatusRows + expandedTaskRows + toolPanelRows;
   const maxControlsRows = Math.max(1, rows - MIN_LIVE_AREA_ROWS);
   const boundedControlsRows = Math.min(controlsRows, maxControlsRows);
 
