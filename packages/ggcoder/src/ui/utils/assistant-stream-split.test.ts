@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitAssistantStreamingText } from "./assistant-stream-split.js";
+import { splitAssistantStreamingText, estimateRenderedRows } from "./assistant-stream-split.js";
 
 describe("splitAssistantStreamingText", () => {
   it("keeps single-block text live (nothing to flush yet)", () => {
@@ -40,5 +40,30 @@ describe("splitAssistantStreamingText", () => {
     const { flushedText, remainingText } = splitAssistantStreamingText(text);
     expect(flushedText).toBe("Intro.\n\n```ts\nconst x = 1;\n```\n\n");
     expect(remainingText).toBe("Trailing in progress");
+  });
+});
+
+describe("estimateRenderedRows", () => {
+  it("returns 0 for empty text", () => {
+    expect(estimateRenderedRows("", 80)).toBe(0);
+  });
+
+  it("counts a short single line as one row", () => {
+    expect(estimateRenderedRows("hello world", 80)).toBe(1);
+  });
+
+  it("wraps long lines by column width", () => {
+    expect(estimateRenderedRows("x".repeat(80), 80)).toBe(1);
+    expect(estimateRenderedRows("x".repeat(81), 80)).toBe(2);
+    expect(estimateRenderedRows("x".repeat(161), 80)).toBe(3);
+  });
+
+  it("counts each newline-separated line independently, blank lines included", () => {
+    expect(estimateRenderedRows("a\nb\nc", 80)).toBe(3);
+    expect(estimateRenderedRows("a\n\nb", 80)).toBe(3);
+  });
+
+  it("is resilient to non-positive column counts", () => {
+    expect(estimateRenderedRows("abc", 0)).toBe(3);
   });
 });

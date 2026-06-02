@@ -3,6 +3,25 @@ export interface AssistantStreamSplit {
   remainingText: string;
 }
 
+/**
+ * Estimate how many terminal rows `text` occupies when wrapped at `columns`.
+ *
+ * A heuristic (counts characters, not grapheme/display width, and ignores
+ * Markdown re-rendering) used only to decide whether in-flight streamed text is
+ * about to overflow the live region. Over-counting slightly is fine — it just
+ * flushes marginally earlier. Each newline-separated line wraps independently;
+ * an empty line still occupies one row.
+ */
+export function estimateRenderedRows(text: string, columns: number): number {
+  if (text.length === 0) return 0;
+  const width = Math.max(1, Math.floor(columns));
+  let rows = 0;
+  for (const line of text.split("\n")) {
+    rows += line.length === 0 ? 1 : Math.ceil(line.length / width);
+  }
+  return rows;
+}
+
 function isInsideCodeFence(text: string): boolean {
   const fenceMatches = text.match(/^\s*(`{3,}|~{3,})/gm);
   return (fenceMatches?.length ?? 0) % 2 === 1;

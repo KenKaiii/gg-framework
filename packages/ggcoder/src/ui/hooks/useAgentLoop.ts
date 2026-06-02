@@ -234,6 +234,10 @@ export function useAgentLoop(
     onAborted?: () => void;
     /** Called when a queued message starts processing (after the previous run completes). */
     onQueuedStart?: (content: UserContent) => void;
+    /** Called when the agent restarts a turn after a stall/overload retry.
+     *  The UI should roll back any pending progressive flushes from the
+     *  aborted attempt so the retry's regenerated text doesn't duplicate. */
+    onRetry?: () => void;
     /** Polled when the agent would otherwise stop. Return a user message to
      *  inject and continue the loop (e.g. "continue with the next plan step"). */
     getFollowUpMessages?: () => Message[] | null;
@@ -250,6 +254,7 @@ export function useAgentLoop(
   const onDone = callbacks?.onDone;
   const onAborted = callbacks?.onAborted;
   const onQueuedStart = callbacks?.onQueuedStart;
+  const onRetry = callbacks?.onRetry;
   const getFollowUpMessages = callbacks?.getFollowUpMessages;
   const [isRunning, setIsRunning] = useState(false);
   const [streamingText, setStreamingText] = useState("");
@@ -869,6 +874,9 @@ export function useAgentLoop(
                 streamThinkingDirty = false;
                 setStreamingText("");
                 setStreamingThinking("");
+                // Let the UI roll back pending progressive flushes from the
+                // aborted attempt before the retry's new stream starts.
+                onRetry?.();
                 // Hidden retries (silent) don't update the UI — the user
                 // only sees retry indicators after silent attempts are exhausted.
                 if (!event.silent) {

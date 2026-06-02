@@ -84,7 +84,10 @@ import {
   flushOnTurnEnd,
   flushOverflow,
 } from "./live-item-flush.js";
-import { splitAssistantStreamingText } from "./utils/assistant-stream-split.js";
+import {
+  splitAssistantStreamingText,
+  estimateRenderedRows,
+} from "./utils/assistant-stream-split.js";
 import { getNextPendingTask, markTaskInProgress } from "../core/tasks-store.js";
 import type { TerminalHistoryPrinter } from "./terminal-history.js";
 import { buildUserContentWithAttachments } from "./prompt-routing.js";
@@ -1699,6 +1702,15 @@ export function App(props: AppProps) {
           },
         ];
       }, []),
+      onRetry: useCallback(() => {
+        // Roll back any pending progressive flushes from the aborted attempt.
+        // Without this, a stall retry regenerates the preamble and the old
+        // flushed paragraph + the new one both end up in terminal history.
+        pendingHistoryFlushRef.current = pendingHistoryFlushRef.current.filter(
+          (item) => item.kind !== "assistant",
+        );
+        streamedAssistantFlushRef.current = { flushedChars: 0, text: "" };
+      }, []),
     },
   );
 
@@ -2548,16 +2560,41 @@ export function App(props: AppProps) {
   // every chunk boundary. Slicing by the prospective flush here keeps the live
   // frame height monotonic, so the footer never bounces.
   const alreadyFlushedChars = streamedAssistantFlushRef.current.flushedChars;
-  const pendingFlushChars = rawVisibleStreamingText
-    ? splitAssistantStreamingText(rawVisibleStreamingText.slice(alreadyFlushedChars)).flushedText
-        .length
+  // Retry-safety gate: don't commit streamed paragraphs to permanent scrollback
+  // while the text is still small enough to live entirely in the live region.
+  // A silent stall-retry (agent-loop.ts) restarts the LLM call from scratch and
+  // regenerates the opening text — reworded, so the byte-identical dedup can't
+  // catch it. Anything already printed to scrollback can't be un-written, so the
+  // regen appends as a second ⏺ bullet that paraphrases the first. Keeping short
+  // streamed text live (it clears via setStreamingText("") on retry) closes that
+  // hole. We only start flushing once the unflushed text would overflow the live
+  // area — the original anti-jump purpose, which only matters for long responses
+  // that are far less likely to be a stalled preamble. Once flushing has begun
+  // for this turn (alreadyFlushedChars > 0) we keep flushing every boundary so
+  // committed continuation paragraphs stay consistent with the live tail.
+  const unflushedStreamingRows = rawVisibleStreamingText
+    ? estimateRenderedRows(rawVisibleStreamingText.slice(alreadyFlushedChars), columns)
     : 0;
+  const shouldFlushStreamedText =
+    alreadyFlushedChars > 0 || unflushedStreamingRows > measuredLiveAreaRows;
+  const pendingFlushChars =
+    rawVisibleStreamingText && shouldFlushStreamedText
+      ? splitAssistantStreamingText(rawVisibleStreamingText.slice(alreadyFlushedChars)).flushedText
+          .length
+      : 0;
   useEffect(() => {
     if (!rawVisibleStreamingText) {
       streamedAssistantFlushRef.current = { flushedChars: 0, text: "" };
       return;
     }
     if (rawVisibleStreamingText === streamedAssistantFlushRef.current.text) return;
+    if (!shouldFlushStreamedText) {
+      streamedAssistantFlushRef.current = {
+        ...streamedAssistantFlushRef.current,
+        text: rawVisibleStreamingText,
+      };
+      return;
+    }
     const alreadyFlushed = streamedAssistantFlushRef.current.flushedChars;
     const unflushedText = rawVisibleStreamingText.slice(alreadyFlushed);
     const split = splitAssistantStreamingText(unflushedText);
@@ -2580,7 +2617,7 @@ export function App(props: AppProps) {
       ...streamedAssistantFlushRef.current,
       text: rawVisibleStreamingText,
     };
-  }, [rawVisibleStreamingText, queueFlush]);
+  }, [rawVisibleStreamingText, shouldFlushStreamedText, queueFlush]);
   const visibleStreamingText = stripDoneMarkers(
     rawVisibleStreamingText.slice(alreadyFlushedChars + pendingFlushChars),
   );
