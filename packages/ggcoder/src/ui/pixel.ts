@@ -4,23 +4,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_INGEST_URL } from "@kenkaiiii/gg-pixel";
 import { fetchPixelEntries, type PixelEntry, type PixelFetchResult } from "../core/pixel.js";
+import { renderLogoBlock } from "../cli/shared.js";
 
-const LOGO_LINES = [" ▄▀▀▀ ▄▀▀▀", " █ ▀█ █ ▀█", " ▀▄▄▀ ▀▄▄▀"];
-const GRADIENT = [
-  "#60a5fa",
-  "#6da1f9",
-  "#7a9df7",
-  "#8799f5",
-  "#9495f3",
-  "#a18ff1",
-  "#a78bfa",
-  "#a18ff1",
-  "#9495f3",
-  "#8799f5",
-  "#7a9df7",
-  "#6da1f9",
-];
-const GAP = "   ";
 const PRIMARY = "#a78bfa";
 const TEXT = "#e2e8f0";
 const TEXT_DIM = "#94a3b8";
@@ -167,16 +152,16 @@ export function renderScreen(
   const lines: string[] = [];
   const version = opts.version ?? _version;
 
-  lines.push(
-    gradientLine(LOGO_LINES[0]!) +
-      GAP +
-      chalk.hex("#60a5fa").bold("GG Coder") +
+  for (const row of renderLogoBlock([
+    chalk.hex("#60a5fa").bold("GG Coder") +
       (version ? chalk.hex(TEXT_DIM)(` v${version}`) : "") +
       chalk.hex(TEXT_DIM)(" · By ") +
       chalk.hex(TEXT).bold("Ken Kai"),
-  );
-  lines.push(gradientLine(LOGO_LINES[1]!) + GAP + chalk.hex(PRIMARY)("Pixel"));
-  lines.push(gradientLine(LOGO_LINES[2]!) + GAP + chalk.hex(TEXT_DIM)(summarize(data)));
+    chalk.hex(PRIMARY)("Pixel"),
+    chalk.hex(TEXT_DIM)(summarize(data)),
+  ])) {
+    lines.push(row);
+  }
   lines.push("");
   lines.push("");
 
@@ -456,19 +441,4 @@ function readProjectSecret(homeDir: string | undefined, projectId: string): stri
   } catch {
     return null;
   }
-}
-
-function gradientLine(text: string): string {
-  let result = "";
-  let colorIdx = 0;
-  for (const ch of text) {
-    if (ch === " ") {
-      result += ch;
-    } else {
-      const color = GRADIENT[Math.min(colorIdx, GRADIENT.length - 1)];
-      result += chalk.hex(color!)(ch);
-      colorIdx++;
-    }
-  }
-  return result;
 }

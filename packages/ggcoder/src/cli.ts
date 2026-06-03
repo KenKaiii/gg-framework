@@ -91,10 +91,9 @@ import { runLogin, runLogout, runDoctor } from "./cli/auth.js";
 import { runMcp } from "./cli/mcp.js";
 import {
   CLI_VERSION,
-  LOGO_LINES,
   clearVisibleScreen,
   displayName,
-  gradientLine,
+  renderLogoBlock,
   requireInteractiveTTY,
 } from "./cli/shared.js";
 import { discoverAgents } from "./core/agents.js";
@@ -123,20 +122,15 @@ function printHelp(): void {
   const primary = chalk.hex("#60a5fa");
   const accent = chalk.hex("#a78bfa");
   const bold = chalk.bold;
-  const gap = "   ";
 
-  // Banner — matches the Ink Banner component layout
+  // Banner — matches the interactive TUI banner layout
   console.log();
-  console.log(
-    gradientLine(LOGO_LINES[0]) +
-      gap +
-      primary.bold("GG Coder") +
-      dim(` v${CLI_VERSION}`) +
-      dim(" · By ") +
-      bold("Ken Kai"),
-  );
-  console.log(gradientLine(LOGO_LINES[1]) + gap + dim("AI coding agent"));
-  console.log(gradientLine(LOGO_LINES[2]));
+  for (const row of renderLogoBlock([
+    primary.bold("GG Coder") + dim(` v${CLI_VERSION}`) + dim(" · By ") + bold("Ken Kai"),
+    dim("AI coding agent"),
+  ])) {
+    console.log(row);
+  }
   console.log();
 
   // Usage
@@ -813,48 +807,18 @@ async function runTelegramSetup(): Promise<void> {
 
   const existing = await loadTelegramConfig();
 
-  // Banner (matches Banner.tsx)
-  const LOGO = [
-    " \u2584\u2580\u2580\u2580 \u2584\u2580\u2580\u2580",
-    " \u2588 \u2580\u2588 \u2588 \u2580\u2588",
-    " \u2580\u2584\u2584\u2580 \u2580\u2584\u2584\u2580",
-  ];
-  const GRADIENT = [
-    "#60a5fa",
-    "#6da1f9",
-    "#7a9df7",
-    "#8799f5",
-    "#9495f3",
-    "#a18ff1",
-    "#a78bfa",
-    "#a18ff1",
-    "#9495f3",
-    "#8799f5",
-    "#7a9df7",
-    "#6da1f9",
-  ];
-  function gradientText(text: string): string {
-    let colorIdx = 0;
-    return text
-      .split("")
-      .map((ch) => {
-        if (ch === " ") return ch;
-        const color = GRADIENT[colorIdx++ % GRADIENT.length]!;
-        return chalk.hex(color)(ch);
-      })
-      .join("");
-  }
-  const GAP = "   ";
+  // Banner
   console.log();
-  console.log(
-    `  ${gradientText(LOGO[0]!)}${GAP}` +
-      chalk.hex("#60a5fa").bold("GG Coder") +
+  for (const row of renderLogoBlock([
+    chalk.hex("#60a5fa").bold("GG Coder") +
       chalk.hex("#6b7280")(` v${CLI_VERSION}`) +
       chalk.hex("#6b7280")(" · By ") +
       chalk.white.bold("Ken Kai"),
-  );
-  console.log(`  ${gradientText(LOGO[1]!)}${GAP}` + chalk.hex("#a78bfa")("Telegram Setup"));
-  console.log(`  ${gradientText(LOGO[2]!)}${GAP}` + chalk.hex("#6b7280")("Remote Control"));
+    chalk.hex("#a78bfa")("Telegram Setup"),
+    chalk.hex("#6b7280")("Remote Control"),
+  ])) {
+    console.log(row);
+  }
   console.log();
 
   if (existing) {
@@ -1064,18 +1028,17 @@ async function runAgentHomeLogin(): Promise<void> {
   const existing = await loadAgentHomeConfig();
 
   // Banner
-  const LOGO = LOGO_LINES;
-  const GAP = "   ";
   console.log();
-  console.log(
-    `  ${gradientLine(LOGO[0]!)}${GAP}` +
-      chalk.hex("#60a5fa").bold("GG Coder") +
+  for (const row of renderLogoBlock([
+    chalk.hex("#60a5fa").bold("GG Coder") +
       chalk.hex("#6b7280")(` v${CLI_VERSION}`) +
       chalk.hex("#6b7280")(" \u00b7 By ") +
       chalk.white.bold("Ken Kai"),
-  );
-  console.log(`  ${gradientLine(LOGO[1]!)}${GAP}` + chalk.hex("#a78bfa")("Agent Home Setup"));
-  console.log(`  ${gradientLine(LOGO[2]!)}${GAP}` + chalk.hex("#6b7280")("Remote Control via iOS"));
+    chalk.hex("#a78bfa")("Agent Home Setup"),
+    chalk.hex("#6b7280")("Remote Control via iOS"),
+  ])) {
+    console.log(row);
+  }
   console.log();
 
   if (existing) {

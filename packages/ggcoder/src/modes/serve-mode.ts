@@ -13,6 +13,7 @@ import { MODELS, getContextWindow } from "../core/model-registry.js";
 import { estimateConversationTokens } from "../core/compaction/token-estimator.js";
 import { PROMPT_COMMANDS } from "../core/prompt-commands.js";
 import { loadCustomCommands } from "../core/custom-commands.js";
+import { renderLogoBlock } from "../cli/shared.js";
 
 export interface ServeModeOptions {
   provider: Provider;
@@ -742,50 +743,18 @@ export async function runServeMode(options: ServeModeOptions): Promise<void> {
     const displayPath =
       home && options.cwd.startsWith(home) ? "~" + options.cwd.slice(home.length) : options.cwd;
 
-    // GG logo with gradient (matches Banner.tsx)
-    const LOGO = [
-      " \u2584\u2580\u2580\u2580 \u2584\u2580\u2580\u2580",
-      " \u2588 \u2580\u2588 \u2588 \u2580\u2588",
-      " \u2580\u2584\u2584\u2580 \u2580\u2584\u2584\u2580",
-    ];
-    const GRADIENT = [
-      "#60a5fa",
-      "#6da1f9",
-      "#7a9df7",
-      "#8799f5",
-      "#9495f3",
-      "#a18ff1",
-      "#a78bfa",
-      "#a18ff1",
-      "#9495f3",
-      "#8799f5",
-      "#7a9df7",
-      "#6da1f9",
-    ];
-
-    function gradientText(text: string): string {
-      let colorIdx = 0;
-      return text
-        .split("")
-        .map((ch) => {
-          if (ch === " ") return ch;
-          const color = GRADIENT[colorIdx++ % GRADIENT.length]!;
-          return chalk.hex(color)(ch);
-        })
-        .join("");
-    }
-
-    const GAP = "   ";
+    // GG logo with gradient (matches the interactive TUI banner)
     console.log();
-    console.log(
-      `  ${gradientText(LOGO[0]!)}${GAP}` +
-        chalk.hex("#60a5fa").bold("GG Coder") +
+    for (const row of renderLogoBlock([
+      chalk.hex("#60a5fa").bold("GG Coder") +
         chalk.hex("#6b7280")(` v${options.version}`) +
         chalk.hex("#6b7280")(" · By ") +
         chalk.white.bold("Ken Kai"),
-    );
-    console.log(`  ${gradientText(LOGO[1]!)}${GAP}` + chalk.hex("#a78bfa")(modelName));
-    console.log(`  ${gradientText(LOGO[2]!)}${GAP}` + chalk.hex("#6b7280")(displayPath));
+      chalk.hex("#a78bfa")(modelName),
+      chalk.hex("#6b7280")(displayPath),
+    ])) {
+      console.log(row);
+    }
     console.log();
     console.log(
       chalk.hex("#6b7280")("  Mode      ") +

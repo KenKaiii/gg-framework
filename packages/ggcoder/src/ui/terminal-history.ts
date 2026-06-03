@@ -61,7 +61,14 @@ import {
 } from "./transcript/presentation.js";
 import { toolTonePalette } from "./transcript/tool-presentation.js";
 
-const LOGO_LINES = [" ▄▀▀▀ ▄▀▀▀", " █ ▀█ █ ▀█", " ▀▄▄▀ ▀▄▄▀"];
+const LOGO_LINES = [
+  " ██████╗  ██████╗ ",
+  "██╔════╝ ██╔════╝ ",
+  "██║  ███╗██║  ███╗",
+  "██║   ██║██║   ██║",
+  "╚██████╔╝╚██████╔╝",
+  " ╚═════╝  ╚═════╝",
+];
 const PLAN_MODE_LOGO = [
   "▗▄▄▖ ▗▖    ▗▄▖ ▗▖  ▗▖    ▗▖  ▗▖ ▗▄▖ ▗▄▄▄ ▗▄▄▄▖",
   "▐▌ ▐▌▐▌   ▐▌ ▐▌▐▛▚▖▐▌    ▐▛▚▞▜▌▐▌ ▐▌▐▌  █▐▌",
@@ -92,8 +99,11 @@ const GRADIENT = [
   "#6da1f9",
 ];
 const GAP = "   ";
-const LOGO_WIDTH = 9;
+const LOGO_WIDTH = 17;
 const SIDE_BY_SIDE_MIN = LOGO_WIDTH + GAP.length + 62;
+// Row index in the (taller) logo block where each info line is placed so the
+// text column reads vertically centered beside the art.
+const INFO_ANCHOR_ROW = 1;
 const COMPACT_TOOLS = new Set(["read", "grep", "find", "ls", "source_path"]);
 const STATE_TOOLS = new Set(["tasks"]);
 const SERVER_STYLE_TOOLS = new Set(["web_search"]);
@@ -429,7 +439,9 @@ function renderBanner(context: TerminalHistoryContext): string {
   const home = process.env.HOME ?? "";
   const displayPath =
     home && context.cwd.startsWith(home) ? `~${context.cwd.slice(home.length)}` : context.cwd;
-  const logo = LOGO_LINES.map((lineText) => gradientLine(lineText, GRADIENT));
+  const logo = LOGO_LINES.map(
+    (lineText) => `${RESPONSE_LEFT_PADDING}${gradientLine(lineText, GRADIENT)}`,
+  );
 
   const shortcuts = `${color(context.theme.primary, "Ctrl+T")} ${dim(context, "tasks · ")}${color(context.theme.primary, "Ctrl+S")} ${dim(context, "skills · ")}${color(context.theme.primary, "Shift+Tab")} ${dim(context, "toggle thinking")}`;
 
@@ -438,20 +450,28 @@ function renderBanner(context: TerminalHistoryContext): string {
       "",
       ...logo,
       "",
-      `${color(context.theme.primary, "GG Coder", true)}${dim(context, ` v${context.version}`)}`,
-      `${color(context.theme.secondary, modelName)}  ${dim(context, truncatePlain(displayPath, context.columns))}`,
-      shortcuts,
+      `${RESPONSE_LEFT_PADDING}${color(context.theme.primary, "GG Coder", true)}${dim(context, ` v${context.version}`)}`,
+      `${RESPONSE_LEFT_PADDING}${color(context.theme.secondary, modelName)}  ${dim(context, truncatePlain(displayPath, context.columns))}`,
+      `${RESPONSE_LEFT_PADDING}${shortcuts}`,
       "",
     ]);
   }
 
-  return block([
-    "",
-    `${logo[0]}${GAP}${color(context.theme.primary, "GG Coder", true)}${dim(context, ` v${context.version} · By `)}${color(context.theme.text, "Ken Kai", true)}`,
-    `${logo[1]}${GAP}${color(context.theme.secondary, modelName)}  ${dim(context, truncatePlain(displayPath, Math.max(10, context.columns - LOGO_WIDTH - GAP.length - stringWidth(modelName) - 2)))}`,
-    `${logo[2]}${GAP}${shortcuts}`,
-    "",
-  ]);
+  // Info lines rendered beside the (taller) logo. They're anchored starting at
+  // INFO_ANCHOR_ROW so the text column sits vertically centered next to the art.
+  const infoLines = [
+    `${color(context.theme.primary, "GG Coder", true)}${dim(context, ` v${context.version} · By `)}${color(context.theme.text, "Ken Kai", true)}`,
+    `${color(context.theme.secondary, modelName)}  ${dim(context, truncatePlain(displayPath, Math.max(10, context.columns - LOGO_WIDTH - GAP.length - stringWidth(modelName) - 2)))}`,
+    shortcuts,
+  ];
+
+  const rows = logo.map((logoLine, i) => {
+    const infoIndex = i - INFO_ANCHOR_ROW;
+    const info = infoIndex >= 0 && infoIndex < infoLines.length ? infoLines[infoIndex] : undefined;
+    return info === undefined ? logoLine : `${logoLine}${GAP}${info}`;
+  });
+
+  return block(["", ...rows, ""]);
 }
 
 function renderUser(
@@ -625,16 +645,16 @@ function renderToolDone(
 
   const { label, detail } = getToolHeaderParts(name, args);
   const inline = getInlineSummary(name, result, isError);
-  const suffix =
-    inline.length > 0 && toolResultPreview(name, result, isError, context).length === 0
-      ? inline
-      : "";
-  const header = toolHeader(isError ? "error" : "done", label, detail, context, { suffix });
   const preview = toolResultPreview(name, result, isError, context);
-  if (name === "edit" && !isError) {
-    const diff = extractDiff(result);
-    if (diff)
-      return block([header, ...messageResponse(renderDiffPreview(diff, args, context), context)]);
+  const editDiff = name === "edit" && !isError ? extractDiff(result) : undefined;
+  const hasBody = preview.length > 0 || editDiff !== undefined;
+  const suffix = inline.length > 0 && preview.length === 0 ? inline : "";
+  // Chips only ride the header when there is a body; the no-body bash path
+  // already surfaces the exit code via its inline suffix (matches live render).
+  const chip = hasBody ? renderHeaderChip(name, result, isError, context) : "";
+  const header = toolHeader(isError ? "error" : "done", label, detail, context, { suffix }) + chip;
+  if (editDiff !== undefined) {
+    return block([header, ...messageResponse(renderDiffPreview(editDiff, args, context), context)]);
   }
   return block(preview.length > 0 ? [header, ...messageResponse(preview, context)] : [header]);
 }
@@ -1156,6 +1176,39 @@ function getServerToolHeaderParts(name: string, input: unknown): { label: string
 
 function getBashExitCode(result: string): string {
   return result.match(/^Exit code: (.+)/)?.[1]?.trim() ?? "0";
+}
+
+/**
+ * At-a-glance header chip mirroring the live ToolExecution chips:
+ *   - bash → exit-code chip (`✓ 0` / `✗ N`)
+ *   - edit → diff-stat chip (`+a −r`)
+ * Returns "" when no chip applies. Spacing (two leading spaces per segment)
+ * matches the live renderer so live/history parity holds.
+ */
+function renderHeaderChip(
+  name: string,
+  result: string,
+  isError: boolean,
+  context: TerminalHistoryContext,
+): string {
+  if (name === "bash" && !isError) {
+    const exitMatch = result.split("\n")[0]?.match(/^Exit code: (.+)/);
+    if (!exitMatch) return "";
+    const code = exitMatch[1].trim();
+    const ok = code === "0";
+    return color(ok ? context.theme.success : context.theme.error, ok ? "  ✓ 0" : `  ✗ ${code}`);
+  }
+  if (name === "edit" && !isError) {
+    const diff = extractDiff(result);
+    if (!diff) return "";
+    const added = (diff.match(/^\+[^+]/gm) ?? []).length;
+    const removed = (diff.match(/^-[^-]/gm) ?? []).length;
+    if (added === 0 && removed === 0) return "";
+    const addedPart = added > 0 ? color(context.theme.success, `  +${added}`) : "";
+    const removedPart = removed > 0 ? color(context.theme.error, `  −${removed}`) : "";
+    return `${addedPart}${removedPart}`;
+  }
+  return "";
 }
 
 function extractDiff(result: string): string | undefined {

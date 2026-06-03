@@ -1,64 +1,29 @@
 import readline from "node:readline/promises";
 import chalk from "chalk";
 import type { MCPScope, MCPServerConfig } from "../core/mcp/index.js";
+import { renderLogoBlock } from "../cli/shared.js";
 
-const LOGO_LINES = [
-  " \u2584\u2580\u2580\u2580 \u2584\u2580\u2580\u2580",
-  " \u2588 \u2580\u2588 \u2588 \u2580\u2588",
-  " \u2580\u2584\u2584\u2580 \u2580\u2584\u2584\u2580",
-];
-const GRADIENT = [
-  "#60a5fa",
-  "#6da1f9",
-  "#7a9df7",
-  "#8799f5",
-  "#9495f3",
-  "#a18ff1",
-  "#a78bfa",
-  "#a18ff1",
-  "#9495f3",
-  "#8799f5",
-  "#7a9df7",
-  "#6da1f9",
-];
 const PRIMARY = "#60a5fa";
 const ACCENT = "#a78bfa";
 const TEXT = "#e2e8f0";
 const TEXT_DIM = "#64748b";
 const GOOD = "#4ade80";
 const BAD = "#ef4444";
-const GAP = "   ";
 
 // Every MCP screen paints from the home position after a full clear, so the
 // banner sits at the same row no matter which screen you came from. Mixing
 // save/restore-cursor with full-clear screens is what made the banner drift.
 const CLEAR_HOME = "\x1b[2J\x1b[H";
 
-function gradientLine(text: string): string {
-  let result = "";
-  let colorIdx = 0;
-  for (const ch of text) {
-    if (ch === " ") {
-      result += ch;
-    } else {
-      result += chalk.hex(GRADIENT[colorIdx % GRADIENT.length]!)(ch);
-      colorIdx++;
-    }
-  }
-  return result;
-}
-
 function bannerLines(version: string, subtitle: string): string[] {
-  return [
-    gradientLine(LOGO_LINES[0]!) +
-      GAP +
-      chalk.hex(PRIMARY).bold("GG Coder") +
+  return renderLogoBlock([
+    chalk.hex(PRIMARY).bold("GG Coder") +
       chalk.hex(TEXT_DIM)(` v${version}`) +
       chalk.hex(TEXT_DIM)(" · By ") +
       chalk.hex(TEXT).bold("Ken Kai"),
-    gradientLine(LOGO_LINES[1]!) + GAP + chalk.hex(ACCENT)("MCP Servers"),
-    gradientLine(LOGO_LINES[2]!) + GAP + chalk.hex(TEXT_DIM)(subtitle),
-  ];
+    chalk.hex(ACCENT)("MCP Servers"),
+    chalk.hex(TEXT_DIM)(subtitle),
+  ]);
 }
 
 /** A server row joined with its live connection status. */
@@ -373,4 +338,4 @@ export const mcpColors = {
   bad: BAD,
 };
 
-export { bannerLines, transportSummary, gradientLine };
+export { bannerLines, transportSummary };

@@ -72,7 +72,10 @@ function normalizeSessionSummaryLine(line: string): string | null {
 }
 
 function normalizeParityLines(kind: CompletedItem["kind"], lines: readonly string[]): string[] {
-  if (kind === "user") return lines.map((line) => line.trimEnd());
+  // Banner art rows carry trailing padding spaces in the history serializer,
+  // but Ink trims trailing whitespace per line in the live render. Trailing
+  // whitespace is invisible, so compare both with trailing space stripped.
+  if (kind === "user" || kind === "banner") return lines.map((line) => line.trimEnd());
   if (kind === "session_summary") {
     return lines.map(normalizeSessionSummaryLine).filter((line): line is string => line !== null);
   }

@@ -8,12 +8,22 @@ const _require = createRequire(import.meta.url);
 // so the package manifest is two levels up rather than one.
 export const CLI_VERSION = (_require("../../package.json") as { version: string }).version;
 
-// ── Logo + gradient (mirrors Banner.tsx) ────────────────────────────
+// ── Logo + gradient (mirrors terminal-history.ts banner) ────────────
 export const LOGO_LINES = [
-  " \u2584\u2580\u2580\u2580 \u2584\u2580\u2580\u2580",
-  " \u2588 \u2580\u2588 \u2588 \u2580\u2588",
-  " \u2580\u2584\u2584\u2580 \u2580\u2584\u2584\u2580",
+  " \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557 ",
+  "\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d ",
+  "\u2588\u2588\u2551  \u2588\u2588\u2588\u2557\u2588\u2588\u2551  \u2588\u2588\u2588\u2557",
+  "\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551",
+  "\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d",
+  " \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d",
 ];
+
+// Visible width of the logo block (glyph columns) and the gap before titles.
+export const LOGO_WIDTH = 17;
+export const LOGO_GAP = "   ";
+// Row index in the logo block where the title lines begin, so a 3-line title
+// block reads vertically centered beside the 6-line art.
+export const LOGO_TITLE_ANCHOR_ROW = 1;
 
 const GRADIENT = [
   "#60a5fa",
@@ -30,18 +40,43 @@ const GRADIENT = [
   "#6da1f9",
 ];
 
-export function gradientLine(text: string): string {
+export function gradientLineWith(text: string, gradient: readonly string[]): string {
+  const palette = gradient.length > 0 ? gradient : GRADIENT;
   let result = "";
   let colorIdx = 0;
   for (const ch of text) {
     if (ch === " ") {
       result += ch;
     } else {
-      result += chalk.hex(GRADIENT[colorIdx % GRADIENT.length])(ch);
+      const color = palette[colorIdx % palette.length] ?? palette[0] ?? "#60a5fa";
+      result += chalk.hex(color)(ch);
       colorIdx++;
     }
   }
   return result;
+}
+
+export function gradientLine(text: string): string {
+  return gradientLineWith(text, GRADIENT);
+}
+
+/**
+ * Render the GG logo with up to three title lines placed beside the
+ * vertically-centered rows of the (6-line) art. Returns one string per output
+ * row. `titleLines` are already-colored strings (brand, page name, subtitle).
+ */
+export function renderLogoBlock(
+  titleLines: readonly string[],
+  options?: { gradient?: readonly string[] },
+): string[] {
+  const gradient = options?.gradient ?? GRADIENT;
+  return LOGO_LINES.map((line, i) => {
+    const logo = gradientLineWith(line, gradient);
+    const titleIndex = i - LOGO_TITLE_ANCHOR_ROW;
+    const title =
+      titleIndex >= 0 && titleIndex < titleLines.length ? titleLines[titleIndex] : undefined;
+    return title === undefined ? logo : `${logo}${LOGO_GAP}${title}`;
+  });
 }
 
 export function clearVisibleScreen(): void {

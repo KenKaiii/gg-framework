@@ -11,10 +11,9 @@ import { loginGemini } from "../core/oauth/gemini.js";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "../core/oauth/types.js";
 import {
   CLI_VERSION,
-  LOGO_LINES,
   clearVisibleScreen,
   displayName,
-  gradientLine,
+  renderLogoBlock,
   openBrowser,
   requireInteractiveTTY,
 } from "./shared.js";
@@ -128,18 +127,17 @@ export async function runDoctor(): Promise<void> {
   const bad = chalk.hex("#ef4444");
 
   // ── Banner ──────────────────────────────────────────────────
-  const LOGO = LOGO_LINES;
-  const GAP = "   ";
   console.log();
-  console.log(
-    `  ${gradientLine(LOGO[0]!)}${GAP}` +
-      primary.bold("GG Coder") +
+  for (const row of renderLogoBlock([
+    primary.bold("GG Coder") +
       dim(` v${CLI_VERSION}`) +
       dim(" · By ") +
       chalk.white.bold("Ken Kai"),
-  );
-  console.log(`  ${gradientLine(LOGO[1]!)}${GAP}` + accent("Doctor"));
-  console.log(`  ${gradientLine(LOGO[2]!)}${GAP}` + dim("Diagnose & Fix"));
+    accent("Doctor"),
+    dim("Diagnose & Fix"),
+  ])) {
+    console.log(row);
+  }
   console.log();
 
   const home = os.homedir();
