@@ -63,6 +63,7 @@ function createClient(options: StreamOptions): OpenAI {
     apiKey: options.apiKey,
     ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
+    ...(options.defaultHeaders ? { defaultHeaders: options.defaultHeaders } : {}),
   });
 }
 

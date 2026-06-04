@@ -7,6 +7,7 @@ import {
 } from "@kenkaiiii/gg-ai";
 import { estimateConversationTokens, estimateMessageTokens } from "./token-estimator.js";
 import { getSummaryModel, getContextWindow } from "../model-registry.js";
+import { kimiCodingHeaders, isKimiCodingEndpoint } from "../oauth/kimi.js";
 import { log } from "../logger.js";
 
 /**
@@ -723,6 +724,10 @@ export async function compact(
         accountId: options.accountId,
         projectId: options.projectId,
         baseUrl: options.baseUrl,
+        defaultHeaders:
+          options.provider === "moonshot" && isKimiCodingEndpoint(options.baseUrl)
+            ? kimiCodingHeaders()
+            : undefined,
         signal: options.signal,
       });
 

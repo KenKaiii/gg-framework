@@ -11,6 +11,7 @@ import { loadCustomCommands } from "./custom-commands.js";
 import { SettingsManager } from "./settings-manager.js";
 import { AuthStorage } from "./auth-storage.js";
 import { getClaudeCliUserAgent } from "./claude-code-version.js";
+import { kimiCodingHeaders, isKimiCodingEndpoint } from "./oauth/kimi.js";
 import { SessionManager, type MessageEntry, type BranchInfo } from "./session-manager.js";
 import { ExtensionLoader } from "./extensions/loader.js";
 import type { ExtensionContext } from "./extensions/types.js";
@@ -355,6 +356,7 @@ export class AgentSession {
 
     const runAgentLoop = async (apiKey: string, accountId?: string, projectId?: string) => {
       const modelInfo = getModel(this.model);
+      const effectiveBaseUrl = this.baseUrl ?? creds.baseUrl;
       const generator = agentLoop(loopMessages, {
         provider: this.provider,
         model: this.model,
@@ -363,10 +365,16 @@ export class AgentSession {
         maxTokens: this.maxTokens,
         thinking: this.thinkingLevel,
         apiKey,
-        baseUrl: this.baseUrl,
+        baseUrl: effectiveBaseUrl,
         signal: this.opts.signal,
         accountId,
         projectId,
+        // Kimi For Coding gates the managed endpoint on coding-agent identity
+        // headers; attach them only when the Kimi OAuth token is in use.
+        defaultHeaders:
+          this.provider === "moonshot" && isKimiCodingEndpoint(effectiveBaseUrl)
+            ? kimiCodingHeaders()
+            : undefined,
         cacheRetention: "short",
         promptCacheKey: this.getPromptCacheKey(),
         supportsImages: modelInfo?.supportsImages,
@@ -392,17 +400,12 @@ export class AgentSession {
         return;
       }
       if (err instanceof ProviderError && err.statusCode === 401) {
-        // API-key providers (GLM, Moonshot) have no refresh mechanism — retrying
-        // with the same key is pointless. Clear the credential and let the error
-        // surface so the user knows to re-login with a valid key.
-        if (
-          this.provider === "glm" ||
-          this.provider === "moonshot" ||
-          this.provider === "minimax" ||
-          this.provider === "xiaomi" ||
-          this.provider === "deepseek" ||
-          this.provider === "openrouter"
-        ) {
+        // Static API-key providers (GLM, Moonshot API key, etc.) have no refresh
+        // mechanism — retrying with the same key is pointless. Clear the
+        // credential and surface the error so the user re-logins. Kimi OAuth
+        // (active for `moonshot` when present) is refreshable, so it falls
+        // through to the force-refresh path below.
+        if (await this.authStorage.isStaticApiKey(this.provider)) {
           log("WARN", "auth", `Got 401 for ${this.provider} — API key is invalid or revoked`);
           await this.authStorage.clearCredentials(this.provider);
           throw err;

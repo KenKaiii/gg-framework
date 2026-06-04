@@ -599,6 +599,7 @@ export async function* agentLoop(
           compaction: options.compaction,
           clearToolUses: options.clearToolUses,
           userAgent: options.userAgent,
+          defaultHeaders: options.defaultHeaders,
           // Flip to non-streaming fallback after repeated stream stalls.
           ...(useNonStreamingFallback ? { streaming: false } : {}),
         });

@@ -20,6 +20,7 @@ import {
   formatWelcome,
 } from "./utils/format.js";
 import { AuthStorage } from "./core/auth-storage.js";
+import { kimiCodingHeaders, isKimiCodingEndpoint } from "./core/oauth/kimi.js";
 import { ensureAppDirs } from "./config.js";
 import { discoverSkills } from "./core/skills.js";
 import path from "node:path";
@@ -185,10 +186,14 @@ export async function runInteractive(config: CliConfig): Promise<void> {
         tools,
         maxTokens: 16384,
         apiKey: creds.accessToken,
-        baseUrl: config.baseUrl,
+        baseUrl: config.baseUrl ?? creds.baseUrl,
         signal: ac.signal,
         accountId: creds.accountId,
         projectId: creds.projectId,
+        defaultHeaders:
+          provider === "moonshot" && isKimiCodingEndpoint(config.baseUrl ?? creds.baseUrl)
+            ? kimiCodingHeaders()
+            : undefined,
         // clearToolUses disabled — causes model to output unsolicited context summaries
       });
 

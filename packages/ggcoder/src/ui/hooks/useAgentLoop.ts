@@ -16,6 +16,7 @@ import {
   type LoopBreakStats,
 } from "../../core/loop-breaker.js";
 import { getClaudeCliUserAgent } from "../../core/claude-code-version.js";
+import { kimiCodingHeaders, isKimiCodingEndpoint } from "../../core/oauth/kimi.js";
 import { log } from "../../core/logger.js";
 
 /** Extract plain text from this run's user input — the verbatim request that
@@ -563,6 +564,12 @@ export function useAgentLoop(
           const uaStart = Date.now();
           const userAgent =
             options.provider === "anthropic" ? await getClaudeCliUserAgent() : undefined;
+          // Kimi For Coding gates the managed endpoint on coding-agent identity
+          // headers; attach them only when the Kimi OAuth token is in use.
+          const defaultHeaders =
+            options.provider === "moonshot" && isKimiCodingEndpoint(options.baseUrl)
+              ? kimiCodingHeaders()
+              : undefined;
           if (options.provider === "anthropic") {
             log("INFO", "ui", "useragent_resolved", {
               ms: String(Date.now() - uaStart),
@@ -588,6 +595,7 @@ export function useAgentLoop(
             projectId,
             signal: ac.signal,
             userAgent,
+            defaultHeaders,
             // Wrap transformContext to flag when a compaction actually shrank
             // the context — the re-grounding hook keys off this.
             transformContext: options.transformContext

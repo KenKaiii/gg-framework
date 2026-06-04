@@ -5,10 +5,28 @@ import type { OAuthCredentials } from "./oauth/types.js";
 import { refreshAnthropicToken } from "./oauth/anthropic.js";
 import { refreshOpenAIToken } from "./oauth/openai.js";
 import { refreshGeminiToken } from "./oauth/gemini.js";
+import { refreshKimiToken } from "./oauth/kimi.js";
 import { withFileLock } from "./file-lock.js";
 import { log } from "./logger.js";
 
 type AuthData = Record<string, OAuthCredentials>;
+
+/**
+ * Storage key for Kimi Code OAuth credentials. Kept distinct from the
+ * `moonshot` API-key entry so a user can configure BOTH and we always
+ * prefer OAuth for the logical `moonshot` provider.
+ */
+export const MOONSHOT_OAUTH_KEY = "moonshot-oauth";
+
+/** Providers whose credentials are static API keys (no refresh mechanism). */
+const STATIC_API_KEY_PROVIDERS = new Set([
+  "glm",
+  "moonshot",
+  "xiaomi",
+  "minimax",
+  "deepseek",
+  "openrouter",
+]);
 
 export class AuthStorage {
   private data: AuthData = {};
@@ -36,6 +54,32 @@ export class AuthStorage {
   async hasCredentials(provider: string): Promise<boolean> {
     await this.ensureLoaded();
     return Boolean(this.data[provider]);
+  }
+
+  /**
+   * True if the user has any usable auth for the logical provider. For
+   * `moonshot` this is satisfied by either the Kimi OAuth credential or the
+   * Moonshot API key.
+   */
+  async hasProviderAuth(provider: string): Promise<boolean> {
+    await this.ensureLoaded();
+    if (provider === "moonshot") {
+      return Boolean(this.data[MOONSHOT_OAUTH_KEY] || this.data["moonshot"]);
+    }
+    return Boolean(this.data[provider]);
+  }
+
+  /**
+   * True if the active credential for `provider` is a static API key with no
+   * refresh mechanism. For `moonshot` this is only true when the Kimi OAuth
+   * credential is absent (a present OAuth credential is refreshable).
+   */
+  async isStaticApiKey(provider: string): Promise<boolean> {
+    await this.ensureLoaded();
+    if (provider === "moonshot" && this.data[MOONSHOT_OAUTH_KEY]) {
+      return false;
+    }
+    return STATIC_API_KEY_PROVIDERS.has(provider);
   }
 
   async load(): Promise<void> {
@@ -101,20 +145,31 @@ export class AuthStorage {
     opts?: { forceRefresh?: boolean },
   ): Promise<OAuthCredentials> {
     await this.ensureLoaded();
+
+    // Prefer Kimi OAuth over the Moonshot API key for the logical `moonshot`
+    // provider. When an OAuth credential exists, resolve (and refresh) that
+    // instead — this is the "default to OAuth first" rule.
+    if (provider === "moonshot" && this.data[MOONSHOT_OAUTH_KEY]) {
+      try {
+        return await this.resolveCredentials(MOONSHOT_OAUTH_KEY, opts);
+      } catch (err) {
+        // OAuth refresh token is dead and was wiped. Fall back to the
+        // Moonshot API key if the user also configured one.
+        if (err instanceof NotLoggedInError && this.data["moonshot"]) {
+          return this.data["moonshot"];
+        }
+        throw err;
+      }
+    }
+
     const creds = this.data[provider];
     if (!creds) {
       throw new NotLoggedInError(provider);
     }
 
-    // GLM and Moonshot use static API keys — no refresh needed
-    if (
-      provider === "glm" ||
-      provider === "moonshot" ||
-      provider === "xiaomi" ||
-      provider === "minimax" ||
-      provider === "deepseek" ||
-      provider === "openrouter"
-    ) {
+    // Static API-key providers have no refresh mechanism. The Kimi OAuth key
+    // (MOONSHOT_OAUTH_KEY) is intentionally excluded — it refreshes below.
+    if (STATIC_API_KEY_PROVIDERS.has(provider)) {
       return creds;
     }
 
@@ -147,7 +202,9 @@ export class AuthStorage {
           ? refreshAnthropicToken
           : provider === "gemini"
             ? refreshGeminiToken
-            : refreshOpenAIToken;
+            : provider === MOONSHOT_OAUTH_KEY
+              ? refreshKimiToken
+              : refreshOpenAIToken;
       let refreshed: OAuthCredentials;
       try {
         refreshed = await refreshFn(creds.refreshToken);

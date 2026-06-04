@@ -292,4 +292,9 @@ export interface StreamOptions {
    *  version should pass it here. Ignored for non-Anthropic providers and for
    *  Anthropic requests using a regular API key. */
   userAgent?: string;
+  /** Extra HTTP headers attached to every model request. Used by providers
+   *  whose endpoint gates on client identity (e.g. Kimi For Coding requires a
+   *  `User-Agent: kimi-code-cli/...` and `X-Msh-*` device headers). Merged
+   *  into the underlying SDK's default headers. */
+  defaultHeaders?: Record<string, string>;
 }
