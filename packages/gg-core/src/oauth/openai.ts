@@ -22,6 +22,9 @@ export async function loginOpenAI(callbacks: OAuthLoginCallbacks): Promise<OAuth
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", state);
+  // Force account chooser / re-authentication so switching accounts actually works.
+  // Without this, the browser silently re-approves the cached session.
+  url.searchParams.set("prompt", "login");
   url.searchParams.set("id_token_add_organizations", "true");
   url.searchParams.set("codex_cli_simplified_flow", "true");
   url.searchParams.set("originator", "ggcoder");
