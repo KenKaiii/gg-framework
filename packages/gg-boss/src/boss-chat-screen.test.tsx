@@ -73,7 +73,7 @@ describe("BossChatScreen", () => {
   it("uses a Boss-owned full GG Coder model selector", () => {
     expect(source).toContain("<BossModelSelector");
     expect(source).not.toContain("loggedInProviders={state.loggedInProviders}");
-    expect(modelSelectorSource).toContain('import { MODELS } from "@kenkaiiii/ggcoder"');
+    expect(modelSelectorSource).toContain('import { MODELS } from "@kenkaiiii/gg-core"');
     expect(modelSelectorSource).toContain("MODELS.map");
     expect(modelSelectorSource).toContain("function BossModelSelectList");
     expect(modelSelectorSource).toContain("stripTerminalFocusSequences");

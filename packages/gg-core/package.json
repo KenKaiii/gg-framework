@@ -1,19 +1,29 @@
 {
-  "name": "@kenkaiiii/gg-ai",
+  "name": "@kenkaiiii/gg-core",
   "version": "4.3.243",
   "type": "module",
-  "description": "Unified LLM streaming API for Anthropic, OpenAI, and Gemini",
+  "description": "Provider-agnostic, UI-free shared foundation: model registry, auth, paths, telegram, voice",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kenkaiiii/gg-framework.git",
-    "directory": "packages/gg-ai"
+    "directory": "packages/gg-core"
   },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./models": {
+      "types": "./dist/model-registry.d.ts",
+      "import": "./dist/model-registry.js",
+      "require": "./dist/model-registry.cjs"
+    },
+    "./paths": {
+      "types": "./dist/paths.d.ts",
+      "import": "./dist/paths.js",
+      "require": "./dist/paths.cjs"
     }
   },
   "main": "./dist/index.cjs",
@@ -28,9 +38,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.94.0",
-    "openai": "^6.34.0",
-    "zod": "^4.4.3"
+    "@kenkaiiii/gg-ai": "workspace:*"
+  },
+  "optionalDependencies": {
+    "@huggingface/transformers": "^3.6.0",
+    "ogg-opus-decoder": "^1.6.13"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

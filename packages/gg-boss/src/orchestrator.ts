@@ -1,13 +1,11 @@
 import { Agent, isAbortError } from "@kenkaiiii/gg-agent";
+import { compact, estimateConversationTokens, shouldCompact } from "@kenkaiiii/ggcoder";
 import {
   AuthStorage,
-  compact,
-  estimateConversationTokens,
   getContextWindow,
   getNextThinkingLevel,
   isThinkingLevelSupported,
-  shouldCompact,
-} from "@kenkaiiii/ggcoder";
+} from "@kenkaiiii/gg-core";
 import {
   formatError,
   type Message,

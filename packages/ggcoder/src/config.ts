@@ -1,43 +1,17 @@
 import path from "node:path";
-import os from "node:os";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
+import { getAppPaths, type AppPaths } from "@kenkaiiii/gg-core";
 import type { ThemeName } from "./ui/theme/theme.js";
 
 export const APP_NAME = "ggcoder";
 export const VERSION = "0.0.1";
 
-export interface AppPaths {
-  agentDir: string;
-  sessionsDir: string;
-  settingsFile: string;
-  authFile: string;
-  telegramFile: string;
-  agentHomeFile: string;
-  mcpFile: string;
-  logFile: string;
-  skillsDir: string;
-  extensionsDir: string;
-  agentsDir: string;
-}
-
-export function getAppPaths(): AppPaths {
-  const agentDir = path.join(os.homedir(), ".gg");
-  return {
-    agentDir,
-    sessionsDir: path.join(agentDir, "sessions"),
-    settingsFile: path.join(agentDir, "settings.json"),
-    authFile: path.join(agentDir, "auth.json"),
-    telegramFile: path.join(agentDir, "telegram.json"),
-    agentHomeFile: path.join(agentDir, "agent-home.json"),
-    mcpFile: path.join(agentDir, "mcp.json"),
-    logFile: path.join(agentDir, "debug.log"),
-    skillsDir: path.join(agentDir, "skills"),
-    extensionsDir: path.join(agentDir, "extensions"),
-    agentsDir: path.join(agentDir, "agents"),
-  };
-}
+// getAppPaths + AppPaths now live in @kenkaiiii/gg-core. Re-exported here so the
+// many `./config.js` importers keep resolving them unchanged.
+export { getAppPaths };
+export type { AppPaths };
 
 export async function ensureAppDirs(): Promise<AppPaths> {
   const paths = getAppPaths();

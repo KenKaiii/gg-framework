@@ -1,5 +1,10 @@
 import { AgentSession } from "@kenkaiiii/ggcoder";
-import type { Message, Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
+import {
+  classifyProviderError,
+  type Message,
+  type Provider,
+  type ThinkingLevel,
+} from "@kenkaiiii/gg-ai";
 import type { EventQueue } from "./event-queue.js";
 import type { ToolUseSummary, WorkerStatus, WorkerTurnSummary } from "./types.js";
 import { bossStore } from "./boss-store.js";
@@ -14,110 +19,12 @@ import { log } from "./logger.js";
  * process.
  */
 /**
- * Patterns matching context-overflow errors across every provider gg-boss
- * supports. Each provider phrases this error differently — a single check on
- * one substring would miss most real cases.
- *
- * Provider attribution (with example messages):
- *  - OpenAI Chat Completions: "This model's maximum context length is 128000 tokens…"
- *  - OpenAI Responses / Codex: "Your input exceeds the context window of this model"
- *  - OpenAI structured code:    error.code = "context_length_exceeded"
- *  - Anthropic (token overflow): "prompt is too long: 213462 tokens > 200000 maximum"
- *  - Anthropic (HTTP 413 byte):  error.type = "request_too_large"
- *  - Google / Gemini:            "The input token count (1196265) exceeds the maximum number of tokens allowed"
- *  - xAI / Grok:                 "This model's maximum prompt length is 131072 but the request contains 537812 tokens"
- *  - Mistral:                    "Prompt contains X tokens … too large for model with Y maximum context length"
- *  - Amazon Bedrock:             "input is too long for requested model"
- *  - OpenRouter:                 "This endpoint's maximum context length is X tokens. However, you requested Y"
- *  - Groq:                       "Please reduce the length of the messages or completion"
- *  - DeepSeek / GLM / MiniMax / Moonshot / Xiaomi: OpenAI-compatible — reuse `context_length_exceeded` and the maximum-context-length wording.
+ * Provider-error classification moved to @kenkaiiii/gg-ai
+ * (`classifyProviderError`) so provider-wording changes are a one-file edit
+ * next to `formatError` / `isHardBillingMessage`. Re-exported under the
+ * historical name so existing callers and tests in gg-boss are unchanged.
  */
-const CONTEXT_OVERFLOW_PATTERNS: RegExp[] = [
-  /context_length_exceeded/i,
-  /context length exceeded/i,
-  /context window/i, // OpenAI Codex / Responses
-  /maximum context length/i, // OpenAI / OpenRouter / Mistral
-  /prompt is too long/i, // Anthropic
-  /request_too_large/i, // Anthropic HTTP 413
-  /input is too long/i, // Bedrock
-  /input token count.*exceeds the maximum/i, // Gemini
-  /maximum prompt length/i, // xAI / Grok
-  /reduce the length of the messages/i, // Groq
-  /too large for model/i, // Mistral
-  /token limit/i, // generic
-];
-
-const RATE_LIMIT_PATTERNS: RegExp[] = [
-  /rate[ _-]?limit/i,
-  /\b429\b/,
-  /too many requests/i,
-  /tokens per minute/i,
-  /requests per minute/i,
-];
-
-const PROVIDER_TRANSIENT_PATTERNS: RegExp[] = [
-  /\b5\d\d\b/,
-  /api_error/i,
-  /server_error/i,
-  /internal server error/i,
-  /bad gateway/i,
-  /service unavailable/i,
-  /gateway timeout/i,
-  /overloaded/i,
-  /\b529\b/,
-];
-
-const BILLING_PATTERNS: RegExp[] = [
-  /insufficient balance/i,
-  /insufficient[ _]quota/i,
-  /quota exceeded/i,
-  /quota_exceeded/i,
-  /credit balance/i,
-  /please recharge/i,
-  /payment required/i,
-  /\b402\b/,
-];
-
-const AUTH_PATTERNS: RegExp[] = [
-  /invalid[ _]api[ _]key/i,
-  /unauthorized/i,
-  /\b401\b/,
-  /authentication[ _]failed/i,
-  /please run \/login/i, // Anthropic Claude Code-style hint
-];
-
-function matchesAny(message: string, patterns: RegExp[]): boolean {
-  return patterns.some((p) => p.test(message));
-}
-
-/**
- * Inspect a raw provider error message and tag it with a clearer, actionable
- * prefix so the boss can route on intent instead of regexing JSON. Preserves
- * the original message verbatim after the prefix — helpful for debugging.
- *
- * Order matters: context-overflow is checked first because some providers
- * wrap overflow errors in HTTP 429 envelopes; we want the structural meaning,
- * not the transport status. Billing comes before auth/rate-limit because
- * "402 Payment Required" must not be mis-routed as a rate-limit retry.
- */
-export function classifyWorkerError(message: string): string {
-  if (matchesAny(message, CONTEXT_OVERFLOW_PATTERNS)) {
-    return `[context_overflow] Worker context window exceeded — the conversation is too large to continue. Recovery: call reset_worker(project) to wipe history, then re-prompt with the task. Re-prompting WITHOUT reset will fail the same way.\n\nOriginal: ${message}`;
-  }
-  if (matchesAny(message, BILLING_PATTERNS)) {
-    return `[billing] Provider billing/quota issue. Recovery: surface to the user — they need to top up or switch providers. Do NOT retry.\n\nOriginal: ${message}`;
-  }
-  if (matchesAny(message, AUTH_PATTERNS)) {
-    return `[auth] Provider authentication failed. Recovery: surface to the user — they need to re-login. Do NOT retry.\n\nOriginal: ${message}`;
-  }
-  if (matchesAny(message, RATE_LIMIT_PATTERNS)) {
-    return `[rate_limited] Provider rate limit hit. Recovery: wait ~30s, then re-prompt the same worker (no reset needed).\n\nOriginal: ${message}`;
-  }
-  if (matchesAny(message, PROVIDER_TRANSIENT_PATTERNS)) {
-    return `[provider_transient] Provider server-side/transient error. Recovery: wait briefly, then re-prompt the same worker (no reset needed). If it keeps happening, switch models/providers or check provider status.\n\nOriginal: ${message}`;
-  }
-  return message;
-}
+export const classifyWorkerError = classifyProviderError;
 
 function safeBusHandler<T>(
   workerName: string,

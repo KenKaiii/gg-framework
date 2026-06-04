@@ -4,7 +4,7 @@ import { ThemeContext, loadTheme, useTheme } from "@kenkaiiii/ggcoder/ui/theme";
 import { AnimationProvider } from "@kenkaiiii/ggcoder/ui";
 import { useDoublePress } from "@kenkaiiii/ggcoder/ui/hooks/double-press";
 import type { Provider } from "@kenkaiiii/gg-ai";
-import { getNextThinkingLevel } from "@kenkaiiii/ggcoder";
+import { getNextThinkingLevel } from "@kenkaiiii/gg-core";
 import { TerminalSizeProvider, useTerminalSize } from "@kenkaiiii/ggcoder/ui/hooks/terminal-size";
 import { BossChatScreen } from "./boss-chat-screen.js";
 import { bossStore, getBossState, useBossState } from "./boss-store.js";

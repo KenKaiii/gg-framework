@@ -1,6 +1,6 @@
 {
   "name": "@kenkaiiii/gg-boss",
-  "version": "4.3.164",
+  "version": "4.3.243",
   "type": "module",
   "description": "Orchestrator agent that drives multiple ggcoder sessions across projects from a single chat",
   "license": "MIT",
@@ -26,6 +26,7 @@
   "devDependencies": {
     "@kenkaiiii/gg-agent": "workspace:*",
     "@kenkaiiii/gg-ai": "workspace:*",
+    "@kenkaiiii/gg-core": "workspace:*",
     "@kenkaiiii/ggcoder": "workspace:*",
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",

@@ -8,6 +8,7 @@ import path from "node:path";
 import chalk from "chalk";
 import type { Provider } from "@kenkaiiii/gg-ai";
 import { setStreamDiagnostic } from "@kenkaiiii/gg-agent";
+import { AuthStorage, getDefaultModel, getModel } from "@kenkaiiii/gg-core";
 import { GGBoss } from "./orchestrator.js";
 import type { ProjectSpec } from "./types.js";
 import { loadLinks } from "./links.js";
@@ -180,10 +181,12 @@ async function runServeSubcommand(argv: string[]): Promise<void> {
   }
 
   const settings = await loadSettings();
-  const bossProvider = settings.bossProvider ?? "anthropic";
-  const bossModel = cliBossModel ?? settings.bossModel ?? "claude-opus-4-8";
-  const workerProvider = settings.workerProvider ?? "anthropic";
-  const workerModel = cliWorkerModel ?? settings.workerModel ?? "claude-sonnet-4-6";
+  const { bossProvider, bossModel, workerProvider, workerModel } = await resolveBossAuth({
+    bossProvider: settings.bossProvider ?? "anthropic",
+    bossModel: cliBossModel ?? settings.bossModel ?? "claude-opus-4-8",
+    workerProvider: settings.workerProvider ?? "anthropic",
+    workerModel: cliWorkerModel ?? settings.workerModel ?? "claude-sonnet-4-6",
+  });
 
   await runBossServeMode({
     bossProvider,
@@ -193,6 +196,77 @@ async function runServeSubcommand(argv: string[]): Promise<void> {
     workerModel,
     telegram: { botToken, userId },
   });
+}
+
+const ALL_PROVIDERS: Provider[] = [
+  "anthropic",
+  "openai",
+  "xiaomi",
+  "gemini",
+  "glm",
+  "moonshot",
+  "minimax",
+  "deepseek",
+  "openrouter",
+];
+
+/** Boss wants the strongest model; on anthropic that's Opus, else the provider default. */
+function bossDefaultModel(provider: Provider): string {
+  return provider === "anthropic" ? "claude-opus-4-8" : getDefaultModel(provider).id;
+}
+
+/**
+ * Resolve boss + worker provider/model against the providers the user is
+ * actually logged in with. Mirrors ggcoder's `resolveActiveProvider`: never
+ * fail just because the *saved* provider isn't authenticated — fall back to a
+ * logged-in one for this launch. Settings on disk are left untouched, so a
+ * later re-login to the preferred provider restores the preference. Only
+ * throws when NOTHING is logged in.
+ */
+async function resolveBossAuth(input: {
+  bossProvider: Provider;
+  bossModel: string;
+  workerProvider: Provider;
+  workerModel: string;
+}): Promise<{
+  bossProvider: Provider;
+  bossModel: string;
+  workerProvider: Provider;
+  workerModel: string;
+  fellBack: boolean;
+}> {
+  const auth = new AuthStorage();
+  await auth.load();
+  const stored = await auth.listProviders();
+  const loggedIn = ALL_PROVIDERS.filter((p) => stored.includes(p));
+
+  if (loggedIn.length === 0) {
+    throw new Error('Not logged in to any provider. Run "ggcoder login" to authenticate.');
+  }
+
+  const fallback = loggedIn[0]!;
+  const resolve = (
+    preferredProvider: Provider,
+    preferredModel: string,
+    defaultFor: (p: Provider) => string,
+  ): { provider: Provider; model: string } => {
+    const provider = loggedIn.includes(preferredProvider) ? preferredProvider : fallback;
+    // Keep the saved model only if it belongs to the resolved provider.
+    const modelFits = getModel(preferredModel)?.provider === provider;
+    return { provider, model: modelFits ? preferredModel : defaultFor(provider) };
+  };
+
+  const boss = resolve(input.bossProvider, input.bossModel, bossDefaultModel);
+  const worker = resolve(input.workerProvider, input.workerModel, (p) => getDefaultModel(p).id);
+  const fellBack = boss.provider !== input.bossProvider || worker.provider !== input.workerProvider;
+
+  return {
+    bossProvider: boss.provider,
+    bossModel: boss.model,
+    workerProvider: worker.provider,
+    workerModel: worker.model,
+    fellBack,
+  };
 }
 
 async function runOrchestrator(args: CliArgs): Promise<void> {
@@ -227,10 +301,33 @@ async function runOrchestrator(args: CliArgs): Promise<void> {
   // Settings persist user choices made via /model boss / /model workers across
   // restarts so the user doesn't have to re-pick every session.
   const settings = await loadSettings();
-  const finalBossProvider = args.bossProvider ?? settings.bossProvider ?? "anthropic";
-  const finalBossModel = args.bossModel ?? settings.bossModel ?? "claude-opus-4-8";
-  const finalWorkerProvider = args.workerProvider ?? settings.workerProvider ?? "anthropic";
-  const finalWorkerModel = args.workerModel ?? settings.workerModel ?? "claude-sonnet-4-6";
+  const preferredBossProvider = args.bossProvider ?? settings.bossProvider ?? "anthropic";
+  const preferredBossModel = args.bossModel ?? settings.bossModel ?? "claude-opus-4-8";
+  const preferredWorkerProvider = args.workerProvider ?? settings.workerProvider ?? "anthropic";
+  const preferredWorkerModel = args.workerModel ?? settings.workerModel ?? "claude-sonnet-4-6";
+
+  // Fall back to a logged-in provider instead of crashing when the saved
+  // boss/worker provider isn't authenticated (matches ggcoder startup).
+  const {
+    bossProvider: finalBossProvider,
+    bossModel: finalBossModel,
+    workerProvider: finalWorkerProvider,
+    workerModel: finalWorkerModel,
+    fellBack,
+  } = await resolveBossAuth({
+    bossProvider: preferredBossProvider,
+    bossModel: preferredBossModel,
+    workerProvider: preferredWorkerProvider,
+    workerModel: preferredWorkerModel,
+  });
+  if (fellBack) {
+    log("INFO", "cli", "provider fallback", {
+      preferredBoss: preferredBossProvider,
+      boss: finalBossProvider,
+      preferredWorker: preferredWorkerProvider,
+      worker: finalWorkerProvider,
+    });
+  }
 
   // Open ~/.gg/boss/debug.log in append mode and stamp a startup line so
   // future tail/grep diagnoses have the full session context up front.
