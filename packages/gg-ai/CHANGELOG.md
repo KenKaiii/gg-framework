@@ -1,5 +1,11 @@
 # @kenkaiiii/gg-ai
 
+## 4.6.1
+
+### Patch Changes
+
+- Fix provider stream cancellation and usage-limit handling, and sanitize Codex tool-call IDs when continuing sessions across model transports.
+
 ## 4.6.0
 
 ### Minor Changes
