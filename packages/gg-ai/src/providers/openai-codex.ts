@@ -34,7 +34,7 @@ function isVisibleOutputItem(itemType: string | undefined): boolean {
 }
 
 export function streamOpenAICodex(options: StreamOptions): StreamResult {
-  return new StreamResult(runStream(options));
+  return new StreamResult(runStream(options), options.signal);
 }
 
 async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, StreamResponse> {
@@ -502,14 +502,24 @@ async function* parseSSE(
 // ── Message Conversion ─────────────────────────────────────
 
 /**
- * Remap tool call IDs that don't match Codex API's expected prefix.
- * Codex expects IDs starting with `fc_` — Anthropic uses `toolu_*` which gets rejected.
+ * Remap tool call IDs to Codex's stricter ID grammar.
+ * Codex expects function-call IDs to start with `fc_`/`fc-` and contain only
+ * letters, numbers, underscores, or dashes. Continued sessions can contain IDs
+ * from other transports/tools such as `toolu_*` or `fc_tasks:153`.
  */
 function remapCodexId(id: string, idMap: Map<string, string>): string {
-  if (id.startsWith("fc_") || id.startsWith("fc-")) return id;
   const existing = idMap.get(id);
   if (existing) return existing;
-  const mapped = `fc_${id.replace(/^toolu_/, "")}`;
+
+  const withPrefix =
+    id.startsWith("fc_") || id.startsWith("fc-") ? id : `fc_${id.replace(/^toolu_/, "")}`;
+  const sanitized = withPrefix.replace(/[^A-Za-z0-9_-]/g, "_");
+  let mapped = sanitized;
+  let suffix = 2;
+  const used = new Set(idMap.values());
+  while (used.has(mapped)) {
+    mapped = `${sanitized}_${suffix++}`;
+  }
   idMap.set(id, mapped);
   return mapped;
 }

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ProviderError } from "../errors.js";
 import { streamAnthropic } from "./anthropic.js";
 
+const createMock = vi.fn();
 const streamMock = vi.fn();
 
 vi.mock("@anthropic-ai/sdk", () => {
@@ -31,22 +32,22 @@ vi.mock("@anthropic-ai/sdk", () => {
     static nextError: Error | null = null;
     static nextEvents: unknown[] | null = null;
     messages = {
-      stream: streamMock.mockImplementation(() => {
+      create: createMock.mockImplementation((params: { stream?: boolean }) => {
         const error = AnthropicMock.nextError;
         const events = AnthropicMock.nextEvents;
         if (!error && !events) {
           throw new Error("test did not configure AnthropicMock.nextError or nextEvents");
         }
-        const iterator = (async function* () {
-          if (events) {
-            for (const event of events) yield event;
-            return;
-          }
-          yield* [];
-          throw error;
+        if (params.stream === false) {
+          if (error) throw error;
+          throw new Error("test did not configure a non-streaming message response");
+        }
+        if (error) throw error;
+        return (async function* () {
+          for (const event of events ?? []) yield event;
         })();
-        return Object.assign(iterator, { currentMessage: null });
       }),
+      stream: streamMock,
     };
   }
 
@@ -85,7 +86,7 @@ describe("streamAnthropic request shaping", () => {
       /* consume */
     }
 
-    const params = streamMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    const params = createMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(params).toMatchObject({ thinking: { type: "enabled" }, stream: true });
     expect(params.temperature).toBeUndefined();
     expect(params.system).toEqual([

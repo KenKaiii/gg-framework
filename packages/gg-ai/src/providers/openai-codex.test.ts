@@ -72,6 +72,54 @@ describe("streamOpenAICodex", () => {
     });
   });
 
+  it("sanitizes continued-session tool call IDs for Codex input", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        createSseResponse([
+          {
+            type: "response.completed",
+            response: { usage: { input_tokens: 10, output_tokens: 5 } },
+          },
+        ]),
+      ),
+    );
+
+    const fetchMock = vi.mocked(fetch);
+    const result = streamOpenAICodex({
+      provider: "openai",
+      model: "gpt-5.5",
+      messages: [
+        {
+          role: "assistant",
+          content: [{ type: "tool_call", id: "fc_tasks:153", name: "tasks", args: {} }],
+        },
+        {
+          role: "tool",
+          content: [{ type: "tool_result", toolCallId: "fc_tasks:153", content: "done" }],
+        },
+      ],
+      apiKey: "token",
+      accountId: "acct",
+    });
+
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as { input: unknown[] };
+    expect(body.input).toContainEqual(
+      expect.objectContaining({
+        type: "function_call",
+        id: "fc_tasks_153",
+        call_id: "fc_tasks_153",
+      }),
+    );
+    expect(body.input).toContainEqual(
+      expect.objectContaining({ type: "function_call_output", call_id: "fc_tasks_153" }),
+    );
+  });
+
   it("does not send an output token cap because the ChatGPT Codex backend rejects it", async () => {
     vi.stubGlobal(
       "fetch",

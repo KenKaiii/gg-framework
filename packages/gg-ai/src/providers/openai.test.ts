@@ -225,6 +225,24 @@ describe("streamOpenAI hard/transient limit classification", () => {
     });
   }
 
+  function streamWithIteratorError(provider: Provider, err: unknown) {
+    createMock.mockResolvedValueOnce({
+      [Symbol.asyncIterator](): AsyncIterator<OpenAI.ChatCompletionChunk> {
+        return {
+          async next(): Promise<IteratorResult<OpenAI.ChatCompletionChunk>> {
+            throw err;
+          },
+        };
+      },
+    });
+    return streamOpenAI({
+      provider,
+      model: "test-model",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "token",
+    });
+  }
+
   it("stamps DeepSeek 402 Insufficient Balance as a usage limit", async () => {
     const err = await makeApiError({ status: 402, message: "Insufficient Balance" });
     const result = streamWithError("deepseek", err);
@@ -247,6 +265,20 @@ describe("streamOpenAI hard/transient limit classification", () => {
       message: "You exceeded your current quota, please check your plan and billing details.",
     });
     const result = streamWithError("openai", err);
+    await expect(result.response).rejects.toThrow(/usage limit reached/i);
+  });
+
+  it("normalizes OpenAI-compatible errors thrown while consuming the stream", async () => {
+    const err = await makeApiError({
+      status: 429,
+      type: "insufficient_quota",
+      message: "You exceeded your current quota, please check your plan and billing details.",
+    });
+    const result = streamWithIteratorError("openai", err);
+    await expect(result.response).rejects.toMatchObject({
+      provider: "openai",
+      statusCode: 429,
+    });
     await expect(result.response).rejects.toThrow(/usage limit reached/i);
   });
 

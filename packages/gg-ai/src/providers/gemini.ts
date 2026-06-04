@@ -624,7 +624,7 @@ async function fetchCodeAssistWithRetry(
 }
 
 export function streamGemini(options: StreamOptions): StreamResult {
-  return new StreamResult(runStream(options));
+  return new StreamResult(runStream(options), options.signal);
 }
 
 async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, StreamResponse> {

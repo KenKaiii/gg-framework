@@ -74,22 +74,25 @@ export class StreamResult implements AsyncIterable<StreamEvent> {
   private rejectResponse!: (e: Error) => void;
   private resolveWait: (() => void) | null = null;
 
-  constructor(generator: AsyncGenerator<StreamEvent, StreamResponse>) {
+  constructor(generator: AsyncGenerator<StreamEvent, StreamResponse>, signal?: AbortSignal) {
     this.response = new Promise<StreamResponse>((resolve, reject) => {
       this.resolveResponse = resolve;
       this.rejectResponse = reject;
     });
-    this.pump(generator);
+    this.pump(generator, signal);
   }
 
-  private async pump(generator: AsyncGenerator<StreamEvent, StreamResponse>): Promise<void> {
+  private async pump(
+    generator: AsyncGenerator<StreamEvent, StreamResponse>,
+    signal?: AbortSignal,
+  ): Promise<void> {
     try {
-      let next = await generator.next();
+      let next = await this._nextWithAbort(generator, signal);
       while (!next.done) {
         this.buffer.push(next.value);
         this.resolveWait?.();
         this.resolveWait = null;
-        next = await generator.next();
+        next = await this._nextWithAbort(generator, signal);
       }
       this.done = true;
       this.resolveResponse(next.value);
@@ -102,6 +105,31 @@ export class StreamResult implements AsyncIterable<StreamEvent> {
       this.rejectResponse(error);
       this.resolveWait?.();
       this.resolveWait = null;
+    }
+  }
+
+  private async _nextWithAbort(
+    generator: AsyncGenerator<StreamEvent, StreamResponse>,
+    signal?: AbortSignal,
+  ): Promise<IteratorResult<StreamEvent, StreamResponse>> {
+    if (!signal) {
+      return generator.next();
+    }
+    if (signal.aborted) {
+      return Promise.reject(new DOMException("Aborted", "AbortError"));
+    }
+    let onAbort: (() => void) | undefined;
+    const abortPromise = new Promise<IteratorResult<StreamEvent, StreamResponse>>((_, reject) => {
+      onAbort = () => {
+        generator.return?.(undefined as unknown as StreamResponse).catch(() => {});
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+    try {
+      return await Promise.race([generator.next(), abortPromise]);
+    } finally {
+      if (onAbort) signal.removeEventListener("abort", onAbort);
     }
   }
 

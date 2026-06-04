@@ -305,7 +305,7 @@ export function registerPalsuProvider(config?: PalsuProviderConfig): PalsuProvid
         return yield* simulateStream(message, stopReason, options.signal, cacheUsage);
       })();
 
-      return new StreamResult(gen);
+      return new StreamResult(gen, options.signal);
     },
   });
 

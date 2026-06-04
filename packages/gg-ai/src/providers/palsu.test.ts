@@ -121,7 +121,7 @@ describe("palsu provider", () => {
       signal: controller.signal,
     });
 
-    await expect(sr.response).rejects.toThrow("aborted");
+    await expect(sr.response).rejects.toThrow("Aborted");
   });
 
   it("falls back to default response when queue is empty", async () => {

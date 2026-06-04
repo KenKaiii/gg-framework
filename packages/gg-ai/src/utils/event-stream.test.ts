@@ -305,4 +305,24 @@ describe("StreamResult - stall regression tests", () => {
     const response = await result.response;
     expect(response).toBeDefined();
   }, 10_000);
+
+  it("aborts a hung generator when signal fires", async () => {
+    async function* gen(): AsyncGenerator<StreamEvent, StreamResponse> {
+      await new Promise(() => {}); // never resolves
+      yield makeEvent("never");
+      return makeResponse();
+    }
+    const ac = new AbortController();
+    const result = new StreamResult(gen(), ac.signal);
+
+    setTimeout(() => ac.abort(), 50);
+
+    await expect(async () => {
+      for await (const _event of result) {
+        // should never reach here
+      }
+    }).rejects.toThrow("Aborted");
+
+    await expect(result.response).rejects.toThrow("Aborted");
+  });
 });
