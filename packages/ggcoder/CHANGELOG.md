@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 4.8.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @kenkaiiii/gg-ai@4.8.0
+  - @kenkaiiii/gg-core@4.8.0
+  - @kenkaiiii/gg-agent@4.8.0
+
 ## 4.7.0
 
 ### Minor Changes

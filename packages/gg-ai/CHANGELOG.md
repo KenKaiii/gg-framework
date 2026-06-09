@@ -1,5 +1,11 @@
 # @kenkaiiii/gg-ai
 
+## 4.8.0
+
+### Minor Changes
+
+- Add Claude Fable 5 (`claude-fable-5`) and Claude Mythos 5 (`claude-mythos-5`) to the model registry with adaptive thinking (low→max), correct beta-header handling in the Anthropic provider, footer short names, and a clear invite-only (Project Glasswing) error for Mythos instead of the raw `not_found_error`.
+
 ## 4.7.0
 
 ## 4.6.3
