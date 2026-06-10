@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 4.8.2
+
+### Patch Changes
+
+- Fix TUI scrollback corruption from streaming markdown tables and inline images: table-aware live-region row estimation, pending-table height clamping and partial-row hold-back in the markdown renderer, and fixed-height inline image blocks so Ink's live-frame erase math stays in sync (no more orphaned ⏺ rows).
+  - @kenkaiiii/gg-ai@4.8.2
+  - @kenkaiiii/gg-agent@4.8.2
+  - @kenkaiiii/gg-core@4.8.2
+
 ## 4.8.1
 
 ### Patch Changes
