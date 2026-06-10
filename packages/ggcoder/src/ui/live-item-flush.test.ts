@@ -3,9 +3,11 @@ import {
   pruneHistory,
   flushOnTurnText,
   flushOnTurnEnd,
+  countOversizedFlushItems,
   MAX_HISTORY_ITEMS,
   type FlushableItem,
 } from "./live-item-flush.js";
+import { estimateRenderedRows } from "./utils/assistant-stream-split.js";
 
 // ── Test helpers ──────────────────────────────────────────
 
@@ -128,6 +130,88 @@ describe("flushOnTurnText", () => {
     const items = [errorItem(), assistantItem()];
     const flushed = flushOnTurnText(items);
     expect(flushed).toHaveLength(2);
+  });
+});
+
+// ── countOversizedFlushItems ──────────────────────────────
+
+describe("countOversizedFlushItems", () => {
+  const LIVE_ROWS = 20;
+  const COLUMNS = 80;
+  const estimate = (text: string) => estimateRenderedRows(text, COLUMNS);
+
+  const shortText = { kind: "assistant", text: "A short answer.", id: "short" };
+  const stepDone = { kind: "step_done", id: "step" };
+  // A markdown table tall enough to exceed the live area: header + separator
+  // + 30 rows, double-counted by the table heuristic.
+  const tallTable = {
+    kind: "assistant",
+    text: [
+      "| Feature | Detail |",
+      "| --- | --- |",
+      ...Array.from({ length: 30 }, (_, i) => `| Row ${i} | some detail text |`),
+    ].join("\n"),
+    id: "table",
+  };
+
+  it("returns 0 when every assistant item fits the live area", () => {
+    expect(countOversizedFlushItems([shortText, stepDone], estimate, LIVE_ROWS)).toBe(0);
+  });
+
+  it("flushes through the oversized assistant item (the table-cut-off bug)", () => {
+    expect(countOversizedFlushItems([tallTable], estimate, LIVE_ROWS)).toBe(1);
+  });
+
+  it("flushes earlier siblings too, preserving transcript order", () => {
+    // [short, step_done, tallTable, short] — flushing only the table would
+    // print it to scrollback BEFORE the pinned earlier items get flushed on
+    // the next turn, corrupting order. Cut must include everything up to and
+    // including the last oversized item.
+    const items = [shortText, stepDone, tallTable, { ...shortText, id: "tail" }];
+    expect(countOversizedFlushItems(items, estimate, LIVE_ROWS)).toBe(3);
+  });
+
+  it("ignores non-assistant items even with long text", () => {
+    const longError = { kind: "error", text: "x".repeat(10_000), id: "err" };
+    expect(countOversizedFlushItems([longError], estimate, LIVE_ROWS)).toBe(0);
+  });
+
+  it("returns 0 when the live area has not been measured yet", () => {
+    expect(countOversizedFlushItems([tallTable], estimate, 0)).toBe(0);
+  });
+
+  it("returns 0 for an empty item list", () => {
+    expect(countOversizedFlushItems([], estimate, LIVE_ROWS)).toBe(0);
+  });
+
+  it("flushes a tall plain-text response too (no table required)", () => {
+    const tallText = {
+      kind: "assistant",
+      text: Array.from({ length: 40 }, (_, i) => `line ${i}`).join("\n"),
+      id: "tall-text",
+    };
+    expect(countOversizedFlushItems([tallText], estimate, LIVE_ROWS)).toBe(1);
+  });
+
+  it("CUMULATIVE: several medium items that fit individually but overflow together", () => {
+    // [DONE:N] segmentation pins multiple assistant items per turn. Three
+    // 10-row items each fit a 20-row live area alone, but the pinned set is
+    // ~32 rows — same top-rows-never-painted bug as a single tall table.
+    const medium = (id: string) => ({
+      kind: "assistant",
+      text: Array.from({ length: 10 }, (_, i) => `para line ${i}`).join("\n"),
+      id,
+    });
+    const items = [medium("a"), { kind: "step_done", id: "s" }, medium("b"), medium("c")];
+    // Suffix that fits: [medium c] (10+0) + [medium b] (10+1) = 21 > 20, so
+    // only "c" survives — flush the first three.
+    expect(countOversizedFlushItems(items, estimate, LIVE_ROWS)).toBe(3);
+  });
+
+  it("CUMULATIVE: keeps the whole set when the sum fits the budget", () => {
+    const small = (id: string) => ({ kind: "assistant", text: "one line", id });
+    const items = [small("a"), { kind: "step_done", id: "s" }, small("b")];
+    expect(countOversizedFlushItems(items, estimate, LIVE_ROWS)).toBe(0);
   });
 });
 

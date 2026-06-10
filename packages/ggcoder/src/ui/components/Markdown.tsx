@@ -58,10 +58,18 @@ export const Markdown = React.memo(function Markdown({
     [availableTerminalHeight, isPending, renderMarkdown, terminalWidth, text, theme],
   );
 
-  const visibleLines =
+  // When clamped, keep the TAIL of the response — but never let the slice
+  // start on a paragraph-break blank line. The ⏺ prefix renders in a sibling
+  // box aligned to the first row of this column, so a leading blank row leaves
+  // the dot floating one row above the text (alignment varies with where the
+  // slice boundary lands).
+  let visibleLines =
     availableTerminalHeight !== undefined && renderedLines.length > availableTerminalHeight
       ? renderedLines.slice(-availableTerminalHeight)
       : renderedLines;
+  while (visibleLines.length > 0 && visibleLines[0] === "") {
+    visibleLines = visibleLines.slice(1);
+  }
 
   if (!text || visibleLines.length === 0) return null;
 

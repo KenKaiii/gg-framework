@@ -178,6 +178,44 @@ export function flushOverflow<T extends FlushableItem>(
 }
 
 /**
+ * When a turn finalizes, decide how many leading items must be flushed to
+ * scrollback immediately because the pinned frame is too tall for the live
+ * area. Finalized items lose the streaming-time table/code-block clamp, so a
+ * too-tall pinned frame exceeds the terminal and Ink can only paint its
+ * bottom rows — the top of the response (e.g. a table's header) is never
+ * painted anywhere until the next turn's flush finally writes it to
+ * scrollback.
+ *
+ * The budget is CUMULATIVE: a turn segmented on [DONE:N] markers pins several
+ * assistant items whose individual heights fit while their sum overflows.
+ * Walking from the end, keep the largest suffix that fits within
+ * `liveAreaRows` and flush the leading complement — a contiguous prefix, so
+ * transcript order is preserved. An item taller than the whole budget flushes
+ * itself and everything before it. Returns 0 when everything fits or the
+ * live area hasn't been measured yet.
+ */
+export function countOversizedFlushItems(
+  items: readonly { kind: string; text?: string }[],
+  estimateRows: (text: string) => number,
+  liveAreaRows: number,
+): number {
+  if (liveAreaRows <= 0) return 0;
+  let rows = 0;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item === undefined) continue;
+    // Non-assistant rows (step_done, etc.) are single-line; assistant items
+    // are estimated from their text. +1 approximates the transcript margin
+    // between items — over-counting just flushes marginally earlier.
+    const itemRows =
+      item.kind === "assistant" && typeof item.text === "string" ? estimateRows(item.text) : 1;
+    rows += itemRows + (i < items.length - 1 ? 1 : 0);
+    if (rows > liveAreaRows) return i + 1;
+  }
+  return 0;
+}
+
+/**
  * Called when `onTurnEnd` fires with a tool_use stop reason (LLM responded
  * with only tool calls, no text). Flushes all items IF none are still pending
  * (no `tool_start` without a corresponding `tool_done`).

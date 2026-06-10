@@ -84,6 +84,7 @@ import {
   flushOnTurnText,
   flushOnTurnEnd,
   flushOverflow,
+  countOversizedFlushItems,
 } from "./live-item-flush.js";
 import {
   splitAssistantStreamingText,
@@ -342,6 +343,11 @@ export function App(props: AppProps) {
   const switchTheme = useSetTheme();
   const { write: writeStdout } = useStdout();
   const { columns, rows } = useTerminalSize();
+  // Layout snapshot readable from agent-event callbacks (whose deps must stay
+  // stable). `liveAreaRows` is filled in by an effect after the chat layout is
+  // measured further down; 0 means "not measured yet" and disables the
+  // oversized-item flush below.
+  const liveLayoutRef = useRef({ columns, liveAreaRows: 0 });
 
   // Hoisted before terminal title hook so it can reference them
   const [lastUserMessage, setLastUserMessage] = useState("");
@@ -1108,8 +1114,26 @@ export function App(props: AppProps) {
               : items;
             const flushablePrev = prev.filter((item) => item.kind !== "assistant");
             if (flushablePrev.length > 0) queueFlush(flushablePrev);
+            // Finalized items taller than the live area can't stay pinned:
+            // streaming-time clamping no longer applies, so Ink would only
+            // paint the frame's bottom rows and the top of the response (e.g.
+            // a table header) would be invisible until the next turn's flush.
+            // The check is cumulative over the WHOLE pinned set (previously
+            // pinned assistant items + this turn's, which [DONE:N]
+            // segmentation can split into several): flush the leading prefix
+            // so the remaining suffix fits, preserving transcript order. The
+            // transcript-history layout effect removes the flushed ids from
+            // the live frame after printing.
+            const pinned = [...assistantItems, ...nextItems];
+            const layout = liveLayoutRef.current;
+            const oversizedCount = countOversizedFlushItems(
+              pinned,
+              (itemText) => estimateRenderedRows(itemText, layout.columns),
+              layout.liveAreaRows,
+            );
+            if (oversizedCount > 0) queueFlush(pinned.slice(0, oversizedCount));
             streamedAssistantFlushRef.current = { flushedChars: 0, text: "" };
-            return [...assistantItems, ...nextItems];
+            return pinned;
           });
         },
         [queueFlush],
@@ -2649,6 +2673,9 @@ export function App(props: AppProps) {
     taskBarExpanded,
     liveToolFeedCount: liveToolFeed.length,
   });
+  useEffect(() => {
+    liveLayoutRef.current = { columns, liveAreaRows: measuredLiveAreaRows };
+  }, [columns, measuredLiveAreaRows]);
   const isPixelView = overlay === "pixel";
   const hasLiveAssistantItem = liveItems.some((item) => item.kind === "assistant");
   const rawVisibleStreamingText = hasLiveAssistantItem ? "" : agentLoop.streamingText;

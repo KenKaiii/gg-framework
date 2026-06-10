@@ -88,6 +88,24 @@ function renderAssistantFrame(streaming: boolean, text = LONG_STREAMING_TEXT): s
   return renderWithTerminal(<AssistantMessage text={text} streaming={streaming} />);
 }
 
+/** Like renderWithTerminal but keeps blank rows — needed for alignment checks. */
+function renderWithTerminalRaw(element: React.ReactElement): string[] {
+  const originalColumns = process.stdout.columns;
+  const originalRows = process.stdout.rows;
+  process.stdout.columns = TERMINAL_COLUMNS;
+  process.stdout.rows = 20;
+  try {
+    return rawLinesOf(
+      renderToString(<TerminalSizeProvider>{element}</TerminalSizeProvider>, {
+        columns: TERMINAL_COLUMNS,
+      }),
+    );
+  } finally {
+    process.stdout.columns = originalColumns;
+    process.stdout.rows = originalRows;
+  }
+}
+
 function renderTerminalHistoryAssistantText(text = LONG_STREAMING_TEXT): string {
   return serializeCompletedItemToTerminalHistory(
     { kind: "assistant", text, id: "assistant-1" },
@@ -298,6 +316,19 @@ describe("AssistantMessage live layout", () => {
     );
 
     expect(lines.length).toBeLessThanOrEqual(5);
+  });
+
+  it("REGRESSION: dot stays inline when the height clamp slices at a blank line", () => {
+    // 3 paragraphs render as [p1, "", p2, "", p3]. availableTerminalHeight=4
+    // tail-slices to ["", p2, "", p3] — the ⏺ prefix sits in a sibling box
+    // aligned to the first row, so a leading blank row left the dot floating
+    // one row above the text (alignment varied with the slice boundary).
+    const text = "First paragraph here.\n\nSecond paragraph here.\n\nThird paragraph here.";
+    const lines = renderWithTerminalRaw(
+      <AssistantMessage text={text} availableTerminalHeight={4} />,
+    );
+
+    expect(lines[0]).toBe(" \u23FA Second paragraph here.");
   });
 
   it("renders the streaming frame with the same line structure as finalized history", () => {
