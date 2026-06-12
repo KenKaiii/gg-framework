@@ -188,13 +188,22 @@ export interface ResetUIOptions {
 /** Stateful theme provider — enables runtime theme switching via useSetTheme(). */
 function ThemeProvider({
   initial,
+  onThemeChange,
   children,
 }: React.PropsWithChildren<{
   initial: ThemeName;
+  /** Mirror theme switches into renderApp's closure (see currentThemeName). */
+  onThemeChange?: (name: ThemeName) => void;
 }>) {
   const [themeName, setThemeName] = React.useState(initial);
   const theme = React.useMemo(() => loadTheme(themeName), [themeName]);
-  const setTheme = React.useCallback((name: ThemeName) => setThemeName(name), []);
+  const setTheme = React.useCallback(
+    (name: ThemeName) => {
+      onThemeChange?.(name);
+      setThemeName(name);
+    },
+    [onThemeChange],
+  );
 
   return React.createElement(
     SetThemeContext.Provider,
@@ -314,6 +323,12 @@ export function getResetClearMode(
 export async function renderApp(config: RenderAppConfig): Promise<void> {
   const themeSetting = config.theme ?? "auto";
   const resolvedTheme = themeSetting === "auto" ? await detectTheme() : themeSetting;
+  // Live theme tracker — updated by ThemeProvider on every /theme switch.
+  // Closure-level serializers (shrink backfill, resize redraw) must use THIS,
+  // not the startup `resolvedTheme`, or post-switch repaints redraw the
+  // transcript in the old theme's colors. Same staleness class as the
+  // sessionStore.history mirror.
+  let currentThemeName: ThemeName = resolvedTheme;
   const fullscreen = isFullscreenViewportEnabled();
 
   // Clear screen + scrollback so old commands don't appear above the TUI.
@@ -463,7 +478,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
       createTerminalHistoryPrinter().print(
         history,
         {
-          theme: loadTheme(resolvedTheme),
+          theme: loadTheme(currentThemeName),
           columns: Math.max(40, process.stdout.columns ?? 80),
           version: config.version,
           model: runtimeState.model,
@@ -493,7 +508,12 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
   const buildElement = (): React.ReactElement =>
     React.createElement(
       ThemeProvider,
-      { initial: resolvedTheme },
+      {
+        initial: currentThemeName,
+        onThemeChange: (name: ThemeName) => {
+          currentThemeName = name;
+        },
+      },
       React.createElement(
         TerminalSizeProvider,
         { isAgentRunning: () => !!sessionStore.isAgentRunning, fullscreen },
@@ -610,7 +630,7 @@ export async function renderApp(config: RenderAppConfig): Promise<void> {
     process.stdout.write(getResetClearMode(options) === "screen" ? SCREEN_CLEAR : VIEWPORT_CLEAR);
     if (options?.resizeRedraw && sessionStore.history.length > 0) {
       terminalHistoryPrinter.print(sessionStore.history, {
-        theme: loadTheme(resolvedTheme),
+        theme: loadTheme(currentThemeName),
         columns: Math.max(40, process.stdout.columns ?? 80),
         version: config.version,
         model: runtimeState.model,

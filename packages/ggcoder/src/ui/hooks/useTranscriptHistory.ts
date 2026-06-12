@@ -128,6 +128,22 @@ export function useTranscriptHistory<TItem extends TranscriptHistoryItem = Compl
         sessionStore.liveItems = (sessionStore.liveItems ?? []).filter(
           (item) => !queuedIds.has(item.id),
         );
+        // Mirror the flushed rows into sessionStore.history SYNCHRONOUSLY.
+        // The React-state fold-in below is deferred to effects, but the
+        // patched ink's bottom-pinned repaint (slash menu close) can fire on
+        // THIS very commit — e.g. submit finalizes deferred assistant rows +
+        // the user prompt while the menu close shrinks the frame. Its
+        // backfill serializes sessionStore.history; if these rows aren't in
+        // it yet, the repaint redraws a stale screen and the just-finalized
+        // messages visibly vanish into blank space.
+        const knownIds = new Set((sessionStore.history ?? []).map((item) => item.id));
+        const newItems = flushed.filter((item) => !knownIds.has(item.id));
+        if (newItems.length > 0) {
+          sessionStore.history = compactHistoryItems([
+            ...(sessionStore.history ?? []),
+            ...newItems,
+          ]);
+        }
       }
       // Remove the flushed rows from the live frame in the SAME React batch as
       // the generation bump. Ink emits one frame write per commit (throttled,
@@ -139,6 +155,7 @@ export function useTranscriptHistory<TItem extends TranscriptHistoryItem = Compl
       setHistoryFlushGeneration((generation) => generation + 1);
     },
     [
+      compactHistoryItems,
       persistDisplayItem,
       printHistoryItems,
       sessionManagerRef,
