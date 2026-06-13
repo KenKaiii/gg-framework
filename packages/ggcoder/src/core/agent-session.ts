@@ -20,7 +20,12 @@ import { getContextWindow, getModel, MODELS } from "./model-registry.js";
 import { discoverSkills, type Skill } from "./skills.js";
 import { ensureAppDirs } from "../config.js";
 import { buildSystemPrompt } from "../system-prompt.js";
-import { createTools, createWebSearchTool, type ProcessManager } from "../tools/index.js";
+import {
+  createTools,
+  createWebSearchTool,
+  type LspManager,
+  type ProcessManager,
+} from "../tools/index.js";
 import { MCPClientManager, getMCPServers, getAllMcpServers } from "./mcp/index.js";
 import { log } from "./logger.js";
 import { setEstimatorModel } from "./compaction/token-estimator.js";
@@ -88,6 +93,7 @@ export class AgentSession {
   private skills: Skill[] = [];
   private cacheKeyLogged = false;
   private processManager?: ProcessManager;
+  private lspManager?: LspManager;
   private mcpManager?: MCPClientManager;
   private provider: Provider;
   private model: string;
@@ -149,17 +155,19 @@ export class AgentSession {
       globalAgentsDir: paths.agentsDir,
       projectDir: this.cwd,
     });
-    const { tools, processManager } = createTools(this.cwd, {
+    const { tools, processManager, lspManager } = createTools(this.cwd, {
       agents,
       skills: this.skills,
       provider: this.provider,
       model: this.model,
+      lspDiagnostics: this.settingsManager.get("lspDiagnostics"),
       // Lazy — sessionId isn't assigned yet when createTools() runs, so we
       // must defer reading the cache key until the sub-agent actually fires.
       getCacheKey: () => this.getPromptCacheKey(),
     });
     this.tools = tools;
     this.processManager = processManager;
+    this.lspManager = lspManager;
 
     // Connect MCP servers (non-blocking — failures are logged and skipped)
     this.mcpManager = new MCPClientManager();
@@ -636,6 +644,7 @@ export class AgentSession {
 
   async dispose(): Promise<void> {
     this.processManager?.shutdownAll();
+    this.lspManager?.shutdownAll();
     await this.mcpManager?.dispose();
     await this.extensionLoader.deactivateAll();
     this.eventBus.removeAllListeners();

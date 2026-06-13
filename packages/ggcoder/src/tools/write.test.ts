@@ -199,4 +199,85 @@ describe("createWriteTool", () => {
 
     expect(mutated).toEqual([]);
   });
+
+  describe("LSP diagnostics", () => {
+    it("appends a non-empty diagnostics string to the result", async () => {
+      const seen: Array<{ filePath: string; content: string }> = [];
+      const tool = createWriteTool(
+        tmpDir,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async (filePath, content) => {
+          seen.push({ filePath, content });
+          return "\n\nDiagnostics in diag.ts (informational — may resolve after related edits):\nL1:1 boom (typescript)";
+        },
+      );
+
+      const raw = await tool.execute(
+        { file_path: "diag.ts", content: "const x = 1;\n" },
+        { signal: new AbortController().signal, toolCallId: "test-diag-1" },
+      );
+
+      const result = resultToString(raw);
+      expect(result).toContain(`Wrote 2 lines to ${path.join(tmpDir, "diag.ts")}`);
+      expect(result).toContain("L1:1 boom (typescript)");
+      expect(seen).toEqual([{ filePath: path.join(tmpDir, "diag.ts"), content: "const x = 1;\n" }]);
+    });
+
+    it("leaves the result unchanged when the provider returns empty", async () => {
+      const tool = createWriteTool(
+        tmpDir,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async () => "",
+      );
+
+      const raw = await tool.execute(
+        { file_path: "clean.ts", content: "ok\n" },
+        { signal: new AbortController().signal, toolCallId: "test-diag-2" },
+      );
+
+      expect(resultToString(raw)).toBe(`Wrote 2 lines to ${path.join(tmpDir, "clean.ts")}`);
+    });
+
+    it("leaves the result unchanged when the provider throws", async () => {
+      const tool = createWriteTool(
+        tmpDir,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async () => {
+          throw new Error("lsp exploded");
+        },
+      );
+
+      const raw = await tool.execute(
+        { file_path: "throws.ts", content: "ok\n" },
+        { signal: new AbortController().signal, toolCallId: "test-diag-3" },
+      );
+
+      expect(resultToString(raw)).toBe(`Wrote 2 lines to ${path.join(tmpDir, "throws.ts")}`);
+      const written = await fs.readFile(path.join(tmpDir, "throws.ts"), "utf-8");
+      expect(written).toBe("ok\n");
+    });
+
+    it("is identical to today when no provider is passed", async () => {
+      const tool = createWriteTool(tmpDir);
+
+      const raw = await tool.execute(
+        { file_path: "plain.ts", content: "ok\n" },
+        { signal: new AbortController().signal, toolCallId: "test-diag-4" },
+      );
+
+      expect(resultToString(raw)).toBe(`Wrote 2 lines to ${path.join(tmpDir, "plain.ts")}`);
+    });
+  });
 });

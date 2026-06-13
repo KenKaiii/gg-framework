@@ -9,6 +9,9 @@ import { isPlanModeActive } from "../core/runtime-mode.js";
 
 type MutationCallback = (filePath: string) => void | Promise<void>;
 
+/** Post-write diagnostics provider (LSP). Non-empty results are appended to successful tool output. */
+type DiagnosticsProvider = (filePath: string, content: string) => Promise<string>;
+
 function isMutationCallback(value: unknown): value is MutationCallback {
   return typeof value === "function";
 }
@@ -33,6 +36,7 @@ export function createWriteTool(
   planModeRefOrOnFileMutated?: { current: boolean } | MutationCallback,
   onFileMutated?: MutationCallback,
   onPreFileMutation?: MutationCallback,
+  getDiagnostics?: DiagnosticsProvider,
 ): AgentTool<typeof WriteParams> {
   const planModeRef = isPlanModeRef(planModeRefOrOnFileMutated)
     ? planModeRefOrOnFileMutated
@@ -76,8 +80,18 @@ export function createWriteTool(
       await ops.writeFile(resolved, content);
       await recordWrite(readFiles, resolved, content, ops);
       await mutationCallback?.(resolved);
+      // LSP diagnostics for the just-written content. Best-effort enhancement:
+      // any failure (or an opted-out provider) leaves output identical to today.
+      let diagnosticsNote = "";
+      if (getDiagnostics) {
+        try {
+          diagnosticsNote = await getDiagnostics(resolved, content);
+        } catch {
+          // Diagnostics must never break a successful write.
+        }
+      }
       const lines = content.split("\n").length;
-      return `Wrote ${lines} lines to ${resolved}`;
+      return `Wrote ${lines} lines to ${resolved}` + diagnosticsNote;
     },
   };
 }

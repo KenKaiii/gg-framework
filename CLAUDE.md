@@ -184,6 +184,36 @@ Fix errors from checks you do run before continuing. Quick fixes:
 - **Zod schemas**: tool parameters defined with Zod, converted to JSON Schema at provider boundary
 - **Debug logging**: `~/.gg/debug.log` — timestamped log of startup, auth, tool calls, turn completions, errors. Truncated on each CLI restart. Singleton logger in `src/core/logger.ts`
 
+## LSP Inline Edit Diagnostics
+
+Successful `edit`/`write` tool results get compiler-grade error diagnostics appended
+(`Diagnostics in src/a.ts (informational …): L42:7 Type 'string' is not assignable …`)
+so the model self-corrects type errors in the same turn it creates them. Code lives in
+`packages/ggcoder/src/core/lsp/` (`jsonrpc.ts` zero-dep Content-Length framing,
+`servers.ts` catalog + root detection, `client.ts` document sync + push/pull race,
+`manager.ts` lazy pool, `format.ts` rendering).
+
+Hard rules:
+
+- **TS/JS works for every user out of the box.** `typescript-language-server` + `typescript`
+  ship as ggcoder dependencies (~26MB unpacked) — no postinstall, no downloads, no runtime
+  `npx -y`. Resolution order: project's `node_modules` (walking up, its own TS version wins) →
+  ggcoder's bundled copy → PATH. Node-based servers spawn via `process.execPath` + the real
+  bin script (never `.bin` shims, which need `node` on PATH). Other servers
+  (`pyright-langserver`, `gopls`, `rust-analyzer`, `clangd`) resolve from project/PATH only —
+  they ship with their language toolchains.
+- **Silent graceful degradation.** Missing/crashed/slow server ⇒ tool output is byte-identical
+  to before (debug-log only). A failed spawn marks `(server, root)` broken for the session.
+- **Lazy + budgeted.** Nothing spawns until the first edit of a matching file; diagnostics are
+  capped at 3s warm / 8s first-touch — overruns return nothing and leave the server warm.
+- **Errors only, capped at 5**, framed as informational so multi-file sequences aren't derailed.
+- Opt out with `"lspDiagnostics": false` in `~/.gg/settings.json`. Pools are per tool set:
+  `rebuildToolsForCwd` (pixel chdir) shuts the old one down; exit handlers call
+  `lspManager.shutdownAll()` alongside `processManager`.
+- Tests: `src/core/lsp/*.test.ts` run against a fake stdio server fixture
+  (`src/tools/__fixtures__/fake-lsp-server.mjs`) — CI never needs real language servers.
+  Opt-in real-tsserver test: `GG_LSP_INTEGRATION=1 npx vitest run src/core/lsp/integration.test.ts`.
+
 ## MCP Servers
 
 `ggcoder mcp` adds and manages Model Context Protocol servers. Configs are stored in the same `{ "mcpServers": { … } }` shape Claude Code uses, so they're portable both directions.

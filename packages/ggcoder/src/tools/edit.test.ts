@@ -998,4 +998,147 @@ describe("createEditTool", () => {
 
     expect(mutated).toEqual([]);
   });
+
+  describe("LSP diagnostics", () => {
+    function contentOf(result: unknown): string {
+      if (result && typeof result === "object" && "content" in result) {
+        const c = (result as { content: unknown }).content;
+        if (typeof c === "string") return c;
+      }
+      return String(result);
+    }
+
+    it("appends a non-empty diagnostics string to a successful edit", async () => {
+      const filePath = path.join(tmpDir, "diag.ts");
+      await fs.writeFile(filePath, "const x = 1;\n");
+      const seen: Array<{ filePath: string; content: string }> = [];
+      const tool = createEditTool(
+        tmpDir,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async (fp, content) => {
+          seen.push({ filePath: fp, content });
+          return "\n\nDiagnostics in diag.ts (informational — may resolve after related edits):\nL1:7 boom (typescript)";
+        },
+      );
+
+      const result = await tool.execute(
+        {
+          file_path: "diag.ts",
+          edits: [{ old_text: "const x = 1;", new_text: 'const x: number = "a";' }],
+        },
+        { signal: new AbortController().signal, toolCallId: "test-diag-1" },
+      );
+
+      const content = contentOf(result);
+      expect(content).toContain("Successfully replaced text in diag.ts.");
+      expect(content).toContain("L1:7 boom (typescript)");
+      expect(seen).toEqual([{ filePath, content: 'const x: number = "a";\n' }]);
+    });
+
+    it("leaves the result unchanged when the provider returns empty", async () => {
+      const filePath = path.join(tmpDir, "clean.ts");
+      await fs.writeFile(filePath, "alpha\n");
+      const tool = createEditTool(
+        tmpDir,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async () => "",
+      );
+
+      const result = await tool.execute(
+        { file_path: "clean.ts", edits: [{ old_text: "alpha", new_text: "beta" }] },
+        { signal: new AbortController().signal, toolCallId: "test-diag-2" },
+      );
+
+      expect(contentOf(result)).toBe("Successfully replaced text in clean.ts.");
+    });
+
+    it("leaves the result unchanged when the provider throws", async () => {
+      const filePath = path.join(tmpDir, "throws.ts");
+      await fs.writeFile(filePath, "alpha\n");
+      const tool = createEditTool(
+        tmpDir,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async () => {
+          throw new Error("lsp exploded");
+        },
+      );
+
+      const result = await tool.execute(
+        { file_path: "throws.ts", edits: [{ old_text: "alpha", new_text: "beta" }] },
+        { signal: new AbortController().signal, toolCallId: "test-diag-3" },
+      );
+
+      expect(contentOf(result)).toBe("Successfully replaced text in throws.ts.");
+      expect(await fs.readFile(filePath, "utf-8")).toBe("beta\n");
+    });
+
+    it("does not call the provider when nothing was written", async () => {
+      const filePath = path.join(tmpDir, "untouched.ts");
+      await fs.writeFile(filePath, "alpha\n");
+      let calls = 0;
+      const tool = createEditTool(
+        tmpDir,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async () => {
+          calls++;
+          return "should not appear";
+        },
+      );
+
+      await expect(
+        tool.execute(
+          { file_path: "untouched.ts", edits: [{ old_text: "missing", new_text: "beta" }] },
+          { signal: new AbortController().signal, toolCallId: "test-diag-4" },
+        ),
+      ).rejects.toThrow("old_text not found");
+
+      expect(calls).toBe(0);
+    });
+
+    it("appends diagnostics to partial-success results", async () => {
+      const filePath = path.join(tmpDir, "partial.ts");
+      await fs.writeFile(filePath, "alpha\ngamma\n");
+      const tool = createEditTool(
+        tmpDir,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async () =>
+          "\n\nDiagnostics in partial.ts (informational — may resolve after related edits):\nL1:1 oops (typescript)",
+      );
+
+      const result = await tool.execute(
+        {
+          file_path: "partial.ts",
+          edits: [
+            { old_text: "alpha", new_text: "beta" },
+            { old_text: "missing", new_text: "x" },
+          ],
+        },
+        { signal: new AbortController().signal, toolCallId: "test-diag-5" },
+      );
+
+      const content = contentOf(result);
+      expect(content).toContain("Applied 1 of 2 edits");
+      expect(content).toContain("L1:1 oops (typescript)");
+    });
+  });
 });

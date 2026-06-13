@@ -18,6 +18,9 @@ import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
 
 type MutationCallback = (filePath: string) => void | Promise<void>;
 
+/** Post-write diagnostics provider (LSP). Non-empty results are appended to successful tool output. */
+type DiagnosticsProvider = (filePath: string, content: string) => Promise<string>;
+
 function isMutationCallback(value: unknown): value is MutationCallback {
   return typeof value === "function";
 }
@@ -132,6 +135,7 @@ export function createEditTool(
   planModeRefOrOnFileMutated?: { current: boolean } | MutationCallback,
   onFileMutated?: MutationCallback,
   onPreFileMutation?: MutationCallback,
+  getDiagnostics?: DiagnosticsProvider,
 ): AgentTool<typeof EditParams> {
   const planModeRef = isPlanModeRef(planModeRefOrOnFileMutated)
     ? planModeRefOrOnFileMutated
@@ -323,6 +327,9 @@ export function createEditTool(
       const diff = generateDiff(originalNormalized, working, relPath);
       const changed = working !== originalNormalized;
 
+      // LSP diagnostics for the just-written content. Best-effort enhancement:
+      // any failure (or an opted-out provider) leaves output identical to today.
+      let diagnosticsNote = "";
       if (changed) {
         const finalContent = hasCRLF ? working.replace(/\n/g, "\r\n") : working;
         // Snapshot the pre-mutation on-disk state for /rewind before writing.
@@ -334,6 +341,13 @@ export function createEditTool(
         // next edit (including retries of the skipped ones) validates against an
         // accurate snapshot. No invalidation — the failure message already
         // carries the closest match and a bounded re-read hint.
+        if (getDiagnostics) {
+          try {
+            diagnosticsNote = await getDiagnostics(resolved, finalContent);
+          } catch {
+            // Diagnostics must never break a successful edit.
+          }
+        }
       }
 
       if (failures.length === 0) {
@@ -348,7 +362,7 @@ export function createEditTool(
           edits.length > 1
             ? `Successfully applied ${edits.length} edits to ${relPath}.`
             : `Successfully replaced text in ${relPath}.`;
-        return { content: summary, details: { diff } };
+        return { content: summary + diagnosticsNote, details: { diff } };
       }
 
       // Partial success — the loud header is deliberate: the model has to know
@@ -357,7 +371,8 @@ export function createEditTool(
       const content =
         `Applied ${successCount} of ${edits.length} edits to ${relPath}.\n` +
         `${failures.length} ${noun} skipped — re-issue ONLY these (the rest are already done, do not redo them):\n\n` +
-        formatFailures();
+        formatFailures() +
+        diagnosticsNote;
       return { content, details: { diff } };
     },
   };

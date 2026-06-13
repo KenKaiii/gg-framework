@@ -364,6 +364,7 @@ function main(): void {
     cwd,
     thinkingLevel,
     idealReviewEnabled: saved.idealReviewEnabled,
+    lspDiagnostics: saved.lspDiagnostics,
     continueRecent,
     resumeSessionPath: values.resume,
     theme: savedTheme,
@@ -387,6 +388,7 @@ async function runInkTUI(opts: {
   theme?: "auto" | ThemeName;
   initialOverlay?: "pixel";
   idealReviewEnabled?: boolean;
+  lspDiagnostics?: boolean;
 }): Promise<void> {
   requireInteractiveTTY();
 
@@ -519,33 +521,41 @@ async function runInkTUI(opts: {
   const onPreFileMutation = (filePath: string): Promise<void> =>
     checkpointRef.current?.recordPreMutation(filePath) ?? Promise.resolve();
 
-  const { tools, processManager, rebuildReadTool } = createTools(cwd, {
+  const { tools, processManager, rebuildReadTool, lspManager } = createTools(cwd, {
     agents,
     skills,
     provider,
     model,
     planModeRef,
     onPreFileMutation,
+    lspDiagnostics: opts.lspDiagnostics,
     onEnterPlan: (reason) => planToolCallbacks.onEnterPlan?.(reason),
     onExitPlan: (planPath) =>
       planToolCallbacks.onExitPlan?.(planPath) ?? Promise.resolve("Plan review is unavailable."),
   });
 
+  // The active LSP pool follows the active tool set — rebuilds (pixel chdir)
+  // shut the old pool down and swap in the new one.
+  let activeLspManager = lspManager;
+
   // Rebuilds the cwd-bound tools for a different project root. Used by the
   // pixel-fix flow so the agent operates in the error's project, not in
   // wherever ggcoder was launched from.
   const rebuildToolsForCwd = (newCwd: string) => {
-    const { tools: rebuilt } = createTools(newCwd, {
+    activeLspManager?.shutdownAll();
+    const { tools: rebuilt, lspManager: rebuiltLspManager } = createTools(newCwd, {
       agents,
       skills,
       provider,
       model,
       planModeRef,
       onPreFileMutation,
+      lspDiagnostics: opts.lspDiagnostics,
       onEnterPlan: (reason) => planToolCallbacks.onEnterPlan?.(reason),
       onExitPlan: (planPath) =>
         planToolCallbacks.onExitPlan?.(planPath) ?? Promise.resolve("Plan review is unavailable."),
     });
+    activeLspManager = rebuiltLspManager;
     return rebuilt;
   };
 
@@ -576,6 +586,7 @@ async function runInkTUI(opts: {
   // Kill all background processes on exit (synchronous — catches all exit paths)
   process.on("exit", () => {
     processManager.shutdownAll();
+    activeLspManager?.shutdownAll();
     mcpManager.dispose().catch(() => {});
   });
 
@@ -792,6 +803,7 @@ async function runSessions(): Promise<void> {
     cwd,
     thinkingLevel,
     idealReviewEnabled: saved2.idealReviewEnabled,
+    lspDiagnostics: saved2.lspDiagnostics,
     resumeSessionPath: selectedPath,
     theme: saved2.theme,
   });

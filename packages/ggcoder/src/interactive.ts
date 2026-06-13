@@ -45,7 +45,7 @@ export async function runInteractive(config: CliConfig): Promise<void> {
     globalSkillsDir: paths.skillsDir,
     projectDir: cwd,
   });
-  const { tools, processManager } = createTools(cwd, {
+  const { tools, processManager, lspManager } = createTools(cwd, {
     skills,
     provider,
     model,
@@ -61,7 +61,10 @@ export async function runInteractive(config: CliConfig): Promise<void> {
       undefined,
       provider,
     ));
-  process.on("exit", () => processManager.shutdownAll());
+  process.on("exit", () => {
+    processManager.shutdownAll();
+    lspManager?.shutdownAll();
+  });
   const authStorage = new AuthStorage(paths.authFile);
   await authStorage.load();
 
