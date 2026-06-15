@@ -65,55 +65,62 @@
       }
       .header {
         position: absolute;
-        top: 70px;
+        top: 56px;
         left: 0;
         right: 0;
         text-align: center;
       }
-      .wordmark {
-        font-size: 48px;
-        font-weight: 700;
-        letter-spacing: -0.03em;
-      }
-      .wordmark .g {
-        background: linear-gradient(135deg, var(--blue), var(--purple));
+      /* ASCII "GG CODER" banner, mirroring src/AsciiLogo.tsx + its brand
+         gradient (blue → periwinkle → blue). Monospace + pre to keep the
+         box-drawing glyphs aligned. */
+      .ascii {
+        display: inline-block;
+        font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+        font-size: 22px;
+        line-height: 1.05;
+        white-space: pre;
+        background: linear-gradient(
+          100deg,
+          #4d9dff 0%,
+          #6f8ff7 25%,
+          #9b8cf7 50%,
+          #6f8ff7 75%,
+          #4d9dff 100%
+        );
         -webkit-background-clip: text;
         background-clip: text;
         -webkit-text-fill-color: transparent;
       }
       .sub {
-        margin-top: 12px;
+        margin-top: 22px;
         font-size: 22px;
         color: var(--muted);
         letter-spacing: 0.01em;
       }
       /*
-        Light tiles behind each icon slot. Centered on the icon positions and
-        tall enough that Finder's black label (drawn below the icon) lands on
-        the light surface. 2× coords: center (360,340) & (960,340).
+        Finder draws each icon's label in BLACK, below the icon. The icons
+        themselves read fine on the dark background, so instead of large tiles
+        we place a small light "pill" behind ONLY the label text. 2× icon
+        centers: (360,340) & (960,340); the label sits ~150px below center
+        (icon is 128px tall at 1× → ~256px at 2×), so the pill is centered at
+        y≈488 (2×).
       */
-      .tile {
+      .pill {
         position: absolute;
-        width: 300px;
-        height: 360px; /* spans 1× y 80→260: icon (≈106-234) + label (≈238-258) */
-        top: 160px; /* 340 - 180 */
-        border-radius: 40px;
-        background: linear-gradient(
-          180deg,
-          rgba(238, 240, 246, 0.96),
-          rgba(222, 226, 236, 0.94)
-        );
-        border: 1px solid rgba(255, 255, 255, 0.5);
-        box-shadow:
-          0 24px 60px rgba(0, 0, 0, 0.45),
-          inset 0 1px 0 rgba(255, 255, 255, 0.7);
+        width: 240px;
+        height: 64px;
+        top: 456px; /* 488 - 32 */
+        border-radius: 32px;
+        background: rgba(233, 236, 243, 0.95);
+        border: 1px solid rgba(255, 255, 255, 0.45);
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
       }
-      .tile.app {
-        left: 210px;
-      } /* 360 - 150 */
-      .tile.apps {
-        left: 810px;
-      } /* 960 - 150 */
+      .pill.app {
+        left: 240px;
+      } /* 360 - 120 */
+      .pill.apps {
+        left: 840px;
+      } /* 960 - 120 */
       .arrow {
         position: absolute;
         top: 322px;
@@ -142,12 +149,17 @@
   <body>
     <div class="stage">
       <div class="header">
-        <div class="wordmark"><span class="g">GG</span> Coder</div>
+        <div class="ascii"> ██████╗  ██████╗      ██████╗ ██████╗ ██████╗ ███████╗██████╗ 
+██╔════╝ ██╔════╝     ██╔════╝██╔═══██╗██╔══██╗██╔════╝██╔══██╗
+██║  ███╗██║  ███╗    ██║     ██║   ██║██║  ██║█████╗  ██████╔╝
+██║   ██║██║   ██║    ██║     ██║   ██║██║  ██║██╔══╝  ██╔══██╗
+╚██████╔╝╚██████╔╝    ╚██████╗╚██████╔╝██████╔╝███████╗██║  ██║
+ ╚═════╝  ╚═════╝      ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝</div>
         <div class="sub">Drag the app into your Applications folder</div>
       </div>
 
-      <div class="tile app"></div>
-      <div class="tile apps"></div>
+      <div class="pill app"></div>
+      <div class="pill apps"></div>
 
       <div class="arrow">
         <svg width="300" height="36" viewBox="0 0 300 36" fill="none">
