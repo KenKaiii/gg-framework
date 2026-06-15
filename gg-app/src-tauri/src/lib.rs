@@ -833,15 +833,44 @@ fn pick_sidecar(env_override: Option<String>, is_dev: bool, resource: Option<&Pa
 }
 
 /// Default working directory for the main window. Override with GG_APP_CWD;
-/// otherwise the workspace root. Additional windows pick their own project dir.
+/// otherwise the workspace root in dev, or the user's home dir in release.
 /// Canonicalized so traversal segments (`../..`) don't leak into the session
 /// store path and surface as a stray ".." project in the picker.
 fn default_cwd() -> PathBuf {
-    let raw = match std::env::var("GG_APP_CWD") {
-        Ok(p) => PathBuf::from(p),
-        Err(_) => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
-    };
+    let raw = pick_cwd(
+        std::env::var("GG_APP_CWD").ok(),
+        cfg!(debug_assertions),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
+        home_dir(),
+    );
     std::fs::canonicalize(&raw).unwrap_or(raw)
+}
+
+/// The current user's home directory, from HOME (Unix) / USERPROFILE (Windows).
+/// Falls back to "/" only if neither is set (effectively never on a real OS).
+fn home_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/"))
+}
+
+/// Pure cwd decision (testable without touching env/filesystem).
+/// - `env_override` (GG_APP_CWD) always wins.
+/// - dev build → the workspace root (`CARGO_MANIFEST_DIR/../..`).
+/// - bundled (release) → `home`. `CARGO_MANIFEST_DIR` is baked in at COMPILE
+///   time, so in a shipped binary it's the CI build machine's path (e.g.
+///   `/Users/runner/work/...`) which doesn't exist on the user's machine — the
+///   sidecar would crash with EACCES trying to use it. Home always exists and
+///   is writable; the project picker re-points the window immediately anyway.
+fn pick_cwd(env_override: Option<String>, is_dev: bool, dev_root: PathBuf, home: PathBuf) -> PathBuf {
+    if let Some(p) = env_override {
+        return PathBuf::from(p);
+    }
+    if is_dev {
+        return dev_root;
+    }
+    home
 }
 
 /// Spawn a Node agent sidecar bound to one window (`label`) + project `cwd`.
@@ -1094,6 +1123,44 @@ mod tests {
     fn pick_sidecar_bundled_falls_back_without_resource() {
         let got = pick_sidecar(None, false, None);
         assert_eq!(got, workspace_sidecar());
+    }
+
+    #[test]
+    fn pick_cwd_env_override_wins() {
+        let got = pick_cwd(
+            Some("/work/proj".into()),
+            true,
+            PathBuf::from("/repo"),
+            PathBuf::from("/home/user"),
+        );
+        assert_eq!(got, PathBuf::from("/work/proj"));
+        // ...even in release mode.
+        let got = pick_cwd(
+            Some("/work/proj".into()),
+            false,
+            PathBuf::from("/repo"),
+            PathBuf::from("/home/user"),
+        );
+        assert_eq!(got, PathBuf::from("/work/proj"));
+    }
+
+    #[test]
+    fn pick_cwd_dev_uses_workspace_root() {
+        let got = pick_cwd(None, true, PathBuf::from("/repo"), PathBuf::from("/home/user"));
+        assert_eq!(got, PathBuf::from("/repo"));
+    }
+
+    #[test]
+    fn pick_cwd_release_uses_home_not_build_path() {
+        // The crux of the release bug: in a shipped binary the dev_root is the CI
+        // build machine's path; release must ignore it and use the home dir.
+        let got = pick_cwd(
+            None,
+            false,
+            PathBuf::from("/Users/runner/work/gg-framework/gg-framework"),
+            PathBuf::from("/home/user"),
+        );
+        assert_eq!(got, PathBuf::from("/home/user"));
     }
 
     #[test]
