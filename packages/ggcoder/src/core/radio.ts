@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
+import path from "node:path";
 import { log } from "./logger.js";
 
 /**
@@ -59,6 +60,45 @@ export const RADIO_STATIONS: readonly RadioStation[] = [
 interface PlayerCandidate {
   cmd: string;
   args: (url: string) => string[];
+}
+
+/**
+ * Well-known directories where streaming players get installed but which a
+ * GUI app's minimal PATH usually omits. macOS apps launched from Finder/Dock
+ * inherit only `/usr/bin:/bin:/usr/sbin:/sbin` — not Homebrew (`/opt/homebrew/bin`
+ * on Apple Silicon, `/usr/local/bin` on Intel) or MacPorts (`/opt/local/bin`),
+ * so `spawn("mpv")` ENOENTs even when mpv is installed. We search these in
+ * addition to PATH. Linux dirs cover the common package-manager prefixes.
+ */
+function extraPlayerDirs(): readonly string[] {
+  switch (process.platform) {
+    case "darwin":
+      return ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"];
+    case "linux":
+      return ["/usr/bin", "/usr/local/bin", "/bin", "/snap/bin"];
+    default:
+      return [];
+  }
+}
+
+/**
+ * Resolve a player command to a runnable path. Returns `cmd` unchanged when it
+ * already resolves via PATH (the common dev case); otherwise probes the
+ * well-known install dirs and returns the first absolute hit. Returns null when
+ * the binary genuinely isn't installed anywhere we know to look.
+ */
+function resolvePlayerPath(cmd: string): string | null {
+  // An explicit path is used as-is.
+  if (cmd.includes(path.sep)) return existsSync(cmd) ? cmd : null;
+
+  // 1) PATH (covers terminal launches + any inherited shell environment).
+  const pathDirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  // 2) Well-known dirs a GUI PATH typically omits.
+  for (const dir of [...pathDirs, ...extraPlayerDirs()]) {
+    const candidate = path.join(dir, cmd);
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
 /**
@@ -190,8 +230,12 @@ export function playRadio(stationId: string): PlayResult {
   }
 
   for (const player of PLAYERS) {
+    // Resolve to an absolute path first so we find players in Homebrew/MacPorts
+    // dirs that a GUI app's minimal PATH omits. Skip when not installed.
+    const bin = resolvePlayerPath(player.cmd);
+    if (!bin) continue;
     try {
-      const child = spawn(player.cmd, player.args(station.url), {
+      const child = spawn(bin, player.args(station.url), {
         detached: process.platform !== "win32",
         stdio: "ignore",
       });
