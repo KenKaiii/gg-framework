@@ -720,6 +720,10 @@ body {
   border-radius: var(--radius-card);
   padding: 18px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  /* Modals can be mounted inside centered containers (e.g. `.home` is
+     text-align: center). Pin left alignment so every modal's text matches
+     regardless of where it's rendered. */
+  text-align: left;
 }
 .modal-title {
   font-size: 15px;

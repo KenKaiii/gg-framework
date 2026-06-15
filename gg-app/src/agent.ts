@@ -371,6 +371,9 @@ export async function saveSettings(projectsRoot: string): Promise<void> {
  * message on invalid name / conflict.
  */
 export async function createProject(name: string): Promise<string> {
+  // Mutating op: gate on readiness so a fast click on a slow-booting (release)
+  // sidecar waits instead of throwing "sidecar not ready".
+  await waitForReady();
   const res = await invoke<{ path: string }>("agent_create_project", { name });
   return res.path;
 }

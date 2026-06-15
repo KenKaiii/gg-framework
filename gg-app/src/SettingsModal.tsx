@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { theme } from "./theme";
 import { Modal } from "./Modal";
 import { waitForReady, getSettings, saveSettings } from "./agent";
+import { toast } from "./toast";
 
 interface Props {
   onClose: () => void;
@@ -32,9 +33,14 @@ export function SettingsModal({ onClose, onSaved }: Props): React.ReactElement {
     if (!projectsRoot.trim() || busy) return;
     setBusy(true);
     try {
+      // The sidecar may still be starting (or respawning) — without this the
+      // invoke throws "sidecar not ready" and the save silently fails.
+      await waitForReady();
       await saveSettings(projectsRoot.trim());
       onSaved?.(projectsRoot.trim());
       onClose();
+    } catch (e) {
+      toast(`Couldn't save: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setBusy(false);
     }
