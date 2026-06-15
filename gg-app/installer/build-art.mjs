@@ -77,12 +77,18 @@ async function toBmp(srcPng, width, height, outName) {
 async function main() {
   mkdirSync(outDir, { recursive: true });
 
-  // DMG background: keep PNG, just normalize to a clean 1320×800.
+  // DMG background MUST be 660×400 px to match the Finder window's point size:
+  // Finder maps 1 background pixel → 1 window point (it does NOT scale the
+  // image to fit), so a larger image only shows its top-left crop. We author
+  // dmg.html at 2× (1320×800) and downscale here → supersampled/crisp at the
+  // correct final size. Drop-zone rings at 2×(360,340)/(960,340) become
+  // (180,170)/(480,170), matching appPosition / applicationFolderPosition in
+  // tauri.conf.json.
   await sharp(join(here, "dmg-background.png"))
-    .resize(1320, 800, { fit: "fill" })
+    .resize(660, 400, { fit: "fill" })
     .png()
     .toFile(join(outDir, "dmg-background.png"));
-  console.log("wrote dmg-background.png (1320×800)");
+  console.log("wrote dmg-background.png (660×400)");
 
   await toBmp(join(here, "nsis-sidebar.png"), 164, 314, "nsis-sidebar.bmp");
   await toBmp(join(here, "nsis-header.png"), 150, 57, "nsis-header.bmp");

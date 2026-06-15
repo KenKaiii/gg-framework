@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "gg-coder",
+  "productName": "GG Coder",
   "version": "0.1.1",
   "identifier": "com.ggcoder.app",
   "build": {
