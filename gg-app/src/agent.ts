@@ -259,13 +259,21 @@ export async function authApiKey(provider: string, key: string): Promise<void> {
   await invoke("app_auth_apikey", { provider, key });
 }
 
-/** Begin an OAuth login; progress arrives via subscribe() auth_* events. */
+/**
+ * Begin an OAuth login; progress arrives via subscribe() auth_* events. Unlike
+ * the API-key/logout paths (handled natively in Rust), the OAuth flow is proxied
+ * through the per-window Node sidecar, so wait for it to come up first — on the
+ * login hub the sidecar may still be booting, and invoking early throws the
+ * "sidecar not ready" error users hit when clicking Continue.
+ */
 export async function authOAuthStart(provider: string): Promise<void> {
+  await waitForReady();
   await invoke("agent_auth_oauth_start", { provider });
 }
 
-/** Submit a pasted OAuth code to an in-flight login. */
+/** Submit a pasted OAuth code to an in-flight login. Sidecar-proxied like start. */
 export async function authOAuthCode(code: string): Promise<void> {
+  await waitForReady();
   await invoke("agent_auth_oauth_code", { code });
 }
 
