@@ -1421,7 +1421,7 @@ dependencies = [
 
 [[package]]
 name = "gg-app"
-version = "0.1.23"
+version = "0.1.24"
 dependencies = [
  "futures-util",
  "libc",
@@ -1598,9 +1598,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.15.5"
+version = "0.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
+checksum = "5971ac85611da7067dbfcabef3c70ebb5606018acd9e2a3903a0da507521e0d5"
 dependencies = [
  "foldhash 0.1.5",
 ]
@@ -5029,7 +5029,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47b807c72e1bac69382b3a6fb3dbe8ea4c0ed87ff5629b8685ae6b9a611028fe"
 dependencies = [
  "bitflags 2.13.0",
- "hashbrown 0.15.5",
+ "hashbrown 0.15.4",
  "indexmap 2.14.0",
  "semver",
 ]
