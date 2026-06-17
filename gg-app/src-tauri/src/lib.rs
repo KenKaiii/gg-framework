@@ -1,9 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 use futures_util::StreamExt;
 use tauri::{Emitter, EventTarget, Manager, RunEvent, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
@@ -51,16 +54,27 @@ fn sidecar_base(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
 }
 
-/// Gracefully terminate a sidecar child so its SIGINT/SIGTERM handler can run
-/// `session.dispose()` (process/LSP/MCP shutdown) before exit. On Unix we send
-/// SIGTERM synchronously (non-blocking), then poll `try_wait()` for up to ~3s off
-/// the calling thread, SIGKILL as a fallback, and `wait()` to reap the zombie
-/// (std `Child` never auto-reaps). On Windows there is no SIGTERM, so the
-/// fallback `kill()` is the only step.
+/// Gracefully terminate a sidecar child AND its entire process tree so MCP/LSP
+/// children (spawned without `detached`, so they share the sidecar's process
+/// group) die with it — no orphans on window-close/project-switch/quit.
+///
+/// On Unix the sidecar is spawned as a process-group leader (see
+/// `spawn_sidecar_with_session`), so sending signals to `-pid` (negative pid =
+/// the whole group) reaps every descendant in one shot. We SIGTERM the group so
+/// the sidecar's SIGTERM handler can run `session.dispose()`, poll `try_wait()`
+/// for up to ~3s, then SIGKILL the group and `wait()` to reap the direct child
+/// (std `Child` never auto-reaps).
+///
+/// On Windows there is no process-group kill, so we tree-kill via
+/// `taskkill /T /F` (kills the descendant tree), then `wait()` to reap.
 fn terminate_child(mut child: Child) {
+    let pid = child.id() as i32;
     #[cfg(unix)]
     unsafe {
-        libc::kill(child.id() as i32, libc::SIGTERM);
+        // Negative pid = signal the entire process group. The sidecar is its
+        // own group leader (pgid == sidecar pid), so this reaches every
+        // non-detached descendant (MCP stdio children, LSP servers).
+        libc::kill(-pid, libc::SIGTERM);
     }
     std::thread::spawn(move || {
         #[cfg(unix)]
@@ -71,10 +85,162 @@ fn terminate_child(mut child: Child) {
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
+            // Grace period expired — force-kill the whole group.
+            unsafe {
+                libc::kill(-pid, libc::SIGKILL);
+            }
         }
-        let _ = child.kill(); // SIGKILL fallback (and the only step on Windows)
-        let _ = child.wait(); // reap
+        #[cfg(not(unix))]
+        {
+            // Tree-kill on Windows: /T kills the descendant tree, /F forces it.
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            // Fall back to direct kill if taskkill is unavailable.
+            let _ = child.kill();
+        }
+        let _ = child.wait(); // reap the direct child (avoid zombie)
     });
+}
+
+// ── Startup orphan sweeper ─────────────────────────────────────────────────
+// When the app is force-quit, crashes, or is killed during a dev run, the
+// sidecar process tree (Node sidecar + MCP stdio children + LSP servers) is
+// orphaned — reparented to init (pid 1). Rust only kills the direct sidecar
+// PID, so children survive. Without a startup sweep these accumulate forever.
+// We run once at the top of `.setup`, before new sidecars are spawned.
+
+/// One process row from `ps -eo pid=,ppid=,command=`.
+struct ProcInfo {
+    pid: i32,
+    ppid: i32,
+    command: String,
+}
+
+/// Command substrings that identify GG Coder sidecar trees. `app-sidecar`
+/// matches both bundled `app-sidecar.mjs` and dev `app-sidecar.js`;
+/// `kencode-search` catches long-dead MCP children already reparented to init.
+const ORPHAN_COMMAND_PATTERNS: &[&str] = &["app-sidecar", "kencode-search"];
+
+/// Pure (no I/O): given a process-table snapshot and the current app's pid,
+/// return the set of orphaned sidecar-tree PIDs that should be SIGKILLed.
+///
+/// An orphan is a process whose command matches a known pattern AND whose
+/// parent is dead (`ppid == 1` or `ppid` absent from the snapshot). We then
+/// transitively include descendants of each orphan root (catches MCP/LSP trees
+/// still linked to a freshly-dead sidecar) plus any pattern-matching process
+/// with a dead parent not already collected (catches children reparented to
+/// init before the snapshot). The current app pid and its live sidecars are
+/// never matched — a live sidecar's parent is the still-running `gg-app`, so
+/// its `ppid` is alive in the snapshot.
+fn orphan_killset(snapshot: &[ProcInfo], self_pid: i32) -> Vec<i32> {
+    let live_pids: HashSet<i32> = snapshot.iter().map(|p| p.pid).collect();
+    let mut parent_children: HashMap<i32, Vec<i32>> = HashMap::new();
+    for p in snapshot {
+        parent_children.entry(p.ppid).or_default().push(p.pid);
+    }
+
+    let matches_pattern = |cmd: &str| ORPHAN_COMMAND_PATTERNS.iter().any(|pat| cmd.contains(pat));
+    let parent_dead = |ppid: i32| ppid == 1 || !live_pids.contains(&ppid);
+
+    // Roots: pattern-matching processes with a dead parent (not self).
+    let mut killset: HashSet<i32> = HashSet::new();
+    for p in snapshot {
+        if p.pid == self_pid {
+            continue;
+        }
+        if matches_pattern(&p.command) && parent_dead(p.ppid) {
+            killset.insert(p.pid);
+        }
+    }
+
+    // Descendants: transitively collect children of each root via the map.
+    // This catches freshly-orphaned MCP/LSP trees still linked to the dead
+    // sidecar in this snapshot.
+    let mut stack: Vec<i32> = killset.iter().copied().collect();
+    while let Some(parent) = stack.pop() {
+        if let Some(children) = parent_children.get(&parent) {
+            for &child in children {
+                if child != self_pid && killset.insert(child) {
+                    stack.push(child);
+                }
+            }
+        }
+    }
+
+    // Reparented: any pattern-matching process with a dead parent NOT already
+    // collected (e.g. kencode-search reparented to pid 1 before the snapshot,
+    // whose original sidecar parent may be gone entirely).
+    for p in snapshot {
+        if p.pid == self_pid {
+            continue;
+        }
+        if matches_pattern(&p.command) && parent_dead(p.ppid) {
+            killset.insert(p.pid);
+        }
+    }
+
+    let mut result: Vec<i32> = killset.into_iter().collect();
+    result.sort_unstable();
+    result
+}
+
+/// OS action (Unix only): snapshot the process table, classify orphans, and
+/// SIGKILL each. Best-effort + logged; never panics. Runs once at startup before
+/// any sidecar is spawned.
+#[cfg(unix)]
+fn sweep_orphan_sidecars() {
+    let output = match Command::new("ps")
+        .args(["-eo", "pid=,ppid=,command="])
+        .output()
+    {
+        Ok(o) => o,
+        Err(e) => {
+            log::warn!("orphan sweep: failed to run ps: {e}");
+            return;
+        }
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let self_pid = std::process::id() as i32;
+
+    let snapshot: Vec<ProcInfo> = stdout
+        .lines()
+        .filter_map(|line| {
+            // split_whitespace collapses the column padding (multiple spaces)
+            // ps emits between pid/ppid/command fields into single delimiters.
+            let mut parts = line.split_whitespace();
+            let pid: i32 = parts.next()?.parse().ok()?;
+            let ppid: i32 = parts.next()?.parse().ok()?;
+            // The rest of the line is the full command (may contain spaces).
+            // Pattern matching uses .contains(), so rejoining with single
+            // spaces is fine.
+            let command = parts.collect::<Vec<_>>().join(" ");
+            Some(ProcInfo { pid, ppid, command })
+        })
+        .collect();
+
+    let killset = orphan_killset(&snapshot, self_pid);
+    if killset.is_empty() {
+        log::info!("orphan sweep: no stale sidecars found");
+        return;
+    }
+
+    log::info!("orphan sweep: killing {} stale process(es)", killset.len());
+    for pid in &killset {
+        let cmd = snapshot
+            .iter()
+            .find(|p| &p.pid == pid)
+            .map(|p| p.command.as_str())
+            .unwrap_or("?");
+        log::info!("orphan sweep: SIGKILL pid {pid}: {cmd}");
+        // Per-PID SIGKILL (not group) — works for both old non-leader orphans
+        // from prior builds and new group-leader orphans.
+        unsafe {
+            let _ = libc::kill(*pid, libc::SIGKILL);
+        }
+    }
 }
 
 /// Resolve the sidecar port for the window that issued a command.
@@ -1719,6 +1885,11 @@ fn spawn_sidecar_with_session(
         .env("GG_APP_CWD", &cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // Make the sidecar a process-group leader so a single group-kill
+    // (`kill(-pid)`) in `terminate_child` reaps its entire descendant tree
+    // (MCP stdio children, LSP servers) — no orphans on close/switch/quit.
+    #[cfg(unix)]
+    cmd.process_group(0);
     if let Some(sp) = &session_path {
         cmd.env("GG_APP_SESSION_ID", sp);
     }
@@ -1919,6 +2090,11 @@ pub fn run() {
             window_restore_target
         ])
         .setup(|app| {
+            // Sweep orphaned sidecars from previous (crashed/force-quit) app
+            // instances BEFORE spawning any new sidecars — they'd otherwise
+            // accumulate forever across launches. Best-effort + logged.
+            #[cfg(unix)]
+            sweep_orphan_sidecars();
             // Restore the previous session's windows (each at its project +
             // session) when a workspace snapshot exists; otherwise build the
             // single default `main` window. Windows are built in code (not from
@@ -2303,5 +2479,112 @@ mod tests {
         } else {
             assert_eq!(got, WindowChrome::Native);
         }
+    }
+
+    // ── orphan_killset classifier tests ──────────────────────────────────────
+
+    /// Helper: build a ProcInfo row.
+    fn proc(pid: i32, ppid: i32, command: &str) -> ProcInfo {
+        ProcInfo {
+            pid,
+            ppid,
+            command: command.to_string(),
+        }
+    }
+
+    #[test]
+    fn orphan_sidecar_with_ppid_1_is_killed() {
+        // A sidecar reparented to init is an orphan.
+        let snap = vec![proc(500, 1, "node /app/sidecar/app-sidecar.mjs")];
+        let ks = orphan_killset(&snap, 100);
+        assert_eq!(ks, vec![500]);
+    }
+
+    #[test]
+    fn live_sidecar_with_alive_parent_is_excluded() {
+        // The current gg-app (pid 100) is the parent of a live sidecar (pid 200).
+        let snap = vec![
+            proc(100, 1, "/Applications/GG Coder.app/Contents/MacOS/gg-app"),
+            proc(200, 100, "ggnode app-sidecar.mjs"),
+        ];
+        let ks = orphan_killset(&snap, 100);
+        assert!(ks.is_empty(), "live sidecar must not be killed: {ks:?}");
+    }
+
+    #[test]
+    fn orphan_sidecar_with_dead_parent_not_in_snapshot() {
+        // Parent pid 999 is absent from the snapshot and ≠ 1 → dead → orphan.
+        let snap = vec![proc(300, 999, "node app-sidecar.js")];
+        let ks = orphan_killset(&snap, 100);
+        assert!(ks.contains(&300));
+    }
+
+    #[test]
+    fn reparented_kencode_is_killed() {
+        // kencode-search reparented to init.
+        let snap = vec![proc(700, 1, "node kencode-search")];
+        let ks = orphan_killset(&snap, 100);
+        assert_eq!(ks, vec![700]);
+    }
+
+    #[test]
+    fn orphan_descendant_tree_is_collected() {
+        // sidecar(500, orphaned) → npm exec(501) → node kencode-search(502)
+        let snap = vec![
+            proc(500, 1, "node app-sidecar.js"),
+            proc(501, 500, "npm exec @kenkaiiii/kencode-search"),
+            proc(502, 501, "node kencode-search"),
+        ];
+        let ks = orphan_killset(&snap, 100);
+        assert!(ks.contains(&500));
+        assert!(ks.contains(&501));
+        assert!(ks.contains(&502));
+        assert_eq!(ks.len(), 3);
+    }
+
+    #[test]
+    fn current_app_pid_never_killed() {
+        // Even if self somehow matches a pattern and has a dead parent, exclude it.
+        let snap = vec![proc(100, 1, "node app-sidecar.js")];
+        let ks = orphan_killset(&snap, 100);
+        assert!(ks.is_empty(), "self pid must never be in killset: {ks:?}");
+    }
+
+    #[test]
+    fn unrelated_node_with_dead_parent_excluded() {
+        // A vite process with a dead parent does NOT match any pattern → excluded.
+        let snap = vec![proc(800, 1, "node vite")];
+        let ks = orphan_killset(&snap, 100);
+        assert!(ks.is_empty(), "non-matching process must not be killed: {ks:?}");
+    }
+
+    #[test]
+    fn dedup_when_descendant_also_matches_pattern() {
+        // sidecar(500, orphaned) → kencode-search(501). Both match patterns,
+        // but 501 is both a descendant AND a reparented-pattern candidate.
+        // It must appear exactly once.
+        let snap = vec![
+            proc(500, 1, "node app-sidecar.js"),
+            proc(501, 500, "node kencode-search"),
+        ];
+        let ks = orphan_killset(&snap, 100);
+        let count_501 = ks.iter().filter(|&&p| p == 501).count();
+        assert_eq!(count_501, 1, "pid 501 must appear exactly once: {ks:?}");
+        assert_eq!(ks.len(), 2);
+    }
+
+    #[test]
+    fn multi_instance_concurrent_dev_runs_safe() {
+        // Two gg-app instances each with their own sidecar — neither is orphaned.
+        let snap = vec![
+            proc(100, 1, "gg-app"),
+            proc(200, 100, "node app-sidecar.js"),
+            proc(300, 1, "gg-app"),
+            proc(400, 300, "node app-sidecar.js"),
+        ];
+        // Instance 1 sweeps.
+        assert!(orphan_killset(&snap, 100).is_empty());
+        // Instance 2 sweeps.
+        assert!(orphan_killset(&snap, 300).is_empty());
     }
 }
