@@ -354,6 +354,12 @@ function App(): React.ReactElement {
   const thinkingStartRef = useRef<number | null>(null);
   const thinkingAccumRef = useRef<number>(0);
 
+  // Whether the transcript is "pinned" to the bottom. Auto-scroll only runs
+  // while pinned. The user scrolling up un-pins it — so they can read freely
+  // even while the agent keeps streaming — and scrolling back to the bottom
+  // re-pins. Default true so a fresh transcript follows the newest output.
+  const stickToBottomRef = useRef(true);
+
   // Pin to the bottom. Images (screenshots / attachments) load asynchronously
   // and grow the content after this fires, so it's also called from each image's
   // onLoad to keep the newest content visible.
@@ -362,18 +368,36 @@ function App(): React.ReactElement {
     if (el) el.scrollTo({ top: el.scrollHeight });
   }, []);
 
-  // Re-pin to the bottom before every paint. The live tool panel + activity bar
-  // (.liveregion) grow/shrink below the transcript as tools run and finish;
-  // since the transcript is a flexible sibling, that growth steals height from
-  // it and would leave the newest content (often the just-sent user prompt)
-  // scrolled under the fold. Keying this layout effect on the live-region's
-  // height inputs (tool feed, run state, done status) AND `items` re-pins
-  // synchronously after layout but before paint, so the prompt is never hidden.
-  // useLayoutEffect (not a ResizeObserver) avoids the post-paint flash and the
-  // RO's unreliable timing relative to the flex re-layout.
+  // Same as scrollToBottom, but a no-op while the user has scrolled up to read.
+  const maybeScrollToBottom = useCallback(() => {
+    if (stickToBottomRef.current) scrollToBottom();
+  }, [scrollToBottom]);
+
+  // Track the user's scroll intent. Any real scroll that lands more than a
+  // small threshold above the bottom un-pins; returning to (near) the bottom
+  // re-pins. Our own programmatic scrollToBottom lands at the bottom, so it
+  // simply keeps the pin set — no need to distinguish it from a user scroll.
+  const onTranscriptScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distanceFromBottom <= 48;
+  }, []);
+
+  // Re-pin to the bottom before every paint — but only while pinned. The live
+  // tool panel + activity bar (.liveregion) grow/shrink below the transcript as
+  // tools run and finish; since the transcript is a flexible sibling, that
+  // growth steals height from it and would leave the newest content (often the
+  // just-sent user prompt) scrolled under the fold. Keying this layout effect on
+  // the live-region's height inputs (tool feed, run state, done status) AND
+  // `items` re-pins synchronously after layout but before paint, so the prompt
+  // is never hidden. useLayoutEffect (not a ResizeObserver) avoids the post-paint
+  // flash and the RO's unreliable timing relative to the flex re-layout. The
+  // stick-to-bottom gate keeps it from yanking the view away while the user is
+  // scrolled up reading mid-stream.
   useLayoutEffect(() => {
-    scrollToBottom();
-  }, [items, liveToolFeed, running, doneStatus, scrollToBottom]);
+    maybeScrollToBottom();
+  }, [items, liveToolFeed, running, doneStatus, maybeScrollToBottom]);
 
   useEffect(() => {
     stateRef.current = state;
@@ -877,6 +901,7 @@ function App(): React.ReactElement {
         }
         case "session_reset":
           // Sidecar started a fresh session — clear the transcript + counters.
+          stickToBottomRef.current = true;
           setItems([]);
           setLiveToolFeed([]);
           setTokens(0);
@@ -938,6 +963,8 @@ function App(): React.ReactElement {
       // only sees live SSE events, so past messages must be fetched explicitly.
       const history = await listHistory();
       if (history.length > 0) {
+        // A freshly hydrated session lands at the bottom (newest message).
+        stickToBottomRef.current = true;
         setItems(
           history.map((h): Item => {
             if (h.hook) return { kind: "hook", id: nextId(), hook: h.hook };
@@ -1187,6 +1214,8 @@ function App(): React.ReactElement {
   function submitText(text: string, label?: string): void {
     const trimmed = text.trim();
     if (!trimmed || !readyRef.current || running) return;
+    // A user send always re-pins to the bottom — they want to see their message.
+    stickToBottomRef.current = true;
     pushItem({
       kind: "user",
       id: nextId(),
@@ -1206,6 +1235,8 @@ function App(): React.ReactElement {
     const trimmed = input.trim();
     if (!readyRef.current) return;
     if (!trimmed && attachments.length === 0 && mentionedPaths.length === 0) return;
+    // A user send always re-pins to the bottom — they want to see their message.
+    stickToBottomRef.current = true;
     // Referenced files are appended to the prompt as a small block so the agent
     // knows which paths to read; they aren't shown in the user's bubble text.
     const prompt =
@@ -1320,6 +1351,7 @@ function App(): React.ReactElement {
   // the hydrate effect even when needsProject is already false (switching
   // sessions from the reopened picker), which flipping the boolean alone won't.
   function onProjectChosen(): void {
+    stickToBottomRef.current = true;
     setItems([]);
     setLiveToolFeed([]);
     setState(null);
@@ -1492,7 +1524,7 @@ function App(): React.ReactElement {
         )}
       </div>
 
-      <div className="transcript" ref={scrollRef}>
+      <div className="transcript" ref={scrollRef} onScroll={onTranscriptScroll}>
         {!hydrated && items.length === 0 ? (
           <TranscriptSkeleton />
         ) : (
@@ -1505,7 +1537,7 @@ function App(): React.ReactElement {
               </div>
             )}
             {items.map((it) => (
-              <TranscriptRow key={it.id} item={it} onImageLoad={scrollToBottom} />
+              <TranscriptRow key={it.id} item={it} onImageLoad={maybeScrollToBottom} />
             ))}
           </>
         )}
