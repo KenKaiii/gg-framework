@@ -734,6 +734,25 @@ body {
   font-weight: 600;
   color: var(--text);
 }
+/* Position pill — "1/4" reading-order indicator for multi-window orientation.
+   Shown only when >1 window is open. Dimmed when this window is not focused. */
+.window-index {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 0 7px;
+  line-height: 18px;
+  white-space: nowrap;
+  user-select: none;
+}
+.window-index.dim {
+  opacity: 0.45;
+}
 .chat-head-nav {
   display: flex;
   align-items: center;
@@ -1225,6 +1244,12 @@ body {
 }
 .winlayout-item:hover {
   background: var(--surface-1);
+}
+/* Divider between the create-presets (2/4/6) and the auto-arrange action. */
+.winlayout-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
 }
 
 .transcript {
@@ -1814,6 +1839,13 @@ body {
 }
 .inputwrap:focus-within {
   border-color: var(--border-strong);
+}
+/* Focused window: prominent primary border + subtle ring so the active window's
+   input is unmistakable when multiple windows are tiled. Layers ABOVE the
+   subtle :focus-within (which only reacts to the textarea being focused). */
+.app.window-focused .inputwrap {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent);
 }
 .inputwrap.dragover {
   border-color: var(--primary);

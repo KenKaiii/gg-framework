@@ -575,6 +575,44 @@ export async function newWindow(): Promise<void> {
   }
 }
 
+/**
+ * Cycle keyboard focus by `offset` positions (wraps around) through windows in
+ * reading order. +1 = forward (Cmd/Ctrl+`), -1 = backward (Cmd/Ctrl+Shift+`).
+ * No-op when ≤1 window is open.
+ */
+export async function focusWindowByOffset(offset: number): Promise<void> {
+  try {
+    await invoke("focus_window_by_offset", { offset });
+  } catch (e) {
+    await logError(`focus_window_by_offset failed: ${String(e)}`);
+  }
+}
+
+/** Re-tile every open window into a clean grid (no create/destroy). */
+export async function arrangeAllWindows(): Promise<void> {
+  try {
+    await invoke("arrange_all");
+  } catch (e) {
+    await logError(`arrange_all failed: ${String(e)}`);
+  }
+}
+
+/**
+ * Payload of the `window-order` broadcast: window labels in reading order
+ * (rows top→bottom, left→right within a row) and the label of the
+ * currently-focused window (or null).
+ */
+export interface WindowOrderEvent {
+  order: string[];
+  focused: string | null;
+}
+
+/** Subscribe THIS window to reading-order broadcasts. Returns an unlisten fn. */
+export async function onWindowOrder(cb: (e: WindowOrderEvent) => void): Promise<() => void> {
+  const un = await appWindow.listen<WindowOrderEvent>("window-order", (e) => cb(e.payload));
+  return un;
+}
+
 // ── Telegram serve (remote control via Telegram) ───────────
 
 /** Telegram config status. `configured` is false until a bot token + user id

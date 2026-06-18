@@ -16,10 +16,14 @@ import {
   runAllTasks,
   deleteTask,
   newWindow,
+  focusWindowByOffset,
+  arrangeAllWindows,
+  onWindowOrder,
   restoreTarget,
   acceptPlan as acceptPlanIPC,
   subscribe,
   isSecondaryWindow,
+  windowLabel,
   setWindowTitle,
   openProjectPath,
   type SidecarEvent,
@@ -453,17 +457,48 @@ function App(): React.ReactElement {
     el.style.height = `${Math.min(el.scrollHeight, max)}px`;
   }, [input]);
 
-  // Cmd+N (macOS) / Ctrl+N (Linux/Windows) opens a new project window.
+  // Keyboard shortcuts for multi-window navigation.
+  //   Cmd/Ctrl+N         → new project window
+  //   Cmd/Ctrl+`          → cycle forward through windows (reading order)
+  //   Cmd/Ctrl+Shift+`    → cycle backward
+  //   Cmd/Ctrl+Shift+A    → auto-arrange all windows into a clean grid
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key.toLowerCase() === "n" && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta) return;
+      // New window: Cmd/Ctrl + N (no Shift/Alt).
+      if (e.key.toLowerCase() === "n" && !e.altKey && !e.shiftKey) {
         e.preventDefault();
         void newWindow();
+        return;
+      }
+      // Cycle windows: Cmd/Ctrl + Backquote (Shift = backward).
+      // Use e.code (physical key) — Shift turns ` into ~, but code stays stable.
+      if (e.code === "Backquote" && !e.altKey) {
+        e.preventDefault();
+        void focusWindowByOffset(e.shiftKey ? -1 : 1);
+        return;
+      }
+      // Auto-arrange all windows: Cmd/Ctrl + Shift + A.
+      if (e.shiftKey && (e.key === "a" || e.key === "A") && !e.altKey) {
+        e.preventDefault();
+        void arrangeAllWindows();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // Track whether THIS window holds OS focus (for the prominent input border).
+  // The webview's own focus/blur events are instant — no IPC round-trip.
+  const [windowFocused, setWindowFocused] = useState(true);
+
+  // Position in the multi-window reading order (e.g. window 2 of 4), plus
+  // whether this window is the focused one. Driven by the Rust `window-order`
+  // broadcast so the label updates automatically when windows move/close.
+  const [windowIndex, setWindowIndex] = useState<number | null>(null);
+  const [windowTotal, setWindowTotal] = useState(1);
+  const [isThisFocused, setIsThisFocused] = useState(true);
 
   // Focus the chat input whenever this window gains focus (or clicked anywhere),
   // so switching between project windows lands the cursor in the input without
@@ -489,12 +524,35 @@ function App(): React.ReactElement {
       }
       inputRef.current?.focus();
     };
-    window.addEventListener("focus", focusInput);
+    const onFocus = (): void => {
+      setWindowFocused(true);
+      focusInput();
+    };
+    const onBlur = (): void => setWindowFocused(false);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
     window.addEventListener("mouseup", focusInput);
     return () => {
-      window.removeEventListener("focus", focusInput);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
       window.removeEventListener("mouseup", focusInput);
     };
+  }, []);
+
+  // Subscribe to the reading-order broadcast from Rust so each window knows its
+  // position (e.g. "1/4") and whether it's focused. Updates automatically when
+  // windows are arranged, moved (debounced), created, closed, or focused.
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    void onWindowOrder((e) => {
+      const idx = e.order.indexOf(windowLabel);
+      setWindowIndex(idx >= 0 ? idx + 1 : null);
+      setWindowTotal(e.order.length);
+      setIsThisFocused(e.focused === windowLabel);
+    }).then((fn) => {
+      un = fn;
+    });
+    return () => un?.();
   }, []);
 
   // Global UI click sound — plays only when an actual interactive element is
@@ -1504,7 +1562,7 @@ function App(): React.ReactElement {
 
   return (
     <div
-      className={`app${isFileDragOver ? " app-file-dragover" : ""}`}
+      className={`app${isFileDragOver ? " app-file-dragover" : ""}${windowFocused ? " window-focused" : ""}`}
       style={{ background: theme.background }}
       onDragEnter={handleWindowDragEnter}
       onDragOver={handleWindowDragOver}
@@ -1524,6 +1582,15 @@ function App(): React.ReactElement {
           <span className="chat-head-title" data-tauri-drag-region>
             {sessionTitle ?? "GG Coder"}
           </span>
+          {windowTotal > 1 && windowIndex !== null && (
+            <span
+              className={`window-index${isThisFocused ? "" : " dim"}`}
+              data-tauri-drag-region
+              title={`Window ${windowIndex} of ${windowTotal} · ⌘\` to cycle`}
+            >
+              {windowIndex}/{windowTotal}
+            </span>
+          )}
           <button
             className="nav-toggle"
             title={navHidden ? "Show nav buttons" : "Hide nav buttons"}

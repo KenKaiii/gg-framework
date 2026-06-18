@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AppWindow } from "lucide-react";
 import { theme } from "./theme";
-import { setupWindows } from "./agent";
+import { setupWindows, arrangeAllWindows } from "./agent";
 import { playSound } from "./sounds";
 
 /**
@@ -40,6 +40,17 @@ export function WindowLayoutButton({ onArrange }: { onArrange?: () => void }): R
         playSound("hover");
       }
       await setupWindows(count);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function arrangeAll(): Promise<void> {
+    setOpen(false);
+    if (busy) return;
+    setBusy(true);
+    try {
+      await arrangeAllWindows();
     } finally {
       setBusy(false);
     }
@@ -86,6 +97,14 @@ export function WindowLayoutButton({ onArrange }: { onArrange?: () => void }): R
               onClick={() => void applyLayout(6)}
             >
               6 windows
+            </button>
+            <div className="winlayout-divider" />
+            <button
+              className="winlayout-item"
+              style={{ color: theme.text }}
+              onClick={() => void arrangeAll()}
+            >
+              Auto-arrange all
             </button>
           </div>
         </>

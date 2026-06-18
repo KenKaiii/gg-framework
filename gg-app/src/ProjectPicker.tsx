@@ -6,6 +6,8 @@ import {
   listSessions,
   selectProject,
   getSettings,
+  focusWindowByOffset,
+  arrangeAllWindows,
   type DiscoveredProject,
   type RecentSession,
 } from "./agent";
@@ -54,6 +56,24 @@ export function ProjectPicker({
   const filteredProjects = q
     ? projects.filter((p) => p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q))
     : projects;
+
+  // Multi-window shortcuts work from the picker too, so you can cycle/arrange
+  // before choosing a project.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta) return;
+      if (e.code === "Backquote" && !e.altKey) {
+        e.preventDefault();
+        void focusWindowByOffset(e.shiftKey ? -1 : 1);
+      } else if (e.shiftKey && (e.key === "a" || e.key === "A") && !e.altKey) {
+        e.preventDefault();
+        void arrangeAllWindows();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
