@@ -1471,6 +1471,77 @@ async fn agent_serve_stop(
     res.json::<serde_json::Value>().await.map_err(|e| e.to_string())
 }
 
+/// Proxy: list MCP servers with live connection status (`{ servers: […] }`).
+/// `cwd` (project scope) scopes the project servers to a specific project path.
+#[tauri::command]
+async fn agent_mcp_list(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+    cwd: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("sidecar not ready")?;
+    let mut req = client.get(format!("{}/mcp", sidecar_base(port)));
+    if let Some(c) = cwd.as_deref().filter(|c| !c.trim().is_empty()) {
+        req = req.query(&[("cwd", c)]);
+    }
+    let res = req.send().await.map_err(|e| e.to_string())?;
+    res.json::<serde_json::Value>().await.map_err(|e| e.to_string())
+}
+
+/// Proxy: add an MCP server from a pasted `claude mcp add …` line. Returns
+/// `{ ok, name, connected, toolCount, error? }`, or an error message on parse/save
+/// failure (the sidecar probes before saving but never blocks the save).
+/// `cwd` is required for project scope (the target project path).
+#[tauri::command]
+async fn agent_mcp_add(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+    line: String,
+    scope: String,
+    cwd: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("sidecar not ready")?;
+    let res = client
+        .post(format!("{}/mcp/add", sidecar_base(port)))
+        .json(&serde_json::json!({ "line": line, "scope": scope, "cwd": cwd }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = res.status();
+    let body = res
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        let msg = body
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("failed to add MCP server");
+        return Err(msg.to_string());
+    }
+    Ok(body)
+}
+
+/// Proxy: remove an MCP server by name. Returns `{ removed: boolean }`.
+/// `cwd` is required for project scope (the target project path).
+#[tauri::command]
+async fn agent_mcp_remove(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+    name: String,
+    scope: String,
+    cwd: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("sidecar not ready")?;
+    let res = client
+        .post(format!("{}/mcp/remove", sidecar_base(port)))
+        .json(&serde_json::json!({ "name": name, "scope": scope, "cwd": cwd }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    res.json::<serde_json::Value>().await.map_err(|e| e.to_string())
+}
+
 /// Proxy: create a new project folder under the configured projects root.
 /// Returns `{ path }` on success, or an error message on validation/conflict.
 #[tauri::command]
@@ -2414,6 +2485,9 @@ pub fn run() {
             agent_serve_status,
             agent_serve_start,
             agent_serve_stop,
+            agent_mcp_list,
+            agent_mcp_add,
+            agent_mcp_remove,
             gaze_focus,
             focus_window_by_offset,
             arrange_all,

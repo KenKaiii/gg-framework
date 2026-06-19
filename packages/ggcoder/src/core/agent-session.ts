@@ -35,7 +35,7 @@ import {
   type ProcessManager,
 } from "../tools/index.js";
 import type { BackgroundProcess } from "./process-manager.js";
-import { MCPClientManager, getMCPServers, getAllMcpServers } from "./mcp/index.js";
+import { MCPClientManager, getAllMcpServers } from "./mcp/index.js";
 import { log } from "./logger.js";
 import { setEstimatorModel } from "./compaction/token-estimator.js";
 import { discoverAgents } from "./agents.js";
@@ -281,7 +281,9 @@ export class AgentSession {
           // GLM not configured — skip Z.AI MCP servers
         }
       }
-      const mcpTools = await this.mcpManager.connectAll(getMCPServers(this.provider, apiKey));
+      const mcpTools = await this.mcpManager.connectAll(
+        await getAllMcpServers(this.provider, apiKey, this.cwd),
+      );
       this.tools.push(...mcpTools);
     } catch (err) {
       log(

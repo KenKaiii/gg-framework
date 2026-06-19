@@ -54,6 +54,15 @@ import { enrichProcessPath } from "./core/shell-path.js";
 import { downscaleForPreview } from "./utils/image.js";
 import { startServeMode, type ServeController } from "./modes/serve-mode.js";
 import { loadTelegramConfig, saveTelegramConfig, verifyBotToken } from "./core/telegram-config.js";
+import {
+  loadServers,
+  addServer,
+  removeServer,
+  parseMcpAddCommand,
+  MCPClientManager,
+  type MCPScope,
+  type MCPServerConfig,
+} from "./core/mcp/index.js";
 
 const ALL_PROVIDERS: Provider[] = [
   "anthropic",
@@ -365,6 +374,71 @@ function detectPromptCommand(
     }
   }
   return null;
+}
+
+// ── MCP server management (mirrors `ggcoder mcp`) ───────────────────────────
+// The webview's MCP modal lists configured servers with live connection status,
+// adds them via the same paste-a-`claude mcp add …` grammar, and removes them.
+// All persistence + connection logic lives in core/mcp (single source of truth);
+// these helpers only shape it for the wire.
+
+/** One wire row for the MCP list: a server config joined with its live status. */
+interface McpWireRow {
+  name: string;
+  scope: MCPScope;
+  ok: boolean;
+  toolCount: number;
+  error?: string;
+  kind: "stdio" | "http";
+  summary: string;
+}
+
+/** A short transport summary for display (URL for http/sse, command+args for stdio). */
+function mcpRowSummary(config: MCPServerConfig): string {
+  if (config.url) return config.url;
+  return [config.command, ...(config.args ?? [])].filter(Boolean).join(" ");
+}
+
+/** Load + connect every server, returning one wire row per server. Mirrors the
+ *  CLI dashboard's buildRows (connectAllDetailed, then dispose). Empty list
+ *  short-circuits before spawning any stdio process / opening any HTTP conn. */
+async function buildMcpRows(cwd: string): Promise<McpWireRow[]> {
+  const scoped = await loadServers(cwd);
+  if (scoped.length === 0) return [];
+
+  const manager = new MCPClientManager();
+  try {
+    const results = await manager.connectAllDetailed(scoped.map((s) => s.config));
+    return scoped.map((s): McpWireRow => {
+      const result = results.find((r) => r.name === s.config.name);
+      return {
+        name: s.config.name,
+        scope: s.scope,
+        ok: result?.ok ?? false,
+        toolCount: result?.toolCount ?? 0,
+        error: result?.error,
+        kind: s.config.url ? "http" : "stdio",
+        summary: mcpRowSummary(s.config),
+      };
+    });
+  } finally {
+    await manager.dispose();
+  }
+}
+
+/** Probe a single server's connection before persisting it. Never throws — a
+ *  failed probe returns ok:false with a human-readable error so the config can
+ *  still be saved. Mirrors the CLI's probeServer. */
+async function probeMcp(
+  config: MCPServerConfig,
+): Promise<{ ok: boolean; toolCount: number; error?: string }> {
+  const manager = new MCPClientManager();
+  try {
+    const result = await manager.probe(config);
+    return { ok: result.ok, toolCount: result.toolCount, error: result.error };
+  } finally {
+    await manager.dispose();
+  }
 }
 
 interface SseClient {
@@ -1609,6 +1683,106 @@ async function main(): Promise<void> {
         }
         json(res, 200, { running: false });
       })();
+      return;
+    }
+
+    // ── MCP server management (mirrors `ggcoder mcp`) ──────────────────
+    // `targetCwd` (project scope) overrides the window cwd so a server can be
+    // added/removed for ANY discovered project, not just this window's. Global
+    // scope ignores it (always ~/.gg/mcp.json).
+    if (method === "GET" && (url === "/mcp" || url.startsWith("/mcp?"))) {
+      const targetCwd = new URL(url, `http://${host}`).searchParams.get("cwd") ?? cwd;
+      void buildMcpRows(targetCwd)
+        .then((servers) => json(res, 200, { servers }))
+        .catch((err) => {
+          log("ERROR", "app-sidecar", "buildMcpRows failed", {
+            message: err instanceof Error ? err.message : String(err),
+          });
+          json(res, 200, { servers: [] });
+        });
+      return;
+    }
+
+    if (method === "POST" && url === "/mcp/add") {
+      void readBody(req).then(async (raw) => {
+        let line: string;
+        let scopeValue: string;
+        let bodyCwd: string | undefined;
+        try {
+          const body = JSON.parse(raw) as {
+            line?: string;
+            scope?: string;
+            cwd?: string;
+          };
+          line = body.line ?? "";
+          scopeValue = body.scope ?? "global";
+          bodyCwd = body.cwd;
+        } catch {
+          json(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        const scope: MCPScope = scopeValue === "project" ? "project" : "global";
+        if (scope === "project" && !bodyCwd) {
+          json(res, 400, { error: "project scope requires a project (cwd)." });
+          return;
+        }
+        const targetCwd = bodyCwd ?? cwd;
+        const parsed = parseMcpAddCommand(line);
+        if (!parsed.ok) {
+          json(res, 400, { error: parsed.error });
+          return;
+        }
+        const config = parsed.value.config;
+        // Best-effort probe — never blocks the save. A failed connect is surfaced
+        // to the UI but the config is still persisted (mirrors the CLI).
+        const probe = await probeMcp(config);
+        const saved = await addServer(config, scope, targetCwd, true);
+        if (!saved.ok) {
+          json(res, 400, { error: saved.error });
+          return;
+        }
+        json(res, 200, {
+          ok: true,
+          name: config.name,
+          connected: probe.ok,
+          toolCount: probe.toolCount,
+          error: probe.error,
+        });
+      });
+      return;
+    }
+
+    if (method === "POST" && url === "/mcp/remove") {
+      void readBody(req).then(async (raw) => {
+        let name: string;
+        let scopeValue: string;
+        let bodyCwd: string | undefined;
+        try {
+          const body = JSON.parse(raw) as {
+            name?: string;
+            scope?: string;
+            cwd?: string;
+          };
+          name = body.name ?? "";
+          scopeValue = body.scope ?? "global";
+          bodyCwd = body.cwd;
+        } catch {
+          json(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        if (!name.trim()) {
+          json(res, 400, { error: "missing server name" });
+          return;
+        }
+        const scope: MCPScope = scopeValue === "project" ? "project" : "global";
+        if (scope === "project" && !bodyCwd) {
+          json(res, 400, { error: "project scope requires a project (cwd)." });
+          return;
+        }
+        const targetCwd = bodyCwd ?? cwd;
+        const removed = await removeServer(name, scope, targetCwd);
+        json(res, 200, { removed });
+      });
       return;
     }
 

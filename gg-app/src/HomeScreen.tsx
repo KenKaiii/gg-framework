@@ -6,6 +6,7 @@ import { AsciiLogo } from "./AsciiLogo";
 import { MemeLayer } from "./MemeLayer";
 import { SettingsModal } from "./SettingsModal";
 import { TelegramSettingsModal } from "./TelegramSettingsModal";
+import { McpModal } from "./McpModal";
 import {
   waitForReady,
   getSettings,
@@ -33,6 +34,7 @@ export function HomeScreen({ onProjects, onLogin }: Props): React.ReactElement {
   const [providerCount, setProviderCount] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showTelegram, setShowTelegram] = useState(false);
+  const [showMcp, setShowMcp] = useState(false);
   const [serving, setServing] = useState(false);
   const [telegramConfigured, setTelegramConfigured] = useState(false);
   const [serveBusy, setServeBusy] = useState(false);
@@ -180,9 +182,18 @@ export function HomeScreen({ onProjects, onLogin }: Props): React.ReactElement {
             <Settings size={20} strokeWidth={2} aria-hidden="true" />
           </button>
         </div>
-        <button className="btn btn-ghost btn-lg home-btn" onClick={onLogin}>
-          Login to AI Providers
-        </button>
+        <div className="home-projects-row">
+          <button className="btn btn-ghost btn-lg home-btn" onClick={onLogin}>
+            Login to AI Providers
+          </button>
+          <button
+            className="btn btn-ghost btn-lg home-btn"
+            title="Manage MCP servers"
+            onClick={() => setShowMcp(true)}
+          >
+            MCP
+          </button>
+        </div>
         <div className="home-projects-row">
           <button
             className={`btn btn-ghost btn-lg home-btn${serving ? " home-serve-active" : ""}`}
@@ -216,6 +227,7 @@ export function HomeScreen({ onProjects, onLogin }: Props): React.ReactElement {
           onSaved={() => setTelegramConfigured(true)}
         />
       )}
+      {showMcp && <McpModal onClose={() => setShowMcp(false)} />}
     </div>
   );
 }
