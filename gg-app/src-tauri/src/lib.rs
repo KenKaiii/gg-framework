@@ -1542,6 +1542,41 @@ async fn agent_mcp_remove(
     res.json::<serde_json::Value>().await.map_err(|e| e.to_string())
 }
 
+/// Proxy: begin an interactive OAuth login for a remote (HTTP) MCP server.
+/// Returns 202 immediately; progress + outcome stream back via `agent-event`
+/// (`mcp_auth_url`, `mcp_auth_status`, `mcp_auth_done`, `mcp_auth_error`). The
+/// webview opens the browser when it receives `mcp_auth_url`.
+/// `cwd` is required for project scope (the target project path).
+#[tauri::command]
+async fn agent_mcp_login(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+    name: String,
+    scope: String,
+    cwd: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("sidecar not ready")?;
+    let res = client
+        .post(format!("{}/mcp/login", sidecar_base(port)))
+        .json(&serde_json::json!({ "name": name, "scope": scope, "cwd": cwd }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = res.status();
+    let body = res
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        let msg = body
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("failed to start MCP login");
+        return Err(msg.to_string());
+    }
+    Ok(body)
+}
+
 /// Proxy: create a new project folder under the configured projects root.
 /// Returns `{ path }` on success, or an error message on validation/conflict.
 #[tauri::command]
@@ -2519,6 +2554,7 @@ pub fn run() {
             agent_mcp_list,
             agent_mcp_add,
             agent_mcp_remove,
+            agent_mcp_login,
             gaze_focus,
             focus_window_by_offset,
             arrange_all,

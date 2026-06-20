@@ -1064,9 +1064,11 @@ body {
 }
 .mcp-dot {
   flex: 0 0 auto;
-  font-size: 12px;
-  width: 14px;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
 }
 .mcp-name {
   flex: 1 1 auto;

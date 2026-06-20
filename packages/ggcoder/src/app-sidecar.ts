@@ -58,8 +58,10 @@ import {
   loadServers,
   addServer,
   removeServer,
+  getServer,
   parseMcpAddCommand,
   MCPClientManager,
+  McpOAuthStore,
   type MCPScope,
   type MCPServerConfig,
 } from "./core/mcp/index.js";
@@ -391,6 +393,8 @@ interface McpWireRow {
   error?: string;
   kind: "stdio" | "http";
   summary: string;
+  /** True when the server needs an interactive OAuth login before it connects. */
+  requiresAuth?: boolean;
 }
 
 /** A short transport summary for display (URL for http/sse, command+args for stdio). */
@@ -419,6 +423,7 @@ async function buildMcpRows(cwd: string): Promise<McpWireRow[]> {
         error: result?.error,
         kind: s.config.url ? "http" : "stdio",
         summary: mcpRowSummary(s.config),
+        requiresAuth: result?.requiresAuth,
       };
     });
   } finally {
@@ -431,11 +436,16 @@ async function buildMcpRows(cwd: string): Promise<McpWireRow[]> {
  *  still be saved. Mirrors the CLI's probeServer. */
 async function probeMcp(
   config: MCPServerConfig,
-): Promise<{ ok: boolean; toolCount: number; error?: string }> {
+): Promise<{ ok: boolean; toolCount: number; error?: string; requiresAuth?: boolean }> {
   const manager = new MCPClientManager();
   try {
     const result = await manager.probe(config);
-    return { ok: result.ok, toolCount: result.toolCount, error: result.error };
+    return {
+      ok: result.ok,
+      toolCount: result.toolCount,
+      error: result.error,
+      requiresAuth: result.requiresAuth,
+    };
   } finally {
     await manager.dispose();
   }
@@ -503,6 +513,26 @@ async function main(): Promise<void> {
   const sidecarLog = path.join(paths.agentDir, "gg-app-sidecar.log");
   initLogger(sidecarLog);
 
+  // Global last-resort guards, installed as early as the logger allows so they
+  // cover the WHOLE lifecycle — including startup/initialize, the phase the
+  // "sidecar did not start in time" bug lives in. The sidecar is a long-lived
+  // HTTP server the Rust shell can respawn: a stray rejection or thrown error
+  // from one request (e.g. an MCP probe spawning a misbehaving child) must not
+  // tear down the whole process and strand the window on its next call. Log and
+  // keep serving (mirrors astro/vscode/gstack long-lived-server handlers).
+  process.on("unhandledRejection", (reason) => {
+    log("ERROR", "app-sidecar", "unhandledRejection", {
+      message: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? reason.stack : undefined,
+    });
+  });
+  process.on("uncaughtException", (err) => {
+    log("ERROR", "app-sidecar", "uncaughtException", {
+      message: err.message,
+      stack: err.stack,
+    });
+  });
+
   // The packaged desktop app launches from Finder/Dock with a minimal PATH that
   // omits Homebrew/Cargo/version-manager dirs, so the agent can't find node,
   // git, python, rg, etc. Enrich process.env.PATH from the login shell once,
@@ -564,6 +594,12 @@ async function main(): Promise<void> {
     thinkingLevel,
     sessionId: resumeSessionPath,
     signal: abort.signal,
+    // The shell gates window readiness on the GG_APP_LISTENING handshake, which
+    // can't fire until initialize() resolves. Connect MCP in the background so a
+    // slow or hanging stdio server (e.g. a first-run `npx -y @playwright/mcp`
+    // download) can't delay the sidecar past the webview's startup timeout
+    // ("sidecar did not start in time"). Tools attach when the servers come up.
+    backgroundMcpConnect: true,
     // Plan mode: the agent's enter_plan/exit_plan tools drive these. We flip
     // session plan state (rebuilds the system prompt + enforces read-only
     // tools) and surface the transition to the webview.
@@ -1736,21 +1772,31 @@ async function main(): Promise<void> {
           return;
         }
         const config = parsed.value.config;
-        // Best-effort probe — never blocks the save. A failed connect is surfaced
-        // to the UI but the config is still persisted (mirrors the CLI).
-        const probe = await probeMcp(config);
-        const saved = await addServer(config, scope, targetCwd, true);
-        if (!saved.ok) {
-          json(res, 400, { error: saved.error });
-          return;
+        try {
+          // Best-effort probe — never blocks the save. A failed connect is
+          // surfaced to the UI but the config is still persisted (mirrors the
+          // CLI). probeMcp swallows connect errors; the try/catch guards the
+          // persist step so a write failure returns a 500 instead of becoming
+          // an unhandled rejection that would crash the sidecar.
+          const probe = await probeMcp(config);
+          const saved = await addServer(config, scope, targetCwd, true);
+          if (!saved.ok) {
+            json(res, 400, { error: saved.error });
+            return;
+          }
+          json(res, 200, {
+            ok: true,
+            name: config.name,
+            connected: probe.ok,
+            toolCount: probe.toolCount,
+            error: probe.error,
+            requiresAuth: probe.requiresAuth,
+          });
+        } catch (err) {
+          json(res, 500, {
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
-        json(res, 200, {
-          ok: true,
-          name: config.name,
-          connected: probe.ok,
-          toolCount: probe.toolCount,
-          error: probe.error,
-        });
       });
       return;
     }
@@ -1784,7 +1830,67 @@ async function main(): Promise<void> {
         }
         const targetCwd = bodyCwd ?? cwd;
         const removed = await removeServer(name, scope, targetCwd);
+        // Drop any saved OAuth tokens for this server so a re-add starts clean.
+        await new McpOAuthStore().clear(name).catch(() => {});
         json(res, 200, { removed });
+      });
+      return;
+    }
+
+    // Interactive OAuth login for a remote (HTTP) MCP server. The browser is
+    // opened by the webview in response to the broadcast `mcp_auth_url` event;
+    // progress + outcome stream via `mcp_auth_status` / `mcp_auth_done` /
+    // `mcp_auth_error`. Responds 202 immediately and runs the flow in the
+    // background (the browser round-trip can take a while).
+    if (method === "POST" && url === "/mcp/login") {
+      void readBody(req).then(async (raw) => {
+        let name: string;
+        let scopeValue: string;
+        let bodyCwd: string | undefined;
+        try {
+          const body = JSON.parse(raw) as { name?: string; scope?: string; cwd?: string };
+          name = body.name ?? "";
+          scopeValue = body.scope ?? "global";
+          bodyCwd = body.cwd;
+        } catch {
+          json(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        if (!name.trim()) {
+          json(res, 400, { error: "missing server name" });
+          return;
+        }
+        const scope: MCPScope = scopeValue === "project" ? "project" : "global";
+        const targetCwd = bodyCwd ?? cwd;
+        const scoped = await getServer(name, targetCwd);
+        if (!scoped || scoped.scope !== scope) {
+          json(res, 404, { error: `No "${name}" server found.` });
+          return;
+        }
+        if (!scoped.config.url) {
+          json(res, 400, { error: "Login is only supported for HTTP MCP servers." });
+          return;
+        }
+        json(res, 202, { accepted: true });
+        broadcast("mcp_auth_status", { name, message: "Starting login\u2026" });
+        const manager = new MCPClientManager();
+        try {
+          const result = await manager.login(scoped.config, (authUrl) => {
+            broadcast("mcp_auth_url", { name, url: authUrl });
+          });
+          if (result.ok) {
+            broadcast("mcp_auth_done", { name, toolCount: result.toolCount });
+          } else {
+            broadcast("mcp_auth_error", { name, message: result.error ?? "Login failed." });
+          }
+        } catch (err) {
+          broadcast("mcp_auth_error", {
+            name,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        } finally {
+          await manager.dispose().catch(() => {});
+        }
       });
       return;
     }

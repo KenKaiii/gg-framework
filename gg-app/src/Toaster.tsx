@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Info, CheckCircle2, AlertTriangle, XCircle, X } from "lucide-react";
 import { theme } from "./theme";
 import { subscribeToasts, dismissToast, type Toast, type ToastTone } from "./toast";
 
@@ -12,11 +13,11 @@ const TONE_COLOR: Record<ToastTone, string> = {
   error: theme.error,
 };
 
-const TONE_ICON: Record<ToastTone, string> = {
-  info: "\u2139",
-  success: "\u2713",
-  warning: "\u26A0",
-  error: "\u2715",
+const TONE_ICON: Record<ToastTone, React.ComponentType<{ size?: number }>> = {
+  info: Info,
+  success: CheckCircle2,
+  warning: AlertTriangle,
+  error: XCircle,
 };
 
 /**
@@ -73,17 +74,23 @@ export function Toaster(): React.ReactElement {
     <div className="toaster">
       {rendered.map((t) => {
         const color = TONE_COLOR[t.tone];
+        const Icon = TONE_ICON[t.tone];
         return (
           <div key={t.id} className={`toast${t.leaving ? " leaving" : ""}`} role="status">
             <span
               className="toast-icon"
-              style={{ color, borderColor: `${color}55`, background: `${color}1a` }}
+              style={{
+                color,
+                borderColor: `${color}55`,
+                background: `${color}1a`,
+                display: "inline-flex",
+              }}
             >
-              {TONE_ICON[t.tone]}
+              <Icon size={14} />
             </span>
             <span className="toast-msg">{t.message}</span>
             <button className="toast-close" aria-label="Dismiss" onClick={() => dismissToast(t.id)}>
-              {"\u2715"}
+              <X size={13} />
             </button>
           </div>
         );

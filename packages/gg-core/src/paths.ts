@@ -9,6 +9,7 @@ export interface AppPaths {
   telegramFile: string;
   agentHomeFile: string;
   mcpFile: string;
+  mcpAuthFile: string;
   logFile: string;
   skillsDir: string;
   extensionsDir: string;
@@ -25,6 +26,7 @@ export function getAppPaths(): AppPaths {
     telegramFile: path.join(agentDir, "telegram.json"),
     agentHomeFile: path.join(agentDir, "agent-home.json"),
     mcpFile: path.join(agentDir, "mcp.json"),
+    mcpAuthFile: path.join(agentDir, "mcp-auth.json"),
     logFile: path.join(agentDir, "debug.log"),
     skillsDir: path.join(agentDir, "skills"),
     extensionsDir: path.join(agentDir, "extensions"),

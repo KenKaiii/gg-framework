@@ -692,6 +692,8 @@ export interface McpServerRow {
   kind: "stdio" | "http";
   /** Transport summary for display (URL or command+args). */
   summary: string;
+  /** True when the server returned 401 and needs an interactive OAuth login. */
+  requiresAuth?: boolean;
 }
 
 /** Outcome of adding an MCP server from a pasted command line. */
@@ -702,6 +704,8 @@ export interface AddMcpResult {
   connected: boolean;
   toolCount: number;
   error?: string;
+  /** True when the server needs an interactive OAuth login before it connects. */
+  requiresAuth?: boolean;
 }
 
 /** List configured MCP servers with live connection status + tool counts.
@@ -730,6 +734,19 @@ export async function addMcpServer(
 ): Promise<AddMcpResult> {
   await waitForReady();
   return invoke<AddMcpResult>("agent_mcp_add", { line, scope, cwd: cwd ?? null });
+}
+
+/** Begin an interactive OAuth login for a remote (HTTP) MCP server. Returns
+ *  immediately; progress + outcome arrive via subscribe() `mcp_auth_*` events.
+ *  `cwd` is required for project scope. Throws a user-facing message on failure
+ *  to start (e.g. not an HTTP server, server not found). */
+export async function loginMcpServer(
+  name: string,
+  scope: "global" | "project",
+  cwd?: string,
+): Promise<void> {
+  await waitForReady();
+  await invoke("agent_mcp_login", { name, scope, cwd: cwd ?? null });
 }
 
 /** Remove an MCP server by name. `cwd` is required for project scope. Returns
