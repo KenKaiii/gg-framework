@@ -1,6 +1,7 @@
 import { agentLoop, isAbortError, type AgentEvent, type AgentTool } from "@kenkaiiii/gg-agent";
 import {
   ProviderError,
+  prewarmAnthropicCache,
   type Message,
   type Provider,
   type ThinkingLevel,
@@ -172,6 +173,9 @@ export class AgentSession {
   private regroundingInjected = false;
   private compactionOccurred = false;
   private originalRequest = "";
+  /** True after the cache has been pre-warmed for this session. Ensures we only
+   *  fire the warm-up call once (before the first real turn). */
+  private cachePrewarmed = false;
   // Messages queued by the user while a run is in flight. Drained at the
   // mid-loop steering boundary (user steering wins over the hooks), mirroring
   // the TUI's getSteeringMessages. Each entry carries its own attachments so a
@@ -762,7 +766,9 @@ export class AgentSession {
           this.provider === "moonshot" && isKimiCodingEndpoint(effectiveBaseUrl)
             ? kimiCodingHeaders()
             : undefined,
-        cacheRetention: "short",
+        // speedProfile "optimized": 1-h cache TTL (survives turns >5 min apart)
+        // + pre-warm before the first turn. "baseline": current 5-min default.
+        cacheRetention: this.isSpeedOptimized() ? "long" : "short",
         promptCacheKey: this.getPromptCacheKey(),
         supportsImages: modelInfo?.supportsImages,
         supportsVideo: modelInfo?.supportsVideo,
@@ -785,6 +791,11 @@ export class AgentSession {
     };
 
     try {
+      // Fire cache pre-warm before the first turn (Anthropic + speedProfile optimized).
+      // Runs concurrently with nothing — it must complete before runAgentLoop so
+      // the cache is warm when the real request arrives. Best-effort: swallowed
+      // inside maybePrewarmCache/prewarmAnthropicCache.
+      await this.maybePrewarmCache(creds);
       await runAgentLoop(creds.accessToken, creds.accountId, creds.projectId);
     } catch (err) {
       // Abort errors are expected (user cancellation) — don't retry or re-throw
@@ -1162,6 +1173,49 @@ export class AgentSession {
   /** Replace the abort signal (e.g. after cancellation). */
   setSignal(signal: AbortSignal): void {
     this.opts = { ...this.opts, signal };
+  }
+
+  /** True when speedProfile is "optimized" (1-h cache TTL + pre-warm). */
+  private isSpeedOptimized(): boolean {
+    return this.settingsManager?.get("speedProfile") === "optimized";
+  }
+
+  /** Fire a cache pre-warm request for Anthropic so the first real turn is a
+   *  cache read instead of a cold write. No-op for other providers and when
+   *  speedProfile is not "optimized". Entirely best-effort — any failure is
+   *  swallowed so prewarm never blocks or aborts the real prompt. */
+  private async maybePrewarmCache(creds: {
+    accessToken: string;
+    accountId?: string;
+    baseUrl?: string;
+  }): Promise<void> {
+    if (this.cachePrewarmed || !this.isSpeedOptimized() || this.provider !== "anthropic") {
+      return;
+    }
+    this.cachePrewarmed = true;
+    try {
+      const userAgent = await getClaudeCliUserAgent();
+      const systemText =
+        typeof this.messages[0]?.content === "string" ? this.messages[0].content : "";
+      if (!systemText) return;
+      await prewarmAnthropicCache({
+        apiKey: creds.accessToken,
+        model: this.model,
+        system: systemText,
+        tools: this.tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+          ...(t.rawInputSchema ? { rawInputSchema: t.rawInputSchema } : {}),
+        })),
+        baseUrl: this.baseUrl ?? creds.baseUrl,
+        userAgent,
+        cacheRetention: "long",
+        signal: this.opts.signal,
+      });
+    } catch {
+      // Best-effort — prewarm failure must never block the session.
+    }
   }
 
   private getPromptCacheKey(): string | undefined {

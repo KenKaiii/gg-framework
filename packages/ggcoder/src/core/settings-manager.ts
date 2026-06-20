@@ -42,6 +42,10 @@ const SettingsSchema = z.object({
   enabledTools: z.array(z.string()).optional(),
   /** Delete session transcripts older than this many days at startup. 0 disables pruning. */
   sessionRetentionDays: z.number().int().min(0).default(30),
+  /** Speed optimization profile.
+   *  - "baseline": 5-min cache TTL, no pre-warm
+   *  - "optimized": 1-h cache TTL, cache pre-warming on first prompt (default) */
+  speedProfile: z.enum(["baseline", "optimized"]).default("optimized"),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -57,6 +61,7 @@ export const DEFAULT_SETTINGS: Settings = {
   idealReviewEnabled: true,
   lspDiagnostics: true,
   sessionRetentionDays: 30,
+  speedProfile: "optimized",
 };
 
 // ── Settings Manager ───────────────────────────────────────

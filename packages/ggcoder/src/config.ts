@@ -36,6 +36,11 @@ export interface SavedSettings {
   lspDiagnostics: boolean;
   /** Days to keep session transcripts before startup pruning. 0 disables. */
   sessionRetentionDays: number;
+  /** Speed optimization profile.
+   *  - "baseline": current defaults (5-min cache TTL, no pre-warm)
+   *  - "optimized": 1-h cache TTL, cache pre-warming on first prompt
+   *  Default: "baseline" so existing behavior is unchanged until benchmarked/merged. */
+  speedProfile?: "baseline" | "optimized";
 }
 
 const VALID_PROVIDERS = new Set<Provider>([
@@ -86,6 +91,9 @@ export function loadSavedSettings(settingsFilePath?: string): SavedSettings {
       raw.sessionRetentionDays >= 0
     ) {
       result.sessionRetentionDays = raw.sessionRetentionDays;
+    }
+    if (raw.speedProfile === "optimized" || raw.speedProfile === "baseline") {
+      result.speedProfile = raw.speedProfile;
     }
   } catch {
     // No settings file or invalid JSON — use defaults

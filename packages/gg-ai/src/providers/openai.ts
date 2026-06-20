@@ -59,13 +59,34 @@ function extractOpenAIUsage(usage: OpenAI.CompletionUsage): {
   };
 }
 
+/** Client cache — avoids re-instantiating the OpenAI SDK on every call.
+ *  See anthropic.ts for rationale. Keyed by identity-relevant fields. */
+const openaiClientCache = new Map<string, OpenAI>();
+
 function createClient(options: StreamOptions): OpenAI {
-  return new OpenAI({
+  const cacheKey = `${options.apiKey ?? ""}|${options.baseUrl ?? ""}|${JSON.stringify(options.defaultHeaders ?? {})}`;
+
+  // Skip cache when a custom fetch is provided (tests, React Native, etc.).
+  if (!options.fetch) {
+    const cached = openaiClientCache.get(cacheKey);
+    if (cached) return cached;
+  }
+
+  const client = new OpenAI({
     apiKey: options.apiKey,
     ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
     ...(options.defaultHeaders ? { defaultHeaders: options.defaultHeaders } : {}),
   });
+
+  if (!options.fetch) {
+    if (openaiClientCache.size >= 8) {
+      const oldest = openaiClientCache.keys().next().value;
+      if (oldest) openaiClientCache.delete(oldest);
+    }
+    openaiClientCache.set(cacheKey, client);
+  }
+  return client;
 }
 
 export function streamOpenAI(options: StreamOptions): StreamResult {

@@ -66,11 +66,10 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   // system+tool prefixes across separate sub-agent processes are accidental
   // rather than guaranteed.
   body.prompt_cache_key = normalizePromptCacheKey(options.promptCacheKey ?? "ggcoder");
-  // Map cacheRetention to OpenAI's prompt_cache_retention. "long" pins the
-  // cached prefix for up to 24h (vs the default 5–10 min in-memory window).
-  if (options.cacheRetention === "long") {
-    body.prompt_cache_retention = "24h";
-  }
+  // Note: prompt_cache_retention ("24h") is a Responses API param, not
+  // accepted by the Codex backend — it returns 400 "Unsupported parameter".
+  // Cache TTL on Codex is controlled server-side (~5-10 min in-memory).
+  // The session_id + x-client-request-id headers below handle cache routing.
   if (options.temperature != null && !options.thinking) {
     body.temperature = options.temperature;
   }

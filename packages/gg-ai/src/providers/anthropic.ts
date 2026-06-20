@@ -23,30 +23,133 @@ import {
 } from "./transform.js";
 import { isJsonObject } from "../utils/json.js";
 
+/**
+ * Client cache — avoids re-instantiating the SDK on every stream() call.
+ * The SDK constructor parses config, computes auth headers, and sets up the
+ * fetch dispatcher. Node's undici pool already reuses TCP connections, but
+ * the SDK overhead itself (config parsing, header computation) repeats on
+ * every call. Keyed by the identity-relevant fields (apiKey, baseUrl,
+ * userAgent) so a mid-session model switch (which may change the UA) gets a
+ * fresh client.
+ */
+const anthropicClientCache = new Map<string, Anthropic>();
+
 function createClient(options: StreamOptions): Anthropic {
   const isOAuth = options.apiKey?.startsWith("sk-ant-oat");
-  return new Anthropic({
+  const userAgent = isOAuth ? (options.userAgent ?? "claude-cli/2.1.75 (external, cli)") : "";
+  const cacheKey = `${options.apiKey ?? ""}|${options.baseUrl ?? ""}|${userAgent}`;
+
+  // Skip cache when a custom fetch is provided (tests, React Native, etc.) —
+  // the cached client would carry the wrong fetch implementation.
+  if (!options.fetch) {
+    const cached = anthropicClientCache.get(cacheKey);
+    if (cached) return cached;
+  }
+
+  const client = new Anthropic({
     ...(isOAuth
       ? { apiKey: null as unknown as string, authToken: options.apiKey }
       : { apiKey: options.apiKey }),
     ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
-    // Disable SDK retries — the agent loop has its own stall/overload retry
-    // logic that surfaces errors properly. SDK retries on 429s can cause
-    // multi-minute hangs when the provider stops responding mid-retry.
     maxRetries: 0,
     ...(isOAuth
       ? {
           defaultHeaders: {
-            // Anthropic's OAuth edge validates the claude-cli version. Callers
-            // (ggcoder) resolve the live version at runtime; the literal here
-            // is the offline fallback for direct gg-ai consumers.
-            "user-agent": options.userAgent ?? "claude-cli/2.1.75 (external, cli)",
+            "user-agent": userAgent,
             "x-app": "cli",
           },
         }
       : {}),
   });
+
+  // Only cache production clients (no custom fetch override).
+  if (!options.fetch) {
+    if (anthropicClientCache.size >= 8) {
+      const oldest = anthropicClientCache.keys().next().value;
+      if (oldest) anthropicClientCache.delete(oldest);
+    }
+    anthropicClientCache.set(cacheKey, client);
+  }
+  return client;
+}
+
+/**
+ * Fire a minimal `max_tokens: 1` request that populates the Anthropic prompt
+ * cache with the system prompt + tools prefix, so the first real user turn is
+ * a cache read instead of a cold cache write. Best-effort: any error is
+ * swallowed so a failed pre-warm never blocks the session.
+ *
+ * Called by AgentSession when speedProfile is "optimized", before the first
+ * real agent-loop turn. The cache TTL follows the `cacheRetention` option —
+ * pass "long" (1 h) so the pre-warm survives until the user's first message.
+ */
+export async function prewarmAnthropicCache(options: {
+  apiKey: string;
+  model: string;
+  system: string;
+  tools?: StreamOptions["tools"];
+  serverTools?: StreamOptions["serverTools"];
+  baseUrl?: string;
+  userAgent?: string;
+  cacheRetention?: StreamOptions["cacheRetention"];
+  signal?: AbortSignal;
+}): Promise<void> {
+  try {
+    const client = createClient({
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      userAgent: options.userAgent,
+    } as StreamOptions);
+    const cacheControl = toAnthropicCacheControl(options.cacheRetention ?? "long", options.baseUrl);
+    const { system, messages } = toAnthropicMessages(
+      [
+        { role: "system", content: options.system },
+        { role: "user", content: "." },
+      ],
+      cacheControl,
+    );
+    const isOAuth = options.apiKey.startsWith("sk-ant-oat");
+    const fullSystem = isOAuth
+      ? [
+          {
+            type: "text" as const,
+            text: "You are Claude Code, Anthropic's official CLI for Claude.",
+          },
+          ...(system ?? []),
+        ]
+      : system;
+    const tools = options.tools?.length
+      ? toAnthropicTools(options.tools, {
+          cacheControl,
+          enableFineGrainedToolStreaming: true,
+        })
+      : undefined;
+    await client.messages.create(
+      {
+        model: options.model,
+        max_tokens: 1,
+        messages,
+        ...(fullSystem ? { system: fullSystem as Anthropic.MessageCreateParams["system"] } : {}),
+        ...(tools
+          ? {
+              tools: [
+                ...tools,
+                ...(options.serverTools ?? []),
+              ] as Anthropic.MessageCreateParams["tools"],
+            }
+          : {}),
+      } as Anthropic.MessageCreateParamsNonStreaming,
+      {
+        signal: options.signal ?? undefined,
+        ...(isOAuth
+          ? { headers: { "anthropic-beta": "claude-code-20250219,oauth-2025-04-20" } }
+          : {}),
+      },
+    );
+  } catch {
+    // Best-effort — prewarm failure should never block the session.
+  }
 }
 
 export function streamAnthropic(options: StreamOptions): StreamResult {

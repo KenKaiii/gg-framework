@@ -241,7 +241,6 @@ describe("streamOpenAICodex", () => {
       stream: true,
       include: ["reasoning.encrypted_content"],
       prompt_cache_key: "session 1",
-      prompt_cache_retention: "24h",
       reasoning: { effort: "high", summary: "auto" },
     });
     expect(body.max_output_tokens).toBeUndefined();
