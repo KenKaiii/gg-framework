@@ -1,5 +1,11 @@
 # @kenkaiiii/gg-ai
 
+## 4.12.2
+
+### Patch Changes
+
+- Fix Windows sidecar crash: the session-folder name encoder (`encodeCwd`) now strips Windows extended-length path prefixes (`\\?\` and `\\?\UNC\`) and all reserved filename characters (`<>:"|?*`). Previously, Windows canonicalized cwds (`\\?\C:\Users\brams`) produced illegal folder names containing `?`, causing `mkdir` ENOENT and a fatal sidecar crash on startup — blocking OAuth/login for all Windows users.
+
 ## 4.12.1
 
 ### Patch Changes
