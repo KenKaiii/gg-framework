@@ -1,5 +1,20 @@
 # @kenkaiiii/gg-ai
 
+## 4.12.1
+
+### Patch Changes
+
+- Add performance benchmarks and optimize streaming, tool execution, and rendering pipeline
+  - edit-diff: lazy normalization cache for fuzzy matching (5-7× faster on large files)
+  - ls: parallel stat() via Promise.all (3.7-5.5× faster on large dirs)
+  - StreamResult: backpressure with high/low-water marks to bound memory (10× reduction)
+  - agent-loop: mixed-mode tool execution batches consecutive parallel-safe tools (2-10× faster)
+  - agent-loop: per-tool timeout isolation via AbortSignal.any (prevents indefinite hangs)
+  - agent-loop: gate diagnostic char-counting behind \_diagFn (eliminates per-turn overhead)
+  - Markdown.tsx: block-level memoization via marked.lexer (only active block re-parses)
+  - App.tsx: requestAnimationFrame-throttled appendAssistant (5-10× fewer re-renders)
+  - benchmarks: full harness with before/after comparison tables (pnpm bench)
+
 ## 4.12.0
 
 ### Minor Changes

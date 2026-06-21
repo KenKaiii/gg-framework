@@ -1,5 +1,7 @@
 # @kenkaiiii/gg-boss
 
+## 4.12.1
+
 ## 4.12.0
 
 ### Minor Changes
