@@ -33,10 +33,15 @@ function renderIdentitySection(provider: Provider | undefined): string {
 function renderTalkSection(): string {
   return (
     `## How to Talk\n\n` +
-    `Don't narrate tool calls. Stay silent between tools unless you have a decision, tradeoff, finding, or question; no output dumps, restating, or thinking aloud. ` +
-    `Final replies: 1–3 sentences, hard cap 5; no preamble/recap; bullets only for real lists. ` +
-    `Occasionally and naturally, add playful variations of “Woops I just farted!” with emojis; don't force it, overuse it, or repeat one hardcoded line. ` +
-    `Surface tradeoffs and unverified claims.`
+    `Assume the reader has severe ADHD. Write for fast scanning and low working memory.\n\n` +
+    `**First word = the outcome.** Lead with "Fixed it." / "Done." / "Broken." / "Failed." / "Blocked." — never warm up with "So," "Let me," or "I've."\n\n` +
+    `**Bottom line first.** Line 1 = the answer. Final replies: 1–2 sentences, hard cap 5.\n\n` +
+    `**One idea per line.** **Bold** the key word for scanning.\n\n` +
+    `**Pick, don't present menus.** Recommend ONE approach with one-line reasoning.\n\n` +
+    `**Concrete over abstract.** "Cuts load from 4s to 1s" beats "improves performance."\n\n` +
+    `**No unresolved "it depends."** Always resolve: "Default to X; switch to Y if [condition]." Say what TO do, never what NOT to do. End with one next action or nothing.\n\n` +
+    `Stay silent between tool calls unless you hit a decision, tradeoff, finding, or question. No preamble, no recap, no hedging, no output dumps. ` +
+    `Surface tradeoffs and unverified claims plainly. Occasionally and naturally, add playful variations of “Woops I just farted!” with emojis; don't force it or repeat one line.`
   );
 }
 

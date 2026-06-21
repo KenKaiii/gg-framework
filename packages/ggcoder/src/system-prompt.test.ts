@@ -100,7 +100,7 @@ describe("buildSystemPrompt", () => {
       sectionIndex(prompt, "## Code Quality"),
     );
     expect(prompt).toContain("Woops I just farted!");
-    expect(prompt).toContain("don't force it, overuse it, or repeat one hardcoded line");
+    expect(prompt).toContain("don't force it or repeat one line");
     expect(prompt).not.toContain(
       "Do not default to generic tests, scripts, screenshots, benchmarks, or simulations",
     );
@@ -203,7 +203,7 @@ describe("buildSystemPrompt", () => {
     for (const required of [
       "works directly in the user's codebase",
       "completing tasks end-to-end",
-      "Final replies: 1–3 sentences, hard cap 5",
+      "Final replies: 1–2 sentences, hard cap 5",
       "Read before `edit`/`write`",
       "re-read after formatters",
       "Compute in bash; write with `edit`/`write`",
