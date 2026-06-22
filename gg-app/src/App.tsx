@@ -1708,9 +1708,10 @@ function App(): React.ReactElement {
         ) : (
           <ProjectPicker
             onChosen={onProjectChosen}
-            // Secondary windows start on the picker and have no home screen, so
-            // they get no "back" affordance; the main window returns home.
-            onClose={isSecondaryWindow ? undefined : () => setEntryView("home")}
+            // Every window can return to the home screen (it shows global
+            // settings/auth, nothing window-specific) — secondary windows just
+            // default to opening on the picker.
+            onClose={() => setEntryView("home")}
           />
         )}
         <Toaster />
@@ -1733,15 +1734,11 @@ function App(): React.ReactElement {
           }}
           onClose={() => {
             setShowPicker(false);
-            // Secondary windows have no home screen — bouncing them "home" lands
-            // on a Projects picker whose back button is suppressed (the
-            // isSecondaryWindow guard below), stranding the user. The picker is
-            // only reachable here from an already-open project, so just close it
-            // to return to that project. The main window keeps going home.
-            if (!isSecondaryWindow) {
-              setNeedsProject(true);
-              setEntryView("home");
-            }
+            // Back from the over-a-project picker returns to the home screen for
+            // every window (the entry picker now offers a back-to-home button,
+            // so secondary windows are no longer stranded there).
+            setNeedsProject(true);
+            setEntryView("home");
           }}
         />
       </div>

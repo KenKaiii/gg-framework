@@ -677,13 +677,17 @@ body {
      box deform). row-gap spaces the wrapped rows. */
   flex-wrap: wrap;
   row-gap: 8px;
-  /* Native chrome (Windows/Linux): no overlay title bar to clear. */
-  padding: 12px 20px;
+  /* Total header height is locked to the chat view's .chat-head (38px strip +
+     42px nav row + 1px border = 81px) so navigating session ↔ picker never
+     shifts the layout. With a 28px-tall control row + 1px border, that means
+     40px top + 12px bottom padding. */
+  padding: 40px 20px 12px;
   border-bottom: 1px solid var(--border);
 }
-/* macOS overlay title bar: top padding clears the traffic-light buttons. */
+/* macOS overlay title bar: the 40px top padding also clears the traffic-light
+   buttons (same role the .chat-head strip plays in the chat view). */
 .platform-macos .picker-head {
-  padding: 34px 20px 12px;
+  padding: 40px 20px 12px;
 }
 .picker-title {
   font-size: 15px;
