@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 4.13.2
+
+### Patch Changes
+
+- Add tool-call and error logging to the gg-app sidecar event bridge so fatal "invalid tool arguments" aborts leave a forensic trail in `~/.gg/gg-app-sidecar.log` (tool name, isError, result preview, and agent error events) instead of failing silently.
+  - @kenkaiiii/gg-ai@4.13.2
+  - @kenkaiiii/gg-agent@4.13.2
+  - @kenkaiiii/gg-core@4.13.2
+
 ## 4.13.1
 
 ### Patch Changes
