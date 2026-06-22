@@ -1,5 +1,20 @@
 # @kenkaiiii/ggcoder
 
+## 4.13.1
+
+### Patch Changes
+
+- Spawn dependency-backed stdio MCP servers (e.g. the default kencode-search)
+  directly via `node <binScript>` instead of `npx -y <pkg>`, removing the ~100 MB
+  `npm exec` wrapper process per MCP connection. Non-dependency / non-npx servers
+  pass through unchanged.
+
+  Also ships content-aware compression for bash/task_output truncation (preserves
+  errors over blind tail slices) and the gg-app shared-daemon backend refactor.
+  - @kenkaiiii/gg-ai@4.13.1
+  - @kenkaiiii/gg-agent@4.13.1
+  - @kenkaiiii/gg-core@4.13.1
+
 ## 4.13.0
 
 ### Minor Changes
