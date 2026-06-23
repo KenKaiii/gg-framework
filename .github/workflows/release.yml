@@ -3,8 +3,9 @@ name: Release
 # Build + sign + publish the gg-app desktop bundle for every OS/arch on a tag
 # push (v*). Each runner stages its own per-platform Node runtime and bundles
 # the sidecar (so sharp's native binary matches the target), then tauri-action
-# produces the installers, signs the updater artifacts, uploads them to a draft
-# GitHub release, and generates `latest.json` for the updater endpoint.
+# produces the installers, signs the updater artifacts, uploads them to a
+# published (non-draft) GitHub release, and generates `latest.json` for the
+# updater endpoint.
 #
 # Required repository secrets:
 #   Updater signing (all OSes):
