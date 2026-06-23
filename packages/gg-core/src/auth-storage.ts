@@ -35,6 +35,7 @@ const STATIC_API_KEY_PROVIDERS = new Set([
   "minimax",
   "deepseek",
   "openrouter",
+  "sakana",
 ]);
 
 export class AuthStorage {

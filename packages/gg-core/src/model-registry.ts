@@ -165,6 +165,36 @@ export const MODELS: ModelInfo[] = [
     costTier: "high",
     maxThinkingLevel: "xhigh",
   },
+  // ── Sakana (Fugu) ──────────────────────────────────────
+  // Sakana Fugu is a multi-agent system surfaced as a standard LLM via the
+  // OpenAI-compatible Sakana API (https://api.sakana.ai/v1). Both models take
+  // text + image input and only accept "high"/"xhigh" reasoning effort, so the
+  // top tier is `xhigh`. `fugu` routes across all providers; `fugu-ultra` is
+  // the heavier tier (may need larger client timeouts on complex tasks).
+  {
+    id: "fugu",
+    name: "Fugu",
+    provider: "sakana",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: false,
+    costTier: "medium",
+    maxThinkingLevel: "xhigh",
+  },
+  {
+    id: "fugu-ultra",
+    name: "Fugu Ultra",
+    provider: "sakana",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: false,
+    costTier: "high",
+    maxThinkingLevel: "xhigh",
+  },
   // ── Gemini ─────────────────────────────────────────────
   {
     id: "gemini-3.1-flash-lite-preview",
@@ -374,6 +404,7 @@ export function getDefaultModel(provider: Provider): ModelInfo {
   if (provider === "minimax") return MODELS.find((m) => m.id === "MiniMax-M3")!;
   if (provider === "deepseek") return MODELS.find((m) => m.id === "deepseek-v4-pro")!;
   if (provider === "openrouter") return MODELS.find((m) => m.id === "qwen/qwen3.6-plus")!;
+  if (provider === "sakana") return MODELS.find((m) => m.id === "fugu")!;
   return MODELS.find((m) => m.id === "claude-sonnet-4-6")!;
 }
 

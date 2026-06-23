@@ -86,6 +86,18 @@ providerRegistry.register("openrouter", {
     }),
 });
 
+providerRegistry.register("sakana", {
+  // Sakana Fugu is a multi-agent system exposed as a standard LLM through the
+  // OpenAI-compatible Sakana API. We ride the Chat Completions transport (the
+  // Responses API is also offered). Fugu models only accept "high"/"xhigh"
+  // reasoning effort — clamped centrally in toOpenAIReasoningEffort.
+  stream: (options) =>
+    streamOpenAI({
+      ...options,
+      baseUrl: options.baseUrl ?? "https://api.sakana.ai/v1",
+    }),
+});
+
 providerRegistry.register("minimax", {
   stream: (options) =>
     streamAnthropic({

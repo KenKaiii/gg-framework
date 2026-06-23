@@ -136,6 +136,7 @@ const PROVIDER_DISPLAY: Record<string, string> = {
   moonshot: "Moonshot",
   deepseek: "DeepSeek",
   openrouter: "OpenRouter",
+  sakana: "Sakana",
   xiaomi: "Xiaomi (MiMo)",
   minimax: "MiniMax",
 };

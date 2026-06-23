@@ -1245,6 +1245,14 @@ const AUTH_PROVIDERS: &[ProviderMeta] = &[
         api_key_label: Some("OpenRouter"),
         api_key_base_url: None,
     },
+    ProviderMeta {
+        value: "sakana",
+        label: "Sakana (Fugu)",
+        description: "Fugu, Fugu Ultra",
+        methods: &["apikey"],
+        api_key_label: Some("Sakana"),
+        api_key_base_url: None,
+    },
 ];
 
 /// Pure: if `value` is a known provider that supports API-key auth, return

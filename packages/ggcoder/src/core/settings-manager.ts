@@ -18,6 +18,7 @@ const SettingsSchema = z.object({
       "xiaomi",
       "deepseek",
       "openrouter",
+      "sakana",
     ])
     .default("anthropic"),
   defaultModel: z.string().optional(),

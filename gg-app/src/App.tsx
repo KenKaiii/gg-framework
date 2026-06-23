@@ -1321,6 +1321,8 @@ function App(): React.ReactElement {
     if (state && modelId === state.model) return;
     void switchModel(modelId).then((res) => {
       if (res) {
+        // Sakana Fugu easter egg: blow the fugu horn when a Fugu model is picked.
+        if (res.model.startsWith("fugu")) playSound("fugu");
         setState((s) =>
           s
             ? {

@@ -82,6 +82,13 @@ export const AUTH_PROVIDERS: AuthProviderMeta[] = [
     methods: ["apikey"],
     apiKeyLabel: "OpenRouter",
   },
+  {
+    value: "sakana",
+    label: "Sakana (Fugu)",
+    description: "Fugu, Fugu Ultra",
+    methods: ["apikey"],
+    apiKeyLabel: "Sakana",
+  },
 ];
 
 export function getAuthProvider(value: string): AuthProviderMeta | undefined {

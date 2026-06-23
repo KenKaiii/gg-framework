@@ -23,6 +23,7 @@ const PROVIDER_LABEL: Record<string, string> = {
   minimax: "MiniMax",
   deepseek: "DeepSeek",
   openrouter: "OpenRouter",
+  sakana: "Sakana",
 };
 
 export function ModelSelector({

@@ -130,6 +130,7 @@ export function displayName(provider: Provider): string {
   if (provider === "minimax") return "MiniMax";
   if (provider === "deepseek") return "DeepSeek";
   if (provider === "openrouter") return "OpenRouter";
+  if (provider === "sakana") return "Sakana (Fugu)";
   return "OpenAI";
 }
 

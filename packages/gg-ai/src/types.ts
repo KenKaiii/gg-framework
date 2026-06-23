@@ -12,6 +12,7 @@ export type Provider =
   | "minimax"
   | "deepseek"
   | "openrouter"
+  | "sakana"
   | "palsu";
 
 // ── Thinking ───────────────────────────────────────────────

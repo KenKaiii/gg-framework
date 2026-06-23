@@ -38,6 +38,7 @@ const PROVIDERS: { label: string; value: Provider; description: string }[] = [
   { label: "Xiaomi (MiMo)", value: "xiaomi", description: "MiMo-V2-Pro" },
   { label: "DeepSeek", value: "deepseek", description: "DeepSeek V4 Pro, V4 Flash" },
   { label: "OpenRouter", value: "openrouter", description: "Qwen3.6-Plus, multi-provider gateway" },
+  { label: "Sakana (Fugu)", value: "sakana", description: "Fugu, Fugu Ultra" },
 ];
 
 function renderScreen(selectedIndex: number): string {

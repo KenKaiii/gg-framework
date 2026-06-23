@@ -850,9 +850,15 @@ export function toOpenAIToolChoice(choice: ToolChoice): OpenAI.ChatCompletionToo
 
 export function toOpenAIReasoningEffort(
   level: ThinkingLevel,
-  _model: string,
+  model: string,
 ): "low" | "medium" | "high" | "xhigh" {
-  return level === "max" ? "xhigh" : level;
+  const effort = level === "max" ? "xhigh" : level;
+  // Sakana Fugu models reject any effort other than "high"/"xhigh", so floor a
+  // lower manual selection up to "high" rather than letting the API 400.
+  if (model.startsWith("fugu") && (effort === "low" || effort === "medium")) {
+    return "high";
+  }
+  return effort;
 }
 
 // ── Response Normalization ─────────────────────────────────

@@ -77,6 +77,7 @@ const ALL_PROVIDERS: Provider[] = [
   "minimax",
   "deepseek",
   "openrouter",
+  "sakana",
 ];
 
 // ── gg-app settings (~/.gg/gg-app.json) ────────────────────

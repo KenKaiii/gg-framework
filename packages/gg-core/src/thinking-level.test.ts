@@ -37,6 +37,15 @@ describe("thinking-level helpers", () => {
     expect(isThinkingLevelSupported("anthropic", "claude-sonnet-4-6", "xhigh")).toBe(false);
   });
 
+  it("cycles Sakana Fugu through high and xhigh", () => {
+    expect(getSupportedThinkingLevels("sakana", "fugu")).toEqual(["high", "xhigh"]);
+    expect(getSupportedThinkingLevels("sakana", "fugu-ultra")).toEqual(["high", "xhigh"]);
+    expect(getNextThinkingLevel("sakana", "fugu", undefined)).toBe("high");
+    expect(getNextThinkingLevel("sakana", "fugu", "high")).toBe("xhigh");
+    expect(getNextThinkingLevel("sakana", "fugu", "xhigh")).toBeUndefined();
+    expect(isThinkingLevelSupported("sakana", "fugu", "medium")).toBe(false);
+  });
+
   it("keeps non-cycling providers binary at their model max", () => {
     expect(getSupportedThinkingLevels("moonshot", "kimi-k2.7-code")).toEqual(["high"]);
     expect(getNextThinkingLevel("moonshot", "kimi-k2.7-code", undefined)).toBe("high");

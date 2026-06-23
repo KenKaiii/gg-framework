@@ -13,6 +13,7 @@ const ALL: Provider[] = [
   "minimax",
   "deepseek",
   "openrouter",
+  "sakana",
 ];
 
 /** Fake auth lookup: only the providers in `set` are "logged in". */

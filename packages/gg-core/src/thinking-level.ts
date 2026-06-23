@@ -2,6 +2,10 @@ import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import { getMaxThinkingLevel } from "./model-registry.js";
 
 const OPENAI_GPT_THINKING_LEVELS: readonly ThinkingLevel[] = ["medium", "high", "xhigh"];
+// Sakana Fugu accepts exactly two reasoning efforts — "high" and "xhigh" — and
+// rejects anything else. Expose both so users can pick the lighter tier instead
+// of being forced into all-or-nothing xhigh.
+const SAKANA_THINKING_LEVELS: readonly ThinkingLevel[] = ["high", "xhigh"];
 const ANTHROPIC_OPUS_48_47_THINKING_LEVELS: readonly ThinkingLevel[] = [
   "low",
   "medium",
@@ -18,6 +22,10 @@ const ANTHROPIC_ADAPTIVE_THINKING_LEVELS: readonly ThinkingLevel[] = [
 
 function isOpenAIGptModel(provider: Provider, model: string): boolean {
   return provider === "openai" && model.startsWith("gpt-");
+}
+
+function isSakanaModel(provider: Provider): boolean {
+  return provider === "sakana";
 }
 
 function isAnthropicOpus48Or47Model(provider: Provider, model: string): boolean {
@@ -44,6 +52,12 @@ export function getSupportedThinkingLevels(
     return levels.slice(0, maxIndex + 1);
   }
 
+  if (isSakanaModel(provider)) {
+    const maxIndex = SAKANA_THINKING_LEVELS.indexOf(maxLevel);
+    if (maxIndex === -1) return SAKANA_THINKING_LEVELS;
+    return SAKANA_THINKING_LEVELS.slice(0, maxIndex + 1);
+  }
+
   if (!isOpenAIGptModel(provider, model)) return [maxLevel];
 
   const maxIndex = OPENAI_GPT_THINKING_LEVELS.indexOf(maxLevel);
@@ -66,7 +80,9 @@ export function getNextThinkingLevel(
 ): ThinkingLevel | undefined {
   const supportedLevels = getSupportedThinkingLevels(provider, model);
   const shouldCycleLevels =
-    isOpenAIGptModel(provider, model) || isAnthropicAdaptiveModel(provider, model);
+    isOpenAIGptModel(provider, model) ||
+    isAnthropicAdaptiveModel(provider, model) ||
+    isSakanaModel(provider);
   if (!shouldCycleLevels) {
     return current ? undefined : supportedLevels[0];
   }

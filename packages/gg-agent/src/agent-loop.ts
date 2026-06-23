@@ -422,6 +422,22 @@ export async function* agentLoop(
   // unreachability doesn't cause multi-minute hangs, but not so aggressively
   // that slow-but-healthy backends get killed.
   const NON_STREAMING_HARD_TIMEOUT_MS = 300_000; // 5min for full non-streaming response
+  // Sakana Fugu is a multi-agent system that reasons silently server-side and
+  // emits NO reasoning/thinking deltas over the wire -- so its pre-output phase
+  // looks like dead air to the stall detector and never earns the thinking-model
+  // timeout extension. Give it a reasoning-sized budget BEFORE the first event so
+  // heavy fugu-ultra turns don't trip the 45s first-event / 90s hard caps, get
+  // aborted, and fall back to non-streaming (which dumps the whole reply at once,
+  // exactly the abruptness we're avoiding). Sakana's own Codex config bumps the
+  // idle timeout to 2h for the same reason. Once output starts flowing, the
+  // normal mid-stream idle/hard timeouts take over unchanged.
+  const isSakana = options.provider === "sakana";
+  const firstEventTimeoutMs = isSakana
+    ? STREAM_THINKING_IDLE_TIMEOUT_MS // 5min before first token
+    : STREAM_FIRST_EVENT_TIMEOUT_MS; // 45s
+  const initialHardTimeoutMs = isSakana
+    ? STREAM_THINKING_HARD_TIMEOUT_MS // 10min absolute cap before output
+    : STREAM_HARD_TIMEOUT_MS; // 90s
   // Runaway tool-call circuit breaker. When a model glitches mid-tool-call it
   // can emit tens of thousands of toolcall_delta events without ever closing,
   // burning the entire stall-retry budget (~25 min) on what is clearly a
@@ -542,7 +558,7 @@ export async function* agentLoop(
           ? STREAM_IDLE_TIMEOUT_MS
           : hasReceivedThinking
             ? STREAM_THINKING_IDLE_TIMEOUT_MS
-            : STREAM_FIRST_EVENT_TIMEOUT_MS;
+            : firstEventTimeoutMs;
         idleTimer = setTimeout(() => {
           diag("idle_timeout_fired", {
             events: streamEventCount,
@@ -568,7 +584,7 @@ export async function* agentLoop(
       // to observe -- just wait for the full response up to the cap.
       let hardTimeoutMs = useNonStreamingFallback
         ? NON_STREAMING_HARD_TIMEOUT_MS
-        : STREAM_HARD_TIMEOUT_MS;
+        : initialHardTimeoutMs;
       hardTimer = setTimeout(() => {
         diag("hard_timeout_fired", {
           events: typeof streamEventCount !== "undefined" ? streamEventCount : 0,
