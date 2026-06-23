@@ -16,6 +16,14 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./core/filler-words": {
+      "import": "./dist/core/filler-words.js",
+      "types": "./dist/core/filler-words.d.ts"
+    },
+    "./core/clustering": {
+      "import": "./dist/core/clustering.js",
+      "types": "./dist/core/clustering.d.ts"
     }
   },
   "files": [
