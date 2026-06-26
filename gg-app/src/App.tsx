@@ -1708,16 +1708,18 @@ function App(): React.ReactElement {
   }
 
   // Show the corner "Enhance" pill whenever the input holds text — it stays put
-  // (no debounce) and only hides when the box is empty. Still skipped while
-  // running/enhancing, with a menu open, or when the draft is already the current
+  // (no debounce) and only hides when the box is empty. Shows even while the agent
+  // is running, so a queued follow-up draft can be enhanced too: enhancePrompt is
+  // a standalone one-shot call, independent of the agent loop. Still skipped mid-
+  // enhance, with a menu open, or when the draft is already the current
   // enhancement (nothing left to improve).
   useEffect(() => {
-    if (running || enhancing || !hydrated) return setEnhanceHintVisible(false);
+    if (enhancing || !hydrated) return setEnhanceHintVisible(false);
     if (input.trim().length === 0) return setEnhanceHintVisible(false);
     if (slashOpen || mentionOpen) return setEnhanceHintVisible(false);
     if (enhancement && enhancement.plain === input) return setEnhanceHintVisible(false);
     setEnhanceHintVisible(true);
-  }, [input, running, enhancing, hydrated, slashOpen, mentionOpen, enhancement]);
+  }, [input, enhancing, hydrated, slashOpen, mentionOpen, enhancement]);
 
   // Submit the current input together with any staged attachments. Images are
   // echoed inline in the user's bubble; all media is sent to the agent.
