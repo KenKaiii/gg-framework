@@ -59,7 +59,7 @@ export function WindowLayoutButton({ onArrange }: { onArrange?: () => void }): R
   return (
     <div className="winlayout" ref={ref}>
       <button
-        className="btn btn-ghost btn-sm"
+        className="btn btn-ghost btn-sm btn-nav-icon"
         disabled={busy}
         title="Arrange into multiple project windows"
         onClick={() => setOpen((o) => !o)}

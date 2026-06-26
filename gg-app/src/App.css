@@ -132,6 +132,15 @@
   border-radius: var(--radius-pill);
   flex: 0 0 auto;
 }
+/* Nav icon buttons (Radio, Windows, …) hold a stroked lucide SVG. Animating the
+   .btn-ghost `filter: brightness()` over a stroked icon re-rasterizes it on a
+   filter layer every frame → visible shimmer/jitter. Brighten the icon via
+   `color` instead (lucide strokes use currentColor): same hover read as the
+   text buttons, zero re-raster, zero movement. */
+.btn-nav-icon:hover:not(:disabled) {
+  filter: none;
+  color: var(--text);
+}
 
 * {
   box-sizing: border-box;

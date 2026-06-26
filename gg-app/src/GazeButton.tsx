@@ -16,7 +16,7 @@ export function GazeButton(): React.ReactElement {
 
   return (
     <button
-      className={`btn btn-sm ${enabled ? "btn-primary" : "btn-ghost"}`}
+      className={`btn btn-sm btn-nav-icon ${enabled ? "btn-primary" : "btn-ghost"}`}
       title={
         enabled
           ? "Gaze focus on — look at a window to focus it (\u2318/Ctrl+Shift+G)"

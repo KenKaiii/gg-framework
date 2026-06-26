@@ -69,7 +69,7 @@ export function RadioButton(): React.ReactElement {
   return (
     <div className="winlayout" ref={ref}>
       <button
-        className="btn btn-ghost btn-sm"
+        className="btn btn-ghost btn-sm btn-nav-icon"
         disabled={busy}
         title={playing ? "Radio playing — click to change or stop" : "Play internet radio"}
         style={playing ? { color: theme.accent } : undefined}
