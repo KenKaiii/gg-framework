@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 4.14.2
+
+### Patch Changes
+
+- Add prompt-enhancer sidecar capability with project-stack-aware terminology, and harden image attachments — malformed/unsupported images (e.g. a bad .ico) now degrade to a file note instead of failing the whole turn.
+  - @kenkaiiii/gg-ai@4.14.2
+  - @kenkaiiii/gg-agent@4.14.2
+  - @kenkaiiii/gg-core@4.14.2
+
 ## 4.14.1
 
 ### Patch Changes
