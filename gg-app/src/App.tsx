@@ -561,7 +561,11 @@ function App(): React.ReactElement {
     // `auto` would then flash a phantom grey scrollbar inside a single-line input.
     el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
     el.style.height = `${Math.min(el.scrollHeight, max)}px`;
-  }, [input]);
+    // Also re-measure when the enhance animation overlay is removed: during the
+    // animation the textarea is position:absolute (stretched to the overlay's
+    // height), so a measurement taken then is wrong. Re-running once enhanceAnim
+    // clears sizes the now-in-flow textarea to its real content height.
+  }, [input, enhanceAnim]);
 
   // Keyboard shortcuts for multi-window navigation.
   //   Cmd/Ctrl+N         → new project window
@@ -1678,13 +1682,29 @@ function App(): React.ReactElement {
     }
   }
 
-  // The dissolve→decode animation finished: apply the result + tear down.
+  // The dissolve→decode animation finished: hand off to the real input WITHOUT a
+  // flash. The decoded text lives in the .enh-diss overlay (on top); the textarea
+  // sits hidden beneath it (.input-anim). If we removed the overlay and filled
+  // the textarea in the same commit, you'd see the overlay text vanish and the
+  // textarea text reflow/resize a frame later. So: fill the textarea FIRST (still
+  // hidden under the overlay) and let useLayoutEffect size it, THEN drop the
+  // overlay on the next frame — the sized text is already in place underneath.
   function onEnhanceAnimDone(): void {
     const r = pendingEnhanceRef.current;
     pendingEnhanceRef.current = null;
-    setEnhanceAnim(null);
-    setEnhancing(false);
-    if (r) applyEnhanceResult(r);
+    if (r) {
+      setInput(r.enhanced);
+      setEnhancement({ plain: r.enhanced, segments: r.segments });
+    }
+    requestAnimationFrame(() => {
+      setEnhanceAnim(null);
+      setEnhancing(false);
+      const el = inputRef.current;
+      if (el) {
+        el.focus();
+        el.selectionStart = el.selectionEnd = el.value.length;
+      }
+    });
   }
 
   // Reveal the floating "Enhance" pill ~1s after the user stops typing, for a
@@ -2189,7 +2209,9 @@ function App(): React.ReactElement {
             )}
             <textarea
               ref={inputRef}
-              className={`input${enhanceAnim ? " input-anim" : ""}`}
+              className={`input${enhanceAnim ? " input-anim" : ""}${
+                enhanceHintVisible ? " input-dimmed" : ""
+              }`}
               rows={1}
               // Lock the input while the dissolve→decode animation plays: the caret
               // is invisible, so typing would be silently discarded and Enter would

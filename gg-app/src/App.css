@@ -2766,6 +2766,16 @@ body {
   line-height: 1.5;
   padding: 0;
   margin: 0;
+  transition:
+    opacity var(--t-fast),
+    filter var(--t-fast);
+}
+/* While the floating "Enhance?" pill is showing, dim + soften the input text so
+   focus shifts to the pill. Reverts the instant the user types (the pill hides,
+   removing this class). */
+.input.input-dimmed {
+  opacity: 0.4;
+  filter: blur(1.5px);
 }
 .input::-webkit-scrollbar {
   width: 8px;
