@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 4.15.0
+
+### Minor Changes
+
+- Add `code_search` AST-aware tool (TS/JS symbol chunking + BM25 ranking) and opt-in hashline anchors for read/edit (stale-edit rejection via line+hash guard).
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@4.15.0
+- @kenkaiiii/gg-agent@4.15.0
+- @kenkaiiii/gg-core@4.15.0
+
 ## 4.14.3
 
 ### Patch Changes
