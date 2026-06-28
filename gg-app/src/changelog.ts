@@ -89,11 +89,11 @@ export const CHANGELOG: ChangelogEntry[] = [
 
 /**
  * The most recent changelog bullets for the modal, capped at `maxItems` total
- * bullet points (default 20) across versions — newest first, version grouping
+ * bullet points (default 50) across versions — newest first, version grouping
  * preserved. A version whose bullets would spill past the cap is included with
  * only the bullets that fit.
  */
-export function recentChangelog(maxItems = 20): ChangelogEntry[] {
+export function recentChangelog(maxItems = 50): ChangelogEntry[] {
   const out: ChangelogEntry[] = [];
   let count = 0;
   for (const entry of CHANGELOG) {

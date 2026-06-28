@@ -9,7 +9,7 @@ import { ShimmerText } from "./ShimmerText";
  * Body of the dedicated, screen-centered "What's new" window (the borderless
  * Tauri window built by Rust `open_whatsnew_window`, reached via the
  * `?whatsnew=1` flag in main.tsx). Renders the most recent changelog bullets
- * (capped at 20, see `recentChangelog`) inside a scroll container that only
+ * (capped at 50, see `recentChangelog`) inside a scroll container that only
  * engages on overflow. Closing — Escape, the × button, or "Got it" — closes the
  * whole window.
  */
@@ -29,7 +29,7 @@ export function WhatsNewWindow(): React.ReactElement {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  const sections = recentChangelog(20);
+  const sections = recentChangelog(50);
 
   return (
     <div className="whatsnew-window" style={{ background: theme.surface2 }}>
@@ -37,7 +37,7 @@ export function WhatsNewWindow(): React.ReactElement {
       <div className="modal-head">
         <div className="modal-title">
           <ShimmerText base={theme.success} bright="#a7f3d0">
-            What&apos;s new with GG Coder
+            What&apos;s new with GG Coder (last 50 updates)
           </ShimmerText>
         </div>
         <button

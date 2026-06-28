@@ -74,6 +74,78 @@ const MEMES: Meme[] = [
     emoji: "🎉",
     caption: "Fixed one bug, made three",
   },
+  {
+    id: 11,
+    src: "https://i.giphy.com/media/nYI8SmmChYXK0/giphy.gif",
+    emoji: "🤷🤖",
+    caption: "The AI wrote it, not me",
+  },
+  {
+    id: 12,
+    src: "https://i.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif",
+    emoji: "🫡",
+    caption: "Accept all. Read nothing.",
+  },
+  {
+    id: 13,
+    src: "https://i.giphy.com/media/3o7TKSjRrfIPjeiVyM/giphy.gif",
+    emoji: "✅🚀",
+    caption: "Vibe check passed. Ship it.",
+  },
+  {
+    id: 14,
+    src: "https://i.giphy.com/media/3oKIPnAiaMCws8nOsE/giphy.gif",
+    emoji: "🙏📦",
+    caption: "npm install && pray",
+  },
+  {
+    id: 15,
+    src: "https://i.giphy.com/media/l46Cy1rHbQ92uuLXa/giphy.gif",
+    emoji: "🧠📜",
+    caption: "Context window full again",
+  },
+  {
+    id: 16,
+    src: "https://i.giphy.com/media/l3q2XhfQ8oCkm1Ts4/giphy.gif",
+    emoji: "👨‍🍳🔥",
+    caption: "My agent is cooking",
+  },
+  {
+    id: 17,
+    src: "https://i.giphy.com/media/xT0xezQGU5xCDJuCPe/giphy.gif",
+    emoji: "⏳💀",
+    caption: "Rate limited mid-vibe",
+  },
+  {
+    id: 18,
+    src: "https://i.giphy.com/media/l1J9u3TZfpmeDLkD6/giphy.gif",
+    emoji: "🤫",
+    caption: "It compiled. Don't ask how.",
+  },
+  {
+    id: 19,
+    src: "https://i.giphy.com/media/3oEduSbSGpGaRX2Vri/giphy.gif",
+    emoji: "👍👀",
+    caption: "LGTM (did not read)",
+  },
+  {
+    id: 20,
+    src: "https://i.giphy.com/media/26tn33aiTi1jkl6H6/giphy.gif",
+    emoji: "🤝🤖",
+    caption: "Merge conflict? Ask the AI.",
+  },
+  {
+    id: 21,
+    src: "https://i.giphy.com/media/3o7btPCcdNniyf0ArS/giphy.gif",
+    emoji: "💪⌨️",
+    caption: "Prompt harder.",
+  },
+  {
+    id: 22,
+    src: "https://i.giphy.com/media/xUPGcguWZHRC2HyBRS/giphy.gif",
+    emoji: "💸🪙",
+    caption: "Tokens are my whole budget",
+  },
 ];
 
 // Four CORNER zones, pinned to the window edges in PIXELS so cards never
@@ -125,7 +197,7 @@ function pickFour(): Placed[] {
 }
 
 /**
- * Decorative floating meme cards on the home screen — 4 of 10 shown at once (one
+ * Decorative floating meme cards on the home screen — 4 of many shown at once (one
  * per corner), rotating every few seconds with a fade. Purely for flair;
  * pointer-events disabled so it never blocks the buttons.
  */
