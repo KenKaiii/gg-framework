@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 4.14.3
+
+### Patch Changes
+
+- Fix queued messages overriding the original task: mid-run steering prompts are now framed as concurrent instructions so the agent folds them into the current work instead of abandoning the original objective.
+  - @kenkaiiii/gg-ai@4.14.3
+  - @kenkaiiii/gg-agent@4.14.3
+  - @kenkaiiii/gg-core@4.14.3
+
 ## 4.14.2
 
 ### Patch Changes
