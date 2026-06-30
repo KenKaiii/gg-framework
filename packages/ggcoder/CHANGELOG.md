@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.1.1
+
+### Patch Changes
+
+- Fix the gg-app Ken mentor sidecar so it follows model switches after it has been created.
+  - @kenkaiiii/gg-ai@5.1.1
+  - @kenkaiiii/gg-agent@5.1.1
+  - @kenkaiiii/gg-core@5.1.1
+
 ## 5.1.0
 
 ### Minor Changes
