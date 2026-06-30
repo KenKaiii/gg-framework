@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.1.0
+
+### Minor Changes
+
+- Add Ken Kai, a read-only mentor agent: a second AgentSession scoped by an `allowedTools` allow-list plus an `allowedMcpServers` whitelist (kencode-search) so it can research real code but never mutate the repo, with its advisory turns persisted alongside the build session as non-LLM custom entries that survive resume and compaction.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.1.0
+- @kenkaiiii/gg-agent@5.1.0
+- @kenkaiiii/gg-core@5.1.0
+
 ## 5.0.0
 
 ### Major Changes
