@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.9.0",
+    date: "2026-07-01",
+    items: [
+      "Xiaomi just got a turbo button. MiMo-V2.5-Pro-UltraSpeed is in the model picker now, built for when you want answers fast and don't mind paying a bit more for the speed.",
+      "Connecting Xiaomi now gives you a real choice. Pick Token Plan or API Credits right in the login screen, and I'll route every MiMo model to whichever one you've actually got set up. No more guessing which key goes where.",
+    ],
+  },
+  {
     version: "0.8.0",
     date: "2026-07-01",
     items: [
