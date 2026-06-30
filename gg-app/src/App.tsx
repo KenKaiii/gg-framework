@@ -82,6 +82,37 @@ import { toast } from "./toast";
 import { fileToPending, toWire, type PendingAttachment } from "./attachments";
 import "./App.css";
 
+const DEFAULT_INPUT_PLACEHOLDER = "Type a message, / commands, @ files, @Ken for help";
+const INPUT_PLACEHOLDERS = [
+  DEFAULT_INPUT_PLACEHOLDER,
+  "Need a second opinion? Ask @Ken",
+  "Stuck on what to do next? Ask @Ken",
+  DEFAULT_INPUT_PLACEHOLDER,
+  "Want a second set of eyes? Ask @Ken",
+  "Unsure how to proceed? Ask @Ken",
+  "Need a quick review? Ask @Ken",
+] as const;
+const RUNNING_INPUT_PLACEHOLDERS = [
+  "Agent is working. Add a follow-up if you want",
+  "Got another thought? Queue it here",
+  "Agent is on it. You can stack the next note",
+  "Thinking ahead? Drop the next instruction",
+  "Keep going. Your next message will queue up",
+] as const;
+const INPUT_PLACEHOLDER_INTERVAL_MS = 12_000;
+const PLACEHOLDER_SHUFFLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+const PLACEHOLDER_SHUFFLE_FRAMES = 18;
+const PLACEHOLDER_SHUFFLE_FRAME_MS = 24;
+
+function shufflePlaceholderFrame(target: string, frame: number): string {
+  const revealCount = Math.ceil((target.length * frame) / PLACEHOLDER_SHUFFLE_FRAMES);
+  return Array.from(target, (char, index) => {
+    if (index < revealCount || /\s|[.,?/@]/.test(char)) return char;
+    const pick = Math.floor(Math.random() * PLACEHOLDER_SHUFFLE_CHARS.length);
+    return PLACEHOLDER_SHUFFLE_CHARS[pick];
+  }).join("");
+}
+
 // ── Transcript model ───────────────────────────────────────
 // Tool activity lives in the pinned LiveToolPanel, never in the transcript.
 // Exported (type-only) so the Ken mentor hook can produce/typecheck ken + error
@@ -205,6 +236,9 @@ function App(): React.ReactElement {
     handleKenEvent,
   } = useKenMentor({ setItems, nextId });
   const [input, setInput] = useState("");
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  const [displayPlaceholder, setDisplayPlaceholder] = useState(DEFAULT_INPUT_PLACEHOLDER);
+  const displayPlaceholderRef = useRef(DEFAULT_INPUT_PLACEHOLDER);
   // Shell-style prompt history for ↑/↓ recall in the chat input. Newest entries
   // last. `historyIndex` is null while editing a fresh draft; stepping ↑ walks
   // backwards into history, ↓ forwards. `historyDraftRef` stashes the in-progress
@@ -455,6 +489,40 @@ function App(): React.ReactElement {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  const inputPlaceholder = running
+    ? RUNNING_INPUT_PLACEHOLDERS[placeholderIndex % RUNNING_INPUT_PLACEHOLDERS.length]
+    : INPUT_PLACEHOLDERS[placeholderIndex % INPUT_PLACEHOLDERS.length];
+  const setAnimatedPlaceholder = useCallback((text: string) => {
+    displayPlaceholderRef.current = text;
+    setDisplayPlaceholder(text);
+  }, []);
+  useEffect(() => {
+    if (input.length > 0) return;
+    const id = window.setInterval(() => {
+      setPlaceholderIndex((i) => i + 1);
+    }, INPUT_PLACEHOLDER_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [input.length]);
+  useEffect(() => {
+    if (input.length > 0) {
+      setAnimatedPlaceholder(inputPlaceholder);
+      return;
+    }
+    if (displayPlaceholderRef.current === inputPlaceholder) return;
+
+    let frame = 0;
+    const id = window.setInterval(() => {
+      frame += 1;
+      const text =
+        frame >= PLACEHOLDER_SHUFFLE_FRAMES
+          ? inputPlaceholder
+          : shufflePlaceholderFrame(inputPlaceholder, frame);
+      setAnimatedPlaceholder(text);
+      if (frame >= PLACEHOLDER_SHUFFLE_FRAMES) window.clearInterval(id);
+    }, PLACEHOLDER_SHUFFLE_FRAME_MS);
+    return () => window.clearInterval(id);
+  }, [input.length, inputPlaceholder, setAnimatedPlaceholder]);
 
   // Stop the browser from navigating to / opening a file dropped anywhere
   // (which would replace the whole UI with the raw file). The active chat view
@@ -1745,11 +1813,7 @@ function App(): React.ReactElement {
               // submit the un-enhanced draft mid-animation.
               readOnly={enhanceAnim !== null}
               value={input}
-              placeholder={
-                running
-                  ? "Agent is working \u2014 queue a follow-up…"
-                  : "Type your message, / for commands, @ to add files"
-              }
+              placeholder={displayPlaceholder}
               onPaste={(e) => {
                 const files = Array.from(e.clipboardData.files);
                 if (files.length > 0) {
