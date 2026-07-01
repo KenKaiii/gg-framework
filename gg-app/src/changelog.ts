@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.10.2",
+    date: "2026-07-01",
+    items: [
+      "Anthropic occasionally drops a tool call mid-stream with nothing in it, and it used to make GG Coder throw up its hands and blame itself. I taught it to recognize that exact glitch and just quietly pick the work back up, so a rare hiccup doesn't kill your session anymore.",
+      "When something really does go wrong, I fixed the message so it points at the actual culprit instead of guessing it's a GG Coder bug. Clearer errors, less confusion about who to blame.",
+    ],
+  },
+  {
     version: "0.10.1",
     date: "2026-07-01",
     items: [
