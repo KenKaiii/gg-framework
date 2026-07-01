@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.4.0
+
+### Minor Changes
+
+- Re-enable Claude Fable 5 in the model selector, and show clean, provider-attributed error messages (headline + guidance + reset time for usage limits) instead of raw JSON error blobs from providers like Xiaomi MiMo.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.4.0
+- @kenkaiiii/gg-agent@5.4.0
+- @kenkaiiii/gg-core@5.4.0
+
 ## 5.3.0
 
 ### Minor Changes
