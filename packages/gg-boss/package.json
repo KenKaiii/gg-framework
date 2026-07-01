@@ -1,6 +1,6 @@
 {
   "name": "@kenkaiiii/gg-boss",
-  "version": "5.4.1",
+  "version": "5.4.2",
   "type": "module",
   "description": "Orchestrator agent that drives multiple ggcoder sessions across projects from a single chat",
   "license": "MIT",

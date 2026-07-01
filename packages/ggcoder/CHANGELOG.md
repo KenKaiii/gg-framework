@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.4.2
+
+### Patch Changes
+
+- Auto-continue once when a tool call fails 3x with completely empty arguments (a provider stream glitch, not a model schema mistake), and correctly attribute the resulting error to the provider instead of mislabeling it a ggcoder bug.
+  - @kenkaiiii/gg-ai@5.4.2
+  - @kenkaiiii/gg-agent@5.4.2
+  - @kenkaiiii/gg-core@5.4.2
+
 ## 5.4.1
 
 ### Patch Changes
