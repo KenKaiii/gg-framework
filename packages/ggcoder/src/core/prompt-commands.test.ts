@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PROMPT_COMMANDS } from "./prompt-commands.js";
 
 describe("prompt commands", () => {
@@ -19,6 +19,31 @@ describe("prompt commands", () => {
     expect(bulletProof?.prompt).toContain("Press Ctrl+T to open the task list");
     expect(bulletProof?.prompt).not.toContain("Create a Goal");
     expect(bulletProof?.prompt).not.toContain("Press CTRL + G");
+  });
+
+  it("points at the app's Tasks button / New Session instead of CLI keybinds when run under gg-app", async () => {
+    const previous = process.env.GG_APP_PORT;
+    process.env.GG_APP_PORT = "0";
+    vi.resetModules();
+    try {
+      const { PROMPT_COMMANDS: appPromptCommands } = await import("./prompt-commands.js");
+      const setup = appPromptCommands.find((command) => command.name === "setup");
+      const bulletProof = appPromptCommands.find((command) => command.name === "bullet-proof");
+      const init = appPromptCommands.find((command) => command.name === "init");
+
+      expect(setup?.prompt).toContain('Click the "Tasks" button');
+      expect(setup?.prompt).not.toContain("Ctrl+T");
+      expect(bulletProof?.prompt).toContain('Click the "Tasks" button');
+      expect(bulletProof?.prompt).not.toContain("Ctrl+T");
+      expect(init?.prompt).toContain("New Session");
+      expect(init?.prompt).toContain('click "+ New"');
+      expect(init?.prompt).not.toContain("restart ggcoder");
+      expect(init?.prompt).not.toContain("/quit");
+    } finally {
+      if (previous === undefined) delete process.env.GG_APP_PORT;
+      else process.env.GG_APP_PORT = previous;
+      vi.resetModules();
+    }
   });
 
   it("removes retired prompt-template commands", () => {

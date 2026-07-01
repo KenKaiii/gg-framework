@@ -10,6 +10,23 @@ export interface PromptCommand {
   prompt: string;
 }
 
+/**
+ * True when this process is the gg-app sidecar (Tauri spawns it with
+ * `GG_APP_PORT` set, even to "0" — plain `ggcoder` CLI never sets it). Used
+ * to phrase user-facing notices (restart / task-list pointers) in terms of
+ * the desktop app's UI instead of CLI keybinds, since most users are on the
+ * app now and it has no terminal keybinds at all.
+ */
+const IS_GG_APP = process.env.GG_APP_PORT !== undefined;
+
+const TASKS_ADDED_NOTICE = IS_GG_APP
+  ? 'Tasks added. Click the "Tasks" button to open the task list and run them.'
+  : "Tasks added. Press Ctrl+T to open the task list and run them.";
+
+const CLAUDE_MD_RESTART_NOTICE = IS_GG_APP
+  ? '> ⚠️ CLAUDE.md was created/updated. GG App loads it fresh per session, so start a **New Session** (click "+ New") before continuing. Without a new session, I won\'t see the new context.'
+  : "> ⚠️ CLAUDE.md was created/updated. ggcoder loads it at startup, so **exit and restart ggcoder** (`/quit` then run `ggcoder` again) before continuing. Without a restart, I won't see the new context.";
+
 export const PROMPT_COMMANDS: PromptCommand[] = [
   {
     name: "expand",
@@ -235,7 +252,7 @@ After the report, ask:
 
 **Do not start fixing until the user picks.**
 
-If the user chooses A, B, or C, do not fix directly. Instead, add one task per selected finding or tightly coupled finding group using the \`tasks\` tool (action=add), ordered by severity, exploitability, and dependency. Each task needs a short title and a standalone prompt that includes the finding ID, vulnerability scenario, affected local files/anchors, concrete remediation, instructions to compare security-sensitive implementation details with kencode search or authoritative docs before editing, project verification commands, and instructions to compare the final fix with kencode search or authoritative docs again before completing the task. After adding the tasks, tell the user exactly: "Tasks added. Press Ctrl+T to open the task list and run them." Do not begin executing them unless the user explicitly says so.
+If the user chooses A, B, or C, do not fix directly. Instead, add one task per selected finding or tightly coupled finding group using the \`tasks\` tool (action=add), ordered by severity, exploitability, and dependency. Each task needs a short title and a standalone prompt that includes the finding ID, vulnerability scenario, affected local files/anchors, concrete remediation, instructions to compare security-sensitive implementation details with kencode search or authoritative docs before editing, project verification commands, and instructions to compare the final fix with kencode search or authoritative docs again before completing the task. After adding the tasks, tell the user exactly: "${TASKS_ADDED_NOTICE}" Do not begin executing them unless the user explicitly says so.
 
 ## Threat reference (May 2026)
 
@@ -344,7 +361,7 @@ Keep total file under 100 lines. If updating, preserve any custom sections the u
 
 End your reply with this exact notice so the user doesn't miss it:
 
-> ⚠️ CLAUDE.md was created/updated. ggcoder loads it at startup, so **exit and restart ggcoder** (\`/quit\` then run \`ggcoder\` again) before continuing. Without a restart, I won't see the new context.`,
+${CLAUDE_MD_RESTART_NOTICE}`,
   },
   {
     name: "setup-commit",
@@ -617,7 +634,7 @@ Which (if any) would you like me to fix? Options:
 ## Rules
 
 - **Report only.** No edits, no installs, no commits without explicit user confirmation after the report.
-- **Task handoff for fixes.** If the user chooses A, B, or C, do not fix directly. Add one task per selected gap or tightly coupled gap group using the \`tasks\` tool (action=add). Each task needs a short title and a standalone prompt that includes the gap, affected files/configs, safe-additive constraints, implementation instructions, project verification commands, and instructions to verify relevant tool/config semantics against official docs before completing the task. Use kencode search only for code-level examples, not as proof of scaffolding requirements. After adding the tasks, tell the user exactly: "Tasks added. Press Ctrl+T to open the task list and run them." Do not begin executing them unless the user explicitly says so.
+- **Task handoff for fixes.** If the user chooses A, B, or C, do not fix directly. Add one task per selected gap or tightly coupled gap group using the \`tasks\` tool (action=add). Each task needs a short title and a standalone prompt that includes the gap, affected files/configs, safe-additive constraints, implementation instructions, project verification commands, and instructions to verify relevant tool/config semantics against official docs before completing the task. Use kencode search only for code-level examples, not as proof of scaffolding requirements. After adding the tasks, tell the user exactly: "${TASKS_ADDED_NOTICE}" Do not begin executing them unless the user explicitly says so.
 - **No code refactors recommended.** This audit is about scaffolding/tooling, not code review. Use \`/scan\` or \`/verify\` for code-level findings.
 - **No dependency installations in the report.** Listing them as observations is fine; recommending installation is not — that's the user's call.
 - **Skip empty categories.** If a category has no findings, omit it.
