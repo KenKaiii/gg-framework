@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.4.1
+
+### Patch Changes
+
+- Fix gg-app auto-compaction not reserving headroom for a model's real output budget (e.g. GPT-5.5 over Codex OAuth: 272K window, up to 128K output), which let context grow until the provider rejected the turn with "exceeds the context window"; also fix the app's context-window footer to use the correct transport-specific window (Codex OAuth vs public API).
+  - @kenkaiiii/gg-ai@5.4.1
+  - @kenkaiiii/gg-agent@5.4.1
+  - @kenkaiiii/gg-core@5.4.1
+
 ## 5.4.0
 
 ### Minor Changes
