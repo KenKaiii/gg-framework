@@ -21,7 +21,8 @@ function isExternalHref(href: string): boolean {
 /**
  * Anchor that opens outside the webview. Browser links go to the OS browser;
  * file-ish links from the agent (`src/App.tsx`, `/abs/file.ts`, `file://…`) open
- * against the current project window's cwd.
+ * against the current project window's cwd. Shift/Cmd(Ctrl)+click reveals the
+ * file in the system file manager (Finder / Explorer) instead of opening it.
  */
 function ExternalLink({
   href,
@@ -39,7 +40,7 @@ function ExternalLink({
         if (isExternalHref(href)) {
           void openUrl(href);
         } else {
-          void openProjectPath(href);
+          void openProjectPath(href, e.shiftKey || e.metaKey || e.ctrlKey);
         }
       }}
     >

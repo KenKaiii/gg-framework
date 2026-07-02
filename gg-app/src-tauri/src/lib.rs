@@ -557,8 +557,10 @@ fn strip_file_location_suffix(path: &str) -> &str {
 
 /// Open a project file linked from the chat. Relative paths resolve against this
 /// window's sidecar cwd; `:line[:col]` and `#Lline` decorations are tolerated.
+/// With `reveal: true` (Shift/Cmd+click) the file is shown in the system file
+/// manager (Finder) instead of opened in its default application.
 #[tauri::command]
-fn open_project_path(webview: WebviewWindow, path: String) -> Result<(), String> {
+fn open_project_path(webview: WebviewWindow, path: String, reveal: Option<bool>) -> Result<(), String> {
     let cwd = cwd_for(&webview).ok_or("sidecar not ready")?;
     let trimmed = path.trim();
     if trimmed.is_empty() {
@@ -588,10 +590,18 @@ fn open_project_path(webview: WebviewWindow, path: String) -> Result<(), String>
         .canonicalize()
         .map_err(|_| format!("file not found: {}", cleaned))?;
 
-    webview
-        .opener()
-        .open_path(canonical.to_string_lossy().to_string(), None::<String>)
-        .map_err(|e| e.to_string())
+    let target = canonical.to_string_lossy().to_string();
+    if reveal.unwrap_or(false) {
+        webview
+            .opener()
+            .reveal_item_in_dir(target)
+            .map_err(|e| e.to_string())
+    } else {
+        webview
+            .opener()
+            .open_path(target, None::<String>)
+            .map_err(|e| e.to_string())
+    }
 }
 
 /// Proxy: current agent/session state.
