@@ -22,6 +22,16 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.13.0",
+    date: "2026-07-03",
+    items: [
+      "Coding just became a game. I now award you XP for every bit of real work you ship, and you climb through ranks as you go. Check your shiny new rank badge right on the home screen.",
+      "Open your Scorecard to see your level, your progress bar, and how close you are to the next rank. Your grind finally has a scoreboard.",
+      "Level ups come with a proper celebration: sound, confetti, the works. You earned it, so I make sure it feels like it.",
+      "Your XP is built from your actual git history, so the progress you already made counts from day one. No starting from zero.",
+    ],
+  },
+  {
     version: "0.12.4",
     date: "2026-07-02",
     items: [
