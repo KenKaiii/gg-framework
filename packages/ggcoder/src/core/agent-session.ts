@@ -1617,22 +1617,36 @@ export class AgentSession {
         before: String(compacted.result.originalCount),
         after: String(compacted.result.newCount),
       });
+
+      // Compaction rewrote history, so the on-disk file no longer reflects
+      // what's in memory — fork a fresh session file for the compacted state
+      // (mirrors compact()'s own persistence) so `ggcoder continue` picks up
+      // the summary instead of the full original transcript.
+      const session = await this.sessionManager.create(this.cwd, this.provider, this.model);
+      this.sessionId = session.id;
+      this.sessionPath = session.path;
+      this.currentLeafId = null;
+
+      // Re-persist (compacted) messages — skip system, it's rebuilt on load
+      for (const msg of this.messages) {
+        if (msg.role === "system") continue;
+        await this.persistMessage(msg);
+      }
+      this.lastPersistedIndex = this.messages.length;
+      // Carry Ken's restored turns into the continuation file.
+      await this.rePersistKenTurns();
+      await this.rePersistAutopilotMarkers();
+      return;
     }
 
-    // Create new session file for continuation
-    const session = await this.sessionManager.create(this.cwd, this.provider, this.model);
-    this.sessionId = session.id;
-    this.sessionPath = session.path;
-
-    // Re-persist (compacted) messages — skip system, it's rebuilt on load
-    for (const msg of this.messages) {
-      if (msg.role === "system") continue;
-      await this.persistMessage(msg);
-    }
+    // Plain resume (no compaction needed): keep using the original session
+    // file/id and append future turns to it in place. Forking a new file here
+    // unconditionally used to create a byte-identical duplicate every time a
+    // session was merely reopened (e.g. app/window restart) with zero new
+    // messages in between — the duplicate entries seen in the session list.
+    this.sessionId = loaded.header.id;
+    this.sessionPath = sessionPath;
     this.lastPersistedIndex = this.messages.length;
-    // Carry Ken's restored turns into the continuation file.
-    await this.rePersistKenTurns();
-    await this.rePersistAutopilotMarkers();
   }
 
   private async prepareDynamicContext(_latestUserPrompt?: string): Promise<Message[]> {
