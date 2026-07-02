@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.12.4",
+    date: "2026-07-02",
+    items: [
+      "Your sessions list is clean now. Reopening a project used to clone the whole conversation into a duplicate every single time, I fixed the leak so resuming just picks up right where you left off.",
+    ],
+  },
+  {
     version: "0.12.3",
     date: "2026-07-02",
     items: [
