@@ -101,4 +101,24 @@ describe("parseAutopilotVerdict", () => {
   it("skips leading blank lines before the keyword", () => {
     expect(parseAutopilotVerdict("\n\nALL_CLEAR")).toEqual({ kind: "all_clear" });
   });
+
+  it("recovers ALL_CLEAR when Ken adds commentary before a trailing bare keyword line", () => {
+    const reply =
+      "The label is now a plain non-clickable <span>, model name is the separate " +
+      "clickable button. Matches the request exactly. Typecheck passed.\nALL_CLEAR";
+    expect(parseAutopilotVerdict(reply)).toEqual({ kind: "all_clear" });
+  });
+
+  it("recovers IGNORE from a trailing bare keyword line after commentary", () => {
+    const reply = "Just a formatting fix, nothing to review here.\nIGNORE";
+    expect(parseAutopilotVerdict(reply)).toEqual({ kind: "ignore" });
+  });
+
+  it("does NOT recover a PROMPT or HUMAN keyword from a later line — only bare ALL_CLEAR/IGNORE", () => {
+    // PROMPT/HUMAN carry a payload that can't be safely recovered from an
+    // arbitrary position in surrounding prose, so this still falls to human.
+    const reply = "Some commentary about the change.\nPROMPT\nFix the bug.";
+    const v = parseAutopilotVerdict(reply);
+    expect(v.kind).toBe("human");
+  });
 });

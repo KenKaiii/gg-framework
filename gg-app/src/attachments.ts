@@ -46,3 +46,15 @@ export function fileToPending(file: File): Promise<PendingAttachment> {
 export function toWire(a: PendingAttachment): Attachment {
   return { kind: a.kind, name: a.name, mediaType: a.mediaType, data: a.data };
 }
+
+/** Stage an already-decoded Attachment (e.g. base64 read natively from a
+ *  dropped file's path, which has no browser File object) as a pending
+ *  attachment — same shape `fileToPending` builds from a File, so a native
+ *  drop attaches identically to a paste/picker file. */
+export function attachmentToPending(a: Attachment): PendingAttachment {
+  return {
+    ...a,
+    id: nextId(),
+    previewUrl: a.kind === "image" ? `data:${a.mediaType};base64,${a.data}` : undefined,
+  };
+}

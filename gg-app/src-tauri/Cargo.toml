@@ -28,6 +28,7 @@ serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["time"] }
+base64 = "0.22"
 
 # Updater + process (relaunch) are desktop-only — the updater plugin doesn't
 # build for mobile targets.

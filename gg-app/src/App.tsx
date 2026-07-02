@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, memo } from "react";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { theme } from "./theme";
 import {
   waitForReady,
@@ -38,6 +39,9 @@ import {
   type FileHit,
   searchFiles,
   enhancePrompt,
+  getDroppedPathInfo,
+  readDroppedFileAttachment,
+  type Attachment,
   type PromptSegment,
 } from "./agent";
 import { ActivityBar } from "./ActivityBar";
@@ -85,7 +89,7 @@ import { AttachmentBar } from "./AttachmentBar";
 import { EnhancedSegments } from "./PromptEnhancement";
 import { EnhanceDissolve } from "./EnhanceDissolve";
 import { toast } from "./toast";
-import { fileToPending, toWire, type PendingAttachment } from "./attachments";
+import { fileToPending, toWire, attachmentToPending, type PendingAttachment } from "./attachments";
 import "./App.css";
 
 const DEFAULT_INPUT_PLACEHOLDER = "Type a message, / commands, @ files, @Ken for help";
@@ -109,6 +113,21 @@ const INPUT_PLACEHOLDER_INTERVAL_MS = 12_000;
 const PLACEHOLDER_SHUFFLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const PLACEHOLDER_SHUFFLE_FRAMES = 18;
 const PLACEHOLDER_SHUFFLE_FRAME_MS = 24;
+
+// Autopilot Ken's "all clear" line, rotated so the auto-review loop doesn't
+// repeat the exact same sentence every time GG Coder's work checks out.
+const ALL_CLEAR_VARIATIONS = [
+  "All clear. Looks good to me.",
+  "Checks out. Nothing left to flag.",
+  "Nice, this holds up. Nothing more from me.",
+  "Solid work. I've got no notes.",
+  "Yep, that covers it. All good.",
+  "Looks right to me — ship it.",
+  "Clean pass. Nothing to add here.",
+  "That does the job. No complaints.",
+  "Good to go, no issues found.",
+  "This holds together. All clear.",
+] as const;
 
 function shufflePlaceholderFrame(target: string, frame: number): string {
   const revealCount = Math.ceil((target.length * frame) / PLACEHOLDER_SHUFFLE_FRAMES);
@@ -247,6 +266,29 @@ function thinkingColor(level: string | null | undefined): string {
 
 function hasDraggedFiles(dataTransfer: DataTransfer | null): boolean {
   return Array.from(dataTransfer?.types ?? []).includes("Files");
+}
+
+type WebkitEntry = { isDirectory?: boolean };
+type DirectoryAwareDataTransferItem = DataTransferItem & {
+  webkitGetAsEntry?: () => WebkitEntry | null;
+};
+
+function isDirectoryDragItem(item: DataTransferItem): boolean {
+  const entry = (item as DirectoryAwareDataTransferItem).webkitGetAsEntry?.();
+  return entry?.isDirectory === true;
+}
+
+function filesForAttachment(dataTransfer: DataTransfer): File[] {
+  const items = Array.from(dataTransfer.items ?? []);
+  if (items.length === 0) return Array.from(dataTransfer.files);
+  return items
+    .filter((item) => item.kind === "file" && !isDirectoryDragItem(item))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file !== null);
+}
+
+function canHandleWindowFileDrop(): boolean {
+  return !document.querySelector(".modal-backdrop");
 }
 
 function App(): React.ReactElement {
@@ -483,6 +525,17 @@ function App(): React.ReactElement {
     stickToBottomRef.current = distanceFromBottom <= 48;
   }, []);
 
+  const insertDroppedFolderPaths = useCallback((paths: string[]): void => {
+    if (paths.length === 0) return;
+    const text = paths.join(" ");
+    setInput((prev) => {
+      if (!prev.trim()) return text;
+      return `${prev}${/\s$/.test(prev) ? "" : " "}${text}`;
+    });
+    setEnhancement(null);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+
   // Re-pin to the bottom before every paint — but only while pinned. The live
   // tool panel + activity bar (.liveregion) grow/shrink below the transcript as
   // tools run and finish; since the transcript is a flexible sibling, that
@@ -563,8 +616,8 @@ function App(): React.ReactElement {
 
   // Stop the browser from navigating to / opening a file dropped anywhere
   // (which would replace the whole UI with the raw file). The active chat view
-  // handles those drops as attachments; entry/picker screens just suppress the
-  // default behavior.
+  // handles files as attachments; native Tauri drop events add folder paths to
+  // the draft because browser File objects cannot represent directories well.
   useEffect(() => {
     const prevent = (e: DragEvent): void => {
       // Only files — don't interfere with text selection drags.
@@ -577,6 +630,40 @@ function App(): React.ReactElement {
       window.removeEventListener("drop", prevent);
     };
   }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (disposed) return;
+        const payload = event.payload;
+        if (payload.type === "enter" || payload.type === "over") {
+          if (canHandleWindowFileDrop()) setIsFileDragOver(true);
+          return;
+        }
+        if (payload.type === "leave") {
+          setIsFileDragOver(false);
+          return;
+        }
+        setIsFileDragOver(false);
+        if (!canHandleWindowFileDrop() || payload.paths.length === 0) return;
+        void getDroppedPathInfo(payload.paths).then((infos) => {
+          if (disposed) return;
+          insertDroppedFolderPaths(infos.filter((info) => info.isDir).map((info) => info.path));
+          const filePaths = infos.filter((info) => !info.isDir).map((info) => info.path);
+          if (filePaths.length > 0) void addNativeDroppedFiles(filePaths);
+        });
+      })
+      .then((off) => {
+        if (disposed) off();
+        else unlisten = off;
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [insertDroppedFolderPaths]);
 
   // Drive the native OS title bar (macOS / Windows / Linux all honor setTitle):
   // the generated session title when actively working in a project, else
@@ -721,6 +808,9 @@ function App(): React.ReactElement {
       const el = target?.closest?.(INTERACTIVE);
       if (!el) return;
       if (el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true") return;
+      // The autopilot toggle plays its own dedicated sound (only when turning
+      // on) instead of the generic click, so skip it here to avoid a double cue.
+      if (el.closest("[data-suppress-click-sound]")) return;
       playSound("click");
     };
     document.addEventListener("click", onClick, true);
@@ -838,6 +928,17 @@ function App(): React.ReactElement {
             if (h.ken && h.role === "assistant") return { kind: "ken", id: nextId(), text: h.text };
             if (h.ken && h.role === "user")
               return { kind: "user", id: nextId(), text: h.text, ken: true };
+            // Persisted autopilot verdict marker: render identically to the
+            // live item so a resumed session never shows the raw verdict text
+            // (e.g. "ALL_CLEAR") the model actually replied with.
+            if (h.autopilot)
+              return {
+                kind: "autopilot",
+                id: nextId(),
+                phase: h.autopilot.phase,
+                reason: h.autopilot.reason,
+                body: h.autopilot.body,
+              };
             if (h.role !== "user") return { kind: h.role, id: nextId(), text: h.text };
             // App-button prompts (e.g. "Initialize Git") were shown live as a
             // friendly shimmer label, not the expanded body. The label is
@@ -1431,8 +1532,17 @@ function App(): React.ReactElement {
     if (ok.length > 0) setAttachments((prev) => [...prev, ...ok]);
   }
 
-  function canHandleWindowFileDrop(): boolean {
-    return !document.querySelector(".modal-backdrop");
+  // Native Tauri drop events hand us absolute paths, not browser File objects
+  // (macOS/Linux keep the native drag-drop handler enabled so folder drops can
+  // report a path at all — see build_app_window). Non-directory paths are read
+  // here and staged exactly like a picked/pasted file.
+  async function addNativeDroppedFiles(paths: string[]): Promise<void> {
+    if (paths.length === 0) return;
+    const results = await Promise.all(paths.map((p) => readDroppedFileAttachment(p)));
+    const ok = results
+      .filter((a): a is Attachment => a !== null)
+      .map((a) => attachmentToPending(a));
+    if (ok.length > 0) setAttachments((prev) => [...prev, ...ok]);
   }
 
   function handleWindowDragEnter(e: React.DragEvent<HTMLDivElement>): void {
@@ -1461,7 +1571,8 @@ function App(): React.ReactElement {
     e.preventDefault();
     setIsFileDragOver(false);
     if (!canHandleWindowFileDrop()) return;
-    if (e.dataTransfer.files.length > 0) void addFiles(e.dataTransfer.files);
+    const files = filesForAttachment(e.dataTransfer);
+    if (files.length > 0) void addFiles(files);
   }
 
   function removeAttachment(id: number): void {
@@ -1684,6 +1795,9 @@ function App(): React.ReactElement {
                   setState((s) => (s ? { ...s, autopilot: next } : s));
                   void setAutopilot(next);
                   setKenPowerBanner(next ? "on" : "off");
+                  // Dedicated cues for turning autopilot on/off (not the generic
+                  // click, suppressed via data-suppress-click-sound).
+                  playSound(next ? "autopilotOn" : "autopilotOff");
                 }}
               />
               <button
@@ -2072,6 +2186,9 @@ function App(): React.ReactElement {
                     title="GG Coder model"
                   />
                 )}
+                <span className="model-label" style={{ color: theme.text }}>
+                  GG
+                </span>
                 <button
                   className="model-button"
                   style={{ color: theme.text }}
@@ -2082,7 +2199,7 @@ function App(): React.ReactElement {
                     setModelMenuOpen((o) => !o);
                   }}
                 >
-                  {`GG ${state?.model ?? "\u2026"}`}
+                  {state?.model ?? "\u2026"}
                 </button>
               </span>
               <FooterSep />
@@ -2098,6 +2215,9 @@ function App(): React.ReactElement {
                     followActive={!state?.kenModelOverride}
                   />
                 )}
+                <span className="model-label" style={{ color: theme.ken }}>
+                  Ken
+                </span>
                 <button
                   className="model-button"
                   style={{ color: theme.ken }}
@@ -2112,7 +2232,7 @@ function App(): React.ReactElement {
                     setKenModelMenuOpen((o) => !o);
                   }}
                 >
-                  {`Ken ${state?.kenModel ?? state?.model ?? "\u2026"}`}
+                  {state?.kenModel ?? state?.model ?? "\u2026"}
                 </button>
               </span>
             </span>
@@ -2306,12 +2426,15 @@ const TranscriptRow = memo(function TranscriptRow({
       // Autopilot Ken's verdict, rendered like a normal @Ken reply (Ken-tinted
       // dot + text) rather than its own marker style. The text is his verdict as
       // prose: for a PROMPT he shows what he sent GG Coder back to do; the
-      // terminal verdicts read as short Ken one-liners.
+      // terminal verdicts read as short Ken one-liners. `done` rotates through
+      // several casual Ken lines (picked deterministically off the item's
+      // stable id, so it never flickers on re-render) instead of always
+      // repeating the exact same sentence turn after turn.
       const copy: Record<Extract<Item, { kind: "autopilot" }>["phase"], string> = {
         prompted: item.body?.trim()
           ? `Sending GG Coder back in:\n\n${item.body.trim()}`
           : "Sending GG Coder back in for another pass.",
-        done: "All clear. Looks good to me.",
+        done: ALL_CLEAR_VARIATIONS[item.id % ALL_CLEAR_VARIATIONS.length],
         human: item.reason?.trim() ? item.reason.trim() : "Need you to weigh in on this one.",
         capped: "Paused autopilot after 3 rounds. Take a look before I keep going.",
       };

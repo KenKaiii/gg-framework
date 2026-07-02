@@ -206,6 +206,21 @@ export async function openProjectPath(path: string): Promise<void> {
   }
 }
 
+export interface DroppedPathInfo {
+  path: string;
+  isDir: boolean;
+}
+
+export async function getDroppedPathInfo(paths: string[]): Promise<DroppedPathInfo[]> {
+  if (paths.length === 0) return [];
+  try {
+    return await invoke<DroppedPathInfo[]>("dropped_path_info", { paths });
+  } catch (e) {
+    await logError(`dropped_path_info failed: ${String(e)}`);
+    return paths.map((path) => ({ path, isDir: false }));
+  }
+}
+
 /** A chat-input attachment (image / video / other file) sent with a prompt. */
 export interface Attachment {
   kind: "image" | "video" | "file";
@@ -213,6 +228,28 @@ export interface Attachment {
   mediaType: string;
   /** base64 with NO data: prefix. */
   data: string;
+}
+
+/** Read a natively-dropped (non-directory) file's bytes as base64, since a
+ *  native drag-drop only gives us a path — no browser File object. Returns
+ *  null (logging) on failure (e.g. permission denied, file too large) so one
+ *  bad file in a multi-file drop doesn't block the rest. */
+export async function readDroppedFileAttachment(path: string): Promise<Attachment | null> {
+  try {
+    const res = await invoke<{ name: string; mediaType: string; data: string }>(
+      "read_dropped_file_attachment",
+      { path },
+    );
+    const kind: Attachment["kind"] = res.mediaType.startsWith("image/")
+      ? "image"
+      : res.mediaType.startsWith("video/")
+        ? "video"
+        : "file";
+    return { kind, name: res.name, mediaType: res.mediaType, data: res.data };
+  } catch (e) {
+    await logError(`read_dropped_file_attachment failed for ${path}: ${String(e)}`);
+    return null;
+  }
 }
 
 export async function sendPrompt(text: string, attachments: Attachment[] = []): Promise<void> {
@@ -331,6 +368,14 @@ export interface HistoryEntry {
    *  the `@Ken` question, an `assistant` row is Ken's reply. Rendered in Ken's
    *  color (user bubble tinted, assistant as a Ken bubble) on resume. */
   ken?: boolean;
+  /** Present when this entry is a persisted autopilot verdict marker. Rendered
+   *  identically to the live `autopilot` item (Ken-tinted bubble), never as
+   *  the raw verdict keyword the model replied with (e.g. `ALL_CLEAR`). */
+  autopilot?: {
+    phase: "prompted" | "done" | "human" | "capped";
+    reason?: string;
+    body?: string;
+  };
   /** Tool-produced images rendered inline (same as live `images` items),
    *  reconstructed from ImageContent blocks in persisted tool results. */
   toolImages?: Array<{ src: string; path?: string }>;

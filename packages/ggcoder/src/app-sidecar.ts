@@ -34,7 +34,7 @@ import {
 import { driveAutopilotCycle } from "./core/autopilot-cycle.js";
 import { validateKenModelPref, effectiveKenModel, type KenModelPref } from "./core/ken-model.js";
 import { collectProjectContext } from "./system-prompt.js";
-import type { KenTurnPayload } from "./core/session-manager.js";
+import type { KenTurnPayload, AutopilotMarkerPayload } from "./core/session-manager.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { MOONSHOT_OAUTH_KEY, XIAOMI_CREDITS_KEY } from "@kenkaiiii/gg-core";
 import { loginAnthropic } from "./core/oauth/anthropic.js";
@@ -267,6 +267,15 @@ interface HistoryEntryForWire {
    *  question, an `assistant` row is Ken's reply. The webview renders these in
    *  Ken's color (user bubble tinted; assistant as a Ken bubble). */
   ken?: boolean;
+  /** Present when this entry is a persisted autopilot verdict marker (an
+   *  `assistant` row with empty `text`). The webview renders it exactly like
+   *  the live `autopilot` item — never the raw verdict keyword the model
+   *  actually replied with (e.g. `ALL_CLEAR`). */
+  autopilot?: {
+    phase: "prompted" | "done" | "human" | "capped";
+    reason?: string;
+    body?: string;
+  };
   toolImages?: Array<{ src: string; path?: string }>;
   subagentGroup?: Array<{
     agentName?: string;
@@ -1337,9 +1346,23 @@ async function createSession(
         onInjected: (body, round) => {
           injectedAutopilotPrompts.push(body);
           broadcast("autopilot_prompted", { round, body });
+          void session.persistAutopilotMarker("prompted", { body });
         },
         runPrompt: (body) => runAgent(body, () => session.prompt(body)),
-        emit: (event) => broadcast(event.type, event.data),
+        emit: (event) => {
+          broadcast(event.type, event.data);
+          // Persist the terminal verdict marker so a resumed session renders the
+          // same Ken bubble the live run showed instead of dropping it or
+          // falling back to the raw verdict text (e.g. ALL_CLEAR).
+          if (event.type === "autopilot_done") {
+            void session.persistAutopilotMarker("done");
+          } else if (event.type === "autopilot_human") {
+            void session.persistAutopilotMarker("human", { reason: event.data.reason });
+          } else if (event.type === "autopilot_capped") {
+            void session.persistAutopilotMarker("capped");
+          }
+          // autopilot_ignored renders nothing live, so nothing is persisted either.
+        },
       });
     } finally {
       autopilotActive = false;
@@ -1741,9 +1764,37 @@ async function createSession(
             history.push({ role: "assistant", text: turn.reply, ken: true });
           }
         };
+
+        // Autopilot verdict markers to interleave, same anchor scheme as Ken
+        // turns — each becomes a single assistant row the webview renders
+        // exactly like the live `autopilot` item (never a raw verdict string).
+        const autopilotByCount = new Map<number, AutopilotMarkerPayload[]>();
+        for (const marker of session.getAutopilotMarkers()) {
+          const list = autopilotByCount.get(marker.afterMessageCount) ?? [];
+          list.push(marker);
+          autopilotByCount.set(marker.afterMessageCount, list);
+        }
+        const flushAutopilot = (count: number): void => {
+          const markers = autopilotByCount.get(count);
+          if (!markers) return;
+          autopilotByCount.delete(count);
+          for (const marker of markers) {
+            history.push({
+              role: "assistant",
+              text: "",
+              autopilot: {
+                phase: marker.phase,
+                ...(marker.reason !== undefined ? { reason: marker.reason } : {}),
+                ...(marker.body !== undefined ? { body: marker.body } : {}),
+              },
+            });
+          }
+        };
         let nonSystemCount = 0;
-        // Turns recorded before any build message (anchor 0) render at the top.
+        // Turns/markers recorded before any build message (anchor 0) render at
+        // the top.
         flushKen(0);
+        flushAutopilot(0);
 
         for (const msg of messages) {
           if (msg.role === "system") continue;
@@ -1858,14 +1909,19 @@ async function createSession(
             }
           }
 
-          // Interleave any Ken turns recorded right after this message.
+          // Interleave any Ken turns / autopilot markers recorded right after
+          // this message.
           flushKen(nonSystemCount);
+          flushAutopilot(nonSystemCount);
         }
 
-        // Flush remaining Ken turns whose anchor is at/after the message count
-        // (e.g. asked before any build message, or anchors beyond the current
-        // count after compaction shrank the history) so none are dropped.
+        // Flush remaining Ken turns / autopilot markers whose anchor is at/after
+        // the message count (e.g. recorded before any build message, or anchors
+        // beyond the current count after compaction shrank the history) so none
+        // are dropped.
         for (const count of [...kenByCount.keys()].sort((a, b) => a - b)) flushKen(count);
+        for (const count of [...autopilotByCount.keys()].sort((a, b) => a - b))
+          flushAutopilot(count);
 
         json(res, 200, { history });
       })();

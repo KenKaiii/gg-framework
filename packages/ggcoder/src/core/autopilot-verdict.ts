@@ -57,6 +57,37 @@ function cap(text: string, max = RAW_REASON_CAP): string {
   return `${text.slice(0, max)} […${text.length - max} more chars]`;
 }
 
+/** Same keyword normalization as the primary line check: uppercase, drop a
+ *  trailing colon/period, collapse "ALL CLEAR" → "ALL_CLEAR". */
+function normalizeKeywordLine(line: string): string {
+  return line
+    .trim()
+    .toUpperCase()
+    .replace(/[:.]+\s*$/, "")
+    .trim()
+    .replace(/\s+/g, "_");
+}
+
+/**
+ * Fallback for when Ken ignores the "keyword-first, nothing before it"
+ * instruction and buries a bare ALL_CLEAR/IGNORE/SKIP line after a recap or
+ * explanation (a real drift pattern models fall into despite the system
+ * prompt). Only matches a line that is EXACTLY one of these bare keywords —
+ * never PROMPT/HUMAN, since those carry a payload that can't be safely
+ * recovered from an arbitrary position in surrounding prose. Returns the
+ * LAST such line (the verdict conventionally lands at the end of the drift),
+ * or null if none/ambiguous multiple different keywords are present.
+ */
+function findTrailingBareVerdict(lines: string[]): "all_clear" | "ignore" | null {
+  let found: "all_clear" | "ignore" | null = null;
+  for (const line of lines) {
+    const normalized = normalizeKeywordLine(line);
+    if (normalized === "ALL_CLEAR") found = "all_clear";
+    else if (normalized === "IGNORE" || normalized === "SKIP") found = "ignore";
+  }
+  return found;
+}
+
 /**
  * Parse Autopilot Ken's raw reply into a verdict. Never throws.
  */
@@ -123,6 +154,14 @@ export function parseAutopilotVerdict(reply: string): AutopilotVerdict {
     return { kind: "human", reason: cap(reason) || DEFAULT_HUMAN_REASON };
   }
 
-  // Unrecognized → stop and ask the human, echoing the raw reply for context.
+  // Unrecognized first line → before giving up, check for a bare verdict Ken
+  // buried later in the reply (prose-then-keyword drift). This is the exact
+  // shape that used to leak raw commentary + "ALL_CLEAR" into a HUMAN bubble
+  // instead of rendering the normal all-clear/ignore marker.
+  const trailing = findTrailingBareVerdict(lines);
+  if (trailing === "all_clear") return { kind: "all_clear" };
+  if (trailing === "ignore") return { kind: "ignore" };
+
+  // Truly unrecognized → stop and ask the human, echoing the raw reply for context.
   return { kind: "human", reason: cap(raw) };
 }

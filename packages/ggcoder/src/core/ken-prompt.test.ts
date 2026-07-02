@@ -37,6 +37,16 @@ describe("buildKenAutopilotSystemPrompt — verdict contract", () => {
     expect(INJECTED_PROMPT_LABEL).toContain("Ken autopilot (injected)");
     expect(prompt).toContain("Ken autopilot (injected)");
   });
+
+  it("forbids commentary before or after the keyword line", () => {
+    // Leak regression: Ken once prefaced ALL_CLEAR with a recap/opinion ("The
+    // label is now a plain non-clickable span... Typecheck passed.\nALL_CLEAR"),
+    // which the parser couldn't read as a bare verdict and surfaced as a raw
+    // HUMAN bubble. The prompt must explicitly ban prose around the keyword.
+    expect(prompt).toContain("nothing before it");
+    expect(prompt).toContain("never add commentary");
+    expect(prompt).toContain("no recap of what you found");
+  });
 });
 
 describe("buildKenSystemPrompt — chat mode unaffected", () => {

@@ -1423,6 +1423,7 @@ dependencies = [
 name = "gg-app"
 version = "0.12.2"
 dependencies = [
+ "base64 0.22.1",
  "futures-util",
  "libc",
  "log",

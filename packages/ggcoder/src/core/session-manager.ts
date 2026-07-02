@@ -74,6 +74,23 @@ export interface KenTurnPayload {
   afterMessageCount: number;
 }
 
+/** Custom-entry kind for an autopilot verdict marker. Mirrors `ken_turn`:
+ *  persisted as a `custom` entry with `parentId: null` so it's never on the
+ *  message DAG (GG Coder never sees it) but survives resume/compaction and
+ *  interleaves back into the transcript via `afterMessageCount`. Covers all
+ *  four terminal/near-terminal autopilot markers so a resumed session renders
+ *  the exact same Ken bubble the live run showed — never the raw verdict
+ *  keyword (e.g. `ALL_CLEAR`) the model actually replied with. */
+export const AUTOPILOT_MARKER_CUSTOM_KIND = "autopilot_marker";
+
+export interface AutopilotMarkerPayload {
+  version: 1;
+  phase: "prompted" | "done" | "human" | "capped";
+  reason?: string;
+  body?: string;
+  afterMessageCount: number;
+}
+
 export type SessionEntry =
   | MessageEntry
   | ModelChangeEntry
@@ -489,6 +506,31 @@ export class SessionManager {
             version: 1,
             question: p.question,
             reply: p.reply,
+            afterMessageCount: typeof p.afterMessageCount === "number" ? p.afterMessageCount : 0,
+          },
+        ];
+      }
+      return [];
+    });
+  }
+
+  /** Read all persisted autopilot markers in file order, validated + normalized
+   *  (same not-on-the-DAG treatment as Ken turns). */
+  getAutopilotMarkers(entries: SessionEntry[]): AutopilotMarkerPayload[] {
+    return entries.flatMap((entry): AutopilotMarkerPayload[] => {
+      if (entry.type !== "custom" || entry.kind !== AUTOPILOT_MARKER_CUSTOM_KIND) return [];
+      const p = entry.data as Partial<AutopilotMarkerPayload> | undefined;
+      const phase = p?.phase;
+      if (
+        p?.version === 1 &&
+        (phase === "prompted" || phase === "done" || phase === "human" || phase === "capped")
+      ) {
+        return [
+          {
+            version: 1,
+            phase,
+            ...(typeof p.reason === "string" ? { reason: p.reason } : {}),
+            ...(typeof p.body === "string" ? { body: p.body } : {}),
             afterMessageCount: typeof p.afterMessageCount === "number" ? p.afterMessageCount : 0,
           },
         ];

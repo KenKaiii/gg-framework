@@ -3579,28 +3579,9 @@ body {
   text-decoration: underline;
 }
 
-/* ── Footer: context meter ── */
-.ctx-meter {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--mono);
-}
-.ctx-meter-track {
-  display: inline-block;
-  width: 56px;
-  height: 5px;
-  background: var(--surface-2);
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-}
-.ctx-meter-fill {
-  display: block;
-  height: 100%;
-  border-radius: var(--radius-pill);
-  transition: width var(--t-fast);
-}
+/* ── Footer: context percentage ── */
 .ctx-meter-pct {
+  font-family: var(--mono);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -3691,13 +3672,28 @@ body {
 .model-anchor {
   position: relative;
   display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Static "GG" / "Ken" prefix — plain text, never clickable. Only the model
+   name next to it opens the dropdown. `line-height: 1` matches `.model-button`
+   below so both sit on the same baseline — without it the button's default UA
+   line-height differs from the inherited body line-height and the label
+   visibly floats above the model name. */
+.model-label {
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1;
 }
 
 .model-button {
   background: transparent;
   border: none;
+  margin: 0;
   font-family: var(--mono);
   font-size: 13px;
+  line-height: 1;
   cursor: pointer;
   padding: 0;
   transition: color var(--t-fast);

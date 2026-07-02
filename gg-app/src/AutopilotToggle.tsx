@@ -24,6 +24,7 @@ export function AutopilotToggle({ checked, onChange, disabled }: Props): React.R
     <span
       className="autopilot-toggle"
       title="Autopilot: after each run, auto-review the work and continue if adjustments are needed"
+      data-suppress-click-sound
     >
       <span className="autopilot-label">Autopilot</span>
       <span className="cl-toggle-switch">

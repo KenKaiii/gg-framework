@@ -8,6 +8,7 @@ use std::sync::Mutex;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
+use base64::Engine as _;
 use futures_util::StreamExt;
 use tauri::{Emitter, EventTarget, Manager, RunEvent, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
@@ -55,6 +56,13 @@ struct RestoreEntry {
     cwd: String,
     #[serde(rename = "sessionPath")]
     session_path: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct DroppedPathInfo {
+    path: String,
+    #[serde(rename = "isDir")]
+    is_dir: bool,
 }
 
 /// Pending per-window restore targets, consumed once by the webview on mount.
@@ -441,6 +449,78 @@ async fn await_daemon_port(app: &tauri::AppHandle) -> Option<u16> {
 fn sidecar_port(webview: WebviewWindow) -> Option<u16> {
     session_for(&webview)?;
     port_for(&webview)
+}
+
+#[tauri::command]
+fn dropped_path_info(paths: Vec<String>) -> Vec<DroppedPathInfo> {
+    paths
+        .into_iter()
+        .map(|path| {
+            let is_dir = std::fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false);
+            DroppedPathInfo { path, is_dir }
+        })
+        .collect()
+}
+
+/// Cap on a single dropped file's size for base64 attachment — large drops
+/// (e.g. multi-GB video) would blow up the base64 payload and the IPC/agent
+/// prompt pipeline; point the user at the file path instead via the error.
+const MAX_DROPPED_FILE_BYTES: u64 = 100 * 1024 * 1024;
+
+/// Guess a media type from the file extension. Covers the kinds the chat
+/// input already accepts (image/video via the attach button, everything else
+/// falls back to a generic binary type like a browser's File.type would for
+/// an unrecognized extension).
+fn guess_media_type(path: &Path) -> String {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        "mp4" => "video/mp4",
+        "mov" => "video/quicktime",
+        "webm" => "video/webm",
+        "avi" => "video/x-msvideo",
+        "mkv" => "video/x-matroska",
+        "pdf" => "application/pdf",
+        "txt" | "md" => "text/plain",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}
+
+/// A native drag-drop only gives us absolute paths (no browser File object),
+/// so a regular file dropped on the window (as opposed to a folder, handled
+/// separately by inserting its path into the draft) is read here and handed
+/// back as base64 — the same shape `fileToPending` builds for a pasted/picked
+/// file — so it attaches identically regardless of how it entered the input.
+#[tauri::command]
+fn read_dropped_file_attachment(path: String) -> Result<serde_json::Value, String> {
+    let p = Path::new(&path);
+    let metadata = std::fs::metadata(p).map_err(|e| e.to_string())?;
+    if metadata.len() > MAX_DROPPED_FILE_BYTES {
+        return Err(format!(
+            "{} is too large to attach ({} MB, limit {} MB)",
+            path,
+            metadata.len() / (1024 * 1024),
+            MAX_DROPPED_FILE_BYTES / (1024 * 1024)
+        ));
+    }
+    let bytes = std::fs::read(p).map_err(|e| e.to_string())?;
+    let data = base64::engine::general_purpose::STANDARD.encode(bytes);
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.clone());
+    let media_type = guess_media_type(p);
+    Ok(serde_json::json!({ "name": name, "mediaType": media_type, "data": data }))
 }
 
 fn strip_file_location_suffix(path: &str) -> &str {
@@ -2077,10 +2157,13 @@ fn build_app_window(app: &tauri::AppHandle, label: &str) -> Result<WebviewWindow
         .title("GG Coder")
         .inner_size(1024.0, 720.0)
         .min_inner_size(480.0, 360.0)
-        .background_color(APP_BG)
-        // Let the webview's HTML drop handler receive files (Tauri's native
-        // drag-drop would otherwise intercept them).
-        .disable_drag_drop_handler();
+        .background_color(APP_BG);
+    // Windows needs HTML5 drop enabled for the existing browser attachment path.
+    // macOS keeps Tauri's native handler so folder drops include absolute paths.
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.disable_drag_drop_handler();
+    }
     if matches!(window_chrome(), WindowChrome::MacOverlay) {
         builder = apply_mac_overlay(builder);
     }
@@ -3018,6 +3101,8 @@ pub fn run() {
         .manage(reqwest::Client::new())
         .invoke_handler(tauri::generate_handler![
             sidecar_port,
+            dropped_path_info,
+            read_dropped_file_attachment,
             open_project_path,
             agent_state,
             agent_prompt,

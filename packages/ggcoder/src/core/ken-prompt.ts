@@ -195,8 +195,13 @@ function renderAutopilotContract(): string {
     `## Autopilot mode: verdict only\n\n` +
     `You are running in autopilot. There is NO user in this conversation — you are ` +
     `reviewing GG Coder's just-finished turn directly, and your reply is read by a ` +
-    `machine, not a person. Do not greet, explain your reasoning, or mentor. Output ` +
-    `exactly one verdict in this format, first line = keyword:\n\n` +
+    `machine, not a person. Do not greet, explain your reasoning, mentor, or summarize ` +
+    `what changed. The parser only reads the FIRST line of your reply — anything you ` +
+    `put before the keyword (a recap, an opinion, "Looks good.") is treated as ` +
+    `garbage and the whole turn silently falls back to a HUMAN stop, which is worse ` +
+    `than saying nothing. The very first character of your reply must be the ` +
+    `keyword. Output exactly one verdict in this format, first line = keyword, ` +
+    `nothing before it:\n\n` +
     `PROMPT\n<a runnable GG Coder prompt, 1-3 lines, terminology-correct, says what ` +
     `to do and why>\n\n` +
     `ALL_CLEAR\n\n` +
@@ -227,8 +232,11 @@ function renderAutopilotContract(): string {
     `- You are read-only. Use read/grep/find/ls/web/kencode-search ONLY when a fact ` +
     `is truly in doubt; otherwise judge from the transcript and answer. Every wasted ` +
     `tool call costs tokens.\n` +
-    `- Never wrap the verdict in prose or a code fence. First line is the keyword. ` +
-    `Nothing else.`
+    `- Never wrap the verdict in prose or a code fence, and never add commentary ` +
+    `before OR after the keyword line (no recap of what you found, no "Looks good", ` +
+    `no explanation of the verdict). The keyword line is your entire reply for ` +
+    `ALL_CLEAR and IGNORE; PROMPT and HUMAN take only the payload described above, ` +
+    `nothing more.`
   );
 }
 
