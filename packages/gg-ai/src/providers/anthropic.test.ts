@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ProviderError } from "../errors.js";
-import { streamAnthropic } from "./anthropic.js";
+import { ProviderError } from "../errors.js";
+import type { StreamEvent } from "../types.js";
+import { streamAnthropic, fineGrainedToolStreamingEnabled } from "./anthropic.js";
 
 const createMock = vi.fn();
 const streamMock = vi.fn();
@@ -513,5 +514,100 @@ describe("streamAnthropic error normalization", () => {
       name: "web_search",
       input: { query: "opus clip pricing" },
     });
+  });
+
+  it("surfaces a truncated tool_use JSON stream as a parse error instead of emitting args:{}", async () => {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const AnthropicMock = Anthropic as unknown as {
+      nextError: Error | null;
+      nextEvents: unknown[] | null;
+    };
+    AnthropicMock.nextError = null;
+    // Large `edit` call whose input_json_delta stream is cut off mid-payload
+    // (the classic failure: the SSE connection drops before the closing braces
+    // arrive). The accumulated argsJson is unparseable. The provider must NOT
+    // swallow it into `{}` — that produced phantom `edit` calls with no
+    // file_path/edits that the tool layer rejected as "Invalid arguments".
+    AnthropicMock.nextEvents = [
+      { type: "message_start", message: { usage: { input_tokens: 7 } } },
+      {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "tool_use", id: "toolu_trunc", name: "edit", input: {} },
+      },
+      {
+        type: "content_block_delta",
+        index: 0,
+        delta: {
+          type: "input_json_delta",
+          partial_json: '{"file_path":"src/app.ts","edits":[{"old',
+        },
+      },
+      // stream is truncated here — no more deltas, then the block/message close
+      { type: "content_block_stop", index: 0 },
+      { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { output_tokens: 3 } },
+      { type: "message_stop" },
+    ];
+
+    const result = streamAnthropic({
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "sk-ant-test",
+    });
+
+    // Attach the response handler up front so its rejection is never orphaned
+    // (StreamResult drives the iterator and the `.response` promise from one
+    // pump; both observe the same throw).
+    const caught = result.response.catch((err: unknown) => err);
+
+    const events: StreamEvent[] = [];
+    try {
+      for await (const event of result) {
+        events.push(event);
+      }
+    } catch {
+      // Iterator re-throws the same failure; asserted via `caught` below.
+    }
+
+    const error = await caught;
+    // It must throw, not resolve.
+    expect(error).toBeInstanceOf(ProviderError);
+    // No statusCode on purpose: a 5xx would route this into classifyOverload's
+    // plain streaming-backoff path (which re-truncates). Status-less keeps it
+    // out of the overload bucket so agent-loop uses the malformed-stream path.
+    expect((error as ProviderError).statusCode).toBeUndefined();
+    // The SyntaxError cause is what agent-loop's isMalformedStream() walks to
+    // classify this as a retryable transport failure (flips to non-streaming).
+    // Asserting the shape here (rather than importing the gg-agent classifiers,
+    // which sit above gg-ai) keeps the package dependency direction intact.
+    expect((error as { cause?: unknown }).cause).toBeInstanceOf(SyntaxError);
+    expect(((error as { cause?: Error }).cause as Error).name).toBe("SyntaxError");
+
+    // Crucially: no tool call with empty args ever leaked out.
+    const emptyArgsCall = events.find(
+      (e) =>
+        e.type === "toolcall_done" &&
+        e.name === "edit" &&
+        Object.keys((e as { args: Record<string, unknown> }).args).length === 0,
+    );
+    expect(emptyArgsCall).toBeUndefined();
+  });
+
+  it("does not send eager tool-input streaming by default (fine-grained flag off)", () => {
+    const prev = process.env.GG_FINE_GRAINED_TOOL_STREAMING;
+    const prevCC = process.env.CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING;
+    delete process.env.GG_FINE_GRAINED_TOOL_STREAMING;
+    delete process.env.CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING;
+    try {
+      expect(fineGrainedToolStreamingEnabled()).toBe(false);
+      process.env.GG_FINE_GRAINED_TOOL_STREAMING = "1";
+      expect(fineGrainedToolStreamingEnabled()).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.GG_FINE_GRAINED_TOOL_STREAMING;
+      else process.env.GG_FINE_GRAINED_TOOL_STREAMING = prev;
+      if (prevCC === undefined) delete process.env.CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING;
+      else process.env.CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING = prevCC;
+    }
   });
 });

@@ -67,8 +67,12 @@ function mergeSources(a: ProjectSource[], b: ProjectSource[]): ProjectSource[] {
 
 /**
  * Scan ~/.gg/sessions/. Each session directory's name is the encoded cwd
- * (slashes → underscores); we decode it back and verify the directory still
- * exists on disk.
+ * (slashes → underscores), but that encoding is lossy: any real path segment
+ * containing a literal underscore round-trips wrong (e.g. `my_app` decodes to
+ * `.../my/app`, which doesn't exist, so the project silently vanished from the
+ * picker). So — like Claude Code discovery — we read the real cwd out of the
+ * session header (`{"type":"session",...,"cwd":"/abs"}`) and only fall back to
+ * decoding the directory name when no header carries a cwd.
  */
 async function discoverGgcoderProjects(): Promise<DiscoveredProject[]> {
   const sessionsDir = getAppPaths().sessionsDir;
@@ -85,21 +89,33 @@ async function discoverGgcoderProjects(): Promise<DiscoveredProject[]> {
     const mtime = await maxJsonlMtime(dir);
     if (mtime === null) continue;
 
-    // Normalize so paths containing traversal segments (e.g. an agent launched
-    // with cwd `.../src-tauri/../..`) collapse to their real directory and the
-    // basename isn't a stray "..". Deduped against other entries downstream.
-    const decoded = path.resolve("/" + entry.replace(/_/g, "/"));
-    if (!(await isDirectory(decoded))) continue;
+    const rawCwd =
+      (await readFirstFromJsonlDir(dir, ggcoderCwdExtractor)) ?? fallbackUnderscoreDecode(entry);
+    if (!rawCwd) continue;
+    // Normalize traversal segments (e.g. an agent launched with cwd
+    // `.../src-tauri/../..`) so the basename isn't a stray "..".
+    const cwd = path.resolve(rawCwd);
+    if (!(await isDirectory(cwd))) continue;
 
     results.push({
-      name: path.basename(decoded),
-      path: decoded,
+      name: path.basename(cwd),
+      path: cwd,
       lastActiveMs: mtime,
       lastActiveDisplay: formatRelativeTime(mtime),
       sources: ["ggcoder"],
     });
   }
   return results;
+}
+
+/**
+ * Best-effort decode of a ggcoder session directory name back to a cwd, used
+ * only when the session files carry no `cwd` header. Lossy by design (literal
+ * underscores are indistinguishable from separators); the caller still verifies
+ * the result is an existing directory.
+ */
+function fallbackUnderscoreDecode(entry: string): string {
+  return "/" + entry.replace(/_/g, "/");
 }
 
 /**
@@ -240,6 +256,22 @@ const claudeCwdExtractor: LineExtractor = (line) => {
   try {
     const parsed = JSON.parse(line) as { cwd?: unknown };
     if (typeof parsed.cwd === "string" && parsed.cwd.startsWith("/")) return parsed.cwd;
+  } catch {
+    // skip malformed
+  }
+  return null;
+};
+
+// ggcoder session files open with a `{"type":"session",...,"cwd":"/abs"}` header
+// that stores the real cwd verbatim. Prefer it over decoding the directory name,
+// whose slash→underscore encoding is lossy for paths containing literal
+// underscores (e.g. `my_app` would wrongly decode to `.../my/app`).
+const ggcoderCwdExtractor: LineExtractor = (line) => {
+  try {
+    const parsed = JSON.parse(line) as { type?: unknown; cwd?: unknown };
+    if (parsed.type === "session" && typeof parsed.cwd === "string" && parsed.cwd.startsWith("/")) {
+      return parsed.cwd;
+    }
   } catch {
     // skip malformed
   }
