@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.8.2
+
+### Patch Changes
+
+- Ship deferred MCP tools, leaner prompts, and smoother retry recovery for faster coding-agent turns.
+  - @kenkaiiii/gg-ai@5.8.2
+  - @kenkaiiii/gg-agent@5.8.2
+  - @kenkaiiii/gg-core@5.8.2
+
 ## 5.8.1
 
 ### Patch Changes
