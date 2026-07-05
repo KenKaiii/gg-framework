@@ -39,6 +39,12 @@ const EXTERNAL = [
   "turndown",
   "turndown-plugin-gfm",
   "@mozilla/readability",
+  // Default MCP server: spawned as a stdio child, never imported, so esbuild
+  // won't bundle it. Copy it next to the sidecar so resolveStdioCommand can
+  // resolve its bin and rewrite `npx -y @kenkaiiii/kencode-search` to a direct
+  // `node dist/index.js` spawn. Without this the shipped app silently falls
+  // back to raw npx, paying a ~90 MB `npm exec` wrapper per MCP connection.
+  "@kenkaiiii/kencode-search",
 ];
 
 // require resolver anchored at the ggcoder package, where these deps live.
