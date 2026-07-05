@@ -11,18 +11,12 @@
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..");
-const sidecarEntry = join(
-  repoRoot,
-  "packages",
-  "ggcoder",
-  "dist",
-  "app-sidecar.js",
-);
+const sidecarEntry = join(repoRoot, "packages", "ggcoder", "dist", "app-sidecar.js");
 const outDir = join(here, "..", "src-tauri", "sidecar");
 const outFile = join(outDir, "app-sidecar.mjs");
 const nodeModulesOut = join(outDir, "node_modules");
@@ -48,22 +42,48 @@ const EXTERNAL = [
 ];
 
 // require resolver anchored at the ggcoder package, where these deps live.
-const ggcoderRequire = createRequire(
-  join(repoRoot, "packages", "ggcoder", "package.json"),
-);
+const ggcoderRequire = createRequire(join(repoRoot, "packages", "ggcoder", "package.json"));
 
 // Candidate node_modules roots to scan directly when `require.resolve` is
 // blocked by a package's `exports` map (which often hides ./package.json).
 const NM_ROOTS = [
   join(repoRoot, "packages", "ggcoder", "node_modules"),
+  join(repoRoot, "node_modules", ".pnpm", "node_modules"),
   join(repoRoot, "node_modules"),
 ];
 
-/** Walk up from a file to the nearest dir containing package.json. */
-function nearestPackageDir(start) {
+function isInsideRepo(dir) {
+  const rel = relative(repoRoot, dir);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function isPackageRoot(dir, name) {
+  try {
+    if (!isInsideRepo(dir)) return false;
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    return pkg.name === name;
+  } catch {
+    return false;
+  }
+}
+
+/** Walk up from a file to the nearest real package root for `name`. */
+function nearestPackageDir(start, name) {
   let dir = start;
   for (let i = 0; i < 12; i++) {
-    if (existsSync(join(dir, "package.json"))) return dir;
+    if (isPackageRoot(dir, name)) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+/** Return the nearest ancestor directory named node_modules. */
+function nearestNodeModulesDir(start) {
+  let dir = start;
+  for (let i = 0; i < 16; i++) {
+    if (basename(dir) === "node_modules") return dir;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
@@ -79,32 +99,39 @@ function nearestPackageDir(start) {
  */
 function packageRoot(name, fromRequire, fromDir) {
   const segs = name.split("/");
-  // 1) Direct package.json resolution (works when exports allows it).
+  // 1) Direct package.json resolution (works when exports allows it). Validate
+  //    the package name because some export maps expose nested package.json stubs.
   try {
-    return dirname(fromRequire.resolve(`${name}/package.json`));
+    const direct = dirname(fromRequire.resolve(`${name}/package.json`));
+    if (isPackageRoot(direct, name)) return direct;
   } catch {
     // ignore and fall through
   }
-  // 2) Resolve the package entry, then walk up to its package.json.
-  try {
-    const entry = fromRequire.resolve(name);
-    const root = nearestPackageDir(dirname(entry));
-    if (root) return root;
-  } catch {
-    // ignore and fall through
-  }
-  // 3) Direct directory lookup in candidate node_modules. pnpm places a
+  // 2) Direct directory lookup in candidate node_modules. pnpm places a
   //    package's deps as siblings under the same .pnpm/<x>/node_modules dir,
-  //    so the requiring package's parent dir is a key candidate.
+  //    so the requiring package's parent dir is a key candidate. Do this before
+  //    resolving the package entry: some packages (for example
+  //    @modelcontextprotocol/sdk) expose subpath files that contain nested
+  //    package.json stubs like {"type":"commonjs"}. Walking up from those entry
+  //    files would copy only that subfolder and drop real dependencies.
   const candidates = [];
   if (fromDir) {
     candidates.push(join(fromDir, "node_modules")); // nested
-    candidates.push(dirname(fromDir)); // pnpm sibling (.../node_modules)
+    const nearestNodeModules = nearestNodeModulesDir(fromDir);
+    if (nearestNodeModules) candidates.push(nearestNodeModules); // pnpm sibling deps
   }
   candidates.push(...NM_ROOTS);
   for (const nm of candidates) {
     const candidate = join(nm, ...segs);
-    if (existsSync(join(candidate, "package.json"))) return candidate;
+    if (isPackageRoot(candidate, name)) return candidate;
+  }
+  // 3) Resolve the package entry, then walk up to its package.json.
+  try {
+    const entry = fromRequire.resolve(name);
+    const root = nearestPackageDir(dirname(entry), name);
+    if (root) return root;
+  } catch {
+    // ignore and fall through
   }
   return null;
 }
@@ -139,9 +166,7 @@ function copyPackage(name, fromRequire, fromDir, copied) {
 
 async function main() {
   if (!existsSync(sidecarEntry)) {
-    throw new Error(
-      `sidecar entry missing: ${sidecarEntry} (build @kenkaiiii/ggcoder first)`,
-    );
+    throw new Error(`sidecar entry missing: ${sidecarEntry} (build @kenkaiiii/ggcoder first)`);
   }
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });

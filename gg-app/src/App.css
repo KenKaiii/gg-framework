@@ -1814,6 +1814,7 @@ body {
 
 /* ── User message chip (mirrors USER_MESSAGE_BACKGROUND in the TUI) ── */
 .user-msg {
+  position: relative;
   /* Hug the text, but never span the whole pane: cap at a readable measure
      that scales down on narrow windows. Wraps once it would overflow the cap. */
   width: fit-content;
@@ -1923,6 +1924,7 @@ body {
 
 /* ── Assistant message: blue dot + text ── */
 .assistant-msg {
+  position: relative;
   display: flex;
   gap: 6px;
   padding: 4px 0;
@@ -1943,6 +1945,45 @@ body {
   word-break: break-word;
   /* Match the user message / input size so both sides read uniformly. */
   font-size: 15px;
+}
+
+/* Hover copy for whole transcript messages (separate from code-block copy). */
+.transcript-copy {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  color: var(--text-muted);
+  font-family: var(--sans);
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+.user-msg .transcript-copy {
+  right: -8px;
+}
+.user-msg:hover .transcript-copy,
+.assistant-msg:hover .transcript-copy,
+.transcript-copy:focus-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.transcript-copy:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
 }
 
 /* ── Markdown rendering (assistant blocks) ── */

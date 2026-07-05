@@ -1,5 +1,5 @@
 import { memo, useCallback, useContext, useMemo, useRef, useState, createContext } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { Check, Copy, CornerDownLeft } from "lucide-react";
@@ -13,15 +13,40 @@ interface Props {
   children: string;
 }
 
-function isExternalHref(href: string): boolean {
-  const scheme = href.match(/^([a-z][a-z0-9+.-]*):/i)?.[1].toLowerCase();
-  return Boolean(scheme && scheme !== "file" && scheme.length > 1);
+const FINDER_SENTINEL_HOST = "ggopen.finder";
+
+function isProjectPathHref(href: string): boolean {
+  const trimmed = href.trim();
+  if (!trimmed || trimmed.startsWith("#")) return false;
+  if (/^[a-zA-Z]:[\\/]/.test(trimmed)) return true;
+
+  try {
+    const url = new URL(trimmed);
+    if (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      url.hostname === FINDER_SENTINEL_HOST
+    ) {
+      return true;
+    }
+    return url.protocol === "file:" || url.protocol === "gg-open:";
+  } catch {
+    // Relative markdown targets like `src/App.tsx` are valid project paths, not URLs.
+  }
+
+  const scheme = trimmed.match(/^([a-z][a-z0-9+.-]*):/i)?.[1].toLowerCase();
+  return !scheme;
+}
+
+function markdownUrlTransform(url: string): string | null | undefined {
+  return isProjectPathHref(url) ? url : defaultUrlTransform(url);
 }
 
 /**
- * Anchor that opens outside the webview. Browser links go to the OS browser;
- * file-ish links from the agent (`src/App.tsx`, `/abs/file.ts`, `file://…`) open
- * against the current project window's cwd.
+ * Single fail-safe link router for rendered markdown. Real URLs go to the OS
+ * browser. File-ish links (`src/App.tsx`, `/abs/file.ts`, `file://…`, legacy
+ * `gg-open://…`, and adapter sentinel `https://ggopen.finder/r?p=…`) go through
+ * the native project-path command. Click reveals in Finder; Shift-click opens the
+ * parent folder.
  */
 function ExternalLink({
   href,
@@ -36,10 +61,10 @@ function ExternalLink({
       onClick={(e) => {
         if (!href || href.startsWith("#")) return;
         e.preventDefault();
-        if (isExternalHref(href)) {
-          void openUrl(href);
+        if (isProjectPathHref(href)) {
+          void openProjectPath(href, e.shiftKey ? "openParent" : "reveal");
         } else {
-          void openProjectPath(href);
+          void openUrl(href);
         }
       }}
     >
@@ -266,6 +291,7 @@ const MemoizedMarkdownBlock = memo(
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[rehypeHighlight]}
+          urlTransform={markdownUrlTransform}
           components={{ a: ExternalLink, pre: PreBlock }}
         >
           {normalized}
