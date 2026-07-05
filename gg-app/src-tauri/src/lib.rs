@@ -220,53 +220,91 @@ fn terminate_child(mut child: Child) {
 // the process-table snapshot and the force-kill primitive differ between
 // Unix (`ps` + `libc::kill`) and Windows (PowerShell CIM + `taskkill`).
 
-/// One process row from the OS process table (pid, parent pid, full command).
+/// One process row from the OS process table (pid, parent pid, process-group
+/// id, full command). `pgid` is 0 on platforms without process groups
+/// (Windows) — it's only consulted on Unix, where the sidecar is spawned as a
+/// group leader (`process_group(0)`) so every non-detached descendant inherits
+/// `pgid == sidecar_pid`. That inherited pgid survives the sidecar's death (the
+/// children reparent to init but keep their group id), which is what lets the
+/// sweep recognise a crashed sidecar's MCP/LSP children by lineage instead of
+/// by a hardcoded name whitelist.
 struct ProcInfo {
     pid: i32,
     ppid: i32,
+    pgid: i32,
     command: String,
 }
 
-/// Command substrings that identify GG Coder sidecar trees. `app-sidecar`
-/// matches both bundled `app-sidecar.mjs` and dev `app-sidecar.js`;
-/// `kencode-search` catches long-dead MCP children already reparented to init.
-const ORPHAN_COMMAND_PATTERNS: &[&str] = &["app-sidecar", "kencode-search"];
+/// Command substrings that identify a GG Coder *sidecar* process itself.
+/// `app-sidecar` matches both bundled `app-sidecar.mjs` and dev
+/// `app-sidecar.js`. This is our OWN binary name (fully under our control, not
+/// a third-party MCP name), so it's a safe, stable anchor. MCP children are NOT
+/// matched by name — there are thousands of possible MCP servers and users can
+/// add any of them — they're recognised structurally instead (descendant walk +
+/// process-group lineage; see `orphan_killset`).
+const SIDECAR_COMMAND_PATTERNS: &[&str] = &["app-sidecar"];
 
-/// Pure (no I/O): given a process-table snapshot and the current app's pid,
-/// return the set of orphaned sidecar-tree PIDs that should be SIGKILLed.
+/// Pure (no I/O): given a process-table snapshot, the current app's pid, and the
+/// set of process-group ids belonging to sidecars we have ever spawned (the
+/// ledger — see `read_sidecar_ledger`), return the orphaned sidecar-tree PIDs to
+/// SIGKILL.
 ///
-/// An orphan is a process whose command matches a known pattern AND whose
-/// parent is dead (`ppid == 1` or `ppid` absent from the snapshot). We then
-/// transitively include descendants of each orphan root (catches MCP/LSP trees
-/// still linked to a freshly-dead sidecar) plus any pattern-matching process
-/// with a dead parent not already collected (catches children reparented to
-/// init before the snapshot). The current app pid and its live sidecars are
-/// never matched — a live sidecar's parent is the still-running `gg-app`, so
-/// its `ppid` is alive in the snapshot.
-fn orphan_killset(snapshot: &[ProcInfo], self_pid: i32) -> Vec<i32> {
+/// A sidecar-tree member is killed when ANY of these hold and it isn't self:
+///
+/// 1. **Orphaned sidecar** — command matches `SIDECAR_COMMAND_PATTERNS` and its
+///    parent is dead (`ppid == 1` or `ppid` absent from the snapshot).
+/// 2. **Descendant of an orphaned sidecar** — transitively reachable via the
+///    ppid tree from a (1) root. Catches MCP/LSP children still linked to a
+///    freshly-dead sidecar that's still in this snapshot.
+/// 3. **Process-group lineage (name-agnostic)** — the process's `pgid` is a
+///    ledgered sidecar group whose *leader is dead* (no live process has
+///    `pid == pgid`). This is the key case: after a crash/force-quit the sidecar
+///    is long gone and its MCP children have reparented to init, but they keep
+///    the sidecar's pgid. Any MCP server, of any name the user added, is caught
+///    here — no whitelist. PID-recycle-safe: a group whose leader is alive is
+///    skipped entirely (either a still-live sidecar, whose children we must NOT
+///    kill, or an unrelated process that recycled the pid).
+///
+/// The current app pid and its live sidecars are never matched — a live
+/// sidecar's parent is the still-running `gg-app`, so its `ppid` is alive, and
+/// its group leader is alive so lineage skips it.
+fn orphan_killset(snapshot: &[ProcInfo], self_pid: i32, ledger_pgids: &HashSet<i32>) -> Vec<i32> {
     let live_pids: HashSet<i32> = snapshot.iter().map(|p| p.pid).collect();
     let mut parent_children: HashMap<i32, Vec<i32>> = HashMap::new();
     for p in snapshot {
         parent_children.entry(p.ppid).or_default().push(p.pid);
     }
 
-    let matches_pattern = |cmd: &str| ORPHAN_COMMAND_PATTERNS.iter().any(|pat| cmd.contains(pat));
+    let matches_sidecar = |cmd: &str| SIDECAR_COMMAND_PATTERNS.iter().any(|pat| cmd.contains(pat));
     let parent_dead = |ppid: i32| ppid == 1 || !live_pids.contains(&ppid);
 
-    // Roots: pattern-matching processes with a dead parent (not self).
+    // The subset of ledgered sidecar groups whose LEADER is dead. A group whose
+    // leader (pid == pgid) is still alive is skipped: it's either a live sidecar
+    // (its children are in use) or an unrelated process that recycled the pid.
+    let dead_leader_groups: HashSet<i32> = ledger_pgids
+        .iter()
+        .copied()
+        .filter(|&g| g > 1 && !live_pids.contains(&g))
+        .collect();
+
     let mut killset: HashSet<i32> = HashSet::new();
+
+    // (1) Orphaned sidecars + (3) process-group lineage. Both are single-pass
+    // over the snapshot.
     for p in snapshot {
         if p.pid == self_pid {
             continue;
         }
-        if matches_pattern(&p.command) && parent_dead(p.ppid) {
+        let orphaned_sidecar = matches_sidecar(&p.command) && parent_dead(p.ppid);
+        let orphaned_group_member = p.pgid > 1 && dead_leader_groups.contains(&p.pgid);
+        if orphaned_sidecar || orphaned_group_member {
             killset.insert(p.pid);
         }
     }
 
-    // Descendants: transitively collect children of each root via the map.
-    // This catches freshly-orphaned MCP/LSP trees still linked to the dead
-    // sidecar in this snapshot.
+    // (2) Descendants: transitively collect children of each root via the map.
+    // Catches freshly-orphaned MCP/LSP trees still linked to a dead sidecar
+    // that remains in this snapshot (its pgid leader still "alive").
     let mut stack: Vec<i32> = killset.iter().copied().collect();
     while let Some(parent) = stack.pop() {
         if let Some(children) = parent_children.get(&parent) {
@@ -278,25 +316,13 @@ fn orphan_killset(snapshot: &[ProcInfo], self_pid: i32) -> Vec<i32> {
         }
     }
 
-    // Reparented: any pattern-matching process with a dead parent NOT already
-    // collected (e.g. kencode-search reparented to pid 1 before the snapshot,
-    // whose original sidecar parent may be gone entirely).
-    for p in snapshot {
-        if p.pid == self_pid {
-            continue;
-        }
-        if matches_pattern(&p.command) && parent_dead(p.ppid) {
-            killset.insert(p.pid);
-        }
-    }
-
     let mut result: Vec<i32> = killset.into_iter().collect();
     result.sort_unstable();
     result
 }
 
-/// Pure parser for `ps -eo pid=,ppid=,command=` output (one row per line).
-/// Column padding (multiple spaces) is collapsed by `split_whitespace`.
+/// Pure parser for `ps -eo pid=,ppid=,pgid=,command=` output (one row per
+/// line). Column padding (multiple spaces) is collapsed by `split_whitespace`.
 /// Available on all platforms so the parsing can be unit-tested.
 fn parse_ps_output(stdout: &str) -> Vec<ProcInfo> {
     stdout
@@ -305,11 +331,12 @@ fn parse_ps_output(stdout: &str) -> Vec<ProcInfo> {
             let mut parts = line.split_whitespace();
             let pid: i32 = parts.next()?.parse().ok()?;
             let ppid: i32 = parts.next()?.parse().ok()?;
+            let pgid: i32 = parts.next()?.parse().ok()?;
             // The rest of the line is the full command (may contain spaces).
             // Pattern matching uses .contains(), so rejoining with single
             // spaces is fine.
             let command = parts.collect::<Vec<_>>().join(" ");
-            Some(ProcInfo { pid, ppid, command })
+            Some(ProcInfo { pid, ppid, pgid, command })
         })
         .collect()
 }
@@ -336,7 +363,15 @@ fn parse_cim_output(stdout: &str) -> Vec<ProcInfo> {
             let pid: i32 = parts.next()?.trim().parse().ok()?;
             let ppid: i32 = parts.next()?.trim().parse().ok()?;
             let command = parts.next()?.trim().to_string();
-            Some(ProcInfo { pid, ppid, command })
+            // Windows has no POSIX process groups; pgid is unused there (set to
+            // 0 so the lineage rule in `orphan_killset`, which requires pgid > 1,
+            // never fires — Windows relies on name + descendant matching).
+            Some(ProcInfo {
+                pid,
+                ppid,
+                pgid: 0,
+                command,
+            })
         })
         .collect()
 }
@@ -347,7 +382,7 @@ fn parse_cim_output(stdout: &str) -> Vec<ProcInfo> {
 #[cfg(unix)]
 fn process_snapshot() -> Option<Vec<ProcInfo>> {
     let output = Command::new("ps")
-        .args(["-eo", "pid=,ppid=,command="])
+        .args(["-eo", "pid=,ppid=,pgid=,command="])
         .output()
         .ok()?;
     Some(parse_ps_output(&String::from_utf8_lossy(&output.stdout)))
@@ -391,6 +426,75 @@ fn force_kill_pid(pid: i32) {
         .status();
 }
 
+/// Absolute path to the sidecar PID ledger (`~/.gg/gg-app-sidecars`).
+///
+/// Newline-delimited list of PIDs of every Node sidecar this app has spawned.
+/// Because each sidecar is spawned as a process-group leader (`process_group(0)`
+/// on Unix), its PID equals the pgid shared by all of its MCP/LSP children. So a
+/// ledgered PID doubles as "a GG process-group id", which is how the sweep
+/// recognises a crashed sidecar's children by lineage — no MCP-name whitelist.
+fn sidecar_ledger_path() -> PathBuf {
+    home_dir().join(".gg").join("gg-app-sidecars")
+}
+
+/// Read the ledgered sidecar PIDs (== process-group ids). Missing/garbage file
+/// → empty set (the sweep then degrades to name + descendant matching, exactly
+/// the pre-ledger behaviour). Best-effort, never panics.
+fn read_sidecar_ledger() -> HashSet<i32> {
+    let Ok(contents) = std::fs::read_to_string(sidecar_ledger_path()) else {
+        return HashSet::new();
+    };
+    contents
+        .lines()
+        .filter_map(|l| l.trim().parse::<i32>().ok())
+        .filter(|&p| p > 1)
+        .collect()
+}
+
+/// Append a freshly-spawned sidecar's PID to the ledger. Called right after
+/// `spawn_daemon` gets a live child. Creates `~/.gg` if needed. Best-effort:
+/// a write failure only means that sidecar's orphans fall back to name matching.
+fn record_sidecar_pid(pid: i32) {
+    let path = sidecar_ledger_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let _ = writeln!(f, "{pid}");
+    }
+}
+
+/// Rewrite the ledger to keep only PIDs whose process group is still live —
+/// i.e. a process with `pid == pgid` exists in the snapshot (a still-running
+/// sidecar, ours or a concurrent instance's). Drops dead groups (their members
+/// were just swept) and pids recycled away, so the file can't grow without
+/// bound. Best-effort.
+fn prune_sidecar_ledger(ledger: &HashSet<i32>, snapshot: &[ProcInfo]) {
+    let live_pids: HashSet<i32> = snapshot.iter().map(|p| p.pid).collect();
+    let keep: Vec<i32> = ledger
+        .iter()
+        .copied()
+        .filter(|g| live_pids.contains(g))
+        .collect();
+    let path = sidecar_ledger_path();
+    if keep.is_empty() {
+        // Nothing worth keeping — remove the file so a stale set can't linger.
+        let _ = std::fs::remove_file(&path);
+        return;
+    }
+    let body = keep
+        .iter()
+        .map(|p| p.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let _ = std::fs::write(&path, format!("{body}\n"));
+}
+
 /// Snapshot the process table, classify orphaned sidecar trees, and force-kill
 /// each. Best-effort + logged; never panics. Runs once at startup before any
 /// sidecar is spawned.
@@ -400,10 +504,12 @@ fn sweep_orphan_sidecars() {
         return;
     };
     let self_pid = std::process::id() as i32;
+    let ledger = read_sidecar_ledger();
 
-    let killset = orphan_killset(&snapshot, self_pid);
+    let killset = orphan_killset(&snapshot, self_pid, &ledger);
     if killset.is_empty() {
         log::info!("orphan sweep: no stale sidecars found");
+        prune_sidecar_ledger(&ledger, &snapshot);
         return;
     }
 
@@ -417,6 +523,7 @@ fn sweep_orphan_sidecars() {
         log::info!("orphan sweep: killing pid {pid}: {cmd}");
         force_kill_pid(*pid);
     }
+    prune_sidecar_ledger(&ledger, &snapshot);
 }
 
 /// The shared daemon port (same for every window). Named `port_for` so the ~35
@@ -2904,7 +3011,14 @@ fn spawn_daemon(app: tauri::AppHandle, is_respawn: bool) {
     cmd.process_group(0);
 
     let mut child = match cmd.spawn() {
-        Ok(c) => c,
+        Ok(c) => {
+            // Record the sidecar PID (== its process-group id on Unix, since it's
+            // a group leader). The startup orphan sweep uses this ledger to
+            // recognise this sidecar's MCP/LSP children by lineage if the app is
+            // later crashed/force-quit — works for ANY MCP server, no name list.
+            record_sidecar_pid(c.id() as i32);
+            c
+        }
         Err(e) => {
             log::error!("failed to spawn daemon: {e}");
             // Surface to every open window so they don't hang on waitForReady.
@@ -3790,20 +3904,39 @@ mod tests {
 
     // ── orphan_killset classifier tests ──────────────────────────────────────
 
-    /// Helper: build a ProcInfo row.
+    /// Helper: build a ProcInfo row whose process group is itself (a group
+    /// leader / a process not tracked by lineage). Good enough for the
+    /// name+descendant cases; use `proc_g` to set an explicit pgid.
     fn proc(pid: i32, ppid: i32, command: &str) -> ProcInfo {
+        proc_g(pid, ppid, pid, command)
+    }
+
+    /// Helper: build a ProcInfo row with an explicit process-group id — used to
+    /// model MCP/LSP children that inherited a (now-dead) sidecar's pgid.
+    fn proc_g(pid: i32, ppid: i32, pgid: i32, command: &str) -> ProcInfo {
         ProcInfo {
             pid,
             ppid,
+            pgid,
             command: command.to_string(),
         }
     }
 
+    /// The empty ledger — for tests that exercise only name + descendant rules.
+    fn no_ledger() -> HashSet<i32> {
+        HashSet::new()
+    }
+
+    /// A ledger containing the given sidecar pgids.
+    fn ledger(pgids: &[i32]) -> HashSet<i32> {
+        pgids.iter().copied().collect()
+    }
+
     #[test]
     fn orphan_sidecar_with_ppid_1_is_killed() {
-        // A sidecar reparented to init is an orphan.
+        // A sidecar reparented to init is an orphan (matched by our own name).
         let snap = vec![proc(500, 1, "node /app/sidecar/app-sidecar.mjs")];
-        let ks = orphan_killset(&snap, 100);
+        let ks = orphan_killset(&snap, 100, &no_ledger());
         assert_eq!(ks, vec![500]);
     }
 
@@ -3814,7 +3947,7 @@ mod tests {
             proc(100, 1, "/Applications/GG Coder.app/Contents/MacOS/gg-app"),
             proc(200, 100, "ggnode app-sidecar.mjs"),
         ];
-        let ks = orphan_killset(&snap, 100);
+        let ks = orphan_killset(&snap, 100, &no_ledger());
         assert!(ks.is_empty(), "live sidecar must not be killed: {ks:?}");
     }
 
@@ -3822,27 +3955,56 @@ mod tests {
     fn orphan_sidecar_with_dead_parent_not_in_snapshot() {
         // Parent pid 999 is absent from the snapshot and ≠ 1 → dead → orphan.
         let snap = vec![proc(300, 999, "node app-sidecar.js")];
-        let ks = orphan_killset(&snap, 100);
+        let ks = orphan_killset(&snap, 100, &no_ledger());
         assert!(ks.contains(&300));
     }
 
     #[test]
-    fn reparented_kencode_is_killed() {
-        // kencode-search reparented to init.
-        let snap = vec![proc(700, 1, "node kencode-search")];
-        let ks = orphan_killset(&snap, 100);
-        assert_eq!(ks, vec![700]);
+    fn reparented_mcp_child_killed_by_group_lineage() {
+        // THE crash case: the sidecar (pgid 500) is long gone; its MCP child
+        // reparented to init (ppid 1) but kept pgid 500. The command is an
+        // arbitrary user-added MCP name we've never heard of. With 500 in the
+        // ledger and no live pid==500, lineage kills it — no name whitelist.
+        let snap = vec![proc_g(701, 1, 500, "node some-random-user-mcp-server")];
+        let ks = orphan_killset(&snap, 100, &ledger(&[500]));
+        assert_eq!(ks, vec![701]);
+    }
+
+    #[test]
+    fn reparented_mcp_child_spared_when_group_leader_alive() {
+        // Same shape, but a process with pid==500 is still alive (a live sidecar,
+        // or a recycled pid). The group is NOT dead → its members are left alone.
+        // The live app (pid 100, self) is in the snapshot so the sidecar's parent
+        // reads as alive too.
+        let snap = vec![
+            proc(100, 1, "gg-app"),
+            proc(500, 100, "ggnode app-sidecar.mjs"),
+            proc_g(701, 500, 500, "node some-user-mcp-server"),
+        ];
+        let ks = orphan_killset(&snap, 100, &ledger(&[500]));
+        assert!(ks.is_empty(), "live-group members must be spared: {ks:?}");
+    }
+
+    #[test]
+    fn unledgered_group_is_not_killed_by_lineage() {
+        // A reparented process whose pgid is NOT in the ledger is none of our
+        // business — lineage only fires for groups we recorded spawning.
+        let snap = vec![proc_g(701, 1, 900, "node some-user-mcp-server")];
+        let ks = orphan_killset(&snap, 100, &ledger(&[500]));
+        assert!(ks.is_empty(), "unledgered group must be spared: {ks:?}");
     }
 
     #[test]
     fn orphan_descendant_tree_is_collected() {
-        // sidecar(500, orphaned) → npm exec(501) → node kencode-search(502)
+        // sidecar(500, orphaned) → npm exec(501) → node kencode-search(502).
+        // Children still linked to the in-snapshot dead sidecar are caught by
+        // the descendant walk regardless of their names.
         let snap = vec![
             proc(500, 1, "node app-sidecar.js"),
             proc(501, 500, "npm exec @kenkaiiii/kencode-search"),
             proc(502, 501, "node kencode-search"),
         ];
-        let ks = orphan_killset(&snap, 100);
+        let ks = orphan_killset(&snap, 100, &no_ledger());
         assert!(ks.contains(&500));
         assert!(ks.contains(&501));
         assert!(ks.contains(&502));
@@ -3853,28 +4015,28 @@ mod tests {
     fn current_app_pid_never_killed() {
         // Even if self somehow matches a pattern and has a dead parent, exclude it.
         let snap = vec![proc(100, 1, "node app-sidecar.js")];
-        let ks = orphan_killset(&snap, 100);
+        let ks = orphan_killset(&snap, 100, &no_ledger());
         assert!(ks.is_empty(), "self pid must never be in killset: {ks:?}");
     }
 
     #[test]
     fn unrelated_node_with_dead_parent_excluded() {
-        // A vite process with a dead parent does NOT match any pattern → excluded.
+        // A vite process with a dead parent, no matching name, no ledgered group
+        // → excluded.
         let snap = vec![proc(800, 1, "node vite")];
-        let ks = orphan_killset(&snap, 100);
+        let ks = orphan_killset(&snap, 100, &ledger(&[500]));
         assert!(ks.is_empty(), "non-matching process must not be killed: {ks:?}");
     }
 
     #[test]
-    fn dedup_when_descendant_also_matches_pattern() {
-        // sidecar(500, orphaned) → kencode-search(501). Both match patterns,
-        // but 501 is both a descendant AND a reparented-pattern candidate.
-        // It must appear exactly once.
+    fn dedup_when_descendant_also_matches_lineage() {
+        // sidecar(500, orphaned) → MCP child(501) sharing pgid 500. 501 is both a
+        // descendant AND a lineage member. It must appear exactly once.
         let snap = vec![
-            proc(500, 1, "node app-sidecar.js"),
-            proc(501, 500, "node kencode-search"),
+            proc_g(500, 1, 500, "node app-sidecar.js"),
+            proc_g(501, 500, 500, "node some-user-mcp-server"),
         ];
-        let ks = orphan_killset(&snap, 100);
+        let ks = orphan_killset(&snap, 100, &ledger(&[500]));
         let count_501 = ks.iter().filter(|&&p| p == 501).count();
         assert_eq!(count_501, 1, "pid 501 must appear exactly once: {ks:?}");
         assert_eq!(ks.len(), 2);
@@ -3882,17 +4044,19 @@ mod tests {
 
     #[test]
     fn multi_instance_concurrent_dev_runs_safe() {
-        // Two gg-app instances each with their own sidecar — neither is orphaned.
+        // Two gg-app instances each with their own live sidecar. Both sidecar
+        // pgids are ledgered, but both leaders are alive → neither is swept.
         let snap = vec![
             proc(100, 1, "gg-app"),
-            proc(200, 100, "node app-sidecar.js"),
+            proc_g(200, 100, 200, "node app-sidecar.js"),
             proc(300, 1, "gg-app"),
-            proc(400, 300, "node app-sidecar.js"),
+            proc_g(400, 300, 400, "node app-sidecar.js"),
         ];
+        let led = ledger(&[200, 400]);
         // Instance 1 sweeps.
-        assert!(orphan_killset(&snap, 100).is_empty());
+        assert!(orphan_killset(&snap, 100, &led).is_empty());
         // Instance 2 sweeps.
-        assert!(orphan_killset(&snap, 300).is_empty());
+        assert!(orphan_killset(&snap, 300, &led).is_empty());
     }
 
     // ── Output parser tests (cross-platform) ────────────────────────────────
@@ -3902,15 +4066,19 @@ mod tests {
 
     #[test]
     fn parse_ps_handles_column_padding_and_spaces_in_command() {
-        // Real `ps -eo pid=,ppid=,command=` output: multiple spaces between fields.
-        let raw = "    1     0 /sbin/launchd\n\
-                   11541     1 /Applications/GG Coder.app/Contents/MacOS/gg-app\n\
-                   11553 11541 /Applications/GG Coder.app/Contents/MacOS/ggnode app-sidecar.mjs";
+        // Real `ps -eo pid=,ppid=,pgid=,command=` output: multiple spaces
+        // between fields. Columns are pid, ppid, pgid, then the command.
+        let raw = "    1     0     1 /sbin/launchd\n\
+                   11541     1 11541 /Applications/GG Coder.app/Contents/MacOS/gg-app\n\
+                   11553 11541 11553 /Applications/GG Coder.app/Contents/MacOS/ggnode app-sidecar.mjs";
         let rows = parse_ps_output(raw);
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].pid, 1);
         assert_eq!(rows[0].ppid, 0);
+        assert_eq!(rows[0].pgid, 1);
         assert_eq!(rows[0].command, "/sbin/launchd");
+        // The sidecar is its own group leader (pgid == pid).
+        assert_eq!(rows[2].pgid, 11553);
         // Command with spaces is rejoined correctly.
         assert!(rows[2].command.contains("app-sidecar.mjs"));
         assert!(rows[2].command.contains("ggnode"));
@@ -3918,13 +4086,14 @@ mod tests {
 
     #[test]
     fn parse_ps_skips_unparseable_lines() {
-        let raw = "pid ppid command\n\
-                   abc def not-a-number\n\
-                   42 1 node";
+        let raw = "pid ppid pgid command\n\
+                   abc def ghi not-a-number\n\
+                   42 1 42 node";
         let rows = parse_ps_output(raw);
         // Header + garbage lines are skipped; only the valid row survives.
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].pid, 42);
+        assert_eq!(rows[0].pgid, 42);
     }
 
     #[test]
@@ -3983,7 +4152,9 @@ mod tests {
         let snapshot = parse_cim_output(raw);
         assert_eq!(snapshot.len(), 6);
         // Self = the new gg-app (pid 6000). Its sidecar (6001) has a live parent.
-        let killset = orphan_killset(&snapshot, 6000);
+        // Windows has no pgid (all 0), so classification relies on the sidecar
+        // name (5000) + descendant walk (5001) — ledger is irrelevant here.
+        let killset = orphan_killset(&snapshot, 6000, &no_ledger());
         // Orphaned sidecar (5000, parent 9999 dead) + its kencode child (5001).
         assert!(killset.contains(&5000));
         assert!(killset.contains(&5001));

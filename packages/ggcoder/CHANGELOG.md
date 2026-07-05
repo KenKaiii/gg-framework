@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.8.6
+
+### Patch Changes
+
+- Fix autopilot leaking the raw HUMAN verdict reason and teach Ken GG Coder's own capabilities so his guidance is grounded in what the tool can actually do.
+  - @kenkaiiii/gg-ai@5.8.6
+  - @kenkaiiii/gg-agent@5.8.6
+  - @kenkaiiii/gg-core@5.8.6
+
 ## 5.8.5
 
 ### Patch Changes

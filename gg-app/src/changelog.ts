@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.14.7",
+    date: "2026-07-05",
+    items: [
+      "Your machine breathes easier now. GG Coder used to leave stray search and tool helpers running every time you closed a project, and they quietly piled up and ate your memory for days. I taught it to hunt down every one of those leftovers on startup, no matter which tools you plugged in, so your RAM stays yours.",
+      "This works for any tool you add, not just the ones I ship. However exotic your setup gets, GG Coder now cleans up after itself instead of slowly bogging down your computer in the background.",
+      "Ken gives sharper advice. He now knows exactly what GG Coder can do under the hood, so his guidance is grounded in the real tools at hand instead of guesses, and his handoffs back to the agent come through clean.",
+    ],
+  },
+  {
     version: "0.14.6",
     date: "2026-07-05",
     items: [

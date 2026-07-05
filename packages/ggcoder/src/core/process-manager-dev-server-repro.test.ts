@@ -27,6 +27,24 @@ async function waitForProcessExit(pid: number): Promise<void> {
   throw new Error(`Process ${pid} was still alive after shutdown.`);
 }
 
+/**
+ * Terminate a real spawned process group with the *unmocked* process.kill.
+ * Used by tests that stub the manager's kill machinery and would otherwise
+ * leak the OS process they spawned. POSIX kills the detached group (-pid);
+ * Windows falls back to the single pid.
+ */
+function killRealProcessTree(pid: number): void {
+  try {
+    process.kill(process.platform === "win32" ? pid : -pid, "SIGKILL");
+  } catch {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // Already gone.
+    }
+  }
+}
+
 function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -82,12 +100,20 @@ describe("ProcessManager dev-server lifecycle repro", () => {
       `${JSON.stringify(process.execPath)} -e "setInterval(()=>{},1000)"`,
       tmpDir,
     );
-    const stopped = await manager.stop(started.id);
-    expect(stopped).toBe(`Process ${started.id} already exited`);
-    manager.shutdownAll();
-    expect(taskkill).toHaveBeenCalledWith("taskkill", ["/pid", String(started.pid), "/T", "/F"], {
-      stdio: "ignore",
-    });
+    try {
+      const stopped = await manager.stop(started.id);
+      expect(stopped).toBe(`Process ${started.id} already exited`);
+      manager.shutdownAll();
+      expect(taskkill).toHaveBeenCalledWith("taskkill", ["/pid", String(started.pid), "/T", "/F"], {
+        stdio: "ignore",
+      });
+    } finally {
+      // This test deliberately mocks `kill` and `spawnSync`, so neither the
+      // simulated stop() nor shutdownAll() actually signals the real child
+      // spawned by start(). Reap it for real here — otherwise every run of
+      // this suite orphans a live `node -e setInterval` process forever.
+      killRealProcessTree(started.pid);
+    }
   });
 
   it("starts, reads, and stops a long-running Node HTTP server through the worker background path", async () => {
