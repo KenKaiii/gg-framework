@@ -196,7 +196,17 @@ export type Item =
       // of the full prompt body that was actually sent to GG Coder.
       kenSent?: boolean;
     }
-  | { kind: "assistant"; id: number; text: string }
+  | {
+      kind: "assistant";
+      id: number;
+      text: string;
+      // True when this bubble is a crash-recovery snapshot: the process died
+      // mid-stream (crash, force-quit, an app update killing the sidecar) with
+      // no completed reply ever recorded after it. Renders a small "recovered
+      // after an unexpected restart" hint below the text instead of looking
+      // like an ordinary finished reply.
+      recovered?: boolean;
+    }
   // Ken Kai (mentor agent) reply — magenta-tinted bubble + "Ken Kai" badge,
   // streamed from the ken_* SSE events. Never mistaken for GG Coder.
   | { kind: "ken"; id: number; text: string }
@@ -1048,7 +1058,13 @@ function App(): React.ReactElement {
                 body: h.autopilot.body,
                 copySeed: h.autopilot.copySeed,
               };
-            if (h.role !== "user") return { kind: h.role, id: nextId(), text: h.text };
+            if (h.role !== "user")
+              return {
+                kind: h.role,
+                id: nextId(),
+                text: h.text,
+                ...(h.recovered ? { recovered: true } : {}),
+              };
             // App-button prompts (e.g. "Initialize Git") were shown live as a
             // friendly shimmer label, not the expanded body. The label is
             // webview-only, so recover it from the restored prompt text. Slash
@@ -2543,6 +2559,11 @@ const TranscriptRow = memo(function TranscriptRow({
                 </span>
                 <div className="assistant-text">
                   <Markdown>{seg.text}</Markdown>
+                  {item.recovered && i === segments.length - 1 ? (
+                    <div className="assistant-recovered-hint">
+                      Recovered after an unexpected restart — this reply may be incomplete.
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ),

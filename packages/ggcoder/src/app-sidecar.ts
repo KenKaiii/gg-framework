@@ -315,6 +315,12 @@ interface HistoryEntryForWire {
   error?: { scope: string; headline: string; message?: string; guidance?: string };
   /** Webview-copy info row marker (e.g. the video-capability warning). */
   infoKind?: "video_warning";
+  /** True when this assistant row is a crash-recovery snapshot — the process
+   *  died mid-stream (crash, force-quit, an app update killing the sidecar)
+   *  and this is the last text the model had streamed before that happened.
+   *  The webview shows a "recovered after an unexpected restart" hint instead
+   *  of rendering it as an ordinary completed reply. */
+  recovered?: boolean;
   toolImages?: Array<{ src: string; path?: string }>;
   subagentGroup?: Array<{
     agentName?: string;
@@ -2386,6 +2392,19 @@ async function createSession(
           flushAutopilot(count);
         for (const count of [...appMarkersByCount.keys()].sort((a, b) => a - b))
           flushAppMarkers(count);
+
+        // Crash-recovery draft: text that was streaming when the process died
+        // mid-turn, with no completed assistant message ever appended after it.
+        // Rendered as a final row with a clear "recovered" marker so the user
+        // sees what was lost instead of it silently vanishing on resume.
+        const recoveredDraft = session.getRecoveredDraft();
+        if (recoveredDraft) {
+          history.push({
+            role: "assistant",
+            text: recoveredDraft.text,
+            recovered: true,
+          });
+        }
 
         json(res, 200, { history });
       })();
