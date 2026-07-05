@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.8.7
+
+### Patch Changes
+
+- Cut MCP server memory: resolve stdio servers to their real bin (via the npx on-demand cache and sole-bin matching) instead of falling back to the ~90 MB npx wrapper per connection. Covers non-bundled defaults like zai and any user-added MCP.
+  - @kenkaiiii/gg-ai@5.8.7
+  - @kenkaiiii/gg-agent@5.8.7
+  - @kenkaiiii/gg-core@5.8.7
+
 ## 5.8.6
 
 ### Patch Changes
