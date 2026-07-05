@@ -88,7 +88,7 @@ import { useAppUpdate } from "./update";
 import { recoverPromptLabel } from "./prompt-labels";
 import { playSound } from "./sounds";
 import { segmentDoneMarkers, hasDoneMarker, countPlanSteps } from "./plan-steps";
-import { Paperclip, AtSign } from "lucide-react";
+import { Paperclip, AtSign, Check, Copy } from "lucide-react";
 import { AttachmentBar } from "./AttachmentBar";
 import { EnhancedSegments } from "./PromptEnhancement";
 import { EnhanceDissolve } from "./EnhanceDissolve";
@@ -2460,6 +2460,35 @@ function App(): React.ReactElement {
 // default shallow `memo` re-renders ONLY the row whose `item` reference changed
 // (the one actively streaming) — the rest bail out, keeping per-token cost O(1)
 // instead of O(transcript length).
+function TranscriptCopyButton({ text }: { text: string }): React.ReactElement | null {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(() => {
+    const value = text.trim();
+    if (!value) return;
+    void navigator.clipboard
+      .writeText(value)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {});
+  }, [text]);
+
+  if (!text.trim()) return null;
+  return (
+    <button
+      type="button"
+      className="transcript-copy"
+      onClick={copy}
+      aria-label={copied ? "Copied" : "Copy message"}
+      title={copied ? "Copied" : "Copy message"}
+    >
+      {copied ? <Check size={12} /> : <Copy size={12} />}
+      <span>{copied ? "Copied" : "Copy"}</span>
+    </button>
+  );
+}
+
 const TranscriptRow = memo(function TranscriptRow({
   item,
   onImageLoad,
@@ -2495,6 +2524,7 @@ const TranscriptRow = memo(function TranscriptRow({
       }
       return (
         <div className={`user-msg${item.queued ? " queued" : ""}${item.ken ? " user-ken" : ""}`}>
+          <TranscriptCopyButton text={item.text} />
           {item.queued && <span className="queued-pill">queued</span>}
           {item.images && item.images.length > 0 && (
             <div className="user-img-row">
@@ -2538,6 +2568,7 @@ const TranscriptRow = memo(function TranscriptRow({
               </div>
             ) : (
               <div key={i} className="assistant-msg">
+                <TranscriptCopyButton text={seg.text} />
                 <span className="assistant-dot" style={{ color: theme.primary }}>
                   {DOT}
                 </span>
@@ -2557,6 +2588,7 @@ const TranscriptRow = memo(function TranscriptRow({
       // fences into a "Send to GG Coder" button.
       return (
         <div className="assistant-msg ken-msg">
+          <TranscriptCopyButton text={item.text} />
           <span className="assistant-dot" style={{ color: theme.ken }}>
             {DOT}
           </span>
@@ -2584,6 +2616,7 @@ const TranscriptRow = memo(function TranscriptRow({
       };
       return (
         <div className="assistant-msg ken-msg">
+          <TranscriptCopyButton text={copy[item.phase]} />
           <span className="assistant-dot" style={{ color: theme.ken }}>
             {DOT}
           </span>
