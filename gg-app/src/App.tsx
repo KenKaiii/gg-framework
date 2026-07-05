@@ -2671,7 +2671,7 @@ const TranscriptRow = memo(function TranscriptRow({
         <div className="img-grid">
           {item.images.map((img, i) => {
             const openImage = (): void => {
-              if (img.path) void openProjectPath(img.path);
+              if (img.path) void openProjectPath(img.path, "open");
             };
             return (
               <figure

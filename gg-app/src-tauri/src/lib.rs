@@ -662,24 +662,80 @@ fn strip_file_location_suffix(path: &str) -> &str {
     &path[..end]
 }
 
-/// Open a project file linked from the chat. Relative paths resolve against this
-/// window's sidecar cwd; `:line[:col]` and `#Lline` decorations are tolerated.
-#[tauri::command]
-fn open_project_path(webview: WebviewWindow, path: String) -> Result<(), String> {
-    let cwd = cwd_for(&webview).ok_or("sidecar not ready")?;
+fn percent_decode_lossy(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
+                if let Ok(value) = u8::from_str_radix(hex, 16) {
+                    out.push(value);
+                    i += 3;
+                    continue;
+                }
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn query_param(input: &str, key: &str) -> Option<String> {
+    let (_, after_question) = input.split_once('?')?;
+    let query = after_question
+        .split_once('#')
+        .map(|(before_hash, _)| before_hash)
+        .unwrap_or(after_question);
+    query.split('&').find_map(|pair| {
+        let (k, v) = pair.split_once('=')?;
+        (k == key).then(|| percent_decode_lossy(v))
+    })
+}
+
+fn normalize_project_path_input(path: &str) -> Result<String, String> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return Err("empty path".into());
     }
-    if trimmed.contains("://") && !trimmed.starts_with("file://") {
+    if trimmed.starts_with("https://ggopen.finder/")
+        || trimmed.starts_with("http://ggopen.finder/")
+    {
+        return query_param(trimmed, "p").ok_or_else(|| "missing path".to_string());
+    }
+    if let Some(rest) = trimmed.strip_prefix("gg-open://") {
+        return Ok(percent_decode_lossy(rest));
+    }
+    if let Some(rest) = trimmed.strip_prefix("file://localhost/") {
+        return Ok(format!("/{}", percent_decode_lossy(rest)));
+    }
+    if let Some(rest) = trimmed.strip_prefix("file://") {
+        return Ok(percent_decode_lossy(rest));
+    }
+    if trimmed.contains("://") {
         return Err("not a file path".into());
     }
+    Ok(percent_decode_lossy(trimmed))
+}
 
-    let without_file_scheme = trimmed.strip_prefix("file://").unwrap_or(trimmed);
-    let without_anchor = without_file_scheme
+/// Open a project file linked from the chat. Relative paths resolve against this
+/// window's sidecar cwd; `:line[:col]` and `#Lline` decorations are tolerated.
+/// Mode `reveal` shows the item in Finder, `openParent` opens its containing
+/// folder, and `open` opens the file with the OS default app.
+#[tauri::command]
+fn open_project_path(
+    webview: WebviewWindow,
+    path: String,
+    mode: Option<String>,
+) -> Result<(), String> {
+    let cwd = cwd_for(&webview).ok_or("sidecar not ready")?;
+    let normalized = normalize_project_path_input(&path)?;
+
+    let without_anchor = normalized
         .split_once("#L")
         .map(|(p, _)| p)
-        .unwrap_or(without_file_scheme);
+        .unwrap_or(&normalized);
     let without_query = without_anchor
         .split_once('?')
         .map(|(p, _)| p)
@@ -695,10 +751,24 @@ fn open_project_path(webview: WebviewWindow, path: String) -> Result<(), String>
         .canonicalize()
         .map_err(|_| format!("file not found: {}", cleaned))?;
 
-    webview
-        .opener()
-        .open_path(canonical.to_string_lossy().to_string(), None::<String>)
-        .map_err(|e| e.to_string())
+    let target = canonical.to_string_lossy().to_string();
+    match mode.as_deref().unwrap_or("reveal") {
+        "open" => webview
+            .opener()
+            .open_path(target, None::<String>)
+            .map_err(|e| e.to_string()),
+        "openParent" => {
+            let parent = canonical.parent().unwrap_or(canonical.as_path());
+            webview
+                .opener()
+                .open_path(parent.to_string_lossy().to_string(), None::<String>)
+                .map_err(|e| e.to_string())
+        }
+        _ => webview
+            .opener()
+            .reveal_item_in_dir(target)
+            .map_err(|e| e.to_string()),
+    }
 }
 
 /// Proxy: current agent/session state.
@@ -3230,6 +3300,19 @@ fn restore_or_default_windows(app: &tauri::AppHandle) -> Result<(), String> {
         } else {
             format!("project-{i}")
         };
+        // Register the restore target BEFORE constructing the webview. A fast
+        // first paint can call `window_restore_target` immediately; registering
+        // afterward races and strands that window on the picker/new session.
+        {
+            let state: State<RestoreTargets> = app.state();
+            state.map.lock().unwrap().insert(
+                label.clone(),
+                RestoreEntry {
+                    cwd: entry.cwd.clone(),
+                    session_path: entry.session_path.clone(),
+                },
+            );
+        }
         let win = build_app_window(app, &label)?;
         start_window_session(
             app.clone(),
@@ -3237,18 +3320,6 @@ fn restore_or_default_windows(app: &tauri::AppHandle) -> Result<(), String> {
             PathBuf::from(&entry.cwd),
             entry.session_path.clone(),
         );
-        // Tell this window which project/session it was restored to, so it skips
-        // the picker and hydrates straight away.
-        {
-            let state: State<RestoreTargets> = app.state();
-            state.map.lock().unwrap().insert(
-                label,
-                RestoreEntry {
-                    cwd: entry.cwd.clone(),
-                    session_path: entry.session_path.clone(),
-                },
-            );
-        }
         // Apply saved geometry when present; else we tile after the loop.
         if let (Some(x), Some(y)) = (entry.x, entry.y) {
             any_geometry = true;
@@ -4161,6 +4232,29 @@ mod tests {
         // Live sidecar (6001) must NOT be killed.
         assert!(!killset.contains(&6001));
         assert_eq!(killset.len(), 2);
+    }
+
+    // ── Project path link normalization ──────────────────────────────────────
+
+    #[test]
+    fn normalize_project_path_accepts_adapter_sentinel() {
+        let href = "https://ggopen.finder/r?p=%2FUsers%2Fme%2FProj%2Fsrc%2FApp.tsx&port=1234";
+        assert_eq!(normalize_project_path_input(href).unwrap(), "/Users/me/Proj/src/App.tsx");
+
+        let href = "http://ggopen.finder/r?p=%2Ftmp%2Fa%20b.txt";
+        assert_eq!(normalize_project_path_input(href).unwrap(), "/tmp/a b.txt");
+    }
+
+    #[test]
+    fn normalize_project_path_accepts_legacy_custom_scheme() {
+        assert_eq!(normalize_project_path_input("gg-open:///tmp/a%20b.txt").unwrap(), "/tmp/a b.txt");
+    }
+
+    #[test]
+    fn normalize_project_path_accepts_file_url_and_plain_path_but_rejects_web_url() {
+        assert_eq!(normalize_project_path_input("file:///tmp/a%20b.txt").unwrap(), "/tmp/a b.txt");
+        assert_eq!(normalize_project_path_input("src/My%20File.tsx").unwrap(), "src/My File.tsx");
+        assert!(normalize_project_path_input("https://example.com/docs").is_err());
     }
 
     // ── reading_order + grid_cols tests ───────────────────────────────────────
