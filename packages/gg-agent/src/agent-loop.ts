@@ -330,12 +330,14 @@ export function isTransportFailure(err: unknown): boolean {
     /\bsse stream disconnected\b/i,
     /\bfailed to reconnect sse stream\b/i,
     // Bare-text SDK timeouts with no error code at all (e.g. Anthropic SDK's
-    // "Request timed out.", or a generic "The operation was aborted due to
-    // timeout" from fetch) — without this they fall through every retry
-    // branch and surface raw to the user instead of auto-retrying like every
-    // other transient transport failure.
-    /\btimed out\b/i,
-    /\btimeout\b/i,
+    // "Request timed out.", "Request to Anthropic timed out", or a fetch
+    // AbortSignal timeout) — without this they fall through every retry branch
+    // and surface raw to the user instead of auto-retrying like every other
+    // transient transport failure. Keep these patterns transport-shaped so a
+    // provider message that merely mentions a timeout policy does not retry.
+    /\brequest(?: to [\w .-]+)? timed out\b/i,
+    /\b(?:connection|socket|headers|body|operation|stream) timed out\b/i,
+    /\b(?:connection|socket|headers|body|operation|stream) timeout(?: error)?\b/i,
   ];
   const seen = new Set<unknown>();
   let cur: unknown = err;

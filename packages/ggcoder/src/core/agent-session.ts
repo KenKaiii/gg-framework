@@ -758,6 +758,7 @@ export class AgentSession {
     this.draftText = "";
     this.draftLastPersistedAt = 0;
     this.draftLastPersistedLength = 0;
+    this.recoveredDraft = null;
   }
 
   /**
@@ -770,7 +771,15 @@ export class AgentSession {
       case "text_delta":
         this.hookText += event.text;
         this.draftText += event.text;
-        void this.maybePersistDraft();
+        void this.maybePersistDraft().catch((err) =>
+          log(
+            "WARN",
+            "session",
+            `Draft snapshot persistence failed; continuing without crash recovery: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          ),
+        );
         break;
       case "tool_call_start":
         this.hookToolCalls.set(event.toolCallId, { name: event.name, args: event.args ?? {} });
@@ -1562,8 +1571,8 @@ export class AgentSession {
 
   /** Crash-recovery draft recovered on load (null when none, or the last run
    *  completed normally). See the `assistant_draft` custom-entry kind doc for
-   *  the staleness rule. Cleared implicitly once the session prompts again —
-   *  resetHookState() starts a fresh draftRunId for the new run. */
+   *  the staleness rule. Cleared once the session prompts again so repeated
+   *  history reads in a live process do not keep re-emitting the stale draft. */
   getRecoveredDraft(): DraftMarkerPayload | null {
     return this.recoveredDraft;
   }
