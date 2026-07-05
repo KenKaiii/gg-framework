@@ -2504,6 +2504,7 @@ const TranscriptRow = memo(function TranscriptRow({
         // full prompt body. The full body still went to GG Coder.
         return (
           <div className="user-msg command labelled user-ken-sent">
+            <TranscriptCopyButton text="Sent to GG Coder" />
             <span className="command-shimmer" style={{ color: theme.ken }}>
               Sent to GG Coder
             </span>
@@ -2516,6 +2517,7 @@ const TranscriptRow = memo(function TranscriptRow({
         // was sent to the agent. Labels read as prose, so drop the mono font.
         return (
           <div className={`user-msg command${item.label ? " labelled" : ""}`}>
+            <TranscriptCopyButton text={item.label ?? item.text} />
             <span className="command-shimmer" style={{ color: theme.commandColor }}>
               {item.label ?? item.text}
             </span>
