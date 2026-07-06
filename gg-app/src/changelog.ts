@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.14.11",
+    date: "2026-07-07",
+    items: [
+      "Kencode search is back. My code search engine that digs through millions of real repositories was silently failing to start inside the app, and every session quietly lost it. I traced it deep into the build pipeline, fixed it at the root, and confirmed live searches flow again.",
+      "I also wired a tripwire into every future build that refuses to ship if this ever breaks again. You get the fix today and the insurance forever.",
+    ],
+  },
+  {
     version: "0.14.10",
     date: "2026-07-06",
     items: [
