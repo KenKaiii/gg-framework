@@ -3,9 +3,12 @@ import { lineHash, anchorFile } from "./hashline.js";
 import {
   applyBaseline,
   applyHashline,
+  applyLadder,
   checkAnchors,
+  parseEnvelope,
   stripFence,
   genFile,
+  genRepetitiveFile,
   buildTasks,
   type EditTask,
 } from "./hashline-edit-benchmark.js";
@@ -19,7 +22,12 @@ import {
  */
 
 /** Build a minimal EditTask around a hand-written file for precise assertions. */
-function taskFor(file: string, mustContain: string[], mustPreserve: string[]): EditTask {
+function taskFor(
+  file: string,
+  mustContain: string[],
+  mustPreserve: string[],
+  validate?: (file: string) => boolean,
+): EditTask {
   return {
     name: "t",
     approxLines: file.split("\n").length,
@@ -27,6 +35,7 @@ function taskFor(file: string, mustContain: string[], mustPreserve: string[]): E
     instruction: "",
     mustContain,
     mustPreserve,
+    validate,
   };
 }
 
@@ -169,5 +178,57 @@ describe("applyBaseline (current string-match) + helpers", () => {
     const task = buildTasks()[0]!;
     expect(genFile(task.approxLines)).toContain("computeTimeout");
     expect(checkAnchors(task.file, taskFor(task.file, [], task.mustPreserve))).toBe(true);
+  });
+
+  it("11. baseline gets fallback-ladder credit: indent-flex recovers dedented old_text", () => {
+    const file = "function f() {\n  const x = 1;\n  return x;\n}\n";
+    // Model omitted the two-space indentation — exact match fails, ladder recovers.
+    const raw = JSON.stringify({
+      edits: [{ old_text: "const x = 1;\nreturn x;", new_text: "return 2;" }],
+    });
+    const out = applyBaseline(raw, taskFor(file, ["return 2;"], ["function f()"]));
+    expect(out.applied).toBe(true);
+    expect(out.correct).toBe(true);
+  });
+
+  it("12. applyLadder: ambiguous does NOT fall through to fuzzy recovery", () => {
+    const file = "a();\nb();\na();\n";
+    expect(applyLadder(file, "a();", "c();")).toEqual({ ok: false, reason: "ambiguous" });
+    // Unique match still applies.
+    const ok = applyLadder(file, "b();", "c();");
+    expect(ok.ok).toBe(true);
+    if (ok.ok) expect(ok.working).toBe("a();\nc();\na();\n");
+  });
+});
+
+describe("parseEnvelope + task validators", () => {
+  it("13. repairs literal newlines/tabs inside JSON string values (both strategies)", () => {
+    // What sonnet actually emitted in run 1: raw newlines inside old_text/new_text.
+    const raw = '{"edits":[{"old_text":"line1\nline2","new_text":"a\tb"}]}';
+    const parsed = parseEnvelope<{ edits: Array<{ old_text: string; new_text: string }> }>(raw);
+    expect(parsed?.edits[0]?.old_text).toBe("line1\nline2");
+    expect(parsed?.edits[0]?.new_text).toBe("a\tb");
+    // Already-valid JSON passes through untouched; garbage returns null.
+    expect(parseEnvelope('{"edits":[]}')).toEqual({ edits: [] });
+    expect(parseEnvelope("not json {")).toBeNull();
+  });
+
+  it("14. checkAnchors enforces the custom validator (repeat task: exactly one 422)", () => {
+    const repeat = buildTasks().find((t) => t.name === "repeat")!;
+    // Correct edit: only handleCase7's error(400) becomes error(422). Slice on
+    // the handler boundaries instead of regex (lint bans countable spaces).
+    const start = repeat.file.indexOf("export function handleCase7");
+    const end = repeat.file.indexOf("export function handleCase8");
+    const good =
+      repeat.file.slice(0, start) +
+      repeat.file.slice(start, end).replace("error(400)", "error(422)") +
+      repeat.file.slice(end);
+    expect(checkAnchors(good, repeat)).toBe(true);
+    // Over-broad edit (all handlers changed) fails the validator even though
+    // the substring checks alone would pass.
+    const bad = repeat.file.replaceAll("error(400)", "error(422)");
+    expect(checkAnchors(bad, repeat)).toBe(false);
+    // Sanity: generator emits the requested number of near-identical blocks.
+    expect(genRepetitiveFile(3)).toContain("handleCase2");
   });
 });

@@ -1279,6 +1279,151 @@ describe("edit anchor guard", () => {
     expect(diffOf(result)).toContain("+const a = 2;");
     expect(await fs.readFile(filePath, "utf-8")).toBe("const a = 2;\n");
   });
+
+  // ── Span form { span, lines } ──
+
+  function spanFor(content: string, startLine: number, endLine: number) {
+    const lines = content.split("\n");
+    return {
+      start_line: startLine,
+      start_hash: lineHash(lines[startLine - 1]!, startLine - 1),
+      end_line: endLine,
+      end_hash: lineHash(lines[endLine - 1]!, endLine - 1),
+    };
+  }
+
+  it("span form replaces the pinned line range without old_text", async () => {
+    const content = "const a = 1;\nconst b = 2;\nconst c = 3;\n";
+    const filePath = path.join(tmpDir, "span1.ts");
+    await fs.writeFile(filePath, content);
+
+    const tool = createEditTool(tmpDir);
+    const result = await tool.execute(
+      {
+        file_path: "span1.ts",
+        edits: [{ span: spanFor(content, 2, 2), lines: ["const b = 20;"] }],
+      },
+      { signal: new AbortController().signal, toolCallId: "span-1" },
+    );
+
+    expect(diffOf(result)).toContain("+const b = 20;");
+    expect(await fs.readFile(filePath, "utf-8")).toBe(
+      "const a = 1;\nconst b = 20;\nconst c = 3;\n",
+    );
+  });
+
+  it("span form: multi-line replace, insert-by-expansion, and delete via empty lines", async () => {
+    const content = "one\ntwo\nthree\nfour\nfive\n";
+    const filePath = path.join(tmpDir, "span2.txt");
+    await fs.writeFile(filePath, content);
+
+    const tool = createEditTool(tmpDir);
+    await tool.execute(
+      {
+        file_path: "span2.txt",
+        edits: [
+          // Replace lines 2-3 with three lines (expansion = insertion).
+          { span: spanFor(content, 2, 3), lines: ["TWO", "TWO.5", "THREE"] },
+          // Delete line 5 ("five"). Anchors verify against the file AS READ,
+          // and spans apply bottom-up, so the earlier expansion doesn't shift this.
+          { span: spanFor(content, 5, 5), lines: [] },
+        ],
+      },
+      { signal: new AbortController().signal, toolCallId: "span-2" },
+    );
+
+    // Deleting line 5 ("five") leaves the trailing newline's empty segment as EOF.
+    expect(await fs.readFile(filePath, "utf-8")).toBe("one\nTWO\nTWO.5\nTHREE\nfour\n");
+  });
+
+  it("span form rejects stale hashes without touching the file", async () => {
+    const content = "alpha\nbeta\n";
+    const filePath = path.join(tmpDir, "span3.txt");
+    await fs.writeFile(filePath, content);
+
+    const tool = createEditTool(tmpDir);
+    await expect(
+      tool.execute(
+        {
+          file_path: "span3.txt",
+          edits: [
+            {
+              span: { start_line: 1, start_hash: "dead", end_line: 1, end_hash: "dead" },
+              lines: ["hijacked"],
+            },
+          ],
+        },
+        { signal: new AbortController().signal, toolCallId: "span-3" },
+      ),
+    ).rejects.toThrow(/changed since you read it/);
+    expect(await fs.readFile(filePath, "utf-8")).toBe(content);
+  });
+
+  it("span form rejects overlapping spans (first wins, overlap reported)", async () => {
+    const content = "l1\nl2\nl3\nl4\n";
+    const filePath = path.join(tmpDir, "span4.txt");
+    await fs.writeFile(filePath, content);
+
+    const tool = createEditTool(tmpDir);
+    const result = await tool.execute(
+      {
+        file_path: "span4.txt",
+        edits: [
+          { span: spanFor(content, 1, 2), lines: ["A"] },
+          { span: spanFor(content, 2, 3), lines: ["B"] },
+        ],
+      },
+      { signal: new AbortController().signal, toolCallId: "span-4" },
+    );
+
+    expect(contentOf(result)).toContain("overlaps");
+    expect(await fs.readFile(filePath, "utf-8")).toBe("A\nl3\nl4\n");
+  });
+
+  it("span and text forms mix in one batch: spans first, then text on the result", async () => {
+    const content = "const x = 1;\nconst y = 2;\n";
+    const filePath = path.join(tmpDir, "span5.ts");
+    await fs.writeFile(filePath, content);
+
+    const tool = createEditTool(tmpDir);
+    await tool.execute(
+      {
+        file_path: "span5.ts",
+        edits: [
+          { span: spanFor(content, 1, 1), lines: ["const x = 10;"] },
+          { old_text: "const y = 2;", new_text: "const y = 20;" },
+        ],
+      },
+      { signal: new AbortController().signal, toolCallId: "span-5" },
+    );
+
+    expect(await fs.readFile(filePath, "utf-8")).toBe("const x = 10;\nconst y = 20;\n");
+  });
+
+  it("rejects an edit that mixes span with old_text, and one with neither form", async () => {
+    const content = "a\nb\n";
+    const filePath = path.join(tmpDir, "span6.txt");
+    await fs.writeFile(filePath, content);
+
+    const tool = createEditTool(tmpDir);
+    await expect(
+      tool.execute(
+        {
+          file_path: "span6.txt",
+          edits: [{ span: spanFor(content, 1, 1), lines: ["z"], old_text: "a", new_text: "z" }],
+        },
+        { signal: new AbortController().signal, toolCallId: "span-6" },
+      ),
+    ).rejects.toThrow(/must not mix/);
+
+    await expect(
+      tool.execute(
+        { file_path: "span6.txt", edits: [{}] },
+        { signal: new AbortController().signal, toolCallId: "span-7" },
+      ),
+    ).rejects.toThrow(/has neither/);
+    expect(await fs.readFile(filePath, "utf-8")).toBe(content);
+  });
 });
 
 function contentOf(result: unknown): string {

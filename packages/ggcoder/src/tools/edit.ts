@@ -44,8 +44,8 @@ const EditAnchorSchema = z.object({
 });
 
 const EditItem = z.object({
-  old_text: z.string().describe("The exact text to find and replace"),
-  new_text: z.string().describe("The replacement text"),
+  old_text: z.string().optional().describe("The exact text to find and replace (text form)"),
+  new_text: z.string().optional().describe("The replacement text (text form)"),
   replace_all: z
     .boolean()
     .optional()
@@ -54,10 +54,23 @@ const EditItem = z.object({
         "Use for renames or repeated tokens. Defaults to false.",
     ),
   anchor: EditAnchorSchema.optional().describe(
-    "Optional staleness guard. When set (using line+hash anchors from a read with anchors:true), " +
-      "the edit is rejected if the file changed since you read it. old_text/new_text still drive the " +
-      "actual replacement.",
+    "Optional staleness guard for the text form. When set (using line+hash anchors from a read " +
+      "with anchors:true), the edit is rejected if the file changed since you read it. " +
+      "old_text/new_text still drive the actual replacement.",
   ),
+  span: EditAnchorSchema.optional().describe(
+    "Span form (preferred when you did a read with anchors:true): replace the inclusive line " +
+      "range pinned by these line+hash endpoints with `lines` — no old_text needed, so you never " +
+      "retype existing code. Rejected if the file changed since the read. " +
+      "Use INSTEAD of old_text/new_text, together with `lines`.",
+  ),
+  lines: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Replacement lines for `span` (full lines with correct indentation, no anchor/line-number " +
+        "prefixes). An empty array deletes the span.",
+    ),
 });
 
 // Some models (Opus 4.6, GLM-5.1) occasionally send `edits` as a JSON string
@@ -137,7 +150,9 @@ type FailureKind =
   | { reason: "noop" }
   | { reason: "not_found"; closestSnippet: string | null; closestLine: number | null }
   | { reason: "ambiguous"; occurrences: number; matchLines: string; more: string }
-  | { reason: "stale_anchor" };
+  | { reason: "stale_anchor" }
+  | { reason: "invalid"; detail: string }
+  | { reason: "overlap" };
 
 interface EditOutcome {
   ok: boolean;
@@ -162,12 +177,17 @@ export function createEditTool(
   return {
     name: "edit",
     description:
-      "Replace text in a file via { old_text, new_text } edits applied sequentially. Read the file first and copy old_text from the latest read/diff. " +
-      "Each old_text should identify one location — include surrounding context; set replace_all: true only for deliberate global replacements/renames. " +
-      "The matcher tolerates safe whitespace/quote/dash drift, but do not paraphrase. For long blocks, a line containing only `...` in BOTH old_text and new_text elides a middle preserved verbatim. " +
+      "Replace text in a file. Two edit forms:\n" +
+      "1. TEXT form { old_text, new_text }: copy old_text verbatim from the latest read/diff with " +
+      "enough context to match one location; set replace_all: true only for deliberate global renames. " +
+      "The matcher tolerates safe whitespace/quote/dash drift, but do not paraphrase. For long blocks, " +
+      "a line containing only `...` in BOTH old_text and new_text elides a middle preserved verbatim.\n" +
+      "2. SPAN form { span, lines } (preferred after a read with anchors:true): pin the line range by " +
+      "its line+hash endpoints and supply the full replacement lines — no old_text to retype, and the " +
+      "edit is rejected if the file changed since the read. Span edits apply against the file as read; " +
+      "text edits then run on the result.\n" +
       "Partial-apply by default: failed edits are listed for retry, successful ones are still written — " +
       "re-issue ONLY the listed failures, not the whole batch. " +
-      "Optionally pin an edit with `anchor` (line+hash from a read with anchors:true) to reject it if the file changed since you read it. " +
       "Returns a unified diff.",
     parameters: EditParams,
     executionMode: "sequential",
@@ -184,7 +204,6 @@ export function createEditTool(
       const hasCRLF = original.includes("\r\n");
       const originalNormalized = hasCRLF ? original.replace(/\r\n/g, "\n") : original;
 
-      let working = originalNormalized;
       // Anchors pin lines in the file AS READ, so they always verify against the
       // original (pre-edit) line array — earlier edits in the batch don't shift
       // what an anchor refers to.
@@ -192,8 +211,71 @@ export function createEditTool(
       const fileName = path.basename(resolved);
       const outcomes: EditOutcome[] = new Array(edits.length);
 
+      // ── Phase 1: span-form edits (hash-anchored replacement). Spans resolve
+      // against the file AS READ and apply bottom-up so indices stay valid.
+      // Text-form edits then run on the result in phase 2.
+      const isSpanForm = (e: (typeof edits)[number]): boolean =>
+        e.span !== undefined || e.lines !== undefined;
+      const spanResolved: Array<{ index: number; start: number; end: number; lines: string[] }> =
+        [];
       for (let i = 0; i < edits.length; i++) {
+        const e = edits[i];
+        if (!isSpanForm(e)) {
+          if (e.old_text === undefined || e.new_text === undefined) {
+            outcomes[i] = {
+              ok: false,
+              failure: {
+                reason: "invalid",
+                detail: "provide either old_text+new_text, or span+lines — this edit has neither",
+              },
+            };
+          }
+          continue;
+        }
+        if (!e.span || !e.lines || e.old_text !== undefined || e.new_text !== undefined) {
+          outcomes[i] = {
+            ok: false,
+            failure: {
+              reason: "invalid",
+              detail:
+                "span form requires BOTH span and lines, and must not mix with old_text/new_text",
+            },
+          };
+          continue;
+        }
+        const res = resolveAnchoredEdit(originalLines, e.span);
+        if (!res.ok) {
+          outcomes[i] = { ok: false, failure: { reason: "stale_anchor" } };
+          continue;
+        }
+        spanResolved.push({ index: i, start: res.startIndex!, end: res.endIndex!, lines: e.lines });
+      }
+      // Reject overlapping spans (keep the first, fail the rest) — overlap means
+      // the model double-addressed the same region and the result is undefined.
+      spanResolved.sort((a, b) => a.start - b.start || a.index - b.index);
+      const spanApplied: typeof spanResolved = [];
+      let lastEnd = -1;
+      for (const s of spanResolved) {
+        if (s.start <= lastEnd) {
+          outcomes[s.index] = { ok: false, failure: { reason: "overlap" } };
+          continue;
+        }
+        spanApplied.push(s);
+        lastEnd = s.end;
+      }
+      const workingLines = [...originalLines];
+      for (let i = spanApplied.length - 1; i >= 0; i--) {
+        const s = spanApplied[i];
+        workingLines.splice(s.start, s.end - s.start + 1, ...s.lines);
+        outcomes[s.index] = { ok: true };
+      }
+      let working = workingLines.join("\n");
+
+      // ── Phase 2: text-form edits, sequential on the working buffer.
+      for (let i = 0; i < edits.length; i++) {
+        if (outcomes[i] !== undefined) continue; // span-form or invalid, already settled
         const { old_text, new_text, replace_all, anchor } = edits[i];
+        if (old_text === undefined || new_text === undefined) continue; // settled above
 
         // Optional staleness guard (opt-in). Runs BEFORE the fuzzy match ladder:
         // if the model supplied an anchor and the file drifted since it read it,
@@ -306,6 +388,15 @@ export function createEditTool(
         }
         if (f.reason === "noop") {
           return `old_text and new_text are identical in ${fileName} — this edit would be a no-op. Either fix new_text or drop this edit.`;
+        }
+        if (f.reason === "invalid") {
+          return `invalid edit: ${f.detail}.`;
+        }
+        if (f.reason === "overlap") {
+          return (
+            `span overlaps another span edit in this batch — the overlapping region was addressed twice. ` +
+            `Merge the overlapping spans into one edit and retry.`
+          );
         }
         if (f.reason === "ambiguous") {
           return (

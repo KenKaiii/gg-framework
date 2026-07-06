@@ -21,17 +21,29 @@
  * the edit applied cleanly + produced the correct file, and an anchor-uniqueness
  * / safety check. Edits are graded deterministically — no second model needed.
  *
+ * The BASELINE apply path runs ggcoder's REAL edit ladder (fuzzy match +
+ * indent-flex + blank-edge strip + dotdotdots — the same edit-diff functions
+ * tools/edit.ts uses), so baseline numbers reflect what our tool actually
+ * recovers, not a naive exact-replace.
+ *
  * Usage:
  *   npx tsx src/core/hashline-edit-benchmark.ts
  *
  * Env overrides:
- *   GG_HL_PROVIDER / GG_HL_MODEL   (default openai / gpt-5.5)
+ *   GG_HL_PROVIDER / GG_HL_MODEL   (default anthropic / claude-sonnet-5)
  *   GG_HL_REPEAT                   (runs per task, default 1 — raise to average noise)
  */
 
 import { stream, type Message, type StreamEvent, type Usage } from "@kenkaiiii/gg-ai";
 import { AuthStorage } from "./auth-storage.js";
 import { anchorFile, type AnchoredFile } from "./hashline.js";
+import {
+  fuzzyFindText,
+  countOccurrences,
+  applyMissingLeadingWhitespace,
+  applyDotdotdots,
+  stripBlankEdges,
+} from "../tools/edit-diff.js";
 
 // ── Edit tasks: synthetic TS files + a concrete, anchor-checkable edit ──
 
@@ -44,6 +56,8 @@ export interface EditTask {
   mustContain: string[];
   /** Substrings that MUST still be present (unchanged anchors far from the edit). */
   mustPreserve: string[];
+  /** Optional extra validator for tasks where substring checks are too weak. */
+  validate?: (file: string) => boolean;
 }
 
 export function genFile(lines: number): string {
@@ -85,13 +99,35 @@ export function genFile(lines: number): string {
   return [...head, ...body, ...tail].join("\n");
 }
 
+/** Near-identical handler blocks — uniqueness pressure for string matching. */
+export function genRepetitiveFile(blocks: number): string {
+  const out: string[] = [
+    `import { parse, ok, error, type Request, type Response } from "./http.js";`,
+    ``,
+  ];
+  for (let i = 0; i < blocks; i++) {
+    out.push(
+      `export function handleCase${i}(req: Request): Response {`,
+      `  const value = parse(req);`,
+      `  if (!value) {`,
+      `    return error(400);`,
+      `  }`,
+      `  return ok(value);`,
+      `}`,
+      ``,
+    );
+  }
+  out.push(`export const HANDLER_COUNT = ${blocks};`, ``);
+  return out.join("\n");
+}
+
 export function buildTasks(): EditTask[] {
   const sizes = [
     { name: "small", lines: 40 },
     { name: "medium", lines: 160 },
     { name: "large", lines: 420 },
   ];
-  return sizes.map((s) => ({
+  const sized: EditTask[] = sizes.map((s) => ({
     name: s.name,
     approxLines: s.lines,
     file: genFile(s.lines),
@@ -102,6 +138,45 @@ export function buildTasks(): EditTask[] {
     mustContain: ["cfg.timeoutMs * cfg.retries", "30000", "computeTimeout"],
     mustPreserve: ["DEFAULT_TIMEOUT = 3000", `SENTINEL_TAIL = "anchor_${s.lines}_end"`, "task0"],
   }));
+
+  // Repetitive: 12 identical bodies; only handleCase7 must change.
+  const repFile = genRepetitiveFile(12);
+  const repetitive: EditTask = {
+    name: "repeat",
+    approxLines: repFile.split("\n").length,
+    file: repFile,
+    instruction:
+      "In `handleCase7` ONLY, change `error(400)` to `error(422)`. " +
+      "Every other handler must keep returning error(400).",
+    mustContain: ["error(422)"],
+    mustPreserve: ["HANDLER_COUNT = 12", "handleCase0", "handleCase11"],
+    validate: (file) => {
+      if (countOccurrences(file, "error(422)") !== 1) return false;
+      if (countOccurrences(file, "error(400)") !== 11) return false;
+      const seven = file.indexOf("export function handleCase7");
+      const eight = file.indexOf("export function handleCase8");
+      const idx = file.indexOf("error(422)");
+      return seven !== -1 && idx > seven && (eight === -1 || idx < eight);
+    },
+  };
+
+  // Multi-edit: three scattered changes in one response.
+  const multiFile = genFile(200);
+  const multi: EditTask = {
+    name: "multi",
+    approxLines: 200,
+    file: multiFile,
+    instruction:
+      "Make THREE changes: (1) rename the constant `DEFAULT_TIMEOUT` to `FALLBACK_TIMEOUT_MS` " +
+      "everywhere it appears, (2) add a `maxRetries: number;` field to the `Config` interface, " +
+      "(3) in `computeTimeout`, return `0` when `cfg.label` is the empty string (before the " +
+      "existing logic).",
+    mustContain: ["FALLBACK_TIMEOUT_MS", "maxRetries: number;", "cfg.label"],
+    mustPreserve: [`SENTINEL_TAIL = "anchor_200_end"`, "task0"],
+    validate: (file) => countOccurrences(file, "DEFAULT_TIMEOUT") === 0,
+  };
+
+  return [...sized, repetitive, multi];
 }
 
 // ── Hashline anchoring lives in ./hashline.ts (shared with the read/edit tools) ──
@@ -161,17 +236,122 @@ export function stripFence(s: string): string {
     .trim();
 }
 
+/**
+ * Parse the model's JSON envelope, tolerating literal (unescaped) newlines and
+ * tabs inside string values. In production, edits arrive as STRUCTURED
+ * tool-call arguments — the JSON envelope is a benchmark artifact — so both
+ * strategies get the same repair to keep the comparison about the EDIT FORMAT,
+ * not about JSON string-escaping discipline.
+ */
+export function parseEnvelope<T>(raw: string): T | null {
+  const text = stripFence(raw);
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // Repair pass: escape raw control chars that appear inside string literals.
+    let out = "";
+    let inString = false;
+    let escaped = false;
+    for (const ch of text) {
+      if (inString) {
+        if (escaped) {
+          out += ch;
+          escaped = false;
+          continue;
+        }
+        if (ch === "\\") {
+          out += ch;
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') {
+          inString = false;
+          out += ch;
+          continue;
+        }
+        if (ch === "\n") {
+          out += "\\n";
+          continue;
+        }
+        if (ch === "\r") {
+          out += "\\r";
+          continue;
+        }
+        if (ch === "\t") {
+          out += "\\t";
+          continue;
+        }
+        out += ch;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      out += ch;
+    }
+    try {
+      return JSON.parse(out) as T;
+    } catch {
+      return null;
+    }
+  }
+}
+
 export function checkAnchors(file: string, task: EditTask): boolean {
   for (const s of task.mustContain) if (!file.includes(s)) return false;
   for (const s of task.mustPreserve) if (!file.includes(s)) return false;
+  if (task.validate && !task.validate(file)) return false;
   return true;
 }
 
+/**
+ * ggcoder's REAL apply ladder, mirroring tools/edit.ts:
+ *   1. exact + smart-quote/dash fuzzy
+ *   2. indent-flex
+ *   3. blank-edge strip, retry 1+2
+ *   4. dotdotdots elision
+ * Returns the new working buffer or a failure reason.
+ */
+export function applyLadder(
+  working: string,
+  oldText: string,
+  newText: string,
+): { ok: true; working: string } | { ok: false; reason: "not_found" | "ambiguous" } {
+  const occurrences = countOccurrences(working, oldText);
+  if (occurrences > 1) return { ok: false, reason: "ambiguous" };
+  if (occurrences === 1) {
+    const match = fuzzyFindText(working, oldText);
+    if (match.found) {
+      return {
+        ok: true,
+        working:
+          working.slice(0, match.index) + newText + working.slice(match.index + match.matchLength),
+      };
+    }
+  }
+  // not_found → fallback ladder (ambiguous deliberately does not fall through)
+  const flexed = applyMissingLeadingWhitespace(working, oldText, newText);
+  if (flexed !== null) return { ok: true, working: flexed };
+  const stripped = stripBlankEdges(oldText);
+  if (stripped !== null) {
+    const strippedFlexed = applyMissingLeadingWhitespace(working, stripped, newText);
+    if (strippedFlexed !== null) return { ok: true, working: strippedFlexed };
+    if (countOccurrences(working, stripped) === 1) {
+      const m = fuzzyFindText(working, stripped);
+      if (m.found) {
+        return {
+          ok: true,
+          working: working.slice(0, m.index) + newText + working.slice(m.index + m.matchLength),
+        };
+      }
+    }
+  }
+  const elided = applyDotdotdots(working, oldText, newText);
+  if (elided !== null) return { ok: true, working: elided };
+  return { ok: false, reason: "not_found" };
+}
+
 export function applyBaseline(raw: string, task: EditTask): ApplyOutcome {
-  let parsed: { edits?: Array<{ old_text: string; new_text: string }> };
-  try {
-    parsed = JSON.parse(stripFence(raw));
-  } catch {
+  const parsed = parseEnvelope<{ edits?: Array<{ old_text: string; new_text: string }> }>(raw);
+  if (parsed === null) {
     return { applied: false, correct: false, ambiguousEdits: 0, parsedEdits: 0 };
   }
   const edits = parsed.edits ?? [];
@@ -179,11 +359,12 @@ export function applyBaseline(raw: string, task: EditTask): ApplyOutcome {
   let applied = edits.length > 0;
   let ambiguous = 0;
   for (const e of edits) {
-    const occ = file.split(e.old_text).length - 1;
-    if (occ === 1) {
-      file = file.replace(e.old_text, e.new_text);
+    // Run the REAL edit ladder (fuzzy + indent-flex + blank-strip + dotdotdots),
+    // so the baseline gets full credit for everything our tool recovers today.
+    const result = applyLadder(file, e.old_text ?? "", e.new_text ?? "");
+    if (result.ok) {
+      file = result.working;
     } else {
-      // 0 = not found (drift/paraphrase), >1 = non-unique → our real tool rejects both.
       ambiguous++;
       applied = false;
     }
@@ -197,10 +378,10 @@ export function applyBaseline(raw: string, task: EditTask): ApplyOutcome {
 }
 
 export function applyHashline(raw: string, task: EditTask, anchored: AnchoredFile): ApplyOutcome {
-  let parsed: { edits?: Array<{ from: string; to: string; lines: string[] }> };
-  try {
-    parsed = JSON.parse(stripFence(raw));
-  } catch {
+  const parsed = parseEnvelope<{ edits?: Array<{ from: string; to: string; lines: string[] }> }>(
+    raw,
+  );
+  if (parsed === null) {
     return { applied: false, correct: false, ambiguousEdits: 0, parsedEdits: 0 };
   }
   const edits = parsed.edits ?? [];
@@ -318,15 +499,17 @@ interface Row {
   baseInTok: number;
   baseOk: boolean;
   baseAmbiguous: number;
+  baseMs: number;
   hlOutTok: number;
   hlInTok: number;
   hlOk: boolean;
   hlAmbiguous: number;
+  hlMs: number;
 }
 
 async function main(): Promise<void> {
-  const provider = process.env.GG_HL_PROVIDER ?? "openai";
-  const model = process.env.GG_HL_MODEL ?? "gpt-5.5";
+  const provider = process.env.GG_HL_PROVIDER ?? "anthropic";
+  const model = process.env.GG_HL_MODEL ?? "claude-sonnet-5";
   const repeat = Math.max(1, parseInt(process.env.GG_HL_REPEAT ?? "1", 10));
 
   const auth = new AuthStorage();
@@ -348,10 +531,12 @@ async function main(): Promise<void> {
       baseInTok: 0,
       baseOk: true,
       baseAmbiguous: 0,
+      baseMs: 0,
       hlOutTok: 0,
       hlInTok: 0,
       hlOk: true,
       hlAmbiguous: 0,
+      hlMs: 0,
     };
     let baseOkCount = 0;
     let hlOkCount = 0;
@@ -365,12 +550,16 @@ async function main(): Promise<void> {
         model,
         creds,
         baselinePrompt(task.file, task.instruction),
-        4096,
+        8192,
       );
       const baseOut = applyBaseline(base.text, task);
+      if (!baseOut.correct && process.env.GG_HL_DEBUG) {
+        process.stdout.write(`   [debug] baseline raw:\n${base.text.slice(0, 1200)}\n`);
+      }
       agg.baseOutTok += base.outputTokens;
       agg.baseInTok += base.inputTokens;
       agg.baseAmbiguous += baseOut.ambiguousEdits;
+      agg.baseMs += base.wallMs;
       if (baseOut.correct) baseOkCount++;
       process.stdout.write(
         `   baseline: ${base.outputTokens} out tok | ${baseOut.correct ? "OK" : "FAIL"}` +
@@ -378,17 +567,23 @@ async function main(): Promise<void> {
       );
 
       await sleep(1500);
+      // Same cap as baseline — an asymmetric cap truncates multi-edit responses
+      // and shows up as a fake FAIL.
       const hl = await call(
         provider,
         model,
         creds,
         hashlinePrompt(anchored.rendered, task.instruction),
-        2048,
+        8192,
       );
       const hlOut = applyHashline(hl.text, task, anchored);
+      if (!hlOut.correct && process.env.GG_HL_DEBUG) {
+        process.stdout.write(`   [debug] hashline raw:\n${hl.text.slice(0, 1200)}\n`);
+      }
       agg.hlOutTok += hl.outputTokens;
       agg.hlInTok += hl.inputTokens;
       agg.hlAmbiguous += hlOut.ambiguousEdits;
+      agg.hlMs += hl.wallMs;
       if (hlOut.correct) hlOkCount++;
       process.stdout.write(
         `   hashline: ${hl.outputTokens} out tok | ${hlOut.correct ? "OK" : "FAIL"}` +
@@ -398,8 +593,10 @@ async function main(): Promise<void> {
 
     agg.baseOutTok = Math.round(agg.baseOutTok / repeat);
     agg.baseInTok = Math.round(agg.baseInTok / repeat);
+    agg.baseMs = Math.round(agg.baseMs / repeat);
     agg.hlOutTok = Math.round(agg.hlOutTok / repeat);
     agg.hlInTok = Math.round(agg.hlInTok / repeat);
+    agg.hlMs = Math.round(agg.hlMs / repeat);
     agg.baseOk = baseOkCount === repeat;
     agg.hlOk = hlOkCount === repeat;
     rows.push(agg);
@@ -408,7 +605,7 @@ async function main(): Promise<void> {
   // ── Report ──
   console.log("══════════════════════ RESULTS ══════════════════════\n");
   console.log(
-    "Task    Lines | base out-tok | hashline out-tok |  Δ out  | in-tok base/hl | OK base/hl",
+    "Task    Lines | base out-tok | hashline out-tok |  Δ out  | in-tok base/hl | ms base/hl | OK base/hl",
   );
   for (const r of rows) {
     const delta = r.baseOutTok > 0 ? ((r.baseOutTok - r.hlOutTok) / r.baseOutTok) * 100 : 0;
@@ -417,6 +614,7 @@ async function main(): Promise<void> {
         `${String(r.baseOutTok).padStart(12)} | ${String(r.hlOutTok).padStart(16)} | ` +
         `${((delta >= 0 ? "-" : "+") + Math.abs(delta).toFixed(0) + "%").padStart(7)} | ` +
         `${String(r.baseInTok).padStart(6)}/${String(r.hlInTok).padStart(6)} | ` +
+        `${String(r.baseMs).padStart(5)}/${String(r.hlMs).padStart(5)} | ` +
         `${r.baseOk ? "OK" : "FAIL"}/${r.hlOk ? "OK" : "FAIL"}`,
     );
   }

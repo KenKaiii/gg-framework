@@ -8,6 +8,7 @@ import { writeOverflow } from "./overflow.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 import { getSafeToolEnv } from "./safe-env.js";
 import { resolveShell } from "../core/shell.js";
+import { PersistentShell } from "../core/persistent-shell.js";
 import { isReadOnlyCommand } from "./read-only-bash.js";
 import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
 
@@ -29,6 +30,14 @@ const BashParams = z.object({
       "Run the command in the background. Returns a process ID immediately. " +
         "Use task_output to read output and task_stop to stop it.",
     ),
+  persist: z
+    .boolean()
+    .optional()
+    .describe(
+      "Run in the persistent session shell: cd, exported env vars, and shell state " +
+        "survive across persist:true calls. Use for multi-step workflows in another " +
+        "directory or with sourced environments. Default false (fresh shell per call).",
+    ),
 });
 
 export function createBashTool(
@@ -37,6 +46,9 @@ export function createBashTool(
   ops: ToolOperations = localOperations,
   planModeRef?: { current: boolean },
 ): AgentTool<typeof BashParams> {
+  // Lazily created on the first persist:true call; one session per tool
+  // instance (i.e. per agent session), killed when the process exits.
+  let sessionShell: PersistentShell | null = null;
   return {
     name: "bash",
     description:
@@ -48,12 +60,33 @@ export function createBashTool(
       "Set run_in_background=true for long-running OR interactive processes " +
       "(dev servers, watchers, REPLs, scaffolders, programs that prompt for input). " +
       "Use task_output to read output, task_send to type input/answer prompts, and " +
-      "task_stop to stop background processes.",
+      "task_stop to stop background processes. " +
+      "Set persist=true to run in a session shell where cd/env state survives across " +
+      "persist:true calls.",
     parameters: BashParams,
     executionMode: "sequential",
-    async execute({ command, timeout: timeoutMs, run_in_background }, context) {
+    async execute({ command, timeout: timeoutMs, run_in_background, persist }, context) {
       if (isPlanModeActive(planModeRef) && !isReadOnlyCommand(command)) {
         return planModeRestriction("bash");
+      }
+      // Persistent session mode — POSIX only; Windows-without-bash falls through
+      // to the normal spawn path (cmd.exe fallback) below.
+      if (persist && !run_in_background && !resolveShell(command).isCmdFallback) {
+        sessionShell ??= new PersistentShell(cwd, getSafeToolEnv(), MAX_OUTPUT_BYTES);
+        const res = await sessionShell.run(
+          command,
+          timeoutMs ?? DEFAULT_TIMEOUT,
+          context.signal,
+          context.onUpdate
+            ? (text) => context.onUpdate?.({ type: "bash_progress", output: text, totalBytes: 0 })
+            : undefined,
+        );
+        const truncated = truncateTail(res.output);
+        const exitCode =
+          res.exitCode === "TIMEOUT"
+            ? `TIMEOUT (${timeoutMs ?? DEFAULT_TIMEOUT}ms) — session shell was reset; cd/env state is gone`
+            : String(res.exitCode);
+        return `Exit code: ${exitCode}\n${truncated.content}`;
       }
       if (run_in_background) {
         const result = await processManager.start(command, cwd);
