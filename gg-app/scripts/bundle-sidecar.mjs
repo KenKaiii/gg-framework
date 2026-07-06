@@ -10,7 +10,7 @@
 // `sharp` platform binary is always correct for the target.
 import { build } from "esbuild";
 import { createRequire } from "node:module";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -79,17 +79,38 @@ function nearestPackageDir(start) {
  */
 function packageRoot(name, fromRequire, fromDir) {
   const segs = name.split("/");
+  // A resolved dir only counts as the package root when its package.json is the
+  // REAL manifest (name matches). Some packages' `exports` maps remap
+  // `<pkg>/package.json` to a nested stub — e.g. @modelcontextprotocol/sdk
+  // resolves it to `dist/cjs/package.json` ({"type":"commonjs"}). Copying that
+  // dir shipped a package with no dependencies field, so its dep tree
+  // (zod-to-json-schema, …) was never copied and the bundled kencode-search
+  // crashed at require time in the installed app.
+  const isRealRoot = (dir) => {
+    try {
+      return JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name === name;
+    } catch {
+      return false;
+    }
+  };
   // 1) Direct package.json resolution (works when exports allows it).
   try {
-    return dirname(fromRequire.resolve(`${name}/package.json`));
+    const dir = dirname(fromRequire.resolve(`${name}/package.json`));
+    if (isRealRoot(dir)) return dir;
   } catch {
     // ignore and fall through
   }
-  // 2) Resolve the package entry, then walk up to its package.json.
+  // 2) Resolve the package entry, then walk up to the real package root (the
+  //    nearest package.json can be a nested build stub — keep walking).
   try {
     const entry = fromRequire.resolve(name);
-    const root = nearestPackageDir(dirname(entry));
-    if (root) return root;
+    let dir = nearestPackageDir(dirname(entry));
+    while (dir) {
+      if (isRealRoot(dir)) return dir;
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = nearestPackageDir(parent);
+    }
   } catch {
     // ignore and fall through
   }
@@ -116,11 +137,17 @@ function packageRoot(name, fromRequire, fromDir) {
  */
 function copyPackage(name, fromRequire, fromDir, copied) {
   if (copied.has(name)) return;
-  const root = packageRoot(name, fromRequire, fromDir);
-  if (!root) {
+  const linkedRoot = packageRoot(name, fromRequire, fromDir);
+  if (!linkedRoot) {
     console.warn(`skip (not found): ${name}`);
     return;
   }
+  // Resolve pnpm symlinks to the real .pnpm dir. Anchoring the child resolver
+  // at the SYMLINK path can't see the package's own deps (pnpm places them as
+  // siblings of the REAL location), which silently skipped every transitive
+  // dep of a package found via the symlink — the bundled kencode-search
+  // shipped without the MCP SDK's dependency tree and crashed on spawn.
+  const root = realpathSync(linkedRoot);
   copied.add(name);
   const dest = join(nodeModulesOut, ...name.split("/"));
   mkdirSync(dirname(dest), { recursive: true });

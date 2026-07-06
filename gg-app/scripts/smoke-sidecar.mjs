@@ -39,10 +39,64 @@ function nodeBin() {
   return "";
 }
 
+/**
+ * The bundled kencode-search MCP server must START from the copied
+ * node_modules tree. It's spawned as a stdio child (never imported), so the
+ * main bundle-load check can't catch a broken copy — v0.14.x shipped a
+ * kencode-search whose MCP SDK dep tree was incomplete (pnpm symlink +
+ * exports-map stub in bundle-sidecar's packageRoot) and it crashed on every
+ * spawn with "Connection closed". This gate makes that class of bug fail CI.
+ */
+async function smokeKencode(node) {
+  const bin = join(
+    srcTauri,
+    "sidecar",
+    "node_modules",
+    "@kenkaiiii",
+    "kencode-search",
+    "dist",
+    "index.js",
+  );
+  if (!existsSync(bin)) fail(`bundled kencode-search missing: ${bin}`);
+  const ok = await new Promise((resolve) => {
+    const child = spawn(node, [bin], { stdio: ["pipe", "pipe", "pipe"] });
+    let err = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      // Must have printed "ready" — a silently-hung child is a failure too.
+      resolve(/ready/.test(err));
+    }, 8000);
+    child.stderr.on("data", (d) => {
+      err += d.toString();
+      if (/ready/.test(err)) {
+        clearTimeout(timer);
+        child.kill("SIGKILL");
+        resolve(true);
+      }
+    });
+    child.on("exit", () => {
+      clearTimeout(timer);
+      if (!/ready/.test(err)) {
+        process.stderr.write(err);
+        resolve(false);
+      }
+    });
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+    child.stdin.end();
+  });
+  if (!ok) fail("bundled kencode-search failed to start (broken dependency copy?)");
+  console.log("smoke: bundled kencode-search starts cleanly");
+}
+
 async function main() {
   if (!existsSync(sidecar)) fail(`bundled sidecar missing: ${sidecar}`);
   const node = nodeBin();
   console.log(`smoke: ${node} ${sidecar}`);
+
+  await smokeKencode(node);
 
   const child = spawn(node, [sidecar], {
     env: { ...process.env, GG_APP_PORT: "0", GG_APP_CWD: process.cwd() },
