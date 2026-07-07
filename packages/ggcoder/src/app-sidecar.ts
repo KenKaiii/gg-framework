@@ -1060,6 +1060,35 @@ async function createSession(
     for (const c of clients) c.res.write(frame);
   }
 
+  // Replace CLI-specific guidance (slash commands, CLI tool names) with
+  // desktop-app equivalents so the webview never shows "run ggcoder login".
+  function desktopGuidance(guidance: string): string {
+    return (
+      guidance
+        // Auth: ggcoder login → Login to AI Providers button
+        .replaceAll(/Run `ggcoder login`/gi, "Use the Login to AI Providers button")
+        .replaceAll(/ggcoder login/gi, "the Login to AI Providers button")
+        // /compact: rewrite the full sentence pattern
+        .replaceAll(
+          /Run \/compact to shrink history, or start a new session\./gi,
+          "Compact the context to shrink history, or start a new session.",
+        )
+        // /model: handle each phrasing pattern
+        .replaceAll(
+          /switch to claude-fable-5 with \/model/gi,
+          "switch to claude-fable-5 using the model selector",
+        )
+        .replaceAll(/Switch with \/model\./gi, "Switch using the model selector.")
+        .replaceAll(
+          /try a different model with \/model\./gi,
+          "try a different model using the model selector.",
+        )
+        .replaceAll(/Use \/model to switch/gi, "Use the model selector to switch")
+        // /help
+        .replaceAll(/see \/help/gi, "check the help menu")
+    );
+  }
+
   // Turn any thrown value into the same clear headline/message/guidance shape
   // the TUI shows (see gg-ai's formatError) instead of a bare `err.message`, log
   // the full detail, and broadcast it under `type` ("error" or "ken_error").
@@ -1072,6 +1101,7 @@ async function createSession(
     err: unknown,
   ): void {
     const f = formatError(err);
+    const guidance = desktopGuidance(f.guidance);
     log("ERROR", "app-sidecar", logLabel, {
       headline: f.headline,
       source: f.source,
@@ -1083,7 +1113,7 @@ async function createSession(
     broadcast(type, {
       headline: f.headline,
       ...(f.message ? { message: f.message } : {}),
-      guidance: f.guidance,
+      guidance,
       ...(f.provider ? { provider: f.provider } : {}),
       ...(f.statusCode != null ? { statusCode: f.statusCode } : {}),
       ...(f.resetsAt != null ? { resetsAt: f.resetsAt } : {}),
@@ -1095,7 +1125,7 @@ async function createSession(
         scope: type,
         headline: f.headline,
         ...(f.message ? { message: f.message } : {}),
-        guidance: f.guidance,
+        guidance,
       })
       .catch(() => {});
   }

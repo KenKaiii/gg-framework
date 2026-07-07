@@ -329,7 +329,7 @@ function finaliseBySource(
         headline: "Authentication issue.",
         source,
         message,
-        guidance: hint ?? "Run `ggcoder login` to refresh your credentials.",
+        guidance: hint ?? "Re-authenticate to refresh your credentials.",
         ...(requestId ? { requestId } : {}),
       };
     case "provider":
@@ -428,7 +428,7 @@ function providerGuidance(
   const lower = message.toLowerCase();
 
   if (statusCode === 401 || lower.includes("unauthorized") || lower.includes("invalid api key")) {
-    return `Authentication failed with ${name}. Run \`ggcoder login\` to refresh your credentials.`;
+    return `Authentication failed with ${name}. Re-authenticate to refresh your credentials.`;
   }
   if (lower.includes("overloaded") || lower.includes("engine_overloaded")) {
     return `${name}'s servers are overloaded right now. Retry in a moment — not a ggcoder issue.`;
