@@ -59,12 +59,32 @@ describe("rebuildFromSessions", () => {
     expect(file!.xpBySource.prompts).toBe(70);
   });
 
-  it("caps seeded XP at level 15", async () => {
-    // 2000 prompts × 10 = 20,000 XP > level-15 cap.
-    await writeSession("_proj_a", "s1.jsonl", sessionJsonl("s1", "2025-01-01T00:00:00Z", 2000));
+  it("gives full credit up to level 15, then diminishing returns beyond", async () => {
+    // Right at the level-15 floor: 762 prompts × 10 = 7620 ≈ xpForLevel(15).
+    await writeSession("_proj_a", "s1.jsonl", sessionJsonl("s1", "2025-01-01T00:00:00Z", 762));
     const file = await rebuildFromSessions(sessionsDir);
-    expect(file!.xp).toBe(xpForLevel(15));
     expect(levelForXp(file!.xp)).toBe(15);
+  });
+
+  it("spreads heavy prior users past level 15 instead of clamping them all onto it", async () => {
+    await writeSession("_light", "s1.jsonl", sessionJsonl("s1", "2025-01-01T00:00:00Z", 1500));
+    const light = await rebuildFromSessions(sessionsDir);
+
+    await fs.rm(sessionsDir, { recursive: true, force: true });
+    await fs.mkdir(sessionsDir, { recursive: true });
+    await writeSession("_heavy", "s1.jsonl", sessionJsonl("s1", "2025-01-01T00:00:00Z", 4000));
+    const heavy = await rebuildFromSessions(sessionsDir);
+
+    // Both clamped onto 15 before; now they land on different, higher levels.
+    expect(levelForXp(light!.xp)).toBeGreaterThan(15);
+    expect(levelForXp(heavy!.xp)).toBeGreaterThan(levelForXp(light!.xp));
+  });
+
+  it("never seeds above the hard cap (level 25)", async () => {
+    await writeSession("_proj_a", "s1.jsonl", sessionJsonl("s1", "2025-01-01T00:00:00Z", 100000));
+    const file = await rebuildFromSessions(sessionsDir);
+    expect(levelForXp(file!.xp)).toBe(25);
+    expect(file!.xp).toBe(xpForLevel(25));
   });
 
   it("uses the oldest session timestamp as createdAt and counts projects", async () => {

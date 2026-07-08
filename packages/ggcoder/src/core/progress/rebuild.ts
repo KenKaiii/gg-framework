@@ -11,9 +11,24 @@ import { xpForLevel } from "./ranks.js";
 import { createEmptyProgress, dayKey } from "./store.js";
 import type { ProgressFile } from "./types.js";
 
-/** Grandfathered XP is capped at the XP needed to reach level 15. */
-const SEED_LEVEL_CAP = 15;
+// Grandfathered XP spreads across a curve instead of clamping everyone onto one level.
+// Full credit up to the level-15 floor; historical usage beyond that keeps earning at a
+// diminished rate (mirrors the engine's DAILY_OVERCAP_FACTOR) so heavy prior users land
+// anywhere from 15 up to a hard ceiling instead of all piling on exactly level 15.
+const SEED_SOFT_CAP_LEVEL = 15;
+const SEED_HARD_CAP_LEVEL = 25;
+const SEED_OVERCAP_FACTOR = 0.25;
 const XP_PER_HISTORICAL_PROMPT = 10;
+
+/** Seed XP from a historical prompt count: full credit to level 15, 25% beyond, hard-capped at 25. */
+export function seedXpForPrompts(totalPrompts: number): number {
+  const softCap = xpForLevel(SEED_SOFT_CAP_LEVEL);
+  const hardCap = xpForLevel(SEED_HARD_CAP_LEVEL);
+  const raw = totalPrompts * XP_PER_HISTORICAL_PROMPT;
+  const full = Math.min(raw, softCap);
+  const overflow = Math.max(0, raw - softCap);
+  return Math.min(hardCap, Math.round(full + overflow * SEED_OVERCAP_FACTOR));
+}
 
 interface SessionScan {
   userPrompts: number;
@@ -101,8 +116,7 @@ export async function rebuildFromSessions(sessionsDir?: string): Promise<Progres
 
   const now = new Date();
   const file = createEmptyProgress(now);
-  const cap = xpForLevel(SEED_LEVEL_CAP);
-  const seeded = Math.min(totalPrompts * XP_PER_HISTORICAL_PROMPT, cap);
+  const seeded = seedXpForPrompts(totalPrompts);
 
   file.xp = seeded;
   file.totals.prompts = totalPrompts;
