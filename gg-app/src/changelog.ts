@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.14.17",
+    date: "2026-07-10",
+    items: [
+      "Sub-agents no longer quit when the faster, cheaper model is out of reach. I made them switch straight back to your active model and finish the job, so your workflow keeps moving without babysitting.",
+    ],
+  },
+  {
     version: "0.14.16",
     date: "2026-07-10",
     items: [
