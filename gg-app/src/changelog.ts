@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.14.15",
+    date: "2026-07-09",
+    items: [
+      "Big sessions no longer hit a wall. When a chat grew too large for the model, the app used to just stop with an error. Now I catch it, quietly trim the history, and keep the conversation rolling so you never lose your flow.",
+      "Error messages read like a human wrote them. Everything now says GG Coder in plain, friendly language, and points you to the exact button to click instead of some command you'd never type.",
+    ],
+  },
+  {
     version: "0.14.14",
     date: "2026-07-08",
     items: [
