@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.9.4
+
+### Patch Changes
+
+- Auto-recover from context-overflow errors in the desktop app (request_too_large / 413) by wiring force-compaction + retry into AgentSession, add explicit 413 guidance, and rebrand user-facing error text to "GG Coder".
+  - @kenkaiiii/gg-ai@5.9.4
+  - @kenkaiiii/gg-agent@5.9.4
+  - @kenkaiiii/gg-core@5.9.4
+
 ## 5.9.3
 
 ### Patch Changes
