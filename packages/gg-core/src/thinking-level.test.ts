@@ -14,6 +14,16 @@ describe("thinking-level helpers", () => {
     expect(getNextThinkingLevel("openai", "gpt-5.5", "xhigh")).toBeUndefined();
   });
 
+  it("exposes the full GPT-5.6 reasoning ladder through max", () => {
+    const levels = ["low", "medium", "high", "xhigh", "max"];
+    for (const model of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+      expect(getSupportedThinkingLevels("openai", model)).toEqual(levels);
+    }
+    expect(getNextThinkingLevel("openai", "gpt-5.6-sol", undefined)).toBe("low");
+    expect(getNextThinkingLevel("openai", "gpt-5.6-sol", "xhigh")).toBe("max");
+    expect(getNextThinkingLevel("openai", "gpt-5.6-sol", "max")).toBeUndefined();
+  });
+
   it("cycles Anthropic adaptive Opus models through max, including xhigh", () => {
     expect(getSupportedThinkingLevels("anthropic", "claude-opus-4-8")).toEqual([
       "low",

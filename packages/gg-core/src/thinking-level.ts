@@ -2,6 +2,13 @@ import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import { getMaxThinkingLevel } from "./model-registry.js";
 
 const OPENAI_GPT_THINKING_LEVELS: readonly ThinkingLevel[] = ["medium", "high", "xhigh"];
+const OPENAI_GPT_56_THINKING_LEVELS: readonly ThinkingLevel[] = [
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
 // Sakana Fugu accepts exactly two reasoning efforts — "high" and "xhigh" — and
 // rejects anything else. Expose both so users can pick the lighter tier instead
 // of being forced into all-or-nothing xhigh.
@@ -60,9 +67,12 @@ export function getSupportedThinkingLevels(
 
   if (!isOpenAIGptModel(provider, model)) return [maxLevel];
 
-  const maxIndex = OPENAI_GPT_THINKING_LEVELS.indexOf(maxLevel);
+  const levels = model.startsWith("gpt-5.6-")
+    ? OPENAI_GPT_56_THINKING_LEVELS
+    : OPENAI_GPT_THINKING_LEVELS;
+  const maxIndex = levels.indexOf(maxLevel);
   if (maxIndex === -1) return ["medium"];
-  return OPENAI_GPT_THINKING_LEVELS.slice(0, maxIndex + 1);
+  return levels.slice(0, maxIndex + 1);
 }
 
 export function isThinkingLevelSupported(
