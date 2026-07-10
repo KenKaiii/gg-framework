@@ -3,11 +3,13 @@
 <plist version="1.0">
 <dict>
     <!--
-      Tauri merges this into the generated app Info.plist on macOS. The webcam
-      gaze tracker calls getUserMedia, which WKWebView refuses (and the app
-      crashes) unless the camera usage description string is present.
+      Tauri merges these strings into the generated macOS app Info.plist.
+      Permissions apply both to GG Coder's webview and to dev apps launched by
+      its agent, because macOS identifies GG Coder as the responsible parent.
     -->
     <key>NSCameraUsageDescription</key>
     <string>GG Coder uses your camera locally to track which window you're looking at and focus it. Video never leaves your machine.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>GG Coder allows apps you run during development to access your microphone for recording and testing.</string>
 </dict>
 </plist>
