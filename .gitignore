@@ -56,6 +56,12 @@ packages/ggcoder/ideal-sim/
 # prompt-bench scratch sandboxes
 experiments/prompt-bench/.bench-sandbox-*
 
+# Local benchmark experiments and raw samples (may contain provider metadata)
+bench/benchmark-results/
+bench/LATENCY_RESULTS.md
+bench/latency-matrix.ts
+bench/api-benchmark.test.ts
+
 # scratch — top coding agents scan
 top-coding-agents.md
 coding-agent-72h-adoption-report.md
