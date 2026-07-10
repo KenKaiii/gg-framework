@@ -24,7 +24,7 @@ describe("streamGemini", () => {
     vi.restoreAllMocks();
   });
 
-  it("sends Code Assist requests with tools, tool responses, and thinking", async () => {
+  it("clamps client-only Ultra to high in Code Assist requests", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -64,7 +64,7 @@ describe("streamGemini", () => {
         },
       ],
       toolChoice: "auto",
-      thinking: "high",
+      thinking: "ultra",
       promptCacheKey: "ggcoder:test-session",
     });
 

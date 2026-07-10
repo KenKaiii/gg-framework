@@ -24,7 +24,7 @@ const SettingsSchema = z.object({
   defaultModel: z.string().optional(),
   maxTokens: z.number().int().min(256).default(16384),
   thinkingEnabled: z.boolean().default(false),
-  thinkingLevel: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+  thinkingLevel: z.enum(["low", "medium", "high", "xhigh", "max", "ultra"]).optional(),
   theme: z
     .enum([
       "auto",

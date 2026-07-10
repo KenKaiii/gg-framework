@@ -586,7 +586,7 @@ export function toAnthropicThinking(
   // provider's `max_tokens > maximum allowed` rejection. Now the ceiling is the
   // envelope and the budget is a fraction of it with a reserved visible floor.
   const VISIBLE_FLOOR = 1024;
-  const effectiveLevel = level === "xhigh" || level === "max" ? "high" : level;
+  const effectiveLevel = level === "xhigh" || level === "max" || level === "ultra" ? "high" : level;
   const budgetMap: Record<"low" | "medium" | "high", number> = {
     low: Math.max(1024, Math.floor(maxTokens * 0.2)),
     medium: Math.max(2048, Math.floor(maxTokens * 0.45)),
@@ -852,7 +852,7 @@ export function toOpenAIReasoningEffort(
   level: ThinkingLevel,
   model: string,
 ): "low" | "medium" | "high" | "xhigh" {
-  const effort = level === "max" ? "xhigh" : level;
+  const effort = level === "max" || level === "ultra" ? "xhigh" : level;
   // Sakana Fugu models reject any effort other than "high"/"xhigh", so floor a
   // lower manual selection up to "high" rather than letting the API 400.
   if (model.startsWith("fugu") && (effort === "low" || effort === "medium")) {

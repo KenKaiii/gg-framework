@@ -23,7 +23,7 @@ const PROVIDERS = [
   "openrouter",
   "sakana",
 ] as const;
-const THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+const THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max", "ultra"] as const;
 const COST_TIERS = ["low", "medium", "high"] as const;
 
 describe("model registry invariants", () => {

@@ -182,6 +182,14 @@ export interface AgentSessionState {
 
 // ── Agent Session ──────────────────────────────────────────
 
+const ULTRA_ORCHESTRATION_MARKER = "\n\n## Ultra orchestration\n";
+const ULTRA_ORCHESTRATION_PROMPT =
+  `${ULTRA_ORCHESTRATION_MARKER}` +
+  `Proactively delegate substantial independent workstreams to subagents and run independent delegates in parallel. ` +
+  `Keep small, tightly coupled, or sequential work in the main agent. Give each delegate a focused scope, ` +
+  `then synthesize and verify their results before finishing. Delegation does not expand the user's requested scope ` +
+  `or bypass approval boundaries.`;
+
 export class AgentSession {
   readonly eventBus = new EventBus();
   readonly slashCommands = new SlashCommandRegistry();
@@ -399,6 +407,7 @@ export class AgentSession {
         this.provider,
       ));
     this.messages = [{ role: "system", content: basePrompt }];
+    this.syncUltraOrchestrationPrompt();
 
     // Load or create session. Transient sessions (subagent spawns) never
     // touch the session store — sessionPath stays empty and persistMessage
@@ -1031,6 +1040,7 @@ export class AgentSession {
     const prevProvider = this.provider;
     if (provider) this.provider = provider as Provider;
     this.model = model;
+    this.syncUltraOrchestrationPrompt();
     setEstimatorModel(model);
     // maxTokens must follow the active model — it was frozen at the boot
     // model's `maxOutputTokens` in the constructor, so without this a session
@@ -1201,6 +1211,7 @@ export class AgentSession {
         this.provider,
       ));
     this.messages = [{ role: "system", content: basePrompt }];
+    this.syncUltraOrchestrationPrompt();
     // Fresh conversation — new entries must not chain onto the old DAG's leaf.
     this.currentLeafId = null;
     // Transient sessions (Ken chat/autopilot, subagent spawns) never touch the
@@ -1373,6 +1384,7 @@ export class AgentSession {
     } else {
       this.messages.unshift({ role: "system", content: rebuilt });
     }
+    this.syncUltraOrchestrationPrompt();
   }
 
   getMessages(): Message[] {
@@ -1621,6 +1633,24 @@ export class AgentSession {
    * effect on the next prompt, since the in-flight loop reads it at start. */
   setThinkingLevel(level: ThinkingLevel | undefined): void {
     this.thinkingLevel = level;
+    this.syncUltraOrchestrationPrompt();
+  }
+
+  /** Ultra is a Codex client preset: max API effort plus proactive local delegation. */
+  private syncUltraOrchestrationPrompt(): void {
+    const systemMessage = this.messages[0];
+    if (systemMessage?.role !== "system" || typeof systemMessage.content !== "string") return;
+
+    const markerIndex = systemMessage.content.indexOf(ULTRA_ORCHESTRATION_MARKER);
+    const basePrompt =
+      markerIndex === -1 ? systemMessage.content : systemMessage.content.slice(0, markerIndex);
+    const supportsUltra =
+      this.provider === "openai" &&
+      (this.model === "gpt-5.6-sol" || this.model === "gpt-5.6-terra") &&
+      this.thinkingLevel === "ultra" &&
+      this.tools.some((tool) => tool.name === "subagent");
+
+    systemMessage.content = supportsUltra ? basePrompt + ULTRA_ORCHESTRATION_PROMPT : basePrompt;
   }
 
   /** Replace the abort signal (e.g. after cancellation). */

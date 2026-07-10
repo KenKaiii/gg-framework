@@ -8,6 +8,7 @@ const OPENAI_GPT_56_THINKING_LEVELS: readonly ThinkingLevel[] = [
   "high",
   "xhigh",
   "max",
+  "ultra",
 ];
 // Sakana Fugu accepts exactly two reasoning efforts — "high" and "xhigh" — and
 // rejects anything else. Expose both so users can pick the lighter tier instead

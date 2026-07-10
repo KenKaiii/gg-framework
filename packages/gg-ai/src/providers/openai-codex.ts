@@ -80,7 +80,8 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     body.temperature = options.temperature;
   }
   body.reasoning = {
-    effort: options.thinking ?? "none",
+    // `ultra` is a client orchestration preset, not a Codex API effort.
+    effort: options.thinking === "ultra" ? "max" : (options.thinking ?? "none"),
     summary: "auto",
     ...(responsesLite ? { context: "all_turns" } : {}),
   };

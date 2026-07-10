@@ -414,6 +414,7 @@ function toGemini3ThinkingLevel(
     case "high":
     case "xhigh":
     case "max":
+    case "ultra":
       return "HIGH";
   }
 }
@@ -427,6 +428,7 @@ function toThinkingBudget(level: NonNullable<StreamOptions["thinking"]>): number
     case "high":
     case "xhigh":
     case "max":
+    case "ultra":
       return 8_192;
   }
 }

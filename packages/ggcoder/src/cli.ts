@@ -110,13 +110,13 @@ import { checkAndAutoUpdate } from "./core/auto-update.js";
 
 import { routeCliCommandInput, type CliSubcommandName } from "./cli/command-routing.js";
 
-const THINKING_LEVELS = new Set<ThinkingLevel>(["low", "medium", "high", "xhigh", "max"]);
+const THINKING_LEVELS = new Set<ThinkingLevel>(["low", "medium", "high", "xhigh", "max", "ultra"]);
 
 export function parseThinkingLevel(value: string | undefined): ThinkingLevel | undefined {
   if (value === undefined) return undefined;
   if (THINKING_LEVELS.has(value as ThinkingLevel)) return value as ThinkingLevel;
   throw new Error(
-    `Invalid --thinking value "${value}". Expected low, medium, high, xhigh, or max.`,
+    `Invalid --thinking value "${value}". Expected low, medium, high, xhigh, max, or ultra.`,
   );
 }
 

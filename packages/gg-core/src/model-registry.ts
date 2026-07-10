@@ -142,9 +142,9 @@ export const MODELS: ModelInfo[] = [
   // apply_patch, text+image web search, and parallel tool calls.
   {
     // Sol — "Latest frontier agentic coding model." (priority 1, default low).
-    // Reasoning ladder: low → medium → high → xhigh → max → ultra. gg-ai's
-    // ThinkingLevel tops out at `max`, so that's the cap here; the `ultra` rung
-    // (auto task delegation) needs a ThinkingLevel extension to expose.
+    // Reasoning ladder: low → medium → high → xhigh → max → ultra. Ultra is a
+    // Codex orchestration preset: the request uses max effort while the local
+    // runtime proactively delegates suitable independent work to subagents.
     id: "gpt-5.6-sol",
     name: "GPT-5.6 Sol",
     provider: "openai",
@@ -154,7 +154,7 @@ export const MODELS: ModelInfo[] = [
     supportsImages: true,
     supportsVideo: false,
     costTier: "high",
-    maxThinkingLevel: "max",
+    maxThinkingLevel: "ultra",
   },
   {
     // Terra — "Balanced agentic coding model for everyday work." (priority 2,
@@ -168,7 +168,7 @@ export const MODELS: ModelInfo[] = [
     supportsImages: true,
     supportsVideo: false,
     costTier: "medium",
-    maxThinkingLevel: "max",
+    maxThinkingLevel: "ultra",
   },
   {
     // Luna — "Fast and affordable agentic coding model." (priority 3, default

@@ -159,9 +159,14 @@ describe("streamOpenAICodex", () => {
     });
   });
 
-  it.each(["medium", "high", "xhigh"] as const)(
-    "sends %s reasoning effort through Codex transport",
-    async (thinking) => {
+  it.each([
+    ["medium", "medium"],
+    ["high", "high"],
+    ["xhigh", "xhigh"],
+    ["ultra", "max"],
+  ] as const)(
+    "maps %s to %s reasoning effort through Codex transport",
+    async (thinking, effort) => {
       vi.stubGlobal(
         "fetch",
         vi.fn(async () =>
@@ -192,7 +197,7 @@ describe("streamOpenAICodex", () => {
         string,
         { effort?: string }
       >;
-      expect(body.reasoning).toMatchObject({ effort: thinking });
+      expect(body.reasoning).toMatchObject({ effort });
     },
   );
 

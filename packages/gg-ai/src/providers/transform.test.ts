@@ -451,7 +451,7 @@ describe("toAnthropicThinking", () => {
     // strictly less than max_tokens. Previously this returned maxTokens +
     // budget (128K), which exceeds the provider's output-token cap.
     const CEILING = 64_000;
-    for (const level of ["low", "medium", "high", "xhigh", "max"] as const) {
+    for (const level of ["low", "medium", "high", "xhigh", "max", "ultra"] as const) {
       const result = toAnthropicThinking(level, CEILING, "claude-haiku-4-5");
       expect(result.maxTokens).toBeLessThanOrEqual(CEILING);
       const budget = (result.thinking as { budget_tokens?: number }).budget_tokens!;
@@ -464,8 +464,9 @@ describe("toAnthropicThinking", () => {
 });
 
 describe("toOpenAIReasoningEffort", () => {
-  it("clamps shared max thinking level to OpenAI's xhigh effort", () => {
+  it("clamps client-only max and ultra levels to OpenAI's xhigh effort", () => {
     expect(toOpenAIReasoningEffort("max", "gpt-5.5")).toBe("xhigh");
+    expect(toOpenAIReasoningEffort("ultra", "gpt-5.6-sol")).toBe("xhigh");
   });
 });
 
