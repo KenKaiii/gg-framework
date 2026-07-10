@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.15.1",
+    date: "2026-07-10",
+    items: [
+      "Apps you launch through GG Coder can finally hear you. I unlocked microphone access for recorders, voice tools, and every other project you run, so testing audio now just works.",
+    ],
+  },
+  {
     version: "0.15.0",
     date: "2026-07-10",
     items: [
