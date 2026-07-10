@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.15.2",
+    date: "2026-07-11",
+    items: [
+      "GPT-5.6 is fully unlocked. I fixed the hidden handshake blocking Sol, Terra, and Luna, so every tier now answers the moment you pick it.",
+    ],
+  },
+  {
     version: "0.15.1",
     date: "2026-07-10",
     items: [
