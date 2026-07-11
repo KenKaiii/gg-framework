@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.13.1
+
+### Patch Changes
+
+- Keep internet radio playback continuous while changing volume.
+  - @kenkaiiii/gg-ai@5.13.1
+  - @kenkaiiii/gg-agent@5.13.1
+  - @kenkaiiii/gg-core@5.13.1
+
 ## 5.13.0
 
 ### Minor Changes
