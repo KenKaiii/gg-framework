@@ -1,6 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
+import { createConnection } from "node:net";
+import os from "node:os";
 import path from "node:path";
+import type { Writable } from "node:stream";
 import { log } from "./logger.js";
 
 /**
@@ -160,6 +163,9 @@ const PLAYERS: readonly PlayerCandidate[] = [
 
 let currentChild: ChildProcess | null = null;
 let currentStationId: string | null = null;
+let currentMpvIpcPath: string | null = null;
+let currentFfmpegInput: Writable | null = null;
+let ipcSequence = 0;
 let currentVolume = 70;
 
 export function getCurrentStation(): string | null {
@@ -176,25 +182,31 @@ export function getRadioVolume(): number {
  */
 export function stopRadio(): void {
   if (!currentChild) return;
+  terminateChild(currentChild);
+  currentChild = null;
+  currentStationId = null;
+  currentMpvIpcPath = null;
+  currentFfmpegInput = null;
+  log("INFO", "radio", "stopped");
+}
+
+function terminateChild(child: ChildProcess | null): void {
+  if (!child) return;
   try {
-    // Detached children sit in their own process group on POSIX; kill the
-    // whole group so any helper threads/forks die too. On Windows there's no
-    // process group concept — kill() targets the child only.
-    if (process.platform !== "win32" && currentChild.pid) {
+    // Detached children may own a process group on POSIX. Fall back to the
+    // direct child when they share the sidecar's process group.
+    if (process.platform !== "win32" && child.pid) {
       try {
-        process.kill(-currentChild.pid, "SIGTERM");
+        process.kill(-child.pid, "SIGTERM");
       } catch {
-        currentChild.kill("SIGTERM");
+        child.kill("SIGTERM");
       }
     } else {
-      currentChild.kill("SIGTERM");
+      child.kill("SIGTERM");
     }
   } catch {
     // Already exited — nothing to do.
   }
-  currentChild = null;
-  currentStationId = null;
-  log("INFO", "radio", "stopped");
 }
 
 export interface PlayResult {
@@ -203,11 +215,81 @@ export interface PlayResult {
   error?: string;
 }
 
-/** Set app-wide radio volume. A playing live stream restarts at the new level. */
+/** Set app-wide radio volume without interrupting a live stream. */
 export function setRadioVolume(volume: number): PlayResult {
   currentVolume = Math.min(100, Math.max(0, Math.round(volume)));
+  if (currentFfmpegInput) {
+    sendFfmpegVolume(currentFfmpegInput, currentVolume);
+    return { ok: true };
+  }
+  if (currentMpvIpcPath) {
+    sendMpvVolume(currentMpvIpcPath, currentVolume);
+    return { ok: true };
+  }
   const station = currentStationId;
   return station ? playRadio(station) : { ok: true };
+}
+
+function sendFfmpegVolume(input: Writable, volume: number): void {
+  input.write(`cvolume@radio -1 volume ${volume / 100}\n`);
+}
+
+function sendMpvVolume(ipcPath: string, volume: number, attempt = 1): void {
+  const socket = createConnection(ipcPath);
+  let connected = false;
+  socket.once("connect", () => {
+    connected = true;
+    socket.end(`${JSON.stringify({ command: ["set_property", "volume", volume] })}\n`);
+  });
+  socket.once("error", (error) => {
+    socket.destroy();
+    if (!connected && attempt < 3 && currentMpvIpcPath === ipcPath) {
+      setTimeout(() => sendMpvVolume(ipcPath, volume, attempt + 1), 40);
+      return;
+    }
+    log("WARN", "radio", "could not update mpv volume", { error: error.message });
+  });
+}
+
+function nextMpvIpcPath(): string {
+  const name = `gg-radio-${process.pid}-${++ipcSequence}`;
+  return process.platform === "win32"
+    ? `\\\\.\\pipe\\${name}`
+    : path.join(os.tmpdir(), `${name}.sock`);
+}
+
+function tryStartNativeFfmpeg(ffplayBin: string, url: string): ChildProcess | null {
+  if (process.platform !== "darwin") return null;
+  const adjacentFfmpeg = path.join(path.dirname(ffplayBin), "ffmpeg");
+  const ffmpegBin = existsSync(adjacentFfmpeg) ? adjacentFfmpeg : resolvePlayerPath("ffmpeg");
+  if (!ffmpegBin) return null;
+
+  try {
+    const child = spawn(
+      ffmpegBin,
+      [
+        "-loglevel",
+        "quiet",
+        "-i",
+        url,
+        "-vn",
+        "-af",
+        `volume@radio=${currentVolume / 100}`,
+        "-f",
+        "audiotoolbox",
+        "-",
+      ],
+      { detached: false, stdio: ["pipe", "ignore", "ignore"] },
+    );
+    if (!child.stdin) {
+      terminateChild(child);
+      return null;
+    }
+    child.stdin.on("error", () => {});
+    return child;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -294,13 +376,19 @@ export function playRadio(stationId: string): PlayResult {
     // dirs that a GUI app's minimal PATH omits. Skip when not installed.
     const bin = resolvePlayerPath(player.cmd);
     if (!bin) continue;
+    const nativeFfmpeg = player.cmd === "ffplay" ? tryStartNativeFfmpeg(bin, station.url) : null;
+    const mpvIpcPath = player.cmd === "mpv" ? nextMpvIpcPath() : null;
+    const playerArgs = player.args(station.url, currentVolume);
+    if (mpvIpcPath) playerArgs.unshift(`--input-ipc-server=${mpvIpcPath}`);
     try {
-      const child = spawn(bin, player.args(station.url, currentVolume), {
-        // Stay in the sidecar's process group so Rust teardown and the parent
-        // watchdog cannot leave audio playing after GG Coder closes.
-        detached: false,
-        stdio: "ignore",
-      });
+      const child =
+        nativeFfmpeg ??
+        spawn(bin, playerArgs, {
+          // Stay in the sidecar's process group so Rust teardown and the parent
+          // watchdog cannot leave audio playing after GG Coder closes.
+          detached: false,
+          stdio: "ignore",
+        });
       let errored = false;
       child.once("error", () => {
         errored = true;
@@ -308,9 +396,11 @@ export function playRadio(stationId: string): PlayResult {
       if (child.pid && !errored) {
         currentChild = child;
         currentStationId = stationId;
+        currentMpvIpcPath = mpvIpcPath;
+        currentFfmpegInput = nativeFfmpeg?.stdin ?? null;
         log("INFO", "radio", "playing", {
           station: station.id,
-          player: player.cmd,
+          player: nativeFfmpeg ? "ffmpeg (AudioToolbox live gain)" : player.cmd,
           url: station.url,
         });
         child.unref();

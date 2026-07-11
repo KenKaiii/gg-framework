@@ -1168,7 +1168,6 @@ body {
   box-shadow:
     0 0 5px #00f260,
     0 0 9px #0575e6;
-  transition: width 0.16s ease-out;
 }
 .radio-volume-input {
   appearance: none;
@@ -1194,6 +1193,16 @@ body {
   box-shadow:
     0 0 0 2px rgba(5, 117, 230, 0.4),
     0 2px 7px rgba(0, 0, 0, 0.65);
+  transition:
+    transform 90ms ease,
+    box-shadow 90ms ease;
+}
+
+.radio-volume-input:active::-webkit-slider-thumb {
+  transform: scale(1.08);
+  box-shadow:
+    0 0 0 3px rgba(5, 117, 230, 0.5),
+    0 2px 9px rgba(0, 0, 0, 0.72);
 }
 /* Modal actions are glossy pills: neutral by default, .primary = violet. */
 .modal-btn {

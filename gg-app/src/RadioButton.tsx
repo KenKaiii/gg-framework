@@ -13,12 +13,15 @@ export function RadioButton(): React.ReactElement {
   const [current, setCurrent] = useState<string | null>(null);
   const [volume, setVolume] = useState(70);
   const [error, setError] = useState<string | null>(null);
+  const volumeRef = useRef(70);
   const syncedVolumeRef = useRef(70);
+  const volumeSaveRef = useRef(0);
 
   const applyState = useCallback((state: Awaited<ReturnType<typeof getRadioState>>): void => {
     setStations(state.stations);
     setCurrent(state.current);
     setSelected((previous) => state.current ?? (previous || state.stations[0]?.id || ""));
+    volumeRef.current = state.volume;
     syncedVolumeRef.current = state.volume;
     setVolume(state.volume);
   }, []);
@@ -31,20 +34,30 @@ export function RadioButton(): React.ReactElement {
     if (open) void getRadioState().then(applyState);
   }, [applyState, open]);
 
-  useEffect(() => {
-    if (volume === syncedVolumeRef.current) return;
-    const timer = setTimeout(() => {
-      void setRadioVolume(volume)
-        .then((saved) => {
-          syncedVolumeRef.current = saved;
-          setVolume(saved);
-        })
-        .catch((reason: unknown) => {
-          setError(reason instanceof Error ? reason.message : String(reason));
-        });
-    }, 180);
-    return () => clearTimeout(timer);
-  }, [volume]);
+  function updateVolume(nextVolume: number): void {
+    volumeRef.current = nextVolume;
+    setVolume(nextVolume);
+  }
+
+  function saveVolume(): void {
+    const nextVolume = volumeRef.current;
+    const previousVolume = syncedVolumeRef.current;
+    if (nextVolume === previousVolume) return;
+    const saveId = ++volumeSaveRef.current;
+    syncedVolumeRef.current = nextVolume;
+    setError(null);
+    void setRadioVolume(nextVolume)
+      .then((saved) => {
+        if (volumeSaveRef.current !== saveId) return;
+        syncedVolumeRef.current = saved;
+        if (volumeRef.current === nextVolume) updateVolume(saved);
+      })
+      .catch((reason: unknown) => {
+        if (volumeSaveRef.current !== saveId) return;
+        syncedVolumeRef.current = previousVolume;
+        setError(reason instanceof Error ? reason.message : String(reason));
+      });
+  }
 
   async function play(station: string): Promise<void> {
     if (busy || !station) return;
@@ -133,7 +146,11 @@ export function RadioButton(): React.ReactElement {
                 max="100"
                 value={volume}
                 aria-label="Radio volume"
-                onChange={(event) => setVolume(Number(event.target.value))}
+                onChange={(event) => updateVolume(Number(event.target.value))}
+                onPointerUp={saveVolume}
+                onPointerCancel={saveVolume}
+                onKeyUp={saveVolume}
+                onBlur={saveVolume}
               />
             </div>
           </div>
