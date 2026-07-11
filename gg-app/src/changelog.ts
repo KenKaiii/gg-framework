@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.17.0",
+    date: "2026-07-11",
+    items: [
+      "Ultra just learned true teamwork. I gave it a crew of specialists that can work at the same time, take new direction mid-job, and keep their full context for the next mission.",
+      "You can now watch every specialist come alive, work, finish, or recover right inside the app. I made the whole parallel workflow feel clear instead of mysterious.",
+      "Settings feel cleaner and calmer. I moved sound controls where they belong and erased the strange shimmer from the home buttons.",
+    ],
+  },
+  {
     version: "0.16.0",
     date: "2026-07-11",
     items: [
