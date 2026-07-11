@@ -923,16 +923,38 @@ async function main(): Promise<void> {
     log("INFO", "app-sidecar", "daemon listening", { port: String(addr.port), host });
   });
 
-  const shutdown = async (): Promise<void> => {
+  const shellPid = process.ppid;
+  let shuttingDown = false;
+  async function shutdown(): Promise<void> {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    clearInterval(parentWatch);
     // Radio playback is app-wide (one stream across all windows), so it stops
     // at the daemon level, not per session.
     stopRadio();
     await Promise.all([...sessions.values()].map((c) => c.dispose().catch(() => {})));
     server.close();
     process.exit(0);
-  };
+  }
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
+  process.once("exit", stopRadio);
+
+  // Tauri can disappear without delivering a signal (force-quit, dev runner
+  // teardown, crash). Detect reparenting or a dead shell so the daemon and its
+  // radio player do not survive as audible orphans.
+  const parentWatch = setInterval(() => {
+    let parentAlive = process.ppid === shellPid;
+    if (parentAlive && shellPid > 1) {
+      try {
+        process.kill(shellPid, 0);
+      } catch (error) {
+        parentAlive = (error as NodeJS.ErrnoException).code === "EPERM";
+      }
+    }
+    if (!parentAlive) void shutdown();
+  }, 1_000);
+  parentWatch.unref?.();
 }
 
 /** Ken's read-only tool allow-list. Excludes every mutating tool (write/edit/

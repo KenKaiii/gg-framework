@@ -4,6 +4,7 @@ import { theme } from "./theme";
 import { recentChangelog } from "./changelog";
 import { Confetti } from "./Confetti";
 import { ShimmerText } from "./ShimmerText";
+import { Badge } from "./Badge";
 
 /**
  * Body of the dedicated, screen-centered "What's new" window (the borderless
@@ -13,6 +14,62 @@ import { ShimmerText } from "./ShimmerText";
  * engages on overflow. Closing — Escape, the × button, or "Got it" — closes the
  * whole window.
  */
+const HIGHLIGHT_TERMS = [
+  "MiMo-V2.5-Pro-UltraSpeed",
+  "GPT-5.6 Ultra",
+  "GPT-5.6",
+  "GPT-5.5",
+  "GPT-5.4 Mini",
+  "GPT-5.4",
+  "GPT-5.3 Codex",
+  "Gemini 3.5 Flash",
+  "Gemini 3.1 Pro",
+  "Claude Sonnet 5",
+  "Claude Fable 5",
+  "Sakana Fugu",
+  "Fugu Ultra",
+  "Radio Paradise",
+  "Kencode search",
+  "Prompt Enhancer",
+  "Send to GG Coder",
+  "Grant Permissions",
+  "Autopilot",
+  "Scorecard",
+  "Enhance",
+  "@Ken",
+  "Radio",
+  "Windows",
+  "Notes",
+  "MCP",
+] as const;
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const highlightPattern = new RegExp(
+  `\`([^\`]+)\`|(${HIGHLIGHT_TERMS.map(escapeRegex).join("|")})|\\b(\\d+(?:\\.\\d+)?(?:K|M| MB| tokens?| minutes?| hour| updates?))\\b`,
+  "g",
+);
+
+export function releaseText(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let cursor = 0;
+  for (const match of text.matchAll(highlightPattern)) {
+    const index = match.index ?? 0;
+    if (index > cursor) nodes.push(text.slice(cursor, index));
+    const value = match[1] ?? match[2] ?? match[3] ?? match[0];
+    nodes.push(
+      <strong className="whatsnew-highlight" key={`${index}-${value}`}>
+        {value}
+      </strong>,
+    );
+    cursor = index + match[0].length;
+  }
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes;
+}
+
 function closeSelf(): void {
   void getCurrentWebviewWindow()
     .close()
@@ -36,8 +93,8 @@ export function WhatsNewWindow(): React.ReactElement {
       <Confetti />
       <div className="modal-head">
         <div className="modal-title">
-          <ShimmerText base={theme.success} bright="#a7f3d0">
-            What&apos;s new with GG Coder (last 50 updates)
+          <ShimmerText base={theme.primary} bright={theme.secondary}>
+            What&apos;s new with GG Coder
           </ShimmerText>
         </div>
         <button
@@ -51,13 +108,24 @@ export function WhatsNewWindow(): React.ReactElement {
         </button>
       </div>
       <div className="whatsnew-scroll">
-        {sections.map((section) => (
-          <div key={section.version} className="whatsnew-section">
-            <div className="whatsnew-version">{`v${section.version}`}</div>
+        {sections.map((section, sectionIndex) => (
+          <div
+            key={section.version}
+            className={`whatsnew-section${sectionIndex === 0 ? " latest" : ""}`}
+          >
+            {sectionIndex === 1 && (
+              <div className="whatsnew-history-divider">
+                <span>Previous updates</span>
+              </div>
+            )}
+            <div className="whatsnew-version">
+              <span>{`v${section.version}`}</span>
+              {sectionIndex === 0 && <Badge>Latest</Badge>}
+            </div>
             <ul className="whatsnew-list">
               {section.items.map((item, i) => (
                 <li key={i} className="whatsnew-item">
-                  {item}
+                  {releaseText(item)}
                 </li>
               ))}
             </ul>

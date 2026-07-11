@@ -4,18 +4,18 @@
  * `WhatsNewModal.tsx`, rendered by `WhatsNewWindow.tsx`).
  *
  * MAINTENANCE: this list is rewritten by the `/release` flow — see
- * `.gg/commands/release.md` (Track B). When cutting a desktop release, the diff
- * since the last `v*` tag is parsed and rephrased into exciting, non-technical
- * copy, then a new entry is PREPENDED here for the new version. Keep entries
- * newest-first and the voice punchy — every line should make the update sound
- * worth installing, never a dry technical note.
+ * `.gg/commands/release.md` (Track B). Each item is one distinct user-facing
+ * feature, never one feature split into several bullets. Backticks wrap concrete
+ * names, controls, models, and numbers that render as themed inline highlights.
+ * Keep entries newest-first and the voice punchy — every line should make the
+ * update sound worth installing, never a dry technical note.
  */
 export interface ChangelogEntry {
   /** App version this entry ships in, e.g. "0.4.1" (no leading "v"). */
   version: string;
   /** Release date, ISO `YYYY-MM-DD`. */
   date: string;
-  /** Hype-toned bullet points, one user-facing win per line. */
+  /** One cohesive bullet per distinct feature; backticks highlight specifics. */
   items: string[];
 }
 
@@ -25,8 +25,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.17.0",
     date: "2026-07-11",
     items: [
-      "Ultra just learned true teamwork. I gave it a crew of specialists that can work at the same time, take new direction mid-job, and keep their full context for the next mission.",
-      "You can now watch every specialist come alive, work, finish, or recover right inside the app. I made the whole parallel workflow feel clear instead of mysterious.",
+      "`Ultra` just learned true teamwork. I gave it a visible crew of specialists that work at the same time, take new direction mid-job, recover cleanly, and keep their full context for the next mission.",
       "Settings feel cleaner and calmer. I moved sound controls where they belong and erased the strange shimmer from the home buttons.",
     ],
   },
@@ -55,8 +54,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.15.0",
     date: "2026-07-10",
     items: [
-      "Your Claude and Codex limits now live right in the title bar. I built a tiny glowing meter that shows how much of your current window is gone and how long until it resets, so you can keep shipping without surprises.",
-      "Tap the meter and your weekly view slides in instantly. I made it follow the model you are using and disappear when it has nothing useful to say.",
+      "Your `Claude` and `Codex` limits now live in one glowing title-bar meter. It follows the model you are using, shows the current window and reset time, and opens your weekly view with one tap.",
     ],
   },
   {
@@ -77,8 +75,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.14.16",
     date: "2026-07-10",
     items: [
-      "GPT-5.6 is here and ready to go. I added all three tiers, Sol, Terra, and Luna, straight from OpenAI's latest Codex catalog, so you can pick the exact balance of power and speed your task needs. Sol is the frontier heavyweight, Terra is your daily driver, and Luna is the fast and affordable one.",
-      "Older OpenAI models have been retired. GPT-5.4, 5.4 Mini, and 5.3 Codex are gone, making room for the new 5.6 family and keeping your model picker clean.",
+      "`GPT-5.6` is here in all three tiers: `Sol` is the frontier heavyweight, `Terra` is your daily driver, and `Luna` is fast and affordable. I retired the older OpenAI lineup so the model picker stays clean.",
       "Error messages finally speak app, not terminal. Every hint now tells you to use the model selector or compact button instead of referencing slash commands that only exist in the CLI.",
     ],
   },
@@ -94,10 +91,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.14.14",
     date: "2026-07-08",
     items: [
-      "Gemini is back and firing on all cylinders. Google renamed their models and it quietly broke sign-ins for everyone, so I matched every latest name and got you connected again.",
-      "Gemini 3.5 Flash and Gemini 3.1 Pro now show up in the model picker, ready to use the moment your account has them.",
-      "Model names read like actual names now. The picker and footer say Gemini 3.5 Flash instead of some cryptic code, so you always know exactly what you're running.",
-      "If your Google account can't reach a model, I now tell you why in plain English and point you straight to one that works, instead of dumping a scary error at you.",
+      "`Gemini` is back and firing on all cylinders. I repaired sign-in after Google's model rename, added `Gemini 3.5 Flash` and `Gemini 3.1 Pro`, cleaned up every model name, and made unavailable-model errors point you straight to one that works.",
     ],
   },
   {
@@ -118,8 +112,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.14.11",
     date: "2026-07-07",
     items: [
-      "Kencode search is back. My code search engine that digs through millions of real repositories was silently failing to start inside the app, and every session quietly lost it. I traced it deep into the build pipeline, fixed it at the root, and confirmed live searches flow again.",
-      "I also wired a tripwire into every future build that refuses to ship if this ever breaks again. You get the fix today and the insurance forever.",
+      "`Kencode search` is back. I fixed the silent startup failure, confirmed live searches flow again, and wired a build-time tripwire so this cannot quietly ship broken again.",
     ],
   },
   {
@@ -128,7 +121,6 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       "Edits just got surgical. I taught the agent to pin the exact lines it wants to change with tiny fingerprints instead of retyping your code, so edits land right the first time, burn fewer tokens, and can never scribble over a file that changed under its feet. On repetitive code it now says in 39 tokens what used to take 160.",
       "The agent's terminal grew a memory. Multi-step shell work can now run in one living session where cd, environment variables, and setup carry over between commands. Less repeating itself, more getting things done.",
-      "I benchmarked all of this against a live model before shipping it. Equal or better accuracy, faster on almost every task, cheaper on every one. Receipts, not vibes.",
     ],
   },
   {
@@ -136,24 +128,21 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-07-06",
     items: [
       "Your session list is yours again. Ken's silent autopilot reviews were quietly leaving behind a fake 2-message session every few minutes, burying your real work under a wall of clones. I plugged the leak for good, so what you see in the picker is exactly what you built. Nothing else.",
-      "Autopilot got tougher to derail. When Ken hands GG Coder the next move, the app now catches his instruction even when he wraps it in chatter, so autopilot keeps rolling instead of stopping to ask you about something it could handle itself.",
-      "I also drilled Ken on keeping his reviews clean and machine-tight, so autopilot cycles run leaner and stall less.",
+      "`Autopilot` got tougher to derail. I made Ken's handoffs land even when they arrive wrapped in chatter, then tightened his reviews so cycles run leaner and stall less.",
     ],
   },
   {
     version: "0.14.8",
     date: "2026-07-05",
     items: [
-      "Your search and tool helpers just went on a diet. Each one used to drag along a chunky launcher that ate around 90 MB for no reason, and with a few windows open that really added up. I taught GG Coder to run the real thing directly and skip the dead weight, so you get the same power for a fraction of the memory.",
-      "This covers every tool, not just mine. Whatever MCP tools you plug in, they now start lean instead of hauling that extra baggage, so your machine stays snappy no matter how loaded up you get.",
+      "Your search and `MCP` helpers just went on a diet. I removed a launcher that wasted around `90 MB` per tool, so built-in and custom tools now start lean and keep your machine snappy.",
     ],
   },
   {
     version: "0.14.7",
     date: "2026-07-05",
     items: [
-      "Your machine breathes easier now. GG Coder used to leave stray search and tool helpers running every time you closed a project, and they quietly piled up and ate your memory for days. I taught it to hunt down every one of those leftovers on startup, no matter which tools you plugged in, so your RAM stays yours.",
-      "This works for any tool you add, not just the ones I ship. However exotic your setup gets, GG Coder now cleans up after itself instead of slowly bogging down your computer in the background.",
+      "Your machine breathes easier now. `GG Coder` hunts down leftover built-in and custom tool helpers on startup, so closed projects stop quietly eating your memory for days.",
       "Ken gives sharper advice. He now knows exactly what GG Coder can do under the hood, so his guidance is grounded in the real tools at hand instead of guesses, and his handoffs back to the agent come through clean.",
     ],
   },
@@ -161,16 +150,14 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.14.6",
     date: "2026-07-05",
     items: [
-      "Autopilot just got a lot more independent. When Ken sends GG Coder back in, it now knows nobody is looking over its shoulder, so it proves its own work before calling it done instead of stopping to check with a human who isn't there.",
-      "Fewer pointless pauses. GG Coder stops asking permission for the obvious next step when it's already clear what you want, so autopilot keeps moving and finishes more in one run.",
+      "`Autopilot` just got more independent. GG Coder now proves its own work and handles the obvious safe next step without asking for a human who is not there, so more jobs finish in one run.",
     ],
   },
   {
     version: "0.14.5",
     date: "2026-07-04",
     items: [
-      "Your research helpers just got faster and cheaper. When GG Coder sends a scout off to read your code or dig through the project, I now put it on the quickest model for the job. Answers come back sooner and cost you less.",
-      "No tradeoff on quality. The helpers that actually change your code still run on the big brain, so your edits stay sharp while the quick lookups fly.",
+      "Your research helpers just got faster and cheaper. I route quick lookups to the fastest model while code-changing helpers keep the big brain, so answers fly without trading away edit quality.",
     ],
   },
   {
@@ -195,10 +182,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.14.2",
     date: "2026-07-03",
     items: [
-      "Reopening a session now looks exactly like you never left. I rebuilt the whole resume path so every bubble, label, and highlight comes back precisely the way you saw it live.",
-      "No more ghost messages. Old sessions sometimes piled duplicate all-clear notes from me at the bottom, and I hunted every last one down.",
-      "Messages you sent mid-run come back clean too. The internal plumbing that used to leak into reopened chats is gone for good.",
-      "Plan banners, task headers, and error details now survive a restart, so the story of what happened in a session stays complete forever.",
+      "Reopening a session now looks exactly like you never left. Every bubble, label, highlight, queued message, plan banner, task header, and error detail comes back clean, with ghost messages and leaked internals gone for good.",
     ],
   },
   {
@@ -212,9 +196,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.14.0",
     date: "2026-07-03",
     items: [
-      "Autopilot can handle plans on its own now. When GG Coder drafts a solid plan, I review it, approve it, and kick off the build without making you babysit the button.",
-      "Bad plans get bounced back cleanly. I send GG Coder the exact revision it needs, then review the new plan again until it is ready to ship.",
-      "Plan popups stay out of your way when Autopilot is on. You still get the normal review screen when you are driving manually, but when I am on watch I keep the flow moving.",
+      "`Autopilot` can handle plans on its own now. I review, approve, revise, and launch them without making you babysit a popup, while manual mode keeps the normal review screen.",
       "I got better at spotting fake blockers. If GG Coder asks permission for safe work that is already implied by your request, I tell it to keep going instead of dragging you back in.",
     ],
   },
@@ -222,10 +204,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.13.0",
     date: "2026-07-03",
     items: [
-      "Coding just became a game. I now award you XP for every bit of real work you ship, and you climb through ranks as you go. Check your shiny new rank badge right on the home screen.",
-      "Open your Scorecard to see your level, your progress bar, and how close you are to the next rank. Your grind finally has a scoreboard.",
-      "Level ups come with a proper celebration: sound, confetti, the works. You earned it, so I make sure it feels like it.",
-      "Your XP is built from your actual git history, so the progress you already made counts from day one. No starting from zero.",
+      "Coding just became a game. Real work earns `XP` from your existing git history, the `Scorecard` shows your climb, and every level-up lands with sound and confetti.",
     ],
   },
   {
@@ -249,8 +228,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.12.2",
     date: "2026-07-02",
     items: [
-      "Autopilot is calmer and harder to fool now. I judge GG Coder against your original request, not my own follow-up nudges, so I stop inventing extra work after the job is already done.",
-      "When GG Coder asks you a question or puts a plan in front of you, I keep my hands off the wheel. I will call for you instead of answering on your behalf.",
+      "`Autopilot` is calmer and harder to fool. I judge GG Coder against your original request, stop inventing work after the job is done, and call you in instead of answering real questions or plan decisions on your behalf.",
       "Ken gets his own model switch. Pin me to a different brain or let me follow GG Coder, right from the footer.",
       "Queued messages land cleaner now. If you send one while I am reviewing and there is no live run to steer, I treat it as a fresh turn instead of mixing it into the next unrelated job.",
     ],
@@ -259,17 +237,14 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.12.1",
     date: "2026-07-02",
     items: [
-      "Squashed a bug in the brand new KEN IS ON banner: in a scrolled-down session it was flashing up above your chat instead of right over it. I pinned it to what you are actually looking at, every time, no matter how deep you have scrolled.",
-      "Also polished off a hairline sliver of chat text that could peek through the top edge of the banner. Full coverage now, clean every time.",
+      "The `KEN IS ON` banner now lands over exactly what you are viewing, even deep in a session, with full edge-to-edge coverage and no chat text peeking through.",
     ],
   },
   {
     version: "0.12.0",
     date: "2026-07-02",
     items: [
-      'Autopilot got sharper. I now know the difference between real work and a quick hello. Small talk, a plain answer, or a routine commit and push no longer get a pointless "all clear" from me, I just stay quiet and let you keep moving.',
-      "Flipping Autopilot mid-run is off the table now, and that is a good thing. The switch locks while I am working or reviewing so you never yank the rug out from under your own build.",
-      "You'll know exactly when I'm watching. A bold KEN IS ON banner flashes across the chat the moment you flip Autopilot on, and KEN IS OFF when you pull me back, so there is never any doubt whose eyes are on the work.",
+      "`Autopilot` got sharper and clearer. I skip pointless reviews for small talk and routine chores, lock the switch during active work, and flash `KEN IS ON` or `KEN IS OFF` so you always know who is watching.",
     ],
   },
   {
@@ -284,8 +259,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.11.0",
     date: "2026-07-02",
     items: [
-      "Meet Autopilot. Flip it on and I stay in the room after every job, reviewing what GG Coder just built the moment it finishes. If something is broken or half-done I send it right back in with a sharp fix, if it nailed it I call it clear, and if it is a real judgment call I tap you on the shoulder. You get a second set of eyes on every single turn without lifting a finger.",
-      "You can watch me work now too. While I review, a little Ken line lights up in the status bar, and my verdict lands right in the chat like I am talking straight to you. No mystery, no black box.",
+      "Meet `Autopilot`. I review every finished job, send broken work straight back with a sharp fix, call clear work done, and tap you for real judgment calls, all while a live Ken status and in-chat verdict show exactly what I am doing.",
       "Your workspace tidies itself. The second a task is done it slips out of your Tasks list on its own, so all you ever see is what still needs doing. No more hunting for the checkbox.",
       "Un-minimizing one window now brings the whole crew back. Click a single GG Coder window back up and its siblings rise with it, so you are never left digging through the dock for the rest.",
     ],
@@ -294,8 +268,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.10.3",
     date: "2026-07-02",
     items: [
-      "Your helper agents just got a lot more capable. I gave them room to run five times longer, so instead of quitting halfway through a real job they now see it all the way to the finish. And if one ever does run out of road, it tells you straight up instead of handing back a mysterious blank.",
-      "Read-only agents are now genuinely read-only. When I send a scout out to explore your code, it physically cannot touch or change a thing. Peace of mind baked right in.",
+      "Your helper agents just got more capable and safer. They can run `5 times` longer, report clearly if they hit a limit, and read-only scouts physically cannot change your code.",
       "The tips GG Coder gives you now actually match the app. No more being told to press some terminal shortcut that does not exist here. It points you at the real buttons you can see and click.",
     ],
   },
@@ -303,16 +276,14 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.10.2",
     date: "2026-07-01",
     items: [
-      "Anthropic occasionally drops a tool call mid-stream with nothing in it, and it used to make GG Coder throw up its hands and blame itself. I taught it to recognize that exact glitch and just quietly pick the work back up, so a rare hiccup doesn't kill your session anymore.",
-      "When something really does go wrong, I fixed the message so it points at the actual culprit instead of guessing it's a GG Coder bug. Clearer errors, less confusion about who to blame.",
+      "Rare empty tool calls from `Anthropic` no longer kill your session. GG Coder quietly picks the work back up, and real failures now name the actual culprit instead of blaming itself.",
     ],
   },
   {
     version: "0.10.1",
     date: "2026-07-01",
     items: [
-      "Big sessions on GPT-5.5 just got sturdier. I fixed a bug where long chats could blow past the real context limit right after a compaction and choke with a context-window error. Now I always leave enough headroom, so those marathon sessions keep running instead of stalling out.",
-      "The context meter in the footer is honest now too. It reads the real window for however you're connected, so the percentage you see actually means something.",
+      "Big sessions on `GPT-5.5` just got sturdier. Compaction now leaves the right headroom, and the footer reads the real context window for your connection, so marathon chats keep running with an honest meter.",
     ],
   },
   {
@@ -327,8 +298,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.9.0",
     date: "2026-07-01",
     items: [
-      "Xiaomi just got a turbo button. MiMo-V2.5-Pro-UltraSpeed is in the model picker now, built for when you want answers fast and don't mind paying a bit more for the speed.",
-      "Connecting Xiaomi now gives you a real choice. Pick Token Plan or API Credits right in the login screen, and I'll route every MiMo model to whichever one you've actually got set up. No more guessing which key goes where.",
+      "Xiaomi just got a turbo button. `MiMo-V2.5-Pro-UltraSpeed` is in the picker, and login now lets you choose `Token Plan` or `API Credits` so every MiMo model uses the right connection automatically.",
     ],
   },
   {
@@ -350,19 +320,14 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.7.1",
     date: "2026-06-30",
     items: [
-      "I made @Ken much easier to remember right when you are about to type. The input now quietly rotates in helpful Ken hints, then shuffles into place instead of snapping.",
-      "Ken now follows your model switch. Pick a new model and @Ken uses it too, so his advice comes from the same brain you chose for the main agent.",
+      "`@Ken` is easier to remember and stays in sync. Helpful hints rotate into the input, and every model switch carries over so his advice comes from the same brain you chose for GG Coder.",
     ],
   },
   {
     version: "0.7.0",
     date: "2026-06-30",
     items: [
-      "Say hey to Ken. I put myself right inside the app as your mentor. Type @Ken and I'll tell you what to build next, call out when something is off, and hand you the exact prompt to run. I am not the one writing the code, I am the one keeping you on the rails.",
-      "I do not guess and I do not just nod along. When I size up your code or a plan I actually go check it. I search real shipping repos and read the live docs before I answer, and if something smells unverified I dig in and tell you what I found.",
-      "I have taste and I am hard on tools. Ask me what to use and I will not parrot whatever is trendy. I research what is actually good right now and steer you to the lean pick that fits your project, not the bloated mainstream one.",
-      "Every prompt I write comes with a Send to GG Coder button. One click and it runs. No copy paste, no fuss. I keep it one focused step at a time so nothing snowballs into a mess.",
-      "Our chats stick around. Close the app, come back later, and my advice plus everything you sent is right where you left it.",
+      "Say hey to `@Ken`, your research-first mentor inside the app. I check real code and live docs, challenge shaky plans, recommend tools with taste, turn advice into one-click `Send to GG Coder` prompts, and keep our chats waiting for you after a restart.",
     ],
   },
   {
@@ -406,8 +371,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.5.1",
     date: "2026-06-27",
     items: [
-      "Squashed a nasty one. On some Macs, clicking Enhance could black out the whole app. I tracked it down and killed it for good, so the screen stays rock solid every single time.",
-      "The Enhance button found its home. It now rides the top edge of your chat box and sticks around the moment you start typing, gliding in and out smooth as glass instead of crowding your words.",
+      "`Enhance` is rock solid and right where it belongs. I killed the Mac blackout bug and pinned the button to your chat box, where it glides in smoothly without crowding your words.",
     ],
   },
   {
@@ -422,8 +386,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.4.1",
     date: "2026-06-24",
     items: [
-      "The Prompt Enhancer now glides in glassy-smooth. I hunted down the split-second flash on handoff and erased it. Pure silk.",
-      "Your input gently dims while the enhancer works its magic, so you always know exactly when it's cooking.",
+      "The `Prompt Enhancer` now glides in glassy-smooth. I erased the handoff flash and gently dim the input while it works, so every transition feels deliberate. Pure silk.",
     ],
   },
   {
@@ -455,8 +418,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.2.0",
     date: "2026-06-14",
     items: [
-      "Fresh AI firepower: the Sakana Fugu and Fugu Ultra models are now one tap away in the model menu.",
-      "More creative range under the hood means more ways to get exactly the answer you're chasing.",
+      "Fresh AI firepower: `Sakana Fugu` and `Fugu Ultra` are now one tap away, giving you more creative range for the exact answer you are chasing.",
     ],
   },
 ];

@@ -11,6 +11,11 @@ coverage/
 .env.*
 ~/.gg/
 .gg/
+!/.gg/
+/.gg/*
+!/.gg/commands/
+/.gg/commands/*
+!/.gg/commands/release.md
 
 # Scratch / ad-hoc test files
 test_*.mjs

@@ -241,7 +241,7 @@ function tryPlayOnWindowsHost(station: RadioStation): ChildProcess | null {
   ].join(" ");
   try {
     return spawn("powershell.exe", ["-NoProfile", "-WindowStyle", "Hidden", "-Command", psScript], {
-      detached: true,
+      detached: false,
       stdio: "ignore",
       env: {
         ...process.env,
@@ -296,7 +296,9 @@ export function playRadio(stationId: string): PlayResult {
     if (!bin) continue;
     try {
       const child = spawn(bin, player.args(station.url, currentVolume), {
-        detached: process.platform !== "win32",
+        // Stay in the sidecar's process group so Rust teardown and the parent
+        // watchdog cannot leave audio playing after GG Coder closes.
+        detached: false,
         stdio: "ignore",
       });
       let errored = false;

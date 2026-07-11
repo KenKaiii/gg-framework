@@ -1320,7 +1320,17 @@ body {
 .whatsnew-section:last-child {
   margin-bottom: 0;
 }
+.whatsnew-section.latest {
+  margin-bottom: 20px;
+  padding: 16px 16px 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface-1);
+}
 .whatsnew-version {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--sans);
   font-size: 12px;
   font-weight: 700;
@@ -1328,6 +1338,28 @@ body {
   text-transform: uppercase;
   color: var(--text-dim);
   margin-bottom: 12px;
+}
+.whatsnew-section.latest .whatsnew-version {
+  color: var(--text-secondary);
+}
+.whatsnew-history-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 18px;
+  color: var(--text-muted);
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.whatsnew-history-divider::before,
+.whatsnew-history-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, var(--border) 78%, transparent);
 }
 .whatsnew-list {
   list-style: none;
@@ -1351,6 +1383,11 @@ body {
   left: 4px;
   top: -0.5px;
   color: var(--primary);
+  font-weight: 700;
+}
+.whatsnew-highlight {
+  color: color-mix(in srgb, var(--secondary) 72%, var(--text));
+  font: inherit;
   font-weight: 700;
 }
 
