@@ -284,6 +284,10 @@ export class SubAgentManager {
     worker.process.stderr?.on("data", (chunk: Buffer) => {
       worker.stderr = (worker.stderr + chunk.toString()).slice(-SUB_AGENT_MAX_STDERR_CHARS);
     });
+    // A worker can exit between the writable check and stdin.write(). Consume
+    // the pipe error here so EPIPE becomes worker failure instead of an
+    // uncaught process-level exception (seen on faster CI runners).
+    worker.process.stdin?.on("error", (error) => this.fail(worker, error));
     worker.process.once("error", (error) => this.fail(worker, error));
     worker.process.once("exit", (code) => {
       if (!this.isTerminal(worker.state) && worker.state !== "closed") {

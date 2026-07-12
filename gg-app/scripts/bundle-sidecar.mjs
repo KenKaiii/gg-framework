@@ -4,10 +4,11 @@
 //
 // Why external + copy (not a single SEA binary): ggcoder's runtime pulls in
 // native `sharp` and lazily imports optional natives (playwright, transformers,
-// unpdf, linkedom, ...). Those cannot be inlined by a bundler, so we mark them
-// `external` and copy the real packages (with their dependency trees) next to
-// the bundle. Each OS/arch bundle is built on its own CI runner, so the copied
-// `sharp` platform binary is always correct for the target.
+// unpdf, ...). Those cannot be inlined by a bundler, so we mark them `external`
+// and copy the real packages (with their dependency trees) next to the bundle.
+// Pure-JS linkedom is bundled to avoid flattening incompatible htmlparser2/entities
+// versions into that external node_modules tree. Each OS/arch bundle is built on
+// its own runner, so copied native binaries match the target.
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
@@ -34,7 +35,6 @@ const EXTERNAL = [
   "playwright",
   "@huggingface/transformers",
   "unpdf",
-  "linkedom",
   "ogg-opus-decoder",
   "turndown",
   "turndown-plugin-gfm",
