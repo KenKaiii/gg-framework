@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.13.3
+
+### Patch Changes
+
+- Align OpenAI prompt caching with Codex and improve cache-safe sub-agent routing.
+  - @kenkaiiii/gg-ai@5.13.3
+  - @kenkaiiii/gg-agent@5.13.3
+  - @kenkaiiii/gg-core@5.13.3
+
 ## 5.13.2
 
 ### Patch Changes
