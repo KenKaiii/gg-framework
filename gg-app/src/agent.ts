@@ -335,7 +335,7 @@ export async function enhancePrompt(text: string): Promise<EnhanceResult> {
   return invoke<EnhanceResult>("agent_enhance_prompt", { text });
 }
 
-export async function openProjectPath(path: string): Promise<void> {
+export async function openProjectPath(path: string, reveal = false): Promise<void> {
   let decoded = path;
   try {
     decoded = decodeURIComponent(path);
@@ -343,7 +343,7 @@ export async function openProjectPath(path: string): Promise<void> {
     // Keep the original string if the model emitted a malformed `%` escape.
   }
   try {
-    await invoke("open_project_path", { path: decoded });
+    await invoke("open_project_path", { path: decoded, reveal });
   } catch (e) {
     await logError(`open_project_path failed: ${String(e)}`);
   }
