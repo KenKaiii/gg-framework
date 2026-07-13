@@ -2365,10 +2365,12 @@ async function createSession(
           .catch(() => json(res, 200, { sessions: [] }));
         return;
       }
-      const sessionsDir =
-        mode === "chat" || requestedAgent
-          ? sessionsDirForChatAgent(paths.sessionsDir, requestedAgent ?? chatAgent)
-          : paths.sessionsDir;
+      // The picker may be served by a sidecar currently running in Chat mode.
+      // An omitted chatAgent always means coding history; chat callers identify
+      // their namespace explicitly (one agent or "all").
+      const sessionsDir = requestedAgent
+        ? sessionsDirForChatAgent(paths.sessionsDir, requestedAgent)
+        : paths.sessionsDir;
       void listRecentSessions(target, 5, sessionsDir)
         .then((sessions) => json(res, 200, { sessions }))
         .catch(() => json(res, 200, { sessions: [] }));
