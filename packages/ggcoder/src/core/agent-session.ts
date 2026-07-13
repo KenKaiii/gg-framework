@@ -25,12 +25,14 @@ import {
   KEN_TURN_CUSTOM_KIND,
   AUTOPILOT_MARKER_CUSTOM_KIND,
   APP_MARKER_CUSTOM_KIND,
+  DRAFT_MARKER_CUSTOM_KIND,
   type MessageEntry,
   type BranchInfo,
   type CustomEntry,
   type KenTurnPayload,
   type AutopilotMarkerPayload,
   type AppMarkerPayload,
+  type DraftMarkerPayload,
 } from "./session-manager.js";
 import { ExtensionLoader } from "./extensions/loader.js";
 import type { ExtensionContext } from "./extensions/types.js";
@@ -306,6 +308,24 @@ export class AgentSession {
   private lastPersistedIndex = 0;
   /** Current leaf entry ID in the session DAG — used to chain parentIds for branching. */
   private currentLeafId: string | null = null;
+  // ── Crash-recovery draft snapshot ──────────────────────────────────────
+  // Streamed assistant text is only durable once the FINISHED message is
+  // persisted at the end of runLoop(). If the process dies mid-stream (crash,
+  // force-quit, an app auto-update killing the sidecar) everything the user
+  // watched stream in is lost — the session file has no trace of it. These
+  // fields throttle a best-effort snapshot of the in-flight text to a `custom`
+  // entry (never on the message DAG, never seen by the LLM) so a resumed
+  // session can recover it instead of silently discarding it.
+  private draftRunId = "";
+  private draftText = "";
+  private draftLastPersistedAt = 0;
+  private draftLastPersistedLength = 0;
+  private static readonly DRAFT_PERSIST_MIN_INTERVAL_MS = 2_000;
+  private static readonly DRAFT_PERSIST_MIN_NEW_CHARS = 200;
+  /** Set once on load from a session file whose last draft snapshot has no
+   *  completed assistant message after it (see loadExistingSession). Null on a
+   *  fresh session or when the prior run finished normally. */
+  private recoveredDraft: DraftMarkerPayload | null = null;
 
   private opts: AgentSessionOptions;
 
@@ -788,6 +808,11 @@ export class AgentSession {
     this.regroundingInjected = false;
     this.compactionOccurred = false;
     this.originalRequest = originalRequest;
+    this.draftRunId = crypto.randomUUID();
+    this.draftText = "";
+    this.draftLastPersistedAt = 0;
+    this.draftLastPersistedLength = 0;
+    this.recoveredDraft = null;
   }
 
   /**
@@ -799,6 +824,16 @@ export class AgentSession {
     switch (event.type) {
       case "text_delta":
         this.hookText += event.text;
+        this.draftText += event.text;
+        void this.maybePersistDraft().catch((err) =>
+          log(
+            "WARN",
+            "session",
+            `Draft snapshot persistence failed; continuing without crash recovery: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          ),
+        );
         break;
       case "tool_call_start":
         this.hookToolCalls.set(event.toolCallId, { name: event.name, args: event.args ?? {} });
@@ -1079,6 +1114,62 @@ export class AgentSession {
       await this.persistMessage(this.messages[i]);
     }
     this.lastPersistedIndex = this.messages.length;
+    // The run completed and its messages are durably persisted above -- the
+    // draft snapshot's job is done. Clearing it here (not in a finally) is
+    // deliberate: if the process dies before reaching this line, the last
+    // snapshot written by maybePersistDraft() is exactly what should survive
+    // for recovery on the next resume.
+    await this.clearDraft();
+  }
+
+  /**
+   * Best-effort, throttled crash-recovery snapshot of the in-flight assistant
+   * text. Writes at most once per DRAFT_PERSIST_MIN_INTERVAL_MS and only when
+   * at least DRAFT_PERSIST_MIN_NEW_CHARS of new text accumulated since the
+   * last write -- cheap enough to call on every text_delta without adding
+   * meaningful I/O pressure to a normal run. No-op for transient sessions.
+   */
+  private async maybePersistDraft(): Promise<void> {
+    if (!this.sessionPath) return;
+    const now = Date.now();
+    const newChars = this.draftText.length - this.draftLastPersistedLength;
+    if (
+      this.draftLastPersistedAt !== 0 &&
+      (now - this.draftLastPersistedAt < AgentSession.DRAFT_PERSIST_MIN_INTERVAL_MS ||
+        newChars < AgentSession.DRAFT_PERSIST_MIN_NEW_CHARS)
+    ) {
+      return;
+    }
+    this.draftLastPersistedAt = now;
+    this.draftLastPersistedLength = this.draftText.length;
+    const afterMessageCount = this.messages.filter((m) => m.role !== "system").length;
+    const payload: DraftMarkerPayload = {
+      version: 1,
+      runId: this.draftRunId,
+      text: this.draftText,
+      afterMessageCount,
+    };
+    const entry: CustomEntry = {
+      type: "custom",
+      kind: DRAFT_MARKER_CUSTOM_KIND,
+      id: crypto.randomUUID(),
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      data: payload,
+    };
+    await this.sessionManager.appendEntry(this.sessionPath, entry);
+  }
+
+  /** Clear the in-memory draft state after a run finishes normally (its text
+   *  is now durable as a real persisted message). The on-disk marker itself is
+   *  left in place -- harmless, since getLatestDraftMarker on the next resume
+   *  will see the real assistant message recorded after it and treat the
+   *  marker as stale (see the kind's doc comment). */
+  private async clearDraft(): Promise<void> {
+    this.draftRunId = "";
+    this.draftText = "";
+    this.draftLastPersistedAt = 0;
+    this.draftLastPersistedLength = 0;
   }
 
   async switchModel(provider: string, model: string): Promise<void> {
@@ -1590,6 +1681,14 @@ export class AgentSession {
     return this.appMarkers;
   }
 
+  /** Crash-recovery draft recovered on load (null when none, or the last run
+   *  completed normally). See the `assistant_draft` custom-entry kind doc for
+   *  the staleness rule. Cleared once the session prompts again so repeated
+   *  history reads in a live process do not keep re-emitting the stale draft. */
+  getRecoveredDraft(): DraftMarkerPayload | null {
+    return this.recoveredDraft;
+  }
+
   /**
    * Record one app transcript marker (display-only row) against this session.
    * Same treatment as autopilot markers: kept in memory for the live
@@ -1808,6 +1907,18 @@ export class AgentSession {
     this.autopilotMarkers = this.sessionManager.getAutopilotMarkers(loaded.entries);
     // Restore app transcript markers (plan banner / task header / errors / hints).
     this.appMarkers = this.sessionManager.getAppMarkers(loaded.entries);
+    // Crash-recovery draft: if the latest snapshot's anchor is still at (or
+    // beyond) the restored message count, no completed assistant message was
+    // ever persisted after it — the process died mid-stream. Surface it via
+    // getRecoveredDraft() so the host can render it with a "recovered" hint.
+    // A stale draft (anchor behind the restored count — the run finished
+    // normally afterward) is intentionally left null.
+    const draft = this.sessionManager.getLatestDraftMarker(loaded.entries);
+    const restoredMessageCount = loadedMessages.filter((m) => m.role !== "system").length;
+    this.recoveredDraft =
+      draft && draft.afterMessageCount >= restoredMessageCount && draft.text.trim()
+        ? draft
+        : null;
 
     // Track the current leaf for subsequent entries
     this.currentLeafId = loaded.header.leafId;

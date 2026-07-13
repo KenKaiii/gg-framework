@@ -315,6 +315,11 @@ export function isTransportFailure(err: unknown): boolean {
     "UND_ERR_RESPONSE_STATUS_CODE",
     "UND_ERR_REQ_CONTENT_LENGTH_MISMATCH",
     "UND_ERR_RES_CONTENT_LENGTH_MISMATCH",
+    // Generic timeout codes some SDKs set without an ETIMEDOUT/UND_ wrapper
+    // (e.g. AbortSignal.timeout()-driven aborts surfaced as DOMException
+    // "TimeoutError", or an SDK's own connection-timeout error class).
+    "ETIMEOUT",
+    "ABORT_ERR",
   ]);
   const messages = [
     /^terminated$/i,
@@ -324,6 +329,15 @@ export function isTransportFailure(err: unknown): boolean {
     /\bbody timeout error\b/i,
     /\bsse stream disconnected\b/i,
     /\bfailed to reconnect sse stream\b/i,
+    // Bare-text SDK timeouts with no error code at all (e.g. Anthropic SDK's
+    // "Request timed out.", "Request to Anthropic timed out", or a fetch
+    // AbortSignal timeout) — without this they fall through every retry branch
+    // and surface raw to the user instead of auto-retrying like every other
+    // transient transport failure. Keep these patterns transport-shaped so a
+    // provider message that merely mentions a timeout policy does not retry.
+    /\brequest(?: to [\w .-]+)? timed out\b/i,
+    /\b(?:connection|socket|headers|body|operation|stream) timed out\b/i,
+    /\b(?:connection|socket|headers|body|operation|stream) timeout(?: error)?\b/i,
   ];
   const seen = new Set<unknown>();
   let cur: unknown = err;

@@ -106,6 +106,25 @@ export interface AppMarkerPayload {
   data: Record<string, unknown>;
 }
 
+/** Custom-entry kind for a crash-recovery snapshot of the assistant's
+ *  in-flight streamed text. Persisted (throttled) WHILE a reply is streaming,
+ *  never as part of the message DAG (parentId null — the LLM never sees it,
+ *  same treatment as Ken turns). `afterMessageCount` anchors it to the user
+ *  turn that started the run. On resume, a draft whose anchor equals the
+ *  restored message count means no completed assistant message was ever
+ *  appended after it — the process died mid-stream (crash, forced quit,
+ *  update-triggered restart) — so the host renders the recovered text instead
+ *  of silently losing it. A draft whose anchor is behind the restored count is
+ *  stale (the run finished normally afterward) and is ignored. */
+export const DRAFT_MARKER_CUSTOM_KIND = "assistant_draft";
+
+export interface DraftMarkerPayload {
+  version: 1;
+  runId: string;
+  text: string;
+  afterMessageCount: number;
+}
+
 export type SessionEntry =
   | MessageEntry
   | ModelChangeEntry
@@ -585,6 +604,30 @@ export class SessionManager {
       }
       return [];
     });
+  }
+
+  /**
+   * Latest crash-recovery draft marker in file order, or null if none was ever
+   * written. Callers compare its `afterMessageCount` against the restored
+   * message count to decide whether the draft is still live (process died
+   * mid-stream, no completed assistant message followed) or stale (the run
+   * finished normally and a real message was persisted afterward).
+   */
+  getLatestDraftMarker(entries: SessionEntry[]): DraftMarkerPayload | null {
+    let latest: DraftMarkerPayload | null = null;
+    for (const entry of entries) {
+      if (entry.type !== "custom" || entry.kind !== DRAFT_MARKER_CUSTOM_KIND) continue;
+      const p = entry.data as Partial<DraftMarkerPayload> | undefined;
+      if (
+        p?.version === 1 &&
+        typeof p.runId === "string" &&
+        typeof p.text === "string" &&
+        typeof p.afterMessageCount === "number"
+      ) {
+        latest = { version: 1, runId: p.runId, text: p.text, afterMessageCount: p.afterMessageCount };
+      }
+    }
+    return latest;
   }
 
   /**

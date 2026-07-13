@@ -2095,6 +2095,13 @@ body {
   /* Match the user message / input size so both sides read uniformly. */
   font-size: 15px;
 }
+.assistant-recovered-hint {
+  margin-top: 6px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  opacity: 0.9;
+}
 
 /* ── Markdown rendering (assistant blocks) ── */
 /* Reset the transcript's inherited `pre-wrap` so the markdown source's

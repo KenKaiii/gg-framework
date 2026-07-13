@@ -553,6 +553,11 @@ export interface HistoryEntry {
   error?: { scope: string; headline: string; message?: string; guidance?: string };
   /** Webview-copy info row marker (e.g. the video-capability warning). */
   infoKind?: "video_warning";
+  /** True when this row is a crash-recovery snapshot: the process died
+   *  mid-stream (crash, force-quit, an app update killing the sidecar) with
+   *  no completed assistant message ever appended after it. `text` is exactly
+   *  what the model had streamed before that happened. */
+  recovered?: boolean;
   /** Tool-produced images rendered inline (same as live `images` items),
    *  reconstructed from ImageContent blocks in persisted tool results. */
   toolImages?: Array<{ src: string; path?: string }>;
