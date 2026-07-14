@@ -22,6 +22,16 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.21.0",
+    date: "2026-07-15",
+    items: [
+      "Your chat agents finally have a soul. I built `Jiwa` so they remember how you want them to speak, behave, and even what name to use, then tucked it beside Memories inside one clean `Brain` switcher where you can inspect or clear every instruction.",
+      "Beautiful interfaces are no longer a lucky roll. I bundled `Evidence-Led UI` into every install, so GG Coder now checks real design craft, accessibility, and responsive behavior before it touches your frontend.",
+      "Long jobs stay focused without getting slapped by a false alarm. I stopped healthy `background tasks` and iterative edits from tripping the stuck detector, while genuine no-progress loops still get snapped out fast.",
+      "Chat gives you more room and more awareness. I added a collapsible `Chat` header and brought the `context meter` into view, so you can reclaim space and see exactly how much conversation room remains.",
+    ],
+  },
+  {
     version: "0.20.1",
     date: "2026-07-13",
     items: [
