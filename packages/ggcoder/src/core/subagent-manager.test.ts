@@ -277,22 +277,45 @@ describe("SubAgentManager", () => {
     expect(await store.load(process.cwd(), "parent-new")).toEqual([]);
   });
 
-  it("prunes unreferenced child transcripts older than 30 days", async () => {
+  it("prunes only old child transcripts unreferenced by every durable parent", async () => {
     const root = await tempDir();
+    const cwd = path.join(root, "project-cwd");
     const sessionRootDir = path.join(root, "sessions");
-    const oldSession = path.join(sessionRootDir, "project", "old.jsonl");
-    await fs.mkdir(path.dirname(oldSession), { recursive: true });
-    await fs.writeFile(oldSession, "{}\n");
+    const sessionDirectory = path.join(sessionRootDir, "project");
+    const unreferencedSession = path.join(sessionDirectory, "old-unreferenced.jsonl");
+    const referencedSession = path.join(sessionDirectory, "old-referenced.jsonl");
+    await fs.mkdir(sessionDirectory, { recursive: true });
+    await Promise.all([
+      fs.writeFile(unreferencedSession, "{}\n"),
+      fs.writeFile(referencedSession, "{}\n"),
+    ]);
     const old = new Date(Date.now() - 31 * 86_400_000);
-    await fs.utimes(oldSession, old, old);
-    const instance = manager({
-      store: new SubAgentStore(path.join(root, "state")),
-      sessionRootDir,
-    });
+    await Promise.all([
+      fs.utimes(unreferencedSession, old, old),
+      fs.utimes(referencedSession, old, old),
+    ]);
 
-    await instance.hydrate("parent-a");
+    const store = new SubAgentStore(path.join(root, "state"));
+    const otherParentRecord: PersistedSubAgentRecord = {
+      agent_id: "other-parent-child",
+      task_name: "durable history",
+      state: "completed",
+      started_at: 1,
+      updated_at: 2,
+      elapsed_ms: 1,
+      turn_count: 1,
+      tool_use_count: 0,
+      token_usage: { input: 2, output: 3 },
+      child_session_path: referencedSession,
+      collected: true,
+    };
+    await store.save(cwd, "other-parent", [otherParentRecord]);
+    const instance = manager({ store, cwd, sessionRootDir });
 
-    await expect(fs.stat(oldSession)).rejects.toMatchObject({ code: "ENOENT" });
+    await instance.hydrate("current-parent");
+
+    await expect(fs.stat(unreferencedSession)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.stat(referencedSession)).resolves.toBeTruthy();
   });
 
   it("copies history to a compacted parent and resets a genuinely new parent", async () => {
