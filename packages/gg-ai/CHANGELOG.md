@@ -1,5 +1,11 @@
 # @kenkaiiii/gg-ai
 
+## 5.17.0
+
+### Minor Changes
+
+- a3916ff: Harden provider error handling, cancellation settlement, review evidence, LSP confidence, route-aware context limits, turn metrics, and durable child-agent recovery.
+
 ## 5.16.0
 
 ## 5.15.1
