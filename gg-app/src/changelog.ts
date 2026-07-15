@@ -22,6 +22,17 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.21.1",
+    date: "2026-07-15",
+    items: [
+      "`Ultra` specialists can survive an app restart and keep their place. I made child agents durable, reconnectable, and safe to continue, so long missions no longer vanish when a process hiccups.",
+      "Cancel means cancelled now. I made `Esc` wait for the active run to settle before the app returns to idle, with a clear `Cancelling...` state and honest recovery if the provider refuses to stop.",
+      "`Autopilot` now proves it actually checked every changed file. I tightened final review around real reads, edits, and diagnostics, so a green finish means the work earned it.",
+      "Provider failures are cleaner and safer. I scrub secrets before they reach logs or sessions and replace broken `HTML` error pages with a useful status-aware message, so support is easier and your credentials stay out of the mess.",
+      "`Context` tracking got sharper across every route and model. I taught GG Coder to use the right limits and timing evidence, so long sessions compact at the right moment instead of guessing.",
+    ],
+  },
+  {
     version: "0.21.0",
     date: "2026-07-15",
     items: [
