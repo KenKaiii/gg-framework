@@ -1,5 +1,13 @@
 # @kenkaiiii/gg-voice
 
+## 4.3.280
+
+### Patch Changes
+
+- Updated dependencies [e00de5b]
+  - @kenkaiiii/gg-ai@5.18.0
+  - @kenkaiiii/gg-agent@5.18.0
+
 ## 4.3.279
 
 ### Patch Changes

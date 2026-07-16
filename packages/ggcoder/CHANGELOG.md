@@ -1,5 +1,18 @@
 # @kenkaiiii/ggcoder
 
+## 5.18.0
+
+### Minor Changes
+
+- e00de5b: Add Kimi K3 as Moonshot's default model with its 1M-token multimodal registry metadata and endpoint-specific max-effort request handling for both the public API and Kimi Code OAuth. Keep Kimi K2.7 Code available as the dedicated coding alternative.
+
+### Patch Changes
+
+- Updated dependencies [e00de5b]
+  - @kenkaiiii/gg-ai@5.18.0
+  - @kenkaiiii/gg-core@5.18.0
+  - @kenkaiiii/gg-agent@5.18.0
+
 ## 5.17.0
 
 ### Minor Changes

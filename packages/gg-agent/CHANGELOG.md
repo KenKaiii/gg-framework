@@ -1,5 +1,12 @@
 # @kenkaiiii/gg-agent
 
+## 5.18.0
+
+### Patch Changes
+
+- Updated dependencies [e00de5b]
+  - @kenkaiiii/gg-ai@5.18.0
+
 ## 5.17.0
 
 ### Minor Changes
