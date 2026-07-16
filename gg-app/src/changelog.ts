@@ -22,6 +22,17 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.22.0",
+    date: "2026-07-16",
+    items: [
+      "`Kimi K3` is here, and I made Moonshot's new flagship your default from day one. You get maximum reasoning, a massive `1M-token` brain, and native image plus video understanding, while `Kimi K2.7 Code` stays ready when you want the lean coding specialist.",
+      "Your workspace tells you the truth at a glance now. I moved the project, `branch`, and live `uncommitted` file count into the title bar, so every window shows exactly where you are without stealing space from your tools.",
+      "Your recent sessions stop multiplying and losing their names after long chats. I made titles and conversation identity survive `compaction`, then collapsed old checkpoints into one clean, resumable session.",
+      "`Plan Steps` finally stays locked to the real plan while GG Coder works. I made it follow live edits, count completed steps honestly, and disappear the instant the run ends, so stale progress never hangs around pretending work is still moving.",
+      "Your specialist crew now shows where every token really went, including fresh input, cached input, and output. I also tightened `Codex` tool results so oversized reads stop devouring the context your agents need to finish strong.",
+    ],
+  },
+  {
     version: "0.21.1",
     date: "2026-07-15",
     items: [
