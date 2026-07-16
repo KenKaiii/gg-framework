@@ -44,7 +44,9 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     emit({
       type: "event",
       event: "turn_end",
-      payload: { usage: { inputTokens: 10, outputTokens: 2 } },
+      payload: {
+        usage: { inputTokens: 10, outputTokens: 2, cacheRead: 20, cacheWrite: 5 },
+      },
     });
     const delay = /slow/.test(frame.task) ? 150 : 15;
     timer = setTimeout(() => complete("completed", `${frame.task}|context:${contextTurns}`), delay);

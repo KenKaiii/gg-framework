@@ -18,7 +18,12 @@ export interface SubAgentLine {
   activities: string[];
   toolUseCount: number;
   /** Cumulative token usage for this agent (live during the run). */
-  tokenUsage?: { input: number; output: number };
+  tokenUsage?: {
+    input: number;
+    output: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+  };
   durationMs?: number;
 }
 
@@ -39,12 +44,20 @@ function displayName(agent: SubAgentLine, index: number): string {
   return agent.agentName && agent.agentName !== "default" ? agent.agentName : `Agent ${index + 1}`;
 }
 
-/** Compact "↑in ↓out" token readout, or null until any tokens are counted. */
-function formatTokens(usage: SubAgentLine["tokenUsage"]): string | null {
+/** Codex-style fresh-input + cached-input + output readout. */
+export function formatSubAgentTokens(usage: SubAgentLine["tokenUsage"]): string | null {
   if (!usage) return null;
-  const total = usage.input + usage.output;
-  if (total === 0) return null;
-  return `\u2191 ${formatTokenCount(usage.input)} \u2193 ${formatTokenCount(usage.output)}`;
+  // Anthropic reports newly cacheable input under cacheWrite, while OpenAI
+  // reports it as ordinary non-cached input. Add writes back so the two rows
+  // compare the same quantity instead of making Claude look artificially tiny.
+  const freshInput = usage.input + (usage.cacheWrite ?? 0);
+  const cacheRead = usage.cacheRead ?? 0;
+  if (freshInput + cacheRead + usage.output === 0) return null;
+  return [
+    `\u2191 ${formatTokenCount(freshInput)}`,
+    ...(cacheRead > 0 ? [`\u21BB ${formatTokenCount(cacheRead)} cached`] : []),
+    `\u2193 ${formatTokenCount(usage.output)}`,
+  ].join(" \u00b7 ");
 }
 
 /**
@@ -95,7 +108,7 @@ export function SubAgentFeed({ agents, aborted = false }: Props): React.ReactEle
           // Done/errored agents collapse to a one-line summary; running agents
           // show their live tool feed (most recent last).
           const feed = isRunning ? agent.activities.slice(-MAX_FEED_ROWS) : [];
-          const tokens = formatTokens(agent.tokenUsage);
+          const tokens = formatSubAgentTokens(agent.tokenUsage);
 
           return (
             <div className="subagent" key={agent.toolCallId}>

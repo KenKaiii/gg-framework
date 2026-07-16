@@ -199,7 +199,7 @@ describe("add_sfx_to_timeline", () => {
     const tool = createAddSfxToTimelineTool(mockHost({ fps: 30 }), "/cwd");
     const r = await tool.execute({ sfx: "notarealsfx", cutPoints: [1] }, ctx);
     expect(r).toMatch(/error: unknown SFX name/);
-    expect(r).toMatch(/bundled SFX name/);
+    expect(r).toMatch(/Bundled:.*whoosh/);
   });
 
   it("rejects when the host can't report a frame rate", async () => {

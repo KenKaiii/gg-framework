@@ -8,6 +8,7 @@ import {
   getDefaultModel,
   getFastModel,
   getModelsForProvider,
+  getToolResultCharLimit,
   usesOpenAICodexTransport,
 } from "./model-registry.js";
 
@@ -124,6 +125,26 @@ describe("model registry context windows", () => {
     const options = { provider: "openai" as const, accountId: "acct_123" };
     expect(usesOpenAICodexTransport(options)).toBe(true);
     expect(getContextWindow(model, options)).toBe(limit);
+    expect(getToolResultCharLimit(model, options)).toBe(40_000);
+  });
+
+  it("caps custom OpenAI model IDs on Codex transport", () => {
+    expect(
+      getToolResultCharLimit("custom-codex-model", {
+        provider: "openai",
+        accountId: "acct_123",
+      }),
+    ).toBe(40_000);
+  });
+
+  it("keeps the generic tool-output allowance outside Codex OAuth", () => {
+    expect(getToolResultCharLimit("gpt-5.6-sol", { provider: "openai" })).toBeUndefined();
+    expect(
+      getToolResultCharLimit("claude-sonnet-5", {
+        provider: "anthropic",
+        accountId: "acct_123",
+      }),
+    ).toBeUndefined();
   });
 
   it("keeps non-OpenAI providers on their model context windows", () => {

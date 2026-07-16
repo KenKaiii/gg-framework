@@ -278,7 +278,7 @@ describe("terminal history", () => {
           task: "Inspect widgets",
           status: "done",
           toolUseCount: 2,
-          tokenUsage: { input: 1200, output: 300 },
+          tokenUsage: { input: 1200, output: 300, cacheRead: 2400, cacheWrite: 500 },
           durationMs: 1800,
         },
       ],
@@ -288,7 +288,7 @@ describe("terminal history", () => {
 
     expect(rendered).toMatch(/^ [⏺●] 1 agent completed/);
     expect(rendered).toContain("   └─ ✓ Inspect widgets");
-    expect(rendered).toContain("      ⎿ 1.5k tokens · 2s");
+    expect(rendered).toContain("      ⎿ 2.0k tokens · 2.4k cached · 2s");
   });
 
   it("keeps compaction and update notices bordered with spacing after final flush", () => {

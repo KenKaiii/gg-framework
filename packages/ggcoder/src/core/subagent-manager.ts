@@ -15,6 +15,7 @@ import {
   resolveSubAgentCliEntry,
   selectSubAgent,
   subAgentCacheKey,
+  type SubAgentTokenUsage,
   SUB_AGENT_MAX_STDERR_CHARS,
 } from "../tools/subagent-shared.js";
 
@@ -37,7 +38,7 @@ export interface SubAgentSnapshot {
   current_activity?: string;
   turn_count: number;
   tool_use_count: number;
-  token_usage: { input: number; output: number };
+  token_usage: SubAgentTokenUsage;
   output?: string;
   error?: string;
   agent_name?: string;
@@ -586,6 +587,10 @@ export class SubAgentManager {
         const usage = payload.usage as Record<string, number> | undefined;
         worker.token_usage.input += usage?.inputTokens ?? 0;
         worker.token_usage.output += usage?.outputTokens ?? 0;
+        worker.token_usage.cacheRead =
+          (worker.token_usage.cacheRead ?? 0) + (usage?.cacheRead ?? 0);
+        worker.token_usage.cacheWrite =
+          (worker.token_usage.cacheWrite ?? 0) + (usage?.cacheWrite ?? 0);
       }
       worker.updated_at = Date.now();
       const durableProgress = event === "tool_call_start" || event === "turn_end";

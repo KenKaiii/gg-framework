@@ -38,10 +38,21 @@ function spawnedCacheKeys(): string[] {
   });
 }
 
-function mockExit(stderr: string, code: number, stdout = ""): MockChildProcess {
+function mockExit(
+  stderr: string,
+  code: number,
+  stdout = "",
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+  },
+): MockChildProcess {
   const child = new MockChildProcess();
   setImmediate(() => {
     if (stdout) child.stdout.write(`${JSON.stringify({ type: "text_delta", text: stdout })}\n`);
+    if (usage) child.stdout.write(`${JSON.stringify({ type: "turn_end", usage })}\n`);
     if (stderr) child.stderr.write(stderr);
     child.stdout.end();
     child.stderr.end();
@@ -82,6 +93,24 @@ describe("createSubAgentTool fast-model fallback", () => {
       "parent-cache:subagent:gpt-5.6-luna:owl",
       "parent-cache:subagent:gpt-5.6-luna:owl",
     ]);
+  });
+
+  it("returns cache reads and writes with the normalized token totals", async () => {
+    spawnMock.mockImplementationOnce(() =>
+      mockExit("", 0, "done", {
+        inputTokens: 10,
+        outputTokens: 3,
+        cacheRead: 20,
+        cacheWrite: 5,
+      }),
+    );
+
+    await expect(runOwl()).resolves.toMatchObject({
+      content: "done",
+      details: {
+        tokenUsage: { input: 10, output: 3, cacheRead: 20, cacheWrite: 5 },
+      },
+    });
   });
 
   it("does not retry unrelated child failures", async () => {

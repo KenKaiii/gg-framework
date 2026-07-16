@@ -12,7 +12,12 @@ export interface SubAgentInfo {
   agentName: string;
   status: "running" | "done" | "error" | "aborted";
   toolUseCount: number;
-  tokenUsage: { input: number; output: number };
+  tokenUsage: {
+    input: number;
+    output: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+  };
   currentActivity?: string;
   result?: string;
   durationMs?: number;
@@ -72,7 +77,9 @@ const AgentRow = React.memo(
     const firstLine = agent.task.split("\n")[0].replace(/\*\*/g, "");
     const taskDisplay = firstLine.length > 60 ? firstLine.slice(0, 57) + "…" : firstLine;
 
-    const totalTokens = agent.tokenUsage.input + agent.tokenUsage.output;
+    const freshInput = agent.tokenUsage.input + (agent.tokenUsage.cacheWrite ?? 0);
+    const totalTokens = freshInput + agent.tokenUsage.output;
+    const cachedTokens = agent.tokenUsage.cacheRead ?? 0;
 
     // Width budgets for content (excluding prefix columns)
     const taskContentWidth = Math.max(10, columns - BRANCH_WIDTH);
@@ -92,6 +99,7 @@ const AgentRow = React.memo(
       detail = (
         <Text color={theme.textDim} wrap="wrap">
           {formatTokens(totalTokens)} tokens
+          {cachedTokens > 0 ? ` · ${formatTokens(cachedTokens)} cached` : ""}
           {agent.durationMs != null ? ` · ${formatDuration(agent.durationMs)}` : ""}
         </Text>
       );

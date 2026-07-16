@@ -15,6 +15,15 @@ export const SUB_AGENT_TIMEOUT_MS = 10 * 60 * 1000;
 export const SUB_AGENT_DEPTH_ENV = "GG_SUBAGENT_DEPTH";
 export const MAX_BLOCKING_SUBAGENT_DEPTH = 3;
 
+export interface SubAgentTokenUsage {
+  /** Fresh, non-cached input reported by the normalized provider adapter. */
+  input: number;
+  output: number;
+  cacheRead?: number;
+  /** Fresh input written into the provider cache (separate on Anthropic). */
+  cacheWrite?: number;
+}
+
 export interface SubAgentSelection {
   agentDef?: AgentDefinition;
   provider: Provider;

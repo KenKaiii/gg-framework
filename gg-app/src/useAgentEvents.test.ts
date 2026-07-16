@@ -368,7 +368,7 @@ describe("useAgentEvents", () => {
           state: "completed",
           elapsed_ms: 30,
           tool_use_count: 2,
-          token_usage: { input: 10, output: 3 },
+          token_usage: { input: 10, output: 3, cacheRead: 20, cacheWrite: 5 },
         }),
       ),
     );
@@ -376,7 +376,13 @@ describe("useAgentEvents", () => {
     expect(groups).toHaveLength(1);
     const group = groups[0];
     expect(group?.kind === "subagent_group" ? group.agents : []).toMatchObject([
-      { toolCallId: "abcd1234", status: "idle", async: true, toolUseCount: 2 },
+      {
+        toolCallId: "abcd1234",
+        status: "idle",
+        async: true,
+        toolUseCount: 2,
+        tokenUsage: { input: 10, output: 3, cacheRead: 20, cacheWrite: 5 },
+      },
     ]);
   });
 

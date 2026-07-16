@@ -35,7 +35,12 @@ export interface SubAgentStatePayload {
   current_activity?: string;
   turn_count: number;
   tool_use_count: number;
-  token_usage: { input: number; output: number };
+  token_usage: {
+    input: number;
+    output: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+  };
   output?: string;
   error?: string;
 }

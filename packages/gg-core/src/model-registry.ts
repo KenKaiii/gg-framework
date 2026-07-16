@@ -506,6 +506,20 @@ export function usesOpenAICodexTransport(options?: ContextWindowOptions): boolea
   return options?.provider === "openai" && Boolean(options.accountId);
 }
 
+/**
+ * Codex applies a 10K-token history cap to every tool/function output. GG's
+ * generic 30%-of-context allowance is far larger on 272K/372K Codex windows
+ * and can turn a few reads into 100K+ fresh input tokens. Four characters per
+ * token matches Codex's byte approximation and keeps this provider policy in
+ * the shared model registry instead of an app-specific copy.
+ */
+export function getToolResultCharLimit(
+  _modelId: string,
+  options?: ContextWindowOptions,
+): number | undefined {
+  return usesOpenAICodexTransport(options) ? 10_000 * 4 : undefined;
+}
+
 export function getContextWindow(modelId: string, options?: ContextWindowOptions): number {
   const model = getModel(modelId);
   if (!model) return 200_000;

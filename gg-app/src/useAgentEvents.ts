@@ -525,7 +525,7 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
             | {
                 toolUseCount?: number;
                 currentActivity?: string;
-                tokenUsage?: { input: number; output: number };
+                tokenUsage?: SubAgentLine["tokenUsage"];
               }
             | undefined;
           const groupId = subagentGroupIdRef.current;
@@ -562,7 +562,7 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           const groupId = subagentGroupIdRef.current;
           if (groupId !== null) {
             const endDetails = details as
-              | { durationMs?: number; tokenUsage?: { input: number; output: number } }
+              | { durationMs?: number; tokenUsage?: SubAgentLine["tokenUsage"] }
               | undefined;
             const durationMs = endDetails?.durationMs;
             const finalTokens = endDetails?.tokenUsage;

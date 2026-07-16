@@ -42,7 +42,13 @@ import {
 import { ExtensionLoader } from "./extensions/loader.js";
 import type { ExtensionContext } from "./extensions/types.js";
 import { shouldCompact, compact, getCompactionReserveTokens } from "./compaction/compactor.js";
-import { getAuthStorageKeys, getContextWindow, getModel, MODELS } from "./model-registry.js";
+import {
+  getAuthStorageKeys,
+  getContextWindow,
+  getModel,
+  getToolResultCharLimit,
+  MODELS,
+} from "./model-registry.js";
 import { discoverSkills, type Skill } from "./skills.js";
 import { ensureAppDirs } from "../config.js";
 import { buildSystemPrompt } from "../system-prompt.js";
@@ -193,6 +199,20 @@ export interface AgentSessionOptions {
   orchestrationPrompt?: boolean;
   /** Host-provided tools appended to this session only (for example, chat delegation). */
   additionalTools?: AgentTool[];
+}
+
+// ── Tool-result policy ─────────────────────────────────────
+
+/** Resolve the per-result cap passed to the agent loop for the active transport. */
+export function resolveSessionToolResultCharLimit(
+  model: string,
+  provider: Provider,
+  accountId?: string,
+): number {
+  return (
+    getToolResultCharLimit(model, { provider, accountId }) ??
+    Math.floor(getContextWindow(model, { provider, accountId }) * 3.5 * 0.3)
+  );
 }
 
 // ── State ──────────────────────────────────────────────────
@@ -1084,11 +1104,9 @@ export class AgentSession {
         supportsImages: modelInfo?.supportsImages,
         supportsVideo: modelInfo?.supportsVideo,
         userAgent,
-        // clearToolUses disabled — causes model to output unsolicited context summaries
-        // Single tool result shouldn't exceed 30% of context window (in chars)
-        maxToolResultChars: Math.floor(
-          getContextWindow(this.model, { provider: this.provider, accountId }) * 3.5 * 0.3,
-        ),
+        // Codex caps each tool output at 10K tokens. Other transports retain the
+        // generic 30%-of-context allowance used before this provider policy.
+        maxToolResultChars: resolveSessionToolResultCharLimit(this.model, this.provider, accountId),
         // Self-correction hooks (same as the TUI): loop-break + re-grounding are
         // polled mid-loop; the ideal review is polled when the agent would stop.
         getSteeringMessages: () => this.getHookSteeringMessages(),

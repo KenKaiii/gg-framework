@@ -99,6 +99,12 @@ describe("SubAgentManager", () => {
     );
     expect(result.timed_out).toBe(false);
     expect(result.agents.every((child) => child.state === "completed")).toBe(true);
+    expect(result.agents[0]?.token_usage).toEqual({
+      input: 10,
+      output: 2,
+      cacheRead: 20,
+      cacheWrite: 5,
+    });
   });
 
   it("waits for any, times out, steers, interrupts, and reuses context", async () => {

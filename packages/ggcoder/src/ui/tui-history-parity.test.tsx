@@ -526,7 +526,7 @@ const parityCaseByKind = {
         task: "Inspect widgets",
         status: "done",
         toolUseCount: 2,
-        tokenUsage: { input: 1200, output: 300 },
+        tokenUsage: { input: 1200, output: 300, cacheRead: 2400, cacheWrite: 500 },
         durationMs: 1800,
       },
     ],
@@ -643,6 +643,15 @@ const supplementalParityCases: CompletedItem[] = [
 const parityCases = [...Object.values(parityCaseByKind), ...supplementalParityCases];
 
 describe("TUI live/history parity", () => {
+  it("keeps fresh and cached sub-agent usage after terminal-history serialization", () => {
+    const item = parityCaseByKind.subagent_group;
+    const live = renderLive(liveElementFor(item)!);
+    const history = renderHistory(item);
+
+    expect(live.join("\n")).toContain("2.0k tokens · 2.4k cached");
+    expect(history.join("\n")).toContain("2.0k tokens · 2.4k cached");
+  });
+
   it.each(parityCases.map((item) => [item.kind, item] as const))(
     "keeps %s live rendering aligned with terminal history",
     (_kind, item) => {

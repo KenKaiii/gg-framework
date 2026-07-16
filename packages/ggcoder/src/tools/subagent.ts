@@ -14,6 +14,7 @@ import {
   resolveSubAgentCliEntry,
   selectSubAgent,
   subAgentCacheKey,
+  type SubAgentTokenUsage,
   SUB_AGENT_MAX_OUTPUT_CHARS,
   SUB_AGENT_MAX_STDERR_CHARS,
   SUB_AGENT_MAX_TURNS,
@@ -37,13 +38,13 @@ const SubAgentParams = z.object({
 
 export interface SubAgentUpdate {
   toolUseCount: number;
-  tokenUsage: { input: number; output: number };
+  tokenUsage: SubAgentTokenUsage;
   currentActivity?: string;
 }
 
 export interface SubAgentDetails {
   toolUseCount: number;
-  tokenUsage: { input: number; output: number };
+  tokenUsage: SubAgentTokenUsage;
   durationMs: number;
 }
 
@@ -126,8 +127,12 @@ export function createSubAgentTool(
       // fall back before producing output or using a tool, so these totals remain
       // an accurate picture of the actual agent run.
       let toolUseCount = 0;
-      const tokenUsage = { input: 0, output: 0 };
-      const cacheTotals = { read: 0, write: 0 };
+      const tokenUsage: SubAgentTokenUsage = {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      };
       let turnCount = 0;
       let currentActivity: string | undefined;
       let textOutput = "";
@@ -224,8 +229,8 @@ export function createSubAgentTool(
                   if (usage) {
                     tokenUsage.input += usage.inputTokens;
                     tokenUsage.output += usage.outputTokens;
-                    if (usage.cacheRead) cacheTotals.read += usage.cacheRead;
-                    if (usage.cacheWrite) cacheTotals.write += usage.cacheWrite;
+                    tokenUsage.cacheRead = (tokenUsage.cacheRead ?? 0) + (usage.cacheRead ?? 0);
+                    tokenUsage.cacheWrite = (tokenUsage.cacheWrite ?? 0) + (usage.cacheWrite ?? 0);
                     turnCount++;
                     log("INFO", "subagent", "Sub-agent turn", {
                       turn: turnCount,
@@ -289,8 +294,8 @@ export function createSubAgentTool(
               toolUseCount: String(toolUseCount),
               inputTokens: String(tokenUsage.input),
               outputTokens: String(tokenUsage.output),
-              cacheRead: String(cacheTotals.read),
-              cacheWrite: String(cacheTotals.write),
+              cacheRead: String(tokenUsage.cacheRead ?? 0),
+              cacheWrite: String(tokenUsage.cacheWrite ?? 0),
               exitCode: String(code),
               model,
             });
