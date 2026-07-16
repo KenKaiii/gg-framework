@@ -318,6 +318,34 @@ describe("useAgentEvents", () => {
     expect(marker).toMatchObject({ kind: "autopilot", phase: "plan_approved" });
   });
 
+  it("uses sidecar plan progress as the authoritative live-file snapshot", () => {
+    const { hook, deps } = setup();
+    deps.planTotalRef.current = 2;
+    deps.planDoneRef.current = new Set([1]);
+
+    act(() => {
+      hook.result.current.handleEvent(
+        ev("plan_progress", { total: 4, completed: [1, 2, 4, 99, "3"] }),
+      );
+    });
+
+    expect(deps.planTotalRef.current).toBe(4);
+    expect([...deps.planDoneRef.current]).toEqual([1, 2, 4]);
+  });
+
+  it("seeds an accepted plan from the canonical total on session reset", () => {
+    const { hook, deps } = setup();
+    deps.pendingPlanTotalRef.current = 2;
+
+    act(() => {
+      hook.result.current.handleEvent(ev("session_reset", { planTotal: 5 }));
+    });
+
+    expect(deps.pendingPlanTotalRef.current).toBeNull();
+    expect(deps.planTotalRef.current).toBe(5);
+    expect(deps.planDoneRef.current.size).toBe(0);
+  });
+
   it("autopilot_prompted closes the stale plan modal after Ken asks for revision", () => {
     const { hook, getPlanReview } = setup();
     act(() => {
@@ -334,16 +362,19 @@ describe("useAgentEvents", () => {
     expect(getPlanReview()).toBeNull();
   });
 
-  it("run_end clears running state", () => {
-    const { hook, setRunning } = setup();
+  it("run_end clears completed plan progress and running state", () => {
+    const { hook, deps, setRunning } = setup();
+    deps.planTotalRef.current = 3;
+    deps.planDoneRef.current = new Set([1, 2, 3]);
+
     act(() => {
       hook.result.current.handleEvent(ev("run_start"));
-    });
-    expect(setRunning).toHaveBeenLastCalledWith(true);
-    act(() => {
       hook.result.current.handleEvent(ev("run_end", { cancelled: false }));
     });
+
     expect(setRunning).toHaveBeenLastCalledWith(false);
+    expect(deps.planTotalRef.current).toBe(0);
+    expect(deps.planDoneRef.current.size).toBe(0);
   });
 
   it("upserts persistent async agents by agent_id through idle and interrupted states", () => {

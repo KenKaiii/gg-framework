@@ -212,10 +212,9 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
   // them for render. Finalizing a span happens outside setState updaters.
   const thinkingStartRef = useRef<number | null>(null);
   const thinkingAccumRef = useRef<number>(0);
-  // Content of the plan currently in the review modal, mirrored from plan_exit.
-  // autopilot_plan_accepted reads it SYNCHRONOUSLY to seed the plan-progress
-  // widget — the planReview state value may not have flushed yet when the
-  // accepted + session_reset frames arrive back-to-back over SSE.
+  // Submitted plan content retained until approval. Current sidecars provide the
+  // canonical live-file count on session_reset; this content supplies the fallback
+  // count when connected to an older sidecar.
   const planReviewContentRef = useRef<string | null>(null);
 
   // Streaming deltas arrive faster than React can usefully render each one.
@@ -800,6 +799,32 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           setState((s) => (s ? { ...s, planMode: true } : s));
           pushItem({ kind: "plan", id: nextId(), reason: String(d.reason ?? "") });
           break;
+        case "plan_progress": {
+          // The sidecar reads the live approved-plan file, so this snapshot
+          // stays accurate even if implementation expands or rewrites `## Steps`.
+          // It is authoritative over the approval-time count and local streamed
+          // marker detection, both of which can be stale between tool calls.
+          const total =
+            typeof d.total === "number" && Number.isFinite(d.total)
+              ? Math.max(0, Math.floor(d.total))
+              : 0;
+          const completed = new Set(
+            Array.isArray(d.completed)
+              ? d.completed.filter(
+                  (step): step is number =>
+                    typeof step === "number" &&
+                    Number.isInteger(step) &&
+                    step >= 1 &&
+                    step <= total,
+                )
+              : [],
+          );
+          planTotalRef.current = total;
+          planDoneRef.current = completed;
+          setPlanTotal(total);
+          setPlanDone(completed);
+          break;
+        }
         case "plan_exit": {
           setState((s) => (s ? { ...s, planMode: false } : s));
           // Always stash the submitted plan: autopilot needs the content to
@@ -820,11 +845,9 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           break;
         }
         case "autopilot_plan_accepted":
-          // Autopilot Ken approved the submitted plan (no user in the loop).
-          // Mirrors the manual-accept path: seed the plan-progress widget from
-          // the modal's plan BEFORE the imminent session_reset consumes the
-          // ref, close the modal, and drop the approved marker in the
-          // transcript.
+          // Keep an approval-time fallback for older sidecars, close the review
+          // modal, and render the approved marker. Current sidecars override this
+          // fallback with the canonical live-file count on session_reset.
           pendingPlanTotalRef.current = planReviewContentRef.current
             ? countPlanSteps(planReviewContentRef.current)
             : 0;
@@ -883,7 +906,11 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           {
             // On an accept-driven reset, restore the approved plan's step count
             // instead of zeroing it (the widget tracks the implementation run).
-            const carriedTotal = pendingPlanTotalRef.current ?? 0;
+            const eventTotal =
+              typeof d.planTotal === "number" && Number.isFinite(d.planTotal)
+                ? Math.max(0, Math.floor(d.planTotal))
+                : null;
+            const carriedTotal = eventTotal ?? pendingPlanTotalRef.current ?? 0;
             pendingPlanTotalRef.current = null;
             planTotalRef.current = carriedTotal;
             planDoneRef.current = new Set();

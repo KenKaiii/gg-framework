@@ -87,6 +87,7 @@ import { SettingsManager, type Settings } from "./core/settings-manager.js";
 import { getModel, getMaxThinkingLevel, getContextWindow, MODELS } from "./core/model-registry.js";
 import { resolveStartOrFallback } from "./core/resolve-start.js";
 import { getGitBranch, isGitRepo } from "./utils/git.js";
+import { extractPlanSteps } from "./utils/plan-steps.js";
 import {
   getNextThinkingLevel,
   getSupportedThinkingLevels,
@@ -1376,7 +1377,9 @@ async function createSession(
       ...baseSessionOptions,
       // Plan mode belongs only to the coding agent.
       onEnterPlan: async (reason) => {
+        deactivateApprovedPlan();
         await session.setPlanMode(true);
+        broadcast("plan_progress", { total: 0, completed: [] });
         broadcast("plan_enter", { reason: reason ?? "" });
         void session.persistAppMarker("plan", { reason: reason ?? "" }).catch(() => {});
       },
@@ -1438,8 +1441,98 @@ async function createSession(
   // fatal-abort path with no forensic trail.
   const toolCallNames = new Map<string, string>();
 
+  // Approved-plan progress belongs beside the plan file, not in the webview.
+  // The implementation can rewrite/expand that file mid-run, so a step count
+  // frozen at approval time becomes dishonest (the exact stale-total bug the
+  // CLI already fixed). Re-read the live file after tools/markers, retain the
+  // last valid step section during transient edits, and send one authoritative
+  // snapshot to the app.
+  let approvedPlanPath: string | null = null;
+  let approvedPlanTotal = 0;
+  let approvedPlanMarkers = new Set<number>();
+  let approvedPlanGeneration = 0;
+  let planMarkerTail = "";
+  let planProgressSync: Promise<boolean> = Promise.resolve(false);
+
+  function planProgressPayload(): { total: number; completed: number[] } {
+    const completed = [...approvedPlanMarkers]
+      .filter((step) => step >= 1 && step <= approvedPlanTotal)
+      .sort((a, b) => a - b);
+    return { total: approvedPlanTotal, completed };
+  }
+
+  async function syncApprovedPlanProgress(generation: number): Promise<boolean> {
+    const planPath = approvedPlanPath;
+    if (planPath === null || generation !== approvedPlanGeneration) return false;
+    const content = await fs.readFile(planPath, "utf-8").catch(() => null);
+    if (approvedPlanPath !== planPath || generation !== approvedPlanGeneration) return false;
+    if (content !== null) {
+      const freshTotal = extractPlanSteps(content).length;
+      // During an in-place rewrite the step section can briefly disappear.
+      // Keep the last real total instead of flashing 0 or declaring completion.
+      if (freshTotal > 0 || approvedPlanTotal === 0) approvedPlanTotal = freshTotal;
+    }
+    broadcast("plan_progress", planProgressPayload());
+    return (
+      approvedPlanTotal > 0 &&
+      Array.from({ length: approvedPlanTotal }, (_, index) => index + 1).every((step) =>
+        approvedPlanMarkers.has(step),
+      )
+    );
+  }
+
+  function queueApprovedPlanProgressSync(): Promise<boolean> {
+    const generation = approvedPlanGeneration;
+    planProgressSync = planProgressSync
+      .catch(() => false)
+      .then(() => syncApprovedPlanProgress(generation))
+      .catch((error) => {
+        log("WARN", "app-sidecar", "plan progress refresh failed", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      });
+    return planProgressSync;
+  }
+
+  async function activateApprovedPlan(planPath: string | undefined): Promise<number> {
+    deactivateApprovedPlan();
+    await session.setApprovedPlan(planPath);
+    if (!planPath) return 0;
+    approvedPlanPath = planPath;
+    await queueApprovedPlanProgressSync();
+    return approvedPlanTotal;
+  }
+
+  function deactivateApprovedPlan(): void {
+    approvedPlanGeneration++;
+    approvedPlanPath = null;
+    approvedPlanTotal = 0;
+    approvedPlanMarkers = new Set();
+    planMarkerTail = "";
+    planProgressSync = Promise.resolve(false);
+  }
+
+  function recordApprovedPlanMarkers(text: string): void {
+    if (approvedPlanPath === null || !text) return;
+    const candidate = planMarkerTail + text;
+    let changed = false;
+    for (const match of candidate.matchAll(/\[DONE:(\d+)\]/gi)) {
+      const step = Number.parseInt(match[1], 10);
+      if (step >= 1 && !approvedPlanMarkers.has(step)) {
+        approvedPlanMarkers.add(step);
+        changed = true;
+      }
+    }
+    planMarkerTail = candidate.slice(-32);
+    if (changed) void queueApprovedPlanProgressSync();
+  }
+
   // Forward every relevant bus event to the webview.
-  session.eventBus.on("text_delta", (d) => broadcast("text_delta", d));
+  session.eventBus.on("text_delta", (d) => {
+    broadcast("text_delta", d);
+    recordApprovedPlanMarkers(d.text);
+  });
   session.eventBus.on("thinking_delta", (d) => broadcast("thinking_delta", d));
   session.eventBus.on("tool_call_start", (d) => {
     toolCallNames.set(d.toolCallId, d.name);
@@ -1456,6 +1549,10 @@ async function createSession(
       ...(d.isError ? { result: d.result.slice(0, 500) } : {}),
     });
     broadcast("tool_call_end", d);
+    // Any tool can mutate the approved plan (including bash), so refresh after
+    // every completed call while tracking is active. The file is tiny and this
+    // keeps the displayed total aligned before the next completion marker.
+    if (approvedPlanPath !== null) void queueApprovedPlanProgressSync();
   });
   // Native server tools (e.g. Anthropic web_search) do NOT end the turn — text
   // streams before and after them in the SAME turn. The webview must reset its
@@ -1781,6 +1878,28 @@ async function createSession(
       // background tasks — refresh the footer extras once it settles.
       gitBranch = await getGitBranch(cwd).catch(() => gitBranch);
       gitIsRepo = await isGitRepo(cwd).catch(() => gitIsRepo);
+      // Serialize behind any marker/tool-triggered refresh so the terminal
+      // progress snapshot uses the live plan file. Once every canonical step
+      // is complete, remove the approved plan from future system prompts and
+      // clear the widget before run_end paints the idle activity bar.
+      if (
+        runSucceeded &&
+        !cancelled &&
+        approvedPlanPath !== null &&
+        (await queueApprovedPlanProgressSync())
+      ) {
+        try {
+          await session.setApprovedPlan(undefined);
+          deactivateApprovedPlan();
+          broadcast("plan_progress", { total: 0, completed: [] });
+        } catch (error) {
+          // Keep tracking when prompt cleanup fails; hiding the widget here
+          // would claim completion while the approved-plan contract remained.
+          log("WARN", "app-sidecar", "completed plan cleanup failed", {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
       if (ownsGeneration) finishOwnedGeneration(generation, false);
       // A cancelled injected run is still owned by the surrounding autopilot
       // cycle; its outer finalizer emits the one terminal cancelled run_end.
@@ -1926,21 +2045,22 @@ async function createSession(
         acceptPlan: async () => {
           if (pendingPlanPath === null || planGeneration !== planGenAtReview) return false;
           const planPath = pendingPlanPath;
+          let planTotal: number;
           try {
             await session.newSession();
             injectedAutopilotPrompts = [];
             titleGenerated = false;
-            await session.setApprovedPlan(planPath);
+            planTotal = await activateApprovedPlan(planPath);
           } catch (err) {
             broadcastError("autopilot_error", "autopilot plan accept failed", err);
             return false;
           }
           clearPendingPlan();
-          // Ordering is load-bearing: the webview reads its still-open plan
-          // modal state (step count) on autopilot_plan_accepted, and
-          // session_reset clears it — accepted must land first.
+          // Keep the approval marker ahead of the reset, then seed the reset
+          // with the sidecar's canonical count from the actual plan file.
           broadcast("autopilot_plan_accepted", {});
-          broadcast("session_reset", {});
+          broadcast("session_reset", { planTotal });
+          broadcast("plan_progress", planProgressPayload());
           // Persisted into the NEW session so a resume shows the marker.
           void session.persistAutopilotMarker("plan_approved");
           return true;
@@ -2094,6 +2214,7 @@ async function createSession(
     if (!task) return false;
     // Fresh session per task so one task's context never bleeds into the next.
     await session.newSession();
+    deactivateApprovedPlan();
     injectedAutopilotPrompts = [];
     clearPendingPlan();
     titleGenerated = false;
@@ -3409,6 +3530,7 @@ async function createSession(
           if (mode === "chat") {
             await session.persistAppMarker("agent_handoff", { chatAgent });
           }
+          deactivateApprovedPlan();
           injectedAutopilotPrompts = [];
           clearPendingPlan();
           broadcast("session_reset", {});
@@ -3464,9 +3586,10 @@ async function createSession(
           await session.newSession();
           injectedAutopilotPrompts = [];
           titleGenerated = false;
-          await session.setApprovedPlan(planPath);
-          broadcast("session_reset", {});
-          json(res, 200, { ok: true });
+          const planTotal = await activateApprovedPlan(planPath);
+          broadcast("session_reset", { planTotal });
+          broadcast("plan_progress", planProgressPayload());
+          json(res, 200, { ok: true, planTotal });
         } catch (err) {
           json(res, 500, { error: err instanceof Error ? err.message : String(err) });
         }

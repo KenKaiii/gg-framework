@@ -427,10 +427,8 @@ function App(): React.ReactElement {
   // which intentionally does not re-capture React state on every render.
   const planTotalRef = useRef(0);
   const planDoneRef = useRef<Set<number>>(new Set());
-  // Plan step count to (re)apply right after an accept-driven session_reset.
-  // Accepting a plan starts a fresh session whose session_reset clears the
-  // counters; this carries the approved plan's step total across that reset so
-  // the Plan Steps widget doesn't get stuck at 0. Null when no accept is pending.
+  // Approval-time count kept only as a compatibility fallback for an older
+  // sidecar whose session_reset has no canonical live-file total.
   const pendingPlanTotalRef = useRef<number | null>(null);
   const [isThinking, setIsThinking] = useState(false);
   const [thinkingStartTs, setThinkingStartTs] = useState<number | null>(null);
@@ -1734,21 +1732,15 @@ function App(): React.ReactElement {
     // fresh session on the sidecar, whose session_reset broadcast nulls
     // planReview (and clears the transcript + counters) here.
     const nextPlanTotal = planReview ? countPlanSteps(planReview) : 0;
-    // Stash it so the accept-driven session_reset restores the count instead of
-    // zeroing it (session_reset arrives over SSE — a different channel than the
-    // acceptPlanIPC response — so it may land before OR after the await resolves).
+    // Stash a fallback for older sidecars. The current sidecar puts its canonical
+    // live-file count directly on session_reset, which wins over this snapshot.
     pendingPlanTotalRef.current = nextPlanTotal;
     // Accept the plan: the sidecar wipes the planning conversation into a FRESH
-    // session (so the build doesn't carry all the plan-mode research) and bakes
-    // the approved plan into the new system prompt, so the model emits `[DONE:n]`
-    // markers the Plan Steps widget reads.
+    // session (so the build doesn't carry all the plan-mode research), bakes the
+    // approved plan into the new system prompt, and broadcasts authoritative
+    // progress before this request resolves. Do not re-seed from stale modal
+    // content after the await: the plan file may already have changed.
     await acceptPlanIPC(planReviewPathRef.current);
-    // Fallback seed for the case session_reset hasn't been processed yet (it
-    // consumes pendingPlanTotalRef, so whichever runs second is a no-op).
-    planTotalRef.current = nextPlanTotal;
-    planDoneRef.current = new Set();
-    setPlanTotal(nextPlanTotal);
-    setPlanDone(new Set());
     runPlanPrompt(
       "The plan has been approved. Implement it now, following each step in order.",
       "\u2713 Plan accepted. Implementing.",

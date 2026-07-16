@@ -148,10 +148,11 @@ export function ActivityBar({
     };
   }, [running]);
 
-  // Plan-step progress (amber "Plan Steps n/total"), shown whenever an approved
-  // plan is being implemented — mirrors the ggcoder CLI activity bar.
+  // Plan-step progress is live run feedback, not durable idle status. Keeping
+  // it mounted after run_end made a blocked/malformed marker sequence look like
+  // active work forever, including the misleading "x/x" stale state.
   const planBadge =
-    planTotal > 0 ? (
+    running && planTotal > 0 && planDone < planTotal ? (
       <span className="plan-steps-badge">
         <span style={{ color: theme.warning }}>{"Plan Steps"}</span>{" "}
         <span style={{ color: theme.textDim }}>
@@ -184,9 +185,8 @@ export function ActivityBar({
             <span>Ready for work</span>
           </span>
         )}
-        {planBadge && <span style={{ marginLeft: "auto" }}>{planBadge}</span>}
         {showToolsToggle && onToggleTools && (
-          <span className="statusrow-tools-toggle" style={{ marginLeft: planBadge ? 8 : "auto" }}>
+          <span className="statusrow-tools-toggle" style={{ marginLeft: "auto" }}>
             <ToolsToggle hidden={toolsHidden} onToggle={onToggleTools} />
           </span>
         )}
