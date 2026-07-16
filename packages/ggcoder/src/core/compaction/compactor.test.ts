@@ -766,6 +766,62 @@ describe("compact", () => {
     }
   });
 
+  it("keeps waiting past the deadline while the stream is actively emitting events", async () => {
+    // Regression: the 30s deadline used to be a HARD total cap, killing every
+    // large summary mid-generation (they stream for well over 30s) and forcing
+    // the extractive fallback. It is now an INACTIVITY deadline — each stream
+    // event re-arms it — so a response that takes 2.5× the timeout but never
+    // goes silent longer than the window must produce the REAL summary.
+    vi.useFakeTimers();
+    try {
+      const mockStream = vi.mocked(stream);
+      mockStream.mockClear();
+
+      const eventGap = SUMMARY_ATTEMPT_TIMEOUT_MS * 0.66; // each gap < timeout
+      const totalDuration = SUMMARY_ATTEMPT_TIMEOUT_MS * 2.5; // total ≫ timeout
+      const response = new Promise((resolve) => {
+        setTimeout(
+          () =>
+            resolve({
+              message: { role: "assistant", content: "Real streamed summary." },
+              stopReason: "end_turn",
+              usage: { inputTokens: 1000, outputTokens: 200 },
+            }),
+          totalDuration,
+        );
+      });
+      let emitted = 0;
+      const iterator = () => ({
+        next: () =>
+          new Promise<IteratorResult<unknown>>((resolve) => {
+            if (emitted >= 3) {
+              resolve({ done: true, value: undefined });
+              return;
+            }
+            emitted++;
+            setTimeout(() => resolve({ done: false, value: { type: "text_delta" } }), eventGap);
+          }),
+      });
+      mockStream.mockReturnValue({
+        response,
+        events: { [Symbol.asyncIterator]: iterator },
+        [Symbol.asyncIterator]: iterator,
+      } as never);
+
+      const messages = buildConversation(30);
+      const promise = compact(messages, baseOptions);
+      await vi.advanceTimersByTimeAsync(totalDuration + 1);
+      const result = await promise;
+
+      const summaryMsg = result.messages[1];
+      expect(summaryMsg.role).toBe("user");
+      expect(summaryMsg.content as string).toContain("Real streamed summary.");
+      expect(summaryMsg.content as string).not.toContain("## Goal");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("passes AbortSignal to summary stream and rejects without compacting on abort", async () => {
     const mockStream = vi.mocked(stream);
     const ac = new AbortController();

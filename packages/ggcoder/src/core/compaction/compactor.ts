@@ -27,7 +27,15 @@ export const MAX_SUMMARY_RETRIES = 2;
 /** Max output tokens for the summary response. */
 const MAX_SUMMARY_OUTPUT_TOKENS = 4096;
 
-/** Local deadline for each compaction summary LLM attempt. */
+/**
+ * Local INACTIVITY deadline for each compaction summary LLM attempt: the timer
+ * resets on every stream event, so it only fires after this long with no sign
+ * of life from the provider. A hard total deadline here used to kill every
+ * large summary mid-generation (a multi-hundred-K-token input can stream for
+ * well over 30s) — ~90% of summary attempts were falling back to the
+ * low-quality extractive summary. Hung requests still fail fast: no first
+ * token within the window aborts the attempt.
+ */
 export const SUMMARY_ATTEMPT_TIMEOUT_MS = 30_000;
 
 class SummaryTimeoutError extends Error {
@@ -42,25 +50,49 @@ async function awaitSummaryResponseWithTimeout<T>(
   timeoutMs: number,
   signal?: AbortSignal,
   onTimeout?: () => void,
+  activity?: AsyncIterable<unknown>,
 ): Promise<T> {
   signal?.throwIfAborted();
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let abortListener: (() => void) | undefined;
+  let settled = false;
 
   try {
     return await new Promise<T>((resolve, reject) => {
-      timeout = setTimeout(() => {
-        reject(new SummaryTimeoutError(timeoutMs));
-        onTimeout?.();
-      }, timeoutMs);
-      if (typeof timeout.unref === "function") timeout.unref();
+      const arm = (): void => {
+        if (settled) return;
+        if (timeout) clearTimeout(timeout);
+        timeout = setTimeout(() => {
+          reject(new SummaryTimeoutError(timeoutMs));
+          onTimeout?.();
+        }, timeoutMs);
+        if (typeof timeout.unref === "function") timeout.unref();
+      };
+      arm();
 
       abortListener = () => reject(new DOMException("Aborted", "AbortError"));
       signal?.addEventListener("abort", abortListener, { once: true });
 
+      // Every stream event proves the provider is alive and generating — reset
+      // the deadline instead of aborting an actively-streaming summary. Errors
+      // here are ignored: the response promise carries the real failure.
+      if (activity) {
+        void (async () => {
+          try {
+            for await (const _event of activity) {
+              if (settled) return;
+              arm();
+            }
+          } catch {
+            /* response promise rejects with the real error */
+          }
+        })();
+      }
+
       response.then(resolve, reject);
     });
   } finally {
+    settled = true;
     if (timeout) clearTimeout(timeout);
     if (abortListener) signal?.removeEventListener("abort", abortListener);
   }
@@ -806,6 +838,7 @@ export async function compact(
         SUMMARY_ATTEMPT_TIMEOUT_MS,
         options.signal,
         () => attemptController.abort(),
+        result,
       );
       options.signal?.throwIfAborted();
 

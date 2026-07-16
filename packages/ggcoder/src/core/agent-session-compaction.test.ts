@@ -289,3 +289,96 @@ describe("transient sessions never leak to the session store", () => {
     expect(await listSessionFiles()).toEqual([]);
   });
 });
+
+describe("load-time auto-compaction deferral (deferLoadCompaction)", () => {
+  // Regression: resuming an over-context session ran a summary LLM call (30s
+  // timeout) inline in loadExistingSession — inside initialize(), which the
+  // gg-app sidecar's readiness (waitForReady → the whole webview) is gated on.
+  // A slow/hanging summary call froze the window for the full timeout. With
+  // deferLoadCompaction the resume returns immediately and runLoop()'s
+  // pre-run auto-compaction handles it on the first prompt.
+
+  /** Create + persist a real session file, returning its path. */
+  async function persistSession(): Promise<string> {
+    shouldCompactMock.mockReturnValue(false);
+    agentLoopMock.mockImplementation(async function* (messages: Message[]) {
+      messages.push({ role: "assistant", content: "first reply" });
+      yield { type: "agent_done" };
+    });
+    const { AgentSession } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      systemPrompt: "system prompt",
+    });
+    await session.initialize();
+    await session.prompt("hello");
+    await session.dispose();
+    const files = await listSessionFiles();
+    expect(files.length).toBeGreaterThan(0);
+    return files[0]!;
+  }
+
+  const compactedResult = {
+    messages: [
+      { role: "system", content: "system prompt" },
+      { role: "user", content: "[compacted]" },
+    ] as Message[],
+    result: {
+      compacted: true,
+      originalCount: 3,
+      newCount: 2,
+      tokensBeforeEstimate: 500_000,
+      tokensAfterEstimate: 2_000,
+    },
+  };
+
+  it("defers compaction out of initialize() and runs it on the first prompt", async () => {
+    const sessionPath = await persistSession();
+
+    shouldCompactMock.mockReturnValue(true);
+    compactMock.mockResolvedValue(compactedResult);
+    agentLoopMock.mockImplementation(async function* (messages: Message[]) {
+      messages.push({ role: "assistant", content: "resumed reply" });
+      yield { type: "agent_done" };
+    });
+
+    const { AgentSession } = await import("./agent-session.js");
+    const resumed = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      systemPrompt: "system prompt",
+      sessionId: sessionPath,
+      deferLoadCompaction: true,
+    });
+    await resumed.initialize();
+    // Readiness path must NOT have paid for a summary LLM call.
+    expect(compactMock).not.toHaveBeenCalled();
+
+    // First prompt triggers runLoop()'s existing pre-run auto-compaction.
+    await resumed.prompt("continue");
+    expect(compactMock).toHaveBeenCalledTimes(1);
+    await resumed.dispose();
+  });
+
+  it("still compacts inline during initialize() without the flag (CLI resume)", async () => {
+    const sessionPath = await persistSession();
+
+    shouldCompactMock.mockReturnValue(true);
+    compactMock.mockResolvedValue(compactedResult);
+
+    const { AgentSession } = await import("./agent-session.js");
+    const resumed = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      systemPrompt: "system prompt",
+      sessionId: sessionPath,
+    });
+    await resumed.initialize();
+    expect(compactMock).toHaveBeenCalledTimes(1);
+    await resumed.dispose();
+  });
+});

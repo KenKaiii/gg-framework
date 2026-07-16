@@ -145,6 +145,17 @@ export interface AgentSessionOptions {
    */
   backgroundMcpConnect?: boolean;
   /**
+   * If true, an over-context restored session is NOT compacted inline during
+   * `loadExistingSession()` — the existing pre-run auto-compaction in
+   * `runLoop()` handles it on the first prompt instead (with proper
+   * compaction_start/_end events). The inline load compaction makes a summary
+   * LLM call with a 30s timeout, and hosts whose readiness is gated on
+   * `initialize()` (the gg-app sidecar: waitForReady blocks the whole webview)
+   * would freeze the UI for that entire call. Default (false) keeps the
+   * compact-on-load behavior for CLI resume/`ggcoder continue`.
+   */
+  deferLoadCompaction?: boolean;
+  /**
    * Plan-mode callbacks. When provided, the `enter_plan`/`exit_plan` tools are
    * registered and the session manages plan-mode restrictions + system-prompt
    * rebuilds. Hosts (e.g. the gg-app sidecar) use these to surface plan-mode
@@ -1966,15 +1977,23 @@ export class AgentSession {
       provider: this.provider,
       accountId: creds.accountId,
     });
-    if (
-      shouldCompact(
-        this.messages,
-        contextWindow,
-        0.8,
-        undefined,
-        getCompactionReserveTokens(this.maxTokens),
-      )
-    ) {
+    const needsLoadCompaction = shouldCompact(
+      this.messages,
+      contextWindow,
+      0.8,
+      undefined,
+      getCompactionReserveTokens(this.maxTokens),
+    );
+    if (needsLoadCompaction && this.opts.deferLoadCompaction) {
+      // Host readiness is gated on initialize() — don't block it on a summary
+      // LLM call (up to 30s). runLoop()'s pre-run auto-compaction picks this
+      // up on the first prompt and emits compaction_start/_end for the UI.
+      log(
+        "INFO",
+        "session",
+        "Restored session exceeds context — deferring compaction to first prompt",
+      );
+    } else if (needsLoadCompaction) {
       await this.subAgentManager?.hydrate(loaded.header.id);
       log("INFO", "session", `Restored session exceeds context — auto-compacting`);
       const compacted = await compact(this.messages, {

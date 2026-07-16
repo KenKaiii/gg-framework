@@ -778,6 +778,11 @@ async function main(): Promise<void> {
     { expiresAt: number; result: UsageResult }
   >();
   const usageRequests = new Map<SubscriptionUsageProvider, Promise<UsageResult>>();
+  // 429 backoff: when the provider rate-limits the usage endpoint, hold the
+  // error result until this timestamp instead of re-polling (and re-logging a
+  // WARN) every 60s — the old cadence hammered a limited endpoint for hours.
+  const usageRateLimitedUntil = new Map<SubscriptionUsageProvider, number>();
+  const USAGE_RATE_LIMIT_BACKOFF_MS = 5 * 60_000;
 
   async function fetchUsageProvider(provider: SubscriptionUsageProvider): Promise<UsageResult> {
     const displayName = provider === "anthropic" ? "Anthropic" : "Codex";
@@ -787,19 +792,32 @@ async function main(): Promise<void> {
     try {
       let credentials = await auth.resolveCredentials(provider);
       try {
-        return { ...(await fetchSubscriptionUsage(provider, credentials)), connected: true };
+        const snapshot = {
+          ...(await fetchSubscriptionUsage(provider, credentials)),
+          connected: true as const,
+        };
+        usageRateLimitedUntil.delete(provider);
+        return snapshot;
       } catch (error) {
         // A provider can revoke an access token before its stored expiry. Refresh
         // once on 401, matching inference auth recovery, then retry the usage call.
         if (error instanceof SubscriptionUsageError && error.status === 401) {
           credentials = await auth.resolveCredentials(provider, { forceRefresh: true });
-          return { ...(await fetchSubscriptionUsage(provider, credentials)), connected: true };
+          const snapshot = {
+            ...(await fetchSubscriptionUsage(provider, credentials)),
+            connected: true as const,
+          };
+          usageRateLimitedUntil.delete(provider);
+          return snapshot;
         }
         throw error;
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log("WARN", "app-sidecar", "subscription usage fetch failed", { provider, message });
+      if (error instanceof SubscriptionUsageError && error.status === 429) {
+        usageRateLimitedUntil.set(provider, Date.now() + USAGE_RATE_LIMIT_BACKOFF_MS);
+      }
       const connected = await auth.hasProviderAuth(provider);
       return {
         provider,
@@ -828,9 +846,13 @@ async function main(): Promise<void> {
         result.connected &&
         result.windows.length > 0 &&
         result.windows.some((window) => window.resetsAt === undefined);
+      const rateLimitedUntil = usageRateLimitedUntil.get(provider) ?? 0;
       usageCache.set(provider, {
         result,
-        expiresAt: Date.now() + (missingReset ? 10_000 : 60_000),
+        expiresAt:
+          rateLimitedUntil > Date.now()
+            ? rateLimitedUntil
+            : Date.now() + (missingReset ? 10_000 : 60_000),
       });
       return result;
     } finally {
@@ -1353,6 +1375,11 @@ async function createSession(
     signal: abort.signal,
     // Keep MCP startup off the readiness path in both modes.
     backgroundMcpConnect: true,
+    // Keep restore-time auto-compaction off the readiness path too: its summary
+    // LLM call (30s timeout) used to freeze waitForReady — and with it the whole
+    // window (project picker, session list) — whenever a resumed session was
+    // over the context threshold. First prompt compacts instead, with UI events.
+    deferLoadCompaction: true,
   };
   let session!: AgentSession;
   if (mode === "chat") {
