@@ -202,6 +202,7 @@ describe("compaction thresholds across all models", () => {
     { model: "glm-5.1", contextWindow: 204_800 },
     { model: "glm-4.7", contextWindow: 200_000 },
     { model: "glm-4.7-flash", contextWindow: 200_000 },
+    { model: "kimi-k3", contextWindow: 1_048_576 },
     { model: "kimi-k2.7-code", contextWindow: 262_144 },
   ];
 

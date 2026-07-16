@@ -54,6 +54,7 @@ describe("session compaction persistence", () => {
     expect(loaded.header.provider).toBe("openai");
     expect(loaded.header.model).toBe("gpt-5");
     expect(loaded.header.conversationId).toBe("original-conversation");
+    expect(loaded.header.preview).toBe("Stable project title");
     expect(loaded.entries.find((entry) => entry.type === "label")?.label).toBe(
       "Stable project title",
     );

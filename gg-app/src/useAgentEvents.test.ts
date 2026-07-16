@@ -78,7 +78,6 @@ function setup(
     setThinkingAccumMs: noop as unknown as AgentEventsDeps["setThinkingAccumMs"],
     setPlanTotal: noop as unknown as AgentEventsDeps["setPlanTotal"],
     setPlanDone: noop as unknown as AgentEventsDeps["setPlanDone"],
-    setSessionTitle: noop as unknown as AgentEventsDeps["setSessionTitle"],
     setPlanReview: ((u: string | null | ((p: string | null) => string | null)) => {
       planReview = typeof u === "function" ? u(planReview) : u;
     }) as AgentEventsDeps["setPlanReview"],
@@ -137,6 +136,22 @@ describe("useAgentEvents", () => {
     act(() => hook.result.current.handleEvent(ev("run_end", { cancelled: true })));
     expect(getState()).toMatchObject({ running: false, runState: "idle" });
     expect(setRunning).toHaveBeenLastCalledWith(false);
+  });
+
+  it("refreshes branch and uncommitted-file count from workspace extras", () => {
+    const { hook, getState } = setup();
+
+    act(() => {
+      hook.result.current.handleEvent(
+        ev("extras", { gitBranch: "feature/dirty", isGitRepo: true, gitDirtyFileCount: 4 }),
+      );
+    });
+
+    expect(getState()).toMatchObject({
+      gitBranch: "feature/dirty",
+      isGitRepo: true,
+      gitDirtyFileCount: 4,
+    });
   });
 
   it("text_delta streams assistant text into a single item", () => {

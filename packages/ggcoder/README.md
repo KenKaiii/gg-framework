@@ -71,7 +71,7 @@ Switch mid-conversation with `/model`. Not locked to anyone.
 |---|---|---|
 | **Anthropic** | Claude Opus 4.8, Sonnet 5, Haiku 4.5 | OAuth |
 | **OpenAI** | GPT-5.5, GPT-5.5 Pro, GPT-5.4, GPT-5.3 Codex | OAuth |
-| **Moonshot** | Kimi K2.7 | API key |
+| **Moonshot** | Kimi K3, Kimi K2.7 Code | OAuth or API key |
 | **Z.AI (GLM)** | GLM-5.1, GLM-4.7, GLM-4.7 Flash | API key |
 | **MiniMax** | MiniMax M3 (image + video) | API key |
 | **Xiaomi (MiMo)** | MiMo-V2.5-Pro, MiMo-V2.5-Pro-UltraSpeed, MiMo-V2.5 (image + video) | API key |
@@ -80,7 +80,7 @@ Switch mid-conversation with `/model`. Not locked to anyone.
 
 The same conversation, the same tools, the same project context — only the model changes. Use a strong reasoning model when you need it, swap to a fast cheap one for grunt work, never restart your session.
 
-**Attachments.** Drag, paste, or type a path to attach images and video in the chat input. Video is sent natively to models that support it (Gemini 3.x, Kimi K2.7, MiniMax M3, MiMo-V2.5); for other models the video is saved to a temp file and the model is told to inspect it with ffmpeg or its own tools.
+**Attachments.** Drag, paste, or type a path to attach images and video in the chat input. Video is sent natively to models that support it (Gemini 3.x, Kimi K3/K2.7 Code, MiniMax M3, MiMo-V2.5); for other models the video is saved to a temp file and the model is told to inspect it with ffmpeg or its own tools.
 
 ---
 

@@ -6,6 +6,7 @@ import {
 } from "../../core/session-compaction.js";
 import type { SessionManager, TurnMetricPayload } from "../../core/session-manager.js";
 import { log } from "../../core/logger.js";
+import { findUserSessionPrompt } from "../../core/session-preview.js";
 import type { SessionStats } from "../session-summary.js";
 
 /** Minimal session-store surface the persistence layer mirrors into. */
@@ -75,6 +76,7 @@ export function useSessionPersistence({
         provider: currentProvider,
         model: currentModel,
         messages: compactedMessages,
+        preview: findUserSessionPrompt(messagesRef.current),
       });
       sessionPathRef.current = session.path;
       sessionStatsRef.current.sessionId = session.id;
@@ -98,6 +100,7 @@ export function useSessionPersistence({
       sessionManagerRef,
       sessionPathRef,
       sessionStatsRef,
+      messagesRef,
       persistedIndexRef,
       cwdRef,
       turnMetricsRef,

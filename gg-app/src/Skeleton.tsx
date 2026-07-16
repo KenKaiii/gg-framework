@@ -35,17 +35,14 @@ export function Skeleton({
 }
 
 /**
- * Footer placeholder shown until the session has hydrated. Mirrors the real
- * footer's two-cluster layout (left: cwd + git, right: thinking + model) so the
- * bar holds its shape and the live content crossfades into the same positions.
+ * Footer placeholder shown until the session has hydrated. The empty left
+ * cluster preserves alignment for transient task/plan status; project context
+ * now lives in the title bar.
  */
 export function FooterSkeleton(): React.ReactElement {
   return (
     <>
-      <span className="footer-left footer-reveal">
-        <Skeleton width={96} />
-        <Skeleton width={70} />
-      </span>
+      <span className="footer-left footer-reveal" />
       <span className="footer-right footer-reveal">
         <Skeleton width={84} />
         <Skeleton width={56} />

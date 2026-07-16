@@ -44,7 +44,11 @@ const PROVIDERS: { label: string; value: Provider; description: string }[] = [
     value: "gemini",
     description: "Gemini 3.1 Flash Lite, Gemini 3.5 Flash, Gemini 3.1 Pro (Preview)",
   },
-  { label: "Moonshot", value: "moonshot", description: "Kimi K2.7 · OAuth or API key" },
+  {
+    label: "Moonshot",
+    value: "moonshot",
+    description: "Kimi K3, K2.7 Code · OAuth or API key",
+  },
   { label: "Z.AI (GLM)", value: "glm", description: "GLM-5.2, GLM-5.1, GLM-4.7, GLM-4.7 Flash" },
   { label: "MiniMax", value: "minimax", description: "MiniMax M3" },
   {

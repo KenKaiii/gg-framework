@@ -1011,7 +1011,6 @@ async fn agent_history(
     sidecar_get_json(&webview, &client, "/history").await
 }
 
-
 /// Proxy: start a fresh session (clears history) for this window's project.
 #[tauri::command]
 async fn agent_new_session(
@@ -1930,7 +1929,7 @@ const AUTH_PROVIDERS: &[ProviderMeta] = &[
     ProviderMeta {
         value: "moonshot",
         label: "Moonshot",
-        description: "Kimi K2.7 · OAuth or API key",
+        description: "Kimi K3, K2.7 Code · OAuth or API key",
         methods: &["oauth", "apikey"],
         api_key_label: Some("Moonshot"),
         api_key_base_url: None,

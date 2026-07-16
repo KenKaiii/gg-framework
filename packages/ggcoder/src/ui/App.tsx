@@ -55,7 +55,6 @@ import {
   startPeriodicUpdateCheck,
   stopPeriodicUpdateCheck,
 } from "../core/auto-update.js";
-import { generateSessionTitle } from "../utils/session-title.js";
 import { SettingsManager, type Settings } from "../core/settings-manager.js";
 import { PROMPT_COMMANDS, getPromptCommand } from "../core/prompt-commands.js";
 import {
@@ -325,8 +324,6 @@ export interface AppProps {
     planSteps: PlanStep[];
     sessionPath?: string;
     sessionId?: string;
-    sessionTitle?: string;
-    sessionTitleGenerated: boolean;
     overlay?: "model" | "skills" | "plan" | "theme" | null;
     planAutoExpand?: boolean;
     pendingAction?: {
@@ -375,7 +372,6 @@ export function App(props: AppProps) {
   // oversized-item flush below.
   const liveLayoutRef = useRef({ columns, liveAreaRows: 0 });
 
-  // Hoisted before terminal title hook so it can reference them
   const [lastUserMessage, setLastUserMessage] = useState("");
   // Bumped on every prompt submit; the fullscreen transcript scroll controller
   // watches this to snap back to the bottom so the newest output is visible.
@@ -384,17 +380,8 @@ export function App(props: AppProps) {
   const [quittingSummary, setQuittingSummary] = useState<SessionSummaryItem["summary"] | null>(
     null,
   );
-  // Terminal title — updated later after agentLoop is created
-  // (hoisted here so the hook is always called in the same order)
+  // Native terminal title keeps the active project visible outside the app frame.
   const [titleRunning, setTitleRunning] = useState(false);
-  const [sessionTitle, setSessionTitle] = useState<string | undefined>(
-    () => props.sessionStore?.sessionTitle,
-  );
-  const sessionTitleGeneratedRef = useRef(props.sessionStore?.sessionTitleGenerated ?? false);
-  useTerminalTitle({
-    isRunning: titleRunning,
-    sessionTitle,
-  });
 
   // Completed transcript rows are kept as durable session data but are no longer
   // rendered through Ink history. They are serialized once into real terminal
@@ -505,6 +492,7 @@ export function App(props: AppProps) {
   // Suppress "done" status when a plan overlay is about to open
   const planOverlayPendingRef = useRef(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
+  useTerminalTitle({ isRunning: titleRunning, cwd: displayedCwd, gitBranch });
   const [currentModel, setCurrentModel] = useState(props.model);
   const [currentProvider, setCurrentProvider] = useState(props.provider);
   const currentProviderRef = useRef(props.provider);
@@ -695,9 +683,6 @@ export function App(props: AppProps) {
   useEffect(() => {
     if (sessionStore) sessionStore.planSteps = planSteps;
   }, [planSteps, sessionStore]);
-  useEffect(() => {
-    if (sessionStore) sessionStore.sessionTitle = sessionTitle;
-  }, [sessionTitle, sessionStore]);
   useEffect(() => {
     if (sessionStore) sessionStore.overlay = overlay;
   }, [overlay, sessionStore]);
@@ -1066,62 +1051,7 @@ export function App(props: AppProps) {
           // Rebuild system prompt to remove the completed plan from context
           void replaceSystemPrompt({ clearApprovedPlan: true });
         }
-
-        // Generate session title after the first turn (background, best-effort)
-        if (!sessionTitleGeneratedRef.current) {
-          sessionTitleGeneratedRef.current = true;
-          const msgs = messagesRef.current;
-          // Find the first user message and first assistant text
-          const userMsg = msgs.find((m) => m.role === "user");
-          const assistantMsg = msgs.find((m) => m.role === "assistant");
-          const userText =
-            typeof userMsg?.content === "string"
-              ? userMsg.content
-              : Array.isArray(userMsg?.content)
-                ? userMsg.content
-                    .filter((c): c is { type: "text"; text: string } => c.type === "text")
-                    .map((c) => c.text)
-                    .join(" ")
-                : "";
-          const assistantText =
-            typeof assistantMsg?.content === "string"
-              ? assistantMsg.content
-              : Array.isArray(assistantMsg?.content)
-                ? assistantMsg.content
-                    .filter((c): c is { type: "text"; text: string } => c.type === "text")
-                    .map((c) => c.text)
-                    .join(" ")
-                : "";
-          if (userText) {
-            generateSessionTitle({
-              provider: currentProvider,
-              userMessage: userText,
-              assistantPreview: assistantText.slice(0, 200),
-              apiKey: activeApiKey,
-              baseUrl: activeBaseUrl,
-              accountId: activeAccountId,
-              resolveCredentials,
-            }).then(
-              (title) => {
-                setSessionTitle(title);
-                log("INFO", "title", `Session title generated: ${title}`);
-              },
-              () => {
-                // Best-effort — silently ignore failures
-              },
-            );
-          }
-        }
-      }, [
-        persistNewMessages,
-        props.cwd,
-        props.skills,
-        currentProvider,
-        activeApiKey,
-        activeAccountId,
-        activeBaseUrl,
-        resolveCredentials,
-      ]),
+      }, [persistNewMessages, props.cwd, props.skills]),
       onTurnText: useCallback(
         (text: string, thinking: string, thinkingMs: number) => {
           const hadStreamedAssistantFlush = streamedAssistantFlushRef.current.flushedChars > 0;
@@ -2145,8 +2075,6 @@ export function App(props: AppProps) {
               persistedIndexRef.current = messagesRef.current.length;
             })();
             agentLoop.reset();
-            setSessionTitle(undefined);
-            sessionTitleGeneratedRef.current = false;
             setLiveItems([{ kind: "info", text: "Session cleared.", id: getId() }]);
           },
           openThemeSelector: () => setOverlay("theme"),

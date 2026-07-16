@@ -874,19 +874,32 @@ body {
 .platform-macos .chat-head-strip {
   padding: 0 14px 0 82px;
 }
-/* The window title (session title once generated, else "GG Coder"). The native
-   overlay title is hidden (hiddenTitle), so this is the ONLY title. It grows to
-   take the slack and truncates with an ellipsis on small windows, so it never
-   overlaps the toggle. */
+/* The visible window title shows project context: cwd, current branch, then the
+   uncommitted-file count. It grows into available space and truncates as one
+   unit on narrow windows so the usage meter and controls remain reachable. */
 .chat-head-title {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--mono);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text);
+}
+.chat-head-cwd {
+  color: var(--text-dim);
+}
+.chat-head-sep {
+  margin: 0 8px;
+  color: var(--border);
+}
+.chat-head-branch {
+  color: var(--secondary);
+}
+.chat-head-dirty {
+  color: var(--warning);
 }
 /* Position pill — "1/4" reading-order indicator for multi-window orientation.
    Shown only when >1 window is open. Dimmed when this window is not focused. */
@@ -3699,8 +3712,8 @@ body {
   }
 }
 
-/* Left cluster shrinks first; the git branch truncates rather than deforming
-   the bar when the window narrows. */
+/* Left cluster holds transient task/plan status and yields space to the controls
+   when the window narrows. Project context now lives in the title bar. */
 .footer-left {
   flex: 1 1 auto;
   min-width: 0;
@@ -3713,13 +3726,6 @@ body {
 /* Dividers sit flush (no flex gap) so ` │ ` reads as one separator unit. */
 .footer-sep {
   flex: 0 0 auto;
-}
-/* cwd is the first thing to truncate when the bar gets tight. */
-.footer-cwd {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Right cluster holds the controls (context, thinking, model, provider) at

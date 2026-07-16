@@ -46,6 +46,7 @@ async function writeSessionRecords(
   options: {
     id: string;
     conversationId?: string;
+    preview?: string;
     timestamp: string;
     records: unknown[];
   },
@@ -58,6 +59,7 @@ async function writeSessionRecords(
     version: 2,
     id: options.id,
     conversationId: options.conversationId,
+    preview: options.preview,
     timestamp: options.timestamp,
     cwd,
     provider: "anthropic",
@@ -179,7 +181,7 @@ describe("discoverProjects (ggcoder store)", () => {
     expect(sessions[0]?.preview).toBe("Keep the original project title");
   });
 
-  it("collapses compaction checkpoints and keeps the generated conversation title", async () => {
+  it("collapses compaction checkpoints and keeps a legacy saved label", async () => {
     const projectPath = path.join(tmp, "projects", "checkpoint-title");
     await fs.mkdir(projectPath, { recursive: true });
     const older = new Date(Date.now() - 60_000).toISOString();
@@ -194,7 +196,7 @@ describe("discoverProjects (ggcoder store)", () => {
           timestamp: older,
           message: { role: "user", content: "A very long original request" },
         },
-        { type: "label", timestamp: older, label: "Fix stable session titles" },
+        { type: "label", timestamp: older, label: "Legacy session title" },
       ],
     });
     const newestPath = await writeSessionRecords(projectPath, "new.jsonl", {
@@ -207,7 +209,7 @@ describe("discoverProjects (ggcoder store)", () => {
           timestamp: newer,
           message: { role: "user", content: "[Previous conversation summary]\n### Goal" },
         },
-        { type: "label", timestamp: newer, label: "Fix stable session titles" },
+        { type: "label", timestamp: newer, label: "Legacy session title" },
       ],
     });
 
@@ -215,7 +217,72 @@ describe("discoverProjects (ggcoder store)", () => {
 
     expect(sessions).toHaveLength(1);
     expect(sessions[0]?.path).toBe(newestPath);
-    expect(sessions[0]?.preview).toBe("Fix stable session titles");
+    expect(sessions[0]?.preview).toBe("Legacy session title");
+  });
+
+  it("uses a checkpoint header preview when compacted messages contain only internal prompts", async () => {
+    const projectPath = path.join(tmp, "projects", "checkpoint-preview");
+    await fs.mkdir(projectPath, { recursive: true });
+    const older = new Date(Date.now() - 60_000).toISOString();
+    const newer = new Date().toISOString();
+    await writeSessionRecords(projectPath, "old.jsonl", {
+      id: "old-session",
+      conversationId: "conversation-root",
+      timestamp: older,
+      records: [
+        {
+          type: "message",
+          timestamp: older,
+          message: { role: "user", content: "Original user request" },
+        },
+      ],
+    });
+    const newestPath = await writeSessionRecords(projectPath, "new.jsonl", {
+      id: "new-checkpoint",
+      conversationId: "conversation-root",
+      preview: "Original user request",
+      timestamp: newer,
+      records: [
+        {
+          type: "message",
+          timestamp: newer,
+          message: { role: "user", content: "[Previous conversation summary]\n### Goal" },
+        },
+      ],
+    });
+
+    const sessions = await listRecentSessions(projectPath);
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.path).toBe(newestPath);
+    expect(sessions[0]?.preview).toBe("Original user request");
+  });
+
+  it("uses the first user prompt when a new session has no saved label", async () => {
+    const projectPath = path.join(tmp, "projects", "prompt-preview");
+    await fs.mkdir(projectPath, { recursive: true });
+    const timestamp = new Date().toISOString();
+    await writeSessionRecords(projectPath, "unlabelled.jsonl", {
+      id: "unlabelled-session",
+      timestamp,
+      records: [
+        {
+          type: "message",
+          timestamp,
+          message: { role: "user", content: "Replace title generation with project context" },
+        },
+        {
+          type: "message",
+          timestamp,
+          message: { role: "assistant", content: "Done." },
+        },
+      ],
+    });
+
+    const sessions = await listRecentSessions(projectPath);
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.preview).toBe("Replace title generation with project context");
   });
 
   // The best-effort decode only round-trips for underscore-free absolute paths

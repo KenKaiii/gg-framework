@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getResetClearMode, type RenderAppConfig, type RuntimeState } from "./render.js";
+import {
+  getResetClearMode,
+  type RenderAppConfig,
+  type RuntimeState,
+  type SessionStore,
+} from "./render.js";
 import type { SubAgentManager } from "../core/subagent-manager.js";
 
 describe("getResetClearMode", () => {
@@ -15,6 +20,17 @@ describe("getResetClearMode", () => {
   it("uses a full screen redraw for explicit session/history replacement", () => {
     expect(getResetClearMode({ wipeSession: true })).toBe("screen");
     expect(getResetClearMode({ history: [{ kind: "banner", id: "banner" }] })).toBe("screen");
+  });
+
+  it("keeps session state focused on resumable conversation data", () => {
+    const store = {
+      messages: [],
+      history: [],
+      planSteps: [],
+    } satisfies SessionStore;
+
+    expect(store).toEqual({ messages: [], history: [], planSteps: [] });
+    expect("sessionTitle" in store).toBe(false);
   });
 });
 

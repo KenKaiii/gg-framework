@@ -384,7 +384,7 @@ export interface RecentSession {
   id: string;
   /** Absolute path to the session .jsonl (passed back to reopen it). */
   path: string;
-  /** Stable generated title, falling back to the first real user prompt. */
+  /** Legacy saved label, falling back to the first real user prompt. */
   preview: string;
   /** Relative "3h ago" string from last activity. */
   lastActiveDisplay: string;
@@ -394,7 +394,7 @@ export interface RecentSession {
 /**
  * List the most recent ggcoder conversations for a project cwd. Compaction
  * checkpoints share a conversation id, so only the newest resumable checkpoint
- * is shown. Generated labels win; otherwise the first real user prompt is used.
+ * is shown. Legacy labels win; otherwise the first real user prompt is used.
  */
 export async function listRecentSessions(
   cwd: string,
@@ -424,7 +424,7 @@ interface ParsedRecentSession extends RecentSession {
   conversationId: string;
 }
 
-/** Single-pass parse of one session file: identity + count + activity + title. */
+/** Single-pass parse of one session file: identity + count + activity + preview. */
 async function readSessionSummary(file: string): Promise<ParsedRecentSession | null> {
   return new Promise((resolve) => {
     const stream = createReadStream(file, { encoding: "utf-8" });
@@ -433,6 +433,7 @@ async function readSessionSummary(file: string): Promise<ParsedRecentSession | n
     let conversationId = "";
     let messageCount = 0;
     let lastActivity = "";
+    let headerPreview = "";
     let preview = "";
     let label = "";
     let valid = false;
@@ -446,7 +447,7 @@ async function readSessionSummary(file: string): Promise<ParsedRecentSession | n
               id,
               conversationId: conversationId || id,
               path: file,
-              preview: label || preview,
+              preview: label || headerPreview || preview,
               lastActiveDisplay: rel(lastActivity),
               messageCount,
             }
@@ -462,6 +463,7 @@ async function readSessionSummary(file: string): Promise<ParsedRecentSession | n
           type?: string;
           id?: string;
           conversationId?: string;
+          preview?: unknown;
           timestamp?: string;
           label?: unknown;
           message?: { role?: string; content?: unknown };
@@ -471,6 +473,9 @@ async function readSessionSummary(file: string): Promise<ParsedRecentSession | n
           valid = true;
           id = p.id ?? "";
           conversationId = p.conversationId ?? id;
+          if (typeof p.preview === "string") {
+            headerPreview = p.preview.replace(/\s+/g, " ").trim().slice(0, 80);
+          }
           if (p.timestamp) lastActivity = p.timestamp;
           return;
         }

@@ -39,7 +39,8 @@ export interface ModelInfo {
    *   - Claude Fable 5 / Mythos 5, Opus 4.8 / 4.7 / 4.6 and Sonnet 5: `max`
    *     (Fable 5 / Mythos 5 use always-on adaptive thinking, low→max ladder)
    *   - Claude Haiku 4.5: `high` (no adaptive `max` tier)
-   *   - GLM / Moonshot / Xiaomi / MiniMax / Qwen: `high` — binary-thinking
+   *   - Kimi K3: `max` (always-on reasoning; currently the only API effort)
+   *   - GLM / Kimi K2.x / Xiaomi / MiniMax / Qwen: `high` — binary-thinking
    *     providers ignore the level on the wire, so the value is cosmetic
    *   - DeepSeek V4: `xhigh` (DeepSeek maps `xhigh` → its internal `max`)
    */
@@ -275,9 +276,28 @@ export const MODELS: ModelInfo[] = [
     maxThinkingLevel: "high",
   },
   // ── Moonshot (Kimi) ────────────────────────────────────
+  // K3 is Kimi's 2.8T-parameter flagship for long-horizon coding, knowledge
+  // work, and deep reasoning. It always reasons at the `max` effort; the public
+  // API uses `reasoning_effort`, while Kimi Code OAuth keeps its managed wire shape.
+  {
+    id: "kimi-k3",
+    name: "Kimi K3",
+    provider: "moonshot",
+    contextWindow: 1_048_576,
+    // The API can be raised as high as the full context window, but 131K is the
+    // documented default and keeps room for input in AgentSession's fixed cap.
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: true,
+    maxVideoBytes: 100 * 1024 * 1024,
+    costTier: "high",
+    maxThinkingLevel: "max",
+  },
+  // Retain the cheaper dedicated coding model as an explicit alternative.
   {
     id: "kimi-k2.7-code",
-    name: "Kimi K2.7",
+    name: "Kimi K2.7 Code",
     provider: "moonshot",
     contextWindow: 262_144,
     maxOutputTokens: 262_144,
@@ -489,7 +509,7 @@ export function getDefaultModel(provider: Provider): ModelInfo {
   if (provider === "openai") return MODELS.find((m) => m.id === "gpt-5.6-sol")!;
   if (provider === "gemini") return MODELS.find((m) => m.id === "gemini-3.1-flash-lite")!;
   if (provider === "glm") return MODELS.find((m) => m.id === "glm-5.2")!;
-  if (provider === "moonshot") return MODELS.find((m) => m.id === "kimi-k2.7-code")!;
+  if (provider === "moonshot") return MODELS.find((m) => m.id === "kimi-k3")!;
   if (provider === "minimax") return MODELS.find((m) => m.id === "MiniMax-M3")!;
   if (provider === "deepseek") return MODELS.find((m) => m.id === "deepseek-v4-pro")!;
   if (provider === "openrouter") return MODELS.find((m) => m.id === "qwen/qwen3.6-plus")!;

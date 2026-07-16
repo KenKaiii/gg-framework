@@ -134,6 +134,106 @@ describe("streamOpenAI request shaping", () => {
     }
   });
 
+  it("uses max reasoning_effort for Kimi K3 and omits K2.x/fixed sampling params", async () => {
+    createMock.mockResolvedValueOnce(createStreamingResult(""));
+    const result = streamOpenAI({
+      provider: "moonshot",
+      model: "kimi-k3",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "t" + "est",
+      thinking: "max",
+      temperature: 0.4,
+      topP: 0.8,
+      cacheRetention: "long",
+    });
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const params = createMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params).toMatchObject({ reasoning_effort: "max", prompt_cache_key: "ggcoder" });
+    expect(params).not.toHaveProperty("thinking");
+    expect(params).not.toHaveProperty("temperature");
+    expect(params).not.toHaveProperty("top_p");
+    expect(params).not.toHaveProperty("prompt_cache_retention");
+  });
+
+  it("uses the managed Kimi Code thinking shape for K3 over OAuth", async () => {
+    createMock.mockResolvedValueOnce(createStreamingResult(""));
+    const result = streamOpenAI({
+      provider: "moonshot",
+      model: "kimi-k3",
+      baseUrl: "https://api.kimi.com/coding/v1",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "t" + "est",
+      thinking: "max",
+    });
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const params = createMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params).toMatchObject({
+      thinking: { type: "enabled", effort: "max", keep: "all" },
+      prompt_cache_key: "ggcoder",
+    });
+    expect(params).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("defaults Kimi K3 to max reasoning even when thinking display is off", async () => {
+    createMock.mockResolvedValueOnce(createStreamingResult(""));
+    const result = streamOpenAI({
+      provider: "moonshot",
+      model: "kimi-k3",
+      messages: [
+        { role: "user", content: "hi" },
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_call", id: "history_call", name: "bash", args: { command: "pwd" } },
+          ],
+        },
+        {
+          role: "tool",
+          content: [{ type: "tool_result", toolCallId: "history_call", content: "project root" }],
+        },
+      ],
+      apiKey: "test-key",
+    });
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const params = createMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params).toMatchObject({ reasoning_effort: "max" });
+    expect(params).not.toHaveProperty("thinking");
+    expect((params.messages as Array<Record<string, unknown>>)[1]).toMatchObject({
+      reasoning_content: " ",
+    });
+  });
+
+  it("omits invalid reasoning and thinking controls for always-thinking Kimi K2.7", async () => {
+    createMock.mockResolvedValueOnce(createStreamingResult(""));
+    const result = streamOpenAI({
+      provider: "moonshot",
+      model: "kimi-k2.7-code",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "t" + "est",
+      thinking: "high",
+      temperature: 0.4,
+      topP: 0.8,
+    });
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const params = createMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params).not.toHaveProperty("reasoning_effort");
+    expect(params).not.toHaveProperty("thinking");
+    expect(params).not.toHaveProperty("temperature");
+    expect(params).not.toHaveProperty("top_p");
+  });
+
   it("uses GPT-5.6 cache options instead of deprecated retention", async () => {
     createMock.mockResolvedValueOnce(createStreamingResult(""));
     const result = streamOpenAI({

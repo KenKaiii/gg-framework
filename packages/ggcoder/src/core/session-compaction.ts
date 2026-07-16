@@ -30,11 +30,13 @@ export async function createCompactedSessionCheckpoint(
     model: string;
     messages: readonly Message[];
     conversationId?: string;
+    preview?: string;
     title?: string;
   },
 ): Promise<{ path: string; id: string }> {
   const session = await sessionManager.create(options.cwd, options.provider, options.model, {
     conversationId: options.conversationId,
+    preview: options.preview ?? options.title,
   });
   await appendMessagesToSession(sessionManager, session.path, options.messages, 0);
   if (options.title) {

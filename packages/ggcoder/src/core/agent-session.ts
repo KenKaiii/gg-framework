@@ -32,7 +32,6 @@ import {
   AUTOPILOT_MARKER_CUSTOM_KIND,
   APP_MARKER_CUSTOM_KIND,
   type MessageEntry,
-  type LabelEntry,
   type BranchInfo,
   type CustomEntry,
   type KenTurnPayload,
@@ -68,7 +67,6 @@ import { createToolSearchTool } from "../tools/tool-search.js";
 import { log } from "./logger.js";
 import { setEstimatorModel } from "./compaction/token-estimator.js";
 import { discoverAgents } from "./agents.js";
-import { generateSessionTitle } from "../utils/session-title.js";
 import { enhancePrompt, type EnhanceResult } from "../utils/prompt-enhancer.js";
 import { detectProjectStack } from "./language-detector.js";
 import {
@@ -87,11 +85,7 @@ import {
 } from "./loop-breaker.js";
 import { buildRegroundingMessage } from "./regrounding.js";
 import { wrapSteeringText, STEERING_PREFIX } from "./steering.js";
-import {
-  extractSessionText,
-  findUserSessionPrompt,
-  getUserSessionPrompt,
-} from "./session-preview.js";
+import { findUserSessionPrompt, getUserSessionPrompt } from "./session-preview.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -339,8 +333,6 @@ export class AgentSession {
   private conversationId = "";
   /** Original user-authored prompt, retained when internal messages replace history. */
   private sessionPreview = "";
-  /** Generated display title persisted as a label entry. */
-  private sessionTitle = "";
   /** Runtime conversation identity for provider transport headers. Transient
    *  children need one even though they intentionally have no persisted session. */
   private readonly transportSessionId = crypto.randomUUID();
@@ -1327,6 +1319,7 @@ export class AgentSession {
       // picks up the compacted state instead of the full original history.
       const session = await this.sessionManager.create(this.cwd, this.provider, this.model, {
         conversationId: this.conversationId || undefined,
+        preview: this.sessionPreview || undefined,
       });
       this.sessionId = session.id;
       this.conversationId = session.header.conversationId ?? session.id;
@@ -1344,7 +1337,6 @@ export class AgentSession {
       await this.rePersistKenTurns();
       await this.rePersistAutopilotMarkers();
       await this.rePersistAppMarkers();
-      await this.rePersistSessionTitle();
       // Persist the compaction counts so a resumed session's quiet notice can
       // show the same "N → M messages" summary the live run did.
       await this.persistAppMarker("compaction", {
@@ -1361,11 +1353,10 @@ export class AgentSession {
 
   async newSession(preserveConversation = false): Promise<void> {
     // Approved-plan execution is a clean checkpoint of the same conversation;
-    // explicit new sessions reset the identity and title.
+    // explicit new sessions reset the conversation identity.
     if (!preserveConversation) {
       this.conversationId = "";
       this.sessionPreview = "";
-      this.sessionTitle = "";
     }
     // A fresh session drops any in-flight plan state so its prompt is clean.
     this.planModeRef.current = false;
@@ -1403,7 +1394,6 @@ export class AgentSession {
       this.sessionId = "";
       this.conversationId = "";
       this.sessionPreview = "";
-      this.sessionTitle = "";
       this.sessionPath = "";
       this.lastPersistedIndex = this.messages.length;
     } else {
@@ -1808,53 +1798,11 @@ export class AgentSession {
   }
 
   /**
-   * Generate a short LLM session title from the conversation so far (first user
-   * message + first assistant reply). Best-effort; returns null on failure or
-   * when there's no user message yet. Uses the cheapest model for the provider.
-   */
-  async generateTitle(): Promise<string | null> {
-    if (this.sessionTitle) return this.sessionTitle;
-    const conversationId = this.conversationId;
-    const userText = findUserSessionPrompt(this.messages) || this.sessionPreview;
-    const firstPersistedUser = this.messages.find((message) => message.role === "user");
-    // Legacy compacted sessions have no retained preview metadata. Let the title
-    // model summarize their compaction record once, then persist that clean title.
-    const titleInput =
-      userText || (firstPersistedUser ? extractSessionText(firstPersistedUser.content) : "");
-    const assistantMsg = this.messages.find((message) => message.role === "assistant");
-    if (!titleInput.trim()) return null;
-    try {
-      const creds = await this.authStorage.resolveCredentials(this.provider, {
-        storageKeys: this.currentAuthStorageKeys(),
-      });
-      const title = await generateSessionTitle({
-        provider: this.provider,
-        userMessage: titleInput,
-        assistantPreview: assistantMsg
-          ? extractSessionText(assistantMsg.content).slice(0, 200)
-          : "",
-        apiKey: creds.accessToken,
-        baseUrl: this.baseUrl ?? creds.baseUrl,
-        accountId: creds.accountId,
-      });
-      const cleanTitle = title?.trim() ?? "";
-      // A title request may finish after an explicit /new. Never leak the old
-      // conversation's title into a different session.
-      if (!cleanTitle || this.conversationId !== conversationId) return null;
-      this.sessionTitle = cleanTitle;
-      await this.persistSessionTitle(cleanTitle);
-      return cleanTitle;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
    * Rewrite a draft prompt into a tighter, terminology-correct version using
    * the ACTIVE provider/model. A stateless one-off LLM call (no agent loop, no
    * tools, no session mutation) — safe to run even mid-run. Returns the plain
    * enhanced text plus typed segments marking each corrected term. Errors throw
-   * so the caller can surface them (unlike best-effort title generation).
+   * so the caller can surface them.
    */
   async enhancePrompt(text: string): Promise<EnhanceResult> {
     if (!text.trim()) return { enhanced: text, segments: [{ kind: "text", text }] };
@@ -1968,12 +1916,12 @@ export class AgentSession {
   private async createNewSession(): Promise<void> {
     const session = await this.sessionManager.create(this.cwd, this.provider, this.model, {
       conversationId: this.conversationId || undefined,
+      preview: this.sessionPreview || undefined,
     });
     this.sessionId = session.id;
     this.conversationId = session.header.conversationId ?? session.id;
     this.sessionPath = session.path;
     this.lastPersistedIndex = this.messages.length;
-    await this.rePersistSessionTitle();
   }
 
   private async loadExistingSession(sessionPath: string): Promise<void> {
@@ -1981,12 +1929,14 @@ export class AgentSession {
     // Use the leaf from the header to walk the correct branch
     const loadedMessages = this.sessionManager.getMessages(loaded.entries, loaded.header.leafId);
     this.conversationId = loaded.header.conversationId ?? loaded.header.id;
-    this.sessionPreview = findUserSessionPrompt(loadedMessages);
-    this.sessionTitle =
-      [...loaded.entries]
-        .reverse()
-        .find((entry) => entry.type === "label")
-        ?.label.trim() ?? "";
+    const legacyLabel = [...loaded.entries]
+      .reverse()
+      .find((entry) => entry.type === "label")
+      ?.label.replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80);
+    this.sessionPreview =
+      legacyLabel || loaded.header.preview || findUserSessionPrompt(loadedMessages);
     // Restore Ken's advisory turns (custom entries, not on the message branch) so
     // they reappear in the transcript and survive into the continuation file.
     this.kenTurns = this.sessionManager.getKenTurns(loaded.entries);
@@ -2049,6 +1999,7 @@ export class AgentSession {
       // the summary instead of the full original transcript.
       const session = await this.sessionManager.create(this.cwd, this.provider, this.model, {
         conversationId: this.conversationId || undefined,
+        preview: this.sessionPreview || undefined,
       });
       this.sessionId = session.id;
       this.conversationId = session.header.conversationId ?? session.id;
@@ -2067,7 +2018,6 @@ export class AgentSession {
       await this.rePersistKenTurns();
       await this.rePersistAutopilotMarkers();
       await this.rePersistAppMarkers();
-      await this.rePersistSessionTitle();
       // Record this load-time auto-compaction's counts for the resumed notice.
       await this.persistAppMarker("compaction", {
         originalCount: compacted.result.originalCount,
@@ -2107,22 +2057,6 @@ export class AgentSession {
     await this.sessionManager.appendEntry(this.sessionPath, entry);
     this.currentLeafId = entryId;
     await this.sessionManager.updateLeaf(this.sessionPath, entryId);
-  }
-
-  private async persistSessionTitle(title: string): Promise<void> {
-    if (!this.sessionPath || !title) return;
-    const entry: LabelEntry = {
-      type: "label",
-      id: crypto.randomUUID(),
-      parentId: null,
-      timestamp: new Date().toISOString(),
-      label: title,
-    };
-    await this.sessionManager.appendEntry(this.sessionPath, entry);
-  }
-
-  private async rePersistSessionTitle(): Promise<void> {
-    if (this.sessionTitle) await this.persistSessionTitle(this.sessionTitle);
   }
 
   private createSlashCommandContext(): SlashCommandContext {

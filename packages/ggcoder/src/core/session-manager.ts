@@ -199,6 +199,8 @@ export interface SessionHeader {
   id: string;
   /** Stable identity shared by checkpoint files created during compaction. */
   conversationId?: string;
+  /** Stable display fallback retained when checkpoint messages contain only internal summaries. */
+  preview?: string;
   timestamp: string;
   cwd: string;
   provider: Provider;
@@ -281,7 +283,7 @@ export class SessionManager {
     cwd: string,
     provider: Provider,
     model: string,
-    options?: { conversationId?: string },
+    options?: { conversationId?: string; preview?: string },
   ): Promise<{
     id: string;
     path: string;
@@ -295,11 +297,16 @@ export class SessionManager {
     const fileName = `${timestamp.replace(/[:.]/g, "-")}_${id.slice(0, 8)}.jsonl`;
     const filePath = path.join(dir, fileName);
 
+    const normalizedPreview = options?.preview?.replace(/\s+/g, " ").trim().slice(0, 80);
+    const safePreview = normalizedPreview
+      ? String(redactValue(normalizedPreview, { secrets: environmentSecrets(process.env) }))
+      : undefined;
     const header: SessionHeader = {
       type: "session",
       version: 2,
       id,
       conversationId: options?.conversationId ?? id,
+      ...(safePreview ? { preview: safePreview } : {}),
       timestamp,
       cwd,
       provider,

@@ -66,7 +66,7 @@ export const AUTH_PROVIDERS: AuthProviderMeta[] = [
   {
     value: "moonshot",
     label: "Moonshot",
-    description: "Kimi K2.7 · OAuth or API key",
+    description: "Kimi K3, K2.7 Code · OAuth or API key",
     methods: ["oauth", "apikey"],
     apiKeyLabel: "Moonshot",
   },

@@ -114,9 +114,18 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
 
   const client = createClient(options);
 
-  // GLM and Moonshot use a custom `thinking` body param instead of `reasoning_effort`
+  // Public Kimi K3 moved from K2.x's custom `thinking` body parameter to
+  // top-level `reasoning_effort`; Kimi Code's OAuth endpoint keeps its managed
+  // nested shape. Both are always-on at the sole current `max` effort.
+  const isKimiK3 = options.provider === "moonshot" && options.model === "kimi-k3";
+  const isManagedKimiK3 =
+    isKimiK3 && options.baseUrl?.replace(/\/+$/, "").endsWith("/coding/v1") === true;
+  const isKimiK27 = options.provider === "moonshot" && options.model.startsWith("kimi-k2.7-code");
+  const hasFixedKimiSampling = isKimiK3 || isKimiK27;
   const usesThinkingParam =
-    options.provider === "glm" || options.provider === "moonshot" || options.provider === "xiaomi";
+    options.provider === "glm" ||
+    (options.provider === "moonshot" && !isKimiK3 && !isKimiK27) ||
+    options.provider === "xiaomi";
 
   const downgradedImages = downgradeUnsupportedImages(options.messages, options.supportsImages);
   const downgradedMessages = downgradeUnsupportedVideos(downgradedImages, options.supportsVideo);
@@ -137,7 +146,9 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   }
   const messages = toOpenAIMessages(downgradedMessages, {
     provider: options.provider,
-    thinking: !!options.thinking,
+    // K3 and K2.7 preserve reasoning even when the user hides thinking in the
+    // UI; keep assistant tool-call history wire-valid in that display mode.
+    thinking: isKimiK3 || isKimiK27 || !!options.thinking,
     supportsImages: options.supportsImages,
   });
 
@@ -150,10 +161,12 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     messages,
     stream: useStreaming,
     ...(options.maxTokens ? { max_completion_tokens: options.maxTokens } : {}),
-    ...(effectiveTemp != null && !options.thinking ? { temperature: effectiveTemp } : {}),
-    ...(options.topP != null ? { top_p: options.topP } : {}),
+    ...(effectiveTemp != null && !options.thinking && !hasFixedKimiSampling
+      ? { temperature: effectiveTemp }
+      : {}),
+    ...(options.topP != null && !hasFixedKimiSampling ? { top_p: options.topP } : {}),
     ...(options.stop ? { stop: options.stop } : {}),
-    ...(options.thinking && !usesThinkingParam
+    ...(options.thinking && !usesThinkingParam && !isKimiK3 && !isKimiK27
       ? { reasoning_effort: toOpenAIReasoningEffort(options.thinking, options.model) }
       : {}),
     ...(options.tools?.length ? { tools: toOpenAITools(options.tools) } : {}),
@@ -180,7 +193,8 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     // message breakpoints while enabling the newer reliable key+prefix matching.
     if (options.provider === "openai" && options.model.startsWith("gpt-5.6")) {
       paramsAny.prompt_cache_options = { mode: "implicit", ttl: "30m" };
-    } else if ((options.cacheRetention ?? "short") === "long") {
+    } else if (!isKimiK3 && (options.cacheRetention ?? "short") === "long") {
+      // K3 caching is automatic and its request schema does not expose a TTL.
       paramsAny.prompt_cache_retention = "24h";
     }
   }
@@ -189,12 +203,27 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     (params as unknown as Record<string, unknown>).service_tier = options.serviceTier;
   }
 
-  // Inject custom thinking param for GLM/Moonshot/Xiaomi (not part of OpenAI spec)
+  if (isKimiK3) {
+    const paramsAny = params as unknown as Record<string, unknown>;
+    if (isManagedKimiK3) {
+      // Kimi Code's managed OAuth endpoint keeps the official CLI's Kimi wire
+      // shape: nested effort plus preserved thinking.
+      paramsAny.thinking = { type: "enabled", effort: "max", keep: "all" };
+    } else {
+      // The public K3 API uses top-level reasoning_effort. The OpenAI SDK's
+      // effort union does not know Kimi's `max` value yet.
+      paramsAny.reasoning_effort = "max";
+    }
+  }
+
+  // Inject the custom toggle for K2.6-era Kimi, GLM, and Xiaomi. Public K3 uses
+  // reasoning_effort, managed K3 has its endpoint-specific block above, and
+  // K2.7 is always-thinking and rejects an explicit disabled toggle.
   if (usesThinkingParam) {
     if (options.thinking) {
       (params as unknown as Record<string, unknown>).thinking = { type: "enabled" };
     } else {
-      // All providers (GLM, Moonshot, Xiaomi MiMo) support explicit disabled.
+      // The providers/models routed through this block support explicit disabled.
       // MiMo is an always-on reasoning model — without { type: "disabled" } it
       // returns reasoning_content and may produce thinking-only responses with
       // no actionable output, causing the agent loop to silently end.

@@ -86,7 +86,7 @@ import { ensureAppDirs, loadSavedSettings } from "./config.js";
 import { SettingsManager, type Settings } from "./core/settings-manager.js";
 import { getModel, getMaxThinkingLevel, getContextWindow, MODELS } from "./core/model-registry.js";
 import { resolveStartOrFallback } from "./core/resolve-start.js";
-import { getGitBranch, isGitRepo } from "./utils/git.js";
+import { getGitBranch, getGitDirtyFileCount, isGitRepo } from "./utils/git.js";
 import { extractPlanSteps } from "./utils/plan-steps.js";
 import {
   getNextThinkingLevel,
@@ -1409,11 +1409,17 @@ async function createSession(
   }
   log("INFO", "app-sidecar", "session ready", { provider, model, mode, chatAgent, cwd });
 
-  // Footer extras (context window, git branch, background tasks). The git
-  // branch is resolved once at startup and refreshed lazily; the context
+  // Workspace extras (context window, git status, background tasks). Git state
+  // is resolved once at startup and refreshed after every run; the context
   // window follows the active model.
-  let gitBranch: string | null = await getGitBranch(cwd).catch(() => null);
-  let gitIsRepo: boolean = await isGitRepo(cwd).catch(() => false);
+  const [initialGitBranch, initialGitIsRepo, initialDirtyFileCount] = await Promise.all([
+    getGitBranch(cwd).catch(() => null),
+    isGitRepo(cwd).catch(() => false),
+    getGitDirtyFileCount(cwd).catch(() => 0),
+  ]);
+  let gitBranch: string | null = initialGitBranch;
+  let gitIsRepo: boolean = initialGitIsRepo;
+  let gitDirtyFileCount = initialDirtyFileCount;
   function currentContextWindow(): number {
     const st = session.getState();
     return getContextWindow(st.model, { provider: st.provider, accountId: st.accountId });
@@ -1424,12 +1430,14 @@ async function createSession(
     contextWindow: number;
     gitBranch: string | null;
     isGitRepo: boolean;
+    gitDirtyFileCount: number;
     tasks: ReturnType<typeof session.listBackgroundProcesses>;
   } {
     return {
       contextWindow: currentContextWindow(),
       gitBranch,
       isGitRepo: gitIsRepo,
+      gitDirtyFileCount,
       tasks: session.listBackgroundProcesses(),
     };
   }
@@ -1577,7 +1585,6 @@ async function createSession(
   });
   const cancelledRunEndGenerations = new Set<number>();
   let pendingCancelDrain: { generation: number; text: string } | null = null;
-  let titleGenerated = false;
   // Bumped by /cancel — a run whose cancel generation changed mid-flight was
   // canceled and earns no XP.
   let cancelGeneration = 0;
@@ -1798,20 +1805,6 @@ async function createSession(
     return ken;
   }
 
-  // Resumed session: if it already has a conversation, generate its title now so
-  // the title bar shows it immediately on load (not just after the next prompt).
-  {
-    const hasHistory = session
-      .getMessages()
-      .some((m) => m.role === "user" || m.role === "assistant");
-    if (hasHistory) {
-      titleGenerated = true;
-      void session.generateTitle().then((title) => {
-        if (title) broadcast("session_title", { title });
-      });
-    }
-  }
-
   function abortOwnedWork(): void {
     cancelGeneration++;
     abort.abort();
@@ -1874,10 +1867,13 @@ async function createSession(
         // Fire-and-forget — XP must never delay or break run teardown.
         void progress.awardRun(cwd, runStartedAt, opts.id);
       }
-      // A run may have switched branches (git checkout) or spawned/finished
-      // background tasks — refresh the footer extras once it settles.
-      gitBranch = await getGitBranch(cwd).catch(() => gitBranch);
-      gitIsRepo = await isGitRepo(cwd).catch(() => gitIsRepo);
+      // A run may have switched branches, changed files, or spawned/finished
+      // background tasks. Refresh the workspace extras once it settles.
+      [gitBranch, gitIsRepo, gitDirtyFileCount] = await Promise.all([
+        getGitBranch(cwd).catch(() => gitBranch),
+        isGitRepo(cwd).catch(() => gitIsRepo),
+        getGitDirtyFileCount(cwd).catch(() => gitDirtyFileCount),
+      ]);
       // Serialize behind any marker/tool-triggered refresh so the terminal
       // progress snapshot uses the live plan file. Once every canonical step
       // is complete, remove the approved plan from future system prompts and
@@ -1916,12 +1912,6 @@ async function createSession(
       broadcast("tasks_list", { tasks: pruneDoneTasksSync(cwd) });
       broadcast("queued", { count: session.getQueuedCount() });
       broadcast("extras", footerExtras());
-      if (!titleGenerated) {
-        titleGenerated = true;
-        void session.generateTitle().then((title) => {
-          if (title) broadcast("session_title", { title });
-        });
-      }
     }
   }
 
@@ -2049,7 +2039,6 @@ async function createSession(
           try {
             await session.newSession(true);
             injectedAutopilotPrompts = [];
-            titleGenerated = false;
             planTotal = await activateApprovedPlan(planPath);
           } catch (err) {
             broadcastError("autopilot_error", "autopilot plan accept failed", err);
@@ -2217,7 +2206,6 @@ async function createSession(
     deactivateApprovedPlan();
     injectedAutopilotPrompts = [];
     clearPendingPlan();
-    titleGenerated = false;
     broadcast("session_reset", {});
     markTaskInProgress(cwd, task.id);
     broadcast("tasks_list", { tasks: loadTasksSync(cwd) });
@@ -2306,6 +2294,29 @@ async function createSession(
     tasksPoll.unref?.();
   };
   scheduleTasksPoll(1500);
+
+  // Files can change outside the agent (editor saves, terminal commits), so keep
+  // the dirty count current while idle. Branch/repo state already refreshes after
+  // agent runs; polling only the count avoids spawning three git processes per tick.
+  let gitPoll: NodeJS.Timeout | undefined;
+  let gitPollStopped = false;
+  const scheduleGitPoll = (delay: number): void => {
+    if (gitPollStopped) return;
+    gitPoll = setTimeout(() => {
+      void getGitDirtyFileCount(cwd)
+        .catch(() => gitDirtyFileCount)
+        .then((nextDirtyFileCount) => {
+          if (gitPollStopped) return;
+          if (nextDirtyFileCount !== gitDirtyFileCount) {
+            gitDirtyFileCount = nextDirtyFileCount;
+            broadcast("extras", footerExtras());
+          }
+          scheduleGitPoll(5000);
+        });
+    }, delay);
+    gitPoll.unref?.();
+  };
+  scheduleGitPoll(5000);
 
   function readBody(req: http.IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -3585,7 +3596,6 @@ async function createSession(
         try {
           await session.newSession(true);
           injectedAutopilotPrompts = [];
-          titleGenerated = false;
           const planTotal = await activateApprovedPlan(planPath);
           broadcast("session_reset", { planTotal });
           broadcast("plan_progress", planProgressPayload());
@@ -4021,6 +4031,8 @@ async function createSession(
   async function dispose(): Promise<void> {
     tasksPollStopped = true;
     if (tasksPoll) clearTimeout(tasksPoll);
+    gitPollStopped = true;
+    if (gitPoll) clearTimeout(gitPoll);
     // Stop the Telegram serve loop + dispose its per-chat sessions.
     if (serveController) await serveController.stop().catch(() => {});
     for (const c of clients) c.res.end();

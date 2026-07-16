@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { WorkspaceHeader } from "./WorkspaceHeader";
+import { formatWorkspaceTitle, WorkspaceHeader } from "./WorkspaceHeader";
 
 afterEach(cleanup);
 
@@ -12,7 +12,6 @@ function ChatHeaderHarness(): React.ReactElement {
   return (
     <WorkspaceHeader
       workspaceMode="chat"
-      sessionTitle={null}
       navHidden={navHidden}
       onToggleNav={() => setNavHidden((hidden) => !hidden)}
     >
@@ -40,5 +39,34 @@ describe("WorkspaceHeader", () => {
     fireEvent.click(showToggle);
 
     expect(screen.getByRole("button", { name: "New chat" })).toBeDefined();
+  });
+
+  it("formats clean, dirty, and pre-commit project context", () => {
+    expect(formatWorkspaceTitle("/work/app", "main", "GG Coder")).toBe("app │ ⎇ main");
+    expect(formatWorkspaceTitle("/work/app", "main", "GG Coder", 3)).toBe(
+      "app │ ⎇ main │ 3 uncommitted",
+    );
+    expect(formatWorkspaceTitle("/work/app", null, "GG Coder", 1)).toBe("app │ 1 uncommitted");
+  });
+
+  it("shows the current directory, branch, and dirty count instead of a session title", () => {
+    render(
+      <WorkspaceHeader
+        workspaceMode="code"
+        cwd="C:\\work\\gg-coder"
+        gitBranch="feature/titlebar"
+        gitDirtyFileCount={3}
+        navHidden
+        onToggleNav={() => {}}
+      >
+        <button>New session</button>
+      </WorkspaceHeader>,
+    );
+
+    expect(screen.getByText("gg-coder")).toBeDefined();
+    expect(screen.getByText("⎇ feature/titlebar")).toBeDefined();
+    expect(screen.getByText("3 uncommitted")).toBeDefined();
+    expect(screen.getByTitle("gg-coder │ ⎇ feature/titlebar │ 3 uncommitted")).toBeDefined();
+    expect(screen.queryByText("GG Coder")).toBeNull();
   });
 });

@@ -158,6 +158,8 @@ export interface AgentState {
   gitBranch?: string | null;
   /** True when the project cwd is inside a git work tree. */
   isGitRepo?: boolean;
+  /** Tracked, staged, and untracked files not yet committed. */
+  gitDirtyFileCount?: number;
   /** True when the active model can accept native video input. */
   supportsVideo?: boolean;
   /** Autopilot (auto-review) toggle for this window's project. Per-window,

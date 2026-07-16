@@ -3,27 +3,84 @@ import type { WorkspaceMode } from "./agent";
 
 interface WorkspaceHeaderProps {
   workspaceMode: WorkspaceMode;
-  sessionTitle: string | null;
+  cwd?: string;
+  gitBranch?: string | null;
+  gitDirtyFileCount?: number;
   navHidden: boolean;
   onToggleNav: () => void;
   stripExtras?: ReactNode;
   children: ReactNode;
 }
 
+export function formatWorkspaceTitle(
+  cwd: string | undefined,
+  gitBranch: string | null | undefined,
+  fallback: string,
+  gitDirtyFileCount = 0,
+): string {
+  const directory = cwd?.split(/[\\/]/).filter(Boolean).pop();
+  if (!directory) return fallback;
+  const segments = [directory];
+  if (gitBranch) segments.push(`⎇ ${gitBranch}`);
+  if (gitDirtyFileCount > 0) segments.push(`${gitDirtyFileCount} uncommitted`);
+  return segments.join(" │ ");
+}
+
 /** Shared code/chat titlebar and collapsible workspace navigation. */
 export function WorkspaceHeader({
   workspaceMode,
-  sessionTitle,
+  cwd,
+  gitBranch,
+  gitDirtyFileCount = 0,
   navHidden,
   onToggleNav,
   stripExtras,
   children,
 }: WorkspaceHeaderProps): React.ReactElement {
+  const fallbackTitle = workspaceMode === "chat" ? "GG Chat" : "GG Coder";
+  const directory = cwd?.split(/[\\/]/).filter(Boolean).pop();
+
   return (
     <div className="chat-head">
       <div className="chat-head-strip" data-tauri-drag-region>
-        <span className="chat-head-title" data-tauri-drag-region>
-          {sessionTitle ?? (workspaceMode === "chat" ? "GG Chat" : "GG Coder")}
+        <span
+          className="chat-head-title"
+          data-tauri-drag-region
+          title={formatWorkspaceTitle(cwd, gitBranch, fallbackTitle, gitDirtyFileCount)}
+        >
+          {directory ? (
+            <>
+              <span className="chat-head-cwd" data-tauri-drag-region>
+                {directory}
+              </span>
+              {gitBranch && (
+                <>
+                  <span className="chat-head-sep" data-tauri-drag-region>
+                    {"│"}
+                  </span>
+                  <span className="chat-head-branch" data-tauri-drag-region>
+                    {`⎇ ${gitBranch}`}
+                  </span>
+                </>
+              )}
+              {gitDirtyFileCount > 0 && (
+                <>
+                  <span className="chat-head-sep" data-tauri-drag-region>
+                    {"│"}
+                  </span>
+                  <span
+                    className="chat-head-dirty"
+                    data-tauri-drag-region
+                    title={`${gitDirtyFileCount} file${gitDirtyFileCount === 1 ? "" : "s"} not committed`}
+                  >
+                    {`${gitDirtyFileCount} uncommitted`}
+                  </span>
+                </>
+              )}
+            </>
+          ) : (
+            fallbackTitle
+          )}
         </span>
         {stripExtras}
         <button

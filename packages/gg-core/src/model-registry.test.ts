@@ -154,6 +154,25 @@ describe("model registry context windows", () => {
     ).toBe(1_000_000);
   });
 
+  it("defaults Moonshot to multimodal K3 while retaining K2.7 Code", () => {
+    expect(getDefaultModel("moonshot")).toMatchObject({
+      id: "kimi-k3",
+      name: "Kimi K3",
+      provider: "moonshot",
+      contextWindow: 1_048_576,
+      maxOutputTokens: 131_072,
+      supportsThinking: true,
+      supportsImages: true,
+      supportsVideo: true,
+      maxThinkingLevel: "max",
+    });
+    expect(getModelsForProvider("moonshot").map((model) => model.id)).toEqual([
+      "kimi-k3",
+      "kimi-k2.7-code",
+    ]);
+    expect(getContextWindow("kimi-k3", { provider: "moonshot" })).toBe(1_048_576);
+  });
+
   it("defaults MiniMax to the multimodal M3 with a 1M context window", () => {
     expect(getDefaultModel("minimax")).toMatchObject({
       id: "MiniMax-M3",

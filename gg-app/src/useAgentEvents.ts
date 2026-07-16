@@ -133,7 +133,6 @@ export interface AgentEventsDeps {
   setThinkingAccumMs: Dispatch<SetStateAction<number>>;
   setPlanTotal: Dispatch<SetStateAction<number>>;
   setPlanDone: Dispatch<SetStateAction<Set<number>>>;
-  setSessionTitle: Dispatch<SetStateAction<string | null>>;
   setPlanReview: Dispatch<SetStateAction<string | null>>;
   setQueuedCount: Dispatch<SetStateAction<number>>;
   setAttachments: Dispatch<SetStateAction<PendingAttachment[]>>;
@@ -176,7 +175,6 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
     setThinkingAccumMs,
     setPlanTotal,
     setPlanDone,
-    setSessionTitle,
     setPlanReview,
     setQueuedCount,
     setAttachments,
@@ -900,7 +898,6 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           setTokens(0);
           setDoneStatus(null);
           setContextTokens(0);
-          setSessionTitle(null);
           setPlanReview(null);
           planReviewContentRef.current = null;
           {
@@ -923,11 +920,8 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           subagentGroupIdRef.current = null;
           subagentGroupByAgentRef.current.clear();
           break;
-        case "session_title":
-          setSessionTitle(String(d.title ?? "") || null);
-          break;
         case "extras":
-          // Context window / git branch refresh (model switch, run end).
+          // Context window / git status refresh (model switch, run end).
           setState((s) =>
             s
               ? {
@@ -935,6 +929,8 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
                   contextWindow: (d.contextWindow as number | undefined) ?? s.contextWindow,
                   gitBranch: (d.gitBranch as string | null | undefined) ?? s.gitBranch,
                   isGitRepo: (d.isGitRepo as boolean | undefined) ?? s.isGitRepo,
+                  gitDirtyFileCount:
+                    (d.gitDirtyFileCount as number | undefined) ?? s.gitDirtyFileCount,
                 }
               : s,
           );
@@ -968,7 +964,6 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
       setThinkingAccumMs,
       setPlanTotal,
       setPlanDone,
-      setSessionTitle,
       setPlanReview,
       setQueuedCount,
       setAttachments,

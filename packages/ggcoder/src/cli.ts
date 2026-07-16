@@ -86,6 +86,7 @@ import {
   getRestoredMessagesForDisplay,
 } from "./core/session-compaction.js";
 import { setEstimatorModel } from "./core/compaction/token-estimator.js";
+import { findUserSessionPrompt } from "./core/session-preview.js";
 import {
   getAuthStorageKeys,
   getContextWindow,
@@ -371,7 +372,7 @@ function main(): void {
     if (p === "openai") return "gpt-5.5";
     if (p === "gemini") return "gemini-3.1-flash-lite";
     if (p === "glm") return "glm-5.2";
-    if (p === "moonshot") return "kimi-k2.7-code";
+    if (p === "moonshot") return "kimi-k3";
     if (p === "minimax") return "MiniMax-M3";
     if (p === "deepseek") return "deepseek-v4-pro";
     if (p === "openrouter") return "qwen/qwen3.6-plus";
@@ -717,6 +718,7 @@ async function runInkTUI(opts: {
               model,
               messages: compacted.messages,
               conversationId: loaded.header.conversationId ?? loaded.header.id,
+              preview: loaded.header.preview ?? findUserSessionPrompt(messages),
               title: [...loaded.entries]
                 .reverse()
                 .find((entry) => entry.type === "label")
@@ -869,7 +871,7 @@ async function runSessions(): Promise<void> {
     if (p === "openai") return "gpt-5.5";
     if (p === "gemini") return "gemini-3.1-flash-lite";
     if (p === "glm") return "glm-5.2";
-    if (p === "moonshot") return "kimi-k2.7-code";
+    if (p === "moonshot") return "kimi-k3";
     if (p === "minimax") return "MiniMax-M3";
     if (p === "deepseek") return "deepseek-v4-pro";
     if (p === "sakana") return "fugu";
