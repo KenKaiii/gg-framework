@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.23.3",
+    date: "2026-07-18",
+    items: [
+      "`GPT-5.6` long chats just got dramatically tougher. I squeeze huge conversations down before sending them and recover automatically when `OpenAI` briefly stumbles, so massive prompts, images, and tool-heavy sessions keep moving instead of crashing into that request buffer error.",
+    ],
+  },
+  {
     version: "0.23.2",
     date: "2026-07-17",
     items: [
