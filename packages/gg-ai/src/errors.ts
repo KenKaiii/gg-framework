@@ -474,6 +474,12 @@ function providerGuidance(
     return `${name} is temporarily unavailable. Retry shortly — not a GG Coder issue.`;
   }
   if (
+    statusCode === 507 ||
+    lower.includes("exceeded request buffer limit while retrying upstream")
+  ) {
+    return `${name}'s proxy could not retry this large request. GG Coder already retried automatically — compact the conversation, then retry.`;
+  }
+  if (
     statusCode === 500 ||
     lower.includes("server_error") ||
     (lower.includes("500") && lower.includes("internal server error"))

@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.94.0",
+    "@bokuweb/zstd-wasm": "^0.0.27",
     "openai": "^6.34.0",
     "zod": "^4.4.3"
   },

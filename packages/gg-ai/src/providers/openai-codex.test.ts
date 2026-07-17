@@ -1,3 +1,4 @@
+import * as zstd from "@bokuweb/zstd-wasm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { streamOpenAICodex } from "./openai-codex.js";
@@ -254,6 +255,44 @@ describe("streamOpenAICodex", () => {
     expect(body.max_output_tokens).toBeUndefined();
     expect(body.max_completion_tokens).toBeUndefined();
     expect(body.max_tokens).toBeUndefined();
+  });
+
+  it("zstd-compresses large Codex request bodies like the official CLI", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        createSseResponse([
+          {
+            type: "response.completed",
+            response: { usage: { input_tokens: 1, output_tokens: 1 } },
+          },
+        ]),
+      ),
+    );
+    const longMessage = "const compressedRequestPayload = true;\n".repeat(4_000);
+    const fetchMock = vi.mocked(fetch);
+    const result = streamOpenAICodex({
+      provider: "openai",
+      model: "gpt-5.6-sol",
+      messages: [{ role: "user", content: longMessage }],
+      apiKey: "test-credential",
+      accountId: "acct",
+    });
+
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.headers).toMatchObject({ "Content-Encoding": "zstd" });
+    const compressedBody = init.body as Uint8Array;
+    expect(compressedBody).toBeInstanceOf(Uint8Array);
+    expect([...compressedBody.slice(0, 4)]).toEqual([0x28, 0xb5, 0x2f, 0xfd]);
+
+    const decoded = new TextDecoder().decode(zstd.decompress(compressedBody));
+    const body = JSON.parse(decoded) as { input: Array<{ content: Array<{ text: string }> }> };
+    expect(body.input[0]?.content[0]?.text).toBe(longMessage);
+    expect(compressedBody.byteLength).toBeLessThan(new TextEncoder().encode(decoded).byteLength);
   });
 
   it.each([["a".repeat(64)], ["b".repeat(65)], ["long-session-".repeat(30)], ["会".repeat(65)]])(

@@ -257,12 +257,14 @@ export function classifyOverload(
     statusCode === 502 ||
     statusCode === 503 ||
     statusCode === 504 ||
+    statusCode === 507 ||
     msg.includes("api_error") ||
     msg.includes("server_error") ||
     msg.includes("internal server error") ||
     msg.includes("bad gateway") ||
     msg.includes("service unavailable") ||
-    msg.includes("gateway timeout")
+    msg.includes("gateway timeout") ||
+    msg.includes("exceeded request buffer limit while retrying upstream")
   ) {
     return "provider_error";
   }

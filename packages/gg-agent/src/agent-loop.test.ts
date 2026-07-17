@@ -192,17 +192,29 @@ describe("isContextOverflow", () => {
 });
 
 describe("classifyOverload", () => {
-  it("classifies provider 5xx and api_error as transient provider errors", () => {
+  it("classifies transient provider 5xx and api_error as provider errors", () => {
     const cases = [
       new ProviderError("anthropic", "api_error: Internal server error", { statusCode: undefined }),
       new ProviderError("anthropic", "Internal server error", { statusCode: 500 }),
       new ProviderError("anthropic", "Bad Gateway", { statusCode: 502 }),
       new ProviderError("anthropic", "Service Unavailable", { statusCode: 503 }),
       new ProviderError("anthropic", "Gateway Timeout", { statusCode: 504 }),
+      new ProviderError("openai", "exceeded request buffer limit while retrying upstream", {
+        statusCode: 507,
+      }),
+      new ProviderError("openai", "exceeded request buffer limit while retrying upstream"),
     ];
 
     for (const error of cases) {
       expect(classifyOverload(error)).toBe("provider_error");
+    }
+  });
+
+  it("does not retry permanent 5xx responses", () => {
+    for (const statusCode of [501, 505, 511]) {
+      expect(
+        classifyOverload(new ProviderError("openai", "Permanent server response", { statusCode })),
+      ).toBeNull();
     }
   });
 

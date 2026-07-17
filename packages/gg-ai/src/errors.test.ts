@@ -104,6 +104,17 @@ describe("formatError request too large", () => {
     expect(f.guidance).toContain("Compact");
     expect(f.guidance).not.toContain("status.anthropic.com");
   });
+
+  it("explains the recovery after OpenAI's request retry buffer overflows", () => {
+    const f = formatError(
+      new ProviderError("openai", "exceeded request buffer limit while retrying upstream", {
+        statusCode: 507,
+      }),
+    );
+    expect(f.guidance).toContain("already retried automatically");
+    expect(f.guidance).toContain("compact the conversation");
+    expect(f.guidance).not.toContain("status.openai.com");
+  });
 });
 
 describe("VideoUnsupportedError", () => {

@@ -1,4 +1,5 @@
 import os from "node:os";
+import * as zstd from "@bokuweb/zstd-wasm";
 import type {
   ContentPart,
   ImageContent,
@@ -32,6 +33,65 @@ import { extractRequestIdFromMessage } from "../utils/request-id.js";
 
 const DEFAULT_BASE_URL = "https://chatgpt.com/backend-api";
 const CODEX_CLIENT_VERSION = "0.144.1";
+// OpenAI's Codex CLI enables zstd request compression by default. Keep tiny
+// synthetic/API requests readable, but compress real agent payloads before they
+// hit the backend's finite Envoy retry buffer.
+const CODEX_REQUEST_COMPRESSION_MIN_BYTES = 16 * 1024;
+
+let zstdInitPromise: Promise<void> | undefined;
+
+interface EncodedCodexRequest {
+  body: BodyInit;
+  compressed: boolean;
+  rawBytes: number;
+  encodedBytes: number;
+}
+
+async function encodeCodexRequest(body: Record<string, unknown>): Promise<EncodedCodexRequest> {
+  const json = JSON.stringify(body);
+  const raw = new TextEncoder().encode(json);
+  if (raw.byteLength < CODEX_REQUEST_COMPRESSION_MIN_BYTES) {
+    return {
+      body: json,
+      compressed: false,
+      rawBytes: raw.byteLength,
+      encodedBytes: raw.byteLength,
+    };
+  }
+
+  try {
+    zstdInitPromise ??= zstd.init();
+    await zstdInitPromise;
+    const compressed = Uint8Array.from(zstd.compress(raw));
+    if (compressed.byteLength >= raw.byteLength) {
+      return {
+        body: json,
+        compressed: false,
+        rawBytes: raw.byteLength,
+        encodedBytes: raw.byteLength,
+      };
+    }
+    return {
+      body: compressed,
+      compressed: true,
+      rawBytes: raw.byteLength,
+      encodedBytes: compressed.byteLength,
+    };
+  } catch (error) {
+    // Compression is an optimization, not a reason to make the provider
+    // unreachable if the WASM asset is missing in an unusual host.
+    providerDiag("codex_request_compression_failed", {
+      error: error instanceof Error ? error.message : String(error),
+      rawBytes: raw.byteLength,
+    });
+    return {
+      body: json,
+      compressed: false,
+      rawBytes: raw.byteLength,
+      encodedBytes: raw.byteLength,
+    };
+  }
+}
 
 function usesResponsesLite(model: string): boolean {
   return model.startsWith("gpt-5.6-");
@@ -140,10 +200,18 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     headers["x-client-request-id"] = transportSessionId;
   }
 
+  const encodedRequest = await encodeCodexRequest(body);
+  if (encodedRequest.compressed) headers["Content-Encoding"] = "zstd";
+  providerDiag("codex_request_body", {
+    rawBytes: encodedRequest.rawBytes,
+    encodedBytes: encodedRequest.encodedBytes,
+    compressed: encodedRequest.compressed,
+  });
+
   const response = await fetch(url, {
     method: "POST",
     headers,
-    body: JSON.stringify(body),
+    body: encodedRequest.body,
     signal: options.signal,
   });
 
