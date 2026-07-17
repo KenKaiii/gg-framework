@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.19.1
+
+### Patch Changes
+
+- Cut OpenAI token burn: percentage-only compaction thresholds on authoritative provider usage, a per-turn aggregate tool-result budget that trims parallel fan-out context bombs, cheap stale tool-output pruning (superseded reads and old outputs stubbed before compaction), and autopilot now suppresses the redundant Ideal self-review while Ken owns verification.
+  - @kenkaiiii/gg-ai@5.19.1
+  - @kenkaiiii/gg-agent@5.19.1
+  - @kenkaiiii/gg-core@5.19.1
+
 ## 5.19.0
 
 ### Minor Changes
