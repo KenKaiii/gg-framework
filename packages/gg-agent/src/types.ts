@@ -202,6 +202,15 @@ export type AgentEvent =
 
 // ── Agent Options ───────────────────────────────────────────
 
+export interface TransformContextOptions {
+  /** Force a transform after the provider reports context overflow. */
+  force?: boolean;
+  /** Latest successful provider usage, anchored at its assistant message. */
+  usage?: Usage;
+  /** Messages appended after that usage sample and not yet seen by the provider. */
+  pendingMessages: Message[];
+}
+
 export interface AgentOptions {
   provider: StreamOptions["provider"];
   model: string;
@@ -254,12 +263,14 @@ export interface AgentOptions {
    * the messages array (e.g. compaction, truncation). Return the same array
    * for no-op, or a new array to replace the conversation context.
    *
+   * The latest provider usage is authoritative for the history through its
+   * assistant response. `pendingMessages` contains context appended afterward.
    * When `options.force` is true, the caller should compact unconditionally
    * (e.g. after a context overflow error from the API).
    */
   transformContext?: (
     messages: Message[],
-    options?: { force?: boolean },
+    options: TransformContextOptions,
   ) => Message[] | Promise<Message[]>;
   /**
    * Polled after tool execution completes each turn. Returns user messages

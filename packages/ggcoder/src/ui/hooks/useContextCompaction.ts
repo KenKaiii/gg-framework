@@ -5,12 +5,10 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
-import type { Message, Provider } from "@kenkaiiii/gg-ai";
-import {
-  compact,
-  shouldCompact,
-  getCompactionReserveTokens,
-} from "../../core/compaction/compactor.js";
+import type { Message, Provider, Usage } from "@kenkaiiii/gg-ai";
+import type { TransformContextOptions } from "@kenkaiiii/gg-agent";
+import { compact, shouldCompact } from "../../core/compaction/compactor.js";
+import { calculateActiveContextTokens } from "../../core/compaction/active-context.js";
 import { estimateConversationTokens } from "../../core/compaction/token-estimator.js";
 import {
   getAuthStorageKeys,
@@ -26,7 +24,6 @@ import { toErrorItem } from "../error-item.js";
 interface UseContextCompactionOptions {
   currentModel: string;
   currentProvider: Provider;
-  maxTokens: number;
   authStorage?: AuthStorage;
   contextWindowOptions: ContextWindowOptions;
   activeApiKey: string | undefined;
@@ -38,15 +35,14 @@ interface UseContextCompactionOptions {
   approvedPlanPathRef: MutableRefObject<string | undefined>;
   settingsRef: MutableRefObject<SettingsManager | null>;
   messagesRef: MutableRefObject<Message[]>;
-  lastActualTokensRef: MutableRefObject<number>;
-  lastActualTokensTimestampRef: MutableRefObject<number>;
   persistCompactedSession: (compactedMessages: readonly Message[]) => Promise<void>;
 }
 
 export interface ContextCompaction {
   compactionAbortRef: MutableRefObject<AbortController | null>;
   compactConversation: (messages: Message[], signal?: AbortSignal) => Promise<Message[]>;
-  transformContext: (messages: Message[], options?: { force?: boolean }) => Promise<Message[]>;
+  transformContext: (messages: Message[], options: TransformContextOptions) => Promise<Message[]>;
+  recordProviderUsage: (usage: Usage, messages: Message[]) => void;
 }
 
 /**
@@ -58,7 +54,6 @@ export interface ContextCompaction {
 export function useContextCompaction({
   currentModel,
   currentProvider,
-  maxTokens,
   authStorage,
   contextWindowOptions,
   activeApiKey,
@@ -70,12 +65,38 @@ export function useContextCompaction({
   approvedPlanPathRef,
   settingsRef,
   messagesRef,
-  lastActualTokensRef,
-  lastActualTokensTimestampRef,
   persistCompactedSession,
 }: UseContextCompactionOptions): ContextCompaction {
   const compactionAbortRef = useRef<AbortController | null>(null);
   const lastCompactionTimeRef = useRef(0);
+  const providerContextRef = useRef<{ usage: Usage; anchor: Message } | null>(null);
+  const modelKey = `${currentProvider}:${currentModel}`;
+  const providerContextModelKeyRef = useRef(modelKey);
+  if (providerContextModelKeyRef.current !== modelKey) {
+    providerContextModelKeyRef.current = modelKey;
+    providerContextRef.current = null;
+  }
+
+  const rememberProviderUsage = useCallback(
+    (usage: Usage, messages: Message[], pendingMessages: Message[]): void => {
+      const anchorIndex = messages.length - pendingMessages.length - 1;
+      const anchor = messages[anchorIndex];
+      if (anchor?.role === "assistant") {
+        providerContextRef.current = { usage: { ...usage }, anchor };
+      }
+    },
+    [],
+  );
+
+  const recordProviderUsage = useCallback((usage: Usage, messages: Message[]): void => {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const anchor = messages[index];
+      if (anchor?.role === "assistant") {
+        providerContextRef.current = { usage: { ...usage }, anchor };
+        return;
+      }
+    }
+  }, []);
 
   const compactConversation = useCallback(
     async (messages: Message[], signal?: AbortSignal): Promise<Message[]> => {
@@ -124,6 +145,7 @@ export function useContextCompaction({
         });
 
         if (result.result.compacted) {
+          providerContextRef.current = null;
           // Replace spinner with completed notice
           setLiveItems((prev) =>
             prev.map((item) =>
@@ -140,9 +162,11 @@ export function useContextCompaction({
             ),
           );
         } else {
-          // Nothing was actually compacted — remove spinner silently
+          // Nothing was actually compacted — remove spinner silently and keep
+          // the original reference so the agent loop preserves its usage anchor.
           log("INFO", "compaction", `Compaction skipped: ${result.result.reason ?? "unknown"}`);
           setLiveItems((prev) => prev.filter((item) => item.id !== spinId));
+          return messages;
         }
 
         return result.messages;
@@ -184,13 +208,17 @@ export function useContextCompaction({
   );
 
   const transformContext = useCallback(
-    async (messages: Message[], options?: { force?: boolean }): Promise<Message[]> => {
+    async (messages: Message[], options: TransformContextOptions): Promise<Message[]> => {
+      if (options.usage) {
+        rememberProviderUsage(options.usage, messages, options.pendingMessages);
+      }
+
       const settings = settingsRef.current;
       const autoCompact = settings?.get("autoCompact") ?? true;
       const threshold = settings?.get("compactThreshold") ?? 0.8;
 
-      // Force-compact on context overflow regardless of settings
-      if (options?.force) {
+      // Force-compact on context overflow regardless of settings or cooldown.
+      if (options.force) {
         const result = await compactConversation(messages);
         if (result !== messages) {
           messagesRef.current = result;
@@ -202,18 +230,27 @@ export function useContextCompaction({
 
       if (!autoCompact) return messages;
 
-      // Time-based cooldown: skip if compaction ran within the last 30 seconds
+      // Time-based cooldown: skip if compaction ran within the last 30 seconds.
       if (Date.now() - lastCompactionTimeRef.current < 30_000) {
         log("INFO", "compaction", `Skipping compaction — cooldown active`);
         return messages;
       }
 
+      let usage = options.usage;
+      let pendingMessages = options.pendingMessages;
+      if (!usage && providerContextRef.current) {
+        const anchorIndex = messages.lastIndexOf(providerContextRef.current.anchor);
+        if (anchorIndex >= 0) {
+          usage = providerContextRef.current.usage;
+          pendingMessages = messages.slice(anchorIndex + 1);
+        } else {
+          providerContextRef.current = null;
+        }
+      }
+
       const contextWindow = getContextWindow(currentModel, contextWindowOptions);
-      const reserveTokens = getCompactionReserveTokens(maxTokens);
-      const tokensFresh = lastActualTokensTimestampRef.current > lastCompactionTimeRef.current;
-      const actualTokens =
-        lastActualTokensRef.current > 0 && tokensFresh ? lastActualTokensRef.current : undefined;
-      if (shouldCompact(messages, contextWindow, threshold, actualTokens, reserveTokens)) {
+      const activeTokens = calculateActiveContextTokens(messages, { usage, pendingMessages });
+      if (shouldCompact(messages, contextWindow, threshold, activeTokens)) {
         const result = await compactConversation(messages);
         if (result !== messages) {
           messagesRef.current = result;
@@ -229,13 +266,16 @@ export function useContextCompaction({
       compactConversation,
       contextWindowOptions,
       persistCompactedSession,
-      maxTokens,
       settingsRef,
       messagesRef,
-      lastActualTokensRef,
-      lastActualTokensTimestampRef,
+      rememberProviderUsage,
     ],
   );
 
-  return { compactionAbortRef, compactConversation, transformContext };
+  return {
+    compactionAbortRef,
+    compactConversation,
+    transformContext,
+    recordProviderUsage,
+  };
 }

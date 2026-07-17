@@ -4,6 +4,7 @@ import {
   type AgentEvent,
   type AgentTool,
   type AgentTurnTiming,
+  type TransformContextOptions,
 } from "@kenkaiiii/gg-agent";
 import { ProviderError } from "@kenkaiiii/gg-ai";
 import type {
@@ -153,7 +154,7 @@ export interface AgentLoopOptions {
   }) => Promise<{ apiKey: string; accountId?: string; projectId?: string }>;
   transformContext?: (
     messages: Message[],
-    options?: { force?: boolean },
+    options: TransformContextOptions,
   ) => Message[] | Promise<Message[]>;
   getIdealReviewMessage?: (stats: IdealReviewStats, touchedFiles: string[]) => Message | null;
   /** Harness-owned successful read/mutation evidence for fail-closed Ideal review. */

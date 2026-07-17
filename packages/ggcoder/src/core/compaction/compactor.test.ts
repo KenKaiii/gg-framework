@@ -13,7 +13,7 @@ import {
   SUMMARY_ATTEMPT_TIMEOUT_MS,
 } from "./compactor.js";
 import { estimateConversationTokens } from "./token-estimator.js";
-import { getContextWindow } from "../model-registry.js";
+import { MODELS, getContextWindow } from "@kenkaiiii/gg-core";
 import type { Message, ContentPart, ToolResult } from "@kenkaiiii/gg-ai";
 
 // ── Helpers ────────────────────────────────────────────────
@@ -158,88 +158,84 @@ describe("shouldCompact", () => {
     expect(shouldCompact(messages, contextWindow, 0.8, 200)).toBe(true);
   });
 
-  it("uses requested output cap for reserve instead of theoretical model max", () => {
-    const messages = [makeMessage("system", "sys"), makeMessage("user", "hello")];
-    const contextWindow = 272_000;
-    const reserveTokens = getCompactionReserveTokens(16_384);
-
-    expect(reserveTokens).toBe(21_384);
-    expect(shouldCompact(messages, contextWindow, 0.8, 133_000, reserveTokens)).toBe(false);
-    expect(shouldCompact(messages, contextWindow, 0.8, 218_000, reserveTokens)).toBe(true);
+  it("keeps the deprecated reserve helper source-compatible", () => {
+    expect(getCompactionReserveTokens(4_096)).toBe(16_384);
+    expect(getCompactionReserveTokens(16_384)).toBe(21_384);
   });
 
-  it("keeps the fixed 16k minimum reserve for tiny output caps", () => {
-    expect(getCompactionReserveTokens(4_096)).toBe(16_384);
+  it("does not let an output-token reserve move the percentage boundary", () => {
+    const messages = [makeMessage("user", "x")];
+    const contextWindow = 272_000;
+    const boundary = Math.ceil(contextWindow * 0.8);
+
+    expect(shouldCompact(messages, contextWindow, 0.8, boundary - 1, 128_000)).toBe(false);
+    expect(shouldCompact(messages, contextWindow, 0.8, boundary, 128_000)).toBe(true);
   });
 });
 
 // ── Cross-model compaction thresholds ─────────────────────
 
 describe("compaction thresholds across all models", () => {
-  // Helper: build a conversation of approximately `targetTokens` tokens
-  function buildConversationOfSize(targetTokens: number): Message[] {
-    const messages: Message[] = [makeMessage("system", "System prompt.")];
-    const charsPerMsg = 1000;
-    // ~1000 chars / 3.5 ≈ 290 tokens per message pair (user + assistant overhead)
-    const tokensPerPair = estimateConversationTokens([
-      makeMessage("user", "x".repeat(charsPerMsg)),
-      makeMessage("assistant", "ok"),
-    ]);
-    const pairs = Math.ceil(targetTokens / tokensPerPair);
-    for (let i = 0; i < pairs; i++) {
-      messages.push(makeMessage("user", `msg ${i} ${"x".repeat(charsPerMsg)}`));
-      messages.push(makeMessage("assistant", `response ${i}`));
-    }
-    return messages;
-  }
+  const messages = [makeMessage("user", "x")];
 
-  const modelThresholds: { model: string; contextWindow: number }[] = [
-    { model: "claude-opus-4-8", contextWindow: 1_000_000 },
-    { model: "claude-sonnet-5", contextWindow: 1_000_000 },
-    { model: "claude-haiku-4-5-20251001", contextWindow: 200_000 },
-    { model: "gpt-5.6-luna", contextWindow: 1_050_000 },
-    { model: "gpt-5.1-codex-mini", contextWindow: 200_000 },
-    { model: "glm-5.1", contextWindow: 204_800 },
-    { model: "glm-4.7", contextWindow: 200_000 },
-    { model: "glm-4.7-flash", contextWindow: 200_000 },
-    { model: "kimi-k3", contextWindow: 1_048_576 },
-    { model: "kimi-k2.7-code", contextWindow: 262_144 },
-  ];
+  it.each(MODELS)("$id crosses the default boundary at exactly 80%", (model) => {
+    const contextWindow = getContextWindow(model.id, { provider: model.provider });
+    const boundary = Math.ceil(contextWindow * 0.8);
 
-  it("model registry returns correct context windows for all models", () => {
-    for (const { model, contextWindow } of modelThresholds) {
-      expect(getContextWindow(model), `${model} context window`).toBe(contextWindow);
-    }
+    expect(contextWindow).toBe(model.contextWindow);
+    expect(shouldCompact(messages, contextWindow, undefined, boundary - 1)).toBe(false);
+    expect(shouldCompact(messages, contextWindow, undefined, boundary)).toBe(true);
   });
 
-  it("unknown models fall back to 200k context window", () => {
+  it.each(MODELS)("$id honors a custom threshold", (model) => {
+    const contextWindow = getContextWindow(model.id, { provider: model.provider });
+    const customBoundary = Math.ceil(contextWindow * 0.65);
+
+    expect(shouldCompact(messages, contextWindow, 0.65, customBoundary - 1)).toBe(false);
+    expect(shouldCompact(messages, contextWindow, 0.65, customBoundary)).toBe(true);
+  });
+
+  it.each(MODELS)("$id ignores theoretical output size at the boundary", (model) => {
+    const contextWindow = getContextWindow(model.id, { provider: model.provider });
+    const boundary = Math.ceil(contextWindow * 0.8);
+
+    expect(shouldCompact(messages, contextWindow, 0.8, boundary - 1, model.maxOutputTokens)).toBe(
+      false,
+    );
+    expect(shouldCompact(messages, contextWindow, 0.8, boundary, model.maxOutputTokens)).toBe(true);
+  });
+
+  it("unknown models fall back to a 200k context window", () => {
     expect(getContextWindow("some-unknown-model")).toBe(200_000);
   });
 
-  for (const { model, contextWindow } of modelThresholds) {
-    const threshold80 = contextWindow * 0.8;
+  const openAITransportCases = [
+    { id: "gpt-5.6-sol", publicWindow: 1_050_000, codexWindow: 372_000 },
+    { id: "gpt-5.6-terra", publicWindow: 1_050_000, codexWindow: 372_000 },
+    { id: "gpt-5.6-luna", publicWindow: 1_050_000, codexWindow: 372_000 },
+    { id: "gpt-5.5", publicWindow: 1_050_000, codexWindow: 272_000 },
+  ] as const;
 
-    it(`${model} (${contextWindow / 1000}k): does NOT compact at 70% context`, () => {
-      const tokens70 = Math.floor(contextWindow * 0.7);
-      const messages = buildConversationOfSize(tokens70);
-      // Use actualTokens to precisely control the value
-      expect(shouldCompact(messages, contextWindow, 0.8, tokens70)).toBe(false);
-    });
+  it.each(openAITransportCases)("$id uses its public API window without accountId", (testCase) => {
+    const contextWindow = getContextWindow(testCase.id, { provider: "openai" });
+    const boundary = Math.ceil(testCase.publicWindow * 0.8);
 
-    it(`${model} (${contextWindow / 1000}k): DOES compact at 85% context`, () => {
-      const tokens85 = Math.floor(contextWindow * 0.85);
-      const messages = buildConversationOfSize(tokens85);
-      expect(shouldCompact(messages, contextWindow, 0.8, tokens85)).toBe(true);
-    });
+    expect(contextWindow).toBe(testCase.publicWindow);
+    expect(shouldCompact(messages, contextWindow, 0.8, boundary - 1)).toBe(false);
+    expect(shouldCompact(messages, contextWindow, 0.8, boundary)).toBe(true);
+  });
 
-    it(`${model} (${contextWindow / 1000}k): compaction threshold is exactly ${threshold80 / 1000}k tokens`, () => {
-      const messages = [makeMessage("user", "x")];
-      // 1 token under threshold — no compact
-      expect(shouldCompact(messages, contextWindow, 0.8, threshold80 - 1)).toBe(false);
-      // 1 token over threshold — compact
-      expect(shouldCompact(messages, contextWindow, 0.8, threshold80 + 1)).toBe(true);
+  it.each(openAITransportCases)("$id uses its Codex OAuth window with accountId", (testCase) => {
+    const contextWindow = getContextWindow(testCase.id, {
+      provider: "openai",
+      accountId: "chatgpt-account",
     });
-  }
+    const boundary = Math.ceil(testCase.codexWindow * 0.8);
+
+    expect(contextWindow).toBe(testCase.codexWindow);
+    expect(shouldCompact(messages, contextWindow, 0.8, boundary - 1)).toBe(false);
+    expect(shouldCompact(messages, contextWindow, 0.8, boundary)).toBe(true);
+  });
 });
 
 // ── findRecentCutPoint ─────────────────────────────────────

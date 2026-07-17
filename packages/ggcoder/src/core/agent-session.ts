@@ -10,6 +10,7 @@ import {
   ProviderError,
   type Message,
   type Provider,
+  type Usage,
   type ThinkingLevel,
   type TextContent,
   type ImageContent,
@@ -43,7 +44,7 @@ import {
 } from "./session-manager.js";
 import { ExtensionLoader } from "./extensions/loader.js";
 import type { ExtensionContext } from "./extensions/types.js";
-import { shouldCompact, compact, getCompactionReserveTokens } from "./compaction/compactor.js";
+import { shouldCompact, compact } from "./compaction/compactor.js";
 import {
   getAuthStorageKeys,
   getContextWindow,
@@ -68,6 +69,7 @@ import { DeferredToolCatalog } from "./mcp/deferred-catalog.js";
 import { createToolSearchTool } from "../tools/tool-search.js";
 import { log } from "./logger.js";
 import { setEstimatorModel } from "./compaction/token-estimator.js";
+import { calculateActiveContextTokens } from "./compaction/active-context.js";
 import { discoverAgents } from "./agents.js";
 import { enhancePrompt, type EnhanceResult } from "../utils/prompt-enhancer.js";
 import { detectProjectStack } from "./language-detector.js";
@@ -304,6 +306,10 @@ export class AgentSession {
   private loopBreakInjected = false;
   private regroundingInjected = false;
   private compactionOccurred = false;
+  private lastCompactionCompacted = false;
+  private compactionRetryAfter = 0;
+  /** Latest provider count, anchored to the assistant response it measured. */
+  private providerContext: { usage: Usage; anchor: Message } | null = null;
   private originalRequest = "";
   // Messages queued by the user while a run is in flight. Drained at the
   // mid-loop steering boundary (user steering wins over the hooks), mirroring
@@ -884,6 +890,13 @@ export class AgentSession {
       }
       case "turn_end":
         this.hookStats.turns = event.turn;
+        for (let index = this.messages.length - 1; index >= 0; index--) {
+          const anchor = this.messages[index];
+          if (anchor?.role === "assistant") {
+            this.providerContext = { usage: { ...event.usage }, anchor };
+            break;
+          }
+        }
         await this.persistTurnMetric(event);
         break;
     }
@@ -1073,17 +1086,27 @@ export class AgentSession {
         accountId: creds.accountId,
       });
       const threshold = this.settingsManager.get("compactThreshold");
-      // Reserve headroom for this model's real output budget (e.g. GPT-5.5 over
-      // Codex OAuth: 272K window but up to 128K max output) — without this the
-      // default 16K reserve lets compaction skip until input alone is near the
-      // window, then `input + max_tokens` exceeds it and the provider rejects
-      // the turn outright with "exceeds the context window". Mirrors the TUI's
-      // useContextCompaction hook.
-      const reserveTokens = getCompactionReserveTokens(this.maxTokens);
-      if (shouldCompact(this.messages, contextWindow, threshold, undefined, reserveTokens)) {
+      let activeTokens: number | undefined;
+      if (this.providerContext) {
+        const anchorIndex = this.messages.lastIndexOf(this.providerContext.anchor);
+        if (anchorIndex >= 0) {
+          activeTokens = calculateActiveContextTokens(this.messages, {
+            usage: this.providerContext.usage,
+            pendingMessages: this.messages.slice(anchorIndex + 1),
+          });
+        } else {
+          this.providerContext = null;
+        }
+      }
+      if (shouldCompact(this.messages, contextWindow, threshold, activeTokens)) {
         await this.compact(creds);
-        // Re-grounding hook keys off this — the context was just summarized.
-        this.compactionOccurred = true;
+        if (this.lastCompactionCompacted) {
+          // Re-grounding hook keys off this — the context was just summarized.
+          this.compactionOccurred = true;
+          this.compactionRetryAfter = 0;
+        } else {
+          this.compactionRetryAfter = Date.now() + 30_000;
+        }
       }
     }
 
@@ -1128,21 +1151,79 @@ export class AgentSession {
         // polled mid-loop; the ideal review is polled when the agent would stop.
         getSteeringMessages: () => this.getHookSteeringMessages(),
         getFollowUpMessages: () => this.getHookFollowUpMessages(),
-        // Overflow recovery: the loop calls this with { force: true } when the
-        // provider rejects a turn as too large (request_too_large / context
-        // overflow). Force-compact the in-flight history and hand it back so the
-        // loop retries with a smaller request, instead of surfacing the error.
-        // Without this the desktop app (which drives the loop through
-        // AgentSession, not the TUI's useContextCompaction hook) had NO auto
-        // recovery on 413 — the error went straight to the user. The non-force
-        // pre-call invocations pass through untouched: pre-turn compaction is
-        // already handled above, so we only act on the overflow force path.
-        // `loopMessages === this.messages` (prepareDynamicContext returns it by
-        // reference) and the post-loop `this.messages = loopMessages` re-sync
-        // keeps persistence correct after compact() swaps the array.
+        // Check authoritative provider usage before every model/tool step.
+        // Forced overflow recovery bypasses settings and cooldown; proactive
+        // checks honor both and estimate only messages unseen by the provider.
         transformContext: async (messages, transformOpts) => {
-          if (!transformOpts?.force) return messages;
-          await this.compact();
+          if (transformOpts.usage) {
+            const anchorIndex = messages.length - transformOpts.pendingMessages.length - 1;
+            const anchor = messages[anchorIndex];
+            if (anchor?.role === "assistant") {
+              this.providerContext = { usage: { ...transformOpts.usage }, anchor };
+            }
+          }
+
+          const force = transformOpts.force === true;
+          if (!force) {
+            if (!this.settingsManager.get("autoCompact")) return messages;
+            if (Date.now() < this.compactionRetryAfter) return messages;
+
+            let usage = transformOpts.usage;
+            let pendingMessages = transformOpts.pendingMessages;
+            if (!usage && this.providerContext) {
+              const anchorIndex = messages.lastIndexOf(this.providerContext.anchor);
+              if (anchorIndex >= 0) {
+                usage = this.providerContext.usage;
+                pendingMessages = messages.slice(anchorIndex + 1);
+              } else {
+                this.providerContext = null;
+              }
+            }
+
+            const contextWindow = getContextWindow(this.model, {
+              provider: this.provider,
+              accountId,
+            });
+            const threshold = this.settingsManager.get("compactThreshold");
+            const activeTokens = calculateActiveContextTokens(messages, {
+              usage,
+              pendingMessages,
+            });
+            if (!shouldCompact(messages, contextWindow, threshold, activeTokens)) return messages;
+          }
+
+          // compact() operates on this.messages, while an earlier transform may
+          // have replaced the loop's in-flight array. Rebind before every attempt
+          // so the current tool results are included in the summary.
+          this.messages = messages;
+          try {
+            await this.compact({
+              accessToken: apiKey,
+              accountId,
+              projectId,
+              baseUrl: effectiveBaseUrl,
+            });
+          } catch (error) {
+            this.messages = messages;
+            this.compactionRetryAfter = Date.now() + 30_000;
+            if (force || isAbortError(error) || this.opts.signal?.aborted) throw error;
+            log(
+              "WARN",
+              "compaction",
+              `In-flight compaction failed; cooling down for 30s: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+            return messages;
+          }
+
+          if (!this.lastCompactionCompacted) {
+            this.messages = messages;
+            this.compactionRetryAfter = Date.now() + 30_000;
+            return messages;
+          }
+
+          this.compactionRetryAfter = 0;
           this.compactionOccurred = true;
           return this.messages;
         },
@@ -1251,6 +1332,7 @@ export class AgentSession {
     const prevProvider = this.provider;
     if (provider) this.provider = provider as Provider;
     this.model = model;
+    this.providerContext = null;
     // Keep host-provided option closures (notably chat delegation) aligned with
     // the live selection after an in-session model switch.
     this.opts.provider = this.provider;
@@ -1340,6 +1422,7 @@ export class AgentSession {
     projectId?: string;
     baseUrl?: string;
   }): Promise<void> {
+    this.lastCompactionCompacted = false;
     const creds =
       existingCredentials ??
       (await this.authStorage.resolveCredentials(this.provider, {
@@ -1363,6 +1446,17 @@ export class AgentSession {
     });
 
     this.messages = result.messages;
+    this.lastCompactionCompacted = result.result.compacted;
+
+    if (!result.result.compacted) {
+      this.eventBus.emit("compaction_end", {
+        originalCount: result.result.originalCount,
+        newCount: result.result.newCount,
+      });
+      return;
+    }
+
+    this.providerContext = null;
 
     // Transient sessions (Ken chat/autopilot, subagent spawns) must NEVER touch
     // the session store: without this guard, the first auto-compaction called
@@ -2024,13 +2118,9 @@ export class AgentSession {
       provider: this.provider,
       accountId: creds.accountId,
     });
-    const needsLoadCompaction = shouldCompact(
-      this.messages,
-      contextWindow,
-      0.8,
-      undefined,
-      getCompactionReserveTokens(this.maxTokens),
-    );
+    const needsLoadCompaction =
+      this.settingsManager.get("autoCompact") &&
+      shouldCompact(this.messages, contextWindow, this.settingsManager.get("compactThreshold"));
     if (needsLoadCompaction && this.opts.deferLoadCompaction) {
       // Host readiness is gated on initialize() — don't block it on a summary
       // LLM call (up to 30s). runLoop()'s pre-run auto-compaction picks this

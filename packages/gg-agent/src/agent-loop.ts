@@ -376,6 +376,8 @@ export async function* agentLoop(
   let toolMap = new Map<string, AgentTool>((options.tools ?? []).map((t) => [t.name, t]));
 
   const totalUsage: Usage = { inputTokens: 0, outputTokens: 0 };
+  let latestProviderUsage: Usage | undefined;
+  let usageAnchorIndex: number | undefined;
   let turn = 0;
   // Set when a turn executes tools and completes but the turn budget is now
   // exhausted — the loop is about to stop mid-task. Drives the terminal
@@ -520,7 +522,12 @@ export async function* agentLoop(
       // ── Mid-loop context transform (compaction / truncation) ──
       if (options.transformContext) {
         diag("transform_start");
-        const transformed = await options.transformContext(messages);
+        const pendingMessages =
+          usageAnchorIndex === undefined ? [] : messages.slice(usageAnchorIndex + 1);
+        const transformed = await options.transformContext(messages, {
+          usage: latestProviderUsage,
+          pendingMessages,
+        });
         if (transformed !== messages) {
           diag("transform_compacted", {
             before: messages.length,
@@ -528,6 +535,8 @@ export async function* agentLoop(
           });
           messages.length = 0;
           messages.push(...transformed);
+          latestProviderUsage = undefined;
+          usageAnchorIndex = undefined;
         }
         diag("transform_end");
       }
@@ -885,10 +894,18 @@ export async function* agentLoop(
               ...overflowDetails,
             });
             try {
-              const compacted = await options.transformContext(messages, { force: true });
+              const pendingMessages =
+                usageAnchorIndex === undefined ? [] : messages.slice(usageAnchorIndex + 1);
+              const compacted = await options.transformContext(messages, {
+                force: true,
+                usage: latestProviderUsage,
+                pendingMessages,
+              });
               if (compacted !== messages && compacted.length < messages.length) {
                 messages.length = 0;
                 messages.push(...compacted);
+                latestProviderUsage = undefined;
+                usageAnchorIndex = undefined;
                 diag("overflow_compact_success", {
                   attempt: overflowCompactionAttempts,
                   messages: messages.length,
@@ -1158,8 +1175,12 @@ export async function* agentLoop(
         totalUsage.cacheWrite = (totalUsage.cacheWrite ?? 0) + response.usage.cacheWrite;
       }
 
-      // Append assistant message to conversation
+      // Append assistant message and anchor the provider's authoritative usage
+      // at that exact history position. Later tool/user messages stay pending
+      // until the next provider request observes them.
       messages.push(response.message);
+      latestProviderUsage = response.usage;
+      usageAnchorIndex = messages.length - 1;
 
       const completedAt = Date.now();
       const outputTokensPerSecond =

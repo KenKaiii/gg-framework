@@ -540,10 +540,6 @@ export function App(props: AppProps) {
     props.sessionStore?.idealReviewEnabled ?? props.idealReviewEnabled ?? true,
   );
   const idealReviewEnabledRef = useRef(idealReviewEnabled);
-  /** Last actual API-reported input token count (from turn_end). */
-  const lastActualTokensRef = useRef(0);
-  /** Timestamp (ms) when lastActualTokensRef was last updated by turn_end. */
-  const lastActualTokensTimestampRef = useRef(0);
   /**
    * Languages whose style packs are currently injected into the system prompt.
    * Grown by `maybeInjectLanguagePacks` after `write`/`bash` tool results when
@@ -911,25 +907,23 @@ export function App(props: AppProps) {
     }
   }, [props.settingsFile]);
 
-  const { compactionAbortRef, compactConversation, transformContext } = useContextCompaction({
-    currentModel,
-    currentProvider,
-    maxTokens: props.maxTokens,
-    authStorage: props.authStorage,
-    contextWindowOptions,
-    activeApiKey,
-    activeAccountId,
-    activeProjectId,
-    activeBaseUrl,
-    setLiveItems,
-    getId,
-    approvedPlanPathRef,
-    settingsRef,
-    messagesRef,
-    lastActualTokensRef,
-    lastActualTokensTimestampRef,
-    persistCompactedSession,
-  });
+  const { compactionAbortRef, compactConversation, transformContext, recordProviderUsage } =
+    useContextCompaction({
+      currentModel,
+      currentProvider,
+      authStorage: props.authStorage,
+      contextWindowOptions,
+      activeApiKey,
+      activeAccountId,
+      activeProjectId,
+      activeBaseUrl,
+      setLiveItems,
+      getId,
+      approvedPlanPathRef,
+      settingsRef,
+      messagesRef,
+      persistCompactedSession,
+    });
 
   // ── Background task bar state (external store) ──────────
   const {
@@ -1606,6 +1600,7 @@ export function App(props: AppProps) {
           },
           timing: AgentTurnTiming,
         ) => {
+          recordProviderUsage(usage, messagesRef.current);
           recordTurnEnd(sessionStatsRef.current, usage);
           const metric: TurnMetricPayload = {
             version: 1,
@@ -1636,13 +1631,6 @@ export function App(props: AppProps) {
             providerDurationMs: String(timing.providerDurationMs),
             ...(timing.ttftMs != null && { ttftMs: String(timing.ttftMs) }),
           });
-          // Track actual token count for compaction decisions.
-          // Anthropic has separate input/output limits — only count input.
-          // All other providers share the context window — count both.
-          const inputContext = usage.inputTokens + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-          lastActualTokensRef.current =
-            currentProvider === "anthropic" ? inputContext : inputContext + usage.outputTokens;
-          lastActualTokensTimestampRef.current = Date.now();
           // For tool-only turns (no text), flush completed items to finalized
           // history so liveItems doesn't grow unbounded across consecutive turns.
           setLiveItems((prev) => {
@@ -1653,7 +1641,7 @@ export function App(props: AppProps) {
             return remaining;
           });
         },
-        [currentModel, currentProvider, queueFlush, sessionStore],
+        [currentModel, currentProvider, queueFlush, recordProviderUsage, sessionStore],
       ),
       onDone: useCallback(
         (

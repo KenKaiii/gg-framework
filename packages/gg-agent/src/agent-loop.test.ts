@@ -11,8 +11,8 @@ import {
   isUsageLimitError,
   serverResetDelayMs,
 } from "./agent-loop.js";
-import type { AgentEvent, AgentResult, AgentTool } from "./types.js";
-import type { Message, StreamOptions } from "@kenkaiiii/gg-ai";
+import type { AgentEvent, AgentResult, AgentTool, TransformContextOptions } from "./types.js";
+import type { Message, StreamOptions, Usage } from "@kenkaiiii/gg-ai";
 
 // ── Mock stream ────────────────────────────────────────────
 
@@ -45,6 +45,22 @@ function mockOkResult(text: string) {
       for (const e of events) yield e;
     },
     response: Promise.resolve(resp),
+  };
+}
+
+function mockToolCallResult(name: string, usage: Usage, id = "t1") {
+  return {
+    [Symbol.asyncIterator]: async function* () {
+      yield* [];
+    },
+    response: Promise.resolve({
+      message: {
+        role: "assistant" as const,
+        content: [{ type: "tool_call" as const, id, name, args: {} }],
+      },
+      stopReason: "tool_use" as const,
+      usage,
+    }),
   };
 }
 
@@ -361,7 +377,155 @@ describe("agentLoop", () => {
     });
 
     expect(transformContext).toHaveBeenCalledTimes(1);
-    expect(transformContext).toHaveBeenCalledWith(messages);
+    expect(transformContext).toHaveBeenCalledWith(messages, {
+      usage: undefined,
+      pendingMessages: [],
+    });
+  });
+
+  it("passes provider usage and pending tool results to the next transform", async () => {
+    const usage: Usage = {
+      inputTokens: 70,
+      outputTokens: 30,
+      cacheRead: 11,
+      cacheWrite: 7,
+    };
+    mockStream
+      .mockReturnValueOnce(
+        mockToolCallResult("context_probe", usage) as unknown as ReturnType<typeof stream>,
+      )
+      .mockReturnValueOnce(mockOkResult("done") as unknown as ReturnType<typeof stream>);
+
+    const transformContext = vi.fn((msgs: Message[], _options: TransformContextOptions) => msgs);
+    await collectLoop(
+      [
+        { role: "system", content: "sys" },
+        { role: "user", content: "run the tool" },
+      ],
+      {
+        provider: "anthropic",
+        model: "test",
+        tools: [
+          {
+            name: "context_probe",
+            description: "returns pending context",
+            parameters: emptyParams,
+            execute: () => "pending tool output",
+          },
+        ],
+        transformContext,
+      },
+    );
+
+    expect(transformContext).toHaveBeenCalledTimes(2);
+    const secondOptions = transformContext.mock.calls[1]![1] as TransformContextOptions;
+    expect(secondOptions.usage).toEqual(usage);
+    expect(secondOptions.pendingMessages).toHaveLength(1);
+    expect(secondOptions.pendingMessages[0]).toMatchObject({ role: "tool" });
+    expect(JSON.stringify(secondOptions.pendingMessages[0]?.content)).toContain(
+      "pending tool output",
+    );
+  });
+
+  it("uses transformed history for the next provider call", async () => {
+    const providerPrompts: Message[][] = [];
+    mockStream
+      .mockImplementationOnce((options: StreamOptions) => {
+        providerPrompts.push(structuredClone(options.messages));
+        return mockToolCallResult("context_probe", {
+          inputTokens: 70,
+          outputTokens: 30,
+        }) as unknown as ReturnType<typeof stream>;
+      })
+      .mockImplementationOnce((options: StreamOptions) => {
+        providerPrompts.push(structuredClone(options.messages));
+        return mockOkResult("done") as unknown as ReturnType<typeof stream>;
+      });
+
+    const compacted: Message[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "compacted history" },
+    ];
+    let transformCall = 0;
+    const transformContext = vi.fn((msgs: Message[]) => {
+      transformCall++;
+      return transformCall === 2 ? compacted : msgs;
+    });
+
+    await collectLoop(
+      [
+        { role: "system", content: "sys" },
+        { role: "user", content: "old history" },
+      ],
+      {
+        provider: "anthropic",
+        model: "test",
+        tools: [
+          {
+            name: "context_probe",
+            description: "returns context",
+            parameters: emptyParams,
+            execute: () => "large pending result",
+          },
+        ],
+        transformContext,
+      },
+    );
+
+    expect(providerPrompts).toHaveLength(2);
+    expect(providerPrompts[1]).toEqual(compacted);
+  });
+
+  it("clears the usage anchor when a transform replaces history", async () => {
+    const firstUsage: Usage = { inputTokens: 80, outputTokens: 20, cacheRead: 5 };
+    const overflow = new Error("prompt is too long: 250000 tokens > 200000 maximum");
+    mockStream
+      .mockReturnValueOnce(
+        mockToolCallResult("context_probe", firstUsage) as unknown as ReturnType<typeof stream>,
+      )
+      .mockReturnValueOnce(mockErrorResult(overflow) as unknown as ReturnType<typeof stream>)
+      .mockReturnValueOnce(mockOkResult("recovered") as unknown as ReturnType<typeof stream>);
+
+    let transformCall = 0;
+    const transformContext = vi.fn((msgs: Message[], options: TransformContextOptions) => {
+      transformCall++;
+      if (transformCall === 2) {
+        return [
+          { role: "system" as const, content: "sys" },
+          { role: "user" as const, content: "compacted history" },
+        ];
+      }
+      if (options.force) return msgs.slice(0, 1);
+      return msgs;
+    });
+
+    await collectLoop(
+      [
+        { role: "system", content: "sys" },
+        { role: "user", content: "old history" },
+      ],
+      {
+        provider: "anthropic",
+        model: "test",
+        tools: [
+          {
+            name: "context_probe",
+            description: "returns context",
+            parameters: emptyParams,
+            execute: () => "pending result",
+          },
+        ],
+        transformContext,
+      },
+    );
+
+    expect((transformContext.mock.calls[1]![1] as TransformContextOptions).usage).toEqual(
+      firstUsage,
+    );
+    const forcedOptions = transformContext.mock.calls.find(
+      (call) => (call[1] as TransformContextOptions).force,
+    )?.[1] as TransformContextOptions;
+    expect(forcedOptions).toEqual({ force: true, usage: undefined, pendingMessages: [] });
   });
 
   it("replaces messages when transformContext returns a new array", async () => {

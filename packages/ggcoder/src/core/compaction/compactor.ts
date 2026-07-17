@@ -150,22 +150,17 @@ export interface CompactionResult {
 }
 
 /**
- * Default token reserve for compaction.
- * Leaves headroom for the model's next response + system overhead.
- * Matches the widely-used Pi / Grok-CLI default of 16 384 tokens.
+ * @deprecated Compaction now uses only the configured context-window percentage.
+ * Retained for source compatibility until the next major release.
  */
 export const COMPACTION_RESERVE_TOKENS = 16_384;
 
-/** Extra non-output headroom for prompt/cache/accounting overhead. */
+/** @deprecated Retained for source compatibility until the next major release. */
 export const COMPACTION_OVERHEAD_RESERVE_TOKENS = 5_000;
 
 /**
- * Calculate the context headroom to reserve before auto-compaction.
- *
- * Use the requested output cap, not the model registry's theoretical maximum.
- * GPT-5.5 over OpenAI Codex has a 272K effective input window but advertises a
- * 128K max output capability; reserving that full amount would compact at
- * ~139K tokens even though the CLI currently requests 16K output tokens.
+ * @deprecated Compaction no longer reserves output tokens when choosing its boundary.
+ * Retained for source compatibility until the next major release.
  */
 export function getCompactionReserveTokens(maxTokens: number): number {
   const safeMaxTokens = Number.isFinite(maxTokens) && maxTokens > 0 ? Math.ceil(maxTokens) : 0;
@@ -178,10 +173,8 @@ const COMPACTION_MIN_MESSAGES = 4;
 /**
  * Check if compaction should be triggered.
  *
- * Uses the reserve-based approach (contextWindow − reserveTokens) used by
- * Pi, Grok-CLI, OpenClaw, BrowserOS, and most real-world agent frameworks.
- * A percentage-based threshold is still supported: when both are supplied the
- * more conservative (lower) limit wins.
+ * The boundary is the first whole token at or above the configured percentage
+ * of the active transport's context window. Output-token ceilings do not move it.
  */
 export function shouldCompact(
   messages: Message[],
@@ -189,8 +182,8 @@ export function shouldCompact(
   threshold = 0.8,
   /** Actual API-reported token count — preferred over char-based estimate when available. */
   actualTokens?: number,
-  /** Fixed token reserve subtracted from contextWindow. Defaults to 16 384. */
-  reserveTokens = COMPACTION_RESERVE_TOKENS,
+  /** @deprecated Output-token reserves no longer affect compaction decisions. */
+  _reserveTokens = COMPACTION_RESERVE_TOKENS,
 ): boolean {
   // Don't attempt compaction with too few messages — compact() would bail
   // anyway (middleMessages <= 2), but this avoids the spinner + LLM auth dance.
@@ -201,21 +194,10 @@ export function shouldCompact(
     return false;
   }
   const estimated = actualTokens ?? estimateConversationTokens(messages);
-  const percentageLimit = contextWindow * threshold;
-  // Honor the reserve when it leaves a sensible amount of context. Models
-  // with large output budgets (e.g. Codex Mini at 100K out / 200K ctx) will
-  // hit the API's context_length error if we only compact at the percentage
-  // threshold. When the reserve is pathological (≥ 75% of the window — e.g.
-  // tiny test fixtures or a model whose output budget eats most of the
-  // window), fall back to the percentage threshold alone.
-  const reserveLimit =
-    reserveTokens > 0 && reserveTokens < contextWindow * 0.75
-      ? contextWindow - reserveTokens
-      : percentageLimit;
-  const limit = Math.min(percentageLimit, reserveLimit);
+  const limit = Math.ceil(contextWindow * threshold);
   const source = actualTokens != null ? "actual" : "estimated";
   log("INFO", "compaction", `Context check: ${estimated} ${source} tokens, threshold ${limit}`);
-  return estimated > limit;
+  return estimated >= limit;
 }
 
 /**

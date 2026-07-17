@@ -33,6 +33,7 @@ export type {
   AgentDoneEvent,
   AgentErrorEvent,
   AgentEvent,
+  TransformContextOptions,
   AgentOptions,
   AgentResult,
 } from "./types.js";
