@@ -1,5 +1,11 @@
 # @kenkaiiii/gg-ai
 
+## 5.19.3
+
+### Patch Changes
+
+- b6e7562: Compress large OpenAI Codex request bodies with zstd and automatically retry HTTP 507 upstream retry-buffer failures.
+
 ## 5.19.2
 
 ## 5.19.1
