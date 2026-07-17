@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { evaluateLoopBreak, ToolCallProgressTracker } from "../../core/loop-breaker.js";
 import { shouldRetainThinkingDelta, type AgentLoopOptions } from "./useAgentLoop.js";
@@ -5,6 +6,22 @@ import type { Message } from "@kenkaiiii/gg-ai";
 import type { TransformContextOptions } from "@kenkaiiii/gg-agent";
 
 describe("useAgentLoop context transforms", () => {
+  it("adds missing read coverage to the initial Ideal review turn", () => {
+    const source = readFileSync(new URL("./useAgentLoop.ts", import.meta.url), "utf8");
+
+    expect(source).toMatch(
+      /withReviewCoverageRequirements\(\s*idealReviewMessage,\s*coverage\.missing\s*\)/,
+    );
+  });
+
+  it("passes the per-turn tool-result budget to the agent loop", () => {
+    const source = readFileSync(new URL("./useAgentLoop.ts", import.meta.url), "utf8");
+
+    expect(source).toMatch(
+      /maxTurnToolResultChars:\s*resolveSessionTurnToolResultCharLimit\(\s*options\.model,\s*options\.provider,\s*accountId,?\s*\)/,
+    );
+  });
+
   it("accepts authoritative usage and pending messages in the transform contract", async () => {
     const seenOptions: TransformContextOptions[] = [];
     const transformContext: NonNullable<AgentLoopOptions["transformContext"]> = async (

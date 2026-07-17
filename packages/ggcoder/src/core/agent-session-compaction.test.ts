@@ -182,6 +182,131 @@ describe("AgentSession worker auto-compaction", () => {
   }, 15_000);
 });
 
+describe("AgentSession stale tool-output pruning", () => {
+  it("stubs superseded reads in-place during the pre-step transform", async () => {
+    shouldCompactMock.mockReturnValue(false);
+    let capturedMessages: Message[] = [];
+
+    agentLoopMock.mockImplementation(async function* (
+      messages: Message[],
+      options: {
+        transformContext?: (m: Message[], o: TransformContextOptions) => Promise<Message[]>;
+      },
+    ) {
+      messages.push(
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_call", id: "old-read", name: "read", args: { file_path: "src/a.ts" } },
+          ],
+        },
+        {
+          role: "tool",
+          content: [{ type: "tool_result", toolCallId: "old-read", content: "x".repeat(150_000) }],
+        },
+        { role: "user", content: "turn 2" },
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_call", id: "new-read", name: "read", args: { file_path: "src/a.ts" } },
+          ],
+        },
+        {
+          role: "tool",
+          content: [{ type: "tool_result", toolCallId: "new-read", content: "fresh" }],
+        },
+        { role: "user", content: "turn 3" },
+      );
+      capturedMessages = await options.transformContext!(messages, { pendingMessages: [] });
+      yield { type: "agent_done" };
+    });
+
+    const { AgentSession } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      systemPrompt: "system prompt",
+      transient: true,
+    });
+    await session.initialize();
+    await session.prompt("prune me");
+    await session.dispose();
+
+    const results = capturedMessages
+      .filter((msg) => msg.role === "tool")
+      .flatMap((msg) => (Array.isArray(msg.content) ? msg.content : []));
+    const oldRead = results.find((r) => r.type === "tool_result" && r.toolCallId === "old-read");
+    const newRead = results.find((r) => r.type === "tool_result" && r.toolCallId === "new-read");
+    expect(oldRead?.content).toContain("superseded by a newer read");
+    expect(newRead?.content).toBe("fresh");
+    expect(compactMock).not.toHaveBeenCalled();
+  });
+
+  it("discards the turn's provider usage after a prune so freed tokens defer compaction", async () => {
+    shouldCompactMock.mockReturnValue(false);
+
+    agentLoopMock.mockImplementation(async function* (
+      messages: Message[],
+      options: {
+        transformContext?: (m: Message[], o: TransformContextOptions) => Promise<Message[]>;
+      },
+    ) {
+      messages.push(
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_call", id: "old-read", name: "read", args: { file_path: "src/a.ts" } },
+          ],
+        },
+        {
+          role: "tool",
+          content: [{ type: "tool_result", toolCallId: "old-read", content: "x".repeat(150_000) }],
+        },
+        { role: "user", content: "turn 2" },
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_call", id: "new-read", name: "read", args: { file_path: "src/a.ts" } },
+          ],
+        },
+        {
+          role: "tool",
+          content: [{ type: "tool_result", toolCallId: "new-read", content: "fresh" }],
+        },
+        { role: "user", content: "turn 3" },
+      );
+      // Usage counted the soon-to-be-pruned 150k-char read. After the prune
+      // it must NOT reach shouldCompact — estimation on the pruned history
+      // takes over instead.
+      await options.transformContext!(messages, {
+        usage: { inputTokens: 180_000, outputTokens: 500 },
+        pendingMessages: [],
+      });
+      yield { type: "agent_done" };
+    });
+
+    const { AgentSession } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      systemPrompt: "system prompt",
+      transient: true,
+    });
+    await session.initialize();
+    await session.prompt("prune usage fallback");
+    await session.dispose();
+
+    // The transform after the in-loop mutation is the last shouldCompact call;
+    // its actualTokens argument must be an estimate of the pruned history,
+    // far below the stale 180k usage figure.
+    const lastCall = shouldCompactMock.mock.calls.at(-1)!;
+    const actualTokens = lastCall[3] as number;
+    expect(actualTokens).toBeLessThan(50_000);
+  });
+});
+
 describe("AgentSession overflow recovery", () => {
   // Regression: the desktop app drives the loop through AgentSession (not the
   // TUI's useContextCompaction hook), and AgentSession never passed
@@ -594,6 +719,56 @@ describe("AgentSession mid-turn compaction", () => {
     await session.dispose();
 
     expect(compactMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues the run and cools down across prompts after pre-run compaction fails", async () => {
+    shouldCompactMock.mockReturnValue(true);
+    compactMock.mockRejectedValue(new Error("summary unavailable"));
+    agentLoopMock.mockImplementation(async function* () {
+      yield { type: "agent_done" };
+    });
+
+    const { AgentSession } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      systemPrompt: "system prompt",
+      transient: true,
+    });
+    await session.initialize();
+    await session.prompt("first prompt");
+    await session.prompt("second prompt");
+    await session.dispose();
+
+    expect(compactMock).toHaveBeenCalledTimes(1);
+    expect(agentLoopMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("cools down across prompts after pre-run compaction is a no-op", async () => {
+    shouldCompactMock.mockReturnValue(true);
+    compactMock.mockImplementation(async (messages: Message[]) =>
+      compactionResult([...messages], false),
+    );
+    agentLoopMock.mockImplementation(async function* () {
+      yield { type: "agent_done" };
+    });
+
+    const { AgentSession } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      systemPrompt: "system prompt",
+      transient: true,
+    });
+    await session.initialize();
+    await session.prompt("first prompt");
+    await session.prompt("second prompt");
+    await session.dispose();
+
+    expect(compactMock).toHaveBeenCalledTimes(1);
+    expect(agentLoopMock).toHaveBeenCalledTimes(2);
   });
 });
 

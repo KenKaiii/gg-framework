@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ProviderError } from "@kenkaiiii/gg-ai";
 import {
   agentLoop,
+  capTurnToolResults,
   classifyOverload,
   extractContextOverflowDetails,
   isBillingError,
@@ -1532,5 +1533,74 @@ describe("agentLoop", () => {
 
     expect(events.some((e) => e.type === "max_turns")).toBe(false);
     expect(events.some((e) => e.type === "agent_done")).toBe(true);
+  });
+});
+
+describe("capTurnToolResults", () => {
+  const result = (id: string, content: string) => ({
+    type: "tool_result" as const,
+    toolCallId: id,
+    content,
+  });
+
+  it("leaves results untouched when the turn total fits the budget", () => {
+    const toolResults = [result("a", "x".repeat(400)), result("b", "y".repeat(500))];
+    capTurnToolResults(toolResults, 1_000);
+    expect(toolResults[0].content).toBe("x".repeat(400));
+    expect(toolResults[1].content).toBe("y".repeat(500));
+  });
+
+  it("is a no-op when no budget is configured", () => {
+    const toolResults = [result("a", "x".repeat(5_000))];
+    capTurnToolResults(toolResults, undefined);
+    expect(toolResults[0].content).toBe("x".repeat(5_000));
+  });
+
+  it("trims only the largest results and preserves small ones (water-filling)", () => {
+    const small = result("small", "s".repeat(200));
+    const medium = result("medium", "m".repeat(2_000));
+    const large = result("large", "l".repeat(20_000));
+    const toolResults = [large, small, medium];
+    capTurnToolResults(toolResults, 6_000);
+
+    expect(small.content).toBe("s".repeat(200));
+    expect(medium.content).toBe("m".repeat(2_000));
+    expect(large.content).not.toBe("l".repeat(20_000));
+    expect(large.content).toContain("characters trimmed");
+    expect(large.content).toContain("offset/limit");
+    // Trimmed large result keeps head and tail around the notice.
+    expect(large.content.startsWith("l")).toBe(true);
+    expect(large.content.endsWith("l")).toBe(true);
+    // Total payload (minus notices) respects the budget.
+    const kept = toolResults.reduce(
+      (sum, r) => sum + (r.content as string).replace(/\n\n\[\.\.\..*\.\.\.\]\n\n/s, "").length,
+      0,
+    );
+    expect(kept).toBeLessThanOrEqual(6_000);
+  });
+
+  it("splits the budget across several oversized parallel results", () => {
+    const toolResults = [
+      result("a", "a".repeat(50_000)),
+      result("b", "b".repeat(50_000)),
+      result("c", "c".repeat(50_000)),
+    ];
+    capTurnToolResults(toolResults, 30_000);
+    for (const r of toolResults) {
+      expect((r.content as string).length).toBeLessThan(50_000);
+      expect(r.content).toContain("characters trimmed");
+    }
+  });
+
+  it("ignores structured (non-string) results", () => {
+    const structured = {
+      type: "tool_result" as const,
+      toolCallId: "img",
+      content: [{ type: "text" as const, text: "t".repeat(10_000) }],
+    };
+    const text = result("txt", "x".repeat(10_000));
+    capTurnToolResults([structured, text], 5_000);
+    expect(structured.content[0].text).toBe("t".repeat(10_000));
+    expect(text.content).toContain("characters trimmed");
   });
 });

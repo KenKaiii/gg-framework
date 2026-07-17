@@ -1622,8 +1622,10 @@ async function createSession(
   // Autopilot (auto-review) toggle for THIS window's project. Loaded from
   // gg-app.json on boot; flipped via POST /autopilot. When on, POST /prompt runs
   // runAutopilotCycle after the user's turn settles — Ken auto-reviews the work
-  // and drives the review→prompt→review loop.
+  // and drives the review→prompt→review loop. Ken is the sole verification
+  // owner in this mode, so suppress the build session's redundant Ideal hook.
   let autopilot = mode === "code" && (await loadAutopilot(cwd));
+  session.setIdealReviewSuppressed(autopilot);
   // True while an autopilot review is in flight (used to defer kenAuto model
   // switches, like kenRunning does for chat Ken, and to drive the spinner).
   let autopilotReviewing = false;
@@ -1825,6 +1827,9 @@ async function createSession(
       // (often >5 min) regardless of the user's global speedProfile pick.
       forceLongCacheRetention: true,
     });
+    // Ken is already the independent autopilot reviewer; recursively running
+    // his own Ideal self-review adds latency and can corrupt the verdict shape.
+    ken.setIdealReviewSuppressed(true);
     await ken.initialize();
     // Deliberately no bus bridge: the review is silent. Errors surface via the
     // runAutopilotReview try/catch as autopilot_error frames.
@@ -2041,6 +2046,7 @@ async function createSession(
     const generation = runLifecycle.begin(abortOwnedWork).generation;
     pendingCancelDrain = null;
     autopilotActive = true;
+    session.setIdealReviewSuppressed(true);
     // Generation captured by the last plan review; acceptPlan re-checks it so
     // a user Accept/Reject landing mid-review always wins.
     let planGenAtReview = -1;
@@ -2150,6 +2156,7 @@ async function createSession(
       });
     } finally {
       autopilotActive = false;
+      session.setIdealReviewSuppressed(autopilot);
       finishOwnedGeneration(generation, true);
       queueMicrotask(() => void runStrandedQueue());
     }
@@ -3209,6 +3216,9 @@ async function createSession(
           return;
         }
         autopilot = enabled;
+        // A toggle-off during an active cycle takes effect after Ken finishes;
+        // until then, injected build runs must not re-enable Ideal self-review.
+        session.setIdealReviewSuppressed(enabled || autopilotActive);
         await saveAutopilot(cwd, enabled);
         log("INFO", "app-sidecar", "autopilot toggled", { enabled: String(enabled) });
         broadcast("autopilot", { autopilot: enabled });

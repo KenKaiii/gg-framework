@@ -70,6 +70,7 @@ import { createToolSearchTool } from "../tools/tool-search.js";
 import { log } from "./logger.js";
 import { setEstimatorModel } from "./compaction/token-estimator.js";
 import { calculateActiveContextTokens } from "./compaction/active-context.js";
+import { pruneStaleToolResults } from "./compaction/tool-result-pruner.js";
 import { discoverAgents } from "./agents.js";
 import { enhancePrompt, type EnhanceResult } from "../utils/prompt-enhancer.js";
 import { detectProjectStack } from "./language-detector.js";
@@ -78,6 +79,7 @@ import {
   evaluateIdealReview,
   buildIdealReviewMessage,
   buildReviewCoverageMessage,
+  withReviewCoverageRequirements,
   detectTestDrift,
   ReviewCoverageTracker,
 } from "./ideal-review.js";
@@ -230,6 +232,23 @@ export function resolveSessionToolResultCharLimit(
   );
 }
 
+/**
+ * Aggregate budget for ALL tool results produced in one assistant turn.
+ * Individual results are already capped, but wide parallel fan-outs (GPT-5.6's
+ * signature behavior) were observed injecting 100k+ uncached tokens in a single
+ * turn. ~15% of the context window in chars (1 token ≈ 3.5 chars), floored at
+ * 100KB so small windows still fit two full-size reads, ceilinged at 240KB so
+ * 1M-context models don't waive the budget entirely.
+ */
+export function resolveSessionTurnToolResultCharLimit(
+  model: string,
+  provider: Provider,
+  accountId?: string,
+): number {
+  const contextChars = getContextWindow(model, { provider, accountId }) * 3.5;
+  return Math.max(100_000, Math.min(Math.floor(contextChars * 0.15), 240_000));
+}
+
 // ── State ──────────────────────────────────────────────────
 
 export interface AgentSessionState {
@@ -302,6 +321,8 @@ export class AgentSession {
   private hookFileEditCounts = new Map<string, number>();
   private hookToolCalls = new Map<string, { name: string; args: Record<string, unknown> }>();
   private idealReviewPhase: "idle" | "reviewing" | "complete" = "idle";
+  /** Runtime-only suppression while Ken owns verification in autopilot mode. */
+  private idealReviewSuppressed = false;
   private readonly reviewCoverage: ReviewCoverageTracker;
   private loopBreakInjected = false;
   private regroundingInjected = false;
@@ -963,7 +984,7 @@ export class AgentSession {
   private getHookFollowUpMessages(): Message[] | null {
     const childCompletionFollowUp = buildSubAgentCompletionFollowUp(this.subAgentManager);
     if (childCompletionFollowUp) return childCompletionFollowUp;
-    if (this.opts.selfCorrectionHooks === false) return null;
+    if (this.opts.selfCorrectionHooks === false || this.idealReviewSuppressed) return null;
 
     if (this.idealReviewPhase === "reviewing") {
       const coverage = this.reviewCoverage.evidence();
@@ -1008,7 +1029,10 @@ export class AgentSession {
     });
     return [
       this.withReviewLspEvidence(
-        buildIdealReviewMessage(decision.reasons, driftedFiles),
+        withReviewCoverageRequirements(
+          buildIdealReviewMessage(decision.reasons, driftedFiles),
+          coverage.missing,
+        ),
         lspEvidence,
       ),
     ];
@@ -1079,8 +1103,9 @@ export class AgentSession {
 
     // Auto-compact if needed. This must happen after credential resolution so
     // OpenAI OAuth/Codex sessions use the Codex product context window instead
-    // of the public API model window.
-    if (this.settingsManager.get("autoCompact")) {
+    // of the public API model window. Failed/no-op attempts cool down across
+    // prompts; provider overflow recovery still bypasses this path entirely.
+    if (this.settingsManager.get("autoCompact") && Date.now() >= this.compactionRetryAfter) {
       const contextWindow = getContextWindow(this.model, {
         provider: this.provider,
         accountId: creds.accountId,
@@ -1099,13 +1124,25 @@ export class AgentSession {
         }
       }
       if (shouldCompact(this.messages, contextWindow, threshold, activeTokens)) {
-        await this.compact(creds);
-        if (this.lastCompactionCompacted) {
-          // Re-grounding hook keys off this — the context was just summarized.
-          this.compactionOccurred = true;
-          this.compactionRetryAfter = 0;
-        } else {
+        try {
+          await this.compact(creds);
+          if (this.lastCompactionCompacted) {
+            // Re-grounding hook keys off this — the context was just summarized.
+            this.compactionOccurred = true;
+            this.compactionRetryAfter = 0;
+          } else {
+            this.compactionRetryAfter = Date.now() + 30_000;
+          }
+        } catch (error) {
           this.compactionRetryAfter = Date.now() + 30_000;
+          if (isAbortError(error) || this.opts.signal?.aborted) throw error;
+          log(
+            "WARN",
+            "compaction",
+            `Pre-run compaction failed; cooling down for 30s: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
         }
       }
     }
@@ -1147,6 +1184,12 @@ export class AgentSession {
         // Codex caps each tool output at 10K tokens. Other transports retain the
         // generic 30%-of-context allowance used before this provider policy.
         maxToolResultChars: resolveSessionToolResultCharLimit(this.model, this.provider, accountId),
+        // Aggregate per-turn budget across parallel tool results (fan-out guard).
+        maxTurnToolResultChars: resolveSessionTurnToolResultCharLimit(
+          this.model,
+          this.provider,
+          accountId,
+        ),
         // Self-correction hooks (same as the TUI): loop-break + re-grounding are
         // polled mid-loop; the ideal review is polled when the agent would stop.
         getSteeringMessages: () => this.getHookSteeringMessages(),
@@ -1166,9 +1209,25 @@ export class AgentSession {
           const force = transformOpts.force === true;
           if (!force) {
             if (!this.settingsManager.get("autoCompact")) return messages;
+
+            // Cheap stale-tool-output pruning before the expensive LLM
+            // compaction check. In-place mutation preserves anchors; drop the
+            // retained usage afterwards since it counted the pruned content.
+            const pruneResult = pruneStaleToolResults(messages);
+            if (pruneResult.pruned) {
+              this.providerContext = null;
+              log("INFO", "compaction", "Pruned stale tool outputs", {
+                prunedResults: String(pruneResult.prunedResults),
+                freedTokens: String(pruneResult.freedTokens),
+              });
+            }
+
             if (Date.now() < this.compactionRetryAfter) return messages;
 
-            let usage = transformOpts.usage;
+            // The turn's own usage also counted the pruned content — after a
+            // prune, fall back to estimating the (now smaller) history so the
+            // freed tokens actually defer the LLM compaction.
+            let usage = pruneResult.pruned ? undefined : transformOpts.usage;
             let pendingMessages = transformOpts.pendingMessages;
             if (!usage && this.providerContext) {
               const anchorIndex = messages.lastIndexOf(this.providerContext.anchor);
@@ -1626,6 +1685,19 @@ export class AgentSession {
 
   getPlanMode(): boolean {
     return this.planModeRef.current;
+  }
+
+  /**
+   * Suppress only the pre-final Ideal self-review for this live session.
+   * Autopilot uses this while Ken independently owns verification; loop-break
+   * and post-compaction re-grounding remain active.
+   */
+  setIdealReviewSuppressed(suppressed: boolean): void {
+    this.idealReviewSuppressed = suppressed;
+    if (suppressed) {
+      this.idealReviewPhase = "idle";
+      this.reviewCoverage.reset();
+    }
   }
 
   /** Queue a user message (optionally with attachments) to be injected mid-run

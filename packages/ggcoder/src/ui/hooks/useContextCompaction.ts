@@ -9,6 +9,7 @@ import type { Message, Provider, Usage } from "@kenkaiiii/gg-ai";
 import type { TransformContextOptions } from "@kenkaiiii/gg-agent";
 import { compact, shouldCompact } from "../../core/compaction/compactor.js";
 import { calculateActiveContextTokens } from "../../core/compaction/active-context.js";
+import { pruneStaleToolResults } from "../../core/compaction/tool-result-pruner.js";
 import { estimateConversationTokens } from "../../core/compaction/token-estimator.js";
 import {
   getAuthStorageKeys,
@@ -230,13 +231,28 @@ export function useContextCompaction({
 
       if (!autoCompact) return messages;
 
+      // Cheap stale-tool-output pruning before the expensive LLM compaction
+      // check. In-place mutation preserves the usage anchor's identity; drop
+      // the retained usage afterwards since it counted the pruned content.
+      const pruneResult = pruneStaleToolResults(messages);
+      if (pruneResult.pruned) {
+        providerContextRef.current = null;
+        log("INFO", "compaction", "Pruned stale tool outputs", {
+          prunedResults: String(pruneResult.prunedResults),
+          freedTokens: String(pruneResult.freedTokens),
+        });
+      }
+
       // Time-based cooldown: skip if compaction ran within the last 30 seconds.
       if (Date.now() - lastCompactionTimeRef.current < 30_000) {
         log("INFO", "compaction", `Skipping compaction — cooldown active`);
         return messages;
       }
 
-      let usage = options.usage;
+      // The turn's own usage also counted the pruned content — after a prune,
+      // fall back to estimating the (now smaller) history so the freed tokens
+      // actually defer the LLM compaction.
+      let usage = pruneResult.pruned ? undefined : options.usage;
       let pendingMessages = options.pendingMessages;
       if (!usage && providerContextRef.current) {
         const anchorIndex = messages.lastIndexOf(providerContextRef.current.anchor);

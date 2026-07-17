@@ -93,6 +93,23 @@ export function buildReviewCoverageMessage(missingFiles: readonly string[]): Mes
   };
 }
 
+/**
+ * Put the harness-owned read checklist on the first Ideal review turn. The
+ * fail-closed follow-up remains as a fallback, but compliant reviews can now
+ * gather all evidence before emitting their single user-facing final answer.
+ */
+export function withReviewCoverageRequirements(
+  message: Message,
+  missingFiles: readonly string[],
+): Message {
+  if (missingFiles.length === 0) return message;
+  const requirement = buildReviewCoverageMessage(missingFiles);
+  return {
+    role: "user",
+    content: `${String(message.content)}\n\n${String(requirement.content)}`,
+  };
+}
+
 export const IDEAL_REVIEW_PROMPT =
   "Ideal? Review the actual work against the user's request before the final response. " +
   "Is it simple, focused, correct, and aligned? Did you over-edit, leave TODOs, miss an obvious " +

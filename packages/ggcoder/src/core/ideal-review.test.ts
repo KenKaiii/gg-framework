@@ -5,6 +5,7 @@ import {
   detectTestDrift,
   evaluateIdealReview,
   ReviewCoverageTracker,
+  withReviewCoverageRequirements,
 } from "./ideal-review.js";
 
 describe("ReviewCoverageTracker", () => {
@@ -39,6 +40,17 @@ describe("ReviewCoverageTracker", () => {
   it("builds a deterministic fail-closed follow-up", () => {
     const message = buildReviewCoverageMessage(["src/a.ts", "src/b.ts"]);
     expect(message.content).toContain("model-authored claims do not count");
+    expect(message.content).toContain("- src/a.ts\n- src/b.ts");
+  });
+
+  it("puts missing read evidence on the initial review prompt", () => {
+    const message = withReviewCoverageRequirements(buildIdealReviewMessage(["120 changed lines"]), [
+      "src/a.ts",
+      "src/b.ts",
+    ]);
+
+    expect(message.content).toContain("Ideal?");
+    expect(message.content).toContain("before finalizing");
     expect(message.content).toContain("- src/a.ts\n- src/b.ts");
   });
 });

@@ -1296,6 +1296,7 @@ export async function* agentLoop(
       const executionOptions: ToolBatchExecutionOptions = {
         signal: options.signal,
         maxToolResultChars: options.maxToolResultChars,
+        maxTurnToolResultChars: options.maxTurnToolResultChars,
         toolMap,
         invalidToolArgumentCounts,
         markFatalToolArgumentError,
@@ -1413,6 +1414,7 @@ interface ToolExecutionRecord {
 interface ToolBatchExecutionOptions {
   signal?: AbortSignal;
   maxToolResultChars?: number;
+  maxTurnToolResultChars?: number;
   toolMap: Map<string, AgentTool>;
   invalidToolArgumentCounts: Map<string, number>;
   /**
@@ -1658,6 +1660,7 @@ async function* executeToolCallsMixed(
 
   const toolResults = buildToolResults(initialToolResults, toolCalls, resultsById);
   capToolResults(toolResults, options.maxToolResultChars);
+  capTurnToolResults(toolResults, options.maxTurnToolResultChars);
   return { toolResults, aborted };
 }
 
@@ -1705,6 +1708,7 @@ async function* executeToolCallsParallel(
 
   const toolResults = buildToolResults(initialToolResults, toolCalls, resultsById);
   capToolResults(toolResults, options.maxToolResultChars);
+  capTurnToolResults(toolResults, options.maxTurnToolResultChars);
   return { toolResults, aborted };
 }
 
@@ -1748,6 +1752,52 @@ function capToolResults(toolResults: ToolResult[], maxToolResultChars: number | 
     const tail = toolResult.content.slice(-tailChars);
     const omitted = toolResult.content.length - headChars - tailChars;
     toolResult.content = head + `\n\n[... ${omitted} characters omitted ...]\n\n` + tail;
+  }
+}
+
+/**
+ * Aggregate per-turn budget across every tool result in one assistant turn.
+ * A single result is bounded by per-tool truncation and `maxToolResultChars`,
+ * but a wide parallel fan-out (8+ reads/bash calls) can still inject 100k+
+ * uncached tokens in one turn. Water-filling: small results keep their full
+ * size; only the largest results share what remains of the budget.
+ */
+export function capTurnToolResults(
+  toolResults: ToolResult[],
+  maxTurnToolResultChars: number | undefined,
+): void {
+  if (!maxTurnToolResultChars) return;
+  const textResults = toolResults.filter(
+    (toolResult): toolResult is ToolResult & { content: string } =>
+      typeof toolResult.content === "string",
+  );
+  const total = textResults.reduce((sum, toolResult) => sum + toolResult.content.length, 0);
+  if (total <= maxTurnToolResultChars) return;
+
+  // Water-filling allocation: process results smallest-first; each takes
+  // min(own size, fair share of what's left), releasing unused budget to the
+  // larger results behind it.
+  const bySize = [...textResults].sort((a, b) => a.content.length - b.content.length);
+  let remaining = maxTurnToolResultChars;
+  let left = bySize.length;
+  for (const toolResult of bySize) {
+    const fairShare = Math.floor(remaining / left);
+    left--;
+    if (toolResult.content.length <= fairShare) {
+      remaining -= toolResult.content.length;
+      continue;
+    }
+    remaining -= fairShare;
+    // Keep 70% head + 30% tail so errors/diagnostics at the end survive.
+    const headChars = Math.floor(fairShare * 0.7);
+    const tailChars = fairShare - headChars;
+    const omitted = toolResult.content.length - fairShare;
+    toolResult.content =
+      toolResult.content.slice(0, headChars) +
+      `\n\n[... ${omitted} characters trimmed: this turn's combined tool results exceeded the ` +
+      `per-turn budget. Re-run this call alone with narrower filters or offset/limit if you ` +
+      `need the omitted content ...]\n\n` +
+      (tailChars > 0 ? toolResult.content.slice(-tailChars) : "");
   }
 }
 

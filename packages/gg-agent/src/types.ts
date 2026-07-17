@@ -255,6 +255,10 @@ export interface AgentOptions {
   clearToolUses?: boolean;
   /** Max characters for a single tool result. Results exceeding this are truncated with a notice. */
   maxToolResultChars?: number;
+  /** Aggregate budget for ALL tool results in one assistant turn. Protects
+   *  against parallel fan-outs injecting huge uncached context in one turn;
+   *  the largest results are trimmed (water-filling) with a re-run notice. */
+  maxTurnToolResultChars?: number;
   /** Max consecutive pause_turn continuations before stopping (default: 5).
    *  Prevents infinite loops when server-side tools keep pausing. */
   maxContinuations?: number;
