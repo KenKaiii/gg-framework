@@ -137,6 +137,7 @@ const PROVIDER_DISPLAY: Record<string, string> = {
   deepseek: "DeepSeek",
   openrouter: "OpenRouter",
   sakana: "Sakana",
+  xai: "xAI (Grok)",
   xiaomi: "Xiaomi (MiMo)",
   minimax: "MiniMax",
 };
@@ -145,6 +146,7 @@ const PROVIDER_DISPLAY: Record<string, string> = {
 const PROVIDER_STATUS_URL: Record<string, string> = {
   openai: "status.openai.com",
   anthropic: "status.anthropic.com",
+  xai: "status.x.ai",
 };
 
 function providerDisplayName(provider: string): string {

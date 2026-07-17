@@ -57,6 +57,15 @@ describe("formatError usage limit", () => {
     expect(formatted.message).toBe("Your Anthropic usage is finished.");
     expect(formatted.resetsAt).toBeUndefined();
   });
+
+  it("uses the xAI display name for Grok errors", () => {
+    const formatted = formatError(
+      new ProviderError("xai", "usage limit reached: You have exceeded your current quota", {
+        statusCode: 429,
+      }),
+    );
+    expect(formatted.headline).toBe("xAI (Grok) usage limit reached.");
+  });
 });
 
 describe("formatError Mythos access", () => {

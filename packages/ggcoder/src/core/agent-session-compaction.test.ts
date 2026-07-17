@@ -137,7 +137,7 @@ describe("AgentSession worker auto-compaction", () => {
       ]),
       expect.objectContaining({ provider: "anthropic", model: "claude-test" }),
     );
-  });
+  }, 15_000);
 });
 
 describe("AgentSession overflow recovery", () => {

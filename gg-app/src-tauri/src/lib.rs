@@ -1927,6 +1927,15 @@ const AUTH_PROVIDERS: &[ProviderMeta] = &[
         api_key_variants: &[],
     },
     ProviderMeta {
+        value: "xai",
+        label: "xAI (Grok)",
+        description: "Grok 4.5",
+        methods: &["apikey"],
+        api_key_label: Some("xAI"),
+        api_key_base_url: None,
+        api_key_variants: &[],
+    },
+    ProviderMeta {
         value: "moonshot",
         label: "Moonshot",
         description: "Kimi K3, K2.7 Code · OAuth or API key",
@@ -1984,20 +1993,20 @@ const AUTH_PROVIDERS: &[ProviderMeta] = &[
         api_key_variants: &[],
     },
     ProviderMeta {
-        value: "openrouter",
-        label: "OpenRouter",
-        description: "Multi-provider gateway",
-        methods: &["apikey"],
-        api_key_label: Some("OpenRouter"),
-        api_key_base_url: None,
-        api_key_variants: &[],
-    },
-    ProviderMeta {
         value: "sakana",
         label: "Sakana (Fugu)",
         description: "Fugu, Fugu Ultra",
         methods: &["apikey"],
         api_key_label: Some("Sakana"),
+        api_key_base_url: None,
+        api_key_variants: &[],
+    },
+    ProviderMeta {
+        value: "openrouter",
+        label: "OpenRouter",
+        description: "Multi-provider gateway",
+        methods: &["apikey"],
+        api_key_label: Some("OpenRouter"),
         api_key_base_url: None,
         api_key_variants: &[],
     },
@@ -4183,6 +4192,27 @@ mod tests {
     }
 
     #[test]
+    fn auth_providers_keep_regional_groups_and_openrouter_last() {
+        let values: Vec<&str> = AUTH_PROVIDERS.iter().map(|provider| provider.value).collect();
+        assert_eq!(
+            values,
+            vec![
+                "anthropic",
+                "openai",
+                "gemini",
+                "xai",
+                "moonshot",
+                "glm",
+                "minimax",
+                "xiaomi",
+                "deepseek",
+                "sakana",
+                "openrouter",
+            ]
+        );
+    }
+
+    #[test]
     fn resolve_apikey_target_gates_on_apikey_support() {
         // OAuth-only provider → not an API-key provider.
         assert!(resolve_apikey_target("anthropic", None).is_none());
@@ -4197,6 +4227,11 @@ mod tests {
         assert_eq!(
             resolve_apikey_target("moonshot", None),
             Some(("moonshot".to_string(), None)),
+        );
+        // xAI uses the public OpenAI-compatible API with a console.x.ai key.
+        assert_eq!(
+            resolve_apikey_target("xai", None),
+            Some(("xai".to_string(), None)),
         );
     }
 

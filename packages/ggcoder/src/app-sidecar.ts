@@ -135,16 +135,20 @@ import { rebuildFromSessions } from "./core/progress/rebuild.js";
 import type { ProgressFile, ProgressSnapshot } from "./core/progress/types.js";
 
 const ALL_PROVIDERS: Provider[] = [
+  // US
   "anthropic",
-  "xiaomi",
   "openai",
   "gemini",
-  "glm",
+  "xai",
+  // China
   "moonshot",
+  "glm",
   "minimax",
+  "xiaomi",
   "deepseek",
-  "openrouter",
+  // Japan, then provider-agnostic gateway last
   "sakana",
+  "openrouter",
 ];
 
 // ── gg-app settings (~/.gg/gg-app.json) ────────────────────
@@ -2654,6 +2658,19 @@ async function createSession(
         const commandCandidates = [...PROMPT_COMMANDS, ...(await loadCustomCommands(cwd))];
         const messages = session.getMessages();
 
+        // An Ideal hook is injected immediately after the assistant's candidate
+        // no-tool response. That response is review scratch, not a user-visible
+        // final answer. Live SSE drops it when the hook event arrives; mark the
+        // same assistant message here so resumed history stays identical.
+        const hiddenIdealDrafts = new Set<(typeof messages)[number]>();
+        for (let i = 0; i < messages.length - 1; i++) {
+          const draft = messages[i];
+          const hookPrompt = messages[i + 1];
+          if (draft?.role !== "assistant" || hookPrompt?.role !== "user") continue;
+          const restored = restoreUserRow(hookPrompt.content);
+          if (detectHookKind(restored.text) === "ideal") hiddenIdealDrafts.add(draft);
+        }
+
         // Pre-index tool results by toolCallId so we can pair tool calls with
         // their results (for sub-agent status + image extraction).
         const toolResultMap = new Map<string, { content: ToolResultContent; isError: boolean }>();
@@ -2882,10 +2899,11 @@ async function createSession(
                 history.push({ role: "assistant", text: "", infoKind: "video_warning" });
               }
             }
-          } else {
+          } else if (!hiddenIdealDrafts.has(msg)) {
             // Assistant: one wire row per persisted text block — live streaming
             // splits bubbles at server_tool_call boundaries, and the persisted
-            // content keeps those blocks separate.
+            // content keeps those blocks separate. Ideal-review candidate drafts
+            // are intentionally omitted to match the live pre-final hook flow.
             for (const blockText of restoreAssistantTexts(msg.content)) {
               history.push({
                 role: "assistant",

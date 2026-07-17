@@ -19,6 +19,7 @@ const SettingsSchema = z.object({
       "deepseek",
       "openrouter",
       "sakana",
+      "xai",
     ])
     .default("anthropic"),
   defaultModel: z.string().optional(),

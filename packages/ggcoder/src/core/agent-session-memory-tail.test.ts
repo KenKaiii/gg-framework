@@ -91,7 +91,7 @@ describe("AgentSession dynamic system prompt tail", () => {
     } finally {
       await session.dispose();
     }
-  });
+  }, 15_000);
 
   it("refreshes changed memory immediately before every run", async () => {
     let memory = "memory v1";

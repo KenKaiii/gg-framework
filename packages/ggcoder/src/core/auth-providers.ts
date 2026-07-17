@@ -64,6 +64,13 @@ export const AUTH_PROVIDERS: AuthProviderMeta[] = [
     methods: ["oauth"],
   },
   {
+    value: "xai",
+    label: "xAI (Grok)",
+    description: "Grok 4.5",
+    methods: ["apikey"],
+    apiKeyLabel: "xAI",
+  },
+  {
     value: "moonshot",
     label: "Moonshot",
     description: "Kimi K3, K2.7 Code · OAuth or API key",
@@ -112,18 +119,18 @@ export const AUTH_PROVIDERS: AuthProviderMeta[] = [
     apiKeyLabel: "DeepSeek",
   },
   {
-    value: "openrouter",
-    label: "OpenRouter",
-    description: "Multi-provider gateway",
-    methods: ["apikey"],
-    apiKeyLabel: "OpenRouter",
-  },
-  {
     value: "sakana",
     label: "Sakana (Fugu)",
     description: "Fugu, Fugu Ultra",
     methods: ["apikey"],
     apiKeyLabel: "Sakana",
+  },
+  {
+    value: "openrouter",
+    label: "OpenRouter",
+    description: "Multi-provider gateway",
+    methods: ["apikey"],
+    apiKeyLabel: "OpenRouter",
   },
 ];
 

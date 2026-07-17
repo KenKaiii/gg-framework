@@ -85,11 +85,13 @@ describe("SubAgentManager", () => {
 
   it("returns after launch and overlaps four child turns", async () => {
     const instance = manager();
-    const start = Date.now();
     const children = await Promise.all(
       [1, 2, 3, 4].map((number) => instance.spawn(`task-${number}`, "slow", "fake")),
     );
-    expect(Date.now() - start).toBeLessThan(140);
+    // Returning every child in the running state proves spawn resolves on the
+    // start acknowledgement rather than waiting for the turn to complete.
+    // Avoid a wall-clock threshold here: process startup is scheduler-dependent
+    // under the full parallel workspace suite.
     expect(children.every((child) => child.state === "running")).toBe(true);
     await expect(instance.spawn("fifth", "slow", "fake")).rejects.toThrow("At most 4");
     const result = await instance.wait(
@@ -185,7 +187,9 @@ describe("SubAgentManager", () => {
     expect(instance.completionGateMessage()).toContain(child.agent_id);
     expect(buildSubAgentCompletionFollowUp(instance)?.[0]?.content).toContain(child.agent_id);
 
-    await new Promise((resolve) => setTimeout(resolve, 180));
+    await vi.waitFor(() => expect(instance.completionGate().active).toEqual([]), {
+      timeout: 5_000,
+    });
     expect(instance.completionGate()).toMatchObject({
       active: [],
       uncollected: [expect.objectContaining({ agent_id: child.agent_id })],

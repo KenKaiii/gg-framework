@@ -99,6 +99,20 @@ providerRegistry.register("sakana", {
     }),
 });
 
+providerRegistry.register("xai", {
+  // xAI's public API (console.x.ai key) is OpenAI-compatible — ride the Chat
+  // Completions transport like Moonshot/DeepSeek. Grok reasoning models take
+  // top-level `reasoning_effort` (low/medium/high), which the shared thinking
+  // path already sends. xAI's OAuth path exists but only via the Grok CLI's
+  // private Responses proxy (cli-chat-proxy.grok.com) with reverse-engineered
+  // attribution headers and account-tier gating — intentionally not wired.
+  stream: (options) =>
+    streamOpenAI({
+      ...options,
+      baseUrl: options.baseUrl ?? "https://api.x.ai/v1",
+    }),
+});
+
 providerRegistry.register("minimax", {
   stream: (options) =>
     streamAnthropic({

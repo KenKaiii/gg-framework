@@ -54,6 +54,7 @@ const VALID_PROVIDERS = new Set<Provider>([
   "deepseek",
   "openrouter",
   "sakana",
+  "xai",
 ]);
 
 function isValidProvider(value: unknown): value is Provider {

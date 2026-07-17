@@ -105,7 +105,8 @@ export async function runLogin(): Promise<void> {
       provider === "minimax" ||
       provider === "deepseek" ||
       provider === "openrouter" ||
-      provider === "sakana"
+      provider === "sakana" ||
+      provider === "xai"
     ) {
       const keyLabel =
         provider === "glm"
@@ -120,7 +121,9 @@ export async function runLogin(): Promise<void> {
                   ? "OpenRouter"
                   : provider === "sakana"
                     ? "Sakana"
-                    : "Moonshot";
+                    : provider === "xai"
+                      ? "xAI"
+                      : "Moonshot";
       const apiKey = await rl.question(chalk.hex("#60a5fa")(`Paste your ${keyLabel} API key: `));
       if (!apiKey.trim()) {
         console.log(chalk.hex("#ef4444")("No API key provided. Login cancelled."));

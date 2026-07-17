@@ -37,6 +37,15 @@ export const XIAOMI_CREDITS_KEY = "xiaomi-credits";
  */
 const REFRESH_SKEW_MS = 60_000;
 
+/**
+ * How long a usage-exhausted mark holds when the provider gave no reset time.
+ * Short on purpose: after it lapses we try the preferred (OAuth) credential
+ * again — if the window is still out, the caller re-marks and falls back again,
+ * costing one rejected request per window instead of sticking to the fallback
+ * key forever.
+ */
+const USAGE_EXHAUSTED_DEFAULT_MS = 15 * 60 * 1000;
+
 /** Providers whose credentials are static API keys (no refresh mechanism). */
 const STATIC_API_KEY_PROVIDERS = new Set([
   "glm",
@@ -46,6 +55,7 @@ const STATIC_API_KEY_PROVIDERS = new Set([
   "deepseek",
   "openrouter",
   "sakana",
+  "xai",
 ]);
 
 export class AuthStorage {
@@ -112,7 +122,13 @@ export class AuthStorage {
   async isStaticApiKey(provider: string): Promise<boolean> {
     await this.ensureLoaded();
     if (provider === "moonshot" && this.data[MOONSHOT_OAUTH_KEY]) {
-      return false;
+      // A usage-exhausted OAuth credential with an API key configured means
+      // the API key is what actually resolves right now — treat it as the
+      // static key it is (so a 401 clears the key instead of pointlessly
+      // force-refreshing the sidelined OAuth token).
+      const exhaustedUntil = this.data[MOONSHOT_OAUTH_KEY].usageExhaustedUntil ?? 0;
+      const apiKeyActive = Date.now() < exhaustedUntil && Boolean(this.data["moonshot"]);
+      if (!apiKeyActive) return false;
     }
     return STATIC_API_KEY_PROVIDERS.has(provider);
   }
@@ -164,6 +180,34 @@ export class AuthStorage {
     await this.save();
   }
 
+  /**
+   * Mark the credential stored under `storageKey` as usage-exhausted until
+   * `resetsAt` (unix SECONDS, from the provider's rate-limit response) or a
+   * 15-minute default when no reset time is known. While the mark is in the
+   * future, `resolveCredentials("moonshot")` serves the Moonshot API key
+   * instead of the Kimi OAuth credential (when both are configured) — OAuth
+   * stays the preferred credential and is retried automatically once the mark
+   * lapses. Persisted to auth.json so a restart (or another gg-app window)
+   * doesn't burn a request rediscovering the same exhausted window. No-op if
+   * nothing is stored under `storageKey`.
+   */
+  async markUsageExhausted(storageKey: string, resetsAt?: number): Promise<void> {
+    await this.ensureLoaded();
+    const creds = this.data[storageKey];
+    if (!creds) return;
+    const until =
+      resetsAt !== undefined && resetsAt * 1000 > Date.now()
+        ? resetsAt * 1000
+        : Date.now() + USAGE_EXHAUSTED_DEFAULT_MS;
+    creds.usageExhaustedUntil = until;
+    await this.save();
+    log(
+      "WARN",
+      "auth",
+      `Marked ${storageKey} usage-exhausted until ${new Date(until).toISOString()}`,
+    );
+  }
+
   async clearAll(): Promise<void> {
     this.data = {};
     await this.save();
@@ -199,8 +243,32 @@ export class AuthStorage {
     // provider. When an OAuth credential exists, resolve (and refresh) that
     // instead — this is the "default to OAuth first" rule.
     if (provider === "moonshot" && this.data[MOONSHOT_OAUTH_KEY]) {
+      // OAuth plan usage window exhausted (marked by the agent loop when the
+      // managed endpoint rejected with a usage/quota stop). Serve the API key
+      // while the window recovers — but ONLY when one is configured; with no
+      // API key the OAuth credential still resolves so the real usage-limit
+      // error (with its reset time) surfaces to the user instead of a
+      // misleading "not logged in".
+      const exhaustedUntil = this.data[MOONSHOT_OAUTH_KEY].usageExhaustedUntil ?? 0;
+      if (Date.now() < exhaustedUntil && this.data["moonshot"]) {
+        log(
+          "WARN",
+          "auth",
+          "Kimi OAuth usage window is exhausted — using the Moonshot API key until " +
+            `${new Date(exhaustedUntil).toISOString()} (OAuth resumes automatically).`,
+        );
+        return this.data["moonshot"];
+      }
       try {
-        return await this.resolveCredentials(MOONSHOT_OAUTH_KEY, opts);
+        // Do NOT forward `storageKeys` here: the caller's keys (e.g.
+        // AgentSession's ["moonshot"]) no longer match the recursive
+        // provider ("moonshot-oauth"), so forwarding them tripped the
+        // storage-key override branch — silently returning the raw API key
+        // when both credentials existed (misattributed "usage is out"
+        // errors) and throwing NotLoggedInError for OAuth-only users.
+        return await this.resolveCredentials(MOONSHOT_OAUTH_KEY, {
+          ...(opts?.forceRefresh ? { forceRefresh: true } : {}),
+        });
       } catch (err) {
         // OAuth refresh token is dead and was wiped. Fall back to the
         // Moonshot API key if the user also configured one. This is a billing

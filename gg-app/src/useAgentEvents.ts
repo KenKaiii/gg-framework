@@ -278,6 +278,25 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
     streamingIdRef.current = null;
   }, [setItems]);
 
+  // Ideal review is a pre-final hook: the no-tool response immediately before
+  // it is an internal draft, not a transcript answer. Drop that active bubble
+  // (including any throttled chunks) before rendering the hook notice, so the
+  // user sees hook → reviewed final response rather than draft → hook → final.
+  const discardStreamingDraft = useCallback(() => {
+    if (flushTimerRef.current !== null) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    pendingChunksRef.current = "";
+    const current = streamingIdRef.current;
+    streamingIdRef.current = null;
+    if (current !== null) {
+      setItems((prev) =>
+        prev.filter((item) => !(item.kind === "assistant" && item.id === current)),
+      );
+    }
+  }, [setItems]);
+
   const pushItem = useCallback(
     (item: Item) => {
       setItems((prev) => [...prev, item]);
@@ -885,7 +904,8 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
         case "hook": {
           const kind = String(d.kind ?? "ideal") as HookKind;
           if (kind in HOOK_PRESENTATION) {
-            endStreamingText();
+            if (kind === "ideal") discardStreamingDraft();
+            else endStreamingText();
             pushItem({ kind: "hook", id: nextId(), hook: kind });
           }
           break;
@@ -948,6 +968,7 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
       pushItem,
       finalizeThinking,
       endStreamingText,
+      discardStreamingDraft,
       nextId,
       setItems,
       setState,

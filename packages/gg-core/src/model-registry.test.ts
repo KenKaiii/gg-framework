@@ -23,6 +23,7 @@ const PROVIDERS = [
   "deepseek",
   "openrouter",
   "sakana",
+  "xai",
 ] as const;
 const THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max", "ultra"] as const;
 const COST_TIERS = ["low", "medium", "high"] as const;

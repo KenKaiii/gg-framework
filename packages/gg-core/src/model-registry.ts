@@ -229,6 +229,26 @@ export const MODELS: ModelInfo[] = [
     costTier: "high",
     maxThinkingLevel: "xhigh",
   },
+  // ── xAI (Grok) ─────────────────────────────────────────
+  // Grok 4.5 (released 2026-07-08) is xAI's flagship for coding, agentic
+  // tasks, and knowledge work — 500K context, text+image input, configurable
+  // `reasoning_effort` (low/medium/high, server default high; reasoning can't
+  // be fully disabled). Served over the OpenAI-compatible API at
+  // https://api.x.ai/v1 (API key from console.x.ai). xAI hasn't published an
+  // official max-output cap for 4.5; 131K matches the Grok Responses ceiling
+  // third-party integrations use.
+  {
+    id: "grok-4.5",
+    name: "Grok 4.5",
+    provider: "xai",
+    contextWindow: 500_000,
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: false,
+    costTier: "medium",
+    maxThinkingLevel: "high",
+  },
   // ── Gemini ─────────────────────────────────────────────
   {
     id: "gemini-3.1-flash-lite",
@@ -514,6 +534,7 @@ export function getDefaultModel(provider: Provider): ModelInfo {
   if (provider === "deepseek") return MODELS.find((m) => m.id === "deepseek-v4-pro")!;
   if (provider === "openrouter") return MODELS.find((m) => m.id === "qwen/qwen3.6-plus")!;
   if (provider === "sakana") return MODELS.find((m) => m.id === "fugu")!;
+  if (provider === "xai") return MODELS.find((m) => m.id === "grok-4.5")!;
   return MODELS.find((m) => m.id === "claude-sonnet-5")!;
 }
 

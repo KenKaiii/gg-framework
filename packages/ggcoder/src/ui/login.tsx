@@ -44,6 +44,7 @@ const PROVIDERS: { label: string; value: Provider; description: string }[] = [
     value: "gemini",
     description: "Gemini 3.1 Flash Lite, Gemini 3.5 Flash, Gemini 3.1 Pro (Preview)",
   },
+  { label: "xAI (Grok)", value: "xai", description: "Grok 4.5" },
   {
     label: "Moonshot",
     value: "moonshot",
@@ -57,8 +58,8 @@ const PROVIDERS: { label: string; value: Provider; description: string }[] = [
     description: "MiMo-V2.5-Pro, MiMo-V2.5-Pro-UltraSpeed, MiMo-V2.5 · Token Plan or API Credits",
   },
   { label: "DeepSeek", value: "deepseek", description: "DeepSeek V4 Pro, V4 Flash" },
-  { label: "OpenRouter", value: "openrouter", description: "Multi-provider gateway" },
   { label: "Sakana (Fugu)", value: "sakana", description: "Fugu, Fugu Ultra" },
+  { label: "OpenRouter", value: "openrouter", description: "Multi-provider gateway" },
 ];
 
 function renderScreen(selectedIndex: number): string {

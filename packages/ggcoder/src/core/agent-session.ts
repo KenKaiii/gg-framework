@@ -1,6 +1,7 @@
 import {
   agentLoop,
   isAbortError,
+  isUsageLimitError,
   type AgentEvent,
   type AgentTool,
   type AgentTurnEndEvent,
@@ -24,6 +25,7 @@ import { PROMPT_COMMANDS, getPromptCommand } from "./prompt-commands.js";
 import { loadCustomCommands } from "./custom-commands.js";
 import { SettingsManager } from "./settings-manager.js";
 import { AuthStorage } from "./auth-storage.js";
+import { MOONSHOT_OAUTH_KEY } from "@kenkaiiii/gg-core";
 import { getClaudeCliUserAgent } from "./claude-code-version.js";
 import { kimiCodingHeaders, isKimiCodingEndpoint } from "./oauth/kimi.js";
 import {
@@ -1152,6 +1154,24 @@ export class AgentSession {
       }
     };
 
+    const clearInvalidStaticApiKey = async (error: unknown): Promise<boolean> => {
+      if (!(error instanceof ProviderError) || error.statusCode !== 401) return false;
+      if (!(await this.authStorage.isStaticApiKey(this.provider))) return false;
+
+      // Clear whichever key actually resolved (the request may have used a
+      // fallback key, not the model's first preference).
+      const badKey =
+        (await this.authStorage.pickStorageKey(this.currentAuthStorageKeys())) ??
+        this.currentAuthStorageKeys()[0]!;
+      log(
+        "WARN",
+        "auth",
+        `Got 401 for ${this.provider} (${badKey}) — API key is invalid or revoked`,
+      );
+      await this.authStorage.clearCredentials(badKey);
+      return true;
+    };
+
     try {
       await runAgentLoop(creds.accessToken, creds.accountId, creds.projectId);
     } catch (err) {
@@ -1159,26 +1179,53 @@ export class AgentSession {
       if (isAbortError(err) || this.opts.signal?.aborted) {
         return;
       }
-      if (err instanceof ProviderError && err.statusCode === 401) {
+      // Kimi OAuth plan ran out of usage (hard usage-limit stop, or an HTTP 402
+      // billing stop). If the user ALSO configured a Moonshot API key, mark
+      // the OAuth credential usage-exhausted (honoring the provider-stated
+      // reset time when present) and retry this turn on the API key — OAuth
+      // stays the preferred credential and resumes automatically once the mark
+      // lapses. A generic 429 is deliberately excluded: it may be a transient
+      // rate limit and must not silently switch the user to a billed API key.
+      // Guarded on the Kimi managed endpoint actually being in use: if the API
+      // key was already active, the same error means BOTH are out and must surface.
+      if (
+        this.provider === "moonshot" &&
+        !this.baseUrl &&
+        isKimiCodingEndpoint(creds.baseUrl) &&
+        (isUsageLimitError(err) || (err instanceof ProviderError && err.statusCode === 402)) &&
+        (await this.authStorage.hasCredentials("moonshot"))
+      ) {
+        const resetsAt = err instanceof ProviderError ? err.resetsAt : undefined;
+        await this.authStorage.markUsageExhausted(MOONSHOT_OAUTH_KEY, resetsAt);
+        log(
+          "WARN",
+          "auth",
+          "Kimi OAuth usage limit reached — retrying this turn on the Moonshot API key",
+          { resetsAt: resetsAt !== undefined ? String(resetsAt) : "unknown" },
+        );
+        creds = await this.authStorage.resolveCredentials(this.provider, {
+          storageKeys: this.currentAuthStorageKeys(),
+        });
+        this.lastAccountId = creds.accountId;
+        // The runAgentLoop closure re-reads `creds`, so the retry picks up the
+        // API key's baseUrl (api.moonshot.ai) and drops the Kimi coding headers.
+        try {
+          await runAgentLoop(creds.accessToken, creds.accountId, creds.projectId);
+        } catch (fallbackErr) {
+          // The fallback is inside this catch branch, so its errors do not pass
+          // through the outer 401 handler. Clear a rejected API key explicitly
+          // before surfacing the error and prompting the user to log in again.
+          await clearInvalidStaticApiKey(fallbackErr);
+          throw fallbackErr;
+        }
+      } else if (err instanceof ProviderError && err.statusCode === 401) {
         // Static API-key providers (GLM, Moonshot API key, etc.) have no refresh
         // mechanism — retrying with the same key is pointless. Clear the
         // credential and surface the error so the user re-logins. Kimi OAuth
         // (active for `moonshot` when present) is refreshable, so it falls
         // through to the force-refresh path below.
-        if (await this.authStorage.isStaticApiKey(this.provider)) {
-          // Clear whichever key actually resolved (the request may have used
-          // a fallback key, not the model's first preference).
-          const badKey =
-            (await this.authStorage.pickStorageKey(this.currentAuthStorageKeys())) ??
-            this.currentAuthStorageKeys()[0]!;
-          log(
-            "WARN",
-            "auth",
-            `Got 401 for ${this.provider} (${badKey}) — API key is invalid or revoked`,
-          );
-          await this.authStorage.clearCredentials(badKey);
-          throw err;
-        }
+        if (await clearInvalidStaticApiKey(err)) throw err;
+
         log("INFO", "auth", "Got 401, force-refreshing token and retrying");
         creds = await this.authStorage.resolveCredentials(this.provider, {
           forceRefresh: true,

@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { AuthStorage, NotLoggedInError, XIAOMI_CREDITS_KEY } from "./auth-storage.js";
+import {
+  AuthStorage,
+  MOONSHOT_OAUTH_KEY,
+  NotLoggedInError,
+  XIAOMI_CREDITS_KEY,
+} from "./auth-storage.js";
 
 async function tempAuthFile(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "gg-core-auth-storage-test-"));
@@ -161,5 +166,103 @@ describe("AuthStorage — Xiaomi dual credential (Token Plan vs. API Credits)", 
     });
     // Order matters — "xiaomi" is listed first.
     expect(await storage.pickStorageKey(["xiaomi", XIAOMI_CREDITS_KEY])).toBe("xiaomi");
+  });
+});
+
+describe("AuthStorage — Moonshot dual credential (Kimi OAuth vs. API key)", () => {
+  const oauthCreds = () => ({
+    accessToken: "kimi-oauth-token",
+    refreshToken: "kimi-refresh",
+    expiresAt: Date.now() + 1_000_000,
+    baseUrl: "https://api.kimi.com/coding/v1",
+  });
+  const apiKeyCreds = () => ({
+    accessToken: "moonshot-api-key",
+    refreshToken: "",
+    expiresAt: Date.now() + 1_000_000,
+  });
+
+  it("prefers the Kimi OAuth credential when both are configured", async () => {
+    const storage = await makeStorage();
+    await storage.setCredentials("moonshot", apiKeyCreds());
+    await storage.setCredentials(MOONSHOT_OAUTH_KEY, oauthCreds());
+    const creds = await storage.resolveCredentials("moonshot", { storageKeys: ["moonshot"] });
+    expect(creds.accessToken).toBe("kimi-oauth-token");
+    expect(await storage.isStaticApiKey("moonshot")).toBe(false);
+  });
+
+  it("falls back to the API key while the OAuth credential is marked usage-exhausted", async () => {
+    const storage = await makeStorage();
+    await storage.setCredentials("moonshot", apiKeyCreds());
+    await storage.setCredentials(MOONSHOT_OAUTH_KEY, oauthCreds());
+
+    await storage.markUsageExhausted(MOONSHOT_OAUTH_KEY);
+    const creds = await storage.resolveCredentials("moonshot", { storageKeys: ["moonshot"] });
+    expect(creds.accessToken).toBe("moonshot-api-key");
+    // The API key is the active credential now — a 401 should clear it, not
+    // force-refresh the sidelined OAuth token.
+    expect(await storage.isStaticApiKey("moonshot")).toBe(true);
+  });
+
+  it("honors a provider-stated reset time (unix seconds) for the exhaustion mark", async () => {
+    const storage = await makeStorage();
+    await storage.setCredentials(MOONSHOT_OAUTH_KEY, oauthCreds());
+    const resetsAt = Math.floor(Date.now() / 1000) + 3600;
+    await storage.markUsageExhausted(MOONSHOT_OAUTH_KEY, resetsAt);
+    const stored = await storage.getCredentials(MOONSHOT_OAUTH_KEY);
+    expect(stored?.usageExhaustedUntil).toBe(resetsAt * 1000);
+  });
+
+  it("resumes OAuth once the exhaustion mark lapses", async () => {
+    const storage = await makeStorage();
+    await storage.setCredentials("moonshot", apiKeyCreds());
+    const oauth = oauthCreds();
+    await storage.setCredentials(MOONSHOT_OAUTH_KEY, {
+      ...oauth,
+      usageExhaustedUntil: Date.now() - 1_000, // already lapsed
+    });
+    const creds = await storage.resolveCredentials("moonshot", { storageKeys: ["moonshot"] });
+    expect(creds.accessToken).toBe("kimi-oauth-token");
+  });
+
+  it("still resolves OAuth when exhausted but no API key exists (real error must surface)", async () => {
+    const storage = await makeStorage();
+    await storage.setCredentials(MOONSHOT_OAUTH_KEY, oauthCreds());
+    await storage.markUsageExhausted(MOONSHOT_OAUTH_KEY);
+    const creds = await storage.resolveCredentials("moonshot", { storageKeys: ["moonshot"] });
+    expect(creds.accessToken).toBe("kimi-oauth-token");
+  });
+
+  it("markUsageExhausted is a no-op when nothing is stored under the key", async () => {
+    const storage = await makeStorage();
+    await storage.markUsageExhausted(MOONSHOT_OAUTH_KEY);
+    expect(await storage.getCredentials(MOONSHOT_OAUTH_KEY)).toBeUndefined();
+  });
+
+  it("treats the xAI API key as a static credential (no refresh mechanism)", async () => {
+    const storage = await makeStorage();
+    await storage.setCredentials("xai", {
+      accessToken: "xai-api-key",
+      refreshToken: "",
+      expiresAt: Date.now() + 1_000_000,
+    });
+    expect(await storage.isStaticApiKey("xai")).toBe(true);
+    const creds = await storage.resolveCredentials("xai");
+    expect(creds.accessToken).toBe("xai-api-key");
+  });
+
+  it("persists the exhaustion mark so a new process (or another app window) sees it", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    const storage = new AuthStorage(filePath);
+    await storage.setCredentials("moonshot", apiKeyCreds());
+    await storage.setCredentials(MOONSHOT_OAUTH_KEY, oauthCreds());
+    await storage.markUsageExhausted(MOONSHOT_OAUTH_KEY);
+
+    const secondProcess = new AuthStorage(filePath);
+    const creds = await secondProcess.resolveCredentials("moonshot", {
+      storageKeys: ["moonshot"],
+    });
+    expect(creds.accessToken).toBe("moonshot-api-key");
   });
 });

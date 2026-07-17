@@ -14,6 +14,7 @@ const ALL: Provider[] = [
   "deepseek",
   "openrouter",
   "sakana",
+  "xai",
 ];
 
 /** Fake auth lookup: only the providers in `set` are "logged in". */

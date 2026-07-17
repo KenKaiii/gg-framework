@@ -24,6 +24,7 @@ const PROVIDER_LABEL: Record<string, string> = {
   deepseek: "DeepSeek",
   openrouter: "OpenRouter",
   sakana: "Sakana",
+  xai: "xAI",
 };
 
 export function ModelSelector({

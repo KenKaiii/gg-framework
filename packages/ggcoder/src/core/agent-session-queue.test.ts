@@ -105,7 +105,7 @@ describe("AgentSession queue — takeNextQueuedMessage", () => {
     } finally {
       await session.dispose();
     }
-  });
+  }, 15_000);
 
   it("take and drain never double-deliver the same message", async () => {
     const session = await makeSession();

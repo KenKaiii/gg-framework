@@ -13,6 +13,7 @@ export type Provider =
   | "deepseek"
   | "openrouter"
   | "sakana"
+  | "xai"
   | "palsu";
 
 // ── Thinking ───────────────────────────────────────────────

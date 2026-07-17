@@ -173,7 +173,7 @@ function printHelp(): void {
     ["-v, --version", "Show version number"],
     [
       "--provider <name>",
-      "AI provider (anthropic, xiaomi, openai, gemini, glm, moonshot, minimax, deepseek, openrouter, sakana)",
+      "AI provider (anthropic, xiaomi, openai, gemini, glm, moonshot, minimax, deepseek, openrouter, sakana, xai)",
     ],
     ["--model <name>", "Model to use (e.g. claude-sonnet-5, gpt-5.5)"],
     ["--max-turns <n>", "Maximum agent turns per prompt"],
@@ -377,6 +377,7 @@ function main(): void {
     if (p === "deepseek") return "deepseek-v4-pro";
     if (p === "openrouter") return "qwen/qwen3.6-plus";
     if (p === "sakana") return "fugu";
+    if (p === "xai") return "grok-4.5";
     return "claude-opus-4-8";
   }
 
@@ -875,6 +876,7 @@ async function runSessions(): Promise<void> {
     if (p === "minimax") return "MiniMax-M3";
     if (p === "deepseek") return "deepseek-v4-pro";
     if (p === "sakana") return "fugu";
+    if (p === "xai") return "grok-4.5";
     return "claude-opus-4-8";
   }
 
@@ -1281,6 +1283,7 @@ async function resolveActiveProvider(
     "deepseek",
     "openrouter",
     "sakana",
+    "xai",
   ];
   const loggedInProviders: Provider[] = [];
   for (const p of allProviders) {

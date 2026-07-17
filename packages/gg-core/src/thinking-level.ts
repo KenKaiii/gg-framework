@@ -14,6 +14,9 @@ const OPENAI_GPT_56_THINKING_LEVELS: readonly ThinkingLevel[] = [
 // rejects anything else. Expose both so users can pick the lighter tier instead
 // of being forced into all-or-nothing xhigh.
 const SAKANA_THINKING_LEVELS: readonly ThinkingLevel[] = ["high", "xhigh"];
+// Grok reasoning models take reasoning_effort low/medium/high (server default
+// high; reasoning can't be fully disabled — "off" just omits the param).
+const XAI_THINKING_LEVELS: readonly ThinkingLevel[] = ["low", "medium", "high"];
 const ANTHROPIC_OPUS_48_47_THINKING_LEVELS: readonly ThinkingLevel[] = [
   "low",
   "medium",
@@ -34,6 +37,10 @@ function isOpenAIGptModel(provider: Provider, model: string): boolean {
 
 function isSakanaModel(provider: Provider): boolean {
   return provider === "sakana";
+}
+
+function isXaiModel(provider: Provider): boolean {
+  return provider === "xai";
 }
 
 function isAnthropicOpus48Or47Model(provider: Provider, model: string): boolean {
@@ -66,6 +73,12 @@ export function getSupportedThinkingLevels(
     return SAKANA_THINKING_LEVELS.slice(0, maxIndex + 1);
   }
 
+  if (isXaiModel(provider)) {
+    const maxIndex = XAI_THINKING_LEVELS.indexOf(maxLevel);
+    if (maxIndex === -1) return XAI_THINKING_LEVELS;
+    return XAI_THINKING_LEVELS.slice(0, maxIndex + 1);
+  }
+
   if (!isOpenAIGptModel(provider, model)) return [maxLevel];
 
   const levels = model.startsWith("gpt-5.6-")
@@ -93,7 +106,8 @@ export function getNextThinkingLevel(
   const shouldCycleLevels =
     isOpenAIGptModel(provider, model) ||
     isAnthropicAdaptiveModel(provider, model) ||
-    isSakanaModel(provider);
+    isSakanaModel(provider) ||
+    isXaiModel(provider);
   if (!shouldCycleLevels) {
     return current ? undefined : supportedLevels[0];
   }
