@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.19.2
+
+### Patch Changes
+
+- Reduce long-session token usage with calibrated context estimates and preserve full oversized command output for targeted recovery.
+  - @kenkaiiii/gg-ai@5.19.2
+  - @kenkaiiii/gg-agent@5.19.2
+  - @kenkaiiii/gg-core@5.19.2
+
 ## 5.19.1
 
 ### Patch Changes
