@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.19.0
+
+### Minor Changes
+
+- Add Grok 4.5 support and make Kimi prefer OAuth with automatic API-key fallback when plan usage is exhausted.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.19.0
+- @kenkaiiii/gg-agent@5.19.0
+- @kenkaiiii/gg-core@5.19.0
+
 ## 5.18.0
 
 ### Minor Changes
