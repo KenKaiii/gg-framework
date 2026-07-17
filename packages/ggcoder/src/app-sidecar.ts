@@ -68,6 +68,7 @@ import {
   autopilotMarkerCopySeed,
 } from "./core/session-history.js";
 import { AuthStorage } from "./core/auth-storage.js";
+import { cleanupToolOutputs } from "./tools/overflow.js";
 import {
   fetchSubscriptionUsage,
   MOONSHOT_OAUTH_KEY,
@@ -735,6 +736,10 @@ async function main(): Promise<void> {
   // before anything spawns (bash tool, background tasks, LSP, git helpers all
   // inherit it). Best-effort — never blocks startup beyond its internal cap.
   await enrichProcessPath();
+
+  // Sweep recoverable full tool outputs (~/.gg/tool-output/) older than 48h.
+  // Fire-and-forget: cleanup must never delay or break startup.
+  void cleanupToolOutputs().catch(() => {});
 
   const auth = new AuthStorage(paths.authFile);
   await auth.load();

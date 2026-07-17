@@ -68,7 +68,7 @@ import { MCPClientManager, getAllMcpServers } from "./mcp/index.js";
 import { DeferredToolCatalog } from "./mcp/deferred-catalog.js";
 import { createToolSearchTool } from "../tools/tool-search.js";
 import { log } from "./logger.js";
-import { setEstimatorModel } from "./compaction/token-estimator.js";
+import { setEstimatorModel, calibrateEstimatorFromUsage } from "./compaction/token-estimator.js";
 import { calculateActiveContextTokens } from "./compaction/active-context.js";
 import { pruneStaleToolResults } from "./compaction/tool-result-pruner.js";
 import { discoverAgents } from "./agents.js";
@@ -1203,6 +1203,9 @@ export class AgentSession {
             const anchor = messages[anchorIndex];
             if (anchor?.role === "assistant") {
               this.providerContext = { usage: { ...transformOpts.usage }, anchor };
+              // Feed the authoritative usage back into the token estimator so
+              // char-based estimates track this session's real tokenizer.
+              calibrateEstimatorFromUsage(messages.slice(0, anchorIndex), transformOpts.usage);
             }
           }
 

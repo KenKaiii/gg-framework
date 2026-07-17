@@ -47,4 +47,8 @@ export {
   estimateMessageTokens,
   estimateConversationTokens,
   setEstimatorModel,
+  calibrateEstimator,
+  calibrateEstimatorFromUsage,
+  getCalibratedRatio,
+  measureConversationChars,
 } from "./compaction/token-estimator.js";

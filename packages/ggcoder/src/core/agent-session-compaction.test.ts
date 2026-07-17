@@ -390,13 +390,6 @@ describe("AgentSession mid-turn compaction", () => {
       cacheWrite: 20,
       outputTokens: 40,
     };
-    const expectedActiveTokens =
-      usage.inputTokens +
-      usage.cacheRead! +
-      usage.cacheWrite! +
-      usage.outputTokens +
-      estimateConversationTokens([pendingMessage]);
-    expect(expectedActiveTokens).toBeGreaterThanOrEqual(160_000);
 
     shouldCompactMock.mockImplementation(
       (_messages, contextWindow: number, threshold: number, actualTokens?: number) =>
@@ -438,6 +431,17 @@ describe("AgentSession mid-turn compaction", () => {
     await session.initialize();
     await session.prompt("run a tool loop");
     await session.dispose();
+
+    // Computed after the run: the anchored usage sample calibrates the token
+    // estimator, so the pending-message estimate must use the same calibrated
+    // ratio the transform used when it called shouldCompact.
+    const expectedActiveTokens =
+      usage.inputTokens +
+      usage.cacheRead! +
+      usage.cacheWrite! +
+      usage.outputTokens +
+      estimateConversationTokens([pendingMessage]);
+    expect(expectedActiveTokens).toBeGreaterThanOrEqual(160_000);
 
     expect(transformed).toEqual(compactedMessages);
     expect(shouldCompactMock).toHaveBeenCalledWith(

@@ -1,4 +1,4 @@
-import type { Message, ContentPart, ToolResult } from "@kenkaiiii/gg-ai";
+import type { Message, ContentPart, ToolResult, Usage } from "@kenkaiiii/gg-ai";
 
 /**
  * Model-family-specific chars-per-token ratios.
@@ -29,24 +29,109 @@ const DEFAULT_CHARS_PER_TOKEN = 3.5;
 
 const PER_MESSAGE_OVERHEAD = 4; // tokens
 
+/** EMA smoothing factor for authoritative-usage calibration observations. */
+const CALIBRATION_ALPHA = 0.3;
+/** Plausibility bounds for chars-per-token; absorbs tokenizer and content skew. */
+const CALIBRATION_MIN_RATIO = 2.0;
+const CALIBRATION_MAX_RATIO = 5.0;
+
 /** Active model name, set via setEstimatorModel(). Used to select the right ratio. */
 let activeModel = "";
+
+/** Session-observed chars-per-token ratio, blended from provider usage reports. */
+let calibratedRatio: number | null = null;
 
 /**
  * Set the active model name for token estimation.
  * Call this when the model changes so estimates use the correct ratio.
+ * Switching models resets usage-based calibration (different tokenizer).
  */
 export function setEstimatorModel(model: string): void {
+  if (model !== activeModel) calibratedRatio = null;
   activeModel = model;
 }
 
-function getCharsPerToken(): number {
+/**
+ * Feed an authoritative provider usage observation back into the estimator:
+ * blends `chars / tokens` into the session ratio via EMA, clamped to sane
+ * bounds. Every downstream estimate (compaction trigger, prune budgets)
+ * sharpens as real usage data accumulates.
+ */
+export function calibrateEstimator(chars: number, tokens: number): void {
+  if (!Number.isFinite(chars) || !Number.isFinite(tokens) || chars <= 0 || tokens <= 0) return;
+  const observed = Math.min(CALIBRATION_MAX_RATIO, Math.max(CALIBRATION_MIN_RATIO, chars / tokens));
+  const currentRatio = calibratedRatio ?? getModelCharsPerToken();
+  calibratedRatio = currentRatio + CALIBRATION_ALPHA * (observed - currentRatio);
+}
+
+/** Current usage-calibrated chars-per-token ratio, or null before any observation. */
+export function getCalibratedRatio(): number | null {
+  return calibratedRatio;
+}
+
+/**
+ * Measure the text characters in a message history and whether it contains
+ * image/video parts (which inflate tokens-per-char and would skew calibration).
+ */
+export function measureConversationChars(messages: Message[]): {
+  chars: number;
+  hasMedia: boolean;
+} {
+  let chars = 0;
+  let hasMedia = false;
+  for (const msg of messages) {
+    if (typeof msg.content === "string") {
+      chars += msg.content.length;
+      continue;
+    }
+    if (!Array.isArray(msg.content)) continue;
+    for (const part of msg.content as (ContentPart | ToolResult)[]) {
+      if (part.type === "image" || part.type === "video") {
+        hasMedia = true;
+      } else if (part.type === "tool_call") {
+        const serializedArgs = JSON.stringify(part.args);
+        chars += part.name.length + (serializedArgs?.length ?? 0);
+      } else if (part.type === "tool_result") {
+        const tr = part as ToolResult;
+        if (typeof tr.content === "string") {
+          chars += tr.content.length;
+        } else {
+          for (const block of tr.content) {
+            if (block.type === "text") chars += block.text.length;
+            else hasMedia = true;
+          }
+        }
+      } else if ("text" in part && typeof part.text === "string") {
+        chars += part.text.length;
+      }
+    }
+  }
+  return { chars, hasMedia };
+}
+
+/**
+ * Calibrate from a provider usage report anchored to a message history using
+ * its authoritative total input tokens (uncached + cache read/write). Skips
+ * histories containing image/video parts.
+ */
+export function calibrateEstimatorFromUsage(history: Message[], usage: Usage): void {
+  const { chars, hasMedia } = measureConversationChars(history);
+  if (hasMedia) return;
+  const totalInputTokens = usage.inputTokens + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+  calibrateEstimator(chars, totalInputTokens);
+}
+
+function getModelCharsPerToken(): number {
   if (!activeModel) return DEFAULT_CHARS_PER_TOKEN;
   const lower = activeModel.toLowerCase();
   for (const [prefix, ratio] of Object.entries(MODEL_FAMILY_RATIOS)) {
     if (lower.startsWith(prefix)) return ratio;
   }
   return DEFAULT_CHARS_PER_TOKEN;
+}
+
+function getCharsPerToken(): number {
+  return calibratedRatio ?? getModelCharsPerToken();
 }
 
 export function estimateTokens(text: string): number {

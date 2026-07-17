@@ -4,8 +4,12 @@ import {
   estimateMessageTokens,
   estimateConversationTokens,
   setEstimatorModel,
+  calibrateEstimator,
+  calibrateEstimatorFromUsage,
+  getCalibratedRatio,
+  measureConversationChars,
 } from "./token-estimator.js";
-import type { Message } from "@kenkaiiii/gg-ai";
+import type { Message, Usage } from "@kenkaiiii/gg-ai";
 
 // Use a known model so the chars-per-token ratio is deterministic in tests.
 // "claude-sonnet-5" → ratio = 3.2
@@ -157,5 +161,169 @@ describe("setEstimatorModel", () => {
 
     // Reset for other tests
     setEstimatorModel("claude-sonnet-5");
+  });
+});
+
+describe("calibrateEstimator", () => {
+  function resetCalibration(): void {
+    // Model change resets calibration; restore the test model afterwards.
+    setEstimatorModel("calibration-reset-sentinel");
+    setEstimatorModel("claude-sonnet-5");
+  }
+
+  it("starts with no calibrated ratio", () => {
+    resetCalibration();
+    expect(getCalibratedRatio()).toBeNull();
+  });
+
+  it("blends the first observation into the model-family prior", () => {
+    resetCalibration();
+    calibrateEstimator(350, 100); // prior 3.2 + 0.3*(observed 3.5 - 3.2) = 3.29
+    expect(getCalibratedRatio()).toBeCloseTo(3.29, 10);
+  });
+
+  it("blends subsequent observations with EMA alpha 0.3", () => {
+    resetCalibration();
+    calibrateEstimator(350, 100); // ratio = 3.29
+    calibrateEstimator(250, 100); // observed 2.5 → 3.29 + 0.3*(2.5-3.29) = 3.053
+    expect(getCalibratedRatio()).toBeCloseTo(3.053, 10);
+  });
+
+  it("clamps observations to [2.0, 5.0] before blending", () => {
+    resetCalibration();
+    calibrateEstimator(100, 1000); // observed 0.1 → clamp 2.0; blend from 3.2 → 2.84
+    expect(getCalibratedRatio()).toBeCloseTo(2.84, 10);
+
+    resetCalibration();
+    calibrateEstimator(10_000, 100); // observed 100 → clamp 5.0; blend from 3.2 → 3.74
+    expect(getCalibratedRatio()).toBeCloseTo(3.74, 10);
+  });
+
+  it("ignores invalid observations", () => {
+    resetCalibration();
+    calibrateEstimator(0, 100);
+    calibrateEstimator(100, 0);
+    calibrateEstimator(-5, 100);
+    calibrateEstimator(Number.NaN, 100);
+    calibrateEstimator(100, Number.POSITIVE_INFINITY);
+    expect(getCalibratedRatio()).toBeNull();
+  });
+
+  it("calibrated ratio overrides the model-family ratio in estimateTokens", () => {
+    resetCalibration();
+    const text = "a".repeat(100);
+    expect(estimateTokens(text)).toBe(32); // claude family ratio 3.2
+    calibrateEstimator(400, 100); // blended ratio = 3.2 + 0.3*(4.0-3.2) = 3.44
+    expect(estimateTokens(text)).toBe(30); // ceil(100/3.44)
+  });
+
+  it("model change resets calibration; same model keeps it", () => {
+    resetCalibration();
+    calibrateEstimator(400, 100);
+    expect(getCalibratedRatio()).toBeCloseTo(3.44, 10);
+
+    setEstimatorModel("claude-sonnet-5"); // same model — keep calibration
+    expect(getCalibratedRatio()).toBeCloseTo(3.44, 10);
+
+    setEstimatorModel("gpt-4.1"); // different model — reset
+    expect(getCalibratedRatio()).toBeNull();
+    setEstimatorModel("claude-sonnet-5");
+  });
+});
+
+describe("measureConversationChars", () => {
+  it("counts chars across string, text, tool_call, and tool_result content", () => {
+    const messages: Message[] = [
+      { role: "system", content: "sys" }, // 3
+      { role: "user", content: "hello" }, // 5
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "hi" }, // 2
+          { type: "tool_call", id: "t1", name: "read", args: { p: "x" } }, // 4 + 9 ({"p":"x"})
+        ],
+      },
+      {
+        role: "tool",
+        content: [{ type: "tool_result", toolCallId: "t1", content: "result" }], // 6
+      },
+    ];
+    const { chars, hasMedia } = measureConversationChars(messages);
+    expect(chars).toBe(3 + 5 + 2 + 4 + 9 + 6);
+    expect(hasMedia).toBe(false);
+  });
+
+  it("handles tool args whose toJSON returns undefined", () => {
+    const messages: Message[] = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "t1",
+            name: "read",
+            args: { toJSON: () => undefined },
+          },
+        ],
+      },
+    ];
+    expect(measureConversationChars(messages)).toEqual({ chars: 4, hasMedia: false });
+  });
+
+  it("flags image and video parts as media", () => {
+    const withImage: Message[] = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "look" },
+          { type: "image", mediaType: "image/png", data: "aaaa" },
+        ],
+      },
+    ];
+    expect(measureConversationChars(withImage).hasMedia).toBe(true);
+
+    const withVideoResult: Message[] = [
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool_result",
+            toolCallId: "t1",
+            content: [{ type: "video", mediaType: "video/mp4", data: "bbbb" }],
+          },
+        ],
+      },
+    ];
+    expect(measureConversationChars(withVideoResult).hasMedia).toBe(true);
+  });
+});
+
+describe("calibrateEstimatorFromUsage", () => {
+  function resetCalibration(): void {
+    setEstimatorModel("calibration-reset-sentinel");
+    setEstimatorModel("claude-sonnet-5");
+  }
+
+  it("calibrates from total input usage tokens (uncached + cache)", () => {
+    resetCalibration();
+    const history: Message[] = [{ role: "user", content: "a".repeat(240) }];
+    const usage: Usage = { inputTokens: 40, outputTokens: 20, cacheRead: 30, cacheWrite: 10 };
+    calibrateEstimatorFromUsage(history, usage); // observed 3.0, blended from 3.2 → 3.14
+    expect(getCalibratedRatio()).toBeCloseTo(3.14, 10);
+  });
+
+  it("skips calibration when history contains media", () => {
+    resetCalibration();
+    const history: Message[] = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "a".repeat(300) },
+          { type: "image", mediaType: "image/png", data: "zzzz" },
+        ],
+      },
+    ];
+    calibrateEstimatorFromUsage(history, { inputTokens: 100, outputTokens: 0 });
+    expect(getCalibratedRatio()).toBeNull();
   });
 });

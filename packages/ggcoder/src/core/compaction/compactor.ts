@@ -179,7 +179,7 @@ const COMPACTION_MIN_MESSAGES = 4;
 export function shouldCompact(
   messages: Message[],
   contextWindow: number,
-  threshold = 0.8,
+  threshold = 0.85,
   /** Actual API-reported token count — preferred over char-based estimate when available. */
   actualTokens?: number,
   /** @deprecated Output-token reserves no longer affect compaction decisions. */
@@ -641,8 +641,13 @@ export function extractSummaryText(content: string | ContentPart[]): string {
     .join("");
 }
 
-/** Budget of recent tokens to keep un-summarized (~20K tokens). */
-const KEEP_RECENT_TOKENS = 20_000;
+/**
+ * Budget of recent tokens to keep un-summarized (~8K tokens).
+ * Aligned with opencode's post-compaction preserved tail — the pruner protects
+ * recency between compactions, so rebuilding a fat tail right after paying for
+ * a summary wastes the savings.
+ */
+const KEEP_RECENT_TOKENS = 8_000;
 
 /**
  * Compact a conversation by summarizing older messages via LLM.
@@ -654,7 +659,7 @@ const KEEP_RECENT_TOKENS = 20_000;
  * better summary.
  *
  * - Keeps the system message (index 0) intact.
- * - Keeps the most recent ~20K tokens of conversation intact.
+ * - Keeps the most recent ~8K tokens of conversation intact.
  * - Summarizes everything in between using an appropriate model.
  * - Tool results are truncated and thinking blocks stripped in the summary call.
  * - Messages are token-budgeted to avoid overflowing the summarizer's context.
@@ -684,7 +689,7 @@ export async function compact(
     contextWindow: String(options.contextWindow),
   });
 
-  // Find the cut point — keep ~20K tokens of recent conversation. Completed
+  // Find the cut point — keep ~8K tokens of recent conversation. Completed
   // tool calls may contain an entire generated file in their arguments; cap
   // those historical payloads so one atomic call/result pair cannot defeat
   // the recent-token budget and overflow the next provider request.

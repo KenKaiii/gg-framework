@@ -10,7 +10,10 @@ import type { TransformContextOptions } from "@kenkaiiii/gg-agent";
 import { compact, shouldCompact } from "../../core/compaction/compactor.js";
 import { calculateActiveContextTokens } from "../../core/compaction/active-context.js";
 import { pruneStaleToolResults } from "../../core/compaction/tool-result-pruner.js";
-import { estimateConversationTokens } from "../../core/compaction/token-estimator.js";
+import {
+  estimateConversationTokens,
+  calibrateEstimatorFromUsage,
+} from "../../core/compaction/token-estimator.js";
 import {
   getAuthStorageKeys,
   getContextWindow,
@@ -84,6 +87,9 @@ export function useContextCompaction({
       const anchor = messages[anchorIndex];
       if (anchor?.role === "assistant") {
         providerContextRef.current = { usage: { ...usage }, anchor };
+        // Feed the authoritative usage back into the token estimator so
+        // char-based estimates track this session's real tokenizer.
+        calibrateEstimatorFromUsage(messages.slice(0, anchorIndex), usage);
       }
     },
     [],
@@ -216,7 +222,7 @@ export function useContextCompaction({
 
       const settings = settingsRef.current;
       const autoCompact = settings?.get("autoCompact") ?? true;
-      const threshold = settings?.get("compactThreshold") ?? 0.8;
+      const threshold = settings?.get("compactThreshold") ?? 0.85;
 
       // Force-compact on context overflow regardless of settings or cooldown.
       if (options.force) {

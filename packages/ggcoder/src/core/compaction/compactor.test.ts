@@ -72,7 +72,7 @@ describe("shouldCompact", () => {
     expect(shouldCompact(messages, 500, 0.8)).toBe(true);
   });
 
-  it("uses default threshold of 0.8", () => {
+  it("uses default threshold of 0.85", () => {
     const content = "x".repeat(400);
     const messages = [
       makeMessage("system", content),
@@ -81,7 +81,9 @@ describe("shouldCompact", () => {
       makeMessage("user", content),
     ];
     const estimated = estimateConversationTokens(messages);
+    // estimated ≈ 0.7 × window → under the 0.85 default boundary
     expect(shouldCompact(messages, Math.ceil(estimated / 0.7))).toBe(false);
+    // estimated ≈ 0.9 × window → over the 0.85 default boundary
     expect(shouldCompact(messages, Math.ceil(estimated / 0.9))).toBe(true);
   });
 
@@ -178,9 +180,9 @@ describe("shouldCompact", () => {
 describe("compaction thresholds across all models", () => {
   const messages = [makeMessage("user", "x")];
 
-  it.each(MODELS)("$id crosses the default boundary at exactly 80%", (model) => {
+  it.each(MODELS)("$id crosses the default boundary at exactly 85%", (model) => {
     const contextWindow = getContextWindow(model.id, { provider: model.provider });
-    const boundary = Math.ceil(contextWindow * 0.8);
+    const boundary = Math.ceil(contextWindow * 0.85);
 
     expect(contextWindow).toBe(model.contextWindow);
     expect(shouldCompact(messages, contextWindow, undefined, boundary - 1)).toBe(false);
@@ -590,7 +592,7 @@ describe("compact", () => {
 
   // Each user message: ~20 + 10000 chars ≈ 2504 tokens + 4 overhead ≈ 2508 tokens
   // Each assistant: ~12 chars ≈ 7 tokens
-  // 30 pairs ≈ 30 × 2515 ≈ 75K tokens total (well over 20K recent budget)
+  // 30 pairs ≈ 30 × 2515 ≈ 75K tokens total (well over the 8K recent budget)
   function buildConversation(middleCount: number): Message[] {
     const msgs: Message[] = [makeMessage("system", "You are a helpful assistant.")];
     for (let i = 0; i < middleCount; i++) {
@@ -668,6 +670,30 @@ describe("compact", () => {
     expect(summaryMsg.role).toBe("user");
     expect(summaryMsg.content as string).toContain("[Previous conversation summary]");
     expect(summaryMsg.content as string).toContain("great summary");
+  });
+
+  it("caps the preserved recent tail at ~8K tokens", async () => {
+    const mockStream = vi.mocked(stream);
+    mockStream.mockReturnValue(
+      mockStreamResult(
+        Promise.resolve({
+          message: { role: "assistant", content: "Summary." },
+          stopReason: "end_turn",
+          usage: { inputTokens: 1000, outputTokens: 50 },
+        }),
+      ) as never,
+    );
+
+    const messages = buildConversation(30);
+    const result = await compact(messages, baseOptions);
+    expect(result.result.compacted).toBe(true);
+
+    // Recent tail = everything after system + summary + assistant ack.
+    const tail = result.messages.slice(3);
+    const tailTokens = estimateConversationTokens(tail);
+    // Budget is 8K; one ≈2.5K-token conversation pair of slack covers the
+    // never-split-a-pair / always-keep-last-user-exchange guards.
+    expect(tailTokens).toBeLessThanOrEqual(8_000 + 3_000);
   });
 
   it("uses fallback summary when LLM returns empty", async () => {

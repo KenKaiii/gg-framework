@@ -6,6 +6,7 @@ import type * as CompactorModule from "../../core/compaction/compactor.js";
 import type { SettingsManager } from "../../core/settings-manager.js";
 import type { CompletedItem } from "../app-items.js";
 import { useContextCompaction } from "./useContextCompaction.js";
+import { getCalibratedRatio, setEstimatorModel } from "../../core/compaction/token-estimator.js";
 
 const compactMock = vi.hoisted(() => vi.fn());
 
@@ -131,6 +132,27 @@ describe("useContextCompaction", () => {
       ]);
     },
   );
+
+  it("calibrates the token estimator from the anchored provider usage", async () => {
+    // Model switch resets any calibration left over from previous tests.
+    setEstimatorModel("calibration-reset-sentinel");
+    setEstimatorModel("test-model");
+    expect(getCalibratedRatio()).toBeNull();
+
+    let transformed: Message[] | undefined;
+    const mounted = render(
+      <Harness provider="openai" onTransformed={(messages) => (transformed = messages)} />,
+      { patchConsole: false },
+    );
+
+    await vi.waitFor(() => expect(transformed).toBeDefined());
+    mounted.unmount();
+
+    const ratio = getCalibratedRatio();
+    expect(ratio).not.toBeNull();
+    expect(ratio!).toBeGreaterThanOrEqual(2.0);
+    expect(ratio!).toBeLessThanOrEqual(5.0);
+  });
 
   it("reuses authoritative usage for the first context check of the next run", async () => {
     let transformed: Message[] | undefined;

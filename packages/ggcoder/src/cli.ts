@@ -77,6 +77,7 @@ import { setProviderDiagnostic } from "@kenkaiiii/gg-ai";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { PROMPT_COMMANDS } from "./core/prompt-commands.js";
 import { createTools } from "./tools/index.js";
+import { cleanupToolOutputs } from "./tools/overflow.js";
 import { CheckpointStore } from "./core/checkpoint-store.js";
 import { ReviewCoverageTracker } from "./core/ideal-review.js";
 import { shouldCompact, compact } from "./core/compaction/compactor.js";
@@ -798,6 +799,8 @@ async function runInkTUI(opts: {
         })
         .catch(() => {});
     }
+    // Sweep recoverable full tool outputs (~/.gg/tool-output/) older than 48h.
+    void cleanupToolOutputs().catch(() => {});
   }
 
   await renderApp({

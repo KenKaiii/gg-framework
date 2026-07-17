@@ -6,7 +6,7 @@ import { getAppPaths } from "../config.js";
 
 const SettingsSchema = z.object({
   autoCompact: z.boolean().default(true),
-  compactThreshold: z.number().min(0.1).max(1.0).default(0.8),
+  compactThreshold: z.number().min(0.1).max(1.0).default(0.85),
   defaultProvider: z
     .enum([
       "anthropic",
@@ -57,7 +57,7 @@ export type Settings = z.infer<typeof SettingsSchema>;
 
 export const DEFAULT_SETTINGS: Settings = {
   autoCompact: true,
-  compactThreshold: 0.8,
+  compactThreshold: 0.85,
   defaultProvider: "anthropic",
   maxTokens: 16384,
   thinkingEnabled: false,

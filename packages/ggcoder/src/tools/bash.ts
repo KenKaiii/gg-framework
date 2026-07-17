@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import type { ProcessManager } from "../core/process-manager.js";
 import { killProcessTree } from "../utils/process.js";
-import { truncateTail } from "./truncate.js";
+import { truncateTail, MAX_BYTES } from "./truncate.js";
 import { compressToolOutput } from "./compress.js";
 import { writeOverflow } from "./overflow.js";
 import { localOperations, type ToolOperations } from "./operations.js";
@@ -14,6 +14,28 @@ import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
 
 const DEFAULT_TIMEOUT = 120_000; // 120 seconds
 const MAX_OUTPUT_BYTES = 10 * 1024 * 1024; // 10 MB — cap buffered output to prevent OOM
+
+/**
+ * Render command output for the tool result. Over-limit output is compressed
+ * (keeps errors + head/tail, collapses repeats) rather than blindly
+ * tail-sliced, and the raw output is offloaded to `~/.gg/tool-output/` so the
+ * model can recover the lost portion with `read --offset` instead of
+ * re-running the command. The offload is best-effort — a full disk or
+ * permission error never fails the tool result.
+ */
+export async function renderBashOutput(rawOutput: string): Promise<string> {
+  const result = truncateTail(rawOutput);
+  if (!result.truncated) return result.content;
+  const overflowPath =
+    Buffer.byteLength(rawOutput, "utf-8") > MAX_BYTES
+      ? await writeOverflow(rawOutput, "bash").catch(() => null)
+      : null;
+  const overflowNotice = overflowPath
+    ? ` Full output saved to ${overflowPath} — read it with offset/limit if needed.`
+    : "";
+  const c = compressToolOutput(rawOutput);
+  return `[${c.notice}${overflowNotice}]\n${c.content}`;
+}
 
 const BashParams = z.object({
   command: z.string().describe("The bash command to execute"),
@@ -81,12 +103,12 @@ export function createBashTool(
             ? (text) => context.onUpdate?.({ type: "bash_progress", output: text, totalBytes: 0 })
             : undefined,
         );
-        const truncated = truncateTail(res.output);
+        const output = await renderBashOutput(res.output);
         const exitCode =
           res.exitCode === "TIMEOUT"
             ? `TIMEOUT (${timeoutMs ?? DEFAULT_TIMEOUT}ms) — session shell was reset; cd/env state is gone`
             : String(res.exitCode);
-        return `Exit code: ${exitCode}\n${truncated.content}`;
+        return `Exit code: ${exitCode}\n${output}`;
       }
       if (run_in_background) {
         const result = await processManager.start(command, cwd);
@@ -162,23 +184,11 @@ export function createBashTool(
           context.signal.removeEventListener("abort", onAbort);
 
           const rawOutput = Buffer.concat(chunks).toString("utf-8");
-          const result = truncateTail(rawOutput);
-
-          let output = result.content;
-          const capNotice = outputCapped
-            ? `[Output capped at ${MAX_OUTPUT_BYTES / 1024 / 1024} MB to prevent memory exhaustion]\n`
-            : "";
+          let output = await renderBashOutput(rawOutput);
           if (outputCapped) {
-            output = `${capNotice}${output}`;
-          }
-          if (result.truncated) {
-            // Over-limit: a blind tail slice would drop the head and any
-            // mid-stream error. Compress instead (keeps errors + head/tail,
-            // collapses repeats); the overflow file preserves the original.
-            const overflowPath = await writeOverflow(rawOutput, "bash").catch(() => null);
-            const overflowNotice = overflowPath ? ` Full output: ${overflowPath}` : "";
-            const c = compressToolOutput(rawOutput);
-            output = `${capNotice}[${c.notice}${overflowNotice}]\n${c.content}`;
+            output =
+              `[Output capped at ${MAX_OUTPUT_BYTES / 1024 / 1024} MB to prevent memory exhaustion]\n` +
+              output;
           }
           // Windows without Git Bash: commands ran under cmd.exe, NOT bash. Tell
           // the model so it uses cmd syntax (no `ls`/`grep`/pipes/single-quotes)
