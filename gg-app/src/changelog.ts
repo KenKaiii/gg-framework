@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.23.2",
+    date: "2026-07-17",
+    items: [
+      "Long chats just got another serious efficiency boost. I taught GG Coder to learn each model's real token footprint, wait until `85%` before compacting, then carry a leaner `8K` recent tail forward. In my live torture test, total input fell `31%` with the answer intact.",
+      "Monster command output is no longer a dead end. I save the full result for `48 hours` and point GG Coder straight to the missing slice, so it can recover one buried line without rerunning the whole command or stuffing your context twice.",
+    ],
+  },
+  {
     version: "0.23.1",
     date: "2026-07-17",
     items: [
