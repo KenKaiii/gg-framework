@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.19.4
+
+### Patch Changes
+
+- Prevent Anthropic many-image requests from failing by resizing new and restored images to provider-safe dimensions.
+  - @kenkaiiii/gg-ai@5.19.4
+  - @kenkaiiii/gg-agent@5.19.4
+  - @kenkaiiii/gg-core@5.19.4
+
 ## 5.19.3
 
 ### Patch Changes
