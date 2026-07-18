@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.23.4",
+    date: "2026-07-18",
+    items: [
+      "`Anthropic` image-heavy chats are rock-solid now. I automatically resize oversized screenshots to the safe `2000px` limit, including images already buried in restored conversations, so long visual sessions keep rolling instead of dying on a surprise error.",
+    ],
+  },
+  {
     version: "0.23.3",
     date: "2026-07-18",
     items: [
