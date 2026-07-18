@@ -105,6 +105,19 @@ describe("formatError request too large", () => {
     expect(f.guidance).not.toContain("status.anthropic.com");
   });
 
+  it("routes Anthropic's many-image dimension error to local recovery", () => {
+    const f = formatError(
+      new ProviderError(
+        "anthropic",
+        "invalid_request_error: At least one of the image dimensions exceed max allowed size for many-image requests: 2000 pixels",
+        { statusCode: 400 },
+      ),
+    );
+    expect(f.guidance).toContain("Restart GG Coder");
+    expect(f.guidance).toContain("restored images are resized");
+    expect(f.guidance).not.toContain("status.anthropic.com");
+  });
+
   it("explains the recovery after OpenAI's request retry buffer overflows", () => {
     const f = formatError(
       new ProviderError("openai", "exceeded request buffer limit while retrying upstream", {

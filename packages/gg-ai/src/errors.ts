@@ -501,6 +501,12 @@ function providerGuidance(
   if (lower.includes("context_length_exceeded") || lower.includes("prompt is too long")) {
     return `Context window for this ${name} model is full. Compact the conversation to shrink history, or start a new session.`;
   }
+  if (
+    lower.includes("many-image request") ||
+    (lower.includes("image dimensions") && lower.includes("max allowed size"))
+  ) {
+    return `An image in conversation history exceeds ${name}'s many-image limit. Restart GG Coder so restored images are resized, then retry; if it persists, start a new session.`;
+  }
   // Anthropic HTTP 413: the request BODY (not the token count) exceeds the
   // provider's max size. Retrying the same request fails identically — the fix
   // is to shrink history, same as a context overflow.

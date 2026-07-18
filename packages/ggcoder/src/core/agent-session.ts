@@ -92,6 +92,7 @@ import {
 import { buildRegroundingMessage } from "./regrounding.js";
 import { wrapSteeringText, STEERING_PREFIX } from "./steering.js";
 import { findUserSessionPrompt, getUserSessionPrompt } from "./session-preview.js";
+import { normalizeMessageImages } from "./message-images.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -2176,10 +2177,15 @@ export class AgentSession {
     // Track the current leaf for subsequent entries
     this.currentLeafId = loaded.header.leafId;
 
-    // Rebuild messages: keep system, add loaded
+    // Rebuild messages: keep system, add loaded. Older gg-app sessions may
+    // contain full-resolution attachments; repair them once on load so they do
+    // not fail when Anthropic's stricter many-image limit activates later.
     const systemMsg = this.messages[0]; // Already built
     this.messages = [systemMsg, ...loadedMessages];
-
+    const normalizedImageCount = await normalizeMessageImages(this.messages);
+    if (normalizedImageCount > 0) {
+      log("INFO", "session", `Resized ${normalizedImageCount} restored session image(s)`);
+    }
     // Auto-compact on load if the restored session exceeds the context window.
     // Without this, huge sessions (1M+ tokens) get loaded into memory and OOM.
     const creds = await this.authStorage.resolveCredentials(this.provider, {

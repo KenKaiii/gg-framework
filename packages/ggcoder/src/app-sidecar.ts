@@ -114,7 +114,7 @@ import {
   stopRadio,
 } from "./core/radio.js";
 import { enrichProcessPath } from "./core/shell-path.js";
-import { downscaleForPreview, validateVisionImage } from "./utils/image.js";
+import { downscaleForPreview, shrinkToFit, validateVisionImage } from "./utils/image.js";
 import { startServeMode, type ServeController } from "./modes/serve-mode.js";
 import { loadTelegramConfig, saveTelegramConfig, verifyBotToken } from "./core/telegram-config.js";
 import {
@@ -389,17 +389,27 @@ async function prepareAttachments(
     const fileName = `${Date.now().toString(36)}-${safe}`;
     const filePath = path.join(dir, fileName);
     const buf = Buffer.from(a.data, "base64");
-    // Validate image attachments before they become native image content blocks.
-    // A corrupt or unsupported-format image (e.g. a malformed .ico, or a .png
-    // with a bad IDAT) makes the provider reject the ENTIRE turn ("image data
-    // ... not a valid image") before the agent can respond. Downgrade such files
-    // to a plain "file" attachment so the model gets a path note and inspects
-    // them with its tools instead of the request 400ing.
+    // Validate and cap image attachments before they become native image content
+    // blocks. Anthropic applies a 2000 px per-dimension cap once conversation
+    // history contains more than 20 images, so every attachment must be safe for
+    // later turns too. Keep the original on disk, but send the resized bytes.
+    // Corrupt or unsupported images become plain files so they cannot reject the
+    // entire provider request.
     let prepared: PreparedAttachment = { ...a };
     if (a.kind === "image") {
-      const validatedType = await validateVisionImage(buf).catch(() => null);
-      if (validatedType) prepared = { ...a, mediaType: validatedType };
-      else prepared = { ...a, kind: "file" };
+      try {
+        const resized = await shrinkToFit(buf, a.mediaType);
+        const validatedType = await validateVisionImage(resized.buffer);
+        prepared = validatedType
+          ? {
+              ...a,
+              mediaType: validatedType,
+              data: resized.buffer.toString("base64"),
+            }
+          : { ...a, kind: "file" };
+      } catch {
+        prepared = { ...a, kind: "file" };
+      }
     }
     try {
       await fs.writeFile(filePath, buf);
