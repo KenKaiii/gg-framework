@@ -22,6 +22,16 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.24.0",
+    date: "2026-07-20",
+    items: [
+      "Long answers no longer vanish at the finish line. When a model hits its output limit, I now resume it automatically up to `2 times` and warn you plainly if anything is still incomplete.",
+      "GG Coder knows when it is stuck now. I taught it to spot repeating tool cycles up to `5 steps` long, break the pattern once, then stop cleanly and tell you exactly what is blocking it instead of burning time on endless retries.",
+      "Your workspace has a real safety rail. I now block writes outside your project by default and stop catastrophic commands like `rm -rf /` before they run, while keeping normal cleanup commands flowing.",
+      "Project rules land in the right order every time. I added `AGENTS.override.md`, nearest-folder precedence, a smart `32 KiB` budget, and tougher plan checks so GG Coder follows the instructions you actually meant without silently losing them.",
+    ],
+  },
+  {
     version: "0.23.7",
     date: "2026-07-19",
     items: [
