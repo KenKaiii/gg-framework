@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.19.5
+
+### Patch Changes
+
+- Report sidecar, provider, tool, and subagent failures through the desktop Error Mom integration.
+  - @kenkaiiii/gg-ai@5.19.5
+  - @kenkaiiii/gg-agent@5.19.5
+  - @kenkaiiii/gg-core@5.19.5
+
 ## 5.19.4
 
 ### Patch Changes
