@@ -1,4 +1,7 @@
 import ReactDOM from "react-dom/client";
+// Error Mom capture must load before anything else so startup failures are
+// reported too. No-ops when VITE_ERROR_MOM_* env vars are absent.
+import "./error-mom";
 import { error as logError, attachConsole } from "@tauri-apps/plugin-log";
 // Self-hosted Geist Sans + Mono (bundled by Vite → works offline in the
 // packaged app). Imported before App so the @font-face rules land ahead of the

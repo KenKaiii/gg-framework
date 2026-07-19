@@ -145,6 +145,9 @@ importers:
       '@fontsource-variable/geist-mono':
         specifier: ^5.2.8
         version: 5.2.8
+      '@kenkaiiii/error-mom':
+        specifier: ^0.1.0
+        version: 0.1.0
       '@mediapipe/tasks-vision':
         specifier: ^0.10.18
         version: 0.10.35
@@ -1784,6 +1787,12 @@ packages:
 
   '@kenkaiiii/agent-home-sdk@0.3.8':
     resolution: {integrity: sha512-RH/5ZsqRgHWLqjQcjpvclK1tUrItRUTbJzoubFvyK2cT2YGjotrPIu+1+54eZdhR/oH8Bk77KRnjAw5SOBRbcw==}
+
+  '@kenkaiiii/error-mom-protocol@0.1.0':
+    resolution: {integrity: sha512-qV6F/Uf/0ZxrGeHIFuwRW0ThBr2cpxWhOCEKxh5oiYr3iUfHbQ/kim+wI9LX8llCIvtHJ2dl0g6lLZ8jXTpU7A==}
+
+  '@kenkaiiii/error-mom@0.1.0':
+    resolution: {integrity: sha512-20e+YG441QkQLBIYqfmXaPrc1+Xsthf/jtJkLxI3rrklk2/Hv0OTTxZRzG7GPAu8OF/y6dxxwa9pxeNkqum0PA==}
 
   '@kenkaiiii/ink@6.8.0-gg.2':
     resolution: {integrity: sha512-b2dmymMYLo/iFFQ1qZKGSFTR2bB5J67EhHhcfLUbppZY9XlKWVpVlLxnoXfud93Fq1qy6NDtOR3qGYK5KDfXYw==}
@@ -6864,6 +6873,14 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@kenkaiiii/agent-home-sdk@0.3.8': {}
+
+  '@kenkaiiii/error-mom-protocol@0.1.0':
+    dependencies:
+      zod: 4.4.3
+
+  '@kenkaiiii/error-mom@0.1.0':
+    dependencies:
+      '@kenkaiiii/error-mom-protocol': 0.1.0
 
   '@kenkaiiii/ink@6.8.0-gg.2(@types/react@19.2.14)(react@19.2.5)':
     dependencies:
