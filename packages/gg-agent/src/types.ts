@@ -121,6 +121,20 @@ export interface AgentMaxTurnsEvent {
   maxTurns: number;
 }
 
+/**
+ * Warning signal emitted when a turn ended on a non-clean stop reason —
+ * `max_tokens` (output clipped at the model's output-token limit), `refusal`,
+ * or a provider-reported `error` stop. Distinguishes a truncated/degraded
+ * completion from a clean one so hosts can warn the user instead of silently
+ * presenting incomplete output as done.
+ */
+export interface AgentTruncatedEvent {
+  type: "truncated";
+  reason: "max_tokens" | "refusal" | "provider_error";
+  /** True when the loop injected a continuation and will keep going. */
+  continued: boolean;
+}
+
 export interface AgentRetryEvent {
   type: "retry";
   reason:
@@ -198,6 +212,7 @@ export type AgentEvent =
   | AgentTurnEndEvent
   | AgentDoneEvent
   | AgentMaxTurnsEvent
+  | AgentTruncatedEvent
   | AgentErrorEvent;
 
 // ── Agent Options ───────────────────────────────────────────

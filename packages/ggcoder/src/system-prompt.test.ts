@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildSystemPrompt } from "./system-prompt.js";
+import {
+  buildSystemPrompt,
+  collectProjectContext,
+  PROJECT_CONTEXT_MAX_BYTES,
+} from "./system-prompt.js";
 import type { LanguageId } from "./core/language-detector.js";
 
 const tempDirs: string[] = [];
@@ -396,6 +400,45 @@ describe("buildSystemPrompt", () => {
     expect(audit.size.sections).toBeGreaterThanOrEqual(8);
   });
 
+  it("only references web_search in Research when it is an active tool", async () => {
+    const cwd = await makeProject();
+
+    // Anthropic-shaped tool set: no client-side web_search tool.
+    const withoutSearch = await buildSystemPrompt(cwd, undefined, false, undefined, [
+      "read",
+      "bash",
+      "web_fetch",
+    ]);
+    expect(withoutSearch).not.toContain("web_search");
+    expect(withoutSearch).toContain(
+      "use `web_fetch` for authoritative docs (native web search is available)",
+    );
+
+    const withSearch = await buildSystemPrompt(cwd, undefined, false, undefined, [
+      "read",
+      "bash",
+      "web_search",
+      "web_fetch",
+    ]);
+    expect(withSearch).toContain("use `web_search` then `web_fetch` for authoritative docs");
+  });
+
+  it("reports the resolved shell in the Environment section", async () => {
+    const cwd = await makeProject();
+    const prompt = await buildSystemPrompt(cwd, undefined, false, undefined, ["read"]);
+
+    // Non-Windows hosts (and Windows with Git Bash) run POSIX bash.
+    expect(prompt).toContain("- Shell: bash (POSIX)");
+  });
+
+  it("states the nearest-wins precedence rule in the project context section", async () => {
+    const cwd = await makeProject({ "AGENTS.md": "Project rules." });
+    const prompt = await buildSystemPrompt(cwd, undefined, false, undefined, ["read"]);
+
+    expect(prompt).toContain("Files are ordered broadest → nearest.");
+    expect(prompt).toContain("the nearest file wins");
+  });
+
   it("uses the Claude Code identity for Anthropic and GG Coder for other providers", async () => {
     const cwd = await makeProject();
     const anthropic = await buildSystemPrompt(
@@ -421,5 +464,103 @@ describe("buildSystemPrompt", () => {
     expect(anthropic).not.toContain("GG Coder by Ken Kai");
     expect(openai.startsWith("You are GG Coder by Ken Kai")).toBe(true);
     expect(openai).not.toContain("You are Claude Code");
+  });
+});
+
+describe("collectProjectContext", () => {
+  it("picks one file per directory — AGENTS.md shadows CLAUDE.md and the rest", async () => {
+    const cwd = await makeProject({
+      "AGENTS.md": "agents rules",
+      "CLAUDE.md": "claude rules",
+      ".cursorrules": "cursor rules",
+    });
+
+    const parts = await collectProjectContext(cwd);
+
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toContain("AGENTS.md");
+    expect(parts[0]).toContain("agents rules");
+    expect(parts.join("\n")).not.toContain("claude rules");
+    expect(parts.join("\n")).not.toContain("cursor rules");
+  });
+
+  it("AGENTS.override.md beats AGENTS.md in the same directory", async () => {
+    const cwd = await makeProject({
+      "AGENTS.override.md": "local override rules",
+      "AGENTS.md": "checked-in rules",
+    });
+
+    const parts = await collectProjectContext(cwd);
+
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toContain("AGENTS.override.md");
+    expect(parts[0]).toContain("local override rules");
+    expect(parts.join("\n")).not.toContain("checked-in rules");
+  });
+
+  it("renders broad → narrow: the nearest file comes last", async () => {
+    const root = await makeProject({
+      "AGENTS.md": "root-level rules",
+      "nested/CLAUDE.md": "nested rules",
+    });
+    const cwd = path.join(root, "nested");
+
+    const parts = await collectProjectContext(cwd);
+
+    const rendered = parts.join("\n\n");
+    expect(rendered.indexOf("root-level rules")).toBeGreaterThanOrEqual(0);
+    expect(rendered.indexOf("root-level rules")).toBeLessThan(rendered.indexOf("nested rules"));
+    expect(parts[parts.length - 1]).toContain("CLAUDE.md");
+  });
+
+  it("skips empty or whitespace-only files", async () => {
+    const cwd = await makeProject({ "AGENTS.md": "  \n\t\n" });
+
+    expect(await collectProjectContext(cwd)).toHaveLength(0);
+  });
+
+  it("strips a BOM so the content renders clean", async () => {
+    const cwd = await makeProject({ "AGENTS.md": "\uFEFFbom rules" });
+
+    const parts = await collectProjectContext(cwd);
+
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toContain("bom rules");
+    expect(parts[0]).not.toContain("\uFEFF");
+  });
+
+  it("budgets nearest-first at 32 KiB and reports skipped files", async () => {
+    const bigParent = "x".repeat(PROJECT_CONTEXT_MAX_BYTES + 1_000);
+    const root = await makeProject({
+      "AGENTS.md": bigParent,
+      "nested/CLAUDE.md": "nearest rules survive",
+    });
+    const cwd = path.join(root, "nested");
+
+    const parts = await collectProjectContext(cwd);
+
+    const rendered = parts.join("\n\n");
+    expect(rendered).toContain("nearest rules survive");
+    expect(rendered).not.toContain(bigParent);
+    expect(rendered).toContain("Skipped (context budget)");
+    expect(rendered).toMatch(/Skipped \(context budget\): .*AGENTS\.md \(\d+KB\)/);
+  });
+
+  it("keeps the nearest file when the budget cannot fit both", async () => {
+    const nearBig = "n".repeat(PROJECT_CONTEXT_MAX_BYTES - 100);
+    const parentRules = `parent rules ${"p".repeat(200)}`; // larger than the 100B leftover
+    const root = await makeProject({
+      "AGENTS.md": parentRules,
+      "nested/AGENTS.md": nearBig,
+    });
+    const cwd = path.join(root, "nested");
+
+    const parts = await collectProjectContext(cwd);
+    const rendered = parts.join("\n\n");
+
+    // The nearest (big) file consumed the budget; the parent was dropped.
+    expect(rendered).toContain(nearBig);
+    expect(rendered).not.toContain(parentRules);
+    expect(rendered).toContain("Skipped (context budget)");
   });
 });

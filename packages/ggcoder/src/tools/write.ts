@@ -6,6 +6,7 @@ import { resolvePath, rejectSymlink } from "./path-utils.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 import { assertFresh, recordWrite, type ReadTracker } from "./read-tracker.js";
 import { isPlanModeActive } from "../core/runtime-mode.js";
+import { resolveWriteGuard, type WriteGuardSettings } from "../core/workspace-guard.js";
 
 type MutationCallback = (filePath: string) => void | Promise<void>;
 
@@ -37,6 +38,7 @@ export function createWriteTool(
   onFileMutated?: MutationCallback,
   onPreFileMutation?: MutationCallback,
   getDiagnostics?: DiagnosticsProvider,
+  getWriteGuardSettings?: () => WriteGuardSettings | undefined,
 ): AgentTool<typeof WriteParams> {
   const planModeRef = isPlanModeRef(planModeRefOrOnFileMutated)
     ? planModeRefOrOnFileMutated
@@ -54,6 +56,12 @@ export function createWriteTool(
     async execute({ file_path, content }) {
       const resolved = resolvePath(cwd, file_path);
       await rejectSymlink(resolved);
+
+      // Workspace write guard: outside cwd/tmp/~/.gg requires user approval.
+      const guard = resolveWriteGuard(cwd, resolved, getWriteGuardSettings?.());
+      if (!guard.allowed) {
+        return `Error: ${guard.reason}`;
+      }
 
       if (isPlanModeActive(planModeRef)) {
         const plansDir = path.join(cwd, ".gg", "plans");

@@ -28,6 +28,7 @@ import { createEnterPlanTool } from "./enter-plan.js";
 import { createExitPlanTool } from "./exit-plan.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 import type { ReadTracker } from "./read-tracker.js";
+import type { WriteGuardSettings } from "../core/workspace-guard.js";
 import type { AgentDefinition } from "../core/agents.js";
 import type { Skill } from "../core/skills.js";
 
@@ -68,6 +69,8 @@ export interface CreateToolsOptions {
   getModel?: () => string;
   getThinkingLevel?: () => ThinkingLevel | undefined;
   getBaseUrl?: () => string | undefined;
+  /** Optional per-model subagent concurrency cap (subagentMaxPerModel). */
+  getMaxPerModel?: () => number | undefined;
   onSubAgentState?: (snapshot: SubAgentSnapshot) => void;
   /** Persistent child workers omit async orchestration to enforce one-level fan-out. */
   disableAsyncSubagents?: boolean;
@@ -84,6 +87,11 @@ export interface CreateToolsOptions {
    * chat provider. Omitted by callers that don't want image generation.
    */
   authStorage?: GenerateImageAuth & { hasProviderAuth(provider: string): Promise<boolean> };
+  /**
+   * Lazily read the workspace write-guard settings (allowOutsideWorkspaceWrites).
+   * When omitted, writes are allowed under cwd, the OS tmpdir, and ~/.gg only.
+   */
+  getWriteGuardSettings?: () => WriteGuardSettings | undefined;
 }
 
 export interface CreateToolsResult {
@@ -142,6 +150,7 @@ export async function createTools(
       opts?.onFileMutated,
       opts?.onPreFileMutation,
       getDiagnostics,
+      opts?.getWriteGuardSettings,
     ),
     createEditTool(
       cwd,
@@ -151,6 +160,7 @@ export async function createTools(
       opts?.onFileMutated,
       opts?.onPreFileMutation,
       getDiagnostics,
+      opts?.getWriteGuardSettings,
     ),
     createBashTool(cwd, processManager, ops, planModeRef),
     createFindTool(cwd),
@@ -192,6 +202,7 @@ export async function createTools(
         getThinkingLevel: () => opts.getThinkingLevel?.(),
         getCacheKey: opts.getCacheKey,
         getBaseUrl: opts.getBaseUrl,
+        getMaxPerModel: () => opts.getMaxPerModel?.(),
         onState: opts.onSubAgentState,
       });
       tools.push(...createSubAgentControlTools(subAgentManager, planModeRef));

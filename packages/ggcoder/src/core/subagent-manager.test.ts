@@ -35,6 +35,7 @@ function manager(
     store?: SubAgentStore;
     cwd?: string;
     sessionRootDir?: string;
+    maxPerModel?: number;
   } = {},
 ) {
   const instance = new SubAgentManager({
@@ -44,6 +45,7 @@ function manager(
     getModel: () => "gpt-5.6-sol",
     getThinkingLevel: () => "ultra",
     getCacheKey: () => "parent-cache",
+    getMaxPerModel: () => options.maxPerModel,
     workerEntry,
     idleTimeoutMs: options.idleTimeoutMs,
     store: options.store,
@@ -125,6 +127,51 @@ describe("SubAgentManager", () => {
     await instance.followup(slow.agent_id, "again");
     const followed = await instance.wait([slow.agent_id], "all", 500);
     expect(followed.agents[0]?.output).toContain("context:2");
+  });
+
+  it("enforces the per-model cap against the resolved child model", async () => {
+    // The read-only "fake" agent resolves to the fast model (gpt-5.6-luna);
+    // a shell-capable agent stays on the parent model (gpt-5.6-sol).
+    const shellAgent: AgentDefinition = {
+      name: "sheller",
+      description: "Shell-capable worker",
+      tools: ["read", "bash"],
+      systemPrompt: "fake",
+      source: "bundled",
+    };
+    const instance = manager({ agentDefs: [...agents, shellAgent], maxPerModel: 1 });
+
+    const first = await instance.spawn("first-luna", "slow", "fake");
+    expect(first.model).toBe("gpt-5.6-luna");
+
+    // Same resolved model at the cap → rejected with the setting named.
+    await expect(instance.spawn("second-luna", "slow", "fake")).rejects.toThrow(
+      "At most 1 agents may run at once on model gpt-5.6-luna (subagentMaxPerModel)",
+    );
+
+    // A different resolved model is unaffected by the luna cap.
+    const other = await instance.spawn("parent-model", "slow", "sheller");
+    expect(other.model).toBe("gpt-5.6-sol");
+  });
+
+  it("counts followups toward the per-model cap", async () => {
+    const instance = manager({ maxPerModel: 1 });
+    const done = await instance.spawn("finished", "fast", "fake");
+    await instance.wait([done.agent_id], "all", 1_000);
+
+    // A fresh active child now occupies the single luna slot…
+    await instance.spawn("occupier", "slow", "fake");
+
+    // …so resuming the finished child on the same model must be rejected.
+    await expect(instance.followup(done.agent_id, "again")).rejects.toThrow("subagentMaxPerModel");
+  });
+
+  it("allows four same-model children when no per-model cap is set (regression)", async () => {
+    const instance = manager();
+    const children = await Promise.all(
+      [1, 2, 3, 4].map((n) => instance.spawn(`uncapped-${n}`, "slow", "fake")),
+    );
+    expect(children.every((child) => child.state === "running")).toBe(true);
   });
 
   it("rejects duplicate names and contains malformed-worker stdin errors", async () => {

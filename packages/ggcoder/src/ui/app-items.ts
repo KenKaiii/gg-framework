@@ -111,6 +111,24 @@ export const LOOP_BREAK_NOTICE_TEXT =
 export const REGROUNDING_NOTICE_TEXT =
   "Hook engaged — re-grounding on the original request after compaction.";
 
+/** Copy shown when a turn hit the model's output-token limit and the loop
+ *  injected a continuation to resume the clipped output. */
+export const TRUNCATED_CONTINUING_NOTICE_TEXT =
+  "Output hit the model's output-token limit — continuing where it stopped.";
+
+/** Copy shown when a run ended on a non-clean stop and could not continue —
+ *  the response may be incomplete. */
+export const TRUNCATED_INCOMPLETE_NOTICE_TEXT =
+  "Output hit the model's output-token limit — the response may be incomplete.";
+
+/** Copy shown when the provider ended the turn with a refusal stop. */
+export const TRUNCATED_REFUSAL_NOTICE_TEXT =
+  "The model refused to continue — the response may be incomplete.";
+
+/** Copy shown when the provider reported an error stop mid-response. */
+export const TRUNCATED_PROVIDER_ERROR_NOTICE_TEXT =
+  "The provider reported an error mid-response — the response may be incomplete.";
+
 /**
  * Semantic tone for an agent-hook notice. Each maps to a theme color so the
  * three hooks read distinctly: a reflective review, a corrective break, and

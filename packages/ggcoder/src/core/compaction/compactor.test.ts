@@ -212,9 +212,9 @@ describe("compaction thresholds across all models", () => {
   });
 
   const openAITransportCases = [
-    { id: "gpt-5.6-sol", publicWindow: 1_050_000, codexWindow: 372_000 },
-    { id: "gpt-5.6-terra", publicWindow: 1_050_000, codexWindow: 372_000 },
-    { id: "gpt-5.6-luna", publicWindow: 1_050_000, codexWindow: 372_000 },
+    { id: "gpt-5.6-sol", publicWindow: 1_050_000, codexWindow: 272_000 },
+    { id: "gpt-5.6-terra", publicWindow: 1_050_000, codexWindow: 272_000 },
+    { id: "gpt-5.6-luna", publicWindow: 1_050_000, codexWindow: 272_000 },
     { id: "gpt-5.5", publicWindow: 1_050_000, codexWindow: 272_000 },
   ] as const;
 

@@ -119,9 +119,9 @@ describe("model registry context windows", () => {
 
   it.each([
     ["gpt-5.5", 272_000],
-    ["gpt-5.6-sol", 372_000],
-    ["gpt-5.6-terra", 372_000],
-    ["gpt-5.6-luna", 372_000],
+    ["gpt-5.6-sol", 272_000],
+    ["gpt-5.6-terra", 272_000],
+    ["gpt-5.6-luna", 272_000],
   ] as const)("uses the %s Codex product window for OpenAI OAuth", (model, limit) => {
     const options = { provider: "openai" as const, accountId: "acct_123" };
     expect(usesOpenAICodexTransport(options)).toBe(true);

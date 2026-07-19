@@ -16,6 +16,6 @@ describe("Footer route-aware context percentage", () => {
         provider: "openai",
         accountId: "acct_123",
       }),
-    ).toBe(17);
+    ).toBe(24);
   });
 });

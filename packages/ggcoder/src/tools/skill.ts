@@ -8,14 +8,16 @@ const parameters = z.object({
 });
 
 export function createSkillTool(skills: Skill[]): AgentTool<typeof parameters> {
-  const skillMap = new Map(skills.map((s) => [s.name, s]));
+  // Case-insensitive: discovery dedupes lowercase names, so `Foo` can be
+  // listed while a literal lookup of `foo` (or vice versa) would miss.
+  const skillMap = new Map(skills.map((s) => [s.name.toLowerCase(), s]));
 
   return {
     name: "skill",
     description: generateSkillDescription(skills),
     parameters,
     async execute(input) {
-      const skill = skillMap.get(input.skill);
+      const skill = skillMap.get(input.skill.toLowerCase());
       if (!skill) {
         const available = skills.map((s) => s.name).join(", ");
         return `Error: Skill "${input.skill}" not found. Available skills: ${available || "none"}`;

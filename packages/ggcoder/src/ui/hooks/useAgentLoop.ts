@@ -23,8 +23,10 @@ import {
 } from "../../core/ideal-review.js";
 import type { LspManager } from "../../core/lsp/manager.js";
 import {
+  CycleDetector,
   detectTextRepetition,
   ToolCallProgressTracker,
+  type CycleDetection,
   type LoopBreakStats,
 } from "../../core/loop-breaker.js";
 import { getClaudeCliUserAgent } from "../../core/claude-code-version.js";
@@ -165,7 +167,7 @@ export interface AgentLoopOptions {
   lspManager?: LspManager;
   /** Polled mid-loop when the agent appears stuck (repeated failures / calls /
    *  edits, or degenerate output). Return a user message to break the loop. */
-  getLoopBreakMessage?: (stats: LoopBreakStats) => Message | null;
+  getLoopBreakMessage?: (stats: LoopBreakStats, stage: 1 | 2) => Message | null;
   /** Polled mid-loop after a compaction reduced the context. Return a user
    *  message that re-pins the original request. */
   getRegroundingMessage?: (originalRequest: string) => Message | null;
@@ -288,6 +290,9 @@ export function useAgentLoop(
      *  The UI should roll back any pending progressive flushes from the
      *  aborted attempt so the retry's regenerated text doesn't duplicate. */
     onRetry?: () => void;
+    /** Called when a turn ended on a non-clean stop (max_tokens/refusal/error)
+     *  so the UI can warn instead of presenting truncated output as done. */
+    onTruncated?: (reason: "max_tokens" | "refusal" | "provider_error", continued: boolean) => void;
     /** Polled when the agent would otherwise stop. Return a user message to
      *  inject and continue the loop (e.g. "continue with the next plan step"). */
     getFollowUpMessages?: () => Message[] | null;
@@ -305,6 +310,7 @@ export function useAgentLoop(
   const onAborted = callbacks?.onAborted;
   const onQueuedStart = callbacks?.onQueuedStart;
   const onRetry = callbacks?.onRetry;
+  const onTruncated = callbacks?.onTruncated;
   const getFollowUpMessages = callbacks?.getFollowUpMessages;
   const [isRunning, setIsRunning] = useState(false);
   const [streamingText, setStreamingText] = useState("");
@@ -344,10 +350,21 @@ export function useAgentLoop(
   const idealReviewPhaseRef = useRef<"idle" | "reviewing" | "complete">("idle");
   // ── Loop-breaker tracking ──
   const loopProgressTrackerRef = useRef(new ToolCallProgressTracker());
+  const cycleDetectorRef = useRef(new CycleDetector());
+  const cyclicPatternRef = useRef<CycleDetection | null>(null);
   const fileEditCountsRef = useRef<Map<string, number>>(new Map());
   const consecutiveFailuresRef = useRef(0);
   const repeatedNoProgressCallsRef = useRef(0);
-  const loopBreakInjectedRef = useRef(false);
+  // 0 = no loop-break injected yet; 1 = first nudge sent; 2 = final stop-and-
+  // report injected (no further injections — maxTurns is the backstop).
+  const loopBreakInjectedRef = useRef<0 | 1 | 2>(0);
+  // Text snapshot taken at loop-break injection. textVisibleRef doubles as UI
+  // streaming state (can't be cleared here), so stage 2 only evaluates text
+  // streamed AFTER the snapshot — otherwise a stage-1 text-repetition trigger
+  // would immediately re-fire on the same stale tail. If the buffer no longer
+  // starts with the snapshot, it was cleared at a turn boundary and the whole
+  // buffer is fresh evidence.
+  const loopBreakTextMarkRef = useRef("");
   // ── Re-grounding tracking ──
   const compactionOccurredRef = useRef(false);
   const regroundingInjectedRef = useRef(false);
@@ -532,10 +549,13 @@ export function useAgentLoop(
         idealReviewPhaseRef.current = "idle";
         options.reviewCoverageTracker?.reset();
         loopProgressTrackerRef.current.reset();
+        cycleDetectorRef.current.reset();
+        cyclicPatternRef.current = null;
         fileEditCountsRef.current = new Map();
         consecutiveFailuresRef.current = 0;
         repeatedNoProgressCallsRef.current = 0;
-        loopBreakInjectedRef.current = false;
+        loopBreakInjectedRef.current = 0;
+        loopBreakTextMarkRef.current = "";
         compactionOccurredRef.current = false;
         regroundingInjectedRef.current = false;
         charCountRef.current = 0;
@@ -679,15 +699,38 @@ export function useAgentLoop(
                 return [{ role: "user" as const, content: wrapSteeringContent(merged) }];
               }
 
-              // Loop-breaker: at most once per run, when the agent looks stuck.
-              if (!loopBreakInjectedRef.current && options.getLoopBreakMessage) {
-                const loopBreakMessage = options.getLoopBreakMessage({
-                  consecutiveFailures: consecutiveFailuresRef.current,
-                  repeatedNoProgressCalls: repeatedNoProgressCallsRef.current,
-                  textRepetitionDetected: detectTextRepetition(textVisibleRef.current),
-                });
+              // Loop-breaker: two-stage. Stage 1 nudges the agent to break the
+              // pattern; a FRESH detection after that injects the harsher final
+              // stop-and-report prompt. All loop signals reset after each
+              // injection so stage 2 only fires on new evidence.
+              if (loopBreakInjectedRef.current < 2 && options.getLoopBreakMessage) {
+                const stage = loopBreakInjectedRef.current === 0 ? (1 as const) : (2 as const);
+                // Only evaluate text streamed after the last injection snapshot
+                // (stale repeated tails must not escalate to stage 2).
+                const mark = loopBreakTextMarkRef.current;
+                const freshText =
+                  mark && textVisibleRef.current.startsWith(mark)
+                    ? textVisibleRef.current.slice(mark.length)
+                    : textVisibleRef.current;
+                const loopBreakMessage = options.getLoopBreakMessage(
+                  {
+                    consecutiveFailures: consecutiveFailuresRef.current,
+                    repeatedNoProgressCalls: repeatedNoProgressCallsRef.current,
+                    textRepetitionDetected: detectTextRepetition(freshText),
+                    ...(cyclicPatternRef.current
+                      ? { cyclicPattern: cyclicPatternRef.current }
+                      : {}),
+                  },
+                  stage,
+                );
                 if (loopBreakMessage) {
-                  loopBreakInjectedRef.current = true;
+                  loopBreakInjectedRef.current = stage;
+                  loopProgressTrackerRef.current.reset();
+                  cycleDetectorRef.current.reset();
+                  cyclicPatternRef.current = null;
+                  consecutiveFailuresRef.current = 0;
+                  repeatedNoProgressCallsRef.current = 0;
+                  loopBreakTextMarkRef.current = textVisibleRef.current;
                   return [loopBreakMessage];
                 }
               }
@@ -922,6 +965,12 @@ export function useAgentLoop(
                   event.result,
                   event.isError,
                 );
+                cyclicPatternRef.current = cycleDetectorRef.current.record(
+                  toolName,
+                  tc?.args,
+                  event.result,
+                  event.isError,
+                );
                 if (!event.isError && (toolName === "edit" || toolName === "write") && tc?.args) {
                   const filePath = (tc.args as { file_path?: unknown }).file_path;
                   if (typeof filePath === "string") {
@@ -991,6 +1040,12 @@ export function useAgentLoop(
                 // Stream error (e.g. stall retries exhausted) — surface to UI
                 // so the user sees a clear failure instead of fake completion.
                 setStallError(event.error.message);
+                break;
+
+              case "truncated":
+                // Non-clean stop (max_tokens/refusal/provider error) — surface
+                // a warning so truncated output never reads as a clean finish.
+                onTruncated?.(event.reason, event.continued);
                 break;
 
               case "retry": {
@@ -1215,6 +1270,7 @@ export function useAgentLoop(
       onDone,
       onAborted,
       onQueuedStart,
+      onTruncated,
       getFollowUpMessages,
     ],
   );

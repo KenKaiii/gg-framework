@@ -7,10 +7,11 @@ import { compressToolOutput } from "./compress.js";
 import { writeOverflow } from "./overflow.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 import { getSafeToolEnv } from "./safe-env.js";
-import { resolveShell } from "../core/shell.js";
+import { resolveShell, type ResolveShellOpts } from "../core/shell.js";
 import { PersistentShell } from "../core/persistent-shell.js";
 import { isReadOnlyCommand } from "./read-only-bash.js";
 import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
+import { isCatastrophicCommand } from "../core/workspace-guard.js";
 
 const DEFAULT_TIMEOUT = 120_000; // 120 seconds
 const MAX_OUTPUT_BYTES = 10 * 1024 * 1024; // 10 MB — cap buffered output to prevent OOM
@@ -67,14 +68,30 @@ export function createBashTool(
   processManager: ProcessManager,
   ops: ToolOperations = localOperations,
   planModeRef?: { current: boolean },
+  shellOpts?: ResolveShellOpts,
 ): AgentTool<typeof BashParams> {
   // Lazily created on the first persist:true call; one session per tool
   // instance (i.e. per agent session), killed when the process exits.
   let sessionShell: PersistentShell | null = null;
-  return {
-    name: "bash",
-    description:
-      "Execute a bash command. The shell's working directory is already set to the project root — " +
+  // Shell selection doesn't depend on the command, so resolve ONCE at tool
+  // creation and bake the true execution environment into the description —
+  // promising bash on a cmd.exe fallback makes the model write POSIX commands
+  // that all fail. The runtime output banner below stays as belt-and-braces
+  // for mid-session PATH changes.
+  const isCmdFallback = resolveShell("", shellOpts ?? {}).isCmdFallback;
+  const description = isCmdFallback
+    ? "Execute a command under Windows cmd.exe (no bash was found on this system). " +
+      "The working directory is already set to the project root — " +
+      "don't cd into it redundantly. Use cd only when you need a different directory. " +
+      "Returns exit code and combined stdout/stderr. " +
+      "Use cmd.exe syntax (dir, findstr, type, del); POSIX commands and bash syntax " +
+      "(ls, grep, cat, &&-chains relying on bash semantics, $(...), single-quoting) will fail. " +
+      "Long output is truncated (tail kept). " +
+      "Set run_in_background=true for long-running OR interactive processes " +
+      "(dev servers, watchers, REPLs, scaffolders, programs that prompt for input). " +
+      "Use task_output to read output, task_send to type input/answer prompts, and " +
+      "task_stop to stop background processes."
+    : "Execute a bash command. The shell's working directory is already set to the project root — " +
       "don't cd into it redundantly. Use cd only when you need a different directory. " +
       "Returns exit code and combined stdout/stderr. " +
       "Commands run in a non-interactive bash shell with TERM=dumb. " +
@@ -84,12 +101,21 @@ export function createBashTool(
       "Use task_output to read output, task_send to type input/answer prompts, and " +
       "task_stop to stop background processes. " +
       "Set persist=true to run in a session shell where cd/env state survives across " +
-      "persist:true calls.",
+      "persist:true calls.";
+  return {
+    name: "bash",
+    description,
     parameters: BashParams,
     executionMode: "sequential",
     async execute({ command, timeout: timeoutMs, run_in_background, persist }, context) {
       if (isPlanModeActive(planModeRef) && !isReadOnlyCommand(command)) {
         return planModeRestriction("bash");
+      }
+      // Catastrophic-command guard — enforced in code, before every execution
+      // path (persistent shell, background, and normal spawn).
+      const catastrophic = isCatastrophicCommand(command, cwd);
+      if (catastrophic) {
+        return `Error: ${catastrophic}`;
       }
       // Persistent session mode — POSIX only; Windows-without-bash falls through
       // to the normal spawn path (cmd.exe fallback) below.

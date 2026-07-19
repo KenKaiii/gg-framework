@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { AgentDefinition } from "../core/agents.js";
-import { resolveSubAgentCliEntry, selectSubAgent, subAgentCacheKey } from "./subagent-shared.js";
+import {
+  resolveAgentDefinition,
+  resolveSubAgentCliEntry,
+  selectSubAgent,
+  subAgentCacheKey,
+} from "./subagent-shared.js";
 
 describe("selectSubAgent", () => {
   it("keeps shell-capable agents on the parent model", () => {
@@ -15,6 +20,23 @@ describe("selectSubAgent", () => {
     expect(selectSubAgent([shellAgent], "worker", "openai", "gpt-5.6-sol").model).toBe(
       "gpt-5.6-sol",
     );
+  });
+});
+
+describe("resolveAgentDefinition", () => {
+  it("stays case-insensitive (regression)", () => {
+    const agent: AgentDefinition = {
+      name: "Scout",
+      description: "Recon",
+      tools: ["read"],
+      systemPrompt: "Scout it.",
+      source: "bundled",
+    };
+
+    expect(resolveAgentDefinition([agent], "scout")).toBe(agent);
+    expect(resolveAgentDefinition([agent], "SCOUT")).toBe(agent);
+    expect(resolveAgentDefinition([agent], "Scout")).toBe(agent);
+    expect(resolveAgentDefinition([agent], "missing")).toBeUndefined();
   });
 });
 

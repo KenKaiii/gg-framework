@@ -1548,6 +1548,159 @@ describe("agentLoop", () => {
   });
 });
 
+describe("agentLoop truncation handling", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  function mockStopResult(text: string, stopReason: string) {
+    const resp = makeResponse(text, stopReason);
+    const events = text ? [{ type: "text_delta" as const, text }] : [];
+    return {
+      [Symbol.asyncIterator]: async function* () {
+        for (const e of events) yield e;
+      },
+      response: Promise.resolve(resp),
+    };
+  }
+
+  const truncatedEvents = (events: AgentEvent[]) =>
+    events.filter((e): e is Extract<AgentEvent, { type: "truncated" }> => e.type === "truncated");
+
+  it("injects a continuation after a max_tokens stop and resumes the output", async () => {
+    mockStream
+      .mockReturnValueOnce(
+        mockStopResult("first half", "max_tokens") as unknown as ReturnType<typeof stream>,
+      )
+      .mockReturnValueOnce(
+        mockStopResult("second half", "end_turn") as unknown as ReturnType<typeof stream>,
+      );
+
+    const messages: Message[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "go" },
+    ];
+
+    const { events, result } = await collectLoop(messages, {
+      provider: "anthropic",
+      model: "test",
+    });
+
+    const truncated = truncatedEvents(events);
+    expect(truncated).toEqual([{ type: "truncated", reason: "max_tokens", continued: true }]);
+    expect(events.some((e) => e.type === "agent_done")).toBe(true);
+    expect(result.totalTurns).toBe(2);
+
+    // The continuation user message was injected between the two assistant parts.
+    const continuation = messages.find(
+      (m) =>
+        m.role === "user" &&
+        typeof m.content === "string" &&
+        m.content.includes("output-token limit"),
+    );
+    expect(continuation).toBeDefined();
+    // Both parts are preserved in history — no replay.
+    const assistantTexts = messages
+      .filter((m) => m.role === "assistant")
+      .map((m) =>
+        Array.isArray(m.content)
+          ? m.content
+              .filter((p): p is { type: "text"; text: string } => p.type === "text")
+              .map((p) => p.text)
+              .join("")
+          : m.content,
+      );
+    expect(assistantTexts).toEqual(["first half", "second half"]);
+  });
+
+  it("stops continuing after two max_tokens continuations and warns", async () => {
+    mockStream.mockReturnValue(
+      mockStopResult("partial", "max_tokens") as unknown as ReturnType<typeof stream>,
+    );
+
+    const { events } = await collectLoop([{ role: "user", content: "go" }], {
+      provider: "anthropic",
+      model: "test",
+    });
+
+    const truncated = truncatedEvents(events);
+    expect(truncated).toEqual([
+      { type: "truncated", reason: "max_tokens", continued: true },
+      { type: "truncated", reason: "max_tokens", continued: true },
+      { type: "truncated", reason: "max_tokens", continued: false },
+    ]);
+    expect(events.some((e) => e.type === "agent_done")).toBe(true);
+  });
+
+  it("emits a provider_error truncated warning on an error stop", async () => {
+    mockStream.mockReturnValueOnce(
+      mockStopResult("degraded", "error") as unknown as ReturnType<typeof stream>,
+    );
+
+    const { events } = await collectLoop([{ role: "user", content: "go" }], {
+      provider: "anthropic",
+      model: "test",
+    });
+
+    const truncated = truncatedEvents(events);
+    expect(truncated).toEqual([{ type: "truncated", reason: "provider_error", continued: false }]);
+    expect(events.some((e) => e.type === "agent_done")).toBe(true);
+  });
+
+  it("emits a refusal truncated warning on a refusal stop", async () => {
+    mockStream.mockReturnValueOnce(
+      mockStopResult("no", "refusal") as unknown as ReturnType<typeof stream>,
+    );
+
+    const { events } = await collectLoop([{ role: "user", content: "go" }], {
+      provider: "anthropic",
+      model: "test",
+    });
+
+    expect(truncatedEvents(events)).toEqual([
+      { type: "truncated", reason: "refusal", continued: false },
+    ]);
+  });
+
+  it("executes tools normally on max_tokens with tool calls — no truncated event", async () => {
+    const toolResp = {
+      [Symbol.asyncIterator]: async function* () {
+        yield* [];
+      },
+      response: Promise.resolve({
+        message: {
+          role: "assistant" as const,
+          content: [{ type: "tool_call" as const, id: "t1", name: "echo", args: {} }],
+        },
+        stopReason: "max_tokens" as const,
+        usage: { inputTokens: 100, outputTokens: 50 },
+      }),
+    };
+    mockStream
+      .mockReturnValueOnce(toolResp as unknown as ReturnType<typeof stream>)
+      .mockReturnValueOnce(
+        mockStopResult("done", "end_turn") as unknown as ReturnType<typeof stream>,
+      );
+
+    const echo: AgentTool = {
+      name: "echo",
+      description: "echo",
+      parameters: emptyParams,
+      execute: vi.fn().mockResolvedValue("ok"),
+    };
+
+    const { events } = await collectLoop([{ role: "user", content: "go" }], {
+      provider: "anthropic",
+      model: "test",
+      tools: [echo],
+    });
+
+    expect(truncatedEvents(events)).toEqual([]);
+    expect(echo.execute).toHaveBeenCalledTimes(1);
+    expect(events.some((e) => e.type === "agent_done")).toBe(true);
+  });
+});
+
 describe("capTurnToolResults", () => {
   const result = (id: string, content: string) => ({
     type: "tool_result" as const,

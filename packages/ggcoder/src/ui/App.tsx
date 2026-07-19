@@ -161,6 +161,10 @@ import {
   IDEAL_HOOK_NOTICE_TEXT,
   LOOP_BREAK_NOTICE_TEXT,
   REGROUNDING_NOTICE_TEXT,
+  TRUNCATED_CONTINUING_NOTICE_TEXT,
+  TRUNCATED_INCOMPLETE_NOTICE_TEXT,
+  TRUNCATED_PROVIDER_ERROR_NOTICE_TEXT,
+  TRUNCATED_REFUSAL_NOTICE_TEXT,
   lastVisibleTranscriptItem,
 } from "./app-items.js";
 export type { DoneStatus } from "./layout-decisions.js";
@@ -1010,18 +1014,19 @@ export function App(props: AppProps) {
         ]);
         return buildIdealReviewMessage(decision.reasons, driftedFiles);
       },
-      getLoopBreakMessage: (stats) => {
+      getLoopBreakMessage: (stats, stage) => {
         if (!idealReviewEnabledRef.current) return null;
         const decision = evaluateLoopBreak(stats);
         if (!decision.shouldBreak) return null;
         log("INFO", "loop-break", "Injecting loop-break nudge", {
+          stage: String(stage),
           reasons: decision.reasons.join(", "),
         });
         setLiveItems((prev) => [
           ...prev,
           { kind: "ideal_hook", text: LOOP_BREAK_NOTICE_TEXT, tone: "warning", id: getId() },
         ]);
-        return buildLoopBreakMessage(decision.reasons);
+        return buildLoopBreakMessage(decision.reasons, stage === 2);
       },
       getRegroundingMessage: (originalRequest) => {
         if (!idealReviewEnabledRef.current) return null;
@@ -1818,6 +1823,23 @@ export function App(props: AppProps) {
         );
         streamedAssistantFlushRef.current = { flushedChars: 0, text: "" };
       }, []),
+      onTruncated: useCallback(
+        (reason: "max_tokens" | "refusal" | "provider_error", continued: boolean) => {
+          const text =
+            reason === "max_tokens"
+              ? continued
+                ? TRUNCATED_CONTINUING_NOTICE_TEXT
+                : TRUNCATED_INCOMPLETE_NOTICE_TEXT
+              : reason === "refusal"
+                ? TRUNCATED_REFUSAL_NOTICE_TEXT
+                : TRUNCATED_PROVIDER_ERROR_NOTICE_TEXT;
+          setLiveItems((prev) => [
+            ...prev,
+            { kind: "ideal_hook", text, tone: "warning", id: getId() },
+          ]);
+        },
+        [],
+      ),
     },
   );
 

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { stripBom } from "../utils/text.js";
 
 export interface AgentDefinition {
   name: string;
@@ -91,7 +92,9 @@ async function loadAgentsFromDir(
  * You are a scout. Quickly investigate a codebase...
  * ```
  */
-export function parseAgentFile(raw: string, source: "global" | "project"): AgentDefinition {
+export function parseAgentFile(rawInput: string, source: "global" | "project"): AgentDefinition {
+  // A BOM before `---` would otherwise silently kill frontmatter parsing.
+  const raw = stripBom(rawInput);
   let name = "";
   let description = "";
   let tools: string[] = [];

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripBom } from "../utils/text.js";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const BUNDLED_SKILLS_DIRS = [
@@ -101,7 +102,9 @@ async function loadSkillsFromDir(dir: string, source: string): Promise<Skill[]> 
  * Parse a skill file with optional frontmatter.
  * Supports simple key: value frontmatter between --- delimiters.
  */
-export function parseSkillFile(raw: string, source: string): Skill {
+export function parseSkillFile(rawInput: string, source: string): Skill {
+  // A BOM before `---` would otherwise silently kill frontmatter parsing.
+  const raw = stripBom(rawInput);
   let name = "";
   let description = "";
   let content = raw;

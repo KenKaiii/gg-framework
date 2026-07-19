@@ -1424,6 +1424,19 @@ describe("edit anchor guard", () => {
     ).rejects.toThrow(/has neither/);
     expect(await fs.readFile(filePath, "utf-8")).toBe(content);
   });
+
+  it("blocks edits outside the workspace with the guard error", async () => {
+    const tool = createEditTool(tmpDir);
+    const outside = path.join(os.homedir(), "Documents", "gg-guard-test-outside.txt");
+
+    const raw = await tool.execute(
+      { file_path: outside, edits: [{ old_text: "a", new_text: "b" }] },
+      { signal: new AbortController().signal, toolCallId: "guard-1" },
+    );
+
+    expect(contentOf(raw)).toContain("outside the workspace");
+    expect(contentOf(raw)).toContain("allowOutsideWorkspaceWrites");
+  });
 });
 
 function contentOf(result: unknown): string {

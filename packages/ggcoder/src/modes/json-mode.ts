@@ -89,6 +89,9 @@ export async function runJsonMode(options: JsonModeOptions): Promise<void> {
   session.eventBus.on("max_turns", (payload) => {
     emitJson({ type: "max_turns", ...payload });
   });
+  session.eventBus.on("truncated", (payload) => {
+    emitJson({ type: "truncated", ...payload });
+  });
   session.eventBus.on("server_tool_call", (payload) => {
     emitJson({ type: "server_tool_call", ...payload });
   });

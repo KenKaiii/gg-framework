@@ -1649,6 +1649,9 @@ async function createSession(
   session.eventBus.on("server_tool_call", (d) => broadcast("server_tool_call", d));
   session.eventBus.on("turn_end", (d) => broadcast("turn_end", d));
   session.eventBus.on("agent_done", (d) => broadcast("agent_done", d));
+  // Non-clean stop (max_tokens/refusal/provider error) — info-style frame so
+  // the webview can warn instead of presenting truncated output as complete.
+  session.eventBus.on("truncated", (d) => broadcast("truncated", d));
   session.eventBus.on("error", (d) => {
     broadcastError("error", "agent error", d.error);
   });

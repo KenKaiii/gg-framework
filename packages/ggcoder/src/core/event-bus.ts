@@ -32,6 +32,7 @@ export interface BusEventMap {
     };
   };
   max_turns: { totalTurns: number; maxTurns: number };
+  truncated: { reason: "max_tokens" | "refusal" | "provider_error"; continued: boolean };
   error: { error: Error };
 
   // Server tool events
@@ -155,6 +156,12 @@ export class EventBus {
         this.emit("max_turns", {
           totalTurns: event.totalTurns,
           maxTurns: event.maxTurns,
+        });
+        break;
+      case "truncated":
+        this.emit("truncated", {
+          reason: event.reason,
+          continued: event.continued,
         });
         break;
       case "server_tool_call":

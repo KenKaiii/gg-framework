@@ -2,8 +2,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { renderBashOutput } from "./bash.js";
+import { createBashTool, renderBashOutput } from "./bash.js";
 import { getToolOutputRoot } from "./overflow.js";
+import { ProcessManager } from "../core/process-manager.js";
 
 let originalHome: string | undefined;
 let tmpHome: string;
@@ -67,5 +68,47 @@ describe("renderBashOutput", () => {
 
     expect(rendered).not.toContain("Full output saved");
     expect(await listSavedOutputs()).toEqual([]);
+  });
+});
+
+describe("createBashTool shell snapshot", () => {
+  it("describes cmd.exe semantics when resolution falls back to cmd", () => {
+    const tool = createBashTool(tmpHome, new ProcessManager(), undefined, undefined, {
+      platform: "win32",
+      env: {},
+      exists: () => false,
+    });
+
+    expect(tool.description).toContain("Windows cmd.exe");
+    expect(tool.description).toContain("dir, findstr, type");
+    expect(tool.description).toContain("will fail");
+    expect(tool.description).not.toContain("Execute a bash command");
+  });
+
+  it("keeps the bash description byte-for-byte when a POSIX shell resolves", () => {
+    const tool = createBashTool(tmpHome, new ProcessManager(), undefined, undefined, {
+      platform: "darwin",
+      env: {},
+      exists: () => true,
+    });
+
+    expect(tool.description.startsWith("Execute a bash command.")).toBe(true);
+    expect(tool.description).toContain("non-interactive bash shell with TERM=dumb");
+    expect(tool.description).not.toContain("cmd.exe");
+  });
+});
+
+describe("catastrophic-command guard", () => {
+  it("refuses rm -rf / before any execution path runs", async () => {
+    const processManager = new ProcessManager();
+    const tool = createBashTool(tmpHome, processManager);
+
+    const result = await tool.execute(
+      { command: "rm -rf /" },
+      { signal: new AbortController().signal, toolCallId: "guard-1" },
+    );
+
+    expect(String(result)).toContain("Refusing to run");
+    expect(String(result)).toContain("user confirmation");
   });
 });

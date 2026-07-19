@@ -280,4 +280,23 @@ describe("createWriteTool", () => {
       expect(resultToString(raw)).toBe(`Wrote 2 lines to ${path.join(tmpDir, "plain.ts")}`);
     });
   });
+
+  describe("workspace write guard", () => {
+    it("blocks writes outside the workspace and does not create the file", async () => {
+      const tool = createWriteTool(tmpDir);
+      const outside = path.join(os.homedir(), "Documents", "gg-guard-test-outside.txt");
+
+      const raw = await tool.execute(
+        { file_path: outside, content: "nope\n" },
+        { signal: new AbortController().signal, toolCallId: "guard-1" },
+      );
+
+      expect(resultToString(raw)).toContain("outside the workspace");
+      expect(resultToString(raw)).toContain("allowOutsideWorkspaceWrites");
+      await expect(fs.stat(outside)).rejects.toThrow();
+    });
+
+    // The allowOutsideWorkspaceWrites escape hatch is covered by
+    // core/workspace-guard.test.ts — the tool just forwards the settings.
+  });
 });

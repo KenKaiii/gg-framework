@@ -60,6 +60,7 @@ export async function runSubagentWorkerMode(): Promise<void> {
       "tool_call_end",
       "turn_end",
       "max_turns",
+      "truncated",
       "server_tool_call",
       "server_tool_result",
     ] as const;

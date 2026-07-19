@@ -136,7 +136,8 @@ export const MODELS: ModelInfo[] = [
   // ── OpenAI (Codex) ─────────────────────────────────────
   // GPT-5.6 family — three agentic coding tiers launched July 2026. The public
   // Responses API advertises a 1.05M context window; OpenAI's Codex product
-  // catalog advertises 372K on the ChatGPT OAuth route. All three take
+  // catalog advertises 272K on the ChatGPT OAuth route (corrected from the
+  // initially advertised 372K — openai/codex PR #33972, Jul 18 2026 hotfix). All three take
   // text+image input, freeform apply_patch, text+image web search, and parallel
   // tool calls.
   {
@@ -148,7 +149,7 @@ export const MODELS: ModelInfo[] = [
     name: "GPT-5.6 Sol",
     provider: "openai",
     contextWindow: 1_050_000,
-    codexContextWindow: 372_000,
+    codexContextWindow: 272_000,
     maxOutputTokens: 128_000,
     supportsThinking: true,
     supportsImages: true,
@@ -163,7 +164,7 @@ export const MODELS: ModelInfo[] = [
     name: "GPT-5.6 Terra",
     provider: "openai",
     contextWindow: 1_050_000,
-    codexContextWindow: 372_000,
+    codexContextWindow: 272_000,
     maxOutputTokens: 128_000,
     supportsThinking: true,
     supportsImages: true,
@@ -178,7 +179,7 @@ export const MODELS: ModelInfo[] = [
     name: "GPT-5.6 Luna",
     provider: "openai",
     contextWindow: 1_050_000,
-    codexContextWindow: 372_000,
+    codexContextWindow: 272_000,
     maxOutputTokens: 128_000,
     supportsThinking: true,
     supportsImages: true,
