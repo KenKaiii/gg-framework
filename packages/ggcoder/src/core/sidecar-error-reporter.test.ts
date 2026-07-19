@@ -77,6 +77,7 @@ describe("sidecar error reporter bridge", () => {
   it.each([
     ["edit", "File must be read first before editing. Use the read tool first."],
     ["write", "File has been modified since it was read. Re-read the file before editing."],
+    ["write", "Existing files must be read first before overwriting. Use the read tool first."],
     ["edit", "old_text not found in example.ts. Text must match verbatim."],
     ["edit", "old_text found 2 times in example.ts. Include more surrounding context."],
     ["edit", "the file changed since you read it (anchor mismatch)"],

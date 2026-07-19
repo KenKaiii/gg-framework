@@ -25,7 +25,11 @@ const EXPECTED_TOOL_VALIDATION_FAILURES: Readonly<Partial<Record<string, readonl
     "old_text found ",
     "old_text not found in ",
   ],
-  write: ["file must be read first before editing", "file has been modified since it was read"],
+  write: [
+    "file must be read first before editing",
+    "existing files must be read first before overwriting",
+    "file has been modified since it was read",
+  ],
 };
 
 export function shouldCaptureUsagePollingError(error: unknown): boolean {
