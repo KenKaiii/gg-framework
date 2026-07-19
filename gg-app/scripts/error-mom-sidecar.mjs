@@ -3,7 +3,7 @@ import appPackage from "../package.json" with { type: "json" };
 
 const server = process.env.ERROR_MOM_SERVER ?? "https://error-mom-production.up.railway.app";
 const projectKey =
-  process.env.ERROR_MOM_PROJECT_KEY ?? "em_ingest_Kz2K3KEZ9RXM9UvXFLz7CM09UAjKWyPoQxNTjE8wAUo";
+  process.env.ERROR_MOM_PROJECT_KEY ?? "em_ingest_NE4bT2QTNimTcqZUX15rq7S9qoM7Pk8crQHdJBQQg_0";
 const release = process.env.ERROR_MOM_RELEASE ?? appPackage.version;
 
 const errorMom = initErrorMom({

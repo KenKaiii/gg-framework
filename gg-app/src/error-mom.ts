@@ -7,7 +7,7 @@ const server =
   import.meta.env.VITE_ERROR_MOM_SERVER ?? "https://error-mom-production.up.railway.app";
 const projectKey =
   import.meta.env.VITE_ERROR_MOM_PROJECT_KEY ??
-  "em_ingest_Kz2K3KEZ9RXM9UvXFLz7CM09UAjKWyPoQxNTjE8wAUo";
+  "em_ingest_NE4bT2QTNimTcqZUX15rq7S9qoM7Pk8crQHdJBQQg_0";
 const release = import.meta.env.VITE_ERROR_MOM_RELEASE ?? appPackage.version;
 
 export const errorMom = initErrorMom({

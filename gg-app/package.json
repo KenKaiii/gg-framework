@@ -23,7 +23,7 @@
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
     "@fontsource-variable/geist-mono": "^5.2.8",
-    "@kenkaiiii/error-mom": "^0.3.1",
+    "@kenkaiiii/error-mom": "^0.3.2",
     "@mediapipe/tasks-vision": "^0.10.18",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
