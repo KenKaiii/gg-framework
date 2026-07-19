@@ -146,8 +146,8 @@ importers:
         specifier: ^5.2.8
         version: 5.2.8
       '@kenkaiiii/error-mom':
-        specifier: ^0.3.2
-        version: 0.3.2
+        specifier: ^0.3.3
+        version: 0.3.3
       '@mediapipe/tasks-vision':
         specifier: ^0.10.18
         version: 0.10.35
@@ -1800,11 +1800,11 @@ packages:
   '@kenkaiiii/agent-home-sdk@0.3.8':
     resolution: {integrity: sha512-RH/5ZsqRgHWLqjQcjpvclK1tUrItRUTbJzoubFvyK2cT2YGjotrPIu+1+54eZdhR/oH8Bk77KRnjAw5SOBRbcw==}
 
-  '@kenkaiiii/error-mom-protocol@0.1.0':
-    resolution: {integrity: sha512-qV6F/Uf/0ZxrGeHIFuwRW0ThBr2cpxWhOCEKxh5oiYr3iUfHbQ/kim+wI9LX8llCIvtHJ2dl0g6lLZ8jXTpU7A==}
+  '@kenkaiiii/error-mom-protocol@0.1.1':
+    resolution: {integrity: sha512-ecu7gxJ5KJoTGvDFspGLWq3+lZ/IzifxGhgcjkV5S2xYytjhWOeuajvMJ49iZkSoEOBR+6b7kMUz0ZKxW23hLg==}
 
-  '@kenkaiiii/error-mom@0.3.2':
-    resolution: {integrity: sha512-0teNKe26TfHUEdeCGgyxfbr3QUR5AG/xmz3XI1KwonTmLwzCxnq5FlYqbhyS7c8rowhdeczKnAV27lJrFc8dDA==}
+  '@kenkaiiii/error-mom@0.3.3':
+    resolution: {integrity: sha512-UgZfqr1KCyRDiP+FQyvEsWJJ3+vXAPmQYl0jAez7CAVhvnAPLBAQPlg+9YSKny47+9JHrG7VHaZzjXSIFQJS7Q==}
 
   '@kenkaiiii/ink@6.8.0-gg.2':
     resolution: {integrity: sha512-b2dmymMYLo/iFFQ1qZKGSFTR2bB5J67EhHhcfLUbppZY9XlKWVpVlLxnoXfud93Fq1qy6NDtOR3qGYK5KDfXYw==}
@@ -6900,13 +6900,13 @@ snapshots:
 
   '@kenkaiiii/agent-home-sdk@0.3.8': {}
 
-  '@kenkaiiii/error-mom-protocol@0.1.0':
+  '@kenkaiiii/error-mom-protocol@0.1.1':
     dependencies:
       zod: 4.4.3
 
-  '@kenkaiiii/error-mom@0.3.2':
+  '@kenkaiiii/error-mom@0.3.3':
     dependencies:
-      '@kenkaiiii/error-mom-protocol': 0.1.0
+      '@kenkaiiii/error-mom-protocol': 0.1.1
 
   '@kenkaiiii/ink@6.8.0-gg.2(@types/react@19.2.14)(react@19.2.5)':
     dependencies:

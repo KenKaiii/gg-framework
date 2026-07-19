@@ -11,9 +11,10 @@ const errorMom = initErrorMom({
   projectKey,
   environment: process.env.ERROR_MOM_ENVIRONMENT ?? "production",
   release,
-  // Provider, worker, and sidecar failures are captured at application boundaries.
-  // Disabling transport capture avoids duplicate usage 429s and expected cancellations.
+  // Explicit application-boundary captures keep reports actionable and avoid
+  // transport/console duplicates, expected cancellations, and sensitive log data.
   captureFailedRequests: false,
+  captureConsoleErrors: false,
 });
 
 globalThis.__GG_ERROR_MOM__ = errorMom;
