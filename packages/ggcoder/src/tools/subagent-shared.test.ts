@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentDefinition } from "../core/agents.js";
-import { selectSubAgent, subAgentCacheKey } from "./subagent-shared.js";
+import { resolveSubAgentCliEntry, selectSubAgent, subAgentCacheKey } from "./subagent-shared.js";
 
 describe("selectSubAgent", () => {
   it("keeps shell-capable agents on the parent model", () => {
@@ -36,5 +36,13 @@ describe("subAgentCacheKey", () => {
 
   it("stays unset when the parent has no stable cache identity", () => {
     expect(subAgentCacheKey(undefined, "gpt-5.6-luna", "owl")).toBeUndefined();
+  });
+});
+
+describe("resolveSubAgentCliEntry", () => {
+  it("keeps app subagent workers behind the monitored sidecar entry", () => {
+    expect(
+      resolveSubAgentCliEntry({ GG_SUBAGENT_WORKER_ENTRY: "/app/error-mom-sidecar.mjs" }),
+    ).toBe("/app/error-mom-sidecar.mjs");
   });
 });

@@ -3266,7 +3266,7 @@ fn pick_node(env_override: Option<String>, is_dev: bool, exe_dir: Option<&Path>)
 /// Resolve the built sidecar JS.
 ///
 /// Dev (debug build, or `GG_SIDECAR_PATH` set): use `GG_SIDECAR_PATH`, else the
-/// workspace `dist/app-sidecar.js` relative to this crate.
+/// workspace Error Mom wrapper relative to this crate.
 ///
 /// Bundled (release): resolve the single-file ESM sidecar shipped under
 /// `bundle.resources` via the Tauri resource directory.
@@ -3285,14 +3285,15 @@ fn resolve_sidecar(app: &tauri::AppHandle) -> PathBuf {
     )
 }
 
-/// Path to the workspace dev sidecar, relative to this crate.
+/// Path to the workspace dev sidecar wrapper, relative to this crate. The
+/// wrapper initializes Error Mom before importing ggcoder's built sidecar.
 fn workspace_sidecar() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/ggcoder/dist/app-sidecar.js")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../scripts/error-mom-sidecar.mjs")
 }
 
 /// Pure sidecar-path decision (testable without an AppHandle).
 /// - `env_override` (GG_SIDECAR_PATH) always wins.
-/// - dev build → workspace `dist/app-sidecar.js`.
+/// - dev build → workspace Error Mom sidecar wrapper.
 /// - bundled → the resolved bundle resource, falling back to the workspace path.
 fn pick_sidecar(env_override: Option<String>, is_dev: bool, resource: Option<&Path>) -> PathBuf {
     if let Some(p) = env_override {
@@ -3421,6 +3422,7 @@ fn spawn_daemon(app: tauri::AppHandle, is_respawn: bool) {
         // Port 0 → the OS assigns a free port, reported back via the
         // GG_APP_LISTENING handshake.
         .env("GG_APP_PORT", "0")
+        .env("ERROR_MOM_RELEASE", env!("CARGO_PKG_VERSION"))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     #[cfg(unix)]

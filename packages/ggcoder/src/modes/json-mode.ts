@@ -3,6 +3,7 @@ import { AgentSession } from "../core/agent-session.js";
 import { isAbortError } from "@kenkaiiii/gg-agent";
 import { formatUserError } from "../utils/error-handler.js";
 import { closeLogger } from "../core/logger.js";
+import { captureSidecarError, flushSidecarErrors } from "../core/sidecar-error-reporter.js";
 
 export interface JsonModeOptions {
   message: string;
@@ -106,6 +107,11 @@ export async function runJsonMode(options: JsonModeOptions): Promise<void> {
       emitJson({ type: "error", message: "Interrupted" });
       process.exit(130);
     }
+    captureSidecarError(err, "json-mode.run", {
+      provider: options.provider,
+      model: options.model,
+    });
+    await flushSidecarErrors();
     process.stderr.write(formatUserError(err) + "\n");
     process.exit(1);
   } finally {

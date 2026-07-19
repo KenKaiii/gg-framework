@@ -3,6 +3,7 @@ import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import { AgentSession } from "../core/agent-session.js";
 import { isModelUnavailableError } from "../tools/subagent.js";
 import { boundSubAgentOutput, SUB_AGENT_TIMEOUT_MS } from "../tools/subagent-shared.js";
+import { captureSidecarError, flushSidecarErrors } from "../core/sidecar-error-reporter.js";
 
 export interface SubagentWorkerInitialize {
   provider: Provider;
@@ -138,6 +139,12 @@ export async function runSubagentWorkerMode(): Promise<void> {
       .catch((error: unknown) => {
         clearTimeout(turnTimer);
         const interrupted = controller.signal.aborted;
+        if (!interrupted) {
+          captureSidecarError(error, "subagent-worker.turn", {
+            provider: initializeOptions?.provider ?? "unknown",
+            model: initializeOptions?.model ?? "unknown",
+          });
+        }
         setState(interrupted ? "interrupted" : "idle");
         emit({
           type: "turn_complete",
@@ -202,6 +209,7 @@ export async function runSubagentWorkerMode(): Promise<void> {
           return;
       }
     } catch (error) {
+      captureSidecarError(error, "subagent-worker.command", { command: command.command });
       reject(command.request_id, error);
     }
   };
@@ -213,6 +221,7 @@ export async function runSubagentWorkerMode(): Promise<void> {
       command = JSON.parse(line) as WorkerCommand;
       if (!command.request_id || !command.command) throw new Error("Invalid command frame");
     } catch (error) {
+      captureSidecarError(error, "subagent-worker.protocol");
       emit({ type: "protocol_error", error: errorMessage(error) });
       return;
     }
@@ -222,4 +231,5 @@ export async function runSubagentWorkerMode(): Promise<void> {
   controller.abort();
   await activeTurn?.catch(() => undefined);
   await session?.dispose();
+  await flushSidecarErrors();
 }

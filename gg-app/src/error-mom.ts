@@ -1,16 +1,18 @@
 import { initErrorMom } from "@kenkaiiii/error-mom";
+import appPackage from "../package.json";
 
-const server = import.meta.env.VITE_ERROR_MOM_SERVER;
-const projectKey = import.meta.env.VITE_ERROR_MOM_PROJECT_KEY;
-const release = import.meta.env.VITE_ERROR_MOM_RELEASE;
+// The project key is write-only (submit errors, read nothing), so committing
+// it is safe, like a Sentry DSN. Environment variables remain optional overrides.
+const server =
+  import.meta.env.VITE_ERROR_MOM_SERVER ?? "https://error-mom-production.up.railway.app";
+const projectKey =
+  import.meta.env.VITE_ERROR_MOM_PROJECT_KEY ??
+  "em_ingest_Kz2K3KEZ9RXM9UvXFLz7CM09UAjKWyPoQxNTjE8wAUo";
+const release = import.meta.env.VITE_ERROR_MOM_RELEASE ?? appPackage.version;
 
-// Capture is optional: builds without Error Mom env vars simply skip monitoring
-// instead of crashing the app at startup.
-if (server && projectKey) {
-  initErrorMom({
-    server,
-    projectKey,
-    environment: import.meta.env.VITE_ERROR_MOM_ENVIRONMENT ?? "production",
-    ...(release ? { release } : {}),
-  });
-}
+export const errorMom = initErrorMom({
+  server,
+  projectKey,
+  environment: import.meta.env.VITE_ERROR_MOM_ENVIRONMENT ?? "production",
+  release,
+});

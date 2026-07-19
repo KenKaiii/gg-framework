@@ -146,8 +146,8 @@ importers:
         specifier: ^5.2.8
         version: 5.2.8
       '@kenkaiiii/error-mom':
-        specifier: ^0.3.0
-        version: 0.3.0
+        specifier: ^0.3.1
+        version: 0.3.1
       '@mediapipe/tasks-vision':
         specifier: ^0.10.18
         version: 0.10.35
@@ -1803,8 +1803,8 @@ packages:
   '@kenkaiiii/error-mom-protocol@0.1.0':
     resolution: {integrity: sha512-qV6F/Uf/0ZxrGeHIFuwRW0ThBr2cpxWhOCEKxh5oiYr3iUfHbQ/kim+wI9LX8llCIvtHJ2dl0g6lLZ8jXTpU7A==}
 
-  '@kenkaiiii/error-mom@0.3.0':
-    resolution: {integrity: sha512-OM6LgZiTthMj6doJk3APJr9ozew2BNrwYzl9JbDTdOyXOzS0evrAnlvMcYKHgYAdqoztdgPRHZkh6l+09t1GdA==}
+  '@kenkaiiii/error-mom@0.3.1':
+    resolution: {integrity: sha512-Pe+oSTJw1jDQHAce0IV/EU363YF8r7iYHJYb3WkDPVGXYfcXIftnBqXcPSCYpzfXs9DIbvRvIq1ckxCUoKMC0g==}
 
   '@kenkaiiii/ink@6.8.0-gg.2':
     resolution: {integrity: sha512-b2dmymMYLo/iFFQ1qZKGSFTR2bB5J67EhHhcfLUbppZY9XlKWVpVlLxnoXfud93Fq1qy6NDtOR3qGYK5KDfXYw==}
@@ -6904,7 +6904,7 @@ snapshots:
     dependencies:
       zod: 4.4.3
 
-  '@kenkaiiii/error-mom@0.3.0':
+  '@kenkaiiii/error-mom@0.3.1':
     dependencies:
       '@kenkaiiii/error-mom-protocol': 0.1.0
 

@@ -17,13 +17,8 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..");
-const sidecarEntry = join(
-  repoRoot,
-  "packages",
-  "ggcoder",
-  "dist",
-  "app-sidecar.js",
-);
+const sidecarEntry = join(here, "error-mom-sidecar.mjs");
+const ggcoderSidecarEntry = join(repoRoot, "packages", "ggcoder", "dist", "app-sidecar.js");
 const outDir = join(here, "..", "src-tauri", "sidecar");
 const outFile = join(outDir, "app-sidecar.mjs");
 const nodeModulesOut = join(outDir, "node_modules");
@@ -53,9 +48,7 @@ const EXTERNAL = [
 ];
 
 // require resolver anchored at the ggcoder package, where these deps live.
-const ggcoderRequire = createRequire(
-  join(repoRoot, "packages", "ggcoder", "package.json"),
-);
+const ggcoderRequire = createRequire(join(repoRoot, "packages", "ggcoder", "package.json"));
 
 // Candidate node_modules roots to scan directly when `require.resolve` is
 // blocked by a package's `exports` map (which often hides ./package.json).
@@ -197,9 +190,9 @@ function pruneForeignNativePayloads() {
 }
 
 async function main() {
-  if (!existsSync(sidecarEntry)) {
+  if (!existsSync(ggcoderSidecarEntry)) {
     throw new Error(
-      `sidecar entry missing: ${sidecarEntry} (build @kenkaiiii/ggcoder first)`,
+      `sidecar entry missing: ${ggcoderSidecarEntry} (build @kenkaiiii/ggcoder first)`,
     );
   }
   if (!existsSync(bundledSkillsSource)) {

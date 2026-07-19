@@ -1,7 +1,7 @@
+// Error Mom must initialize before every other webview dependency so startup
+// failures are reported too.
+import { errorMom } from "./error-mom";
 import ReactDOM from "react-dom/client";
-// Error Mom capture must load before anything else so startup failures are
-// reported too. No-ops when VITE_ERROR_MOM_* env vars are absent.
-import "./error-mom";
 import { error as logError, attachConsole } from "@tauri-apps/plugin-log";
 // Self-hosted Geist Sans + Mono (bundled by Vite → works offline in the
 // packaged app). Imported before App so the @font-face rules land ahead of the
@@ -32,7 +32,19 @@ window.addEventListener("unhandledrejection", (e) => {
 // first render so CSS can gate the macOS-only traffic-light insets.
 tagPlatform();
 
-const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
+function captureReactError(culprit: string, error: unknown, componentStack?: string): void {
+  errorMom.captureError(error, {
+    culprit,
+    ...(componentStack ? { context: { componentStack } } : {}),
+  });
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement, {
+  onUncaughtError: (error, info) => captureReactError("react.uncaught", error, info.componentStack),
+  onCaughtError: (error, info) => captureReactError("react.caught", error, info.componentStack),
+  onRecoverableError: (error, info) =>
+    captureReactError("react.recoverable", error, info.componentStack),
+});
 
 // The dedicated, screen-centered "What's new" window reuses this same entry with
 // a `?whatsnew=1` flag (see Rust `open_whatsnew_window`). Render ONLY the notes

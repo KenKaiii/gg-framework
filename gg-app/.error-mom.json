@@ -1,6 +1,6 @@
 {
   "server": "https://error-mom-production.up.railway.app",
-  "projectId": "project_7fc2520d78e484b0d18d63c3d34fa671",
-  "projectName": "gg app",
-  "framework": "vite"
+  "projectId": "project_91cfe5a91cc8cd1515da60c7206b0f4d",
+  "projectName": "gg-app",
+  "framework": "tauri"
 }
