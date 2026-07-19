@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.19.6
+
+### Patch Changes
+
+- Filter expected usage polling, cancellation, and tool validation failures from desktop error reports.
+  - @kenkaiiii/gg-ai@5.19.6
+  - @kenkaiiii/gg-agent@5.19.6
+  - @kenkaiiii/gg-core@5.19.6
+
 ## 5.19.5
 
 ### Patch Changes
