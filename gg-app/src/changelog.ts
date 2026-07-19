@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.23.7",
+    date: "2026-07-19",
+    items: [
+      "`Error Mom` got a sharper nose. I taught it to ignore routine `429` checks, cancelled requests, and harmless edit retries, so real failures stand out instantly and I can fix what actually interrupted you.",
+    ],
+  },
+  {
     version: "0.23.6",
     date: "2026-07-19",
     items: [
