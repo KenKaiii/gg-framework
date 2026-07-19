@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.20.0
+
+### Minor Changes
+
+- Harden agent completion, loop recovery, workspace writes, project instructions, and subagent concurrency.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.20.0
+- @kenkaiiii/gg-agent@5.20.0
+- @kenkaiiii/gg-core@5.20.0
+
 ## 5.19.6
 
 ### Patch Changes
