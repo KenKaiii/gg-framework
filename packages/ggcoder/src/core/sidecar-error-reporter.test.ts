@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   captureSidecarError,
   flushSidecarErrors,
+  shouldCaptureToolFailure,
+  shouldCaptureUsagePollingError,
   wrapSidecarHandler,
   type SidecarErrorContext,
 } from "./sidecar-error-reporter.js";
@@ -63,5 +65,27 @@ describe("sidecar error reporter bridge", () => {
       tags: { process: "app-sidecar" },
     });
     expect(reporter.flush).toHaveBeenCalledOnce();
+  });
+
+  it("filters expected usage rate limits without hiding other usage failures", () => {
+    expect(shouldCaptureUsagePollingError({ status: 429 })).toBe(false);
+    expect(shouldCaptureUsagePollingError({ status: "429" })).toBe(false);
+    expect(shouldCaptureUsagePollingError({ status: 500 })).toBe(true);
+    expect(shouldCaptureUsagePollingError(new Error("network failed"))).toBe(true);
+  });
+
+  it.each([
+    ["edit", "File must be read first before editing. Use the read tool first."],
+    ["write", "File has been modified since it was read. Re-read the file before editing."],
+    ["edit", "old_text not found in example.ts. Text must match verbatim."],
+    ["edit", "old_text found 2 times in example.ts. Include more surrounding context."],
+    ["edit", "the file changed since you read it (anchor mismatch)"],
+  ])("filters expected %s validation failures", (toolName, result) => {
+    expect(shouldCaptureToolFailure(toolName, result)).toBe(false);
+  });
+
+  it("keeps unexpected tool failures reportable", () => {
+    expect(shouldCaptureToolFailure("edit", "EACCES: permission denied")).toBe(true);
+    expect(shouldCaptureToolFailure("bash", "Command exited with code 1")).toBe(true);
   });
 });

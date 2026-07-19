@@ -137,6 +137,8 @@ import type { ProgressFile, ProgressSnapshot } from "./core/progress/types.js";
 import {
   captureSidecarError,
   flushSidecarErrors,
+  shouldCaptureToolFailure,
+  shouldCaptureUsagePollingError,
   wrapSidecarHandler,
 } from "./core/sidecar-error-reporter.js";
 
@@ -844,7 +846,9 @@ async function main(): Promise<void> {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      captureSidecarError(error, "app-sidecar.usage.fetch", { provider });
+      if (shouldCaptureUsagePollingError(error)) {
+        captureSidecarError(error, "app-sidecar.usage.fetch", { provider });
+      }
       log("WARN", "app-sidecar", "subscription usage fetch failed", { provider, message });
       if (error instanceof SubscriptionUsageError && error.status === 429) {
         usageRateLimitedUntil.set(provider, Date.now() + USAGE_RATE_LIMIT_BACKOFF_MS);
@@ -1621,9 +1625,9 @@ async function createSession(
   session.eventBus.on("tool_call_end", (d) => {
     const name = toolCallNames.get(d.toolCallId) ?? "unknown";
     toolCallNames.delete(d.toolCallId);
-    if (d.isError) {
-      // Tool output can contain private project data. Report the failure and tool
-      // identity without shipping the raw result body to Error Mom.
+    if (d.isError && shouldCaptureToolFailure(name, d.result)) {
+      // Expected model-correctable validation failures stay in the local log and
+      // conversation. Unexpected failures are reported without private result data.
       captureSidecarError(new Error(`Tool ${name} failed`), `tool.${name}`, { tool: name });
     }
     log(d.isError ? "ERROR" : "INFO", "tool", `Tool call ended: ${name}`, {
