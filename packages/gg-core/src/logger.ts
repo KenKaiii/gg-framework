@@ -12,6 +12,8 @@ export type LogLevel = "INFO" | "ERROR" | "WARN" | "DEBUG";
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
 let fd: number | null = null;
+let bytesWritten = 0;
+let capped = false;
 let sessionId = "";
 let appName = "app";
 let cleanups: (() => void)[] = [];
@@ -43,7 +45,7 @@ function rotateIfNeeded(filePath: string): void {
  * could not be opened.
  */
 export function openLog(filePath: string, name: string): boolean {
-  if (fd !== null) return false;
+  if (fd !== null || capped) return false;
   appName = name;
   exactSecrets = environmentSecrets(process.env);
   try {
@@ -56,12 +58,28 @@ export function openLog(filePath: string, name: string): boolean {
     fd = fs.openSync(filePath, "a");
   } catch {
     // Can't open log file — silently disable logging
+    fd = null;
+    bytesWritten = 0;
+    return false;
+  }
+  try {
+    bytesWritten = fs.fstatSync(fd).size;
+  } catch {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      // Ignore cleanup failure
+    }
+    fd = null;
+    bytesWritten = 0;
     return false;
   }
   sessionId = randomBytes(4).toString("hex");
   // Visible separator between sessions when back-reading the log.
   try {
-    fs.writeSync(fd, "\n");
+    if (bytesWritten < MAX_BYTES) {
+      bytesWritten += fs.writeSync(fd, "\n");
+    }
   } catch {
     // Write failed — proceed without the separator
   }
@@ -101,8 +119,28 @@ export function log(
     if (pairs) line += ` ${pairs}`;
   }
   line += "\n";
+
+  const lineBytes = Buffer.byteLength(line);
+  if (bytesWritten + lineBytes > MAX_BYTES) {
+    // A noisy production path must not turn one long-lived process into an
+    // unbounded SSD writer. Stop file logging for this process at the hard cap;
+    // later launches can use any remaining budget and rotate once it is full.
+    const capLine = `[${ts}] [sid=${sessionId}] [WARN] [logger] Log cap reached; file logging disabled until restart\n`;
+    try {
+      if (bytesWritten + Buffer.byteLength(capLine) <= MAX_BYTES) {
+        bytesWritten += fs.writeSync(fd, capLine);
+      }
+      fs.closeSync(fd);
+    } catch {
+      // Write/close failure still disables logging below.
+    }
+    fd = null;
+    capped = true;
+    return;
+  }
+
   try {
-    fs.writeSync(fd, line);
+    bytesWritten += fs.writeSync(fd, line);
   } catch {
     // Write failed — don't crash
   }
@@ -122,14 +160,17 @@ export function registerLogCleanup(fn: () => void): void {
  * any registered cleanups.
  */
 export function closeLogger(opts?: { shutdownLine?: boolean }): void {
-  if (fd === null) return;
-  if (opts?.shutdownLine !== false) log("INFO", "shutdown", `${appName} shutting down`);
-  try {
-    fs.closeSync(fd);
-  } catch {
-    // Ignore close errors
+  if (fd !== null) {
+    if (opts?.shutdownLine !== false) log("INFO", "shutdown", `${appName} shutting down`);
+    try {
+      if (fd !== null) fs.closeSync(fd);
+    } catch {
+      // Ignore close errors
+    }
   }
   fd = null;
+  bytesWritten = 0;
+  capped = false;
   exactSecrets = [];
   for (const unsub of cleanups) unsub();
   cleanups = [];

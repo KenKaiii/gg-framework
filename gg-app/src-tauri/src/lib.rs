@@ -26,6 +26,9 @@ struct Daemon {
     /// The daemon's HTTP port, learned from its `GG_APP_LISTENING` handshake.
     /// `None` until ready; reset to `None` across a crash-respawn.
     port: Mutex<Option<u16>>,
+    /// Consecutive short-lived crashes. A daemon that stays up for the stable
+    /// window resets this budget; repeated crashes hit a circuit breaker.
+    respawn_attempts: Mutex<u32>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -3404,15 +3407,40 @@ fn pick_cwd(
     home
 }
 
+const DAEMON_STABLE_UPTIME: std::time::Duration = std::time::Duration::from_secs(60);
+const DAEMON_MAX_RESPAWNS: u32 = 5;
+
+/// Exponential crash-loop backoff: 1s, 2s, 4s, 8s, 16s, then stop.
+/// A hard retry budget prevents a broken sidecar/signature/configuration from
+/// turning the desktop shell into an unbounded process-spawn and disk-write loop.
+fn daemon_respawn_delay(attempt: u32) -> Option<std::time::Duration> {
+    if attempt == 0 || attempt > DAEMON_MAX_RESPAWNS {
+        return None;
+    }
+    Some(std::time::Duration::from_secs(1 << (attempt - 1)))
+}
+
+fn emit_daemon_error(app: &tauri::AppHandle, message: &str) {
+    for label in app.webview_windows().keys() {
+        let _ = app.emit_to(
+            EventTarget::webview_window(label.clone()),
+            "sidecar-error",
+            message,
+        );
+    }
+}
+
 /// Spawn the ONE shared Node daemon. Reads its `GG_APP_LISTENING` handshake to
-/// learn the shared port; on an unexpected exit (its stdout closes while the app
-/// is NOT quitting) it respawns the daemon and re-creates every live window's
-/// session from its stored `{cwd, session_path}` (Step 9 crash recovery).
+/// learn the shared port; on an unexpected exit it reaps the dead child, applies
+/// bounded exponential backoff, and re-creates every live window's session.
+/// Five short-lived respawns exhaust the retry budget; one minute of stable
+/// uptime resets it.
 ///
 /// The daemon is a process-group leader (Unix), so `terminate_child` reaps its
 /// entire descendant tree (every session's MCP stdio children + LSP servers) in
 /// one group-kill — no orphans on quit.
 fn spawn_daemon(app: tauri::AppHandle, is_respawn: bool) {
+    let started_at = std::time::Instant::now();
     let script = resolve_sidecar(&app);
     let node = resolve_node(&app);
     log::info!("spawning daemon: {} {}", node.display(), script.display());
@@ -3438,20 +3466,24 @@ fn spawn_daemon(app: tauri::AppHandle, is_respawn: bool) {
             c
         }
         Err(e) => {
-            log::error!("failed to spawn daemon: {e}");
-            // Surface to every open window so they don't hang on waitForReady.
-            for label in app.webview_windows().keys() {
-                let _ = app.emit_to(
-                    EventTarget::webview_window(label.clone()),
-                    "sidecar-error",
-                    format!("failed to spawn daemon: {e}"),
-                );
-            }
+            let message = format!("failed to spawn daemon: {e}");
+            log::error!("{message}");
+            emit_daemon_error(&app, &message);
             return;
         }
     };
 
-    if let Some(stdout) = child.stdout.take() {
+    // Publish the child before starting pipe readers. A process can fail before
+    // the reader thread starts; storing first guarantees the crash handler can
+    // still take and reap that exact child instead of leaving a zombie behind.
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    {
+        let daemon: State<Daemon> = app.state();
+        *daemon.child.lock().unwrap() = Some(child);
+    }
+
+    if let Some(stdout) = stdout {
         let app2 = app.clone();
         std::thread::spawn(move || {
             let reader = BufReader::new(stdout);
@@ -3463,9 +3495,6 @@ fn spawn_daemon(app: tauri::AppHandle, is_respawn: bool) {
                         // On a respawn the windows already exist with (now
                         // stale) sessions — re-create them all. On the initial
                         // spawn `restore_or_default_windows` drives creation.
-                        // (We can't infer respawn from prior port state: the
-                        // crash handler resets it to None before respawning so
-                        // proxy commands fail fast while the daemon is down.)
                         if is_respawn {
                             recreate_all_window_sessions(app2.clone());
                         }
@@ -3474,41 +3503,64 @@ fn spawn_daemon(app: tauri::AppHandle, is_respawn: bool) {
                     log::debug!("[daemon] {line}");
                 }
             }
-            // stdout closed → the daemon process exited. If the app isn't
-            // quitting, this is a crash: respawn + rehydrate every window.
-            let exiting = app2.state::<AppExiting>().0.load(Ordering::SeqCst);
-            if !exiting {
-                log::warn!("daemon exited unexpectedly — respawning");
-                {
-                    let daemon: State<Daemon> = app2.state();
-                    *daemon.port.lock().unwrap() = None;
+
+            // stdout closed → the daemon exited (or lost its control pipe). If
+            // the app isn't quitting, remove the stale port and reap/terminate
+            // the exact child before considering a bounded respawn.
+            if app2.state::<AppExiting>().0.load(Ordering::SeqCst) {
+                return;
+            }
+
+            let attempt = {
+                let daemon: State<Daemon> = app2.state();
+                *daemon.port.lock().unwrap() = None;
+                if let Some(mut old_child) = daemon.child.lock().unwrap().take() {
+                    match old_child.try_wait() {
+                        Ok(Some(_)) => {
+                            let _ = old_child.wait();
+                        }
+                        _ => terminate_child(old_child),
+                    }
                 }
+                let mut attempts = daemon.respawn_attempts.lock().unwrap();
+                if started_at.elapsed() >= DAEMON_STABLE_UPTIME {
+                    *attempts = 0;
+                }
+                *attempts += 1;
+                *attempts
+            };
+
+            let Some(delay) = daemon_respawn_delay(attempt) else {
+                let message =
+                    "Agent daemon stopped after repeated crashes. Restart GG Coder to try again.";
+                log::error!("daemon crash circuit breaker opened after {attempt} crashes");
+                emit_daemon_error(&app2, message);
+                return;
+            };
+
+            log::warn!(
+                "daemon exited unexpectedly — respawn {attempt}/{DAEMON_MAX_RESPAWNS} in {}s",
+                delay.as_secs()
+            );
+            std::thread::sleep(delay);
+            if !app2.state::<AppExiting>().0.load(Ordering::SeqCst) {
                 spawn_daemon(app2.clone(), true);
             }
         });
     }
 
-    if let Some(stderr) = child.stderr.take() {
+    if let Some(stderr) = stderr {
         let app3 = app.clone();
         std::thread::spawn(move || {
             let reader = BufReader::new(stderr);
             for line in reader.lines().map_while(Result::ok) {
                 log::error!("[daemon:stderr] {line}");
                 if line.starts_with("GG_APP_FATAL") {
-                    for label in app3.webview_windows().keys() {
-                        let _ = app3.emit_to(
-                            EventTarget::webview_window(label.clone()),
-                            "sidecar-error",
-                            line.clone(),
-                        );
-                    }
+                    emit_daemon_error(&app3, &line);
                 }
             }
         });
     }
-
-    let daemon: State<Daemon> = app.state();
-    *daemon.child.lock().unwrap() = Some(child);
 }
 
 /// POST /session to the daemon for `cwd` (+ optional resume `session_path`);
@@ -4094,6 +4146,20 @@ mod tests {
     }
 
     #[test]
+    fn daemon_respawns_with_bounded_exponential_backoff() {
+        let delays: Vec<u64> = (1..=DAEMON_MAX_RESPAWNS)
+            .map(|attempt| daemon_respawn_delay(attempt).unwrap().as_secs())
+            .collect();
+        assert_eq!(delays, vec![1, 2, 4, 8, 16]);
+    }
+
+    #[test]
+    fn daemon_crash_loop_opens_circuit_breaker() {
+        assert!(daemon_respawn_delay(0).is_none());
+        assert!(daemon_respawn_delay(DAEMON_MAX_RESPAWNS + 1).is_none());
+    }
+
+    #[test]
     fn keep_for_snapshot_excludes_picker_windows() {
         let default = Path::new("/home/user");
         // No project chosen yet → excluded.
@@ -4195,7 +4261,10 @@ mod tests {
 
     #[test]
     fn auth_providers_keep_regional_groups_and_openrouter_last() {
-        let values: Vec<&str> = AUTH_PROVIDERS.iter().map(|provider| provider.value).collect();
+        let values: Vec<&str> = AUTH_PROVIDERS
+            .iter()
+            .map(|provider| provider.value)
+            .collect();
         assert_eq!(
             values,
             vec![
