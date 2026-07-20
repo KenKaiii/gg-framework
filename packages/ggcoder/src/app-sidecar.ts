@@ -35,7 +35,6 @@ import {
   chatAgentSessionsDir,
   createChatAgent,
   parseChatAgentId,
-  sessionsDirForChatAgent,
   switchChatAgent,
   type ChatAgentId,
 } from "./chat-agents/index.js";
@@ -96,7 +95,8 @@ import {
 } from "./core/thinking-level.js";
 import { PROMPT_COMMANDS } from "./core/prompt-commands.js";
 import { loadCustomCommands } from "./core/custom-commands.js";
-import { discoverProjects, listRecentSessions } from "./core/project-discovery.js";
+import { discoverProjects } from "./core/project-discovery.js";
+import { listSidecarSessions } from "./app-sidecar-sessions.js";
 import {
   loadTasksSync,
   saveTasksSync,
@@ -2654,46 +2654,9 @@ async function createSession(
         return;
       }
       const requestedAgent = new URL(url, `http://${host}`).searchParams.get("chatAgent");
-      if (requestedAgent === "all") {
-        void Promise.all(
-          CHAT_AGENT_IDS.map(async (agentId) => {
-            const agentSessions = await listRecentSessions(
-              target,
-              5,
-              chatAgentSessionsDir(paths.sessionsDir, agentId),
-            );
-            return agentSessions.map((item) => ({ ...item, chatAgent: agentId }));
-          }),
-        )
-          .then(async (groups) => {
-            const dated = await Promise.all(
-              groups.flat().map(async (item) => ({
-                item,
-                mtime: await fs
-                  .stat(item.path)
-                  .then((stat) => stat.mtimeMs)
-                  .catch(() => 0),
-              })),
-            );
-            const recent = dated
-              .sort((left, right) => right.mtime - left.mtime)
-              .slice(0, 5)
-              .map(({ item }) => item);
-            json(res, 200, { sessions: recent });
-          })
-          .catch((error) => {
-            captureSidecarError(error, "app-sidecar.sessions.list-chat");
-            json(res, 200, { sessions: [] });
-          });
-        return;
-      }
-      // The picker may be served by a sidecar currently running in Chat mode.
-      // An omitted chatAgent always means coding history; chat callers identify
-      // their namespace explicitly (one agent or "all").
-      const sessionsDir = requestedAgent
-        ? sessionsDirForChatAgent(paths.sessionsDir, requestedAgent)
-        : paths.sessionsDir;
-      void listRecentSessions(target, 5, sessionsDir)
+      // An omitted chatAgent means coding history; chat callers identify one
+      // agent or request the combined, recency-sorted "all" listing.
+      void listSidecarSessions(target, requestedAgent, paths.sessionsDir)
         .then((sessions) => json(res, 200, { sessions }))
         .catch((error) => {
           captureSidecarError(error, "app-sidecar.sessions.list");
