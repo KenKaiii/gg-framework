@@ -692,7 +692,7 @@ async function runInkTUI(opts: {
 
       if (loadedMessages.length > 0) {
         messages.push(...loadedMessages);
-        sessionPath = resumePath;
+        sessionPath = loaded.path;
         sessionId = loaded.header.id;
         log("INFO", "session", `Restored session`, {
           path: resumePath,
@@ -786,27 +786,26 @@ async function runInkTUI(opts: {
     await subAgentManager?.hydrate(sessionId);
   }
 
-  // Prune old session transcripts in the background — they're append-only
-  // JSONL and can reach 100MB+ each, so without cleanup ~/.gg/sessions grows
-  // unbounded and eventually fills the disk. Fire-and-forget: pruning must
-  // never delay or break startup. The active session is explicitly protected.
+  // Unified maintenance enforces retention first, then normalizes and archives
+  // cold sessions. Fire-and-forget: startup and TUI readiness never wait for it.
   {
     const { sessionRetentionDays } = loadSavedSettings(paths.settingsFile);
-    if (sessionRetentionDays > 0) {
-      const keepPaths = sessionPath ? [sessionPath] : [];
-      void sessionManager
-        .pruneOldSessions({ maxAgeDays: sessionRetentionDays, keepPaths })
-        .then(({ deletedFiles, freedBytes }) => {
-          if (deletedFiles > 0) {
-            log("INFO", "session", `Pruned old sessions`, {
-              deletedFiles: String(deletedFiles),
-              freedMB: (freedBytes / 1024 / 1024).toFixed(1),
-              retentionDays: String(sessionRetentionDays),
-            });
-          }
-        })
-        .catch(() => {});
-    }
+    const keepPaths = sessionPath ? [sessionPath] : [];
+    void sessionManager
+      .runMaintenance({ retentionDays: sessionRetentionDays, keepPaths })
+      .then((metrics) => {
+        if (metrics.deletedFiles > 0 || metrics.archivedFiles > 0 || metrics.failures > 0) {
+          log("INFO", "session", "Session maintenance complete", {
+            deletedFiles: String(metrics.deletedFiles),
+            freedMB: (metrics.deletedBytes / 1024 / 1024).toFixed(1),
+            archivedFiles: String(metrics.archivedFiles),
+            savedMB: (metrics.bytesSaved / 1024 / 1024).toFixed(1),
+            failures: String(metrics.failures),
+            retentionDays: String(sessionRetentionDays),
+          });
+        }
+      })
+      .catch(() => {});
     // Sweep recoverable full tool outputs (~/.gg/tool-output/) older than 48h.
     void cleanupToolOutputs().catch(() => {});
   }

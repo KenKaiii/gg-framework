@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ConfigModule from "../config.js";
 import { encodeCwd } from "./encode-cwd.js";
 import { discoverProjects, listRecentSessions } from "./project-discovery.js";
+import { archiveColdSession, archiveSessionPath } from "./session-storage.js";
 
 // Holder the hoisted mock reads at call time (vi.mock is hoisted above imports,
 // so it can't close over a value assigned later without this indirection).
@@ -258,6 +259,34 @@ describe("discoverProjects (ggcoder store)", () => {
     expect(sessions[0]?.preview).toBe("Original user request");
   });
 
+  it("discovers and deduplicates an archived GG Coder session", async () => {
+    const projectPath = path.join(tmp, "projects", "archived");
+    await fs.mkdir(projectPath, { recursive: true });
+    const timestamp = new Date().toISOString();
+    const plainPath = await writeSessionRecords(projectPath, "archived.jsonl", {
+      id: "archived-session",
+      timestamp,
+      records: [
+        {
+          type: "message",
+          id: "archived-message",
+          parentId: null,
+          timestamp,
+          message: { role: "user", content: "Archived request" },
+        },
+      ],
+    });
+    await archiveColdSession(plainPath);
+    const corruptArchive = path.join(path.dirname(plainPath), "newer-corrupt.jsonl.gz");
+    await fs.writeFile(corruptArchive, Buffer.from([0x1f, 0x8b, 0x00, 0x01]));
+    const future = new Date(Date.now() + 60_000);
+    await fs.utimes(corruptArchive, future, future);
+    const sessions = await listRecentSessions(projectPath);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.path).toBe(archiveSessionPath(plainPath));
+    expect(sessions[0]?.preview).toBe("Archived request");
+    expect((await discoverProjects()).some((project) => project.path === projectPath)).toBe(true);
+  });
   it("uses the first user prompt when a new session has no saved label", async () => {
     const projectPath = path.join(tmp, "projects", "prompt-preview");
     await fs.mkdir(projectPath, { recursive: true });

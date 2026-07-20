@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -14,6 +13,22 @@ import type { AgentTurnTiming } from "@kenkaiiii/gg-agent";
 import { log } from "./logger.js";
 import { encodeCwd } from "./encode-cwd.js";
 import type { CompletedItem } from "../ui/app-items.js";
+import {
+  archiveColdSession,
+  archiveSessionPath,
+  cleanupOldSessionTemps,
+  COLD_SESSION_AGE_DAYS,
+  emptyStorageNormalizationMetrics,
+  hydrateSessionEntry,
+  isSessionPath,
+  normalizeSessionEntryForStorage,
+  openSessionReadStream,
+  plainSessionPath,
+  resolveSessionPath,
+  sessionAssetDir,
+  thawSessionArchive,
+  type StorageNormalizationMetrics,
+} from "./session-storage.js";
 
 // ── Entry Types ────────────────────────────────────────────
 
@@ -233,6 +248,16 @@ export interface SessionInfo {
   messageCount: number;
 }
 
+export interface SessionMaintenanceMetrics extends StorageNormalizationMetrics {
+  deletedFiles: number;
+  deletedBytes: number;
+  archivedFiles: number;
+  archivedSourceBytes: number;
+  archivedBytes: number;
+  bytesSaved: number;
+  failures: number;
+}
+
 // ── Branch Info ───────────────────────────────────────────
 
 export interface BranchInfo {
@@ -249,13 +274,16 @@ export interface BranchInfo {
 // ── Session Manager ────────────────────────────────────────
 
 export class SessionManager {
+  private static activePathsByRoot = new Map<string, Map<string, number>>();
+  private static maintenanceByRoot = new Map<string, Promise<SessionMaintenanceMetrics>>();
+
   private sessionsDir: string;
   private warnedPersistCodes = new Set<string>();
   /** Called once per error code when session persistence fails (e.g. ENOSPC). */
   onPersistError?: (error: NodeJS.ErrnoException) => void;
 
   constructor(sessionsDir: string) {
-    this.sessionsDir = sessionsDir;
+    this.sessionsDir = path.resolve(sessionsDir);
   }
 
   /**
@@ -318,20 +346,43 @@ export class SessionManager {
     return { id, path: filePath, header };
   }
 
+  registerActivePath(sessionPath: string): void {
+    const root = this.sessionsDir;
+    const active = SessionManager.activePathsByRoot.get(root) ?? new Map<string, number>();
+    const basePath = path.resolve(plainSessionPath(sessionPath));
+    active.set(basePath, (active.get(basePath) ?? 0) + 1);
+    SessionManager.activePathsByRoot.set(root, active);
+  }
+
+  unregisterActivePath(sessionPath: string): void {
+    const active = SessionManager.activePathsByRoot.get(this.sessionsDir);
+    if (!active) return;
+    const basePath = path.resolve(plainSessionPath(sessionPath));
+    const registrations = active.get(basePath) ?? 0;
+    if (registrations <= 1) active.delete(basePath);
+    else active.set(basePath, registrations - 1);
+    if (active.size === 0) SessionManager.activePathsByRoot.delete(this.sessionsDir);
+  }
+
+  private protectedSessionBases(keepPaths: string[] = []): Set<string> {
+    return new Set([
+      ...(SessionManager.activePathsByRoot.get(this.sessionsDir)?.keys() ?? []),
+      ...keepPaths.map((sessionPath) => path.resolve(plainSessionPath(sessionPath))),
+    ]);
+  }
+
   async load(sessionPath: string): Promise<{
     header: SessionHeader;
     entries: SessionEntry[];
+    path: string;
   }> {
-    // Stream the JSONL file line-by-line instead of loading the entire
-    // file into memory. For large sessions (100MB+) this avoids holding
-    // the raw string, the split array, and the parsed objects all at once.
+    // Resuming is a write operation, so transparently thaw a gzip archive and
+    // return the effective plain path every future append must use.
+    const effectivePath = await thawSessionArchive(sessionPath);
+    const { stream } = await openSessionReadStream(effectivePath);
     let header: SessionHeader | null = null;
     const entries: SessionEntry[] = [];
-
-    const rl = createInterface({
-      input: createReadStream(sessionPath, { encoding: "utf-8" }),
-      crlfDelay: Infinity,
-    });
+    const rl = createInterface({ input: stream, crlfDelay: Infinity });
 
     for await (const line of rl) {
       if (!line) continue;
@@ -341,12 +392,12 @@ export class SessionManager {
           if ((parsed as SessionHeader).version === 2) {
             header = parsed as SessionHeader;
           } else {
-            // Upgrade v1 to v2
             const v1 = parsed as SessionHeaderV1;
             header = {
               type: "session",
               version: 2,
               id: v1.id,
+              conversationId: v1.id,
               timestamp: v1.timestamp,
               cwd: v1.cwd,
               provider: v1.provider,
@@ -354,110 +405,167 @@ export class SessionManager {
               leafId: null,
             };
           }
-        } else if (parsed.type === "message") {
-          // v1 compat: entries without id/parentId
-          const entry = parsed as SessionEntry;
-          if (!entry.id) {
-            (entry as MessageEntry).id = crypto.randomUUID();
-            (entry as MessageEntry).parentId = null;
-          }
-          entries.push(entry);
-        } else {
-          entries.push(parsed as SessionEntry);
+          continue;
         }
+
+        const entry = parsed as SessionEntry;
+        if (entry.type === "message" && !entry.id) {
+          (entry as MessageEntry).id = crypto.randomUUID();
+          (entry as MessageEntry).parentId = null;
+        }
+        entries.push(await hydrateSessionEntry(entry, effectivePath));
       } catch {
-        // Skip malformed JSON lines — a corrupt line shouldn't crash the session
+        // Skip malformed JSON lines — cold migration preserves their raw bytes
+        // so a future recovery tool still has a chance to repair them.
       }
     }
 
     if (!header) {
       throw new Error(`Invalid session file: no header found in ${sessionPath}`);
     }
-
-    return { header, entries };
+    return { header, entries, path: effectivePath };
   }
 
-  async list(cwd: string): Promise<SessionInfo[]> {
-    const dir = this.dirForCwd(cwd);
+  private async readSessionInfo(
+    candidatePath: string,
+  ): Promise<(SessionInfo & { conversationId: string }) | null> {
+    try {
+      const resolvedPath = await resolveSessionPath(candidatePath);
+      const { stream } = await openSessionReadStream(resolvedPath);
+      const rl = createInterface({ input: stream, crlfDelay: Infinity });
+      let first: SessionLine | null = null;
+      let messageCount = 0;
+      let lastActivity: string | null = null;
+      for await (const line of rl) {
+        if (!line) continue;
+        try {
+          const parsed = JSON.parse(line) as SessionLine;
+          if (!first) {
+            if (parsed.type !== "session") break;
+            first = parsed;
+          } else if (parsed.type === "message") {
+            messageCount += 1;
+            if (parsed.timestamp) lastActivity = parsed.timestamp;
+          }
+        } catch {
+          // Skip malformed lines while retaining readable entries around them.
+        }
+      }
+      if (!first || first.type !== "session") return null;
+      return {
+        id: first.id,
+        conversationId:
+          (first as SessionHeader).version === 2
+            ? ((first as SessionHeader).conversationId ?? first.id)
+            : first.id,
+        path: resolvedPath,
+        timestamp: first.timestamp,
+        lastActivity: lastActivity ?? first.timestamp,
+        cwd: first.cwd,
+        messageCount,
+      };
+    } catch {
+      return null;
+    }
+  }
 
+  private async sessionCandidates(directory: string): Promise<string[]> {
     let files: string[];
     try {
-      files = await fs.readdir(dir);
+      files = await fs.readdir(directory);
     } catch {
       return [];
     }
+    return files.filter(isSessionPath).map((file) => path.join(directory, file));
+  }
 
-    const sessions: SessionInfo[] = [];
-
-    for (const file of files) {
-      if (!file.endsWith(".jsonl")) continue;
-      const filePath = path.join(dir, file);
-
-      try {
-        // Stream line-by-line to avoid loading entire file for listing
-        const rl = createInterface({
-          input: createReadStream(filePath, { encoding: "utf-8" }),
-          crlfDelay: Infinity,
-        });
-
-        let first: SessionLine | null = null;
-        let messageCount = 0;
-        let lastActivity: string | null = null;
-
-        for await (const line of rl) {
-          if (!line) continue;
-          try {
-            const parsed = JSON.parse(line) as SessionLine;
-            if (!first) {
-              if (parsed.type !== "session") break;
-              first = parsed;
-            } else if (parsed.type === "message") {
-              messageCount++;
-              if (parsed.timestamp) lastActivity = parsed.timestamp;
-            }
-          } catch {
-            // Skip malformed lines
-          }
-        }
-
-        if (!first || first.type !== "session") continue;
-
-        sessions.push({
-          id: first.id,
-          path: filePath,
-          timestamp: first.timestamp,
-          lastActivity: lastActivity ?? first.timestamp,
-          cwd: first.cwd,
-          messageCount,
-        });
-      } catch {
-        // Skip corrupt files
+  async list(cwd: string): Promise<SessionInfo[]> {
+    const candidates = await this.sessionCandidates(this.dirForCwd(cwd));
+    const summaries = await Promise.all(candidates.map((file) => this.readSessionInfo(file)));
+    const byConversation = new Map<string, SessionInfo>();
+    const seenResolvedPaths = new Set<string>();
+    for (const summary of summaries) {
+      if (!summary || seenResolvedPaths.has(summary.path)) continue;
+      seenResolvedPaths.add(summary.path);
+      const current = byConversation.get(summary.conversationId);
+      if (!current || summary.lastActivity > current.lastActivity) {
+        const { conversationId: _conversationId, ...info } = summary;
+        byConversation.set(summary.conversationId, info);
       }
     }
-
-    // Sort by last activity descending (the session most recently spoken in first)
-    sessions.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
-    return sessions;
+    return [...byConversation.values()].sort((a, b) =>
+      b.lastActivity.localeCompare(a.lastActivity),
+    );
   }
 
   async getMostRecent(cwd: string): Promise<string | null> {
     const sessions = await this.list(cwd);
-    const withMessages = sessions.find((s) => s.messageCount > 0);
-    return withMessages?.path ?? null;
+    return sessions.find((session) => session.messageCount > 0)?.path ?? null;
   }
 
   async findById(cwd: string, sessionId: string): Promise<string | null> {
-    const sessions = await this.list(cwd);
-    return sessions.find((session) => session.id === sessionId)?.path ?? null;
+    const candidates = await this.sessionCandidates(this.dirForCwd(cwd));
+    for (const candidate of candidates) {
+      const summary = await this.readSessionInfo(candidate);
+      if (summary?.id === sessionId || summary?.conversationId === sessionId) return summary.path;
+    }
+    return null;
   }
 
-  /**
-   * Delete session files older than `maxAgeDays` across ALL project dirs.
-   * Age is judged by file mtime, so a session that's still being appended to
-   * is never considered old. Best-effort: per-file errors are skipped so a
-   * locked or vanished file can't break startup. Empty project dirs left
-   * behind are removed. Returns what was freed for logging.
-   */
+  private async storageDirectories(): Promise<string[]> {
+    let entries;
+    try {
+      entries = await fs.readdir(this.sessionsDir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(this.sessionsDir, entry.name));
+  }
+
+  private async logicalSessionBases(directory: string): Promise<string[]> {
+    let entries;
+    try {
+      entries = await fs.readdir(directory, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    const bases = new Set<string>();
+    for (const entry of entries) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isFile() && isSessionPath(entry.name)) {
+        bases.add(path.resolve(plainSessionPath(entryPath)));
+      } else if (entry.isDirectory() && entry.name.endsWith(".jsonl.assets")) {
+        bases.add(path.resolve(entryPath.slice(0, -".assets".length)));
+      }
+    }
+    return [...bases];
+  }
+
+  private async removeStoragePath(
+    targetPath: string,
+  ): Promise<{ deletedFiles: number; deletedBytes: number }> {
+    let stat;
+    try {
+      stat = await fs.lstat(targetPath);
+    } catch {
+      return { deletedFiles: 0, deletedBytes: 0 };
+    }
+    if (stat.isDirectory()) {
+      const result = { deletedFiles: 0, deletedBytes: 0 };
+      for (const name of await fs.readdir(targetPath)) {
+        const removed = await this.removeStoragePath(path.join(targetPath, name));
+        result.deletedFiles += removed.deletedFiles;
+        result.deletedBytes += removed.deletedBytes;
+      }
+      await fs.rmdir(targetPath).catch(() => {});
+      return result;
+    }
+    await fs.unlink(targetPath);
+    return { deletedFiles: 1, deletedBytes: stat.size };
+  }
+
   async pruneOldSessions(options: {
     maxAgeDays: number;
     keepPaths?: string[];
@@ -465,57 +573,111 @@ export class SessionManager {
     const result = { deletedFiles: 0, freedBytes: 0 };
     if (options.maxAgeDays <= 0) return result;
     const cutoffMs = Date.now() - options.maxAgeDays * 86_400_000;
-    const keep = new Set((options.keepPaths ?? []).map((p) => path.resolve(p)));
-
-    let cwdDirs: string[];
-    try {
-      cwdDirs = await fs.readdir(this.sessionsDir);
-    } catch {
-      return result;
-    }
-
-    for (const dirName of cwdDirs) {
-      const dir = path.join(this.sessionsDir, dirName);
-      let files: string[];
-      try {
-        const stat = await fs.stat(dir);
-        if (!stat.isDirectory()) continue;
-        files = await fs.readdir(dir);
-      } catch {
-        continue;
-      }
-
-      let remaining = files.length;
-      for (const file of files) {
-        if (!file.endsWith(".jsonl")) continue;
-        const filePath = path.join(dir, file);
-        if (keep.has(path.resolve(filePath))) continue;
+    for (const directory of await this.storageDirectories()) {
+      for (const basePath of await this.logicalSessionBases(directory)) {
+        if (this.protectedSessionBases(options.keepPaths).has(basePath)) continue;
         try {
-          const stat = await fs.stat(filePath);
+          const resolved = await resolveSessionPath(basePath);
+          const stat = await fs.stat(resolved);
           if (stat.mtimeMs >= cutoffMs) continue;
-          await fs.unlink(filePath);
-          result.deletedFiles += 1;
-          result.freedBytes += stat.size;
-          remaining -= 1;
+          for (const target of [
+            basePath,
+            archiveSessionPath(basePath),
+            sessionAssetDir(basePath),
+          ]) {
+            const removed = await this.removeStoragePath(target);
+            result.deletedFiles += removed.deletedFiles;
+            result.freedBytes += removed.deletedBytes;
+          }
         } catch {
-          // Skip files we can't stat/delete — pruning is best-effort
+          // A raced, corrupt, or inaccessible logical group is skipped safely.
         }
       }
+      await fs.rmdir(directory).catch(() => {});
+    }
+    return result;
+  }
 
-      if (remaining === 0) {
-        await fs.rmdir(dir).catch(() => {});
+  async runMaintenance(options: {
+    retentionDays: number;
+    keepPaths?: string[];
+    now?: number;
+  }): Promise<SessionMaintenanceMetrics> {
+    const existing = SessionManager.maintenanceByRoot.get(this.sessionsDir);
+    if (existing) return existing;
+
+    const maintenance = this.runMaintenanceUnsafe(options).finally(() => {
+      SessionManager.maintenanceByRoot.delete(this.sessionsDir);
+    });
+    SessionManager.maintenanceByRoot.set(this.sessionsDir, maintenance);
+    return maintenance;
+  }
+
+  private async runMaintenanceUnsafe(options: {
+    retentionDays: number;
+    keepPaths?: string[];
+    now?: number;
+  }): Promise<SessionMaintenanceMetrics> {
+    const metrics: SessionMaintenanceMetrics = {
+      deletedFiles: 0,
+      deletedBytes: 0,
+      archivedFiles: 0,
+      archivedSourceBytes: 0,
+      archivedBytes: 0,
+      bytesSaved: 0,
+      failures: 0,
+      ...emptyStorageNormalizationMetrics(),
+    };
+    const pruned = await this.pruneOldSessions({
+      maxAgeDays: options.retentionDays,
+      keepPaths: options.keepPaths,
+    });
+    metrics.deletedFiles = pruned.deletedFiles;
+    metrics.deletedBytes = pruned.freedBytes;
+
+    const now = options.now ?? Date.now();
+    const coldCutoff = now - COLD_SESSION_AGE_DAYS * 86_400_000;
+    for (const directory of await this.storageDirectories()) {
+      const tempCleanup = await cleanupOldSessionTemps(directory, now - 86_400_000);
+      metrics.deletedFiles += tempCleanup.deletedFiles;
+      metrics.deletedBytes += tempCleanup.freedBytes;
+      for (const basePath of await this.logicalSessionBases(directory)) {
+        if (this.protectedSessionBases(options.keepPaths).has(basePath)) continue;
+        try {
+          const resolved = await resolveSessionPath(basePath);
+          const stat = await fs.stat(resolved);
+          if (stat.mtimeMs >= coldCutoff || resolved.endsWith(".jsonl.gz")) continue;
+          const archived = await archiveColdSession(resolved);
+          if (!archived.archived) continue;
+          metrics.archivedFiles += 1;
+          metrics.archivedSourceBytes += archived.sourceBytes;
+          metrics.archivedBytes += archived.archiveBytes;
+          metrics.bytesSaved += archived.bytesSaved;
+          metrics.truncatedToolTexts += archived.truncatedToolTexts;
+          metrics.externalizedMedia += archived.externalizedMedia;
+          metrics.omittedPathMedia += archived.omittedPathMedia;
+          metrics.removedDisplayItems += archived.removedDisplayItems;
+        } catch (error) {
+          metrics.failures += 1;
+          log("WARN", "session", "Cold session maintenance failed", {
+            path: basePath,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
-
-    return result;
+    return metrics;
   }
 
   async appendEntry(sessionPath: string, entry: SessionEntry): Promise<void> {
     try {
-      // Persist a sanitized clone. The live conversation remains untouched so
-      // credentials can still be used by the current in-memory run.
+      // Persist a sanitized, bounded clone. The live conversation remains
+      // untouched so the current turn keeps full tool output and media.
       const safeEntry = redactValue(entry, { secrets: environmentSecrets(process.env) });
-      await fs.appendFile(sessionPath, JSON.stringify(safeEntry) + "\n", "utf-8");
+      const writablePath = await thawSessionArchive(sessionPath);
+      const normalized = await normalizeSessionEntryForStorage(safeEntry, writablePath);
+      if (normalized === null) return;
+      await fs.appendFile(writablePath, `${JSON.stringify(normalized)}\n`, "utf-8");
     } catch (error) {
       this.handlePersistError(error, "appendEntry");
     }
@@ -535,7 +697,8 @@ export class SessionManager {
 
   async updateLeaf(sessionPath: string, leafId: string): Promise<void> {
     try {
-      await this.updateLeafUnsafe(sessionPath, leafId);
+      const writablePath = await thawSessionArchive(sessionPath);
+      await this.updateLeafUnsafe(writablePath, leafId);
     } catch (error) {
       this.handlePersistError(error, "updateLeaf");
     }

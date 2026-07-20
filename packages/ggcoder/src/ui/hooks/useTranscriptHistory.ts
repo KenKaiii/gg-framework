@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { DISPLAY_ITEM_CUSTOM_KIND, type SessionManager } from "../../core/session-manager.js";
+import type { SessionManager } from "../../core/session-manager.js";
 import { compactHistory } from "../item-helpers.js";
 import { trimFlushedItems } from "../live-item-flush.js";
 import type { CompletedItem } from "../app-items.js";
@@ -36,14 +36,17 @@ interface UseTranscriptHistoryOptions<TItem extends TranscriptHistoryItem> {
    * `writeStdout` (erase frame → write → restore frame) when absent.
    */
   enqueueStdout?: (data: string) => void;
-  sessionPathRef: React.RefObject<string | undefined>;
-  sessionManagerRef: React.RefObject<SessionManager | null>;
+  /** @deprecated Display projections are reconstructed from canonical messages. */
+  sessionPathRef?: React.RefObject<string | undefined>;
+  /** @deprecated Display projections are reconstructed from canonical messages. */
+  sessionManagerRef?: React.RefObject<SessionManager | null>;
+  /** @deprecated Display projections are no longer persisted. */
+  persistDisplayItem?: (item: TItem) => unknown;
   sessionStore?: SessionStoreLike<TItem>;
   history: readonly TItem[];
   setHistory: React.Dispatch<React.SetStateAction<TItem[]>>;
   setLiveItems: React.Dispatch<React.SetStateAction<TItem[]>>;
   compactHistoryItems?: (items: TItem[]) => TItem[];
-  persistDisplayItem?: (item: TItem) => unknown;
   trimFlushItems?: (items: TItem[]) => TItem[];
 }
 
@@ -64,20 +67,16 @@ export function useTranscriptHistory<TItem extends TranscriptHistoryItem = Compl
   terminalHistoryContext,
   writeStdout,
   enqueueStdout,
-  sessionPathRef,
-  sessionManagerRef,
   sessionStore,
   history,
   setHistory,
   setLiveItems,
   compactHistoryItems = (items) => compactHistory(items as CompletedItem[]) as TItem[],
-  persistDisplayItem,
   trimFlushItems = (items) => trimFlushedItems(items as CompletedItem[]) as TItem[],
 }: UseTranscriptHistoryOptions<TItem>): UseTranscriptHistoryResult<TItem> {
   const terminalHistoryContextRef = useRef<TerminalHistoryContext>(terminalHistoryContext);
   const pendingHistoryFlushRef = useRef<TItem[]>([]);
   const drainedHistoryFlushRef = useRef<TItem[]>([]);
-  const persistedDisplayItemIdsRef = useRef<Set<string>>(new Set());
   const streamedAssistantFlushRef = useRef<{ flushedChars: number; text: string }>({
     flushedChars: 0,
     text: "",
@@ -111,22 +110,6 @@ export function useTranscriptHistory<TItem extends TranscriptHistoryItem = Compl
       // produced by the batched setLiveItems/generation updates below, which is
       // also the write that shrinks the live frame. One write = no footer jump.
       printHistoryItems(flushed, { reason: "flush" });
-      const sessionPath = sessionPathRef.current;
-      const sessionManager = sessionManagerRef.current;
-      if (sessionPath && sessionManager) {
-        for (const item of flushed) {
-          if (persistedDisplayItemIdsRef.current.has(item.id)) continue;
-          persistedDisplayItemIdsRef.current.add(item.id);
-          void sessionManager.appendEntry(sessionPath, {
-            type: "custom",
-            kind: DISPLAY_ITEM_CUSTOM_KIND,
-            data: { version: 1, item: persistDisplayItem ? persistDisplayItem(item) : item },
-            id: `display-${item.id}`,
-            parentId: null,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      }
       if (sessionStore) {
         const queuedIds = new Set(items.map((item) => item.id));
         sessionStore.liveItems = (sessionStore.liveItems ?? []).filter(
@@ -158,16 +141,7 @@ export function useTranscriptHistory<TItem extends TranscriptHistoryItem = Compl
       setLiveItems((prev) => prev.filter((item) => !flushedIds.has(item.id)));
       setHistoryFlushGeneration((generation) => generation + 1);
     },
-    [
-      compactHistoryItems,
-      persistDisplayItem,
-      printHistoryItems,
-      sessionManagerRef,
-      sessionPathRef,
-      sessionStore,
-      setLiveItems,
-      trimFlushItems,
-    ],
+    [compactHistoryItems, printHistoryItems, sessionStore, setLiveItems, trimFlushItems],
   );
 
   useEffect(() => {

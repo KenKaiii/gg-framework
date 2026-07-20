@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { chatAgentSessionsDir } from "./chat-agents/index.js";
 import { listSidecarSessions } from "./app-sidecar-sessions.js";
 import { encodeCwd } from "./core/encode-cwd.js";
+import { archiveColdSession, archiveSessionPath } from "./core/session-storage.js";
 
 async function writeSessions(
   sessionsRoot: string,
@@ -77,5 +78,21 @@ describe("gg-app sidecar session listings", () => {
     expect(chatSessions).toHaveLength(30);
     expect(chatSessions[0]).toMatchObject({ id: "chat-30", chatAgent: "general" });
     expect(chatSessions.at(-1)).toMatchObject({ id: "chat-1", chatAgent: "general" });
+  });
+
+  it("lists archived coding and chat sessions once despite their redirect counterparts", async () => {
+    const chatRoot = chatAgentSessionsDir(coderSessionsDir, "general");
+    await writeSessions(coderSessionsDir, cwd, "coding-archive", 1);
+    await writeSessions(chatRoot, cwd, "chat-archive", 1);
+    const codingPlain = path.join(coderSessionsDir, encodeCwd(cwd), "coding-archive-0.jsonl");
+    const chatPlain = path.join(chatRoot, encodeCwd(cwd), "chat-archive-0.jsonl");
+    await Promise.all([archiveColdSession(codingPlain), archiveColdSession(chatPlain)]);
+
+    const codingSessions = await listSidecarSessions(cwd, null, coderSessionsDir);
+    const chatSessions = await listSidecarSessions(cwd, "general", coderSessionsDir);
+    expect(codingSessions).toHaveLength(1);
+    expect(codingSessions[0]?.path).toBe(archiveSessionPath(codingPlain));
+    expect(chatSessions).toHaveLength(1);
+    expect(chatSessions[0]?.path).toBe(archiveSessionPath(chatPlain));
   });
 });
