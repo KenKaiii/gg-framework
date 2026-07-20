@@ -1,5 +1,15 @@
 # @kenkaiiii/ggcoder
 
+## 5.20.2
+
+### Patch Changes
+
+- 5fb6b62: Automatically enforce session retention across desktop, CLI, and chat-agent stores, compress inactive transcripts after seven days, and cap persisted tool output at 40,000 characters. Media is migrated to deduplicated adjacent assets with backward-compatible hydration and archived sessions remain discoverable and resumable through stale saved paths.
+- Updated dependencies [f4b8ec7]
+  - @kenkaiiii/gg-core@5.20.2
+  - @kenkaiiii/gg-ai@5.20.2
+  - @kenkaiiii/gg-agent@5.20.2
+
 ## 5.20.1
 
 ### Patch Changes

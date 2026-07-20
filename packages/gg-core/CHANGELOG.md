@@ -1,5 +1,12 @@
 # @kenkaiiii/gg-core
 
+## 5.20.2
+
+### Patch Changes
+
+- f4b8ec7: Cap each long-lived process at 10 MB of debug-log writes so noisy production paths cannot grow the active log without bound.
+  - @kenkaiiii/gg-ai@5.20.2
+
 ## 5.20.1
 
 ### Patch Changes
