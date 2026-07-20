@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.20.1
+
+### Patch Changes
+
+- Show up to 30 recent chat sessions while keeping coding history capped at 5.
+  - @kenkaiiii/gg-ai@5.20.1
+  - @kenkaiiii/gg-agent@5.20.1
+  - @kenkaiiii/gg-core@5.20.1
+
 ## 5.20.0
 
 ### Minor Changes
