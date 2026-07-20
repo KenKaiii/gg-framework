@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.24.1",
+    date: "2026-07-20",
+    items: [
+      "Your chat history just got six times deeper. I expanded the picker from `5` recent conversations to `30`, so the thread you want is far less likely to disappear while coding history stays lean.",
+    ],
+  },
+  {
     version: "0.24.0",
     date: "2026-07-20",
     items: [
