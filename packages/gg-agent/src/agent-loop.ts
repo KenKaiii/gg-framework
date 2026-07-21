@@ -1779,19 +1779,30 @@ function buildToolResults(
   return toolResults;
 }
 
-function capToolResults(toolResults: ToolResult[], maxToolResultChars: number | undefined): void {
+export function capToolResults(
+  toolResults: ToolResult[],
+  maxToolResultChars: number | undefined,
+): void {
   if (!maxToolResultChars) return;
   const hardMax = 400_000; // absolute ceiling regardless of context window
   const max = Math.min(maxToolResultChars, hardMax);
   for (const toolResult of toolResults) {
     if (typeof toolResult.content !== "string" || toolResult.content.length <= max) continue;
+    const originalChars = toolResult.content.length;
     // Keep 70% head + 30% tail to preserve errors/diagnostics at the end.
     const headChars = Math.floor(max * 0.7);
     const tailChars = max - headChars;
     const head = toolResult.content.slice(0, headChars);
     const tail = toolResult.content.slice(-tailChars);
-    const omitted = toolResult.content.length - headChars - tailChars;
+    const omitted = originalChars - headChars - tailChars;
     toolResult.content = head + `\n\n[... ${omitted} characters omitted ...]\n\n` + tail;
+    // Mark the divergence: the model + persistent transcript now hold this
+    // trimmed content, but the tool_call_end event already carried the full one.
+    toolResult.capped = {
+      originalChars,
+      keptChars: toolResult.content.length,
+      scope: "per-result",
+    };
   }
 }
 
@@ -1828,16 +1839,24 @@ export function capTurnToolResults(
       continue;
     }
     remaining -= fairShare;
+    const originalChars = toolResult.content.length;
     // Keep 70% head + 30% tail so errors/diagnostics at the end survive.
     const headChars = Math.floor(fairShare * 0.7);
     const tailChars = fairShare - headChars;
-    const omitted = toolResult.content.length - fairShare;
+    const omitted = originalChars - fairShare;
     toolResult.content =
       toolResult.content.slice(0, headChars) +
       `\n\n[... ${omitted} characters trimmed: this turn's combined tool results exceeded the ` +
       `per-turn budget. Re-run this call alone with narrower filters or offset/limit if you ` +
       `need the omitted content ...]\n\n` +
       (tailChars > 0 ? toolResult.content.slice(-tailChars) : "");
+    // Mark the divergence (per-turn budget). Preserve an existing per-result
+    // marker's originalChars so the full pre-any-trim size stays visible.
+    toolResult.capped = {
+      originalChars: toolResult.capped?.originalChars ?? originalChars,
+      keptChars: toolResult.content.length,
+      scope: "per-turn",
+    };
   }
 }
 

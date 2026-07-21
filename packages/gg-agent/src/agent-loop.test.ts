@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ProviderError } from "@kenkaiiii/gg-ai";
 import {
   agentLoop,
+  capToolResults,
   capTurnToolResults,
   classifyOverload,
   extractContextOverflowDetails,
@@ -1767,5 +1768,54 @@ describe("capTurnToolResults", () => {
     capTurnToolResults([structured, text], 5_000);
     expect(structured.content[0].text).toBe("t".repeat(10_000));
     expect(text.content).toContain("characters trimmed");
+  });
+});
+
+// Fix D (baseline #2): capping mutates the model-input/persistent transcript in
+// place while the tool_call_end event already carried the FULL preview. The
+// `capped` marker makes that divergence programmatically visible.
+describe("tool-result cap divergence marker", () => {
+  const result = (id: string, content: string) => ({
+    type: "tool_result" as const,
+    toolCallId: id,
+    content,
+  });
+
+  it("marks a per-result cap with original + kept char counts", () => {
+    const r = result("big", "z".repeat(10_000));
+    capToolResults([r], 1_000);
+    expect(r.content).toContain("characters omitted");
+    expect(r.capped).toEqual({
+      originalChars: 10_000,
+      keptChars: (r.content as string).length,
+      scope: "per-result",
+    });
+  });
+
+  it("does not mark a result that fits the per-result budget", () => {
+    const r = result("small", "z".repeat(500));
+    capToolResults([r], 1_000);
+    expect(r.capped).toBeUndefined();
+    expect(r.content).toBe("z".repeat(500));
+  });
+
+  it("marks a per-turn cap with scope 'per-turn'", () => {
+    const large = result("large", "l".repeat(20_000));
+    capTurnToolResults([large], 6_000);
+    expect(large.capped?.scope).toBe("per-turn");
+    expect(large.capped?.originalChars).toBe(20_000);
+    expect(large.capped?.keptChars).toBe((large.content as string).length);
+  });
+
+  it("preserves the true original size when both caps fire in sequence", () => {
+    const r = result("huge", "h".repeat(100_000));
+    capToolResults([r], 50_000); // per-result trim first
+    const afterPerResult = r.capped?.originalChars;
+    capTurnToolResults([r], 5_000); // then per-turn trim
+    expect(afterPerResult).toBe(100_000);
+    // The per-turn marker keeps the FULL pre-any-trim original, not the
+    // already-trimmed intermediate size.
+    expect(r.capped?.originalChars).toBe(100_000);
+    expect(r.capped?.scope).toBe("per-turn");
   });
 });

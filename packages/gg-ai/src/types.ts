@@ -68,6 +68,21 @@ export interface ToolResult {
   toolCallId: string;
   content: ToolResultContent;
   isError?: boolean;
+  /**
+   * Set when the agent loop trimmed `content` to fit a per-result or per-turn
+   * budget. The provider (model input) and the persistent transcript both see
+   * the trimmed `content`, but the live `tool_call_end` event carried the FULL
+   * preview — so this marker makes that divergence explicit and reconcilable.
+   * Internal metadata only: it is never serialized onto the provider wire.
+   */
+  capped?: {
+    /** Length of the original, untrimmed string content. */
+    originalChars: number;
+    /** Length of the trimmed content actually sent to the model. */
+    keptChars: number;
+    /** Which budget triggered the trim. */
+    scope: "per-result" | "per-turn";
+  };
 }
 
 export interface ServerToolCall {

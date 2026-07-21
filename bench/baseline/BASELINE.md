@@ -8,7 +8,7 @@
 | # | Adoption item | Baseline result | Verdict |
 |---|---|---|---|
 | 1 | EOL-aware edit executor | **0/18 edit failures** on CRLF corpus; CRLF intact every run. `edit.ts` already normalizes `\r\n`→`\n` for matching and converts back on write | ❌ **DROP — already implemented** |
-| 2 | Aggregate tool-response budget | Per-turn tool-result aggregates: max 11,187 / mean 1,937 chars. 10k budget would trigger on 9.1% of turns; 25k+ never. **Real finding:** capping mutates the persistent transcript in place while `tool_call_end` events carry the uncapped preview → transcript ≠ model input once a cap triggers | ⚠️ **Reprioritize: the divergence bug is the real work, not the budget** |
+| 2 | Aggregate tool-response budget | **FIXED (Fix D):** the transcript≠model-input divergence is now programmatically visible — `capToolResults`/`capTurnToolResults` stamp a `ToolResult.capped = { originalChars, keptChars, scope }` marker whenever they trim. Consumers can reconcile the full `tool_call_end` preview against the trimmed model input; the marker is internal metadata and never reaches the provider wire. Budget sizing itself was measured fine (10k triggers 9.1% of turns). | ✅ **DONE — divergence made visible** |
 | 3 | Registry/compaction sizing | **Severe:** Anthropic models list 1M context but gg-ai never sends the context-1m beta header → compaction triggers at 850K against a route that hard-rejects >200K. Auto-compaction can never fire before the provider 400s | 🔥 **TOP PRIORITY — actively broken** |
 | 4 | Truncated-stream retry | **FIXED (Fix A):** `truncate-silent` now **throws** `ProviderError("Stream ended before completion (no stop_reason).", 504)` — no longer a SILENT PARTIAL. 504 routes into the agent-loop retry bucket via `classifyOverload` → `provider_error` (agent-loop.ts:259). `clean` still passes; `truncate-mid` unchanged (throws `terminated`). OpenAI path mirrored (`no finish_reason` → 504). | ✅ **DONE — silent-partial path closed & retryable** |
 | 5 | Tool-call ID normalization | **FIXED (Fix F):** `remapToolCallId` now `slice(6)` (was `slice(5)`) → `toolu_01ABC` maps to a clean single-underscore `call_01ABC` (baseline 09 confirms, paired=true). Composite-id collision guard still open (low priority). | ✅ **DONE (double-underscore) — collision guard deferred** |
@@ -88,7 +88,7 @@ Cases A (user `""`), B (user `[{text:""}]`), D (settled assistant `""`) all reac
 | P0 | **#3 Anthropic route-aware context window** (200K default vs 1M beta) | Compaction can never fire before provider 400 — measured |
 | ~~P0~~ ✅ | ~~**#4 Silent partial on clean-truncated streams + retry classification**~~ **DONE (Fix A)** | Silent corruption path — measured; now throws retryable 504 (anthropic + openai) |
 | ~~P0~~ ✅ | ~~**#8 Sidecar byte caps + fs.watch dispose**~~ **DONE (Fix C)** | 10 MB body cap (413), fs.watch dispose, 50k glob scan cap |
-| P1 | **#2 Transcript/model-input divergence on cap** | Data-integrity bug found by the baseline |
+| ~~P1~~ ✅ | ~~**#2 Transcript/model-input divergence on cap**~~ **DONE (Fix D)** | `ToolResult.capped` marker exposes the trim (internal-only, never on wire) |
 | ~~P1~~ ✅ | ~~**#20 Omit empty text parts**~~ **DONE (Fix E)** | Live 400 failure modes; A/B/D now dropped/filtered |
 | P1 | **#16 LSP move-symbol** (narrow scope) | 0/3 measured gap; skip rename |
 | P2 (partial ✅) | **#5 ID remap** — `call__` double-underscore **DONE (Fix F)**; collision guard still deferred | Edge cases only |

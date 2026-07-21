@@ -206,7 +206,11 @@ const transcriptDivergence =
   "context (agent-loop.ts messages.push({role:'tool', content: toolResults})), so all subsequent turns " +
   "re-send the truncated version. However the tool_call_end event is emitted BEFORE capping with the full " +
   "result preview, so the UI/event transcript keeps the untruncated result — the event transcript and the " +
-  "provider-bound message history diverge once a cap triggers.";
+  "provider-bound message history diverge once a cap triggers. " +
+  "POST Fix D: capToolResults/capTurnToolResults now stamp a `ToolResult.capped = { originalChars, keptChars, " +
+  "scope }` marker whenever they trim, so the divergence is programmatically visible — a consumer can reconcile " +
+  "the full tool_call_end preview against the trimmed model input. The marker is internal metadata; the wire " +
+  "serializers (toAnthropicMessages/toOpenAIMessages) pick explicit fields, so `capped` never reaches the provider.";
 
 console.log("\n── Distribution (all runs) ──");
 table(
