@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.20.5
+
+### Patch Changes
+
+- Require generated UIs to meet WCAG 2.2 Level AA and follow ADA-aligned accessibility practices.
+  - @kenkaiiii/gg-ai@5.20.5
+  - @kenkaiiii/gg-agent@5.20.5
+  - @kenkaiiii/gg-core@5.20.5
+
 ## 5.20.4
 
 ### Patch Changes
