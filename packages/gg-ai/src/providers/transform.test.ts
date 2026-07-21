@@ -493,6 +493,79 @@ describe("Anthropic transform", () => {
       { type: "text", text: "answer" },
     ]);
   });
+
+  // Baseline #20 (empty-parts): Anthropic rejects empty text blocks with a 400
+  // ("text content blocks must be non-empty"). The serializer must never emit one.
+  it("drops a user message whose string content is empty (case A)", () => {
+    const messages: Message[] = [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: [{ type: "text", text: "prev" }] },
+      { role: "user", content: "" },
+    ];
+    const { messages: out } = toAnthropicMessages(messages);
+    // The empty user turn is gone; the real ones survive.
+    expect(out.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(out[0]?.content).toBe("hi");
+  });
+
+  it("filters empty text parts from a user content array (case B)", () => {
+    const messages: Message[] = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "" },
+          { type: "text", text: "real" },
+        ],
+      },
+    ];
+    const { messages: out } = toAnthropicMessages(messages);
+    const content = out[0]?.content as unknown as Array<Record<string, unknown>>;
+    expect(content).toEqual([{ type: "text", text: "real" }]);
+  });
+
+  it("drops a user message whose only text part is empty", () => {
+    const messages: Message[] = [
+      { role: "user", content: "first" },
+      { role: "assistant", content: [{ type: "text", text: "ack" }] },
+      { role: "user", content: [{ type: "text", text: "" }] },
+    ];
+    const { messages: out } = toAnthropicMessages(messages);
+    expect(out.map((m) => m.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("drops a settled assistant message with empty string content (case D)", () => {
+    const messages: Message[] = [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "" },
+      { role: "user", content: "next" },
+    ];
+    const { messages: out } = toAnthropicMessages(messages);
+    // The empty assistant turn is dropped; both user turns remain.
+    expect(out.map((m) => m.role)).toEqual(["user", "user"]);
+    expect(out.map((m) => m.content)).toEqual(["hi", "next"]);
+  });
+
+  it("keeps whitespace-only user text intact (API accepts non-empty text)", () => {
+    const messages: Message[] = [{ role: "user", content: [{ type: "text", text: "  \n " }] }];
+    const { messages: out } = toAnthropicMessages(messages);
+    const content = out[0]?.content as unknown as Array<Record<string, unknown>>;
+    expect(content).toEqual([{ type: "text", text: "  \n " }]);
+  });
+
+  it("keeps a non-text user part (image) even with no text", () => {
+    const messages: Message[] = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "" },
+          { type: "image", mediaType: "image/png", data: "abc" },
+        ],
+      },
+    ];
+    const { messages: out } = toAnthropicMessages(messages);
+    const content = out[0]?.content as unknown as Array<Record<string, unknown>>;
+    expect(content.map((b) => b.type)).toEqual(["image"]);
+  });
 });
 
 describe("OpenAI transform", () => {
@@ -507,6 +580,40 @@ describe("OpenAI transform", () => {
       { role: "system", content },
       { role: "user", content: "Hello" },
     ]);
+  });
+
+  // Baseline #5: `toolu_*` -> OpenAI must strip the FULL `toolu_` prefix. The old
+  // `slice(5)` left the trailing underscore, producing `call__<id>` (double
+  // underscore; lossy). Pairing must survive: the tool_result references the
+  // same remapped id.
+  it("remaps a toolu_ id to a single-underscore call_ id and preserves pairing", () => {
+    const messages: Message[] = [
+      {
+        role: "assistant",
+        content: [{ type: "tool_call", id: "toolu_01ABC", name: "bash", args: { cmd: "ls" } }],
+      },
+      { role: "tool", content: [{ type: "tool_result", toolCallId: "toolu_01ABC", content: "ok" }] },
+    ];
+    const out = toOpenAIMessages(messages) as unknown as Array<Record<string, unknown>>;
+    const assistant = out.find((m) => m.role === "assistant") as {
+      tool_calls: Array<{ id: string }>;
+    };
+    const toolMsg = out.find((m) => m.role === "tool") as { tool_call_id: string };
+    expect(assistant.tool_calls[0]?.id).toBe("call_01ABC");
+    expect(assistant.tool_calls[0]?.id).not.toContain("call__");
+    // Pairing intact: the result points at the identical remapped id.
+    expect(toolMsg.tool_call_id).toBe("call_01ABC");
+  });
+
+  it("passes through non-anthropic tool ids unchanged", () => {
+    const messages: Message[] = [
+      {
+        role: "assistant",
+        content: [{ type: "tool_call", id: "call_xyz", name: "bash", args: {} }],
+      },
+    ];
+    const out = toOpenAIMessages(messages) as Array<{ tool_calls?: Array<{ id: string }> }>;
+    expect(out[0]?.tool_calls?.[0]?.id).toBe("call_xyz");
   });
 });
 

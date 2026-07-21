@@ -11,14 +11,14 @@
 | 2 | Aggregate tool-response budget | Per-turn tool-result aggregates: max 11,187 / mean 1,937 chars. 10k budget would trigger on 9.1% of turns; 25k+ never. **Real finding:** capping mutates the persistent transcript in place while `tool_call_end` events carry the uncapped preview → transcript ≠ model input once a cap triggers | ⚠️ **Reprioritize: the divergence bug is the real work, not the budget** |
 | 3 | Registry/compaction sizing | **Severe:** Anthropic models list 1M context but gg-ai never sends the context-1m beta header → compaction triggers at 850K against a route that hard-rejects >200K. Auto-compaction can never fire before the provider 400s | 🔥 **TOP PRIORITY — actively broken** |
 | 4 | Truncated-stream retry | **FIXED (Fix A):** `truncate-silent` now **throws** `ProviderError("Stream ended before completion (no stop_reason).", 504)` — no longer a SILENT PARTIAL. 504 routes into the agent-loop retry bucket via `classifyOverload` → `provider_error` (agent-loop.ts:259). `clean` still passes; `truncate-mid` unchanged (throws `terminated`). OpenAI path mirrored (`no finish_reason` → 504). | ✅ **DONE — silent-partial path closed & retryable** |
-| 5 | Tool-call ID normalization | Pairing preserved both directions, but `toolu_*`→OpenAI produces `call__*` (double underscore, lossy); sanitized composite ids can silently merge on collision | ✅ **Mostly OK — harden edge cases only (low priority)** |
+| 5 | Tool-call ID normalization | **FIXED (Fix F):** `remapToolCallId` now `slice(6)` (was `slice(5)`) → `toolu_01ABC` maps to a clean single-underscore `call_01ABC` (baseline 09 confirms, paired=true). Composite-id collision guard still open (low priority). | ✅ **DONE (double-underscore) — collision guard deferred** |
 | 6 | `tool_script` orchestration | Baseline cost: **2.8 LLM round-trips, 4.2 tool calls, ~1.6k tokens, 5.2s wall** per multi-tool task (100% success). Cheapest tasks already hit the 2-call floor | ⚖️ **Marginal on small tasks — evaluate only on fat multi-tool tasks (see 02's write-summary: 4 calls/12 tools/9.6s)** |
 | 8 | Sidecar bounds | Glob: 18.5 MB retained per 20k files (~0.9 MB/1k). HTTP bodies: RSS grows **5.5× body size**, **no byte cap** (550 MB @ 100 MB body). fs.watch **leaked** (app-sidecar.ts:1215, no close/dispose) | 🔥 **Confirmed — fix (small diffs)** |
 | 10 | MCP catalog binding | N/A today — MCP connects once at startup (`initialMcpConnectPromise ??=`); catalog cannot change mid-session | ❌ **DROP until MCP hot-reload exists** |
 | 12 | Byte-stable prefixes | System prompt **byte-stable** (sha256 × 5 builds); volatile date is a **suffix** after `<!-- uncached -->` — absorbed by prefix caching (100% hit). Prefix volatility proven detectable (0% hit arm) | ❌ **DROP — already done right** |
 | 15 | On-demand skill retrieval | Today: skills section = 237 tok (3.0% of prompt) — savings ceiling is tiny. At 10+ installed skills it becomes 23–45% | ⏸️ **DEFER — revisit when skill count grows** |
 | 16 | LSP semantic edit tools | Renames: **100%** (12/12 incl. compile pass). **Move-to-new-file: 0/3** — model creates the new file + updates imports but leaves the original definition behind every time | ✅ **Adopt narrowly: an LSP `move_symbol` beats text edits; rename doesn't need it** |
-| 20 | Empty-part omission + misc | `emptyPartsOnWire=true`: user `""`, user `{text:""}`, and settled assistant `""` all reach the wire — **live Anthropic 400 failure modes** | ✅ **Adopt — cheap serializer fix** |
+| 20 | Empty-part omission + misc | **FIXED (Fix E):** user `""` (A), user `{text:""}` (B), and settled assistant `""` (D) no longer reach the wire — `toAnthropicMessages` drops the degenerate turn / filters empty text parts. Only case H (active-trajectory empty text before signed thinking) remains, by design. Baseline 10 confirms A/B/D clean. | ✅ **DONE — live 400 modes closed** |
 
 ## Detailed results
 
@@ -89,8 +89,8 @@ Cases A (user `""`), B (user `[{text:""}]`), D (settled assistant `""`) all reac
 | ~~P0~~ ✅ | ~~**#4 Silent partial on clean-truncated streams + retry classification**~~ **DONE (Fix A)** | Silent corruption path — measured; now throws retryable 504 (anthropic + openai) |
 | P0 | **#8 Sidecar byte caps + fs.watch dispose** | 5.5× memory amplification, unbounded; one-line-class leak |
 | P1 | **#2 Transcript/model-input divergence on cap** | Data-integrity bug found by the baseline |
-| P1 | **#20 Omit empty text parts** | Live 400 failure modes |
+| ~~P1~~ ✅ | ~~**#20 Omit empty text parts**~~ **DONE (Fix E)** | Live 400 failure modes; A/B/D now dropped/filtered |
 | P1 | **#16 LSP move-symbol** (narrow scope) | 0/3 measured gap; skip rename |
-| P2 | **#5 ID remap hardening** (`call__` prefix, collision guard) | Edge cases only |
+| P2 (partial ✅) | **#5 ID remap** — `call__` double-underscore **DONE (Fix F)**; collision guard still deferred | Edge cases only |
 | P2 | **#6 tool_script** — only if it wins on fat tasks (write-summary class) | Small tasks already at the floor |
 | — | ~~#1 EOL edits~~ / ~~#12 byte-stable prefixes~~ / ~~#10 MCP binding~~ / ~~#15 skill retrieval~~ | Already done / N/A / premature — measured |

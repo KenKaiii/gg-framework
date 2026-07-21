@@ -146,7 +146,7 @@ a2o.behavior =
   a2o.wireToolCallId === TOOLU_ID
     ? "pass-through (verbatim)"
     : a2o.wireToolCallId
-      ? `normalized: toolu_* → ${JSON.stringify(a2o.wireToolCallId)} (transform.ts remapToolCallId: "call_" + id.slice(5) — note slice(5) keeps the "_" from "toolu_", producing a double underscore)`
+      ? `normalized: toolu_* → ${JSON.stringify(a2o.wireToolCallId)} (transform.ts remapToolCallId: "call_" + id.slice(6) — full "toolu_" prefix stripped, single-underscore clean id${a2o.wireToolCallId.includes("call__") ? " — WARN: double underscore still present!" : ""})`
       : "DROPPED";
 
 // ── Case 2: OpenAI history → Anthropic provider ─────────────
@@ -208,11 +208,11 @@ console.log("\nanthropic→openai:", a2o.behavior);
 console.log("openai→anthropic:", o2a.behavior);
 console.log("composite→anthropic:", composite.behavior);
 
+const doubleUnderscore = Boolean(a2o.wireToolCallId?.includes("call__"));
 const verdict =
   "The conversion layer NORMALIZES rather than passing through, and pairing is preserved in both directions. " +
-  `Anthropic→OpenAI (transform.ts remapToolCallId): toolu_* ids become "call_" + id.slice(5) — ${TOOLU_ID} → ${a2o.wireToolCallId} ` +
-  "(slice(5), not slice(6), retains the underscore from 'toolu_', so every remapped id carries a DOUBLE underscore 'call__…'; " +
-  "valid for OpenAI but lossy — the reverse mapping is not identity). Non-toolu ids pass through verbatim. " +
+  `Anthropic→OpenAI (transform.ts remapToolCallId): toolu_* ids become "call_" + id.slice(6) — ${TOOLU_ID} → ${a2o.wireToolCallId} ` +
+  `(POST Fix F: slice(6) strips the full 'toolu_' prefix, so the remapped id is a clean single-underscore 'call_…'${doubleUnderscore ? " — WARN: double underscore detected!" : ""}). Non-toolu ids pass through verbatim. ` +
   `OpenAI→Anthropic (transform.ts remapAnthropicToolCallId): ids matching ^[a-zA-Z0-9_-]+$ pass through verbatim (${CALL_ID} survived); ` +
   `ids with illegal chars (Codex composite 'callId|itemId') are char-sanitized (${COMPOSITE_ID} → ${composite.wireToolUseId}), ` +
   "memoized in an idMap so the assistant tool_use and the tool_result stay paired. " +

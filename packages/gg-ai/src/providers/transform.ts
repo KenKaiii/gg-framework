@@ -472,12 +472,24 @@ export function toAnthropicMessages(
       continue;
     }
     if (msg.role === "user") {
+      // Drop empty-string text parts: Anthropic rejects empty text blocks with a
+      // 400 ("text content blocks must be non-empty"). A string content of ""
+      // and an all-empty content array are both degenerate — skip the whole
+      // message rather than send a guaranteed-400 body. Whitespace-only text is
+      // left intact (it is non-empty and the API accepts it). Baseline #20 A/B.
+      if (typeof msg.content === "string") {
+        if (msg.content === "") continue;
+      } else if (!msg.content.some((p) => !(p.type === "text" && p.text === ""))) {
+        continue;
+      }
       out.push({
         role: "user",
         content:
           typeof msg.content === "string"
             ? msg.content
-            : msg.content.map((part) => {
+            : msg.content
+                .filter((part) => !(part.type === "text" && part.text === ""))
+                .map((part) => {
                 if (part.type === "text") return { type: "text" as const, text: part.text };
                 if (part.type === "video") {
                   // MiniMax-M3 rides the Anthropic transport and accepts native
@@ -509,6 +521,10 @@ export function toAnthropicMessages(
       continue;
     }
     if (msg.role === "assistant") {
+      // A settled assistant turn with string content "" bypasses the array
+      // filter below and would reach the wire as an empty string — Anthropic
+      // 400s on it just like an empty text block. Drop it (baseline #20 D).
+      if (typeof msg.content === "string" && msg.content === "") continue;
       const content =
         typeof msg.content === "string"
           ? msg.content
@@ -694,7 +710,11 @@ function remapToolCallId(id: string, idMap: Map<string, string>): string {
   if (!id.startsWith("toolu_")) return id;
   const existing = idMap.get(id);
   if (existing) return existing;
-  const mapped = `call_${id.slice(5)}`;
+  // Strip the full `toolu_` prefix (6 chars). `slice(5)` left the trailing
+  // underscore, producing `call__<id>` (double underscore) — lossy and not
+  // identity-reversible. `slice(6)` yields a clean `call_<id>`. Pairing still
+  // holds because both the tool_call and its result resolve through idMap.
+  const mapped = `call_${id.slice(6)}`;
   idMap.set(id, mapped);
   return mapped;
 }

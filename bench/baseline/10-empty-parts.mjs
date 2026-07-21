@@ -191,17 +191,17 @@ table(
 
 const anyEmpty = cases.some((c) => c.emptyPartsOnWire.length > 0);
 const anyWhitespace = cases.some((c) => c.whitespacePartsOnWire.length > 0);
+const offenders = cases.filter((c) => c.emptyPartsOnWire.length > 0).map((c) => c.name);
 const summary =
   `emptyPartsOnWire=${anyEmpty}, whitespacePartsOnWire=${anyWhitespace}. ` +
-  "gg-ai's Anthropic serializer (transform.ts toAnthropicMessages) DOES emit empty text parts in several paths: " +
-  "user messages are passed through verbatim — string content '' goes on the wire as an empty string (A) and " +
-  "{type:'text',text:''} blocks are serialized as-is (B); whitespace-only text is never trimmed anywhere (C, G). " +
-  "Assistant messages get partial filtering: an assistant message whose parts ALL filter out is dropped wholesale " +
-  "(E), and empty text blocks are removed from settled turns when real content survives (F) — but an assistant " +
-  "message with STRING content '' bypasses the array filter entirely and goes on the wire as '' (D), and in the " +
-  "active trajectory an empty text block preceding a signed thinking block is deliberately kept for positional " +
-  "integrity (H). Anthropic rejects empty text blocks with 400 'text content blocks must be non-empty', so " +
-  "A/B/D are live failure modes.";
+  `Cases still emitting an empty text part on the wire: ${offenders.length ? offenders.join(" | ") : "none"}. ` +
+  "POST Fix E (transform.ts toAnthropicMessages): user string '' (A) and settled assistant string '' (D) now " +
+  "drop the whole degenerate turn; empty text parts are filtered out of user content arrays (B), while non-text " +
+  "parts (images) and whitespace-only text (C, G — non-empty, API-accepted) are left intact. The ONLY remaining " +
+  "empty text part is case H: in the ACTIVE trajectory an empty text block preceding a signed thinking block is " +
+  "deliberately kept for positional integrity (dropping it shifts the signed thinking block and trips 'thinking " +
+  "blocks cannot be modified') — this is by design and covered by a dedicated transform.test.ts case. A/B/D " +
+  "(the live 400 failure modes) are fixed.";
 
 console.log("\nsummary:", summary);
 writeResult("10-empty-parts", {

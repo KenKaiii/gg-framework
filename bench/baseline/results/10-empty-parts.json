@@ -1,55 +1,25 @@
 {
   "benchmark": "10-empty-parts",
   "model": "claude-sonnet-5",
-  "date": "2026-07-21T21:34:03.972Z",
+  "date": "2026-07-21T22:39:50.632Z",
   "cases": [
     {
       "name": "A: user string ''",
       "rolesIn": "user",
-      "rolesOnWire": "user",
-      "messagesDropped": 0,
-      "emptyPartsOnWire": [
-        "messages[0](user) {type:\"text\",text:\"\"}"
-      ],
+      "rolesOnWire": "",
+      "messagesDropped": 1,
+      "emptyPartsOnWire": [],
       "whitespacePartsOnWire": [],
-      "snippet": [
-        {
-          "role": "user",
-          "content": [
-            {
-              "type": "text",
-              "text": "",
-              "cache_control": {
-                "type": "ephemeral"
-              }
-            }
-          ]
-        }
-      ]
+      "snippet": []
     },
     {
       "name": "B: user [{text:''}]",
       "rolesIn": "user",
-      "rolesOnWire": "user",
-      "messagesDropped": 0,
-      "emptyPartsOnWire": [
-        "messages[0](user) {type:\"text\",text:\"\"}"
-      ],
+      "rolesOnWire": "",
+      "messagesDropped": 1,
+      "emptyPartsOnWire": [],
       "whitespacePartsOnWire": [],
-      "snippet": [
-        {
-          "role": "user",
-          "content": [
-            {
-              "type": "text",
-              "text": "",
-              "cache_control": {
-                "type": "ephemeral"
-              }
-            }
-          ]
-        }
-      ]
+      "snippet": []
     },
     {
       "name": "C: user [{text:'  \\n '}]",
@@ -78,20 +48,14 @@
     {
       "name": "D: settled assistant string ''",
       "rolesIn": "user,assistant,user",
-      "rolesOnWire": "user,assistant,user",
-      "messagesDropped": 0,
-      "emptyPartsOnWire": [
-        "messages[1](assistant) string content \"\""
-      ],
+      "rolesOnWire": "user,user",
+      "messagesDropped": 1,
+      "emptyPartsOnWire": [],
       "whitespacePartsOnWire": [],
       "snippet": [
         {
           "role": "user",
           "content": "hi"
-        },
-        {
-          "role": "assistant",
-          "content": ""
         },
         {
           "role": "user",
@@ -249,37 +213,11 @@
   "snippets": [
     {
       "name": "A: user string ''",
-      "snippet": [
-        {
-          "role": "user",
-          "content": [
-            {
-              "type": "text",
-              "text": "",
-              "cache_control": {
-                "type": "ephemeral"
-              }
-            }
-          ]
-        }
-      ]
+      "snippet": []
     },
     {
       "name": "B: user [{text:''}]",
-      "snippet": [
-        {
-          "role": "user",
-          "content": [
-            {
-              "type": "text",
-              "text": "",
-              "cache_control": {
-                "type": "ephemeral"
-              }
-            }
-          ]
-        }
-      ]
+      "snippet": []
     },
     {
       "name": "C: user [{text:'  \\n '}]",
@@ -304,10 +242,6 @@
         {
           "role": "user",
           "content": "hi"
-        },
-        {
-          "role": "assistant",
-          "content": ""
         },
         {
           "role": "user",
@@ -436,5 +370,5 @@
       ]
     }
   ],
-  "summary": "emptyPartsOnWire=true, whitespacePartsOnWire=true. gg-ai's Anthropic serializer (transform.ts toAnthropicMessages) DOES emit empty text parts in several paths: user messages are passed through verbatim — string content '' goes on the wire as an empty string (A) and {type:'text',text:''} blocks are serialized as-is (B); whitespace-only text is never trimmed anywhere (C, G). Assistant messages get partial filtering: an assistant message whose parts ALL filter out is dropped wholesale (E), and empty text blocks are removed from settled turns when real content survives (F) — but an assistant message with STRING content '' bypasses the array filter entirely and goes on the wire as '' (D), and in the active trajectory an empty text block preceding a signed thinking block is deliberately kept for positional integrity (H). Anthropic rejects empty text blocks with 400 'text content blocks must be non-empty', so A/B/D are live failure modes."
+  "summary": "emptyPartsOnWire=true, whitespacePartsOnWire=true. Cases still emitting an empty text part on the wire: H: active assistant [{text:''},{thinking signed}]. POST Fix E (transform.ts toAnthropicMessages): user string '' (A) and settled assistant string '' (D) now drop the whole degenerate turn; empty text parts are filtered out of user content arrays (B), while non-text parts (images) and whitespace-only text (C, G — non-empty, API-accepted) are left intact. The ONLY remaining empty text part is case H: in the ACTIVE trajectory an empty text block preceding a signed thinking block is deliberately kept for positional integrity (dropping it shifts the signed thinking block and trips 'thinking blocks cannot be modified') — this is by design and covered by a dedicated transform.test.ts case. A/B/D (the live 400 failure modes) are fixed."
 }
