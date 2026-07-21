@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.22.0
+
+### Minor Changes
+
+- Add Kimi (Moonshot) subscription usage tracking — the usage meter now reports Kimi For Coding plan quota (weekly + rate windows) alongside Anthropic and OpenAI.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.22.0
+- @kenkaiiii/gg-agent@5.22.0
+- @kenkaiiii/gg-core@5.22.0
+
 ## 5.21.0
 
 ### Minor Changes

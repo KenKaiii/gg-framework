@@ -1,6 +1,6 @@
 {
   "name": "@kenkaiiii/gg-editor",
-  "version": "0.7.106",
+  "version": "0.7.107",
   "type": "module",
   "description": "CLI video editor agent. Drives DaVinci Resolve and Premiere Pro via API + hotkeys + GUI fallback.",
   "license": "MIT",
