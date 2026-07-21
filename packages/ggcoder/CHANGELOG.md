@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.20.3
+
+### Patch Changes
+
+- Strengthen the bundled UI skill with consistent content rails, control spacing, and pointer focus guidance.
+  - @kenkaiiii/gg-ai@5.20.3
+  - @kenkaiiii/gg-agent@5.20.3
+  - @kenkaiiii/gg-core@5.20.3
+
 ## 5.20.2
 
 ### Patch Changes
