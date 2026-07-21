@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.21.0
+
+### Minor Changes
+
+- Kimi K3 gains its full low/high/max thinking ladder with an endpoint-aware default (high on the Kimi For Coding OAuth endpoint, matching the official CLI's plan-usage profile; max on the public API), thinking can now be fully disabled via the nested toggle, and context compaction no longer blows past the model's window on oversized turns.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.21.0
+- @kenkaiiii/gg-agent@5.21.0
+- @kenkaiiii/gg-core@5.21.0
+
 ## 5.20.5
 
 ### Patch Changes
