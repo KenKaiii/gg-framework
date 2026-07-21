@@ -919,7 +919,7 @@ async fn agent_usage(
     provider: String,
 ) -> Result<serde_json::Value, String> {
     let port = port_for(&webview).ok_or("daemon not ready")?;
-    if provider != "anthropic" && provider != "openai" {
+    if provider != "anthropic" && provider != "openai" && provider != "moonshot" {
         return Err("unsupported usage provider".into());
     }
     let res = client

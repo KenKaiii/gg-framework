@@ -336,7 +336,7 @@ export async function getProgress(): Promise<ProgressSnapshot> {
   return invoke<ProgressSnapshot>("agent_progress");
 }
 
-export type SubscriptionUsageProvider = "anthropic" | "openai";
+export type SubscriptionUsageProvider = "anthropic" | "openai" | "moonshot";
 
 export interface SubscriptionUsageWindow {
   kind: "current" | "weekly";

@@ -1,6 +1,7 @@
+import { kimiCodeBaseUrl, kimiCodingHeaders } from "./oauth/kimi.js";
 import type { OAuthCredentials } from "./oauth/types.js";
 
-export type SubscriptionUsageProvider = "anthropic" | "openai";
+export type SubscriptionUsageProvider = "anthropic" | "openai" | "moonshot";
 
 export interface SubscriptionUsageWindow {
   kind: "current" | "weekly";
@@ -57,6 +58,23 @@ interface CodexUsageResponse {
     primary_window?: CodexWindow | null;
     secondary_window?: CodexWindow | null;
   } | null;
+}
+
+interface KimiUsageDetail {
+  limit?: unknown;
+  used?: unknown;
+  remaining?: unknown;
+  resetTime?: unknown;
+}
+
+interface KimiLimit {
+  window?: { duration?: unknown; timeUnit?: unknown } | null;
+  detail?: KimiUsageDetail | null;
+}
+
+interface KimiUsageResponse {
+  usage?: KimiUsageDetail | null;
+  limits?: KimiLimit[] | null;
 }
 
 const ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
@@ -215,6 +233,108 @@ async function fetchCodexUsage(
 }
 
 /**
+ * Kimi For Coding (`/coding/v1/usages`) reports plan quota as string-valued
+ * counters, so accept numbers too rather than trusting one wire shape.
+ */
+function kimiNumber(value: unknown): number | undefined {
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return finiteNumber(value);
+}
+
+function kimiUsagePercent(detail: KimiUsageDetail | null | undefined): number | undefined {
+  const used = kimiNumber(detail?.used);
+  const limit = kimiNumber(detail?.limit);
+  if (used === undefined || limit === undefined || limit <= 0) return undefined;
+  return Math.min(100, Math.max(0, (used / limit) * 100));
+}
+
+function kimiWindowMinutes(window: KimiLimit["window"]): number | undefined {
+  const duration = kimiNumber(window?.duration);
+  if (duration === undefined || duration <= 0) return undefined;
+  switch (window?.timeUnit) {
+    case "TIME_UNIT_SECOND":
+      return duration / 60;
+    case "TIME_UNIT_MINUTE":
+      return duration;
+    case "TIME_UNIT_HOUR":
+      return duration * 60;
+    case "TIME_UNIT_DAY":
+      return duration * 24 * 60;
+    default:
+      // Unknown unit — skip the window rather than mislabel its duration.
+      return undefined;
+  }
+}
+
+async function fetchKimiUsage(
+  credentials: Pick<OAuthCredentials, "accessToken" | "accountId">,
+  fetchFn: FetchFn,
+  signal: AbortSignal,
+  now: () => number,
+): Promise<SubscriptionUsageSnapshot> {
+  const response = await fetchFn(`${kimiCodeBaseUrl()}/usages`, {
+    method: "GET",
+    signal,
+    headers: {
+      Authorization: "Bearer " + credentials.accessToken,
+      Accept: "application/json",
+      // The managed coding endpoint gates on the kimi-code-cli client identity,
+      // same as model requests.
+      ...kimiCodingHeaders(),
+    },
+  });
+  const data = (await readUsageResponse(response)) as KimiUsageResponse;
+  const windows: SubscriptionUsageWindow[] = [];
+  // Top-level `usage` is the weekly request quota of the membership tier.
+  const weeklyPercent = kimiUsagePercent(data.usage);
+  if (weeklyPercent !== undefined) {
+    windows.push({
+      kind: "weekly",
+      label: "Weekly",
+      usedPercent: weeklyPercent,
+      resetsAt: isoTimestamp(data.usage?.resetTime),
+    });
+  }
+  for (const limit of data.limits ?? []) {
+    const minutes = kimiWindowMinutes(limit?.window);
+    const percent = kimiUsagePercent(limit?.detail);
+    if (minutes === undefined || percent === undefined) continue;
+    if (minutes >= 6 * 24 * 60) {
+      // A weekly sub-limit duplicates the top-level quota — keep whichever
+      // arrived first.
+      if (!windows.some((window) => window.kind === "weekly")) {
+        windows.push({
+          kind: "weekly",
+          label: "Weekly",
+          usedPercent: percent,
+          resetsAt: isoTimestamp(limit?.detail?.resetTime),
+        });
+      }
+      continue;
+    }
+    windows.push({
+      kind: "current",
+      label: `${Math.max(1, Math.round(minutes / 60))}-hour`,
+      usedPercent: percent,
+      resetsAt: isoTimestamp(limit?.detail?.resetTime),
+    });
+  }
+  windows.sort((left, right) => {
+    if (left.kind === right.kind) return 0;
+    return left.kind === "current" ? -1 : 1;
+  });
+  return {
+    provider: "moonshot",
+    displayName: "Kimi",
+    windows,
+    fetchedAt: now(),
+  };
+}
+
+/**
  * Fetch subscription quota windows with an already-resolved OAuth credential.
  * Tokens stay server-side: callers expose only the normalized percentages and
  * reset timestamps to their UI.
@@ -230,7 +350,9 @@ export async function fetchSubscriptionUsage(
   try {
     return provider === "anthropic"
       ? await fetchAnthropicUsage(credentials, fetchFn, signal, now)
-      : await fetchCodexUsage(credentials, fetchFn, signal, now);
+      : provider === "openai"
+        ? await fetchCodexUsage(credentials, fetchFn, signal, now)
+        : await fetchKimiUsage(credentials, fetchFn, signal, now);
   } catch (error) {
     if (error instanceof SubscriptionUsageError) throw error;
     const message = error instanceof Error ? error.message : String(error);

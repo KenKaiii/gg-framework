@@ -140,6 +140,94 @@ describe("fetchSubscriptionUsage", () => {
     ]);
   });
 
+  it("normalizes Kimi weekly quota and the 5-hour rate-limit window", async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse({
+        usage: {
+          limit: "2048",
+          used: "214",
+          remaining: "1834",
+          resetTime: "2030-01-09T15:23:13.716839300Z",
+        },
+        limits: [
+          {
+            window: { duration: 300, timeUnit: "TIME_UNIT_MINUTE" },
+            detail: {
+              limit: "200",
+              used: "139",
+              remaining: "61",
+              resetTime: "2030-01-06T13:33:02.717479433Z",
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await fetchSubscriptionUsage(
+      "moonshot",
+      { accessToken: "kimi-token" },
+      { fetchFn, now: () => 1234 },
+    );
+
+    expect(result).toEqual({
+      provider: "moonshot",
+      displayName: "Kimi",
+      windows: [
+        {
+          kind: "current",
+          label: "5-hour",
+          usedPercent: 69.5,
+          resetsAt: Date.parse("2030-01-06T13:33:02.717479433Z"),
+        },
+        {
+          kind: "weekly",
+          label: "Weekly",
+          usedPercent: (214 / 2048) * 100,
+          resetsAt: Date.parse("2030-01-09T15:23:13.716839300Z"),
+        },
+      ],
+      fetchedAt: 1234,
+    });
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.kimi.com/coding/v1/usages");
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization?.endsWith("kimi-token")).toBe(true);
+    expect(headers["X-Msh-Platform"]).toBe("kimi_code_cli");
+  });
+
+  it("skips Kimi windows with unknown time units or unusable counters", async () => {
+    const result = await fetchSubscriptionUsage(
+      "moonshot",
+      { accessToken: "kimi-token" },
+      {
+        now: () => 1234,
+        fetchFn: async () =>
+          jsonResponse({
+            usage: { limit: "0", used: "0", resetTime: "2030-01-09T00:00:00Z" },
+            limits: [
+              {
+                window: { duration: 7, timeUnit: "TIME_UNIT_FORTNIGHT" },
+                detail: { limit: "10", used: "1", resetTime: "2030-01-08T00:00:00Z" },
+              },
+              {
+                window: { duration: "1", timeUnit: "TIME_UNIT_DAY" },
+                detail: { limit: "50", used: "5", resetTime: "2030-01-02T00:00:00Z" },
+              },
+            ],
+          }),
+      },
+    );
+
+    expect(result.windows).toEqual([
+      {
+        kind: "current",
+        label: "24-hour",
+        usedPercent: 10,
+        resetsAt: Date.parse("2030-01-02T00:00:00Z"),
+      },
+    ]);
+  });
+
   it("rejects provider HTTP errors without exposing the response body", async () => {
     await expect(
       fetchSubscriptionUsage(

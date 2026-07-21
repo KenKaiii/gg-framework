@@ -8,7 +8,7 @@ import type {
 import { compactResetLabel, fullResetLabel } from "./usage-display";
 
 function supportedProvider(provider: string): provider is SubscriptionUsageProvider {
-  return provider === "anthropic" || provider === "openai";
+  return provider === "anthropic" || provider === "openai" || provider === "moonshot";
 }
 
 function shortWindowLabel(window: SubscriptionUsageWindow): string {
