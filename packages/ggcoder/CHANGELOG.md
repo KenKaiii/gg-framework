@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.20.4
+
+### Patch Changes
+
+- Teach the bundled UI skill to avoid generic soft semantic tint-on-tint treatments.
+  - @kenkaiiii/gg-ai@5.20.4
+  - @kenkaiiii/gg-agent@5.20.4
+  - @kenkaiiii/gg-core@5.20.4
+
 ## 5.20.3
 
 ### Patch Changes
