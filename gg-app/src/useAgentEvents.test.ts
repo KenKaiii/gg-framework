@@ -108,6 +108,39 @@ function setup(
 describe("useAgentEvents", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("removes the notice when compaction is skipped", () => {
+    const { hook, getItems } = setup();
+
+    act(() => {
+      hook.result.current.handleEvent(ev("compaction_start", { messageCount: 466 }));
+      hook.result.current.handleEvent(
+        ev("compaction_end", { compacted: false, originalCount: 466, newCount: 466 }),
+      );
+    });
+
+    expect(getItems()).toEqual([]);
+  });
+
+  it("completes the notice when messages were compacted", () => {
+    const { hook, getItems } = setup();
+
+    act(() => {
+      hook.result.current.handleEvent(ev("compaction_start", { messageCount: 466 }));
+      hook.result.current.handleEvent(
+        ev("compaction_end", { compacted: true, originalCount: 466, newCount: 42 }),
+      );
+    });
+
+    expect(getItems()).toEqual([
+      expect.objectContaining({
+        kind: "compaction",
+        status: "done",
+        originalCount: 466,
+        newCount: 42,
+      }),
+    ]);
+  });
+
   it("keeps the run owned while cancellation is pending", () => {
     const { hook, getState, setRunning } = setup(() => false, {
       running: true,

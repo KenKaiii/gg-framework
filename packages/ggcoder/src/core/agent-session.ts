@@ -1573,6 +1573,7 @@ export class AgentSession {
 
     if (!result.result.compacted) {
       this.eventBus.emit("compaction_end", {
+        compacted: false,
         originalCount: result.result.originalCount,
         newCount: result.result.newCount,
       });
@@ -1621,6 +1622,7 @@ export class AgentSession {
     }
 
     this.eventBus.emit("compaction_end", {
+      compacted: true,
       originalCount: result.result.originalCount,
       newCount: result.result.newCount,
     });

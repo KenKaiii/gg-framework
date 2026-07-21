@@ -232,20 +232,28 @@ export function findRecentCutPoint(messages: Message[], tokenBudget: number): nu
   // Never cut before index 1 (preserve system message at 0)
   cutIndex = Math.max(1, cutIndex);
 
-  // Always keep at least the last user→assistant exchange so that compaction
-  // never produces an empty recentMessages array. Without this, the trailing-
-  // assistant-pop can strip the compaction ack, leaving only the summary and
-  // making `ggcoder continue` restore just 1 message.
+  // Always keep some recent context so compaction never produces an empty
+  // recentMessages array. A single oversized tool result cannot fit the budget;
+  // in that case keep only its atomic assistant-call/tool-result group. Keeping
+  // the whole user turn can retain hundreds of tool messages and make the first
+  // compaction attempt a no-op.
   if (cutIndex >= messages.length && messages.length > 2) {
-    // Find the last user message and keep everything from there onward
-    for (let i = messages.length - 1; i >= 1; i--) {
-      if (messages[i].role === "user") {
-        cutIndex = i;
-        break;
+    if (messages[messages.length - 1].role === "tool") {
+      cutIndex = messages.length - 1;
+      while (cutIndex > 1 && messages[cutIndex].role === "tool") {
+        cutIndex--;
       }
+    } else {
+      // For a user/assistant tail, preserve the last exchange. This also keeps
+      // a non-system message after the trailing-assistant repair below.
+      for (let i = messages.length - 1; i >= 1; i--) {
+        if (messages[i].role === "user") {
+          cutIndex = i;
+          break;
+        }
+      }
+      cutIndex = Math.min(cutIndex, messages.length - 2);
     }
-    // Fallback: at minimum keep the last 2 messages
-    cutIndex = Math.min(cutIndex, messages.length - 2);
     cutIndex = Math.max(1, cutIndex);
   }
 

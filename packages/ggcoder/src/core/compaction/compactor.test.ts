@@ -306,6 +306,22 @@ describe("findRecentCutPoint", () => {
     // the last user→assistant pair so compaction never produces empty recent messages.
     expect(cut).toBe(1);
   });
+
+  it("keeps only the latest atomic tool group when its result exceeds the budget", () => {
+    const messages = [
+      makeMessage("system", "sys"),
+      makeMessage("user", "one long task"),
+      makeToolCallMessage("read", { file_path: "old.ts" }, "old"),
+      makeToolResultMessage("old", "old result"),
+      makeToolCallMessage("bash", { command: "generate" }, "latest"),
+      makeToolResultMessage("latest", "x".repeat(100_000)),
+    ];
+
+    const cut = findRecentCutPoint(messages, 8_000);
+
+    expect(cut).toBe(4);
+    expect(messages.slice(cut).map((message) => message.role)).toEqual(["assistant", "tool"]);
+  });
 });
 
 // ── prepareMessagesForSummary ──────────────────────────────

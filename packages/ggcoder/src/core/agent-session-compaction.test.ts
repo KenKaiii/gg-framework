@@ -870,6 +870,29 @@ describe("transient sessions never leak to the session store", () => {
   });
 });
 
+describe("AgentSession compaction events", () => {
+  it("marks a skipped compaction as unsuccessful", async () => {
+    const { AgentSession } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      systemPrompt: "system prompt",
+      transient: true,
+    });
+    await session.initialize();
+
+    compactMock.mockResolvedValue(compactionResult([...session.getMessages()], false));
+    const events: Array<{ compacted: boolean; originalCount: number; newCount: number }> = [];
+    session.eventBus.on("compaction_end", (event) => events.push(event));
+
+    await session.compact({ accessToken: "token" });
+
+    expect(events).toEqual([{ compacted: false, originalCount: 1, newCount: 1 }]);
+    await session.dispose();
+  });
+});
+
 describe("load-time auto-compaction deferral (deferLoadCompaction)", () => {
   // Regression: resuming an over-context session ran a summary LLM call (30s
   // timeout) inline in loadExistingSession — inside initialize(), which the

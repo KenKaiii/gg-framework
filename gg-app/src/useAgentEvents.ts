@@ -682,11 +682,13 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           const id = compactionIdRef.current;
           compactionIdRef.current = null;
           setItems((prev) =>
-            prev.map((it) =>
-              it.kind === "compaction" && it.id === id
-                ? { ...it, status: "done" as const, originalCount, newCount }
-                : it,
-            ),
+            d.compacted === false
+              ? prev.filter((it) => !(it.kind === "compaction" && it.id === id))
+              : prev.map((it) =>
+                  it.kind === "compaction" && it.id === id
+                    ? { ...it, status: "done" as const, originalCount, newCount }
+                    : it,
+                ),
           );
           break;
         }
