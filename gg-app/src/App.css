@@ -727,58 +727,113 @@ body {
   opacity: 0.55;
 }
 
-/* ── Login screen (provider list + connection badges) ── */
-.login-list {
+/* ── Login screen (provider logo grid + connection dots) ──
+   Tiles reuse the .btn-ghost recipe (glossy neutral gradient + inner top
+   highlight + drop shadow, brightness-on-hover) stretched onto a square card.
+   Responsive: 2 columns below 640px (window min width is 480), 4 above. */
+.login-scroll {
   flex: 1 1 auto;
   overflow-y: auto;
+}
+.login-grid {
+  /* Full-width with the same 12px padding as .picker-list (session list) so
+     page content edges align across screens. */
   padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+@media (min-width: 640px) {
+  .login-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+.login-tile {
+  position: relative;
+  aspect-ratio: 1 / 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-.login-item {
-  display: flex;
   align-items: center;
-  gap: 12px;
-  width: 100%;
-  background: transparent;
-  border: 1px solid var(--border);
+  justify-content: center;
+  gap: 10px;
+  background: var(--gloss-neutral);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius-card);
+  box-shadow: var(--gloss-shadow-neutral);
   font-family: var(--sans);
-  text-align: left;
-  padding: 12px 14px;
   cursor: pointer;
   transition:
-    background-color var(--t-fast),
-    border-color var(--t-fast);
+    filter var(--t-fast),
+    box-shadow var(--t-fast);
 }
-.login-item:hover {
-  background: var(--surface-1);
-  border-color: var(--border-strong);
+.login-tile:hover {
+  filter: brightness(1.18);
 }
-.login-item-body {
-  flex: 1 1 auto;
-  min-width: 0;
+.login-tile:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.login-tile-logo {
+  width: 48px;
+  height: 48px;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: center;
 }
-.login-item-name {
-  font-size: 14px;
+.login-logo {
+  max-width: 48px;
+  max-height: 48px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+.login-logo-fallback {
+  font-size: 30px;
   font-weight: 600;
   color: var(--text);
 }
-.login-item-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.login-tile-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
 }
-.login-methods {
+.login-tile-methods {
   display: flex;
-  gap: 6px;
-  flex: 0 0 auto;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.login-conn-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(54, 196, 137, 0.18);
+}
+/* Narrow windows (480-640px): tighter padding, slightly smaller logo. */
+@media (max-width: 639px) {
+  .login-grid {
+    padding: 10px;
+    gap: 8px;
+  }
+  .login-tile {
+    gap: 8px;
+  }
+  .login-tile-logo {
+    width: 40px;
+    height: 40px;
+  }
+  .login-logo {
+    max-width: 40px;
+    max-height: 40px;
+  }
+  .login-tile-name {
+    font-size: 12px;
+  }
 }
 
 /* ── Provider login modal ── */

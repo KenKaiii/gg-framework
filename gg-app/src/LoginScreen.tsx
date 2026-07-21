@@ -4,15 +4,16 @@ import { authStatus, type AuthProvider } from "./agent";
 import { Badge } from "./Badge";
 import { BackButton } from "./BackButton";
 import { ProviderLoginModal } from "./ProviderLoginModal";
+import { providerLogo } from "./provider-logos";
 
 interface Props {
   onClose: () => void;
 }
 
 /**
- * Provider login hub. Lists every supported AI provider with a live connection
- * badge; selecting one opens a modal that adapts to OAuth, API key, or both.
- * Mirrors `ggcoder login` in the desktop app.
+ * Provider login hub. Shows every supported AI provider as a grid of logo
+ * tiles with a live connection dot; selecting one opens a modal that adapts
+ * to OAuth, API key, or both. Mirrors `ggcoder login` in the desktop app.
  */
 export function LoginScreen({ onClose }: Props): React.ReactElement {
   const [providers, setProviders] = useState<AuthProvider[]>([]);
@@ -60,30 +61,37 @@ export function LoginScreen({ onClose }: Props): React.ReactElement {
         )}
       </div>
 
-      <div className="login-list">
-        {loading && (
-          <div className="picker-empty" style={{ color: theme.textDim }}>
-            {"checking providers\u2026"}
-          </div>
-        )}
-        {providers.map((p) => (
-          <button key={p.value} className="login-item" onClick={() => setActive(p)}>
-            <span className="login-item-body">
-              <span className="login-item-name">{p.label}</span>
-              <span className="login-item-desc">{p.description}</span>
-            </span>
-            <span className="login-methods">
-              {p.methods.map((m) => (
-                <Badge key={m}>{m === "oauth" ? "OAuth" : "API key"}</Badge>
-              ))}
-            </span>
-            {p.connected ? (
-              <Badge color={theme.success}>{"\u25CF Connected"}</Badge>
-            ) : (
-              <Badge>{"Not connected"}</Badge>
-            )}
-          </button>
-        ))}
+      <div className="login-scroll">
+        <div className="login-grid">
+          {loading && (
+            <div className="picker-empty" style={{ color: theme.textDim }}>
+              {"checking providers\u2026"}
+            </div>
+          )}
+          {providers.map((p) => {
+            const logo = providerLogo(p.value);
+            return (
+              <button key={p.value} className="login-tile" onClick={() => setActive(p)}>
+                {p.connected && (
+                  <span className="login-conn-dot" title="Connected" aria-label="Connected" />
+                )}
+                <span className="login-tile-logo">
+                  {logo ? (
+                    <img className="login-logo" src={logo} alt="" />
+                  ) : (
+                    <span className="login-logo-fallback">{p.label.charAt(0)}</span>
+                  )}
+                </span>
+                <span className="login-tile-name">{p.label}</span>
+                <span className="login-tile-methods">
+                  {p.methods.map((m) => (
+                    <Badge key={p.value}>{m === "oauth" ? "OAuth" : "API key"}</Badge>
+                  ))}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {active && (
