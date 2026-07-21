@@ -49,6 +49,7 @@ export function ProjectPicker({
   const [sessions, setSessions] = useState<RecentSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
   const [projectsRoot, setProjectsRoot] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [query, setQuery] = useState("");
@@ -116,6 +117,7 @@ export function ProjectPicker({
   function openProject(project: DiscoveredProject): void {
     setSelected(project);
     setSessions([]);
+    setResumeError(null);
     setSessionsLoading(true);
     void listSessions(project.path).then((s) => {
       setSessions(s);
@@ -126,11 +128,20 @@ export function ProjectPicker({
   function choose(cwd: string, sessionPath?: string): void {
     if (busy) return;
     setBusy(true);
-    // Re-point this window's agent (respawns the sidecar), then let App re-run
-    // its ready flow against the new sidecar.
+    setResumeError(null);
+    // Rust now resolves this command only after the daemon session is ready.
+    // A failed resume therefore stays in the picker and shows its real cause.
     void selectProject(cwd, sessionPath)
       .then(() => onChosen(cwd))
-      .catch(() => setBusy(false));
+      .catch((reason: unknown) => {
+        const message = reason instanceof Error ? reason.message : String(reason);
+        setResumeError(
+          message
+            .replace(/Run ["'`]?ggcoder login["'`]?/gi, "Use AI Providers to sign in")
+            .replace(/ggcoder login/gi, "AI Providers"),
+        );
+        setBusy(false);
+      });
   }
 
   // Open an existing folder from disk as a project. The native folder picker is
@@ -259,6 +270,11 @@ export function ProjectPicker({
         </div>
       ) : (
         <div className="picker-list">
+          {resumeError && (
+            <div className="picker-error" role="alert">
+              {resumeError}
+            </div>
+          )}
           {sessionsLoading && <ListSkeleton rows={4} />}
           {!sessionsLoading && sessions.length === 0 && (
             <div className="picker-empty">

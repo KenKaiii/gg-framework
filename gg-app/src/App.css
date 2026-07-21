@@ -1619,6 +1619,17 @@ body {
   font-size: 14px;
   line-height: 1.5;
 }
+.picker-error {
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 10%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--error) 35%, var(--border));
+  border-radius: var(--radius-button);
+  font-size: 13px;
+  line-height: 1.45;
+}
 .picker-item {
   display: flex;
   flex-direction: column;

@@ -222,12 +222,5 @@ export function renderVerifySection(cmds: readonly VerifyCommand[]): string {
     const parts = list.map((c) => `\`${c.command}\` (${c.label})`).join(", ");
     lines.push(`- **${lang}**: ${parts}`);
   }
-  return (
-    `## Verification\n\n` +
-    `When verification is needed, choose the smallest relevant command(s) below. ` +
-    `Pick only the commands matching the language(s) you actually touched; do not ` +
-    `run the full list by default after every edit. If a command fails, fix the ` +
-    `issues before reporting the task complete \u2014 never claim success on unverified output.\n\n` +
-    lines.join("\n")
-  );
+  return `## Verification\n\n${lines.join("\n")}`;
 }

@@ -51,6 +51,10 @@ function promptAudit(prompt: string): { size: ReturnType<typeof promptSize>; fla
     "generic tests, scripts, screenshots, benchmarks, or simulations; use them by default",
     "After meaningful edits, run the relevant verification commands below",
     "Run relevant checks after edits",
+    "Run only targeted verification needed for the change",
+    "Run targeted verification that is appropriate to the change before calling work complete",
+    "plan multi-file work first",
+    "otherwise follow through and verify",
   ];
 
   for (const phrase of obsoleteOrContradictory) {
@@ -208,6 +212,10 @@ describe("buildSystemPrompt", () => {
       "works directly in the user's codebase",
       "completing tasks end-to-end",
       "Final replies: 1–2 sentences, hard cap 5",
+      "Do all safe, reversible steps implied by the goal",
+      "never ask permission, merely suggest them, or leave them for the user",
+      "ONE action that unblocks you",
+      "State what works now and the blocker or next step",
       "Read before `edit`/`write`",
       "re-read after formatters",
       "Compute in bash; write with `edit`/`write`",
@@ -215,8 +223,9 @@ describe("buildSystemPrompt", () => {
       "When none exist, infer from the task and project",
       "ask only when a missing product or taste decision would materially change the result",
       "Keep edits small",
-      "Do routine follow-up yourself",
-      "Ask first for destructive actions",
+      "plan only complex/risky multi-file work",
+      "Stop only for user decisions, secrets/access, cost",
+      "otherwise continue through completion",
       "Preserve user work",
       "Rule precedence: project context files",
       "file/module patterns → applicable skill instructions",
@@ -228,10 +237,18 @@ describe("buildSystemPrompt", () => {
       "ReferenceSources",
       "DiscoverRepos",
       "SearchCode literal text/RE2 (not semantic)",
-      "Choose targeted verification appropriate to the change",
+      "Skip checks after simple edits",
+      "At coherent checkpoints or after risky/non-obvious changes",
+      "run one targeted check",
     ]) {
       expect(prompt).toContain(required);
     }
+
+    expect(prompt).not.toContain("doable in under 2 minutes");
+    expect(prompt).not.toContain("Estimate time only when");
+    expect(prompt).not.toContain("plan multi-file work first");
+    expect(prompt).not.toContain("otherwise follow through and verify");
+    expect(prompt).not.toContain("Run only targeted verification needed for the change");
   });
 
   it("keeps kencode guidance concise while separating repo discovery from exact search", async () => {

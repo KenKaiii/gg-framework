@@ -94,10 +94,8 @@ describe("renderVerifySection", () => {
       { label: "lint", command: "pnpm lint", language: "typescript" },
       { label: "lint", command: "cargo clippy", language: "rust" },
     ]);
-    // Alphabetical: rust before typescript.
-    const rustIdx = out.indexOf("- **rust**");
-    const tsIdx = out.indexOf("- **typescript**");
-    expect(rustIdx).toBeGreaterThan(0);
-    expect(tsIdx).toBeGreaterThan(rustIdx);
+    expect(out).toBe(
+      "## Verification\n\n- **rust**: `cargo clippy` (lint)\n- **typescript**: `pnpm lint` (lint)",
+    );
   });
 });

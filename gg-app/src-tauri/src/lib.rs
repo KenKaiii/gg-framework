@@ -2851,10 +2851,10 @@ async fn arrange_all(app: tauri::AppHandle) -> Result<(), String> {
 
 /// Re-point THIS window's agent at a chosen project: dispose its current daemon
 /// session and create a fresh one at `cwd`, optionally resuming the session file
-/// `session_path`. No process is killed — only one session in the shared daemon
-/// is swapped. The webview re-runs its ready flow against the new session.
+/// `session_path`. The command resolves only after the daemon session is ready,
+/// so a failed resume stays in the picker instead of opening an endless skeleton.
 #[tauri::command]
-fn select_project(
+async fn select_project(
     webview: WebviewWindow,
     app: tauri::AppHandle,
     mode: WorkspaceMode,
@@ -2867,7 +2867,8 @@ fn select_project(
     let old_id = {
         let windows: State<Windows> = app.state();
         let mut map = windows.map.lock().unwrap();
-        map.get_mut(&label).and_then(|w| w.session_id.take())
+        map.get_mut(&label)
+            .and_then(|window| window.session_id.take())
     };
     // Dispose the old session on the daemon (best-effort, off-thread).
     if let Some(id) = old_id {
@@ -2878,18 +2879,29 @@ fn select_project(
             });
         }
     }
-    // Create the new session for this window (records cwd/session_path, awaits
-    // the daemon, starts the bridge, emits sidecar-ready).
-    start_window_session(
+
+    let cwd = PathBuf::from(cwd);
+    let generation = prepare_window_session(
+        &app,
+        &label,
+        mode,
+        chat_agent,
+        &cwd,
+        session_path.as_deref(),
+    );
+    finish_window_session(
         app.clone(),
         label,
         mode,
         chat_agent,
-        PathBuf::from(cwd),
+        cwd,
         session_path,
-    );
-    // The map now reflects this window's new project/session; persist the
-    // workspace so a restart reopens it here.
+        generation,
+    )
+    .await?;
+
+    // Persist only a working selection; a failed resume must not become the
+    // workspace target retried on every app restart.
     snapshot_workspace(&app);
     Ok(())
 }
@@ -3564,7 +3576,7 @@ fn spawn_daemon(app: tauri::AppHandle, is_respawn: bool) {
 }
 
 /// POST /session to the daemon for `cwd` (+ optional resume `session_path`);
-/// returns the new session id, or `None` on failure.
+/// returns the new session id or the daemon's concrete initialization error.
 async fn daemon_create_session(
     app: &tauri::AppHandle,
     port: u16,
@@ -3572,7 +3584,7 @@ async fn daemon_create_session(
     chat_agent: ChatAgent,
     cwd: &Path,
     session_path: Option<&str>,
-) -> Option<String> {
+) -> Result<String, String> {
     let client = app.state::<reqwest::Client>().inner().clone();
     let body = serde_json::json!({
         "mode": mode,
@@ -3585,12 +3597,24 @@ async fn daemon_create_session(
         .json(&body)
         .send()
         .await
-        .ok()?;
-    let value = res.json::<serde_json::Value>().await.ok()?;
+        .map_err(|error| error.to_string())?;
+    let status = res.status();
+    let value = res
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| error.to_string())?;
+    if !status.is_success() {
+        return Err(value
+            .get("error")
+            .and_then(|error| error.as_str())
+            .unwrap_or("failed to create agent session")
+            .to_string());
+    }
     value
         .get("sessionId")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+        .and_then(|session_id| session_id.as_str())
+        .map(|session_id| session_id.to_string())
+        .ok_or_else(|| "agent daemon returned no session id".to_string())
 }
 
 /// DELETE /session/:id on the daemon (best-effort, fire-and-forget).
@@ -3622,37 +3646,82 @@ fn publish_window_session(
     true
 }
 
-/// Create (or re-point) one window's session. Each start receives a process-wide
-/// generation; only that generation may publish its daemon response.
-fn start_window_session(
+/// Record a pending window session synchronously. This invalidates older starts
+/// before any daemon request is allowed to publish its response.
+fn prepare_window_session(
+    app: &tauri::AppHandle,
+    label: &str,
+    mode: WorkspaceMode,
+    chat_agent: ChatAgent,
+    cwd: &Path,
+    session_path: Option<&str>,
+) -> u64 {
+    let windows: State<Windows> = app.state();
+    let generation = windows.next_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let mut map = windows.map.lock().unwrap();
+    let entry = map.entry(label.to_string()).or_default();
+    entry.generation = generation;
+    entry.mode = mode;
+    entry.chat_agent = chat_agent;
+    entry.cwd = Some(cwd.to_path_buf());
+    entry.session_path = session_path.map(str::to_string);
+    entry.session_id = None;
+    log::info!(
+        "window session starting label={label} generation={generation} mode={mode:?} cwd={} elapsed_ms=0",
+        cwd.display()
+    );
+    generation
+}
+
+/// Finish a prepared session and publish it only if its generation is current.
+/// Returning the daemon error lets picker commands remain on the session list
+/// instead of entering a loading screen that can never hydrate.
+async fn finish_window_session(
     app: tauri::AppHandle,
     label: String,
     mode: WorkspaceMode,
     chat_agent: ChatAgent,
     cwd: PathBuf,
     session_path: Option<String>,
-) {
+    generation: u64,
+) -> Result<(), String> {
     let started_at = std::time::Instant::now();
-    let generation = {
-        let windows: State<Windows> = app.state();
-        let generation = windows.next_generation.fetch_add(1, Ordering::SeqCst) + 1;
-        let mut map = windows.map.lock().unwrap();
-        let entry = map.entry(label.clone()).or_default();
-        entry.generation = generation;
-        entry.mode = mode;
-        entry.chat_agent = chat_agent;
-        entry.cwd = Some(cwd.clone());
-        entry.session_path = session_path.clone();
-        entry.session_id = None;
-        generation
+    let Some(port) = await_daemon_port(&app).await else {
+        let message = "daemon did not start in time".to_string();
+        let current = app
+            .state::<Windows>()
+            .map
+            .lock()
+            .unwrap()
+            .get(&label)
+            .is_some_and(|entry| entry.generation == generation);
+        log::error!(
+            "window session daemon unavailable label={label} generation={generation} mode={mode:?} cwd={} elapsed_ms={}",
+            cwd.display(),
+            started_at.elapsed().as_millis()
+        );
+        if current {
+            let _ = app.emit_to(
+                EventTarget::webview_window(label.clone()),
+                "sidecar-error",
+                &message,
+            );
+        }
+        return Err(message);
     };
-    log::info!(
-        "window session starting label={label} generation={generation} mode={mode:?} cwd={} elapsed_ms=0",
-        cwd.display()
-    );
 
-    tauri::async_runtime::spawn(async move {
-        let Some(port) = await_daemon_port(&app).await else {
+    let id = match daemon_create_session(
+        &app,
+        port,
+        mode,
+        chat_agent,
+        &cwd,
+        session_path.as_deref(),
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(message) => {
             let current = app
                 .state::<Windows>()
                 .map
@@ -3661,7 +3730,7 @@ fn start_window_session(
                 .get(&label)
                 .is_some_and(|entry| entry.generation == generation);
             log::error!(
-                "window session daemon unavailable label={label} generation={generation} mode={mode:?} cwd={} elapsed_ms={}",
+                "daemon session creation failed label={label} generation={generation} mode={mode:?} cwd={} error={message} elapsed_ms={}",
                 cwd.display(),
                 started_at.elapsed().as_millis()
             );
@@ -3669,63 +3738,58 @@ fn start_window_session(
                 let _ = app.emit_to(
                     EventTarget::webview_window(label.clone()),
                     "sidecar-error",
-                    "daemon did not start in time",
+                    &message,
                 );
             }
-            return;
-        };
-        match daemon_create_session(&app, port, mode, chat_agent, &cwd, session_path.as_deref())
-            .await
-        {
-            Some(id) => {
-                let published = {
-                    let windows: State<Windows> = app.state();
-                    let mut map = windows.map.lock().unwrap();
-                    publish_window_session(&mut map, &label, generation, id.clone())
-                };
-                if !published {
-                    log::warn!(
-                        "stale window session discarded label={label} generation={generation} mode={mode:?} cwd={} daemon_session_id={id} elapsed_ms={}",
-                        cwd.display(),
-                        started_at.elapsed().as_millis()
-                    );
-                    daemon_delete_session(&app, port, &id).await;
-                    return;
-                }
-                log::info!(
-                    "window session ready label={label} generation={generation} mode={mode:?} cwd={} daemon_session_id={id} elapsed_ms={}",
-                    cwd.display(),
-                    started_at.elapsed().as_millis()
-                );
-                start_event_bridge(app.clone(), label.clone(), port, id);
-                let _ = app.emit_to(
-                    EventTarget::webview_window(label.clone()),
-                    "sidecar-ready",
-                    port,
-                );
-            }
-            None => {
-                let current = app
-                    .state::<Windows>()
-                    .map
-                    .lock()
-                    .unwrap()
-                    .get(&label)
-                    .is_some_and(|entry| entry.generation == generation);
-                log::error!(
-                    "daemon session creation failed label={label} generation={generation} mode={mode:?} cwd={} elapsed_ms={}",
-                    cwd.display(),
-                    started_at.elapsed().as_millis()
-                );
-                if current {
-                    let _ = app.emit_to(
-                        EventTarget::webview_window(label.clone()),
-                        "sidecar-error",
-                        "failed to create agent session",
-                    );
-                }
-            }
+            return Err(message);
         }
+    };
+
+    let published = {
+        let windows: State<Windows> = app.state();
+        let mut map = windows.map.lock().unwrap();
+        publish_window_session(&mut map, &label, generation, id.clone())
+    };
+    if !published {
+        log::warn!(
+            "stale window session discarded label={label} generation={generation} mode={mode:?} cwd={} daemon_session_id={id} elapsed_ms={}",
+            cwd.display(),
+            started_at.elapsed().as_millis()
+        );
+        daemon_delete_session(&app, port, &id).await;
+        return Err("session selection was superseded".to_string());
+    }
+
+    log::info!(
+        "window session ready label={label} generation={generation} mode={mode:?} cwd={} daemon_session_id={id} elapsed_ms={}",
+        cwd.display(),
+        started_at.elapsed().as_millis()
+    );
+    start_event_bridge(app.clone(), label.clone(), port, id);
+    let _ = app.emit_to(EventTarget::webview_window(label), "sidecar-ready", port);
+    Ok(())
+}
+
+/// Create (or re-point) one window's session in the background.
+fn start_window_session(
+    app: tauri::AppHandle,
+    label: String,
+    mode: WorkspaceMode,
+    chat_agent: ChatAgent,
+    cwd: PathBuf,
+    session_path: Option<String>,
+) {
+    let generation = prepare_window_session(
+        &app,
+        &label,
+        mode,
+        chat_agent,
+        &cwd,
+        session_path.as_deref(),
+    );
+    tauri::async_runtime::spawn(async move {
+        let _ = finish_window_session(app, label, mode, chat_agent, cwd, session_path, generation)
+            .await;
     });
 }
 

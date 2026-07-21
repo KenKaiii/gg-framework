@@ -301,22 +301,6 @@ If `npm i` gets ETARGET after publishing, clear cache: `npm cache clean --force`
 - Provider error classification → `@kenkaiiii/gg-ai` (`classifyProviderError` in `error-classification.ts`).
 - Tests → co-located with source files
 
-## Code Quality
-
-Run targeted verification that is appropriate to the change before calling work complete. Do not run the full quality suite after every edit by default; reserve it for broad code changes, release work, or when explicitly requested.
-
-For full verification, use:
-
-```bash
-pnpm check && pnpm lint && pnpm format:check
-```
-
-After code changes that need compiled outputs, also run `pnpm build`.
-
-Fix errors from checks you do run before continuing. Quick fixes:
-- `pnpm lint:fix` — auto-fix ESLint issues
-- `pnpm format` — auto-fix Prettier formatting
-- Use `/fix` to run all checks and spawn parallel agents to fix issues
 
 ## Key Patterns
 
