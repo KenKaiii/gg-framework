@@ -385,6 +385,21 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     });
   }
 
+  // Silent-partial guard (mirror of anthropic.ts): a complete OpenAI-compatible
+  // stream always ends with a chunk carrying `finish_reason`. The OpenAI SDK does
+  // NOT throw on a clean premature close (the body iterator just ends), so
+  // consuming chunks but never seeing a finish_reason means the stream was
+  // truncated mid-flight. Without this guard, normalizeOpenAIStopReason(null)
+  // maps the missing finish into "end_turn", making a truncated turn look
+  // finished. Throw a 504 so the agent loop treats it as a retryable transport
+  // failure. The partial body rides on `cause` for debugging, never returned.
+  if (finishReason === null) {
+    throw new ProviderError(providerName, "Stream ended before completion (no finish_reason).", {
+      statusCode: 504,
+      cause: { partialText: textAccum, outputTokens },
+    });
+  }
+
   // Finalize thinking content (GLM, Moonshot, Xiaomi reasoning_content)
   // Always include in response for multi-turn round-tripping, even when
   // thinking display is off — toOpenAIMessages sends it as reasoning_content.

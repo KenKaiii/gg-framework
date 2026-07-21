@@ -1,0 +1,385 @@
+{
+  "benchmark": "04-prefix-stability",
+  "model": "claude-sonnet-5",
+  "date": "2026-07-21T21:35:38.231Z",
+  "byteStable": true,
+  "volatileDiff": "n/a — prompt was byte-stable across all 5 builds",
+  "dateEmbedding": {
+    "embedsDate": true,
+    "embedsTime": false,
+    "sourceLines": [
+      {
+        "n": 247,
+        "line": "const today = new Date();"
+      }
+    ],
+    "uncachedMarkerPresent": true,
+    "suffixAfterMarker": "<!-- uncached -->\nToday's date: 22 July 2026",
+    "note": "The only volatile content is `Today's date: <day> <month> <year>` — appended as the FINAL line after an `<!-- uncached -->` marker, so it changes at most once per calendar day and never disturbs the cached prefix."
+  },
+  "systemPromptChars": 31151,
+  "systemPromptEstTokens": 7788,
+  "arms": {
+    "control": {
+      "rows": [
+        {
+          "run": 1,
+          "turn": 1,
+          "inputTokens": 2,
+          "cacheRead": 0,
+          "cacheWrite": 12792,
+          "ttftMs": 1277,
+          "totalMs": 2134
+        },
+        {
+          "run": 1,
+          "turn": 2,
+          "inputTokens": 2,
+          "cacheRead": 12792,
+          "cacheWrite": 63,
+          "ttftMs": 1193,
+          "totalMs": 1869
+        },
+        {
+          "run": 1,
+          "turn": 3,
+          "inputTokens": 2,
+          "cacheRead": 12855,
+          "cacheWrite": 60,
+          "ttftMs": 864,
+          "totalMs": 1755
+        },
+        {
+          "run": 1,
+          "turn": 4,
+          "inputTokens": 2,
+          "cacheRead": 12915,
+          "cacheWrite": 81,
+          "ttftMs": 1077,
+          "totalMs": 1984
+        },
+        {
+          "run": 1,
+          "turn": 5,
+          "inputTokens": 2,
+          "cacheRead": 12996,
+          "cacheWrite": 66,
+          "ttftMs": 1028,
+          "totalMs": 1950
+        },
+        {
+          "run": 1,
+          "turn": 6,
+          "inputTokens": 2,
+          "cacheRead": 13062,
+          "cacheWrite": 66,
+          "ttftMs": 1050,
+          "totalMs": 1556
+        },
+        {
+          "run": 2,
+          "turn": 1,
+          "inputTokens": 2,
+          "cacheRead": 12792,
+          "cacheWrite": 0,
+          "ttftMs": 856,
+          "totalMs": 1890
+        },
+        {
+          "run": 2,
+          "turn": 2,
+          "inputTokens": 2,
+          "cacheRead": 12792,
+          "cacheWrite": 56,
+          "ttftMs": 1178,
+          "totalMs": 1977
+        },
+        {
+          "run": 2,
+          "turn": 3,
+          "inputTokens": 2,
+          "cacheRead": 12848,
+          "cacheWrite": 61,
+          "ttftMs": 869,
+          "totalMs": 1746
+        },
+        {
+          "run": 2,
+          "turn": 4,
+          "inputTokens": 2,
+          "cacheRead": 12909,
+          "cacheWrite": 81,
+          "ttftMs": 2369,
+          "totalMs": 3269
+        },
+        {
+          "run": 2,
+          "turn": 5,
+          "inputTokens": 2,
+          "cacheRead": 12990,
+          "cacheWrite": 62,
+          "ttftMs": 1168,
+          "totalMs": 2295
+        },
+        {
+          "run": 2,
+          "turn": 6,
+          "inputTokens": 2,
+          "cacheRead": 13052,
+          "cacheWrite": 58,
+          "ttftMs": 926,
+          "totalMs": 1412
+        }
+      ],
+      "summary": {
+        "avgWarmHitPct": 99.9845229983212,
+        "avgWarmTtftMs": 1172.2,
+        "warmBilledInputTokens": 20,
+        "warmCacheReadTokens": 129211,
+        "totalInputTokens": 24,
+        "totalCacheWriteTokens": 13446
+      }
+    },
+    "volatileSuffix": {
+      "rows": [
+        {
+          "run": 1,
+          "turn": 1,
+          "inputTokens": 2,
+          "cacheRead": 12763,
+          "cacheWrite": 56,
+          "ttftMs": 1396,
+          "totalMs": 2087
+        },
+        {
+          "run": 1,
+          "turn": 2,
+          "inputTokens": 2,
+          "cacheRead": 12763,
+          "cacheWrite": 123,
+          "ttftMs": 817,
+          "totalMs": 1740
+        },
+        {
+          "run": 1,
+          "turn": 3,
+          "inputTokens": 2,
+          "cacheRead": 12763,
+          "cacheWrite": 189,
+          "ttftMs": 1396,
+          "totalMs": 1861
+        },
+        {
+          "run": 1,
+          "turn": 4,
+          "inputTokens": 2,
+          "cacheRead": 12763,
+          "cacheWrite": 270,
+          "ttftMs": 1841,
+          "totalMs": 2590
+        },
+        {
+          "run": 1,
+          "turn": 5,
+          "inputTokens": 2,
+          "cacheRead": 12763,
+          "cacheWrite": 344,
+          "ttftMs": 1406,
+          "totalMs": 1971
+        },
+        {
+          "run": 1,
+          "turn": 6,
+          "inputTokens": 2,
+          "cacheRead": 12763,
+          "cacheWrite": 405,
+          "ttftMs": 873,
+          "totalMs": 1385
+        },
+        {
+          "run": 2,
+          "turn": 1,
+          "inputTokens": 2,
+          "cacheRead": 12763,
+          "cacheWrite": 56,
+          "ttftMs": 927,
+          "totalMs": 1747
+        },
+        {
+          "run": 2,
+          "turn": 2,
+          "inputTokens": 2,
+          "cacheRead": 12763,
+          "cacheWrite": 112,
+          "ttftMs": 846,
+          "totalMs": 1647
+        },
+        {
+          "run": 2,
+          "turn": 3,
+          "inputTokens": 2,
+          "cacheRead": 12763,
+          "cacheWrite": 174,
+          "ttftMs": 1028,
+          "totalMs": 1754
+        },
+        {
+          "run": 2,
+          "turn": 4,
+          "inputTokens": 2,
+          "cacheRead": 12763,
+          "cacheWrite": 255,
+          "ttftMs": 1225,
+          "totalMs": 2209
+        },
+        {
+          "run": 2,
+          "turn": 5,
+          "inputTokens": 2,
+          "cacheRead": 12763,
+          "cacheWrite": 321,
+          "ttftMs": 855,
+          "totalMs": 1891
+        },
+        {
+          "run": 2,
+          "turn": 6,
+          "inputTokens": 2,
+          "cacheRead": 12763,
+          "cacheWrite": 388,
+          "ttftMs": 1704,
+          "totalMs": 2119
+        }
+      ],
+      "summary": {
+        "avgWarmHitPct": 99.98433215824521,
+        "avgWarmTtftMs": 1199.1,
+        "warmBilledInputTokens": 20,
+        "warmCacheReadTokens": 127630,
+        "totalInputTokens": 24,
+        "totalCacheWriteTokens": 2693
+      }
+    },
+    "volatilePrefix": {
+      "rows": [
+        {
+          "run": 1,
+          "turn": 1,
+          "inputTokens": 2,
+          "cacheRead": 0,
+          "cacheWrite": 12819,
+          "ttftMs": 967,
+          "totalMs": 1903
+        },
+        {
+          "run": 1,
+          "turn": 2,
+          "inputTokens": 2,
+          "cacheRead": 0,
+          "cacheWrite": 12882,
+          "ttftMs": 1013,
+          "totalMs": 1799
+        },
+        {
+          "run": 1,
+          "turn": 3,
+          "inputTokens": 2,
+          "cacheRead": 0,
+          "cacheWrite": 12944,
+          "ttftMs": 1372,
+          "totalMs": 2397
+        },
+        {
+          "run": 1,
+          "turn": 4,
+          "inputTokens": 2,
+          "cacheRead": 0,
+          "cacheWrite": 13024,
+          "ttftMs": 1335,
+          "totalMs": 2668
+        },
+        {
+          "run": 1,
+          "turn": 5,
+          "inputTokens": 2,
+          "cacheRead": 0,
+          "cacheWrite": 13103,
+          "ttftMs": 1106,
+          "totalMs": 2260
+        },
+        {
+          "run": 1,
+          "turn": 6,
+          "inputTokens": 2,
+          "cacheRead": 0,
+          "cacheWrite": 13169,
+          "ttftMs": 1852,
+          "totalMs": 1986
+        },
+        {
+          "run": 2,
+          "turn": 1,
+          "inputTokens": 2,
+          "cacheRead": 0,
+          "cacheWrite": 12819,
+          "ttftMs": 901,
+          "totalMs": 2634
+        },
+        {
+          "run": 2,
+          "turn": 2,
+          "inputTokens": 2,
+          "cacheRead": 0,
+          "cacheWrite": 12895,
+          "ttftMs": 1129,
+          "totalMs": 2259
+        },
+        {
+          "run": 2,
+          "turn": 3,
+          "inputTokens": 2,
+          "cacheRead": 0,
+          "cacheWrite": 12961,
+          "ttftMs": 989,
+          "totalMs": 1751
+        },
+        {
+          "run": 2,
+          "turn": 4,
+          "inputTokens": 2,
+          "cacheRead": 0,
+          "cacheWrite": 13042,
+          "ttftMs": 1560,
+          "totalMs": 2332
+        },
+        {
+          "run": 2,
+          "turn": 5,
+          "inputTokens": 2,
+          "cacheRead": 0,
+          "cacheWrite": 13120,
+          "ttftMs": 1154,
+          "totalMs": 2487
+        },
+        {
+          "run": 2,
+          "turn": 6,
+          "inputTokens": 2,
+          "cacheRead": 0,
+          "cacheWrite": 13190,
+          "ttftMs": 1185,
+          "totalMs": 1745
+        }
+      ],
+      "summary": {
+        "avgWarmHitPct": 0,
+        "avgWarmTtftMs": 1269.5,
+        "warmBilledInputTokens": 20,
+        "warmCacheReadTokens": 0,
+        "totalInputTokens": 24,
+        "totalCacheWriteTokens": 155968
+      }
+    }
+  },
+  "notes": "volatile-suffix (timestamp APPENDED to the system prompt) does NOT collapse the cache: prefix caching reuses the shared stable prefix up to the divergence point, so hit% stays ~100% and only the volatile tail is reprocessed. volatile-prefix (timestamp PREPENDED) destroys the shared prefix and collapses hit% — that arm proves the measurement detects regressions. This is exactly why system-prompt.ts appends its volatile date suffix as the FINAL line."
+}

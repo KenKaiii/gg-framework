@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type OpenAI from "openai";
 import type { Provider, ThinkingLevel } from "../types.js";
+import { ProviderError } from "../errors.js";
 import { streamOpenAI } from "./openai.js";
 
 const createMock = vi.fn();
@@ -589,5 +590,97 @@ describe("streamOpenAI hard/transient limit classification", () => {
         expect(e.message).not.toContain("<html>");
       },
     );
+  });
+});
+
+describe("streamOpenAI silent-partial truncation guard", () => {
+  afterEach(() => {
+    createMock.mockReset();
+  });
+
+  // The OpenAI SDK does NOT throw on a clean premature close (the body iterator
+  // just ends), so a stream that produced chunks but never a finish_reason must
+  // be caught by gg-ai and surfaced as a retryable 504 -- otherwise
+  // normalizeOpenAIStopReason(null) silently maps it to "end_turn".
+  function truncatedStream(): AsyncIterable<OpenAI.ChatCompletionChunk> {
+    return (async function* () {
+      yield {
+        id: "chatcmpl_1",
+        object: "chat.completion.chunk",
+        created: 1,
+        model: "test",
+        choices: [{ index: 0, delta: { role: "assistant", content: "partial-" }, finish_reason: null }],
+      };
+      yield {
+        id: "chatcmpl_1",
+        object: "chat.completion.chunk",
+        created: 1,
+        model: "test",
+        choices: [{ index: 0, delta: { content: "text" }, finish_reason: null }],
+      };
+      // Stream ends here: no chunk ever carries a finish_reason (clean close).
+    })() as AsyncIterable<OpenAI.ChatCompletionChunk>;
+  }
+
+  it("rejects with a 504 when the stream ends before a finish_reason", async () => {
+    createMock.mockResolvedValueOnce(truncatedStream());
+    const result = streamOpenAI({
+      provider: "openai",
+      model: "test-model",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "token",
+    });
+    // Attach the response handler up front so the pump's rejection is never
+    // orphaned when the iterator throws first.
+    const caught = result.response.catch((err: unknown) => err);
+
+    const events: string[] = [];
+    try {
+      for await (const event of result) events.push(event.type);
+    } catch {
+      // Iterator re-throws the same failure; asserted via `caught` below.
+    }
+
+    const thrown = await caught;
+    expect(thrown).toBeInstanceOf(ProviderError);
+    expect((thrown as ProviderError).statusCode).toBe(504);
+    expect((thrown as ProviderError).message).toMatch(/before completion/i);
+    // No phantom "done" event leaked out.
+    expect(events).not.toContain("done");
+  });
+
+  it("resolves normally on a complete stream (guard does not false-positive)", async () => {
+    createMock.mockResolvedValueOnce(
+      (async function* () {
+        yield {
+          id: "chatcmpl_1",
+          object: "chat.completion.chunk",
+          created: 1,
+          model: "test",
+          choices: [{ index: 0, delta: { role: "assistant", content: "Hello" }, finish_reason: null }],
+        };
+        yield {
+          id: "chatcmpl_1",
+          object: "chat.completion.chunk",
+          created: 1,
+          model: "test",
+          choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        };
+      })() as AsyncIterable<OpenAI.ChatCompletionChunk>,
+    );
+    const result = streamOpenAI({
+      provider: "openai",
+      model: "test-model",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "token",
+    });
+
+    let text = "";
+    for await (const event of result) {
+      if (event.type === "text_delta") text += event.text;
+    }
+    await expect(result.response).resolves.toMatchObject({ stopReason: "stop_sequence" });
+    expect(text).toBe("Hello");
   });
 });

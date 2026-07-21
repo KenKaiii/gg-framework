@@ -1,0 +1,69 @@
+{
+  "benchmark": "09-provider-id-replay",
+  "model": "claude-sonnet-5",
+  "date": "2026-07-21T21:34:03.432Z",
+  "anthropicToOpenai": {
+    "sentId": "toolu_01ABCdefGHIjkl",
+    "wireToolCallId": "call__01ABCdefGHIjkl",
+    "wireToolResultId": "call__01ABCdefGHIjkl",
+    "pairingConsistent": true,
+    "behavior": "normalized: toolu_* → \"call__01ABCdefGHIjkl\" (transform.ts remapToolCallId: \"call_\" + id.slice(5) — note slice(5) keeps the \"_\" from \"toolu_\", producing a double underscore)",
+    "snippet": {
+      "assistant": {
+        "role": "assistant",
+        "content": "Reading it now.",
+        "tool_calls": [
+          {
+            "id": "call__01ABCdefGHIjkl",
+            "type": "function",
+            "function": {
+              "name": "read",
+              "arguments": "{\"path\":\"config.ts\"}"
+            }
+          }
+        ]
+      },
+      "tool": {
+        "role": "tool",
+        "tool_call_id": "call__01ABCdefGHIjkl",
+        "content": "export const x = 1;"
+      }
+    }
+  },
+  "openaiToAnthropic": {
+    "sentId": "call_9Zx8y7w6v5",
+    "wireToolUseId": "call_9Zx8y7w6v5",
+    "wireToolResultId": "call_9Zx8y7w6v5",
+    "pairingConsistent": true,
+    "behavior": "pass-through (verbatim — call_* matches Anthropic's ^[a-zA-Z0-9_-]+$ so remapAnthropicToolCallId returns it unchanged)",
+    "snippet": {
+      "assistantContent": [
+        {
+          "type": "text",
+          "text": "Reading it now."
+        },
+        {
+          "type": "tool_use",
+          "id": "call_9Zx8y7w6v5",
+          "name": "read",
+          "input": {
+            "path": "config.ts"
+          }
+        }
+      ],
+      "toolResult": {
+        "type": "tool_result",
+        "tool_use_id": "call_9Zx8y7w6v5",
+        "content": "export const x = 1;"
+      }
+    }
+  },
+  "compositeToAnthropic": {
+    "sentId": "call_abc123|fc_item_456",
+    "wireToolUseId": "call_abc123_fc_item_456",
+    "wireToolResultId": "call_abc123_fc_item_456",
+    "pairingConsistent": true,
+    "behavior": "sanitized: [^a-zA-Z0-9_-] → '_' (memoized via idMap so tool_use and tool_result stay paired)"
+  },
+  "verdict": "The conversion layer NORMALIZES rather than passing through, and pairing is preserved in both directions. Anthropic→OpenAI (transform.ts remapToolCallId): toolu_* ids become \"call_\" + id.slice(5) — toolu_01ABCdefGHIjkl → call__01ABCdefGHIjkl (slice(5), not slice(6), retains the underscore from 'toolu_', so every remapped id carries a DOUBLE underscore 'call__…'; valid for OpenAI but lossy — the reverse mapping is not identity). Non-toolu ids pass through verbatim. OpenAI→Anthropic (transform.ts remapAnthropicToolCallId): ids matching ^[a-zA-Z0-9_-]+$ pass through verbatim (call_9Zx8y7w6v5 survived); ids with illegal chars (Codex composite 'callId|itemId') are char-sanitized (call_abc123|fc_item_456 → call_abc123_fc_item_456), memoized in an idMap so the assistant tool_use and the tool_result stay paired. Nothing is regenerated with fresh randomness and nothing is dropped; collisions after sanitization (two ids differing only in illegal chars) would silently merge."
+}

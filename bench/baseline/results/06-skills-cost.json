@@ -1,0 +1,202 @@
+{
+  "benchmark": "06-skills-cost",
+  "model": "claude-sonnet-5",
+  "date": "2026-07-21T21:34:05.016Z",
+  "injectionNotes": {
+    "skills": "discoverSkills() merges bundled + ~/.gg/skills + <project>/.gg/skills; buildSystemPrompt appends a '## Skills' section via formatSkillsForPrompt() with one description line per skill; full skill bodies load on demand via the skill tool.",
+    "slashCommands": "Not injected into the system prompt (client-side SlashCommandRegistry expansion).",
+    "mcpTools": "Deferred behind tool_search; schemas not inlined in the prompt."
+  },
+  "skillInventory": [
+    {
+      "name": "evidence-led-ui",
+      "source": "global",
+      "descriptionChars": 297,
+      "bodyChars": 10457
+    },
+    {
+      "name": "find-skills",
+      "source": "global",
+      "descriptionChars": 244,
+      "bodyChars": 3294
+    }
+  ],
+  "prompt": {
+    "chars": 32101,
+    "estTokens": 8026,
+    "sections": [
+      {
+        "name": "(identity preamble)",
+        "chars": 204,
+        "estTokens": 51,
+        "pctOfTotal": 0.6354942213638204
+      },
+      {
+        "name": "## How to Talk",
+        "chars": 1116,
+        "estTokens": 279,
+        "pctOfTotal": 3.476527210990312
+      },
+      {
+        "name": "## How to Work",
+        "chars": 1122,
+        "estTokens": 281,
+        "pctOfTotal": 3.4952182175010122
+      },
+      {
+        "name": "## Research & Verification",
+        "chars": 802,
+        "estTokens": 201,
+        "pctOfTotal": 2.4983645369303136
+      },
+      {
+        "name": "## Code Quality",
+        "chars": 180,
+        "estTokens": 45,
+        "pctOfTotal": 0.5607301953210181
+      },
+      {
+        "name": "## Tools",
+        "chars": 2553,
+        "estTokens": 639,
+        "pctOfTotal": 7.953023270303106
+      },
+      {
+        "name": "## Project Context",
+        "chars": 278,
+        "estTokens": 70,
+        "pctOfTotal": 0.8660166349957945
+      },
+      {
+        "name": "## npm Packages",
+        "chars": 751,
+        "estTokens": 188,
+        "pctOfTotal": 2.3394909815893588
+      },
+      {
+        "name": "## Models & Multimodal",
+        "chars": 889,
+        "estTokens": 223,
+        "pctOfTotal": 2.7693841313354723
+      },
+      {
+        "name": "## gg-app — Desktop App (primary product)",
+        "chars": 6685,
+        "estTokens": 1672,
+        "pctOfTotal": 20.824896420672253
+      },
+      {
+        "name": "## Project Structure",
+        "chars": 1907,
+        "estTokens": 477,
+        "pctOfTotal": 5.940624902651008
+      },
+      {
+        "name": "## Package Dependencies",
+        "chars": 1288,
+        "estTokens": 322,
+        "pctOfTotal": 4.012336064297062
+      },
+      {
+        "name": "## Tech Stack",
+        "chars": 320,
+        "estTokens": 80,
+        "pctOfTotal": 0.9968536805706988
+      },
+      {
+        "name": "## Commands",
+        "chars": 323,
+        "estTokens": 81,
+        "pctOfTotal": 1.0061991838260491
+      },
+      {
+        "name": "## Releasing",
+        "chars": 4112,
+        "estTokens": 1028,
+        "pctOfTotal": 12.809569795333479
+      },
+      {
+        "name": "## Organization Rules",
+        "chars": 737,
+        "estTokens": 185,
+        "pctOfTotal": 2.2958786330643903
+      },
+      {
+        "name": "## Key Patterns",
+        "chars": 1487,
+        "estTokens": 372,
+        "pctOfTotal": 4.632254446901966
+      },
+      {
+        "name": "## LSP Inline Edit Diagnostics",
+        "chars": 1978,
+        "estTokens": 495,
+        "pctOfTotal": 6.1618018130276315
+      },
+      {
+        "name": "## MCP Servers",
+        "chars": 1953,
+        "estTokens": 489,
+        "pctOfTotal": 6.083922619233046
+      },
+      {
+        "name": "## Slash Commands",
+        "chars": 2297,
+        "estTokens": 575,
+        "pctOfTotal": 7.155540325846546
+      },
+      {
+        "name": "## Skills",
+        "chars": 950,
+        "estTokens": 238,
+        "pctOfTotal": 2.959409364194262
+      },
+      {
+        "name": "## Environment",
+        "chars": 125,
+        "estTokens": 32,
+        "pctOfTotal": 0.3893959689729292
+      },
+      {
+        "name": "(uncached date suffix)",
+        "chars": 44,
+        "estTokens": 11,
+        "pctOfTotal": 0.13706738107847108
+      }
+    ]
+  },
+  "skillsSectionDelta": {
+    "skillsInstalled": 2,
+    "skillsSectionChars": 948,
+    "skillsSectionEstTokens": 237,
+    "promptWithoutChars": 31151,
+    "promptWithChars": 32101,
+    "deltaChars": 950,
+    "deltaEstTokens": 238,
+    "pctOfPrompt": 2.953179028690695
+  },
+  "syntheticSimulation": [
+    {
+      "skills": 5,
+      "wordsPerDescription": 80,
+      "sectionChars": 3763,
+      "sectionEstTokens": 941,
+      "pctOfRealPrompt": 12.079869025071426
+    },
+    {
+      "skills": 10,
+      "wordsPerDescription": 80,
+      "sectionChars": 7163,
+      "sectionEstTokens": 1791,
+      "pctOfRealPrompt": 22.994446406214887
+    },
+    {
+      "skills": 20,
+      "wordsPerDescription": 80,
+      "sectionChars": 13963,
+      "sectionEstTokens": 3491,
+      "pctOfRealPrompt": 44.82360116850182
+    }
+  ],
+  "notes": "Only skill name+description lines are injected today (bodies load on demand via the skill tool), so the on-demand-retrieval upper bound is the '## Skills' listing section itself. Slash commands and MCP tool schemas are not inlined in the system prompt at all."
+}

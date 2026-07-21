@@ -1,0 +1,363 @@
+{
+  "benchmark": "01-eol-edits",
+  "model": "claude-sonnet-5",
+  "date": "2026-07-21T21:39:50.375Z",
+  "runs": [
+    {
+      "task": "mul-plus-one",
+      "run": 1,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 4776,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 163,
+        "cacheRead": 4829,
+        "cacheWrite": 2627
+      }
+    },
+    {
+      "task": "mul-plus-one",
+      "run": 2,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 4773,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 163,
+        "cacheRead": 7456,
+        "cacheWrite": 0
+      }
+    },
+    {
+      "task": "mul-plus-one",
+      "run": 3,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 5089,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 182,
+        "cacheRead": 7177,
+        "cacheWrite": 315
+      }
+    },
+    {
+      "task": "rename-trimmed",
+      "run": 1,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 5278,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 210,
+        "cacheRead": 7064,
+        "cacheWrite": 445
+      }
+    },
+    {
+      "task": "rename-trimmed",
+      "run": 2,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 5218,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 212,
+        "cacheRead": 7334,
+        "cacheWrite": 177
+      }
+    },
+    {
+      "task": "rename-trimmed",
+      "run": 3,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 5567,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 212,
+        "cacheRead": 7511,
+        "cacheWrite": 0
+      }
+    },
+    {
+      "task": "retries-5",
+      "run": 1,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 5267,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 160,
+        "cacheRead": 6991,
+        "cacheWrite": 338
+      }
+    },
+    {
+      "task": "retries-5",
+      "run": 2,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 5992,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 160,
+        "cacheRead": 7329,
+        "cacheWrite": 0
+      }
+    },
+    {
+      "task": "retries-5",
+      "run": 3,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 5382,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 160,
+        "cacheRead": 7329,
+        "cacheWrite": 0
+      }
+    },
+    {
+      "task": "readme-heading",
+      "run": 1,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 5370,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 178,
+        "cacheRead": 7004,
+        "cacheWrite": 342
+      }
+    },
+    {
+      "task": "readme-heading",
+      "run": 2,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 5329,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 178,
+        "cacheRead": 7346,
+        "cacheWrite": 0
+      }
+    },
+    {
+      "task": "readme-heading",
+      "run": 3,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 6527,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 178,
+        "cacheRead": 7346,
+        "cacheWrite": 0
+      }
+    },
+    {
+      "task": "add-div",
+      "run": 1,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 5630,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 234,
+        "cacheRead": 7082,
+        "cacheWrite": 481
+      }
+    },
+    {
+      "task": "add-div",
+      "run": 2,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 6148,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 234,
+        "cacheRead": 7563,
+        "cacheWrite": 0
+      }
+    },
+    {
+      "task": "add-div",
+      "run": 3,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 5731,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 234,
+        "cacheRead": 7563,
+        "cacheWrite": 0
+      }
+    },
+    {
+      "task": "farewell-trimmed",
+      "run": 1,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 5631,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 233,
+        "cacheRead": 7066,
+        "cacheWrite": 469
+      }
+    },
+    {
+      "task": "farewell-trimmed",
+      "run": 2,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 6704,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 233,
+        "cacheRead": 7535,
+        "cacheWrite": 0
+      }
+    },
+    {
+      "task": "farewell-trimmed",
+      "run": 3,
+      "success": true,
+      "crlfSurvived": true,
+      "toolCalls": 2,
+      "editCalls": 1,
+      "failedEditCalls": 0,
+      "notFoundErrors": 0,
+      "error": null,
+      "llmCalls": 3,
+      "wallMs": 6181,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 245,
+        "cacheRead": 7185,
+        "cacheWrite": 372
+      }
+    }
+  ],
+  "diagnostic": {
+    "task": "mul-plus-one",
+    "note": "no failing edit observed in diagnostic run",
+    "success": true
+  },
+  "summary": {
+    "totalRuns": 18,
+    "successRate": "100.0%",
+    "editErrorRate": "0.0%",
+    "totalEditCalls": 18,
+    "failedEditCalls": 0,
+    "notFoundErrors": 0,
+    "crlfCorrupted": 0
+  }
+}

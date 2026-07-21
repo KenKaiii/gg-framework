@@ -1,0 +1,322 @@
+{
+  "benchmark": "05-refactor-edits",
+  "model": "claude-sonnet-5",
+  "date": "2026-07-21T21:42:01.759Z",
+  "runs": [
+    {
+      "task": "rename-formatName",
+      "run": 1,
+      "success": true,
+      "compileOk": true,
+      "missedRefFiles": 0,
+      "problems": [],
+      "editCalls": 4,
+      "editErrors": 0,
+      "toolCalls": 9,
+      "llmCalls": 4,
+      "wallMs": 12025,
+      "usage": {
+        "inputTokens": 8,
+        "outputTokens": 1015,
+        "cacheRead": 10209,
+        "cacheWrite": 5001
+      },
+      "totalTokens": 1023,
+      "error": null
+    },
+    {
+      "task": "rename-formatName",
+      "run": 2,
+      "success": true,
+      "compileOk": true,
+      "missedRefFiles": 0,
+      "problems": [],
+      "editCalls": 4,
+      "editErrors": 0,
+      "toolCalls": 10,
+      "llmCalls": 5,
+      "wallMs": 12206,
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 1093,
+        "cacheRead": 16151,
+        "cacheWrite": 2249
+      },
+      "totalTokens": 1103,
+      "error": null
+    },
+    {
+      "task": "rename-formatName",
+      "run": 3,
+      "success": true,
+      "compileOk": true,
+      "missedRefFiles": 0,
+      "problems": [],
+      "editCalls": 4,
+      "editErrors": 0,
+      "toolCalls": 9,
+      "llmCalls": 4,
+      "wallMs": 13881,
+      "usage": {
+        "inputTokens": 8,
+        "outputTokens": 1049,
+        "cacheRead": 13026,
+        "cacheWrite": 2161
+      },
+      "totalTokens": 1057,
+      "error": null
+    },
+    {
+      "task": "rename-slugify",
+      "run": 1,
+      "success": true,
+      "compileOk": true,
+      "missedRefFiles": 0,
+      "problems": [],
+      "editCalls": 3,
+      "editErrors": 0,
+      "toolCalls": 7,
+      "llmCalls": 4,
+      "wallMs": 8954,
+      "usage": {
+        "inputTokens": 8,
+        "outputTokens": 625,
+        "cacheRead": 12330,
+        "cacheWrite": 1528
+      },
+      "totalTokens": 633,
+      "error": null
+    },
+    {
+      "task": "rename-slugify",
+      "run": 2,
+      "success": true,
+      "compileOk": true,
+      "missedRefFiles": 0,
+      "problems": [],
+      "editCalls": 6,
+      "editErrors": 3,
+      "toolCalls": 10,
+      "llmCalls": 5,
+      "wallMs": 17016,
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 1193,
+        "cacheRead": 16948,
+        "cacheWrite": 1907
+      },
+      "totalTokens": 1203,
+      "error": null
+    },
+    {
+      "task": "rename-slugify",
+      "run": 3,
+      "success": true,
+      "compileOk": true,
+      "missedRefFiles": 0,
+      "problems": [],
+      "editCalls": 3,
+      "editErrors": 0,
+      "toolCalls": 7,
+      "llmCalls": 4,
+      "wallMs": 9538,
+      "usage": {
+        "inputTokens": 8,
+        "outputTokens": 677,
+        "cacheRead": 12648,
+        "cacheWrite": 1262
+      },
+      "totalTokens": 685,
+      "error": null
+    },
+    {
+      "task": "move-slugify",
+      "run": 1,
+      "success": false,
+      "compileOk": true,
+      "missedRefFiles": 1,
+      "problems": [
+        "src/util.ts still defines slugify"
+      ],
+      "editCalls": 0,
+      "editErrors": 0,
+      "toolCalls": 3,
+      "llmCalls": 2,
+      "wallMs": 6660,
+      "usage": {
+        "inputTokens": 4,
+        "outputTokens": 694,
+        "cacheRead": 5755,
+        "cacheWrite": 733
+      },
+      "totalTokens": 698,
+      "error": "The model repeatedly issued invalid arguments for tool `edit`. This is usually an upstream model/tool-calling bug. Your conversation is preserved; send another message or switch models to continue."
+    },
+    {
+      "task": "move-slugify",
+      "run": 2,
+      "success": false,
+      "compileOk": true,
+      "missedRefFiles": 1,
+      "problems": [
+        "src/util.ts still defines slugify"
+      ],
+      "editCalls": 0,
+      "editErrors": 0,
+      "toolCalls": 3,
+      "llmCalls": 3,
+      "wallMs": 7536,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 677,
+        "cacheRead": 9248,
+        "cacheWrite": 398
+      },
+      "totalTokens": 683,
+      "error": "The model repeatedly issued invalid arguments for tool `edit`. This is usually an upstream model/tool-calling bug. Your conversation is preserved; send another message or switch models to continue."
+    },
+    {
+      "task": "move-slugify",
+      "run": 3,
+      "success": false,
+      "compileOk": true,
+      "missedRefFiles": 1,
+      "problems": [
+        "src/util.ts still defines slugify"
+      ],
+      "editCalls": 0,
+      "editErrors": 0,
+      "toolCalls": 3,
+      "llmCalls": 3,
+      "wallMs": 7290,
+      "usage": {
+        "inputTokens": 6,
+        "outputTokens": 687,
+        "cacheRead": 9258,
+        "cacheWrite": 408
+      },
+      "totalTokens": 693,
+      "error": "The model repeatedly issued invalid arguments for tool `edit`. This is usually an upstream model/tool-calling bug. Your conversation is preserved; send another message or switch models to continue."
+    },
+    {
+      "task": "rename-max-retries",
+      "run": 1,
+      "success": true,
+      "compileOk": true,
+      "missedRefFiles": 0,
+      "problems": [],
+      "editCalls": 4,
+      "editErrors": 2,
+      "toolCalls": 7,
+      "llmCalls": 5,
+      "wallMs": 10722,
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 820,
+        "cacheRead": 15853,
+        "cacheWrite": 1492
+      },
+      "totalTokens": 830,
+      "error": null
+    },
+    {
+      "task": "rename-max-retries",
+      "run": 2,
+      "success": true,
+      "compileOk": true,
+      "missedRefFiles": 0,
+      "problems": [],
+      "editCalls": 4,
+      "editErrors": 2,
+      "toolCalls": 7,
+      "llmCalls": 5,
+      "wallMs": 11361,
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 807,
+        "cacheRead": 15935,
+        "cacheWrite": 1358
+      },
+      "totalTokens": 817,
+      "error": null
+    },
+    {
+      "task": "rename-max-retries",
+      "run": 3,
+      "success": true,
+      "compileOk": true,
+      "missedRefFiles": 0,
+      "problems": [],
+      "editCalls": 4,
+      "editErrors": 2,
+      "toolCalls": 7,
+      "llmCalls": 5,
+      "wallMs": 10845,
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 807,
+        "cacheRead": 17293,
+        "cacheWrite": 0
+      },
+      "totalTokens": 817,
+      "error": null
+    }
+  ],
+  "summary": {
+    "totalRuns": 12,
+    "successRate": "75.0%",
+    "perTask": [
+      {
+        "task": "rename-formatName",
+        "runs": 3,
+        "successes": 3,
+        "successRate": "100.0%",
+        "meanLlmCalls": "4.3",
+        "meanWallS": "13",
+        "meanTokens": "1061",
+        "editErrors": 0,
+        "missedRefFiles": 0
+      },
+      {
+        "task": "rename-slugify",
+        "runs": 3,
+        "successes": 3,
+        "successRate": "100.0%",
+        "meanLlmCalls": "4.3",
+        "meanWallS": "12",
+        "meanTokens": "840",
+        "editErrors": 3,
+        "missedRefFiles": 0
+      },
+      {
+        "task": "move-slugify",
+        "runs": 3,
+        "successes": 0,
+        "successRate": "0.0%",
+        "meanLlmCalls": "2.7",
+        "meanWallS": "7",
+        "meanTokens": "691",
+        "editErrors": 0,
+        "missedRefFiles": 3
+      },
+      {
+        "task": "rename-max-retries",
+        "runs": 3,
+        "successes": 3,
+        "successRate": "100.0%",
+        "meanLlmCalls": "5.0",
+        "meanWallS": "11",
+        "meanTokens": "821",
+        "editErrors": 6,
+        "missedRefFiles": 0
+      }
+    ],
+    "meanLlmCalls": "4.1",
+    "meanWallS": "11",
+    "totalTokens": 10242,
+    "editErrors": 9,
+    "missedRefFiles": 3,
+    "compileFailures": 0,
+    "note": "Toolset was read+edit+grep+find+ls (no bash); move-slugify additionally got the write tool because the current edit tool cannot create src/strings.ts."
+  }
+}

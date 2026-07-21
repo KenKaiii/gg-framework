@@ -1,0 +1,436 @@
+{
+  "benchmark": "03-tool-result-bytes",
+  "model": "claude-sonnet-5",
+  "date": "2026-07-21T21:38:04.393Z",
+  "config": {
+    "dirs": 20,
+    "filesPerDir": 50,
+    "runs": 2,
+    "maxTurns": 10,
+    "thinking": "low",
+    "tools": [
+      "read",
+      "grep",
+      "find",
+      "ls"
+    ],
+    "budgets": [
+      10000,
+      25000,
+      50000,
+      100000
+    ]
+  },
+  "tasks": [
+    {
+      "id": "grep-padding",
+      "prompt": "grep for 'padding' across the whole tree and summarize what you find."
+    },
+    {
+      "id": "find-and-read",
+      "prompt": "Find all .ts files under the pkg-01* directories and read the first 5 of them, then summarize what they contain."
+    },
+    {
+      "id": "count-per-dir",
+      "prompt": "List every directory in this project and count the files in each."
+    }
+  ],
+  "runs": [
+    {
+      "task": "grep-padding",
+      "run": 1,
+      "error": null,
+      "llmCalls": 4,
+      "toolCalls": 4,
+      "wallMs": 11337,
+      "turnAgg": [
+        {
+          "turn": 1,
+          "chars": 2816
+        },
+        {
+          "turn": 2,
+          "chars": 17
+        },
+        {
+          "turn": 3,
+          "chars": 79
+        }
+      ],
+      "toolCallSizes": [
+        {
+          "name": "grep",
+          "turn": 1,
+          "resultChars": 2816
+        },
+        {
+          "name": "find",
+          "turn": 2,
+          "resultChars": 17
+        },
+        {
+          "name": "ls",
+          "turn": 3,
+          "resultChars": 0
+        },
+        {
+          "name": "read",
+          "turn": 3,
+          "resultChars": 79
+        }
+      ],
+      "maxTurnAgg": 2816
+    },
+    {
+      "task": "grep-padding",
+      "run": 2,
+      "error": null,
+      "llmCalls": 3,
+      "toolCalls": 3,
+      "wallMs": 9872,
+      "turnAgg": [
+        {
+          "turn": 1,
+          "chars": 2816
+        },
+        {
+          "turn": 2,
+          "chars": 79
+        }
+      ],
+      "toolCallSizes": [
+        {
+          "name": "grep",
+          "turn": 1,
+          "resultChars": 2816
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "read",
+          "turn": 2,
+          "resultChars": 79
+        }
+      ],
+      "maxTurnAgg": 2816
+    },
+    {
+      "task": "find-and-read",
+      "run": 1,
+      "error": null,
+      "llmCalls": 3,
+      "toolCalls": 6,
+      "wallMs": 8280,
+      "turnAgg": [
+        {
+          "turn": 1,
+          "chars": 1920
+        },
+        {
+          "turn": 2,
+          "chars": 83
+        }
+      ],
+      "toolCallSizes": [
+        {
+          "name": "find",
+          "turn": 1,
+          "resultChars": 1920
+        },
+        {
+          "name": "read",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "read",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "read",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "read",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "read",
+          "turn": 2,
+          "resultChars": 83
+        }
+      ],
+      "maxTurnAgg": 1920
+    },
+    {
+      "task": "find-and-read",
+      "run": 2,
+      "error": null,
+      "llmCalls": 3,
+      "toolCalls": 6,
+      "wallMs": 9817,
+      "turnAgg": [
+        {
+          "turn": 1,
+          "chars": 1920
+        },
+        {
+          "turn": 2,
+          "chars": 83
+        }
+      ],
+      "toolCallSizes": [
+        {
+          "name": "find",
+          "turn": 1,
+          "resultChars": 1920
+        },
+        {
+          "name": "read",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "read",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "read",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "read",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "read",
+          "turn": 2,
+          "resultChars": 83
+        }
+      ],
+      "maxTurnAgg": 1920
+    },
+    {
+      "task": "count-per-dir",
+      "run": 1,
+      "error": null,
+      "llmCalls": 3,
+      "toolCalls": 2,
+      "wallMs": 6912,
+      "turnAgg": [
+        {
+          "turn": 1,
+          "chars": 419
+        },
+        {
+          "turn": 2,
+          "chars": 1921
+        }
+      ],
+      "toolCallSizes": [
+        {
+          "name": "ls",
+          "turn": 1,
+          "resultChars": 419
+        },
+        {
+          "name": "find",
+          "turn": 2,
+          "resultChars": 1921
+        }
+      ],
+      "maxTurnAgg": 1921
+    },
+    {
+      "task": "count-per-dir",
+      "run": 2,
+      "error": null,
+      "llmCalls": 3,
+      "toolCalls": 21,
+      "wallMs": 11182,
+      "turnAgg": [
+        {
+          "turn": 1,
+          "chars": 419
+        },
+        {
+          "turn": 2,
+          "chars": 1189
+        }
+      ],
+      "toolCallSizes": [
+        {
+          "name": "ls",
+          "turn": 1,
+          "resultChars": 419
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 0
+        },
+        {
+          "name": "ls",
+          "turn": 2,
+          "resultChars": 1189
+        }
+      ],
+      "maxTurnAgg": 1189
+    }
+  ],
+  "distribution": {
+    "turns": 13,
+    "individualResults": 42,
+    "perTurnAggChars": {
+      "max": 2816,
+      "mean": 1058.5384615384614,
+      "p95": 2816
+    },
+    "perResultChars": {
+      "max": 2816,
+      "mean": 327.64285714285717
+    }
+  },
+  "budgetTriggers": {
+    "10000": {
+      "turnsExceeding": 0,
+      "turnsExceedingPct": 0,
+      "individualResultsExceeding": 0
+    },
+    "25000": {
+      "turnsExceeding": 0,
+      "turnsExceedingPct": 0,
+      "individualResultsExceeding": 0
+    },
+    "50000": {
+      "turnsExceeding": 0,
+      "turnsExceedingPct": 0,
+      "individualResultsExceeding": 0
+    },
+    "100000": {
+      "turnsExceeding": 0,
+      "turnsExceedingPct": 0,
+      "individualResultsExceeding": 0
+    }
+  },
+  "currentCaps": {
+    "agentLoopDefaults": {
+      "perResultOptionDefault": "undefined → cap OFF in raw Agent; overflow-retry path falls back to 100_000",
+      "perResultHardCeiling": 400000,
+      "perTurnOptionDefault": "undefined → cap OFF in raw Agent",
+      "benchHarness": "Agent built without maxToolResultChars/maxTurnToolResultChars → both caps disabled in these runs"
+    },
+    "ggcoderSession": {
+      "formula": {
+        "perResult": "getToolResultCharLimit(model) ?? floor(contextWindow * 3.5 * 0.30)",
+        "perTurn": "clamp(floor(contextWindow * 3.5 * 0.15), 100_000, 240_000)"
+      },
+      "resolvedForSonnet5": {
+        "contextWindow": 1000000,
+        "contextWindowNote": "inferred: perResultChars / (3.5 * 0.30) = 1M tokens",
+        "perResultChars": 1050000,
+        "perTurnChars": 240000
+      }
+    }
+  },
+  "transcriptDivergence": "Capping MUTATES the recorded transcript, not just the outbound payload: capToolResults/capTurnToolResults rewrite toolResult.content in place in the array that is then pushed into the persistent `messages` context (agent-loop.ts messages.push({role:'tool', content: toolResults})), so all subsequent turns re-send the truncated version. However the tool_call_end event is emitted BEFORE capping with the full result preview, so the UI/event transcript keeps the untruncated result — the event transcript and the provider-bound message history diverge once a cap triggers."
+}
