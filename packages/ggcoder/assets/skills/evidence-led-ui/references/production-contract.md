@@ -29,6 +29,7 @@ This is a binding, pass/fail quality floor for implemented web and native UI. Ap
 WCAG 2.2 Level AA is the web conformance floor. Project, platform, legal, or contractual requirements may be stricter.
 
 - Keep a visible focus indicator and ensure sticky headers, footers, cookie bars, drawers, and overlays do not obscure the focused control.
+- Pointer activation, native popup dismissal, and clicks elsewhere must not leave a focus ring, highlighted border, shadow, background, or container focus treatment stuck as a false selected or active state. Distinguish pointer from keyboard focus and distinguish focus from genuine selected, expanded, and error states; never suppress visible keyboard focus globally.
 - WCAG 2.2 Target Size (Minimum) is 24 by 24 CSS pixels with defined exceptions. Default touch-oriented web controls to a 44 by 44 CSS-pixel hit area where layout permits. Native work follows its platform target guidance, such as 44 by 44 points on Apple platforms and 48 by 48 density-independent pixels in Material guidance.
 - Provide a single-pointer alternative for every non-essential drag interaction. Reordering also needs keyboard and assistive-technology operation.
 - Do not require users to re-enter information already supplied in the same process when it can be selected or populated. Preserve data across validation errors and recoverable navigation.
@@ -42,6 +43,7 @@ Automated accessibility tooling is a defect detector, not proof of conformance. 
 
 - Every control has a persistent programmatic label. Associate help, units, requirements, and errors with the field; placeholder text is an example, never the only label.
 - Use the correct input type, `autocomplete`, `inputmode`, and semantic grouping. Keep browser autofill, password-manager, paste, and native validation affordances working unless the product has a verified reason to replace them.
+- Select, dropdown, and combobox indicators must have a deliberate logical trailing inset and reserved content padding for the icon width and gap. They fail when the indicator touches the edge, overlaps text or adjacent actions, duplicates the native indicator, or creates a dead pointer zone; verify long values, narrow widths, zoom, and RTL.
 - Validate at a helpful time. Do not show errors before the user can reasonably act. On submit, summarize errors when the form is long, focus or link to the first problem, preserve values, and explain how to recover.
 - Async actions expose pending, success, failure, retry, and duplicate-submission behavior. Do not silently lose work or replace the whole layout with a spinner.
 - Match safeguards to consequence. Prefer undo for cheap reversible actions; use explicit confirmation for destructive, expensive, security-sensitive, or irreversible actions. State the object and consequence in concrete language.
@@ -49,6 +51,7 @@ Automated accessibility tooling is a defect detector, not proof of conformance. 
 ## 4. Responsive and international resilience
 
 - Use viewport queries for page composition and container queries for reusable components when the support policy permits. Use Grid, Flexbox, and `subgrid` to maintain key lines instead of JavaScript layout or breakpoint-specific duplication.
+- Navigation, header, main content, adjacent sections, and footer must reuse a shared content rail, responsive gutters, and spacing tokens by default. Full-bleed outer surfaces may differ, but inner edges must align. Any width, offset, margin, or padding exception needs an explicit content or user reason and must remain coherent at every breakpoint.
 - Prefer logical properties and flow-relative alignment. Declare document language and direction, use locale-aware number/date/plural formatting, and avoid sentence construction by string concatenation.
 - Test right-to-left layout when localization is relevant, long German-like expansion, short labels, CJK text, long unbroken values, dynamic type or 200% text, and missing media. Essential content must not depend on truncation.
 - Account for safe areas, on-screen keyboards, dynamic viewport units, orientation, window resizing, no-hover input, coarse pointers, and split-screen or large-screen layouts where the platform can expose them.

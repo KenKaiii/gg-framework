@@ -36,11 +36,11 @@ Maximum: **24 points**. Ship broad UI work only at **20/24 or higher**, with no 
 
 ## 3. Composition
 
-- **0:** Layout breaks, clips, ignores shared key lines, or relies on arbitrary modules.
-- **1:** Grid is stable but generic, repetitive, or weakly related to content; some section edges or component geometry drift.
-- **2:** Scale, key lines, alignment, whitespace, and asymmetry/symmetry express content relationships and remain deliberate across viewports.
+- **0:** Layout breaks, clips, ignores shared key lines, uses arbitrary modules, or lets navigation, header, main, section, and footer rails drift without a content reason.
+- **1:** Grid is stable but generic, repetitive, or weakly related to content; some section edges, spacing tokens, or component geometry drift.
+- **2:** Scale, shared content rails, key lines, alignment, whitespace, and asymmetry/symmetry express content relationships and remain deliberate across viewports.
 
-**Test:** Draw vertical and horizontal guides through major regions. Shared edges, baselines, dividers, and repeated component anatomy should align unless an exception communicates real hierarchy.
+**Test:** Draw vertical and horizontal guides through navigation, header, main, repeated sections, and footer at every representative breakpoint. Full-bleed outer surfaces may differ, but their inner content edges must align by default. Compare repeated margins, padding, and gaps side by side; equal roles use equal tokens unless an exception communicates real hierarchy.
 
 ## 4. Consistency and flow
 
@@ -48,7 +48,7 @@ Maximum: **24 points**. Ship broad UI work only at **20/24 or higher**, with no 
 - **1:** Most patterns repeat, but spacing cadence, icon treatment, controls, actions, or section transitions contain visible inconsistencies.
 - **2:** Existing primitives are reused; one icon family, spacing rhythm, component anatomy, navigation order, action placement, and surface logic carry through the full flow.
 
-**Test:** Compare adjacent sections and pages side by side. Trace one repeated action through every occurrence, then inspect container edges, control heights, icon weight, spacing, borders, labels, and state behavior.
+**Test:** Compare adjacent sections and pages side by side. Trace one repeated action through every occurrence, then inspect container edges, control heights, icon weight, spacing, borders, labels, and state behavior. For selects, dropdowns, and comboboxes, verify the trailing icon has intentional edge inset and reserved text clearance at every size, in RTL, and with the longest plausible value.
 
 ## 5. Typography
 
@@ -72,7 +72,7 @@ Maximum: **24 points**. Ship broad UI work only at **20/24 or higher**, with no 
 - **1:** Happy-path interaction works, but secondary states, feedback, timing, recovery, or layout continuity are generic or incomplete.
 - **2:** Relevant loading, empty, error, validation, retry, offline, focus, hover/press, selected, expanded, pending, disabled, destructive, and success states are coherent, preserve work and layout, and provide purposeful feedback.
 
-**Test:** Trigger each relevant state with realistic content length and failure wording. Confirm preservation, recovery, duplicate-submission behavior, status announcement, and that any transition improves continuity rather than decoration.
+**Test:** Trigger each relevant state with realistic content length and failure wording. Confirm preservation, recovery, duplicate-submission behavior, status announcement, and that any transition improves continuity rather than decoration. Test pointer and keyboard focus separately, including native dropdown dismissal and clicks onto non-focusable space; no pointer-only highlight may stick, and keyboard focus must remain visible.
 
 ## 8. Responsive behavior
 

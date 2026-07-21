@@ -21,8 +21,11 @@ Apply these on every UI task. Read `references/craft-rulings.md` when implementi
 
 - **No emoji UI:** Never use emoji as icons, bullets, status marks, or decoration unless explicitly requested. Reuse the project icon system; otherwise use one coherent icon package.
 - **Uniform geometry:** Align containers, columns, section edges, baselines, dividers, control heights, and repeated component anatomy. Break alignment only for a clear content reason.
+- **One shared content rail:** Default navigation, header, main content, footer, and adjacent sections to the same max-width, inline gutters, and breakpoint padding. Full-bleed backgrounds may differ, but their inner content edges must align. Any different width or offset needs an explicit user or content reason, never one-off margin or padding.
+- **No edge-hugging control icons:** Select, dropdown, and combobox chevrons and other trailing icons need a deliberate inline-end inset plus enough reserved text padding for the icon and gap. They must never touch the control edge or overlap content; use logical properties so the anatomy also works in RTL.
 - **Reuse first:** Search for existing components, variants, tokens, utilities, icon wrappers, focus rings, and motion curves before creating new ones.
 - **Purposeful feedback:** Relevant hover, focus, press, selected, expanded, loading, success, and error states need clear feedback. Avoid abrupt changes when a short transition improves continuity.
+- **No sticky pointer focus:** Clicking or tapping must not leave a focus ring, highlighted border, shadow, background, or container `:focus-within` treatment stuck after the interaction ends, a native popup closes, or the user clicks elsewhere. Preserve immediate, visible keyboard focus by distinguishing input modality instead of suppressing focus globally.
 - **No generic hover lift:** Do not default to `translateY`, bobbing, floating, or scale-up on hover. Prefer color, border, underline, icon fill, opacity, or restrained shadow changes.
 - **No `transition: all`:** Name transition properties, reuse duration/easing tokens, and provide a reduced-motion path.
 - **Intentional type:** Reuse the existing type system. For net-new web work, select an appropriate modern family or pairing; do not use Arial, Helvetica, or bare `system-ui` as the aesthetic direction.
@@ -101,6 +104,7 @@ Plan only relevant states, but include the complete primary path and recovery:
 - loading, empty, error, retry, offline, success, disabled, and destructive outcomes;
 - hover, focus-visible, press, selected, expanded, and pending feedback;
 - keyboard order, accessible names/status, overlay focus, and drag alternatives;
+- pointer-versus-keyboard focus behavior, including native popup dismissal and clicks onto non-focusable space;
 - narrow, intermediate, desktop, wide/resizable, pointer, touch, and no-hover behavior;
 - reduced motion, forced colors, zoom/reflow, long/localized/RTL text, missing media, and realistic data extremes.
 
@@ -114,7 +118,7 @@ For a broad page, multi-screen feature, or redesign, create or update `DESIGN.md
 
 Use real project content and data. Label fixtures honestly. Never invent testimonials, customer logos, ratings, metrics, or claims as fact.
 
-Reuse dependencies and primitives. Use one coherent icon system. Maintain semantic controls, visible focus, keyboard operation, measured contrast, readable line lengths, stable adaptive layout, and reduced-motion support. Implement the complete planned flow, not only its first screenshot.
+Reuse dependencies and primitives. Use one coherent icon system. Maintain semantic controls, visible keyboard focus, keyboard operation, measured contrast, readable line lengths, stable adaptive layout, and reduced-motion support. Pointer interaction must not leave a false focus, active, or selected-looking highlight behind. Implement the complete planned flow, not only its first screenshot.
 
 The representative initial state must keep decision-critical information and the primary action visible or one obvious action away on desktop and mobile. Preserve selected context through master-detail recomposition. Keep demo, debug, and state-switching controls subordinate and non-obscuring.
 
