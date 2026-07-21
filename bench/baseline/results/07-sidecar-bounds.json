@@ -1,13 +1,13 @@
 {
   "benchmark": "07-sidecar-bounds",
   "model": "claude-sonnet-5",
-  "date": "2026-07-21T21:34:02.293Z",
+  "date": "2026-07-21T22:48:58.120Z",
   "glob": {
     "files": 20000,
-    "globMs": "64.3",
-    "sortMs": "3.3",
-    "fullRetainedMB": "17.2",
-    "peakDeltaMB": "17.2",
+    "globMs": "60.6",
+    "sortMs": "2.9",
+    "fullRetainedMB": "17.3",
+    "peakDeltaMB": "17.3",
     "slicedKeptDeltaMB": "2.5",
     "slicedKeptNote": "heapUsed delta after gc (RSS is a high-water mark and does not shrink)",
     "mbPer1kFiles": "0.86",
@@ -17,46 +17,45 @@
     "rows": [
       {
         "sizeMB": 1,
-        "ms": "13.3",
-        "serverDeltaMB": "5.6",
-        "deltaPerBodyMB": "5.58",
+        "ms": "11.4",
+        "serverDeltaMB": "7.2",
+        "deltaPerBodyMB": "7.20",
         "echoedBytes": 1048576
       },
       {
         "sizeMB": 10,
-        "ms": "9.6",
-        "serverDeltaMB": "53.2",
-        "deltaPerBodyMB": "5.32",
+        "ms": "9.2",
+        "serverDeltaMB": "50.1",
+        "deltaPerBodyMB": "5.01",
         "echoedBytes": 10485760
       },
       {
         "sizeMB": 50,
-        "ms": "51.3",
-        "serverDeltaMB": "280.8",
-        "deltaPerBodyMB": "5.62",
+        "ms": "42.2",
+        "serverDeltaMB": "232.8",
+        "deltaPerBodyMB": "4.66",
         "echoedBytes": 52428800
       },
       {
         "sizeMB": 100,
-        "ms": "120.6",
-        "serverDeltaMB": "550.0",
-        "deltaPerBodyMB": "5.50",
+        "ms": "67.4",
+        "serverDeltaMB": "448.5",
+        "deltaPerBodyMB": "4.49",
         "echoedBytes": 104857600
       }
     ],
     "linearWithBodySize": true,
-    "byteCapPresent": false,
-    "note": "delta measured inside handler after Buffer.concat+toString; includes concat copy + utf-8 string; ~2x body size, unbounded"
+    "byteCapPresent": true,
+    "byteCapBytes": 10485760,
+    "note": "delta measured inside handler after Buffer.concat+toString; ~2x body size. The real sidecar now caps at 10 MB (413) via readCappedBody."
   },
   "fsWatchLeak": {
-    "status": "OPEN/LEAKED",
+    "status": "FIXED",
     "refs": {
-      "watchCreated": "app-sidecar.ts:1215 — const watcher = fsWatch(agentDir, …)",
-      "unrefOnly": "app-sidecar.ts:1226 — watcher.unref() (keeps process exitable; handle stays open)",
-      "debounce": "app-sidecar.ts:1213,1217-1218 — watchDebounce cleared only on re-arm; no teardown clears it",
-      "noClose": "grep: zero matches for `watcher.close` in app-sidecar.ts",
-      "noDispose": "app-sidecar.ts:~1241 — createProgressManager returns { snapshot, awardRun }; no close/dispose"
+      "watchCreated": "app-sidecar.ts — const watcher = fsWatch(agentDir, …); stored in progressWatcher",
+      "dispose": "createProgressManager now returns { snapshot, awardRun, dispose }; dispose() calls progressWatcher.close() and clearTimeout(watchDebounce).",
+      "wiredToShutdown": "the daemon shutdown() handler calls progress.dispose() before server.close()."
     },
-    "verdict": "The fs.watch handle is never closed and the debounce timer is never cleared on shutdown. unref() only stops the watcher from pinning the event loop; the FD stays open for the process lifetime. One manager per daemon today, but any re-creation (or per-session use) leaks a watcher + pending 150ms debounce timer each time."
+    "verdict": "The fs.watch handle is now closed and the debounce timer cleared on shutdown via progress.dispose(), wired into the SIGINT/SIGTERM shutdown path. No watcher/timer leak."
   }
 }

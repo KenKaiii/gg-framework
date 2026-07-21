@@ -13,7 +13,7 @@
 | 4 | Truncated-stream retry | **FIXED (Fix A):** `truncate-silent` now **throws** `ProviderError("Stream ended before completion (no stop_reason).", 504)` — no longer a SILENT PARTIAL. 504 routes into the agent-loop retry bucket via `classifyOverload` → `provider_error` (agent-loop.ts:259). `clean` still passes; `truncate-mid` unchanged (throws `terminated`). OpenAI path mirrored (`no finish_reason` → 504). | ✅ **DONE — silent-partial path closed & retryable** |
 | 5 | Tool-call ID normalization | **FIXED (Fix F):** `remapToolCallId` now `slice(6)` (was `slice(5)`) → `toolu_01ABC` maps to a clean single-underscore `call_01ABC` (baseline 09 confirms, paired=true). Composite-id collision guard still open (low priority). | ✅ **DONE (double-underscore) — collision guard deferred** |
 | 6 | `tool_script` orchestration | Baseline cost: **2.8 LLM round-trips, 4.2 tool calls, ~1.6k tokens, 5.2s wall** per multi-tool task (100% success). Cheapest tasks already hit the 2-call floor | ⚖️ **Marginal on small tasks — evaluate only on fat multi-tool tasks (see 02's write-summary: 4 calls/12 tools/9.6s)** |
-| 8 | Sidecar bounds | Glob: 18.5 MB retained per 20k files (~0.9 MB/1k). HTTP bodies: RSS grows **5.5× body size**, **no byte cap** (550 MB @ 100 MB body). fs.watch **leaked** (app-sidecar.ts:1215, no close/dispose) | 🔥 **Confirmed — fix (small diffs)** |
+| 8 | Sidecar bounds | **FIXED (Fix C):** HTTP bodies now capped at **10 MB** (413) via `readCappedBody` (utils/http-body.ts, backs both readers) — verified by a real-server 413 test. `fs.watch` now **disposed** on shutdown (`progress.dispose()` closes the watcher + clears the debounce). Glob search **stream + 50k scan cap** (bounded retention). | ✅ **DONE — all three bounds closed** |
 | 10 | MCP catalog binding | N/A today — MCP connects once at startup (`initialMcpConnectPromise ??=`); catalog cannot change mid-session | ❌ **DROP until MCP hot-reload exists** |
 | 12 | Byte-stable prefixes | System prompt **byte-stable** (sha256 × 5 builds); volatile date is a **suffix** after `<!-- uncached -->` — absorbed by prefix caching (100% hit). Prefix volatility proven detectable (0% hit arm) | ❌ **DROP — already done right** |
 | 15 | On-demand skill retrieval | Today: skills section = 237 tok (3.0% of prompt) — savings ceiling is tiny. At 10+ installed skills it becomes 23–45% | ⏸️ **DEFER — revisit when skill count grows** |
@@ -87,7 +87,7 @@ Cases A (user `""`), B (user `[{text:""}]`), D (settled assistant `""`) all reac
 |---|---|---|
 | P0 | **#3 Anthropic route-aware context window** (200K default vs 1M beta) | Compaction can never fire before provider 400 — measured |
 | ~~P0~~ ✅ | ~~**#4 Silent partial on clean-truncated streams + retry classification**~~ **DONE (Fix A)** | Silent corruption path — measured; now throws retryable 504 (anthropic + openai) |
-| P0 | **#8 Sidecar byte caps + fs.watch dispose** | 5.5× memory amplification, unbounded; one-line-class leak |
+| ~~P0~~ ✅ | ~~**#8 Sidecar byte caps + fs.watch dispose**~~ **DONE (Fix C)** | 10 MB body cap (413), fs.watch dispose, 50k glob scan cap |
 | P1 | **#2 Transcript/model-input divergence on cap** | Data-integrity bug found by the baseline |
 | ~~P1~~ ✅ | ~~**#20 Omit empty text parts**~~ **DONE (Fix E)** | Live 400 failure modes; A/B/D now dropped/filtered |
 | P1 | **#16 LSP move-symbol** (narrow scope) | 0/3 measured gap; skip rename |

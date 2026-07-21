@@ -68,6 +68,7 @@ import {
 } from "./core/session-history.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { cleanupToolOutputs } from "./tools/overflow.js";
+import { readCappedBody } from "./utils/http-body.js";
 import {
   fetchSubscriptionUsage,
   MOONSHOT_OAUTH_KEY,
@@ -447,6 +448,9 @@ interface FileHit {
 }
 
 const FILE_SEARCH_LIMIT = 20;
+// Upper bound on files walked per search (baseline #8 memory cap). Far above the
+// 20-result output limit, so relevance/recency ranking is unaffected in practice.
+const FILE_SEARCH_SCAN_CAP = 50_000;
 
 /** Score a candidate path against a lowercased query. Higher is better; a
  *  negative score means "no match". Basename hits beat path hits; prefix beats
@@ -494,8 +498,13 @@ async function searchProjectFiles(cwd: string, rawQuery: string): Promise<FileHi
   const ig = ignore.default().add(gitignore);
 
   // `stats: true` gives mtime without a second stat pass, so the empty-query
-  // "recent files" path is a single walk.
-  const entries = await fg.default("**/*", {
+  // "recent files" path is a single walk. Stream + hard scan cap (baseline #8):
+  // collecting the full result array retained ~0.9 MB per 1k files (18.5 MB at
+  // 20k), unbounded. Bail after FILE_SEARCH_SCAN_CAP entries so a giant repo
+  // can't balloon RSS; the newest/most-relevant matches still surface because
+  // the cap is far above the 20-result output limit.
+  const entries: { path: string; stats?: { mtimeMs: number } }[] = [];
+  const scanStream = fg.default.stream("**/*", {
     cwd,
     dot: false,
     onlyFiles: true,
@@ -504,6 +513,17 @@ async function searchProjectFiles(cwd: string, rawQuery: string): Promise<FileHi
     followSymbolicLinks: false,
     stats: true,
   });
+  for await (const entry of scanStream) {
+    entries.push(entry as unknown as { path: string; stats?: { mtimeMs: number } });
+    if (entries.length >= FILE_SEARCH_SCAN_CAP) {
+      (scanStream as unknown as { destroy: () => void }).destroy();
+      log("DEBUG", "app-sidecar", "file search scan cap hit", {
+        cap: String(FILE_SEARCH_SCAN_CAP),
+        cwd,
+      });
+      break;
+    }
+  }
   const files = entries.filter((e) => !ig.ignores(e.path));
 
   if (!query) {
@@ -700,13 +720,11 @@ async function runJsonModeIfRequested(): Promise<boolean> {
 // ── Daemon-level HTTP helpers (shared by the session-management routes) ─────
 // The per-session route table has its own local copies; these serve the
 // daemon's own POST /session / DELETE /session routes.
-function daemonReadBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c) => chunks.push(c as Buffer));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-    req.on("error", reject);
-  });
+function daemonReadBody(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): Promise<string | null> {
+  return readCappedBody(req, res);
 }
 
 function daemonJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -935,7 +953,8 @@ async function main(): Promise<void> {
       // ── Daemon-level routes (session lifecycle) ──────────────────────────
       // Create a session for a window: { mode?, cwd, sessionPath? } → { sessionId }.
       if (method === "POST" && url === "/session") {
-        void daemonReadBody(req).then(async (raw) => {
+        void daemonReadBody(req, res).then(async (raw) => {
+          if (raw === null) return;
           let body: { mode?: unknown; chatAgent?: unknown; cwd?: unknown; sessionPath?: unknown } =
             {};
           try {
@@ -1042,6 +1061,8 @@ async function main(): Promise<void> {
     // Radio playback is app-wide (one stream across all windows), so it stops
     // at the daemon level, not per session.
     stopRadio();
+    // Close the ~/.gg progress fs.watch handle (baseline #8 leak fix).
+    progress.dispose();
     await Promise.all([...sessions.values()].map((c) => c.dispose().catch(() => {})));
     server.close();
     process.exit(0);
@@ -1140,6 +1161,8 @@ interface ProgressManager {
   snapshot: () => ProgressSnapshot;
   /** Award XP for one successfully completed run (prompt + any new commits). */
   awardRun: (cwd: string, runStartedAt: number, originId?: string) => Promise<void>;
+  /** Close the ~/.gg fs.watch + clear any pending debounce (leak-free shutdown). */
+  dispose: () => void;
 }
 
 async function createProgressManager(
@@ -1211,6 +1234,7 @@ async function createProgressManager(
   // Watch ~/.gg (dir watch survives the atomic tmp+rename) for progress.json
   // writes from other daemon processes; debounce, reload read-only, dedupe by nonce.
   let watchDebounce: NodeJS.Timeout | null = null;
+  let progressWatcher: ReturnType<typeof fsWatch> | null = null;
   try {
     const watcher = fsWatch(agentDir, (_event, filename) => {
       if (filename !== "progress.json") return;
@@ -1228,6 +1252,7 @@ async function createProgressManager(
       }, 150);
     });
     watcher.unref();
+    progressWatcher = watcher;
   } catch (err) {
     captureSidecarError(err, "app-sidecar.progress.watch");
     log("DEBUG", "app-sidecar", "progress watch unavailable", {
@@ -1235,7 +1260,22 @@ async function createProgressManager(
     });
   }
 
-  return { snapshot, awardRun };
+  // Dispose closes the fs.watch handle (baseline #8: it was previously never
+  // closed — a per-daemon leak) and clears any pending debounce timer.
+  function dispose(): void {
+    if (watchDebounce) {
+      clearTimeout(watchDebounce);
+      watchDebounce = null;
+    }
+    try {
+      progressWatcher?.close();
+    } catch {
+      // Already closed / never opened — nothing to do.
+    }
+    progressWatcher = null;
+  }
+
+  return { snapshot, awardRun, dispose };
 }
 
 type WorkspaceMode = "code" | "chat";
@@ -2427,13 +2467,11 @@ async function createSession(
   };
   scheduleGitPoll(5000);
 
-  function readBody(req: http.IncomingMessage): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      req.on("data", (c) => chunks.push(c as Buffer));
-      req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-      req.on("error", reject);
-    });
+  function readBody(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<string | null> {
+    return readCappedBody(req, res);
   }
 
   function json(res: http.ServerResponse, status: number, body: unknown): void {
@@ -2591,7 +2629,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/settings") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let projectsRoot: string;
         try {
           projectsRoot = (JSON.parse(raw) as { projectsRoot?: string }).projectsRoot ?? "";
@@ -2614,7 +2653,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/create-project") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let name: string;
         try {
           name = (JSON.parse(raw) as { name?: string }).name ?? "";
@@ -3055,7 +3095,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/prompt") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let text: string;
         let attachments: AppAttachment[];
         let meta: { kenSent?: boolean; enhancements?: unknown[] } | undefined;
@@ -3191,7 +3232,8 @@ async function createSession(
         json(res, 404, { error: "Ken is not available in GG Chat." });
         return;
       }
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let text: string;
         try {
           text = (JSON.parse(raw) as { text?: string }).text ?? "";
@@ -3254,7 +3296,8 @@ async function createSession(
         json(res, 404, { error: "Autopilot is not available in GG Chat." });
         return;
       }
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let enabled: boolean;
         try {
           enabled = Boolean((JSON.parse(raw) as { enabled?: boolean }).enabled);
@@ -3275,7 +3318,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/enhance") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let text: string;
         try {
           text = (JSON.parse(raw) as { text?: string }).text ?? "";
@@ -3325,7 +3369,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/radio/volume") {
-      void readBody(req).then((raw) => {
+      void readBody(req, res).then((raw) => {
+        if (raw === null) return;
         let volume: number;
         try {
           volume = Number((JSON.parse(raw) as { volume?: number }).volume);
@@ -3348,7 +3393,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/radio") {
-      void readBody(req).then((raw) => {
+      void readBody(req, res).then((raw) => {
+        if (raw === null) return;
         let station: string;
         try {
           station = (JSON.parse(raw) as { station?: string }).station ?? "";
@@ -3372,7 +3418,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/tasks/run") {
-      void readBody(req).then((raw) => {
+      void readBody(req, res).then((raw) => {
+        if (raw === null) return;
         let id: string | null;
         let all: boolean;
         try {
@@ -3394,7 +3441,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/tasks/delete") {
-      void readBody(req).then((raw) => {
+      void readBody(req, res).then((raw) => {
+        if (raw === null) return;
         let id: string;
         try {
           id = (JSON.parse(raw) as { id?: string }).id ?? "";
@@ -3432,7 +3480,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/model") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let modelId: string;
         try {
           modelId = (JSON.parse(raw) as { model?: string }).model ?? "";
@@ -3500,7 +3549,8 @@ async function createSession(
     // to BOTH Ken sessions (chat + autopilot reviewer); a switch landing while
     // either is mid-run defers via the pending-model mechanics.
     if (method === "POST" && url === "/ken/model") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let modelId: string | null;
         try {
           const parsed = (JSON.parse(raw) as { model?: string | null }).model;
@@ -3543,7 +3593,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/kill") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let id: string;
         try {
           id = (JSON.parse(raw) as { id?: string }).id ?? "";
@@ -3668,7 +3719,8 @@ async function createSession(
     //   3. session_reset tells the webview to clear its transcript; it then runs
     //      the "implement it now" prompt in the clean session.
     if (method === "POST" && url === "/plan/accept") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let planPath: string | undefined;
         try {
           planPath = (JSON.parse(raw) as { planPath?: string }).planPath || undefined;
@@ -3720,7 +3772,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/auth/apikey") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let provider = "";
         let key: string;
         let variant: string | undefined;
@@ -3764,7 +3817,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/auth/oauth/start") {
-      void readBody(req).then((raw) => {
+      void readBody(req, res).then((raw) => {
+        if (raw === null) return;
         let provider = "";
         try {
           provider = (JSON.parse(raw) as { provider?: string }).provider ?? "";
@@ -3815,7 +3869,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/auth/oauth/code") {
-      void readBody(req).then((raw) => {
+      void readBody(req, res).then((raw) => {
+        if (raw === null) return;
         let code: string;
         try {
           code = (JSON.parse(raw) as { code?: string }).code ?? "";
@@ -3835,7 +3890,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/auth/logout") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let provider: string;
         try {
           provider = (JSON.parse(raw) as { provider?: string }).provider ?? "";
@@ -3873,7 +3929,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/telegram") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let botTokenInput: string;
         let userIdInput: string;
         try {
@@ -3982,7 +4039,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/mcp/add") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let line: string;
         let scopeValue: string;
         let bodyCwd: string | undefined;
@@ -4042,7 +4100,8 @@ async function createSession(
     }
 
     if (method === "POST" && url === "/mcp/remove") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let name: string;
         let scopeValue: string;
         let bodyCwd: string | undefined;
@@ -4083,7 +4142,8 @@ async function createSession(
     // `mcp_auth_error`. Responds 202 immediately and runs the flow in the
     // background (the browser round-trip can take a while).
     if (method === "POST" && url === "/mcp/login") {
-      void readBody(req).then(async (raw) => {
+      void readBody(req, res).then(async (raw) => {
+        if (raw === null) return;
         let name: string;
         let scopeValue: string;
         let bodyCwd: string | undefined;

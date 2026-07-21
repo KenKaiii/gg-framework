@@ -158,8 +158,14 @@ async function benchHttpBody() {
   return {
     rows,
     linearWithBodySize: linear,
-    byteCapPresent: false, // no length guard anywhere in daemonReadBody/readBody
-    note: "delta measured inside handler after Buffer.concat+toString; includes concat copy + utf-8 string; ~2x body size, unbounded",
+    // FIXED (Fix C): readCappedBody (utils/http-body.ts, MAX_HTTP_BODY_BYTES=10MB)
+    // now backs both daemonReadBody and the per-route readBody; over-cap bodies
+    // get a 413 + destroyed socket + resolve(null). Numbers below are the
+    // pre-fix unbounded demonstration (this bench re-implements the old reader
+    // inline to show what the cap now prevents).
+    byteCapPresent: true,
+    byteCapBytes: 10 * 1024 * 1024,
+    note: "delta measured inside handler after Buffer.concat+toString; ~2x body size. The real sidecar now caps at 10 MB (413) via readCappedBody.",
   };
 }
 
@@ -184,23 +190,23 @@ table(
   httpBody.rows.map((r) => [r.sizeMB + " MB", r.ms + " ms", r.serverDeltaMB + " MB", r.deltaPerBodyMB + "x"]),
   ["body", "time", "server RSS Δ", "Δ per body MB"],
 );
-console.log(`linear growth: ${httpBody.linearWithBodySize} — byte cap present: ${httpBody.byteCapPresent}`);
+console.log(
+  `linear growth: ${httpBody.linearWithBodySize} — byte cap present (real sidecar): ${httpBody.byteCapPresent} (${httpBody.byteCapBytes} bytes)`,
+);
 
-// (c) fs.watch leak — code inspection of createProgressManager (app-sidecar.ts:1145-1242).
+// (c) fs.watch leak — code inspection of createProgressManager. FIXED (Fix C).
 const fsWatchLeak = {
-  status: "OPEN/LEAKED",
+  status: "FIXED",
   refs: {
-    watchCreated: "app-sidecar.ts:1215 — const watcher = fsWatch(agentDir, …)",
-    unrefOnly: "app-sidecar.ts:1226 — watcher.unref() (keeps process exitable; handle stays open)",
-    debounce: "app-sidecar.ts:1213,1217-1218 — watchDebounce cleared only on re-arm; no teardown clears it",
-    noClose: "grep: zero matches for `watcher.close` in app-sidecar.ts",
-    noDispose: "app-sidecar.ts:~1241 — createProgressManager returns { snapshot, awardRun }; no close/dispose",
+    watchCreated: "app-sidecar.ts — const watcher = fsWatch(agentDir, …); stored in progressWatcher",
+    dispose:
+      "createProgressManager now returns { snapshot, awardRun, dispose }; dispose() calls " +
+      "progressWatcher.close() and clearTimeout(watchDebounce).",
+    wiredToShutdown: "the daemon shutdown() handler calls progress.dispose() before server.close().",
   },
   verdict:
-    "The fs.watch handle is never closed and the debounce timer is never cleared on shutdown. " +
-    "unref() only stops the watcher from pinning the event loop; the FD stays open for the " +
-    "process lifetime. One manager per daemon today, but any re-creation (or per-session use) " +
-    "leaks a watcher + pending 150ms debounce timer each time.",
+    "The fs.watch handle is now closed and the debounce timer cleared on shutdown via " +
+    "progress.dispose(), wired into the SIGINT/SIGTERM shutdown path. No watcher/timer leak.",
 };
 console.log(`\n(c) fs.watch in createProgressManager: ${fsWatchLeak.status}`);
 for (const [k, v] of Object.entries(fsWatchLeak.refs)) console.log(`    ${k}: ${v}`);
