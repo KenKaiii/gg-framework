@@ -25,6 +25,7 @@ Apply these on every UI task. Read `references/craft-rulings.md` when implementi
 - **No edge-hugging control icons:** Select, dropdown, and combobox chevrons and other trailing icons need a deliberate inline-end inset plus enough reserved text padding for the icon and gap. They must never touch the control edge or overlap content; use logical properties so the anatomy also works in RTL.
 - **Reuse first:** Search for existing components, variants, tokens, utilities, icon wrappers, focus rings, and motion curves before creating new ones.
 - **Purposeful feedback:** Relevant hover, focus, press, selected, expanded, loading, success, and error states need clear feedback. Avoid abrupt changes when a short transition improves continuity.
+- **No soft semantic tint-on-tint:** Do not default badges, buttons, toasts, cards, selected states, or icon medallions to a low-opacity semantic-color background with saturated same-hue text or icons, with or without a matching border. Unless the user explicitly requests that treatment or an established system must be preserved, choose a product-specific alternative rather than imposing one universal replacement style.
 - **No sticky pointer focus:** Clicking or tapping must not leave a focus ring, highlighted border, shadow, background, or container `:focus-within` treatment stuck after the interaction ends, a native popup closes, or the user clicks elsewhere. Preserve immediate, visible keyboard focus by distinguishing input modality instead of suppressing focus globally.
 - **No generic hover lift:** Do not default to `translateY`, bobbing, floating, or scale-up on hover. Prefer color, border, underline, icon fill, opacity, or restrained shadow changes.
 - **No `transition: all`:** Name transition properties, reuse duration/easing tokens, and provide a reduced-motion path.
@@ -93,7 +94,7 @@ One thesis leads. Do not combine several aesthetic directions into a mood-board 
 
 ### 5. Run the anti-default check
 
-For broad visual work, read `references/anti-defaults.md`. Flag emoji UI, mixed icon families, arbitrary misalignment, duplicated local styling, abrupt interaction, generic hover lift, generic type, generated em dashes, centered gradient heroes, glass cards, equal card grids, decorative eyebrows, random metric blocks, ubiquitous pills, dark-premium assumptions, fake terminals, floating screenshots, bento layouts, ambient motion, icon medallions, and invented proof.
+For broad visual work, read `references/anti-defaults.md`. Flag emoji UI, mixed icon families, arbitrary misalignment, duplicated local styling, abrupt interaction, generic hover lift, soft semantic tint-on-tint treatments, generic type, generated em dashes, centered gradient heroes, glass cards, equal card grids, decorative eyebrows, random metric blocks, ubiquitous pills, dark-premium assumptions, fake terminals, floating screenshots, bento layouts, ambient motion, icon medallions, and invented proof.
 
 Keep a flagged pattern only after completing: **“This belongs because…”** with a product-specific reason. Replace choices that could survive unchanged in an unrelated product.
 

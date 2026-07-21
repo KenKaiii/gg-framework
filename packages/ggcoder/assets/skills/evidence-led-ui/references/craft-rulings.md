@@ -154,6 +154,14 @@ Never use faint light-gray text on white, faint dark-gray text on black, or low-
 - Aim above the minimum for small, thin, long-form, or mission-critical text. Verify computed colors rather than judging from a screenshot alone.
 - Do not use color as the only status cue. Pair color with text, shape, icon, or pattern.
 
+### No soft semantic tint-on-tint
+
+Do not default badges, buttons, toasts, alerts, cards, selected states, status rows, or icon medallions to the familiar `soft`, `subtle`, `surface`, or `tonal` formula: a low-opacity red, green, amber, blue, or purple background paired with saturated same-hue text or icons, often finished with a same-hue border. The border is optional; the same-hue tinted surface plus same-hue foreground is the rejected pattern.
+
+Choose the replacement from the product's existing aesthetic and the component's role. Viable directions include a neutral surface with an isolated semantic icon, dot, or edge; a solid semantic fill with neutral high-contrast text; monochrome treatment; a product accent; plain typography; or another coherent local material model. These are options, not a new house style. Preserve hierarchy, measured contrast, and a non-color cue for status.
+
+Retain tint-on-tint only when the user explicitly asks for it or exact reuse of an established design-system variant is required by scope. Existing examples are evidence to inspect, not permission to spread the treatment into new component families.
+
 ## 7. Consistency and flow
 
 A polished interface feels like one system from section to section, component to component, and page to page.
@@ -187,5 +195,6 @@ Before calling UI work complete, verify:
 - reduced motion preserves state meaning;
 - typography is intentional, loaded efficiently, and stable during fallback;
 - all text and meaningful non-text contrast is measured;
+- no soft semantic tint-on-tint treatment was introduced without an explicit user request or required existing-system match;
 - repeated navigation/actions remain consistent across sections and pages;
 - generated UI copy contains no em dashes unless explicitly allowed.

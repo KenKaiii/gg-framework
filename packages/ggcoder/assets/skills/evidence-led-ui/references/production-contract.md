@@ -78,6 +78,7 @@ For web surfaces, use current Core Web Vitals as the shared target at the 75th p
 ## 7. Tokens and component contracts
 
 - Reuse the host system first. For a net-new scalable system, separate primitive values from semantic roles and component tokens; define modes without duplicating meaning.
+- Do not introduce soft semantic tint-on-tint as the default status variant: low-opacity semantic backgrounds paired with saturated same-hue text or icons, with or without matching borders. Derive a replacement from the host aesthetic and preserve non-color status cues; retain the treatment only when explicitly requested or exact established-system reuse is required.
 - The Design Tokens Community Group 2025.10 format is a stable interoperability option, not a W3C Standard and not a mandatory migration target. Use it only when tools need a portable source of truth.
 - Each shared component documents anatomy, semantic element, variants, sizes, content limits, states, keyboard behavior, responsive behavior, and accessibility name/description rules.
 - Keep one source of truth. Generated platform outputs must not become competing hand-edited token stores.

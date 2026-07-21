@@ -3,7 +3,7 @@
 ## Contents
 
 - Purpose and review method
-- Template composition: centered gradient hero, glass cards, equal card grids, eyebrows, metric blocks, pills, dark-premium assumptions, huge type, fake terminals, floating screenshots, and bento layouts
+- Template composition: centered gradient hero, glass cards, equal card grids, eyebrows, metric blocks, pills, soft semantic tint-on-tint treatments, dark-premium assumptions, huge type, fake terminals, floating screenshots, and bento layouts
 - Decoration and truth: ambient motion, icon medallions, false authenticity, emoji, and mixed icon language
 - Craft regressions: generic hover lift, abrupt states, accidental misalignment, reimplemented local styling, generic type, and generated em dashes
 - Final anti-default review
@@ -61,6 +61,14 @@ For every flagged pattern, write one sentence: **“This belongs because…”**
 **Default action:** Reserve full pills for roles that benefit from compact enclosure or toggle/tag semantics; use a smaller local radius vocabulary elsewhere.
 
 **Legitimate when:** The project already uses an orbital/capsule motif, a control’s variable label length needs it, or tactile consumer friendliness is a deliberate material rule.
+
+## Soft semantic tint-on-tint
+
+**AI tell:** Badges, buttons, toasts, cards, selected states, status rows, and icon medallions repeatedly use low-opacity semantic-color backgrounds with saturated same-hue text or icons, sometimes with a matching border. Component libraries often name this formula `soft`, `subtle`, `surface`, or `tonal`.
+
+**Default action:** Replace the formula, then derive the new treatment from the product's actual aesthetic and component role. A neutral surface with one semantic marker, a solid fill with neutral high-contrast text, monochrome styling, product accent, typography, or another coherent local material model can work; none is the universal replacement.
+
+**Legitimate when:** The user explicitly requests tint-on-tint or exact reuse of an established design-system variant is required by scope. Unlike most patterns in this file, this is a binding craft default rather than a pattern justified by generic claims such as `clean`, `friendly`, or `modern`.
 
 ## Dark equals premium
 

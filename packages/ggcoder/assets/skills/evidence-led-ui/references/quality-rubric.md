@@ -48,7 +48,7 @@ Maximum: **24 points**. Ship broad UI work only at **20/24 or higher**, with no 
 - **1:** Most patterns repeat, but spacing cadence, icon treatment, controls, actions, or section transitions contain visible inconsistencies.
 - **2:** Existing primitives are reused; one icon family, spacing rhythm, component anatomy, navigation order, action placement, and surface logic carry through the full flow.
 
-**Test:** Compare adjacent sections and pages side by side. Trace one repeated action through every occurrence, then inspect container edges, control heights, icon weight, spacing, borders, labels, and state behavior. For selects, dropdowns, and comboboxes, verify the trailing icon has intentional edge inset and reserved text clearance at every size, in RTL, and with the longest plausible value.
+**Test:** Compare adjacent sections and pages side by side. Trace one repeated action through every occurrence, then inspect container edges, control heights, icon weight, spacing, borders, labels, and state behavior. For selects, dropdowns, and comboboxes, verify the trailing icon has intentional edge inset and reserved text clearance at every size, in RTL, and with the longest plausible value. Flag any low-opacity semantic background paired with saturated same-hue text or icons; it fails unless the user requested it or exact established-system reuse is required.
 
 ## 5. Typography
 
