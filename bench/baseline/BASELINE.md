@@ -9,7 +9,7 @@
 |---|---|---|---|
 | 1 | EOL-aware edit executor | **0/18 edit failures** on CRLF corpus; CRLF intact every run. `edit.ts` already normalizes `\r\n`→`\n` for matching and converts back on write | ❌ **DROP — already implemented** |
 | 2 | Aggregate tool-response budget | **FIXED (Fix D):** the transcript≠model-input divergence is now programmatically visible — `capToolResults`/`capTurnToolResults` stamp a `ToolResult.capped = { originalChars, keptChars, scope }` marker whenever they trim. Consumers can reconcile the full `tool_call_end` preview against the trimmed model input; the marker is internal metadata and never reaches the provider wire. Budget sizing itself was measured fine (10k triggers 9.1% of turns). | ✅ **DONE — divergence made visible** |
-| 3 | Registry/compaction sizing | **Severe:** Anthropic models list 1M context but gg-ai never sends the context-1m beta header → compaction triggers at 850K against a route that hard-rejects >200K. Auto-compaction can never fire before the provider 400s | 🔥 **TOP PRIORITY — actively broken** |
+| 3 | Registry/compaction sizing | **DISPROVEN by live probe (baseline 12):** Sonnet 5 + Opus 4.8 each **ACCEPTED a 341,942-token request** (Anthropic's own count; cacheRead) with **no context-1m beta header** and returned a normal completion — a 400 context rejection cannot produce that. Fable 5 was only 429 usage-limited (orthogonal; owner-confirmed 1M GA). So these models are **1M-context GA on this route**; the registry's `contextWindow: 1_000_000` is CORRECT and compaction at 0.85×1M is valid. | ✅ **NO-OP — verified correct, nothing to change** |
 | 4 | Truncated-stream retry | **FIXED (Fix A):** `truncate-silent` now **throws** `ProviderError("Stream ended before completion (no stop_reason).", 504)` — no longer a SILENT PARTIAL. 504 routes into the agent-loop retry bucket via `classifyOverload` → `provider_error` (agent-loop.ts:259). `clean` still passes; `truncate-mid` unchanged (throws `terminated`). OpenAI path mirrored (`no finish_reason` → 504). | ✅ **DONE — silent-partial path closed & retryable** |
 | 5 | Tool-call ID normalization | **FIXED (Fix F):** `remapToolCallId` now `slice(6)` (was `slice(5)`) → `toolu_01ABC` maps to a clean single-underscore `call_01ABC` (baseline 09 confirms, paired=true). Composite-id collision guard still open (low priority). | ✅ **DONE (double-underscore) — collision guard deferred** |
 | 6 | `tool_script` orchestration | Baseline cost: **2.8 LLM round-trips, 4.2 tool calls, ~1.6k tokens, 5.2s wall** per multi-tool task (100% success). Cheapest tasks already hit the 2-call floor | ⚖️ **Marginal on small tasks — evaluate only on fat multi-tool tasks (see 02's write-summary: 4 calls/12 tools/9.6s)** |
@@ -76,6 +76,16 @@ Latent footgun also found: `StreamResult`'s background pump rejects its response
 ### 10 — Empty parts on the wire
 Cases A (user `""`), B (user `[{text:""}]`), D (settled assistant `""`) all reach the wire; whitespace never trimmed (C, G). Anthropic rejects empty text blocks with 400 → live failure modes.
 
+### 12 — Anthropic 1M context (LIVE probe, real GG auth)
+Sent a ~224K-char / **341,942-token** (Anthropic's count) single user turn to each 1M model with **no `context-1m` beta header**:
+| model | classification | note |
+|---|---|---|
+| claude-sonnet-5 | **ACCEPTED** | streamed "PROBE OK"; cacheRead 341,942 tok — full payload processed |
+| claude-opus-4-8 | **ACCEPTED** | streamed "PROBE OK"; cacheRead 341,942 tok |
+| claude-fable-5 | USAGE_LIMITED (429) | orthogonal to context; owner-confirmed 1M GA |
+
+Verdict: 1M models are 1M-context GA on this route with no beta needed → item #3 is a **no-op**. The registry's `contextWindow: 1_000_000` and 0.85×1M compaction threshold are correct as-is.
+
 ### 11 — Registry audit
 - Only route-specific limits: 4 OpenAI models (`codexContextWindow` 272K vs 1.05M API), keyed off accountId.
 - **No Anthropic route/input distinction**: Sonnet 5 / Opus 4.8 / Fable 5 budget compaction at 850K (0.85 × 1M) on a route that rejects >200K without the 1m beta header.
@@ -85,7 +95,7 @@ Cases A (user `""`), B (user `[{text:""}]`), D (settled assistant `""`) all reac
 
 | Priority | Item | Why |
 |---|---|---|
-| P0 | **#3 Anthropic route-aware context window** (200K default vs 1M beta) | Compaction can never fire before provider 400 — measured |
+| ~~P0~~ ✅ | ~~**#3 Anthropic route-aware context window**~~ **NO-OP (Fix B) — live-probed** | Sonnet 5 + Opus 4.8 accept 341,942 tok with no beta (baseline 12); registry 1M is correct |
 | ~~P0~~ ✅ | ~~**#4 Silent partial on clean-truncated streams + retry classification**~~ **DONE (Fix A)** | Silent corruption path — measured; now throws retryable 504 (anthropic + openai) |
 | ~~P0~~ ✅ | ~~**#8 Sidecar byte caps + fs.watch dispose**~~ **DONE (Fix C)** | 10 MB body cap (413), fs.watch dispose, 50k glob scan cap |
 | ~~P1~~ ✅ | ~~**#2 Transcript/model-input divergence on cap**~~ **DONE (Fix D)** | `ToolResult.capped` marker exposes the trim (internal-only, never on wire) |

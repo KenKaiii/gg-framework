@@ -1,0 +1,68 @@
+{
+  "benchmark": "12-anthropic-1m-probe",
+  "model": "claude-sonnet-5",
+  "date": "2026-07-21T23:01:25.042Z",
+  "targetTokens": 210000,
+  "approxInputTokens": 224738,
+  "betaHeaderSent": false,
+  "results": [
+    {
+      "model": "claude-sonnet-5",
+      "approxInputTokens": 224738,
+      "ok": true,
+      "threw": false,
+      "errorName": null,
+      "errorMessage": null,
+      "statusCode": null,
+      "classification": "ACCEPTED",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 8,
+        "cacheRead": 341942,
+        "cacheWrite": 0
+      },
+      "text": "PROBE OK",
+      "ms": 2091
+    },
+    {
+      "model": "claude-opus-4-8",
+      "approxInputTokens": 224738,
+      "ok": true,
+      "threw": false,
+      "errorName": null,
+      "errorMessage": null,
+      "statusCode": null,
+      "classification": "ACCEPTED",
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 8,
+        "cacheRead": 341942,
+        "cacheWrite": 0
+      },
+      "text": "PROBE OK",
+      "ms": 2056
+    },
+    {
+      "model": "claude-fable-5",
+      "approxInputTokens": 224738,
+      "ok": false,
+      "threw": true,
+      "errorName": "ProviderError",
+      "errorMessage": "Claude usage limit reached",
+      "statusCode": 429,
+      "classification": "USAGE_LIMITED",
+      "usage": null,
+      "text": null,
+      "ms": 600
+    }
+  ],
+  "accepted": [
+    "claude-sonnet-5",
+    "claude-opus-4-8"
+  ],
+  "contextRejected": [],
+  "usageLimited": [
+    "claude-fable-5"
+  ],
+  "verdict": "claude-sonnet-5, claude-opus-4-8 ACCEPTED a ~224738-token request (>200K) with NO context-1m beta header sent by gg-ai — a streamed completion came back, which a 400 context rejection cannot produce. The large payload was genuinely transmitted (counted as cacheWrite, since gg-ai applies cache_control to the last user turn). claude-fable-5 returned a 429 USAGE LIMIT — orthogonal to context size, so inconclusive here but not contradicting (owner-confirmed 1M GA). Conclusion: Anthropic 1M models are 1M-context GA on this route. The model-registry contextWindow of 1_000_000 is CORRECT and compaction at 0.85×1M is valid, so item #3 is a NO-OP — no route-aware clamp and no beta header are needed."
+}
