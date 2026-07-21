@@ -14,7 +14,7 @@ import {
   serverResetDelayMs,
 } from "./agent-loop.js";
 import type { AgentEvent, AgentResult, AgentTool, TransformContextOptions } from "./types.js";
-import type { Message, StreamOptions, Usage } from "@kenkaiiii/gg-ai";
+import type { Message, StreamOptions, ToolResult, Usage } from "@kenkaiiii/gg-ai";
 
 // ── Mock stream ────────────────────────────────────────────
 
@@ -1775,8 +1775,8 @@ describe("capTurnToolResults", () => {
 // place while the tool_call_end event already carried the FULL preview. The
 // `capped` marker makes that divergence programmatically visible.
 describe("tool-result cap divergence marker", () => {
-  const result = (id: string, content: string) => ({
-    type: "tool_result" as const,
+  const result = (id: string, content: string): ToolResult => ({
+    type: "tool_result",
     toolCallId: id,
     content,
   });
