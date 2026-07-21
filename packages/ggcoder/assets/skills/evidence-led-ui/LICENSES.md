@@ -44,6 +44,18 @@ The following works informed research comparisons. Their source text, assets, da
 - Status checked 2026-07-13: W3C Recommendation, 12 December 2024
 - Use here: linked accessibility conformance floor; W3C text is not redistributed.
 
+### WCAG2ICT
+
+- Source: https://www.w3.org/TR/wcag2ict-22/
+- Status checked 2026-07-21: W3C Group Note; informative guidance for applying WCAG 2 Level A and AA to non-web software.
+- Use here: linked native-software accessibility guidance; W3C text is not redistributed.
+
+### U.S. Department of Justice ADA web and mobile accessibility guidance
+
+- Sources: https://www.ada.gov/resources/web-guidance/ and https://www.ada.gov/resources/2024-03-08-web-rule/
+- Status checked 2026-07-21: current DOJ guidance and Title II rule fact sheet.
+- Use here: legal-context and equal-access boundary only; no source text is redistributed and no legal-compliance conclusion is inferred.
+
 ### WCAG 3.0
 
 - Source: https://www.w3.org/TR/wcag-3.0/

@@ -42,12 +42,14 @@ As fetched on 2026-07-13, [`styles.refero.design/robots.txt`](https://styles.ref
 
 Therefore this skill must not bulk-scrape Refero, call undocumented Refero endpoints, or mirror its catalog. Refero may be used only through an authorized Refero MCP or a user-provided export the user is entitled to share. Live access is optional; the skill works without it.
 
-## Accessibility standards
+## Accessibility standards and ADA context
 
-- **Conformance floor:** [Web Content Accessibility Guidelines (WCAG) 2.2](https://www.w3.org/TR/WCAG22/), W3C Recommendation dated 12 December 2024 in the current W3C publication fetched 2026-07-13.
+- **Web conformance floor:** [Web Content Accessibility Guidelines (WCAG) 2.2](https://www.w3.org/TR/WCAG22/), W3C Recommendation dated 12 December 2024 in the current publication fetched 2026-07-21. The [W3C WCAG overview](https://www.w3.org/WAI/standards-guidelines/wcag/) encourages the latest version and states that WCAG 2.2 conformance is backward compatible with WCAG 2.1 and 2.0.
+- **Native application guidance:** [WCAG2ICT](https://www.w3.org/TR/wcag2ict-22/) explains how Level A and AA criteria apply to non-web software. It is informative guidance, not a normative standard, and native work still needs platform and product-specific accessibility requirements.
+- **U.S. ADA context:** The Department of Justice [ADA web accessibility guidance](https://www.ada.gov/resources/web-guidance/) explains equal access and effective communication under Titles II and III. The current [Title II web and mobile app rule fact sheet](https://www.ada.gov/resources/2024-03-08-web-rule/) names WCAG 2.1 Level AA as its technical standard and documents scope, exceptions, and compliance timing. These sources were checked 2026-07-21.
 - **Not the conformance target:** [W3C Accessibility Guidelines (WCAG) 3.0](https://www.w3.org/TR/wcag-3.0/) is a W3C Working Draft dated 3 March 2026. W3C says publication as a Working Draft does not imply endorsement and that it is inappropriate to cite as anything other than work in progress.
 
-Project or jurisdictional requirements may exceed this floor. Use the current official standard and product-specific accessibility requirements at implementation time.
+WCAG 2.2 Level AA is the default engineering floor because it includes and extends WCAG 2.1, but technical WCAG conformance alone does not prove compliance with the ADA or another law. Project, procurement, contractual, platform, and jurisdictional requirements may exceed this floor. Use the current official standard and obtain qualified product or legal review before making a legal-compliance claim.
 
 ## UI craft research checked 14 July 2026
 
@@ -68,11 +70,11 @@ The motion recommendations were also checked against the pinned local corpus. Se
 
 Refero content was not accessed for this update because no authorized Refero MCP or user-provided export was available. The existing Refero boundary remains unchanged.
 
-## Production-practice research checked 14 July 2026
+## Production-practice research checked 21 July 2026
 
 The pass/fail contract in `references/production-contract.md` was checked against current primary guidance:
 
-- [What's New in WCAG 2.2](https://www.w3.org/WAI/standards-guidelines/wcag/new-in-22/) and the linked Understanding documents: focus not obscured, target size minimum, dragging alternatives, redundant entry, and accessible authentication;
+- [WCAG 2.2](https://www.w3.org/TR/WCAG22/), its [conformance requirements](https://www.w3.org/TR/WCAG22/#conformance-reqs), [How to Meet WCAG 2](https://www.w3.org/WAI/WCAG22/quickref/), and [What's New in WCAG 2.2](https://www.w3.org/WAI/standards-guidelines/wcag/new-in-22/): all applicable Level A and AA criteria across full pages and complete processes, plus focus not obscured, target size minimum, dragging alternatives, redundant entry, and accessible authentication;
 - [WAI-ARIA Authoring Practices](https://www.w3.org/WAI/ARIA/apg/) and its dialog, menu button, combobox, and keyboard-interface patterns: native semantics first and complete keyboard/focus behavior for custom composites;
 - [WAI Forms Tutorial](https://www.w3.org/WAI/tutorials/forms/): labels, grouping, instructions, validation, notifications, and accessible custom controls;
 - the [WHATWG HTML Standard for dialog](https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element) and [popover](https://html.spec.whatwg.org/multipage/popover.html), plus [MDN Popover API guidance](https://developer.mozilla.org/en-US/docs/Web/API/Popover_API): modal versus non-modal top-layer behavior and the semantics authors must still provide;

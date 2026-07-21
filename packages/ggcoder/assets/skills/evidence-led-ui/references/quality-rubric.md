@@ -84,11 +84,11 @@ Maximum: **24 points**. Ship broad UI work only at **20/24 or higher**, with no 
 
 ## 9. Accessibility quality floor
 
-- **0:** Keyboard path, focus, semantics, contrast, labels, icon meaning, status, drag-only operation, or target sizes block use.
-- **1:** Basics exist but focus order/visibility, text/non-text contrast, motion, icon labels, status cues, composite-widget behavior, forced colors, or assistive naming has gaps.
-- **2:** Native semantics or verified APG behavior, visible and unobscured focus, keyboard operation, meaningful labels/status, WCAG 2.2 target minimums with platform-appropriate touch targets, reduced motion, forced colors, text contrast of at least 4.5:1 (3:1 for large text), and meaningful non-text contrast of at least 3:1 are verified.
+- **0:** Any applicable WCAG 2.2 Level A or AA criterion fails, or keyboard use, focus, semantics, contrast, labels, media alternatives, status, drag alternatives, target sizes, or assistive-technology output blocks use.
+- **1:** Basics work, but the changed-scope criterion audit is incomplete or focus order/visibility, text/non-text contrast, motion, icon labels, status cues, composite-widget behavior, forced colors, zoom/reflow, media alternatives, or assistive-technology verification has gaps.
+- **2:** The changed scope has evidence that every applicable WCAG 2.2 Level A and AA criterion passes. Native semantics or verified APG behavior, visible and unobscured focus, complete keyboard operation, meaningful names/instructions/status, media alternatives, target minimums, reduced motion, forced colors, 200% text and 320 CSS-pixel reflow where applicable, representative assistive-technology output, text contrast of at least 4.5:1 (3:1 for large text), and meaningful non-text contrast of at least 3:1 are verified.
 
-**Test:** Complete the primary task by keyboard; inspect accessible names and status; verify overlay focus and drag alternatives; measure text, icon, control, and focus contrast; run project accessibility tooling; test 200% text/reflow, `prefers-reduced-motion`, and forced colors; verify color is not the only cue.
+**Test:** Audit every applicable Level A and AA criterion for the changed scope against the official WCAG Quick Reference and all five conformance requirements. Complete the primary task by keyboard and with a representative screen reader or native assistive technology. Inspect names, roles, values, status, reading order, page and passage language, titles, link purpose, multiple navigation paths, consistent help, text/media alternatives, images of text, hover/focus content, overlay focus, context changes, timing, forms and error prevention, pointer cancellation, and gesture/drag alternatives. Measure text, icon, control, state, and focus contrast; run project accessibility tooling; test 200% text, 320 CSS-pixel reflow, zoom or platform text scaling, `prefers-reduced-motion`, and forced colors. Record pass, fail, or justified not applicable. Automated output alone never earns a pass or supports an ADA-compliance or WCAG-conformance claim.
 
 ## 10. Motion purpose
 
