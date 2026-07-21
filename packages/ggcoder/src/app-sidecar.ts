@@ -84,7 +84,12 @@ import type { OAuthCredentials, OAuthLoginCallbacks } from "./core/oauth/types.j
 import { AUTH_PROVIDERS, type AuthProviderMeta } from "./core/auth-providers.js";
 import { ensureAppDirs, loadSavedSettings } from "./config.js";
 import { SettingsManager, type Settings } from "./core/settings-manager.js";
-import { getModel, getMaxThinkingLevel, getContextWindow, MODELS } from "./core/model-registry.js";
+import {
+  getModel,
+  getDefaultThinkingLevel,
+  getContextWindow,
+  MODELS,
+} from "./core/model-registry.js";
 import { resolveStartOrFallback } from "./core/resolve-start.js";
 import { getGitBranch, getGitDirtyFileCount, isGitRepo } from "./utils/git.js";
 import { extractPlanSteps } from "./utils/plan-steps.js";
@@ -1283,6 +1288,10 @@ async function createSession(
   const host = "127.0.0.1";
 
   const saved = loadSavedSettings(paths.settingsFile);
+  // Native login/logout and other live sessions share auth.json. Refresh the
+  // daemon-level snapshot before choosing this session's provider so a project
+  // never boots against credentials that were just replaced or disconnected.
+  await auth.load();
   // Per-project model/thinking prefs win over the shared global settings.json:
   // each window (one project cwd) restores its own selection instead of every
   // window reading the same single global slot that the last writer clobbered
@@ -1307,9 +1316,14 @@ async function createSession(
   }
 
   // Per-project thinking prefs win over the global settings.json fallback.
+  // With no saved level, the default follows the active credential's endpoint:
+  // Kimi K3 on the OAuth coding endpoint starts at its declared default (high),
+  // matching the official kimi-code CLI's plan-usage profile.
   const thinkEnabled = projectPrefs?.thinkingEnabled ?? saved.thinkingEnabled;
   const thinkingLevel: ThinkingLevel | undefined = thinkEnabled
-    ? (projectPrefs?.thinkingLevel ?? saved.thinkingLevel ?? getMaxThinkingLevel(model))
+    ? (projectPrefs?.thinkingLevel ??
+      saved.thinkingLevel ??
+      getDefaultThinkingLevel(model, { baseUrl: auth.getStoredBaseUrl(provider) }))
     : undefined;
 
   // ── SSE fan-out (declared before the session so plan callbacks can use it) ─

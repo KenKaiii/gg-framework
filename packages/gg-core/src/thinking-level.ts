@@ -30,6 +30,11 @@ const ANTHROPIC_ADAPTIVE_THINKING_LEVELS: readonly ThinkingLevel[] = [
   "high",
   "max",
 ];
+// Kimi K3's effort ladder is declared server-side via /models think_efforts:
+// ["low","high","max"] on both the public API (default max) and the Kimi For
+// Coding OAuth endpoint (default high) — verified live 2026-07-21. Unlisted
+// efforts are rejected with a 400, so expose exactly the declared rungs.
+const MOONSHOT_K3_THINKING_LEVELS: readonly ThinkingLevel[] = ["low", "high", "max"];
 
 function isOpenAIGptModel(provider: Provider, model: string): boolean {
   return provider === "openai" && model.startsWith("gpt-");
@@ -41,6 +46,10 @@ function isSakanaModel(provider: Provider): boolean {
 
 function isXaiModel(provider: Provider): boolean {
   return provider === "xai";
+}
+
+function isMoonshotK3Model(provider: Provider, model: string): boolean {
+  return provider === "moonshot" && model === "kimi-k3";
 }
 
 function isAnthropicOpus48Or47Model(provider: Provider, model: string): boolean {
@@ -79,6 +88,8 @@ export function getSupportedThinkingLevels(
     return XAI_THINKING_LEVELS.slice(0, maxIndex + 1);
   }
 
+  if (isMoonshotK3Model(provider, model)) return MOONSHOT_K3_THINKING_LEVELS;
+
   if (!isOpenAIGptModel(provider, model)) return [maxLevel];
 
   const levels = model.startsWith("gpt-5.6-")
@@ -107,7 +118,8 @@ export function getNextThinkingLevel(
     isOpenAIGptModel(provider, model) ||
     isAnthropicAdaptiveModel(provider, model) ||
     isSakanaModel(provider) ||
-    isXaiModel(provider);
+    isXaiModel(provider) ||
+    isMoonshotK3Model(provider, model);
   if (!shouldCycleLevels) {
     return current ? undefined : supportedLevels[0];
   }

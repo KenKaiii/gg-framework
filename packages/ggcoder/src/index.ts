@@ -39,6 +39,7 @@ export {
   getContextWindow,
   usesOpenAICodexTransport,
   getMaxThinkingLevel,
+  getDefaultThinkingLevel,
   getNextThinkingLevel,
   getSupportedThinkingLevels,
   isThinkingLevelSupported,

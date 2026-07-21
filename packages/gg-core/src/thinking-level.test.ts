@@ -64,10 +64,16 @@ describe("thinking-level helpers", () => {
     expect(isThinkingLevelSupported("sakana", "fugu", "medium")).toBe(false);
   });
 
-  it("keeps non-cycling providers at their model's sole supported effort", () => {
-    expect(getSupportedThinkingLevels("moonshot", "kimi-k3")).toEqual(["max"]);
-    expect(getNextThinkingLevel("moonshot", "kimi-k3", undefined)).toBe("max");
+  it("cycles Kimi K3 through its server-declared low, high, max ladder", () => {
+    expect(getSupportedThinkingLevels("moonshot", "kimi-k3")).toEqual(["low", "high", "max"]);
+    expect(getNextThinkingLevel("moonshot", "kimi-k3", undefined)).toBe("low");
+    expect(getNextThinkingLevel("moonshot", "kimi-k3", "low")).toBe("high");
+    expect(getNextThinkingLevel("moonshot", "kimi-k3", "high")).toBe("max");
     expect(getNextThinkingLevel("moonshot", "kimi-k3", "max")).toBeUndefined();
+    expect(isThinkingLevelSupported("moonshot", "kimi-k3", "medium")).toBe(false);
+  });
+
+  it("keeps non-cycling providers at their model's sole supported effort", () => {
     expect(getSupportedThinkingLevels("moonshot", "kimi-k2.7-code")).toEqual(["high"]);
     expect(getNextThinkingLevel("moonshot", "kimi-k2.7-code", undefined)).toBe("high");
     expect(getNextThinkingLevel("moonshot", "kimi-k2.7-code", "high")).toBeUndefined();

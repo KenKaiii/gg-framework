@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import crypto from "node:crypto";
 import { getAppPaths } from "./paths.js";
 import type { OAuthCredentials } from "./oauth/types.js";
@@ -27,6 +28,42 @@ export const MOONSHOT_OAUTH_KEY = "moonshot-oauth";
  * order, is decided per-model via `getAuthStorageKeys()` in model-registry.ts.
  */
 export const XIAOMI_CREDITS_KEY = "xiaomi-credits";
+
+/**
+ * The credential entry whose baseUrl applies right now. For `moonshot` this
+ * mirrors resolveCredentials' preference: the Kimi OAuth entry, sidelined to
+ * the Moonshot API key only while its usage window is exhausted and a key is
+ * configured. Shared by {@link AuthStorage.getStoredBaseUrl} and
+ * {@link readStoredBaseUrlSync} so both paths agree on the active endpoint.
+ */
+function activeBaseUrlEntry(data: AuthData, provider: string): OAuthCredentials | undefined {
+  if (provider === "moonshot") {
+    const oauth = data[MOONSHOT_OAUTH_KEY];
+    if (oauth) {
+      const exhaustedUntil = oauth.usageExhaustedUntil ?? 0;
+      if (Date.now() < exhaustedUntil && data["moonshot"]) return data["moonshot"];
+      return oauth;
+    }
+    return data["moonshot"];
+  }
+  return data[provider];
+}
+
+/**
+ * Synchronous baseUrl read straight from the auth file, for boot paths that
+ * need the active endpoint before an AuthStorage instance exists (e.g. the
+ * CLI's sync main()). Missing/corrupt files yield undefined — callers treat
+ * that as the provider's public endpoint. Read-only: safe without the file
+ * lock (a torn mid-write read just falls back to undefined).
+ */
+export function readStoredBaseUrlSync(authFile: string, provider: string): string | undefined {
+  try {
+    const data = JSON.parse(readFileSync(authFile, "utf-8")) as AuthData;
+    return activeBaseUrlEntry(data, provider)?.baseUrl;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Refresh refreshable OAuth tokens this long BEFORE their hard expiry. Renewing
@@ -133,6 +170,17 @@ export class AuthStorage {
     return STATIC_API_KEY_PROVIDERS.has(provider);
   }
 
+  /**
+   * The base URL on the credential that is active right now, if any.
+   * Synchronous — call only after load()/resolveCredentials() populated the
+   * snapshot. For `moonshot` this is the Kimi For Coding URL whenever the
+   * OAuth entry is the one resolveCredentials would serve (i.e. not currently
+   * usage-exhausted with an API key configured).
+   */
+  getStoredBaseUrl(provider: string): string | undefined {
+    return activeBaseUrlEntry(this.data, provider)?.baseUrl;
+  }
+
   async load(): Promise<void> {
     await withFileLock(this.filePath, async () => {
       try {
@@ -163,21 +211,44 @@ export class AuthStorage {
     if (!this.loaded) await this.load();
   }
 
+  /**
+   * Apply one provider-scoped mutation to the latest on-disk snapshot.
+   * AuthStorage instances live in every app session/process, so writing this
+   * instance's cached snapshot can erase credentials another instance just
+   * added. The file lock only serializes writers; the re-read prevents stale
+   * full-file overwrites.
+   */
+  private async mutateLatest(mutator: (data: AuthData) => void): Promise<void> {
+    await this.ensureLoaded();
+    await withFileLock(this.filePath, async () => {
+      const latest = await readAuthData(this.filePath);
+      mutator(latest);
+      await atomicWriteFile(this.filePath, JSON.stringify(latest, null, 2));
+      this.data = latest;
+    });
+  }
+
+  private async reloadLatest(): Promise<void> {
+    await withFileLock(this.filePath, async () => {
+      this.data = await readAuthData(this.filePath);
+    });
+  }
+
   async getCredentials(provider: string): Promise<OAuthCredentials | undefined> {
     await this.ensureLoaded();
     return this.data[provider];
   }
 
   async setCredentials(provider: string, creds: OAuthCredentials): Promise<void> {
-    await this.ensureLoaded();
-    this.data[provider] = creds;
-    await this.save();
+    await this.mutateLatest((latest) => {
+      latest[provider] = creds;
+    });
   }
 
   async clearCredentials(provider: string): Promise<void> {
-    await this.ensureLoaded();
-    delete this.data[provider];
-    await this.save();
+    await this.mutateLatest((latest) => {
+      delete latest[provider];
+    });
   }
 
   /**
@@ -192,15 +263,18 @@ export class AuthStorage {
    * nothing is stored under `storageKey`.
    */
   async markUsageExhausted(storageKey: string, resetsAt?: number): Promise<void> {
-    await this.ensureLoaded();
-    const creds = this.data[storageKey];
-    if (!creds) return;
     const until =
       resetsAt !== undefined && resetsAt * 1000 > Date.now()
         ? resetsAt * 1000
         : Date.now() + USAGE_EXHAUSTED_DEFAULT_MS;
-    creds.usageExhaustedUntil = until;
-    await this.save();
+    let marked = false;
+    await this.mutateLatest((latest) => {
+      const creds = latest[storageKey];
+      if (!creds) return;
+      creds.usageExhaustedUntil = until;
+      marked = true;
+    });
+    if (!marked) return;
     log(
       "WARN",
       "auth",
@@ -209,8 +283,11 @@ export class AuthStorage {
   }
 
   async clearAll(): Promise<void> {
-    this.data = {};
-    await this.save();
+    await this.ensureLoaded();
+    await withFileLock(this.filePath, async () => {
+      this.data = {};
+      await atomicWriteFile(this.filePath, JSON.stringify(this.data, null, 2));
+    });
   }
 
   /**
@@ -224,6 +301,19 @@ export class AuthStorage {
     opts?: { forceRefresh?: boolean; storageKeys?: string[] },
   ): Promise<OAuthCredentials> {
     await this.ensureLoaded();
+
+    // A failed refresh removes the credential from this session's cache. If
+    // the user then re-logs in through another app session, recover that new
+    // on-disk credential instead of remaining "not logged in" until restart.
+    const directStorageKeys =
+      opts?.storageKeys && !(opts.storageKeys.length === 1 && opts.storageKeys[0] === provider)
+        ? opts.storageKeys
+        : provider === "moonshot"
+          ? [MOONSHOT_OAUTH_KEY, "moonshot"]
+          : [provider];
+    if (!directStorageKeys.some((key) => Boolean(this.data[key]))) {
+      await this.reloadLatest();
+    }
 
     // Explicit ordered storage-key override (e.g. Xiaomi: prefer the Token
     // Plan credential, fall back to API Credits if only that's configured).
@@ -309,22 +399,30 @@ export class AuthStorage {
     if (existing) return existing;
 
     const refreshPromise = withFileLock(this.filePath, async () => {
-      // Re-read from disk in case another process refreshed while we waited for the lock
-      try {
-        const content = await fs.readFile(this.filePath, "utf-8");
-        const freshData = JSON.parse(content) as AuthData;
-        const freshCreds = freshData[provider];
-        if (
-          freshCreds &&
-          !opts?.forceRefresh &&
-          Date.now() < freshCreds.expiresAt - REFRESH_SKEW_MS
-        ) {
-          // Another process already refreshed — use their token
-          this.data[provider] = freshCreds;
-          return freshCreds;
-        }
-      } catch {
-        // Fall through to refresh
+      // Always refresh against the latest complete file. A different app
+      // session may have re-logged in this provider or changed another one
+      // since this instance loaded its cached snapshot.
+      const latest = await readAuthData(this.filePath);
+      const latestCreds = latest[provider];
+      if (!latestCreds) {
+        this.data = latest;
+        throw new NotLoggedInError(provider);
+      }
+
+      const credentialWasReplaced =
+        latestCreds.accessToken !== creds.accessToken ||
+        latestCreds.refreshToken !== creds.refreshToken ||
+        latestCreds.expiresAt !== creds.expiresAt;
+      if (
+        credentialWasReplaced ||
+        (!opts?.forceRefresh && Date.now() < latestCreds.expiresAt - REFRESH_SKEW_MS)
+      ) {
+        // Another process refreshed or re-logged in while this session still
+        // held the rejected token. Trust that replacement even for a forced
+        // refresh; retrying the revoked OLD refresh token would delete the new
+        // login that just landed on disk.
+        this.data = latest;
+        return latestCreds;
       }
 
       const refreshFn =
@@ -337,36 +435,37 @@ export class AuthStorage {
               : refreshOpenAIToken;
       let refreshed: OAuthCredentials;
       try {
-        refreshed = await refreshFn(creds.refreshToken);
+        refreshed = await refreshFn(latestCreds.refreshToken);
       } catch (err) {
         // Refresh token revoked / expired / invalid → the stored creds are
-        // unusable. Wipe them so the next launch surfaces a clean
-        // NotLoggedInError instead of hitting the same dead refresh path
-        // every time. The user must re-login.
+        // unusable. Delete only this provider from the latest snapshot so a
+        // failed refresh can never erase another provider's concurrent login.
         const msg = err instanceof Error ? err.message : String(err);
         const isAuthFailure =
           /\((401|400)\)/.test(msg) ||
           /invalid_grant|invalid_token|invalid.*refresh/i.test(msg) ||
           /unauthorized/i.test(msg);
         if (isAuthFailure) {
-          delete this.data[provider];
-          await atomicWriteFile(this.filePath, JSON.stringify(this.data, null, 2));
+          delete latest[provider];
+          this.data = latest;
+          await atomicWriteFile(this.filePath, JSON.stringify(latest, null, 2));
           throw new NotLoggedInError(provider);
         }
         throw err;
       }
-      if (!refreshed.accountId && creds.accountId) {
-        refreshed.accountId = creds.accountId;
+      if (!refreshed.accountId && latestCreds.accountId) {
+        refreshed.accountId = latestCreds.accountId;
       }
-      if (!refreshed.projectId && creds.projectId) {
-        refreshed.projectId = creds.projectId;
+      if (!refreshed.projectId && latestCreds.projectId) {
+        refreshed.projectId = latestCreds.projectId;
       }
-      if (!refreshed.baseUrl && creds.baseUrl) {
-        refreshed.baseUrl = creds.baseUrl;
+      if (!refreshed.baseUrl && latestCreds.baseUrl) {
+        refreshed.baseUrl = latestCreds.baseUrl;
       }
-      this.data[provider] = refreshed;
-      // Write atomically (we already hold the file lock)
-      await atomicWriteFile(this.filePath, JSON.stringify(this.data, null, 2));
+      latest[provider] = refreshed;
+      this.data = latest;
+      // Write atomically (we already hold the file lock).
+      await atomicWriteFile(this.filePath, JSON.stringify(latest, null, 2));
       return refreshed;
     });
 
@@ -386,11 +485,16 @@ export class AuthStorage {
     const creds = await this.resolveCredentials(provider);
     return creds.accessToken;
   }
+}
 
-  private async save(): Promise<void> {
-    await withFileLock(this.filePath, async () => {
-      await atomicWriteFile(this.filePath, JSON.stringify(this.data, null, 2));
-    });
+/** Read the latest complete auth snapshot while a caller holds the file lock. */
+async function readAuthData(filePath: string): Promise<AuthData> {
+  try {
+    const content = await fs.readFile(filePath, "utf-8");
+    return JSON.parse(content) as AuthData;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
   }
 }
 

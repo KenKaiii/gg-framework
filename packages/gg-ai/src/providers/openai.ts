@@ -4,6 +4,7 @@ import type {
   StreamEvent,
   StreamOptions,
   StreamResponse,
+  ThinkingLevel,
   ToolCall,
 } from "../types.js";
 import {
@@ -29,6 +30,22 @@ import { normalizePromptCacheKey } from "./prompt-cache-key.js";
 import { uploadMoonshotVideos } from "./moonshot-video.js";
 import { parseToolArguments } from "../utils/json.js";
 import { getEnvironment } from "../utils/env.js";
+
+// Kimi K3's declared effort rungs (server-validated; anything else 400s).
+// Official alias mapping from Moonshot's K3 third-party-tools docs:
+// ultra/max/xhigh → max, high/medium → high, low → low.
+type KimiK3Effort = "low" | "high" | "max";
+function toKimiK3Effort(level: ThinkingLevel): KimiK3Effort {
+  switch (level) {
+    case "low":
+      return "low";
+    case "medium":
+    case "high":
+      return "high";
+    default: // "xhigh" | "max" | "ultra"
+      return "max";
+  }
+}
 
 // Normalize OpenAI completion usage to the framework convention where
 // inputTokens excludes cache hits (matching Anthropic). Handles vendor-specific
@@ -114,12 +131,19 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
 
   const client = createClient(options);
 
-  // Public Kimi K3 moved from K2.x's custom `thinking` body parameter to
-  // top-level `reasoning_effort`; Kimi Code's OAuth endpoint keeps its managed
-  // nested shape. Both are always-on at the sole current `max` effort.
+  // Kimi K3's effort ladder is server-declared as low/high/max on both the
+  // public API (default max) and the Kimi For Coding OAuth endpoint (default
+  // high); unlisted efforts are rejected with a 400, and thinking can be fully
+  // disabled via the nested toggle on either endpoint. The public API takes
+  // top-level `reasoning_effort`; the managed endpoint keeps the official
+  // CLI's nested shape.
   const isKimiK3 = options.provider === "moonshot" && options.model === "kimi-k3";
   const isManagedKimiK3 =
     isKimiK3 && options.baseUrl?.replace(/\/+$/, "").endsWith("/coding/v1") === true;
+  // Clamp out-of-ladder levels to the official alias rungs — the session
+  // layer already restricts choices via getSupportedThinkingLevels, this is a
+  // safety net for stale saved settings.
+  const k3Effort = options.thinking ? toKimiK3Effort(options.thinking) : undefined;
   const isKimiK27 = options.provider === "moonshot" && options.model.startsWith("kimi-k2.7-code");
   const hasFixedKimiSampling = isKimiK3 || isKimiK27;
   const usesThinkingParam =
@@ -146,9 +170,11 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   }
   const messages = toOpenAIMessages(downgradedMessages, {
     provider: options.provider,
-    // K3 and K2.7 preserve reasoning even when the user hides thinking in the
-    // UI; keep assistant tool-call history wire-valid in that display mode.
-    thinking: isKimiK3 || isKimiK27 || !!options.thinking,
+    // K2.7 preserves reasoning even when the user hides thinking in the UI;
+    // keep assistant tool-call history wire-valid in that display mode. A
+    // disabled K3 must NOT carry placeholder reasoning_content (mirrors the
+    // official CLI: reasoning is preserved only while thinking is enabled).
+    thinking: isKimiK27 || !!options.thinking,
     supportsImages: options.supportsImages,
   });
 
@@ -207,12 +233,19 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     const paramsAny = params as unknown as Record<string, unknown>;
     if (isManagedKimiK3) {
       // Kimi Code's managed OAuth endpoint keeps the official CLI's Kimi wire
-      // shape: nested effort plus preserved thinking.
-      paramsAny.thinking = { type: "enabled", effort: "max", keep: "all" };
-    } else {
+      // shape: nested effort plus preserved reasoning, or an explicit disabled
+      // toggle when thinking is off.
+      paramsAny.thinking = k3Effort
+        ? { type: "enabled", effort: k3Effort, keep: "all" }
+        : { type: "disabled" };
+    } else if (k3Effort) {
       // The public K3 API uses top-level reasoning_effort. The OpenAI SDK's
       // effort union does not know Kimi's `max` value yet.
-      paramsAny.reasoning_effort = "max";
+      paramsAny.reasoning_effort = k3Effort;
+    } else {
+      // Public K3 has no reasoning_effort "off" — disable via the nested
+      // toggle, the shape the official CLI uses on this endpoint too.
+      paramsAny.thinking = { type: "disabled" };
     }
   }
 

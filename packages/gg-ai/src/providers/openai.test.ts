@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type OpenAI from "openai";
-import type { Provider } from "../types.js";
+import type { Provider, ThinkingLevel } from "../types.js";
 import { streamOpenAI } from "./openai.js";
 
 const createMock = vi.fn();
@@ -180,7 +180,7 @@ describe("streamOpenAI request shaping", () => {
     expect(params).not.toHaveProperty("reasoning_effort");
   });
 
-  it("defaults Kimi K3 to max reasoning even when thinking display is off", async () => {
+  it("disables Kimi K3 reasoning via the nested toggle when thinking is off", async () => {
     createMock.mockResolvedValueOnce(createStreamingResult(""));
     const result = streamOpenAI({
       provider: "moonshot",
@@ -205,11 +205,94 @@ describe("streamOpenAI request shaping", () => {
     }
 
     const params = createMock.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(params).toMatchObject({ reasoning_effort: "max" });
-    expect(params).not.toHaveProperty("thinking");
-    expect((params.messages as Array<Record<string, unknown>>)[1]).toMatchObject({
-      reasoning_content: " ",
+    expect(params).toMatchObject({ thinking: { type: "disabled" } });
+    expect(params).not.toHaveProperty("reasoning_effort");
+    // A disabled K3 must not carry placeholder reasoning_content in history.
+    expect((params.messages as Array<Record<string, unknown>>)[1]).not.toHaveProperty(
+      "reasoning_content",
+    );
+  });
+
+  it.each(["low", "high"] as const)(
+    "sends Kimi K3's declared %s effort on both endpoints",
+    async (effort) => {
+      // Public API: top-level reasoning_effort.
+      createMock.mockResolvedValueOnce(createStreamingResult(""));
+      const pub = streamOpenAI({
+        provider: "moonshot",
+        model: "kimi-k3",
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "t" + "est",
+        thinking: effort,
+      });
+      for await (const _event of pub) {
+        /* consume */
+      }
+      const pubParams = createMock.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(pubParams).toMatchObject({ reasoning_effort: effort });
+      expect(pubParams).not.toHaveProperty("thinking");
+
+      // Kimi Code OAuth: nested managed shape with preserved reasoning.
+      createMock.mockResolvedValueOnce(createStreamingResult(""));
+      const managed = streamOpenAI({
+        provider: "moonshot",
+        model: "kimi-k3",
+        baseUrl: "https://api.kimi.com/coding/v1",
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "t" + "est",
+        thinking: effort,
+      });
+      for await (const _event of managed) {
+        /* consume */
+      }
+      const managedParams = createMock.mock.calls[1]?.[0] as Record<string, unknown>;
+      expect(managedParams).toMatchObject({
+        thinking: { type: "enabled", effort, keep: "all" },
+      });
+      expect(managedParams).not.toHaveProperty("reasoning_effort");
+    },
+  );
+
+  it("disables Kimi K3 on the managed endpoint with the nested toggle", async () => {
+    createMock.mockResolvedValueOnce(createStreamingResult(""));
+    const result = streamOpenAI({
+      provider: "moonshot",
+      model: "kimi-k3",
+      baseUrl: "https://api.kimi.com/coding/v1",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "t" + "est",
     });
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const params = createMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params).toMatchObject({ thinking: { type: "disabled" } });
+    expect(params).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("maps out-of-ladder Kimi K3 efforts per the official alias table", async () => {
+    // Official mapping: ultra/max/xhigh → max, high/medium → high, low → low.
+    const cases: Array<[ThinkingLevel, string]> = [
+      ["medium", "high"],
+      ["xhigh", "max"],
+      ["ultra", "max"],
+    ];
+    for (const [given, sent] of cases) {
+      createMock.mockResolvedValueOnce(createStreamingResult(""));
+      const result = streamOpenAI({
+        provider: "moonshot",
+        model: "kimi-k3",
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "t" + "est",
+        thinking: given,
+      });
+      for await (const _event of result) {
+        /* consume */
+      }
+      const params = createMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(params).toMatchObject({ reasoning_effort: sent });
+    }
   });
 
   it("omits invalid reasoning and thinking controls for always-thinking Kimi K2.7", async () => {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -7,7 +7,11 @@ import {
   MOONSHOT_OAUTH_KEY,
   NotLoggedInError,
   XIAOMI_CREDITS_KEY,
+  readStoredBaseUrlSync,
 } from "./auth-storage.js";
+
+const refreshOpenAIToken = vi.hoisted(() => vi.fn());
+vi.mock("./oauth/openai.js", () => ({ refreshOpenAIToken }));
 
 async function tempAuthFile(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "gg-core-auth-storage-test-"));
@@ -17,6 +21,7 @@ async function tempAuthFile(): Promise<string> {
 const tmpFiles: string[] = [];
 
 afterEach(async () => {
+  refreshOpenAIToken.mockReset();
   while (tmpFiles.length > 0) {
     const f = tmpFiles.pop()!;
     await fs.rm(path.dirname(f), { recursive: true, force: true }).catch(() => {});
@@ -28,6 +33,77 @@ async function makeStorage(): Promise<AuthStorage> {
   tmpFiles.push(filePath);
   return new AuthStorage(filePath);
 }
+
+function oauthCreds(accessToken: string, refreshToken = `${accessToken}-refresh`) {
+  return {
+    accessToken,
+    refreshToken,
+    expiresAt: Date.now() + 1_000_000,
+  };
+}
+
+describe("AuthStorage — shared-file concurrency", () => {
+  it("preserves provider logins written by stale storage instances", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    const firstSession = new AuthStorage(filePath);
+    const secondSession = new AuthStorage(filePath);
+    await Promise.all([firstSession.load(), secondSession.load()]);
+
+    await firstSession.setCredentials("anthropic", oauthCreds("anthropic-token"));
+    await secondSession.setCredentials("openai", oauthCreds("openai-token"));
+
+    const reloaded = new AuthStorage(filePath);
+    expect(await reloaded.listProviders()).toEqual(["anthropic", "openai"]);
+  });
+
+  it("deletes only the requested provider from the latest snapshot", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    const staleSession = new AuthStorage(filePath);
+    await staleSession.setCredentials("anthropic", oauthCreds("anthropic-token"));
+    await staleSession.setCredentials("openai", oauthCreds("openai-token"));
+
+    const otherSession = new AuthStorage(filePath);
+    await otherSession.setCredentials("gemini", oauthCreds("gemini-token"));
+    await staleSession.clearCredentials("anthropic");
+
+    const reloaded = new AuthStorage(filePath);
+    expect(await reloaded.listProviders()).toEqual(["openai", "gemini"]);
+  });
+
+  it("uses a concurrent re-login instead of refreshing and deleting the rejected old token", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    const runningSession = new AuthStorage(filePath);
+    await runningSession.setCredentials("openai", oauthCreds("old-token", "revoked-refresh"));
+
+    const loginSession = new AuthStorage(filePath);
+    await loginSession.setCredentials("openai", oauthCreds("new-token", "new-refresh"));
+
+    const resolved = await runningSession.resolveCredentials("openai", { forceRefresh: true });
+    expect(resolved.accessToken).toBe("new-token");
+    expect(refreshOpenAIToken).not.toHaveBeenCalled();
+    expect((await new AuthStorage(filePath).getCredentials("openai"))?.accessToken).toBe(
+      "new-token",
+    );
+  });
+
+  it("recovers a re-login after this session already removed its expired credential", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    const runningSession = new AuthStorage(filePath);
+    await runningSession.setCredentials("anthropic", oauthCreds("expired-token"));
+    await runningSession.clearCredentials("anthropic");
+
+    const loginSession = new AuthStorage(filePath);
+    await loginSession.setCredentials("anthropic", oauthCreds("relogged-token"));
+
+    expect((await runningSession.resolveCredentials("anthropic")).accessToken).toBe(
+      "relogged-token",
+    );
+  });
+});
 
 describe("AuthStorage — Xiaomi dual credential (Token Plan vs. API Credits)", () => {
   it("hasProviderAuth is satisfied by either the Token Plan or the Credits key", async () => {
@@ -211,6 +287,31 @@ describe("AuthStorage — Moonshot dual credential (Kimi OAuth vs. API key)", ()
     await storage.markUsageExhausted(MOONSHOT_OAUTH_KEY, resetsAt);
     const stored = await storage.getCredentials(MOONSHOT_OAUTH_KEY);
     expect(stored?.usageExhaustedUntil).toBe(resetsAt * 1000);
+  });
+
+  it("reports the active endpoint's baseUrl for endpoint-aware defaults", async () => {
+    const storage = await makeStorage();
+    // OAuth present → the managed Kimi For Coding endpoint.
+    await storage.setCredentials(MOONSHOT_OAUTH_KEY, oauthCreds());
+    expect(storage.getStoredBaseUrl("moonshot")).toBe("https://api.kimi.com/coding/v1");
+    // The sync file read agrees (boot paths use it before AuthStorage exists).
+    expect(readStoredBaseUrlSync(storage.path, "moonshot")).toBe("https://api.kimi.com/coding/v1");
+
+    // API-key-only → no stored baseUrl (the public Moonshot API is the default).
+    const keyOnly = await makeStorage();
+    await keyOnly.setCredentials("moonshot", apiKeyCreds());
+    expect(keyOnly.getStoredBaseUrl("moonshot")).toBeUndefined();
+
+    // Usage-exhausted OAuth + API key configured → the key is active (public API).
+    await storage.setCredentials("moonshot", apiKeyCreds());
+    await storage.markUsageExhausted(MOONSHOT_OAUTH_KEY);
+    expect(storage.getStoredBaseUrl("moonshot")).toBeUndefined();
+
+    // Other providers read their own entry; unknown providers yield undefined.
+    expect(storage.getStoredBaseUrl("anthropic")).toBeUndefined();
+    expect(
+      readStoredBaseUrlSync(path.join(os.tmpdir(), "does-not-exist.json"), "moonshot"),
+    ).toBeUndefined();
   });
 
   it("resumes OAuth once the exhaustion mark lapses", async () => {

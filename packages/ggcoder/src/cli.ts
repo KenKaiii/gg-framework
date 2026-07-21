@@ -68,7 +68,7 @@ import { segmentDisplayText, stripDoneMarkers } from "./utils/plan-steps.js";
 import { formatUserError } from "./utils/error-handler.js";
 import type { Message, Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import type { ThemeName } from "./ui/theme/theme.js";
-import { AuthStorage } from "./core/auth-storage.js";
+import { AuthStorage, readStoredBaseUrlSync } from "./core/auth-storage.js";
 import { SessionManager, type TurnMetricPayload } from "./core/session-manager.js";
 import { ensureAppDirs, getAppPaths, loadSavedSettings } from "./config.js";
 import { initLogger, log, closeLogger } from "./core/logger.js";
@@ -92,7 +92,7 @@ import {
   getAuthStorageKeys,
   getContextWindow,
   getDefaultModel,
-  getMaxThinkingLevel,
+  getDefaultThinkingLevel,
   getModel,
   getModelsForProvider,
 } from "./core/model-registry.js";
@@ -383,8 +383,13 @@ function main(): void {
   }
 
   const model: string = saved.model ?? getHardcodedDefault(provider);
+  // No saved level → follow the active credential's endpoint (Kimi K3 OAuth
+  // starts at its declared default, high). Sync read: main() is not async.
   const thinkingLevel: ThinkingLevel | undefined = saved.thinkingEnabled
-    ? (saved.thinkingLevel ?? getMaxThinkingLevel(model))
+    ? (saved.thinkingLevel ??
+      getDefaultThinkingLevel(model, {
+        baseUrl: readStoredBaseUrlSync(getAppPaths().authFile, provider),
+      }))
     : undefined;
 
   // Interactive mode (Ink TUI)
@@ -892,7 +897,10 @@ async function runSessions(): Promise<void> {
 
   const model = saved2.model ?? getDefault(provider);
   const thinkingLevel: ThinkingLevel | undefined = saved2.thinkingEnabled
-    ? (saved2.thinkingLevel ?? getMaxThinkingLevel(model))
+    ? (saved2.thinkingLevel ??
+      getDefaultThinkingLevel(model, {
+        baseUrl: readStoredBaseUrlSync(paths.authFile, provider),
+      }))
     : undefined;
 
   closeLogger();
@@ -1087,7 +1095,8 @@ async function runServe(): Promise<void> {
   );
 
   const thinkingLevel: ThinkingLevel | undefined = saved3.thinkingEnabled
-    ? (saved3.thinkingLevel ?? getMaxThinkingLevel(model))
+    ? (saved3.thinkingLevel ??
+      getDefaultThinkingLevel(model, { baseUrl: authStorage.getStoredBaseUrl(provider) }))
     : undefined;
 
   initLogger(paths.logFile, {
@@ -1248,7 +1257,8 @@ async function runAgentHome(): Promise<void> {
   );
 
   const thinkingLevel: ThinkingLevel | undefined = saved4.thinkingEnabled
-    ? (saved4.thinkingLevel ?? getMaxThinkingLevel(model))
+    ? (saved4.thinkingLevel ??
+      getDefaultThinkingLevel(model, { baseUrl: authStorage.getStoredBaseUrl(provider) }))
     : undefined;
 
   initLogger(paths.logFile, {

@@ -6,6 +6,7 @@ import {
   getAuthStorageKeys,
   getContextWindow,
   getDefaultModel,
+  getDefaultThinkingLevel,
   getFastModel,
   getModelsForProvider,
   getToolResultCharLimit,
@@ -172,6 +173,24 @@ describe("model registry context windows", () => {
       "kimi-k2.7-code",
     ]);
     expect(getContextWindow("kimi-k3", { provider: "moonshot" })).toBe(1_048_576);
+  });
+
+  it("starts Kimi K3 at the endpoint's declared default effort, kimi-code-style", () => {
+    // Kimi For Coding OAuth endpoint declares default_effort "high" …
+    expect(getDefaultThinkingLevel("kimi-k3", { baseUrl: "https://api.kimi.com/coding/v1" })).toBe(
+      "high",
+    );
+    // … the public Moonshot API declares "max" …
+    expect(getDefaultThinkingLevel("kimi-k3", { baseUrl: "https://api.moonshot.ai/v1" })).toBe(
+      "max",
+    );
+    // … and no stored endpoint (e.g. API-key-only auth) means the public API.
+    expect(getDefaultThinkingLevel("kimi-k3")).toBe("max");
+    // Every other model starts at its registry max regardless of endpoint.
+    expect(
+      getDefaultThinkingLevel("kimi-k2.7-code", { baseUrl: "https://api.kimi.com/coding/v1" }),
+    ).toBe("high");
+    expect(getDefaultThinkingLevel("claude-opus-4-8")).toBe("max");
   });
 
   it("defaults MiniMax to the multimodal M3 with a 1M context window", () => {
