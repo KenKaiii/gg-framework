@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.26.1",
+    date: "2026-07-22",
+    items: [
+      "Every answer now arrives whole. If your provider's connection drops mid-reply, I catch the cut-off and `retry` cleanly instead of quietly handing you half an answer dressed up as a finished one. No more silent half-answers.",
+      "Random error popups, evicted. I hunted down a sneaky class of `400` rejections that could crash a chat out of nowhere, so your conversations just keep flowing.",
+      "GG now runs lighter for longer. I capped runaway memory at `10 MB` per request and `50k` files per search, and plugged a background leak, so marathon sessions stay snappy instead of slowly bloating.",
+    ],
+  },
+  {
     version: "0.26.0",
     date: "2026-07-22",
     items: [
