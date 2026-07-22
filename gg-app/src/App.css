@@ -1023,8 +1023,8 @@ body {
   border-color: var(--primary);
   background: var(--surface-2);
 }
-/* Match the titlebar nav buttons (.commit-button / .winlayout-button): same
-   font-size, weight, and padding so every chrome button reads uniformly. */
+/* Match the titlebar nav buttons (.commit-button / .btn-nav-icon): same
+   font-size, weight, and padding so every chrome control reads uniformly. */
 .picker-new {
   background: transparent;
   border: 1px solid;
@@ -1788,10 +1788,37 @@ body {
   cursor: default;
 }
 
-/* Multi-window layout control + its dropdown. */
+/* Multi-window layout control: looks like the old icon button, but a
+   transparent native <select> stretched over it takes the click and opens the
+   OS-native dropdown (snaps back to its placeholder after each choice). */
 .winlayout {
   position: relative;
   display: inline-flex;
+}
+.winlayout-icon-btn {
+  /* Purely presentational — the overlaying select receives hover/click. */
+  pointer-events: none;
+}
+/* Hover lands on the overlaying select, so mirror the .btn-nav-icon hover
+   (color brighten, no filter — see the .btn-nav-icon comment) from here. */
+.winlayout:has(.winlayout-select:not(:disabled)):hover .winlayout-icon-btn {
+  color: var(--text);
+}
+.winlayout:has(.winlayout-select:disabled) .winlayout-icon-btn {
+  opacity: 0.4;
+}
+.winlayout-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+}
+.winlayout-select:disabled {
+  cursor: default;
 }
 /* Hide/show toggle for the nav-button row. Lives at the right of the title
    strip; small and borderless so it reads as a titlebar control, not a button. */
@@ -1814,77 +1841,6 @@ body {
   background: var(--surface-1);
   color: var(--text);
 }
-.winlayout-button {
-  background: transparent;
-  border: 1px solid;
-  border-radius: var(--radius-button);
-  font-family: var(--sans);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 2px 9px;
-  cursor: pointer;
-  transition:
-    color var(--t-fast),
-    background-color var(--t-fast),
-    border-color var(--t-fast);
-}
-.winlayout-button:hover:not(:disabled) {
-  background: var(--surface-1);
-}
-.winlayout-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-/* Invisible full-screen click catcher for dismissing popovers that live in a
-   Tauri drag region (where document mousedown listeners don't fire). Sits just
-   under the menu it dismisses. */
-.menu-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 59;
-}
-
-.winlayout-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  border: 1px solid;
-  border-radius: var(--radius-card);
-  padding: 5px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
-  z-index: 60;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 150px;
-}
-.winlayout-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-button);
-  font-family: var(--sans);
-  font-size: 13px;
-  text-align: left;
-  padding: 6px 9px;
-  cursor: pointer;
-  transition:
-    color var(--t-fast),
-    background-color var(--t-fast),
-    border-color var(--t-fast);
-}
-.winlayout-item:hover {
-  background: var(--surface-1);
-}
-/* Divider between the create-presets (2/4/6) and the auto-arrange action. */
-.winlayout-divider {
-  height: 1px;
-  margin: 4px 0;
-  background: var(--border);
-}
-
 /* Non-scrolling wrapper around `.transcript` — owns the flex sizing +
    `position: relative` so an absolutely positioned overlay child (the Ken
    power banner) is pinned to the visible chat viewport, not the scrolled
@@ -3496,6 +3452,31 @@ body {
   cursor: default;
   filter: saturate(0.7) brightness(0.92);
 }
+/* Installing state: the banner box itself becomes the progress track — same
+   padding/font as the available state, so the swap causes zero layout shift.
+   The fill is absolutely positioned (out of flow); only the centered
+   percentage occupies the same line box the label text did. */
+.update-banner-progress {
+  /* The busy filter desaturates to grey — right for a static "busy" row, but
+     it muddied the greens here. Progress keeps the vibrant gradient as the
+     track and sweeps a lighter mint from the same family across it. */
+  filter: none;
+}
+.update-banner-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: linear-gradient(135deg, #8ff5c6 0%, #a7f3e9 100%);
+  /* Hairline dark leading edge so the fill boundary reads crisply. */
+  box-shadow: 1px 0 0 rgba(4, 19, 13, 0.15);
+  transition: width 180ms linear;
+  pointer-events: none;
+}
+.update-banner-pct {
+  position: relative; /* above the fill */
+  font-variant-numeric: tabular-nums; /* steady width as the digits climb */
+}
 .update-banner-dot {
   width: 8px;
   height: 8px;
@@ -3519,6 +3500,8 @@ body {
    logo, shown only when an update is pending. Deliberately smaller than the
    primary action buttons so it reads as a notification, not a main CTA. */
 .home-update {
+  position: relative; /* anchor + clip the progress fill below */
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3545,6 +3528,48 @@ body {
 .home-update:disabled {
   opacity: 0.7;
   cursor: default;
+}
+/* Installing state: the pill keeps its vibrant gradient as the track (no
+   :disabled dimming). Progress is a slim strip along the pill's bottom edge —
+   a full-height fill swept over the "Installing…" label and looked muddy at
+   this size. The percentage reserves a steady 3ch so the label doesn't jitter
+   as it climbs. */
+.home-update-progress {
+  opacity: 1;
+  cursor: default;
+}
+.home-update-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #8ff5c6 0%, #a7f3e9 100%);
+  transition: width 180ms linear;
+  pointer-events: none;
+}
+/* Label swap without resizing: both labels occupy the same grid cell (the
+   inactive one is visibility:hidden), so the pill is always sized to the
+   wider of "Update to x.y.z" and "Installing… 100%". */
+.home-update-swap {
+  display: grid;
+}
+.home-update-swap > * {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.home-update-hidden {
+  visibility: hidden;
+}
+.home-update-pct {
+  display: inline-block;
+  /* 4ch, not 3ch: "100%" is three digits PLUS the % glyph — 3ch fit "99%" but
+     the span outgrew it at 100%, stretching the pill right at the finish. */
+  min-width: 4ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 /* Shown in the update pill's place when already up to date — the current
    version plus a "What's new" button, so the spot never collapses/jumps. */
@@ -3594,9 +3619,9 @@ body {
   /* .inputwrap (an earlier sibling) is `position: relative`, which — despite
      coming first in DOM order — paints ABOVE any non-positioned sibling per
      CSS stacking rules (positioned elements always paint after static ones).
-     Without this, the growing textarea overlapped the upward-opening
-     .model-menu anchored in the footer. Make the footer positioned too, with
-     a higher z-index, so it (and its dropdowns) stack above the input. */
+     Without this, the growing textarea overlapped the popovers anchored in
+     the footer. Make the footer positioned too, with a higher z-index, so it
+     (and its overlays) stack above the input. */
   position: relative;
   z-index: 2;
 }
@@ -3909,17 +3934,16 @@ body {
   text-decoration: underline;
 }
 
-/* ── Model picker (footer, opens upward) ── */
+/* ── Model picker (footer, native <select>) ── */
 .model-anchor {
-  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 
 /* Static "GG" / "Ken" prefix — plain text, never clickable. Only the model
-   name next to it opens the dropdown. `line-height: 1` matches `.model-button`
-   below so both sit on the same baseline — without it the button's default UA
+   select next to it opens the dropdown. `line-height: 1` matches `.model-select`
+   below so both sit on the same baseline — without it the control's default UA
    line-height differs from the inherited body line-height and the label
    visibly floats above the model name. */
 .model-label {
@@ -3928,75 +3952,35 @@ body {
   line-height: 1;
 }
 
-.model-button {
-  background: transparent;
-  border: none;
-  margin: 0;
+/* Text-look picker with a native dropdown: the visible label is plain mono
+   text (like the old footer button); a transparent <select> stretched over it
+   takes the click and opens the OS-native dropdown. */
+.model-picker {
+  position: relative;
+  display: inline-flex;
+  line-height: 1;
+}
+.model-select-text {
   font-family: var(--mono);
   font-size: 13px;
   line-height: 1;
-  cursor: pointer;
-  padding: 0;
   transition: color var(--t-fast);
 }
-.model-button:hover:not(:disabled) {
+.model-picker:has(.model-select:not(:disabled)):hover .model-select-text {
   text-decoration: underline;
 }
-.model-button:disabled {
-  cursor: default;
-}
-
-.model-menu {
+.model-select {
   position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
-  border: 1px solid;
-  border-radius: var(--radius-card);
-  padding: 8px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
-  z-index: 50;
-  max-width: min(640px, 90vw);
-  max-height: 50vh;
-  overflow-y: auto;
-}
-
-.model-menu-title {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 2px 6px 6px;
-}
-
-.model-menu-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 2px 8px;
-}
-
-/* "Follow GG Coder" row in Ken's model picker — full-width above the grid. */
-.model-menu-follow {
-  display: block;
+  inset: 0;
   width: 100%;
-  margin-bottom: 6px;
-}
-
-.model-menu-item {
+  margin: 0;
+  padding: 0;
   border: none;
-  border-radius: var(--radius-button);
-  font-family: var(--mono);
-  font-size: 12.5px;
-  text-align: left;
-  padding: 4px 8px;
+  opacity: 0;
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition:
-    color var(--t-fast),
-    background-color var(--t-fast);
 }
-.model-menu-item:hover {
-  background: var(--surface-1) !important;
+.model-select:disabled {
+  cursor: default;
 }
 
 .meter {

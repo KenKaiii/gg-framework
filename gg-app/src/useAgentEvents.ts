@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { theme } from "./theme";
 import {
@@ -196,6 +196,17 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
   // attached to their original transcript group after a newer run starts.
   const subagentGroupIdRef = useRef<number | null>(null);
   const subagentGroupByAgentRef = useRef<Map<string, number>>(new Map());
+  // subagent_state snapshots arrive per tool/turn event PER AGENT — with
+  // several parallel agents that's a steady burst of full-transcript setItems,
+  // which saturates the main thread and makes scrolling janky mid-run. Buffer
+  // the latest snapshot per agent and flush them together on a short timer:
+  // one batched render per window no matter how many agents are talking. Keep
+  // every distinct activity seen inside the window so coalescing never hides a
+  // quick tool transition.
+  const pendingSubagentRef = useRef<
+    Map<string, { snapshot: SubAgentStatePayload; activities: string[] }>
+  >(new Map());
+  const subagentFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Transcript id of the in-flight compaction notice, so compaction_end can
   // flip the same row from shimmer → summary instead of pushing a new line.
   const compactionIdRef = useRef<number | null>(null);
@@ -304,6 +315,130 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
     [setItems],
   );
 
+  // Apply one sub-agent snapshot to its transcript group (creating the group
+  // on first sight). Called from the buffered flush below — multiple snapshots
+  // flushed in the same tick batch into a single React render.
+  const applySubagentSnapshot = useCallback(
+    (snapshot: SubAgentStatePayload, bufferedActivities: readonly string[]): void => {
+      const status: SubAgentLine["status"] =
+        snapshot.state === "starting"
+          ? "starting"
+          : snapshot.state === "running"
+            ? "running"
+            : snapshot.state === "completed"
+              ? "idle"
+              : snapshot.state === "interrupted"
+                ? "interrupted"
+                : snapshot.state === "closed" && !snapshot.error
+                  ? "done"
+                  : "error";
+      const appendActivities = (existing: readonly string[]): string[] => {
+        const next = [...existing];
+        for (const activity of bufferedActivities) {
+          if (activity !== next[next.length - 1]) next.push(activity);
+        }
+        return next.slice(-12);
+      };
+      const updateAgent = (agent: SubAgentLine): SubAgentLine => ({
+        ...agent,
+        status,
+        toolUseCount: snapshot.tool_use_count,
+        tokenUsage: snapshot.token_usage,
+        durationMs: snapshot.elapsed_ms,
+        activities: appendActivities(agent.activities),
+      });
+      const mappedGroupId = subagentGroupByAgentRef.current.get(snapshot.agent_id);
+      const activeGroupId = subagentGroupIdRef.current;
+      const shouldCreateGroup = mappedGroupId === undefined && activeGroupId === null;
+      const groupId = mappedGroupId ?? activeGroupId ?? nextId();
+      if (mappedGroupId === undefined) {
+        subagentGroupByAgentRef.current.set(snapshot.agent_id, groupId);
+        if (shouldCreateGroup) subagentGroupIdRef.current = groupId;
+      }
+      if (shouldCreateGroup) {
+        pushItem({
+          kind: "subagent_group",
+          id: groupId,
+          agents: [
+            {
+              toolCallId: snapshot.agent_id,
+              agentName: snapshot.task_name,
+              status,
+              async: true,
+              activities: appendActivities([]),
+              toolUseCount: snapshot.tool_use_count,
+              tokenUsage: snapshot.token_usage,
+              durationMs: snapshot.elapsed_ms,
+            },
+          ],
+        });
+      } else {
+        setItems((previous) =>
+          previous.map((item) => {
+            if (item.kind !== "subagent_group" || item.id !== groupId) return item;
+            const found = item.agents.some((agent) => agent.toolCallId === snapshot.agent_id);
+            return {
+              ...item,
+              agents: found
+                ? item.agents.map((agent) =>
+                    agent.toolCallId === snapshot.agent_id ? updateAgent(agent) : agent,
+                  )
+                : [
+                    ...item.agents,
+                    {
+                      toolCallId: snapshot.agent_id,
+                      agentName: snapshot.task_name,
+                      status,
+                      async: true,
+                      activities: appendActivities([]),
+                      toolUseCount: snapshot.tool_use_count,
+                      tokenUsage: snapshot.token_usage,
+                      durationMs: snapshot.elapsed_ms,
+                    },
+                  ],
+            };
+          }),
+        );
+      }
+    },
+    [nextId, pushItem, setItems],
+  );
+
+  const SUBAGENT_FLUSH_MS = 150;
+  // Drain the buffered snapshots synchronously (cancelling any pending timer).
+  // Run boundaries call this so final statuses land before run_end's own
+  // group updates, and so nothing lingers into the next run.
+  const flushSubagentSnapshots = useCallback(() => {
+    if (subagentFlushTimerRef.current !== null) {
+      clearTimeout(subagentFlushTimerRef.current);
+      subagentFlushTimerRef.current = null;
+    }
+    if (pendingSubagentRef.current.size === 0) return;
+    const pending = [...pendingSubagentRef.current.values()];
+    pendingSubagentRef.current.clear();
+    for (const { snapshot, activities } of pending) {
+      applySubagentSnapshot(snapshot, activities);
+    }
+  }, [applySubagentSnapshot]);
+
+  // Drop buffered snapshots WITHOUT applying them (session reset wipes the
+  // transcript — a late flush would recreate a stale group in the fresh one).
+  const dropPendingSubagentSnapshots = useCallback(() => {
+    if (subagentFlushTimerRef.current !== null) {
+      clearTimeout(subagentFlushTimerRef.current);
+      subagentFlushTimerRef.current = null;
+    }
+    pendingSubagentRef.current.clear();
+  }, []);
+
+  // No timer may outlive the hook (window close / project switch).
+  useEffect(
+    () => () => {
+      if (subagentFlushTimerRef.current !== null) clearTimeout(subagentFlushTimerRef.current);
+    },
+    [],
+  );
+
   // End the active thinking span (if any), folding its duration into the
   // accumulator. Called when text/tools begin or the run ends. Side effects on
   // refs happen here, outside any setState updater, keeping updaters pure.
@@ -337,6 +472,9 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           break;
         }
         case "run_start":
+          // Land any still-buffered sub-agent snapshots on their (previous
+          // run's) group before the active-group pointer resets below.
+          flushSubagentSnapshots();
           setRunning(true);
           setState((previous) =>
             previous ? { ...previous, running: true, runState: "running" } : previous,
@@ -399,86 +537,17 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           break;
         }
         case "subagent_state": {
+          // Buffer the latest snapshot per agent; flushSubagentSnapshots
+          // applies them together on a short timer (one batched render per
+          // window instead of one full-transcript setItems per event).
           const snapshot = d as unknown as SubAgentStatePayload;
-          const status: SubAgentLine["status"] =
-            snapshot.state === "starting"
-              ? "starting"
-              : snapshot.state === "running"
-                ? "running"
-                : snapshot.state === "completed"
-                  ? "idle"
-                  : snapshot.state === "interrupted"
-                    ? "interrupted"
-                    : snapshot.state === "closed" && !snapshot.error
-                      ? "done"
-                      : "error";
+          const previous = pendingSubagentRef.current.get(snapshot.agent_id);
+          const activities = previous ? [...previous.activities] : [];
           const activity = snapshot.current_activity;
-          const updateAgent = (agent: SubAgentLine): SubAgentLine => {
-            const last = agent.activities[agent.activities.length - 1];
-            return {
-              ...agent,
-              status,
-              toolUseCount: snapshot.tool_use_count,
-              tokenUsage: snapshot.token_usage,
-              durationMs: snapshot.elapsed_ms,
-              activities:
-                activity && activity !== last
-                  ? [...agent.activities, activity].slice(-12)
-                  : agent.activities,
-            };
-          };
-          const mappedGroupId = subagentGroupByAgentRef.current.get(snapshot.agent_id);
-          const activeGroupId = subagentGroupIdRef.current;
-          const shouldCreateGroup = mappedGroupId === undefined && activeGroupId === null;
-          const groupId = mappedGroupId ?? activeGroupId ?? nextId();
-          if (mappedGroupId === undefined) {
-            subagentGroupByAgentRef.current.set(snapshot.agent_id, groupId);
-            if (shouldCreateGroup) subagentGroupIdRef.current = groupId;
-          }
-          if (shouldCreateGroup) {
-            pushItem({
-              kind: "subagent_group",
-              id: groupId,
-              agents: [
-                {
-                  toolCallId: snapshot.agent_id,
-                  agentName: snapshot.task_name,
-                  status,
-                  async: true,
-                  activities: activity ? [activity] : [],
-                  toolUseCount: snapshot.tool_use_count,
-                  tokenUsage: snapshot.token_usage,
-                  durationMs: snapshot.elapsed_ms,
-                },
-              ],
-            });
-          } else {
-            setItems((previous) =>
-              previous.map((item) => {
-                if (item.kind !== "subagent_group" || item.id !== groupId) return item;
-                const found = item.agents.some((agent) => agent.toolCallId === snapshot.agent_id);
-                return {
-                  ...item,
-                  agents: found
-                    ? item.agents.map((agent) =>
-                        agent.toolCallId === snapshot.agent_id ? updateAgent(agent) : agent,
-                      )
-                    : [
-                        ...item.agents,
-                        {
-                          toolCallId: snapshot.agent_id,
-                          agentName: snapshot.task_name,
-                          status,
-                          async: true,
-                          activities: activity ? [activity] : [],
-                          toolUseCount: snapshot.tool_use_count,
-                          tokenUsage: snapshot.token_usage,
-                          durationMs: snapshot.elapsed_ms,
-                        },
-                      ],
-                };
-              }),
-            );
+          if (activity && activity !== activities[activities.length - 1]) activities.push(activity);
+          pendingSubagentRef.current.set(snapshot.agent_id, { snapshot, activities });
+          if (subagentFlushTimerRef.current === null) {
+            subagentFlushTimerRef.current = setTimeout(flushSubagentSnapshots, SUBAGENT_FLUSH_MS);
           }
           break;
         }
@@ -725,6 +794,9 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           break;
         }
         case "run_end": {
+          // Flush first so final sub-agent statuses are in place before the
+          // aborted-marking pass below reads them.
+          flushSubagentSnapshots();
           setRunning(false);
           setState((previous) =>
             previous ? { ...previous, running: false, runState: "idle" } : previous,
@@ -914,6 +986,9 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
         }
         case "session_reset":
           // Sidecar started a fresh session — clear the transcript + counters.
+          // Buffered sub-agent snapshots are dropped, not flushed: a late
+          // flush would recreate a stale group in the fresh transcript.
+          dropPendingSubagentSnapshots();
           stickToBottomRef.current = true;
           setItems([]);
           setLiveToolFeed([]);
@@ -971,6 +1046,8 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
       finalizeThinking,
       endStreamingText,
       discardStreamingDraft,
+      flushSubagentSnapshots,
+      dropPendingSubagentSnapshots,
       nextId,
       setItems,
       setState,

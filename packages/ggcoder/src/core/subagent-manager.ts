@@ -582,7 +582,16 @@ export class SubAgentManager {
     if (frame.type === "event") {
       const event = String(frame.event);
       const payload = (frame.payload ?? {}) as Record<string, unknown>;
-      if (event === "text_delta") worker.taskOutput += String(payload.text ?? "");
+      // text_delta / thinking_delta fire per token but change no snapshot
+      // field (taskOutput is worker-local; the snapshot only carries the final
+      // `output`). Publishing them broadcast an unchanged snapshot per token,
+      // per agent — pure SSE + re-render churn downstream. Accumulate and move
+      // on; real state changes publish below.
+      if (event === "text_delta" || event === "thinking_delta") {
+        if (event === "text_delta") worker.taskOutput += String(payload.text ?? "");
+        worker.updated_at = Date.now();
+        return;
+      }
       if (event === "tool_call_start") {
         worker.tool_use_count++;
         worker.current_activity = activity(

@@ -21,6 +21,31 @@ export const SPINNER_FRAME_MS = 80;
 const FRAMES = SPINNER_FRAMES;
 const FRAME_MS = SPINNER_FRAME_MS;
 
+/**
+ * Idle-line variations for the ready state — rotated so the quiet line under
+ * the transcript isn't always the same "Ready for work". Re-rolled each time
+ * the bar returns to the bare idle state (never the same phrase twice in a
+ * row). Tone: deadpan, a little self-deprecating about being an idle AI —
+ * funny like the wake screen, never meme-speak. The original stays first.
+ */
+const READY_PHRASES = [
+  "Ready for work",
+  "Ready when you are",
+  "Your move",
+  "Standing by. Obviously.",
+  "Waiting on you, as usual",
+  "Doing nothing, expertly",
+  "Napping, but professionally",
+  "Polishing my tokens",
+  "Idling at 0 tokens/sec",
+  "Stretching my context window",
+] as const;
+
+function pickReadyPhrase(exclude?: string): string {
+  const pool = exclude ? READY_PHRASES.filter((p) => p !== exclude) : READY_PHRASES;
+  return pool[Math.floor(Math.random() * pool.length)] ?? "Ready for work";
+}
+
 function formatElapsed(ms: number): string {
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s`;
@@ -128,6 +153,14 @@ export function ActivityBar({
   const [elapsed, setElapsed] = useState(0);
   const [, setNow] = useState(0);
   const startRef = useRef(0);
+  // Idle ready-line phrase: random per mount, re-rolled every time the bar
+  // comes back to the bare idle state (excluding the current one, so it
+  // actually changes).
+  const [readyPhrase, setReadyPhrase] = useState(() => pickReadyPhrase());
+  const bareIdle = !running && !doneStatus;
+  useEffect(() => {
+    if (bareIdle) setReadyPhrase((cur) => pickReadyPhrase(cur));
+  }, [bareIdle]);
 
   useEffect(() => {
     if (!running) {
@@ -182,7 +215,7 @@ export function ActivityBar({
             <span className="statusrow-icon" style={{ color: theme.accent }}>
               {"\u276f"}
             </span>
-            <span>Ready for work</span>
+            <span>{readyPhrase}</span>
           </span>
         )}
         {showToolsToggle && onToggleTools && (

@@ -54,8 +54,7 @@ import { useAgentEvents, HOOK_PRESENTATION, type HookKind } from "./useAgentEven
 import { LiveToolPanel, type LiveToolEntry } from "./LiveToolPanel";
 import { SubAgentFeed, type SubAgentLine } from "./SubAgentFeed";
 import { CompactionNotice } from "./CompactionNotice";
-import { ModelMenu } from "./ModelMenu";
-import { modelDisplayName } from "./model-name";
+import { ModelSelect } from "./ModelSelect";
 import { SlashMenu } from "./SlashMenu";
 import { FileMentionMenu } from "./FileMentionMenu";
 import { ReferencedFiles, appendReferencedFiles, parseReferencedFiles } from "./ReferencedFiles";
@@ -78,6 +77,7 @@ import { RadioButton } from "./RadioButton";
 import { ProjectPicker } from "./ProjectPicker";
 import { ChatPicker } from "./ChatPicker";
 import { BackButton } from "./BackButton";
+import { Badge } from "./Badge";
 import { AutopilotToggle } from "./AutopilotToggle";
 import { HomeScreen } from "./HomeScreen";
 import { initialEntryView, type EntryView } from "./app-entry-view";
@@ -425,11 +425,6 @@ function App(): React.ReactElement {
   const [thinkingStartTs, setThinkingStartTs] = useState<number | null>(null);
   const [thinkingAccumMs, setThinkingAccumMs] = useState(0);
   const [models, setModels] = useState<ModelOption[]>([]);
-  // Footer + menus show the friendly registry name (e.g. "Gemini 3.5 Flash"),
-  // not the raw wire id (e.g. "gemini-3-flash").
-  const modelName = (id: string | undefined | null): string => modelDisplayName(models, id);
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [kenModelMenuOpen, setKenModelMenuOpen] = useState(false);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [slashIndex, setSlashIndex] = useState(0);
   // `@`-mention file picker state. `mention` is the active token being typed
@@ -1193,7 +1188,6 @@ function App(): React.ReactElement {
   // sidecar's ken_model_change broadcast updates state; the .then is just a
   // faster local echo of the same payload.
   function onSelectKenModel(modelId: string | null): void {
-    setKenModelMenuOpen(false);
     if (state && modelId !== null && state.kenModelOverride && modelId === state.kenModel) return;
     if (state && modelId === null && !state.kenModelOverride) return;
     void switchKenModel(modelId).then((res) => {
@@ -1213,7 +1207,6 @@ function App(): React.ReactElement {
   }
 
   function onSelectModel(modelId: string): void {
-    setModelMenuOpen(false);
     if (state && modelId === state.model) return;
     void switchModel(modelId).then((res) => {
       if (res) {
@@ -2334,65 +2327,37 @@ function App(): React.ReactElement {
                   );
                 })()}
               <span className="model-anchor">
-                {modelMenuOpen && models.length > 0 && (
-                  <ModelMenu
-                    models={models}
-                    currentModel={state?.model ?? ""}
-                    onSelect={onSelectModel}
-                    onClose={() => setModelMenuOpen(false)}
-                    title={workspaceMode === "chat" ? "GG model" : "GG Coder model"}
-                  />
-                )}
                 <span className="model-label" style={{ color: theme.text }}>
                   GG
                 </span>
-                <button
-                  className="model-button"
-                  style={{ color: theme.text }}
-                  disabled={running || models.length === 0}
+                <ModelSelect
+                  models={models}
+                  currentModel={state?.model ?? ""}
+                  onSelect={onSelectModel}
+                  disabled={running}
                   title={workspaceMode === "chat" ? "Switch GG's model" : "Switch GG Coder's model"}
-                  onClick={() => {
-                    setKenModelMenuOpen(false);
-                    setModelMenuOpen((o) => !o);
-                  }}
-                >
-                  {modelName(state?.model)}
-                </button>
+                />
               </span>
               {workspaceMode === "code" && (
                 <>
                   <FooterSep />
                   <span className="model-anchor">
-                    {kenModelMenuOpen && models.length > 0 && (
-                      <ModelMenu
-                        models={models}
-                        currentModel={state?.kenModel ?? state?.model ?? ""}
-                        onSelect={(id) => onSelectKenModel(id)}
-                        onClose={() => setKenModelMenuOpen(false)}
-                        title="Ken's model"
-                        onSelectFollow={() => onSelectKenModel(null)}
-                        followActive={!state?.kenModelOverride}
-                      />
-                    )}
                     <span className="model-label" style={{ color: theme.ken }}>
                       Ken
                     </span>
-                    <button
-                      className="model-button"
-                      style={{ color: theme.ken }}
-                      disabled={models.length === 0}
+                    <ModelSelect
+                      models={models}
+                      currentModel={state?.kenModel ?? state?.model ?? ""}
+                      onSelect={(id) => onSelectKenModel(id)}
+                      color={theme.ken}
                       title={
                         state?.kenModelOverride
                           ? "Ken is pinned to his own model — click to change"
                           : "Ken follows GG Coder's model — click to pin one"
                       }
-                      onClick={() => {
-                        setModelMenuOpen(false);
-                        setKenModelMenuOpen((o) => !o);
-                      }}
-                    >
-                      {modelName(state?.kenModel ?? state?.model)}
-                    </button>
+                      onSelectFollow={() => onSelectKenModel(null)}
+                      followActive={!state?.kenModelOverride}
+                    />
                   </span>
                 </>
               )}
@@ -2408,13 +2373,24 @@ function App(): React.ReactElement {
           onClick={() => void appUpdate.install()}
         >
           <span className="update-banner-dot" />
-          {`Ken just pushed a new update (${appUpdate.version}) — click here to install`}
+          {"Ken just updated GG Coder!"}
+          <Badge>Install</Badge>
         </button>
       )}
       {appUpdate.phase === "installing" && (
-        <div className="update-banner update-banner-busy">
-          <span className="update-banner-dot" />
-          {"Installing update\u2026 the app will restart automatically."}
+        // Same .update-banner box (padding/font) as the available state, so
+        // banner → progress bar swaps content with zero layout shift. The fill
+        // is absolutely positioned; only the centered percentage is in flow.
+        <div
+          className="update-banner update-banner-busy update-banner-progress"
+          role="progressbar"
+          aria-valuenow={appUpdate.progress ?? 0}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Downloading update"
+        >
+          <span className="update-banner-fill" style={{ width: `${appUpdate.progress ?? 0}%` }} />
+          <span className="update-banner-pct">{`${appUpdate.progress ?? 0}%`}</span>
         </div>
       )}
 

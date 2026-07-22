@@ -2,10 +2,10 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { modelDisplayName } from "./model-name";
-import { ModelMenu } from "./ModelMenu";
+import { ModelSelect } from "./ModelSelect";
 import type { ModelOption } from "./agent";
 
-// ModelMenu only imports ModelOption from ./agent as a type (erased), so the
+// ModelSelect only imports ModelOption from ./agent as a type (erased), so the
 // module's Tauri side-effects never load. Guard anyway in case that changes.
 vi.mock("./agent", () => ({}));
 
@@ -31,19 +31,36 @@ describe("modelDisplayName (footer label)", () => {
   });
 });
 
-describe("ModelMenu (dropdown)", () => {
+describe("ModelSelect (native dropdown)", () => {
   it("renders friendly names, not raw wire ids", () => {
     render(
-      <ModelMenu
+      <ModelSelect
         models={MODELS}
         currentModel="gemini-3-flash"
         onSelect={() => {}}
-        onClose={() => {}}
+        title="Switch model"
       />,
     );
-    // The button label is the friendly name…
-    expect(screen.getByText("Gemini 3.5 Flash")).toBeDefined();
+    // The closed control shows the friendly name as plain text (it also
+    // appears once more as the <option> inside the hidden select)…
+    expect(screen.getAllByText("Gemini 3.5 Flash").length).toBeGreaterThan(0);
     // …and the raw wire id is never shown as visible text.
     expect(screen.queryByText("gemini-3-flash")).toBeNull();
+  });
+
+  it("shows the follow choice as selected when Ken follows GG Coder", () => {
+    render(
+      <ModelSelect
+        models={MODELS}
+        currentModel="gemini-3-flash"
+        onSelect={() => {}}
+        title="Ken's model"
+        onSelectFollow={() => {}}
+        followActive
+      />,
+    );
+    const select = screen.getByLabelText("Ken's model") as HTMLSelectElement;
+    expect(select.value).toBe("__follow__");
+    expect(screen.getByText("Follow GG Coder (Gemini 3.5 Flash)")).toBeDefined();
   });
 });

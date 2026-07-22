@@ -139,13 +139,28 @@ export function HomeScreen({ onProjects, onChat, onLogin }: Props): React.ReactE
       <MemeLayer />
       {appUpdate.phase === "available" || appUpdate.phase === "installing" ? (
         <button
-          className="home-update"
+          className={`home-update${appUpdate.phase === "installing" ? " home-update-progress" : ""}`}
           disabled={appUpdate.phase === "installing"}
           title={`Update to ${appUpdate.version} — installs and restarts the app`}
           onClick={() => void appUpdate.install()}
         >
+          {appUpdate.phase === "installing" && (
+            <span className="home-update-fill" style={{ width: `${appUpdate.progress ?? 0}%` }} />
+          )}
           <Download size={14} strokeWidth={2.25} aria-hidden="true" />
-          {appUpdate.phase === "installing" ? "Installing\u2026" : `Update to ${appUpdate.version}`}
+          {/* Both labels occupy the same grid cell; the inactive one is
+              visibility:hidden, so the pill is ALWAYS sized to the wider of
+              the two and never resizes when the install starts or the
+              percentage climbs. */}
+          <span className="home-update-swap">
+            <span className={appUpdate.phase === "installing" ? "home-update-hidden" : undefined}>
+              {`Update to ${appUpdate.version}`}
+            </span>
+            <span className={appUpdate.phase === "installing" ? undefined : "home-update-hidden"}>
+              {"Installing\u2026"}
+              <span className="home-update-pct">{`${appUpdate.progress ?? 0}%`}</span>
+            </span>
+          </span>
         </button>
       ) : (
         version && (
