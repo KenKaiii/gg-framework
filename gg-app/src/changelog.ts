@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.27.1",
+    date: "2026-07-23",
+    items: [
+      "Long builds no longer stall out waiting for you to type `Continue`. I taught GG Coder to catch runaway tool calls, retry them `2 times`, and keep your conversation moving without losing its place.",
+      "GG's built-in coding senses are fully loaded again. I restored `TypeScript diagnostics` and `source inspection` inside the desktop app, then made search more forgiving, so it catches mistakes sooner and digs through dependencies without missing a beat.",
+    ],
+  },
+  {
     version: "0.27.0",
     date: "2026-07-22",
     items: [
