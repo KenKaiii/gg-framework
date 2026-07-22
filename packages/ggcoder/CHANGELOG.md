@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.22.2
+
+### Patch Changes
+
+- Keep live sessions responsive while multiple subagents stream in parallel.
+  - @kenkaiiii/gg-ai@5.22.2
+  - @kenkaiiii/gg-agent@5.22.2
+  - @kenkaiiii/gg-core@5.22.2
+
 ## 5.22.1
 
 ### Patch Changes
