@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.22.3
+
+### Patch Changes
+
+- Automatically recover from runaway tool-call streams and restore bundled TypeScript diagnostics and source inspection in the desktop sidecar.
+  - @kenkaiiii/gg-ai@5.22.3
+  - @kenkaiiii/gg-agent@5.22.3
+  - @kenkaiiii/gg-core@5.22.3
+
 ## 5.22.2
 
 ### Patch Changes
