@@ -28,3 +28,12 @@ export function tagPlatform(doc: Document = document, nav: Navigator = navigator
   doc.documentElement.classList.add(cls);
   return cls;
 }
+
+/**
+ * Native popup selects are reliable in WKWebView on macOS. WebView2 and
+ * WebKitGTK have shipped popup regressions where the list opens but cannot be
+ * selected, so Windows/Linux use the in-webview accessible menu fallback.
+ */
+export function supportsNativeSelectPopup(doc: Document = document): boolean {
+  return doc.documentElement.classList.contains("platform-macos");
+}

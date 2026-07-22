@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { platformClass } from "./platform";
+import { platformClass, supportsNativeSelectPopup } from "./platform";
 
 describe("platformClass", () => {
   it("maps macOS identifiers", () => {
@@ -22,5 +23,19 @@ describe("platformClass", () => {
   it("falls back to linux (native chrome) for unknown", () => {
     expect(platformClass("")).toBe("platform-linux");
     expect(platformClass("freebsd")).toBe("platform-linux");
+  });
+});
+
+describe("supportsNativeSelectPopup", () => {
+  it("uses native popups only on macOS", () => {
+    const doc = document.implementation.createHTMLDocument();
+    doc.documentElement.className = "platform-macos";
+    expect(supportsNativeSelectPopup(doc)).toBe(true);
+
+    doc.documentElement.className = "platform-windows";
+    expect(supportsNativeSelectPopup(doc)).toBe(false);
+
+    doc.documentElement.className = "platform-linux";
+    expect(supportsNativeSelectPopup(doc)).toBe(false);
   });
 });
