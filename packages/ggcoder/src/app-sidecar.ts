@@ -2467,10 +2467,7 @@ async function createSession(
   };
   scheduleGitPoll(5000);
 
-  function readBody(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): Promise<string | null> {
+  function readBody(req: http.IncomingMessage, res: http.ServerResponse): Promise<string | null> {
     return readCappedBody(req, res);
   }
 

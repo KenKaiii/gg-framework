@@ -490,33 +490,33 @@ export function toAnthropicMessages(
             : msg.content
                 .filter((part) => !(part.type === "text" && part.text === ""))
                 .map((part) => {
-                if (part.type === "text") return { type: "text" as const, text: part.text };
-                if (part.type === "video") {
-                  // MiniMax-M3 rides the Anthropic transport and accepts native
-                  // video blocks. Non-video models never reach here — video is
-                  // downgraded to text by downgradeUnsupportedVideos first.
+                  if (part.type === "text") return { type: "text" as const, text: part.text };
+                  if (part.type === "video") {
+                    // MiniMax-M3 rides the Anthropic transport and accepts native
+                    // video blocks. Non-video models never reach here — video is
+                    // downgraded to text by downgradeUnsupportedVideos first.
+                    return {
+                      type: "video" as const,
+                      source: {
+                        type: "base64" as const,
+                        media_type: part.mediaType,
+                        data: part.data,
+                      },
+                    } as unknown as Anthropic.ContentBlockParam;
+                  }
                   return {
-                    type: "video" as const,
+                    type: "image" as const,
                     source: {
                       type: "base64" as const,
-                      media_type: part.mediaType,
+                      media_type: part.mediaType as
+                        | "image/jpeg"
+                        | "image/png"
+                        | "image/gif"
+                        | "image/webp",
                       data: part.data,
                     },
-                  } as unknown as Anthropic.ContentBlockParam;
-                }
-                return {
-                  type: "image" as const,
-                  source: {
-                    type: "base64" as const,
-                    media_type: part.mediaType as
-                      | "image/jpeg"
-                      | "image/png"
-                      | "image/gif"
-                      | "image/webp",
-                    data: part.data,
-                  },
-                };
-              }),
+                  };
+                }),
       });
       continue;
     }

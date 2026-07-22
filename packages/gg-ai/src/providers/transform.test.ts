@@ -592,7 +592,10 @@ describe("OpenAI transform", () => {
         role: "assistant",
         content: [{ type: "tool_call", id: "toolu_01ABC", name: "bash", args: { cmd: "ls" } }],
       },
-      { role: "tool", content: [{ type: "tool_result", toolCallId: "toolu_01ABC", content: "ok" }] },
+      {
+        role: "tool",
+        content: [{ type: "tool_result", toolCallId: "toolu_01ABC", content: "ok" }],
+      },
     ];
     const out = toOpenAIMessages(messages) as unknown as Array<Record<string, unknown>>;
     const assistant = out.find((m) => m.role === "assistant") as {

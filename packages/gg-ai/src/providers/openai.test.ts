@@ -609,7 +609,9 @@ describe("streamOpenAI silent-partial truncation guard", () => {
         object: "chat.completion.chunk",
         created: 1,
         model: "test",
-        choices: [{ index: 0, delta: { role: "assistant", content: "partial-" }, finish_reason: null }],
+        choices: [
+          { index: 0, delta: { role: "assistant", content: "partial-" }, finish_reason: null },
+        ],
       };
       yield {
         id: "chatcmpl_1",
@@ -657,7 +659,9 @@ describe("streamOpenAI silent-partial truncation guard", () => {
           object: "chat.completion.chunk",
           created: 1,
           model: "test",
-          choices: [{ index: 0, delta: { role: "assistant", content: "Hello" }, finish_reason: null }],
+          choices: [
+            { index: 0, delta: { role: "assistant", content: "Hello" }, finish_reason: null },
+          ],
         };
         yield {
           id: "chatcmpl_1",
