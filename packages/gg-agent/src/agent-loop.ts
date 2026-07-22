@@ -393,6 +393,7 @@ export async function* agentLoop(
   let overloadRetries = 0;
   let emptyResponseRetries = 0;
   let stallRetries = 0;
+  let runawayToolcallRetries = 0;
   let overflowCompactionAttempts = 0;
   let toolResultTruncationAttempted = false;
   const invalidToolArgumentCounts = new Map<string, number>();
@@ -409,6 +410,8 @@ export async function* agentLoop(
   const MAX_OVERLOAD_RETRIES = 10;
   const MAX_EMPTY_RESPONSE_RETRIES = 2;
   const MAX_STALL_RETRIES = 5;
+  const MAX_RUNAWAY_TOOLCALL_RETRIES = 2;
+  const RUNAWAY_TOOLCALL_RETRY_DELAY_MS = 1_000;
   const MAX_OVERFLOW_COMPACTIONS = 2;
   // After this many streaming stalls in a row, switch to non-streaming mode
   // for the remaining stall retries. Keeps the first two retries fast (the
@@ -477,11 +480,10 @@ export async function* agentLoop(
     ? STREAM_THINKING_HARD_TIMEOUT_MS // 10min absolute cap before output
     : STREAM_HARD_TIMEOUT_MS; // 90s
   // Runaway tool-call circuit breaker. When a model glitches mid-tool-call it
-  // can emit tens of thousands of toolcall_delta events without ever closing,
-  // burning the entire stall-retry budget (~25 min) on what is clearly a
-  // non-recoverable model error. Cap accumulated arg chars and event count;
-  // exceeding either is a hard, non-retriable failure. Thresholds are generous
-  // enough to allow legitimate large file writes through `write`.
+  // can emit tens of thousands of toolcall_delta events without ever closing.
+  // Cap accumulated arg chars and event count so one bad stream cannot hang the
+  // run indefinitely. The loop automatically replays the untouched turn twice;
+  // only repeated failures surface to the user.
   const MAX_TOOLCALL_DELTA_CHARS = 1_000_000; // 1 MB of accumulated tool-call args
   const MAX_TOOLCALL_DELTA_EVENTS = 20_000; // 20k delta events in one stream
   let logicalTurnStartedAt = 0;
@@ -988,16 +990,39 @@ export async function* agentLoop(
         // Both are transport failures — retry with exponential backoff and flip
         // to non-streaming mode after STALL_RETRIES_BEFORE_NON_STREAMING attempts,
         // since broken SSE often recovers when replayed as plain HTTP.
-        // Runaway tool-call: the model never closed a tool-call block and
-        // blew past the size/count caps. Retrying just reproduces the loop,
-        // so surface a clear error and stop. Checked before the abort branch
-        // since we ourselves aborted the stream to break the runaway.
+        // Runaway tool-call: the model never closed a tool-call block and blew
+        // past the size/count caps. The partial call was never added to message
+        // history, so replay the untouched turn automatically — exactly what a
+        // manual "continue" fixed, without forcing the user to intervene.
         if (runawayDetected) {
           diag("runaway_toolcall_aborted", {
             ...runawayDetected,
             provider: options.provider,
             model: options.model,
           });
+          if (runawayToolcallRetries < MAX_RUNAWAY_TOOLCALL_RETRIES) {
+            runawayToolcallRetries++;
+            const delayMs = RUNAWAY_TOOLCALL_RETRY_DELAY_MS * runawayToolcallRetries;
+            diag("retry", {
+              reason: "runaway_toolcall",
+              attempt: runawayToolcallRetries,
+              maxAttempts: MAX_RUNAWAY_TOOLCALL_RETRIES,
+              delayMs,
+              ...runawayDetected,
+            });
+            yield {
+              type: "retry" as const,
+              reason: "runaway_toolcall" as const,
+              attempt: runawayToolcallRetries,
+              maxAttempts: MAX_RUNAWAY_TOOLCALL_RETRIES,
+              delayMs,
+              silent: true,
+            };
+            await abortableSleep(delayMs, options.signal);
+            turn--; // The aborted provider attempt does not consume a turn.
+            continue;
+          }
+
           const detail =
             runawayDetected.kind === "chars"
               ? `${(runawayDetected.chars / 1024).toFixed(0)} KB of tool-call arguments`
@@ -1005,9 +1030,8 @@ export async function* agentLoop(
           yield {
             type: "error" as const,
             error: new Error(
-              `The model glitched mid-tool-call and produced ${detail} without closing the call. ` +
-                `This is usually an upstream model bug — try the same request again or switch models. ` +
-                `Your conversation is preserved.`,
+              `The model repeatedly failed to close a tool call after ${MAX_RUNAWAY_TOOLCALL_RETRIES} automatic retries ` +
+                `(${detail}). Switch models and retry; your conversation is preserved.`,
             ),
           };
           break;
@@ -1133,6 +1157,7 @@ export async function* agentLoop(
 
       overloadRetries = 0;
       stallRetries = 0;
+      runawayToolcallRetries = 0;
 
       // Detect empty/degenerate responses — the API occasionally returns 0 tokens
       // with no content, or "thinks" without producing actionable output.

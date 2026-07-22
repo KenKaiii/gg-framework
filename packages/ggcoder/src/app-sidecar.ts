@@ -833,11 +833,14 @@ async function main(): Promise<void> {
     { expiresAt: number; result: UsageResult }
   >();
   const usageRequests = new Map<SubscriptionUsageProvider, Promise<UsageResult>>();
-  // 429 backoff: when the provider rate-limits the usage endpoint, hold the
-  // error result until this timestamp instead of re-polling (and re-logging a
-  // WARN) every 60s — the old cadence hammered a limited endpoint for hours.
+  // 429 backoff: quota endpoints are auxiliary UI data. Honor Retry-After when
+  // provided; otherwise retain the unavailable snapshot for 30 minutes. Clamp
+  // the provider value so a malformed header can neither hammer the endpoint
+  // nor suppress usage data forever.
   const usageRateLimitedUntil = new Map<SubscriptionUsageProvider, number>();
-  const USAGE_RATE_LIMIT_BACKOFF_MS = 5 * 60_000;
+  const USAGE_RATE_LIMIT_FALLBACK_BACKOFF_MS = 30 * 60_000;
+  const USAGE_RATE_LIMIT_MIN_BACKOFF_MS = 60_000;
+  const USAGE_RATE_LIMIT_MAX_BACKOFF_MS = 24 * 60 * 60_000;
 
   async function fetchUsageProvider(provider: SubscriptionUsageProvider): Promise<UsageResult> {
     const displayName =
@@ -876,10 +879,23 @@ async function main(): Promise<void> {
       if (shouldCaptureUsagePollingError(error)) {
         captureSidecarError(error, "app-sidecar.usage.fetch", { provider });
       }
-      log("WARN", "app-sidecar", "subscription usage fetch failed", { provider, message });
+      let backoffMs: number | undefined;
       if (error instanceof SubscriptionUsageError && error.status === 429) {
-        usageRateLimitedUntil.set(provider, Date.now() + USAGE_RATE_LIMIT_BACKOFF_MS);
+        backoffMs = Math.min(
+          USAGE_RATE_LIMIT_MAX_BACKOFF_MS,
+          Math.max(
+            USAGE_RATE_LIMIT_MIN_BACKOFF_MS,
+            error.retryAfterMs ?? USAGE_RATE_LIMIT_FALLBACK_BACKOFF_MS,
+          ),
+        );
+        usageRateLimitedUntil.set(provider, Date.now() + backoffMs);
       }
+      log("WARN", "app-sidecar", "subscription usage fetch failed", {
+        provider,
+        message,
+        ...(backoffMs !== undefined && { backoffMs: String(backoffMs) }),
+      });
+
       const connected = await auth.hasProviderAuth(authKey);
       return {
         provider,

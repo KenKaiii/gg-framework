@@ -862,6 +862,8 @@ async function performSearch(
   filters: SearchFilters,
   signal: AbortSignal,
 ): Promise<SearchResponse> {
+  const unavailableEngines: SearchEngine[] = [];
+
   for (const engine of ENGINES) {
     const startedAt = Date.now();
     try {
@@ -879,7 +881,11 @@ async function performSearch(
       );
 
       if (isRateLimited(statusCode, html)) {
-        log("WARN", "web-search", "Search engine unavailable", {
+        unavailableEngines.push(engine);
+        // A blocked fallback is expected on public search pages. Keep each
+        // attempt in DEBUG and emit one actionable WARN only when every engine
+        // is unavailable; otherwise successful searches flood the app log.
+        log("DEBUG", "web-search", "Search engine unavailable", {
           engine,
           status: String(statusCode),
           reason: "rate-limited",
@@ -901,7 +907,8 @@ async function performSearch(
         return { results: filteredResults.results, engine, stats: filteredResults.stats };
       }
     } catch (error) {
-      log("WARN", "web-search", "Search engine attempt failed", {
+      unavailableEngines.push(engine);
+      log("DEBUG", "web-search", "Search engine attempt failed", {
         engine,
         error: error instanceof Error ? error.message : String(error),
         duration: `${Date.now() - startedAt}ms`,
@@ -910,6 +917,11 @@ async function performSearch(
     }
   }
 
+  if (unavailableEngines.length === ENGINES.length) {
+    log("WARN", "web-search", "All search engines unavailable", {
+      engines: unavailableEngines.join(","),
+    });
+  }
   return { results: [], engine: "DuckDuckGo", stats: emptyFilterStats() };
 }
 

@@ -25,8 +25,8 @@ const nodeModulesOut = join(outDir, "node_modules");
 const bundledSkillsSource = join(repoRoot, "packages", "ggcoder", "assets", "skills");
 const bundledSkillsOut = join(outDir, "skills");
 
-// Packages that must NOT be inlined: native addons + lazily-loaded optional
-// heavy deps. They are copied verbatim with their dependency trees instead.
+// Packages that must NOT be inlined: native addons, lazily-loaded optional
+// heavy deps, and child-process entry points that esbuild cannot discover.
 const EXTERNAL = [
   "sharp",
   "playwright",
@@ -39,6 +39,14 @@ const EXTERNAL = [
   // The Codex transport loads this package's zstd.wasm by path at runtime.
   // Keep the package external so the WASM asset survives the sidecar bundle.
   "@bokuweb/zstd-wasm",
+  // LSP servers run as child processes from their real package entry points.
+  // The server resolver also needs a physical tsserver.js path. Neither package
+  // is imported by the sidecar, so esbuild would otherwise omit both and every
+  // installed desktop build would silently lose TS/JS inline diagnostics.
+  "typescript-language-server",
+  "typescript",
+  // source_path spawns opensrc's CLI by physical path; it is never imported.
+  "opensrc",
   // Default MCP server: spawned as a stdio child, never imported, so esbuild
   // won't bundle it. Copy it next to the sidecar so resolveStdioCommand can
   // resolve its bin and rewrite `npx -y @kenkaiiii/kencode-search` to a direct

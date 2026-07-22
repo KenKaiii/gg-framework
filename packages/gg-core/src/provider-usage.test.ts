@@ -242,4 +242,26 @@ describe("fetchSubscriptionUsage", () => {
       }),
     );
   });
+
+  it("preserves provider Retry-After guidance on rate limits", async () => {
+    await expect(
+      fetchSubscriptionUsage(
+        "anthropic",
+        { accessToken: "test-token" },
+        {
+          fetchFn: async () =>
+            new Response(JSON.stringify({ error: "rate limited" }), {
+              status: 429,
+              headers: { "content-type": "application/json", "retry-after": "120" },
+            }),
+          now: () => Date.parse("2030-01-01T00:00:00Z"),
+        },
+      ),
+    ).rejects.toEqual(
+      expect.objectContaining<Partial<SubscriptionUsageError>>({
+        status: 429,
+        retryAfterMs: 120_000,
+      }),
+    );
+  });
 });

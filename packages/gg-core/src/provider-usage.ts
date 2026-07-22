@@ -22,6 +22,7 @@ export class SubscriptionUsageError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = "SubscriptionUsageError";
@@ -141,12 +142,21 @@ function normalizedCodexWindow(
   };
 }
 
-async function readUsageResponse(response: Response): Promise<unknown> {
+function retryAfterMs(response: Response, now: number): number | undefined {
+  const value = response.headers.get("retry-after")?.trim();
+  if (!value) return undefined;
+  if (/^\d+(?:\.\d+)?$/.test(value)) return Math.ceil(Number(value) * 1_000);
+  const retryAt = Date.parse(value);
+  return Number.isFinite(retryAt) ? Math.max(0, retryAt - now) : undefined;
+}
+
+async function readUsageResponse(response: Response, now: number): Promise<unknown> {
   const text = await response.text();
   if (!response.ok) {
     throw new SubscriptionUsageError(
       `Subscription usage request failed with HTTP ${response.status}`,
       response.status,
+      retryAfterMs(response, now),
     );
   }
   try {
@@ -173,7 +183,7 @@ async function fetchAnthropicUsage(
       "User-Agent": "ggcoder",
     },
   });
-  const data = (await readUsageResponse(response)) as AnthropicUsageResponse;
+  const data = (await readUsageResponse(response, now())) as AnthropicUsageResponse;
   const windows: SubscriptionUsageWindow[] = [];
   const currentPercent = clampPercent(data.five_hour?.utilization);
   if (currentPercent !== undefined) {
@@ -215,7 +225,7 @@ async function fetchCodexUsage(
   };
   if (credentials.accountId) headers["ChatGPT-Account-Id"] = credentials.accountId;
   const response = await fetchFn(CODEX_USAGE_URL, { method: "GET", signal, headers });
-  const data = (await readUsageResponse(response)) as CodexUsageResponse;
+  const data = (await readUsageResponse(response, now())) as CodexUsageResponse;
   const windows = [
     normalizedCodexWindow(data.rate_limit?.primary_window, "current", now()),
     normalizedCodexWindow(data.rate_limit?.secondary_window, "weekly", now()),
@@ -286,7 +296,7 @@ async function fetchKimiUsage(
       ...kimiCodingHeaders(),
     },
   });
-  const data = (await readUsageResponse(response)) as KimiUsageResponse;
+  const data = (await readUsageResponse(response, now())) as KimiUsageResponse;
   const windows: SubscriptionUsageWindow[] = [];
   // Top-level `usage` is the weekly request quota of the membership tier.
   const weeklyPercent = kimiUsagePercent(data.usage);

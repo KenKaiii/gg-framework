@@ -78,6 +78,28 @@ function mockErrorResult(error: Error) {
   };
 }
 
+function mockRunawayToolCallResult(kind: "events" | "chars") {
+  const error = Object.assign(new Error("aborted runaway tool call"), { name: "AbortError" });
+  const response = Promise.reject(error);
+  response.catch(() => {});
+  return {
+    [Symbol.asyncIterator]: async function* () {
+      const count = kind === "events" ? 20_001 : 1;
+      const argsJson = kind === "chars" ? "x".repeat(1_000_001) : "";
+      for (let index = 0; index < count; index++) {
+        yield {
+          type: "toolcall_delta" as const,
+          id: "runaway",
+          name: "write",
+          argsJson,
+        };
+      }
+      throw error;
+    },
+    response,
+  };
+}
+
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
   const promise = new Promise<void>((r) => {
@@ -988,6 +1010,72 @@ describe("agentLoop", () => {
       turnEnd?.type === "turn_end" ? turnEnd.timing.providerDurationMs : 0,
     ).toBeGreaterThanOrEqual(90_000);
   }, 30_000);
+
+  it("automatically replays a turn after a runaway tool-call stream", async () => {
+    vi.useFakeTimers();
+    mockStream
+      .mockReturnValueOnce(
+        mockRunawayToolCallResult("events") as unknown as ReturnType<typeof stream>,
+      )
+      .mockReturnValueOnce(
+        mockOkResult("Recovered automatically.") as unknown as ReturnType<typeof stream>,
+      );
+
+    const messages: Message[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "continue the task" },
+    ];
+    const loopPromise = collectLoop(messages, { provider: "openai", model: "test" });
+    await vi.advanceTimersByTimeAsync(1_100);
+    const { events, result } = await loopPromise;
+    vi.useRealTimers();
+
+    expect(mockStream).toHaveBeenCalledTimes(2);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "retry",
+        reason: "runaway_toolcall",
+        attempt: 1,
+        maxAttempts: 2,
+        delayMs: 1_000,
+        silent: true,
+      }),
+    );
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(events.some((event) => event.type === "agent_done")).toBe(true);
+    expect(result.totalTurns).toBe(1);
+  });
+
+  it("bounds runaway tool-call auto-retries", async () => {
+    vi.useFakeTimers();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      mockStream.mockReturnValueOnce(
+        mockRunawayToolCallResult("chars") as unknown as ReturnType<typeof stream>,
+      );
+    }
+
+    const messages: Message[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "continue the task" },
+    ];
+    const loopPromise = collectLoop(messages, { provider: "openai", model: "test" });
+    await vi.advanceTimersByTimeAsync(3_100);
+    const { events } = await loopPromise;
+    vi.useRealTimers();
+
+    expect(mockStream).toHaveBeenCalledTimes(3);
+    expect(
+      events.filter((event) => event.type === "retry" && event.reason === "runaway_toolcall"),
+    ).toHaveLength(2);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "error",
+        error: expect.objectContaining({
+          message: expect.stringContaining("after 2 automatic retries"),
+        }),
+      }),
+    );
+  });
 
   it("preserves partial streamed text across a transport-failure retry", async () => {
     vi.useFakeTimers();

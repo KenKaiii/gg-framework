@@ -183,7 +183,8 @@ export interface RetryInfo {
     | "empty_response"
     | "stream_stall"
     | "overflow_compact"
-    | "tool_argument_glitch";
+    | "tool_argument_glitch"
+    | "runaway_toolcall";
   attempt: number;
   maxAttempts: number;
   delayMs: number;

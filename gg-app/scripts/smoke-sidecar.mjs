@@ -92,6 +92,43 @@ async function smokeKencode(node) {
   console.log("smoke: bundled kencode-search starts cleanly");
 }
 
+/**
+ * TS/JS diagnostics resolve these packages by physical path and spawn the
+ * language server with the bundled Node runtime. A bundle-load smoke cannot
+ * detect their absence because neither package is imported by the sidecar.
+ */
+function smokeTypescriptLanguageServer(node) {
+  const languageServer = join(
+    srcTauri,
+    "sidecar",
+    "node_modules",
+    "typescript-language-server",
+    "lib",
+    "cli.mjs",
+  );
+  const tsserver = join(srcTauri, "sidecar", "node_modules", "typescript", "lib", "tsserver.js");
+  if (!existsSync(languageServer))
+    fail(`bundled TypeScript language server missing: ${languageServer}`);
+  if (!existsSync(tsserver)) fail(`bundled tsserver missing: ${tsserver}`);
+
+  const version = execFileSync(node, [languageServer, "--version"], { encoding: "utf8" }).trim();
+  if (!/^\d+\.\d+\.\d+/.test(version)) {
+    fail(`bundled TypeScript language server returned invalid version: ${version}`);
+  }
+  console.log(`smoke: bundled TypeScript language server starts cleanly (${version})`);
+}
+
+/** source_path also spawns a copied CLI that esbuild cannot discover. */
+function smokeOpenSrc(node) {
+  const bin = join(srcTauri, "sidecar", "node_modules", "opensrc", "bin", "opensrc.js");
+  if (!existsSync(bin)) fail(`bundled opensrc missing: ${bin}`);
+  const help = execFileSync(node, [bin, "--help"], { encoding: "utf8" });
+  if (!help.includes("Fetch source code for packages")) {
+    fail("bundled opensrc did not return its CLI help");
+  }
+  console.log("smoke: bundled opensrc starts cleanly");
+}
+
 async function main() {
   if (!existsSync(sidecar)) fail(`bundled sidecar missing: ${sidecar}`);
   if (!existsSync(evidenceSkill)) fail(`bundled evidence-led-ui skill missing: ${evidenceSkill}`);
@@ -99,6 +136,8 @@ async function main() {
   console.log(`smoke: ${node} ${sidecar}`);
 
   await smokeKencode(node);
+  smokeTypescriptLanguageServer(node);
+  smokeOpenSrc(node);
 
   const child = spawn(node, [sidecar], {
     env: { ...process.env, GG_APP_PORT: "0", GG_APP_CWD: process.cwd() },

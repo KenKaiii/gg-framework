@@ -287,6 +287,7 @@ const RETRY_REASON_LABELS: Record<RetryInfo["reason"], string> = {
   stream_stall: "Provider stream stalled",
   overflow_compact: "Context overflow — compacting",
   tool_argument_glitch: "Provider dropped tool call args — auto-continuing",
+  runaway_toolcall: "Provider tool call stream glitched — retrying",
 };
 
 export function ActivityIndicator({

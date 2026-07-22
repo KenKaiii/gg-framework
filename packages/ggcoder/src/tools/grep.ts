@@ -7,7 +7,7 @@ import { BINARY_EXTENSIONS } from "./read.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 
 const GrepParams = z.object({
-  pattern: z.string().describe("Search pattern (regex supported)"),
+  pattern: z.string().describe("Search pattern (JavaScript regex; leading (?i) is supported)"),
   path: z.string().optional().describe("File or directory to search (defaults to cwd)"),
   include: z.string().optional().describe("Glob pattern to filter files (e.g. '*.ts')"),
   max_results: z
@@ -38,11 +38,16 @@ export function createGrepTool(
     async execute({ pattern, path: searchPath, include, max_results, case_insensitive }) {
       const dir = searchPath ? resolvePath(cwd, searchPath) : cwd;
       const maxResults = max_results ?? DEFAULT_MAX_RESULTS;
-      const flags = case_insensitive ? "gi" : "g";
+      // Models commonly emit the RE2/PCRE-style leading `(?i)` flag. JavaScript
+      // rejects it as an invalid group, so translate that safe, unambiguous form
+      // to the equivalent RegExp flag while preserving the explicit tool option.
+      const hasInlineCaseInsensitiveFlag = pattern.startsWith("(?i)");
+      const normalizedPattern = hasInlineCaseInsensitiveFlag ? pattern.slice(4) : pattern;
+      const flags = case_insensitive || hasInlineCaseInsensitiveFlag ? "gi" : "g";
 
       let regex: RegExp;
       try {
-        regex = new RegExp(pattern, flags);
+        regex = new RegExp(normalizedPattern, flags);
       } catch (err) {
         throw new Error(`Invalid regex pattern: ${(err as Error).message}`, { cause: err });
       }

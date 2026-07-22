@@ -23,4 +23,16 @@ describe("createGrepTool", () => {
     expect(result).not.toContain("z.txt:1:needle");
     expect(result).toContain("[Truncated at 1 matches]");
   });
+
+  it("accepts a leading (?i) as a case-insensitive regex flag", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "gg-grep-inline-flag-"));
+    await fs.writeFile(path.join(tmpDir, "deploy.txt"), "Deploy to Railway\n");
+
+    const result = await createGrepTool(tmpDir).execute(
+      { pattern: "(?i)deploy|railway", include: "*.txt" },
+      context(),
+    );
+
+    expect(result).toContain("deploy.txt:1:Deploy to Railway");
+  });
 });

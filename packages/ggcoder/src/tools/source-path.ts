@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -132,6 +133,13 @@ function getBundledOpenSrcBinPath(): string {
   if (override) return override;
 
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  // In the desktop esbuild bundle this module lives at sidecar/app-sidecar.mjs
+  // and copied externals live directly under sidecar/node_modules. In the npm
+  // package it lives at dist/tools/source-path.js, two levels below the package
+  // root. Probe both layouts instead of assuming the npm layout — that old
+  // assumption escaped the app sandbox and resolved under Contents/node_modules.
+  const bundledAppBin = path.join(currentDir, "node_modules", "opensrc", "bin", "opensrc.js");
+  if (existsSync(bundledAppBin)) return bundledAppBin;
   return path.resolve(currentDir, "../../node_modules/opensrc/bin/opensrc.js");
 }
 
