@@ -22,6 +22,16 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.27.0",
+    date: "2026-07-22",
+    items: [
+      "The `model picker` and `Arrange` button now open real native menus while keeping the exact clean controls you already know. They feel faster, behave properly with your keyboard, and look right at home on your machine.",
+      "Reading while several `subagents` work in parallel just got silky smooth. I cut the pointless background chatter and keep every real activity update, so you can scroll through the conversation without fighting the app.",
+      "Updates now show their work. Tap the new `Install` badge and both the footer and home screen turn into live percentage progress, with zero jumping around while GG Coder downloads the good stuff.",
+      "The idle footer finally developed a personality. I added `10` dry little status lines, from professional napping to token polishing, so waiting around is at least mildly entertaining.",
+    ],
+  },
+  {
     version: "0.26.1",
     date: "2026-07-22",
     items: [
