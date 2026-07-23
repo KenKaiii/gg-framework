@@ -319,6 +319,45 @@ body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
+
+.app-restoring {
+  align-items: center;
+  justify-content: center;
+}
+
+.app-restoring-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.app-restoring-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 10px rgb(77 157 255 / 45%);
+  animation: appRestoringPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes appRestoringPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-restoring-dot {
+    animation: none;
+  }
+}
 .app-file-dragover::before,
 .app-file-dragover::after {
   position: absolute;
@@ -4465,10 +4504,7 @@ body {
 }
 .rank-fx-gradient,
 .rank-fx-gradient-glow,
-.rank-fx-animated,
-.rank-fx-gold,
-.rank-fx-gold-shimmer,
-.rank-fx-iridescent {
+.rank-fx-gold {
   color: transparent;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -4482,43 +4518,19 @@ body {
   text-shadow: 0 0 14px rgba(126, 170, 255, 0.25);
 }
 .rank-fx-animated {
-  background-image: linear-gradient(
-    90deg,
-    #9b8cf7 0%,
-    #60a5fa 25%,
-    #34d399 50%,
-    #60a5fa 75%,
-    #9b8cf7 100%
-  );
-  background-size: 200% 100%;
+  color: #7ca8ff;
+  text-shadow: 0 0 12px rgba(96, 165, 250, 0.2);
 }
 .rank-fx-gold {
   background-image: linear-gradient(90deg, #b78b2d, #ffe38a, #d9a441);
 }
 .rank-fx-gold-shimmer {
-  background-image: linear-gradient(
-    110deg,
-    #b78b2d 0%,
-    #d9a441 24%,
-    #ffe38a 42%,
-    #fff3bf 50%,
-    #ffe38a 58%,
-    #d9a441 76%,
-    #b78b2d 100%
-  );
-  background-size: 200% 100%;
+  color: #ffe38a;
+  text-shadow: 0 0 12px rgba(255, 227, 138, 0.2);
 }
 .rank-fx-iridescent {
-  background-image: linear-gradient(
-    90deg,
-    #9b8cf7 0%,
-    #7df9ff 20%,
-    #ff8bd2 40%,
-    #fff18a 60%,
-    #7df9ff 80%,
-    #9b8cf7 100%
-  );
-  background-size: 200% 100%;
+  color: #a99cff;
+  text-shadow: 0 0 12px rgba(125, 249, 255, 0.2);
 }
 @media (prefers-reduced-motion: no-preference) {
   .rank-badge-celebrate::before {
@@ -4537,13 +4549,13 @@ body {
     animation: rankBadgeSparks 1.2s ease-out both;
   }
   .rank-fx-animated {
-    animation: rankShift 8s linear infinite;
+    animation: rankArcaneShift 8s ease-in-out infinite;
   }
   .rank-fx-gold-shimmer {
-    animation: rankShift 7s linear infinite;
+    animation: rankGoldShift 7s ease-in-out infinite;
   }
   .rank-fx-iridescent {
-    animation: rankShift 12s linear infinite;
+    animation: rankIridescentShift 12s ease-in-out infinite;
   }
 }
 @keyframes rankXpChip {
@@ -4622,12 +4634,34 @@ body {
     transform: translate(-50%, -50%) scale(1.15);
   }
 }
-@keyframes rankShift {
-  0% {
-    background-position: 0% 50%;
-  }
+@keyframes rankArcaneShift {
+  0%,
   100% {
-    background-position: 200% 50%;
+    color: #9b8cf7;
+  }
+  50% {
+    color: #34d399;
+  }
+}
+@keyframes rankGoldShift {
+  0%,
+  100% {
+    color: #d9a441;
+  }
+  50% {
+    color: #fff3bf;
+  }
+}
+@keyframes rankIridescentShift {
+  0%,
+  100% {
+    color: #a99cff;
+  }
+  33% {
+    color: #7df9ff;
+  }
+  66% {
+    color: #ff8bd2;
   }
 }
 

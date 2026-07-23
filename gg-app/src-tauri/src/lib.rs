@@ -75,8 +75,8 @@ struct Windows {
 #[derive(Default)]
 struct AppExiting(AtomicBool);
 
-/// One restored window's target (mode, cwd, and optional session), handed to the
-/// webview once via `window_restore_target` so it skips the picker on boot.
+/// One window's active target (mode, cwd, and optional session), returned by
+/// `window_restore_target` so the webview can recover without showing Home.
 #[derive(Clone, serde::Serialize)]
 struct RestoreEntry {
     mode: WorkspaceMode,
@@ -107,7 +107,10 @@ struct PermissionsStatus {
     granted: bool,
 }
 
-/// Pending per-window restore targets, consumed once by the webview on mount.
+/// Per-window active workspace targets. An entry exists only after the user has
+/// chosen a workspace (or when one was restored at boot). Targets stay available
+/// for the lifetime of the window so a WebKit content-process reload can recover
+/// the same workspace instead of falling back to Home.
 #[derive(Default)]
 struct RestoreTargets {
     map: Mutex<HashMap<String, RestoreEntry>>,
@@ -119,6 +122,10 @@ fn register_restore_target(
     entry: RestoreEntry,
 ) {
     targets.insert(label, entry);
+}
+
+fn restore_target(targets: &HashMap<String, RestoreEntry>, label: &str) -> Option<RestoreEntry> {
+    targets.get(label).cloned()
 }
 
 fn remove_restore_target(
@@ -1743,14 +1750,11 @@ fn write_workspace(ws: &Workspace) {
     }
 }
 
-/// Pure: is this window worth snapshotting? A window still sitting on the picker
-/// has no project chosen (its cwd is None or equals the default boot cwd) and
-/// must be excluded so it doesn't restore as an empty home window.
-fn keep_for_snapshot(cwd: Option<&Path>, default_cwd: &Path) -> bool {
-    match cwd {
-        Some(c) => c != default_cwd,
-        None => false,
-    }
+/// Pure: picker-only windows have a daemon session at the default boot cwd but
+/// no active workspace target. A selected project remains snapshot-worthy even
+/// when its path happens to equal that default cwd.
+fn keep_for_snapshot(workspace_selected: bool, cwd: Option<&Path>) -> bool {
+    workspace_selected && cwd.is_some()
 }
 
 /// Pure: drop restore entries that can't be opened (empty cwd, or a cwd that no
@@ -1766,11 +1770,18 @@ fn filter_restorable<F: Fn(&str) -> bool>(
 }
 
 /// Walk every live window + its `Windows` session entry and write a fresh
-/// snapshot. Picker-only windows (still at the default boot cwd) are excluded.
+/// snapshot. Picker-only windows (without an active target) are excluded.
 /// Geometry is captured from each window's current outer position + inner size.
 fn snapshot_workspace(app: &tauri::AppHandle) {
-    let default = default_cwd();
     let windows = app.webview_windows();
+    let selected_labels: HashSet<String> = app
+        .state::<RestoreTargets>()
+        .map
+        .lock()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
     let state: State<Windows> = app.state();
     let map = state.map.lock().unwrap();
 
@@ -1783,7 +1794,7 @@ fn snapshot_workspace(app: &tauri::AppHandle) {
     for label in &labels {
         let Some(inst) = map.get(label) else { continue };
         let cwd = inst.cwd.as_deref();
-        if !keep_for_snapshot(cwd, &default) {
+        if !keep_for_snapshot(selected_labels.contains(label), cwd) {
             continue;
         }
         let cwd = cwd.unwrap().to_string_lossy().to_string();
@@ -1840,14 +1851,14 @@ fn remove_window_from_workspace(app: &tauri::AppHandle, label: &str) {
     }
 }
 
-/// Consume-once: hand the calling window its restore target (cwd + session) so
-/// the webview skips the picker on boot. Returns null for a normal (non-restored)
-/// window. The entry is removed after the first read.
+/// Hand the calling webview its active workspace target so it can skip Home and
+/// hydrate the existing daemon session. Unlike the old consume-once target, this
+/// remains available across React remounts and WebKit content-process reloads.
 #[tauri::command]
 fn window_restore_target(webview: WebviewWindow) -> Option<RestoreEntry> {
     let state: State<RestoreTargets> = webview.state();
-    let mut map = state.map.lock().unwrap();
-    remove_restore_target(&mut map, webview.label())
+    let map = state.map.lock().unwrap();
+    restore_target(&map, webview.label())
 }
 
 // ── Native provider auth status (~/.gg/auth.json) ─────────────────────────
@@ -2863,6 +2874,15 @@ async fn select_project(
     session_path: Option<String>,
 ) -> Result<(), String> {
     let label = webview.label().to_string();
+    // The existing daemon session is about to be retired. Remove its durable
+    // target first so a failed switch or mid-switch webview reload cannot reopen
+    // a workspace whose session has already been disposed.
+    remove_restore_target(
+        &mut app.state::<RestoreTargets>().map.lock().unwrap(),
+        &label,
+    );
+    snapshot_workspace(&app);
+
     // Take the old session id (and clear it) so the old SSE bridge retires.
     let old_id = {
         let windows: State<Windows> = app.state();
@@ -2880,6 +2900,12 @@ async fn select_project(
         }
     }
 
+    let target = RestoreEntry {
+        mode,
+        chat_agent,
+        cwd: cwd.clone(),
+        session_path: session_path.clone(),
+    };
     let cwd = PathBuf::from(cwd);
     let generation = prepare_window_session(
         &app,
@@ -2891,7 +2917,7 @@ async fn select_project(
     );
     finish_window_session(
         app.clone(),
-        label,
+        label.clone(),
         mode,
         chat_agent,
         cwd,
@@ -2900,8 +2926,13 @@ async fn select_project(
     )
     .await?;
 
-    // Persist only a working selection; a failed resume must not become the
-    // workspace target retried on every app restart.
+    // Publish the target only after the daemon confirms the selection. Keeping
+    // it for the window lifetime lets a reloaded webview recover in place.
+    register_restore_target(
+        &mut app.state::<RestoreTargets>().map.lock().unwrap(),
+        label,
+        target,
+    );
     snapshot_workspace(&app);
     Ok(())
 }
@@ -4224,17 +4255,14 @@ mod tests {
     }
 
     #[test]
-    fn keep_for_snapshot_excludes_picker_windows() {
+    fn keep_for_snapshot_excludes_only_unselected_picker_windows() {
         let default = Path::new("/home/user");
-        // No project chosen yet → excluded.
-        assert!(!keep_for_snapshot(None, default));
-        // Still on the default boot cwd (picker) → excluded.
-        assert!(!keep_for_snapshot(Some(Path::new("/home/user")), default));
-        // A real project → kept.
-        assert!(keep_for_snapshot(
-            Some(Path::new("/home/user/proj")),
-            default
-        ));
+        // Picker session exists at the boot cwd, but no workspace was chosen.
+        assert!(!keep_for_snapshot(false, Some(default)));
+        assert!(!keep_for_snapshot(false, None));
+        // Explicitly choosing that exact directory must still survive restart.
+        assert!(keep_for_snapshot(true, Some(default)));
+        assert!(keep_for_snapshot(true, Some(Path::new("/home/user/proj"))));
     }
 
     #[test]
@@ -5128,7 +5156,7 @@ mod tests {
     }
 
     #[test]
-    fn restore_target_registration_is_consume_once_and_cleanup_safe() {
+    fn restore_target_survives_repeated_webview_mounts_until_cleanup() {
         let mut targets = HashMap::new();
         let entry = RestoreEntry {
             mode: WorkspaceMode::Code,
@@ -5138,13 +5166,16 @@ mod tests {
         };
 
         register_restore_target(&mut targets, "main".into(), entry);
-        assert!(targets.contains_key("main"));
-        let consumed = remove_restore_target(&mut targets, "main");
         assert_eq!(
-            consumed.as_ref().map(|target| target.cwd.as_str()),
-            Some("/project")
+            restore_target(&targets, "main").map(|target| target.cwd),
+            Some("/project".into())
         );
-        assert!(remove_restore_target(&mut targets, "main").is_none());
+        assert_eq!(
+            restore_target(&targets, "main").map(|target| target.cwd),
+            Some("/project".into())
+        );
+        assert!(remove_restore_target(&mut targets, "main").is_some());
+        assert!(restore_target(&targets, "main").is_none());
     }
 
     #[test]

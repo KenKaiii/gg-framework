@@ -1100,17 +1100,10 @@ function App(): React.ReactElement {
     return () => unsub();
   }, [handleEvent]);
 
-  // Boot-time workspace restore: if Rust reopened THIS window from the saved
-  // workspace (after a restart / update), its sidecar is already spawned at the
-  // restored project + session. Skip the picker and hydrate straight in, exactly
-  // like a completed project choice. Consume-once on the Rust side, so this runs
-  // a single time on mount. Always flips `restoreChecked` so the entry render is
-  // unblocked whether or not this was a restored window.
+  // Boot-time/reload workspace recovery: Rust keeps THIS window's active target
+  // for its lifetime. A restored app launch and a WebKit content-process reload
+  // therefore both hydrate straight back into the existing daemon session.
   useEffect(() => {
-    // No cancelled-guard: the Rust target is consume-once, so whichever call
-    // receives it MUST act on it (a dev StrictMode double-mount would otherwise
-    // consume it on the first run and drop it, stranding the window on the
-    // picker). React 19 makes a setState after unmount a safe no-op.
     void restoreTarget()
       .then((target) => {
         if (target) {
@@ -1119,7 +1112,7 @@ function App(): React.ReactElement {
         }
       })
       .finally(() => setRestoreChecked(true));
-    // Mount-only: onProjectChosen reads stable setters; restoreTarget is consumed once.
+    // Mount-only: the native target remains stable for this window's lifetime.
   }, []);
 
   useEffect(() => {
@@ -1798,11 +1791,18 @@ function App(): React.ReactElement {
     setHydrateNonce((n) => n + 1);
   }
 
-  // Hold the entry render until the restore check resolves, so a window reopened
-  // from the saved workspace jumps straight into its project instead of briefly
-  // flashing the home/picker screen.
+  // Show explicit recovery feedback while Rust resolves this window's durable
+  // target. This branch used to paint only the dark background, which looked
+  // indistinguishable from a dead/black webview during a slow recovery.
   if (needsProject && !restoreChecked) {
-    return <div className="app" style={{ background: theme.background }} />;
+    return (
+      <div className="app app-restoring" style={{ background: theme.background }}>
+        <div className="app-restoring-status" role="status" aria-live="polite">
+          <span className="app-restoring-dot" aria-hidden="true" />
+          Restoring workspace…
+        </div>
+      </div>
+    );
   }
 
   if (needsProject) {

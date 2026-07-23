@@ -1018,7 +1018,7 @@ export async function selectProject(cwd: string, sessionPath?: string): Promise<
   await selectWorkspace("code", cwd, sessionPath);
 }
 
-/** The project/session a window was restored to on app boot (workspace restore). */
+/** The active project/session Rust can restore into this webview. */
 export interface RestoreTarget {
   mode: WorkspaceMode;
   chatAgent?: ChatAgentId;
@@ -1027,10 +1027,10 @@ export interface RestoreTarget {
 }
 
 /**
- * If THIS window was reopened from the saved workspace (after a restart/update),
- * return its restore target so the webview can skip the project picker and
- * hydrate straight into the resumed project/session. Returns null for a normal
- * (freshly launched) window. Consume-once: a second call returns null.
+ * Return THIS window's active workspace target so the webview can skip Home and
+ * hydrate its existing daemon session. Rust retains the target for the window's
+ * lifetime, allowing repeated calls after React or WebKit content-process reloads.
+ * Returns null only while this is a fresh picker-only window.
  */
 export async function restoreTarget(): Promise<RestoreTarget | null> {
   try {
