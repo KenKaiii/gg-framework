@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.27.3",
+    date: "2026-07-23",
+    items: [
+      "Your workspace windows now know exactly where they belong. I made every window recover its active project instead of dumping you on `Home`, and slow wake-ups now show `Restoring workspace` instead of an empty black screen.",
+      "Your `rank badge` keeps the flex without the flicker. I rebuilt its color-shifting shine so your tier stays visible and smooth, even while other video-heavy apps are fighting for the screen.",
+    ],
+  },
+  {
     version: "0.27.2",
     date: "2026-07-23",
     items: [
