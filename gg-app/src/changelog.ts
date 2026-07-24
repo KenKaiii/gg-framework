@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.27.6",
+    date: "2026-07-24",
+    items: [
+      "Your title bar is now a launchpad. Click the `project name` to pop its folder straight open in Finder or Explorer, and click the `branch` to jump right to the repo on GitHub. It works the same on Mac and Windows.",
+      "No more staring at a lonely `0`. Your `issues` and `PRs` chips now show up only when you actually have some, so the title bar stays clean and only tells you what matters.",
+    ],
+  },
+  {
     version: "0.27.5",
     date: "2026-07-24",
     items: [
