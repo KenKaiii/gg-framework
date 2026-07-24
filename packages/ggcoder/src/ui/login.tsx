@@ -32,7 +32,7 @@ const PROVIDERS: { label: string; value: Provider; description: string }[] = [
   {
     label: "Anthropic",
     value: "anthropic",
-    description: "Claude Fable 5, Opus 4.8, Sonnet 5, Haiku 4.5",
+    description: "Claude Fable 5, Opus 5, Sonnet 5, Haiku 4.5",
   },
   {
     label: "OpenAI",

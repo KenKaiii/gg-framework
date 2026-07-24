@@ -37,8 +37,8 @@ export interface ModelInfo {
    *     and `ultra`; gg-ai caps at `max` — `ultra` needs a ThinkingLevel bump)
    *   - OpenAI GPT-5.5-era: `xhigh`
    *   - OpenAI Pro/Codex/old: clamped to what the model accepts
-   *   - Claude Fable 5 / Mythos 5, Opus 4.8 / 4.7 / 4.6 and Sonnet 5: `max`
-   *     (Fable 5 / Mythos 5 use always-on adaptive thinking, low→max ladder)
+   *   - Claude Fable 5 / Mythos 5, Opus 5, Opus 4.8 / 4.7 / 4.6 and Sonnet 5:
+   *     `max` (Fable 5 / Mythos 5 use always-on adaptive thinking, low→max ladder)
    *   - Claude Haiku 4.5: `high` (no adaptive `max` tier)
    *   - Kimi K3: `max` (always-on reasoning; currently the only API effort)
    *   - GLM / Kimi K2.x / Xiaomi / MiniMax / Qwen: `high` — binary-thinking
@@ -99,6 +99,23 @@ export const MODELS: ModelInfo[] = [
   //   maxThinkingLevel: "max",
   // },
   {
+    // Released 2026-07-24 — "For complex agentic coding and enterprise work".
+    // Near-Fable capability at half the price ($5/$25 vs $10/$50). Adaptive
+    // thinking with the full effort ladder (low→max, xhigh included); dateless
+    // ID is the canonical pinned snapshot (post-4.6 naming scheme).
+    id: "claude-opus-5",
+    name: "Claude Opus 5",
+    provider: "anthropic",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: false,
+    costTier: "high",
+    maxThinkingLevel: "max",
+  },
+  {
+    // Legacy — superseded by Claude Opus 5 (same $5/$25 pricing) on 2026-07-24.
     id: "claude-opus-4-8",
     name: "Claude Opus 4.8",
     provider: "anthropic",

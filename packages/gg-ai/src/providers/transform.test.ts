@@ -621,11 +621,13 @@ describe("OpenAI transform", () => {
 });
 
 describe("toAnthropicThinking", () => {
-  it("passes Anthropic adaptive effort levels through for Claude Opus 4.8", () => {
-    for (const level of ["low", "medium", "high", "xhigh", "max"] as const) {
-      expect(toAnthropicThinking(level, MAX_TOKENS, "claude-opus-4-8").outputConfig).toEqual({
-        effort: level,
-      });
+  it("passes Anthropic adaptive effort levels through for Claude Opus 5 and Opus 4.8", () => {
+    for (const model of ["claude-opus-5", "claude-opus-4-8"]) {
+      for (const level of ["low", "medium", "high", "xhigh", "max"] as const) {
+        const result = toAnthropicThinking(level, MAX_TOKENS, model);
+        expect(result.outputConfig).toEqual({ effort: level });
+        expect((result.thinking as { type: string }).type).toBe("adaptive");
+      }
     }
   });
 

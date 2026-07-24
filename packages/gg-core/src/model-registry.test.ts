@@ -190,6 +190,7 @@ describe("model registry context windows", () => {
     expect(
       getDefaultThinkingLevel("kimi-k2.7-code", { baseUrl: "https://api.kimi.com/coding/v1" }),
     ).toBe("high");
+    expect(getDefaultThinkingLevel("claude-opus-5")).toBe("max");
     expect(getDefaultThinkingLevel("claude-opus-4-8")).toBe("max");
   });
 

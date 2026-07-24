@@ -48,7 +48,7 @@ export const AUTH_PROVIDERS: AuthProviderMeta[] = [
   {
     value: "anthropic",
     label: "Anthropic",
-    description: "Claude Fable 5, Opus 4.8, Sonnet 5, Haiku 4.5",
+    description: "Claude Fable 5, Opus 5, Sonnet 5, Haiku 4.5",
     methods: ["oauth"],
   },
   {
