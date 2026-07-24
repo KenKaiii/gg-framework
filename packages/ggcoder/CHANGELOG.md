@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.22.4
+
+### Patch Changes
+
+- Fix memory tools killing the turn when the model sends content over the 600-character limit (over-limit input is now an ordinary, actionable tool error instead of a fatal "repeatedly issued invalid arguments" failure), make chat agents save durable memories proactively without being asked, fix false stream stalls for silent OpenAI reasoning, and anchor transcript error markers to persisted messages so resumed errors render at the bottom.
+  - @kenkaiiii/gg-ai@5.22.4
+  - @kenkaiiii/gg-agent@5.22.4
+  - @kenkaiiii/gg-core@5.22.4
+
 ## 5.22.3
 
 ### Patch Changes
