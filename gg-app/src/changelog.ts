@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.28.1",
+    date: "2026-07-24",
+    items: [
+      "`Claude Opus 5` is now fully dialed in. You can cycle its thinking all the way from `low` up through `xhigh` and `max`, so you decide exactly how hard it pushes on any task. It was locked to one setting before. I also cleared the retired `Opus 4.8` out of the model menu, so you only ever see models worth picking.",
+    ],
+  },
+  {
     version: "0.28.0",
     date: "2026-07-24",
     items: [
