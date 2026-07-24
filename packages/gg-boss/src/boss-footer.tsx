@@ -14,7 +14,6 @@ const SHORT_MODELS: Record<string, string> = {
   "claude-fable-5": "Fable",
   "claude-mythos-5": "Mythos",
   "claude-opus-5": "Opus",
-  "claude-opus-4-8": "Opus 4.8",
   "claude-sonnet-5": "Sonnet",
   "claude-haiku-4-5": "Haiku",
   "claude-haiku-4-5-20251001": "Haiku",

@@ -146,7 +146,7 @@ describe("setEstimatorModel", () => {
   it("uses different ratios for different model families", () => {
     const text = "a".repeat(100);
 
-    setEstimatorModel("claude-opus-4-8");
+    setEstimatorModel("claude-opus-5");
     const claudeTokens = estimateTokens(text); // 100/3.2 = 32
 
     setEstimatorModel("gpt-4.1");

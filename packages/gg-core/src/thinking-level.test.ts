@@ -24,15 +24,15 @@ describe("thinking-level helpers", () => {
   });
 
   it("cycles Anthropic adaptive Opus models through max, including xhigh", () => {
-    expect(getSupportedThinkingLevels("anthropic", "claude-opus-4-8")).toEqual([
+    expect(getSupportedThinkingLevels("anthropic", "claude-opus-5")).toEqual([
       "low",
       "medium",
       "high",
       "xhigh",
       "max",
     ]);
-    expect(getNextThinkingLevel("anthropic", "claude-opus-4-8", "xhigh")).toBe("max");
-    expect(getNextThinkingLevel("anthropic", "claude-opus-4-8", "max")).toBeUndefined();
+    expect(getNextThinkingLevel("anthropic", "claude-opus-5", "xhigh")).toBe("max");
+    expect(getNextThinkingLevel("anthropic", "claude-opus-5", "max")).toBeUndefined();
   });
 
   it("cycles Anthropic adaptive Sonnet models without xhigh", () => {

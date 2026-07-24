@@ -17,7 +17,9 @@ const SAKANA_THINKING_LEVELS: readonly ThinkingLevel[] = ["high", "xhigh"];
 // Grok reasoning models take reasoning_effort low/medium/high (server default
 // high; reasoning can't be fully disabled — "off" just omits the param).
 const XAI_THINKING_LEVELS: readonly ThinkingLevel[] = ["low", "medium", "high"];
-const ANTHROPIC_OPUS_48_47_THINKING_LEVELS: readonly ThinkingLevel[] = [
+// Opus 5 / 4.7 expose the full ladder including xhigh ("extended capability for
+// long-horizon work"). Other adaptive Anthropic models omit xhigh and would 400.
+const ANTHROPIC_XHIGH_THINKING_LEVELS: readonly ThinkingLevel[] = [
   "low",
   "medium",
   "high",
@@ -52,13 +54,14 @@ function isMoonshotK3Model(provider: Provider, model: string): boolean {
   return provider === "moonshot" && model === "kimi-k3";
 }
 
-function isAnthropicOpus48Or47Model(provider: Provider, model: string): boolean {
-  return provider === "anthropic" && /opus-4-8|opus-4-7/.test(model);
+function isAnthropicXhighModel(provider: Provider, model: string): boolean {
+  return provider === "anthropic" && /opus-5|opus-4-8|opus-4-7/.test(model);
 }
 
 function isAnthropicAdaptiveModel(provider: Provider, model: string): boolean {
   return (
-    provider === "anthropic" && /opus-4-8|opus-4-7|opus-4-6|sonnet-5|fable-5|mythos-5/.test(model)
+    provider === "anthropic" &&
+    /opus-5|opus-4-8|opus-4-7|opus-4-6|sonnet-5|fable-5|mythos-5/.test(model)
   );
 }
 
@@ -68,8 +71,8 @@ export function getSupportedThinkingLevels(
 ): readonly ThinkingLevel[] {
   const maxLevel = getMaxThinkingLevel(model);
   if (isAnthropicAdaptiveModel(provider, model)) {
-    const levels = isAnthropicOpus48Or47Model(provider, model)
-      ? ANTHROPIC_OPUS_48_47_THINKING_LEVELS
+    const levels = isAnthropicXhighModel(provider, model)
+      ? ANTHROPIC_XHIGH_THINKING_LEVELS
       : ANTHROPIC_ADAPTIVE_THINKING_LEVELS;
     const maxIndex = levels.indexOf(maxLevel);
     if (maxIndex === -1) return ["low", "medium", "high"];

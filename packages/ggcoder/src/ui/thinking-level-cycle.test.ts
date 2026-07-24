@@ -21,16 +21,16 @@ describe("getNextThinkingLevel", () => {
   });
 
   it("cycles Anthropic adaptive models through low, medium, high, xhigh, max, then off", () => {
-    expect(getNextThinkingLevel("anthropic", "claude-opus-4-8", undefined)).toBe("low");
-    expect(getNextThinkingLevel("anthropic", "claude-opus-4-8", "low")).toBe("medium");
-    expect(getNextThinkingLevel("anthropic", "claude-opus-4-8", "medium")).toBe("high");
-    expect(getNextThinkingLevel("anthropic", "claude-opus-4-8", "high")).toBe("xhigh");
-    expect(getNextThinkingLevel("anthropic", "claude-opus-4-8", "xhigh")).toBe("max");
-    expect(getNextThinkingLevel("anthropic", "claude-opus-4-8", "max")).toBeUndefined();
+    expect(getNextThinkingLevel("anthropic", "claude-opus-5", undefined)).toBe("low");
+    expect(getNextThinkingLevel("anthropic", "claude-opus-5", "low")).toBe("medium");
+    expect(getNextThinkingLevel("anthropic", "claude-opus-5", "medium")).toBe("high");
+    expect(getNextThinkingLevel("anthropic", "claude-opus-5", "high")).toBe("xhigh");
+    expect(getNextThinkingLevel("anthropic", "claude-opus-5", "xhigh")).toBe("max");
+    expect(getNextThinkingLevel("anthropic", "claude-opus-5", "max")).toBeUndefined();
   });
 
   it("recognizes Anthropic adaptive effort levels supported by each model", () => {
-    expect(getSupportedThinkingLevels("anthropic", "claude-opus-4-8")).toEqual([
+    expect(getSupportedThinkingLevels("anthropic", "claude-opus-5")).toEqual([
       "low",
       "medium",
       "high",
@@ -43,7 +43,7 @@ describe("getNextThinkingLevel", () => {
       "high",
       "max",
     ]);
-    expect(isThinkingLevelSupported("anthropic", "claude-opus-4-8", "max")).toBe(true);
+    expect(isThinkingLevelSupported("anthropic", "claude-opus-5", "max")).toBe(true);
   });
 
   it("keeps non-GPT OpenAI models as a binary max-thinking toggle", () => {

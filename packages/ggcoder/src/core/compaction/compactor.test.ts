@@ -110,7 +110,7 @@ describe("shouldCompact", () => {
     }
     const estimated = estimateConversationTokens(messages);
 
-    const opusContext = getContextWindow("claude-opus-4-8");
+    const opusContext = getContextWindow("claude-opus-5");
     const kimiContext = getContextWindow("kimi-k2.7-code");
 
     // Sanity: Opus has 1M, Kimi has 256k
