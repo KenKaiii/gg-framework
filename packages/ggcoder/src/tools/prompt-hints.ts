@@ -24,7 +24,7 @@ export const TOOL_PROMPT_HINTS: Record<string, string> = {
   task_output: "Read new output from a background process by id.",
   task_stop: "Stop a background process by id.",
   tasks:
-    "Manage the project task list. Do not use this tool proactively — only manage the task list when the user explicitly requests it.",
+    "Manage the project task list. Do not use this tool proactively — only when the user explicitly requests it, or when an active slash-command's flow reaches its task-handoff step.",
   enter_plan:
     "Enter read-only plan mode for complex/risky tasks before implementation; draft a plan under .gg/plans/.",
   exit_plan: "Submit a .gg/plans/ markdown plan for user approval and leave plan mode.",

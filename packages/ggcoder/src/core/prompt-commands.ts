@@ -27,6 +27,13 @@ const CLAUDE_MD_RESTART_NOTICE = IS_GG_APP
   ? '> ⚠️ CLAUDE.md was created/updated. GG App loads it fresh per session, so start a **New Session** (click "+ New") before continuing. Without a new session, I won\'t see the new context.'
   : "> ⚠️ CLAUDE.md was created/updated. ggcoder loads it at startup, so **exit and restart ggcoder** (`/quit` then run `ggcoder` again) before continuing. Without a restart, I won't see the new context.";
 
+/**
+ * Shared sub-agent fan-out phrasing. One home so the "call the tool N times
+ * in a single response" wording can't drift between command prompts.
+ */
+const spawnParallel = (count: string | number): string =>
+  `in parallel using the subagent tool (call the subagent tool ${count} times in a single response)`;
+
 export const PROMPT_COMMANDS: PromptCommand[] = [
   {
     name: "expand",
@@ -50,7 +57,7 @@ Use this profile to decide which features are relevant and genuinely missing. If
 
 ## Phase 1: Parallel feature research
 
-Spawn exactly 5 sub-agents in parallel using the subagent tool (call the subagent tool 5 times in a single response). Give each sub-agent the project profile and a different feature-hunting lens:
+Spawn exactly 5 sub-agents ${spawnParallel(5)}. Give each sub-agent the project profile and a different feature-hunting lens:
 
 **Agent 1 - Direct competitor killer features**: The standout, most-loved user-facing features in the closest peer projects/tools/products that this project lacks.
 
@@ -116,15 +123,20 @@ If the user chooses C, ask what they would like — pick specific features by ra
     description: "Audit exploitable weaknesses",
     prompt: `# Bullet-Proof: Defensive Security Review
 
-You are a defensive security auditor reviewing this codebase to identify exploitable weaknesses so they can be patched before the project ships. Think rigorously about realistic threat scenarios — boundary checks, edge cases, race conditions, trust assumptions, supply-chain risks, agent-mediated paths.
+This is an **authorized defensive security review** of this repository, requested by its owner so weaknesses can be found and patched before they ship. This is standard defensive security work — the same review a security engineer performs before a release. The entire flow is **read-only reporting**: no code changes, no exploit development, and nothing is fixed until the user explicitly chooses at the end.
 
-Goal: harden this project against realistic threats. **Report only HIGH CONFIDENCE findings (≥0.8) with a concrete data-flow path that demonstrates exposure.** Better to miss theoretical issues than flood the report with noise.
+Defensive ground rules (apply to every phase and every subagent):
+- Never produce working exploit code, weaponized payloads, or attack tooling.
+- Describe each risk at the **data-flow level** — where untrusted data enters, what it can reach, and why that is fixable — so every finding maps directly to a patch.
+- The deliverable is a remediation report for the maintainers, nothing else.
+
+Goal: harden this project. **Report only HIGH CONFIDENCE findings (≥0.8) with a concrete data-flow path that demonstrates exposure.** Better to miss theoretical issues than flood the report with noise.
 
 This command is **dynamic and project-agnostic**. Recon drives everything. Do not assume the stack, the language, the deploy target, or that there is an LLM/agent layer. Read first, decide second.
 
 ## Phase 1: Recon — Understand THIS project before auditing anything
 
-Spawn **FOUR recon subagents in parallel** using the subagent tool (call the subagent tool 4 times in a single response). Each has a narrow, independent slice so they can all run at once. **No vulnerabilities flagged in this phase.**
+Spawn **FOUR recon subagents** ${spawnParallel(4)}. Each has a narrow, independent slice so they can all run at once. **No vulnerabilities flagged in this phase.**
 
 **Recon Agent A — Stack & Deployment.** Read manifests, lockfiles, CI/CD configs, Dockerfile/Helm/Terraform, deploy scripts. Produce:
 - Primary language(s), framework(s), runtimes
@@ -138,7 +150,7 @@ Spawn **FOUR recon subagents in parallel** using the subagent tool (call the sub
 
 **Recon Agent C — Sinks.** Walk dangerous-operation code. Produce a **Sinks table** with location (file:line) and sink type for: shell exec, SQL / NoSQL / LDAP / XPath queries, eval / Function / exec / pickle / yaml.load / Marshal / ObjectInputStream, file write, file include / require with dynamic path, network egress (fetch / requests / http.Get), auth decisions, secret reads, native deserializers, dynamic code load, smart-contract external calls, child_process spawns.
 
-**Recon Agent D — Assets.** Scan for what is worth stealing or destroying. Produce an **Assets table** with location and asset type for: credentials / tokens (config files, env files, KMS, OAuth flows, ~/.{app}/auth.json-style stores), customer/PII data stores, source code with IP value, build/CI secrets, signing keys, model API tokens, on-chain funds / wallets, session state, MCP config files, license keys.
+**Recon Agent D — Assets.** Scan for what this project must protect. Produce an **Assets table** with location and asset type for: credentials / tokens (config files, env files, KMS, OAuth flows, ~/.{app}/auth.json-style stores), customer/PII data stores, source code with IP value, build/CI secrets, signing keys, model API tokens, on-chain funds / wallets, session state, MCP config files, license keys.
 
 **After all four return, the main agent synthesizes:**
 1. Assemble the four tables (Stack/Deploy, Sources, Sinks, Assets) into the recon report
@@ -168,21 +180,23 @@ Default catalog — pick what applies, drop what doesn't, add stack-specific aud
 
 ## Phase 3: Parallel audits
 
-Spawn one subagent per active audit **in a single response** (call the subagent tool N times **with \`agent: "auditor"\`**, where N is whatever Phase 2 picked — do not pad to a fixed number, do not drop audits Phase 2 selected). The \`auditor\` agent has the defensive-review persona and exclusion list baked in, so your task description only needs the vulnerability-class scope. Each auditor receives:
-- The full recon output (Sources, Sinks, Assets, Threat model)
+Spawn one subagent per active audit **in a single response** (call the subagent tool N times **with \`agent: "auditor"\`**, where N is whatever Phase 2 picked — do not pad to a fixed number, do not drop audits Phase 2 selected). If the \`auditor\` agent is unavailable, use default subagents and open each task with: "You are performing an authorized, read-only defensive security review for the code owner; report data-flow risks so they can be patched — no exploit code."
+
+**Subagents cannot see this prompt.** Each auditor's task text must therefore include, written out by you:
 - Its specific vulnerability-class scope
-- The 2026 threat reference at the bottom of this prompt
+- The recon rows relevant to that scope (Sources, Sinks, Assets, Threat-model lines — condensed, not the full dump)
+- The specific bullets from the Threat reference below that apply to its class (copy those lines into the task)
 
 Each auditor must:
 1. **Trace data flow** from Sources to Sinks for its class. Not pattern matching.
 2. For every candidate, apply the **untrusted-input vs trusted-input** decision: is the input *actually reachable* by an untrusted source, or is it a settings constant / build-time string / hard-coded value?
-3. Construct a concrete **vulnerability scenario** — describe how the weakness would be triggered (input → system response → resulting exposure). If you can't describe the steps, don't flag it.
+3. Describe a concrete **risk scenario** at the data-flow level — what kind of input reaches the source, how the system processes it, what exposure results. No working payloads. If you can't describe the steps, don't flag it.
 4. Assign **confidence 0.0–1.0**. Drop anything <0.8 before returning.
 5. Be framework-aware: ORM parameterization, auto-escape, memory-safe languages, JSX/template escaping all eliminate entire vuln classes. Don't flag what the framework already handles.
 
 ## Phase 4: False-positive filter
 
-After auditors complete, spawn one verification subagent per surviving finding **in parallel with \`agent: "skeptic"\`** (call the subagent tool once per finding in a single response). The \`skeptic\` agent starts from "this is a false positive" and tries to disprove the finding — only confirmed findings survive. Pass each verifier the full audit finding (location, source/sink, vulnerability scenario, claimed confidence). Drop anything the skeptic returns as DROP; lower severity for DOWNGRADE.
+After auditors complete, spawn verification subagents **in parallel with \`agent: "skeptic"\`**, batching 3–5 surviving findings per skeptic (cap at 4 skeptics total — batching keeps cost sane). The \`skeptic\` agent starts from "this is a false positive" and tries to disprove each finding — only confirmed findings survive. Pass each skeptic the full text of its findings (location, source/sink, risk scenario, claimed confidence); skeptics cannot see this prompt or the auditors' context. Drop anything returned as DROP; lower severity for DOWNGRADE.
 
 **Hard exclusions — do NOT report these, even if real:**
 - DOS / rate-limiting / memory exhaustion without a clear amplification primitive
@@ -227,9 +241,9 @@ Threat model: [from recon]
 - Category: <slug>   CWE: CWE-XXX   Confidence: 0.95
 - Exposure surface: <entry point from Sources>
 - Source → Sink: <e.g. \`POST /api/foo body.userId\` → \`subprocess.run(..., shell=True)\`>
-- Vulnerability scenario:
-  1. Untrusted input <specific payload> reaches <source>
-  2. Server processes it as <what>
+- Risk scenario (data-flow level, no payloads):
+  1. Untrusted input of <shape/kind> reaches <source>
+  2. The system processes it as <what>
   3. Result: <RCE / data exposure / auth bypass>
 - Impact: <blast radius — what is exposed, how far it spreads>
 - Fix: <concrete remediation, code-level>
@@ -256,7 +270,7 @@ If the user chooses A, B, or C, do not fix directly. Instead, add one task per s
 
 ## Threat reference (May 2026)
 
-Cite these as needed per audit. Do not dump them into the report — use them to verify whether a candidate is actually reachable.
+Defensive reference material from public incident reports and OWASP — patterns to check for, not techniques to reproduce. Copy the relevant bullets into each auditor's task (Phase 3); do not dump them into the report.
 
 **OWASP Top 10:2025** — A01 Broken Access Control (now includes SSRF), A02 Misconfig, **A03 Supply Chain Failures (new)**, A05 Injection (now includes prompt injection), **A10 Mishandling Exceptional Conditions (new — fail-open patterns)**.
 
@@ -266,7 +280,7 @@ Cite these as needed per audit. Do not dump them into the report — use them to
 
 **OWASP Top 10 for Agents 2026 (ASI01–10)** — Goal hijack, tool misuse, identity/privilege abuse, agentic supply chain, unexpected code exec, memory/context poisoning, inter-agent comms, cascading failures, human-trust exploit, rogue agents.
 
-**Real 2024-2026 incidents — use as grep templates:**
+**Real 2024-2026 public incidents — patterns to grep for defensively:**
 - tj-actions/changed-files (Mar 14-15 2025, CVE-2025-30066, 23k repos) → unpinned GH Actions, \`uses: foo/bar@main\` / mutable tags, runner-memory secret dumps
 - TanStack Mini Shai-Hulud (May 11 2026, CVE-2026-45321, CVSS 9.6 — 84 versions across 42 \`@tanstack/*\` + UiPath/Mistral/Guardrails/OpenSearch, 169+ packages total, "TeamPCP") → self-spreading npm worm, \`pull_request_target\` + cache poisoning + OIDC token extraction from \`/proc/<pid>/mem\`, persistent \`gh-token-monitor\` daemon
 - Slopsquatting (ongoing 2025-2026, \`react-codeshift\` Jan 2026) → AI coding assistants hallucinate ~20% non-existent package names (open-source models ~21.7%, GPT-4 ~5.2%); malicious parties register the hallucinated names on npm/PyPI. **Verify every package actually existed BEFORE the agent suggested it** — check registry age, download history, author identity
@@ -321,7 +335,7 @@ If CLAUDE.md does NOT exist:
 
 Derive every fact from the actual project — source code, entry points, manifests, and config. Treat README, docs, and code comments as unverified hints that are frequently stale: never copy claims from them, and only state things you can confirm from the code and config themselves.
 
-Spawn 3 sub-agents in parallel using the subagent tool (call the subagent tool 3 times in a single response):
+Spawn 3 sub-agents ${spawnParallel(3)}:
 
 1. **Project Purpose Agent**: Determine what the project actually does from its real code — entry points, main modules, exported/public APIs, CLI commands, routes, and manifests. Do not rely on the README's description.
 2. **Directory Structure Agent**: Map out the folder structure and what each folder contains
@@ -489,7 +503,7 @@ Illustrative only (not prescriptive):
 
 ## Phase 3: Parallel sweep
 
-Spawn one sub-agent per domain you chose, in parallel using the subagent tool (call it N times in a single response, one task per domain). Each explores its assigned domain and returns skill-worthy opportunities.
+Spawn one sub-agent per domain you chose, ${spawnParallel("N")} — one task per domain. Each explores its assigned domain and returns skill-worthy opportunities.
 
 **Skill-worthy means**: a recurring activity someone will do on THIS project — shipping, reviewing, migrating, debugging, onboarding, whatever applies — where a reusable instruction set would make it **faster** (efficient), **lower-effort** (easier), or **less likely to break something** (safer). The test is: will this skill save real time, reduce real cognitive load, or prevent real mistakes, repeatedly, on this project? If no, drop it. A domain returning zero candidates is a valid outcome.
 
@@ -546,100 +560,6 @@ If strong candidates had no ecosystem match, list them at the bottom:
 ## Phase 6: Wait for the user
 
 After presenting the list, ask which (if any) to install. Install nothing without explicit confirmation. Once confirmed, hand off to find-skills to perform the actual install.`,
-  },
-  {
-    name: "setup",
-    aliases: ["setup-project"],
-    description: "Audit project setup",
-    prompt: `Audit this project across six categories and report gaps. **Do not fix anything yet.** Wait for me to choose what to address after the report.
-
-Language-agnostic and project-agnostic — adapt findings to the languages and stack actually present. Ignore categories that don't apply (e.g. skip CI for a local-only scratchpad).
-
-## Categories
-
-### 1. Project hygiene
-
-- \`.gitignore\` present and covers the active language(s)?
-- \`README.md\` present with at least install + run instructions?
-- License file present (if this looks like a public/shareable project)?
-- \`.editorconfig\` present?
-- Git initialized? (\`.git\` directory exists)
-
-### 2. Toolchain version pinning
-
-- Language version pinned in a canonical file: \`.nvmrc\` / \`package.json#engines\` (Node), \`.python-version\` / \`pyproject.toml#requires-python\` (Python), \`rust-toolchain.toml\` (Rust), the \`go\` line in \`go.mod\`, \`.ruby-version\` (Ruby), etc.
-- Lockfile present and committed? (\`package-lock.json\`, \`pnpm-lock.yaml\`, \`yarn.lock\`, \`bun.lockb\`, \`uv.lock\`, \`poetry.lock\`, \`Cargo.lock\`, \`go.sum\`, \`Gemfile.lock\`, \`composer.lock\`)
-
-### 3. Code quality tooling
-
-For each active language, check that a formatter, linter, and (where applicable) type checker are configured:
-- **Formatter**: Prettier / ruff format / gofmt (built-in) / rustfmt (built-in) / clang-format / etc.
-- **Linter**: ESLint / Ruff / golangci-lint / Clippy / etc. — with a reasonable strictness preset
-- **Type checker** (statically-typed langs only): tsc strict, Pyright strict, mypy strict
-- **Test framework**: vitest / jest / pytest / go test / cargo test / rspec / etc.
-
-Report which are present, missing, or configured below the pack's strictness recommendation.
-
-### 4. Verify pipeline
-
-- Are \`lint\` / \`typecheck\` / \`format:check\` / \`test\` (or language-equivalent) wired as runnable commands? (scripts in \`package.json\`, \`pyproject.toml\`, a \`Makefile\`, or \`justfile\`)
-- Pre-commit hook configured? (\`.husky/\`, \`pre-commit\` framework, \`lefthook\`, etc.) — nice-to-have, not required.
-- CI config present? (\`.github/workflows/\`, \`.gitlab-ci.yml\`, \`.circleci/\`, etc.)
-
-### 5. Style pack alignment
-
-"Active style packs" refers specifically to the per-language sub-sections inside the **Language Style Packs** section in your system prompt (e.g. \`### TypeScript\`, \`### Python\`, \`### Go\`). It does **NOT** include the cross-cutting \`### Agent-Written Code\` preamble that sits above them — those are guidelines for how code is *written*, not project-scaffolding to audit. It also does **NOT** include Skills (\`.gg/skills/\`) or any other extension category. If the Language Style Packs section is absent or empty, **skip this entire section entirely** — do not substitute Skills or any other concept.
-
-When per-language packs are present, compare the project against each pack's **Tooling** bullet and the system prompt's **Verification** commands. For tool recommendations or config semantics, verify against official docs when local files are ambiguous:
-- Tooling: which strict-mode flags or lint-rule presets does the pack recommend that the project is missing? (e.g. \`tsconfig\` missing \`noUncheckedIndexedAccess\`, \`pyproject\` missing \`[tool.ruff]\`, Go project missing \`golangci-lint\` config).
-- Dependencies: list which pack-mentioned libs (Zod, Pydantic, thiserror, anyhow, etc.) the project uses, has an equivalent for, or lacks. **Observation only — no recommendation to install.**
-
-### 6. Documentation hygiene
-
-- \`CLAUDE.md\` or \`AGENTS.md\` present?
-- Public API documented? (top-level docstrings, type signatures, or README examples)
-- Architecture doc for non-trivial projects? (\`ARCHITECTURE.md\`, \`docs/architecture/\`, ADRs)
-
-## How to investigate
-
-- Read the project root + obvious config locations (\`./\`, \`.github/\`, \`.husky/\`, \`docs/\`).
-- Don't recurse into \`node_modules\`, \`dist\`, \`build\`, \`target\`, vendored folders.
-- Use \`ls\`, \`read\`, \`find\` (with name patterns) — do not \`grep\` source code for this audit; it's about scaffolding, not code review.
-- Cap at ~20 file reads total. If a file is huge (e.g. \`pnpm-lock.yaml\`), don't read its body — presence is what matters.
-
-## Output format
-
-A single Markdown report, organized by category. Within each category, mark each item as one of:
-- \`[OK]\` — present and reasonable
-- \`[GAP]\` — missing or misconfigured; safe to add/fix
-- \`[INFO]\` — observation only, no action implied
-- \`[N/A]\` — doesn't apply to this project (omit from output if obvious)
-
-Keep each line to one sentence. No prose paragraphs.
-
-At the end:
-
-\`\`\`
-## Summary
-
-<N> gaps in hygiene, <N> in tooling, <N> in verify pipeline, <N> in style-pack alignment.
-
-Which (if any) would you like me to fix? Options:
-- A) Add tasks for all [GAP] items that are safe + additive (no overwrites)
-- B) Add tasks for a category: hygiene / tooling / verify / style-pack alignment
-- C) Add tasks for specific items — tell me which
-- D) None — just the report
-\`\`\`
-
-## Rules
-
-- **Report only.** No edits, no installs, no commits without explicit user confirmation after the report.
-- **Task handoff for fixes.** If the user chooses A, B, or C, do not fix directly. Add one task per selected gap or tightly coupled gap group using the \`tasks\` tool (action=add). Each task needs a short title and a standalone prompt that includes the gap, affected files/configs, safe-additive constraints, implementation instructions, project verification commands, and instructions to verify relevant tool/config semantics against official docs before completing the task. Use kencode search only for code-level examples, not as proof of scaffolding requirements. After adding the tasks, tell the user exactly: "${TASKS_ADDED_NOTICE}" Do not begin executing them unless the user explicitly says so.
-- **No code refactors recommended.** This audit is about scaffolding/tooling, not code review. Use \`/scan\` or \`/verify\` for code-level findings.
-- **No dependency installations in the report.** Listing them as observations is fine; recommending installation is not — that's the user's call.
-- **Skip empty categories.** If a category has no findings, omit it.
-- **Adapt to scale.** A 50-line script doesn't need CI, a license, or an ARCHITECTURE.md. Use judgment.
-- **Brand-new empty project**: report "Empty project — nothing to audit. To bootstrap, tell me the stack you want and I'll scaffold from scratch." and stop.`,
   },
 ];
 

@@ -5,7 +5,6 @@ import type {
   DurationItem,
   ErrorItem,
   QueuedItem,
-  SetupHintItem,
   StepDoneItem,
   StylePackItem,
   UpdateNoticeItem,
@@ -14,7 +13,6 @@ import {
   presentDuration,
   presentError,
   presentQueued,
-  presentSetupHint,
   presentStepDone,
   presentStylePack,
   presentUpdateNotice,
@@ -44,55 +42,6 @@ export function StylePackRow({ item }: { item: StylePackItem }) {
         <Text color={theme.text} bold wrap="wrap">
           {presentation.names}
         </Text>
-        {presentation.showSetupHint && (
-          <Box marginTop={1}>
-            <Text wrap="wrap">
-              <Text color={theme.textMuted}>{"Tip: run "}</Text>
-              <Text color={theme.language} bold>
-                {"/setup"}
-              </Text>
-              <Text color={theme.textMuted}>{presentation.setupHint}</Text>
-            </Text>
-          </Box>
-        )}
-      </Box>
-    </Box>
-  );
-}
-
-export function SetupHintRow({ item }: { item: SetupHintItem }) {
-  const theme = useTheme();
-  const presentation = presentSetupHint(item);
-
-  return (
-    <Box key={item.id} paddingLeft={1} flexShrink={1}>
-      <Box
-        flexShrink={1}
-        flexDirection="column"
-        borderStyle="round"
-        borderColor={theme.language}
-        paddingX={1}
-      >
-        <Text wrap="wrap">
-          <Text color={theme.language} bold>
-            {"◆ "}
-          </Text>
-          <Text color={theme.language} bold>
-            {presentation.headerLabel}
-          </Text>
-        </Text>
-        <Text color={theme.textMuted} wrap="wrap">
-          {presentation.body}
-        </Text>
-        <Box marginTop={1}>
-          <Text wrap="wrap">
-            <Text color={theme.textMuted}>{"Tip: run "}</Text>
-            <Text color={theme.language} bold>
-              {"/setup"}
-            </Text>
-            <Text color={theme.textMuted}>{presentation.setupHint}</Text>
-          </Text>
-        </Box>
       </Box>
     </Box>
   );

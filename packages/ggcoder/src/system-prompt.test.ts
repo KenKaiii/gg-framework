@@ -108,7 +108,7 @@ describe("buildSystemPrompt", () => {
       sectionIndex(prompt, "## Code Quality"),
     );
     expect(prompt).toContain("Woops I just farted!");
-    expect(prompt).toContain("don't force it or repeat one line");
+    expect(prompt).toContain("never repeat, never force, never explain");
     expect(prompt).not.toContain(
       "Do not default to generic tests, scripts, screenshots, benchmarks, or simulations",
     );
@@ -234,9 +234,10 @@ describe("buildSystemPrompt", () => {
       "Do not rely on memory for APIs",
       "Use `source_path`",
       "web_search` then `web_fetch",
-      "ReferenceSources",
-      "DiscoverRepos",
-      "SearchCode literal text/RE2 (not semantic)",
+      "use the kencode-search tools (usage in Tools below)",
+      "curated, categorized reference repos",
+      "Search GitHub repos live",
+      "literal text or RE2 regex; NOT semantic",
       "Skip checks after simple edits",
       "At coherent checkpoints or after risky/non-obvious changes",
       "run one targeted check",
@@ -279,7 +280,7 @@ describe("buildSystemPrompt", () => {
       "tool_search",
     ]);
     // Research section must not name tools the model can't call yet…
-    expect(deferred).not.toContain("SearchCode literal text/RE2");
+    expect(deferred).not.toContain("kencode-search tools");
     expect(deferred).not.toContain("ReferenceSources");
     // …and must point discovery at tool_search instead (research + tools hint).
     expect(deferred).toContain("call `tool_search` first");
@@ -287,7 +288,7 @@ describe("buildSystemPrompt", () => {
 
     // Neither kencode nor tool_search active: the public-code sentence is omitted.
     const bare = await buildSystemPrompt(cwd, undefined, false, undefined, ["read", "bash"]);
-    expect(bare).not.toContain("SearchCode literal text/RE2");
+    expect(bare).not.toContain("kencode-search tools");
     expect(bare).not.toContain("tool_search");
   });
 
@@ -420,16 +421,36 @@ describe("buildSystemPrompt", () => {
   it("only references web_search in Research when it is an active tool", async () => {
     const cwd = await makeProject();
 
-    // Anthropic-shaped tool set: no client-side web_search tool.
-    const withoutSearch = await buildSystemPrompt(cwd, undefined, false, undefined, [
-      "read",
-      "bash",
-      "web_fetch",
-    ]);
-    expect(withoutSearch).not.toContain("web_search");
-    expect(withoutSearch).toContain(
+    // Anthropic-shaped tool set: no client-side web_search tool, but native
+    // server-side search really exists — the prompt may claim it.
+    const anthropicNoSearch = await buildSystemPrompt(
+      cwd,
+      undefined,
+      false,
+      undefined,
+      ["read", "bash", "web_fetch"],
+      undefined,
+      "anthropic",
+    );
+    expect(anthropicNoSearch).not.toContain("web_search");
+    expect(anthropicNoSearch).toContain(
       "use `web_fetch` for authoritative docs (native web search is available)",
     );
+
+    // Non-Anthropic provider without the web_search tool: no native-search
+    // capability exists, so the prompt must not claim one.
+    const otherNoSearch = await buildSystemPrompt(
+      cwd,
+      undefined,
+      false,
+      undefined,
+      ["read", "bash", "web_fetch"],
+      undefined,
+      "openai",
+    );
+    expect(otherNoSearch).not.toContain("web_search");
+    expect(otherNoSearch).not.toContain("native web search is available");
+    expect(otherNoSearch).toContain("use `web_fetch` for authoritative docs");
 
     const withSearch = await buildSystemPrompt(cwd, undefined, false, undefined, [
       "read",

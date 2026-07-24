@@ -79,7 +79,7 @@ function normalizeParityLines(kind: CompletedItem["kind"], lines: readonly strin
   if (kind === "session_summary") {
     return lines.map(normalizeSessionSummaryLine).filter((line): line is string => line !== null);
   }
-  if (kind === "style_pack" || kind === "setup_hint" || kind === "update_notice") {
+  if (kind === "style_pack" || kind === "update_notice") {
     return lines.map((line) => line.replace(/─/g, "").replace(/ +(?=│$)/u, ""));
   }
   return [...lines];
@@ -164,56 +164,6 @@ function renderStylePackLive(
         <Text color={itemTheme.text} bold wrap="wrap">
           {names.join(", ")}
         </Text>
-        {item.showSetupHint && (
-          <Box marginTop={1}>
-            <Text wrap="wrap">
-              <Text color={itemTheme.textMuted}>{"Tip: run "}</Text>
-              <Text color={itemTheme.language} bold>
-                {"/setup"}
-              </Text>
-              <Text color={itemTheme.textMuted}>
-                {" to audit this project against the active pack(s)"}
-              </Text>
-            </Text>
-          </Box>
-        )}
-      </Box>
-    </Box>
-  );
-}
-
-function renderSetupHintLive(itemTheme: Theme) {
-  return (
-    <Box paddingLeft={1} marginTop={1} flexShrink={1}>
-      <Box
-        flexShrink={1}
-        flexDirection="column"
-        borderStyle="round"
-        borderColor={itemTheme.language}
-        paddingX={1}
-      >
-        <Text wrap="wrap">
-          <Text color={itemTheme.language} bold>
-            {"◆ "}
-          </Text>
-          <Text color={itemTheme.language} bold>
-            {"NO STYLE PACKS DETECTED"}
-          </Text>
-        </Text>
-        <Text color={itemTheme.textMuted} wrap="wrap">
-          {"This directory has no recognized language manifest at its root."}
-        </Text>
-        <Box marginTop={1}>
-          <Text wrap="wrap">
-            <Text color={itemTheme.textMuted}>{"Tip: run "}</Text>
-            <Text color={itemTheme.language} bold>
-              {"/setup"}
-            </Text>
-            <Text color={itemTheme.textMuted}>
-              {" to audit project hygiene or bootstrap a new project from scratch"}
-            </Text>
-          </Text>
-        </Box>
       </Box>
     </Box>
   );
@@ -326,8 +276,6 @@ function liveElementFor(item: CompletedItem): React.ReactElement | null {
       return <SubAgentPanel agents={item.agents} aborted={item.aborted} />;
     case "style_pack":
       return renderStylePackLive(item, theme);
-    case "setup_hint":
-      return renderSetupHintLive(theme);
     case "update_notice":
       return renderUpdateNoticeLive(item, theme);
     case "compacting":
@@ -535,9 +483,7 @@ const parityCaseByKind = {
     kind: "style_pack",
     id: "style-pack",
     added: ["typescript"],
-    showSetupHint: true,
   },
-  setup_hint: { kind: "setup_hint", id: "setup-hint" },
   update_notice: {
     kind: "update_notice",
     id: "update-notice",

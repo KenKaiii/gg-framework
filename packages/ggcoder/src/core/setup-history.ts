@@ -5,7 +5,8 @@ import os from "node:os";
 const HISTORY_PATH = path.join(os.homedir(), ".gg", "setup-history.json");
 
 interface SetupHistoryEntry {
-  /** ISO timestamp of the most recent /setup audit for this cwd. */
+  /** Legacy field from the retired /setup auto-audit — preserved on read/write
+   *  so downgrades don't lose it, never written by current code. */
   lastAuditedAt?: string;
   /** Language pack ids the user has already been notified about for this cwd.
    *  Persisted so the "STYLE PACK ACTIVE" badge only fires on first activation,
@@ -16,13 +17,11 @@ interface SetupHistoryEntry {
 type SetupHistory = Record<string, SetupHistoryEntry>;
 
 /**
- * Persisted record of which project directories have been auto-audited by
- * `/setup`. Used to gate the first-time auto-run: we want the audit to fire
- * exactly once per project, not once per session.
+ * Persisted per-project UI-notification history (style-pack badge announcements).
  *
  * Stored at `~/.gg/setup-history.json`. Keys are absolute cwd paths. The file
  * is small (one line per project the user has ever opened with ggcoder) and
- * read/written on session start only \u2014 not in any hot path.
+ * read/written on session start only — not in any hot path.
  */
 function readHistory(): SetupHistory {
   try {
@@ -45,22 +44,6 @@ function writeHistory(history: SetupHistory): void {
     /* best-effort \u2014 a failed write just means the auto-run will fire again
        next session, which is annoying but not broken. */
   }
-}
-
-/** Returns true if this cwd has never been audited by /setup before. */
-export function isFirstTimeSetup(cwd: string): boolean {
-  const history = readHistory();
-  return history[cwd]?.lastAuditedAt === undefined;
-}
-
-/** Mark this cwd as audited. Called immediately after the auto-run fires
- *  (whether or not the agent actually completes the audit) so we never
- *  double-trigger across sessions. */
-export function markSetupAudited(cwd: string): void {
-  const history = readHistory();
-  const existing = history[cwd] ?? {};
-  history[cwd] = { ...existing, lastAuditedAt: new Date().toISOString() };
-  writeHistory(history);
 }
 
 /** Returns the language ids that have already been announced via the

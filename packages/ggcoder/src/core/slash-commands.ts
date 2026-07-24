@@ -147,13 +147,9 @@ export function createBuiltinCommands(): SlashCommand[] {
     {
       name: "session",
       aliases: ["s"],
-      description: "List sessions or create new",
-      usage: "/session [list|new]",
-      async execute(args, ctx) {
-        if (args === "new" || args === "n") {
-          await ctx.newSession();
-          return "New session created.";
-        }
+      description: "List sessions (use /new for a new session)",
+      usage: "/session",
+      async execute(_args, ctx) {
         return ctx.listSessions();
       },
     },

@@ -83,18 +83,6 @@ export interface StylePackItem {
   kind: "style_pack";
   /** Newly-added language ids in this injection. Rendered via LANGUAGE_DISPLAY_NAMES. */
   added: readonly LanguageId[];
-  /** Show the one-time /setup hint. Only true for the first badge in a session. */
-  showSetupHint: boolean;
-  id: string;
-}
-
-/**
- * Shown once per session when initial language detection finds no packs —
- * keeps `/setup` discoverable in dirs that don't look like a project root
- * (parent folders, scratch dirs, etc.).
- */
-export interface SetupHintItem {
-  kind: "setup_hint";
   id: string;
 }
 
@@ -359,7 +347,6 @@ export type CompletedItem =
   | ErrorItem
   | InfoItem
   | StylePackItem
-  | SetupHintItem
   | UpdateNoticeItem
   | QueuedItem
   | CompactingItem

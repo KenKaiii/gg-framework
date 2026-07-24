@@ -56,13 +56,8 @@ import {
   stopPeriodicUpdateCheck,
 } from "../core/auto-update.js";
 import { SettingsManager, type Settings } from "../core/settings-manager.js";
-import { PROMPT_COMMANDS, getPromptCommand } from "../core/prompt-commands.js";
-import {
-  isFirstTimeSetup,
-  markSetupAudited,
-  getAnnouncedLanguages,
-  markLanguagesAnnounced,
-} from "../core/setup-history.js";
+import { PROMPT_COMMANDS } from "../core/prompt-commands.js";
+import { getAnnouncedLanguages, markLanguagesAnnounced } from "../core/setup-history.js";
 import { loadCustomCommands, type CustomCommand } from "../core/custom-commands.js";
 import { detectLanguages, type LanguageId } from "../core/language-detector.js";
 import { detectVerifyCommands } from "../core/verify-commands.js";
@@ -552,19 +547,6 @@ export function App(props: AppProps) {
    * than invalidating prompt caching, and stale guidance is harmless).
    */
   const injectedLanguagesRef = useRef<Set<LanguageId>>(new Set());
-  /**
-   * True until the first style-pack badge is pushed. Used to gate the
-   * one-time "/setup" hint so users learn the slash command without being
-   * spammed on every subsequent pack swap.
-   */
-  const setupHintShownRef = useRef(false);
-  /**
-   * Callback that fires `/setup` programmatically. Assigned later in the
-   * component once `agentLoop` is in scope. Called from the initial
-   * language-detection path when this cwd has never been audited before.
-   */
-  const triggerAutoSetupRef = useRef<() => Promise<void>>(async () => {});
-
   const getId = () => `ui-${nextIdRef.current++}`;
 
   // Session persistence failures (e.g. ENOSPC disk-full) must not crash the
@@ -787,25 +769,11 @@ export function App(props: AppProps) {
       if (!injectedLanguagesRef.current.has(id)) added.push(id);
     }
     if (added.length === 0) {
-      // No new packs to inject. The empty-detection hint + auto-run are
-      // first-time-per-cwd only — once the user has been shown the box and
-      // /setup has had a chance to run, re-showing on every session is noise.
-      // The with-packs path below is gated the same way via
+      // No new packs to inject. The with-packs path below is gated via
       // getAnnouncedLanguages / markLanguagesAnnounced: badge fires once per
       // (cwd, language) and stays silent on subsequent sessions / /clear.
-      if (
-        source === "initial" &&
-        !setupHintShownRef.current &&
-        injectedLanguagesRef.current.size === 0 &&
-        isFirstTimeSetup(cwd)
-      ) {
-        setupHintShownRef.current = true;
-        markSetupAudited(cwd);
+      if (source === "initial" && injectedLanguagesRef.current.size === 0) {
         log("INFO", "language", `No style packs detected for ${cwd}`, { source });
-        setLiveItems((prev) => [...prev, { kind: "setup_hint", id: getId() }]);
-        // /setup handles the empty / parent-folder / scratch-dir case via
-        // its brand-new-empty-project branch in the prompt template.
-        void triggerAutoSetupRef.current();
       }
       return;
     }
@@ -828,19 +796,7 @@ export function App(props: AppProps) {
       const toAnnounce = added.filter((id) => !alreadyAnnounced.has(id));
       if (toAnnounce.length > 0) {
         markLanguagesAnnounced(cwd, toAnnounce);
-        const showSetupHint = !setupHintShownRef.current;
-        setupHintShownRef.current = true;
-        setLiveItems((prev) => [
-          ...prev,
-          { kind: "style_pack", added: toAnnounce, showSetupHint, id: getId() },
-        ]);
-      }
-      // First-time-per-project auto-run. Fires only on the initial mount
-      // detection path — not on tool/input triggers — so we don't surprise
-      // users mid-session. Persisted across sessions via setup-history.json.
-      if (source === "initial" && isFirstTimeSetup(cwd)) {
-        markSetupAudited(cwd);
-        void triggerAutoSetupRef.current();
+        setLiveItems((prev) => [...prev, { kind: "style_pack", added: toAnnounce, id: getId() }]);
       }
     } catch (err) {
       log("WARN", "language", `Detection apply failed (${source}): ${(err as Error).message}`);
@@ -1840,45 +1796,6 @@ export function App(props: AppProps) {
       ),
     },
   );
-
-  // First-time-per-project auto-run of /setup. Bound after `agentLoop` is in
-  // scope so the ref closure can dispatch to it. Called from the initial
-  // language-detection path when `isFirstTimeSetup(cwd)` is true. Pushes a
-  // notice item explaining what's happening, then runs the audit prompt.
-  triggerAutoSetupRef.current = async () => {
-    const setupCmd = getPromptCommand("setup");
-    if (!setupCmd) {
-      log("WARN", "setup", "Auto-setup skipped — /setup command not found in registry.");
-      return;
-    }
-    log("INFO", "setup", `Auto-running /setup (first session for ${cwdRef.current})`);
-    setLiveItems((prev) => [
-      ...prev,
-      {
-        kind: "info",
-        text:
-          "First time in this project — auto-running /setup to audit hygiene, tooling, and style-pack alignment. " +
-          "Press Esc to cancel.",
-        id: getId(),
-      },
-      { kind: "user", text: "/setup", id: getId() },
-    ]);
-    setLastUserMessage("/setup");
-    setDoneStatus(null);
-    try {
-      await agentLoop.run(setupCmd.prompt);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const isAbort = msg.includes("aborted") || msg.includes("abort");
-      log(isAbort ? "INFO" : "ERROR", "setup", `Auto-setup ended: ${msg}`);
-      setLiveItems((prev) => [
-        ...prev,
-        isAbort
-          ? { kind: "stopped", text: "Auto-setup cancelled.", id: getId() }
-          : toErrorItem(err, getId()),
-      ]);
-    }
-  };
 
   // Sync terminal title with agent loop state
   useEffect(() => {

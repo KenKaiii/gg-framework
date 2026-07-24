@@ -15,7 +15,6 @@ import {
 } from "./terminal-history-format.js";
 import {
   presentError,
-  presentSetupHint,
   presentStepDone,
   presentStylePack,
   presentUpdateNotice,
@@ -60,40 +59,18 @@ export function renderError(
 
 export function renderStylePack(
   added: readonly LanguageId[],
-  showSetupHint: boolean,
   context: TerminalHistoryContext,
 ): string {
   const presentation = presentStylePack({
     kind: "style_pack",
     added,
-    showSetupHint,
     id: "history-style-pack",
   });
   const lines = [
     `${color(context.theme.language, "◆ ", true)}${color(context.theme.language, presentation.headerLabel, true)}`,
     color(context.theme.text, presentation.names, true),
   ];
-  if (presentation.showSetupHint) {
-    lines.push(
-      "",
-      `${dim(context, "Tip: run ")}${color(context.theme.language, "/setup", true)}${dim(context, presentation.setupHint)}`,
-    );
-  }
   return renderRoundBorderBox(lines, context, context.theme.language);
-}
-
-export function renderSetupHint(context: TerminalHistoryContext): string {
-  const presentation = presentSetupHint();
-  return renderRoundBorderBox(
-    [
-      `${color(context.theme.language, "◆ ", true)}${color(context.theme.language, presentation.headerLabel, true)}`,
-      dim(context, presentation.body),
-      "",
-      `${dim(context, "Tip: run ")}${color(context.theme.language, "/setup", true)}${dim(context, presentation.setupHint)}`,
-    ],
-    context,
-    context.theme.language,
-  );
 }
 
 export function renderUpdateNotice(_text: string, context: TerminalHistoryContext): string {

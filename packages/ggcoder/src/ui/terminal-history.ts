@@ -44,7 +44,6 @@ import {
   renderCompacted,
   renderCompacting,
   renderError,
-  renderSetupHint,
   renderStatusLine,
   renderStepDone,
   renderStylePack,
@@ -352,9 +351,7 @@ export function serializeCompletedItemToTerminalHistory(
       );
     }
     case "style_pack":
-      return renderStylePack(item.added, item.showSetupHint, context);
-    case "setup_hint":
-      return renderSetupHint(context);
+      return renderStylePack(item.added, context);
     case "update_notice":
       return renderUpdateNotice(item.text, context);
     case "compacting":

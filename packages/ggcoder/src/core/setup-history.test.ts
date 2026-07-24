@@ -25,37 +25,17 @@ async function loadModule() {
 }
 
 describe("setup-history", () => {
-  it("isFirstTimeSetup returns true when history file is absent", async () => {
-    const { isFirstTimeSetup } = await loadModule();
-    expect(isFirstTimeSetup("/tmp/never-seen")).toBe(true);
-  });
-
-  it("markSetupAudited persists the cwd entry", async () => {
-    const { isFirstTimeSetup, markSetupAudited } = await loadModule();
-    const cwd = "/tmp/first-project";
-    expect(isFirstTimeSetup(cwd)).toBe(true);
-    markSetupAudited(cwd);
-    expect(isFirstTimeSetup(cwd)).toBe(false);
-  });
-
-  it("treats distinct cwds independently", async () => {
-    const { isFirstTimeSetup, markSetupAudited } = await loadModule();
-    markSetupAudited("/tmp/project-a");
-    expect(isFirstTimeSetup("/tmp/project-a")).toBe(false);
-    expect(isFirstTimeSetup("/tmp/project-b")).toBe(true);
+  it("getAnnouncedLanguages returns [] when never announced", async () => {
+    const { getAnnouncedLanguages } = await loadModule();
+    expect(getAnnouncedLanguages("/tmp/fresh")).toEqual([]);
   });
 
   it("tolerates corrupt history files (treats as empty)", async () => {
     const ggDir = path.join(tmpHome, ".gg");
     fs.mkdirSync(ggDir, { recursive: true });
     fs.writeFileSync(path.join(ggDir, "setup-history.json"), "{ not valid json");
-    const { isFirstTimeSetup } = await loadModule();
-    expect(isFirstTimeSetup("/tmp/anywhere")).toBe(true);
-  });
-
-  it("getAnnouncedLanguages returns [] when never announced", async () => {
     const { getAnnouncedLanguages } = await loadModule();
-    expect(getAnnouncedLanguages("/tmp/fresh")).toEqual([]);
+    expect(getAnnouncedLanguages("/tmp/anywhere")).toEqual([]);
   });
 
   it("markLanguagesAnnounced persists and dedupes across calls", async () => {
@@ -67,15 +47,21 @@ describe("setup-history", () => {
     expect(getAnnouncedLanguages(cwd).sort()).toEqual(["rust", "typescript"]);
   });
 
-  it("markLanguagesAnnounced and markSetupAudited coexist without clobbering", async () => {
-    const { isFirstTimeSetup, markSetupAudited, getAnnouncedLanguages, markLanguagesAnnounced } =
-      await loadModule();
+  it("preserves legacy lastAuditedAt entries without clobbering", async () => {
+    const ggDir = path.join(tmpHome, ".gg");
+    fs.mkdirSync(ggDir, { recursive: true });
     const cwd = "/tmp/coexist";
+    fs.writeFileSync(
+      path.join(ggDir, "setup-history.json"),
+      JSON.stringify({ [cwd]: { lastAuditedAt: "2026-01-01T00:00:00.000Z" } }),
+    );
+    const { getAnnouncedLanguages, markLanguagesAnnounced } = await loadModule();
     markLanguagesAnnounced(cwd, ["python"]);
-    expect(isFirstTimeSetup(cwd)).toBe(true);
-    markSetupAudited(cwd);
-    expect(isFirstTimeSetup(cwd)).toBe(false);
     expect(getAnnouncedLanguages(cwd)).toEqual(["python"]);
+    const raw = JSON.parse(fs.readFileSync(path.join(ggDir, "setup-history.json"), "utf-8")) as {
+      [k: string]: { lastAuditedAt?: string };
+    };
+    expect(raw[cwd].lastAuditedAt).toBe("2026-01-01T00:00:00.000Z");
   });
 
   it("markLanguagesAnnounced is a no-op for empty input", async () => {

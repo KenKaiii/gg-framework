@@ -72,9 +72,7 @@ function itemForKind(kind: CompletedItem["kind"], id: string = kind): CompletedI
     case "step_done":
       return { kind, id, stepNum: 1, description: "step" };
     case "style_pack":
-      return { kind, id, added: [], showSetupHint: false };
-    case "setup_hint":
-      return { kind, id };
+      return { kind, id, added: [] };
     case "banner":
       return { kind, id };
     case "session_summary":

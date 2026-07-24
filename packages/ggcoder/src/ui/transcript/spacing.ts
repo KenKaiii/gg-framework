@@ -33,7 +33,6 @@ export const TRANSCRIPT_SPACING_KINDS = [
   "duration",
   "step_done",
   "style_pack",
-  "setup_hint",
 ] as const satisfies readonly CompletedItem["kind"][];
 
 export const DEFAULT_TRANSCRIPT_SPACING_KINDS = TRANSCRIPT_SPACING_KINDS;

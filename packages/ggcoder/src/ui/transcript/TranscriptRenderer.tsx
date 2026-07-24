@@ -14,7 +14,6 @@ import {
   DurationRow,
   ErrorRow,
   QueuedRow,
-  SetupHintRow,
   StepDoneRow,
   StylePackRow,
   UpdateNoticeRow,
@@ -111,8 +110,6 @@ export function renderTranscriptItem({
       );
     case "style_pack":
       return withTranscriptSpacing(<StylePackRow item={item} />);
-    case "setup_hint":
-      return withTranscriptSpacing(<SetupHintRow item={item} />);
     case "assistant": {
       // Reserve the rows that render OUTSIDE the markdown body so the whole
       // finalized assistant frame stays within `measuredLiveAreaRows`:

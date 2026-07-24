@@ -7,18 +7,26 @@ describe("prompt commands", () => {
     expect(PROMPT_COMMANDS.find((command) => command.aliases.includes("g"))).toBeUndefined();
   });
 
-  it("hands setup/bullet-proof fixes off to the tasks tool, not a Goal", () => {
-    const setup = PROMPT_COMMANDS.find((command) => command.name === "setup");
+  it("hands bullet-proof fixes off to the tasks tool, not a Goal", () => {
     const bulletProof = PROMPT_COMMANDS.find((command) => command.name === "bullet-proof");
 
-    expect(setup?.prompt).toContain("`tasks` tool");
-    expect(setup?.prompt).toContain("Press Ctrl+T to open the task list");
-    expect(setup?.prompt).not.toContain("Create a Goal");
-    expect(setup?.prompt).not.toContain("Press CTRL + G");
     expect(bulletProof?.prompt).toContain("`tasks` tool");
     expect(bulletProof?.prompt).toContain("Press Ctrl+T to open the task list");
     expect(bulletProof?.prompt).not.toContain("Create a Goal");
     expect(bulletProof?.prompt).not.toContain("Press CTRL + G");
+  });
+
+  it("frames bullet-proof as an authorized defensive review with no exploit output", () => {
+    const bulletProof = PROMPT_COMMANDS.find((command) => command.name === "bullet-proof");
+
+    expect(bulletProof?.prompt).toContain("authorized defensive security review");
+    expect(bulletProof?.prompt).toContain("Never produce working exploit code");
+    expect(bulletProof?.prompt).toContain("data-flow level");
+    // Subagents never see the command prompt — the handoff must say so.
+    expect(bulletProof?.prompt).toContain("Subagents cannot see this prompt.");
+    // Skeptic verification is batched to keep fan-out cost bounded.
+    expect(bulletProof?.prompt).toContain("batching 3–5 surviving findings per skeptic");
+    expect(bulletProof?.prompt).not.toContain("<specific payload>");
   });
 
   it("points at the app's Tasks button / New Session instead of CLI keybinds when run under gg-app", async () => {
@@ -27,12 +35,9 @@ describe("prompt commands", () => {
     vi.resetModules();
     try {
       const { PROMPT_COMMANDS: appPromptCommands } = await import("./prompt-commands.js");
-      const setup = appPromptCommands.find((command) => command.name === "setup");
       const bulletProof = appPromptCommands.find((command) => command.name === "bullet-proof");
       const init = appPromptCommands.find((command) => command.name === "init");
 
-      expect(setup?.prompt).toContain('Click the "Tasks" button');
-      expect(setup?.prompt).not.toContain("Ctrl+T");
       expect(bulletProof?.prompt).toContain('Click the "Tasks" button');
       expect(bulletProof?.prompt).not.toContain("Ctrl+T");
       expect(init?.prompt).toContain("New Session");
@@ -54,11 +59,12 @@ describe("prompt commands", () => {
       "simplify",
       "batch",
       "research",
+      "setup",
       "setup-lint",
       `setup-${"tests"}`,
       "setup-update",
     ];
-    const removedAliases = ["depcheck", "depsource"];
+    const removedAliases = ["depcheck", "depsource", "setup-project"];
 
     for (const name of removedCommandNames) {
       expect(PROMPT_COMMANDS.find((command) => command.name === name)).toBeUndefined();

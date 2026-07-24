@@ -53,7 +53,7 @@ function renderTalkSection(): string {
     `**Easy to scan.** One idea per line; **bold** key words. Number steps; cap lists at 5. Recommend ONE approach, not a menu.\n\n` +
     `**Be concrete and decisive.** Give measured outcomes. Default to X; switch to Y only when [condition]. Say what TO do.\n\n` +
     `Stay silent between tool calls unless you hit a decision, tradeoff, finding, or question. No preamble, no recap, no hedging, no output dumps. ` +
-    `Surface tradeoffs and unverified claims plainly. Occasionally and naturally, add playful variations of “Woops I just farted!” with emojis; don't force it or repeat one line.`
+    `Surface tradeoffs and unverified claims plainly. Rarely and at random (roughly 1 in 6 replies), drop ONE short, absurd, cringey interjection with an emoji — a fart confession (“Woops I just farted!”), a sudden weird craving, misplaced pride in a semicolon, an unprompted pigeon fact… invent fresh ones; never repeat, never force, never explain.`
   );
 }
 
@@ -109,27 +109,34 @@ async function renderApprovedPlanSection(
   );
 }
 
-function renderResearchSection(toolNames: readonly string[] | undefined): string {
+function renderResearchSection(
+  toolNames: readonly string[] | undefined,
+  provider: Provider | undefined,
+): string {
   const active = new Set(toolNames ?? DEFAULT_TOOL_NAMES);
-  // The public-code guidance references the kencode-search MCP tools by name.
-  // With deferred MCP loading those live in the tool_search catalog until
-  // promoted — so point at discovery instead of naming tools the model can't
-  // call yet. Never reference an unavailable tool.
+  // Kencode usage details (literal/RE2, broad→narrow, path semantics) live in
+  // the Tools section hints — one home, no duplication. Research only says WHEN
+  // to reach for public code. With deferred MCP loading the kencode tools sit
+  // in the tool_search catalog until promoted, so point at discovery instead of
+  // naming tools the model can't call yet. Never reference an unavailable tool.
   const publicCode = active.has("mcp__kencode-search__searchCode")
-    ? `For public code, use ReferenceSources for curated repos or DiscoverRepos for current/top repos, then verify exact snippets with SearchCode literal text/RE2 (not semantic); \`path\` is a literal path substring and \`repo\` only after broad/peek proof. `
+    ? ` For real public GitHub code, use the kencode-search tools (usage in Tools below).`
     : active.has("tool_search")
-      ? `For public GitHub code and design references, call \`tool_search\` first (e.g. "search public code" or "UI design screens") — it unlocks the matching tools for your next step. `
+      ? ` For public GitHub code and design references, call \`tool_search\` first (e.g. "search public code" or "UI design screens") — it unlocks the matching tools for your next step.`
       : "";
-  // Only reference `web_search` when it's actually in the active tool set —
-  // Anthropic sessions use server-side native search instead, and naming an
-  // unavailable tool trains the model to call something that doesn't exist.
+  // Only reference `web_search` when it's actually in the active tool set, and
+  // only claim native server-side search on providers that really have it
+  // (Anthropic). Naming an unavailable tool or capability trains the model to
+  // rely on something that doesn't exist.
   const docs = active.has("web_search")
     ? `use \`web_search\` then \`web_fetch\` for authoritative docs`
-    : `use \`web_fetch\` for authoritative docs (native web search is available)`;
+    : provider === "anthropic"
+      ? `use \`web_fetch\` for authoritative docs (native web search is available)`
+      : `use \`web_fetch\` for authoritative docs`;
   return (
     `## Research & Verification\n\n` +
     `Your training data has a cutoff; the real current date is the final line of this prompt. Assume your knowledge of library versions, APIs, CLI flags, config schema, defaults, and best practices has changed since then — treat it as a stale hint to verify, never as ground truth. ` +
-    `Do not rely on memory for APIs, CLI flags, config schema, internals, or error wording — verify first. Use \`source_path\` for installed deps and inspect with read/grep/find/ls; ${docs}. ` +
+    `Do not rely on memory for APIs, CLI flags, config schema, internals, or error wording — verify first. Use \`source_path\` for installed deps; ${docs}.` +
     publicCode
   );
 }
@@ -280,7 +287,7 @@ export async function buildSystemPrompt(
   const approvedPlanSection = await renderApprovedPlanSection(approvedPlanPath);
   if (approvedPlanSection) sections.push(approvedPlanSection);
 
-  sections.push(renderResearchSection(toolNames), renderCodeQualitySection());
+  sections.push(renderResearchSection(toolNames, provider), renderCodeQualitySection());
 
   const toolsSection = renderToolsSection(toolNames);
   if (toolsSection) sections.push(toolsSection);
