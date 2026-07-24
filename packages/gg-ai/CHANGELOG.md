@@ -1,5 +1,7 @@
 # @kenkaiiii/gg-ai
 
+## 5.23.1
+
 ## 5.23.0
 
 ### Minor Changes
