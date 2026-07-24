@@ -202,6 +202,7 @@ function credsFromTokenResponse(
     accessToken,
     refreshToken,
     expiresAt: Date.now() + expiresIn * 1000,
+    expiresIn,
     baseUrl: kimiCodeBaseUrl(),
   };
 }

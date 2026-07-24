@@ -105,6 +105,62 @@ describe("AuthStorage — shared-file concurrency", () => {
   });
 });
 
+describe("AuthStorage — proactive refresh threshold (kimi-code parity)", () => {
+  // A short-lived token (15-min lifetime, like Kimi) must refresh at its
+  // halfway point, not 60s before expiry. Ported from MoonshotAI/kimi-code's
+  // defaultRefreshThreshold = max(300s, expiresIn * 0.5).
+  it("refreshes a 15-min token once it is within the lifetime-scaled threshold", async () => {
+    const storage = await makeStorage();
+    // 6 min left on a 15-min token → inside the 7.5-min threshold → refresh.
+    await storage.setCredentials("openai", {
+      ...oauthCreds("live-15m"),
+      expiresAt: Date.now() + 6 * 60_000,
+      expiresIn: 15 * 60,
+    });
+    refreshOpenAIToken.mockResolvedValue({
+      ...oauthCreds("refreshed-15m"),
+      expiresAt: Date.now() + 15 * 60_000,
+      expiresIn: 15 * 60,
+    });
+
+    const resolved = await storage.resolveCredentials("openai");
+    expect(refreshOpenAIToken).toHaveBeenCalledOnce();
+    expect(resolved.accessToken).toBe("refreshed-15m");
+  });
+
+  it("does not refresh a 15-min token still outside the threshold", async () => {
+    const storage = await makeStorage();
+    // 9 min left on a 15-min token → outside the 7.5-min threshold → keep.
+    await storage.setCredentials("openai", {
+      ...oauthCreds("live-9m"),
+      expiresAt: Date.now() + 9 * 60_000,
+      expiresIn: 15 * 60,
+    });
+
+    const resolved = await storage.resolveCredentials("openai");
+    expect(refreshOpenAIToken).not.toHaveBeenCalled();
+    expect(resolved.accessToken).toBe("live-9m");
+  });
+
+  it("falls back to the 5-min floor when lifetime is unknown", async () => {
+    const storage = await makeStorage();
+    // No expiresIn (legacy credential): threshold floors at 300s. 4 min left
+    // → inside the floor → refresh.
+    await storage.setCredentials("openai", {
+      ...oauthCreds("legacy-live"),
+      expiresAt: Date.now() + 4 * 60_000,
+    });
+    refreshOpenAIToken.mockResolvedValue({
+      ...oauthCreds("legacy-refreshed"),
+      expiresAt: Date.now() + 60 * 60_000,
+    });
+
+    const resolved = await storage.resolveCredentials("openai");
+    expect(refreshOpenAIToken).toHaveBeenCalledOnce();
+    expect(resolved.accessToken).toBe("legacy-refreshed");
+  });
+});
+
 describe("AuthStorage — Xiaomi dual credential (Token Plan vs. API Credits)", () => {
   it("hasProviderAuth is satisfied by either the Token Plan or the Credits key", async () => {
     const storage = await makeStorage();

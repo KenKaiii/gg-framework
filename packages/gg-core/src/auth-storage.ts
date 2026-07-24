@@ -66,13 +66,24 @@ export function readStoredBaseUrlSync(authFile: string, provider: string): strin
 }
 
 /**
- * Refresh refreshable OAuth tokens this long BEFORE their hard expiry. Renewing
- * proactively keeps the credential (and its refresh token) alive across
- * sessions instead of waiting until a request fails with 401 — which, for
- * providers like Kimi, is otherwise misread as a dead credential and triggers a
- * silent fall back to a static API key.
+ * Proactive-refresh threshold, ported from MoonshotAI/kimi-code's OAuthManager
+ * (`defaultRefreshThreshold`): refresh when the token is within
+ * `max(MIN_REFRESH_THRESHOLD_MS, lifetime * REFRESH_THRESHOLD_RATIO)` of expiry.
+ *
+ * A flat skew is wrong for short-lived tokens. Kimi access tokens live only
+ * 15 min, so a 60s skew rode them to the boundary and reliably 401'd — misread
+ * as a dead credential, silently falling back to a static API key (or hard-
+ * failing the run when a concurrent-session refresh race rotated the token).
+ * Scaling by lifetime refreshes a 15-min token at its 7.5-min halfway point,
+ * and never earlier than 5 min before expiry for longer-lived tokens.
  */
-const REFRESH_SKEW_MS = 60_000;
+const MIN_REFRESH_THRESHOLD_MS = 300_000;
+const REFRESH_THRESHOLD_RATIO = 0.5;
+
+function refreshThresholdMs(creds: OAuthCredentials): number {
+  const lifetimeMs = (creds.expiresIn ?? 0) * 1000;
+  return Math.max(MIN_REFRESH_THRESHOLD_MS, lifetimeMs * REFRESH_THRESHOLD_RATIO);
+}
 
 /**
  * How long a usage-exhausted mark holds when the provider gave no reset time.
@@ -390,7 +401,7 @@ export class AuthStorage {
     }
 
     // Return if not expired (with a safety skew) and not force-refreshing
-    if (!opts?.forceRefresh && Date.now() < creds.expiresAt - REFRESH_SKEW_MS) {
+    if (!opts?.forceRefresh && Date.now() < creds.expiresAt - refreshThresholdMs(creds)) {
       return creds;
     }
 
@@ -415,7 +426,7 @@ export class AuthStorage {
         latestCreds.expiresAt !== creds.expiresAt;
       if (
         credentialWasReplaced ||
-        (!opts?.forceRefresh && Date.now() < latestCreds.expiresAt - REFRESH_SKEW_MS)
+        (!opts?.forceRefresh && Date.now() < latestCreds.expiresAt - refreshThresholdMs(latestCreds))
       ) {
         // Another process refreshed or re-logged in while this session still
         // held the rejected token. Trust that replacement even for a forced
