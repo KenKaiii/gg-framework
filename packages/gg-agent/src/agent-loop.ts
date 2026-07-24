@@ -463,20 +463,21 @@ export async function* agentLoop(
   // unreachability doesn't cause multi-minute hangs, but not so aggressively
   // that slow-but-healthy backends get killed.
   const NON_STREAMING_HARD_TIMEOUT_MS = 300_000; // 5min for full non-streaming response
-  // Sakana Fugu is a multi-agent system that reasons silently server-side and
-  // emits NO reasoning/thinking deltas over the wire -- so its pre-output phase
-  // looks like dead air to the stall detector and never earns the thinking-model
-  // timeout extension. Give it a reasoning-sized budget BEFORE the first event so
-  // heavy fugu-ultra turns don't trip the 45s first-event / 90s hard caps, get
-  // aborted, and fall back to non-streaming (which dumps the whole reply at once,
-  // exactly the abruptness we're avoiding). Sakana's own Codex config bumps the
-  // idle timeout to 2h for the same reason. Once output starts flowing, the
-  // normal mid-stream idle/hard timeouts take over unchanged.
-  const isSakana = options.provider === "sakana";
-  const firstEventTimeoutMs = isSakana
-    ? STREAM_THINKING_IDLE_TIMEOUT_MS // 5min before first token
+  // Some providers reason silently server-side and emit no reasoning deltas, so
+  // their pre-output phase looks like dead air and never earns the dynamic
+  // thinking timeout extension below. This is always true for Sakana Fugu and
+  // for first-party OpenAI reasoning requests (the UI can show Thinking while
+  // Chat Completions exposes no reasoning_content). Give those calls a
+  // reasoning-sized budget before the first visible event. Without it, slower
+  // accounts or network paths repeatedly trip the 45s first-event / 90s hard
+  // caps even though the model is still working. Once output starts flowing,
+  // the normal mid-stream timeout takes over.
+  const usesSilentReasoningBudget =
+    options.provider === "sakana" || (options.provider === "openai" && options.thinking != null);
+  const firstEventTimeoutMs = usesSilentReasoningBudget
+    ? STREAM_THINKING_IDLE_TIMEOUT_MS // 5min before first visible token
     : STREAM_FIRST_EVENT_TIMEOUT_MS; // 45s
-  const initialHardTimeoutMs = isSakana
+  const initialHardTimeoutMs = usesSilentReasoningBudget
     ? STREAM_THINKING_HARD_TIMEOUT_MS // 10min absolute cap before output
     : STREAM_HARD_TIMEOUT_MS; // 90s
   // Runaway tool-call circuit breaker. When a model glitches mid-tool-call it
@@ -518,6 +519,9 @@ export async function* agentLoop(
           chars: msgChars,
           provider: options.provider,
           model: options.model,
+          thinking: options.thinking ?? "off",
+          firstEventTimeoutMs,
+          initialHardTimeoutMs,
         });
       }
 
@@ -1098,16 +1102,34 @@ export async function* agentLoop(
         // Stream stall retries exhausted — surface a clear error so the UI
         // can distinguish "gave up after stalls" from "completed normally".
         if (transportFailure) {
+          const cause = malformed
+            ? "malformed_stream"
+            : socketDrop
+              ? "socket_drop"
+              : "stream_stall";
           diag("stall_exhausted", {
             stallRetries: MAX_STALL_RETRIES,
             provider: options.provider,
             model: options.model,
+            cause,
+            nonStreaming: useNonStreamingFallback,
+            events: streamEventCount,
+            eventTypes: eventTypeCounts,
+            lastEventType,
+            sinceLastEventMs: Date.now() - lastEventTime,
+            attemptDurationMs: Date.now() - streamCallStart,
+            maxConsumerLagMs,
           });
           yield {
             type: "error" as const,
-            error: new Error(
-              `The API provider's stream stalled ${MAX_STALL_RETRIES} times — the provider may be experiencing capacity issues. ` +
-                `Your conversation is preserved. Send another message to retry.`,
+            error: new GGAIError(
+              `The connection to the API provider stopped responding after ${MAX_STALL_RETRIES} automatic retries. ` +
+                `Your conversation is preserved.`,
+              {
+                source: "network",
+                hint: "Retry once. If it keeps happening on this device, disable any VPN or proxy and allow GG Coder through firewall or antivirus web protection.",
+                cause: err,
+              },
             ),
           };
           break;

@@ -28,6 +28,7 @@ import type { AddressInfo } from "node:net";
 import { runJsonMode } from "./modes/json-mode.js";
 import { runSubagentWorkerMode } from "./modes/subagent-worker-mode.js";
 import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
+import { setStreamDiagnostic } from "@kenkaiiii/gg-agent";
 import { AgentSession } from "./core/agent-session.js";
 import { RunLifecycle } from "./core/run-lifecycle.js";
 import {
@@ -755,6 +756,33 @@ async function main(): Promise<void> {
   // ~/.gg/debug.log (initLogger truncates on each start).
   const sidecarLog = path.join(paths.agentDir, "gg-app-sidecar.log");
   initLogger(sidecarLog);
+
+  // The desktop sidecar previously omitted the stream diagnostic hook used by
+  // the CLI, leaving device-specific provider stalls impossible to distinguish from
+  // event-loop starvation or a broken streaming network path. Keep routine
+  // phases lightweight; timeout phases include non-sensitive runtime context.
+  setStreamDiagnostic((phase, data) => {
+    const includeRuntime =
+      phase === "idle_timeout_fired" ||
+      phase === "hard_timeout_fired" ||
+      phase === "stall_exhausted";
+    log("INFO", "stream", phase, {
+      ...(data ?? {}),
+      ...(includeRuntime
+        ? {
+            platform: process.platform,
+            arch: process.arch,
+            osRelease: os.release(),
+            node: process.version,
+            logicalCpus: os.cpus().length,
+            totalMemoryMb: Math.round(os.totalmem() / 1024 / 1024),
+            freeMemoryMb: Math.round(os.freemem() / 1024 / 1024),
+            rssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+            processUptimeSec: Math.round(process.uptime()),
+          }
+        : {}),
+    });
+  });
 
   // Global last-resort guards, installed as early as the logger allows so they
   // cover the WHOLE lifecycle — including startup/initialize, the phase the
