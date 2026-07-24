@@ -1,6 +1,6 @@
 ---
 name: evidence-led-ui
-description: Use for web/mobile UI changes or evaluation: pages, components, dashboards, design systems, responsiveness, accessibility, or visual polish, even without explicit design request. Exclude database/API schemas, CLI output, copy-only work, standalone image/SVG generation, and description-only tasks.
+description: Use for broad or design-sensitive web/mobile UI work: net-new pages/screens, redesigns, design-system work, visual polish, responsive or accessibility overhauls, and UI quality review/critique. Do NOT use for small UI edits that follow existing patterns (bug fixes, minor styling tweaks, wiring, copy changes, small component additions matching neighbors); just match the surrounding code for those. Also exclude database/API schemas, CLI output, standalone image/SVG generation, and description-only tasks.
 license: See LICENSES.md
 compatibility: Full review requires filesystem inspection and rendered screenshots; web research and browser/device tooling are optional and unavailable checks must be reported honestly.
 ---
