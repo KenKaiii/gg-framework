@@ -1033,6 +1033,26 @@ body {
     display: none;
   }
 }
+/* Folder name + branch double as click targets: folder opens its location in the
+   OS file manager, branch opens the linked GitHub repo. Button reset only — the
+   base .chat-head-cwd / .chat-head-branch classes keep the color, flex, and
+   truncation. Hover brightens to signal the affordance. */
+.chat-head-link {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.chat-head-link:hover:not(:disabled) {
+  color: var(--text);
+}
+.chat-head-link:disabled {
+  cursor: default;
+}
 /* GitHub issue/PR counts — buttons when the repo URL is known (click opens the
    issues/pulls page), static text otherwise. Font metrics come from the parent
    .chat-head-title so the chip aligns with the branch/dirty segments. */

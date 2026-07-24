@@ -100,6 +100,69 @@ describe("WorkspaceHeader", () => {
     expect(screen.queryByText(/PRs?$/)).toBeNull();
   });
 
+  it("hides a zero-count chip but keeps a non-zero one", () => {
+    // 3 open issues, 0 open PRs → issues chip shows, PR chip is hidden.
+    expect(formatWorkspaceTitle("/work/app", "main", "GG Coder", 0, 3, 0)).toBe(
+      "app │ ⎇ main │ 3 issues",
+    );
+
+    render(
+      <WorkspaceHeader
+        workspaceMode="code"
+        cwd="/work/gg-coder"
+        gitBranch="main"
+        gitHubIssues={3}
+        gitHubPRs={0}
+        gitHubRepoUrl="https://github.com/kenkaiiii/gg-coder"
+        navHidden
+        onToggleNav={() => {}}
+      >
+        <button>New session</button>
+      </WorkspaceHeader>,
+    );
+
+    expect(screen.getByRole("button", { name: "3 issues" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /PRs?$/ })).toBeNull();
+  });
+
+  it("makes the folder a click-to-open-location button and the branch a repo link", () => {
+    render(
+      <WorkspaceHeader
+        workspaceMode="code"
+        cwd="/work/gg-coder"
+        gitBranch="main"
+        gitHubRepoUrl="https://github.com/kenkaiiii/gg-coder"
+        navHidden
+        onToggleNav={() => {}}
+      >
+        <button>New session</button>
+      </WorkspaceHeader>,
+    );
+
+    const folder = screen.getByRole("button", { name: "gg-coder" });
+    expect(folder.getAttribute("title")).toBe("/work/gg-coder — open folder");
+
+    const branch = screen.getByRole("button", { name: "⎇ main" });
+    expect(branch.getAttribute("title")).toContain("github.com/kenkaiiii/gg-coder");
+  });
+
+  it("leaves the branch as static text when there is no GitHub repo URL", () => {
+    render(
+      <WorkspaceHeader
+        workspaceMode="code"
+        cwd="/work/gg-coder"
+        gitBranch="main"
+        navHidden
+        onToggleNav={() => {}}
+      >
+        <button>New session</button>
+      </WorkspaceHeader>,
+    );
+
+    expect(screen.queryByRole("button", { name: "⎇ main" })).toBeNull();
+    expect(screen.getByText("⎇ main")).toBeDefined();
+  });
+
   it("shows the current directory, branch, and dirty count instead of a session title", () => {
     render(
       <WorkspaceHeader

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { openUrl, type WorkspaceMode } from "./agent";
+import { openProjectPath, openUrl, type WorkspaceMode } from "./agent";
 
 interface WorkspaceHeaderProps {
   workspaceMode: WorkspaceMode;
@@ -34,8 +34,9 @@ export function formatWorkspaceTitle(
   const segments = [directory];
   if (gitBranch) segments.push(`⎇ ${gitBranch}`);
   if (gitDirtyFileCount > 0) segments.push(`${gitDirtyFileCount} uncommitted`);
-  if (gitHubIssues !== null) segments.push(pluralize(gitHubIssues, "issue", "issues"));
-  if (gitHubPRs !== null) segments.push(pluralize(gitHubPRs, "PR", "PRs"));
+  if (gitHubIssues !== null && gitHubIssues > 0)
+    segments.push(pluralize(gitHubIssues, "issue", "issues"));
+  if (gitHubPRs !== null && gitHubPRs > 0) segments.push(pluralize(gitHubPRs, "PR", "PRs"));
   return segments.join(" │ ");
 }
 
@@ -73,17 +74,34 @@ export function WorkspaceHeader({
         >
           {directory ? (
             <>
-              <span className="chat-head-cwd" data-tauri-drag-region>
+              <button
+                type="button"
+                className="chat-head-cwd chat-head-link"
+                disabled={!cwd}
+                title={cwd ? `${cwd} — open folder` : undefined}
+                onClick={() => cwd && void openProjectPath(cwd)}
+              >
                 {directory}
-              </span>
+              </button>
               {gitBranch && (
                 <>
                   <span className="chat-head-sep" data-tauri-drag-region>
                     {"│"}
                   </span>
-                  <span className="chat-head-branch" data-tauri-drag-region>
-                    {`⎇ ${gitBranch}`}
-                  </span>
+                  {gitHubRepoUrl ? (
+                    <button
+                      type="button"
+                      className="chat-head-branch chat-head-link"
+                      title={`${gitBranch} — open ${gitHubRepoUrl} on GitHub`}
+                      onClick={() => void openUrl(gitHubRepoUrl)}
+                    >
+                      {`⎇ ${gitBranch}`}
+                    </button>
+                  ) : (
+                    <span className="chat-head-branch" data-tauri-drag-region>
+                      {`⎇ ${gitBranch}`}
+                    </span>
+                  )}
                 </>
               )}
               {gitDirtyFileCount > 0 && (
@@ -100,7 +118,7 @@ export function WorkspaceHeader({
                   </span>
                 </>
               )}
-              {gitHubIssues !== null && (
+              {gitHubIssues !== null && gitHubIssues > 0 && (
                 <>
                   <span className="chat-head-sep" data-tauri-drag-region>
                     {"│"}
@@ -116,7 +134,7 @@ export function WorkspaceHeader({
                   </button>
                 </>
               )}
-              {gitHubPRs !== null && (
+              {gitHubPRs !== null && gitHubPRs > 0 && (
                 <>
                   <span className="chat-head-sep" data-tauri-drag-region>
                     {"│"}
