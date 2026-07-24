@@ -426,7 +426,8 @@ export class AuthStorage {
         latestCreds.expiresAt !== creds.expiresAt;
       if (
         credentialWasReplaced ||
-        (!opts?.forceRefresh && Date.now() < latestCreds.expiresAt - refreshThresholdMs(latestCreds))
+        (!opts?.forceRefresh &&
+          Date.now() < latestCreds.expiresAt - refreshThresholdMs(latestCreds))
       ) {
         // Another process refreshed or re-logged in while this session still
         // held the rejected token. Trust that replacement even for a forced

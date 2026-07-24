@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.22.5
+
+### Patch Changes
+
+- Proactive OAuth token refresh at a lifetime-scaled threshold. Short-lived tokens (e.g. Kimi's 15-minute access token) now refresh at their halfway point instead of riding to the expiry cliff, eliminating the recurring 401s and the misleading "API Key appears invalid" run failures caused by concurrent-session refresh races. Ported from MoonshotAI/kimi-code's OAuthManager: refresh when within max(300s, lifetime × 0.5) of expiry.
+  - @kenkaiiii/gg-ai@5.22.5
+  - @kenkaiiii/gg-agent@5.22.5
+  - @kenkaiiii/gg-core@5.22.5
+
 ## 5.22.4
 
 ### Patch Changes
