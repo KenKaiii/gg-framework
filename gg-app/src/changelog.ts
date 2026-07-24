@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.28.0",
+    date: "2026-07-24",
+    items: [
+      "`Claude Opus 5` just landed, and you can pick it right now. It is Anthropic's newest flagship: near-frontier smarts at half the price of the model it replaces, a full `1M token` context so it holds way more of your project in mind, and image understanding baked in. Open the model menu and give it a spin.",
+    ],
+  },
+  {
     version: "0.27.7",
     date: "2026-07-24",
     items: [
