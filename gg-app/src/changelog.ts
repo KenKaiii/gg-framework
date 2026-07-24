@@ -22,6 +22,16 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.27.4",
+    date: "2026-07-24",
+    items: [
+      "Your project's GitHub pulse now lives in the title bar. Open `issues` and `PRs` sit right next to your branch, and one click jumps you straight to them on GitHub.",
+      "Your chat agents finally remember on their own. They now save the durable facts you share the moment you share them, no nagging required. I also fixed a nasty bug where a long memory update could abruptly kill your whole conversation.",
+      "No more phantom stalls. Quiet `OpenAI` reasoning models used to look frozen while they were silently thinking. Now the app knows the difference between thinking and stuck.",
+      "Resumed sessions tell the truth. Errors now land exactly where they happened instead of jumping to the bottom of the transcript.",
+    ],
+  },
+  {
     version: "0.27.3",
     date: "2026-07-23",
     items: [
