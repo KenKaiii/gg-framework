@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.27.5",
+    date: "2026-07-24",
+    items: [
+      "`Kimi` and `Moonshot` just got rock solid. They used to drop out mid-task with a bogus `API Key appears invalid` roughly every 15 minutes, especially with a few windows open at once. I now refresh your login well before it can ever expire, so your sessions just keep running.",
+    ],
+  },
+  {
     version: "0.27.4",
     date: "2026-07-24",
     items: [
