@@ -750,6 +750,8 @@ function App(): React.ReactElement {
             state?.gitBranch,
             fallbackTitle,
             state?.gitDirtyFileCount,
+            state?.gitHubIssues ?? null,
+            state?.gitHubPRs ?? null,
           )
         : fallbackTitle;
     setWindowTitle(title);
@@ -759,6 +761,8 @@ function App(): React.ReactElement {
     state?.cwd,
     state?.gitBranch,
     state?.gitDirtyFileCount,
+    state?.gitHubIssues,
+    state?.gitHubPRs,
     workspaceMode,
   ]);
 
@@ -1877,6 +1881,9 @@ function App(): React.ReactElement {
         cwd={state?.cwd}
         gitBranch={state?.gitBranch}
         gitDirtyFileCount={state?.gitDirtyFileCount}
+        gitHubIssues={state?.gitHubIssues}
+        gitHubPRs={state?.gitHubPRs}
+        gitHubRepoUrl={state?.gitHubRepoUrl}
         navHidden={navHidden}
         onToggleNav={toggleNav}
         stripExtras={

@@ -759,6 +759,20 @@ fn open_project_path(webview: WebviewWindow, path: String) -> Result<(), String>
         .map_err(|e| e.to_string())
 }
 
+/// Open an http(s) URL in the system browser (title-bar GitHub issue/PR links).
+/// Scheme-validated so the webview can't turn this into a local-file opener.
+#[tauri::command]
+fn open_url(webview: WebviewWindow, url: String) -> Result<(), String> {
+    let trimmed = url.trim();
+    if !trimmed.starts_with("https://") && !trimmed.starts_with("http://") {
+        return Err("only http(s) URLs can be opened".into());
+    }
+    webview
+        .opener()
+        .open_url(trimmed, None::<String>)
+        .map_err(|e| e.to_string())
+}
+
 /// Proxy: current agent/session state.
 #[tauri::command]
 async fn agent_state(
@@ -3966,6 +3980,7 @@ pub fn run() {
             open_permissions_settings,
             read_dropped_file_attachment,
             open_project_path,
+            open_url,
             agent_state,
             agent_memories,
             agent_delete_memory,

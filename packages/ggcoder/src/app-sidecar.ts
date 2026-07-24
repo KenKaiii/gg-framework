@@ -94,6 +94,7 @@ import {
 } from "./core/model-registry.js";
 import { resolveStartOrFallback } from "./core/resolve-start.js";
 import { getGitBranch, getGitDirtyFileCount, isGitRepo } from "./utils/git.js";
+import { getGitHubOpenCounts, getGitHubRepoSlug } from "./utils/github.js";
 import { extractPlanSteps } from "./utils/plan-steps.js";
 import {
   getNextThinkingLevel,
@@ -1588,14 +1589,21 @@ async function createSession(
   // Workspace extras (context window, git status, background tasks). Git state
   // is resolved once at startup and refreshed after every run; the context
   // window follows the active model.
-  const [initialGitBranch, initialGitIsRepo, initialDirtyFileCount] = await Promise.all([
-    getGitBranch(cwd).catch(() => null),
-    isGitRepo(cwd).catch(() => false),
-    getGitDirtyFileCount(cwd).catch(() => 0),
-  ]);
+  const [initialGitBranch, initialGitIsRepo, initialDirtyFileCount, initialGitHubSlug] =
+    await Promise.all([
+      getGitBranch(cwd).catch(() => null),
+      isGitRepo(cwd).catch(() => false),
+      getGitDirtyFileCount(cwd).catch(() => 0),
+      getGitHubRepoSlug(cwd).catch(() => null),
+    ]);
   let gitBranch: string | null = initialGitBranch;
   let gitIsRepo: boolean = initialGitIsRepo;
   let gitDirtyFileCount = initialDirtyFileCount;
+  // Open issue/PR counts for the origin repo's GitHub slug, via the `gh` CLI's
+  // auth. null = unknown (gh missing/unauthed, non-GitHub origin) → chips hidden.
+  const gitHubSlug: string | null = initialGitHubSlug;
+  let gitHubIssues: number | null = null;
+  let gitHubPRs: number | null = null;
   function currentContextWindow(): number {
     const st = session.getState();
     return getContextWindow(st.model, { provider: st.provider, accountId: st.accountId });
@@ -1607,6 +1615,9 @@ async function createSession(
     gitBranch: string | null;
     isGitRepo: boolean;
     gitDirtyFileCount: number;
+    gitHubIssues: number | null;
+    gitHubPRs: number | null;
+    gitHubRepoUrl: string | null;
     tasks: ReturnType<typeof session.listBackgroundProcesses>;
   } {
     return {
@@ -1614,8 +1625,24 @@ async function createSession(
       gitBranch,
       isGitRepo: gitIsRepo,
       gitDirtyFileCount,
+      gitHubIssues,
+      gitHubPRs,
+      gitHubRepoUrl: gitHubSlug ? `https://github.com/${gitHubSlug}` : null,
       tasks: session.listBackgroundProcesses(),
     };
+  }
+
+  // Refresh the GitHub counts and broadcast only on change. Transient failures
+  // keep the last-known numbers so the chips don't flicker off on a timeout.
+  async function refreshGitHubCounts(): Promise<void> {
+    if (!gitHubSlug) return;
+    const counts = await getGitHubOpenCounts(gitHubSlug);
+    if (!counts) return;
+    if (counts.issues !== gitHubIssues || counts.prs !== gitHubPRs) {
+      gitHubIssues = counts.issues;
+      gitHubPRs = counts.prs;
+      broadcast("extras", footerExtras());
+    }
   }
 
   // tool_call_end carries no tool name (only the id), so remember each call's
@@ -2064,6 +2091,9 @@ async function createSession(
         isGitRepo(cwd).catch(() => gitIsRepo),
         getGitDirtyFileCount(cwd).catch(() => gitDirtyFileCount),
       ]);
+      // A run may have opened/closed issues or PRs — refresh fire-and-forget so
+      // teardown isn't delayed by the network. Broadcasts itself on change.
+      void refreshGitHubCounts();
       // Serialize behind any marker/tool-triggered refresh so the terminal
       // progress snapshot uses the live plan file. Once every canonical step
       // is complete, remove the approved plan from future system prompts and
@@ -2510,6 +2540,20 @@ async function createSession(
     gitPoll.unref?.();
   };
   scheduleGitPoll(5000);
+
+  // GitHub issue/PR counts change outside the app (web UI, teammates), so poll
+  // on a slow cadence. Network-bound, so keep it well under the search API's
+  // rate budget (2 calls per tick). No-op when the origin isn't a GitHub repo.
+  let gitHubPoll: NodeJS.Timeout | undefined;
+  let gitHubPollStopped = false;
+  const scheduleGitHubPoll = (delay: number): void => {
+    if (gitHubPollStopped) return;
+    gitHubPoll = setTimeout(() => {
+      void refreshGitHubCounts().finally(() => scheduleGitHubPoll(60_000));
+    }, delay);
+    gitHubPoll.unref?.();
+  };
+  scheduleGitHubPoll(2000);
 
   function readBody(req: http.IncomingMessage, res: http.ServerResponse): Promise<string | null> {
     return readCappedBody(req, res);
@@ -4245,6 +4289,8 @@ async function createSession(
     if (tasksPoll) clearTimeout(tasksPoll);
     gitPollStopped = true;
     if (gitPoll) clearTimeout(gitPoll);
+    gitHubPollStopped = true;
+    if (gitHubPoll) clearTimeout(gitHubPoll);
     // Stop the Telegram serve loop + dispose its per-chat sessions.
     if (serveController) await serveController.stop().catch(() => {});
     for (const c of clients) c.res.end();

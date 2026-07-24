@@ -1,15 +1,24 @@
 import type { ReactNode } from "react";
-import type { WorkspaceMode } from "./agent";
+import { openUrl, type WorkspaceMode } from "./agent";
 
 interface WorkspaceHeaderProps {
   workspaceMode: WorkspaceMode;
   cwd?: string;
   gitBranch?: string | null;
   gitDirtyFileCount?: number;
+  /** Open issue/PR counts for the project's GitHub origin (null = unknown/hidden). */
+  gitHubIssues?: number | null;
+  gitHubPRs?: number | null;
+  /** Origin repo's web URL — makes the issue/PR chips clickable. */
+  gitHubRepoUrl?: string | null;
   navHidden: boolean;
   onToggleNav: () => void;
   stripExtras?: ReactNode;
   children: ReactNode;
+}
+
+function pluralize(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
 
 export function formatWorkspaceTitle(
@@ -17,12 +26,16 @@ export function formatWorkspaceTitle(
   gitBranch: string | null | undefined,
   fallback: string,
   gitDirtyFileCount = 0,
+  gitHubIssues: number | null = null,
+  gitHubPRs: number | null = null,
 ): string {
   const directory = cwd?.split(/[\\/]/).filter(Boolean).pop();
   if (!directory) return fallback;
   const segments = [directory];
   if (gitBranch) segments.push(`⎇ ${gitBranch}`);
   if (gitDirtyFileCount > 0) segments.push(`${gitDirtyFileCount} uncommitted`);
+  if (gitHubIssues !== null) segments.push(pluralize(gitHubIssues, "issue", "issues"));
+  if (gitHubPRs !== null) segments.push(pluralize(gitHubPRs, "PR", "PRs"));
   return segments.join(" │ ");
 }
 
@@ -32,6 +45,9 @@ export function WorkspaceHeader({
   cwd,
   gitBranch,
   gitDirtyFileCount = 0,
+  gitHubIssues = null,
+  gitHubPRs = null,
+  gitHubRepoUrl = null,
   navHidden,
   onToggleNav,
   stripExtras,
@@ -46,7 +62,14 @@ export function WorkspaceHeader({
         <span
           className="chat-head-title"
           data-tauri-drag-region
-          title={formatWorkspaceTitle(cwd, gitBranch, fallbackTitle, gitDirtyFileCount)}
+          title={formatWorkspaceTitle(
+            cwd,
+            gitBranch,
+            fallbackTitle,
+            gitDirtyFileCount,
+            gitHubIssues,
+            gitHubPRs,
+          )}
         >
           {directory ? (
             <>
@@ -75,6 +98,38 @@ export function WorkspaceHeader({
                   >
                     {`${gitDirtyFileCount} uncommitted`}
                   </span>
+                </>
+              )}
+              {gitHubIssues !== null && (
+                <>
+                  <span className="chat-head-sep" data-tauri-drag-region>
+                    {"│"}
+                  </span>
+                  <button
+                    type="button"
+                    className="chat-head-github"
+                    disabled={!gitHubRepoUrl}
+                    title={`${pluralize(gitHubIssues, "open issue", "open issues")} on GitHub${gitHubRepoUrl ? " — click to view" : ""}`}
+                    onClick={() => gitHubRepoUrl && void openUrl(`${gitHubRepoUrl}/issues`)}
+                  >
+                    {pluralize(gitHubIssues, "issue", "issues")}
+                  </button>
+                </>
+              )}
+              {gitHubPRs !== null && (
+                <>
+                  <span className="chat-head-sep" data-tauri-drag-region>
+                    {"│"}
+                  </span>
+                  <button
+                    type="button"
+                    className="chat-head-github"
+                    disabled={!gitHubRepoUrl}
+                    title={`${pluralize(gitHubPRs, "open PR", "open PRs")} on GitHub${gitHubRepoUrl ? " — click to view" : ""}`}
+                    onClick={() => gitHubRepoUrl && void openUrl(`${gitHubRepoUrl}/pulls`)}
+                  >
+                    {pluralize(gitHubPRs, "PR", "PRs")}
+                  </button>
                 </>
               )}
             </>

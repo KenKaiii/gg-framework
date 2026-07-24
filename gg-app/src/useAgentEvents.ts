@@ -1028,6 +1028,18 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
                   isGitRepo: (d.isGitRepo as boolean | undefined) ?? s.isGitRepo,
                   gitDirtyFileCount:
                     (d.gitDirtyFileCount as number | undefined) ?? s.gitDirtyFileCount,
+                  // null is meaningful here (counts unknown → chips hidden), so
+                  // only fall back to the old value when the field is absent.
+                  gitHubIssues:
+                    d.gitHubIssues !== undefined
+                      ? (d.gitHubIssues as number | null)
+                      : s.gitHubIssues,
+                  gitHubPRs:
+                    d.gitHubPRs !== undefined ? (d.gitHubPRs as number | null) : s.gitHubPRs,
+                  gitHubRepoUrl:
+                    d.gitHubRepoUrl !== undefined
+                      ? (d.gitHubRepoUrl as string | null)
+                      : s.gitHubRepoUrl,
                 }
               : s,
           );

@@ -160,6 +160,13 @@ export interface AgentState {
   isGitRepo?: boolean;
   /** Tracked, staged, and untracked files not yet committed. */
   gitDirtyFileCount?: number;
+  /** Open GitHub issues for the project's origin repo, or null when unknown
+   *  (gh CLI missing/unauthed, or origin isn't GitHub). Absent on older sidecars. */
+  gitHubIssues?: number | null;
+  /** Open GitHub pull requests for the project's origin repo (see gitHubIssues). */
+  gitHubPRs?: number | null;
+  /** Web URL of the project's GitHub origin repo (title-bar chip links). */
+  gitHubRepoUrl?: string | null;
   /** True when the active model can accept native video input. */
   supportsVideo?: boolean;
   /** Autopilot (auto-review) toggle for this window's project. Per-window,
@@ -388,6 +395,14 @@ export interface EnhanceResult {
 export async function enhancePrompt(text: string): Promise<EnhanceResult> {
   await waitForReady();
   return invoke<EnhanceResult>("agent_enhance_prompt", { text });
+}
+
+export async function openUrl(url: string): Promise<void> {
+  try {
+    await invoke("open_url", { url });
+  } catch (e) {
+    await logError(`open_url failed: ${String(e)}`);
+  }
 }
 
 export async function openProjectPath(path: string): Promise<void> {

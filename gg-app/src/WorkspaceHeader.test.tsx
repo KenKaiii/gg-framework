@@ -1,7 +1,17 @@
 // @vitest-environment jsdom
 import { useState } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+
+// WorkspaceHeader imports agent.ts (openUrl), which reads the current webview
+// window at module load — stub it for jsdom.
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({
+    label: "main",
+    setTitle: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+
 import { formatWorkspaceTitle, WorkspaceHeader } from "./WorkspaceHeader";
 
 afterEach(cleanup);
@@ -47,6 +57,47 @@ describe("WorkspaceHeader", () => {
       "app │ ⎇ main │ 3 uncommitted",
     );
     expect(formatWorkspaceTitle("/work/app", null, "GG Coder", 1)).toBe("app │ 1 uncommitted");
+  });
+
+  it("shows GitHub issue/PR counts and appends them to the window title", () => {
+    expect(formatWorkspaceTitle("/work/app", "main", "GG Coder", 0, 4, 1)).toBe(
+      "app │ ⎇ main │ 4 issues │ 1 PR",
+    );
+
+    render(
+      <WorkspaceHeader
+        workspaceMode="code"
+        cwd="/work/gg-coder"
+        gitBranch="main"
+        gitHubIssues={4}
+        gitHubPRs={1}
+        gitHubRepoUrl="https://github.com/kenkaiiii/gg-coder"
+        navHidden
+        onToggleNav={() => {}}
+      >
+        <button>New session</button>
+      </WorkspaceHeader>,
+    );
+
+    expect(screen.getByRole("button", { name: "4 issues" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "1 PR" })).toBeDefined();
+  });
+
+  it("hides the GitHub chips when the counts are unknown", () => {
+    render(
+      <WorkspaceHeader
+        workspaceMode="code"
+        cwd="/work/gg-coder"
+        gitBranch="main"
+        navHidden
+        onToggleNav={() => {}}
+      >
+        <button>New session</button>
+      </WorkspaceHeader>,
+    );
+
+    expect(screen.queryByText(/issues?$/)).toBeNull();
+    expect(screen.queryByText(/PRs?$/)).toBeNull();
   });
 
   it("shows the current directory, branch, and dirty count instead of a session title", () => {

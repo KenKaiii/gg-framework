@@ -969,14 +969,17 @@ body {
   padding: 0 14px 0 82px;
 }
 /* The visible window title shows project context: cwd, current branch, then the
-   uncommitted-file count. It grows into available space and truncates as one
-   unit on narrow windows so the usage meter and controls remain reachable. */
+   uncommitted-file count and GitHub issue/PR chips. It grows into available
+   space; on narrow windows the segments truncate in priority order (folder
+   name first, then branch) so the compact counts stay visible and the usage
+   meter and controls remain reachable. */
 .chat-head-title {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: baseline;
   font-family: var(--mono);
   font-size: 13px;
   font-weight: 500;
@@ -984,16 +987,82 @@ body {
 }
 .chat-head-cwd {
   color: var(--text-dim);
+  /* Project identity — outlasts the branch, truncates before the counts. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .chat-head-sep {
+  flex: none;
   margin: 0 8px;
   color: var(--border);
 }
 .chat-head-branch {
   color: var(--secondary);
+  /* Stable context, not a changing count — the FIRST segment to give way
+     (higher shrink factor than the folder), and fully hidden ≤600px below. */
+  flex: 0 3 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+/* Uncommitted-file count — teal (--info), deliberately NOT --warning amber:
+   the UI already leans on amber heavily (usage meter, plan mode, code tokens),
+   and an informational git status shouldn't compete with real warnings. */
 .chat-head-dirty {
-  color: var(--warning);
+  flex: none;
+  color: var(--info);
+}
+/* Narrow-window cascade (media = window width; halves ≈ 750px, quads ≈ 375px).
+   Segments drop WHOLE, highest-context-cost first, so every surviving count
+   stays complete and readable instead of all ellipsizing into uselessness.
+   The full string always remains in the strip's hover tooltip. */
+@media (max-width: 600px) {
+  /* Branch is the least glance-critical (it's stable context, not a changing
+     count) — drop it (+ its leading separator) so folder + counts stay whole. */
+  .chat-head-branch,
+  .chat-head-sep:has(+ .chat-head-branch) {
+    display: none;
+  }
+}
+@media (max-width: 440px) {
+  /* Quad-tile widths: keep identity (folder, elastic) + the GitHub counts. */
+  .chat-head-dirty,
+  .chat-head-sep:has(+ .chat-head-dirty) {
+    display: none;
+  }
+}
+/* GitHub issue/PR counts — buttons when the repo URL is known (click opens the
+   issues/pulls page), static text otherwise. Font metrics come from the parent
+   .chat-head-title so the chip aligns with the branch/dirty segments. */
+.chat-head-github {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  /* Compact, high-signal counts — never truncate or wrap; the narrow-window
+     cascade above drops other segments whole so these stay readable. */
+  flex: none;
+  white-space: nowrap;
+}
+/* The trailing chip absorbs the final squeeze with a graceful ellipsis instead
+   of the container hard-clipping it mid-word (quad-tile widths). */
+.chat-head-github:last-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-head-github:hover:not(:disabled) {
+  color: var(--text);
+}
+.chat-head-github:disabled {
+  cursor: default;
 }
 /* Position pill — "1/4" reading-order indicator for multi-window orientation.
    Shown only when >1 window is open. Dimmed when this window is not focused. */
