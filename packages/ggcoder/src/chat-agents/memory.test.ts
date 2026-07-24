@@ -3,7 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ToolContext } from "@kenkaiiii/gg-agent";
-import { buildMemoryTools, MEMORY_HARD_LIMIT, MEMORY_SOFT_LIMIT, MemoryStore } from "./memory.js";
+import {
+  buildMemoryTools,
+  MEMORY_HARD_LIMIT,
+  MEMORY_SOFT_LIMIT,
+  MEMORY_TEXT_LIMIT,
+  MemoryStore,
+} from "./memory.js";
 
 let tempDir: string;
 let filePath: string;
@@ -210,5 +216,18 @@ describe("memory tools", () => {
       `Forgot memory ${id}. 0 memories remain.`,
     );
     expect(await store.list()).toEqual([]);
+  });
+
+  it("rejects over-limit content as an ordinary tool error, not a schema failure", async () => {
+    const store = new MemoryStore({ filePath });
+    const tools = buildMemoryTools(store);
+    // The Zod schema must accept long content so validation reaches the store;
+    // a schema-level failure would count toward the agent loop's fatal
+    // "repeatedly issued invalid arguments" path.
+    const longContent = "x".repeat(MEMORY_TEXT_LIMIT + 1);
+    expect(tools[0]!.parameters.parse({ content: longContent })).toEqual({ content: longContent });
+    await expect(store.remember(longContent)).rejects.toThrow(
+      `Memory content is ${MEMORY_TEXT_LIMIT + 1} characters; the limit is ${MEMORY_TEXT_LIMIT}.`,
+    );
   });
 });

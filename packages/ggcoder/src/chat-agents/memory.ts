@@ -239,7 +239,7 @@ export class MemoryStore {
     const data = this.readFileSync();
     const memories = sortForDisplay(data.memories);
     if (memories.length === 0) {
-      return "# Durable memory\nNo durable memories are stored yet. Use remember only for significant future-useful facts.";
+      return "# Durable memory\nNo durable memories are stored yet. Use remember proactively for significant future-useful facts as they come up.";
     }
     const lines = [
       "# Durable memory",
@@ -283,7 +283,10 @@ export class MemoryStore {
     const text = content.trim();
     if (!text) throw new Error("Memory content cannot be empty.");
     if (text.length > MEMORY_TEXT_LIMIT) {
-      throw new Error(`Memory content must be ${MEMORY_TEXT_LIMIT} characters or fewer.`);
+      throw new Error(
+        `Memory content is ${text.length} characters; the limit is ${MEMORY_TEXT_LIMIT}. ` +
+          "Retry with a shorter wording, or split the facts across multiple memories.",
+      );
     }
     return text;
   }
@@ -373,19 +376,31 @@ function requireFileSync(filePath: string): string {
   return fsSync.readFileSync(filePath, "utf8");
 }
 
+// Length is NOT enforced in the Zod schemas on purpose: an over-limit value
+// would fail validation inside the agent loop, where three identical failures
+// escalate to a fatal "repeatedly issued invalid arguments" error that kills
+// the turn — and models are notoriously bad at counting characters. Instead the
+// limit is enforced in MemoryStore.normalizeText, which throws a plain Error
+// that becomes an ordinary, actionable tool result the model can react to.
 const rememberParameters = z.object({
   content: z
     .string()
     .min(1)
-    .max(MEMORY_TEXT_LIMIT)
-    .describe("One concise, self-contained durable fact"),
+    .describe(
+      `One concise, self-contained durable fact (max ${MEMORY_TEXT_LIMIT} characters; shorten or split longer text)`,
+    ),
   category: z.enum(MEMORY_CATEGORIES).optional().describe("Kind of durable fact"),
   importance: z.number().int().min(1).max(5).optional().describe("Future usefulness from 1 to 5"),
 });
 
 const updateParameters = z.object({
   id: z.string().min(1).describe("Memory ID shown in the durable memory block"),
-  content: z.string().min(1).max(MEMORY_TEXT_LIMIT).describe("Replacement durable fact"),
+  content: z
+    .string()
+    .min(1)
+    .describe(
+      `Replacement durable fact (max ${MEMORY_TEXT_LIMIT} characters; shorten or split longer text)`,
+    ),
   category: z.enum(MEMORY_CATEGORIES).optional(),
   importance: z.number().int().min(1).max(5).optional(),
   forget_ids: z
