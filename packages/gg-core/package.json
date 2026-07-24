@@ -1,6 +1,6 @@
 {
   "name": "@kenkaiiii/gg-core",
-  "version": "5.22.6",
+  "version": "5.23.0",
   "type": "module",
   "description": "Provider-agnostic, UI-free shared foundation: model registry, auth, paths, telegram, voice",
   "license": "MIT",
