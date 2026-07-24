@@ -384,6 +384,23 @@ export class AgentSession {
   private readonly transportSessionId = crypto.randomUUID();
   private sessionPath = "";
   private lastPersistedIndex = 0;
+
+  /**
+   * Number of non-system messages guaranteed to be in the session file — the
+   * anchor base for transcript markers (Ken turns, autopilot verdicts, app
+   * markers). `this.messages` can run ahead of the file: the agent loop
+   * appends assistant/tool/steering messages in place but they are only
+   * persisted when the run SUCCEEDS, so after a failed run the in-memory list
+   * carries an unpersisted tail. Markers anchored against that tail point past
+   * their real position on resume — the row (notably an error) renders lower
+   * in the transcript than it happened, bunching at the bottom, or gets
+   * dropped as out-of-range. Anchoring to the persisted prefix keeps resume
+   * placement 1:1 with where the row appeared live.
+   */
+  private persistedTranscriptCount(): number {
+    return this.messages.slice(0, this.lastPersistedIndex).filter((m) => m.role !== "system")
+      .length;
+  }
   /** Current leaf entry ID in the session DAG — used to chain parentIds for branching. */
   private currentLeafId: string | null = null;
 
@@ -1949,7 +1966,7 @@ export class AgentSession {
    * appendEntry's own handling.
    */
   async persistKenTurn(question: string, reply: string): Promise<void> {
-    const afterMessageCount = this.messages.filter((m) => m.role !== "system").length;
+    const afterMessageCount = this.persistedTranscriptCount();
     const payload: KenTurnPayload = { version: 1, question, reply, afterMessageCount };
     this.kenTurns.push(payload);
     if (!this.sessionPath) return;
@@ -1995,7 +2012,7 @@ export class AgentSession {
     phase: AutopilotMarkerPayload["phase"],
     extra?: { reason?: string; body?: string },
   ): Promise<void> {
-    const afterMessageCount = this.messages.filter((m) => m.role !== "system").length;
+    const afterMessageCount = this.persistedTranscriptCount();
     const payload: AutopilotMarkerPayload = {
       version: 1,
       phase,
@@ -2055,8 +2072,7 @@ export class AgentSession {
     data: Record<string, unknown>,
     anchorOffset = 0,
   ): Promise<void> {
-    const afterMessageCount =
-      this.messages.filter((m) => m.role !== "system").length + anchorOffset;
+    const afterMessageCount = this.persistedTranscriptCount() + anchorOffset;
     const payload: AppMarkerPayload = { version: 1, kind, afterMessageCount, data };
     this.appMarkers.push(payload);
     if (!this.sessionPath) return;
