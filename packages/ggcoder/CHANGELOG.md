@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.22.6
+
+### Patch Changes
+
+- Remove the retired /setup command and its auto-run/hint UI, fix /bullet-proof refusals with authorized-defensive-review framing plus seeded auditor/skeptic agents and batched skeptic verification, dedupe kencode/source_path guidance out of the Research section, gate the native-web-search claim to Anthropic, and slim the system prompt.
+  - @kenkaiiii/gg-ai@5.22.6
+  - @kenkaiiii/gg-agent@5.22.6
+  - @kenkaiiii/gg-core@5.22.6
+
 ## 5.22.5
 
 ### Patch Changes
