@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchSubscriptionUsage } from "./provider-usage.js";
+import { fetchSubscriptionUsage, mergePartialSubscriptionUsage } from "./provider-usage.js";
 import type { SubscriptionUsageError } from "./provider-usage.js";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -138,6 +138,149 @@ describe("fetchSubscriptionUsage", () => {
         resetsAt: now + 593_701_000,
       },
     ]);
+    expect(result.unavailableWindowKinds).toEqual(["current"]);
+  });
+
+  it("uses an additional Codex 5-hour limit when the top level is weekly-only", async () => {
+    const result = await fetchSubscriptionUsage(
+      "openai",
+      { accessToken: "test-token" },
+      {
+        now: () => 1_000,
+        fetchFn: async () =>
+          jsonResponse({
+            rate_limit: {
+              primary_window: { limit_window_seconds: 604_800, used_percent: 12 },
+            },
+            additional_rate_limits: [
+              {
+                limit_name: "codex",
+                metered_feature: "tokens",
+                rate_limit: {
+                  primary_window: {
+                    limit_window_seconds: 18_000,
+                    used_percent: 27,
+                    reset_after_seconds: 300,
+                  },
+                },
+              },
+            ],
+          }),
+      },
+    );
+
+    expect(result.windows).toEqual([
+      {
+        kind: "current",
+        label: "5-hour",
+        usedPercent: 27,
+        resetsAt: 301_000,
+      },
+      { kind: "weekly", label: "Weekly", usedPercent: 12, resetsAt: undefined },
+    ]);
+    expect(result.unavailableWindowKinds).toBeUndefined();
+  });
+
+  it("ignores malformed and non-sub-week additional Codex limits", async () => {
+    const result = await fetchSubscriptionUsage(
+      "openai",
+      { accessToken: "test-token" },
+      {
+        fetchFn: async () =>
+          jsonResponse({
+            rate_limit: {
+              primary_window: { limit_window_seconds: 604_800, used_percent: 12 },
+            },
+            additional_rate_limits: [
+              null,
+              {},
+              { rate_limit: { primary_window: { used_percent: 33 } } },
+              {
+                rate_limit: {
+                  primary_window: { limit_window_seconds: 0, used_percent: 34 },
+                },
+              },
+              {
+                rate_limit: {
+                  primary_window: { limit_window_seconds: "18000", used_percent: 44 },
+                  secondary_window: { limit_window_seconds: 18_000, used_percent: "bad" },
+                },
+              },
+              {
+                rate_limit: {
+                  primary_window: { limit_window_seconds: 604_800, used_percent: 55 },
+                },
+              },
+            ],
+          }),
+      },
+    );
+
+    expect(result.windows).toEqual([
+      { kind: "weekly", label: "Weekly", usedPercent: 12, resetsAt: undefined },
+    ]);
+    expect(result.unavailableWindowKinds).toEqual(["current"]);
+  });
+
+  it("prefers the top-level Codex current window over additional limits", async () => {
+    const result = await fetchSubscriptionUsage(
+      "openai",
+      { accessToken: "test-token" },
+      {
+        fetchFn: async () =>
+          jsonResponse({
+            rate_limit: {
+              primary_window: { limit_window_seconds: 18_000, used_percent: 21 },
+              secondary_window: { limit_window_seconds: 604_800, used_percent: 40 },
+            },
+            additional_rate_limits: [
+              {
+                rate_limit: {
+                  primary_window: { limit_window_seconds: 10_800, used_percent: 99 },
+                  secondary_window: { limit_window_seconds: 604_800, used_percent: 88 },
+                },
+              },
+            ],
+          }),
+      },
+    );
+
+    expect(result.windows).toEqual([
+      { kind: "current", label: "5-hour", usedPercent: 21, resetsAt: undefined },
+      { kind: "weekly", label: "Weekly", usedPercent: 40, resetsAt: undefined },
+    ]);
+  });
+
+  it("preserves a recent Codex short-term window without extending its lifetime", () => {
+    const cached = new Map();
+    const complete = {
+      provider: "openai" as const,
+      displayName: "Codex",
+      windows: [
+        { kind: "current" as const, label: "5-hour", usedPercent: 22 },
+        { kind: "weekly" as const, label: "Weekly", usedPercent: 40 },
+      ],
+      fetchedAt: 1_000,
+    };
+    mergePartialSubscriptionUsage(complete, cached, 1_000, 30_000);
+
+    const partial = {
+      provider: "openai" as const,
+      displayName: "Codex",
+      windows: [{ kind: "weekly" as const, label: "Weekly", usedPercent: 41 }],
+      fetchedAt: 2_000,
+      unavailableWindowKinds: ["current" as const],
+    };
+    const merged = mergePartialSubscriptionUsage(partial, cached, 2_000, 30_000);
+    expect(merged.windows).toEqual([
+      { kind: "current", label: "5-hour", usedPercent: 22 },
+      { kind: "weekly", label: "Weekly", usedPercent: 41 },
+    ]);
+    expect(merged.staleWindowKinds).toEqual(["current"]);
+
+    const expired = mergePartialSubscriptionUsage(partial, cached, 31_000, 30_000);
+    expect(expired.windows).toEqual([{ kind: "weekly", label: "Weekly", usedPercent: 41 }]);
+    expect(expired.staleWindowKinds).toBeUndefined();
   });
 
   it("normalizes Kimi weekly quota and the 5-hour rate-limit window", async () => {

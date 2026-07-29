@@ -16,6 +16,50 @@ export interface SubscriptionUsageSnapshot {
   displayName: string;
   windows: SubscriptionUsageWindow[];
   fetchedAt: number;
+  /** Window kinds the provider omitted from an otherwise valid response. */
+  unavailableWindowKinds?: Array<SubscriptionUsageWindow["kind"]>;
+  /** Window kinds preserved from a recent response rather than observed now. */
+  staleWindowKinds?: Array<SubscriptionUsageWindow["kind"]>;
+}
+
+export interface CachedSubscriptionUsageWindow {
+  window: SubscriptionUsageWindow;
+  observedAt: number;
+}
+
+/**
+ * Preserve recently observed windows when a provider returns a partial quota
+ * response. The original observation time is retained so repeated partial
+ * responses cannot keep old data alive indefinitely.
+ */
+export function mergePartialSubscriptionUsage(
+  snapshot: SubscriptionUsageSnapshot,
+  cached: Map<SubscriptionUsageWindow["kind"], CachedSubscriptionUsageWindow>,
+  now: number,
+  maxAgeMs: number,
+): SubscriptionUsageSnapshot {
+  for (const window of snapshot.windows) cached.set(window.kind, { window, observedAt: now });
+
+  const unavailable = new Set(snapshot.unavailableWindowKinds ?? []);
+  const staleWindowKinds: Array<SubscriptionUsageWindow["kind"]> = [];
+  const windows = [...snapshot.windows];
+  for (const kind of unavailable) {
+    const previous = cached.get(kind);
+    if (!previous || now - previous.observedAt >= maxAgeMs) {
+      cached.delete(kind);
+      continue;
+    }
+    if (!windows.some((window) => window.kind === kind)) {
+      windows.push(previous.window);
+      staleWindowKinds.push(kind);
+    }
+  }
+  windows.sort((left, right) => (left.kind === right.kind ? 0 : left.kind === "current" ? -1 : 1));
+  return {
+    ...snapshot,
+    windows,
+    ...(staleWindowKinds.length > 0 ? { staleWindowKinds } : {}),
+  };
 }
 
 export class SubscriptionUsageError extends Error {
@@ -54,11 +98,20 @@ interface CodexWindow {
   reset_after_seconds?: unknown;
 }
 
+interface CodexRateLimit {
+  primary_window?: CodexWindow | null;
+  secondary_window?: CodexWindow | null;
+}
+
+interface CodexAdditionalRateLimit {
+  limit_name?: unknown;
+  metered_feature?: unknown;
+  rate_limit?: CodexRateLimit | null;
+}
+
 interface CodexUsageResponse {
-  rate_limit?: {
-    primary_window?: CodexWindow | null;
-    secondary_window?: CodexWindow | null;
-  } | null;
+  rate_limit?: CodexRateLimit | null;
+  additional_rate_limits?: CodexAdditionalRateLimit[] | null;
 }
 
 interface KimiUsageDetail {
@@ -226,19 +279,49 @@ async function fetchCodexUsage(
   if (credentials.accountId) headers["ChatGPT-Account-Id"] = credentials.accountId;
   const response = await fetchFn(CODEX_USAGE_URL, { method: "GET", signal, headers });
   const data = (await readUsageResponse(response, now())) as CodexUsageResponse;
-  const windows = [
+  const topLevelWindows = [
     normalizedCodexWindow(data.rate_limit?.primary_window, "current", now()),
     normalizedCodexWindow(data.rate_limit?.secondary_window, "weekly", now()),
   ].filter((window): window is SubscriptionUsageWindow => window !== null);
-  windows.sort((left, right) => {
-    if (left.kind === right.kind) return 0;
-    return left.kind === "current" ? -1 : 1;
-  });
+  let current = topLevelWindows.find((window) => window.kind === "current");
+  const weekly = topLevelWindows.find((window) => window.kind === "weekly");
+
+  // Some wham responses move the short-term quota under a feature-specific
+  // additional_rate_limits entry while leaving only the weekly plan window at
+  // the top level. Use the first genuinely sub-week window, but never let an
+  // additional limit replace a top-level current or weekly value.
+  if (!current && Array.isArray(data.additional_rate_limits)) {
+    for (const additional of data.additional_rate_limits) {
+      const candidates = [
+        additional?.rate_limit?.primary_window,
+        additional?.rate_limit?.secondary_window,
+      ];
+      for (const candidate of candidates) {
+        const duration = finiteNumber(candidate?.limit_window_seconds);
+        if (duration === undefined || duration <= 0 || duration >= 6 * 24 * 60 * 60) continue;
+        const normalized = normalizedCodexWindow(candidate, "current", now());
+        if (normalized?.kind === "current") {
+          current = normalized;
+          break;
+        }
+      }
+      if (current) break;
+    }
+  }
+
+  const windows = [current, weekly].filter(
+    (window): window is SubscriptionUsageWindow => window !== undefined,
+  );
+  const availableKinds = new Set(windows.map((window) => window.kind));
+  const unavailableWindowKinds = (["current", "weekly"] as const).filter(
+    (kind) => !availableKinds.has(kind),
+  );
   return {
     provider: "openai",
     displayName: "Codex",
     windows,
     fetchedAt: now(),
+    ...(unavailableWindowKinds.length > 0 ? { unavailableWindowKinds } : {}),
   };
 }
 

@@ -5077,7 +5077,7 @@ body {
   color: var(--text-secondary);
 }
 .title-usage-window {
-  width: 25px;
+  width: 29px;
   color: var(--text-muted);
   font-weight: 650;
   text-align: right;
@@ -5092,6 +5092,14 @@ body {
   border-radius: var(--radius-pill);
   background: radial-gradient(circle, #1b2735, #090a0f);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+.title-usage-meter.is-unavailable .title-usage-track {
+  border-style: dashed;
+  background: var(--surface-1);
+  box-shadow: none;
+}
+.title-usage-meter.is-unavailable .title-usage-reset {
+  color: var(--text-muted);
 }
 .title-usage-fill {
   position: absolute;
