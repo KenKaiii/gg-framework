@@ -1,9 +1,9 @@
 import { useEffect } from "react";
 import { createStore, useStore } from "./create-store.js";
-import type { ProcessManager, BackgroundProcess } from "../../core/process-manager.js";
+import type { BackgroundTaskSnapshot, ProcessManager } from "../../core/process-manager.js";
 
 interface TaskBarState {
-  bgTasks: BackgroundProcess[];
+  bgTasks: BackgroundTaskSnapshot[];
   focused: boolean;
   expanded: boolean;
   selectedIndex: number;
@@ -45,8 +45,8 @@ export function navigateTaskBar(index: number) {
   taskBarStore.setState({ selectedIndex: index });
 }
 
-export function killTask(pm: ProcessManager, id: string) {
-  pm.stop(id);
+export async function killTask(pm: ProcessManager, id: string): Promise<string> {
+  return pm.stop(id);
 }
 
 // ── Effects (call from component) ────────────────────────
@@ -56,17 +56,17 @@ export function useTaskBarPolling(pm: ProcessManager | undefined) {
   useEffect(() => {
     if (!pm) return;
     const poll = () => {
-      const running = pm.list().filter((p) => p.exitCode === null);
+      const tasks = pm.list();
       const prev = taskBarStore.getSnapshot();
-      taskBarStore.setState({ bgTasks: running });
+      taskBarStore.setState({ bgTasks: tasks });
 
-      // Auto-exit when all tasks gone
-      if (running.length === 0 && (prev.focused || prev.expanded)) {
+      // Keep retained completions reachable; exit only after backend expiry.
+      if (tasks.length === 0 && (prev.focused || prev.expanded)) {
         taskBarStore.setState({ focused: false, expanded: false });
       }
 
       // Clamp selected index
-      const maxIdx = Math.min(running.length, 5) - 1;
+      const maxIdx = Math.min(tasks.length, 5) - 1;
       if (prev.selectedIndex > maxIdx && maxIdx >= 0) {
         taskBarStore.setState({ selectedIndex: maxIdx });
       }

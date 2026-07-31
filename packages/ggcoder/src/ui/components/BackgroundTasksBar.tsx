@@ -1,18 +1,18 @@
 import React from "react";
 import { Text, Box, useInput } from "ink";
 import { useTheme } from "../theme/theme.js";
-import type { BackgroundProcess } from "../../core/process-manager.js";
+import type { BackgroundTaskSnapshot } from "../../core/process-manager.js";
 
 const MAX_VISIBLE = 5;
 
 interface BackgroundTasksBarProps {
-  tasks: BackgroundProcess[];
+  tasks: BackgroundTaskSnapshot[];
   focused: boolean;
   expanded: boolean;
   selectedIndex: number;
   onExpand: () => void;
   onCollapse: () => void;
-  onKill: (id: string) => void;
+  onKill: (id: string) => Promise<void>;
   onExit: () => void;
   onNavigate: (index: number) => void;
   compact?: boolean;
@@ -50,6 +50,14 @@ export function getFooterStatusLayoutDecision({
 function truncateCommand(command: string, maxLen: number): string {
   if (command.length <= maxLen) return command;
   return command.slice(0, maxLen - 1) + "\u2026";
+}
+
+export function formatBackgroundTaskStatus(task: BackgroundTaskSnapshot): string {
+  if (task.isRunning) return "running";
+  if (task.completedAt === null) return "completion pending";
+  if (task.signal) return `signal ${task.signal}`;
+  if (task.exitCode !== null) return `exit ${task.exitCode}`;
+  return "completed";
 }
 
 export function BackgroundTasksBar({
@@ -103,8 +111,8 @@ export function BackgroundTasksBar({
 
       if (_input === "k" || _input === "K") {
         const task = tasks[selectedIndex];
-        if (task) {
-          onKill(task.id);
+        if (task?.isRunning) {
+          onKill(task.id).catch(() => undefined);
         }
       }
     },
@@ -114,6 +122,7 @@ export function BackgroundTasksBar({
   if (tasks.length === 0) return null;
 
   const count = tasks.length;
+  const runningCount = tasks.filter((task) => task.isRunning).length;
   const label = `Background task${count !== 1 ? "s" : ""}`;
   const collapsedTextColor = focused ? theme.commandColor : theme.textDim;
 
@@ -122,7 +131,7 @@ export function BackgroundTasksBar({
     return (
       <Box paddingLeft={1} paddingRight={1}>
         <Text color={collapsedTextColor}>{"● "}</Text>
-        <Text color={collapsedTextColor}>({count})</Text>
+        <Text color={collapsedTextColor}>({runningCount})</Text>
         <Text color={collapsedTextColor}> {compact ? "bg tasks" : label}</Text>
         {focused && !compact && (
           <Text color={theme.textDim}>
@@ -147,9 +156,8 @@ export function BackgroundTasksBar({
         const isSelected = i === selectedIndex;
         const textColor = isSelected ? theme.commandColor : theme.textDim;
         const cmd = truncateCommand(task.command, 50);
-        const isRunning = task.exitCode === null;
-        const dot = isRunning ? "\u25CF" : "\u25CB";
-        const statusLabel = isRunning ? "running" : `exit ${task.exitCode}`;
+        const dot = task.isRunning ? "\u25CF" : "\u25CB";
+        const statusLabel = formatBackgroundTaskStatus(task);
 
         return (
           <Box
@@ -177,8 +185,12 @@ export function BackgroundTasksBar({
       <Text color={theme.textDim}>
         <Text color={theme.primary}>↑↓</Text>
         {" navigate · "}
-        <Text color={theme.primary}>K</Text>
-        {" kill · "}
+        {tasks[selectedIndex]?.isRunning && (
+          <>
+            <Text color={theme.primary}>K</Text>
+            {" kill · "}
+          </>
+        )}
         <Text color={theme.primary}>Esc</Text>
         {" back"}
       </Text>

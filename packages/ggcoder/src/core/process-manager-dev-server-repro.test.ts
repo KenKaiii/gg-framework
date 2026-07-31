@@ -140,8 +140,9 @@ describe("ProcessManager dev-server lifecycle repro", () => {
         `  console.log('DEV_SERVER_READY ' + address.port);\n` +
         `});\n` +
         `const interval = setInterval(() => console.log('DEV_SERVER_TICK'), 250);\n` +
-        `process.on('SIGTERM', () => {\n` +
-        `  console.log('DEV_SERVER_SIGTERM');\n` +
+        `process.stdin.resume();\n` +
+        `process.stdin.on('end', () => {\n` +
+        `  console.log('DEV_SERVER_EOF');\n` +
         `  clearInterval(interval);\n` +
         `  server.close(() => process.exit(0));\n` +
         `});\n`,
@@ -169,22 +170,14 @@ describe("ProcessManager dev-server lifecycle repro", () => {
     expect(fromStart.output).toContain("DEV_SERVER_READY");
 
     const stopped = await manager.stop(started.id);
-    expect(stopped).toBe(`Process ${started.id} stopped`);
+    expect(stopped).toContain(`Process ${started.id} stopped gracefully via stdin EOF`);
+    expect(stopped).toContain("code=0");
+    expect(stopped).toContain("DEV_SERVER_EOF");
 
     const final = await manager.readOutput(started.id, true);
     expect(final.isRunning).toBe(false);
-    expect(final.exitCode).not.toBeNull();
-    if (process.platform === "win32") {
-      // Windows has no SIGTERM. `stop()` force-kills the PID tree with taskkill
-      // /F precisely because there is no process group and no graceful signal
-      // to send, so a SIGTERM handler CANNOT run and the server gets no chance
-      // to clean up. That is a real, unavoidable platform difference — what
-      // matters (asserted above) is that the process and its children are
-      // genuinely dead, which is the failure mode users actually hit.
-      expect(final.output).toContain("DEV_SERVER_READY");
-    } else {
-      expect(final.output).toContain("DEV_SERVER_SIGTERM");
-    }
+    expect(final.exitCode).toBe(0);
+    expect(final.output).toContain("DEV_SERVER_EOF");
   }, 45_000);
 
   const posixIt = process.platform === "win32" ? it.skip : it;

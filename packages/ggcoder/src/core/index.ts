@@ -27,6 +27,7 @@ export {
   type BranchInfo,
 } from "./session-manager.js";
 export { AgentSession, type AgentSessionOptions, type AgentSessionState } from "./agent-session.js";
+export type { BackgroundTaskSnapshot } from "./process-manager.js";
 export {
   SlashCommandRegistry,
   createBuiltinCommands,

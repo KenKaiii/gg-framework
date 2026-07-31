@@ -15,6 +15,58 @@ export interface CliConfig {
   outputFormat?: "text" | "json";
 }
 
+// ── Foreground Execution ────────────────────────────────────
+
+export type ForegroundExecutionReason =
+  | "completed"
+  | "nonZeroExit"
+  | "timedOut"
+  | "aborted"
+  | "spawnError";
+
+export interface ForegroundExecutionMetadata {
+  executionId: string;
+  command: string;
+  cwd: string;
+  startedAt: number;
+  timeoutMs: number;
+  pid: number | null;
+  logPath: string;
+}
+
+export interface ForegroundExecutionOutcome {
+  metadata: ForegroundExecutionMetadata;
+  reason: ForegroundExecutionReason;
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+  elapsedMs: number;
+  error: Error | null;
+}
+
+/** Stable, serializable diagnostics exposed to hosts for foreground bash runs. */
+export interface BashDiagnostics {
+  executionId: string;
+  pid: number | null;
+  command: string;
+  cwd: string;
+  startedAt: number;
+  timeoutMs: number;
+  reason: ForegroundExecutionReason;
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+  elapsedMs: number;
+  logPath: string;
+  tail: string;
+  outputCapped: boolean;
+  totalOutputBytes: number;
+  retainedOutputBytes: number;
+  droppedOutputBytes: number;
+}
+
+export interface BashToolResultDetails {
+  bashDiagnostics: BashDiagnostics;
+}
+
 // ── Session Persistence ────────────────────────────────────
 
 export interface SessionHeader {

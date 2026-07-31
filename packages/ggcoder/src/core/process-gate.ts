@@ -40,7 +40,9 @@ export function isUnresolvedProcess(proc: GateableProcess, runStartedAt: number)
   if (proc.startedAt < runStartedAt) return false;
   const running = proc.exitCode === null;
   if (!running && proc.exitCode === 0) return false;
-  return running ? proc.lastReadOffset === 0 : proc.lastReadOffset < proc.logSize;
+  return running
+    ? proc.lastReadOffset === null || proc.lastReadOffset === 0
+    : (proc.lastReadOffset ?? 0) < proc.logSize;
 }
 
 /** Unresolved processes in stable start order, so the message is deterministic. */

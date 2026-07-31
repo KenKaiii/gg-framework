@@ -1,19 +1,19 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { BackgroundTasksBar, type FooterStatusLayoutDecision } from "./BackgroundTasksBar.js";
-import type { BackgroundProcess } from "../../core/process-manager.js";
+import type { BackgroundTaskSnapshot } from "../../core/process-manager.js";
 import type { useTheme } from "../theme/theme.js";
 
 interface FooterStatusRowProps {
   columns: number;
   layout: FooterStatusLayoutDecision;
-  tasks: BackgroundProcess[];
+  tasks: BackgroundTaskSnapshot[];
   focused: boolean;
   expanded: boolean;
   selectedIndex: number;
   onExpand: () => void;
   onCollapse: () => void;
-  onKill: (id: string) => void;
+  onKill: (id: string) => Promise<void>;
   onExit: () => void;
   onNavigate: (index: number) => void;
   theme: ReturnType<typeof useTheme>;

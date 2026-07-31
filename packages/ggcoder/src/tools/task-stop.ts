@@ -11,8 +11,12 @@ export function createTaskStopTool(
 ): AgentTool<typeof TaskStopParams> {
   return {
     name: "task_stop",
-    description: "Stop a background process by ID. Sends SIGTERM, then SIGKILL after 5 seconds.",
+    description:
+      "Stop a managed background process by closing stdin (EOF) first, waiting up to two seconds " +
+      "for a clean exit, then escalating through configured process-tree cleanup if needed. " +
+      "Returns the final state and unread output.",
     parameters: TaskStopParams,
+    executionMode: "sequential",
     async execute({ id }) {
       return processManager.stop(id);
     },

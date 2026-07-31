@@ -11,11 +11,13 @@ const TaskSendParams = z.object({
   enter: z
     .boolean()
     .optional()
-    .describe("Append a newline (press Enter) after the input. Default true."),
+    .describe(
+      "Append a newline (press Enter) after the input. Defaults to true when input is supplied; set true without input to press Enter only.",
+    ),
   eof: z
     .boolean()
     .optional()
-    .describe("Close stdin after sending, signalling end-of-input (Ctrl-D)."),
+    .describe("Close stdin after any text/newline, signalling end-of-input (Ctrl-D)."),
 });
 
 export function createTaskSendTool(
@@ -24,17 +26,18 @@ export function createTaskSendTool(
   return {
     name: "task_send",
     description:
-      "Send input to a running background process (started with run_in_background) to drive it " +
-      "interactively — answer a [Y/n] or password-style prompt, type into a REPL, or feed a " +
-      "scaffolder's questions. By default the input is followed by Enter. After sending, call " +
-      "task_output to read the process's response. Set eof=true to close stdin (Ctrl-D).",
+      "Send text, press Enter, or close stdin for a running background process (started with " +
+      "run_in_background). Text is followed by Enter by default. Use enter=true without input " +
+      "for a newline only, or eof=true without input to close stdin without a newline. After " +
+      "sending, call task_output to read the process's response.",
     parameters: TaskSendParams,
     executionMode: "sequential",
     async execute({ id, input, enter, eof }) {
-      if ((input === undefined || input === "") && enter === false && !eof) {
-        return "Nothing to send: provide input, or set enter=true to press Enter, or eof=true.";
+      const sendsEnter = enter ?? input !== undefined;
+      if ((input === undefined || input === "") && !sendsEnter && !eof) {
+        return "Nothing to send: provide text, set enter=true to press Enter, or set eof=true to close stdin.";
       }
-      return processManager.sendInput(id, input ?? "", { enter, eof });
+      return processManager.sendInput(id, input, { enter, eof });
     },
   };
 }

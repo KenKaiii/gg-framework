@@ -2,6 +2,30 @@ import fs from "node:fs/promises";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createReadStream, type ReadStream } from "node:fs";
 import type { Dirent, Stats } from "node:fs";
+import {
+  killProcessTree,
+  killProcessTreeAsync,
+  reapProcessWrapper,
+  type ProcessTarget,
+} from "../utils/process.js";
+
+export interface SpawnProcessOptions {
+  cwd: string;
+  env?: NodeJS.ProcessEnv;
+  detached?: boolean;
+  stdio?: Array<"pipe" | "ignore">;
+}
+
+/** Complete lifecycle for processes on one execution target. */
+export interface ProcessLifecycleAdapter {
+  spawn(command: string, args: string[], options: SpawnProcessOptions): ChildProcess;
+  /** Graceful tree cleanup, with escalation owned by the target adapter. */
+  cleanupProcessTree(target: ProcessTarget): Promise<void>;
+  /** Immediate tree cleanup for synchronous shutdown paths. */
+  killProcessTree(target: ProcessTarget): void;
+  /** Reap only the exact completed wrapper, never its descendants. */
+  reapProcessWrapper(target: ProcessTarget): void;
+}
 
 /**
  * Abstraction over filesystem and process operations.
@@ -30,23 +54,27 @@ export interface ToolOperations {
   /** Create a readable stream for a file. */
   createReadStream(path: string, encoding: BufferEncoding): ReadStream;
 
-  /** Spawn a child process. Returns the ChildProcess handle. */
-  spawn(
-    command: string,
-    args: string[],
-    options: {
-      cwd: string;
-      env?: Record<string, string>;
-      detached?: boolean;
-      stdio?: Array<"pipe" | "ignore">;
-    },
-  ): ChildProcess;
+  /** Process lifecycle on the same target as the filesystem operations. */
+  process: ProcessLifecycleAdapter;
 }
 
 /**
  * Default local filesystem + process operations.
  * This is what tools use when running on the local machine.
  */
+export const localProcessLifecycle: ProcessLifecycleAdapter = {
+  spawn: (command, args, options) =>
+    spawn(command, args, {
+      cwd: options.cwd,
+      env: options.env,
+      detached: options.detached,
+      stdio: options.stdio as Parameters<typeof spawn>[2] extends { stdio: infer S } ? S : never,
+    }),
+  cleanupProcessTree: (target) => killProcessTreeAsync(target),
+  killProcessTree: (target) => killProcessTree(target),
+  reapProcessWrapper: (target) => reapProcessWrapper(target),
+};
+
 export const localOperations: ToolOperations = {
   readFile: (path) => fs.readFile(path, "utf-8"),
 
@@ -66,11 +94,5 @@ export const localOperations: ToolOperations = {
 
   createReadStream: (path, encoding) => createReadStream(path, { encoding }),
 
-  spawn: (command, args, options) =>
-    spawn(command, args, {
-      cwd: options.cwd,
-      env: options.env,
-      detached: options.detached,
-      stdio: options.stdio as Parameters<typeof spawn>[2] extends { stdio: infer S } ? S : never,
-    }),
+  process: localProcessLifecycle,
 };

@@ -9,27 +9,74 @@
  * POSIX-only (needs a real bash). Callers must fall back to spawn-per-call
  * when bash is unavailable (Windows cmd.exe fallback path).
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import type { ForegroundExecutionReason } from "../types.js";
+import type { ProcessTarget } from "../utils/process.js";
+import {
+  BOUNDED_OUTPUT_MAX_LINES,
+  BoundedOutputTail,
+  type BoundedOutputTailSnapshot,
+  OutputChunkDecoder,
+} from "../tools/bounded-output-tail.js";
+import { localProcessLifecycle, type ProcessLifecycleAdapter } from "../tools/operations.js";
+import type { ForegroundLogHandle } from "./process-manager.js";
+import { log } from "./logger.js";
 import { resolveShell, type ResolveShellOpts } from "./shell.js";
-import { killProcessTree } from "../utils/process.js";
+
+type PersistentOutputSource = "stdout" | "stderr";
+
+interface PersistentOutputStreamState {
+  source: PersistentOutputSource;
+  decoder: OutputChunkDecoder;
+  binary: boolean;
+  binaryBytes: number;
+  reportedBinaryBytes: number;
+}
 
 export interface PersistentRunResult {
-  exitCode: number | "TIMEOUT";
+  reason: ForegroundExecutionReason;
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+  elapsedMs: number;
+  pid: number | null;
+  error: Error | null;
   output: string;
+  outputSnapshot: BoundedOutputTailSnapshot;
+}
+
+function longestSentinelPrefix(candidate: Buffer, sentinel: Buffer): number {
+  const maxLength = Math.min(candidate.length, sentinel.length - 1);
+  for (let length = maxLength; length > 0; length -= 1) {
+    if (candidate.subarray(candidate.length - length).equals(sentinel.subarray(0, length))) {
+      return length;
+    }
+  }
+  return 0;
 }
 
 export class PersistentShell {
   private child: ChildProcess | null = null;
-  private buffer = "";
   private busy = false;
 
   constructor(
     private readonly cwd: string,
     private readonly env: NodeJS.ProcessEnv,
     private readonly maxOutputBytes: number,
+    private readonly lifecycle: ProcessLifecycleAdapter = localProcessLifecycle,
     private readonly shellOpts?: ResolveShellOpts,
   ) {}
+
+  private startCleanup(target: ProcessTarget): void {
+    void Promise.resolve()
+      .then(() => this.lifecycle.cleanupProcessTree(target))
+      .catch((error: unknown) => {
+        log("WARN", "bash", "Persistent process-tree cleanup failed", {
+          pid: String(target.pid),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }
 
   /** True while a previous persistent command is still running. */
   get isBusy(): boolean {
@@ -40,24 +87,17 @@ export class PersistentShell {
     if (this.child && this.child.exitCode === null && !this.child.killed) {
       return this.child;
     }
-    // Fresh session: no rc files so startup is fast and deterministic.
-    //
-    // Spawn the SAME bash the one-shot path resolved, not a bare `bash`: on
-    // Windows the caller only reaches persist mode when Git Bash was found,
-    // but Git for Windows puts `cmd\` on PATH and `bash.exe` in `bin\` — so a
-    // bare `bash` spawn is ENOENT and every persist-mode command failed.
-    const child = spawn(resolveShell("", this.shellOpts).file, ["--norc", "--noprofile"], {
+    // Fresh session: use the same resolved shell as one-shot execution.
+    const shell = resolveShell("", this.shellOpts);
+    const child = this.lifecycle.spawn(shell.file, ["--norc", "--noprofile"], {
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "pipe"],
       env: this.env,
-      // Windows has no process groups; `detached` there only orphans the shell
-      // past a parent crash instead of grouping it for a clean tree-kill.
       detached: process.platform !== "win32",
     });
     // Don't let a lingering session shell keep the parent process alive.
     child.unref();
     this.child = child;
-    this.buffer = "";
     return child;
   }
 
@@ -72,107 +112,324 @@ export class PersistentShell {
     command: string,
     timeoutMs: number,
     signal: AbortSignal,
-    onChunk?: (text: string) => void,
+    onChunk?: (text: string, totalBytes: number) => void,
+    foregroundLog?: ForegroundLogHandle,
   ): Promise<PersistentRunResult> {
+    const startedAt = Date.now();
+    const emptySnapshot = (): BoundedOutputTailSnapshot => ({
+      content: "",
+      totalInputBytes: 0,
+      retainedBytes: 0,
+      retainedLines: 0,
+      capped: false,
+    });
     if (this.busy) {
       return Promise.resolve({
+        reason: "nonZeroExit",
         exitCode: 1,
+        signal: null,
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+        pid: this.child?.pid ?? null,
+        error: null,
         output: "persistent shell is busy with a previous command",
+        outputSnapshot: {
+          ...emptySnapshot(),
+          content: "persistent shell is busy with a previous command",
+          totalInputBytes: Buffer.byteLength("persistent shell is busy with a previous command"),
+          retainedBytes: Buffer.byteLength("persistent shell is busy with a previous command"),
+          retainedLines: 1,
+        },
       });
     }
     this.busy = true;
-    const child = this.ensureChild();
-    const sentinel = `__GG_PSH_${randomUUID()}__`;
+
+    let child: ChildProcess;
+    try {
+      child = this.ensureChild();
+    } catch (error) {
+      this.busy = false;
+      const spawnError = error instanceof Error ? error : new Error(String(error));
+      return Promise.resolve({
+        reason: "spawnError",
+        exitCode: null,
+        signal: null,
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+        pid: null,
+        error: spawnError,
+        output: "",
+        outputSnapshot: emptySnapshot(),
+      });
+    }
+
+    const sentinelText = `__GG_PSH_${randomUUID()}__`;
+    const sentinel = Buffer.from(sentinelText, "utf8");
     // `</dev/null` keeps stdin-reading commands (cat, read) from eating the
-    // next sentinel line instead of hanging the session.
-    const wrapped = `{ ${command}\n} </dev/null; echo "${sentinel}$?"\n`;
+    // next sentinel line instead of hanging the session. Merge command stderr
+    // into stdout so the sentinel is ordered after every command output byte.
+    const wrapped = `{ ${command}\n} </dev/null 2>&1; echo "${sentinelText}$?"\n`;
 
     return new Promise<PersistentRunResult>((resolve) => {
-      let out = "";
-      let capped = false;
-      let done = false;
-
-      const finish = (result: PersistentRunResult): void => {
-        if (done) return;
-        done = true;
-        child.stdout?.off("data", onData);
-        child.stderr?.off("data", onData);
-        child.off("exit", onExit);
-        child.off("error", onError);
-        clearTimeout(timer);
-        signal.removeEventListener("abort", onAbort);
-        this.busy = false;
-        resolve(result);
+      const outputTail = new BoundedOutputTail(BOUNDED_OUTPUT_MAX_LINES, this.maxOutputBytes);
+      const stdoutState: PersistentOutputStreamState = {
+        source: "stdout",
+        decoder: new OutputChunkDecoder(),
+        binary: false,
+        binaryBytes: 0,
+        reportedBinaryBytes: 0,
       };
+      const stderrState: PersistentOutputStreamState = {
+        source: "stderr",
+        decoder: new OutputChunkDecoder(),
+        binary: false,
+        binaryBytes: 0,
+        reportedBinaryBytes: 0,
+      };
+      let totalBytes = 0;
+      let stdoutPending: Buffer = Buffer.alloc(0);
+      let sentinelSuffix = "";
+      let sentinelFound = false;
+      let done = false;
+      let logBackpressured = false;
 
-      // When output is capped we stop growing `out` but MUST keep scanning for
-      // the sentinel — otherwise an over-cap command hangs until timeout and
-      // needlessly destroys the session. `scanTail` keeps a small rolling
-      // window across chunk boundaries so a split sentinel is still found.
-      let scanTail = "";
-      const checkSentinel = (scan: string, fromCapped: boolean): void => {
-        const idx = scan.indexOf(sentinel);
-        if (idx === -1) return;
-        const code = parseInt(scan.slice(idx + sentinel.length), 10);
-        const body = fromCapped ? out : scan.slice(0, idx);
-        finish({
-          exitCode: Number.isNaN(code) ? 1 : code,
-          output:
-            body.replace(/\n$/, "") +
-            (fromCapped ? `\n[Output capped at ${this.maxOutputBytes} bytes]` : ""),
+      const writeForegroundLog = (source: PersistentOutputSource, text: string): void => {
+        if (
+          !foregroundLog ||
+          foregroundLog.write(`[${source}] ${text}`) ||
+          logBackpressured ||
+          done
+        ) {
+          return;
+        }
+        logBackpressured = true;
+        child.stdout?.pause();
+        child.stderr?.pause();
+        void foregroundLog.waitForDrain().then(() => {
+          if (!logBackpressured) return;
+          logBackpressured = false;
+          if (done) return;
+          child.stdout?.resume();
+          child.stderr?.resume();
         });
       };
 
-      const onData = (d: Buffer): void => {
-        const text = d.toString("utf-8");
-        if (capped) {
-          scanTail = (scanTail + text).slice(-(sentinel.length + 16));
-          checkSentinel(scanTail, true);
+      const emitText = (source: PersistentOutputSource, text: string): void => {
+        if (!text) return;
+        outputTail.append(text);
+        writeForegroundLog(source, text);
+        onChunk?.(text, totalBytes);
+      };
+
+      const emitBinarySummary = (state: PersistentOutputStreamState): void => {
+        if (state.binaryBytes === state.reportedBinaryBytes) return;
+        const marker = `[${state.source} binary output omitted: ${state.binaryBytes} bytes]\n`;
+        state.reportedBinaryBytes = state.binaryBytes;
+        outputTail.append(marker);
+        writeForegroundLog(state.source, marker);
+        onChunk?.(marker, totalBytes);
+      };
+
+      const decodeOutput = (state: PersistentOutputStreamState, data: Buffer): void => {
+        if (data.length === 0) return;
+        if (state.binary) {
+          state.binaryBytes += data.length;
           return;
         }
-        out += text;
-        if (out.length > this.maxOutputBytes) {
-          capped = true;
-          scanTail = out.slice(-(sentinel.length + 16));
-          out = out.slice(0, this.maxOutputBytes);
+        const decoded = state.decoder.write(data);
+        if (decoded.binary) {
+          state.binary = true;
+          state.binaryBytes += decoded.unsafeBytes;
+          emitBinarySummary(state);
+          return;
         }
-        onChunk?.(text);
-        checkSentinel(capped ? scanTail : out, capped);
+        emitText(state.source, decoded.text);
       };
 
-      const timer = setTimeout(() => {
-        this.kill();
-        finish({ exitCode: "TIMEOUT", output: out });
-      }, timeoutMs);
-
-      const onAbort = (): void => {
-        this.kill();
-        finish({ exitCode: 1, output: out });
+      const flushDecoder = (state: PersistentOutputStreamState): void => {
+        if (state.binary) {
+          emitBinarySummary(state);
+          return;
+        }
+        const decoded = state.decoder.end();
+        if (decoded.binary) {
+          state.binary = true;
+          state.binaryBytes += decoded.unsafeBytes;
+          emitBinarySummary(state);
+          return;
+        }
+        emitText(state.source, decoded.text);
       };
-      signal.addEventListener("abort", onAbort, { once: true });
+
+      const finish = (
+        reason: ForegroundExecutionReason,
+        exitCode: number | null,
+        closeSignal: NodeJS.Signals | null,
+        error: Error | null = null,
+      ): void => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+        child.stdout?.off("data", onStdoutData);
+        child.stderr?.off("data", onStderrData);
+        child.off("exit", onExit);
+        child.off("error", onError);
+        if (!sentinelFound && stdoutPending.length > 0) {
+          totalBytes += stdoutPending.length;
+          decodeOutput(stdoutState, stdoutPending);
+          stdoutPending = Buffer.alloc(0);
+        }
+        flushDecoder(stdoutState);
+        flushDecoder(stderrState);
+        if (logBackpressured) {
+          logBackpressured = false;
+          child.stdout?.resume();
+          child.stderr?.resume();
+        }
+        this.busy = false;
+        const outputSnapshot = outputTail.snapshot();
+        resolve({
+          reason,
+          exitCode,
+          signal: closeSignal,
+          elapsedMs: Math.max(0, Date.now() - startedAt),
+          pid: child.pid ?? null,
+          error,
+          output: outputSnapshot.content,
+          outputSnapshot,
+        });
+      };
+
+      const maybeFinishSentinel = (): void => {
+        const newline = sentinelSuffix.indexOf("\n");
+        if (newline === -1) return;
+        const code = Number.parseInt(sentinelSuffix.slice(0, newline).trim(), 10);
+        const exitCode = Number.isNaN(code) ? 1 : code;
+        finish(exitCode === 0 ? "completed" : "nonZeroExit", exitCode, null);
+      };
+
+      const onStdoutData = (data: Buffer): void => {
+        if (sentinelFound) {
+          sentinelSuffix += data.toString("utf8");
+          maybeFinishSentinel();
+          return;
+        }
+
+        const candidate = stdoutPending.length === 0 ? data : Buffer.concat([stdoutPending, data]);
+        const sentinelIndex = candidate.indexOf(sentinel);
+        if (sentinelIndex !== -1) {
+          const commandOutput = candidate.subarray(0, sentinelIndex);
+          totalBytes += commandOutput.length;
+          decodeOutput(stdoutState, commandOutput);
+          stdoutPending = Buffer.alloc(0);
+          sentinelFound = true;
+          sentinelSuffix = candidate.subarray(sentinelIndex + sentinel.length).toString("utf8");
+          maybeFinishSentinel();
+          return;
+        }
+
+        const retainedPrefixBytes = longestSentinelPrefix(candidate, sentinel);
+        const emitThrough = candidate.length - retainedPrefixBytes;
+        const commandOutput = candidate.subarray(0, emitThrough);
+        totalBytes += commandOutput.length;
+        decodeOutput(stdoutState, commandOutput);
+        stdoutPending = candidate.subarray(emitThrough);
+      };
+
+      const onStderrData = (data: Buffer): void => {
+        totalBytes += data.length;
+        decodeOutput(stderrState, data);
+      };
+
+      const interrupt = (reason: "timedOut" | "aborted"): void => {
+        if (done) return;
+        if (this.child === child) this.child = null;
+        if (child.pid !== undefined) {
+          this.startCleanup({
+            pid: child.pid,
+            isExited: () => child.exitCode !== null || child.signalCode !== null,
+          });
+        }
+        finish(reason, null, child.signalCode);
+      };
+      const onAbort = (): void => interrupt("aborted");
 
       // `exit N` (or a crash) ends the session shell itself — the sentinel
       // never prints, so settle from the shell's own exit code. The next run()
       // starts a fresh session.
-      const onExit = (code: number | null): void => {
-        this.child = null;
-        finish({ exitCode: code ?? 1, output: out.replace(/\n$/, "") });
+      const onExit = (code: number | null, exitSignal: NodeJS.Signals | null): void => {
+        if (this.child === child) this.child = null;
+        if (child.pid !== undefined) {
+          try {
+            this.lifecycle.reapProcessWrapper({
+              pid: child.pid,
+              isExited: () => child.exitCode !== null || child.signalCode !== null,
+            });
+          } catch {
+            // The shell exit result remains authoritative if wrapper reaping fails.
+          }
+        }
+        const exitCode = code ?? (exitSignal ? null : 1);
+        finish(
+          exitCode === 0 ? "completed" : "nonZeroExit",
+          exitCode,
+          exitSignal ?? child.signalCode,
+        );
       };
+      const onError = (error: Error): void => {
+        if (this.child === child) this.child = null;
+        finish("spawnError", null, child.signalCode, error);
+      };
+
+      const timer = setTimeout(() => interrupt("timedOut"), timeoutMs);
+
       child.on("exit", onExit);
-
-      const onError = (): void => finish({ exitCode: 1, output: "failed to spawn session bash" });
       child.on("error", onError);
-
-      child.stdout?.on("data", onData);
-      child.stderr?.on("data", onData);
-      child.stdin?.write(wrapped);
+      child.stdout?.on("data", onStdoutData);
+      child.stderr?.on("data", onStderrData);
+      signal.addEventListener("abort", onAbort, { once: true });
+      if (signal.aborted) onAbort();
+      if (!done) {
+        try {
+          child.stdin?.write(wrapped);
+        } catch (error) {
+          onError(error instanceof Error ? error : new Error(String(error)));
+        }
+      }
     });
   }
 
-  /** Kill the session shell; the next run() starts a fresh one. */
+  /** Gracefully kill the session shell; the next run() starts a fresh one. */
   kill(): void {
-    if (this.child?.pid) killProcessTree(this.child.pid);
+    const childToKill = this.takeChild();
+    if (childToKill?.pid !== undefined) {
+      this.startCleanup({
+        pid: childToKill.pid,
+        isExited: () => childToKill.exitCode !== null || childToKill.signalCode !== null,
+      });
+    }
+  }
+
+  /** Immediately kill the session tree from synchronous process-exit hooks. */
+  killNow(): void {
+    const childToKill = this.takeChild();
+    if (childToKill?.pid === undefined) return;
+    try {
+      this.lifecycle.killProcessTree({
+        pid: childToKill.pid,
+        isExited: () => childToKill.exitCode !== null || childToKill.signalCode !== null,
+      });
+    } catch (error) {
+      log("WARN", "bash", "Immediate persistent process-tree cleanup failed", {
+        pid: String(childToKill.pid),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private takeChild(): ChildProcess | null {
+    const childToKill = this.child;
     this.child = null;
     this.busy = false;
+    return childToKill;
   }
 }
