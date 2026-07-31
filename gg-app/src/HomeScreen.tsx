@@ -22,6 +22,13 @@ import {
 import { RankBadge } from "./RankBadge";
 import { ScorecardModal } from "./ScorecardModal";
 import { useAppUpdate } from "./update";
+import { ConfirmModal } from "./ConfirmModal";
+import {
+  LOCAL_UPDATE_CONFIRMATION_CONFIRM_LABEL,
+  LOCAL_UPDATE_CONFIRMATION_MESSAGE,
+  LOCAL_UPDATE_CONFIRMATION_TITLE,
+  shouldConfirmLocalUpdate,
+} from "./local-update-confirmation";
 import { toast } from "./toast";
 
 interface Props {
@@ -59,6 +66,7 @@ export function HomeScreen({
   const [telegramConfigured, setTelegramConfigured] = useState(false);
   const [serveBusy, setServeBusy] = useState(false);
   const [version, setVersion] = useState<string | null>(null);
+  const [showLocalUpdateConfirm, setShowLocalUpdateConfirm] = useState(false);
   const [progress, setProgress] = useState<ProgressSnapshot | null>(null);
   const [showScorecard, setShowScorecard] = useState(false);
   const appUpdate = useAppUpdate();
@@ -165,10 +173,16 @@ export function HomeScreen({
         <button
           className={`home-update${appUpdate.phase === "installing" ? " home-update-progress" : ""}`}
           disabled={appUpdate.phase === "installing"}
-          title={`Update to ${appUpdate.version} — installs and restarts the app`}
-          onClick={() => void appUpdate.install()}
+          title={appUpdate.installTitle}
+          onClick={() => {
+            if (shouldConfirmLocalUpdate(appUpdate.localPatched, appUpdate.phase)) {
+              setShowLocalUpdateConfirm(true);
+            } else {
+              void appUpdate.install();
+            }
+          }}
         >
-          {appUpdate.phase === "installing" && (
+          {appUpdate.phase === "installing" && !appUpdate.localPatched && (
             <span className="home-update-fill" style={{ width: `${appUpdate.progress ?? 0}%` }} />
           )}
           <Download size={14} strokeWidth={2.25} aria-hidden="true" />
@@ -178,11 +192,15 @@ export function HomeScreen({
               percentage climbs. */}
           <span className="home-update-swap">
             <span className={appUpdate.phase === "installing" ? "home-update-hidden" : undefined}>
-              {`Update to ${appUpdate.version}`}
+              {appUpdate.installLabel}
             </span>
             <span className={appUpdate.phase === "installing" ? undefined : "home-update-hidden"}>
-              {"Installing\u2026"}
-              <span className="home-update-pct">{`${appUpdate.progress ?? 0}%`}</span>
+              {appUpdate.localPatched
+                ? (appUpdate.statusMessage ?? appUpdate.installLabel)
+                : "Installing\u2026"}
+              {!appUpdate.localPatched && (
+                <span className="home-update-pct">{`${appUpdate.progress ?? 0}%`}</span>
+              )}
             </span>
           </span>
         </button>
@@ -205,6 +223,18 @@ export function HomeScreen({
             </button>
           </div>
         )
+      )}
+      {showLocalUpdateConfirm && (
+        <ConfirmModal
+          title={LOCAL_UPDATE_CONFIRMATION_TITLE}
+          message={LOCAL_UPDATE_CONFIRMATION_MESSAGE}
+          confirmLabel={LOCAL_UPDATE_CONFIRMATION_CONFIRM_LABEL}
+          onConfirm={() => {
+            setShowLocalUpdateConfirm(false);
+            void appUpdate.install();
+          }}
+          onClose={() => setShowLocalUpdateConfirm(false)}
+        />
       )}
       <AsciiLogo />
       <div className="home-tagline">Cause the other coding agents piss me off</div>

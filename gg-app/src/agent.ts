@@ -85,6 +85,28 @@ export type {
   PhaseCompletionUnmetGateCode,
 } from "./phase-completion-events";
 
+export interface LocalPatchedUpdateEvent {
+  type: "started" | "line" | "completed" | "error";
+  message?: string;
+  line?: string;
+  stream?: "stdout" | "stderr";
+  exitCode?: number | null;
+  installerPath?: string | null;
+  opened?: "installer" | "folder" | "none";
+}
+
+export async function startLocalPatchedUpdate(repoRoot: string): Promise<void> {
+  await invoke("app_local_patched_update_start", { repoRoot });
+}
+
+export async function listenLocalPatchedUpdate(
+  onEvent: (event: LocalPatchedUpdateEvent) => void,
+): Promise<() => void> {
+  return appWindow.listen<LocalPatchedUpdateEvent>("local-patched-update", (event) => {
+    onEvent(event.payload);
+  });
+}
+
 /** Subscribe this window to a secret-free model-catalog invalidation. */
 export async function onModelsChanged(onChange: () => void): Promise<() => void> {
   return appWindow.listen("agent-models-changed", () => onChange());

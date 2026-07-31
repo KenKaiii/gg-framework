@@ -99,6 +99,12 @@ import { FooterSkeleton, TranscriptSkeleton, Skeleton } from "./Skeleton";
 import { useAppUpdate } from "./update";
 import { formatBuildIdentity } from "./build-info";
 import { MENTOR_DISPLAY_NAME, MENTOR_HANDLE, PRODUCT_DISPLAY_NAME } from "./brand";
+import {
+  LOCAL_UPDATE_CONFIRMATION_CONFIRM_LABEL,
+  LOCAL_UPDATE_CONFIRMATION_MESSAGE,
+  LOCAL_UPDATE_CONFIRMATION_TITLE,
+  shouldConfirmLocalUpdate,
+} from "./local-update-confirmation";
 import { recoverPromptLabel } from "./prompt-labels";
 import { playSound } from "./sounds";
 import { segmentDoneMarkers, hasDoneMarker, countPlanSteps } from "./plan-steps";
@@ -630,6 +636,7 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
   const [hydrateNonce, setHydrateNonce] = useState(0);
   // New-session confirmation modal + in-flight guard.
   const [confirmNewSession, setConfirmNewSession] = useState(false);
+  const [showLocalUpdateConfirm, setShowLocalUpdateConfirm] = useState(false);
   // Hide/show the nav button row (the bar + centered title always stay).
   // Persisted across reloads.
   const [navHidden, setNavHidden] = useState(() => {
@@ -3075,18 +3082,23 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
       {appUpdate.phase === "available" && (
         <button
           className="update-banner"
-          title={`Update to ${appUpdate.version} — installs and restarts the app`}
-          onClick={() => void appUpdate.install()}
+          title={appUpdate.installTitle}
+          onClick={() => {
+            if (shouldConfirmLocalUpdate(appUpdate.localPatched, appUpdate.phase)) {
+              setShowLocalUpdateConfirm(true);
+            } else {
+              void appUpdate.install();
+            }
+          }}
         >
           <span className="update-banner-dot" />
-          {`${MENTOR_DISPLAY_NAME} just updated ${PRODUCT_DISPLAY_NAME}!`}
-          <Badge>Install</Badge>
+          {appUpdate.localPatched
+            ? `${appUpdate.installLabel} — click to review the protected source update`
+            : `${MENTOR_DISPLAY_NAME} just updated ${PRODUCT_DISPLAY_NAME}!`}
+          {!appUpdate.localPatched && <Badge>Install</Badge>}
         </button>
       )}
-      {appUpdate.phase === "installing" && (
-        // Same .update-banner box (padding/font) as the available state, so
-        // banner → progress bar swaps content with zero layout shift. The fill
-        // is absolutely positioned; only the centered percentage is in flow.
+      {appUpdate.phase === "installing" && !appUpdate.localPatched && (
         <div
           className="update-banner update-banner-busy update-banner-progress"
           role="progressbar"
@@ -3099,6 +3111,12 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
           <span className="update-banner-pct">{`${appUpdate.progress ?? 0}%`}</span>
         </div>
       )}
+      {appUpdate.localPatched && ["installing", "completed", "error"].includes(appUpdate.phase) && (
+        <div className="update-banner update-banner-busy" title={appUpdate.installTitle}>
+          <span className="update-banner-dot" />
+          {appUpdate.statusMessage ?? appUpdate.installLabel}
+        </div>
+      )}
 
       {workspaceMode === "code" && showInitGit && (
         <InitGitModal
@@ -3108,6 +3126,19 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
             setShowInitGit(false);
             submitText(prompt, "Initializing Git\u2026");
           }}
+        />
+      )}
+
+      {props.focused !== false && showLocalUpdateConfirm && (
+        <ConfirmModal
+          title={LOCAL_UPDATE_CONFIRMATION_TITLE}
+          message={LOCAL_UPDATE_CONFIRMATION_MESSAGE}
+          confirmLabel={LOCAL_UPDATE_CONFIRMATION_CONFIRM_LABEL}
+          onConfirm={() => {
+            setShowLocalUpdateConfirm(false);
+            void appUpdate.install();
+          }}
+          onClose={() => setShowLocalUpdateConfirm(false)}
         />
       )}
 
