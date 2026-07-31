@@ -11,6 +11,7 @@ const SettingsSchema = z.object({
     .enum([
       "anthropic",
       "openai",
+      "azure",
       "gemini",
       "glm",
       "moonshot",

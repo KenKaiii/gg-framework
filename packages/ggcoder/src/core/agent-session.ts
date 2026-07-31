@@ -63,8 +63,10 @@ import {
   getAuthStorageKeys,
   getContextWindow,
   getModel,
+  getModelDisplayId,
   getToolResultCharLimit,
   MODELS,
+  resolveTransportModel,
 } from "./model-registry.js";
 import { discoverSkills, type Skill } from "./skills.js";
 import { ensureAppDirs } from "../config.js";
@@ -1676,7 +1678,7 @@ export class AgentSession {
       const effectiveBaseUrl = this.baseUrl ?? creds.baseUrl;
       const generator = agentLoop(loopMessages, {
         provider: this.provider,
-        model: this.model,
+        model: resolveTransportModel(this.provider, this.model),
         tools: options.disableTools ? [] : this.tools,
         webSearch: !options.disableTools,
         maxTokens: this.maxTokens,
@@ -2193,6 +2195,7 @@ export class AgentSession {
       compact(this.messages, {
         provider: this.provider,
         model: this.model,
+        transportModel: resolveTransportModel(this.provider, this.model),
         apiKey: creds.accessToken,
         accountId: creds.accountId,
         projectId: creds.projectId,
@@ -2967,7 +2970,7 @@ export class AgentSession {
     }
     return enhancePrompt({
       provider: this.provider,
-      model: this.model,
+      model: resolveTransportModel(this.provider, this.model),
       prompt: text,
       stack,
       apiKey: creds.accessToken,
@@ -3256,10 +3259,11 @@ export class AgentSession {
         );
       },
       getModelList: () => {
-        const current = `Current: ${this.provider}:${this.model}\n\nAvailable models:\n`;
-        const list = MODELS.map((m) => `  ${m.provider}:${m.id} — ${m.name} (${m.costTier})`).join(
-          "\n",
-        );
+        const current = `Current: ${this.provider}:${getModelDisplayId(this.model)}\n\nAvailable models:\n`;
+        const list = MODELS.map(
+          (model) =>
+            `  ${model.provider}:${getModelDisplayId(model.id)} — ${model.name} (${model.costTier})`,
+        ).join("\n");
         return current + list;
       },
       quit: () => {

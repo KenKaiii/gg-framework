@@ -2,17 +2,12 @@ import os from "node:os";
 import * as zstd from "@bokuweb/zstd-wasm";
 import type {
   ContentPart,
-  ImageContent,
-  Message,
   StreamEvent,
   StreamOptions,
   StreamResponse,
-  Tool,
   ToolCall,
-  ToolChoice,
 } from "../types.js";
 import {
-  GGAIError,
   ProviderError,
   isRawHtmlErrorEcho,
   providerHtmlErrorMessage,
@@ -20,16 +15,20 @@ import {
 } from "../errors.js";
 import { StreamResult } from "../utils/event-stream.js";
 import { providerDiag } from "../utils/diag.js";
-import { resolveToolSchema } from "../utils/zod-to-json-schema.js";
 import { normalizePromptCacheKey } from "./prompt-cache-key.js";
-import {
-  downgradeUnsupportedImages,
-  downgradeUnsupportedVideos,
-  toolResultText,
-} from "./transform.js";
+import { downgradeUnsupportedImages, downgradeUnsupportedVideos } from "./transform.js";
 import { parseToolArguments } from "../utils/json.js";
-import { readSseStream } from "../utils/sse.js";
 import { extractRequestIdFromMessage } from "../utils/request-id.js";
+import {
+  parseEncryptedReasoningPart,
+  parseResponsesSse,
+  serializeEncryptedReasoningItem,
+  serializeResponsesInput,
+  serializeResponsesToolChoice,
+  serializeResponsesTools,
+  type ResponsesInputAdapter,
+  type ResponsesUsagePayload,
+} from "./openai-responses-core.js";
 
 const DEFAULT_BASE_URL = "https://chatgpt.com/backend-api";
 const CODEX_CLIENT_VERSION = "0.144.1";
@@ -105,22 +104,6 @@ function isVisibleOutputItem(itemType: string | undefined): boolean {
   return itemType === "message";
 }
 
-function toCodexToolChoice(choice: ToolChoice | undefined, tools: Tool[] | undefined): string {
-  const resolved = choice ?? "auto";
-  if (typeof resolved === "object") {
-    throw new GGAIError(
-      `OpenAI Codex does not support selecting the named tool \`${resolved.name}\`; use auto, none, or required.`,
-      { source: "capability" },
-    );
-  }
-  if (resolved === "required" && !tools?.length) {
-    throw new GGAIError("OpenAI Codex cannot require a tool call when no tools are configured.", {
-      source: "capability",
-    });
-  }
-  return resolved;
-}
-
 export function streamOpenAICodex(options: StreamOptions): StreamResult {
   return new StreamResult(runStream(options), options.signal);
 }
@@ -132,7 +115,10 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   const downgradedImages = downgradeUnsupportedImages(options.messages, options.supportsImages);
   // Codex (GPT OAuth) has no video support — always strip video to a placeholder.
   const downgraded = downgradeUnsupportedVideos(downgradedImages, options.supportsVideo);
-  const { system, input } = toCodexInput(downgraded, { supportsImages: options.supportsImages });
+  const { system, input } = serializeResponsesInput(
+    downgraded,
+    createCodexInputAdapter(options.supportsImages),
+  );
 
   const responsesLite = usesResponsesLite(options.model);
   const body: Record<string, unknown> = {
@@ -141,13 +127,16 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     stream: true,
     instructions: system,
     input,
-    tool_choice: toCodexToolChoice(options.toolChoice, options.tools),
+    tool_choice: serializeResponsesToolChoice(options.toolChoice, options.tools, {
+      transportName: "OpenAI Codex",
+      supportsNamedTool: false,
+    }),
     parallel_tool_calls: !responsesLite,
     include: ["reasoning.encrypted_content"],
   };
 
   if (options.tools?.length) {
-    body.tools = toCodexTools(options.tools);
+    body.tools = serializeResponsesTools(options.tools, { strict: null });
   }
   // Always set a prompt_cache_key. OpenAI uses this key to route requests
   // with the same prefix to the same cache shard — without it, the codex
@@ -283,7 +272,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   const diagStart = Date.now();
   const diagSeen = new Set<string>();
 
-  for await (const event of parseSSE(response.body)) {
+  for await (const event of parseResponsesSse(response.body)) {
     const type = event.type as string | undefined;
     if (!type) continue;
 
@@ -487,13 +476,8 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
           // array). Re-emitting the exact item OpenAI returned is what keeps
           // store:false replay valid — reconstructing a subset risks dropping
           // fields the API echoes back.
-          orderedItems.push({
-            kind: "reasoning",
-            part: {
-              type: "raw",
-              data: { ...item, summary: Array.isArray(item.summary) ? item.summary : [] },
-            },
-          });
+          const part = parseEncryptedReasoningPart(item);
+          if (part) orderedItems.push({ kind: "reasoning", part });
         }
       }
       if (item?.type === "function_call") {
@@ -517,11 +501,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     // Response completed
     if (type === "response.completed" || type === "response.done") {
       const resp = event.response as Record<string, unknown> | undefined;
-      const usage = resp?.usage as
-        | (Record<string, number> & {
-            input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
-          })
-        | undefined;
+      const usage = resp?.usage as ResponsesUsagePayload | undefined;
       if (usage) {
         cacheRead = usage.input_tokens_details?.cached_tokens ?? 0;
         cacheWrite = usage.input_tokens_details?.cache_write_tokens ?? 0;
@@ -595,22 +575,6 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   return streamResponse;
 }
 
-// ── SSE Parser ─────────────────────────────────────────────
-
-async function* parseSSE(
-  body: ReadableStream<Uint8Array>,
-): AsyncGenerator<Record<string, unknown>> {
-  for await (const event of readSseStream(body)) {
-    const data = event.data.trim();
-    if (!data || data === "[DONE]") continue;
-    try {
-      yield JSON.parse(data) as Record<string, unknown>;
-    } catch {
-      // skip malformed JSON
-    }
-  }
-}
-
 // ── Message Conversion ─────────────────────────────────────
 
 /**
@@ -636,137 +600,23 @@ function remapCodexId(id: string, idMap: Map<string, string>): string {
   return mapped;
 }
 
-/** A raw content part that holds a Codex encrypted reasoning item for round-trip. */
-function isEncryptedReasoning(
-  data: Record<string, unknown>,
-): data is { type: "reasoning"; id: string; encrypted_content: string; summary?: unknown } {
-  return (
-    data.type === "reasoning" &&
-    typeof data.id === "string" &&
-    typeof data.encrypted_content === "string"
-  );
-}
-
-function toCodexInput(
-  messages: Message[],
-  options?: { supportsImages?: boolean },
-): { system: string | undefined; input: unknown[] } {
-  let system: string | undefined;
-  const input: unknown[] = [];
+function createCodexInputAdapter(supportsImages: boolean | undefined): ResponsesInputAdapter {
   const idMap = new Map<string, string>();
-
-  for (const msg of messages) {
-    if (msg.role === "system") {
-      system = msg.content;
-      continue;
-    }
-
-    if (msg.role === "user") {
-      const content =
-        typeof msg.content === "string"
-          ? [{ type: "input_text", text: msg.content }]
-          : msg.content.map((part) => {
-              if (part.type === "text") return { type: "input_text", text: part.text };
-              return {
-                type: "input_image",
-                detail: "auto",
-                image_url: `data:${part.mediaType};base64,${part.data}`,
-              };
-            });
-      input.push({ role: "user", content });
-      continue;
-    }
-
-    if (msg.role === "assistant") {
-      if (typeof msg.content === "string") {
-        input.push({
-          type: "message",
-          role: "assistant",
-          content: [{ type: "output_text", text: msg.content, annotations: [] }],
-          status: "completed",
-        });
-        continue;
-      }
-
-      for (const part of msg.content) {
-        if (part.type === "raw" && isEncryptedReasoning(part.data)) {
-          // Re-emit the captured reasoning item verbatim in its original
-          // position so it precedes the following function_call (requires
-          // store:false + include reasoning.encrypted_content, both set on the
-          // request).
-          input.push(part.data);
-        } else if (part.type === "text") {
-          input.push({
-            type: "message",
-            role: "assistant",
-            content: [{ type: "output_text", text: part.text, annotations: [] }],
-            status: "completed",
-          });
-        } else if (part.type === "tool_call") {
-          const [callId, itemId] = part.id.includes("|")
-            ? part.id.split("|", 2)
-            : [part.id, part.id];
-          input.push({
-            type: "function_call",
-            id: remapCodexId(itemId, idMap),
-            call_id: remapCodexId(callId, idMap),
-            name: part.name,
-            arguments: JSON.stringify(part.args),
-          });
-        }
-        // thinking parts (and non-reasoning raw parts) are skipped for codex input
-      }
-      continue;
-    }
-
-    if (msg.role === "tool") {
-      const toolImages: ImageContent[] = [];
-      for (const result of msg.content) {
-        const [callId] = result.toolCallId.includes("|")
-          ? result.toolCallId.split("|", 2)
-          : [result.toolCallId];
-        const text = toolResultText(result.content);
-        input.push({
-          type: "function_call_output",
-          call_id: remapCodexId(callId, idMap),
-          output: text.length > 0 ? text : "(see attached image)",
-        });
-        if (options?.supportsImages !== false && Array.isArray(result.content)) {
-          for (const block of result.content) {
-            if (block.type === "image") toolImages.push(block);
-          }
-        }
-      }
-      if (toolImages.length > 0) {
-        input.push({
-          type: "message",
-          role: "user",
-          content: [
-            { type: "input_text", text: "Attached image(s) from tool result:" },
-            ...toolImages.map((img) => ({
-              type: "input_image",
-              detail: "auto",
-              image_url: `data:${img.mediaType};base64,${img.data}`,
-            })),
-          ],
-        });
-      }
-    }
-  }
-
-  return { system, input };
-}
-
-// ── Tool Conversion ────────────────────────────────────────
-
-function toCodexTools(tools: Tool[]): unknown[] {
-  return tools.map((tool) => ({
-    type: "function",
-    name: tool.name,
-    description: tool.description,
-    parameters: resolveToolSchema(tool),
-    strict: null,
-  }));
+  return {
+    encodeToolCallId(id) {
+      const [callId, itemId] = id.includes("|") ? id.split("|", 2) : [id, id];
+      return {
+        callId: remapCodexId(callId, idMap),
+        itemId: remapCodexId(itemId, idMap),
+      };
+    },
+    encodeToolResultId(id) {
+      const [callId] = id.includes("|") ? id.split("|", 2) : [id];
+      return remapCodexId(callId, idMap);
+    },
+    serializeRawAssistantPart: serializeEncryptedReasoningItem,
+    includeToolResultImages: supportsImages !== false,
+  };
 }
 
 // HTTP error bodies may be JSON, useful plain text, or an HTML edge/proxy page.

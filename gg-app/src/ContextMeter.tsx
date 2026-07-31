@@ -12,6 +12,11 @@ function contextColor(pct: number): string {
   return theme.success;
 }
 
+export function getContextPercent(contextTokens: number, contextWindow?: number): number {
+  if (!contextWindow || contextWindow <= 0 || contextTokens <= 0) return 0;
+  return Math.min(100, Math.round((contextTokens / contextWindow) * 100));
+}
+
 export function ContextMeter({ pct }: { pct: number }): React.ReactElement {
   const clamped = Math.max(0, Math.min(100, pct));
   const color = contextColor(clamped);

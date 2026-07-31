@@ -1457,6 +1457,7 @@ async function resolveActiveProvider(
     "anthropic",
     "xiaomi",
     "openai",
+    "azure",
     "gemini",
     "glm",
     "moonshot",

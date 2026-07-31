@@ -6,6 +6,8 @@ export interface ModelInfo {
   id: string;
   name: string;
   provider: Provider;
+  /** Canonical capability identity when the provider routes through a deployment alias. */
+  modelIdentity?: string;
   contextWindow: number;
   /**
    * ChatGPT Codex transport uses product-specific windows that can differ from
@@ -574,6 +576,7 @@ export function getDefaultModel(provider: Provider): ModelInfo {
   if (provider === "openrouter") return MODELS.find((m) => m.id === "qwen/qwen3.6-plus")!;
   if (provider === "sakana") return MODELS.find((m) => m.id === "fugu")!;
   if (provider === "xai") return MODELS.find((m) => m.id === "grok-4.5")!;
+  if (provider === "azure") return MODELS.find((model) => model.provider === "azure")!;
   // Local models only exist once discovery has run, and there's no "the" local
   // model. Never throw here (callers rely on a ModelInfo): fall back to a
   // placeholder that carries the conservative defaults, so a caller asking

@@ -68,6 +68,29 @@ describe("formatError usage limit", () => {
   });
 });
 
+describe("formatError transient reset guidance", () => {
+  it("keeps diagnostics out of display text while exposing reset metadata", () => {
+    const resetsAt = Math.floor(Date.now() / 1000) + 30;
+    const formatted = formatError(
+      new ProviderError("azure", "Temporary capacity failure", {
+        statusCode: 429,
+        requestId: "req_safe-123",
+        resetsAt,
+      }),
+    );
+
+    expect(formatted).toMatchObject({
+      headline: "Azure OpenAI returned an error.",
+      message: "Temporary capacity failure",
+      requestId: "req_safe-123",
+      resetsAt,
+    });
+    expect(formatted.guidance).toContain("The provider says to retry after");
+    expect(formatted.message).not.toContain("req_safe-123");
+    expect(formatted.guidance).not.toContain("req_safe-123");
+  });
+});
+
 describe("formatError Mythos access", () => {
   it("explains invite-only access for a Mythos not_found_error", () => {
     const formatted = formatError(

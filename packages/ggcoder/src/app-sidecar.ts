@@ -18,14 +18,10 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { parseArgs } from "node:util";
-import {
-  environmentSecrets,
-  formatError,
-  redactValue,
-  type ToolResultContent,
-} from "@kenkaiiii/gg-ai";
+import { environmentSecrets, redactValue, type ToolResultContent } from "@kenkaiiii/gg-ai";
 import type { AddressInfo } from "node:net";
 import { runJsonMode } from "./modes/json-mode.js";
+import { formatSidecarError, sidecarSensitiveValues } from "./app-sidecar-error.js";
 import { runSubagentWorkerMode } from "./modes/subagent-worker-mode.js";
 import type { MessageProvenance, Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import { setStreamDiagnostic } from "@kenkaiiii/gg-agent";
@@ -123,9 +119,11 @@ import { getGitBranch, getGitDirtyFileCount, isGitRepo } from "./utils/git.js";
 import { getGitHubOpenCounts, getGitHubRepoSlug } from "./utils/github.js";
 import { extractPlanSteps } from "./utils/plan-steps.js";
 import {
+  clampThinkingLevel,
   getNextThinkingLevel,
   getSupportedThinkingLevels,
   isThinkingLevelSupported,
+  resolveInitialThinkingLevel,
 } from "./core/thinking-level.js";
 import { PROMPT_COMMANDS } from "./core/prompt-commands.js";
 import { loadCustomCommands } from "./core/custom-commands.js";
@@ -170,6 +168,7 @@ import { awardPrompt, awardCommits } from "./core/progress/engine.js";
 import { detectNewCommits, repoKey } from "./core/progress/git-xp.js";
 import { rebuildFromSessions } from "./core/progress/rebuild.js";
 import type { ProgressFile, ProgressSnapshot } from "./core/progress/types.js";
+import { AppSidecarReloadCoordinator } from "./app-sidecar-reload.js";
 import {
   captureSidecarError,
   flushSidecarErrors,
@@ -188,6 +187,7 @@ const ALL_PROVIDERS: Provider[] = [
   // US
   "anthropic",
   "openai",
+  "azure",
   "gemini",
   "xai",
   // China
@@ -848,6 +848,7 @@ async function main(): Promise<void> {
   // request to its window's session via the `x-gg-session` header (and the
   // `?session=` query for the SSE /events stream).
   const sessions = new Map<string, SessionContext>();
+  const reloadCoordinator = new AppSidecarReloadCoordinator();
 
   /**
    * Fan one frame out to every window.
@@ -863,7 +864,6 @@ async function main(): Promise<void> {
   // Providers currently mid-OAuth in some window. Daemon-level so two windows
   // cannot race two browser flows for the same provider into one auth file.
   const oauthInFlightProviders = new Set<string>();
-
   const memoryStore = new MemoryStore({
     onChange: ({ memories }) => {
       for (const ctx of sessions.values()) {
@@ -1063,6 +1063,42 @@ async function main(): Promise<void> {
       }
 
       // ── Daemon-level routes (session lifecycle) ──────────────────────────
+      // Secret-free two-phase reload: reserve while Rust persists native config,
+      // then dispose every session and exit only if no pane has active work.
+      if (method === "POST" && url === "/admin/reload/prepare") {
+        const decision = reloadCoordinator.prepare(sessions.values());
+        daemonJson(
+          res,
+          decision.ok ? 200 : 409,
+          decision.ok ? { ok: true } : { error: decision.reason },
+        );
+        return;
+      }
+      if (method === "POST" && url === "/admin/reload/cancel") {
+        reloadCoordinator.cancel();
+        daemonJson(res, 200, { ok: true });
+        return;
+      }
+      if (method === "POST" && url === "/admin/reload") {
+        const decision = reloadCoordinator.begin(sessions.values());
+        if (!decision.ok) {
+          daemonJson(res, 409, { error: decision.reason });
+          return;
+        }
+        daemonJson(res, 202, { ok: true });
+        setImmediate(() => void shutdown());
+        return;
+      }
+      const releaseMutation = reloadCoordinator.tryAcquireSessionMutation(method);
+      if (!releaseMutation) {
+        daemonJson(res, 409, { error: "configuration refresh in progress" });
+        return;
+      }
+      // Keep the lease through asynchronous body reads and route completion. Both
+      // events may fire; coordinator releases are intentionally idempotent.
+      res.once("finish", releaseMutation);
+      res.once("close", releaseMutation);
+
       // Create a session for a window: { mode?, cwd, sessionPath? } → { sessionId }.
       if (method === "POST" && url === "/session") {
         void daemonReadBody(req, res).then(async (raw) => {
@@ -1093,6 +1129,7 @@ async function main(): Promise<void> {
                 jiwaStore,
                 broadcastAll,
                 oauthInFlightProviders,
+                reloadCoordinator,
               },
               { id, mode, chatAgent, cwd: sessionCwd, sessionPath },
             );
@@ -1183,8 +1220,8 @@ async function main(): Promise<void> {
     stopRadio();
     // Close the ~/.gg progress fs.watch handle (baseline #8 leak fix).
     progress.dispose();
-    await Promise.all([...sessions.values()].map((c) => c.dispose().catch(() => {})));
-    server.close();
+    await Promise.all([...sessions.values()].map((context) => context.dispose().catch(() => {})));
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     process.exit(0);
   }
   process.on("SIGINT", () => void shutdown());
@@ -1417,6 +1454,7 @@ interface SessionContext {
     method: string,
   ) => void;
   dispose: () => Promise<void>;
+  isRunning: () => boolean;
 }
 
 /**
@@ -1435,11 +1473,9 @@ async function createSession(
     jiwaStore: JiwaStore;
     /** Fan one frame out to EVERY window, not just this session's. */
     broadcastAll: (type: string, data: unknown) => void;
-    /**
-     * Providers with an OAuth flow in progress in SOME window. Daemon-wide
-     * because a login writes the shared auth file — see `/auth/oauth/start`.
-     */
+    /** Providers with an OAuth flow in progress in some window. */
     oauthInFlightProviders: Set<string>;
+    reloadCoordinator: AppSidecarReloadCoordinator;
   },
   opts: {
     id: string;
@@ -1449,7 +1485,15 @@ async function createSession(
     sessionPath?: string;
   },
 ): Promise<SessionContext> {
-  const { auth, progress, memoryStore, jiwaStore, broadcastAll, oauthInFlightProviders } = deps;
+  const {
+    auth,
+    progress,
+    memoryStore,
+    jiwaStore,
+    broadcastAll,
+    oauthInFlightProviders,
+    reloadCoordinator,
+  } = deps;
   const paths = deps.paths;
   const mode = opts.mode;
   let chatAgent = opts.chatAgent;
@@ -1487,15 +1531,32 @@ async function createSession(
   }
 
   // Per-project thinking prefs win over the global settings.json fallback.
-  // With no saved level, the default follows the active credential's endpoint:
-  // Kimi K3 on the OAuth coding endpoint starts at its declared default (high),
-  // matching the official kimi-code CLI's plan-usage profile.
+  // Restore the endpoint-aware upstream default, then clamp it against the
+  // resolved deployment identity so an Azure reload cannot retain an invalid level.
   const thinkEnabled = projectPrefs?.thinkingEnabled ?? saved.thinkingEnabled;
-  const thinkingLevel: ThinkingLevel | undefined = thinkEnabled
+  const restoredThinkingLevel: ThinkingLevel | undefined = thinkEnabled
     ? (projectPrefs?.thinkingLevel ??
       saved.thinkingLevel ??
       getDefaultThinkingLevel(model, { baseUrl: auth.getStoredBaseUrl(provider) }))
     : undefined;
+  const thinkingLevel = resolveInitialThinkingLevel(
+    provider,
+    model,
+    thinkEnabled,
+    restoredThinkingLevel,
+  );
+  if (
+    projectPrefs &&
+    projectPrefs.provider === provider &&
+    thinkingLevel !== restoredThinkingLevel
+  ) {
+    await saveProjectModelPrefs(cwd, {
+      provider,
+      model,
+      thinkingEnabled: !!thinkingLevel,
+      thinkingLevel,
+    });
+  }
 
   // ── SSE fan-out (declared before the session so plan callbacks can use it) ─
   const clients = new Set<SseClient>();
@@ -1570,43 +1631,27 @@ async function createSession(
   // Without this the webview only ever saw a raw provider string like
   // `400 {"code":"400",...}` with no "is this me or them / when does it reset"
   // context that the CLI has always given.
+  const sidecarErrorSecrets = sidecarSensitiveValues(process.env);
+
   function broadcastError(
     type: "error" | "ken_error" | "autopilot_error",
     logLabel: string,
     err: unknown,
   ): void {
-    const f = formatError(err);
-    const message = f.message ? desktopGuidance(f.message) : undefined;
-    const guidance = localNetworkGuidance(f.source) ?? desktopGuidance(f.guidance);
+    const formatted = formatSidecarError(err, desktopGuidance, sidecarErrorSecrets);
     captureSidecarError(err, `app-sidecar.${logLabel.replaceAll(" ", "-")}`, {
       scope: type,
-      ...(f.provider ? { provider: f.provider } : {}),
-      ...(f.statusCode != null ? { status: String(f.statusCode) } : {}),
     });
-    log("ERROR", "app-sidecar", logLabel, {
-      headline: f.headline,
-      source: f.source,
-      ...(message ? { message } : {}),
-      ...(f.provider ? { provider: f.provider } : {}),
-      ...(f.statusCode != null ? { statusCode: String(f.statusCode) } : {}),
-      ...(f.requestId ? { requestId: f.requestId } : {}),
-    });
-    broadcast(type, {
-      headline: f.headline,
-      ...(message ? { message } : {}),
-      guidance,
-      ...(f.provider ? { provider: f.provider } : {}),
-      ...(f.statusCode != null ? { statusCode: f.statusCode } : {}),
-      ...(f.resetsAt != null ? { resetsAt: f.resetsAt } : {}),
-    });
+    log("ERROR", "app-sidecar", logLabel, formatted.logFields);
+    broadcast(type, formatted.event);
     // Persist the error row (display-only marker) so a resumed session shows
     // the same headline/message/guidance the live run did. Best-effort.
     void session
       .persistAppMarker("error", {
         scope: type,
-        headline: f.headline,
-        ...(message ? { message } : {}),
-        guidance,
+        headline: formatted.event.headline,
+        ...(formatted.event.message ? { message: formatted.event.message } : {}),
+        guidance: formatted.event.guidance,
       })
       .catch(() => {});
   }
@@ -3959,8 +4004,19 @@ async function createSession(
           json(res, 409, { error: "cannot run a task while the agent is running" });
           return;
         }
+        const releaseOperation = reloadCoordinator.tryAcquireOperationMutation();
+        if (!releaseOperation) {
+          json(res, 409, { error: "configuration refresh in progress" });
+          return;
+        }
         json(res, 202, { accepted: true });
-        void runTasks(id, all);
+        void runTasks(id, all)
+          .catch((error) => {
+            log("ERROR", "app-sidecar", "accepted task continuation failed", {
+              message: error instanceof Error ? error.message : String(error),
+            });
+          })
+          .finally(releaseOperation);
       });
       return;
     }
@@ -4059,9 +4115,8 @@ async function createSession(
         // CLI): keep thinking on at the first supported tier if it was on but
         // the prior level is unsupported here; leave it off if it was off.
         const prevLevel = session.getThinkingLevel();
-        if (prevLevel && !isThinkingLevelSupported(target.provider, target.id, prevLevel)) {
-          session.setThinkingLevel(getNextThinkingLevel(target.provider, target.id, undefined));
-        }
+        const clampedLevel = clampThinkingLevel(target.provider, target.id, prevLevel);
+        if (clampedLevel !== prevLevel) session.setThinkingLevel(clampedLevel);
         // Persist per-project so THIS window/project restores its own model on
         // restart (not the single global slot every window shares). Keep the
         // global write too as a "last used" fallback for never-opened projects
@@ -4224,22 +4279,40 @@ async function createSession(
 
     if (method === "POST" && url === "/thinking") {
       const st = session.getState();
-      const next = getNextThinkingLevel(st.provider, st.model, session.getThinkingLevel());
+      const previous = session.getThinkingLevel();
+      const next = getNextThinkingLevel(st.provider, st.model, previous);
+      const releaseOperation = reloadCoordinator.tryAcquireOperationMutation();
+      if (!releaseOperation) {
+        json(res, 409, { error: "configuration refresh in progress" });
+        return;
+      }
       session.setThinkingLevel(next);
-      // Persist per-project so THIS window restores its thinking state on
-      // restart; keep the global write as a fallback (mirrors the CLI).
-      void saveProjectModelPrefs(cwd, {
-        provider: st.provider,
-        model: st.model,
-        thinkingEnabled: !!next,
-        thinkingLevel: next ?? undefined,
-      }).then(() => persistThinkingLevel(paths.settingsFile, next));
-      const payload = {
-        thinkingLevel: next ?? null,
-        supportedThinkingLevels: getSupportedThinkingLevels(st.provider, st.model),
-      };
-      broadcast("thinking_change", payload);
-      json(res, 200, payload);
+      // Report completion only after both project and global preferences persist.
+      void (async () => {
+        try {
+          await saveProjectModelPrefs(cwd, {
+            provider: st.provider,
+            model: st.model,
+            thinkingEnabled: !!next,
+            thinkingLevel: next ?? undefined,
+          });
+          await persistThinkingLevel(paths.settingsFile, next);
+          const payload = {
+            thinkingLevel: next ?? null,
+            supportedThinkingLevels: getSupportedThinkingLevels(st.provider, st.model),
+          };
+          broadcast("thinking_change", payload);
+          json(res, 200, payload);
+        } catch (error) {
+          session.setThinkingLevel(previous);
+          log("ERROR", "app-sidecar", "thinking preference persistence failed", {
+            message: error instanceof Error ? error.message : String(error),
+          });
+          json(res, 500, { error: "thinking preference persistence failed" });
+        } finally {
+          releaseOperation();
+        }
+      })();
       return;
     }
 
@@ -4986,6 +5059,7 @@ async function createSession(
     broadcast,
     handle,
     dispose,
+    isRunning: () => running || autopilotActive || runLifecycle.running,
   };
 }
 

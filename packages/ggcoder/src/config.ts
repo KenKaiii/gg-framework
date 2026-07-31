@@ -17,6 +17,7 @@ export type { AppPaths };
 export async function ensureAppDirs(): Promise<AppPaths> {
   const paths = getAppPaths();
   await fs.mkdir(paths.agentDir, { recursive: true, mode: 0o700 });
+  await fs.mkdir(path.join(paths.agentDir, "commands"), { recursive: true, mode: 0o700 });
   await fs.mkdir(paths.sessionsDir, { recursive: true, mode: 0o700 });
   await fs.mkdir(paths.skillsDir, { recursive: true, mode: 0o700 });
   await fs.mkdir(paths.extensionsDir, { recursive: true, mode: 0o700 });
@@ -54,6 +55,7 @@ const VALID_PROVIDERS = new Set<Provider>([
   "anthropic",
   "xiaomi",
   "openai",
+  "azure",
   "gemini",
   "glm",
   "moonshot",
@@ -131,7 +133,14 @@ export function loadSavedSettings(settingsFilePath?: string): SavedSettings {
   return result;
 }
 
-const VALID_THINKING_LEVELS = new Set<ThinkingLevel>(["low", "medium", "high", "xhigh", "max"]);
+const VALID_THINKING_LEVELS = new Set<ThinkingLevel>([
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+]);
 
 function isValidThinkingLevel(value: unknown): value is ThinkingLevel {
   return typeof value === "string" && VALID_THINKING_LEVELS.has(value as ThinkingLevel);

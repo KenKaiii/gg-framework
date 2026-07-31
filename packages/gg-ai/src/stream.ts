@@ -2,6 +2,7 @@ import type { Message, StreamOptions } from "./types.js";
 import { GGAIError, VideoUnsupportedError } from "./errors.js";
 import type { StreamResult } from "./utils/event-stream.js";
 import { streamAnthropic } from "./providers/anthropic.js";
+import { streamAzureOpenAIResponses } from "./providers/azure-openai-responses.js";
 import { streamOpenAI } from "./providers/openai.js";
 import { streamOpenAICodex } from "./providers/openai-codex.js";
 import { streamGemini } from "./providers/gemini.js";
@@ -41,6 +42,10 @@ providerRegistry.register("openai", {
     }
     return streamOpenAI(options);
   },
+});
+
+providerRegistry.register("azure", {
+  stream: (options) => streamAzureOpenAIResponses(options),
 });
 
 providerRegistry.register("gemini", {

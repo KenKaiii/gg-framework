@@ -1281,6 +1281,174 @@ body {
   align-items: center;
   margin-top: 14px;
 }
+/* Azure connection management stays inside Settings so users can review the
+   non-secret connection metadata beside the rest of the app preferences. */
+.settings-modal {
+  width: min(560px, 92vw);
+  max-height: min(760px, 92vh);
+  overflow-y: auto;
+}
+.azure-settings {
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+}
+.azure-settings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.azure-settings-title {
+  margin: 0 0 6px;
+}
+.azure-settings-description {
+  max-width: 410px;
+  margin: 0;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+.azure-settings-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 54px;
+  margin-top: 14px;
+  font-size: 13px;
+}
+.azure-settings-form {
+  display: grid;
+  margin-top: 18px;
+}
+.azure-field-label {
+  margin: 16px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.azure-field-label:first-child {
+  margin-top: 0;
+}
+.azure-key-hint {
+  margin-top: 6px;
+  word-break: normal;
+}
+.azure-general-error {
+  line-height: 1.5;
+}
+.azure-settings-summary {
+  margin-top: 16px;
+}
+.azure-settings-summary dl {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--border);
+}
+.azure-settings-summary dl > div {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.32fr) minmax(0, 1fr);
+  gap: 16px;
+  padding: 10px 12px;
+  background: var(--surface-1);
+}
+.azure-settings-summary dt {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.azure-settings-summary dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.azure-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.azure-settings .modal-btn {
+  min-height: 40px;
+}
+.azure-remove-btn {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 45%, transparent);
+}
+.azure-remove-btn:hover:not(:disabled) {
+  color: #ffd6d4;
+  border-color: var(--error);
+}
+.azure-confirm {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--error) 55%, var(--border));
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--error) 8%, var(--surface-1));
+}
+.azure-confirm h4,
+.azure-confirm p {
+  margin: 0;
+}
+.azure-confirm h4 {
+  color: var(--text);
+  font-size: 13px;
+}
+.azure-confirm p {
+  margin-top: 7px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.azure-live-status {
+  min-height: 18px;
+  margin: 12px 0 0;
+  font-size: 12px;
+}
+.settings-modal button:focus-visible,
+.settings-modal input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+@media (max-width: 560px) {
+  .settings-modal {
+    width: 96vw;
+    max-height: 94vh;
+    padding: 16px;
+  }
+  .azure-settings-heading,
+  .azure-settings-state,
+  .modal-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .azure-settings-heading .badge {
+    align-self: flex-start;
+  }
+  .azure-settings-summary dl > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .azure-settings-actions .modal-btn {
+    flex: 1 1 100%;
+    width: 100%;
+    min-height: 44px;
+  }
+}
+@media (forced-colors: active) {
+  .azure-confirm,
+  .azure-remove-btn,
+  .azure-settings-summary dl {
+    border-color: CanvasText;
+  }
+}
+
 .modal-row .modal-input {
   flex: 1 1 auto;
   /* Allow the input to shrink below its content/attribute width so a long path

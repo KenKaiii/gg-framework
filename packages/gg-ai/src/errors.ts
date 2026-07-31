@@ -130,6 +130,7 @@ export class ProviderError extends GGAIError {
  */
 const PROVIDER_DISPLAY: Record<string, string> = {
   openai: "OpenAI",
+  azure: "Azure OpenAI",
   anthropic: "Anthropic",
   gemini: "Gemini",
   glm: "Z.AI (GLM)",
@@ -308,6 +309,11 @@ export function formatError(err: unknown): FormattedError {
         guidance: "Try again once it's back. Your conversation is preserved.",
       };
     }
+    const baseGuidance = err.hint ?? providerGuidance(err.provider, cleanMessage, err.statusCode);
+    const retryGuidance =
+      err.resetsAt && err.resetsAt * 1000 > Date.now()
+        ? ` The provider says to retry after ${formatResetTime(err.resetsAt)}.`
+        : "";
     return {
       headline: `${name} returned an error.`,
       source: "provider",
@@ -315,7 +321,8 @@ export function formatError(err: unknown): FormattedError {
       provider: err.provider,
       statusCode: err.statusCode,
       requestId: err.requestId,
-      guidance: err.hint ?? providerGuidance(err.provider, cleanMessage, err.statusCode),
+      ...(err.resetsAt ? { resetsAt: err.resetsAt } : {}),
+      guidance: `${baseGuidance}${retryGuidance}`,
     };
   }
 

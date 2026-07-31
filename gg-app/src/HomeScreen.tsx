@@ -291,6 +291,7 @@ export function HomeScreen({
             setFolderSet(true);
             toast("Project folder saved.", "success");
           }}
+          onAzureConnectionChanged={() => void refresh().catch(() => {})}
         />
       )}
       {showTelegram && (

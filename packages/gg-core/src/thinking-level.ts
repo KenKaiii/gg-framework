@@ -46,8 +46,16 @@ const MOONSHOT_K3_THINKING_LEVELS: readonly ThinkingLevel[] = ["low", "high", "m
  */
 const LOCAL_THINKING_LEVELS: readonly ThinkingLevel[] = ["low", "medium", "high", "max"];
 
+function resolvedModelIdentity(model: string): string {
+  return getModel(model)?.modelIdentity ?? model;
+}
+
 function isOpenAIGptModel(provider: Provider, model: string): boolean {
-  return provider === "openai" && model.startsWith("gpt-");
+  const identity = resolvedModelIdentity(model);
+  return (
+    (provider === "openai" && identity.startsWith("gpt-")) ||
+    (provider === "azure" && identity === "gpt-5.6-sol")
+  );
 }
 
 function isSakanaModel(provider: Provider): boolean {
@@ -77,6 +85,9 @@ export function getSupportedThinkingLevels(
   provider: Provider,
   model: string,
 ): readonly ThinkingLevel[] {
+  const modelInfo = getModel(model);
+  if (modelInfo && !modelInfo.supportsThinking) return [];
+
   // Local models: reasoning support is per-model and probed, not assumed. A
   // non-reasoning local model must never be sent a reasoning_effort — Ollama
   // hard-400s (`"llama3.2" does not support thinking`) — so it offers no levels
@@ -118,7 +129,8 @@ export function getSupportedThinkingLevels(
 
   if (!isOpenAIGptModel(provider, model)) return [maxLevel];
 
-  const levels = model.startsWith("gpt-5.6-")
+  const identity = resolvedModelIdentity(model);
+  const levels = identity.startsWith("gpt-5.6-")
     ? OPENAI_GPT_56_THINKING_LEVELS
     : OPENAI_GPT_THINKING_LEVELS;
   const maxIndex = levels.indexOf(maxLevel);
@@ -159,4 +171,25 @@ export function getNextThinkingLevel(
   const index = supportedLevels.indexOf(current);
   if (index === -1) return supportedLevels[0];
   return supportedLevels[index + 1];
+}
+
+export function clampThinkingLevel(
+  provider: Provider,
+  model: string,
+  current: ThinkingLevel | undefined,
+): ThinkingLevel | undefined {
+  if (!current || isThinkingLevelSupported(provider, model, current)) return current;
+  return getNextThinkingLevel(provider, model, undefined);
+}
+
+/** Restore a saved thinking preference against the model selected at startup.
+ * A deployment/config reload can change that model before a session is created. */
+export function resolveInitialThinkingLevel(
+  provider: Provider,
+  model: string,
+  enabled: boolean | undefined,
+  savedLevel: ThinkingLevel | undefined,
+): ThinkingLevel | undefined {
+  if (!enabled) return undefined;
+  return clampThinkingLevel(provider, model, savedLevel ?? getMaxThinkingLevel(model));
 }

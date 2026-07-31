@@ -1233,13 +1233,15 @@ export async function* agentLoop(
       // with no content, or "thinks" without producing actionable output.
       // Reasoning models (MiMo, DeepSeek) may report outputTokens > 0 from
       // thinking alone while producing no text or tool calls — still a dud.
-      const contentArr = Array.isArray(response.message.content) ? response.message.content : null;
+      const content = response.message.content;
+      const contentArr = Array.isArray(content) ? content : null;
       const hasActionableContent =
-        response.message.content !== "" &&
-        contentArr !== null &&
-        contentArr.some(
-          (p) => p.type === "text" || p.type === "tool_call" || p.type === "server_tool_call",
-        );
+        (typeof content === "string" && content.trim().length > 0) ||
+        (contentArr !== null &&
+          contentArr.some(
+            (part) =>
+              part.type === "text" || part.type === "tool_call" || part.type === "server_tool_call",
+          ));
       if (!hasActionableContent) {
         if (emptyResponseRetries < MAX_EMPTY_RESPONSE_RETRIES) {
           emptyResponseRetries++;
