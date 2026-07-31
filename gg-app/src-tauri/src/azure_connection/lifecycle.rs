@@ -8,7 +8,7 @@ use std::time::Duration;
 use tauri::{Emitter, EventTarget, Manager};
 
 use super::{AzureConnectionError, SecureAzureConfig};
-use crate::{sidecar_base, Daemon, WindowSession, Windows};
+use crate::{sidecar_base, Daemon, PaneRegistry, Windows};
 
 const RELOAD_WAIT_ATTEMPTS: usize = 600;
 const RELOAD_WAIT_INTERVAL: Duration = Duration::from_millis(50);
@@ -214,16 +214,13 @@ pub(crate) fn take_ready_model_refresh_windows(app: &tauri::AppHandle) -> Vec<St
     ready
 }
 
-fn ready_refresh_labels(
-    pending: &HashSet<String>,
-    registry: &std::collections::HashMap<String, WindowSession>,
-) -> Vec<String> {
+fn ready_refresh_labels(pending: &HashSet<String>, registry: &PaneRegistry) -> Vec<String> {
     let mut labels = pending
         .iter()
         .filter(|label| {
-            registry
-                .get(*label)
-                .is_some_and(|session| session.session_id.is_some())
+            registry.get(*label).is_some_and(|panes| {
+                !panes.is_empty() && panes.values().all(|pane| pane.session_id.is_some())
+            })
         })
         .cloned()
         .collect::<Vec<_>>();
@@ -234,7 +231,7 @@ fn ready_refresh_labels(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ChatAgent, WindowSession, WorkspaceMode};
+    use crate::{ChatAgent, PaneSession, WorkspaceMode};
     use std::ffi::OsStr;
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
@@ -350,27 +347,43 @@ mod tests {
         assert!(!serde_json::to_string(&error).unwrap().contains(&canary()));
     }
 
-    fn window(session_id: Option<&str>) -> WindowSession {
-        WindowSession {
+    fn pane(session_id: Option<&str>) -> PaneSession {
+        PaneSession {
             session_id: session_id.map(str::to_owned),
             mode: WorkspaceMode::Code,
             chat_agent: ChatAgent::General,
             cwd: Some(PathBuf::from("C:/project")),
             session_path: None,
             generation: 1,
+            startup_error: None,
         }
     }
 
     #[test]
     fn model_refresh_labels_are_isolated_until_each_window_is_ready() {
-        let mut registry = std::collections::HashMap::from([
-            ("main".into(), window(Some("main-session"))),
-            ("project-1".into(), window(None)),
-        ]);
+        let mut registry = PaneRegistry::default();
+        registry.windows.insert(
+            "main".into(),
+            [("primary".into(), pane(Some("main-session")))].into(),
+        );
+        registry.windows.insert(
+            "project-1".into(),
+            [
+                ("primary".into(), pane(Some("project-primary"))),
+                ("split".into(), pane(None)),
+            ]
+            .into(),
+        );
         let pending = HashSet::from(["main".into(), "project-1".into()]);
         assert_eq!(ready_refresh_labels(&pending, &registry), vec!["main"]);
 
-        registry.get_mut("project-1").unwrap().session_id = Some("project-session".into());
+        registry
+            .windows
+            .get_mut("project-1")
+            .unwrap()
+            .get_mut("split")
+            .unwrap()
+            .session_id = Some("project-split".into());
         assert_eq!(
             ready_refresh_labels(&pending, &registry),
             vec!["main", "project-1"]

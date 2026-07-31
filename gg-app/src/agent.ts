@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { error as logError, info as logInfo } from "@tauri-apps/plugin-log";
+import { routePaneEvent, type PaneEventEnvelope } from "./pane-routing";
 
 // Per-window event bus. The Rust side emits agent traffic with `emit_to` the
 // specific window label, so each window must listen on ITS OWN webview target —
@@ -145,6 +146,7 @@ export interface AgentState {
   provider: string;
   model: string;
   cwd: string;
+  sessionPath?: string | null;
   mode: WorkspaceMode;
   chatAgent?: ChatAgentId;
   running: boolean;
@@ -201,7 +203,7 @@ export interface ProjectTask {
 /** List this project's tasks (pending / in-progress / done). */
 export async function listTasks(): Promise<ProjectTask[]> {
   try {
-    const res = await invoke<{ tasks: ProjectTask[] }>("agent_tasks");
+    const res = await invoke<{ tasks: ProjectTask[] }>("agent_tasks", { paneId: "primary" });
     return res.tasks ?? [];
   } catch (e) {
     await logError(`agent_tasks failed: ${String(e)}`);
@@ -211,18 +213,21 @@ export async function listTasks(): Promise<ProjectTask[]> {
 
 /** Run a single task end-to-end in its own fresh session. */
 export async function runTask(id: string): Promise<void> {
-  await invoke("agent_run_tasks", { id, all: false });
+  await invoke("agent_run_tasks", { paneId: "primary", id, all: false });
 }
 
 /** Run every pending task sequentially (a fresh session each), in order. */
 export async function runAllTasks(): Promise<void> {
-  await invoke("agent_run_tasks", { id: null, all: true });
+  await invoke("agent_run_tasks", { paneId: "primary", id: null, all: true });
 }
 
 /** Delete a task by id. Returns the remaining tasks. */
 export async function deleteTask(id: string): Promise<ProjectTask[]> {
   try {
-    const res = await invoke<{ tasks: ProjectTask[] }>("agent_delete_task", { id });
+    const res = await invoke<{ tasks: ProjectTask[] }>("agent_delete_task", {
+      paneId: "primary",
+      id,
+    });
     return res.tasks ?? [];
   } catch (e) {
     await logError(`agent_delete_task failed: ${String(e)}`);
@@ -232,22 +237,22 @@ export async function deleteTask(id: string): Promise<ProjectTask[]> {
 
 export async function listMemories(): Promise<MemorySnapshot> {
   await waitForReady();
-  return invoke<MemorySnapshot>("agent_memories");
+  return invoke<MemorySnapshot>("agent_memories", { paneId: "primary" });
 }
 
 export async function deleteMemory(id: string): Promise<MemorySnapshot> {
   await waitForReady();
-  return invoke<MemorySnapshot>("agent_delete_memory", { id });
+  return invoke<MemorySnapshot>("agent_delete_memory", { paneId: "primary", id });
 }
 
 export async function listJiwa(): Promise<JiwaSnapshot> {
   await waitForReady();
-  return invoke<JiwaSnapshot>("agent_jiwa");
+  return invoke<JiwaSnapshot>("agent_jiwa", { paneId: "primary" });
 }
 
 export async function deleteJiwa(id: string): Promise<JiwaSnapshot> {
   await waitForReady();
-  return invoke<JiwaSnapshot>("agent_delete_jiwa", { id });
+  return invoke<JiwaSnapshot>("agent_delete_jiwa", { paneId: "primary", id });
 }
 
 export interface ThinkingState {
@@ -316,7 +321,7 @@ export interface SwitchKenModelResult {
 }
 
 export async function getState(): Promise<AgentState> {
-  return invoke<AgentState>("agent_state");
+  return invoke<AgentState>("agent_state", { paneId: "primary" });
 }
 
 // ── Progress (Ranks) ─────────────────────────────────────────────────────
@@ -364,7 +369,7 @@ export interface ProgressSnapshot {
 /** Fetch the current XP/rank snapshot (initial paint; live updates ride `progress` frames). */
 export async function getProgress(): Promise<ProgressSnapshot> {
   await waitForReady();
-  return invoke<ProgressSnapshot>("agent_progress");
+  return invoke<ProgressSnapshot>("agent_progress", { paneId: "primary" });
 }
 
 export type SubscriptionUsageProvider = "anthropic" | "openai" | "moonshot";
@@ -394,7 +399,7 @@ export async function getSubscriptionUsage(
   provider: SubscriptionUsageProvider,
 ): Promise<SubscriptionUsageProviderSnapshot> {
   await waitForReady();
-  return invoke<SubscriptionUsageProviderSnapshot>("agent_usage", { provider });
+  return invoke<SubscriptionUsageProviderSnapshot>("agent_usage", { paneId: "primary", provider });
 }
 
 /**
@@ -421,7 +426,7 @@ export interface EnhanceResult {
  */
 export async function enhancePrompt(text: string): Promise<EnhanceResult> {
   await waitForReady();
-  return invoke<EnhanceResult>("agent_enhance_prompt", { text });
+  return invoke<EnhanceResult>("agent_enhance_prompt", { paneId: "primary", text });
 }
 
 export async function openUrl(url: string): Promise<void> {
@@ -440,7 +445,7 @@ export async function openProjectPath(path: string): Promise<void> {
     // Keep the original string if the model emitted a malformed `%` escape.
   }
   try {
-    await invoke("open_project_path", { path: decoded });
+    await invoke("open_project_path", { paneId: "primary", path: decoded });
   } catch (e) {
     await logError(`open_project_path failed: ${String(e)}`);
   }
@@ -509,7 +514,7 @@ export async function sendPrompt(
     `prompt: ${text.slice(0, 80)}${attachments.length ? ` (+${attachments.length} att)` : ""}`,
   );
   try {
-    await invoke("agent_prompt", { text, attachments, meta: meta ?? null });
+    await invoke("agent_prompt", { paneId: "primary", text, attachments, meta: meta ?? null });
   } catch (e) {
     await logError(`agent_prompt failed: ${String(e)}`);
     throw e;
@@ -553,7 +558,7 @@ export function parseCancelFailure(error: unknown): CancelFailure {
 
 export async function cancel(): Promise<CancelResult> {
   try {
-    return await invoke<CancelResult>("agent_cancel");
+    return await invoke<CancelResult>("agent_cancel", { paneId: "primary" });
   } catch (error) {
     const failure = parseCancelFailure(error);
     await logError(`agent_cancel failed: ${JSON.stringify(failure)}`);
@@ -598,7 +603,7 @@ export async function sendKenPrompt(text: string): Promise<void> {
   await logInfo(`ken prompt: ${text.slice(0, 80)}`);
   try {
     await waitForReady();
-    await invoke("agent_ken_prompt", { text });
+    await invoke("agent_ken_prompt", { paneId: "primary", text });
   } catch (e) {
     await logError(`agent_ken_prompt failed: ${String(e)}`);
     throw e;
@@ -609,7 +614,7 @@ export async function sendKenPrompt(text: string): Promise<void> {
 export async function cancelKen(): Promise<void> {
   try {
     await waitForReady();
-    await invoke("agent_ken_cancel");
+    await invoke("agent_ken_cancel", { paneId: "primary" });
   } catch (e) {
     await logError(`agent_ken_cancel failed: ${String(e)}`);
   }
@@ -620,7 +625,10 @@ export async function cancelKen(): Promise<void> {
 export async function setAutopilot(enabled: boolean): Promise<boolean> {
   try {
     await waitForReady();
-    const res = await invoke<{ autopilot?: boolean }>("agent_autopilot_set", { enabled });
+    const res = await invoke<{ autopilot?: boolean }>("agent_autopilot_set", {
+      paneId: "primary",
+      enabled,
+    });
     return res.autopilot ?? enabled;
   } catch (e) {
     await logError(`agent_autopilot_set failed: ${String(e)}`);
@@ -636,7 +644,7 @@ export async function setAutopilot(enabled: boolean): Promise<boolean> {
  */
 export async function acceptPlan(planPath: string | null): Promise<void> {
   try {
-    await invoke("agent_accept_plan", { planPath });
+    await invoke("agent_accept_plan", { paneId: "primary", planPath });
   } catch (e) {
     await logError(`agent_accept_plan failed: ${String(e)}`);
   }
@@ -701,7 +709,7 @@ export interface HistoryEntry {
 /** Fetch the resumed session's prior messages so the transcript can hydrate. */
 export async function listHistory(): Promise<HistoryEntry[]> {
   try {
-    const res = await invoke<{ history: HistoryEntry[] }>("agent_history");
+    const res = await invoke<{ history: HistoryEntry[] }>("agent_history", { paneId: "primary" });
     return res.history ?? [];
   } catch (e) {
     await logError(`agent_history failed: ${String(e)}`);
@@ -797,13 +805,13 @@ export async function authApiKey(provider: string, key: string, variant?: string
  */
 export async function authOAuthStart(provider: string): Promise<void> {
   await waitForReady();
-  await invoke("agent_auth_oauth_start", { provider });
+  await invoke("agent_auth_oauth_start", { paneId: "primary", provider });
 }
 
 /** Submit a pasted OAuth code to an in-flight login. Sidecar-proxied like start. */
 export async function authOAuthCode(code: string): Promise<void> {
   await waitForReady();
-  await invoke("agent_auth_oauth_code", { code });
+  await invoke("agent_auth_oauth_code", { paneId: "primary", code });
 }
 
 /** How the user answered an MCP server's request for input. */
@@ -963,7 +971,7 @@ export async function removeAzureConnection(): Promise<AzureConnectionStatus> {
 /** Start a fresh session (clears history) for this window's current project. */
 export async function newSession(): Promise<void> {
   try {
-    await invoke("agent_new_session");
+    await invoke("agent_new_session", { paneId: "primary" });
   } catch (e) {
     await logError(`agent_new_session failed: ${String(e)}`);
     throw e;
@@ -988,7 +996,7 @@ export interface RadioState {
 /** Read app-wide radio state (stations, playback, and volume). */
 export async function getRadioState(): Promise<RadioState> {
   try {
-    const res = await invoke<RadioState>("agent_radio_state");
+    const res = await invoke<RadioState>("agent_radio_state", { paneId: "primary" });
     return {
       stations: res.stations ?? [],
       current: res.current ?? null,
@@ -1002,13 +1010,16 @@ export async function getRadioState(): Promise<RadioState> {
 
 /** Play a station by id, or pause with "off". */
 export async function setRadio(station: string): Promise<string | null> {
-  const res = await invoke<{ current: string | null }>("agent_radio_set", { station });
+  const res = await invoke<{ current: string | null }>("agent_radio_set", {
+    paneId: "primary",
+    station,
+  });
   return res.current ?? null;
 }
 
 /** Set app-wide radio volume from 0 to 100. */
 export async function setRadioVolume(volume: number): Promise<number> {
-  const res = await invoke<{ volume: number }>("agent_radio_volume", { volume });
+  const res = await invoke<{ volume: number }>("agent_radio_volume", { paneId: "primary", volume });
   return Number.isFinite(res.volume) ? res.volume : volume;
 }
 
@@ -1042,7 +1053,7 @@ export async function cancelQueued(id: string): Promise<QueuedMessage[] | null> 
 /** Stop a background task by id. Returns the sidecar's status message, if any. */
 export async function killTask(id: string): Promise<string | null> {
   try {
-    const res = await invoke<{ message?: string }>("agent_kill_task", { id });
+    const res = await invoke<{ message?: string }>("agent_kill_task", { paneId: "primary", id });
     return res.message ?? null;
   } catch (e) {
     await logError(`agent_kill_task failed: ${String(e)}`);
@@ -1065,27 +1076,22 @@ export type ImportTranscriptResult =
     }
   | { ok: false; error: string };
 
-/**
- * Import a Claude Code / Codex / Cursor transcript as a resumable GG Coder
- * session. Failures come back as `{ ok: false, error }` rather than throwing,
- * so the caller can render the reason directly.
- */
+/** Import a foreign coding-agent transcript as a resumable session. */
 export async function importTranscript(
   path: string,
   cwd?: string,
 ): Promise<ImportTranscriptResult> {
   try {
     return await invoke<ImportTranscriptResult>("agent_import_transcript", { path, cwd });
-  } catch (e) {
-    await logError(`agent_import_transcript failed: ${String(e)}`);
-    return { ok: false, error: String(e) };
+  } catch (error) {
+    await logError(`agent_import_transcript failed: ${String(error)}`);
+    return { ok: false, error: String(error) };
   }
 }
-
 /** Cycle the reasoning/thinking level to the next supported value (or off). */
 export async function cycleThinking(): Promise<ThinkingState | null> {
   try {
-    return await invoke<ThinkingState>("agent_cycle_thinking");
+    return await invoke<ThinkingState>("agent_cycle_thinking", { paneId: "primary" });
   } catch (e) {
     await logError(`agent_cycle_thinking failed: ${String(e)}`);
     return null;
@@ -1095,7 +1101,7 @@ export async function cycleThinking(): Promise<ThinkingState | null> {
 /** List workflow (prompt-template) slash commands the agent can run. */
 export async function listCommands(): Promise<SlashCommand[]> {
   try {
-    const res = await invoke<{ commands: SlashCommand[] }>("agent_commands");
+    const res = await invoke<{ commands: SlashCommand[] }>("agent_commands", { paneId: "primary" });
     return res.commands ?? [];
   } catch (e) {
     await logError(`agent_commands failed: ${String(e)}`);
@@ -1115,7 +1121,7 @@ export async function listCommands(): Promise<SlashCommand[]> {
  */
 export async function listModels(): Promise<ModelOption[] | null> {
   try {
-    const res = await invoke<{ models: ModelOption[] }>("agent_models");
+    const res = await invoke<{ models: ModelOption[] }>("agent_models", { paneId: "primary" });
     return res.models ?? [];
   } catch (e) {
     await logError(`agent_models failed: ${String(e)}`);
@@ -1135,14 +1141,15 @@ export async function listModels(): Promise<ModelOption[] | null> {
  */
 export async function switchModel(model: string): Promise<SwitchModelResult | { error: string }> {
   try {
-    const res = await invoke<SwitchModelResult & { error?: string }>("agent_switch_model", {
+    const response = await invoke<SwitchModelResult & { error?: string }>("agent_switch_model", {
+      paneId: "primary",
       model,
     });
-    if (res.error) {
-      await logError(`agent_switch_model refused: ${res.error}`);
-      return { error: res.error };
+    if (response.error) {
+      await logError(`agent_switch_model refused: ${response.error}`);
+      return { error: response.error };
     }
-    return res;
+    return response;
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await logError(`agent_switch_model failed: ${message}`);
@@ -1161,7 +1168,10 @@ export function isSwitchModelError(
  *  he follows GG Coder's model again. Returns his effective model. */
 export async function switchKenModel(model: string | null): Promise<SwitchKenModelResult | null> {
   try {
-    return await invoke<SwitchKenModelResult>("agent_switch_ken_model", { model });
+    return await invoke<SwitchKenModelResult>("agent_switch_ken_model", {
+      paneId: "primary",
+      model,
+    });
   } catch (e) {
     await logError(`agent_switch_ken_model failed: ${String(e)}`);
     return null;
@@ -1249,7 +1259,9 @@ export async function createProject(name: string): Promise<string> {
 /** Discover known projects (ggcoder + Claude Code + Codex), most recent first. */
 export async function listProjects(): Promise<DiscoveredProject[]> {
   try {
-    const res = await invoke<{ projects: DiscoveredProject[] }>("agent_projects");
+    const res = await invoke<{ projects: DiscoveredProject[] }>("agent_projects", {
+      paneId: "primary",
+    });
     return res.projects ?? [];
   } catch (e) {
     await logError(`agent_projects failed: ${String(e)}`);
@@ -1272,7 +1284,7 @@ export interface FileHit {
  */
 export async function searchFiles(query: string): Promise<FileHit[]> {
   try {
-    const res = await invoke<{ files: FileHit[] }>("agent_files", { query });
+    const res = await invoke<{ files: FileHit[] }>("agent_files", { paneId: "primary", query });
     return res.files ?? [];
   } catch (e) {
     await logError(`agent_files failed: ${String(e)}`);
@@ -1287,6 +1299,7 @@ export async function listSessions(
 ): Promise<RecentSession[]> {
   try {
     const res = await invoke<{ sessions: RecentSession[] }>("agent_sessions", {
+      paneId: "primary",
       cwd,
       chatAgent: chatAgent ?? null,
     });
@@ -1308,6 +1321,7 @@ export async function selectWorkspace(
   chatAgent: ChatAgentId = "general",
 ): Promise<void> {
   await invoke("select_project", {
+    paneId: "primary",
     mode,
     chatAgent,
     cwd,
@@ -1326,6 +1340,64 @@ export interface RestoreTarget {
   chatAgent?: ChatAgentId;
   cwd: string;
   sessionPath: string | null;
+}
+
+export interface PaneCopyResult {
+  windowLabel: string;
+  reusedWindow: boolean;
+}
+
+interface PreparedPaneCopy extends PaneCopyResult {
+  copyId: string;
+}
+
+export class PaneCopyError extends Error {
+  constructor(
+    message: string,
+    /** null when preparation failed before there was anything to roll back. */
+    readonly rollbackSucceeded: boolean | null,
+  ) {
+    super(message);
+    this.name = "PaneCopyError";
+  }
+}
+
+/**
+ * Copy one pane into a new native window without changing its source ownership.
+ * Rust derives the source owner from this webview, reserves the destination,
+ * starts a separate daemon session, and rolls the reservation back on failure.
+ */
+export async function copyPaneToNewWindow(paneId: string): Promise<PaneCopyResult> {
+  const copyId =
+    globalThis.crypto?.randomUUID?.() ??
+    `copy-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  let prepared: PreparedPaneCopy | null = null;
+  try {
+    prepared = await invoke<PreparedPaneCopy>("agent_pane_copy", { paneId, copyId });
+    return await invoke<PaneCopyResult>("agent_pane_copy_startup", { copyId });
+  } catch (error) {
+    let rollbackSucceeded: boolean | null = null;
+    if (prepared) {
+      try {
+        await invoke("agent_pane_copy_rollback", { copyId });
+        rollbackSucceeded = true;
+      } catch (rollbackError) {
+        await logError(`agent_pane_copy_rollback failed: ${String(rollbackError)}`);
+      }
+    }
+    const suffix = rollbackSucceeded ? "" : " (rollback also failed)";
+    throw new PaneCopyError(`${String(error)}${suffix}`, rollbackSucceeded);
+  }
+}
+
+/** Consume the startup target only when this is an extracted-pane window. */
+export async function copiedPaneRestoreTarget(): Promise<RestoreTarget | null> {
+  try {
+    return await invoke<RestoreTarget | null>("agent_pane_copy_restore");
+  } catch (error) {
+    await logError(`agent_pane_copy_restore failed: ${String(error)}`);
+    return null;
+  }
 }
 
 /**
@@ -1600,7 +1672,7 @@ export interface TelegramStatus {
 /** Read the saved Telegram config status (masked). */
 export async function getTelegramStatus(): Promise<TelegramStatus> {
   try {
-    return await invoke<TelegramStatus>("agent_telegram_get");
+    return await invoke<TelegramStatus>("agent_telegram_get", { paneId: "primary" });
   } catch (e) {
     await logError(`agent_telegram_get failed: ${String(e)}`);
     return { configured: false };
@@ -1614,7 +1686,7 @@ export async function getTelegramStatus(): Promise<TelegramStatus> {
  */
 export async function saveTelegramConfig(botToken: string, userId: string): Promise<void> {
   await waitForReady();
-  await invoke("agent_telegram_save", { botToken, userId });
+  await invoke("agent_telegram_save", { paneId: "primary", botToken, userId });
 }
 
 export interface ServeStatus {
@@ -1625,7 +1697,7 @@ export interface ServeStatus {
 /** Read whether the Telegram serve loop is running + whether it's configured. */
 export async function getServeStatus(): Promise<ServeStatus> {
   try {
-    return await invoke<ServeStatus>("agent_serve_status");
+    return await invoke<ServeStatus>("agent_serve_status", { paneId: "primary" });
   } catch (e) {
     await logError(`agent_serve_status failed: ${String(e)}`);
     return { running: false, configured: false };
@@ -1635,13 +1707,13 @@ export async function getServeStatus(): Promise<ServeStatus> {
 /** Start the Telegram serve loop. Throws with a user-facing message on failure. */
 export async function startServe(): Promise<void> {
   await waitForReady();
-  await invoke("agent_serve_start");
+  await invoke("agent_serve_start", { paneId: "primary" });
 }
 
 /** Stop the Telegram serve loop. */
 export async function stopServe(): Promise<void> {
   await waitForReady();
-  await invoke("agent_serve_stop");
+  await invoke("agent_serve_stop", { paneId: "primary" });
 }
 
 // ── MCP server management (mirrors `ggcoder mcp`) ────────────
@@ -1680,6 +1752,7 @@ export async function listMcpServers(cwd?: string): Promise<McpServerRow[]> {
   try {
     await waitForReady();
     const res = await invoke<{ servers: McpServerRow[] }>("agent_mcp_list", {
+      paneId: "primary",
       cwd: cwd ?? null,
     });
     return res.servers ?? [];
@@ -1698,7 +1771,12 @@ export async function addMcpServer(
   cwd?: string,
 ): Promise<AddMcpResult> {
   await waitForReady();
-  return invoke<AddMcpResult>("agent_mcp_add", { line, scope, cwd: cwd ?? null });
+  return invoke<AddMcpResult>("agent_mcp_add", {
+    paneId: "primary",
+    line,
+    scope,
+    cwd: cwd ?? null,
+  });
 }
 
 /** Begin an interactive OAuth login for a remote (HTTP) MCP server. Returns
@@ -1711,7 +1789,7 @@ export async function loginMcpServer(
   cwd?: string,
 ): Promise<void> {
   await waitForReady();
-  await invoke("agent_mcp_login", { name, scope, cwd: cwd ?? null });
+  await invoke("agent_mcp_login", { paneId: "primary", name, scope, cwd: cwd ?? null });
 }
 
 /** Remove an MCP server by name. `cwd` is required for project scope. Returns
@@ -1724,6 +1802,7 @@ export async function removeMcpServer(
   try {
     await waitForReady();
     return await invoke<{ removed: boolean }>("agent_mcp_remove", {
+      paneId: "primary",
       name,
       scope,
       cwd: cwd ?? null,
@@ -1739,14 +1818,25 @@ export async function removeMcpServer(
 // eliminates the StrictMode/HMR double-mount race where two async `listen()`
 // calls leave two live listeners updating two independent state trees.
 const localSubscribers = new Set<(e: SidecarEvent) => void>();
+const paneEnvelopeSubscribers = new Set<(e: PaneEventEnvelope) => void>();
 let tauriListenerStarted = false;
 
 function ensureTauriListener(): void {
   if (tauriListenerStarted) return;
   tauriListenerStarted = true;
-  void appWindow.listen<SidecarEvent>("agent-event", (e) => {
-    for (const fn of localSubscribers) fn(e.payload);
+  void appWindow.listen<PaneEventEnvelope>("agent-event", (e) => {
+    const envelope = e.payload;
+    for (const fn of paneEnvelopeSubscribers) fn(envelope);
+    const primary = routePaneEvent(envelope, [{ paneId: "primary" }]);
+    if (primary)
+      for (const fn of localSubscribers) fn({ type: envelope.type, data: envelope.data });
   });
+}
+
+function subscribePaneEnvelope(onEvent: (e: PaneEventEnvelope) => void): () => void {
+  ensureTauriListener();
+  paneEnvelopeSubscribers.add(onEvent);
+  return () => paneEnvelopeSubscribers.delete(onEvent);
 }
 
 /**
@@ -1759,39 +1849,443 @@ export function subscribe(onEvent: (e: SidecarEvent) => void): () => void {
   return () => localSubscribers.delete(onEvent);
 }
 
-/** Wait until the sidecar reports a port (proves the agent is up). */
-export async function waitForReady(): Promise<void> {
-  const immediate = await invoke<number | null>("sidecar_port").catch(() => null);
-  if (typeof immediate === "number") return;
-  await new Promise<void>((resolve, reject) => {
+export interface PaneStartupStatus {
+  ready: boolean;
+  error: string | null;
+  generation: number;
+  sessionId: string | null;
+}
+
+interface PaneLifecycleEvent {
+  paneId: string;
+  generation: number;
+  error?: string;
+}
+
+/** Wait for one logical pane. Listeners are installed before the first status
+ * read, and polling remains active until settlement so status/event races close. */
+export async function waitForPaneReady(paneId: string = "primary"): Promise<PaneStartupStatus> {
+  return new Promise<PaneStartupStatus>((resolve, reject) => {
     let settled = false;
-    let unlisten: (() => void) | undefined;
-    const timeout = setTimeout(() => {
-      if (!settled) {
-        clearInterval(poll);
-        unlisten?.();
-        reject(new Error("sidecar did not start in time"));
-      }
-    }, 30000);
-    const finish = (): void => {
+    let poll: ReturnType<typeof setInterval> | undefined;
+    const timeout = setTimeout(() => fail(`pane '${paneId}' did not start in time`), 30000);
+    const unlisteners: Array<() => void> = [];
+
+    const cleanup = (): void => {
+      if (poll) clearInterval(poll);
+      if (timeout) clearTimeout(timeout);
+      for (const unlisten of unlisteners.splice(0)) unlisten();
+    };
+    const succeed = (status: PaneStartupStatus): void => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeout);
-      clearInterval(poll);
-      unlisten?.();
-      resolve();
+      cleanup();
+      resolve(status);
     };
-    appWindow
-      .listen<number>("sidecar-ready", finish)
-      .then((u) => {
-        if (settled) u();
-        else unlisten = u;
-      })
-      .catch(() => {});
-    const poll = setInterval(() => {
-      void invoke<number | null>("sidecar_port").then((p) => {
-        if (typeof p === "number") finish();
-      });
-    }, 500);
+    const fail = (message: string): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error(message));
+    };
+    const readStatus = async (): Promise<void> => {
+      try {
+        const status = await invoke<PaneStartupStatus>("agent_pane_status", { paneId });
+        if (settled) return;
+        if (status.error) fail(`pane '${paneId}' failed to start: ${status.error}`);
+        else if (status.ready) succeed(status);
+      } catch {
+        // A pane may not be registered yet. Persistent polling observes it later.
+      }
+    };
+    const install = async <T>(name: string, handler: (payload: T) => void): Promise<void> => {
+      try {
+        const unlisten = await appWindow.listen<T>(name, (event) => handler(event.payload));
+        if (settled) unlisten();
+        else unlisteners.push(unlisten);
+      } catch (error) {
+        fail(`failed to listen for pane '${paneId}' readiness: ${String(error)}`);
+      }
+    };
+
+    void Promise.all([
+      install<PaneLifecycleEvent>("agent-pane-ready", (event) => {
+        if (event.paneId === paneId) void readStatus();
+      }),
+      install<PaneLifecycleEvent>("agent-pane-error", (event) => {
+        if (event.paneId === paneId)
+          fail(`pane '${paneId}' failed to start: ${event.error ?? "unknown error"}`);
+      }),
+      install<string>("sidecar-error", (message) => fail(`agent daemon failed: ${message}`)),
+    ]).then(() => {
+      if (settled) return;
+      void readStatus();
+      poll = setInterval(() => void readStatus(), 500);
+    });
   });
+}
+
+/** Preserve the existing primary-pane readiness API. */
+export async function waitForReady(): Promise<void> {
+  await waitForPaneReady("primary");
+}
+
+/** Inputs shared by pane creation/restoration and workspace selection. */
+export interface PaneSessionTarget {
+  mode: WorkspaceMode;
+  cwd: string;
+  sessionPath?: string | null;
+  chatAgent?: ChatAgentId;
+}
+
+/** Dispose a pane without requiring the caller to retain its generation. */
+export function disposePaneSession(paneId: string, generation?: number): Promise<void> {
+  return invoke("agent_pane_dispose", { paneId, generation: generation ?? null });
+}
+
+export interface PaneAgentClient {
+  readonly paneId: string;
+  status(): Promise<PaneStartupStatus>;
+  waitForReady(): Promise<PaneStartupStatus>;
+  create(target: PaneSessionTarget): Promise<number>;
+  restore(target: PaneSessionTarget): Promise<number>;
+  dispose(generation: number): Promise<void>;
+  selectWorkspace(target: PaneSessionTarget, expectedGeneration: number): Promise<number>;
+  subscribe(onEvent: (event: SidecarEvent) => void): () => void;
+  getState(): Promise<AgentState>;
+  listMemories(): Promise<MemorySnapshot>;
+  deleteMemory(id: string): Promise<MemorySnapshot>;
+  listJiwa(): Promise<JiwaSnapshot>;
+  deleteJiwa(id: string): Promise<JiwaSnapshot>;
+  getProgress(): Promise<ProgressSnapshot>;
+  getSubscriptionUsage(
+    provider: SubscriptionUsageProvider,
+  ): Promise<SubscriptionUsageProviderSnapshot>;
+  enhancePrompt(text: string): Promise<EnhanceResult>;
+  sendPrompt(text: string, attachments?: Attachment[], meta?: PromptMeta): Promise<void>;
+  cancel(): Promise<CancelResult>;
+  sendKenPrompt(text: string): Promise<void>;
+  cancelKen(): Promise<void>;
+  setAutopilot(enabled: boolean): Promise<boolean>;
+  acceptPlan(planPath: string | null): Promise<void>;
+  listHistory(): Promise<HistoryEntry[]>;
+  authOAuthStart(provider: string): Promise<void>;
+  authOAuthCode(code: string): Promise<void>;
+  newSession(): Promise<void>;
+  getRadioState(): Promise<RadioState>;
+  setRadio(station: string): Promise<string | null>;
+  setRadioVolume(volume: number): Promise<number>;
+  listTasks(): Promise<ProjectTask[]>;
+  runTask(id: string): Promise<void>;
+  runAllTasks(): Promise<void>;
+  deleteTask(id: string): Promise<ProjectTask[]>;
+  killTask(id: string): Promise<string | null>;
+  cycleThinking(): Promise<ThinkingState | null>;
+  listCommands(): Promise<SlashCommand[]>;
+  listModels(): Promise<ModelOption[]>;
+  switchModel(model: string): Promise<SwitchModelResult | null>;
+  switchKenModel(model: string | null): Promise<SwitchKenModelResult | null>;
+  getSettings(): Promise<AppSettings | null>;
+  saveSettings(projectsRoot: string): Promise<void>;
+  listProjects(): Promise<DiscoveredProject[]>;
+  searchFiles(query: string): Promise<FileHit[]>;
+  listSessions(cwd: string, chatAgent?: ChatAgentId | "all"): Promise<RecentSession[]>;
+  getTelegramStatus(): Promise<TelegramStatus>;
+  saveTelegramConfig(botToken: string, userId: string): Promise<void>;
+  getServeStatus(): Promise<ServeStatus>;
+  startServe(): Promise<void>;
+  stopServe(): Promise<void>;
+  listMcpServers(cwd?: string): Promise<McpServerRow[]>;
+  addMcpServer(line: string, scope: "global" | "project", cwd?: string): Promise<AddMcpResult>;
+  loginMcpServer(name: string, scope: "global" | "project", cwd?: string): Promise<void>;
+  removeMcpServer(
+    name: string,
+    scope: "global" | "project",
+    cwd?: string,
+  ): Promise<{ removed: boolean }>;
+}
+
+/** Primary compatibility client for legacy children/tests during the pane extraction. */
+export const primaryPaneAgentClient: PaneAgentClient = new Proxy(
+  { paneId: "primary" } as PaneAgentClient,
+  {
+    get(_target, property) {
+      return createPaneAgentClient("primary")[property as keyof PaneAgentClient];
+    },
+  },
+);
+
+/** Current-v2 pane-scoped bridge. Compatibility exports above remain primary-only. */
+export function createPaneAgentClient(paneId: string): PaneAgentClient {
+  const call = <T>(command: string, args: Record<string, unknown> = {}): Promise<T> =>
+    invoke<T>(command, { paneId, ...args });
+  const ready = (): Promise<PaneStartupStatus> => waitForPaneReady(paneId);
+  const targetArgs = (target: PaneSessionTarget) => ({
+    mode: target.mode,
+    chatAgent: target.chatAgent ?? "general",
+    cwd: target.cwd,
+    sessionPath: target.sessionPath ?? null,
+  });
+  const safeArray = async <T>(
+    command: string,
+    key: string,
+    args: Record<string, unknown> = {},
+  ): Promise<T[]> => {
+    try {
+      return (await call<Record<string, T[]>>(command, args))[key] ?? [];
+    } catch (e) {
+      await logError(`${command} failed: ${String(e)}`);
+      return [];
+    }
+  };
+
+  return {
+    paneId,
+    status: () => call("agent_pane_status"),
+    waitForReady: ready,
+    create: (target) => call("agent_pane_create", targetArgs(target)),
+    restore: (target) => call("agent_pane_restore", targetArgs(target)),
+    dispose: (generation) => call("agent_pane_dispose", { generation }),
+    async selectWorkspace(target, expectedGeneration) {
+      try {
+        const status = await call<PaneStartupStatus>("agent_pane_status");
+        return call("select_project", {
+          ...targetArgs(target),
+          expectedGeneration: expectedGeneration > 0 ? expectedGeneration : status.generation,
+        });
+      } catch {
+        // A brand-new auxiliary pane has no native registry entry until its first
+        // target is chosen. Create it instead of trying to replace it.
+        return call("agent_pane_create", targetArgs(target));
+      }
+    },
+    subscribe(onEvent) {
+      let activeSessionId: string | null = null;
+      let generation: number | null = null;
+      let disposed = false;
+      let refreshEpoch = 0;
+      const refresh = async (): Promise<void> => {
+        const epoch = ++refreshEpoch;
+        try {
+          const status = await call<PaneStartupStatus>("agent_pane_status");
+          if (disposed || epoch !== refreshEpoch) return;
+          activeSessionId = status.sessionId;
+          generation = status.generation;
+        } catch {
+          if (disposed || epoch !== refreshEpoch) return;
+          activeSessionId = null;
+          generation = null;
+        }
+      };
+      void refresh();
+      const unlisten = subscribePaneEnvelope((event) => {
+        if (disposed || event.paneId !== paneId) return;
+        if (event.sessionId === activeSessionId) {
+          onEvent({ type: event.type, data: event.data });
+        } else {
+          void refresh();
+        }
+      });
+      const unlistenReadyPromise = appWindow.listen<PaneLifecycleEvent>(
+        "agent-pane-ready",
+        (event) => {
+          if (event.payload.paneId === paneId && event.payload.generation !== generation)
+            void refresh();
+        },
+      );
+      return () => {
+        disposed = true;
+        refreshEpoch += 1;
+        unlisten();
+        void unlistenReadyPromise.then((unlistenReady) => unlistenReady());
+      };
+    },
+    getState: () => call("agent_state"),
+    listMemories: async () => {
+      await ready();
+      return call("agent_memories");
+    },
+    deleteMemory: async (id) => {
+      await ready();
+      return call("agent_delete_memory", { id });
+    },
+    listJiwa: async () => {
+      await ready();
+      return call("agent_jiwa");
+    },
+    deleteJiwa: async (id) => {
+      await ready();
+      return call("agent_delete_jiwa", { id });
+    },
+    getProgress: async () => {
+      await ready();
+      return call("agent_progress");
+    },
+    getSubscriptionUsage: async (provider) => {
+      await ready();
+      return call("agent_usage", { provider });
+    },
+    enhancePrompt: async (text) => {
+      await ready();
+      return call("agent_enhance_prompt", { text });
+    },
+    sendPrompt: (text, attachments = [], meta) =>
+      call("agent_prompt", { text, attachments, meta: meta ?? null }),
+    async cancel() {
+      try {
+        return await call<CancelResult>("agent_cancel");
+      } catch (e) {
+        throw new AgentCancelError(parseCancelFailure(e));
+      }
+    },
+    sendKenPrompt: async (text) => {
+      await ready();
+      await call("agent_ken_prompt", { text });
+    },
+    cancelKen: async () => {
+      await ready();
+      await call("agent_ken_cancel");
+    },
+    async setAutopilot(enabled) {
+      await ready();
+      try {
+        return (
+          (await call<{ autopilot?: boolean }>("agent_autopilot_set", { enabled })).autopilot ??
+          enabled
+        );
+      } catch {
+        return enabled;
+      }
+    },
+    acceptPlan: (planPath) => call("agent_accept_plan", { planPath }),
+    listHistory: () => safeArray("agent_history", "history"),
+    authOAuthStart: async (provider) => {
+      await ready();
+      await call("agent_auth_oauth_start", { provider });
+    },
+    authOAuthCode: async (code) => {
+      await ready();
+      await call("agent_auth_oauth_code", { code });
+    },
+    newSession: () => call("agent_new_session"),
+    async getRadioState() {
+      try {
+        const r = await call<RadioState>("agent_radio_state");
+        return {
+          stations: r.stations ?? [],
+          current: r.current ?? null,
+          volume: Number.isFinite(r.volume) ? r.volume : 70,
+        };
+      } catch {
+        return { stations: [], current: null, volume: 70 };
+      }
+    },
+    async setRadio(station) {
+      return (
+        (await call<{ current: string | null }>("agent_radio_set", { station })).current ?? null
+      );
+    },
+    async setRadioVolume(volume) {
+      const r = await call<{ volume: number }>("agent_radio_volume", { volume });
+      return Number.isFinite(r.volume) ? r.volume : volume;
+    },
+    listTasks: () => safeArray("agent_tasks", "tasks"),
+    runTask: (id) => call("agent_run_tasks", { id, all: false }),
+    runAllTasks: () => call("agent_run_tasks", { id: null, all: true }),
+    deleteTask: async (id) => {
+      try {
+        return (await call<{ tasks: ProjectTask[] }>("agent_delete_task", { id })).tasks ?? [];
+      } catch {
+        return [];
+      }
+    },
+    async killTask(id) {
+      try {
+        return (await call<{ message?: string }>("agent_kill_task", { id })).message ?? null;
+      } catch {
+        return null;
+      }
+    },
+    async cycleThinking() {
+      try {
+        return await call("agent_cycle_thinking");
+      } catch {
+        return null;
+      }
+    },
+    listCommands: () => safeArray("agent_commands", "commands"),
+    listModels: () => safeArray("agent_models", "models"),
+    async switchModel(model) {
+      try {
+        return await call("agent_switch_model", { model });
+      } catch {
+        return null;
+      }
+    },
+    async switchKenModel(model) {
+      try {
+        return await call("agent_switch_ken_model", { model });
+      } catch {
+        return null;
+      }
+    },
+    async getSettings() {
+      try {
+        return await call<AppSettings>("agent_settings");
+      } catch {
+        return null;
+      }
+    },
+    saveSettings: (projectsRoot) => call("agent_save_settings", { projectsRoot }),
+    listProjects: () => safeArray("agent_projects", "projects"),
+    searchFiles: (query) => safeArray("agent_files", "files", { query }),
+    listSessions: (cwd, chatAgent) =>
+      safeArray("agent_sessions", "sessions", { cwd, chatAgent: chatAgent ?? null }),
+    async getTelegramStatus() {
+      try {
+        return await call("agent_telegram_get");
+      } catch {
+        return { configured: false };
+      }
+    },
+    saveTelegramConfig: async (botToken, userId) => {
+      await ready();
+      await call("agent_telegram_save", { botToken, userId });
+    },
+    async getServeStatus() {
+      try {
+        return await call("agent_serve_status");
+      } catch {
+        return { running: false, configured: false };
+      }
+    },
+    startServe: async () => {
+      await ready();
+      await call("agent_serve_start");
+    },
+    stopServe: async () => {
+      await ready();
+      await call("agent_serve_stop");
+    },
+    listMcpServers: async (cwd) => {
+      await ready();
+      return safeArray("agent_mcp_list", "servers", { cwd: cwd ?? null });
+    },
+    addMcpServer: async (line, scope, cwd) => {
+      await ready();
+      return call("agent_mcp_add", { line, scope, cwd: cwd ?? null });
+    },
+    loginMcpServer: async (name, scope, cwd) => {
+      await ready();
+      await call("agent_mcp_login", { name, scope, cwd: cwd ?? null });
+    },
+    async removeMcpServer(name, scope, cwd) {
+      await ready();
+      try {
+        return await call("agent_mcp_remove", { name, scope, cwd: cwd ?? null });
+      } catch {
+        return { removed: false };
+      }
+    },
+  };
 }
