@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:local-patched": "node scripts/build-local-hotfix.mjs",
+    "build:local-hotfix": "pnpm build:local-patched",
+    "update:local-fixes": "node scripts/update-with-local-fixes.mjs",
     "check": "tsc --noEmit",
     "lint": "eslint --cache 'src/**/*.{ts,tsx}'",
     "lint:fix": "eslint --cache 'src/**/*.{ts,tsx}' --fix",
@@ -45,6 +48,7 @@
     "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2",
     "@testing-library/react": "^16.3.2",
+    "@types/node": "^25.6.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",

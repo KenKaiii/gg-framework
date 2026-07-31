@@ -9,9 +9,18 @@
     "lint:fix": "eslint 'packages/*/src/**/*.{ts,tsx}' --fix && pnpm --filter matey lint:fix && pnpm --filter gg-app lint:fix",
     "format": "prettier --write 'packages/*/src/**/*.{ts,tsx}' 'Matey/**/*.{ts,tsx,css,html,json,md,yml}' && pnpm --filter gg-app format",
     "format:check": "prettier --check 'packages/*/src/**/*.{ts,tsx}' 'Matey/**/*.{ts,tsx,css,html,json,md,yml}' && pnpm --filter gg-app format:check",
-    "test": "pnpm -r test",
+    "test": "pnpm test:audit-generated && pnpm -r test",
+    "test:audit-generated": "node --test scripts/audit-generated.test.mjs",
     "bench": "pnpm build && npx tsx benchmarks/run-comparison.ts",
-    "prepare": "pnpm build"
+    "prepare": "pnpm build",
+    "app:update:local-fixes": "pnpm --filter gg-app update:local-fixes",
+    "app:build:local-patched": "pnpm --filter gg-app build:local-patched",
+    "audit:generated:web": "node scripts/audit-generated.mjs web",
+    "audit:generated:tauri": "node scripts/audit-generated.mjs tauri",
+    "audit:generated:sidecar-deps": "node scripts/audit-generated.mjs sidecar-deps",
+    "audit:generated:tauri-schemas": "node scripts/audit-generated.mjs tauri-schemas",
+    "audit:generated:cache": "node scripts/audit-generated.mjs cache",
+    "audit:generated:packages": "node scripts/audit-generated.mjs packages"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
