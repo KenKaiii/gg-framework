@@ -35,6 +35,8 @@ interface Props {
    * folder). A counter, not a boolean, so repeats always re-fire.
    */
   refreshSignal?: number;
+  waitForAgentReady?: () => Promise<unknown>;
+  loadProgress?: () => Promise<ProgressSnapshot | null>;
 }
 
 /**
@@ -46,6 +48,8 @@ export function HomeScreen({
   onChat,
   onLogin,
   refreshSignal = 0,
+  waitForAgentReady = waitForReady,
+  loadProgress = getProgress,
 }: Props): React.ReactElement {
   const [folderSet, setFolderSet] = useState(false);
   const [providerCount, setProviderCount] = useState(0);
@@ -64,11 +68,11 @@ export function HomeScreen({
     void getVersion()
       .then(setVersion)
       .catch(() => {});
-    void waitForReady()
-      .then(() => getProgress())
+    void waitForAgentReady()
+      .then(() => loadProgress())
       .then(setProgress)
       .catch(() => {});
-  }, []);
+  }, [loadProgress, waitForAgentReady]);
 
   async function refresh(): Promise<void> {
     // Settings + auth are read NATIVELY (Rust) — do them first, WITHOUT waiting on

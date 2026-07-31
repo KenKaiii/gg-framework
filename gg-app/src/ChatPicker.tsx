@@ -20,6 +20,14 @@ interface Props {
   onChosen: (cwd: string) => void;
   onClose?: () => void;
   initialAgent?: ChatAgentId;
+  waitForCatalogReady?: () => Promise<unknown>;
+  discoverSessions?: (cwd: string, chatAgent?: ChatAgentId | "all") => Promise<RecentSession[]>;
+  bindChat?: (
+    cwd: string,
+    sessionPath: string | undefined,
+    chatAgent: ChatAgentId,
+  ) => Promise<unknown>;
+  showWindowControls?: boolean;
 }
 
 /** Agent and session chooser rooted at the configured projects folder. */
@@ -27,6 +35,10 @@ export function ChatPicker({
   onChosen,
   onClose,
   initialAgent = "general",
+  waitForCatalogReady = waitForReady,
+  discoverSessions = listSessions,
+  bindChat = (cwd, sessionPath, chatAgent) => selectWorkspace("chat", cwd, sessionPath, chatAgent),
+  showWindowControls = true,
 }: Props): React.ReactElement {
   const [projectsRoot, setProjectsRoot] = useState("");
   const [sessions, setSessions] = useState<RecentSession[]>([]);
@@ -59,8 +71,8 @@ export function ChatPicker({
         const root = settings?.projectsRoot.trim() ?? "";
         if (!root) throw new Error("Choose a projects folder in Settings before starting a chat.");
         if (!cancelled) setProjectsRoot(root);
-        await waitForReady();
-        return listSessions(root, "all");
+        await waitForCatalogReady();
+        return discoverSessions(root, "all");
       })
       .then((recent) => {
         if (!cancelled) setSessions(recent);
@@ -76,12 +88,12 @@ export function ChatPicker({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [discoverSessions, waitForCatalogReady]);
 
   function choose(session?: RecentSession): void {
     if (busy || !projectsRoot) return;
     setBusy(true);
-    void selectWorkspace("chat", projectsRoot, session?.path, session?.chatAgent ?? initialAgent)
+    void bindChat(projectsRoot, session?.path, session?.chatAgent ?? initialAgent)
       .then(() => onChosen(projectsRoot))
       .catch(() => setBusy(false));
   }
@@ -100,8 +112,12 @@ export function ChatPicker({
           >
             {"+ New chat"}
           </button>
-          <RadioButton />
-          <WindowLayoutButton />
+          {showWindowControls && (
+            <>
+              <RadioButton />
+              <WindowLayoutButton />
+            </>
+          )}
         </span>
       </div>
 

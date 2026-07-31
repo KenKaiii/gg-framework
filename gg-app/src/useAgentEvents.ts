@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { theme } from "./theme";
 import {
-  listCommands,
-  listModels,
+  listCommands as listPrimaryCommands,
+  listModels as listPrimaryModels,
   type SidecarEvent,
   type SubAgentStatePayload,
   type AgentState,
@@ -12,6 +12,7 @@ import {
   type ProjectTask,
   type QueuedMessage,
   type SlashCommand,
+  type PaneAgentClient,
 } from "./agent";
 import { formatTokenCount } from "./ActivityBar";
 import { type LiveToolEntry, LIVE_TOOL_PANEL_ROWS } from "./LiveToolPanel";
@@ -115,6 +116,7 @@ function pickDoneVerb(toolsUsed: ReadonlySet<string>): string {
  * mirrors the memoized handler reads without re-subscribing.
  */
 export interface AgentEventsDeps {
+  client?: Pick<PaneAgentClient, "listCommands" | "listModels">;
   setItems: Dispatch<SetStateAction<Item[]>>;
   nextId: () => number;
   /** Ken (mentor) event delegate — consulted first; ken events early-return. */
@@ -163,6 +165,7 @@ export interface AgentEvents {
 
 export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
   const {
+    client,
     setItems,
     nextId,
     handleKenEvent,
@@ -194,6 +197,8 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
     pendingPlanTotalRef,
     stickToBottomRef,
   } = deps;
+  const listCommands = client?.listCommands ?? listPrimaryCommands;
+  const listModels = client?.listModels ?? listPrimaryModels;
 
   // ── Event-machine private refs (used nowhere outside this hook) ──
   const streamingIdRef = useRef<number | null>(null);
@@ -1146,6 +1151,8 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
       flushSubagentSnapshots,
       dropPendingSubagentSnapshots,
       nextId,
+      listCommands,
+      listModels,
       setItems,
       setState,
       setTasks,

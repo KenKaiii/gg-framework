@@ -1532,12 +1532,14 @@ async fn agent_history(
 async fn agent_export_transcript(
     webview: WebviewWindow,
     client: State<'_, reqwest::Client>,
+    pane_id: Option<String>,
     path: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    let pane_id = pane_id.as_deref().unwrap_or(PRIMARY_PANE_ID);
     let Some(path) = path else {
-        return sidecar_get_json(&webview, PRIMARY_PANE_ID, &client, "/export?name=1").await;
+        return sidecar_get_json(&webview, pane_id, &client, "/export?name=1").await;
     };
-    let body = sidecar_get_json(&webview, PRIMARY_PANE_ID, &client, "/export").await?;
+    let body = sidecar_get_json(&webview, pane_id, &client, "/export").await?;
     let markdown = body
         .get("markdown")
         .and_then(|v| v.as_str())
@@ -1691,10 +1693,12 @@ async fn agent_auth_logout(
 async fn agent_cancel_queued(
     webview: WebviewWindow,
     client: State<'_, reqwest::Client>,
+    pane_id: Option<String>,
     id: String,
 ) -> Result<serde_json::Value, String> {
     let port = port_for(&webview).ok_or("daemon not ready")?;
-    let gg_sid = session_for(&webview).ok_or("session not ready")?;
+    let pane_id = pane_id.as_deref().unwrap_or(PRIMARY_PANE_ID);
+    let gg_sid = pane_session_for(&webview, pane_id).ok_or("session not ready")?;
     let res = client
         .post(format!("{}/queued/cancel", sidecar_base(port)))
         .header("x-gg-session", &gg_sid)

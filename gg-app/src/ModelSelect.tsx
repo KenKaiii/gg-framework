@@ -18,6 +18,8 @@ interface Props {
    *  clears the pin. `followActive` makes it the selected value. */
   onSelectFollow?: () => void;
   followActive?: boolean;
+  /** Incremented when the backing daemon/catalog identity changes. */
+  refreshNonce?: number;
 }
 
 const FOLLOW_VALUE = "__follow__";
@@ -36,6 +38,7 @@ export function ModelSelect({
   color,
   onSelectFollow,
   followActive,
+  refreshNonce = 0,
 }: Props): React.ReactElement {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLSpanElement>(null);
@@ -53,6 +56,10 @@ export function ModelSelect({
   const activeLocal = models.find((model) => model.id === currentModel && model.local);
   // Which machine/server is answering matters when a local model is active.
   const triggerTitle = activeLocal?.endpoint ? `${title} — ${activeLocal.endpoint}` : title;
+
+  useEffect(() => {
+    setOpen(false);
+  }, [models, refreshNonce]);
 
   useEffect(() => {
     if (!open) return;

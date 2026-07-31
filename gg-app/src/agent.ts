@@ -1969,6 +1969,9 @@ export interface PaneAgentClient {
   setAutopilot(enabled: boolean): Promise<boolean>;
   acceptPlan(planPath: string | null): Promise<void>;
   listHistory(): Promise<HistoryEntry[]>;
+  cancelQueued(id: string): Promise<QueuedMessage[] | null>;
+  exportTranscriptName(): Promise<string | null>;
+  saveTranscript(path: string): Promise<{ path: string; bytes: number }>;
   authOAuthStart(provider: string): Promise<void>;
   authOAuthCode(code: string): Promise<void>;
   newSession(): Promise<void>;
@@ -1983,7 +1986,7 @@ export interface PaneAgentClient {
   cycleThinking(): Promise<ThinkingState | null>;
   listCommands(): Promise<SlashCommand[]>;
   listModels(): Promise<ModelOption[]>;
-  switchModel(model: string): Promise<SwitchModelResult | null>;
+  switchModel(model: string): Promise<SwitchModelResult | { error: string }>;
   switchKenModel(model: string | null): Promise<SwitchKenModelResult | null>;
   getSettings(): Promise<AppSettings | null>;
   saveSettings(projectsRoot: string): Promise<void>;
@@ -2159,6 +2162,29 @@ export function createPaneAgentClient(paneId: string): PaneAgentClient {
     },
     acceptPlan: (planPath) => call("agent_accept_plan", { planPath }),
     listHistory: () => safeArray("agent_history", "history"),
+    async cancelQueued(id) {
+      try {
+        const response = await call<{ queued?: QueuedMessage[] }>("agent_cancel_queued", { id });
+        return response.queued ?? [];
+      } catch {
+        return null;
+      }
+    },
+    async exportTranscriptName() {
+      try {
+        await ready();
+        const response = await call<{ filename?: string }>("agent_export_transcript", {
+          path: null,
+        });
+        return response.filename ?? null;
+      } catch {
+        return null;
+      }
+    },
+    async saveTranscript(path) {
+      await ready();
+      return call("agent_export_transcript", { path });
+    },
     authOAuthStart: async (provider) => {
       await ready();
       await call("agent_auth_oauth_start", { provider });
@@ -2217,9 +2243,12 @@ export function createPaneAgentClient(paneId: string): PaneAgentClient {
     listModels: () => safeArray("agent_models", "models"),
     async switchModel(model) {
       try {
-        return await call("agent_switch_model", { model });
-      } catch {
-        return null;
+        const response = await call<SwitchModelResult & { error?: string }>("agent_switch_model", {
+          model,
+        });
+        return response.error ? { error: response.error } : response;
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error) };
       }
     },
     async switchKenModel(model) {

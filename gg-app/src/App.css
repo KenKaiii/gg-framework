@@ -939,6 +939,18 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.picker-build-identity {
+  flex: 0 0 auto;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--secondary);
+  opacity: 0.8;
+}
 
 /* ── Main chat-view header (.chat-head) ──
    Two stacked rows under one bottom border:
@@ -1465,6 +1477,13 @@ body {
    otherwise the field is flush against the description text. */
 .modal-hint + .modal-input {
   margin-top: 10px;
+}
+/* Quiet local-build fingerprint shown in Settings. */
+.modal-build-identity {
+  margin-top: 16px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
 }
 .modal-radio-group {
   display: flex;
@@ -2903,11 +2922,14 @@ body {
 }
 
 /* ── Tool rows (status dot + styled verb/detail/summary) ── */
+.tool-entry {
+  min-width: 0;
+}
 .tool-row {
   display: flex;
   gap: 6px;
   padding: 1px 0;
-  align-items: baseline;
+  align-items: center;
 }
 .tool-dot {
   flex: 0 0 auto;
@@ -2923,6 +2945,104 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.tool-details-toggle,
+.bash-diagnostics-copy {
+  min-height: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+.tool-details-toggle {
+  flex: 0 0 auto;
+  padding: 1px 6px 1px 4px;
+  font-size: 11px;
+}
+.tool-details-toggle:hover,
+.bash-diagnostics-copy:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--surface-1);
+}
+.tool-details-toggle:focus-visible,
+.bash-diagnostics-copy:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.bash-diagnostics {
+  margin: 4px 0 7px 18px;
+  padding: 7px 8px;
+  border-left: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.bash-diagnostics dl {
+  margin: 0;
+  display: grid;
+  gap: 3px;
+}
+.bash-diagnostics dl > div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+}
+.bash-diagnostics dt {
+  color: var(--text-dim);
+}
+.bash-diagnostics dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.bash-diagnostics-tail {
+  margin-top: 7px;
+}
+.bash-diagnostics-tail > span {
+  color: var(--text-dim);
+}
+.bash-diagnostics-tail pre {
+  max-height: 160px;
+  margin: 3px 0 0;
+  padding: 6px 7px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font: inherit;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.bash-diagnostics-tail pre:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.bash-diagnostics-copy {
+  margin-top: 7px;
+  padding: 2px 7px;
+  font-size: 11px;
+}
+.task-output-details dl > div {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+.task-output-guidance {
+  margin: 7px 0 0;
+  padding-inline-start: 16px;
+  color: var(--text-secondary);
+}
+.task-output-guidance li + li {
+  margin-top: 3px;
 }
 
 /* ── Sub-agent in-chat feed (parallel delegations + live tool activity) ── */
@@ -4301,6 +4421,11 @@ body {
   overflow: hidden;
   white-space: nowrap;
 }
+.footer-custom-build {
+  flex: 0 0 auto;
+  color: var(--secondary);
+  font-weight: 600;
+}
 /* Dividers sit flush (no flex gap) so ` │ ` reads as one separator unit. */
 .footer-sep {
   flex: 0 0 auto;
@@ -4417,8 +4542,20 @@ body {
   cursor: pointer;
   padding: 0;
 }
-.bgtasks-kill:hover {
+.bgtasks-kill:hover:not(:disabled) {
   text-decoration: underline;
+}
+.bgtasks-kill:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.bgtasks-feedback {
+  max-width: 420px;
+  padding: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 /* ── Model picker (footer, native <select>) ── */
@@ -5856,4 +5993,307 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Recursive agent workspace interactions. */
+.workspace-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+.workspace-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 30px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+  user-select: none;
+}
+.workspace-rearrangement-toggle {
+  padding: 3px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.workspace-rearrangement-toggle:hover:not(:disabled),
+.workspace-rearrangement-toggle:focus-visible:not(:disabled),
+.workspace-rearrangement-toggle[aria-pressed="true"] {
+  color: var(--text);
+  border-color: var(--primary);
+  outline: none;
+}
+.workspace-rearrangement-toggle[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--primary) 18%, var(--surface-2));
+}
+.workspace-rearrangement-toggle:disabled {
+  color: var(--text-dim);
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+.workspace-grid {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.workspace-split {
+  position: absolute;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.workspace-pane-slot {
+  position: absolute;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+  container-type: inline-size;
+}
+.workspace-pane-slot.pane-focused {
+  outline-color: var(--primary);
+}
+.workspace-pane-body,
+.workspace-pane-body > .agent-pane,
+.workspace-pane-body > .app {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.pane-drag-active {
+  cursor: grabbing;
+}
+.pane-drop-overlay {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  pointer-events: none;
+}
+.pane-drop-overlay::after {
+  position: absolute;
+  z-index: 0;
+  border: 2px solid color-mix(in srgb, var(--primary) 82%, white);
+  background: color-mix(in srgb, var(--primary) 24%, transparent);
+  box-shadow: inset 0 0 24px color-mix(in srgb, var(--primary) 12%, transparent);
+  content: "";
+  pointer-events: none;
+  opacity: 0;
+}
+.pane-drop-overlay[data-hovered-placement="left"]::after,
+.pane-drop-overlay[data-hovered-placement="right"]::after {
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  opacity: 1;
+}
+.pane-drop-overlay[data-hovered-placement="left"]::after {
+  left: 0;
+}
+.pane-drop-overlay[data-hovered-placement="right"]::after {
+  right: 0;
+}
+.pane-drop-overlay[data-hovered-placement="up"]::after,
+.pane-drop-overlay[data-hovered-placement="down"]::after {
+  right: 0;
+  left: 0;
+  height: 50%;
+  opacity: 1;
+}
+.pane-drop-overlay[data-hovered-placement="up"]::after {
+  top: 0;
+}
+.pane-drop-overlay[data-hovered-placement="down"]::after {
+  bottom: 0;
+}
+.pane-drop-zone {
+  position: absolute;
+  z-index: 1;
+  pointer-events: auto;
+}
+.pane-drop-overlay-inert .pane-drop-zone {
+  cursor: not-allowed;
+}
+.pane-drop-zone-left,
+.pane-drop-zone-right {
+  top: 0;
+  bottom: 0;
+  width: 25%;
+}
+.pane-drop-zone-left {
+  left: 0;
+}
+.pane-drop-zone-right {
+  right: 0;
+}
+.pane-drop-zone-up,
+.pane-drop-zone-down {
+  right: 25%;
+  left: 25%;
+  height: 25%;
+}
+.pane-drop-zone-up {
+  top: 0;
+}
+.pane-drop-zone-down {
+  bottom: 0;
+}
+.pane-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-button);
+  color: var(--text-muted);
+  background: transparent;
+  cursor: grab;
+}
+.pane-drag-handle:hover,
+.pane-drag-handle:focus-visible {
+  color: var(--text);
+  border-color: var(--primary);
+  background: var(--surface-2);
+  outline: none;
+}
+.pane-drag-handle:active {
+  cursor: grabbing;
+}
+.pane-drag-handle-agent {
+  position: absolute;
+  z-index: 12;
+  top: 7px;
+  left: 8px;
+  background: var(--surface-1);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.workspace-pane-actions {
+  position: absolute;
+  z-index: 12;
+  top: 5px;
+  right: 38px;
+  display: flex;
+  gap: 3px;
+}
+.workspace-pane-actions button,
+.workspace-pane-close {
+  display: inline-grid;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-1);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.workspace-pane-actions button:hover:not(:disabled),
+.workspace-pane-actions button:focus-visible:not(:disabled),
+.workspace-pane-close:hover,
+.workspace-pane-close:focus-visible {
+  border-color: var(--primary);
+  color: var(--text);
+  outline: none;
+}
+.workspace-pane-actions button:focus-visible,
+.workspace-pane-close:focus-visible,
+.workspace-rearrangement-toggle:focus-visible {
+  box-shadow: 0 0 0 1px var(--primary);
+}
+.workspace-pane-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.workspace-pane-close {
+  position: absolute;
+  z-index: 12;
+  top: 5px;
+  right: 8px;
+  font-size: 18px;
+}
+.workspace-divider {
+  position: absolute;
+  z-index: 10;
+  pointer-events: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  outline: 0;
+  background: var(--surface-1);
+  touch-action: none;
+}
+.workspace-divider-horizontal {
+  min-width: 7px;
+  cursor: col-resize;
+}
+.workspace-divider-vertical {
+  min-height: 7px;
+  cursor: row-resize;
+}
+.workspace-divider-line {
+  position: absolute;
+  background: var(--border-strong);
+  transition: background-color var(--t-fast);
+}
+.workspace-divider-horizontal .workspace-divider-line {
+  inset: 0 auto 0 3px;
+  width: 1px;
+}
+.workspace-divider-vertical .workspace-divider-line {
+  inset: 3px 0 auto;
+  height: 1px;
+}
+.workspace-divider:hover .workspace-divider-line,
+.workspace-divider:focus-visible .workspace-divider-line {
+  background: var(--primary);
+}
+.workspace-divider:focus-visible .workspace-divider-line {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 28%, transparent);
+}
+
+@container (max-width: 420px) {
+  .pane-drop-zone-left,
+  .pane-drop-zone-right {
+    width: max(25%, min(44px, 50%));
+  }
+
+  .pane-drop-zone-up,
+  .pane-drop-zone-down {
+    right: max(25%, min(44px, 50%));
+    left: max(25%, min(44px, 50%));
+    height: max(25%, min(44px, 50%));
+  }
 }

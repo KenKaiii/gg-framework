@@ -39,6 +39,11 @@ interface Props {
   initialProjectPath?: string | null;
   /** Shown when the picker is reachable from an open project (enables "back"). */
   onClose?: () => void;
+  waitForCatalogReady?: () => Promise<unknown>;
+  discoverProjects?: () => Promise<DiscoveredProject[]>;
+  discoverSessions?: (cwd: string) => Promise<RecentSession[]>;
+  bindProject?: (cwd: string, sessionPath?: string) => Promise<unknown>;
+  showWindowControls?: boolean;
 }
 
 /**
@@ -51,6 +56,11 @@ export function ProjectPicker({
   onChosen,
   initialProjectPath,
   onClose,
+  waitForCatalogReady = waitForReady,
+  discoverProjects = listProjects,
+  discoverSessions = listSessions,
+  bindProject = selectProject,
+  showWindowControls = true,
 }: Props): React.ReactElement {
   const [projects, setProjects] = useState<DiscoveredProject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,8 +112,8 @@ export function ProjectPicker({
   useEffect(() => {
     let cancelled = false;
     // The window's sidecar serves project discovery; wait for it before asking.
-    void waitForReady()
-      .then(() => listProjects())
+    void waitForCatalogReady()
+      .then(() => discoverProjects())
       .then((p) => {
         if (cancelled) return;
         setProjects(p);
@@ -128,7 +138,7 @@ export function ProjectPicker({
     setSessions([]);
     setResumeError(null);
     setSessionsLoading(true);
-    void listSessions(project.path).then((s) => {
+    void discoverSessions(project.path).then((s) => {
       setSessions(s);
       setSessionsLoading(false);
     });
@@ -140,7 +150,7 @@ export function ProjectPicker({
     setResumeError(null);
     // Rust now resolves this command only after the daemon session is ready.
     // A failed resume therefore stays in the picker and shows its real cause.
-    void selectProject(cwd, sessionPath)
+    void bindProject(cwd, sessionPath)
       .then(() => onChosen(cwd))
       .catch((reason: unknown) => {
         const message = reason instanceof Error ? reason.message : String(reason);
@@ -248,8 +258,12 @@ export function ProjectPicker({
               </button>
             </>
           )}
-          <RadioButton />
-          <WindowLayoutButton />
+          {showWindowControls && (
+            <>
+              <RadioButton />
+              <WindowLayoutButton />
+            </>
+          )}
         </span>
       </div>
 
