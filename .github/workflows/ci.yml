@@ -125,6 +125,12 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Generated-output audit tests
+        shell: bash
+        run: |
+          node --test scripts/audit-generated.test.mjs
+          node scripts/audit-generated.mjs --inspect
+
       # shell: bash for the same reason as the `test` job — on Windows a
       # PowerShell multi-line step only reports the LAST line's exit code, so a
       # failing build here would pass silently.

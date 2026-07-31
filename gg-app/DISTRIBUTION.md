@@ -53,7 +53,7 @@ correctly skipped (they don't exist on the build machine).
 ## Build & verify locally
 
 ```bash
-pnpm --filter @kenkaiiii/ggcoder build      # produce dist/app-sidecar.js
+pnpm --filter @kenkaiiii/ggcoder... build   # produce dist/app-sidecar.js
 pnpm --filter gg-app stage:node             # download + stage the Node runtime
 pnpm --filter gg-app bundle:sidecar         # esbuild bundle + copy externals
 node gg-app/scripts/smoke-sidecar.mjs       # boot bundled node + sidecar, hit /state

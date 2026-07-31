@@ -20,7 +20,10 @@
     "prebundle": "pnpm stage:node && pnpm bundle:sidecar",
     "installer:art": "node installer/build-art.mjs",
     "bump": "node scripts/bump-version.mjs",
-    "test": "vitest run",
+    "evidence:workspace-shell": "node scripts/workspace-shell-evidence.mjs",
+    "test": "pnpm test:parallel && pnpm test:workspace-shell-evidence",
+    "test:parallel": "vitest run --exclude scripts/workspace-shell-evidence.test.mjs",
+    "test:workspace-shell-evidence": "vitest run scripts/workspace-shell-evidence.test.mjs --no-file-parallelism",
     "smoke:packaged": "node scripts/smoke-packaged-windows.mjs",
     "tauri": "tauri"
   },

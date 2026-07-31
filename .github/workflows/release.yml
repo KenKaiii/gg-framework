@@ -82,6 +82,12 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Generated-output audit
+        shell: bash
+        run: |
+          node --test scripts/audit-generated.test.mjs
+          node scripts/audit-generated.mjs --inspect
+
       # shell: bash is load-bearing on the windows-latest leg. The default shell
       # there is PowerShell, which does NOT abort a multi-line script when an
       # intermediate command exits non-zero — only the LAST line decides the

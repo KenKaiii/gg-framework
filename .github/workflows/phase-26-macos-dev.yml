@@ -1,0 +1,54 @@
+name: Phase 26 macOS dev evidence
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  notes-resume:
+    name: macOS tauri dev · Notes inspect/Resume
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Record exact reviewed SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build current-checkout sidecar dependencies
+        run: pnpm --filter @kenkaiiii/ggcoder... build
+
+      - name: Stage current-platform Node binary and sidecar resources
+        run: |
+          pnpm --filter gg-app stage:node
+          pnpm --filter gg-app bundle:sidecar
+
+      - name: Run isolated current-checkout macOS Notes smoke
+        id: smoke
+        run: node gg-app/scripts/phase-26-macos-dev-evidence.mjs
+
+      - name: Upload isolated macOS evidence
+        if: always() && steps.smoke.outputs.evidence_root != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: phase-26-macos-dev-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ steps.smoke.outputs.evidence_root }}
+          if-no-files-found: error
+          retention-days: 30
