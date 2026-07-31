@@ -9,7 +9,7 @@
  *   <runnable GG Coder prompt body, 1-3 lines>
  *
  *   ALL_CLEAR
- *
+ *   ACCEPT_VERIFICATION_EXCEPTION {"id":"<current exception ID>"}  // optional
  *   IGNORE
  *
  *   HUMAN
@@ -35,7 +35,7 @@
 
 export type AutopilotVerdict =
   | { kind: "prompt"; body: string }
-  | { kind: "all_clear" }
+  | { kind: "all_clear"; acceptedVerificationExceptionId?: string }
   | { kind: "ignore" }
   | { kind: "human"; reason: string };
 
@@ -74,22 +74,53 @@ function normalizeKeywordLine(line: string): string {
     .replace(/\s+/g, "_");
 }
 
+const EXCEPTION_ACCEPTANCE_PREFIX = "ACCEPT_VERIFICATION_EXCEPTION ";
+
+/** Parse the one optional ALL_CLEAR payload. The JSON object keeps arbitrary
+ *  persisted IDs unambiguous and rejects prose or partial acknowledgements. */
+function parseVerificationExceptionAcceptance(payload: string): string | undefined {
+  const lines = payload
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length !== 1 || !lines[0]!.startsWith(EXCEPTION_ACCEPTANCE_PREFIX)) {
+    return undefined;
+  }
+  try {
+    const value: unknown = JSON.parse(lines[0]!.slice(EXCEPTION_ACCEPTANCE_PREFIX.length));
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      Array.isArray(value) ||
+      Object.keys(value).length !== 1 ||
+      !("id" in value) ||
+      typeof value.id !== "string" ||
+      value.id.length === 0
+    ) {
+      return undefined;
+    }
+    return value.id;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Fallback for when Ken ignores the "keyword-first, nothing before it"
  * instruction and buries a bare ALL_CLEAR/IGNORE/SKIP line after a recap or
- * explanation (a real drift pattern models fall into despite the system
- * prompt). Only matches a line that is EXACTLY one of these bare keywords.
- * PROMPT/HUMAN carry payloads and get their own dedicated recovery passes in
- * parseAutopilotVerdict. Returns the LAST such line (the verdict
- * conventionally lands at the end of the drift), or null if none/ambiguous
- * multiple different keywords are present.
+ * explanation. Returns the LAST such line so ALL_CLEAR's optional acceptance
+ * payload can be re-parsed from the exact verdict boundary.
  */
-function findTrailingBareVerdict(lines: string[]): "all_clear" | "ignore" | null {
-  let found: "all_clear" | "ignore" | null = null;
-  for (const line of lines) {
-    const normalized = normalizeKeywordLine(line);
-    if (normalized === "ALL_CLEAR") found = "all_clear";
-    else if (normalized === "IGNORE" || normalized === "SKIP") found = "ignore";
+function findTrailingBareVerdict(
+  lines: string[],
+): { kind: "all_clear" | "ignore"; index: number } | null {
+  let found: { kind: "all_clear" | "ignore"; index: number } | null = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    const normalized = normalizeKeywordLine(lines[index]!);
+    if (normalized === "ALL_CLEAR") found = { kind: "all_clear", index };
+    else if (normalized === "IGNORE" || normalized === "SKIP") {
+      found = { kind: "ignore", index };
+    }
   }
   return found;
 }
@@ -124,7 +155,10 @@ export function parseAutopilotVerdict(reply: string): AutopilotVerdict {
     .trim();
 
   if (collapsed === "ALL_CLEAR" || collapsed.startsWith("ALL_CLEAR")) {
-    return { kind: "all_clear" };
+    const acceptedVerificationExceptionId = parseVerificationExceptionAcceptance(rest);
+    return acceptedVerificationExceptionId
+      ? { kind: "all_clear", acceptedVerificationExceptionId }
+      : { kind: "all_clear" };
   }
 
   // IGNORE / SKIP: the turn wasn't real work — nothing to say, nothing to show.
@@ -165,8 +199,10 @@ export function parseAutopilotVerdict(reply: string): AutopilotVerdict {
   // shape that used to leak raw commentary + "ALL_CLEAR" into a HUMAN bubble
   // instead of rendering the normal all-clear/ignore marker.
   const trailing = findTrailingBareVerdict(lines);
-  if (trailing === "all_clear") return { kind: "all_clear" };
-  if (trailing === "ignore") return { kind: "ignore" };
+  if (trailing?.kind === "all_clear") {
+    return parseAutopilotVerdict(lines.slice(trailing.index).join("\n"));
+  }
+  if (trailing?.kind === "ignore") return { kind: "ignore" };
 
   // A buried bare HUMAN line (Ken wrote his reasoning first, THEN the verdict).
   // Take the lines after the LAST exact-"HUMAN" line as the reason and drop the

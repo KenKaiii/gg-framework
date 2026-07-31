@@ -24,6 +24,16 @@
       "types": "./dist/paths.d.ts",
       "import": "./dist/paths.js",
       "require": "./dist/paths.cjs"
+    },
+    "./project-notes": {
+      "types": "./dist/project-notes.d.ts",
+      "import": "./dist/project-notes.js",
+      "require": "./dist/project-notes.cjs"
+    },
+    "./phase-start-protocol": {
+      "types": "./dist/phase-start-protocol.d.ts",
+      "import": "./dist/phase-start-protocol.js",
+      "require": "./dist/phase-start-protocol.cjs"
     }
   },
   "main": "./dist/index.cjs",

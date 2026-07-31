@@ -170,6 +170,12 @@ import { rebuildFromSessions } from "./core/progress/rebuild.js";
 import type { ProgressFile, ProgressSnapshot } from "./core/progress/types.js";
 import { AppSidecarReloadCoordinator } from "./app-sidecar-reload.js";
 import { AppSidecarSessionRouter, sessionEventFrame } from "./app-sidecar-session-router.js";
+import { createAppSidecarNotesHandler, type AppSidecarNotesHandler } from "./app-sidecar-notes.js";
+import {
+  ProjectNotesRepository,
+  canonicalProjectKey,
+  type ProjectNotesSnapshot,
+} from "./project-notes-repository.js";
 import {
   captureSidecarError,
   flushSidecarErrors,
@@ -856,6 +862,24 @@ async function main(): Promise<void> {
   };
 
   const oauthInFlightProviders = new Set<string>();
+  const notesRepository = new ProjectNotesRepository(paths.agentDir);
+  const broadcastNotesSnapshot = (snapshot: ProjectNotesSnapshot): void => {
+    for (const context of sessions.values()) {
+      if (canonicalProjectKey(context.cwd) === snapshot.projectKey) {
+        context.broadcastNotesChange(snapshot);
+      }
+    }
+  };
+  const notes = createAppSidecarNotesHandler({
+    repository: notesRepository,
+    onCommittedSnapshot: broadcastNotesSnapshot,
+    onError: (error) => {
+      captureSidecarError(error, "app-sidecar.notes.request");
+      log("ERROR", "app-sidecar", "notes request failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    },
+  });
   const memoryStore = new MemoryStore({
     onChange: ({ memories }) => {
       for (const ctx of sessions.values()) {
@@ -1110,6 +1134,7 @@ async function main(): Promise<void> {
                 broadcastAll,
                 oauthInFlightProviders,
                 reloadCoordinator,
+                notes,
               },
               { id, mode, chatAgent, cwd: sessionCwd, sessionPath },
             );
@@ -1435,6 +1460,7 @@ interface SessionContext {
   session: AgentSession;
   clients: Set<SseClient>;
   broadcast: (type: string, data: unknown) => void;
+  broadcastNotesChange: (snapshot: ProjectNotesSnapshot) => void;
   /** Handle one HTTP request for this session. Owns its own 404 fallthrough. */
   handle: (
     req: http.IncomingMessage,
@@ -1465,6 +1491,7 @@ async function createSession(
     /** Providers with an OAuth flow in progress in some window. */
     oauthInFlightProviders: Set<string>;
     reloadCoordinator: AppSidecarReloadCoordinator;
+    notes: AppSidecarNotesHandler;
   },
   opts: {
     id: string;
@@ -1482,6 +1509,7 @@ async function createSession(
     broadcastAll,
     oauthInFlightProviders,
     reloadCoordinator,
+    notes,
   } = deps;
   const paths = deps.paths;
   const mode = opts.mode;
@@ -1569,6 +1597,10 @@ async function createSession(
     }
   }
 
+  function broadcastNotesChange(snapshot: ProjectNotesSnapshot): void {
+    broadcast("notes_change", { projectKey: snapshot.projectKey, revision: snapshot.revision });
+  }
+
   // Replace CLI-specific guidance (slash commands, CLI tool names) with
   // desktop-app equivalents so the webview never shows "run ggcoder login".
   // Applied to BOTH the message and guidance fields — the auth "Not logged in…
@@ -1604,25 +1636,6 @@ async function createSession(
         .replaceAll(/Use \/model to switch/gi, "Use the model selector to switch")
         // /help
         .replaceAll(/see \/help/gi, "check the help menu")
-    );
-  }
-
-  /**
-   * Guidance for a connection failure against the ACTIVE local endpoint, or
-   * undefined when that isn't the situation (so the generic wording stands).
-   * "Disable your VPN / allow us through the firewall" is useless advice for a
-   * server running on this machine — name what the user has to restart.
-   */
-  function localNetworkGuidance(source: string | undefined): string | undefined {
-    if (source !== "network") return undefined;
-    const state = session.getState();
-    if (state.provider !== "local") return undefined;
-    const parsed = parseLocalModelId(state.model);
-    const probe = localProbes.find((p) => p.endpoint.id === parsed?.endpointId);
-    if (!probe) return undefined;
-    return (
-      `${probe.endpoint.label} stopped responding at ${probe.endpoint.baseUrl}. ` +
-      "Start it again and retry, or pick another model."
     );
   }
 
@@ -2925,6 +2938,8 @@ async function createSession(
     url: string,
     method: string,
   ): void {
+    if (notes.handle(req, res, { cwd }, url, method)) return;
+
     if (method === "GET" && url === "/state") {
       const st = session.getState();
       json(res, 200, {
@@ -5074,6 +5089,7 @@ async function createSession(
     session,
     clients,
     broadcast,
+    broadcastNotesChange,
     handle,
     dispose,
     isRunning: () => running || autopilotActive || runLifecycle.running,

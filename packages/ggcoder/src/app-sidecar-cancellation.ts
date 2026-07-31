@@ -1,33 +1,9 @@
 import { randomUUID } from "node:crypto";
-interface BoundPhaseLifecycleContext {
-  phaseId: string;
-  [key: string]: unknown;
-}
-
-type PhaseLifecycleReconcileStatus =
-  | "committed"
-  | "same-status"
-  | "manual-override"
-  | "done-terminal"
-  | "no-active-phase"
-  | "phase-not-found"
-  | "phase-archived"
-  | "stale-session"
-  | "missing"
-  | "corrupt"
-  | "storage-failure";
-
-interface PhaseLifecycleReconcileOutcome {
-  status: PhaseLifecycleReconcileStatus;
-  error?: unknown;
-}
-
-interface AppSidecarPhaseLifecycleCoordinator {
-  enqueue(
-    event: { type: "cancelled" },
-    context: BoundPhaseLifecycleContext,
-  ): Promise<PhaseLifecycleReconcileOutcome>;
-}
+import type {
+  AppSidecarPhaseLifecycleCoordinator,
+  BoundPhaseLifecycleContext,
+  PhaseLifecycleReconcileOutcome,
+} from "./app-sidecar-phase-lifecycle.js";
 
 export type PhaseCancellationPersistenceFailureCode =
   | "phase-not-found"

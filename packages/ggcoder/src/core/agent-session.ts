@@ -32,6 +32,7 @@ import { getClaudeCliUserAgent } from "./claude-code-version.js";
 import { kimiCodingHeaders, isKimiCodingEndpoint } from "./oauth/kimi.js";
 import {
   SessionManager,
+  RequiredSessionPersistenceError,
   KEN_TURN_CUSTOM_KIND,
   AUTOPILOT_MARKER_CUSTOM_KIND,
   APP_MARKER_CUSTOM_KIND,
@@ -79,6 +80,7 @@ import {
 } from "../tools/index.js";
 import type { BackgroundProcess } from "./process-manager.js";
 import { buildProcessCompletionFollowUp } from "./process-gate.js";
+import { canonicalProjectKey } from "../project-notes-repository.js";
 import { buildSubAgentCompletionFollowUp, type SubAgentManager } from "./subagent-manager.js";
 import { applyAsyncSubagentPolicy } from "./subagent-policy.js";
 import { z } from "zod";
@@ -126,6 +128,13 @@ import { AgentNotificationQueue } from "./agent-notifications.js";
 
 import { findUserSessionPrompt, getUserSessionPrompt } from "./session-preview.js";
 import { normalizeMessageImages } from "./message-images.js";
+import {
+  ACTIVE_PHASE_CONTEXT_KIND,
+  parseActivePhaseContext,
+  renderActivePhasePackage,
+  type ActivePhaseContextV1,
+  type ActivePhaseExecutionStage,
+} from "../phase-context.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import type { Stats } from "node:fs";
@@ -463,6 +472,8 @@ export class AgentSession {
   private approvedPlanPath?: string;
   /** Extra workspace roots added with `/add-dir` (resolved, de-duplicated). */
   private additionalRoots: string[] = [];
+  /** Durable selected Roadmap phase, restored before the next provider turn. */
+  private activePhaseContext?: ActivePhaseContextV1;
 
   private sessionId = "";
   private checkpointGeneration = 0;
@@ -1071,6 +1082,7 @@ export class AgentSession {
     await this.adoptDeferredCheckpointBeforePrompt();
     const slash = await this.resolveSlashInput(content);
     if (slash?.kind === "template") {
+      await this.ensureActivePhaseSessionMetadata();
       // Prompt templates remain human-originated: the user invoked the command.
       const userMessage: Message = { role: "user", content: slash.fullPrompt, provenance };
       this.messages.push(userMessage);
@@ -1088,6 +1100,7 @@ export class AgentSession {
       return;
     }
 
+    await this.ensureActivePhaseSessionMetadata();
     // Push user message
     const userMessage: Message = { role: "user", content, provenance };
     this.messages.push(userMessage);
@@ -1105,7 +1118,12 @@ export class AgentSession {
    * attachments are always a direct conversational turn.
    */
   async promptWithAttachments(text: string, attachments: SessionAttachment[]): Promise<void> {
+    if (attachments.length === 0) {
+      await this.prompt(text);
+      return;
+    }
     await this.adoptDeferredCheckpointBeforePrompt();
+    await this.ensureActivePhaseSessionMetadata();
     const parts = this.buildAttachmentParts(text, attachments);
     if (parts.length === 0) return;
     const userMessage: Message = {
@@ -1656,6 +1674,7 @@ export class AgentSession {
             this.compactionRetryAfter = Date.now() + 30_000;
           }
         } catch (error) {
+          if (error instanceof RequiredSessionPersistenceError) throw error;
           this.compactionRetryAfter = Date.now() + 30_000;
           if (isAbortError(error) || this.opts.signal?.aborted) throw error;
           log(
@@ -1811,6 +1830,7 @@ export class AgentSession {
             );
           } catch (error) {
             this.messages = messages;
+            if (error instanceof RequiredSessionPersistenceError) throw error;
             this.compactionRetryAfter = Date.now() + 30_000;
             if (force || isAbortError(error) || this.opts.signal?.aborted) throw error;
             log(
@@ -2317,15 +2337,20 @@ export class AgentSession {
 
   async newSession(preserveConversation = false): Promise<void> {
     // Approved-plan execution is a clean checkpoint of the same conversation;
-    // explicit new sessions reset the conversation identity.
+    // explicit new sessions reset the conversation identity and phase binding.
     if (!preserveConversation) {
       this.conversationId = "";
       this.checkpointGeneration = 0;
       this.sessionPreview = "";
+      this.activePhaseContext = undefined;
     }
-    // A fresh session drops any in-flight plan state so its prompt is clean.
+    // A fresh explicit session drops plan state. A preserved phase checkpoint
+    // reconstructs it from durable execution metadata below.
     this.planModeRef.current = false;
     this.approvedPlanPath = undefined;
+    if (preserveConversation && this.activePhaseContext) {
+      this.restorePlanStateFromActivePhase(this.activePhaseContext);
+    }
     // Display-only history belongs to the OLD session. Without this, stale Ken
     // turns / autopilot verdicts / app markers linger in memory, show up in the
     // new session's /history, and get re-persisted into the new file by the
@@ -2365,6 +2390,7 @@ export class AgentSession {
     } else {
       await this.createNewSession();
       await this.subAgentManager?.resetParentSession(this.sessionId);
+      await this.rePersistActivePhaseContext();
     }
     this.eventBus.emit("session_start", { sessionId: this.sessionId });
   }
@@ -2660,6 +2686,9 @@ export class AgentSession {
     if (orchestration) tailParts.push(orchestration);
     const hostTail = this.opts.getSystemPromptTail?.();
     if (hostTail) tailParts.push(hostTail);
+    if (this.activePhaseContext) {
+      tailParts.push(renderActivePhasePackage(this.activePhaseContext).systemPromptSuffix);
+    }
     if (tailParts.length === 0) return basePrompt;
     return `${basePrompt}\n\n<!-- uncached -->\n${tailParts.join("\n\n")}`;
   }
@@ -2697,6 +2726,91 @@ export class AgentSession {
 
   getMessages(): Message[] {
     return this.messages;
+  }
+
+  getActivePhaseContext(): ActivePhaseContextV1 | undefined {
+    return this.activePhaseContext ? structuredClone(this.activePhaseContext) : undefined;
+  }
+
+  async setActivePhaseContext(context: ActivePhaseContextV1 | undefined): Promise<void> {
+    if (context === undefined) {
+      this.activePhaseContext = undefined;
+      this.refreshSystemPromptTail();
+      return;
+    }
+    const parsed = parseActivePhaseContext(context);
+    if (!parsed) throw new Error("Cannot activate malformed phase context.");
+    if (parsed.projectKey !== canonicalProjectKey(this.cwd)) {
+      throw new Error("Cannot activate phase context from another project.");
+    }
+    // Rendering applies the deterministic package budget before metadata is persisted.
+    const activeContext = await this.rePersistActivePhaseContext(
+      renderActivePhasePackage(parsed).context,
+    );
+    if (!activeContext) throw new Error("Cannot activate phase context without metadata.");
+    this.restorePlanStateFromActivePhase(activeContext);
+    this.refreshSystemPromptTail();
+  }
+
+  async updateActivePhaseStage(
+    executionStage: ActivePhaseExecutionStage,
+    approvedPlanPath?: string,
+  ): Promise<ActivePhaseContextV1> {
+    if (!this.activePhaseContext) throw new Error("No active phase context is bound.");
+    const activeContext = await this.rePersistActivePhaseContext({
+      ...this.activePhaseContext,
+      executionStage,
+      ...(approvedPlanPath ? { approvedPlanPath } : { approvedPlanPath: undefined }),
+    });
+    if (!activeContext) throw new Error("No active phase context is bound.");
+    this.restorePlanStateFromActivePhase(activeContext);
+    await this.rebuildSystemPromptInPlace();
+    this.refreshSystemPromptTail();
+    return structuredClone(activeContext);
+  }
+
+  private restorePlanStateFromActivePhase(context: ActivePhaseContextV1): void {
+    this.planModeRef.current =
+      context.executionStage === "planning" || context.executionStage === "awaiting-approval";
+    this.approvedPlanPath =
+      context.executionStage === "implementing" ? context.approvedPlanPath : undefined;
+  }
+
+  private async ensureActivePhaseSessionMetadata(): Promise<void> {
+    const context = this.activePhaseContext;
+    if (!context || !this.sessionPath) return;
+    if (
+      context.session.sessionId === this.sessionId &&
+      context.session.sessionPath === this.sessionPath
+    ) {
+      return;
+    }
+    await this.rePersistActivePhaseContext(context);
+  }
+
+  private async rePersistActivePhaseContext(
+    context: ActivePhaseContextV1 | undefined = this.activePhaseContext,
+  ): Promise<ActivePhaseContextV1 | undefined> {
+    if (!context) return undefined;
+    const synchronizedContext = this.sessionId
+      ? {
+          ...context,
+          session: { sessionId: this.sessionId, sessionPath: this.sessionPath || null },
+        }
+      : context;
+    if (this.sessionPath) {
+      const entry: CustomEntry = {
+        type: "custom",
+        kind: ACTIVE_PHASE_CONTEXT_KIND,
+        id: crypto.randomUUID(),
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        data: synchronizedContext,
+      };
+      await this.sessionManager.appendRequiredEntry(this.sessionPath, entry);
+    }
+    this.activePhaseContext = synchronizedContext;
+    return synchronizedContext;
   }
 
   getTurnMetrics(): TurnMetricPayload[] {
@@ -3078,7 +3192,10 @@ export class AgentSession {
     // before reading history so the next prompt cannot continue an old branch.
     const canonicalPath =
       (await this.sessionManager.resolveCanonicalSession(sessionPath, this.cwd)) ?? sessionPath;
-    const loaded = await this.sessionManager.load(canonicalPath);
+    const expectedProjectKey = canonicalProjectKey(this.cwd);
+    const loaded = await this.sessionManager.load(canonicalPath, {
+      projectKey: expectedProjectKey,
+    });
     // Use the leaf from the header to walk the correct branch
     const loadedMessages = this.sessionManager.getMessages(loaded.entries, loaded.header.leafId);
     this.checkpointGeneration = loaded.header.generation ?? 0;
@@ -3105,6 +3222,14 @@ export class AgentSession {
     // Restore app transcript markers (plan banner / task header / errors / hints).
     this.appMarkers = this.sessionManager.getAppMarkers(loaded.entries, loaded.header.leafId);
     this.turnMetrics = this.sessionManager.getTurnMetrics(loaded.entries);
+    this.activePhaseContext = this.sessionManager.getActivePhaseContext(loaded.entries, {
+      projectKey: expectedProjectKey,
+    });
+    if (this.activePhaseContext) {
+      this.restorePlanStateFromActivePhase(this.activePhaseContext);
+      await this.rebuildSystemPromptInPlace();
+      this.refreshSystemPromptTail();
+    }
     // A run that opened the journal and never closed it died mid-flight. Read
     // it here, before anything rewrites the file, and report it once the
     // transcript is in place.

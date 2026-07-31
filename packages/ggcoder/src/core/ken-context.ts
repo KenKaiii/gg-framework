@@ -170,19 +170,66 @@ export const AUTOPILOT_REVIEW_INSTRUCTION =
   "ask (the 'Original user request' section above; lines labeled 'Ken " +
   "autopilot (injected)' are your own earlier fix prompts, NOT user asks). " +
   "Reply with your verdict ONLY — the first line must be exactly PROMPT, " +
-  "ALL_CLEAR, IGNORE, or HUMAN, with the payload after. If GG Coder ended by " +
-  "asking the user a question or presenting options, use HUMAN only when the " +
-  "answer requires an actual user-level decision: intent, preference, missing " +
-  "product requirement, credential/secret, external access, budget/cost, or " +
-  "destructive/irreversible approval. If the question is only permission to " +
-  "continue work that is mechanically implied by the user's original ask and " +
-  "safe for GG Coder to do without new information, use PROMPT with the next " +
-  "concrete follow-up instead. No greetings, no mentorship prose.";
+  "ALL_CLEAR, IGNORE, or HUMAN, with the payload after. If a 'Verification " +
+  "exception awaiting review' section exists, a bare ALL_CLEAR does not accept " +
+  "it; use that section's exact machine-readable acceptance line only when you " +
+  "explicitly accept the current exception. If GG Coder ended by asking the user " +
+  "a question or presenting options, use HUMAN only when the answer requires an " +
+  "actual user-level decision: intent, preference, missing product requirement, " +
+  "credential/secret, external access, budget/cost, or destructive/irreversible " +
+  "approval. If the question is only permission to continue work that is " +
+  "mechanically implied by the user's original ask and safe for GG Coder to do " +
+  "without new information, use PROMPT with the next concrete follow-up instead. " +
+  "No greetings, no mentorship prose.";
+
+/** A persisted typed verification exception shown to Autopilot Ken for an
+ *  explicit, attributable acceptance decision. */
+export interface KenVerificationException {
+  id: string;
+  requesterActor: string;
+  reason: string | null;
+  timestamp: string;
+  evidence: readonly string[];
+}
 
 /** Inputs the sidecar gathers for an autopilot review digest (everything
  *  `buildKenDigest` needs except the fixed review instruction, which this helper
  *  supplies as the `question`). */
-export type KenAutopilotContextInput = Omit<KenDigestInput, "question">;
+export type KenAutopilotContextInput = Omit<KenDigestInput, "question"> & {
+  verificationException?: KenVerificationException | null;
+};
+
+/** Insert a review-only section immediately before the trailing instruction. */
+function insertBeforeQuestion(digest: string, section: string): string {
+  const marker = "\n\n## They just asked you\n";
+  const index = digest.lastIndexOf(marker);
+  if (index === -1) return `${digest}\n\n${section}`;
+  return `${digest.slice(0, index)}\n\n${section}${digest.slice(index)}`;
+}
+
+function renderVerificationException(exception: KenVerificationException): string {
+  const details = JSON.stringify(
+    {
+      id: exception.id,
+      requesterActor: exception.requesterActor,
+      reason: exception.reason,
+      timestamp: exception.timestamp,
+      evidence: exception.evidence,
+    },
+    null,
+    2,
+  );
+  const acceptance = JSON.stringify({ id: exception.id });
+  return (
+    `## Verification exception awaiting review\n` +
+    `The latest typed verification result is exception-requested. Judge this specific ` +
+    `request from its reason and evidence; do not infer acceptance from ALL_CLEAR.\n\n` +
+    `\`\`\`json\n${details}\n\`\`\`\n\n` +
+    `A bare ALL_CLEAR leaves the phase in Review. To explicitly accept this exact ` +
+    `exception, reply with these two lines:\nALL_CLEAR\n` +
+    `ACCEPT_VERIFICATION_EXCEPTION ${acceptance}`
+  );
+}
 
 /**
  * Build the autopilot-review digest: identical to a normal Ken digest but with
@@ -190,7 +237,14 @@ export type KenAutopilotContextInput = Omit<KenDigestInput, "question">;
  * Ken reviews the transcript instead of answering a user. Pure — no I/O.
  */
 export function buildKenAutopilotContext(input: KenAutopilotContextInput): string {
-  return buildKenDigest({ ...input, question: AUTOPILOT_REVIEW_INSTRUCTION });
+  const { verificationException, ...digestInput } = input;
+  const digest = buildKenDigest({
+    ...digestInput,
+    question: AUTOPILOT_REVIEW_INSTRUCTION,
+  });
+  return verificationException
+    ? insertBeforeQuestion(digest, renderVerificationException(verificationException))
+    : digest;
 }
 
 /** Max chars of the inlined plan markdown in a plan-review digest. Plans are
@@ -224,17 +278,12 @@ export const AUTOPILOT_PLAN_REVIEW_INSTRUCTION =
  * instruction that references it.
  */
 export function buildKenAutopilotPlanContext(
-  input: KenAutopilotContextInput & { planContent: string },
+  input: Omit<KenAutopilotContextInput, "verificationException"> & { planContent: string },
 ): string {
   const { planContent, ...rest } = input;
   const digest = buildKenDigest({ ...rest, question: AUTOPILOT_PLAN_REVIEW_INSTRUCTION });
   const planSection = `## Plan under review\n${cap(planContent.trim(), PLAN_CONTENT_CAP)}`;
-  // Insert the plan section right before the final "They just asked you"
-  // section (always the last one buildKenDigest appends).
-  const marker = "\n\n## They just asked you\n";
-  const idx = digest.lastIndexOf(marker);
-  if (idx === -1) return `${digest}\n\n${planSection}`;
-  return `${digest.slice(0, idx)}\n\n${planSection}${digest.slice(idx)}`;
+  return insertBeforeQuestion(digest, planSection);
 }
 
 /**

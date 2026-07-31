@@ -1,0 +1,39 @@
+{
+  "version": 3,
+  "reference": "Malformed legacy v3 fixture",
+  "currentFocus": "Report the post-normalization validation error",
+  "tasks": [],
+  "handoff": {
+    "text": "",
+    "updatedAt": null,
+    "readAt": null
+  },
+  "updatedAt": "2026-07-25T12:34:56.000Z",
+  "legacyImportedAt": null,
+  "phases": [
+    {
+      "id": "phase-malformed-legacy",
+      "title": "Malformed legacy phase",
+      "goal": "Exercise additive migration diagnostics",
+      "doneWhen": [],
+      "order": 0,
+      "status": "blocked",
+      "sourcePrompt": "Validate a malformed legacy v3 document.",
+      "referenceIds": [],
+      "session": null,
+      "reminder": null,
+      "attentionReason": null,
+      "createdAt": "2026-07-25T12:34:56.000Z",
+      "updatedAt": "2026-07-25T12:34:56.000Z",
+      "completedAt": null,
+      "archivedAt": null,
+      "overrides": {
+        "status": null,
+        "referenceIds": null
+      },
+      "pendingAutomaticLifecycleTransition": null,
+      "lifecycleEvents": []
+    }
+  ],
+  "references": []
+}

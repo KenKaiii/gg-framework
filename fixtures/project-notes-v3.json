@@ -1,0 +1,250 @@
+{
+  "version": 3,
+  "reference": "  canonical reference\r\nbytes 😀\n",
+  "currentFocus": "Freeze the authoritative Notes v3 contract",
+  "tasks": [
+    {
+      "id": "task-contract-fixture",
+      "text": "Publish the shared contract fixture",
+      "status": "done",
+      "createdAt": "2026-07-23T09:00:00.000Z",
+      "updatedAt": "2026-07-24T11:30:00.000Z",
+      "completedAt": "2026-07-24T11:30:00.000Z",
+      "archivedAt": "2026-07-25T08:00:00.000Z"
+    },
+    {
+      "id": "task-cross-boundary",
+      "text": "Verify both schema boundaries",
+      "status": "todo",
+      "createdAt": "2026-07-24T12:00:00.000Z",
+      "updatedAt": "2026-07-25T12:34:56.000Z",
+      "completedAt": null,
+      "archivedAt": null
+    }
+  ],
+  "handoff": {
+    "text": "Keep app and sidecar validators pinned to this document.",
+    "updatedAt": "2026-07-25T12:30:00.000Z",
+    "readAt": "2026-07-25T12:31:00.000Z"
+  },
+  "updatedAt": "2026-07-25T12:34:56.000Z",
+  "legacyImportedAt": "2026-07-22T08:15:00.000Z",
+  "phases": [
+    {
+      "id": "phase-schema-contract",
+      "title": "Freeze the v3 schema",
+      "goal": "Prove both validators accept one complete contract document",
+      "doneWhen": [
+        "The app validator accepts the fixture",
+        "The sidecar validator accepts the fixture",
+        "Both persistence boundaries preserve every field"
+      ],
+      "order": 0,
+      "status": "needs-attention",
+      "sourcePrompt": "Add an authoritative Notes v3 schema fixture shared across boundaries.",
+      "referenceIds": ["ref-schema-issue", "ref-schema-pr"],
+      "session": {
+        "sessionId": "session-phase-16-contract",
+        "sessionPath": "/sessions/phase-16-contract.jsonl"
+      },
+      "reminder": {
+        "id": "reminder-review-contract",
+        "occurrenceKey": "occurrence-review-contract",
+        "dueAt": "2026-07-26T09:00:00.000Z",
+        "note": "Review the contract before Phase 17 starts",
+        "createdAt": "2026-07-25T10:00:00.000Z",
+        "lastDelivery": {
+          "occurrenceKey": "occurrence-review-contract",
+          "attemptedAt": "2026-07-26T09:00:01.000Z",
+          "channel": "in-app",
+          "permission": "not-required"
+        }
+      },
+      "attentionReason": "Awaiting cross-boundary verification",
+      "createdAt": "2026-07-23T09:00:00.000Z",
+      "updatedAt": "2026-07-25T12:34:56.000Z",
+      "completedAt": null,
+      "archivedAt": null,
+      "overrides": {
+        "status": {
+          "value": "needs-attention",
+          "source": "user",
+          "updatedAt": "2026-07-25T12:32:00.000Z"
+        },
+        "referenceIds": {
+          "value": ["ref-schema-issue", "ref-schema-pr"],
+          "source": "user",
+          "updatedAt": "2026-07-25T12:33:00.000Z"
+        }
+      },
+      "pendingAutomaticLifecycleTransition": {
+        "status": "review",
+        "source": "agent",
+        "reason": "Autopilot review started",
+        "kind": "other",
+        "timestamp": "2026-07-25T12:34:56.000Z",
+        "expectedSession": {
+          "sessionId": "session-phase-16-contract",
+          "sessionPath": "/sessions/phase-16-contract.jsonl"
+        }
+      },
+      "lifecycleEvents": [
+        {
+          "id": "event-schema-planning",
+          "fromStatus": null,
+          "toStatus": "planning",
+          "source": "user",
+          "timestamp": "2026-07-23T09:00:00.000Z",
+          "reason": "Contract scope approved",
+          "kind": "other"
+        },
+        {
+          "id": "event-schema-progress",
+          "fromStatus": "planning",
+          "toStatus": "in-progress",
+          "source": "session",
+          "timestamp": "2026-07-24T12:00:00.000Z",
+          "reason": null,
+          "kind": "other"
+        },
+        {
+          "id": "event-schema-attention",
+          "fromStatus": "in-progress",
+          "toStatus": "needs-attention",
+          "source": "agent",
+          "timestamp": "2026-07-25T12:34:56.000Z",
+          "reason": "Cross-boundary fixture evidence required",
+          "kind": "attention-question-opened"
+        }
+      ],
+      "roadmapEvents": [
+        {
+          "type": "status-update",
+          "id": "roadmap-schema-verification",
+          "actor": "gg-coder",
+          "transition": "review",
+          "progress": "Verified the shared Notes v3 contract",
+          "blocker": null,
+          "evidence": ["Backend and app validators accepted the canonical fixture"],
+          "verification": "passed",
+          "verificationReason": null,
+          "verificationSession": {
+            "sessionId": "session-phase-16-contract",
+            "sessionPath": "/sessions/phase-16-contract.jsonl"
+          },
+          "statusOutcome": "manual-override",
+          "proposedReferences": [],
+          "timestamp": "2026-07-25T12:34:56.000Z"
+        },
+        {
+          "type": "implementation-checkpoint",
+          "id": "checkpoint-schema-contract",
+          "session": {
+            "sessionId": "session-phase-16-contract",
+            "sessionPath": "/sessions/phase-16-contract.jsonl"
+          },
+          "planStepTotal": 3,
+          "completedPlanSteps": [1, 2, 3],
+          "runOutcome": "succeeded",
+          "timestamp": "2026-07-25T12:34:56.000Z"
+        },
+        {
+          "type": "completion-review",
+          "id": "review-schema-contract",
+          "reviewer": "ken-autopilot",
+          "decision": "accepted",
+          "evidence": ["Canonical contract checks are complete"],
+          "reason": null,
+          "implementationCheckpointId": "checkpoint-schema-contract",
+          "verificationStatusUpdateId": "roadmap-schema-verification",
+          "acceptsVerificationException": false,
+          "gateOutcome": "done",
+          "unmetGateCodes": [],
+          "timestamp": "2026-07-25T12:34:56.000Z"
+        }
+      ]
+    },
+    {
+      "id": "phase-migration-proof",
+      "title": "Preserve migration evidence",
+      "goal": "Retain complete legacy fields while extending the document",
+      "doneWhen": ["Migration and restart tests remain green"],
+      "order": 1,
+      "status": "done",
+      "sourcePrompt": "Keep focused v2 migration fixtures.",
+      "referenceIds": ["ref-schema-pr"],
+      "session": null,
+      "reminder": null,
+      "attentionReason": null,
+      "createdAt": "2026-07-22T08:15:00.000Z",
+      "updatedAt": "2026-07-24T11:30:00.000Z",
+      "completedAt": "2026-07-24T11:30:00.000Z",
+      "archivedAt": "2026-07-25T08:30:00.000Z",
+      "overrides": {
+        "status": null,
+        "referenceIds": null
+      },
+      "pendingAutomaticLifecycleTransition": null,
+      "lifecycleEvents": [
+        {
+          "id": "event-migration-progress",
+          "fromStatus": null,
+          "toStatus": "in-progress",
+          "source": "agent",
+          "timestamp": "2026-07-22T08:15:00.000Z",
+          "reason": "Migration implementation started",
+          "kind": "other"
+        },
+        {
+          "id": "event-migration-done",
+          "fromStatus": "in-progress",
+          "toStatus": "done",
+          "source": "system",
+          "timestamp": "2026-07-24T11:30:00.000Z",
+          "reason": "Migration and restart checks passed",
+          "kind": "other"
+        }
+      ],
+      "roadmapEvents": []
+    }
+  ],
+  "references": [
+    {
+      "id": "ref-schema-issue",
+      "provider": "github",
+      "tool": "kencode-search",
+      "canonicalUrl": "https://github.com/kenkaiiii/gg-framework/issues/116",
+      "owner": "kenkaiiii",
+      "repo": "gg-framework",
+      "revision": null,
+      "path": null,
+      "range": null,
+      "issue": 116,
+      "pullRequest": null,
+      "query": "Notes v3 schema contract",
+      "anchor": "issue-116",
+      "relevance": "Tracks the authoritative schema requirement",
+      "capturedAt": "2026-07-23T09:05:00.000Z"
+    },
+    {
+      "id": "ref-schema-pr",
+      "provider": "github",
+      "tool": "kencode-search",
+      "canonicalUrl": "https://github.com/kenkaiiii/gg-framework/pull/117",
+      "owner": "kenkaiiii",
+      "repo": "gg-framework",
+      "revision": "phase-16-notes-v3",
+      "path": "packages/ggcoder/src/project-notes-repository.ts",
+      "range": {
+        "startLine": 35,
+        "endLine": 137
+      },
+      "issue": null,
+      "pullRequest": 117,
+      "query": null,
+      "anchor": "discussion_r117",
+      "relevance": "Reviews the duplicated app and sidecar schema boundaries",
+      "capturedAt": "2026-07-25T12:00:00.000Z"
+    }
+  ]
+}
