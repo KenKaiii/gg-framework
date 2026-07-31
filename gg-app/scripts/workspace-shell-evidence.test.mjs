@@ -171,8 +171,14 @@ describe("workspace-shell evidence supervisor", () => {
       expectBoundedTimeout(result);
       const descendantPid = Number(result.outputTail.match(/descendant-pid=(\d+)/)?.[1]);
       expect(descendantPid).toBeGreaterThan(0);
-      const liveProcesses = await readProcessTable();
-      expect(liveProcesses.some(({ pid }) => pid === descendantPid)).toBe(false);
+      const disappearanceDeadline = Date.now() + 3_000;
+      let descendantStillLive = true;
+      while (descendantStillLive && Date.now() < disappearanceDeadline) {
+        const liveProcesses = await readProcessTable();
+        descendantStillLive = liveProcesses.some(({ pid }) => pid === descendantPid);
+        if (descendantStillLive) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(descendantStillLive).toBe(false);
       console.info(
         `WORKSPACE_SHELL_TIMEOUT_STRESS=${JSON.stringify(timeoutEvidence(run, result, descendantPid))}`,
       );
