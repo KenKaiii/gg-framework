@@ -120,7 +120,13 @@ export function isCatastrophicCommand(command: string, cwd: string): string | nu
     const recursive = /(?:^|\s)-{1,2}(?:[a-zA-Z]*r[a-zA-Z]*|recursive)(?:\s|$)/.test(flags);
     const force = /(?:^|\s)-{1,2}(?:[a-zA-Z]*f[a-zA-Z]*|force)(?:\s|$)/.test(flags);
     if (recursive && force) {
-      const targets = rmMatch[2].split(/\s+/).filter((t) => t.length > 0 && !t.startsWith("-"));
+      const rawTargets = rmMatch[2].trim();
+      // An unquoted absolute path may contain spaces (common for Windows home
+      // directories). Check the full tail before tokenizing individual targets.
+      if (isCatastrophicRemovalTarget(rawTargets, cwd)) {
+        return `Refusing to run: recursive force-remove of ${unquote(rawTargets)}. ${confirmNote}`;
+      }
+      const targets = rawTargets.split(/\s+/).filter((t) => t.length > 0 && !t.startsWith("-"));
       for (const target of targets) {
         if (isCatastrophicRemovalTarget(target, cwd)) {
           return `Refusing to run: recursive force-remove of ${unquote(target)}. ${confirmNote}`;

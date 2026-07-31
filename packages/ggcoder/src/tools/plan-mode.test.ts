@@ -112,10 +112,11 @@ describe("plan mode", () => {
     const bashTool = tools.find((tool) => tool.name === "bash");
     expect(bashTool).toBeDefined();
 
-    const result = String(await bashTool!.execute({ command: "echo hi" }, toolContext()));
-    expect(result).not.toContain("bash is restricted in plan mode");
-    expect(result).toContain("Exit code: 0");
-    expect(result).toContain("hi");
+    const result = await bashTool!.execute({ command: "echo hi" }, toolContext());
+    expect(result).toMatchObject({
+      content: expect.stringContaining("Exit code: 0"),
+    });
+    expect((result as { content: string }).content).toContain("hi");
 
     processManager.shutdownAll();
   });

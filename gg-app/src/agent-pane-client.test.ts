@@ -29,11 +29,14 @@ const target = {
 describe("pane agent client", () => {
   beforeEach(() => {
     invoke.mockReset();
-    invoke.mockImplementation(async (command: string) =>
-      command === "agent_pane_status"
-        ? { ready: true, error: null, generation: 1, sessionId: "session" }
-        : {},
-    );
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "agent_pane_status") {
+        return { ready: true, error: null, generation: 1, sessionId: "session" };
+      }
+      if (command === "agent_prompt") return { queued: false, count: 0 };
+      if (command === "agent_new_session") return { operationId: "new-session-op" };
+      return {};
+    });
   });
 
   it("routes the current IPC surface with the complete pane argument matrix", async () => {
@@ -133,13 +136,23 @@ describe("pane agent client", () => {
     await vi.waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("agent_pane_status", { paneId: "right" }),
     );
+    await vi.waitFor(() => expect(listeners.has("agent-pane-ready")).toBe(true));
+    const statusCallsBeforeReady = invoke.mock.calls.filter(
+      ([command]) => command === "agent_pane_status",
+    ).length;
+    listeners.get("agent-pane-ready")!({ payload: { paneId: "right", generation: 10 } });
+    await vi.waitFor(() =>
+      expect(
+        invoke.mock.calls.filter(([command]) => command === "agent_pane_status").length,
+      ).toBeGreaterThan(statusCallsBeforeReady),
+    );
     listeners.get("agent-event")!({
       payload: { paneId: "right", sessionId: "stale", type: "delta", data: 1 },
     });
     listeners.get("agent-event")!({
       payload: { paneId: "right", sessionId: "active", type: "delta", data: 2 },
     });
-    expect(onEvent).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(onEvent).toHaveBeenCalledTimes(1));
     expect(onEvent).toHaveBeenCalledWith({ type: "delta", data: 2 });
   });
 });

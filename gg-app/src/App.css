@@ -6297,3 +6297,1787 @@ body {
     height: max(25%, min(44px, 50%));
   }
 }
+
+/* Reconstructed structured Project Notes and Roadmap UI. */
+.notes-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.notes-status-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+/* ── Notes command center ── */
+.notes-modal {
+  --notes-content-width: 960px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(1120px, calc(100vw - 32px));
+  height: min(900px, calc(100vh - 32px));
+  height: min(900px, calc(100dvh - 32px));
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+}
+.notes-modal .modal-head {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: min(100%, var(--notes-content-width));
+  margin: 0 auto;
+  padding: 18px 24px 14px;
+}
+.notes-shell {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.notes-shell-status {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: min(100%, var(--notes-content-width));
+  margin-inline: auto;
+  padding: 0 24px 14px;
+}
+.notes-tabs-scroll {
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+  overscroll-behavior-inline: contain;
+}
+.notes-tabs {
+  box-sizing: border-box;
+  display: flex;
+  width: min(100%, var(--notes-content-width));
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+.notes-tabs button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  gap: 7px;
+  margin-bottom: -1px;
+  padding: 8px 13px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.25;
+  transition:
+    border-color var(--t-fast),
+    color var(--t-fast);
+}
+.notes-tabs button:hover {
+  color: var(--text);
+}
+.notes-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--primary);
+  color: var(--text);
+  font-weight: 650;
+}
+.notes-tab-count {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.notes-panels {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.notes-panel {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.notes-panel[hidden] {
+  display: none;
+}
+.notes-panel-rail {
+  box-sizing: border-box;
+  display: grid;
+  width: min(100%, var(--notes-content-width));
+  margin-inline: auto;
+  gap: 14px;
+  padding: 18px 24px 24px;
+}
+.notes-roadmap-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-1);
+  padding: 9px 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.notes-roadmap-summary strong {
+  color: var(--text);
+  font-weight: 650;
+}
+.notes-roadmap-summary span,
+.notes-roadmap-counts strong {
+  font-variant-numeric: tabular-nums;
+}
+.notes-roadmap-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+}
+.notes-roadmap-counts p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.notes-roadmap-counts strong {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 650;
+}
+.notes-roadmap-rail {
+  --notes-content-width: 1040px;
+}
+.notes-roadmap-section {
+  padding: 0;
+  overflow: hidden;
+}
+.notes-roadmap-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.notes-roadmap-toolbar h2 {
+  margin-bottom: 2px;
+}
+.notes-roadmap-toolbar p,
+.notes-phase-detail-heading p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.notes-roadmap-new,
+.notes-roadmap-primary,
+.notes-phase-detail-heading button,
+.notes-phase-form-actions button,
+.notes-phase-secondary-actions button,
+.notes-phase-archive button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-button);
+  background: var(--gloss-neutral);
+  color: var(--text-secondary);
+  box-shadow: var(--gloss-shadow-neutral);
+  padding: 6px 10px;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+}
+.notes-roadmap-new:hover,
+.notes-roadmap-primary:hover,
+.notes-phase-detail-heading button:hover,
+.notes-phase-form-actions button:hover:not(:disabled),
+.notes-phase-secondary-actions button:hover:not(:disabled),
+.notes-phase-archive button:hover {
+  filter: brightness(1.18);
+  color: var(--text);
+}
+.notes-phase-form-actions button:disabled,
+.notes-phase-secondary-actions button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.notes-phase-form {
+  display: grid;
+  gap: 12px;
+}
+.notes-phase-create {
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.notes-phase-form[hidden] {
+  display: none;
+}
+.notes-phase-form input,
+.notes-phase-form textarea,
+.notes-phase-status-control select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+}
+.notes-phase-form input,
+.notes-phase-status-control select {
+  min-height: 36px;
+  padding-block: 7px;
+  padding-inline: 10px;
+}
+.notes-phase-status-control select {
+  padding-inline-end: 34px;
+}
+.notes-phase-form textarea {
+  display: block;
+  min-height: 76px;
+  max-height: 180px;
+  resize: vertical;
+  padding: 9px 10px;
+}
+.notes-field-help {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.notes-phase-status-help {
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.notes-phase-form-actions,
+.notes-phase-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.notes-roadmap-empty {
+  padding: 28px 14px;
+  text-align: center;
+}
+.notes-roadmap-empty strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+}
+.notes-roadmap-empty p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.notes-roadmap-workspace {
+  min-width: 0;
+}
+.notes-roadmap-workspace.has-detail {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.82fr) minmax(0, 1.18fr);
+  align-items: start;
+}
+.notes-roadmap-workspace.has-detail .notes-roadmap-list {
+  min-width: 0;
+  border-inline-end: 1px solid var(--border);
+}
+.notes-roadmap-workspace.has-detail .notes-roadmap-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title action"
+    "status status"
+    "count reminder";
+  gap: 5px 9px;
+  padding-block: 9px;
+}
+.notes-roadmap-workspace.has-detail .notes-phase-count,
+.notes-roadmap-workspace.has-detail .notes-phase-reminder {
+  align-self: start;
+}
+.notes-roadmap-workspace.has-detail .notes-phase-reminder {
+  justify-self: end;
+  text-align: end;
+}
+.notes-roadmap-list {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.notes-roadmap-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(104px, auto) 52px 146px 70px;
+  grid-template-areas: "title status count reminder action";
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+  padding: 8px 10px 8px 14px;
+  border-bottom: 1px solid var(--border);
+  border-inline-start: 3px solid transparent;
+}
+.notes-roadmap-row.is-selected {
+  border-inline-start-color: var(--primary);
+  background: var(--surface-2);
+}
+.notes-roadmap-title {
+  grid-area: title;
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 4px 0;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notes-roadmap-title:hover {
+  color: var(--primary);
+}
+.notes-phase-status,
+.notes-phase-count,
+.notes-phase-reminder {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notes-phase-status {
+  grid-area: status;
+  justify-self: start;
+  border-inline-start: 2px solid var(--border-strong);
+  padding-inline-start: 7px;
+  font-weight: 600;
+}
+.notes-phase-count {
+  grid-area: count;
+  font-variant-numeric: tabular-nums;
+}
+.notes-phase-reminder {
+  grid-area: reminder;
+}
+.notes-roadmap-primary {
+  grid-area: action;
+  min-width: 64px;
+}
+.notes-phase-detail {
+  position: sticky;
+  top: 12px;
+  min-width: 0;
+  margin: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+.notes-phase-detail-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.notes-phase-detail-heading h3 {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.notes-phase-edit,
+.notes-phase-content,
+.notes-phase-metadata,
+.notes-phase-controls {
+  margin: 0;
+  padding: 14px;
+}
+.notes-phase-content {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.notes-phase-content h4,
+.notes-phase-saved-prompt h4,
+.notes-phase-archive h3,
+.notes-archive-task-heading {
+  margin: 0 0 7px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.notes-phase-content p,
+.notes-phase-content ul {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.notes-phase-content ul {
+  padding-inline-start: 18px;
+}
+.notes-phase-saved-prompt {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0 14px 14px;
+}
+.notes-phase-saved-prompt h4 {
+  margin: 0;
+}
+.notes-phase-metadata {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 16px;
+  border-top: 1px solid var(--border);
+}
+.notes-phase-metadata div {
+  min-width: 0;
+}
+.notes-phase-metadata dt {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.notes-phase-metadata dd {
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notes-phase-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  align-items: end;
+  gap: 14px;
+  border-top: 1px solid var(--border);
+}
+.notes-phase-secondary-actions {
+  justify-content: flex-end;
+}
+.notes-phase-archive {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.notes-phase-archive ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.notes-phase-archive li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.notes-phase-archive li > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.notes-phase-archive strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notes-phase-archive small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.notes-archive-task-heading {
+  margin-top: 14px;
+}
+.notes-persistence {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  border: 1px solid var(--border-strong);
+  border-inline-start: 3px solid var(--success);
+  border-radius: var(--radius-card);
+  background: var(--surface-1);
+  padding: 10px 12px;
+}
+.notes-persistence-local,
+.notes-persistence-warning {
+  border-inline-start-color: var(--warning);
+}
+.notes-persistence-error {
+  border-inline-start-color: var(--error);
+}
+.notes-persistence-icon {
+  margin-top: 1px;
+  color: var(--success);
+}
+.notes-persistence-local .notes-persistence-icon,
+.notes-persistence-warning .notes-persistence-icon {
+  color: var(--warning);
+}
+.notes-persistence-error .notes-persistence-icon {
+  color: var(--error);
+}
+.notes-persistence strong {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+.notes-persistence p {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.notes-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-1);
+  padding: 14px;
+}
+.notes-section h2 {
+  margin: 0 0 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.notes-add-form > label,
+.notes-edit-form > label,
+.notes-field > label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.notes-add-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.notes-add-controls input,
+.notes-edit-form input,
+.notes-current-focus input,
+.notes-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+}
+.notes-add-controls input,
+.notes-edit-form input,
+.notes-current-focus input {
+  padding: 8px 10px;
+}
+.notes-add-controls input {
+  flex: 1 1 auto;
+}
+.notes-field textarea {
+  display: block;
+  min-height: 104px;
+  max-height: 220px;
+  resize: vertical;
+  overflow: auto;
+  padding: 10px 12px;
+}
+.notes-reference-section > .notes-field > textarea {
+  min-height: 150px;
+  max-height: 300px;
+}
+.notes-references {
+  min-width: 0;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.notes-references-toolbar,
+.notes-reference-detail-heading,
+.notes-phase-references-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.notes-references-toolbar {
+  padding-bottom: 12px;
+}
+.notes-references-toolbar h3,
+.notes-reference-form-heading h4,
+.notes-reference-detail-heading h4,
+.notes-phase-references h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.notes-references-toolbar p,
+.notes-reference-form-heading p,
+.notes-reference-detail-heading p,
+.notes-phase-references-heading p {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.notes-reference-new,
+.notes-reference-form-actions button,
+.notes-reference-detail-actions button,
+.notes-reference-open button,
+.notes-reference-delete button,
+.notes-phase-references-empty button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-button);
+  background: var(--gloss-neutral);
+  color: var(--text-secondary);
+  box-shadow: var(--gloss-shadow-neutral);
+  padding: 6px 10px;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+}
+.notes-reference-new:hover,
+.notes-reference-form-actions button:hover,
+.notes-reference-detail-actions button:hover,
+.notes-reference-open button:hover:not(:disabled),
+.notes-reference-delete button:hover,
+.notes-phase-references-empty button:hover {
+  filter: brightness(1.18);
+  color: var(--text);
+}
+.notes-reference-open button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.notes-reference-form {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+.notes-reference-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+.notes-reference-form-wide {
+  grid-column: 1 / -1;
+}
+.notes-reference-form input:not([type="checkbox"]),
+.notes-reference-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  background: var(--surface-1);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+}
+.notes-reference-form input:not([type="checkbox"]) {
+  min-height: 36px;
+  padding-block: 7px;
+  padding-inline: 10px;
+}
+.notes-reference-form textarea {
+  display: block;
+  min-height: 76px;
+  max-height: 180px;
+  resize: vertical;
+  padding: 9px 10px;
+}
+.notes-reference-form [aria-invalid="true"] {
+  border-color: var(--error);
+}
+.notes-reference-optional,
+.notes-reference-initial-phases,
+.notes-reference-phase-links {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.notes-reference-optional legend,
+.notes-reference-initial-phases legend,
+.notes-reference-phase-links legend {
+  padding-inline: 5px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+.notes-reference-form-actions,
+.notes-reference-detail-actions,
+.notes-reference-delete-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.notes-reference-error-summary,
+.notes-reference-field-error,
+.notes-reference-error {
+  color: var(--error);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.notes-reference-error-summary,
+.notes-reference-error {
+  margin: 0;
+  border-inline-start: 3px solid var(--error);
+  padding-inline-start: 9px;
+}
+.notes-reference-field-error {
+  margin: 5px 0 0;
+}
+.notes-reference-checkboxes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 14px;
+}
+.notes-reference-checkboxes label,
+.notes-reference-phase-links label,
+.notes-phase-reference-options label {
+  display: flex;
+  min-width: 0;
+  min-height: 24px;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.notes-reference-checkboxes input,
+.notes-reference-phase-links input,
+.notes-phase-reference-options input {
+  flex: 0 0 auto;
+  inline-size: 16px;
+  block-size: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.notes-reference-workspace {
+  min-width: 0;
+}
+.notes-reference-workspace.has-detail {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.78fr) minmax(0, 1.22fr);
+  align-items: start;
+  border-top: 1px solid var(--border);
+}
+.notes-reference-workspace.has-detail .notes-reference-groups {
+  border-inline-end: 1px solid var(--border);
+}
+.notes-reference-empty {
+  padding: 28px 14px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+.notes-reference-empty strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+}
+.notes-reference-empty p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.notes-reference-groups {
+  min-width: 0;
+}
+.notes-reference-group h4 {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+}
+.notes-reference-group h4 span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.notes-reference-group h4 small {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 550;
+}
+.notes-reference-group ul,
+.notes-reference-phase-links ul,
+.notes-phase-reference-options {
+  display: grid;
+  min-width: 0;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.notes-reference-row {
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+  border-inline-start: 3px solid transparent;
+}
+.notes-reference-row.is-selected {
+  border-inline-start-color: var(--primary);
+  background: var(--surface-2);
+}
+.notes-reference-row > button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "source count"
+    "coordinate coordinate"
+    "relevance relevance";
+  width: 100%;
+  min-width: 0;
+  gap: 3px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 9px 11px;
+  cursor: pointer;
+  font-family: var(--sans);
+  text-align: start;
+}
+.notes-reference-row > button:hover strong {
+  color: var(--primary);
+}
+.notes-reference-row-source,
+.notes-reference-row-count,
+.notes-reference-row-relevance {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.notes-reference-row-source {
+  grid-area: source;
+}
+.notes-reference-row-count {
+  grid-area: count;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+.notes-reference-row strong {
+  grid-area: coordinate;
+  min-width: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  transition: color var(--t-fast);
+}
+.notes-reference-row-relevance {
+  grid-area: relevance;
+  color: var(--text-secondary);
+}
+.notes-reference-detail {
+  position: sticky;
+  top: 12px;
+  min-width: 0;
+  margin: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+.notes-reference-detail-heading {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.notes-reference-detail-heading > div:first-child {
+  min-width: 0;
+}
+.notes-reference-detail-heading > div:first-child > span {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.notes-reference-metadata {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+  padding: 14px;
+}
+.notes-reference-metadata div {
+  min-width: 0;
+}
+.notes-reference-metadata-wide {
+  grid-column: 1 / -1;
+}
+.notes-reference-metadata dt {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.notes-reference-metadata dd {
+  margin: 3px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.notes-reference-open,
+.notes-reference-phase-links,
+.notes-reference-delete {
+  margin: 0 14px 14px;
+}
+.notes-reference-open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.notes-reference-phase-links ul {
+  gap: 8px;
+}
+.notes-reference-phase-links label > span,
+.notes-phase-reference-options label > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.notes-reference-phase-links strong,
+.notes-phase-reference-options strong {
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.notes-reference-phase-links small,
+.notes-phase-reference-options small,
+.notes-phase-reference-options label > span > span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.notes-reference-delete {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.notes-reference-delete > p,
+.notes-reference-delete-confirm p {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.notes-phase-references {
+  margin: 0;
+  padding: 14px;
+  border-top: 1px solid var(--border);
+}
+.notes-phase-reference-options {
+  gap: 0;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  overflow: hidden;
+}
+.notes-phase-reference-options li {
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+}
+.notes-phase-reference-options li:last-child {
+  border-bottom: 0;
+}
+.notes-phase-reference-options li.is-attached {
+  border-inline-start: 3px solid var(--primary);
+}
+.notes-phase-reference-options label {
+  padding: 9px 10px;
+}
+.notes-phase-reference-options label > span > span {
+  color: var(--text-secondary);
+}
+.notes-phase-references-empty {
+  margin-top: 10px;
+}
+.notes-phase-references-empty p {
+  margin: 0 0 9px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.notes-completion-gates,
+.notes-roadmap-latest,
+.notes-roadmap-proposals,
+.notes-roadmap-history {
+  margin: 0;
+  padding: 14px;
+  border-top: 1px solid var(--border);
+}
+.notes-completion-gates h4,
+.notes-roadmap-latest h4,
+.notes-roadmap-proposals h4 {
+  margin: 0 0 9px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+.notes-completion-gates dl {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  overflow: hidden;
+}
+.notes-completion-gates dl > div {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.28fr) minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.notes-completion-gates dl > div:last-child {
+  border-bottom: 0;
+}
+.notes-completion-gates dt {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.notes-completion-gates dd {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.notes-completion-gates dd strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.notes-completion-gates dd time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.notes-completion-gates dd ul {
+  margin: 2px 0 0;
+  padding-inline-start: 18px;
+}
+.notes-completion-unreviewed {
+  display: grid;
+  gap: 2px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.notes-roadmap-report {
+  border-inline-start: 3px solid var(--primary);
+  padding-inline-start: 10px;
+}
+.notes-roadmap-report p,
+.notes-roadmap-report ul,
+.notes-roadmap-proposals p,
+.notes-roadmap-empty-report,
+.notes-roadmap-history p,
+.notes-roadmap-history ul {
+  margin: 5px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.notes-roadmap-report-meta {
+  margin-top: 0 !important;
+  color: var(--text-muted) !important;
+  font-size: 11px !important;
+}
+.notes-roadmap-report-meta strong,
+.notes-roadmap-history strong {
+  color: var(--text);
+}
+.notes-roadmap-report h5 {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.notes-roadmap-report ul,
+.notes-roadmap-history ul {
+  padding-inline-start: 18px;
+}
+.notes-roadmap-blocker,
+.notes-roadmap-protected {
+  border-inline-start: 3px solid var(--warning);
+  padding-inline-start: 8px;
+  color: var(--text) !important;
+}
+.notes-roadmap-proposals > ul,
+.notes-roadmap-history ol {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  overflow: hidden;
+}
+.notes-roadmap-proposals > ul > li,
+.notes-roadmap-history ol > li {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.notes-roadmap-proposals > ul > li:last-child,
+.notes-roadmap-history ol > li:last-child {
+  border-bottom: 0;
+}
+.notes-roadmap-proposals li > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.notes-roadmap-proposals strong,
+.notes-roadmap-proposals small,
+.notes-roadmap-proposals span {
+  overflow-wrap: anywhere;
+}
+.notes-roadmap-proposals strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.notes-roadmap-proposals small,
+.notes-roadmap-proposals span {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.notes-roadmap-proposal-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+.notes-roadmap-history summary {
+  min-height: 24px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.notes-roadmap-history[open] summary {
+  margin-bottom: 10px;
+}
+.notes-roadmap-history ol > li {
+  display: block;
+}
+.notes-phase-references-heading > button,
+.notes-phase-status-control > button {
+  min-height: 30px;
+  margin-top: 8px;
+}
+.notes-phase-execution {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-1);
+}
+.notes-phase-execution h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+.notes-phase-execution p {
+  margin: 3px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.notes-phase-execution .notes-phase-attention {
+  border-inline-start: 3px solid var(--warning);
+  padding-inline-start: 8px;
+  color: var(--text);
+}
+.notes-phase-action-status,
+.notes-phase-action-error {
+  grid-column: 1 / -1;
+  min-height: 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.notes-phase-action-status:empty {
+  display: none;
+}
+.notes-phase-action-error {
+  border-inline-start: 3px solid var(--error);
+  padding-inline-start: 8px;
+  color: var(--error);
+}
+.notes-reminder-section {
+  display: grid;
+  gap: 12px;
+  margin-block: 16px;
+  padding-block: 14px;
+  border-block: 1px solid var(--border);
+}
+
+.notes-reminder-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notes-reminder-heading h4,
+.notes-reminder-heading p,
+.notes-reminder-current p,
+.notes-reminder-empty,
+.notes-reminder-authority {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.notes-reminder-heading p,
+.notes-reminder-current p,
+.notes-reminder-empty,
+.notes-reminder-authority {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.notes-reminder-authority {
+  border-inline-start: 3px solid var(--border-strong);
+  padding-inline-start: 9px;
+}
+
+.notes-reminder-current {
+  display: grid;
+  gap: 8px;
+}
+
+.notes-reminder-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notes-reminder-custom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.notes-reminder-section button {
+  min-height: 32px;
+}
+
+.notes-reminder-section input,
+.notes-reminder-section textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  background: var(--surface-1);
+  color: var(--text);
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.notes-reminder-section textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.roadmap-reminder-alert-layer {
+  position: fixed;
+  inset-inline-end: 18px;
+  inset-block-end: 84px;
+  z-index: 199;
+  width: min(440px, calc(100vw - 24px));
+  pointer-events: none;
+}
+
+.roadmap-reminder-alert {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  box-shadow: 0 12px 34px -12px rgba(0, 0, 0, 0.7);
+  padding: 14px;
+  color: var(--text);
+  pointer-events: auto;
+  animation: roadmap-reminder-in 180ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.roadmap-reminder-alert-copy {
+  min-width: 0;
+}
+
+.roadmap-reminder-alert h2,
+.roadmap-reminder-alert p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.roadmap-reminder-alert h2 {
+  margin-block: 3px 5px;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.roadmap-reminder-alert-copy p {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.roadmap-reminder-alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.roadmap-reminder-alert-actions .btn {
+  min-height: 36px;
+}
+
+.roadmap-reminder-alert-status {
+  min-height: 16px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.roadmap-reminder-alert-status.error {
+  border-inline-start: 3px solid var(--error);
+  padding-inline-start: 8px;
+  color: var(--error);
+}
+
+@keyframes roadmap-reminder-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.notes-roadmap button:disabled,
+.notes-phase-reference-options input:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.notes-add-controls button,
+.notes-task-actions button,
+.notes-archive-toggle {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-button);
+  background: var(--gloss-neutral);
+  color: var(--text-secondary);
+  box-shadow: var(--gloss-shadow-neutral);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 11px;
+  cursor: pointer;
+}
+.notes-add-controls button:hover:not(:disabled),
+.notes-task-actions button:hover:not(:disabled),
+.notes-archive-toggle:hover:not(:disabled) {
+  filter: brightness(1.18);
+  color: var(--text);
+}
+.notes-add-controls button:disabled,
+.notes-task-actions button:disabled,
+.notes-archive-toggle:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.notes-task-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.notes-task-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.notes-task-check {
+  display: flex;
+  flex: 1 1 260px;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.notes-task-check input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.notes-task-row.is-done .notes-task-check span {
+  color: var(--text-dim);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+.notes-task-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.notes-edit-form {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 8px;
+}
+.notes-archive-toggle {
+  min-height: 24px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+  padding: 0;
+}
+.notes-archived-task > span {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.notes-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.notes-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.notes-modal button:focus-visible,
+.notes-modal input:focus-visible,
+.notes-modal select:focus-visible,
+.notes-modal textarea:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.notes-modal input[type="checkbox"]:focus-visible {
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .notes-tabs button,
+  .notes-reference-row strong,
+  .roadmap-reminder-alert {
+    transition: none;
+  }
+  .roadmap-reminder-alert {
+    animation: none;
+  }
+}
+@media (forced-colors: active) {
+  .notes-persistence,
+  .notes-roadmap-summary,
+  .notes-reminder-section,
+  .roadmap-reminder-alert,
+  .notes-section,
+  .notes-phase-detail,
+  .notes-phase-execution,
+  .notes-reference-form,
+  .notes-reference-detail,
+  .notes-reference-row,
+  .notes-reference-optional,
+  .notes-reference-initial-phases,
+  .notes-reference-phase-links,
+  .notes-phase-reference-options,
+  .notes-completion-gates dl,
+  .notes-roadmap-proposals > ul,
+  .notes-roadmap-history ol,
+  .notes-roadmap-row,
+  .notes-add-controls input,
+  .notes-phase-form input,
+  .notes-phase-form textarea,
+  .notes-reference-form input,
+  .notes-reference-form textarea,
+  .notes-phase-status-control select,
+  .notes-edit-form input,
+  .notes-current-focus input,
+  .notes-field textarea {
+    border-color: CanvasText;
+  }
+  .notes-persistence-icon {
+    color: CanvasText;
+  }
+  .notes-tabs button[aria-selected="true"] {
+    border-bottom-color: Highlight;
+    color: Highlight;
+  }
+  .notes-reference-row.is-selected,
+  .notes-phase-reference-options li.is-attached {
+    border-inline-start-color: Highlight;
+  }
+  .notes-reference-form [aria-invalid="true"],
+  .notes-phase-action-error,
+  .roadmap-reminder-alert-status.error,
+  .notes-reference-error,
+  .notes-reference-error-summary {
+    border-color: Mark;
+    color: MarkText;
+  }
+  .notes-modal button:focus-visible,
+  .notes-modal input:focus-visible,
+  .notes-modal select:focus-visible,
+  .notes-modal textarea:focus-visible {
+    outline-color: Highlight;
+  }
+}
+@media (max-width: 760px) {
+  .notes-roadmap-workspace.has-detail,
+  .notes-reference-workspace.has-detail {
+    display: block;
+  }
+  .notes-roadmap.has-detail .notes-roadmap-new,
+  .notes-roadmap-workspace.has-detail .notes-roadmap-list,
+  .notes-reference-workspace.has-detail .notes-reference-groups {
+    display: none;
+  }
+  .notes-roadmap-workspace.has-detail .notes-phase-detail,
+  .notes-reference-workspace.has-detail .notes-reference-detail {
+    position: static;
+    margin: 12px;
+  }
+  .notes-roadmap-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title action"
+      "status status"
+      "count reminder";
+    gap: 6px 10px;
+    padding-block: 10px;
+  }
+  .notes-roadmap-title,
+  .notes-phase-status,
+  .notes-phase-reminder {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+  .notes-phase-count,
+  .notes-phase-reminder {
+    align-self: start;
+  }
+  .notes-phase-reminder {
+    justify-self: end;
+    text-align: end;
+  }
+  .notes-phase-content,
+  .notes-phase-controls,
+  .notes-reminder-custom,
+  .notes-phase-execution,
+  .notes-reference-metadata {
+    grid-template-columns: 1fr;
+  }
+  .notes-reference-metadata-wide {
+    grid-column: auto;
+  }
+  .notes-phase-secondary-actions {
+    justify-content: flex-start;
+  }
+  .notes-roadmap-proposals > ul > li {
+    flex-direction: column;
+  }
+  .notes-roadmap-proposal-actions {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .notes-modal {
+    width: calc(100vw - 12px);
+    height: calc(100vh - 12px);
+    height: calc(100dvh - 12px);
+  }
+  .notes-modal .modal-head {
+    padding: 14px 14px 10px;
+  }
+  .notes-shell-status {
+    padding: 0 14px 10px;
+  }
+  .notes-tabs {
+    padding-inline: 14px;
+  }
+  .notes-panel-rail {
+    padding: 14px;
+  }
+  .notes-add-controls,
+  .notes-task-row,
+  .notes-reminder-heading,
+  .roadmap-reminder-alert-actions {
+    flex-wrap: wrap;
+  }
+  .notes-phase-metadata {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .notes-completion-gates dl > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .notes-phase-secondary-actions {
+    justify-content: flex-start;
+  }
+  .notes-phase-execution .notes-roadmap-primary {
+    width: 100%;
+  }
+  .notes-phase-secondary-actions button,
+  .notes-phase-execution .notes-roadmap-primary,
+  .notes-reference-new,
+  .notes-reference-form-actions button,
+  .notes-reference-detail-actions button,
+  .notes-reference-open button,
+  .notes-reference-delete button,
+  .notes-phase-references-empty button,
+  .notes-roadmap-proposal-actions button,
+  .notes-phase-references-heading > button,
+  .notes-phase-status-control > button {
+    min-height: 36px;
+  }
+  .notes-reference-form-grid,
+  .notes-reference-checkboxes {
+    grid-template-columns: 1fr;
+  }
+  .notes-reference-form-wide {
+    grid-column: auto;
+  }
+  .notes-reference-detail-heading,
+  .notes-references-toolbar {
+    flex-wrap: wrap;
+  }
+  .notes-reference-detail-actions {
+    flex: 1 1 100%;
+  }
+  .notes-add-controls button,
+  .roadmap-reminder-alert-actions button {
+    flex: 1 1 auto;
+  }
+  .notes-task-actions {
+    box-sizing: border-box;
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    width: 100%;
+    min-width: 0;
+    padding-left: 24px;
+  }
+  .notes-edit-form .notes-task-actions {
+    padding-left: 0;
+  }
+}

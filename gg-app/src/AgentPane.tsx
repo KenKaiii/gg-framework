@@ -61,7 +61,8 @@ import { ReferencedFiles, appendReferencedFiles, parseReferencedFiles } from "./
 import { ContextMeter } from "./ContextMeter";
 import { BackgroundTasksButton } from "./BackgroundTasksButton";
 import { TasksModal } from "./TasksModal";
-import { NotesModal } from "./NotesModal";
+import { ProjectNotes } from "./ProjectNotes";
+import type { NotesSessionLink, PhaseStartResult } from "./notes-types";
 import { MemoryModal } from "./MemoryModal";
 import { ShimmerText } from "./ShimmerText";
 import { WakeScreen } from "./WakeScreen";
@@ -613,10 +614,7 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
   // Updated live via the `tasks_list` SSE event while a run-all sweep advances.
   const [projectTasks, setProjectTasks] = useState<ProjectTask[]>([]);
   const [showTasks, setShowTasks] = useState(false);
-  // Free-form per-project notes, persisted to localStorage keyed by project cwd.
-  const [showNotes, setShowNotes] = useState(false);
   const [showMemories, setShowMemories] = useState(false);
-  const [notes, setNotes] = useState("");
   // Every window chooses a code or chat workspace before connecting. Mode stays
   // separate from picker visibility so restore and reopened pickers are explicit.
   const [needsProject, setNeedsProject] = useState(true);
@@ -1543,35 +1541,6 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
     [deleteTask],
   );
 
-  // Per-project notes: load from localStorage whenever the active project (cwd)
-  // changes, and write back on every edit. Keyed by cwd so each project keeps
-  // its own notebook; windows pointed at the same project share one.
-  const notesKey = state?.cwd ? `gg-notes:${state.cwd}` : null;
-  useEffect(() => {
-    if (!notesKey) {
-      setNotes("");
-      return;
-    }
-    try {
-      setNotes(localStorage.getItem(notesKey) ?? "");
-    } catch {
-      setNotes("");
-    }
-  }, [notesKey]);
-
-  const handleNotesChange = useCallback(
-    (value: string) => {
-      setNotes(value);
-      if (!notesKey) return;
-      try {
-        localStorage.setItem(notesKey, value);
-      } catch {
-        // Storage full/unavailable — keep the in-memory value for this session.
-      }
-    },
-    [notesKey],
-  );
-
   // Pin Ken to a model (or null → clear the pin, follow GG Coder). The
   // sidecar's ken_model_change broadcast updates state; the .then is just a
   // faster local echo of the same payload.
@@ -2341,6 +2310,55 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
     onProjectChosen();
   }, [onUserTargetChange]);
 
+  const startRoadmapPhase = useCallback(
+    async (phaseId: string): Promise<PhaseStartResult> => {
+      if (state?.mode !== "code") {
+        return {
+          status: "failed",
+          code: "coding-mode-required",
+          operationId: null,
+          message: "Roadmap phases can only start in coding mode.",
+        };
+      }
+      if (running || autopilotReviewing || newSessionBusy) {
+        return {
+          status: "failed",
+          code: "session-busy",
+          operationId: null,
+          message: "Wait for the current run or Autopilot review to finish.",
+        };
+      }
+      return client.startPhase(phaseId);
+    },
+    [autopilotReviewing, client, newSessionBusy, running, state?.mode],
+  );
+
+  const resumeRoadmapPhase = useCallback(
+    async (phaseId: string, link: NotesSessionLink): Promise<void> => {
+      if (running || autopilotReviewing || newSessionBusy) {
+        throw new Error("Wait for the current run or Autopilot review to finish.");
+      }
+      const currentCwd = stateRef.current?.cwd;
+      if (!currentCwd) throw new Error("The project session is not ready.");
+      if (link.sessionPath === null) {
+        const recovered = await startRoadmapPhase(phaseId);
+        if (recovered.status === "failed") throw new Error(recovered.message);
+        if (recovered.status === "accepted") return;
+        link = recovered.session;
+      }
+      if (link.sessionPath === null) {
+        throw new Error("This phase has no resumable session file.");
+      }
+      await client.selectWorkspace(
+        { mode: "code", cwd: currentCwd, sessionPath: link.sessionPath },
+        generationRef.current ?? 0,
+      );
+      await client.waitForReady();
+      onProjectChosen();
+    },
+    [autopilotReviewing, client, newSessionBusy, running, startRoadmapPhase],
+  );
+
   useEffect(() => {
     onSnapshot?.({
       paneId,
@@ -2596,13 +2614,18 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
               >
                 {"+ New"}
               </button>
-              <button
-                className="btn btn-sm btn-ghost"
-                title="Open your notes for this project"
-                onClick={() => setShowNotes(true)}
-              >
-                Notes
-              </button>
+              <ProjectNotes
+                cwd={state?.cwd ?? null}
+                client={client}
+                onStartPhase={startRoadmapPhase}
+                onResumePhase={resumeRoadmapPhase}
+                phaseStartUnavailableReason={
+                  state?.mode === "code" ? null : "Roadmap phases can only start in coding mode."
+                }
+                phaseActionDisabled={running || autopilotReviewing || newSessionBusy}
+                paneFocused={props.focused !== false}
+                windowFocused={windowFocused && props.windowFocused !== false}
+              />
               <button
                 className="btn btn-sm btn-ghost"
                 title="View and run this project's tasks"
@@ -3116,14 +3139,6 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
 
       {workspaceMode === "chat" && showMemories && (
         <MemoryModal onClose={() => setShowMemories(false)} />
-      )}
-
-      {workspaceMode === "code" && showNotes && (
-        <NotesModal
-          value={notes}
-          onChange={handleNotesChange}
-          onClose={() => setShowNotes(false)}
-        />
       )}
 
       {showScorecard && progress && (

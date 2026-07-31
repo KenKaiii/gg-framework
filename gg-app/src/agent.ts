@@ -7,6 +7,19 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { error as logError, info as logInfo } from "@tauri-apps/plugin-log";
 import { routePaneEvent, type PaneEventEnvelope } from "./pane-routing";
+import {
+  isPhaseStartResult,
+  isProjectNotesMigrationOutcome,
+  isProjectNotesReadOutcome,
+  isProjectNotesSaveOutcome,
+  isReminderClaimOutcome,
+  isReminderReleaseOutcome,
+  isReminderReserveOutcome,
+  type NotesClient,
+  type PhaseStartResult,
+} from "./notes-types";
+export { isPhaseLaunchErrorEvent } from "./notes-types";
+export type { PhaseLaunchErrorEvent, PhaseLaunchErrorCode } from "./notes-types";
 
 // Per-window event bus. The Rust side emits agent traffic with `emit_to` the
 // specific window label, so each window must listen on ITS OWN webview target —
@@ -50,6 +63,27 @@ export interface SidecarEvent {
   type: string;
   data: unknown;
 }
+
+export {
+  isPhaseCompletionCheckpointFailedEvent,
+  isPhaseCompletionReviewBlockedEvent,
+  isPhaseCompletionReviewFailedEvent,
+} from "./phase-completion-events";
+export type {
+  PhaseCompletionBlockedGateOutcome,
+  PhaseCompletionCheckpointFailedEvent,
+  PhaseCompletionCheckpointFailedPayload,
+  PhaseCompletionCheckpointFailureCode,
+  PhaseCompletionReconciliationKind,
+  PhaseCompletionReconciliationOwner,
+  PhaseCompletionReviewBlockedEvent,
+  PhaseCompletionReviewBlockedPayload,
+  PhaseCompletionReviewFailedEvent,
+  PhaseCompletionReviewFailedPayload,
+  PhaseCompletionReviewFailureCode,
+  PhaseCompletionSession,
+  PhaseCompletionUnmetGateCode,
+} from "./phase-completion-events";
 
 /** Subscribe this window to a secret-free model-catalog invalidation. */
 export async function onModelsChanged(onChange: () => void): Promise<() => void> {
@@ -146,6 +180,7 @@ export interface AgentState {
   provider: string;
   model: string;
   cwd: string;
+  sessionId?: string;
   sessionPath?: string | null;
   mode: WorkspaceMode;
   chatAgent?: ChatAgentId;
@@ -177,8 +212,8 @@ export interface AgentState {
   additionalRoots?: string[];
   /** True when the active model can accept native video input. */
   supportsVideo?: boolean;
-  /** Autopilot (auto-review) toggle for this window's project. Per-window,
-   *  persisted server-side; absent on frames from older sidecars. */
+  /** Project-wide Autopilot (auto-review) policy shared live by every pane/window
+   *  on this canonical project; absent on frames from older sidecars. */
   autopilot?: boolean;
   /** Provider of the model Ken (mentor + autopilot) uses next turn. */
   kenProvider?: string;
@@ -505,23 +540,80 @@ export interface PromptMeta {
   enhancements?: PromptSegment[];
 }
 
+/** Authoritative outcome of submitting one prompt to the sidecar. */
+export interface PromptSubmissionResult {
+  queued: boolean;
+  count: number;
+}
+
+export function requirePromptSubmissionResult(value: unknown): PromptSubmissionResult {
+  if (typeof value !== "object" || value === null) {
+    throw new Error("invalid prompt submission response");
+  }
+  const result = value as Record<string, unknown>;
+  if (
+    typeof result.queued !== "boolean" ||
+    typeof result.count !== "number" ||
+    !Number.isSafeInteger(result.count) ||
+    result.count < 0 ||
+    (result.queued ? result.count < 1 : result.count !== 0)
+  ) {
+    throw new Error("invalid prompt submission response");
+  }
+  return { queued: result.queued, count: result.count };
+}
+
 export async function sendPrompt(
   text: string,
   attachments: Attachment[] = [],
   meta?: PromptMeta,
-): Promise<void> {
+): Promise<PromptSubmissionResult> {
   await logInfo(
     `prompt: ${text.slice(0, 80)}${attachments.length ? ` (+${attachments.length} att)` : ""}`,
   );
   try {
-    await invoke("agent_prompt", { paneId: "primary", text, attachments, meta: meta ?? null });
+    const result = await invoke<unknown>("agent_prompt", {
+      paneId: "primary",
+      text,
+      attachments,
+      meta: meta ?? null,
+    });
+    return requirePromptSubmissionResult(result);
   } catch (e) {
     await logError(`agent_prompt failed: ${String(e)}`);
     throw e;
   }
 }
 
-export interface CancelResult {
+export type PhaseCancellationPersistenceOutcome =
+  | "committed"
+  | "same-status"
+  | "manual-override"
+  | "done-terminal"
+  | "no-active-phase"
+  | "phase-not-found"
+  | "phase-archived"
+  | "stale-session"
+  | "missing"
+  | "corrupt"
+  | "storage-failure"
+  | "ignored"
+  | "not-pending";
+
+export interface PhaseCancellationPersistenceResult {
+  roadmapStatusSaved: boolean;
+  roadmapStatusOutcome: PhaseCancellationPersistenceOutcome;
+  roadmapStatusRetryable: boolean;
+  roadmapStatusFailure?: {
+    operationId: string;
+    phaseId: string;
+    code: string;
+    recovery: string;
+    detail?: string;
+  };
+}
+
+export interface CancelResult extends PhaseCancellationPersistenceResult {
   cancelled: boolean;
   runState: "idle" | "running" | "cancelling";
   drained: string;
@@ -566,6 +658,12 @@ export async function cancel(): Promise<CancelResult> {
   }
 }
 
+export async function retryCancelledRoadmapStatus(): Promise<PhaseCancellationPersistenceResult> {
+  return invoke<PhaseCancellationPersistenceResult>("agent_cancel_roadmap_status_retry", {
+    paneId: "primary",
+  });
+}
+
 // ── Ken Kai (mentor agent) ──────────────────────────────────
 // Ken is a second, read-only agent in this window. The user reaches him with
 // `@Ken …`; he reads GG Coder's transcript and hands back runnable prompts +
@@ -583,8 +681,9 @@ export async function cancel(): Promise<CancelResult> {
 // Autopilot Ken (auto-reviewer) is a SEPARATE, non-chatty mode of the same Ken.
 // When autopilot is on, after each GG Coder run the sidecar silently drives a
 // review→prompt→review loop and emits the `autopilot_*` family (no chat bubble,
-// no new IPC — cancel reuses agent_cancel). All ride the same generic
-// `agent-event` SSE channel:
+// no new IPC — cancel reuses agent_cancel). Completion persistence failures use
+// the typed `phase_completion_*` family. All ride the same generic `agent-event`
+// SSE channel:
 //   autopilot_review_start {}       — Ken started an auto-review (spinner)
 //   autopilot_prompted { round }    — Ken fed GG Coder another prompt (marker)
 //   autopilot_done {}               — Ken gave the all-clear, loop stops
@@ -596,6 +695,9 @@ export async function cancel(): Promise<CancelResult> {
 //                                     the webview can seed the plan-progress
 //                                     widget from the still-open plan modal
 //   autopilot_error { headline, … } — a review failed (structured, like error)
+//   phase_completion_checkpoint_failed { code, recovery, … } — checkpoint recovery
+//   phase_completion_review_failed { code, recovery, … }     — review persistence recovery
+//   phase_completion_review_blocked { unmetGateCodes, … }    — unmet completion gates
 
 /** Ask Ken Kai. Fires the read-only mentor run; reply arrives via `ken_*`
  *  SSE events. Lazily boots Ken's session on first use. */
@@ -620,8 +722,8 @@ export async function cancelKen(): Promise<void> {
   }
 }
 
-/** Toggle autopilot (auto-review) for this window's project. Persisted
- *  server-side (~/.gg/gg-app.json, keyed by cwd). Returns the new value. */
+/** Toggle project-wide Autopilot (auto-review). Persisted server-side and fanned
+ *  out live to every pane/window on the same canonical project. */
 export async function setAutopilot(enabled: boolean): Promise<boolean> {
   try {
     await waitForReady();
@@ -632,7 +734,7 @@ export async function setAutopilot(enabled: boolean): Promise<boolean> {
     return res.autopilot ?? enabled;
   } catch (e) {
     await logError(`agent_autopilot_set failed: ${String(e)}`);
-    return enabled;
+    throw e;
   }
 }
 
@@ -647,6 +749,7 @@ export async function acceptPlan(planPath: string | null): Promise<void> {
     await invoke("agent_accept_plan", { paneId: "primary", planPath });
   } catch (e) {
     await logError(`agent_accept_plan failed: ${String(e)}`);
+    throw e;
   }
 }
 
@@ -968,13 +1071,71 @@ export async function removeAzureConnection(): Promise<AzureConnectionStatus> {
   }
 }
 
+/** Successful fresh-session creation, correlated with its reset event. */
+export interface NewSessionResult {
+  operationId: string;
+}
+
+export type NewSessionFailureKind = "creation-rejected" | "outcome-unknown";
+
+/** Typed distinction between an HTTP rejection and an indeterminate transport outcome. */
+export class NewSessionError extends Error {
+  constructor(
+    readonly kind: NewSessionFailureKind,
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = "NewSessionError";
+  }
+}
+
+function asNewSessionError(error: unknown): NewSessionError {
+  let candidate: unknown = error;
+  if (typeof error === "string") {
+    try {
+      candidate = JSON.parse(error);
+    } catch {
+      candidate = null;
+    }
+  }
+  if (typeof candidate === "object" && candidate !== null) {
+    const value = candidate as { kind?: unknown; message?: unknown; status?: unknown };
+    if (
+      (value.kind === "creation-rejected" || value.kind === "outcome-unknown") &&
+      typeof value.message === "string"
+    ) {
+      return new NewSessionError(
+        value.kind,
+        value.message,
+        typeof value.status === "number" ? value.status : undefined,
+      );
+    }
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return new NewSessionError("outcome-unknown", message);
+}
+
+function requireNewSessionResult(value: unknown): NewSessionResult {
+  const operationId =
+    typeof value === "object" && value !== null
+      ? (value as { operationId?: unknown }).operationId
+      : undefined;
+  if (typeof operationId !== "string" || operationId.length === 0) {
+    throw new Error("invalid new-session response: missing operationId");
+  }
+  return { operationId };
+}
+
 /** Start a fresh session (clears history) for this window's current project. */
-export async function newSession(): Promise<void> {
+export async function newSession(): Promise<NewSessionResult> {
   try {
-    await invoke("agent_new_session", { paneId: "primary" });
+    return requireNewSessionResult(
+      await invoke<NewSessionResult>("agent_new_session", { paneId: "primary" }),
+    );
   } catch (e) {
     await logError(`agent_new_session failed: ${String(e)}`);
-    throw e;
+    throw asNewSessionError(e);
   }
 }
 
@@ -1943,7 +2104,7 @@ export function disposePaneSession(paneId: string, generation?: number): Promise
   return invoke("agent_pane_dispose", { paneId, generation: generation ?? null });
 }
 
-export interface PaneAgentClient {
+export interface PaneAgentClient extends NotesClient {
   readonly paneId: string;
   status(): Promise<PaneStartupStatus>;
   waitForReady(): Promise<PaneStartupStatus>;
@@ -1953,6 +2114,7 @@ export interface PaneAgentClient {
   selectWorkspace(target: PaneSessionTarget, expectedGeneration: number): Promise<number>;
   subscribe(onEvent: (event: SidecarEvent) => void): () => void;
   getState(): Promise<AgentState>;
+  startPhase(phaseId: string): Promise<PhaseStartResult>;
   listMemories(): Promise<MemorySnapshot>;
   deleteMemory(id: string): Promise<MemorySnapshot>;
   listJiwa(): Promise<JiwaSnapshot>;
@@ -1962,8 +2124,13 @@ export interface PaneAgentClient {
     provider: SubscriptionUsageProvider,
   ): Promise<SubscriptionUsageProviderSnapshot>;
   enhancePrompt(text: string): Promise<EnhanceResult>;
-  sendPrompt(text: string, attachments?: Attachment[], meta?: PromptMeta): Promise<void>;
+  sendPrompt(
+    text: string,
+    attachments?: Attachment[],
+    meta?: PromptMeta,
+  ): Promise<PromptSubmissionResult>;
   cancel(): Promise<CancelResult>;
+  retryCancelledRoadmapStatus(): Promise<PhaseCancellationPersistenceResult>;
   sendKenPrompt(text: string): Promise<void>;
   cancelKen(): Promise<void>;
   setAutopilot(enabled: boolean): Promise<boolean>;
@@ -1974,7 +2141,7 @@ export interface PaneAgentClient {
   saveTranscript(path: string): Promise<{ path: string; bytes: number }>;
   authOAuthStart(provider: string): Promise<void>;
   authOAuthCode(code: string): Promise<void>;
-  newSession(): Promise<void>;
+  newSession(): Promise<NewSessionResult>;
   getRadioState(): Promise<RadioState>;
   setRadio(station: string): Promise<string | null>;
   setRadioVolume(volume: number): Promise<number>;
@@ -2065,26 +2232,44 @@ export function createPaneAgentClient(paneId: string): PaneAgentClient {
     subscribe(onEvent) {
       let activeSessionId: string | null = null;
       let generation: number | null = null;
+      let identityResolved = false;
       let disposed = false;
       let refreshEpoch = 0;
-      const refresh = async (): Promise<void> => {
-        const epoch = ++refreshEpoch;
-        try {
-          const status = await call<PaneStartupStatus>("agent_pane_status");
-          if (disposed || epoch !== refreshEpoch) return;
-          activeSessionId = status.sessionId;
-          generation = status.generation;
-        } catch {
-          if (disposed || epoch !== refreshEpoch) return;
-          activeSessionId = null;
-          generation = null;
+      const pendingEnvelopes: PaneEventEnvelope[] = [];
+      const deliverPending = (): void => {
+        if (disposed || !identityResolved) return;
+        const envelopes = pendingEnvelopes.splice(0);
+        for (const event of envelopes) {
+          if (disposed) return;
+          if (event.sessionId === activeSessionId) {
+            onEvent({ type: event.type, data: event.data });
+          }
         }
       };
-      void refresh();
+      const refresh = async (): Promise<void> => {
+        const epoch = ++refreshEpoch;
+        identityResolved = false;
+        let nextSessionId: string | null = null;
+        let nextGeneration: number | null = null;
+        try {
+          const status = await call<PaneStartupStatus>("agent_pane_status");
+          nextSessionId = status.sessionId;
+          nextGeneration = status.generation;
+        } catch {
+          // Retry a failed lookup when the next tagged envelope arrives.
+        }
+        if (disposed || epoch !== refreshEpoch) return;
+        activeSessionId = nextSessionId;
+        generation = nextGeneration;
+        identityResolved = true;
+        deliverPending();
+      };
       const unlisten = subscribePaneEnvelope((event) => {
         if (disposed || event.paneId !== paneId) return;
+        pendingEnvelopes.push(event);
+        if (!identityResolved) return;
         if (event.sessionId === activeSessionId) {
-          onEvent({ type: event.type, data: event.data });
+          deliverPending();
         } else {
           void refresh();
         }
@@ -2096,14 +2281,63 @@ export function createPaneAgentClient(paneId: string): PaneAgentClient {
             void refresh();
         },
       );
+      void refresh();
       return () => {
         disposed = true;
         refreshEpoch += 1;
+        pendingEnvelopes.length = 0;
         unlisten();
         void unlistenReadyPromise.then((unlistenReady) => unlistenReady());
       };
     },
     getState: () => call("agent_state"),
+    async getNotes() {
+      const outcome = await call<unknown>("agent_notes_get");
+      if (!isProjectNotesReadOutcome(outcome)) throw new Error("invalid Notes read response");
+      return outcome;
+    },
+    async migrateNotes(document) {
+      const outcome = await call<unknown>("agent_notes_migrate", { document });
+      if (!isProjectNotesMigrationOutcome(outcome)) {
+        throw new Error("invalid Notes migration response");
+      }
+      return outcome;
+    },
+    async saveNotes(expectedRevision, document) {
+      const outcome = await call<unknown>("agent_notes_save", { expectedRevision, document });
+      if (!isProjectNotesSaveOutcome(outcome)) throw new Error("invalid Notes save response");
+      return outcome;
+    },
+    async reserveReminder(focused) {
+      const outcome = await call<unknown>("agent_reminder_reserve", { focused });
+      if (!isReminderReserveOutcome(outcome)) {
+        throw new Error("invalid reminder reserve response");
+      }
+      return outcome;
+    },
+    async claimReminder(leaseToken, channel, permission) {
+      const outcome = await call<unknown>("agent_reminder_claim", {
+        leaseToken,
+        channel,
+        permission,
+      });
+      if (!isReminderClaimOutcome(outcome)) {
+        throw new Error("invalid reminder claim response");
+      }
+      return outcome;
+    },
+    async releaseReminder(leaseToken) {
+      const outcome = await call<unknown>("agent_reminder_release", { leaseToken });
+      if (!isReminderReleaseOutcome(outcome)) {
+        throw new Error("invalid reminder release response");
+      }
+      return outcome;
+    },
+    async startPhase(phaseId) {
+      const outcome = await call<unknown>("agent_phase_start", { phaseId });
+      if (!isPhaseStartResult(outcome)) throw new Error("invalid phase start response");
+      return outcome;
+    },
     listMemories: async () => {
       await ready();
       return call("agent_memories");
@@ -2132,8 +2366,10 @@ export function createPaneAgentClient(paneId: string): PaneAgentClient {
       await ready();
       return call("agent_enhance_prompt", { text });
     },
-    sendPrompt: (text, attachments = [], meta) =>
-      call("agent_prompt", { text, attachments, meta: meta ?? null }),
+    sendPrompt: async (text, attachments = [], meta) =>
+      requirePromptSubmissionResult(
+        await call<unknown>("agent_prompt", { text, attachments, meta: meta ?? null }),
+      ),
     async cancel() {
       try {
         return await call<CancelResult>("agent_cancel");
@@ -2141,6 +2377,8 @@ export function createPaneAgentClient(paneId: string): PaneAgentClient {
         throw new AgentCancelError(parseCancelFailure(e));
       }
     },
+    retryCancelledRoadmapStatus: () =>
+      call<PhaseCancellationPersistenceResult>("agent_cancel_roadmap_status_retry"),
     sendKenPrompt: async (text) => {
       await ready();
       await call("agent_ken_prompt", { text });
@@ -2156,8 +2394,9 @@ export function createPaneAgentClient(paneId: string): PaneAgentClient {
           (await call<{ autopilot?: boolean }>("agent_autopilot_set", { enabled })).autopilot ??
           enabled
         );
-      } catch {
-        return enabled;
+      } catch (error) {
+        await logError(`agent_autopilot_set failed: ${String(error)}`);
+        throw error;
       }
     },
     acceptPlan: (planPath) => call("agent_accept_plan", { planPath }),
@@ -2193,7 +2432,13 @@ export function createPaneAgentClient(paneId: string): PaneAgentClient {
       await ready();
       await call("agent_auth_oauth_code", { code });
     },
-    newSession: () => call("agent_new_session"),
+    async newSession() {
+      try {
+        return requireNewSessionResult(await call("agent_new_session"));
+      } catch (error) {
+        throw asNewSessionError(error);
+      }
+    },
     async getRadioState() {
       try {
         const r = await call<RadioState>("agent_radio_state");

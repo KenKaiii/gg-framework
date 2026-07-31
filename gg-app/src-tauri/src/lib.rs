@@ -41,6 +41,7 @@ use futures_util::StreamExt;
 use tauri::{
     Emitter, EventTarget, Manager, RunEvent, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 /// The single shared Node daemon process. Every window's `AgentSession` lives
@@ -1270,6 +1271,583 @@ async fn agent_state(
         .map_err(|e| e.to_string())
 }
 
+fn normalize_notes_response(
+    status: reqwest::StatusCode,
+    body: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let typed_outcome = body
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|value| {
+            matches!(value, "ok" | "missing" | "corrupt" | "conflict" | "invalid")
+        });
+    if status.is_success() || typed_outcome {
+        return Ok(body);
+    }
+    Err(body
+        .get("message")
+        .or_else(|| body.get("error"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("notes request failed")
+        .to_string())
+}
+
+async fn notes_response(response: reqwest::Response) -> Result<serde_json::Value, String> {
+    let status = response.status();
+    let body = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| error.to_string())?;
+    normalize_notes_response(status, body)
+}
+
+/// Proxy: load the authenticated pane's project Notes snapshot.
+#[tauri::command]
+async fn agent_notes_get(
+    webview: WebviewWindow,
+    pane_id: String,
+    client: tauri::State<'_, reqwest::Client>,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = pane_session_for(&webview, &pane_id).ok_or("session not ready")?;
+    let response = client
+        .get(format!("{}/notes", sidecar_base(port)))
+        .header("x-gg-session", &gg_sid)
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    notes_response(response).await
+}
+
+fn encode_path_segment(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char)
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
+fn phase_start_path(phase_id: &str) -> String {
+    format!("/phases/{}/start", encode_path_segment(phase_id))
+}
+
+fn normalize_phase_start_response(
+    status: reqwest::StatusCode,
+    body: &str,
+) -> Result<serde_json::Value, String> {
+    let value = serde_json::from_str::<serde_json::Value>(body)
+        .map_err(|_| "invalid phase-start response".to_string())?;
+    let typed = value
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|candidate| matches!(candidate, "accepted" | "already-bound" | "failed"));
+    if status.is_success() || typed {
+        Ok(value)
+    } else {
+        Err(sidecar_error_text(status, body))
+    }
+}
+
+#[cfg(feature = "native-smoke")]
+fn audit_native_phase_start(
+    pane_id: &str,
+    phase_id: &str,
+    status: reqwest::StatusCode,
+    result: &Result<serde_json::Value, String>,
+) {
+    use std::io::Write as _;
+
+    let Ok(path) = std::env::var("GG_PHASE21_NATIVE_SMOKE_AUDIT_FILE") else {
+        return;
+    };
+    let outcome = match result {
+        Ok(value) => serde_json::json!({ "response": value }),
+        Err(error) => serde_json::json!({ "error": error }),
+    };
+    let entry = serde_json::json!({
+        "route": "agent_phase_start",
+        "paneId": pane_id,
+        "phaseId": phase_id,
+        "httpStatus": status.as_u16(),
+        "authenticated": true,
+        "outcome": outcome,
+    });
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "{entry}");
+    }
+}
+
+/// Proxy: atomically bind and start one Roadmap phase for the authenticated pane.
+#[tauri::command]
+async fn agent_phase_start(
+    webview: WebviewWindow,
+    pane_id: String,
+    client: tauri::State<'_, reqwest::Client>,
+    phase_id: String,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = pane_session_for(&webview, &pane_id).ok_or("session not ready")?;
+    let response = client
+        .post(format!(
+            "{}{}",
+            sidecar_base(port),
+            phase_start_path(&phase_id)
+        ))
+        .header("x-gg-session", &gg_sid)
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    let result = normalize_phase_start_response(status, &body);
+    #[cfg(feature = "native-smoke")]
+    audit_native_phase_start(&pane_id, &phase_id, status, &result);
+    result
+}
+
+/// Proxy: create the pane's project Notes repository only when absent.
+#[tauri::command]
+async fn agent_notes_migrate(
+    webview: WebviewWindow,
+    pane_id: String,
+    client: tauri::State<'_, reqwest::Client>,
+    document: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = pane_session_for(&webview, &pane_id).ok_or("session not ready")?;
+    let response = client
+        .post(format!("{}/notes/migrate", sidecar_base(port)))
+        .header("x-gg-session", &gg_sid)
+        .json(&serde_json::json!({ "document": document }))
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    notes_response(response).await
+}
+
+/// Proxy: compare-and-swap the pane's project Notes document.
+#[tauri::command]
+async fn agent_notes_save(
+    webview: WebviewWindow,
+    pane_id: String,
+    client: tauri::State<'_, reqwest::Client>,
+    expected_revision: u64,
+    document: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = pane_session_for(&webview, &pane_id).ok_or("session not ready")?;
+    let response = client
+        .put(format!("{}/notes", sidecar_base(port)))
+        .header("x-gg-session", &gg_sid)
+        .json(&serde_json::json!({
+            "expectedRevision": expected_revision,
+            "document": document,
+        }))
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    notes_response(response).await
+}
+
+const ROADMAP_REMINDER_NOTIFICATION_TITLE: &str = "Roadmap reminder due";
+const ROADMAP_REMINDER_NOTIFICATION_BODY: &str = "Open GG Coder to review it.";
+
+#[derive(Debug, PartialEq)]
+struct RoadmapReminderNotificationSpec {
+    title: &'static str,
+    body: &'static str,
+    sound: Option<&'static str>,
+}
+
+fn roadmap_reminder_sound() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        return "Submarine";
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return "Mail";
+    }
+    #[cfg(target_os = "linux")]
+    {
+        return "message-new-instant";
+    }
+    #[allow(unreachable_code)]
+    "default"
+}
+
+fn roadmap_reminder_notification_spec(sound_enabled: bool) -> RoadmapReminderNotificationSpec {
+    RoadmapReminderNotificationSpec {
+        title: ROADMAP_REMINDER_NOTIFICATION_TITLE,
+        body: ROADMAP_REMINDER_NOTIFICATION_BODY,
+        sound: sound_enabled.then(roadmap_reminder_sound),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NotificationAvailabilitySignal {
+    Enabled,
+    Disabled,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum RoadmapReminderNotificationPermission {
+    Granted,
+    Denied,
+    Unavailable,
+}
+
+fn notification_permission_from_signal(
+    signal: NotificationAvailabilitySignal,
+) -> RoadmapReminderNotificationPermission {
+    match signal {
+        NotificationAvailabilitySignal::Enabled => RoadmapReminderNotificationPermission::Granted,
+        NotificationAvailabilitySignal::Disabled => RoadmapReminderNotificationPermission::Denied,
+        NotificationAvailabilitySignal::Unknown => {
+            RoadmapReminderNotificationPermission::Unavailable
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_notification_signal(
+    setting: Option<windows::UI::Notifications::NotificationSetting>,
+) -> NotificationAvailabilitySignal {
+    use windows::UI::Notifications::NotificationSetting;
+
+    match setting {
+        Some(NotificationSetting::Enabled) => NotificationAvailabilitySignal::Enabled,
+        Some(
+            NotificationSetting::DisabledForApplication
+            | NotificationSetting::DisabledForUser
+            | NotificationSetting::DisabledByGroupPolicy
+            | NotificationSetting::DisabledByManifest,
+        ) => NotificationAvailabilitySignal::Disabled,
+        Some(_) | None => NotificationAvailabilitySignal::Unknown,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn platform_notification_signal(app_id: &str) -> NotificationAvailabilitySignal {
+    use windows::core::HSTRING;
+    use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
+    use windows::UI::Notifications::ToastNotificationManager;
+
+    let initialized = unsafe { RoInitialize(RO_INIT_MULTITHREADED) }.is_ok();
+    let setting = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(app_id))
+        .and_then(|notifier| notifier.Setting());
+    if initialized {
+        unsafe { RoUninitialize() };
+    }
+    match setting {
+        Ok(setting) => windows_notification_signal(Some(setting)),
+        Err(error) => {
+            log::warn!("Windows notification availability probe failed: {error}");
+            windows_notification_signal(None)
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MacosNotificationState {
+    Enabled,
+    Disabled,
+    NotDetermined,
+    Unknown,
+}
+
+#[cfg(target_os = "macos")]
+fn macos_notification_state(
+    authorization: objc2_user_notifications::UNAuthorizationStatus,
+    alert: objc2_user_notifications::UNNotificationSetting,
+) -> MacosNotificationState {
+    use objc2_user_notifications::{UNAuthorizationStatus, UNNotificationSetting};
+
+    match authorization {
+        UNAuthorizationStatus::Denied => MacosNotificationState::Disabled,
+        UNAuthorizationStatus::Authorized
+        | UNAuthorizationStatus::Provisional
+        | UNAuthorizationStatus::Ephemeral
+            if alert == UNNotificationSetting::Enabled =>
+        {
+            MacosNotificationState::Enabled
+        }
+        UNAuthorizationStatus::Authorized
+        | UNAuthorizationStatus::Provisional
+        | UNAuthorizationStatus::Ephemeral => MacosNotificationState::Disabled,
+        UNAuthorizationStatus::NotDetermined => MacosNotificationState::NotDetermined,
+        _ => MacosNotificationState::Unknown,
+    }
+}
+
+#[cfg(all(target_os = "macos", test))]
+fn macos_notification_signal(
+    authorization: objc2_user_notifications::UNAuthorizationStatus,
+    alert: objc2_user_notifications::UNNotificationSetting,
+) -> NotificationAvailabilitySignal {
+    match macos_notification_state(authorization, alert) {
+        MacosNotificationState::Enabled => NotificationAvailabilitySignal::Enabled,
+        MacosNotificationState::Disabled => NotificationAvailabilitySignal::Disabled,
+        MacosNotificationState::NotDetermined | MacosNotificationState::Unknown => {
+            NotificationAvailabilitySignal::Unknown
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_current_notification_state() -> MacosNotificationState {
+    use block2::RcBlock;
+    use objc2_user_notifications::{UNNotificationSettings, UNUserNotificationCenter};
+    use std::ptr::NonNull;
+    use std::sync::mpsc;
+
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let callback = RcBlock::new(move |settings: NonNull<UNNotificationSettings>| {
+        let settings = unsafe { settings.as_ref() };
+        let _ = sender.send(macos_notification_state(
+            settings.authorizationStatus(),
+            settings.alertSetting(),
+        ));
+    });
+    UNUserNotificationCenter::currentNotificationCenter()
+        .getNotificationSettingsWithCompletionHandler(&callback);
+    receiver
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap_or(MacosNotificationState::Unknown)
+}
+
+#[cfg(target_os = "macos")]
+fn platform_notification_signal(_app_id: &str) -> NotificationAvailabilitySignal {
+    use block2::RcBlock;
+    use objc2::runtime::Bool;
+    use objc2_foundation::NSError;
+    use objc2_user_notifications::{UNAuthorizationOptions, UNUserNotificationCenter};
+    use std::sync::mpsc;
+
+    match macos_current_notification_state() {
+        MacosNotificationState::Enabled => return NotificationAvailabilitySignal::Enabled,
+        MacosNotificationState::Disabled => return NotificationAvailabilitySignal::Disabled,
+        MacosNotificationState::Unknown => return NotificationAvailabilitySignal::Unknown,
+        MacosNotificationState::NotDetermined => {}
+    }
+
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let callback = RcBlock::new(move |granted: Bool, error: *mut NSError| {
+        let _ = sender.send(if !error.is_null() {
+            NotificationAvailabilitySignal::Unknown
+        } else if granted.as_bool() {
+            NotificationAvailabilitySignal::Enabled
+        } else {
+            NotificationAvailabilitySignal::Disabled
+        });
+    });
+    UNUserNotificationCenter::currentNotificationCenter()
+        .requestAuthorizationWithOptions_completionHandler(
+            UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound,
+            &callback,
+        );
+    let requested = receiver
+        .recv_timeout(Duration::from_secs(30))
+        .unwrap_or(NotificationAvailabilitySignal::Unknown);
+    if requested != NotificationAvailabilitySignal::Enabled {
+        return requested;
+    }
+
+    match macos_current_notification_state() {
+        MacosNotificationState::Enabled => NotificationAvailabilitySignal::Enabled,
+        MacosNotificationState::Disabled => NotificationAvailabilitySignal::Disabled,
+        MacosNotificationState::NotDetermined | MacosNotificationState::Unknown => {
+            NotificationAvailabilitySignal::Unknown
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn platform_notification_signal(_app_id: &str) -> NotificationAvailabilitySignal {
+    // Freedesktop notification services expose delivery, not a reliable per-app
+    // authorization state. Linux therefore uses the visible in-app fallback and
+    // records `unavailable` instead of manufacturing a `granted` audit result.
+    NotificationAvailabilitySignal::Unknown
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+fn platform_notification_signal(_app_id: &str) -> NotificationAvailabilitySignal {
+    NotificationAvailabilitySignal::Unknown
+}
+
+#[tauri::command]
+async fn roadmap_reminder_notification_permission(
+    app: tauri::AppHandle,
+) -> RoadmapReminderNotificationPermission {
+    let app_id = app.config().identifier.clone();
+    tauri::async_runtime::spawn_blocking(move || platform_notification_signal(&app_id))
+        .await
+        .map(notification_permission_from_signal)
+        .unwrap_or(RoadmapReminderNotificationPermission::Unavailable)
+}
+
+#[tauri::command]
+fn show_roadmap_reminder_notification(
+    app: tauri::AppHandle,
+    sound_enabled: bool,
+) -> Result<(), String> {
+    let spec = roadmap_reminder_notification_spec(sound_enabled);
+    let mut notification = app
+        .notification()
+        .builder()
+        .title(spec.title)
+        .body(spec.body);
+    if let Some(sound) = spec.sound {
+        notification = notification.sound(sound);
+    }
+    notification.show().map_err(|error| error.to_string())
+}
+
+fn normalize_reminder_response(
+    status: reqwest::StatusCode,
+    body: &str,
+    allowed_statuses: &[&str],
+) -> Result<serde_json::Value, String> {
+    let value = serde_json::from_str::<serde_json::Value>(body)
+        .map_err(|_| "invalid reminder response".to_string())?;
+    let typed_status = value
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .filter(|candidate| allowed_statuses.contains(candidate));
+    if typed_status.is_some() {
+        return Ok(value);
+    }
+    Err(if status.is_success() {
+        "invalid reminder response".to_string()
+    } else {
+        sidecar_error_text(status, body)
+    })
+}
+
+async fn reminder_response(
+    response: reqwest::Response,
+    allowed_statuses: &[&str],
+) -> Result<serde_json::Value, String> {
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    normalize_reminder_response(status, &body, allowed_statuses)
+}
+
+#[tauri::command]
+async fn agent_reminder_reserve(
+    webview: WebviewWindow,
+    pane_id: String,
+    client: tauri::State<'_, reqwest::Client>,
+    focused: bool,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = pane_session_for(&webview, &pane_id).ok_or("session not ready")?;
+    let response = client
+        .post(format!("{}/reminders/reserve", sidecar_base(port)))
+        .header("x-gg-session", &gg_sid)
+        .json(&serde_json::json!({ "focused": focused }))
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    reminder_response(
+        response,
+        &[
+            "reserved",
+            "deferred",
+            "leased",
+            "none",
+            "already-delivered",
+            "missing",
+            "corrupt",
+        ],
+    )
+    .await
+}
+
+#[tauri::command]
+async fn agent_reminder_claim(
+    webview: WebviewWindow,
+    pane_id: String,
+    client: tauri::State<'_, reqwest::Client>,
+    lease_token: String,
+    channel: String,
+    permission: String,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = pane_session_for(&webview, &pane_id).ok_or("session not ready")?;
+    let response = client
+        .post(format!("{}/reminders/claim", sidecar_base(port)))
+        .header("x-gg-session", &gg_sid)
+        .json(&serde_json::json!({
+            "leaseToken": lease_token,
+            "channel": channel,
+            "permission": permission,
+        }))
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    reminder_response(
+        response,
+        &[
+            "ok",
+            "phase-not-found",
+            "phase-inactive",
+            "phase-archived",
+            "reminder-not-found",
+            "stale-occurrence",
+            "not-due",
+            "already-delivered",
+            "invalid-lease",
+            "expired-lease",
+            "wrong-session",
+            "invalid",
+            "missing",
+            "corrupt",
+        ],
+    )
+    .await
+}
+
+#[tauri::command]
+async fn agent_reminder_release(
+    webview: WebviewWindow,
+    pane_id: String,
+    client: tauri::State<'_, reqwest::Client>,
+    lease_token: String,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = pane_session_for(&webview, &pane_id).ok_or("session not ready")?;
+    let response = client
+        .post(format!("{}/reminders/release", sidecar_base(port)))
+        .header("x-gg-session", &gg_sid)
+        .json(&serde_json::json!({ "leaseToken": lease_token }))
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    reminder_response(
+        response,
+        &[
+            "released",
+            "invalid-lease",
+            "expired-lease",
+            "wrong-session",
+        ],
+    )
+    .await
+}
+
 /// Proxy: shared durable chat memories.
 #[tauri::command]
 async fn agent_memories(
@@ -1451,6 +2029,52 @@ async fn agent_usage(
     Ok(body)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PromptSubmissionResult {
+    queued: bool,
+    count: usize,
+}
+
+fn parse_prompt_submission_response(
+    status: reqwest::StatusCode,
+    body: &str,
+) -> Result<PromptSubmissionResult, String> {
+    if !status.is_success() {
+        return Err(sidecar_error_text(status, body));
+    }
+    let result: PromptSubmissionResult =
+        serde_json::from_str(body).map_err(|_| "invalid prompt submission response".to_string())?;
+    if (result.queued && result.count == 0) || (!result.queued && result.count != 0) {
+        return Err("invalid prompt submission response".into());
+    }
+    Ok(result)
+}
+
+async fn post_sidecar_prompt(
+    client: &reqwest::Client,
+    endpoint: &str,
+    gg_sid: &str,
+    text: String,
+    attachments: Option<serde_json::Value>,
+    meta: Option<serde_json::Value>,
+) -> Result<PromptSubmissionResult, String> {
+    let response = client
+        .post(endpoint)
+        .header("x-gg-session", gg_sid)
+        .json(&serde_json::json!({
+            "text": text,
+            "attachments": attachments.unwrap_or(serde_json::Value::Array(vec![])),
+            "meta": meta.unwrap_or(serde_json::Value::Null),
+        }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    parse_prompt_submission_response(status, &body)
+}
+
 /// Proxy: submit a prompt (optionally with attachments). The reply streams back
 /// via the `agent-event` event. `attachments` is passed through opaquely.
 #[tauri::command]
@@ -1461,21 +2085,18 @@ async fn agent_prompt(
     text: String,
     attachments: Option<serde_json::Value>,
     meta: Option<serde_json::Value>,
-) -> Result<(), String> {
+) -> Result<PromptSubmissionResult, String> {
     let port = port_for(&webview).ok_or("daemon not ready")?;
     let gg_sid = pane_session_for(&webview, &pane_id).ok_or("session not ready")?;
-    client
-        .post(format!("{}/prompt", sidecar_base(port)))
-        .header("x-gg-session", &gg_sid)
-        .json(&serde_json::json!({
-            "text": text,
-            "attachments": attachments.unwrap_or(serde_json::Value::Array(vec![])),
-            "meta": meta.unwrap_or(serde_json::Value::Null),
-        }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    post_sidecar_prompt(
+        &client,
+        &format!("{}/prompt", sidecar_base(port)),
+        &gg_sid,
+        text,
+        attachments,
+        meta,
+    )
+    .await
 }
 
 async fn sidecar_get_json(
@@ -1523,11 +2144,6 @@ async fn agent_history(
 }
 
 /// Proxy: export this window's session as Markdown.
-///
-/// Called twice per export, deliberately. With `path: None` it returns only the
-/// suggested filename, so the webview can open the native save dialog without
-/// ever carrying the transcript. With `path: Some(_)` it fetches the markdown
-/// and writes it to disk here — a large transcript never crosses the IPC bridge.
 #[tauri::command]
 async fn agent_export_transcript(
     webview: WebviewWindow,
@@ -1542,10 +2158,66 @@ async fn agent_export_transcript(
     let body = sidecar_get_json(&webview, pane_id, &client, "/export").await?;
     let markdown = body
         .get("markdown")
-        .and_then(|v| v.as_str())
+        .and_then(|value| value.as_str())
         .ok_or("sidecar returned no transcript")?;
-    std::fs::write(&path, markdown).map_err(|e| format!("could not save transcript: {e}"))?;
+    std::fs::write(&path, markdown)
+        .map_err(|error| format!("could not save transcript: {error}"))?;
     Ok(serde_json::json!({ "path": path, "bytes": markdown.len() }))
+}
+
+fn sidecar_error_text(status: reqwest::StatusCode, body: &str) -> String {
+    let trimmed = body.trim();
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if let Some(message) = json
+            .get("message")
+            .or_else(|| json.get("error"))
+            .and_then(|value| value.as_str())
+        {
+            return message.to_string();
+        }
+        return json.to_string();
+    }
+    if !trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+    format!("sidecar request failed with HTTP {status}")
+}
+
+fn parse_sidecar_json_response(
+    status: reqwest::StatusCode,
+    body: &str,
+) -> Result<serde_json::Value, String> {
+    if !status.is_success() {
+        return Err(sidecar_error_text(status, body));
+    }
+    serde_json::from_str(body).map_err(|error| error.to_string())
+}
+
+fn parse_new_session_response(
+    status: reqwest::StatusCode,
+    body: &str,
+) -> Result<serde_json::Value, String> {
+    if !status.is_success() {
+        let kind = if status.is_client_error() {
+            "creation-rejected"
+        } else {
+            "outcome-unknown"
+        };
+        return Err(serde_json::json!({
+            "kind": kind,
+            "status": status.as_u16(),
+            "message": sidecar_error_text(status, body),
+        })
+        .to_string());
+    }
+    let value = serde_json::from_str::<serde_json::Value>(body)
+        .map_err(|_| "invalid new-session response".to_string())?;
+    let operation_id = value
+        .get("operationId")
+        .and_then(|candidate| candidate.as_str())
+        .filter(|candidate| !candidate.is_empty())
+        .ok_or_else(|| "invalid new-session response: missing operationId".to_string())?;
+    Ok(serde_json::json!({ "operationId": operation_id }))
 }
 
 /// Proxy: start a fresh session (clears history) for this window's project.
@@ -1554,16 +2226,18 @@ async fn agent_new_session(
     webview: WebviewWindow,
     pane_id: String,
     client: tauri::State<'_, reqwest::Client>,
-) -> Result<(), String> {
+) -> Result<serde_json::Value, String> {
     let port = port_for(&webview).ok_or("daemon not ready")?;
     let gg_sid = pane_session_for(&webview, &pane_id).ok_or("session not ready")?;
-    client
+    let response = client
         .post(format!("{}/new-session", sidecar_base(port)))
         .header("x-gg-session", &gg_sid)
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    Ok(())
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    parse_new_session_response(status, &body)
 }
 
 /// Proxy: store an API key for a provider.
@@ -1877,16 +2551,16 @@ async fn agent_run_tasks(
 ) -> Result<serde_json::Value, String> {
     let port = port_for(&webview).ok_or("daemon not ready")?;
     let gg_sid = pane_session_for(&webview, &pane_id).ok_or("session not ready")?;
-    let res = client
+    let response = client
         .post(format!("{}/tasks/run", sidecar_base(port)))
         .header("x-gg-session", &gg_sid)
         .json(&serde_json::json!({ "id": id, "all": all }))
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    parse_sidecar_json_response(status, &body)
 }
 
 /// Proxy: delete a task by id. Returns the remaining `{ tasks }`.
@@ -1923,14 +2597,16 @@ async fn agent_accept_plan(
 ) -> Result<(), String> {
     let port = port_for(&webview).ok_or("daemon not ready")?;
     let gg_sid = pane_session_for(&webview, &pane_id).ok_or("session not ready")?;
-    client
+    let response = client
         .post(format!("{}/plan/accept", sidecar_base(port)))
         .header("x-gg-session", &gg_sid)
         .json(&serde_json::json!({ "planPath": plan_path }))
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    Ok(())
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    parse_sidecar_json_response(status, &body).map(|_| ())
 }
 
 fn parse_cancel_response(
@@ -1956,6 +2632,32 @@ async fn agent_cancel(
     let gg_sid = pane_session_for(&webview, &pane_id).ok_or("session not ready")?;
     let response = client
         .post(format!("{}/cancel", sidecar_base(port)))
+        .header("x-gg-session", &gg_sid)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = response.status();
+    let body = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())?;
+    parse_cancel_response(status, body)
+}
+
+/// Proxy: retry only the Project Notes write for an already acknowledged cancellation.
+#[tauri::command]
+async fn agent_cancel_roadmap_status_retry(
+    webview: WebviewWindow,
+    pane_id: String,
+    client: tauri::State<'_, reqwest::Client>,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = pane_session_for(&webview, &pane_id).ok_or("session not ready")?;
+    let response = client
+        .post(format!(
+            "{}/cancel/roadmap-status/retry",
+            sidecar_base(port)
+        ))
         .header("x-gg-session", &gg_sid)
         .send()
         .await
@@ -3427,6 +4129,27 @@ fn apply_mac_overlay<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
 /// shows — the in-app `chat-head-title` is the ONLY title. Building via the
 /// builder (rather than the config + a runtime patch) is the only way to hide
 /// the native title, since there's no runtime `set_hidden_title` setter.
+fn exact_fixture_opt_in(enabled: bool, value: Option<&str>) -> bool {
+    enabled && value == Some("1")
+}
+
+fn phase25_dev_fixture_enabled() -> bool {
+    exact_fixture_opt_in(
+        cfg!(debug_assertions),
+        std::env::var("GG_PHASE25_DEV_FIXTURE_SKIP_ORPHAN_SWEEP")
+            .ok()
+            .as_deref(),
+    )
+}
+
+#[cfg(all(debug_assertions, target_os = "macos"))]
+fn phase26_macos_smoke_enabled() -> bool {
+    exact_fixture_opt_in(
+        cfg!(all(debug_assertions, target_os = "macos")),
+        std::env::var("GG_PHASE26_MACOS_SMOKE").ok().as_deref(),
+    )
+}
+
 fn build_app_window_with_visibility(
     app: &tauri::AppHandle,
     label: &str,
@@ -3438,6 +4161,20 @@ fn build_app_window_with_visibility(
         .min_inner_size(480.0, 360.0)
         .background_color(APP_BG)
         .visible(visible);
+    #[cfg(target_os = "windows")]
+    if cfg!(feature = "native-smoke") || phase25_dev_fixture_enabled() {
+        let port_variable = if cfg!(feature = "native-smoke") {
+            "GG_APP_NATIVE_SMOKE_CDP_PORT"
+        } else {
+            "GG_PHASE25_DEV_FIXTURE_CDP_PORT"
+        };
+        let cdp_port = std::env::var(port_variable)
+            .map_err(|_| format!("{port_variable} is required"))?
+            .parse::<u16>()
+            .map_err(|_| format!("{port_variable} must be a TCP port"))?;
+        let browser_args = format!("--remote-debugging-port={cdp_port}");
+        builder = builder.additional_browser_args(&browser_args);
+    }
     // Windows needs HTML5 drop enabled for the existing browser attachment path.
     // macOS keeps Tauri's native handler so folder drops include absolute paths.
     #[cfg(target_os = "windows")]
@@ -5163,8 +5900,26 @@ fn spawn_daemon(app: tauri::AppHandle, is_respawn: bool) {
     }
 }
 
+fn parse_daemon_create_session_response(
+    status: reqwest::StatusCode,
+    value: &serde_json::Value,
+) -> Result<String, String> {
+    if !status.is_success() {
+        return Err(value
+            .get("error")
+            .and_then(|error| error.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("agent daemon rejected session with HTTP {status}")));
+    }
+    value
+        .get("sessionId")
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| "agent daemon response did not include a session id".to_string())
+}
+
 /// POST /session to the daemon for `cwd` (+ optional resume `session_path`);
-/// returns the new session id or the daemon's concrete initialization error.
+/// returns the new session id or the daemon's concrete rejection reason.
 async fn daemon_create_session(
     app: &tauri::AppHandle,
     port: u16,
@@ -5180,29 +5935,18 @@ async fn daemon_create_session(
         "cwd": cwd.to_string_lossy(),
         "sessionPath": session_path,
     });
-    let res = client
+    let response = client
         .post(format!("{}/session", sidecar_base(port)))
         .json(&body)
         .send()
         .await
-        .map_err(|error| error.to_string())?;
-    let status = res.status();
-    let value = res
+        .map_err(|error| format!("failed to reach agent daemon: {error}"))?;
+    let status = response.status();
+    let value = response
         .json::<serde_json::Value>()
         .await
-        .map_err(|error| error.to_string())?;
-    if !status.is_success() {
-        return Err(value
-            .get("error")
-            .and_then(|error| error.as_str())
-            .unwrap_or("failed to create agent session")
-            .to_string());
-    }
-    value
-        .get("sessionId")
-        .and_then(|session_id| session_id.as_str())
-        .map(|session_id| session_id.to_string())
-        .ok_or_else(|| "agent daemon returned no session id".to_string())
+        .map_err(|error| format!("agent daemon returned an invalid response: {error}"))?;
+    parse_daemon_create_session_response(status, &value)
 }
 
 /// DELETE /session/:id on the daemon and require an acknowledged success response.
@@ -5534,7 +6278,15 @@ fn restore_or_default_windows(app: &tauri::AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(all(debug_assertions, target_os = "macos"))]
+    let builder = if phase26_macos_smoke_enabled() {
+        builder.plugin(tauri_plugin_webdriver_automation::init())
+    } else {
+        builder
+    };
+    builder
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -5580,6 +6332,15 @@ pub fn run() {
             open_project_path,
             open_url,
             agent_state,
+            agent_notes_get,
+            agent_phase_start,
+            agent_notes_migrate,
+            agent_notes_save,
+            agent_reminder_reserve,
+            agent_reminder_claim,
+            agent_reminder_release,
+            roadmap_reminder_notification_permission,
+            show_roadmap_reminder_notification,
             agent_memories,
             agent_delete_memory,
             agent_jiwa,
@@ -5588,6 +6349,7 @@ pub fn run() {
             agent_usage,
             agent_prompt,
             agent_cancel,
+            agent_cancel_roadmap_status_retry,
             agent_ken_prompt,
             agent_ken_cancel,
             agent_autopilot_set,
@@ -5664,10 +6426,12 @@ pub fn run() {
             // instances BEFORE spawning any new sidecars — they'd otherwise
             // accumulate forever across launches. Best-effort + logged.
             // Cross-platform: uses `ps` on Unix, PowerShell CIM on Windows.
-            sweep_orphan_sidecars();
-            // macOS menu-bar / Windows notification-area presence. Built before
-            // the windows so the status item is there even if window restore is
-            // slow. Non-fatal: a tray failure must never stop the app launching.
+            // The isolated Phase 25 dev fixture must never inspect or terminate
+            // a pre-existing host sidecar.
+            if !phase25_dev_fixture_enabled() {
+                sweep_orphan_sidecars();
+            }
+            // macOS menu-bar / Windows notification-area presence.
             #[cfg(any(target_os = "macos", windows))]
             if let Err(e) = init_tray(&app.handle().clone()) {
                 log::warn!("tray init failed: {e}");
@@ -5910,6 +6674,503 @@ fn refresh_live_sessions(app: &tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dev_fixture_flags_require_debug_builds_and_exact_opt_in() {
+        for value in [None, Some(""), Some("0"), Some("true")] {
+            assert!(!exact_fixture_opt_in(true, value));
+            assert!(!exact_fixture_opt_in(false, value));
+        }
+        assert!(exact_fixture_opt_in(true, Some("1")));
+        assert!(!exact_fixture_opt_in(false, Some("1")));
+    }
+
+    #[test]
+    fn release_builds_ignore_dev_fixture_environment_opt_in() {
+        assert!(!exact_fixture_opt_in(false, Some("1")));
+    }
+
+    #[test]
+    fn debug_dev_fixture_can_suppress_only_the_startup_sweep() {
+        assert!(exact_fixture_opt_in(true, Some("1")));
+    }
+
+    fn prompt_proxy_result(
+        status: reqwest::StatusCode,
+        body: &str,
+    ) -> Result<PromptSubmissionResult, String> {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let response_body = body.to_string();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
+            let mut request = [0_u8; 4096];
+            let read = stream.read(&mut request).unwrap();
+            let request = String::from_utf8_lossy(&request[..read]);
+            assert!(request.starts_with("POST /prompt HTTP/1.1"));
+            assert!(request.contains("x-gg-session: test-session"));
+
+            let response = format!(
+                "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                status.as_u16(),
+                status.canonical_reason().unwrap_or("Unknown"),
+                response_body.len(),
+                response_body,
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+
+        let client = reqwest::Client::new();
+        let endpoint = format!("http://{address}/prompt");
+        let result = tauri::async_runtime::block_on(post_sidecar_prompt(
+            &client,
+            &endpoint,
+            "test-session",
+            "Ship the fix".to_string(),
+            Some(serde_json::json!([])),
+            Some(serde_json::json!({ "kenSent": true })),
+        ));
+        server.join().unwrap();
+        result
+    }
+
+    #[test]
+    fn daemon_session_response_preserves_resume_identity_rejections() {
+        for message in [
+            "Cannot resume a session from another project",
+            "Cannot resume phase context from another project",
+        ] {
+            assert_eq!(
+                parse_daemon_create_session_response(
+                    reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                    &serde_json::json!({ "error": message }),
+                ),
+                Err(message.to_string())
+            );
+        }
+        assert_eq!(
+            parse_daemon_create_session_response(
+                reqwest::StatusCode::OK,
+                &serde_json::json!({ "sessionId": "same-project-session" }),
+            ),
+            Ok("same-project-session".to_string())
+        );
+    }
+
+    #[test]
+    fn phase_start_proxy_encodes_ids_and_preserves_typed_outcomes() {
+        assert_eq!(
+            phase_start_path("phase/21 review"),
+            "/phases/phase%2F21%20review/start"
+        );
+        for (status, body) in [
+            (
+                reqwest::StatusCode::ACCEPTED,
+                r#"{"status":"accepted","operationId":"op-1","session":{"sessionId":"s","sessionPath":"/s"},"packageTokenCount":42}"#,
+            ),
+            (
+                reqwest::StatusCode::CONFLICT,
+                r#"{"status":"failed","code":"session-busy","operationId":null,"message":"Wait"}"#,
+            ),
+        ] {
+            let parsed = normalize_phase_start_response(status, body).unwrap();
+            assert!(matches!(
+                parsed.get("status").and_then(serde_json::Value::as_str),
+                Some("accepted" | "failed")
+            ));
+        }
+    }
+
+    #[test]
+    fn phase_start_proxy_rejects_transport_ambiguity() {
+        assert_eq!(
+            normalize_phase_start_response(reqwest::StatusCode::BAD_GATEWAY, "not json"),
+            Err("invalid phase-start response".to_string())
+        );
+        assert_eq!(
+            normalize_phase_start_response(
+                reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                r#"{"error":"unknown"}"#,
+            ),
+            Err("unknown".to_string())
+        );
+    }
+
+    #[test]
+    fn normalize_notes_response_preserves_expected_non_success_outcomes() {
+        for (status, body) in [
+            (
+                reqwest::StatusCode::CONFLICT,
+                serde_json::json!({ "status": "conflict", "snapshot": { "revision": 2 } }),
+            ),
+            (
+                reqwest::StatusCode::NOT_FOUND,
+                serde_json::json!({ "status": "missing" }),
+            ),
+            (
+                reqwest::StatusCode::BAD_REQUEST,
+                serde_json::json!({
+                    "status": "invalid",
+                    "error": { "path": "$", "message": "invalid request body" }
+                }),
+            ),
+            (
+                reqwest::StatusCode::BAD_REQUEST,
+                serde_json::json!({
+                    "status": "invalid",
+                    "error": { "path": "$", "message": "malformed JSON request body" }
+                }),
+            ),
+            (
+                reqwest::StatusCode::BAD_REQUEST,
+                serde_json::json!({
+                    "status": "invalid",
+                    "error": {
+                        "path": "phases[0].roadmapEvents[0].type",
+                        "message": "privileged roadmap events require their dedicated authority path"
+                    }
+                }),
+            ),
+            (
+                reqwest::StatusCode::PAYLOAD_TOO_LARGE,
+                serde_json::json!({
+                    "status": "invalid",
+                    "error": {
+                        "path": "$",
+                        "message": "notes request body exceeds 1048576 bytes"
+                    }
+                }),
+            ),
+        ] {
+            assert_eq!(
+                normalize_notes_response(status, body.clone()).unwrap(),
+                body
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_notes_response_rejects_untyped_server_failures() {
+        let error = normalize_notes_response(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "status": "error", "message": "notes request failed" }),
+        )
+        .unwrap_err();
+        assert_eq!(error, "notes request failed");
+    }
+
+    #[test]
+    fn roadmap_reminder_notification_is_fixed_private_and_uses_at_most_one_platform_sound() {
+        let muted = roadmap_reminder_notification_spec(false);
+        assert_eq!(muted.title, "Roadmap reminder due");
+        assert_eq!(muted.body, "Open GG Coder to review it.");
+        assert_eq!(muted.sound, None);
+
+        let audible = roadmap_reminder_notification_spec(true);
+        assert_eq!(audible.title, muted.title);
+        assert_eq!(audible.body, muted.body);
+        assert_eq!(audible.sound, Some(roadmap_reminder_sound()));
+        #[cfg(target_os = "windows")]
+        assert_eq!(audible.sound, Some("Mail"));
+        #[cfg(target_os = "macos")]
+        assert_eq!(audible.sound, Some("Submarine"));
+        #[cfg(target_os = "linux")]
+        assert_eq!(audible.sound, Some("message-new-instant"));
+    }
+
+    #[test]
+    fn notification_availability_maps_enabled_disabled_and_unknown_without_drift() {
+        assert_eq!(
+            notification_permission_from_signal(NotificationAvailabilitySignal::Enabled),
+            RoadmapReminderNotificationPermission::Granted
+        );
+        assert_eq!(
+            notification_permission_from_signal(NotificationAvailabilitySignal::Disabled),
+            RoadmapReminderNotificationPermission::Denied
+        );
+        assert_eq!(
+            notification_permission_from_signal(NotificationAvailabilitySignal::Unknown),
+            RoadmapReminderNotificationPermission::Unavailable
+        );
+        assert_eq!(
+            serde_json::to_value(RoadmapReminderNotificationPermission::Granted).unwrap(),
+            serde_json::json!("granted")
+        );
+        assert_eq!(
+            serde_json::to_value(RoadmapReminderNotificationPermission::Denied).unwrap(),
+            serde_json::json!("denied")
+        );
+        assert_eq!(
+            serde_json::to_value(RoadmapReminderNotificationPermission::Unavailable).unwrap(),
+            serde_json::json!("unavailable")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_toast_setting_maps_enabled_disabled_and_unknown() {
+        use windows::UI::Notifications::NotificationSetting;
+
+        assert_eq!(
+            windows_notification_signal(Some(NotificationSetting::Enabled)),
+            NotificationAvailabilitySignal::Enabled
+        );
+        for setting in [
+            NotificationSetting::DisabledForApplication,
+            NotificationSetting::DisabledForUser,
+            NotificationSetting::DisabledByGroupPolicy,
+            NotificationSetting::DisabledByManifest,
+        ] {
+            assert_eq!(
+                windows_notification_signal(Some(setting)),
+                NotificationAvailabilitySignal::Disabled
+            );
+        }
+        assert_eq!(
+            windows_notification_signal(None),
+            NotificationAvailabilitySignal::Unknown
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_authorization_maps_enabled_disabled_and_unknown() {
+        use objc2_user_notifications::{UNAuthorizationStatus, UNNotificationSetting};
+
+        assert_eq!(
+            macos_notification_signal(
+                UNAuthorizationStatus::Authorized,
+                UNNotificationSetting::Enabled,
+            ),
+            NotificationAvailabilitySignal::Enabled
+        );
+        assert_eq!(
+            macos_notification_signal(
+                UNAuthorizationStatus::Denied,
+                UNNotificationSetting::Disabled,
+            ),
+            NotificationAvailabilitySignal::Disabled
+        );
+        assert_eq!(
+            macos_notification_state(
+                UNAuthorizationStatus::NotDetermined,
+                UNNotificationSetting::NotSupported,
+            ),
+            MacosNotificationState::NotDetermined
+        );
+        assert_eq!(
+            macos_notification_signal(
+                UNAuthorizationStatus::NotDetermined,
+                UNNotificationSetting::NotSupported,
+            ),
+            NotificationAvailabilitySignal::Unknown
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_policy_reports_unavailable_instead_of_granted() {
+        assert_eq!(
+            platform_notification_signal("com.ggcoder.app"),
+            NotificationAvailabilitySignal::Unknown
+        );
+    }
+
+    #[test]
+    fn reminder_proxy_preserves_only_route_typed_outcomes() {
+        let reserved = r#"{"status":"reserved","leaseToken":"lease-1"}"#;
+        assert_eq!(
+            normalize_reminder_response(
+                reqwest::StatusCode::OK,
+                reserved,
+                &["reserved", "deferred", "none"],
+            )
+            .unwrap(),
+            serde_json::from_str::<serde_json::Value>(reserved).unwrap()
+        );
+        let denied = r#"{"status":"wrong-session"}"#;
+        assert_eq!(
+            normalize_reminder_response(reqwest::StatusCode::OK, denied, &["ok", "wrong-session"],)
+                .unwrap(),
+            serde_json::json!({ "status": "wrong-session" })
+        );
+        assert_eq!(
+            normalize_reminder_response(
+                reqwest::StatusCode::OK,
+                r#"{"status":"released"}"#,
+                &["reserved", "deferred", "none"],
+            ),
+            Err("invalid reminder response".to_string())
+        );
+    }
+
+    #[test]
+    fn reminder_proxy_rejects_malformed_and_ambiguous_responses() {
+        assert_eq!(
+            normalize_reminder_response(
+                reqwest::StatusCode::BAD_GATEWAY,
+                "not json",
+                &["reserved"],
+            ),
+            Err("invalid reminder response".to_string())
+        );
+        assert_eq!(
+            normalize_reminder_response(
+                reqwest::StatusCode::OK,
+                r#"{"status":"maybe"}"#,
+                &["reserved"],
+            ),
+            Err("invalid reminder response".to_string())
+        );
+    }
+
+    #[test]
+    fn prompt_proxy_preserves_direct_and_queued_sidecar_202_results() {
+        assert_eq!(
+            prompt_proxy_result(
+                reqwest::StatusCode::ACCEPTED,
+                r#"{"queued":false,"count":0}"#,
+            ),
+            Ok(PromptSubmissionResult {
+                queued: false,
+                count: 0,
+            })
+        );
+        assert_eq!(
+            prompt_proxy_result(
+                reqwest::StatusCode::ACCEPTED,
+                r#"{"queued":true,"count":2}"#,
+            ),
+            Ok(PromptSubmissionResult {
+                queued: true,
+                count: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn prompt_proxy_rejects_malformed_success_shapes() {
+        for body in [
+            r#"{"accepted":true}"#,
+            r#"{"queued":true,"count":0}"#,
+            r#"{"queued":false,"count":1}"#,
+        ] {
+            assert_eq!(
+                prompt_proxy_result(reqwest::StatusCode::ACCEPTED, body),
+                Err("invalid prompt submission response".to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn prompt_proxy_rejects_sidecar_400_409_and_500_with_backend_text() {
+        for (status, body, expected) in [
+            (
+                reqwest::StatusCode::BAD_REQUEST,
+                r#"{"error":"empty prompt"}"#,
+                "empty prompt",
+            ),
+            (
+                reqwest::StatusCode::CONFLICT,
+                r#"{"error":"configuration refresh in progress"}"#,
+                "configuration refresh in progress",
+            ),
+            (
+                reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                r#"{"error":"provider exploded"}"#,
+                "provider exploded",
+            ),
+        ] {
+            assert_eq!(prompt_proxy_result(status, body), Err(expected.to_string()));
+        }
+    }
+
+    #[test]
+    fn sidecar_json_response_rejects_non_success_statuses() {
+        assert_eq!(
+            parse_sidecar_json_response(
+                reqwest::StatusCode::CONFLICT,
+                r#"{"error":"session mutation in progress"}"#,
+            ),
+            Err("session mutation in progress".to_string())
+        );
+        assert_eq!(
+            parse_sidecar_json_response(
+                reqwest::StatusCode::ACCEPTED,
+                r#"{"accepted":true,"operationId":"operation-1"}"#,
+            ),
+            Ok(serde_json::json!({
+                "accepted": true,
+                "operationId": "operation-1"
+            }))
+        );
+    }
+
+    #[test]
+    fn new_session_response_forwards_operation_identity() {
+        assert_eq!(
+            parse_new_session_response(
+                reqwest::StatusCode::OK,
+                r#"{"ok":true,"operationId":"operation-42"}"#,
+            ),
+            Ok(serde_json::json!({ "operationId": "operation-42" }))
+        );
+        assert_eq!(
+            parse_new_session_response(reqwest::StatusCode::OK, r#"{"ok":true}"#),
+            Err("invalid new-session response: missing operationId".to_string())
+        );
+        let rejected = parse_new_session_response(
+            reqwest::StatusCode::CONFLICT,
+            r#"{"error":"session is already resetting"}"#,
+        )
+        .unwrap_err();
+        let rejected: serde_json::Value = serde_json::from_str(&rejected).unwrap();
+        assert_eq!(
+            rejected,
+            serde_json::json!({
+                "kind": "creation-rejected",
+                "status": 409,
+                "message": "session is already resetting",
+            })
+        );
+        let unknown = parse_new_session_response(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            r#"{"error":"storage failed after reset"}"#,
+        )
+        .unwrap_err();
+        let unknown: serde_json::Value = serde_json::from_str(&unknown).unwrap();
+        assert_eq!(
+            unknown,
+            serde_json::json!({
+                "kind": "outcome-unknown",
+                "status": 500,
+                "message": "storage failed after reset",
+            })
+        );
+    }
+
+    #[test]
+    fn new_session_error_preserves_json_error_text() {
+        assert_eq!(
+            sidecar_error_text(
+                reqwest::StatusCode::CONFLICT,
+                r#"{"message":"session is already resetting"}"#,
+            ),
+            "session is already resetting"
+        );
+        assert_eq!(
+            sidecar_error_text(
+                reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                r#"{"error":{"code":"reset_failed","retryable":true}}"#,
+            ),
+            r#"{"error":{"code":"reset_failed","retryable":true}}"#
+        );
+    }
 
     #[test]
     fn cancel_response_accepts_acknowledged_success() {
