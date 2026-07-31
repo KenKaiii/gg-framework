@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Settings, Download } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { AsciiLogo } from "./AsciiLogo";
 import { HomeBackdrop } from "./HomeBackdrop";
 import { MemeLayer } from "./MemeLayer";
@@ -209,31 +208,7 @@ export function HomeScreen({
       )}
       <AsciiLogo />
       <div className="home-tagline">Cause the other coding agents piss me off</div>
-      <div className="home-byline">
-        By Ken Kai
-        <span className="home-byline-sep">{"\u00b7"}</span>
-        <a
-          className="home-link"
-          href="https://skool.com/kenkai"
-          onClick={(e) => {
-            e.preventDefault();
-            void openUrl("https://skool.com/kenkai");
-          }}
-        >
-          Skool
-        </a>
-        <span className="home-byline-sep">{"\u00b7"}</span>
-        <a
-          className="home-link"
-          href="https://youtube.com/@kenkaidoesai"
-          onClick={(e) => {
-            e.preventDefault();
-            void openUrl("https://youtube.com/@kenkaidoesai");
-          }}
-        >
-          YouTube
-        </a>
-      </div>
+      <div className="home-byline">Built for shipping real projects fast</div>
       <div className="home-actions">
         <div className="home-projects-row home-primary-row">
           <button

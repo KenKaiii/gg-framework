@@ -174,7 +174,7 @@ export function evaluatePhaseCompletion({
     gateOutcome: "done",
     unmetGateCodes: [],
     targetStatus: "done",
-    reason: `Final review accepted by ${review.reviewer === "ken" ? "Ken" : "Autopilot Ken"}.`,
+    reason: `Final review accepted by ${review.reviewer === "ken" ? "Supah" : "Autopilot Supah"}.`,
   };
 }
 

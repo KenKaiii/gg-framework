@@ -192,7 +192,7 @@ function completionReview(
     id: "completion-review-ui",
     reviewer: "ken-autopilot",
     decision: "accepted",
-    evidence: ["Autopilot Ken reviewed the completion gates."],
+    evidence: ["Autopilot Supah reviewed the completion gates."],
     reason: null,
     implementationCheckpointId: "checkpoint-ui",
     verificationStatusUpdateId: "verification-ui-passed",
@@ -692,7 +692,7 @@ describe("ProjectNotes", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Notes" }));
     fireEvent.click(screen.getByRole("tab", { name: "Roadmap" }));
     fireEvent.click(screen.getByRole("button", { name: "Inspect phase: Phase schedule" }));
-    expect(screen.getByText(/Future reminders are recovered when GG Coder opens/)).toBeTruthy();
+    expect(screen.getByText(/Future reminders are recovered when Supah Coder opens/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /^Tomorrow,/ }));
     await waitFor(() =>
@@ -913,7 +913,7 @@ describe("ProjectNotes", () => {
     fireEvent.click(screen.getByRole("button", { name: "Notes, 1 reminder due" }));
     selectNotesTab("Roadmap");
     fireEvent.click(screen.getByRole("button", { name: "Review phase: Phase in-app-evidence" }));
-    expect(screen.getByText("An in-app reminder was requested in GG Coder.")).toBeTruthy();
+    expect(screen.getByText("An in-app reminder was requested in Supah Coder.")).toBeTruthy();
   });
 
   it("keeps native evidence truthful after mocked dispatch failure", async () => {
@@ -1150,7 +1150,7 @@ describe("ProjectNotes", () => {
     fireEvent.click(screen.getByRole("button", { name: "Inspect phase: Roadmap reporting" }));
 
     expect(screen.getByRole("heading", { name: "Latest report" })).toBeTruthy();
-    expect(screen.getAllByText("Autopilot Ken").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Autopilot Supah").length).toBeGreaterThan(0);
     expect(screen.getByText("Repository reconciliation is implemented.")).toBeTruthy();
     expect(
       screen.getAllByText("Blocker: The release build is still running.").length,
@@ -1279,7 +1279,7 @@ describe("ProjectNotes", () => {
     expect(gates?.textContent).toContain("1 of 2 plan steps");
     expect(gates?.textContent).toContain("Failed");
     expect(gates?.textContent).toContain(failedReason);
-    expect(gates?.textContent).toContain("Rejected by Autopilot Ken");
+    expect(gates?.textContent).toContain("Rejected by Autopilot Supah");
     expect(gates?.textContent).toContain(
       "The implementation checkpoint used by this final review does not complete every canonical plan step.",
     );
@@ -1312,9 +1312,9 @@ describe("ProjectNotes", () => {
 
     const gates = screen.getByRole("heading", { name: "Completion gates" }).closest("section");
     expect(gates?.textContent).toContain("Exception requested");
-    expect(gates?.textContent).toContain("Reported by GG Coder");
+    expect(gates?.textContent).toContain("Reported by Supah Coder");
     expect(gates?.textContent).toContain("The native screen reader is unavailable in CI.");
-    expect(gates?.textContent).toContain("Exception accepted by Autopilot Ken");
+    expect(gates?.textContent).toContain("Exception accepted by Autopilot Supah");
     expect(gates?.querySelectorAll("time")).toHaveLength(4);
   });
 
@@ -1371,7 +1371,7 @@ describe("ProjectNotes", () => {
     expect(verificationGate?.textContent).toContain("Newer unreviewed evidence");
     expect(verificationGate?.textContent).toContain("Passed");
     expect(verificationGate?.textContent).toContain("Newer verification was not reviewed.");
-    expect(gates?.textContent).toContain("Rejected by Autopilot Ken");
+    expect(gates?.textContent).toContain("Rejected by Autopilot Supah");
     expect(gates?.textContent).toContain(
       "The implementation checkpoint used by this final review does not complete every canonical plan step.",
     );
@@ -1398,7 +1398,7 @@ describe("ProjectNotes", () => {
     const gates = screen.getByRole("heading", { name: "Completion gates" }).closest("section");
     expect(gates?.textContent).toContain("2 of 2 plan steps");
     expect(gates?.textContent).toContain("Passed");
-    expect(gates?.textContent).toContain("Accepted by Autopilot Ken");
+    expect(gates?.textContent).toContain("Accepted by Autopilot Supah");
     expect(gates?.textContent).toContain("Done is complete. Archiving remains a separate action.");
     expect(screen.getByRole("button", { name: "Archive phase" })).toBeTruthy();
   });

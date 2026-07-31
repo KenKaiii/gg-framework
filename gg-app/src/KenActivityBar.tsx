@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { MENTOR_DISPLAY_NAME } from "./brand";
 import { theme } from "./theme";
 import { SPINNER_FRAMES, SPINNER_FRAME_MS, formatTokenCount } from "./ActivityBar";
 
@@ -79,7 +80,7 @@ export function KenActivityBar({
           {SPINNER_FRAMES[frame]}
         </span>
         <span className="working" style={{ color: theme.ken }}>
-          {"Ken is thinking\u2026"}
+          {`${MENTOR_DISPLAY_NAME} is thinking\u2026`}
         </span>
         <span style={{ color: theme.textMuted }}>
           {"("}

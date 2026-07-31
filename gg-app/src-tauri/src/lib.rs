@@ -1459,7 +1459,7 @@ async fn agent_notes_save(
 }
 
 const ROADMAP_REMINDER_NOTIFICATION_TITLE: &str = "Roadmap reminder due";
-const ROADMAP_REMINDER_NOTIFICATION_BODY: &str = "Open GG Coder to review it.";
+const ROADMAP_REMINDER_NOTIFICATION_BODY: &str = "Open Supah Coder to review it.";
 
 #[derive(Debug, PartialEq)]
 struct RoadmapReminderNotificationSpec {
@@ -4156,7 +4156,7 @@ fn build_app_window_with_visibility(
     visible: bool,
 ) -> Result<WebviewWindow, String> {
     let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
-        .title("GG Coder")
+        .title("Supah Coder")
         .inner_size(1024.0, 720.0)
         .min_inner_size(480.0, 360.0)
         .background_color(APP_BG)
@@ -5079,7 +5079,7 @@ fn init_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         // Template tinting is a macOS concept; on Windows it must stay off or the
         // colour tile would be flattened.
         .icon_as_template(cfg!(target_os = "macos"))
-        .tooltip("GG Coder")
+        .tooltip("Supah Coder")
         .menu(&build_tray_menu(app, &TrayStatus::default())?)
         // The icon has no action other than its menu, so a click that did nothing
         // would read as broken. Right-click opens it too (tray-icon defaults
@@ -5868,7 +5868,7 @@ fn spawn_daemon(app: tauri::AppHandle, is_respawn: bool) {
 
             let Some(delay) = daemon_respawn_delay(attempt) else {
                 let message =
-                    "Agent daemon stopped after repeated crashes. Restart GG Coder to try again.";
+                    "Agent daemon stopped after repeated crashes. Restart Supah Coder to try again.";
                 log::error!("daemon crash circuit breaker opened after {attempt} crashes");
                 emit_daemon_error(&app2, message);
                 return;
@@ -6868,7 +6868,7 @@ mod tests {
     fn roadmap_reminder_notification_is_fixed_private_and_uses_at_most_one_platform_sound() {
         let muted = roadmap_reminder_notification_spec(false);
         assert_eq!(muted.title, "Roadmap reminder due");
-        assert_eq!(muted.body, "Open GG Coder to review it.");
+        assert_eq!(muted.body, "Open Supah Coder to review it.");
         assert_eq!(muted.sound, None);
 
         let audible = roadmap_reminder_notification_spec(true);

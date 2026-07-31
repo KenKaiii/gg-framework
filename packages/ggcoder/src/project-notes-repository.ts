@@ -971,7 +971,7 @@ function validateCompletionReviewRequest(
   if (!isNonEmptyString(request.reviewId)) return "Review ID is required.";
   if (!isTimestamp(request.timestamp)) return "Review timestamp is invalid.";
   if (!isNotesRoadmapReviewer(request.reviewer)) {
-    return "Only Ken or Autopilot Ken may submit a final review.";
+    return "Only Supah or Autopilot Supah may submit a final review.";
   }
   const issue = validateNotesCompletionReviewFields(request);
   if (issue?.code === "unknown-decision") return "Review decision is invalid.";
@@ -1468,7 +1468,7 @@ export class ProjectNotesRepository {
     if (reviewer === "gg-coder") {
       return {
         status: "invalid-review",
-        message: "Only Ken or Autopilot Ken may submit a final review.",
+        message: "Only Supah or Autopilot Supah may submit a final review.",
       };
     }
     if (request.statusUpdate.transition !== "review") {

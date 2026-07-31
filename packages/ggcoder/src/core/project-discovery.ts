@@ -33,28 +33,7 @@ export async function discoverProjects(): Promise<DiscoveredProject[]> {
     discoverCodexProjects(),
   ]);
 
-  const byPath = new Map<string, DiscoveredProject>();
-  for (const p of [...gg, ...cc, ...cx]) {
-    const existing = byPath.get(p.path);
-    if (!existing) {
-      byPath.set(p.path, p);
-      continue;
-    }
-    byPath.set(p.path, {
-      name: existing.name,
-      path: existing.path,
-      lastActiveMs: Math.max(existing.lastActiveMs, p.lastActiveMs),
-      lastActiveDisplay: "", // recomputed below
-      sources: mergeSources(existing.sources, p.sources),
-    });
-  }
-
-  const merged = Array.from(byPath.values()).map((p) => ({
-    ...p,
-    lastActiveDisplay: formatRelativeTime(p.lastActiveMs),
-  }));
-  merged.sort((a, b) => b.lastActiveMs - a.lastActiveMs);
-  return merged;
+  return mergeDiscoveredProjects([...gg, ...cc, ...cx]);
 }
 
 const SOURCE_ORDER: Record<ProjectSource, number> = {
@@ -66,6 +45,76 @@ const SOURCE_ORDER: Record<ProjectSource, number> = {
 function mergeSources(a: ProjectSource[], b: ProjectSource[]): ProjectSource[] {
   const set = new Set<ProjectSource>([...a, ...b]);
   return Array.from(set).sort((x, y) => SOURCE_ORDER[x] - SOURCE_ORDER[y]);
+}
+
+/** Comparison key for resolved project paths; Windows filesystems are case-insensitive. */
+export function discoveryPathKey(projectPath: string, platform = process.platform): string {
+  const resolved = path.resolve(projectPath);
+  return platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+/** Merge discovery sources by normalized path, retaining newest activity and all sources. */
+export function mergeDiscoveredProjects(
+  projects: DiscoveredProject[],
+  platform = process.platform,
+): DiscoveredProject[] {
+  const byPath = new Map<string, DiscoveredProject>();
+  for (const project of projects) {
+    const resolvedPath = path.resolve(project.path);
+    const key = discoveryPathKey(resolvedPath, platform);
+    const existing = byPath.get(key);
+    if (!existing) {
+      byPath.set(key, { ...project, path: resolvedPath });
+      continue;
+    }
+    const lastActiveMs = Math.max(existing.lastActiveMs, project.lastActiveMs);
+    byPath.set(key, {
+      ...existing,
+      lastActiveMs,
+      lastActiveDisplay: formatRelativeTime(lastActiveMs),
+      sources: mergeSources(existing.sources, project.sources),
+    });
+  }
+  return Array.from(byPath.values())
+    .map((project) => ({
+      ...project,
+      lastActiveDisplay: formatRelativeTime(project.lastActiveMs),
+    }))
+    .sort((a, b) => b.lastActiveMs - a.lastActiveMs);
+}
+
+/** Discover readable direct child directories under the configured projects root. */
+export async function discoverProjectsRootFolders(
+  projectsRoot: string,
+): Promise<DiscoveredProject[]> {
+  if (!projectsRoot.trim()) return [];
+  const resolvedRoot = path.resolve(projectsRoot);
+  let entries;
+  try {
+    entries = await fs.readdir(resolvedRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const projects: DiscoveredProject[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const projectPath = path.resolve(resolvedRoot, entry.name);
+    try {
+      const stat = await fs.stat(projectPath);
+      if (!stat.isDirectory()) continue;
+      projects.push({
+        name: entry.name,
+        path: projectPath,
+        lastActiveMs: stat.mtimeMs,
+        lastActiveDisplay: formatRelativeTime(stat.mtimeMs),
+        sources: ["ggcoder"],
+      });
+    } catch {
+      // Best effort: a disappearing or unreadable child must not fail discovery.
+    }
+  }
+  return projects;
 }
 
 /**

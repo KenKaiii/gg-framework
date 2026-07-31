@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { theme } from "./theme";
+import { MENTOR_DISPLAY_NAME, PRODUCT_DISPLAY_NAME } from "./brand";
 import { modelDisplayName } from "./model-name";
 import { groupByProvider } from "./provider-labels";
 import { supportsNativeSelectPopup } from "./platform";
@@ -173,8 +174,8 @@ export function ModelSelect({
           {onSelectFollow && (
             <option value={FOLLOW_VALUE}>
               {following
-                ? `Follow GG Coder (${modelDisplayName(models, currentModel)})`
-                : "Follow GG Coder"}
+                ? `Follow ${PRODUCT_DISPLAY_NAME} (${modelDisplayName(models, currentModel)})`
+                : `Follow ${PRODUCT_DISPLAY_NAME}`}
             </option>
           )}
           {!known && currentModel !== "" && <option value={currentModel}>{currentModel}</option>}
@@ -233,9 +234,9 @@ export function ModelSelect({
                 background: following ? theme.surface2 : "transparent",
               }}
               onClick={chooseFollow}
-              title="Ken adopts whatever model GG Coder is using"
+              title={`${MENTOR_DISPLAY_NAME} adopts whatever model ${PRODUCT_DISPLAY_NAME} is using`}
             >
-              Follow GG Coder
+              Follow {PRODUCT_DISPLAY_NAME}
             </button>
           )}
           {groups.map((group) => (

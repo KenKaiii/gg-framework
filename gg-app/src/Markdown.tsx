@@ -5,6 +5,7 @@ import rehypeHighlight from "rehype-highlight";
 import { Check, Copy, CornerDownLeft } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { openProjectPath, sendPrompt } from "./agent";
+import { PRODUCT_DISPLAY_NAME } from "./brand";
 import { codeLanguage, codeNodeText } from "./markdown-prompt";
 import { marked } from "marked";
 import "highlight.js/styles/github-dark.css";
@@ -150,10 +151,12 @@ function PromptBlock({ body }: { body: string }): React.ReactElement {
           className={`ken-prompt-send${sent ? " sent" : ""}`}
           onClick={send}
           disabled={sent}
-          title={sent ? "Sent to GG Coder" : "Send this prompt to GG Coder"}
+          title={
+            sent ? `Sent to ${PRODUCT_DISPLAY_NAME}` : `Send this prompt to ${PRODUCT_DISPLAY_NAME}`
+          }
         >
           {sent ? <Check size={12} /> : <CornerDownLeft size={12} />}
-          {sent ? "Sent" : "Send to GG Coder"}
+          {sent ? "Sent" : `Send to ${PRODUCT_DISPLAY_NAME}`}
         </button>
       )}
     </div>

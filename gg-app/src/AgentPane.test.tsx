@@ -289,10 +289,10 @@ describe("AgentPane lifecycle", () => {
     const view = render(<AgentPane client={pane} />);
     fireEvent.click(await screen.findByRole("button", { name: "Open projects" }));
     fireEvent.click(await screen.findByRole("button", { name: "Bind project" }));
-    const modelButton = await screen.findByTitle("Switch GG Coder's model");
+    const modelButton = await screen.findByTitle("Switch Supah Coder's model");
     await waitFor(() => expect((modelButton as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(modelButton);
-    expect(screen.getByRole("menu", { name: "Switch GG Coder's model" })).toBeTruthy();
+    expect(screen.getByRole("menu", { name: "Switch Supah Coder's model" })).toBeTruthy();
 
     await act(async () => {
       nativeMocks.modelsChanged?.();
@@ -300,7 +300,7 @@ describe("AgentPane lifecycle", () => {
     });
 
     await waitFor(() =>
-      expect(screen.queryByRole("menu", { name: "Switch GG Coder's model" })).toBeNull(),
+      expect(screen.queryByRole("menu", { name: "Switch Supah Coder's model" })).toBeNull(),
     );
     view.unmount();
     await waitFor(() => expect(nativeMocks.modelsUnlisten).toHaveBeenCalledOnce());
@@ -315,7 +315,7 @@ describe("AgentPane lifecycle", () => {
     render(<AgentPane client={pane} />);
     fireEvent.click(await screen.findByRole("button", { name: "Open projects" }));
     fireEvent.click(await screen.findByRole("button", { name: "Bind project" }));
-    const modelButton = await screen.findByTitle("Switch GG Coder's model");
+    const modelButton = await screen.findByTitle("Switch Supah Coder's model");
     await waitFor(() => expect(modelButton.textContent).toContain("Azure old"));
     vi.mocked(pane.getState).mockReset().mockResolvedValue(agentState("azure:gpt-new"));
     vi.mocked(pane.listModels)
@@ -328,7 +328,7 @@ describe("AgentPane lifecycle", () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByTitle("Switch GG Coder's model").textContent).toContain("Azure new"),
+      expect(screen.getByTitle("Switch Supah Coder's model").textContent).toContain("Azure new"),
     );
   });
 

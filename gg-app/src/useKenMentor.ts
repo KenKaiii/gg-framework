@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { MENTOR_DISPLAY_NAME } from "./brand";
 import type { Dispatch, SetStateAction } from "react";
 import type { SidecarEvent } from "./agent";
 import type { Item } from "./App";
@@ -172,11 +173,15 @@ export function useKenMentor(opts: {
               ? {
                   kind: "error",
                   id: nextId(),
-                  headline: `Ken: ${headline}`,
+                  headline: `${MENTOR_DISPLAY_NAME}: ${headline}`,
                   message: typeof d.message === "string" ? d.message : undefined,
                   guidance: typeof d.guidance === "string" ? d.guidance : undefined,
                 }
-              : { kind: "error", id: nextId(), text: `Ken: ${String(d.message ?? "unknown")}` },
+              : {
+                  kind: "error",
+                  id: nextId(),
+                  text: `${MENTOR_DISPLAY_NAME}: ${String(d.message ?? "unknown")}`,
+                },
           ]);
           return true;
         }

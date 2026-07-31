@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { MENTOR_DISPLAY_NAME } from "./brand";
 import { theme } from "./theme";
 import { YourPlanLogo } from "./PlanModeLogo";
 import { Markdown } from "./Markdown";
@@ -42,7 +43,7 @@ export function PlanReviewModal({
 
       {kenReviewing && (
         <div className="plan-review-ken" style={{ color: theme.ken }}>
-          Ken is reviewing this plan… you can still accept or reject it yourself.
+          {MENTOR_DISPLAY_NAME} is reviewing this plan… you can still accept or reject it yourself.
         </div>
       )}
       <div className="plan-review-actions">

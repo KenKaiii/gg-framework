@@ -3,6 +3,7 @@ import {
   notesAutomaticStatusAfterOverrideReset,
 } from "@kenkaiiii/gg-core/project-notes";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { MENTOR_DISPLAY_NAME, PRODUCT_DISPLAY_NAME } from "./brand";
 import { referenceRepositoryLabel, referenceSourceLabel } from "./notes-reference";
 import { NotesPhaseCompletionGates } from "./NotesPhaseCompletionGates";
 import {
@@ -103,14 +104,14 @@ const STATUS_OPTIONS = NOTES_PHASE_STATUSES.map((value) => ({
 }));
 
 const ROADMAP_ACTOR_LABELS = {
-  "gg-coder": "GG Coder",
-  ken: "Ken",
-  "ken-autopilot": "Autopilot Ken",
+  "gg-coder": PRODUCT_DISPLAY_NAME,
+  ken: MENTOR_DISPLAY_NAME,
+  "ken-autopilot": `Autopilot ${MENTOR_DISPLAY_NAME}`,
 } as const satisfies Record<NotesRoadmapActor, string>;
 
 const ROADMAP_REVIEWER_LABELS = {
-  ken: "Ken",
-  "ken-autopilot": "Autopilot Ken",
+  ken: MENTOR_DISPLAY_NAME,
+  "ken-autopilot": `Autopilot ${MENTOR_DISPLAY_NAME}`,
 } as const satisfies Record<NotesRoadmapReviewer, string>;
 
 const VERIFICATION_LABELS = {
@@ -1068,7 +1069,7 @@ function PhaseDetail({
         <div className="notes-reminder-heading">
           <div>
             <h4 id={`notes-reminder-${phase.id}`}>Reminder</h4>
-            <p>Future reminders are recovered when GG Coder opens.</p>
+            <p>Future reminders are recovered when {PRODUCT_DISPLAY_NAME} opens.</p>
           </div>
           {phase.reminder && (
             <button
@@ -1109,7 +1110,7 @@ function PhaseDetail({
                     ? "Native notification availability could not be verified. Use the in-app actions here."
                     : phase.reminder.lastDelivery.channel === "native"
                       ? "A private native notification was requested."
-                      : "An in-app reminder was requested in GG Coder."}
+                      : `An in-app reminder was requested in ${PRODUCT_DISPLAY_NAME}.`}
               </p>
             )}
             {Date.parse(phase.reminder.dueAt) <= currentTime.getTime() && (
@@ -1735,7 +1736,7 @@ function renderActivityItem(item: ActivityItem): React.ReactNode {
   if (event.type === "implementation-checkpoint") {
     return (
       <>
-        <strong>GG Coder</strong> {timestamp}
+        <strong>{PRODUCT_DISPLAY_NAME}</strong> {timestamp}
         <p>
           Implementation checkpoint: {event.completedPlanSteps.length} of {event.planStepTotal} plan
           steps, run {implementationOutcomeLabel(event.runOutcome)}.

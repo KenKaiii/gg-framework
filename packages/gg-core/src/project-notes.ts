@@ -1876,7 +1876,7 @@ function validateRoadmapEvents(
         return validationError(eventPath, "invalid completion review");
       }
       if (!isNotesRoadmapReviewer(record.reviewer)) {
-        return validationError(`${eventPath}.reviewer`, "expected Ken or Autopilot Ken");
+        return validationError(`${eventPath}.reviewer`, "expected Supah or Autopilot Supah");
       }
       const reviewIssue = validateNotesCompletionReviewFields({
         decision: record.decision,

@@ -14,6 +14,7 @@ import {
   type RecentSession,
 } from "./agent";
 import { Badge, sourceStyle } from "./Badge";
+import { PRODUCT_DISPLAY_NAME } from "./brand";
 import { ListSkeleton } from "./Skeleton";
 import { BackButton } from "./BackButton";
 import { WindowLayoutButton } from "./WindowLayoutButton";
@@ -356,7 +357,7 @@ export function ProjectPicker({
                   onClick={() => chooseSession(selected.path, s)}
                   title={
                     isForeignSession(s)
-                      ? `From ${sourceStyle(s.source ?? "").label} — opens as a GG Coder session`
+                      ? `From ${sourceStyle(s.source ?? "").label} — opens as a ${PRODUCT_DISPLAY_NAME} session`
                       : undefined
                   }
                 >

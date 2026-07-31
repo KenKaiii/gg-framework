@@ -138,7 +138,7 @@ describe("evaluatePhaseCompletion", () => {
       implementationCheckpointId: "checkpoint-1",
       verificationStatusUpdateId: "verification-passed",
       targetStatus: "done",
-      reason: "Final review accepted by Autopilot Ken.",
+      reason: "Final review accepted by Autopilot Supah.",
     });
   });
 

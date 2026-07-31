@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { openProjectPath, openUrl, type WorkspaceMode } from "./agent";
 import { projectAccent } from "./projectAccent";
+import { PRODUCT_DISPLAY_NAME } from "./brand";
 
 interface WorkspaceHeaderProps {
   workspaceMode: WorkspaceMode;
@@ -61,7 +62,7 @@ export function WorkspaceHeader({
   stripExtras,
   children,
 }: WorkspaceHeaderProps): React.ReactElement {
-  const fallbackTitle = workspaceMode === "chat" ? "GG Chat" : "GG Coder";
+  const fallbackTitle = workspaceMode === "chat" ? "GG Chat" : PRODUCT_DISPLAY_NAME;
   const directory = cwd?.split(/[\\/]/).filter(Boolean).pop();
   // Stable per-project colour, so a wall of identical dark windows becomes
   // identifiable at a glance. Published as a CSS variable (not just inlined on

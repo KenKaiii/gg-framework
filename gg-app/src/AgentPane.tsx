@@ -98,6 +98,7 @@ import { Markdown, PromptSendProvider } from "./Markdown";
 import { FooterSkeleton, TranscriptSkeleton, Skeleton } from "./Skeleton";
 import { useAppUpdate } from "./update";
 import { formatBuildIdentity } from "./build-info";
+import { MENTOR_DISPLAY_NAME, MENTOR_HANDLE, PRODUCT_DISPLAY_NAME } from "./brand";
 import { recoverPromptLabel } from "./prompt-labels";
 import { playSound } from "./sounds";
 import { segmentDoneMarkers, hasDoneMarker, countPlanSteps } from "./plan-steps";
@@ -112,15 +113,15 @@ import "./App.css";
 
 const BUILD_IDENTITY = formatBuildIdentity();
 
-const DEFAULT_INPUT_PLACEHOLDER = "Type a message, / commands, @ files, @Ken for help";
+const DEFAULT_INPUT_PLACEHOLDER = `Type a message, / commands, @ files, ${MENTOR_HANDLE} for help`;
 const INPUT_PLACEHOLDERS = [
   DEFAULT_INPUT_PLACEHOLDER,
-  "Need a second opinion? Ask @Ken",
-  "Stuck on what to do next? Ask @Ken",
+  `Need a second opinion? Ask ${MENTOR_HANDLE}`,
+  `Stuck on what to do next? Ask ${MENTOR_HANDLE}`,
   DEFAULT_INPUT_PLACEHOLDER,
-  "Want a second set of eyes? Ask @Ken",
-  "Unsure how to proceed? Ask @Ken",
-  "Need a quick review? Ask @Ken",
+  `Want a second set of eyes? Ask ${MENTOR_HANDLE}`,
+  `Unsure how to proceed? Ask ${MENTOR_HANDLE}`,
+  `Need a quick review? Ask ${MENTOR_HANDLE}`,
 ] as const;
 const RUNNING_INPUT_PLACEHOLDERS = [
   "Agent is working. Add a follow-up if you want",
@@ -1077,7 +1078,7 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
   // Keep the native window title aligned with the visible title-bar context.
   useEffect(() => {
     if (!ownsWindowGlobals) return;
-    const fallbackTitle = workspaceMode === "chat" ? "GG Chat" : "GG Coder";
+    const fallbackTitle = workspaceMode === "chat" ? "GG Chat" : PRODUCT_DISPLAY_NAME;
     const title =
       !needsProject && !showPicker
         ? formatWorkspaceTitle(
@@ -1378,7 +1379,7 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
             if (h.error) {
               const prefix =
                 h.error.scope === "ken_error"
-                  ? "Ken: "
+                  ? `${MENTOR_DISPLAY_NAME}: `
                   : h.error.scope === "autopilot_error"
                     ? "Autopilot: "
                     : "";
@@ -2370,7 +2371,7 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
       sessionTitle: formatWorkspaceTitle(
         state?.cwd,
         state?.gitBranch,
-        workspaceMode === "chat" ? "GG Chat" : "GG Coder",
+        workspaceMode === "chat" ? "GG Chat" : PRODUCT_DISPLAY_NAME,
         state?.gitDirtyFileCount,
       ),
       projectBound: !needsProject && Boolean(state?.cwd ?? target?.cwd),
@@ -3034,7 +3035,11 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
                   onSelect={onSelectModel}
                   disabled={running}
                   refreshNonce={modelCatalogRefreshNonce}
-                  title={workspaceMode === "chat" ? "Switch GG's model" : "Switch GG Coder's model"}
+                  title={
+                    workspaceMode === "chat"
+                      ? "Switch GG's model"
+                      : `Switch ${PRODUCT_DISPLAY_NAME}'s model`
+                  }
                 />
               </span>
               {workspaceMode === "code" && (
@@ -3042,7 +3047,7 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
                   <FooterSep />
                   <span className="model-anchor">
                     <span className="model-label" style={{ color: theme.ken }}>
-                      Ken
+                      {MENTOR_DISPLAY_NAME}
                     </span>
                     <ModelSelect
                       key={`ken-models-${modelCatalogRefreshNonce}`}
@@ -3053,8 +3058,8 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
                       refreshNonce={modelCatalogRefreshNonce}
                       title={
                         state?.kenModelOverride
-                          ? "Ken is pinned to his own model — click to change"
-                          : "Ken follows GG Coder's model — click to pin one"
+                          ? `${MENTOR_DISPLAY_NAME} is pinned to a separate model — click to change`
+                          : `${MENTOR_DISPLAY_NAME} follows ${PRODUCT_DISPLAY_NAME}'s model — click to pin one`
                       }
                       onSelectFollow={() => onSelectKenModel(null)}
                       followActive={!state?.kenModelOverride}
@@ -3074,7 +3079,7 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
           onClick={() => void appUpdate.install()}
         >
           <span className="update-banner-dot" />
-          {"Ken just updated GG Coder!"}
+          {`${MENTOR_DISPLAY_NAME} just updated ${PRODUCT_DISPLAY_NAME}!`}
           <Badge>Install</Badge>
         </button>
       )}
@@ -3187,7 +3192,7 @@ const TranscriptRow = memo(function TranscriptRow({
         return (
           <div className="user-msg command labelled user-ken-sent">
             <span className="command-shimmer" style={{ color: theme.ken }}>
-              Sent to GG Coder
+              Sent to {PRODUCT_DISPLAY_NAME}
             </span>
           </div>
         );
@@ -3286,8 +3291,8 @@ const TranscriptRow = memo(function TranscriptRow({
       // repeating the exact same sentence turn after turn.
       const copy: Record<Extract<Item, { kind: "autopilot" }>["phase"], string> = {
         prompted: item.body?.trim()
-          ? `Sending GG Coder back in:\n\n${item.body.trim()}`
-          : "Sending GG Coder back in for another pass.",
+          ? `Sending ${PRODUCT_DISPLAY_NAME} back in:\n\n${item.body.trim()}`
+          : `Sending ${PRODUCT_DISPLAY_NAME} back in for another pass.`,
         done: allClearCopy(item.copySeed, item.id),
         human: item.reason?.trim() ? item.reason.trim() : "Need you to weigh in on this one.",
         capped: "Paused autopilot after 3 rounds. Take a look before I keep going.",

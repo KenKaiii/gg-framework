@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { PRODUCT_DISPLAY_NAME } from "./brand";
 import { theme } from "./theme";
 import { recentChangelog } from "./changelog";
 import { Confetti } from "./Confetti";
@@ -31,12 +32,12 @@ const HIGHLIGHT_TERMS = [
   "Radio Paradise",
   "Kencode search",
   "Prompt Enhancer",
-  "Send to GG Coder",
+  "Send to Supah Coder",
   "Grant Permissions",
   "Autopilot",
   "Scorecard",
   "Enhance",
-  "@Ken",
+  "@Supah",
   "Radio",
   "Windows",
   "Notes",
@@ -94,7 +95,7 @@ export function WhatsNewWindow(): React.ReactElement {
       <div className="modal-head">
         <div className="modal-title">
           <ShimmerText base={theme.primary} bright={theme.secondary}>
-            What&apos;s new with GG Coder
+            What&apos;s new with {PRODUCT_DISPLAY_NAME}
           </ShimmerText>
         </div>
         <button

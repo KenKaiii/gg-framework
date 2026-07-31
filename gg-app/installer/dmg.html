@@ -42,16 +42,8 @@
         height: 800px;
         /* Soft, cool off-white with faint brand tints in the corners. */
         background:
-          radial-gradient(
-            110% 80% at 50% -10%,
-            rgba(77, 157, 255, 0.1),
-            transparent 55%
-          ),
-          radial-gradient(
-            90% 70% at 50% 120%,
-            rgba(155, 140, 247, 0.1),
-            transparent 60%
-          ),
+          radial-gradient(110% 80% at 50% -10%, rgba(77, 157, 255, 0.1), transparent 55%),
+          radial-gradient(90% 70% at 50% 120%, rgba(155, 140, 247, 0.1), transparent 60%),
           linear-gradient(180deg, #f4f6fb 0%, #e9edf5 100%);
         color: var(--ink);
       }
@@ -125,12 +117,14 @@
   <body>
     <div class="stage">
       <div class="header">
-        <div class="ascii"> ██████╗  ██████╗      ██████╗ ██████╗ ██████╗ ███████╗██████╗ 
-██╔════╝ ██╔════╝     ██╔════╝██╔═══██╗██╔══██╗██╔════╝██╔══██╗
-██║  ███╗██║  ███╗    ██║     ██║   ██║██║  ██║█████╗  ██████╔╝
-██║   ██║██║   ██║    ██║     ██║   ██║██║  ██║██╔══╝  ██╔══██╗
-╚██████╔╝╚██████╔╝    ╚██████╗╚██████╔╝██████╔╝███████╗██║  ██║
- ╚═════╝  ╚═════╝      ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝</div>
+        <div class="ascii">
+          ███████╗██╗ ██╗██████╗ █████╗ ██╗ ██╗ ██████╗ ██████╗ ██████╗ ███████╗██████╗ ██╔════╝██║
+          ██║██╔══██╗██╔══██╗██║ ██║ ██╔════╝██╔═══██╗██╔══██╗██╔════╝██╔══██╗ ███████╗██║
+          ██║██████╔╝███████║███████║ ██║ ██║ ██║██║ ██║█████╗ ██████╔╝ ╚════██║██║ ██║██╔═══╝
+          ██╔══██║██╔══██║ ██║ ██║ ██║██║ ██║██╔══╝ ██╔══██╗ ███████║╚██████╔╝██║ ██║ ██║██║ ██║
+          ╚██████╗╚██████╔╝██████╔╝███████╗██║ ██║ ╚══════╝ ╚═════╝ ╚═╝ ╚═╝ ╚═╝╚═╝ ╚═╝ ╚═════╝
+          ╚═════╝ ╚═════╝ ╚══════╝╚═╝ ╚═╝
+        </div>
         <div class="sub">Drag the app into your Applications folder</div>
       </div>
 
@@ -142,12 +136,27 @@
               <stop offset="1" stop-color="#7a5fe0" stop-opacity="1" />
             </linearGradient>
           </defs>
-          <line x1="6" y1="18" x2="272" y2="18" stroke="url(#ag)" stroke-width="4" stroke-linecap="round" />
-          <path d="M266 6 L292 18 L266 30" stroke="#7a5fe0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+          <line
+            x1="6"
+            y1="18"
+            x2="272"
+            y2="18"
+            stroke="url(#ag)"
+            stroke-width="4"
+            stroke-linecap="round"
+          />
+          <path
+            d="M266 6 L292 18 L266 30"
+            stroke="#7a5fe0"
+            stroke-width="4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            fill="none"
+          />
         </svg>
       </div>
 
-      <div class="footer">GG Coder · the coding agent, on your desktop</div>
+      <div class="footer">Supah Coder · the coding agent, on your desktop</div>
     </div>
   </body>
 </html>

@@ -33,7 +33,7 @@ import {
   type WorkspaceLayoutPath,
   type WorkspacePaneId,
 } from "./workspace-layout";
-const PRODUCT_DISPLAY_NAME = "GG Coder";
+import { PRODUCT_DISPLAY_NAME } from "./brand";
 import { ConfirmModal } from "./ConfirmModal";
 import { Toaster } from "./Toaster";
 import { toast } from "./toast";

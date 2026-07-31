@@ -39,14 +39,14 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.37.3",
     date: "2026-07-30",
     items: [
-      "Big autonomous jobs can now run longer without drowning in their own history. I taught `GG Coder` to clear away old research and bulky working scraps as it goes, so you get more useful context, fewer interruptions and a steadier finish on massive tasks.",
+      "Big autonomous jobs can now run longer without drowning in their own history. I taught `Supah Coder` to clear away old research and bulky working scraps as it goes, so you get more useful context, fewer interruptions and a steadier finish on massive tasks.",
     ],
   },
   {
     version: "0.37.2",
     date: "2026-07-30",
     items: [
-      "GG Coder now plugs straight into `ACP` editors like `Zed`. Run `ggcoder acp` and you get your real sessions, model controls, thinking levels, plan mode, streaming answers and clean cancellation right inside the tools you already use.",
+      "Supah Coder now plugs straight into `ACP` editors like `Zed`. Run `ggcoder acp` and you get your real sessions, model controls, thinking levels, plan mode, streaming answers and clean cancellation right inside the tools you already use.",
       "Your longest chats are now much harder to lose or scramble. I rebuilt conversation compaction so your original request, newest work and approved plan stay together, reopening an old checkpoint always lands on the latest one, and two windows can no longer race each other into duplicate histories.",
     ],
   },
@@ -65,7 +65,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       "MCP servers can now ask you questions mid-task, and you answer right in the app. When a server needs a name, a choice, or a quick confirmation, a clean little form pops up instead of the whole task stalling out. You decide, it keeps going.",
       "Connecting a model now updates every open window instantly. Drop in an API key or finish a login and the new models show up in the picker right away, no more closing and reopening your session to see them. Disconnecting cleans them up just as fast.",
-      "A crash no longer eats your work. I now save your session at every step, so if GG Coder dies mid-task everything it already did is still there when you come back, and it tells you exactly where things stopped.",
+      "A crash no longer eats your work. I now save your session at every step, so if Supah Coder dies mid-task everything it already did is still there when you come back, and it tells you exactly where things stopped.",
       "Images and screenshots just got a lot cheaper to send. A big `2000x2000` shot now costs about a third of the tokens it used to, with zero difference in what the model actually sees.",
       "Background tasks learned some manners. A chatty dev server used to burn around `2,000 tokens a minute` repeating that it was still running. Now it checks in early, then goes quiet, so your context stays free for real work.",
     ],
@@ -74,7 +74,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.36.0",
     date: "2026-07-28",
     items: [
-      "GG Coder now lives in your menu bar, so it is one click away even when every window is buried behind a fullscreen editor. Hit the little `G` and start a chat or a code session, flip `Remote` on and off, or jump straight into settings. It knows what you already have open: one window and it uses that one, several and it opens a fresh one instead of hijacking the work you are watching. When an update is ready, `Update now` appears right at the top.",
+      "Supah Coder now lives in your menu bar, so it is one click away even when every window is buried behind a fullscreen editor. Hit the little `G` and start a chat or a code session, flip `Remote` on and off, or jump straight into settings. It knows what you already have open: one window and it uses that one, several and it opens a fresh one instead of hijacking the work you are watching. When an update is ready, `Update now` appears right at the top.",
       "Every project gets its own colour now. A stack of identical dark windows turns into something you can read at a glance, with a coloured dot beside the project name and a matching tint along the top edge. The colour comes from the project itself, so it is the same on every window, every launch, every machine, and there is nothing to set up.",
     ],
   },
@@ -89,7 +89,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.34.0",
     date: "2026-07-28",
     items: [
-      "Bring your old conversations with you. `/import` pulls a Claude Code, Codex or Cursor thread straight into GG Coder and you carry on where you left off, full history intact. I tested it on a real `44` message thread and it picked up mid sentence.",
+      "Bring your old conversations with you. `/import` pulls a Claude Code, Codex or Cursor thread straight into Supah Coder and you carry on where you left off, full history intact. I tested it on a real `44` message thread and it picked up mid sentence.",
       "I stopped saying done when I was not. If I kick off your tests or a build in the background and never actually read the result, I now go back and check before I hand the work over. No more cheerful all good sitting on top of a failed build.",
       "Ask me what I can do and get a straight answer instantly. Your tools used to look missing for the first few seconds while everything booted up, so I would tell you a capability did not exist when it did. I remember them between launches now, so the answer is right from the very first message.",
     ],
@@ -98,7 +98,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.33.1",
     date: "2026-07-28",
     items: [
-      "Reopen a chat and everything sits exactly where it happened. Errors, `Ken` verdicts and plan banners used to pile up at the bottom of long conversations, sometimes `900` messages below where they belong. I went through every one of your saved chats and fixed the lot, old ones included.",
+      "Reopen a chat and everything sits exactly where it happened. Errors, `Supah` verdicts and plan banners used to pile up at the bottom of long conversations, sometimes `900` messages below where they belong. I went through every one of your saved chats and fixed the lot, old ones included.",
       "No more seeing the same thing twice. When `Autopilot` hands me a job, reopening that chat used to show its instruction again as raw text underneath. Now you get the one clean handoff, exactly like you saw it live.",
       "Your slash commands stay looking like commands. Reopen a chat and `/release` is still a neat little chip instead of the giant prompt hiding behind it, even after you have edited that command since.",
     ],
@@ -126,7 +126,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-07-27",
     items: [
       "Big jobs now run all the way to the finish. When I hit the turn limit but I am still making real progress, I get handed more turns and carry on from exactly where I was instead of stopping halfway through your task. If I am just spinning my wheels, I still stop, so you never pay for a loop.",
-      "GG Coder remembers your project between sessions. When a long chat gets compacted I write down what happened in `.gg/memory.md`, so next time I already know what you asked for and what I changed. It is plain text right in your repo, so you can read it, fix it, or delete any line you disagree with. Turn it off any time in `Settings` or with `/memory-off`.",
+      "Supah Coder remembers your project between sessions. When a long chat gets compacted I write down what happened in `.gg/memory.md`, so next time I already know what you asked for and what I changed. It is plain text right in your repo, so you can read it, fix it, or delete any line you disagree with. Turn it off any time in `Settings` or with `/memory-off`.",
       "No more waiting on background work. Finished helper agents and long builds now tap me on the shoulder the second they are done, so I react immediately instead of stopping to go check on them and burning your tokens doing it.",
       "Switching models mid-chat is clean now. I keep a proper record of which model did what, and I hold onto the cached part of your conversation right through the switch, so your next reply stays fast and cheap.",
     ],
@@ -238,7 +238,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.27.1",
     date: "2026-07-23",
     items: [
-      "Long builds no longer stall out waiting for you to type `Continue`. I taught GG Coder to catch runaway tool calls, retry them `2 times`, and keep your conversation moving without losing its place.",
+      "Long builds no longer stall out waiting for you to type `Continue`. I taught Supah Coder to catch runaway tool calls, retry them `2 times`, and keep your conversation moving without losing its place.",
       "GG's built-in coding senses are fully loaded again. I restored `TypeScript diagnostics` and `source inspection` inside the desktop app, then made search more forgiving, so it catches mistakes sooner and digs through dependencies without missing a beat.",
     ],
   },
@@ -248,7 +248,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       "The `model picker` and `Arrange` button now open real native menus while keeping the exact clean controls you already know. They feel faster, behave properly with your keyboard, and look right at home on your machine.",
       "Reading while several `subagents` work in parallel just got silky smooth. I cut the pointless background chatter and keep every real activity update, so you can scroll through the conversation without fighting the app.",
-      "Updates now show their work. Tap the new `Install` badge and both the footer and home screen turn into live percentage progress, with zero jumping around while GG Coder downloads the good stuff.",
+      "Updates now show their work. Tap the new `Install` badge and both the footer and home screen turn into live percentage progress, with zero jumping around while Supah Coder downloads the good stuff.",
       "The idle footer finally developed a personality. I added `10` dry little status lines, from professional napping to token polishing, so waiting around is at least mildly entertaining.",
     ],
   },
@@ -283,21 +283,21 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.24.5",
     date: "2026-07-21",
     items: [
-      "Every interface GG Coder builds now starts with accessibility as a hard requirement. I made `WCAG 2.2 AA` and `ADA-aligned` design non-negotiable across keyboard navigation, screen readers, contrast, motion, forms, media, zoom, and complete user flows. Better UI now means more people can actually use it.",
+      "Every interface Supah Coder builds now starts with accessibility as a hard requirement. I made `WCAG 2.2 AA` and `ADA-aligned` design non-negotiable across keyboard navigation, screen readers, contrast, motion, forms, media, zoom, and complete user flows. Better UI now means more people can actually use it.",
     ],
   },
   {
     version: "0.24.4",
     date: "2026-07-21",
     items: [
-      "GG Coder's `UI skill` just got pickier about color. I taught it to reject the muddy red-on-red and green-on-green `status pills` AI loves to repeat, then choose styling that actually fits your product instead of forcing another template. Your interfaces get cleaner without all looking the same.",
+      "Supah Coder's `UI skill` just got pickier about color. I taught it to reject the muddy red-on-red and green-on-green `status pills` AI loves to repeat, then choose styling that actually fits your product instead of forcing another template. Your interfaces get cleaner without all looking the same.",
     ],
   },
   {
     version: "0.24.3",
     date: "2026-07-21",
     items: [
-      "Interfaces GG Coder builds just got a serious taste upgrade. I taught the `UI skill` to lock navigation and content to one clean rail, give `dropdowns` proper breathing room, and kill sticky click outlines without sacrificing `keyboard focus`. The tiny details finally behave like they belong together.",
+      "Interfaces Supah Coder builds just got a serious taste upgrade. I taught the `UI skill` to lock navigation and content to one clean rail, give `dropdowns` proper breathing room, and kill sticky click outlines without sacrificing `keyboard focus`. The tiny details finally behave like they belong together.",
     ],
   },
   {
@@ -305,7 +305,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-07-20",
     items: [
       "Your conversations now clean up after themselves without disappearing. I keep the last `30 days`, squeeze quiet sessions after `7 days`, and cap runaway saved tool output at `40,000 characters`. You get your disk space back and every archived chat still resumes right where you left it.",
-      "GG Coder refuses to melt down in the background now. I give the engine `5 retries`, then stop it cleanly, and cap each run's logs at `10 MB` so a bad crash can never spiral into a process or disk-space storm.",
+      "Supah Coder refuses to melt down in the background now. I give the engine `5 retries`, then stop it cleanly, and cap each run's logs at `10 MB` so a bad crash can never spiral into a process or disk-space storm.",
     ],
   },
   {
@@ -320,9 +320,9 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-07-20",
     items: [
       "Long answers no longer vanish at the finish line. When a model hits its output limit, I now resume it automatically up to `2 times` and warn you plainly if anything is still incomplete.",
-      "GG Coder knows when it is stuck now. I taught it to spot repeating tool cycles up to `5 steps` long, break the pattern once, then stop cleanly and tell you exactly what is blocking it instead of burning time on endless retries.",
+      "Supah Coder knows when it is stuck now. I taught it to spot repeating tool cycles up to `5 steps` long, break the pattern once, then stop cleanly and tell you exactly what is blocking it instead of burning time on endless retries.",
       "Your workspace has a real safety rail. I now block writes outside your project by default and stop catastrophic commands like `rm -rf /` before they run, while keeping normal cleanup commands flowing.",
-      "Project rules land in the right order every time. I added `AGENTS.override.md`, nearest-folder precedence, a smart `32 KiB` budget, and tougher plan checks so GG Coder follows the instructions you actually meant without silently losing them.",
+      "Project rules land in the right order every time. I added `AGENTS.override.md`, nearest-folder precedence, a smart `32 KiB` budget, and tougher plan checks so Supah Coder follows the instructions you actually meant without silently losing them.",
     ],
   },
   {
@@ -343,7 +343,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.23.5",
     date: "2026-07-19",
     items: [
-      "When GG Coder hits a snag, I can see it faster now. I wired in `Error Mom` monitoring so startup failures and unexpected crashes reach me automatically, helping me squash problems before they derail you again.",
+      "When Supah Coder hits a snag, I can see it faster now. I wired in `Error Mom` monitoring so startup failures and unexpected crashes reach me automatically, helping me squash problems before they derail you again.",
     ],
   },
   {
@@ -364,8 +364,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.23.2",
     date: "2026-07-17",
     items: [
-      "Long chats just got another serious efficiency boost. I taught GG Coder to learn each model's real token footprint, wait until `85%` before compacting, then carry a leaner `8K` recent tail forward. In my live torture test, total input fell `31%` with the answer intact.",
-      "Monster command output is no longer a dead end. I save the full result for `48 hours` and point GG Coder straight to the missing slice, so it can recover one buried line without rerunning the whole command or stuffing your context twice.",
+      "Long chats just got another serious efficiency boost. I taught Supah Coder to learn each model's real token footprint, wait until `85%` before compacting, then carry a leaner `8K` recent tail forward. In my live torture test, total input fell `31%` with the answer intact.",
+      "Monster command output is no longer a dead end. I save the full result for `48 hours` and point Supah Coder straight to the missing slice, so it can recover one buried line without rerunning the whole command or stuffing your context twice.",
     ],
   },
   {
@@ -374,7 +374,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       "Your token bill on OpenAI models just took a serious haircut. I capped how much raw tool output a single turn can dump into context, so those runaway `400K` token spikes from parallel file reads are gone for good.",
       "Long sessions now clean up after themselves. I quietly drop stale file reads and ancient command output the moment newer versions exist, keeping conversations lean, cutting rebilled context by up to `60%`, and pushing full compaction much further away.",
-      "`Autopilot` stopped double-checking itself. When Ken reviews your work he now owns the whole verification, so runs finish faster with one clean verdict instead of two overlapping reviews.",
+      "`Autopilot` stopped double-checking itself. When Supah reviews your work he now owns the whole verification, so runs finish faster with one clean verdict instead of two overlapping reviews.",
     ],
   },
   {
@@ -394,7 +394,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "`Kimi K3` is here, and I made Moonshot's new flagship your default from day one. You get maximum reasoning, a massive `1M-token` brain, and native image plus video understanding, while `Kimi K2.7 Code` stays ready when you want the lean coding specialist.",
       "Your workspace tells you the truth at a glance now. I moved the project, `branch`, and live `uncommitted` file count into the title bar, so every window shows exactly where you are without stealing space from your tools.",
       "Your recent sessions stop multiplying and losing their names after long chats. I made titles and conversation identity survive `compaction`, then collapsed old checkpoints into one clean, resumable session.",
-      "`Plan Steps` finally stays locked to the real plan while GG Coder works. I made it follow live edits, count completed steps honestly, and disappear the instant the run ends, so stale progress never hangs around pretending work is still moving.",
+      "`Plan Steps` finally stays locked to the real plan while Supah Coder works. I made it follow live edits, count completed steps honestly, and disappear the instant the run ends, so stale progress never hangs around pretending work is still moving.",
       "Your specialist crew now shows where every token really went, including fresh input, cached input, and output. I also tightened `Codex` tool results so oversized reads stop devouring the context your agents need to finish strong.",
     ],
   },
@@ -406,7 +406,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Cancel means cancelled now. I made `Esc` wait for the active run to settle before the app returns to idle, with a clear `Cancelling...` state and honest recovery if the provider refuses to stop.",
       "`Autopilot` now proves it actually checked every changed file. I tightened final review around real reads, edits, and diagnostics, so a green finish means the work earned it.",
       "Provider failures are cleaner and safer. I scrub secrets before they reach logs or sessions and replace broken `HTML` error pages with a useful status-aware message, so support is easier and your credentials stay out of the mess.",
-      "`Context` tracking got sharper across every route and model. I taught GG Coder to use the right limits and timing evidence, so long sessions compact at the right moment instead of guessing.",
+      "`Context` tracking got sharper across every route and model. I taught Supah Coder to use the right limits and timing evidence, so long sessions compact at the right moment instead of guessing.",
     ],
   },
   {
@@ -414,7 +414,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-07-15",
     items: [
       "Your chat agents finally have a soul. I built `Jiwa` so they remember how you want them to speak, behave, and even what name to use, then tucked it beside Memories inside one clean `Brain` switcher where you can inspect or clear every instruction.",
-      "Beautiful interfaces are no longer a lucky roll. I bundled `Evidence-Led UI` into every install, so GG Coder now checks real design craft, accessibility, and responsive behavior before it touches your frontend.",
+      "Beautiful interfaces are no longer a lucky roll. I bundled `Evidence-Led UI` into every install, so Supah Coder now checks real design craft, accessibility, and responsive behavior before it touches your frontend.",
       "Long jobs stay focused without getting slapped by a false alarm. I stopped healthy `background tasks` and iterative edits from tripping the stuck detector, while genuine no-progress loops still get snapped out fast.",
       "Chat gives you more room and more awareness. I added a collapsible `Chat` header and brought the `context meter` into view, so you can reclaim space and see exactly how much conversation room remains.",
     ],
@@ -439,7 +439,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.19.0",
     date: "2026-07-13",
     items: [
-      "Chat just became a whole new side of GG Coder. I built `General`, `Therapist`, and `Research` companions with their own conversation history, then gave them durable memory you can inspect and clean up anytime.",
+      "Chat just became a whole new side of Supah Coder. I built `General`, `Therapist`, and `Research` companions with their own conversation history, then gave them durable memory you can inspect and clean up anytime.",
       "Your windows now wake up exactly where you left them. I hardened restored sessions, rapid project switches, and reused window slots, so even a `4 window` workspace opens cleanly with every chat attached to the right place.",
       "Web research is faster, cleaner, and much harder to knock over. I made `Web Search` share fresh results across windows and gave `Web Fetch` smarter extraction, strict download guards, and quicker document discovery.",
       "Image batches finally deliver what you asked for. I fixed `Generate Image` so requests for up to `4 images` produce the full set instead of getting rejected by the provider.",
@@ -458,7 +458,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-07-12",
     items: [
       "Long sessions and `/compact` now bounce back faster instead of getting buried under giant old file edits. I slimmed down oversized history and cut off stalled cleanup attempts fast, so you spend less time waiting and more time shipping.",
-      "`Apple silicon` is cleaner and ready for what comes next. I stripped unused Intel baggage out of the app bundle, cutting roughly `180 MB` before compression and keeping GG Coder fully native as macOS moves beyond Rosetta.",
+      "`Apple silicon` is cleaner and ready for what comes next. I stripped unused Intel baggage out of the app bundle, cutting roughly `180 MB` before compression and keeping Supah Coder fully native as macOS moves beyond Rosetta.",
     ],
   },
   {
@@ -473,7 +473,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-07-11",
     items: [
       "`Ultra` now runs a real specialist crew. I made every expert visible while it works, steerable mid-job, and ready to pick up another mission with full context intact.",
-      "`Radio` finally behaves like part of the app. I added a volume slider, made your level stick across windows, and guaranteed the music stops when GG Coder closes, even after a force quit.",
+      "`Radio` finally behaves like part of the app. I added a volume slider, made your level stick across windows, and guaranteed the music stops when Supah Coder closes, even after a force quit.",
       "`What's new` is easier to scan. I put the latest release in one clean card, grouped each feature into a single story, and gave the details just enough emphasis to pop.",
     ],
   },
@@ -503,7 +503,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.15.1",
     date: "2026-07-10",
     items: [
-      "Apps you launch through GG Coder can finally hear you. I unlocked microphone access for recorders, voice tools, and every other project you run, so testing audio now just works.",
+      "Apps you launch through Supah Coder can finally hear you. I unlocked microphone access for recorders, voice tools, and every other project you run, so testing audio now just works.",
     ],
   },
   {
@@ -540,7 +540,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-07-09",
     items: [
       "Big sessions no longer hit a wall. When a chat grew too large for the model, the app used to just stop with an error. Now I catch it, quietly trim the history, and keep the conversation rolling so you never lose your flow.",
-      "Error messages read like a human wrote them. Everything now says GG Coder in plain, friendly language, and points you to the exact button to click instead of some command you'd never type.",
+      "Error messages read like a human wrote them. Everything now says Supah Coder in plain, friendly language, and points you to the exact button to click instead of some command you'd never type.",
     ],
   },
   {
@@ -568,7 +568,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.14.11",
     date: "2026-07-07",
     items: [
-      "`Kencode search` is back. I fixed the silent startup failure, confirmed live searches flow again, and wired a build-time tripwire so this cannot quietly ship broken again.",
+      "`Supahcode search` is back. I fixed the silent startup failure, confirmed live searches flow again, and wired a build-time tripwire so this cannot quietly ship broken again.",
     ],
   },
   {
@@ -583,8 +583,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.14.9",
     date: "2026-07-06",
     items: [
-      "Your session list is yours again. Ken's silent autopilot reviews were quietly leaving behind a fake 2-message session every few minutes, burying your real work under a wall of clones. I plugged the leak for good, so what you see in the picker is exactly what you built. Nothing else.",
-      "`Autopilot` got tougher to derail. I made Ken's handoffs land even when they arrive wrapped in chatter, then tightened his reviews so cycles run leaner and stall less.",
+      "Your session list is yours again. Supah's silent autopilot reviews were quietly leaving behind a fake 2-message session every few minutes, burying your real work under a wall of clones. I plugged the leak for good, so what you see in the picker is exactly what you built. Nothing else.",
+      "`Autopilot` got tougher to derail. I made Supah's handoffs land even when they arrive wrapped in chatter, then tightened his reviews so cycles run leaner and stall less.",
     ],
   },
   {
@@ -598,15 +598,15 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.14.7",
     date: "2026-07-05",
     items: [
-      "Your machine breathes easier now. `GG Coder` hunts down leftover built-in and custom tool helpers on startup, so closed projects stop quietly eating your memory for days.",
-      "Ken gives sharper advice. He now knows exactly what GG Coder can do under the hood, so his guidance is grounded in the real tools at hand instead of guesses, and his handoffs back to the agent come through clean.",
+      "Your machine breathes easier now. `Supah Coder` hunts down leftover built-in and custom tool helpers on startup, so closed projects stop quietly eating your memory for days.",
+      "Supah gives sharper advice. He now knows exactly what Supah Coder can do under the hood, so his guidance is grounded in the real tools at hand instead of guesses, and his handoffs back to the agent come through clean.",
     ],
   },
   {
     version: "0.14.6",
     date: "2026-07-05",
     items: [
-      "`Autopilot` just got more independent. GG Coder now proves its own work and handles the obvious safe next step without asking for a human who is not there, so more jobs finish in one run.",
+      "`Autopilot` just got more independent. Supah Coder now proves its own work and handles the obvious safe next step without asking for a human who is not there, so more jobs finish in one run.",
     ],
   },
   {
@@ -631,7 +631,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Big tool catalogs no longer slow down your first reply. I keep the essentials ready, then pull in the heavy stuff only when you actually need it.",
       "Connection hiccups feel way less annoying now. If a reply gets cut off after real progress, I keep what you already saw and continue instead of making you watch the same answer again.",
       "Streaming feels calmer and lighter. I tuned the live text updates so long answers stay smooth without making your machine work so hard.",
-      "I trimmed the instruction stack again. GG Coder spends less attention on boilerplate and more attention on your code.",
+      "I trimmed the instruction stack again. Supah Coder spends less attention on boilerplate and more attention on your code.",
     ],
   },
   {
@@ -653,7 +653,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-07-03",
     items: [
       "`Autopilot` can handle plans on its own now. I review, approve, revise, and launch them without making you babysit a popup, while manual mode keeps the normal review screen.",
-      "I got better at spotting fake blockers. If GG Coder asks permission for safe work that is already implied by your request, I tell it to keep going instead of dragging you back in.",
+      "I got better at spotting fake blockers. If Supah Coder asks permission for safe work that is already implied by your request, I tell it to keep going instead of dragging you back in.",
     ],
   },
   {
@@ -684,8 +684,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.12.2",
     date: "2026-07-02",
     items: [
-      "`Autopilot` is calmer and harder to fool. I judge GG Coder against your original request, stop inventing work after the job is done, and call you in instead of answering real questions or plan decisions on your behalf.",
-      "Ken gets his own model switch. Pin me to a different brain or let me follow GG Coder, right from the footer.",
+      "`Autopilot` is calmer and harder to fool. I judge Supah Coder against your original request, stop inventing work after the job is done, and call you in instead of answering real questions or plan decisions on your behalf.",
+      "Supah gets his own model switch. Pin me to a different brain or let me follow Supah Coder, right from the footer.",
       "Queued messages land cleaner now. If you send one while I am reviewing and there is no live run to steer, I treat it as a fresh turn instead of mixing it into the next unrelated job.",
     ],
   },
@@ -693,14 +693,14 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.12.1",
     date: "2026-07-02",
     items: [
-      "The `KEN IS ON` banner now lands over exactly what you are viewing, even deep in a session, with full edge-to-edge coverage and no chat text peeking through.",
+      "The `SUPAH IS ON` banner now lands over exactly what you are viewing, even deep in a session, with full edge-to-edge coverage and no chat text peeking through.",
     ],
   },
   {
     version: "0.12.0",
     date: "2026-07-02",
     items: [
-      "`Autopilot` got sharper and clearer. I skip pointless reviews for small talk and routine chores, lock the switch during active work, and flash `KEN IS ON` or `KEN IS OFF` so you always know who is watching.",
+      "`Autopilot` got sharper and clearer. I skip pointless reviews for small talk and routine chores, lock the switch during active work, and flash `SUPAH IS ON` or `SUPAH IS OFF` so you always know who is watching.",
     ],
   },
   {
@@ -715,9 +715,9 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.11.0",
     date: "2026-07-02",
     items: [
-      "Meet `Autopilot`. I review every finished job, send broken work straight back with a sharp fix, call clear work done, and tap you for real judgment calls, all while a live Ken status and in-chat verdict show exactly what I am doing.",
+      "Meet `Autopilot`. I review every finished job, send broken work straight back with a sharp fix, call clear work done, and tap you for real judgment calls, all while a live Supah status and in-chat verdict show exactly what I am doing.",
       "Your workspace tidies itself. The second a task is done it slips out of your Tasks list on its own, so all you ever see is what still needs doing. No more hunting for the checkbox.",
-      "Un-minimizing one window now brings the whole crew back. Click a single GG Coder window back up and its siblings rise with it, so you are never left digging through the dock for the rest.",
+      "Un-minimizing one window now brings the whole crew back. Click a single Supah Coder window back up and its siblings rise with it, so you are never left digging through the dock for the rest.",
     ],
   },
   {
@@ -725,14 +725,14 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-07-02",
     items: [
       "Your helper agents just got more capable and safer. They can run `5 times` longer, report clearly if they hit a limit, and read-only scouts physically cannot change your code.",
-      "The tips GG Coder gives you now actually match the app. No more being told to press some terminal shortcut that does not exist here. It points you at the real buttons you can see and click.",
+      "The tips Supah Coder gives you now actually match the app. No more being told to press some terminal shortcut that does not exist here. It points you at the real buttons you can see and click.",
     ],
   },
   {
     version: "0.10.2",
     date: "2026-07-01",
     items: [
-      "Rare empty tool calls from `Anthropic` no longer kill your session. GG Coder quietly picks the work back up, and real failures now name the actual culprit instead of blaming itself.",
+      "Rare empty tool calls from `Anthropic` no longer kill your session. Supah Coder quietly picks the work back up, and real failures now name the actual culprit instead of blaming itself.",
     ],
   },
   {
@@ -769,21 +769,21 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "0.7.2",
     date: "2026-06-30",
     items: [
-      "GG Coder just got faster at the boring part. When it needs to read a few files or search around, it now grabs them all at once instead of one at a time. Less waiting on every step, more time actually building.",
+      "Supah Coder just got faster at the boring part. When it needs to read a few files or search around, it now grabs them all at once instead of one at a time. Less waiting on every step, more time actually building.",
     ],
   },
   {
     version: "0.7.1",
     date: "2026-06-30",
     items: [
-      "`@Ken` is easier to remember and stays in sync. Helpful hints rotate into the input, and every model switch carries over so his advice comes from the same brain you chose for GG Coder.",
+      "`@Supah` is easier to remember and stays in sync. Helpful hints rotate into the input, and every model switch carries over so his advice comes from the same brain you chose for Supah Coder.",
     ],
   },
   {
     version: "0.7.0",
     date: "2026-06-30",
     items: [
-      "Say hey to `@Ken`, your research-first mentor inside the app. I check real code and live docs, challenge shaky plans, recommend tools with taste, turn advice into one-click `Send to GG Coder` prompts, and keep our chats waiting for you after a restart.",
+      "Say hey to `@Supah`, your research-first mentor inside the app. I check real code and live docs, challenge shaky plans, recommend tools with taste, turn advice into one-click `Send to Supah Coder` prompts, and keep our chats waiting for you after a restart.",
     ],
   },
   {

@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { MENTOR_DISPLAY_NAME, PRODUCT_DISPLAY_NAME } from "./brand";
 import type {
   NotesCompletionUnmetGateCode,
   NotesImplementationRunOutcome,
@@ -13,14 +14,14 @@ import type {
 } from "./notes-types";
 
 const ROADMAP_ACTOR_LABELS = {
-  "gg-coder": "GG Coder",
-  ken: "Ken",
-  "ken-autopilot": "Autopilot Ken",
+  "gg-coder": PRODUCT_DISPLAY_NAME,
+  ken: MENTOR_DISPLAY_NAME,
+  "ken-autopilot": `Autopilot ${MENTOR_DISPLAY_NAME}`,
 } as const satisfies Record<NotesRoadmapActor, string>;
 
 const ROADMAP_REVIEWER_LABELS = {
-  ken: "Ken",
-  "ken-autopilot": "Autopilot Ken",
+  ken: MENTOR_DISPLAY_NAME,
+  "ken-autopilot": `Autopilot ${MENTOR_DISPLAY_NAME}`,
 } as const satisfies Record<NotesRoadmapReviewer, string>;
 
 const VERIFICATION_LABELS = {
