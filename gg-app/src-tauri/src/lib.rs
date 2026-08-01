@@ -6522,7 +6522,7 @@ pub fn run() {
     let builder = tauri::Builder::default();
     #[cfg(all(debug_assertions, target_os = "macos"))]
     let builder = if phase26_macos_smoke_enabled() {
-        builder.plugin(tauri_plugin_webdriver_automation::init())
+        builder.plugin(tauri_plugin_wdio_webdriver::init())
     } else {
         builder
     };
