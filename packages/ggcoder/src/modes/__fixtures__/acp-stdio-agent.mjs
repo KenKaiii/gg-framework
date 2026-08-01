@@ -135,6 +135,27 @@ const seeded = await seedSessions();
 class ScriptedSession {
   eventBus = new EventBus();
   disposed = false;
+
+  // A stand-in for the real registry, shaped like `SlashCommandRegistry.getAll`.
+  // Two entries are enough to pin the precedence rules: `new` collides with a
+  // project command file, and `quit` carries an alias that collides with one.
+  slashCommands = {
+    getAll: () => [
+      {
+        name: "new",
+        aliases: [],
+        description: "Start a new session",
+        usage: "/new",
+      },
+      {
+        name: "quit",
+        aliases: ["q"],
+        description: "Exit the agent",
+        usage: "/quit",
+      },
+    ],
+  };
+
   #messages = [];
   #sessionId = "acp-fixture-session";
   #model = "claude-opus-5";

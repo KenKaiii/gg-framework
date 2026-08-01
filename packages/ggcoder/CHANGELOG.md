@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.31.0
+
+### Minor Changes
+
+- Advertise built-in and project slash commands to ACP clients when sessions open or load.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.31.0
+- @kenkaiiii/gg-agent@5.31.0
+- @kenkaiiii/gg-core@5.31.0
+
 ## 5.30.3
 
 ### Patch Changes

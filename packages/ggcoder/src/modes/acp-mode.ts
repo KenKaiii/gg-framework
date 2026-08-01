@@ -25,6 +25,8 @@ import { isAbortError } from "@kenkaiiii/gg-agent";
 import { getAllModels, getMaxThinkingLevel, getModel } from "@kenkaiiii/gg-core";
 import { AgentSession } from "../core/agent-session.js";
 import type { EventBus } from "../core/event-bus.js";
+import { PROMPT_COMMANDS } from "../core/prompt-commands.js";
+import { loadCustomCommands } from "../core/custom-commands.js";
 import {
   findSessionById,
   listAllSessions,
@@ -97,6 +99,14 @@ export interface AcpAgentSession {
   setPlanMode(active: boolean): Promise<void>;
   /** Bake an approved plan into the prompt so [DONE:n] progress markers work. */
   setApprovedPlan(planPath: string | undefined): Promise<void>;
+  /**
+   * Registry commands (/model, /compact, …), including any an extension
+   * registered during `initialize`. Optional so a test double need not carry a
+   * registry — a session without one simply advertises no registry commands.
+   */
+  readonly slashCommands?: {
+    getAll(): { name: string; aliases: string[]; description: string; usage: string }[];
+  };
 }
 
 export interface AcpModeOptions {
@@ -287,6 +297,89 @@ function configOptionsFor(session: AcpAgentSession): ConfigOption[] {
   ];
 }
 
+// ── Available commands ─────────────────────────────────────
+
+/** One entry of ACP's `available_commands_update`. */
+interface AcpCommand {
+  name: string;
+  description: string;
+  /** Present only when the command does something with trailing text. */
+  input?: { hint: string };
+}
+
+/** What a prompt-template command does with whatever follows the name. */
+const TEMPLATE_ARG_HINT = "extra instructions (optional)";
+
+/**
+ * The argument hint for a registry command, taken from its own usage string.
+ *
+ * `/add-dir [path] — no path lists the current roots` becomes `[path]`: the
+ * client renders a hint, not a man page, and the prose after the dash is the
+ * description's job.
+ */
+function hintFromUsage(name: string, usage: string): { hint: string } | undefined {
+  const withoutName = usage.replace(new RegExp(`^\\s*/${name}\\b`), "").trim();
+  const hint = withoutName.split("—")[0].split(" - ")[0].trim();
+  return hint ? { hint } : undefined;
+}
+
+/**
+ * Every slash command this session would actually honour, in the precedence
+ * `AgentSession.resolveSlashInput` uses: built-in prompt templates, then
+ * `.gg/commands/*.md` from the project, then registry commands.
+ *
+ * That order is not cosmetic. `resolveSlashInput` looks for a template body
+ * FIRST and only falls through to the registry when there is none, so a project
+ * file named `new.md` really does shadow the registry's `/new`. Listing the
+ * registry entry for that name would point a client's user at a description of
+ * something the agent will not run.
+ *
+ * Names already claimed — including a built-in's ALIASES, which
+ * `getPromptCommand` matches — are dropped rather than listed twice.
+ */
+async function availableCommands(session: AcpAgentSession, cwd: string): Promise<AcpCommand[]> {
+  const commands: AcpCommand[] = [];
+  const taken = new Set<string>();
+
+  const add = (command: AcpCommand): void => {
+    if (taken.has(command.name)) return;
+    taken.add(command.name);
+    commands.push(command);
+  };
+
+  for (const command of PROMPT_COMMANDS) {
+    for (const alias of command.aliases) taken.add(alias);
+    add({
+      name: command.name,
+      description: command.description,
+      input: { hint: TEMPLATE_ARG_HINT },
+    });
+  }
+
+  // Project commands are files on disk, so a client that never rescans still
+  // gets whatever existed when the session opened.
+  for (const command of await loadCustomCommands(cwd)) {
+    add({
+      name: command.name,
+      description: command.description,
+      input: { hint: TEMPLATE_ARG_HINT },
+    });
+  }
+
+  // Last: anything above with the same NAME beats a registry command. An alias
+  // collision does not, so aliases are deliberately not claimed here — a
+  // project `q.md` shadows `/q` without hiding `/quit` itself.
+  for (const command of session.slashCommands?.getAll() ?? []) {
+    add({
+      name: command.name,
+      description: command.description,
+      input: hintFromUsage(command.name, command.usage),
+    });
+  }
+
+  return commands;
+}
+
 /** The `modes` block ACP clients like Zed read from session/new and session/load. */
 function sessionModes(session: AcpAgentSession): Record<string, unknown> {
   return {
@@ -448,6 +541,35 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
       sessionUpdate: "config_option_update",
       configOptions: configOptionsFor(session),
     });
+  }
+
+  /**
+   * Tell the client which slash commands exist, once the session is up.
+   *
+   * Sent as a notification AFTER the response that created the session (a
+   * timer, not a microtask, so it cannot overtake it): the payload is addressed
+   * by sessionId, and a client that has not yet seen its own session/new result
+   * has nowhere to put it. The agent is the only party that can know its
+   * built-ins, so a client scanning `.gg/commands` on its own would miss them.
+   */
+  function notifyAvailableCommands(target: AcpAgentSession): void {
+    const forSession = sessionId;
+    setTimeout(() => {
+      // A second session/new (or a dispose) beat us here; that session will
+      // announce its own commands.
+      if (session !== target || sessionId !== forSession) return;
+      void availableCommands(target, options.cwd)
+        .then((commands) => {
+          if (session !== target || sessionId !== forSession) return;
+          notifyUpdate({
+            sessionUpdate: "available_commands_update",
+            availableCommands: commands,
+          });
+        })
+        // Command discovery reads the disk. A failure there must not take down
+        // a session that is otherwise fine.
+        .catch(() => {});
+    }, 0);
   }
 
   /**
@@ -614,6 +736,7 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
 
   async function handleNewSession(): Promise<unknown> {
     const created = await startSession();
+    notifyAvailableCommands(created);
     return { sessionId, configOptions: configOptionsFor(created), modes: sessionModes(created) };
   }
 
@@ -688,6 +811,7 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
     sessionId = requested;
 
     for (const update of historyUpdates(displayMessages)) notifyUpdate(update);
+    notifyAvailableCommands(restored);
 
     return { configOptions: configOptionsFor(restored), modes: sessionModes(restored) };
   }

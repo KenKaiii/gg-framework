@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.38.0",
+    date: "2026-08-01",
+    items: [
+      "Your phone remote and other `ACP` clients now know every command GG Coder can run the instant a session opens. I wired in built-ins plus project favorites like `/commit`, with the exact descriptions and inputs you need, so command pickers are complete without brittle file scanning.",
+    ],
+  },
+  {
     version: "0.37.5",
     date: "2026-07-31",
     items: [

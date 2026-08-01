@@ -162,6 +162,19 @@ class AcpClient {
     return frames.at(-1)!.result!.sessionId as string;
   }
 
+  /** Wait for a `session/update` notification of one kind, ignoring the rest. */
+  async untilUpdate(kind: string, timeoutMs = 20_000): Promise<Record<string, unknown>> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const found = updates(this.frames).find((update) => update.sessionUpdate === kind);
+      if (found) return found;
+      if (Date.now() >= deadline) {
+        throw new Error(`timed out waiting for ${kind}; stderr=${this.stderr}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
   /**
    * The stored sessions the fixture seeded, newest first.
    *
@@ -201,6 +214,16 @@ function updates(frames: Frame[]): Record<string, unknown>[] {
   return frames
     .filter((frame) => frame.method === "session/update")
     .map((frame) => frame.params!.update!);
+}
+
+/**
+ * Conversation updates only.
+ *
+ * The command list is announced on its own schedule after a session opens, so
+ * an exact-match transcript assertion would otherwise pass or fail on timing.
+ */
+function transcript(frames: Frame[]): Record<string, unknown>[] {
+  return updates(frames).filter((update) => update.sessionUpdate !== "available_commands_update");
 }
 
 describe("ACP mode over stdio", () => {
@@ -279,7 +302,11 @@ describe("ACP mode over stdio", () => {
       params: { sessionId: newest!.sessionId, cwd: tmpProject, mcpServers: [] },
     });
     const frames = await client.until(91);
-    const replay = frames.filter((frame) => frame.method === "session/update");
+    const replay = frames.filter(
+      (frame) =>
+        frame.method === "session/update" &&
+        frame.params!.update!.sessionUpdate !== "available_commands_update",
+    );
 
     // History must arrive BEFORE the response: a client draws a resumed session
     // with its live-turn renderer, so anything after the reply lands nowhere.
@@ -287,7 +314,7 @@ describe("ACP mode over stdio", () => {
     expect(frames.at(-1)!.id).toBe(91);
     for (const frame of replay) expect(frame.params!.sessionId).toBe(newest!.sessionId);
 
-    expect(updates(frames)).toEqual([
+    expect(transcript(frames)).toEqual([
       {
         sessionUpdate: "user_message_chunk",
         content: { type: "text", text: "newer: add the config panel" },
@@ -333,7 +360,7 @@ describe("ACP mode over stdio", () => {
         content: { type: "text", text: "Second follow-up complete." },
       },
     ]);
-    const replayText = updates(frames)
+    const replayText = transcript(frames)
       .map((update) => (update.content as { text?: string } | undefined)?.text ?? "")
       .join("\n");
     expect(replayText).not.toContain("replacement summary");
@@ -350,7 +377,11 @@ describe("ACP mode over stdio", () => {
     expect(turn.at(-1)!.result).toEqual({ stopReason: "end_turn" });
     expect(
       turn
-        .filter((frame) => frame.method === "session/update")
+        .filter(
+          (frame) =>
+            frame.method === "session/update" &&
+            frame.params!.update!.sessionUpdate !== "available_commands_update",
+        )
         .every((frame) => frame.params!.sessionId === newest!.sessionId),
     ).toBe(true);
 
@@ -366,7 +397,7 @@ describe("ACP mode over stdio", () => {
       },
     });
     const contextFrames = (await client.until(93)).slice(contextStart);
-    const contextText = updates(contextFrames)
+    const contextText = transcript(contextFrames)
       .map((update) => (update.content as { text?: string } | undefined)?.text ?? "")
       .join("\n");
     expect(contextText).toContain("second replacement summary");
@@ -391,7 +422,7 @@ describe("ACP mode over stdio", () => {
     const frames = await client.until(91);
 
     expect(frames.at(-1)!.error).toBeUndefined();
-    expect(updates(frames)[0]).toEqual({
+    expect(transcript(frames)[0]).toEqual({
       sessionUpdate: "user_message_chunk",
       content: { type: "text", text: "newer: add the config panel" },
     });
@@ -411,7 +442,7 @@ describe("ACP mode over stdio", () => {
     });
     const frames = await client.until(91);
 
-    expect(updates(frames)).toEqual([
+    expect(transcript(frames)).toEqual([
       {
         sessionUpdate: "user_message_chunk",
         content: {
@@ -556,6 +587,72 @@ describe("ACP mode over stdio", () => {
     expect(mode.options.map((option) => option.value)).toEqual(["default", "plan"]);
   });
 
+  it("announces available commands after session/new, merging built-ins with project files", async () => {
+    // A project command, and one whose name collides with a built-in template.
+    const commandsDir = path.join(tmpProject, ".gg", "commands");
+    await fs.mkdir(commandsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(commandsDir, "commit.md"),
+      "---\nname: commit\ndescription: Check, review, commit and push\n---\n\nRun the checks.\n",
+    );
+    await fs.writeFile(
+      path.join(commandsDir, "init.md"),
+      "---\nname: init\ndescription: Shadowed by the built-in\n---\n\nNever runs.\n",
+    );
+    // A project file whose name collides with a REGISTRY command (the fixture
+    // registers `/new`). The session resolves a template body before consulting
+    // the registry, so this file really is what `/new` runs here.
+    await fs.writeFile(
+      path.join(commandsDir, "new.md"),
+      "---\nname: new\ndescription: Project override of the registry command\n---\n\nRuns.\n",
+    );
+
+    client = new AcpClient();
+    client.send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1 } });
+    await client.until(1);
+    client.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/new",
+      params: { cwd: tmpProject, mcpServers: [] },
+    });
+    const frames = await client.until(2);
+    // The announcement must not overtake the response that names the session.
+    expect(updates(frames).some((u) => u.sessionUpdate === "available_commands_update")).toBe(
+      false,
+    );
+
+    const update = await client.untilUpdate("available_commands_update");
+    const commands = update.availableCommands as {
+      name: string;
+      description: string;
+      input?: { hint: string };
+    }[];
+    const byName = new Map(commands.map((command) => [command.name, command]));
+
+    // A built-in the client could not have discovered by scanning the disk.
+    expect(byName.get("bullet-proof")).toMatchObject({
+      description: "Audit exploitable weaknesses",
+      input: { hint: expect.any(String) },
+    });
+    // A project file, carried with its own frontmatter description.
+    expect(byName.get("commit")!.description).toBe("Check, review, commit and push");
+    // Collisions resolve the way the session itself resolves them: a built-in
+    // template beats a project file, and it is listed once.
+    expect(commands.filter((command) => command.name === "init")).toHaveLength(1);
+    expect(byName.get("init")!.description).toBe("Generate or update CLAUDE.md for this project");
+    // ...but a project file beats a REGISTRY command, because that is the order
+    // `resolveSlashInput` uses. Advertising the registry's `/new` here would
+    // describe something the agent would never run.
+    expect(commands.filter((command) => command.name === "new")).toHaveLength(1);
+    expect(byName.get("new")!.description).toBe("Project override of the registry command");
+    // A registry command with no collision is listed, with a hint parsed from
+    // its usage rather than the template hint.
+    expect(byName.get("quit")).toEqual({ name: "quit", description: "Exit the agent" });
+    // Aliases are not separate commands.
+    expect(byName.has("bp")).toBe(false);
+  });
+
   it("switches mode via session/set_mode and tells the client with current_mode_update", async () => {
     client = new AcpClient();
     const sessionId = await client.handshake();
@@ -569,7 +666,7 @@ describe("ACP mode over stdio", () => {
     const frames = await client.until(3);
     expect(frames.at(-1)!.result).toEqual({});
 
-    const notes = updates(frames);
+    const notes = transcript(frames);
     expect(notes[0]).toEqual({ sessionUpdate: "current_mode_update", currentModeId: "plan" });
     // The full option set rides along so a client tracking config sees the
     // same truth the modes block would tell it.
@@ -650,7 +747,7 @@ describe("ACP mode over stdio", () => {
       expect(frame.params!.sessionId).toBe(sessionId);
     }
 
-    expect(updates(frames)).toEqual([
+    expect(transcript(frames)).toEqual([
       { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "planning" } },
       { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hello " } },
       { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "world" } },
