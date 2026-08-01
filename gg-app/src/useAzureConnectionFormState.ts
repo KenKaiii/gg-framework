@@ -8,6 +8,7 @@ import {
   type AzureConnectionErrorField,
   type AzureConnectionStatus,
 } from "./agent";
+import type { SafeTauriUnlisten } from "./tauri-listener";
 
 export type AzureFieldErrors = Partial<Record<AzureConnectionErrorField, string>>;
 export type AzurePendingState = "loading" | "saving" | "removing" | null;
@@ -169,7 +170,7 @@ export function useAzureConnectionFormState(onConnectionChanged?: () => void) {
 
   useEffect(() => {
     let disposed = false;
-    let unlisten: (() => void) | undefined;
+    let unlisten: SafeTauriUnlisten | undefined;
     void onModelsChanged(() => {
       const request = ++statusRequestRef.current;
       void getAzureConnectionStatus()
@@ -182,14 +183,14 @@ export function useAzureConnectionFormState(onConnectionChanged?: () => void) {
         .catch(() => {});
       onConnectionChangedRef.current?.();
     }).then((stopListening) => {
-      if (disposed) stopListening();
+      if (disposed) void stopListening();
       else unlisten = stopListening;
     });
     return () => {
       disposed = true;
       statusRequestRef.current += 1;
       commandPendingRef.current = false;
-      unlisten?.();
+      void unlisten?.();
       clearApiKey();
     };
   }, [applyStatus, clearApiKey]);

@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { error as logError, info as logInfo } from "@tauri-apps/plugin-log";
 import { routePaneEvent, type PaneEventEnvelope } from "./pane-routing";
+import { createSafeTauriUnlisten, type SafeTauriUnlisten } from "./tauri-listener";
 import {
   isPhaseStartResult,
   isProjectNotesMigrationOutcome,
@@ -26,6 +27,21 @@ export type { PhaseLaunchErrorEvent, PhaseLaunchErrorCode } from "./notes-types"
 // a global `listen` (target "Any") would never receive window-scoped events.
 // This is what keeps multiple project windows fully isolated.
 const appWindow = getCurrentWebviewWindow();
+
+// appWindow.listen lifecycle map:
+// - local-patched-update, model, gaze, tray, and window-order listeners follow
+//   their owning React effect;
+// - readiness listeners live only until waitForPaneReady settles;
+// - each pane client owns one agent-pane-ready listener for its subscription;
+// - agent-event is intentionally window-lifetime and fans out synchronously.
+// Every listener that can be released receives the same guarded cleanup here.
+async function listenAppWindow<T>(
+  eventName: string,
+  handler: (event: { payload: T }) => void,
+): Promise<SafeTauriUnlisten> {
+  const unlisten = await appWindow.listen<T>(eventName, handler);
+  return createSafeTauriUnlisten(unlisten, eventName);
+}
 
 /** This webview's window label (`main` for the first window, `project-N` for
  *  windows opened via the Windows button). */
@@ -101,15 +117,15 @@ export async function startLocalPatchedUpdate(repoRoot: string): Promise<void> {
 
 export async function listenLocalPatchedUpdate(
   onEvent: (event: LocalPatchedUpdateEvent) => void,
-): Promise<() => void> {
-  return appWindow.listen<LocalPatchedUpdateEvent>("local-patched-update", (event) => {
+): Promise<SafeTauriUnlisten> {
+  return listenAppWindow<LocalPatchedUpdateEvent>("local-patched-update", (event) => {
     onEvent(event.payload);
   });
 }
 
 /** Subscribe this window to a secret-free model-catalog invalidation. */
-export async function onModelsChanged(onChange: () => void): Promise<() => void> {
-  return appWindow.listen("agent-models-changed", () => onChange());
+export async function onModelsChanged(onChange: () => void): Promise<SafeTauriUnlisten> {
+  return listenAppWindow("agent-models-changed", () => onChange());
 }
 export interface MemoryChangeEvent extends SidecarEvent {
   type: "memory_change";
@@ -1653,9 +1669,8 @@ export async function gazeFocus(
 }
 
 /** Subscribe THIS window to gaze-target broadcasts. Returns an unlisten fn. */
-export async function onGazeTarget(cb: (e: GazeTargetEvent) => void): Promise<() => void> {
-  const un = await appWindow.listen<GazeTargetEvent>("gaze-target", (e) => cb(e.payload));
-  return un;
+export async function onGazeTarget(cb: (e: GazeTargetEvent) => void): Promise<SafeTauriUnlisten> {
+  return listenAppWindow<GazeTargetEvent>("gaze-target", (e) => cb(e.payload));
 }
 
 // ── macOS menu-bar tray ────────────────────────────────────────────────────
@@ -1667,8 +1682,8 @@ export type TrayIntent = "update" | "new-chat" | "new-code" | "remote" | "settin
  * Subscribe THIS window to tray actions routed to it. Returns an unlisten fn.
  * Used when the tray reuses an already-open window.
  */
-export async function onTrayIntent(cb: (intent: TrayIntent) => void): Promise<() => void> {
-  return await appWindow.listen<TrayIntent>("tray-intent", (e) => cb(e.payload));
+export async function onTrayIntent(cb: (intent: TrayIntent) => void): Promise<SafeTauriUnlisten> {
+  return listenAppWindow<TrayIntent>("tray-intent", (e) => cb(e.payload));
 }
 
 /**
@@ -1752,9 +1767,8 @@ export interface WindowOrderEvent {
 }
 
 /** Subscribe THIS window to reading-order broadcasts. Returns an unlisten fn. */
-export async function onWindowOrder(cb: (e: WindowOrderEvent) => void): Promise<() => void> {
-  const un = await appWindow.listen<WindowOrderEvent>("window-order", (e) => cb(e.payload));
-  return un;
+export async function onWindowOrder(cb: (e: WindowOrderEvent) => void): Promise<SafeTauriUnlisten> {
+  return listenAppWindow<WindowOrderEvent>("window-order", (e) => cb(e.payload));
 }
 
 // ── Local models (Ollama / LM Studio / llama.cpp / vLLM) ──
@@ -2007,7 +2021,7 @@ let tauriListenerStarted = false;
 function ensureTauriListener(): void {
   if (tauriListenerStarted) return;
   tauriListenerStarted = true;
-  void appWindow.listen<PaneEventEnvelope>("agent-event", (e) => {
+  void listenAppWindow<PaneEventEnvelope>("agent-event", (e) => {
     const envelope = e.payload;
     for (const fn of paneEnvelopeSubscribers) fn(envelope);
     const primary = routePaneEvent(envelope, [{ paneId: "primary" }]);
@@ -2052,24 +2066,22 @@ export async function waitForPaneReady(paneId: string = "primary"): Promise<Pane
     let settled = false;
     let poll: ReturnType<typeof setInterval> | undefined;
     const timeout = setTimeout(() => fail(`pane '${paneId}' did not start in time`), 30000);
-    const unlisteners: Array<() => void> = [];
+    const unlisteners: SafeTauriUnlisten[] = [];
 
-    const cleanup = (): void => {
+    const cleanup = async (): Promise<void> => {
       if (poll) clearInterval(poll);
       if (timeout) clearTimeout(timeout);
-      for (const unlisten of unlisteners.splice(0)) unlisten();
+      await Promise.all(unlisteners.splice(0).map((unlisten) => unlisten()));
     };
     const succeed = (status: PaneStartupStatus): void => {
       if (settled) return;
       settled = true;
-      cleanup();
-      resolve(status);
+      void cleanup().then(() => resolve(status));
     };
     const fail = (message: string): void => {
       if (settled) return;
       settled = true;
-      cleanup();
-      reject(new Error(message));
+      void cleanup().then(() => reject(new Error(message)));
     };
     const readStatus = async (): Promise<void> => {
       try {
@@ -2083,8 +2095,8 @@ export async function waitForPaneReady(paneId: string = "primary"): Promise<Pane
     };
     const install = async <T>(name: string, handler: (payload: T) => void): Promise<void> => {
       try {
-        const unlisten = await appWindow.listen<T>(name, (event) => handler(event.payload));
-        if (settled) unlisten();
+        const unlisten = await listenAppWindow<T>(name, (event) => handler(event.payload));
+        if (settled) await unlisten();
         else unlisteners.push(unlisten);
       } catch (error) {
         fail(`failed to listen for pane '${paneId}' readiness: ${String(error)}`);
@@ -2296,7 +2308,7 @@ export function createPaneAgentClient(paneId: string): PaneAgentClient {
           void refresh();
         }
       });
-      const unlistenReadyPromise = appWindow.listen<PaneLifecycleEvent>(
+      const unlistenReadyPromise = listenAppWindow<PaneLifecycleEvent>(
         "agent-pane-ready",
         (event) => {
           if (event.payload.paneId === paneId && event.payload.generation !== generation)

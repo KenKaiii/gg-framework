@@ -7,6 +7,7 @@ import {
   startLocalPatchedUpdate,
   type LocalPatchedUpdateEvent,
 } from "./agent";
+import type { SafeTauriUnlisten } from "./tauri-listener";
 import { appBuildInfo } from "./build-info";
 import { installUpdateForBuild } from "./update-policy";
 
@@ -97,7 +98,7 @@ export function useAppUpdate(): UpdateInfo {
   useEffect(() => {
     if (!appBuildInfo.localPatched) return undefined;
     let cancelled = false;
-    let unlisten: (() => void) | undefined;
+    let unlisten: SafeTauriUnlisten | undefined;
     void listenLocalPatchedUpdate((payload: LocalPatchedUpdateEvent) => {
       if (cancelled) return;
       if (payload.type === "started") {
@@ -120,7 +121,7 @@ export function useAppUpdate(): UpdateInfo {
       }
     })
       .then((cleanup) => {
-        if (cancelled) cleanup();
+        if (cancelled) void cleanup();
         else unlisten = cleanup;
       })
       .catch((error) => {
@@ -129,7 +130,7 @@ export function useAppUpdate(): UpdateInfo {
       });
     return () => {
       cancelled = true;
-      unlisten?.();
+      void unlisten?.();
     };
   }, []);
 

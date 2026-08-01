@@ -35,6 +35,7 @@ import {
   type PaneAgentClient,
   type PaneSessionTarget,
 } from "./agent";
+import { createSafeTauriUnlisten, type SafeTauriUnlisten } from "./tauri-listener";
 import { ActivityBar } from "./ActivityBar";
 import { KenActivityBar } from "./KenActivityBar";
 import { AutopilotReviewBar } from "./AutopilotReviewBar";
@@ -829,15 +830,15 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
   // claims the parked intent on mount.
   useEffect(() => {
     if (!ownsWindowGlobals) return;
-    let unlisten: (() => void) | null = null;
+    let unlisten: SafeTauriUnlisten | null = null;
     let disposed = false;
     void onTrayIntent((intent) => trayIntentRef.current(intent)).then((un) => {
-      if (disposed) un();
+      if (disposed) void un();
       else unlisten = un;
     });
     return () => {
       disposed = true;
-      unlisten?.();
+      void unlisten?.();
     };
   }, [ownsWindowGlobals]);
 
@@ -1050,7 +1051,7 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
   useEffect(() => {
     if (!ownsWindowGlobals) return;
     let disposed = false;
-    let unlisten: (() => void) | undefined;
+    let unlisten: SafeTauriUnlisten | undefined;
     void getCurrentWebview()
       .onDragDropEvent((event) => {
         if (disposed) return;
@@ -1073,12 +1074,13 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
         });
       })
       .then((off) => {
-        if (disposed) off();
-        else unlisten = off;
+        const stop = createSafeTauriUnlisten(off, "webview-drag-drop");
+        if (disposed) void stop();
+        else unlisten = stop;
       });
     return () => {
       disposed = true;
-      unlisten?.();
+      void unlisten?.();
     };
   }, [insertDroppedFolderPaths, ownsWindowGlobals]);
 
@@ -1223,16 +1225,21 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
   // windows are arranged, moved (debounced), created, closed, or focused.
   useEffect(() => {
     if (!ownsWindowGlobals) return;
-    let un: (() => void) | undefined;
+    let disposed = false;
+    let unlisten: SafeTauriUnlisten | undefined;
     void onWindowOrder((e) => {
       const idx = e.order.indexOf(windowLabel);
       setWindowIndex(idx >= 0 ? idx + 1 : null);
       setWindowTotal(e.order.length);
       setIsThisFocused(e.focused === windowLabel);
-    }).then((fn) => {
-      un = fn;
+    }).then((stop) => {
+      if (disposed) void stop();
+      else unlisten = stop;
     });
-    return () => un?.();
+    return () => {
+      disposed = true;
+      void unlisten?.();
+    };
   }, [ownsWindowGlobals]);
 
   // Global UI click sound — plays only when an actual interactive element is
@@ -1483,7 +1490,7 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
 
   useEffect(() => {
     let cancelled = false;
-    let unlisten: (() => void) | undefined;
+    let unlisten: SafeTauriUnlisten | undefined;
     void onModelsChanged(() => {
       setModelCatalogRefreshNonce((nonce) => nonce + 1);
       void (async () => {
@@ -1501,12 +1508,12 @@ export function AgentPane(props: AgentPaneProps): React.ReactElement {
         }
       })();
     }).then((stop) => {
-      if (cancelled) stop();
+      if (cancelled) void stop();
       else unlisten = stop;
     });
     return () => {
       cancelled = true;
-      unlisten?.();
+      void unlisten?.();
     };
   }, [client]);
 

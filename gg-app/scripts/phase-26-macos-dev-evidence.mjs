@@ -24,6 +24,59 @@ function readAudit(path) {
     .map((line) => JSON.parse(line));
 }
 
+const TAURI_LISTENER_CLEANUP_ERROR =
+  "undefined is not an object (evaluating 'listeners[eventId].handlerId')";
+const FIXTURE_REMOTE_ACTIVE_ERROR =
+  "set_remote_active failed: invalid args `active` for command `set_remote_active`: command set_remote_active missing required key active";
+const FIXTURE_REMINDER_ERROR = "roadmap reminder delivery failed: invalid reminder response";
+
+export function inspectPhase26DevLog(log) {
+  const lines = log.split(/\r?\n/);
+  const errorLines = lines.filter((line) => line.includes("[ERROR]"));
+  const listenerCleanupErrors = errorLines.filter((line) =>
+    line.includes(TAURI_LISTENER_CLEANUP_ERROR),
+  );
+  if (listenerCleanupErrors.length > 0) {
+    throw new Error(
+      `Phase 26 detected ${listenerCleanupErrors.length} Tauri listener cleanup error(s): ${TAURI_LISTENER_CLEANUP_ERROR}`,
+    );
+  }
+
+  const unexpectedErrors = errorLines.filter(
+    (line) => !line.includes(FIXTURE_REMOTE_ACTIVE_ERROR) && !line.includes(FIXTURE_REMINDER_ERROR),
+  );
+  if (unexpectedErrors.length > 0) {
+    throw new Error(
+      `Phase 26 detected ${unexpectedErrors.length} unexpected error log(s): ${unexpectedErrors[0]}`,
+    );
+  }
+
+  return {
+    status: "passed",
+    listenerCleanup: {
+      classification: "regression-guard",
+      count: 0,
+      issue: "https://github.com/tauri-apps/tauri/issues/15799",
+    },
+    fixtureOnly: [
+      {
+        kind: "remote-active",
+        classification: "expected-fixture-limitation",
+        count: errorLines.filter((line) => line.includes(FIXTURE_REMOTE_ACTIVE_ERROR)).length,
+        reason:
+          "The Phase 21 sidecar fixture returns 200 {} for GET /serve; production returns boolean running/configured fields.",
+      },
+      {
+        kind: "reminder",
+        classification: "expected-fixture-limitation",
+        count: errorLines.filter((line) => line.includes(FIXTURE_REMINDER_ERROR)).length,
+        reason:
+          "The Phase 21 sidecar fixture returns 200 {} for POST /reminders/reserve; production returns a typed reminder status.",
+      },
+    ],
+  };
+}
+
 async function waitFor(label, check, { timeoutMs = 60_000, intervalMs = 200 } = {}) {
   const deadline = Date.now() + timeoutMs;
   let lastError = null;
@@ -261,6 +314,8 @@ export async function capturePhase26MacosDevEvidence({ fixture, webdriver, start
     );
   }
   await webdriver.screenshot(resumeScreenshot);
+  await delay(100);
+  const devLogAudit = inspectPhase26DevLog(readFileSync(descriptor.devLog, "utf8"));
 
   return {
     status: "passed",
@@ -282,6 +337,7 @@ export async function capturePhase26MacosDevEvidence({ fixture, webdriver, start
     inspected,
     resumed: resumed.dom,
     sidecarAudit: resumed.audit,
+    devLogAudit,
     screenshots: { inspected: inspectScreenshot, resumed: resumeScreenshot },
     github: process.env.GITHUB_RUN_ID
       ? {

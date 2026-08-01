@@ -11,6 +11,7 @@ import {
   windowLabel,
   type RestoreTarget,
 } from "./agent";
+import { createSafeTauriUnlisten, type SafeTauriUnlisten } from "./tauri-listener";
 import { type AgentPaneProps, type PaneInputActions, type PaneSnapshot } from "./AgentPane";
 import { PANE_DRAG_MIME } from "./PaneDropOverlay";
 import {
@@ -254,7 +255,7 @@ function ReadyWorkspaceShell({
 
   useEffect(() => {
     let disposed = false;
-    let unlisten: (() => void) | undefined;
+    let unlisten: SafeTauriUnlisten | undefined;
     void getCurrentWebview()
       .onDragDropEvent((event) => {
         if (disposed) return;
@@ -278,12 +279,13 @@ function ReadyWorkspaceShell({
           ?.handleNativeDrop(payload.paths);
       })
       .then((off) => {
-        if (disposed) off();
-        else unlisten = off;
+        const stop = createSafeTauriUnlisten(off, "webview-drag-drop");
+        if (disposed) void stop();
+        else unlisten = stop;
       });
     return () => {
       disposed = true;
-      unlisten?.();
+      void unlisten?.();
     };
   }, []);
 
