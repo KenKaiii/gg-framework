@@ -561,7 +561,9 @@ body {
 
 .ascii-logo {
   font-family: var(--mono);
-  font-size: 12px;
+  /* Six 86-column mono rows occupy about 51.6em. Scale only when the 24px home
+     gutters leave less room, keeping the full brand visible in narrow windows. */
+  font-size: min(12px, calc((100vw - 48px) / 51.6));
   line-height: 1.05;
   white-space: pre;
   /* Brand gradient (blue → periwinkle → blue), wider than the text so the
@@ -4625,9 +4627,9 @@ body {
   cursor: default;
 }
 .model-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 8px);
+  /* Portaled to body so responsive footer overflow cannot clip the popup. The
+     viewport-clamped horizontal and trigger-relative bottom coordinates are inline. */
+  position: fixed;
   z-index: 50;
   max-width: min(640px, 90vw);
   max-height: 50vh;

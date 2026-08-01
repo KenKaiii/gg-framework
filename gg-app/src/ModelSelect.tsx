@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { theme } from "./theme";
 import { MENTOR_DISPLAY_NAME, PRODUCT_DISPLAY_NAME } from "./brand";
 import { modelDisplayName } from "./model-name";
@@ -42,8 +43,10 @@ export function ModelSelect({
   refreshNonce = 0,
 }: Props): React.ReactElement {
   const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; bottom: number } | null>(null);
   const rootRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
   const following = Boolean(onSelectFollow && followActive);
   const value = following ? FOLLOW_VALUE : currentModel;
@@ -62,10 +65,31 @@ export function ModelSelect({
     setOpen(false);
   }, [models, refreshNonce]);
 
+  useLayoutEffect(() => {
+    if (!open) return;
+    const placeMenu = (): void => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const viewportGutter = 12;
+      const menuWidth = menuRef.current?.getBoundingClientRect().width ?? 0;
+      const preferredLeft = rect.right - menuWidth;
+      const maximumLeft = Math.max(viewportGutter, window.innerWidth - menuWidth - viewportGutter);
+      setMenuPosition({
+        left: Math.min(Math.max(viewportGutter, preferredLeft), maximumLeft),
+        bottom: window.innerHeight - rect.top + 8,
+      });
+    };
+    placeMenu();
+    window.addEventListener("resize", placeMenu);
+    return () => window.removeEventListener("resize", placeMenu);
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const closeOnOutsideClick = (event: MouseEvent): void => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
@@ -78,7 +102,7 @@ export function ModelSelect({
     );
     document.addEventListener("keydown", closeOnEscape);
     requestAnimationFrame(() => {
-      const menu = rootRef.current?.querySelector<HTMLElement>(".model-menu");
+      const menu = menuRef.current;
       const active = menu?.querySelector<HTMLElement>("[aria-checked='true']");
       (active ?? menu?.querySelector<HTMLElement>("[role='menuitemradio']"))?.focus();
     });
@@ -212,49 +236,58 @@ export function ModelSelect({
       >
         {modelDisplayName(models, currentModel)}
       </button>
-      {open && (
-        <div
-          id={menuId}
-          className="model-menu"
-          role="menu"
-          aria-label={title}
-          onKeyDown={moveMenuFocus}
-          style={{ background: theme.surface2, borderColor: theme.border }}
-        >
-          <div className="model-menu-title" style={{ color: theme.textMuted }} aria-hidden="true">
-            {title}
-          </div>
-          {onSelectFollow && (
-            <button
-              className="model-menu-item model-menu-follow"
-              role="menuitemradio"
-              aria-checked={following}
-              style={{
-                color: following ? theme.primary : theme.text,
-                background: following ? theme.surface2 : "transparent",
-              }}
-              onClick={chooseFollow}
-              title={`${MENTOR_DISPLAY_NAME} adopts whatever model ${PRODUCT_DISPLAY_NAME} is using`}
-            >
-              Follow {PRODUCT_DISPLAY_NAME}
-            </button>
-          )}
-          {groups.map((group) => (
-            <div key={group.provider} className="model-menu-section">
-              <div
-                className="model-menu-subtitle"
-                style={{ color: theme.textMuted }}
-                aria-hidden="true"
-              >
-                {group.label}
-              </div>
-              <div className="model-menu-grid" role="group" aria-label={group.label}>
-                {group.models.map((model) => renderItem(model))}
-              </div>
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            id={menuId}
+            className="model-menu"
+            role="menu"
+            aria-label={title}
+            onKeyDown={moveMenuFocus}
+            style={{
+              background: theme.surface2,
+              borderColor: theme.border,
+              left: menuPosition?.left ?? 0,
+              bottom: menuPosition?.bottom ?? 0,
+              visibility: menuPosition ? "visible" : "hidden",
+            }}
+          >
+            <div className="model-menu-title" style={{ color: theme.textMuted }} aria-hidden="true">
+              {title}
             </div>
-          ))}
-        </div>
-      )}
+            {onSelectFollow && (
+              <button
+                className="model-menu-item model-menu-follow"
+                role="menuitemradio"
+                aria-checked={following}
+                style={{
+                  color: following ? theme.primary : theme.text,
+                  background: following ? theme.surface2 : "transparent",
+                }}
+                onClick={chooseFollow}
+                title={`${MENTOR_DISPLAY_NAME} adopts whatever model ${PRODUCT_DISPLAY_NAME} is using`}
+              >
+                Follow {PRODUCT_DISPLAY_NAME}
+              </button>
+            )}
+            {groups.map((group) => (
+              <div key={group.provider} className="model-menu-section">
+                <div
+                  className="model-menu-subtitle"
+                  style={{ color: theme.textMuted }}
+                  aria-hidden="true"
+                >
+                  {group.label}
+                </div>
+                <div className="model-menu-grid" role="group" aria-label={group.label}>
+                  {group.models.map((model) => renderItem(model))}
+                </div>
+              </div>
+            ))}
+          </div>,
+          document.body,
+        )}
     </span>
   );
 }

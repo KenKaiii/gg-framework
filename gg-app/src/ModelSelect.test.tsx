@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ModelSelect } from "./ModelSelect";
 import { supportsNativeSelectPopup } from "./platform";
 import type { ModelOption } from "./agent";
@@ -35,6 +35,7 @@ const MODELS: ModelOption[] = [
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
@@ -129,6 +130,101 @@ describe("ModelSelect — in-webview menu", () => {
 
     fireEvent.click(item);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("escapes a clipped narrow footer and stays anchored through desktop resize", () => {
+    supportsNativeMock.mockReturnValue(false);
+    const width = vi.spyOn(window, "innerWidth", "get").mockReturnValue(484);
+    const height = vi.spyOn(window, "innerHeight", "get").mockReturnValue(781);
+    vi.spyOn(HTMLDivElement.prototype, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 435,
+      height: 220,
+      top: 0,
+      right: 435,
+      bottom: 220,
+      left: 0,
+      toJSON: () => ({}),
+    });
+    render(
+      <div style={{ overflow: "hidden", width: 320, height: 20 }}>
+        <ModelSelect
+          models={MODELS}
+          currentModel="claude-sonnet-5"
+          onSelect={vi.fn()}
+          title="Switch model"
+        />
+      </div>,
+    );
+    const trigger = screen.getByRole("button", { name: "Claude Sonnet 5" });
+    const triggerRect = vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({
+      x: 120,
+      y: 720,
+      width: 150,
+      height: 20,
+      top: 720,
+      right: 270,
+      bottom: 740,
+      left: 120,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.click(trigger);
+
+    const menu = screen.getByRole("menu", { name: "Switch model" });
+    expect(menu.parentElement).toBe(document.body);
+    expect(menu.style.left).toBe("12px");
+    expect(menu.style.bottom).toBe("69px");
+    expect(menu.style.visibility).toBe("visible");
+
+    width.mockReturnValue(1164);
+    height.mockReturnValue(741);
+    triggerRect.mockReturnValue({
+      x: 781,
+      y: 679,
+      width: 150,
+      height: 20,
+      top: 679,
+      right: 931,
+      bottom: 699,
+      left: 781,
+      toJSON: () => ({}),
+    });
+    fireEvent(window, new Event("resize"));
+
+    expect(menu.style.left).toBe("496px");
+    expect(menu.style.bottom).toBe("70px");
+  });
+
+  it("preserves menu focus, keyboard selection, Escape, and outside-click dismissal", async () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    const onSelect = openMenu();
+    const trigger = screen.getByRole("button", { name: "Claude Sonnet 5" });
+    const menu = screen.getByRole("menu", { name: "Switch model" });
+    const active = screen.getByRole("menuitemradio", { name: "Claude Sonnet 5" });
+    const next = screen.getByRole("menuitemradio", { name: "GPT-5.6 Sol" });
+
+    expect(document.activeElement).toBe(active);
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(next);
+    fireEvent.click(next);
+    expect(onSelect).toHaveBeenCalledWith("gpt-5.6-sol");
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Switch model" })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    await waitFor(() => expect(screen.getByRole("menu", { name: "Switch model" })).toBeTruthy());
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("menu", { name: "Switch model" })).toBeNull();
   });
 
   it("marks the active model as checked", () => {
