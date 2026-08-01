@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACP_PROTOCOL_VERSION } from "./acp-mode.js";
 
 const FIXTURE = path.join(
@@ -11,6 +11,13 @@ const FIXTURE = path.join(
   "__fixtures__",
   "acp-stdio-agent.mjs",
 );
+const ACP_CLIENT_TIMEOUT_MS = 20_000;
+const ACP_TEST_TIMEOUT_MS = ACP_CLIENT_TIMEOUT_MS + 5_000;
+
+// This process-backed file can legitimately wait as long as AcpClient's deadline
+// under worker contention. Keep Vitest alive long enough to report AcpClient's
+// diagnostic instead of its unrelated 5-second default.
+vi.setConfig({ testTimeout: ACP_TEST_TIMEOUT_MS });
 
 interface Frame {
   jsonrpc?: string;
@@ -127,7 +134,7 @@ class AcpClient {
    * including it. Ordering is the assertion that matters: notifications for a
    * turn must precede that turn's response.
    */
-  async until(id: string | number, timeoutMs = 20_000): Promise<Frame[]> {
+  async until(id: string | number, timeoutMs = ACP_CLIENT_TIMEOUT_MS): Promise<Frame[]> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const index = this.frames.findIndex((frame) => frame.id === id);
@@ -163,7 +170,10 @@ class AcpClient {
   }
 
   /** Wait for a `session/update` notification of one kind, ignoring the rest. */
-  async untilUpdate(kind: string, timeoutMs = 20_000): Promise<Record<string, unknown>> {
+  async untilUpdate(
+    kind: string,
+    timeoutMs = ACP_CLIENT_TIMEOUT_MS,
+  ): Promise<Record<string, unknown>> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const found = updates(this.frames).find((update) => update.sessionUpdate === kind);
@@ -227,6 +237,14 @@ function transcript(frames: Frame[]): Record<string, unknown>[] {
 }
 
 describe("ACP mode over stdio", () => {
+  it("keeps the file timeout beyond AcpClient's response deadline", async () => {
+    const source = await fs.readFile(fileURLToPath(import.meta.url), "utf8");
+
+    expect(ACP_CLIENT_TIMEOUT_MS).toBe(20_000);
+    expect(ACP_TEST_TIMEOUT_MS).toBe(25_000);
+    expect(source).toContain("vi.setConfig({ testTimeout: ACP_TEST_TIMEOUT_MS });");
+  });
+
   it("negotiates initialize and creates a session", async () => {
     client = new AcpClient();
     client.send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1 } });
