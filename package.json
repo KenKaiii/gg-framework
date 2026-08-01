@@ -8,7 +8,7 @@
     "lint": "eslint \"packages/*/src/**/*.{ts,tsx}\" && pnpm --filter matey lint && pnpm --filter gg-app lint",
     "lint:fix": "eslint \"packages/*/src/**/*.{ts,tsx}\" --fix && pnpm --filter matey lint:fix && pnpm --filter gg-app lint:fix",
     "format": "prettier --write \"packages/*/src/**/*.{ts,tsx}\" \"Matey/**/*.{ts,tsx,css,html,json,md,yml}\" && pnpm --filter gg-app format",
-    "format:check": "prettier --check \"packages/*/src/**/*.{ts,tsx}\" \"Matey/**/*.{ts,tsx,css,html,json,md,yml}\" && pnpm --filter gg-app format:check",
+    "format:check": "node scripts/format-check-reconstruction.mjs",
     "test": "pnpm test:audit-generated && pnpm --filter @kenkaiiii/gg-ai test && pnpm --filter @kenkaiiii/gg-agent test && pnpm --filter @kenkaiiii/gg-core test && pnpm --filter @kenkaiiii/ggcoder test && pnpm --filter @kenkaiiii/gg-boss test && pnpm --filter gg-app test",
     "test:audit-generated": "node --test scripts/audit-generated.test.mjs",
     "bench": "pnpm build && npx tsx benchmarks/run-comparison.ts",

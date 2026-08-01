@@ -41,7 +41,9 @@ function safePath(repoRoot, literalPath) {
     literalPath.length === 0 ||
     isAbsolute(literalPath) ||
     literalPath.includes("\0") ||
-    literalPath.split(/[\\/]/).some((segment) => segment === "" || segment === "." || segment === "..") ||
+    literalPath
+      .split(/[\\/]/)
+      .some((segment) => segment === "" || segment === "." || segment === "..") ||
     /[*?\[\]{}]/.test(literalPath)
   ) {
     throw new Error(`Refusing non-literal repository path: ${String(literalPath)}`);
@@ -153,7 +155,9 @@ async function directWorkspaceRoots(repoRoot, patterns, unsupported) {
     }
   }
 
-  return [...new Set(roots)].sort((left, right) => lexicalCompare(displayPath(repoRoot, left), displayPath(repoRoot, right)));
+  return [...new Set(roots)].sort((left, right) =>
+    lexicalCompare(displayPath(repoRoot, left), displayPath(repoRoot, right)),
+  );
 }
 
 function collectOutputRoots(value, roots) {
@@ -161,7 +165,8 @@ function collectOutputRoots(value, roots) {
     const normalized = value.replaceAll("\\", "/").replace(/^\.\//, "");
     if (!normalized || normalized.startsWith("../") || isAbsolute(normalized)) return;
     const first = normalized.split("/")[0];
-    if (first && !first.includes(".") && first !== "src" && first !== "node_modules") roots.add(first);
+    if (first && !first.includes(".") && first !== "src" && first !== "node_modules")
+      roots.add(first);
     return;
   }
   if (Array.isArray(value)) {
@@ -209,7 +214,8 @@ function simpleCargoTargetDir(configText) {
   const matches = [...configText.matchAll(/^\s*target-dir\s*=\s*["']([^"']+)["']\s*$/gm)];
   if (matches.length !== 1) return undefined;
   const value = matches[0][1].replaceAll("\\", "/");
-  if (!value || value.includes("..") || isAbsolute(value) || /[*?\[\]{}]/.test(value)) return undefined;
+  if (!value || value.includes("..") || isAbsolute(value) || /[*?\[\]{}]/.test(value))
+    return undefined;
   return value;
 }
 
@@ -232,7 +238,8 @@ export async function discoverGenerated({ repoRoot = defaultRepoRoot } = {}) {
   const claimedPaths = new Set();
 
   const manifests = [];
-  if (rootManifest) manifests.push({ root: repoRoot, manifest: rootManifest, file: "package.json" });
+  if (rootManifest)
+    manifests.push({ root: repoRoot, manifest: rootManifest, file: "package.json" });
   for (const root of packageRoots) {
     const file = `${displayPath(repoRoot, root)}/package.json`;
     const manifest = await readJsonIfPresent(resolve(root, "package.json"));
@@ -246,7 +253,9 @@ export async function discoverGenerated({ repoRoot = defaultRepoRoot } = {}) {
 
     if (buildScript && /(^|[\s;&])vite\s+build(?:\s|$)/.test(buildScript)) {
       const tauriFile = `${rootPath}/src-tauri/tauri.conf.json`;
-      const tauriConfig = await readJsonIfPresent(resolve(entry.root, "src-tauri", "tauri.conf.json"));
+      const tauriConfig = await readJsonIfPresent(
+        resolve(entry.root, "src-tauri", "tauri.conf.json"),
+      );
       const frontendDist = tauriConfig?.build?.frontendDist;
       const distLiteral = `${rootPath}/dist`;
       const evidence = [`${entry.file} build script runs vite build`];
@@ -262,7 +271,12 @@ export async function discoverGenerated({ repoRoot = defaultRepoRoot } = {}) {
     for (const [scriptName, script] of Object.entries(scripts)) {
       if (typeof script !== "string" || !script.includes("--cache")) continue;
       const location = cacheLocation(script);
-      if (!location || location.includes("..") || isAbsolute(location) || /[*?\[\]{}]/.test(location)) {
+      if (
+        !location ||
+        location.includes("..") ||
+        isAbsolute(location) ||
+        /[*?\[\]{}]/.test(location)
+      ) {
         unsupported.push(`Unsupported cache location in ${entry.file} script ${scriptName}`);
         continue;
       }
@@ -335,7 +349,9 @@ export async function discoverGenerated({ repoRoot = defaultRepoRoot } = {}) {
         ? tauriConfig.bundle.resources
         : [];
       if (
-        resources.some((value) => typeof value === "string" && value.replaceAll("\\", "/") === "sidecar/") &&
+        resources.some(
+          (value) => typeof value === "string" && value.replaceAll("\\", "/") === "sidecar/",
+        ) &&
         /^\/sidecar\/?$/m.test(ignoreText ?? "") &&
         typeof scripts["bundle:sidecar"] === "string"
       ) {
@@ -455,7 +471,8 @@ async function assertSafeDirectoryTree(repoRoot, selectedPath, directory) {
       throw refusal(repoRoot, selectedPath, child, "symbolic link or junction");
     }
     if (stat.isDirectory()) await assertSafeDirectoryTree(repoRoot, selectedPath, child);
-    else if (!stat.isFile()) throw refusal(repoRoot, selectedPath, child, "unsupported filesystem object");
+    else if (!stat.isFile())
+      throw refusal(repoRoot, selectedPath, child, "unsupported filesystem object");
   }
 }
 
@@ -537,7 +554,8 @@ export async function auditGenerated({ repoRoot = defaultRepoRoot, target, log =
 
   log(`Generated-artifact audit: ${target}`);
   for (const status of statuses) log(formatPathStatus(status.item, status.present, status.state));
-  if (statuses.every(({ present }) => !present)) log(`(no generated artifacts found for ${target})`);
+  if (statuses.every(({ present }) => !present))
+    log(`(no generated artifacts found for ${target})`);
 }
 
 export function parseArgs(argv) {

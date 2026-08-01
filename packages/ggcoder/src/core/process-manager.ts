@@ -5,10 +5,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
-import {
-  killProcessTree as killLocalProcessTree,
-  type ProcessTarget,
-} from "../utils/process.js";
+import { killProcessTree as killLocalProcessTree, type ProcessTarget } from "../utils/process.js";
 import { localProcessLifecycle, type ProcessLifecycleAdapter } from "../tools/operations.js";
 import { getSafeToolEnv } from "../tools/safe-env.js";
 import { resolveShell } from "./shell.js";

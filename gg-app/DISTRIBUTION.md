@@ -107,10 +107,10 @@ every push/PR (stage + bundle + smoke + `cargo test`) without a full bundle.
 
 Updater signing (every OS):
 
-| Secret | Purpose |
-|---|---|
-| `TAURI_SIGNING_PRIVATE_KEY` | minisign private key for updater signatures. **Must match** `plugins.updater.pubkey` in `tauri.conf.json`. |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | password for that key. |
+| Secret                               | Purpose                                                                                                    |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `TAURI_SIGNING_PRIVATE_KEY`          | minisign private key for updater signatures. **Must match** `plugins.updater.pubkey` in `tauri.conf.json`. |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | password for that key.                                                                                     |
 
 If the updater key is lost, rotate both the key and the `pubkey` in
 `tauri.conf.json` (old installs won't auto-update across the rotation).
@@ -118,21 +118,21 @@ If the updater key is lost, rotate both the key and the `pubkey` in
 macOS code signing + notarization (only consumed by the macOS matrix legs;
 leave unset to ship an unsigned build — the workflow stays green):
 
-| Secret | Purpose |
-|---|---|
-| `APPLE_CERTIFICATE` | base64 of the exported **Developer ID Application** `.p12`. |
-| `APPLE_CERTIFICATE_PASSWORD` | the password chosen when exporting that `.p12`. |
-| `APPLE_SIGNING_IDENTITY` | full identity name, e.g. `Developer ID Application: NAME (396M7LY29W)`. |
-| `KEYCHAIN_PASSWORD` | any throwaway password for the ephemeral CI keychain. |
-| `APPLE_ID` | Apple ID email used for notarization. |
-| `APPLE_PASSWORD` | an **app-specific** password for that Apple ID (not the account password). |
-| `APPLE_TEAM_ID` | Apple Team ID — `396M7LY29W`. |
+| Secret                       | Purpose                                                                    |
+| ---------------------------- | -------------------------------------------------------------------------- |
+| `APPLE_CERTIFICATE`          | base64 of the exported **Developer ID Application** `.p12`.                |
+| `APPLE_CERTIFICATE_PASSWORD` | the password chosen when exporting that `.p12`.                            |
+| `APPLE_SIGNING_IDENTITY`     | full identity name, e.g. `Developer ID Application: NAME (396M7LY29W)`.    |
+| `KEYCHAIN_PASSWORD`          | any throwaway password for the ephemeral CI keychain.                      |
+| `APPLE_ID`                   | Apple ID email used for notarization.                                      |
+| `APPLE_PASSWORD`             | an **app-specific** password for that Apple ID (not the account password). |
+| `APPLE_TEAM_ID`              | Apple Team ID — `396M7LY29W`.                                              |
 
 ## macOS signing setup (one-time)
 
 1. **Create a Developer ID Application certificate.** On your Mac, Keychain
-   Access → Certificate Assistant → *Request a Certificate From a Certificate
-   Authority* to make a CSR. In the Apple Developer portal
+   Access → Certificate Assistant → _Request a Certificate From a Certificate
+   Authority_ to make a CSR. In the Apple Developer portal
    (Certificates, IDs & Profiles) create a **Developer ID Application**
    certificate, upload the CSR, download the `.cer`, and open it to install
    into your login keychain.

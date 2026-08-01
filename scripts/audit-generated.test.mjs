@@ -65,7 +65,12 @@ async function snapshotFixtureTree(repoRoot) {
       const path = relative(repoRoot, absolutePath).replaceAll("\\", "/");
       const stat = await lstat(absolutePath);
       if (stat.isSymbolicLink()) {
-        snapshot.push({ path, type: "link", mode: stat.mode, target: await readlink(absolutePath) });
+        snapshot.push({
+          path,
+          type: "link",
+          mode: stat.mode,
+          target: await readlink(absolutePath),
+        });
       } else if (stat.isDirectory()) {
         snapshot.push({ path, type: "directory", mode: stat.mode });
         await visit(absolutePath);
@@ -165,12 +170,18 @@ test("Rust/Tauri discovery honors a literal Cargo target-dir and evidenced outpu
     });
     await mkdir(join(repoRoot, "desktop", "src-tauri"), { recursive: true });
     await mkdir(join(repoRoot, "desktop", ".cargo"), { recursive: true });
-    await writeFile(join(repoRoot, "desktop", "src-tauri", "Cargo.toml"), "[package]\nname='app'\n");
+    await writeFile(
+      join(repoRoot, "desktop", "src-tauri", "Cargo.toml"),
+      "[package]\nname='app'\n",
+    );
     await writeFile(
       join(repoRoot, "desktop", "src-tauri", ".gitignore"),
       "/target/\n/gen/schemas\n/sidecar/\n",
     );
-    await writeFile(join(repoRoot, "desktop", ".cargo", "config.toml"), 'target-dir = "cargo-out"\n');
+    await writeFile(
+      join(repoRoot, "desktop", ".cargo", "config.toml"),
+      'target-dir = "cargo-out"\n',
+    );
     await writeJson(join(repoRoot, "desktop", "src-tauri", "tauri.conf.json"), {
       build: { frontendDist: "../dist" },
       bundle: { resources: ["sidecar/"] },
@@ -178,9 +189,7 @@ test("Rust/Tauri discovery honors a literal Cargo target-dir and evidenced outpu
 
     const inspection = await discoverGenerated({ repoRoot });
     assert.deepEqual(artifactPaths(inspection, "tauri"), ["desktop/cargo-out"]);
-    assert.deepEqual(artifactPaths(inspection, "tauri-schemas"), [
-      "desktop/src-tauri/gen/schemas",
-    ]);
+    assert.deepEqual(artifactPaths(inspection, "tauri-schemas"), ["desktop/src-tauri/gen/schemas"]);
     assert.deepEqual(artifactPaths(inspection, "sidecar-deps"), ["desktop/src-tauri/sidecar"]);
     assert.deepEqual(artifactPaths(inspection, "web"), ["desktop/dist"]);
   });
@@ -271,8 +280,12 @@ test("successful audits report missing and present literals deterministically wi
     const first = await captureAudit(repoRoot, "packages");
     const second = await captureAudit(repoRoot, "packages");
     assert.deepEqual(first, second);
-    assert.ok(first.some((line) => line.includes("path=apps/one/dist") && line.includes("present=yes")));
-    assert.ok(first.some((line) => line.includes("path=apps/two/dist") && line.includes("present=no")));
+    assert.ok(
+      first.some((line) => line.includes("path=apps/one/dist") && line.includes("present=yes")),
+    );
+    assert.ok(
+      first.some((line) => line.includes("path=apps/two/dist") && line.includes("present=no")),
+    );
   });
 });
 
@@ -325,7 +338,8 @@ test("spawned inspect and representative audit are deterministic and leave Git s
       join(repoRoot, "scripts", "audit-generated.mjs"),
     );
 
-    const statusBefore = (await execFileAsync("git", ["status", "--short"], { cwd: repoRoot })).stdout;
+    const statusBefore = (await execFileAsync("git", ["status", "--short"], { cwd: repoRoot }))
+      .stdout;
     const inspectOne = (
       await execFileAsync(process.execPath, ["scripts/audit-generated.mjs", "--inspect"], {
         cwd: repoRoot,
@@ -340,8 +354,11 @@ test("spawned inspect and representative audit are deterministic and leave Git s
     const parsed = JSON.parse(inspectOne);
     assert.equal(parsed.cleanupMarkdown, renderCleanupMarkdown(parsed));
 
-    await execFileAsync(process.execPath, ["scripts/audit-generated.mjs", "web"], { cwd: repoRoot });
-    const statusAfter = (await execFileAsync("git", ["status", "--short"], { cwd: repoRoot })).stdout;
+    await execFileAsync(process.execPath, ["scripts/audit-generated.mjs", "web"], {
+      cwd: repoRoot,
+    });
+    const statusAfter = (await execFileAsync("git", ["status", "--short"], { cwd: repoRoot }))
+      .stdout;
     assert.equal(statusAfter, statusBefore);
   });
 });
@@ -375,7 +392,11 @@ test("production source has no filesystem mutators, mutating Git verbs, or actio
     "writeFile",
   ];
   for (const mutator of mutators) {
-    assert.doesNotMatch(source, new RegExp(`\\b${mutator}(?:Sync)?\\s*\\(`), `${mutator} call found`);
+    assert.doesNotMatch(
+      source,
+      new RegExp(`\\b${mutator}(?:Sync)?\\s*\\(`),
+      `${mutator} call found`,
+    );
     assert.doesNotMatch(
       source,
       new RegExp(`import\\s*\\{[^}]*\\b${mutator}(?:Sync)?\\b[^}]*\\}\\s*from\\s*["']node:fs`),

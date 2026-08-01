@@ -22,14 +22,14 @@ Only color and border feedback transition. There is no spatial tab animation, ho
 
 ### Local reuse map
 
-| Need | Existing source | Phase 17 use |
-| --- | --- | --- |
-| Dialog semantics, Escape, focus return | `src/Modal.tsx` | Retain and harden its shared focusable-element filter. |
-| Tabs and roving keyboard behavior | `src/MemoryModal.tsx` | Reuse the tablist/tab/tabpanel pattern, automatic activation, and focus movement conventions. |
-| Notes editors and task lifecycle | `NotesCurrentFocus`, `NotesTaskList`, `NotesHandoff` | Move unchanged beneath destination panels and preserve callbacks. |
-| Persistence diagnostics | `NotesPersistenceStatus` in `src/ProjectNotes.tsx` | Keep fixed above the tab rail with existing live-region wording. |
-| Visual language | `src/App.css` and `src/theme.ts` | Reuse surfaces, borders, radii, form controls, button anatomy, and focus treatment. |
-| Typography and icons | Existing Geist and Lucide setup | Keep existing type roles; add no navigation icons. |
+| Need                                   | Existing source                                      | Phase 17 use                                                                                  |
+| -------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Dialog semantics, Escape, focus return | `src/Modal.tsx`                                      | Retain and harden its shared focusable-element filter.                                        |
+| Tabs and roving keyboard behavior      | `src/MemoryModal.tsx`                                | Reuse the tablist/tab/tabpanel pattern, automatic activation, and focus movement conventions. |
+| Notes editors and task lifecycle       | `NotesCurrentFocus`, `NotesTaskList`, `NotesHandoff` | Move unchanged beneath destination panels and preserve callbacks.                             |
+| Persistence diagnostics                | `NotesPersistenceStatus` in `src/ProjectNotes.tsx`   | Keep fixed above the tab rail with existing live-region wording.                              |
+| Visual language                        | `src/App.css` and `src/theme.ts`                     | Reuse surfaces, borders, radii, form controls, button anatomy, and focus treatment.           |
+| Typography and icons                   | Existing Geist and Lucide setup                      | Keep existing type roles; add no navigation icons.                                            |
 
 ### Content and count contract
 
@@ -68,22 +68,22 @@ Only color and border feedback transition. There is no spatial tab animation, ho
 
 ### State matrix
 
-| State | Required result |
-| --- | --- |
-| Initial open | Overview is selected and focused; exactly one panel is visible. |
-| Populated Overview | Existing edits and task actions remain available; non-zero Roadmap summary fragments appear. |
-| Empty Overview summary | Zero phase/reminder fragments are absent; all tabs remain stable. |
-| Empty Roadmap | Honest no-active-roadmap-work message with no CRUD or session action. |
-| Populated Roadmap | Correct singular/plural passive counts only. |
-| Reference editing | Existing textarea value and sidecar persistence flow remain intact across tab switches. |
-| Archive collapsed/expanded | Disclosure and Restore behavior remain intact across tab switches. |
-| Authoritative rerender | Selected tab and mounted local editor/disclosure state survive. |
-| Project switch | Old modal closes; prior project tab and content cannot leak into the new project. |
-| Save warning/error | Existing live diagnostic stays fixed and visible above navigation. |
-| Long content | Only the selected panel scrolls; shell title, status, and tabs remain fixed. |
-| Narrow/zoomed | Tab rail scrolls horizontally, actions wrap, and no page-level horizontal overflow appears. |
-| Reduced motion | State feedback is immediate with no tab transition. |
-| Forced colors | Selected tab, controls, focus, and boundaries remain distinguishable. |
+| State                      | Required result                                                                              |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| Initial open               | Overview is selected and focused; exactly one panel is visible.                              |
+| Populated Overview         | Existing edits and task actions remain available; non-zero Roadmap summary fragments appear. |
+| Empty Overview summary     | Zero phase/reminder fragments are absent; all tabs remain stable.                            |
+| Empty Roadmap              | Honest no-active-roadmap-work message with no CRUD or session action.                        |
+| Populated Roadmap          | Correct singular/plural passive counts only.                                                 |
+| Reference editing          | Existing textarea value and sidecar persistence flow remain intact across tab switches.      |
+| Archive collapsed/expanded | Disclosure and Restore behavior remain intact across tab switches.                           |
+| Authoritative rerender     | Selected tab and mounted local editor/disclosure state survive.                              |
+| Project switch             | Old modal closes; prior project tab and content cannot leak into the new project.            |
+| Save warning/error         | Existing live diagnostic stays fixed and visible above navigation.                           |
+| Long content               | Only the selected panel scrolls; shell title, status, and tabs remain fixed.                 |
+| Narrow/zoomed              | Tab rail scrolls horizontally, actions wrap, and no page-level horizontal overflow appears.  |
+| Reduced motion             | State feedback is immediate with no tab transition.                                          |
+| Forced colors              | Selected tab, controls, focus, and boundaries remain distinguishable.                        |
 
 ### Release evidence contract
 
@@ -122,13 +122,13 @@ Use flat canvas and bordered containment only where list/detail hierarchy requir
 
 ### Reuse map
 
-| Need | Existing source | Phase 19 use |
-| --- | --- | --- |
-| Notes shell and mounted tabs | `src/NotesModal.tsx` | Keep the Reference panel mounted and let the modal activate it from an empty phase attachment state. |
-| Compact list/detail and focus restoration | `src/NotesRoadmap.tsx` | Match row selection, selected edge, narrow detail recomposition, and return-focus behavior. |
-| Forms and controls | `src/App.css` Notes fields/buttons/selects | Reuse label, input, textarea, button, focus, wrapping, and logical spacing anatomy. |
-| Persistence and live status | `src/useProjectNotes.ts`, `ProjectNotes.tsx` | Route typed ID-based mutations through the optimistic CAS queue and announce results politely. |
-| External URL opening | `@tauri-apps/plugin-opener` | Wrap verified `openUrl(url)` behind one injectable boundary; call it only from `Open source`. |
+| Need                                      | Existing source                              | Phase 19 use                                                                                         |
+| ----------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Notes shell and mounted tabs              | `src/NotesModal.tsx`                         | Keep the Reference panel mounted and let the modal activate it from an empty phase attachment state. |
+| Compact list/detail and focus restoration | `src/NotesRoadmap.tsx`                       | Match row selection, selected edge, narrow detail recomposition, and return-focus behavior.          |
+| Forms and controls                        | `src/App.css` Notes fields/buttons/selects   | Reuse label, input, textarea, button, focus, wrapping, and logical spacing anatomy.                  |
+| Persistence and live status               | `src/useProjectNotes.ts`, `ProjectNotes.tsx` | Route typed ID-based mutations through the optimistic CAS queue and announce results politely.       |
+| External URL opening                      | `@tauri-apps/plugin-opener`                  | Wrap verified `openUrl(url)` behind one injectable boundary; call it only from `Open source`.        |
 
 ### Component and state contract
 
