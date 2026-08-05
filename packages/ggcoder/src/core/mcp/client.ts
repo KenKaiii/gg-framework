@@ -12,7 +12,8 @@ import {
   UnauthorizedError,
 } from "@modelcontextprotocol/client";
 import type { ElicitRequest, ElicitResult } from "@modelcontextprotocol/client";
-import type { AgentTool } from "@kenkaiiii/gg-agent";
+import type { AgentTool, ToolExecuteResult } from "@kenkaiiii/gg-agent";
+import type { ImageContent, TextContent } from "@kenkaiiii/gg-ai";
 import { z } from "zod";
 import http from "node:http";
 import os from "node:os";
@@ -27,6 +28,87 @@ import { McpOAuthStore } from "./oauth-store.js";
 import { isLocalhost, alternateLoopback, isNetworkError } from "./loopback.js";
 import { resolveStdioCommand } from "./resolve-stdio.js";
 import { McpCatalogCache, type ProtocolEra } from "./catalog-cache.js";
+
+/** Media types the providers accept as inline image input. An MCP server may
+ *  legitimately return `image/svg+xml` or a TIFF; those cannot be forwarded, so
+ *  they degrade to a text note instead of being dropped silently. */
+const FORWARDABLE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+/**
+ * Convert an MCP `CallToolResult.content` array into a tool result the agent
+ * loop can hand to the model.
+ *
+ * Text parts pass through unchanged. Image parts (`{ type: "image", data,
+ * mimeType }`) become real {@link ImageContent} so a tool whose entire answer IS
+ * a picture — a screenshot tool, a chart renderer, a design-file exporter —
+ * actually reaches the model. Before this, only `item.text` was collected, so
+ * an image-only response arrived as `(empty response)` and the model was asked
+ * to reason about a picture it never received.
+ *
+ * Anything unmappable is reported as a short text note rather than dropped, so
+ * a silent hole never looks like an empty tool.
+ */
+export async function mcpContentToToolResult(
+  content: readonly unknown[],
+): Promise<ToolExecuteResult> {
+  const parts: (TextContent | ImageContent)[] = [];
+
+  for (const item of content) {
+    if (item == null || typeof item !== "object") continue;
+    const part = item as Record<string, unknown>;
+
+    if (typeof part.text === "string") {
+      parts.push({ type: "text", text: part.text });
+      continue;
+    }
+
+    if (part.type === "image" && typeof part.data === "string") {
+      const mediaType = typeof part.mimeType === "string" ? part.mimeType : "image/png";
+      if (!FORWARDABLE_IMAGE_TYPES.has(mediaType)) {
+        parts.push({ type: "text", text: `(MCP returned an unsupported image type: ${mediaType})` });
+        continue;
+      }
+      parts.push(await fitImagePart(part.data, mediaType));
+      continue;
+    }
+
+    // `{ type: "resource", resource: { text | blob } }` — embedded resources.
+    const resource = part.resource;
+    if (resource != null && typeof resource === "object") {
+      const res = resource as Record<string, unknown>;
+      if (typeof res.text === "string") {
+        parts.push({ type: "text", text: res.text });
+        continue;
+      }
+      const mediaType = typeof res.mimeType === "string" ? res.mimeType : "";
+      if (typeof res.blob === "string" && FORWARDABLE_IMAGE_TYPES.has(mediaType)) {
+        parts.push(await fitImagePart(res.blob, mediaType));
+        continue;
+      }
+    }
+  }
+
+  if (parts.length === 0) return "(empty response)";
+  // Text-only stays a plain string: the existing transcript, truncation and
+  // display paths all handle strings, and nothing gains from wrapping them.
+  if (parts.every((p) => p.type === "text")) {
+    return parts.map((p) => (p as TextContent).text).join("\n") || "(empty response)";
+  }
+  return { content: parts };
+}
+
+/** Downscale an MCP image to the provider's visual budget. Sharp is optional at
+ *  runtime, and a server may hand back something it cannot decode, so any
+ *  failure forwards the original bytes rather than losing the image. */
+async function fitImagePart(base64: string, mediaType: string): Promise<ImageContent> {
+  try {
+    const { shrinkToFit } = await import("../../utils/image.js");
+    const fitted = await shrinkToFit(Buffer.from(base64, "base64"), mediaType);
+    return { type: "image", mediaType: fitted.mediaType, data: fitted.buffer.toString("base64") };
+  } catch {
+    return { type: "image", mediaType, data: base64 };
+  }
+}
 
 interface ConnectedServer {
   name: string;
@@ -569,7 +651,7 @@ export class MCPClientManager {
           // The client the attempt actually ran against, so a failure can be
           // attributed to "my client was replaced" vs "the server hung up".
           let attemptClient = liveClient();
-          const callOnce = async (): Promise<string> => {
+          const callOnce = async (): Promise<ToolExecuteResult> => {
             attemptClient = liveClient();
             const result = await attemptClient.callTool(
               { name: tool.name, arguments: args as Record<string, unknown> },
@@ -578,18 +660,7 @@ export class MCPClientManager {
             if (!("content" in result) || !Array.isArray(result.content)) {
               return "(empty response)";
             }
-            const texts: string[] = [];
-            for (const item of result.content) {
-              if (
-                item != null &&
-                typeof item === "object" &&
-                "text" in item &&
-                typeof item.text === "string"
-              ) {
-                texts.push(item.text);
-              }
-            }
-            return texts.join("\n") || "(empty response)";
+            return mcpContentToToolResult(result.content);
           };
 
           try {
