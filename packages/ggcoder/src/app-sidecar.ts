@@ -81,6 +81,7 @@ import { cleanupToolOutputs } from "./tools/overflow.js";
 import { readCappedBody } from "./utils/http-body.js";
 import {
   fetchSubscriptionUsage,
+  mergePartialSubscriptionUsage,
   MOONSHOT_OAUTH_KEY,
   SubscriptionUsageError,
   XIAOMI_CREDITS_KEY,
@@ -92,6 +93,7 @@ import {
   toModelInfo as localModelInfo,
   type LocalEndpoint,
   type LocalEndpointProbe,
+  type CachedSubscriptionUsageWindow,
   type SubscriptionUsageProvider,
   type SubscriptionUsageSnapshot,
 } from "@kenkaiiii/gg-core";
@@ -904,8 +906,13 @@ async function main(): Promise<void> {
       ctx.broadcast("progress", { ...snapshot, origin: ctx.id === originId });
   });
 
+  type ConnectedUsageResult = SubscriptionUsageSnapshot & {
+    connected: true;
+    error?: never;
+    stale?: boolean;
+  };
   type UsageResult =
-    | (SubscriptionUsageSnapshot & { connected: true; error?: never; stale?: boolean })
+    | ConnectedUsageResult
     | {
         provider: SubscriptionUsageProvider;
         displayName: string;
@@ -920,12 +927,19 @@ async function main(): Promise<void> {
     { expiresAt: number; result: UsageResult }
   >();
   const usageRequests = new Map<SubscriptionUsageProvider, Promise<UsageResult>>();
+  // Keep each window's original observation time. Codex's wham endpoint can
+  // temporarily return only the weekly window; a new weekly response must not
+  // make an old short-term value look fresh forever.
+  const usageWindowCache = new Map<
+    SubscriptionUsageProvider,
+    Map<"current" | "weekly", CachedSubscriptionUsageWindow>
+  >();
   // Last snapshot that actually carried windows, per provider. Replayed while a
   // fetch is failing so the title meter never blinks out of existence. Bounded
   // by USAGE_LAST_GOOD_MAX_AGE_MS — a provider that never recovers must stop
   // reporting rather than freeze a percentage (and a long-past reset time) on
   // screen forever. The 429 backoff alone runs to 24h, far past any usefulness.
-  const usageLastGood = new Map<SubscriptionUsageProvider, UsageResult>();
+  const usageLastGood = new Map<SubscriptionUsageProvider, ConnectedUsageResult>();
   const USAGE_LAST_GOOD_MAX_AGE_MS = 30 * 60_000;
   // 429 backoff: quota endpoints are auxiliary UI data. Honor Retry-After when
   // provided; otherwise retain the unavailable snapshot for 30 minutes. Clamp
@@ -946,13 +960,22 @@ async function main(): Promise<void> {
       // Logged out: drop the replay cache so a later login on a DIFFERENT
       // account can never inherit the previous one's numbers.
       usageLastGood.delete(provider);
+      usageWindowCache.delete(provider);
       return { provider, displayName, connected: false, windows: [], fetchedAt: Date.now() };
     }
     try {
       let credentials = await auth.resolveCredentials(authKey);
       try {
+        const fetched = await fetchSubscriptionUsage(provider, credentials);
+        const cache = usageWindowCache.get(provider) ?? new Map();
+        usageWindowCache.set(provider, cache);
         const snapshot = {
-          ...(await fetchSubscriptionUsage(provider, credentials)),
+          ...mergePartialSubscriptionUsage(
+            fetched,
+            cache,
+            Date.now(),
+            USAGE_LAST_GOOD_MAX_AGE_MS,
+          ),
           connected: true as const,
         };
         usageRateLimitedUntil.delete(provider);
@@ -962,8 +985,16 @@ async function main(): Promise<void> {
         // once on 401, matching inference auth recovery, then retry the usage call.
         if (error instanceof SubscriptionUsageError && error.status === 401) {
           credentials = await auth.resolveCredentials(authKey, { forceRefresh: true });
+          const fetched = await fetchSubscriptionUsage(provider, credentials);
+          const cache = usageWindowCache.get(provider) ?? new Map();
+          usageWindowCache.set(provider, cache);
           const snapshot = {
-            ...(await fetchSubscriptionUsage(provider, credentials)),
+            ...mergePartialSubscriptionUsage(
+              fetched,
+              cache,
+              Date.now(),
+              USAGE_LAST_GOOD_MAX_AGE_MS,
+            ),
             connected: true as const,
           };
           usageRateLimitedUntil.delete(provider);
@@ -1003,7 +1034,26 @@ async function main(): Promise<void> {
       if (lastGood && Date.now() - lastGood.fetchedAt >= USAGE_LAST_GOOD_MAX_AGE_MS) {
         usageLastGood.delete(provider);
       } else if (connected && lastGood) {
-        return { ...lastGood, stale: true };
+        const staleKinds = new Set(lastGood.staleWindowKinds ?? []);
+        const windowCache = usageWindowCache.get(provider);
+        const windows = lastGood.windows.filter((window) => {
+          if (!staleKinds.has(window.kind)) return true;
+          const observed = windowCache?.get(window.kind);
+          return (
+            observed !== undefined &&
+            Date.now() - observed.observedAt < USAGE_LAST_GOOD_MAX_AGE_MS
+          );
+        });
+        if (windows.length > 0) {
+          return {
+            ...lastGood,
+            windows,
+            staleWindowKinds: lastGood.staleWindowKinds?.filter((kind) =>
+              windows.some((window) => window.kind === kind),
+            ),
+            stale: true,
+          };
+        }
       }
       return {
         provider,
@@ -1028,7 +1078,7 @@ async function main(): Promise<void> {
       // Never re-store a replay — it would keep its original `fetchedAt`, but
       // writing it back muddies the "last GOOD" contract for no gain.
       if (result.connected && !result.error && !result.stale && result.windows.length > 0) {
-        usageLastGood.set(provider, result);
+        usageLastGood.set(provider, result as ConnectedUsageResult);
       }
       // Anthropic can return utilization before it assigns reset timestamps
       // (notably before the account's first active request). Retry that partial

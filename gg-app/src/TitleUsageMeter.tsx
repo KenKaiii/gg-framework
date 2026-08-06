@@ -20,10 +20,10 @@ export function TitleUsageMeter({ currentProvider }: { currentProvider: string }
   const [snapshot, setSnapshot] = useState<SubscriptionUsageProviderSnapshot | null>(null);
   const [selection, setSelection] = useState<{
     provider: string;
-    kind: "current" | "weekly";
-  }>({ provider: currentProvider, kind: "current" });
+    kind: "current" | "weekly" | null;
+  }>({ provider: currentProvider, kind: null });
   const [now, setNow] = useState(() => Date.now());
-  const windowKind = selection.provider === currentProvider ? selection.kind : "current";
+  const windowKind = selection.provider === currentProvider ? selection.kind : null;
 
   // Never carry one provider's numbers over to another — clear on switch.
   useEffect(() => {
@@ -74,37 +74,65 @@ export function TitleUsageMeter({ currentProvider }: { currentProvider: string }
   }
 
   const selectedWindow =
-    snapshot.windows.find((window) => window.kind === windowKind) ?? snapshot.windows[0];
-  if (!selectedWindow) return null;
+    windowKind === null
+      ? snapshot.windows[0]
+      : snapshot.windows.find((window) => window.kind === windowKind);
+  const selectedKind = selectedWindow?.kind ?? windowKind;
+  if (!selectedKind) return null;
 
-  const canToggle = snapshot.windows.some((window) => window.kind !== selectedWindow.kind);
-  const percent = Math.min(100, Math.max(0, selectedWindow.usedPercent));
+  const nextKind = selectedKind === "current" ? "weekly" : "current";
+  const nextIsAvailable = snapshot.windows.some((window) => window.kind === nextKind);
+  const nextIsKnownUnavailable = snapshot.unavailableWindowKinds?.includes(nextKind) ?? false;
+  const canToggle = nextIsAvailable || nextIsKnownUnavailable;
+  const unavailable = !selectedWindow;
+  const staleWindow = snapshot.staleWindowKinds?.includes(selectedKind) ?? false;
+  const percent = selectedWindow
+    ? Math.min(100, Math.max(0, selectedWindow.usedPercent))
+    : 0;
   const roundedPercent = Math.round(percent);
-  const reset = compactResetLabel(selectedWindow.resetsAt, now);
-  const nextKind = selectedWindow.kind === "current" ? "weekly" : "current";
+  const reset = selectedWindow ? compactResetLabel(selectedWindow.resetsAt, now) : "unavailable";
+  const label = selectedWindow?.label ?? (selectedKind === "current" ? "Short-term" : "Weekly");
   // `stale` means the sidecar is replaying its last good snapshot because the
-  // provider's quota endpoint is failing (usually a 429). The bar deliberately
-  // stays put rather than flickering out, so say so on hover instead of
-  // presenting old numbers as live ones.
-  const title = `${snapshot.displayName} ${selectedWindow.label}: ${roundedPercent}% used · ${fullResetLabel(selectedWindow.resetsAt, now)}${snapshot.stale ? " · last known — usage is temporarily unavailable" : ""}${canToggle ? ` · Click for ${nextKind} usage` : ""}`;
+  // provider's quota endpoint is failing (usually a 429). A stale window is a
+  // recent value preserved from a partial response. Both remain visible, but
+  // are explicitly identified rather than presented as live numbers.
+  const status = unavailable
+    ? "usage unavailable"
+    : `${roundedPercent}% used · ${fullResetLabel(selectedWindow.resetsAt, now)}`;
+  const staleNote = snapshot.stale
+    ? " · last known — usage is temporarily unavailable"
+    : staleWindow
+      ? " · last known — this window was not included in the latest response"
+      : "";
+  const title = `${snapshot.displayName} ${label}: ${status}${staleNote}${canToggle ? ` · Click for ${nextKind} usage` : ""}`;
 
   return (
     <button
-      className={`title-usage-meter${snapshot.stale ? " is-stale" : ""}`}
+      className={`title-usage-meter${snapshot.stale || staleWindow ? " is-stale" : ""}${unavailable ? " is-unavailable" : ""}`}
       type="button"
       title={title}
       aria-label={title}
-      aria-pressed={selectedWindow.kind === "weekly"}
+      aria-pressed={selectedKind === "weekly"}
       onClick={() => canToggle && setSelection({ provider: currentProvider, kind: nextKind })}
     >
-      <span className="title-usage-window">{shortWindowLabel(selectedWindow)}</span>
+      <span className="title-usage-window">
+        {selectedWindow
+          ? shortWindowLabel(selectedWindow)
+          : selectedKind === "current"
+            ? "short"
+            : "week"}
+      </span>
       <span className="title-usage-track" aria-hidden="true">
-        <span className="title-usage-fill" style={{ width: `${percent}%` }} />
-        <span className="title-usage-particles">
-          {Array.from({ length: 5 }, (_, index) => (
-            <span className="title-usage-particle" key={index} />
-          ))}
-        </span>
+        {!unavailable && (
+          <>
+            <span className="title-usage-fill" style={{ width: `${percent}%` }} />
+            <span className="title-usage-particles">
+              {Array.from({ length: 5 }, (_, index) => (
+                <span className="title-usage-particle" key={`particle-${index}`} />
+              ))}
+            </span>
+          </>
+        )}
       </span>
       <span className="title-usage-reset">{reset}</span>
     </button>

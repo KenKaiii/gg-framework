@@ -80,7 +80,7 @@ describe("TitleUsageMeter", () => {
     expect(getUsageMock).toHaveBeenCalledTimes(2);
   });
 
-  it("renders a weekly-only provider window without a bogus 168h label", async () => {
+  it("toggles a weekly-only Codex response to a truthful unavailable short-term view", async () => {
     getUsageMock.mockResolvedValue({
       provider: "openai",
       displayName: "Codex",
@@ -93,6 +93,7 @@ describe("TitleUsageMeter", () => {
           resetsAt: Date.now() + 6 * 24 * 60 * 60_000,
         },
       ],
+      unavailableWindowKinds: ["current"],
       fetchedAt: Date.now(),
     });
 
@@ -102,6 +103,40 @@ describe("TitleUsageMeter", () => {
     expect(screen.getByText("week")).toBeDefined();
     expect(screen.queryByText("168h")).toBeNull();
     expect(meter.querySelector<HTMLElement>(".title-usage-fill")?.style.width).toBe("11%");
+
+    fireEvent.click(meter);
+    await screen.findByRole("button", { name: /Codex Short-term: usage unavailable/ });
+    expect(screen.getByText("short")).toBeDefined();
+    expect(screen.getByText("unavailable")).toBeDefined();
+    expect(meter.querySelector(".title-usage-fill")).toBeNull();
+    expect(meter.className).toContain("is-unavailable");
+
+    fireEvent.click(meter);
+    await screen.findByRole("button", { name: /Codex Weekly: 11% used/ });
+  });
+
+  it("labels a preserved Codex short-term window as last known", async () => {
+    getUsageMock.mockResolvedValue({
+      provider: "openai",
+      displayName: "Codex",
+      connected: true,
+      windows: [
+        { kind: "current", label: "5-hour", usedPercent: 22 },
+        { kind: "weekly", label: "Weekly", usedPercent: 48 },
+      ],
+      unavailableWindowKinds: ["current"],
+      staleWindowKinds: ["current"],
+      fetchedAt: Date.now(),
+    });
+
+    render(<TitleUsageMeter currentProvider="openai" />);
+
+    const meter = await screen.findByRole("button", {
+      name: /Codex 5-hour: 22% used.*last known.*not included in the latest response/,
+    });
+    expect(meter.className).toContain("is-stale");
+    fireEvent.click(meter);
+    await screen.findByRole("button", { name: /Codex Weekly: 48% used/ });
   });
 
   it("keeps the last good snapshot when a refresh comes back unavailable", async () => {
