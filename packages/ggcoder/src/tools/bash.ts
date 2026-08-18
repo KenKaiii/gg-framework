@@ -32,6 +32,26 @@ const DEFAULT_TIMEOUT = 120_000; // 120 seconds
 const MAX_OUTPUT_BYTES = 10 * 1024 * 1024; // 10 MB — cap buffered output to prevent OOM
 
 /**
+ * Optional command-rewrite hook for the plain foreground spawn path (not
+ * `persist` or `run_in_background` — see the call site for why). Given the
+ * exact string the model asked to run, return a replacement to execute
+ * instead, or `undefined`/`null` to run the command unchanged. Errors are
+ * swallowed by the caller: a throwing rewriter behaves exactly like one that
+ * returned nothing.
+ *
+ * All safety guards (plan mode, catastrophic-command, network policy) run
+ * against the ORIGINAL command before this hook is ever called, so a
+ * rewriter cannot be used to bypass them.
+ *
+ * Intended for callers who want to route commands through an external
+ * compaction tool (e.g. github.com/rtk-ai/rtk, which rewrites common CLI
+ * invocations like `git status` / `ps aux` into token-cheaper equivalents).
+ * Nothing in this package ships such an integration — wiring one in is the
+ * caller's choice, at the `createTools`/`createBashTool` call site.
+ */
+export type CommandRewriter = (command: string) => string | undefined | null;
+
+/**
  * Render command output for the tool result. Over-limit output is compressed
  * (keeps errors + head/tail, collapses repeats) rather than blindly
  * tail-sliced, and the raw output is offloaded to `~/.gg/tool-output/` so the
@@ -118,6 +138,7 @@ export function createBashTool(
   shellOpts?: ResolveShellOpts,
   getNetworkPolicy?: GetNetworkPolicy,
   getSandboxPolicy?: () => SandboxPolicy,
+  rewriteCommand?: CommandRewriter,
 ): AgentTool<typeof BashParams> {
   // Lazily created on the first persist:true call; one session per tool
   // instance (i.e. per agent session), killed when the process exits.
@@ -277,9 +298,26 @@ export function createBashTool(
 
       const effectiveTimeout = timeoutMs ?? DEFAULT_TIMEOUT;
 
+      // Optional rewrite, scoped to ONLY this plain foreground spawn path.
+      // persist=true (stateful shell, tracks cd) and run_in_background=true
+      // (long-running, output read later via task_output) are deliberately
+      // left untouched -- rewriting there risks shell-state or output-timing
+      // bugs for comparatively little benefit, since those paths are already
+      // rarer and the output there is either already truncated/streamed or
+      // tied to `cd`-sensitive session state a rewriter cannot see.
+      let effectiveCommand = command;
+      if (rewriteCommand) {
+        try {
+          effectiveCommand = rewriteCommand(command) ?? command;
+        } catch {
+          // A throwing rewriter must never break or block the original command.
+          effectiveCommand = command;
+        }
+      }
+
       // Cross-platform shell: bash on macOS/Linux, Git Bash on Windows (or
       // cmd.exe fallback), wrapped by the OS sandbox before any child starts.
-      const shell = resolveShell(command, shellOpts);
+      const shell = resolveShell(effectiveCommand, shellOpts);
       let launch: SandboxLaunch;
       try {
         launch = await prepareLaunch(shell);
