@@ -7,7 +7,7 @@ import { createReadTool } from "./read.js";
 import { getVideoByteLimit } from "../core/model-registry.js";
 import { createWriteTool } from "./write.js";
 import { createEditTool } from "./edit.js";
-import { createBashTool } from "./bash.js";
+import { createBashTool, type CommandRewriter } from "./bash.js";
 import { createFindTool } from "./find.js";
 import { createGrepTool } from "./grep.js";
 import { createSearchCodeTool } from "./search-code.js";
@@ -110,6 +110,13 @@ export interface CreateToolsOptions {
   /** Lazily read the OS command-sandbox mode and allowed network domains. */
   getSandboxPolicy?: () => SandboxPolicy;
   /**
+   * Optional rewrite hook for the bash tool's plain foreground spawn path
+   * (git status, ps aux, find, ...). Every safety guard still runs against
+   * the original command first — see `CommandRewriter` in `./bash.js` for
+   * the exact scope and contract. Omitted by default: commands run unchanged.
+   */
+  rewriteCommand?: CommandRewriter;
+  /**
    * Lazily read whether `grep` may use the external `rg` scanner when present
    * (grepUseRipgrep). Defaults to enabled when omitted.
    */
@@ -199,6 +206,7 @@ export async function createTools(
       undefined,
       opts?.getNetworkPolicy,
       ops === localOperations ? opts?.getSandboxPolicy : undefined,
+      opts?.rewriteCommand,
     ),
     createFindTool(cwd),
     createGrepTool(cwd, ops, { useExternalScanner: opts?.getUseExternalGrep }),

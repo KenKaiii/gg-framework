@@ -325,3 +325,113 @@ describe.skipIf(process.platform !== "win32")("createBashTool on real Windows", 
     }
   }, 40_000);
 });
+
+describe("rewriteCommand hook", () => {
+  it("runs the rewritten command instead of the original", async () => {
+    const tool = createBashTool(
+      tmpHome,
+      new ProcessManager(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (command) => (command === "echo original" ? "echo rewritten" : undefined),
+    );
+
+    const result = await tool.execute(
+      { command: "echo original" },
+      { signal: new AbortController().signal, toolCallId: "rewrite-1" },
+    );
+
+    expect(String(result)).toContain("rewritten");
+    expect(String(result)).not.toContain("original");
+  });
+
+  it("falls back to the original command when the rewriter returns undefined", async () => {
+    const tool = createBashTool(
+      tmpHome,
+      new ProcessManager(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => undefined,
+    );
+
+    const result = await tool.execute(
+      { command: "echo untouched" },
+      { signal: new AbortController().signal, toolCallId: "rewrite-2" },
+    );
+
+    expect(String(result)).toContain("untouched");
+  });
+
+  it("falls back to the original command when the rewriter throws", async () => {
+    const tool = createBashTool(
+      tmpHome,
+      new ProcessManager(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => {
+        throw new Error("boom");
+      },
+    );
+
+    const result = await tool.execute(
+      { command: "echo survives" },
+      { signal: new AbortController().signal, toolCallId: "rewrite-3" },
+    );
+
+    expect(String(result)).toContain("survives");
+  });
+
+  it("still refuses a catastrophic command even when a rewriter is configured", async () => {
+    const tool = createBashTool(
+      tmpHome,
+      new ProcessManager(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => "echo this-should-never-run",
+    );
+
+    const result = await tool.execute(
+      { command: "rm -rf /" },
+      { signal: new AbortController().signal, toolCallId: "rewrite-4" },
+    );
+
+    expect(String(result)).toContain("Refusing to run");
+  });
+
+  it("never calls the rewriter for run_in_background commands", async () => {
+    const processManager = new ProcessManager();
+    let calls = 0;
+    const tool = createBashTool(
+      tmpHome,
+      processManager,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (command) => {
+        calls++;
+        return command;
+      },
+    );
+
+    await tool.execute(
+      { command: "echo bg", run_in_background: true },
+      { signal: new AbortController().signal, toolCallId: "rewrite-5" },
+    );
+
+    expect(calls).toBe(0);
+  });
+});
