@@ -650,17 +650,35 @@ export function getSummaryModel(provider: Provider, currentModelId: string): Mod
 }
 
 /**
+ * Cheapest sibling within the SAME provider at the requested `costTier`.
+ *
+ * Routes off each model's `costTier` — the single source of truth that already
+ * travels with the registry entry — so a model rename/bump needs no change
+ * here. A provider with no model at that tier gracefully keeps the current
+ * model, so there's never a crash or a cross-provider jump to a login the user
+ * may not have.
+ *
+ * Note: `costTier` is coarse. A provider whose `high` band holds several models
+ * returns the first registry match — pass an explicit model id when one
+ * specific frontier model is required.
+ */
+export function getModelForTier(
+  provider: Provider,
+  currentModelId: string,
+  tier: ModelInfo["costTier"],
+): ModelInfo {
+  const match = getModelsForProvider(provider).find((m) => m.costTier === tier);
+  return match ?? getModel(currentModelId) ?? getDefaultModel(provider);
+}
+
+/**
  * Fastest/cheapest sibling within the SAME provider, for scout-style read-only
  * sub-agents (recon, research) where a low-latency model is enough and the
  * frontier model is wasted spend + latency.
  *
- * Routes off each model's `costTier` — the single source of truth that already
- * travels with the registry entry — so a model rename/bump needs no change
- * here. Providers with no low-tier sibling (GLM, Moonshot, MiniMax, Xiaomi,
- * Sakana, OpenRouter) gracefully keep the parent model, so there's never a
- * crash or a cross-provider jump to a login the user may not have.
+ * Providers with no low-tier sibling (GLM, Moonshot, MiniMax, Xiaomi, Sakana,
+ * OpenRouter) gracefully keep the parent model.
  */
 export function getFastModel(provider: Provider, currentModelId: string): ModelInfo {
-  const low = getModelsForProvider(provider).find((m) => m.costTier === "low");
-  return low ?? getModel(currentModelId) ?? getDefaultModel(provider);
+  return getModelForTier(provider, currentModelId, "low");
 }
