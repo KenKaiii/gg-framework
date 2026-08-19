@@ -434,4 +434,54 @@ describe("rewriteCommand hook", () => {
 
     expect(calls).toBe(0);
   });
+
+  it("supports an async rewriter that returns a Promise", async () => {
+    // The realistic implementation of this hook routes through an external
+    // CLI, and a synchronous version of that is spawnSync, which blocks the
+    // entire process's event loop -- a real problem for any host running
+    // multiple concurrent sessions in one process. This proves the hook
+    // actually awaits, not just accepts an async-looking signature.
+    const tool = createBashTool(
+      tmpHome,
+      new ProcessManager(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      async (command) => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return command === "echo original" ? "echo rewritten-async" : undefined;
+      },
+    );
+
+    const result = await tool.execute(
+      { command: "echo original" },
+      { signal: new AbortController().signal, toolCallId: "rewrite-6" },
+    );
+
+    expect(String(result)).toContain("rewritten-async");
+  });
+
+  it("falls back to the original command when an async rewriter rejects", async () => {
+    const tool = createBashTool(
+      tmpHome,
+      new ProcessManager(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      async () => {
+        throw new Error("async boom");
+      },
+    );
+
+    const result = await tool.execute(
+      { command: "echo survives-async" },
+      { signal: new AbortController().signal, toolCallId: "rewrite-7" },
+    );
+
+    expect(String(result)).toContain("survives-async");
+  });
 });

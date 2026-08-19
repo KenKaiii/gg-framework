@@ -36,8 +36,19 @@ const MAX_OUTPUT_BYTES = 10 * 1024 * 1024; // 10 MB — cap buffered output to p
  * `persist` or `run_in_background` — see the call site for why). Given the
  * exact string the model asked to run, return a replacement to execute
  * instead, or `undefined`/`null` to run the command unchanged. Errors are
- * swallowed by the caller: a throwing rewriter behaves exactly like one that
- * returned nothing.
+ * swallowed by the caller: a throwing (or rejecting) rewriter behaves exactly
+ * like one that returned nothing.
+ *
+ * May return a Promise. Deliberately: the realistic implementation of this
+ * hook routes through an external CLI (see below), and a synchronous
+ * implementation of that is `spawnSync`, which blocks the *entire* process's
+ * event loop until the child exits. Any host that runs multiple concurrent
+ * sessions/tool-calls in one process — which ggcoder-based UIs commonly do
+ * — would have one session's rewrite stall every other session's tool calls
+ * at the same time, not just its own. `execute()` already awaits this call,
+ * so an async rewriter (using `spawn` instead) costs nothing extra here and
+ * closes off that failure mode by construction rather than relying on every
+ * implementer to know not to use the sync form.
  *
  * All safety guards (plan mode, catastrophic-command, network policy) run
  * against the ORIGINAL command before this hook is ever called, so a
@@ -49,7 +60,9 @@ const MAX_OUTPUT_BYTES = 10 * 1024 * 1024; // 10 MB — cap buffered output to p
  * Nothing in this package ships such an integration — wiring one in is the
  * caller's choice, at the `createTools`/`createBashTool` call site.
  */
-export type CommandRewriter = (command: string) => string | undefined | null;
+export type CommandRewriter = (
+  command: string,
+) => string | undefined | null | Promise<string | undefined | null>;
 
 /**
  * Render command output for the tool result. Over-limit output is compressed
@@ -308,9 +321,10 @@ export function createBashTool(
       let effectiveCommand = command;
       if (rewriteCommand) {
         try {
-          effectiveCommand = rewriteCommand(command) ?? command;
+          effectiveCommand = (await rewriteCommand(command)) ?? command;
         } catch {
-          // A throwing rewriter must never break or block the original command.
+          // A throwing (or rejecting) rewriter must never break or block the
+          // original command.
           effectiveCommand = command;
         }
       }
