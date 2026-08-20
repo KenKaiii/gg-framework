@@ -117,6 +117,7 @@ import chalk from "chalk";
 import { checkAndAutoUpdate } from "./core/auto-update.js";
 
 import { routeCliCommandInput, type CliSubcommandName } from "./cli/command-routing.js";
+import { createRtkRewriter } from "./tools/rtk-rewrite.js";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["low", "medium", "high", "xhigh", "max", "ultra"]);
 
@@ -657,6 +658,9 @@ async function runInkTUI(opts: {
       getModel: () => activeModel,
       getThinkingLevel: () => activeThinking,
       getMaxPerModel: () => opts.subagentMaxPerModel,
+      // Opt-in only (GG_RTK_REWRITE=1); undefined otherwise, so this never
+      // changes default behavior. See tools/rtk-rewrite.ts for what/why.
+      rewriteCommand: createRtkRewriter(),
     },
   );
 
