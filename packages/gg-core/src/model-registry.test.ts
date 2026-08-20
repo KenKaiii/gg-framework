@@ -13,6 +13,7 @@ import {
   getDefaultModel,
   getDefaultThinkingLevel,
   getFastModel,
+  getModelForTier,
   getModelsForProvider,
   getSummaryModel,
   getToolResultCharLimit,
@@ -111,6 +112,43 @@ describe("getFastModel", () => {
   it("picks Haiku for Anthropic and Luna for OpenAI", () => {
     expect(getFastModel("anthropic", "claude-opus-5").costTier).toBe("low");
     expect(getFastModel("openai", "gpt-5.6-sol").id).toBe("gpt-5.6-luna");
+  });
+});
+
+describe("getModelForTier", () => {
+  const TIERS = ["low", "medium", "high"] as const;
+
+  it("returns a model at the requested tier when the provider has one", () => {
+    for (const provider of PROVIDERS) {
+      const current = getDefaultModel(provider);
+      for (const tier of TIERS) {
+        const picked = getModelForTier(provider, current.id, tier);
+        const hasTier = getModelsForProvider(provider).some((m) => m.costTier === tier);
+        if (hasTier) {
+          expect(picked.costTier).toBe(tier);
+        } else {
+          expect(picked.id).toBe(current.id);
+        }
+      }
+    }
+  });
+
+  it("never crosses providers, whatever the tier", () => {
+    for (const provider of PROVIDERS) {
+      const current = getDefaultModel(provider);
+      for (const tier of TIERS) {
+        expect(getModelForTier(provider, current.id, tier).provider).toBe(provider);
+      }
+    }
+  });
+
+  it("agrees with getFastModel on the low tier", () => {
+    for (const provider of PROVIDERS) {
+      const current = getDefaultModel(provider);
+      expect(getModelForTier(provider, current.id, "low").id).toBe(
+        getFastModel(provider, current.id).id,
+      );
+    }
   });
 });
 

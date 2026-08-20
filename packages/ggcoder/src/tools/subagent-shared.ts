@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import type { AgentDefinition } from "../core/agents.js";
-import { getFastModel } from "../core/model-registry.js";
+import { getFastModel, getModelForTier } from "../core/model-registry.js";
 import { truncateTail } from "./truncate.js";
 
 export const SUB_AGENT_MAX_TURNS = 50;
@@ -67,6 +67,12 @@ export function selectSubAgent(
  * research, recon and audit agent always ran on a Haiku-class model, invisibly
  * and with no way to override it. Defaulting to the parent's model instead
  * makes a downgrade opt-in and one line of frontmatter away.
+ *
+ * `model:` accepts, in order: `inherit` (default), `fast` (alias for the
+ * `low` tier), a cost tier keyword (`low` | `medium` | `high`, resolved
+ * within the SAME provider), or an explicit model id passed through
+ * verbatim. A tier keyword is opt-in per agent, same as `fast` always was —
+ * no existing agent's resolved model changes unless its frontmatter says so.
  */
 export function resolveAgentModel(
   agentDef: AgentDefinition | undefined,
@@ -76,6 +82,14 @@ export function resolveAgentModel(
   const preference = agentDef?.model?.trim();
   if (!preference || preference === "inherit") return parentModel;
   if (preference === "fast") return getFastModel(provider, parentModel).id;
+  // A cost tier resolves within the SAME provider, same as `fast` always did
+  // (getFastModel is now `low` under this same mechanism) — no provider jump,
+  // no crash on a provider with no sibling in that band. Anything else is an
+  // explicit model id and passes through verbatim, unchanged from before.
+  const tier = preference.toLowerCase();
+  if (tier === "low" || tier === "medium" || tier === "high") {
+    return getModelForTier(provider, parentModel, tier).id;
+  }
   return preference;
 }
 

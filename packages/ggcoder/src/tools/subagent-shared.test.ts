@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { getDefaultModel, getModelForTier, getModelsForProvider } from "@kenkaiiii/gg-core";
 import type { AgentDefinition } from "../core/agents.js";
 import {
   renderAgentRoster,
   resolveAgentDefinition,
+  resolveAgentModel,
   resolveSubAgentCliEntry,
   selectSubAgent,
   subAgentCacheKey,
@@ -116,5 +118,60 @@ describe("resolveSubAgentCliEntry", () => {
     expect(
       resolveSubAgentCliEntry({ GG_SUBAGENT_WORKER_ENTRY: "/app/error-mom-sidecar.mjs" }),
     ).toBe("/app/error-mom-sidecar.mjs");
+  });
+});
+
+describe("resolveAgentModel — cost tier keywords", () => {
+  const PARENT = "claude-opus-5";
+  const tierId = (provider: Parameters<typeof getModelsForProvider>[0], tier: string) =>
+    getModelsForProvider(provider).find((m) => m.costTier === tier)?.id;
+
+  it("leaves existing preferences byte-identical: unset, inherit, fast, explicit id", () => {
+    expect(resolveAgentModel(undefined, "anthropic", PARENT)).toBe(PARENT);
+    expect(resolveAgentModel(agent({ name: "a" }), "anthropic", PARENT)).toBe(PARENT);
+    expect(resolveAgentModel(agent({ name: "a", model: "inherit" }), "anthropic", PARENT)).toBe(
+      PARENT,
+    );
+    expect(resolveAgentModel(agent({ name: "a", model: "fast" }), "anthropic", PARENT)).toBe(
+      tierId("anthropic", "low"),
+    );
+    expect(
+      resolveAgentModel(agent({ name: "a", model: "claude-sonnet-5" }), "anthropic", PARENT),
+    ).toBe("claude-sonnet-5");
+  });
+
+  it("resolves low/medium/high within the same provider", () => {
+    for (const tier of ["low", "medium", "high"] as const) {
+      expect(resolveAgentModel(agent({ name: "a", model: tier }), "anthropic", PARENT)).toBe(
+        tierId("anthropic", tier),
+      );
+    }
+  });
+
+  it("is case-insensitive", () => {
+    expect(resolveAgentModel(agent({ name: "a", model: "HIGH" }), "anthropic", PARENT)).toBe(
+      tierId("anthropic", "high"),
+    );
+  });
+
+  it("agrees with getModelForTier directly, for every provider", () => {
+    const providers = ["anthropic", "openai", "gemini", "glm", "xai", "moonshot", "local"] as const;
+    for (const provider of providers) {
+      const current = getDefaultModel(provider).id;
+      for (const tier of ["low", "medium", "high"] as const) {
+        expect(resolveAgentModel(agent({ name: "a", model: tier }), provider, current)).toBe(
+          getModelForTier(provider, current, tier).id,
+        );
+      }
+    }
+  });
+
+  it("never crosses providers and never crashes when a tier has no sibling", () => {
+    // gemini has no medium tier registered — must keep the parent model, not
+    // jump to another provider's model or throw.
+    expect(getModelsForProvider("gemini").some((m) => m.costTier === "medium")).toBe(false);
+    expect(
+      resolveAgentModel(agent({ name: "a", model: "medium" }), "gemini", "gemini-3.1-pro-preview"),
+    ).toBe("gemini-3.1-pro-preview");
   });
 });
