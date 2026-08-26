@@ -56,8 +56,11 @@ afterEach(async () => {
   await session?.dispose();
   session = undefined;
   restoreHome?.();
-  await fs.rm(tmpHome, { recursive: true, force: true });
-  await fs.rm(tmpProject, { recursive: true, force: true });
+  // maxRetries: on Windows a just-reaped child's log handle can outlive the
+  // process (background logs live under tmpHome), and a recursive rm then
+  // fails with EBUSY.
+  await fs.rm(tmpHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  await fs.rm(tmpProject, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 async function makeSession(): Promise<GateInternals> {
@@ -72,6 +75,29 @@ async function makeSession(): Promise<GateInternals> {
   });
   await session.initialize();
   return session as unknown as GateInternals;
+}
+
+/**
+ * Wait for a background process to genuinely exit.
+ *
+ * A fixed budget is not a substitute: this test's whole claim is that the agent
+ * read a FINISHED run, and `npm test` cold-starts in ~6s on the Windows runner
+ * — past the 5s the old poll loop allowed, after which it silently continued
+ * and asserted against a still-running process. Fail loudly instead.
+ */
+async function waitForExit(
+  manager: ProcessManager,
+  id: string,
+  timeoutMs = 45_000,
+): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const proc = manager.list().find((entry) => entry.id === id);
+    if (!proc) throw new Error(`Background process ${id} disappeared before it exited.`);
+    if (proc.exitCode !== null) return proc.exitCode;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Background process ${id} did not exit within ${timeoutMs}ms.`);
 }
 
 let callSeq = 0;
@@ -159,13 +185,7 @@ describe("AgentSession verification gate", () => {
     // A real short verification-shaped process; it exits non-zero (empty dir),
     // which is fine — the agent SAW the result, that is what counts.
     const started = await manager.start("npm test", tmpProject);
-    for (
-      let i = 0;
-      i < 100 && manager.list().find((p) => p.id === started.id)?.exitCode === null;
-      i += 1
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
+    await waitForExit(manager, started.id);
 
     await simulateToolCall(internal, "edit", { file_path: "src/a.ts" });
     await simulateToolCall(internal, "bash", {
@@ -176,7 +196,9 @@ describe("AgentSession verification gate", () => {
 
     await simulateToolCall(internal, "task_output", { id: started.id });
     expect(internal.verificationGate.isOwed()).toBe(false); // read of the finished run
-  });
+    // Longer than the 20s default: the assertion below is about a FINISHED run,
+    // and npm's cold start on the Windows runner is measured in seconds.
+  }, 60_000);
 
   it("is disabled by the verificationGateEnabled setting", async () => {
     const internal = await makeSession();

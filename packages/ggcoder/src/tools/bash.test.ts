@@ -20,8 +20,42 @@ beforeEach(async () => {
 
 afterEach(async () => {
   restoreHome?.();
-  await fs.rm(tmpHome, { recursive: true, force: true });
+  // maxRetries: Windows releases a dead child's inherited log handle slightly
+  // after the process itself is gone, which surfaces here as EBUSY.
+  await fs.rm(tmpHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
+
+/**
+ * A background command that lives briefly and exists everywhere. `sleep` is a
+ * coreutils binary, not a shell builtin, so it is not guaranteed on the Windows
+ * shells `resolveShell` may pick; node is, because the test runner is node.
+ */
+const BRIEF_BACKGROUND_COMMAND = `node -e "setTimeout(() => {}, 500)"`;
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `shutdownAll()` only signals the process tree and returns. The child can
+ * still hold its log file under `tmpHome` open for a moment after that, and
+ * afterEach's recursive rm then fails with EBUSY on Windows. Wait for the OS to
+ * actually reap what this test started.
+ */
+async function shutdownAndWait(manager: ProcessManager): Promise<void> {
+  const pids = manager.list().map((proc) => proc.pid);
+  manager.shutdownAll();
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (!pids.some(isProcessAlive)) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Background processes still alive after shutdown: ${pids.join(", ")}`);
+}
 
 async function listSavedOutputs(): Promise<string[]> {
   const root = getToolOutputRoot();
@@ -153,7 +187,7 @@ describe("wake-condition validation", () => {
     const tool = createBashTool(tmpHome, manager);
     const result = await tool.execute(
       {
-        command: "sleep 1",
+        command: BRIEF_BACKGROUND_COMMAND,
         run_in_background: true,
         wake: { pattern: "READY", silence_seconds: 30 },
       },
@@ -161,7 +195,7 @@ describe("wake-condition validation", () => {
     );
     expect(String(result)).toContain("Wake rules armed");
     expect(String(result)).toContain("silence 30s");
-    await manager.shutdownAll();
+    await shutdownAndWait(manager);
   });
 
   it("does not promise a wake when no notification path exists", async () => {
@@ -169,12 +203,12 @@ describe("wake-condition validation", () => {
     const manager = new ProcessManager({ bgDir: `${tmpHome}/bg-noqueue` });
     const tool = createBashTool(tmpHome, manager);
     const result = await tool.execute(
-      { command: "sleep 1", run_in_background: true, wake: { pattern: "READY" } },
+      { command: BRIEF_BACKGROUND_COMMAND, run_in_background: true, wake: { pattern: "READY" } },
       { signal: new AbortController().signal, toolCallId: "wake-4" },
     );
     expect(String(result)).toContain("NOT armed");
     expect(String(result)).toContain("Poll task_output");
-    await manager.shutdownAll();
+    await shutdownAndWait(manager);
   });
 });
 
