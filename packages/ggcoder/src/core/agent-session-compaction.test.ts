@@ -1431,4 +1431,46 @@ describe("load-time auto-compaction deferral (deferLoadCompaction)", () => {
     expect(compactMock).toHaveBeenCalledTimes(1);
     await resumed.dispose();
   });
+
+  // Regression: the credentials resolved on this path only SIZE the context
+  // window, but an expired OAuth token makes resolving them refresh over the
+  // network. With no connectivity the refresh rejected ("fetch failed"),
+  // initialize() rejected with it, the gg-app's session creation failed, and
+  // the window — which therefore never received a port — reported "sidecar did
+  // not start in time" after 30s.
+  it("opens a restored session when the credential refresh cannot reach the network", async () => {
+    const sessionPath = await persistSession();
+
+    // Expire the stored credential so resolution must refresh over the network.
+    const authPath = path.join(tmpHome, ".gg", "auth.json");
+    const auth = JSON.parse(await fs.readFile(authPath, "utf-8")) as Record<
+      string,
+      { expiresAt: number }
+    >;
+    auth["anthropic"]!.expiresAt = Date.now() - 60_000;
+    await writeJson(authPath, auth);
+
+    shouldCompactMock.mockReturnValue(true);
+    compactMock.mockResolvedValue(compactedResult);
+    const offline = vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("fetch failed"));
+
+    try {
+      const { AgentSession } = await import("./agent-session.js");
+      const resumed = new AgentSession({
+        provider: "anthropic",
+        model: "claude-test",
+        cwd: tmpProject,
+        systemPrompt: "system prompt",
+        sessionId: sessionPath,
+      });
+
+      await expect(resumed.initialize()).resolves.toBeUndefined();
+      // Compacting needs a live provider call, so it waits for the first prompt
+      // instead of failing the restore.
+      expect(compactMock).not.toHaveBeenCalled();
+      await resumed.dispose();
+    } finally {
+      offline.mockRestore();
+    }
+  });
 });
