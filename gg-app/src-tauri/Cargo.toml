@@ -32,7 +32,9 @@ tauri-plugin-dialog = "2"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.13", default-features = false, features = ["json", "stream"] }
+# `query` became an opt-in feature in 0.13. No TLS feature on purpose: every
+# request goes to the local sidecar over plain http://127.0.0.1.
+reqwest = { version = "0.13", default-features = false, features = ["json", "query", "stream"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["time"] }
 base64 = "0.23"
