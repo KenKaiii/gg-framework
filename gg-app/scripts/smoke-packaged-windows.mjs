@@ -410,10 +410,20 @@ async function main() {
     });
     appPid = child.pid;
     packagedNode = layout.node;
+    // stdio is ignored (see above), so the exit code is the only crash evidence
+    // this runner can report. Without it a flaky launch and a real startup
+    // crash produce the same one-line failure.
+    let exited = null;
+    child.on("exit", (code, signal) => {
+      exited = { code, signal };
+    });
 
     await waitFor("packaged app window and bundled sidecar", () => {
       if (!processExists(appPid)) {
-        throw new StopWaitingError("packaged app exited early");
+        const how = exited
+          ? `code ${exited.code === null ? "null" : `0x${(exited.code >>> 0).toString(16)}`}, signal ${exited.signal}`
+          : "exit status unknown";
+        throw new StopWaitingError(`packaged app exited early (${how})`);
       }
       const processes = processSnapshot();
       const app = processes.find(
