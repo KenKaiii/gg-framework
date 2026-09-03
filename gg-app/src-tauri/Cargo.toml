@@ -32,9 +32,16 @@ tauri-plugin-dialog = "2"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# `query` became an opt-in feature in 0.13. No TLS feature on purpose: every
-# request goes to the local sidecar over plain http://127.0.0.1.
+# `query` became an opt-in feature in 0.13. We ask for no TLS feature of our
+# own — every request goes to the local sidecar over plain http://127.0.0.1 —
+# but tauri-plugin-updater turns on reqwest's `rustls-no-provider`, and cargo
+# unifies features across the shared 0.13 build. So OUR client is a rustls
+# client too, and building one panics unless a crypto provider is installed
+# first. See `install_rustls_provider` in lib.rs.
 reqwest = { version = "0.13", default-features = false, features = ["json", "query", "stream"] }
+# Only to install that provider. `ring` is the same backend (and version) the
+# updater already pulls in, so this adds no crates to the build.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["time"] }
 base64 = "0.23"
