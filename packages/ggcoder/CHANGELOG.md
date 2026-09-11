@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.59.1
+
+### Patch Changes
+
+- Reduce repeated verification hooks by separating edit diagnostics from completion checks, sharing background-check results with Autopilot, and preserving verification after builds that leave source unchanged.
+  - @kenkaiiii/gg-ai@5.59.1
+  - @kenkaiiii/gg-agent@5.59.1
+  - @kenkaiiii/gg-core@5.59.1
+
 ## 5.59.0
 
 ### Minor Changes
