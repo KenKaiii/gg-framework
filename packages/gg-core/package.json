@@ -42,7 +42,7 @@
   },
   "optionalDependencies": {
     "@huggingface/transformers": "^3.6.0",
-    "ogg-opus-decoder": "^1.6.13"
+    "ogg-opus-decoder": "^1.7.5"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
