@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.63.3",
+    date: "2026-09-11",
+    items: [
+      "I fixed a sneaky edit bug that could corrupt your code. Global `replace_all` edits now replace each match exactly once, so you stop seeing duplicate properties or half-finished changes that leave the agent chasing `TypeScript` errors it created itself. Fewer repair loops, cleaner diffs, faster finishes.",
+      "Your chat stays clean while the agent works. I pulled the raw post-edit diagnostic dumps out of the conversation, so edits that check out no longer spray gray error walls mid-reply. The agent still sees every real problem and fixes it, you just read the result instead of the noise.",
+    ],
+  },
+  {
     version: "0.63.2",
     date: "2026-09-11",
     items: [
