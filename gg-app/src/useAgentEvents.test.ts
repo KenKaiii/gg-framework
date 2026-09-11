@@ -463,6 +463,43 @@ describe("useAgentEvents", () => {
     expect(items[0]).toMatchObject({ kind: "assistant", text: "Hello world" });
   });
 
+  it("shows diagnostic feedback without discarding plan progress or announcing completion", () => {
+    const { hook, getItems } = setup();
+    act(() => {
+      hook.result.current.handleEvent(ev("text_delta", { text: "[DONE:2]" }));
+      hook.result.current.handleEvent(
+        ev("diagnostics", { text: "Diagnostics in a.ts: type mismatch" }),
+      );
+      hook.result.current.handleEvent(ev("text_delta", { text: "Continuing step 3." }));
+      hook.result.current.endStreamingText();
+    });
+    expect(getItems()).toEqual([
+      expect.objectContaining({ kind: "assistant", text: "[DONE:2]" }),
+      expect.objectContaining({ kind: "info", text: "Diagnostics in a.ts: type mismatch" }),
+      expect.objectContaining({ kind: "assistant", text: "Continuing step 3." }),
+    ]);
+  });
+
+  it("does not release an armed final draft when diagnostics arrive", () => {
+    const { hook, getItems } = setup();
+    act(() => {
+      hook.result.current.handleEvent(ev("hook_armed", { kind: "verification", armed: true }));
+      hook.result.current.handleEvent(ev("text_delta", { text: "Unverified draft" }));
+      hook.result.current.handleEvent(
+        ev("diagnostics", { text: "Diagnostics in a.ts: type mismatch" }),
+      );
+    });
+    expect(getItems()).toEqual([
+      expect.objectContaining({ kind: "info", text: "Diagnostics in a.ts: type mismatch" }),
+    ]);
+    act(() => {
+      hook.result.current.handleEvent(ev("hook", { kind: "verification" }));
+      hook.result.current.handleEvent(ev("hook_armed", { kind: "verification", armed: false }));
+      hook.result.current.endStreamingText();
+    });
+    expect(getItems().some((item) => item.kind === "assistant")).toBe(false);
+  });
+
   it("discards a draft the late-arming fallback could not hold back", () => {
     const { hook, getItems } = setup();
 

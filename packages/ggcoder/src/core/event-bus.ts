@@ -50,6 +50,9 @@ export interface BusEventMap {
   server_tool_call: { id: string; name: string; input: unknown };
   server_tool_result: { toolUseId: string; resultType: string; data: unknown };
 
+  /** Informational edit feedback, not a completion gate or a draft replacement. */
+  diagnostics: { text: string };
+
   // Agent self-correction hooks (ideal review / verification / loop-break /
   // re-grounding). Carries only the semantic kind; the presentation layer owns
   // text + color.

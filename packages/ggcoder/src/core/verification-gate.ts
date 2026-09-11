@@ -27,6 +27,7 @@
 import type { Message } from "@kenkaiiii/gg-ai";
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import type { VerificationEvidence } from "./verification-evidence.js";
 
 export const VERIFICATION_STATE_KIND = "verification_state";
 const verificationStateSchema = z.object({
@@ -487,6 +488,39 @@ export class VerificationGate {
    * was the thing edited.
    */
   private suspects = new Map<string, string>();
+  private evidenceRecords = new Map<string, VerificationEvidence & { revision: number }>();
+
+  private rememberEvidence(
+    command: string,
+    status: VerificationEvidence["status"],
+    reason: string,
+    revision = this.revision,
+  ): void {
+    const key = checkKey(command);
+    if ((this.evidenceRecords.get(key)?.revision ?? -1) > revision) return;
+    this.evidenceRecords.delete(key);
+    this.evidenceRecords.set(key, {
+      command: command.slice(0, 2000),
+      status,
+      reason: reason.slice(0, 1000),
+      revision,
+    });
+    if (this.evidenceRecords.size > 64)
+      this.evidenceRecords.delete(this.evidenceRecords.keys().next().value!);
+  }
+
+  /** The same host-observed results used by the completion gate, not a second transcript verdict. */
+  evidence(): VerificationEvidence[] {
+    return [...this.evidenceRecords.values()].map(({ revision, ...entry }) =>
+      revision === this.revision
+        ? entry
+        : {
+            ...entry,
+            status: "rejected",
+            reason: "Superseded: result belongs to an earlier source revision",
+          },
+    );
+  }
 
   /**
    * @param addedText Text the model ADDED in this mutation (the `+` lines of a
@@ -517,6 +551,12 @@ export class VerificationGate {
   recordVerification(revision = this.revision, command = "verification"): void {
     // A check that started before a later edit cannot verify that edit.
     if (revision !== this.revision) return;
+    this.rememberEvidence(
+      command,
+      "passed",
+      "Host-observed successful exit at the current source revision",
+      revision,
+    );
     const key = checkKey(command);
     this.passedChecks.set(key, revision);
     // Eviction may require an extra check; it can never create an approval.
@@ -547,6 +587,7 @@ export class VerificationGate {
     // recordVerification, because it verified newer code.
     if ((this.passedChecks.get(key) ?? -1) > revision) return;
     this.failedChecks.set(key, revision);
+    this.rememberEvidence(command, "failed", "Host-observed unsuccessful exit", revision);
   }
 
   requireFreshVerification(invalidateRevision = false, cause?: string): void {
@@ -563,6 +604,7 @@ export class VerificationGate {
    *  explanation. Command text is model-authored: capped, never executed. */
   recordRejectedCheck(command: string, reason: string): void {
     if (!command.trim() || !reason.trim()) return;
+    this.rememberEvidence(command, "rejected", reason);
     this.lastRejectedCheck = {
       command: command.trim().slice(0, 200),
       reason: reason.trim().slice(0, 200),
@@ -743,6 +785,7 @@ export class VerificationGate {
     this.suspects.clear();
     this.failedChecks.clear();
     this.passedChecks.clear();
+    this.evidenceRecords.clear();
     this.unknownVerification = false;
     this.runTouched = false;
     this.lastRejectedCheck = null;

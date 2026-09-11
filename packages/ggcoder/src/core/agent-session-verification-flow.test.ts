@@ -17,12 +17,15 @@ import { useFakeHome } from "../test-support/fake-home.js";
 import type { AgentEvent } from "@kenkaiiii/gg-agent";
 import type { AgentSession } from "./agent-session.js";
 import type { ProcessManager } from "./process-manager.js";
+import { buildKenAutopilotContext } from "./ken-context.js";
+import type { VerificationEvidence } from "./verification-evidence.js";
 
 interface FlowInternals {
   sessionPath: string;
   processManager: ProcessManager;
   getHookFollowUpMessages(): Promise<Message[] | null>;
   getVerificationProblem(): string | null;
+  getVerificationEvidence(): VerificationEvidence[];
   trackHookEvent(event: AgentEvent): Promise<void>;
   eventBus: {
     on(event: string, handler: (data: Record<string, unknown>) => void): () => void;
@@ -106,7 +109,154 @@ async function simulateToolCall(
   } as unknown as AgentEvent);
 }
 
+async function prepareBuildProject(build: string): Promise<void> {
+  execFileSync("git", ["init", "--quiet"], { cwd: tmpProject });
+  await fs.writeFile(path.join(tmpProject, ".gitignore"), "dist/\n");
+  await fs.writeFile(path.join(tmpProject, "subject.mjs"), "export const value = 1;\n");
+  await fs.writeFile(
+    path.join(tmpProject, "verification.test.mjs"),
+    "import assert from 'node:assert/strict'; import {value} from './subject.mjs'; assert.equal(value, 1);\n",
+  );
+  await fs.writeFile(path.join(tmpProject, "build.mjs"), build);
+  await fs.writeFile(
+    path.join(tmpProject, "package.json"),
+    JSON.stringify({
+      scripts: {
+        check: "node --test verification.test.mjs",
+        build: "node build.mjs",
+      },
+    }),
+  );
+}
+
+async function runRealCheck(
+  internal: FlowInternals,
+  command: string,
+  background = false,
+  poll = true,
+): Promise<void> {
+  const toolCallId = `real-${Math.random()}`;
+  await internal.trackHookEvent({
+    type: "tool_call_start",
+    toolCallId,
+    name: "bash",
+    args: { command, run_in_background: background },
+  } as AgentEvent);
+  const proc = await internal.processManager.start(command, tmpProject);
+  if (background) {
+    await internal.trackHookEvent({
+      type: "tool_call_end",
+      toolCallId,
+      result: `ID: ${proc.id}\n`,
+      isError: false,
+      durationMs: 1,
+    } as AgentEvent);
+  }
+  expect(await internal.processManager.waitForExitOrWake(proc.id, 30_000)).toBe("exited");
+  if (background) {
+    if (poll) await simulateToolCall(internal, "task_output", { id: proc.id });
+  } else {
+    const exitCode = internal.processManager.list().find((p) => p.id === proc.id)!.exitCode;
+    await internal.trackHookEvent({
+      type: "tool_call_end",
+      toolCallId,
+      result: `Exit code: ${exitCode}\n`,
+      isError: exitCode !== 0,
+      durationMs: 1,
+    } as AgentEvent);
+  }
+}
+
+const artifactBuild =
+  "import fs from 'node:fs'; fs.mkdirSync('dist', {recursive:true}); fs.writeFileSync('dist/app.js', 'generated');\n";
+
 describe("verification gate flow", () => {
+  it("collects a completed background build/check without demanding a polling turn", async () => {
+    await prepareBuildProject(artifactBuild);
+    const { internal, events } = await makeSession();
+    await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+    await runRealCheck(internal, "npm run check && npm run build", true, false);
+    expect(await internal.getHookFollowUpMessages()).toBeNull();
+    expect(internal.getVerificationProblem()).toBeNull();
+    expect(events.filter((event) => event.startsWith("hook:"))).toEqual([]);
+    expect(internal.getVerificationEvidence()).toContainEqual(
+      expect.objectContaining({ status: "passed" }),
+    );
+  });
+
+  it("collects an unread failed background check as a failure, never as success", async () => {
+    await prepareBuildProject("process.exit(1);\n");
+    const { internal } = await makeSession();
+    await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+    await runRealCheck(internal, "npm run build", true, false);
+    await internal.getHookFollowUpMessages();
+    expect(internal.getVerificationProblem()).toContain("failed");
+    expect(internal.getVerificationEvidence()).toContainEqual(
+      expect.objectContaining({ status: "failed" }),
+    );
+  });
+
+  it("does not repeat verification after a real artifact-only build", async () => {
+    await prepareBuildProject(artifactBuild);
+    const { internal, events } = await makeSession();
+    await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+    await runRealCheck(internal, "npm run check");
+    await runRealCheck(internal, "npm run build");
+    expect(await fs.readFile(path.join(tmpProject, "dist/app.js"), "utf8")).toBe("generated");
+    expect(internal.getVerificationProblem()).toBeNull();
+    expect(await internal.getHookFollowUpMessages()).toBeNull();
+    expect(events.filter((e) => e.startsWith("hook:"))).toEqual([]);
+  });
+
+  it("accepts a real background check/build chain in both the gate and Ken's digest", async () => {
+    await prepareBuildProject(artifactBuild);
+    const { internal } = await makeSession();
+    await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+    const command = "npm run check && npm run build";
+    await runRealCheck(internal, command, true);
+    expect(internal.getVerificationProblem()).toBeNull();
+    expect(await internal.getHookFollowUpMessages()).toBeNull();
+    const digest = buildKenAutopilotContext({
+      cwd: tmpProject,
+      gitBranch: null,
+      messages: [],
+      verificationEvidence: internal.getVerificationEvidence(),
+    });
+    expect(digest).toContain(`PASSED: \`${command}\``);
+  });
+
+  it("still invalidates checks when a real build rewrites source", async () => {
+    await prepareBuildProject(
+      "import fs from 'node:fs'; fs.writeFileSync('subject.mjs', 'export const value = 2;');\n",
+    );
+    const { internal } = await makeSession();
+    await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+    await runRealCheck(internal, "npm run check");
+    await runRealCheck(internal, "npm run build");
+    expect(internal.getVerificationProblem()).toContain("Unverified");
+    const digest = buildKenAutopilotContext({
+      cwd: tmpProject,
+      gitBranch: null,
+      messages: [],
+      verificationEvidence: internal.getVerificationEvidence(),
+    });
+    expect(digest).not.toContain("PASSED:");
+    await runRealCheck(internal, "npm run check");
+    expect(internal.getVerificationProblem()).toContain("failed");
+  });
+
+  it("never treats a failed build as verified just because source is unchanged", async () => {
+    await prepareBuildProject("process.exit(1);\n");
+    const { internal } = await makeSession();
+    await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+    await runRealCheck(internal, "npm run check");
+    await runRealCheck(internal, "npm run build", true);
+    expect(internal.getVerificationProblem()).toContain("failed");
+    expect(internal.getVerificationEvidence()).toContainEqual(
+      expect.objectContaining({ command: "npm run build", status: "failed" }),
+    );
+  });
+
   it("arms before the draft streams, then announces itself when it injects", async () => {
     const { internal, events } = await makeSession();
 
@@ -340,6 +490,14 @@ describe("verification gate flow", () => {
     expect(await internal.processManager.waitForExitOrWake(started.id, 30_000)).toBe("exited");
     await simulateToolCall(internal, "task_output", { id: started.id });
     expect(internal.getVerificationProblem()).toBeNull();
+    const digest = buildKenAutopilotContext({
+      cwd: tmpProject,
+      gitBranch: null,
+      messages: [],
+      verificationEvidence: internal.getVerificationEvidence(),
+    });
+    expect(digest).toContain(`PASSED: \`${command}\``);
+    expect(digest).not.toContain("background or persistent commands are not bounded evidence");
   });
 
   it("persists unresolved verification and requires fresh evidence after resuming", async () => {

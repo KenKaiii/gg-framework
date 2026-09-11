@@ -18,7 +18,7 @@
  */
 import type { Message, ContentPart, ToolResult } from "@kenkaiiii/gg-ai";
 import { matchExpandedCommand, type WorkflowCommandSpec } from "./autopilot-gate.js";
-import { collectVerificationEvidence } from "./verification-evidence.js";
+import { collectVerificationEvidence, type VerificationEvidence } from "./verification-evidence.js";
 
 /** How many of the most recent build-session messages to inline verbatim. */
 export const KEN_RECENT_MESSAGE_LIMIT = 20;
@@ -47,6 +47,10 @@ export interface KenDigestInput {
   gitBranch: string | null;
   /** Build session messages (`buildSession.getMessages()`). */
   messages: Message[];
+  /** Authoritative current-revision results from the build session's gate. */
+  verificationEvidence?: readonly VerificationEvidence[];
+  /** null means the host gate is satisfied; undefined means no live host state. */
+  verificationProblem?: string | null;
   /** Platform string (defaults to process.platform). */
   platform?: string;
   /** Override the recent-message cap (tests). */
@@ -311,8 +315,10 @@ export function buildKenDigest(input: KenDigestInput): string {
     }`,
   );
 
-  const verificationEvidence = collectVerificationEvidence(afterSummary).slice(-12);
-  if (verificationEvidence.length > 0) {
+  const verificationEvidence = (
+    input.verificationEvidence ?? collectVerificationEvidence(afterSummary)
+  ).slice(-12);
+  if (verificationEvidence.length > 0 || input.verificationEvidence !== undefined) {
     const rows = verificationEvidence.map(
       (evidence) =>
         `- ${evidence.status.toUpperCase()}: \`${cap(evidence.command, 180)}\` — ${evidence.reason}`,
@@ -320,6 +326,13 @@ export function buildKenDigest(input: KenDigestInput): string {
     sections.push(
       "## Harness-classified verification evidence\n" +
         "Only PASSED entries below count as bounded verification evidence; model-authored claims do not.\n" +
+        (input.verificationEvidence !== undefined
+          ? "These are the completion gate's host-observed results, including completed background checks. " +
+            "Do not reclassify them from launch text or demand foreground reruns. A build pass does not imply tests ran.\n"
+          : "") +
+        (input.verificationProblem !== undefined
+          ? `Current host gate: ${input.verificationProblem ?? "satisfied; do not require reruns merely because older checks failed or named records were not retained across restart"}.\n`
+          : "") +
         rows.join("\n"),
     );
   }

@@ -12,6 +12,8 @@ export interface VerificationCommandClassification {
    * must NOT poison the revision — its green output is merely not evidence. */
   mayMutate: boolean;
   reason: string;
+  /** Still rejected by transcript parsing; only the live host can prove unchanged inputs. */
+  snapshotEligible?: boolean;
 }
 
 export interface VerificationEvidence {
@@ -229,7 +231,25 @@ function classifyPackageRunner(tokens: readonly string[]): VerificationCommandCl
   const script = tokens[scriptIndex]?.toLowerCase();
   if (!script) return rejected(false, "package runner has no script");
   if (UNSAFE_PACKAGE_SCRIPTS.test(script)) {
-    return rejected(true, "mutating, artifact-producing, or long-running package script", true);
+    const result = rejected(
+      true,
+      "mutating, artifact-producing, or long-running package script",
+      true,
+    );
+    const flags = lowerFlags(tokens.slice(scriptIndex + 1));
+    // Only ordinary builds qualify, and only with a host-owned before/after
+    // snapshot. Never infer safety for fixers, watchers or another directory.
+    if (
+      script === "build" &&
+      !tokens.some((token) =>
+        /^(?:--dir|--prefix|--cwd|-C|-c|-w|--workspace-root)(?:=|$)/.test(token),
+      ) &&
+      !hasFlag(flags, LONG_RUNNING_FLAGS) &&
+      !hasFlag(flags, MUTATING_FLAGS) &&
+      !hasFlag(flags, AMBIGUOUS_FLAGS)
+    )
+      result.snapshotEligible = true;
+    return result;
   }
   if (!SAFE_PACKAGE_SCRIPTS.test(script)) {
     // pnpm permits omitting exec for installed binaries, e.g. pnpm vitest run.
@@ -311,11 +331,18 @@ export function classifyVerificationCommand(command: string): VerificationComman
   });
   const firstRejected = results.find((result) => !result.accepted);
   if (firstRejected) {
-    return rejected(
-      results.some((result) => result.candidate),
+    const result = rejected(
+      results.some((entry) => entry.candidate),
       firstRejected.reason,
-      firstRejected.mayMutate,
+      results.some((entry) => entry.mayMutate),
     );
+    if (
+      results.every((entry) => entry.accepted || entry.snapshotEligible) &&
+      !results.some((entry) => entry.reason === "working-directory prelude")
+    ) {
+      result.snapshotEligible = true;
+    }
+    return result;
   }
   return accepted(segments.length === 1 ? results[0].reason : "bounded verification command chain");
 }

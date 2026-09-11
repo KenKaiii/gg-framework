@@ -1168,6 +1168,15 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           schedulePromotionEnd();
           break;
         }
+        case "diagnostics": {
+          const text = typeof d.text === "string" ? d.text : "";
+          if (!text) break;
+          // Feedback must not use the hook path: that discards the current
+          // answer (including plan markers). Leave any armed final draft held.
+          endStreamingText();
+          pushItem({ kind: "info", id: nextId(), text }, { skipIfSameAsLast: true });
+          break;
+        }
         case "hook_armed": {
           // Pre-final hooks hold text back; other hooks are mid-loop.
           const armedKind = String(d.kind ?? "ideal");
