@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.63.2",
+    date: "2026-09-11",
+    items: [
+      "Know where you stand without reading the whole reply. I made your agent lead with a clear status like `DONE`, `NOT FIXED`, or `NEEDS APPROVAL`, followed by what you need to do next. Finished work, remaining limits, and updates still waiting to ship no longer get buried.",
+      "I cut another source of repeat `verification` interruptions. Your agent now keeps credit for completed checks when a follow-up command leaves your code untouched, without treating that follow-up as proof of fresh checks.",
+      "No more chasing an image setting that cannot deliver. I made `Flare` and `Sunburst` explain up front that `transparent backgrounds` are currently unavailable through your ChatGPT connection, instead of retrying the same failed request or quietly giving you an opaque image.",
+    ],
+  },
+  {
     version: "0.63.1",
     date: "2026-09-11",
     items: [
