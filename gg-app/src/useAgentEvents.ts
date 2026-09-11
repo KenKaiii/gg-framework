@@ -1169,12 +1169,9 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           break;
         }
         case "diagnostics": {
-          const text = typeof d.text === "string" ? d.text : "";
-          if (!text) break;
-          // Feedback must not use the hook path: that discards the current
-          // answer (including plan markers). Leave any armed final draft held.
-          endStreamingText();
-          pushItem({ kind: "info", id: nextId(), text }, { skipIfSameAsLast: true });
+          // Raw post-edit feedback belongs to the agent, not the conversation.
+          // The session still delivers it to the model and enforces verification;
+          // don't add chat rows, split streamed answers, or release held drafts.
           break;
         }
         case "hook_armed": {

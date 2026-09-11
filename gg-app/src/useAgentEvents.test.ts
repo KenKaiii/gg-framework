@@ -463,7 +463,7 @@ describe("useAgentEvents", () => {
     expect(items[0]).toMatchObject({ kind: "assistant", text: "Hello world" });
   });
 
-  it("shows diagnostic feedback without discarding plan progress or announcing completion", () => {
+  it("keeps raw diagnostics out of chat without interrupting plan progress", () => {
     const { hook, getItems } = setup();
     act(() => {
       hook.result.current.handleEvent(ev("text_delta", { text: "[DONE:2]" }));
@@ -474,10 +474,22 @@ describe("useAgentEvents", () => {
       hook.result.current.endStreamingText();
     });
     expect(getItems()).toEqual([
-      expect.objectContaining({ kind: "assistant", text: "[DONE:2]" }),
-      expect.objectContaining({ kind: "info", text: "Diagnostics in a.ts: type mismatch" }),
-      expect.objectContaining({ kind: "assistant", text: "Continuing step 3." }),
+      expect.objectContaining({ kind: "assistant", text: "[DONE:2]Continuing step 3." }),
     ]);
+  });
+
+  it("does not add chat rows for repeated diagnostic or timeout notices", () => {
+    const { hook, getItems } = setup();
+    act(() => {
+      for (const text of [
+        "Post-edit diagnostics for the latest queued changes:\nL16:30 Expected 1 arguments, but got 4.",
+        "a.ts: diagnostics timeout; not verified. Run the project checks.",
+        "a.ts: diagnostics timeout; not verified. Run the project checks.",
+      ]) {
+        hook.result.current.handleEvent(ev("diagnostics", { text }));
+      }
+    });
+    expect(getItems()).toEqual([]);
   });
 
   it("does not release an armed final draft when diagnostics arrive", () => {
@@ -489,9 +501,7 @@ describe("useAgentEvents", () => {
         ev("diagnostics", { text: "Diagnostics in a.ts: type mismatch" }),
       );
     });
-    expect(getItems()).toEqual([
-      expect.objectContaining({ kind: "info", text: "Diagnostics in a.ts: type mismatch" }),
-    ]);
+    expect(getItems()).toEqual([]);
     act(() => {
       hook.result.current.handleEvent(ev("hook", { kind: "verification" }));
       hook.result.current.handleEvent(ev("hook_armed", { kind: "verification", armed: false }));
