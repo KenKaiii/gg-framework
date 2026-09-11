@@ -4,6 +4,7 @@ import type { AgentTool } from "@kenkaiiii/gg-agent";
 import { resolvePath, rejectSymlink } from "./path-utils.js";
 import {
   fuzzyFindText,
+  normalizeForFuzzyMatch,
   countOccurrences,
   generateDiff,
   findClosestSnippet,
@@ -163,19 +164,22 @@ type MatchResult = MatchSuccess | MatchFailure;
 function tryMatch(working: string, old: string, next: string, replaceAll: boolean): MatchResult {
   if (old.length === 0) return { ok: false, reason: "not_found" };
 
-  const occurrences = countOccurrences(working, old);
+  const occurrences = countOccurrences(working, old, !replaceAll);
 
   if (replaceAll && occurrences > 0) {
-    let newWorking = working;
-    let replaced = 0;
-    while (replaced < occurrences) {
-      const match = fuzzyFindText(newWorking, old);
-      if (!match.found) break;
-      newWorking =
-        newWorking.slice(0, match.index) + next + newWorking.slice(match.index + match.matchLength);
-      replaced++;
+    const parts: string[] = [];
+    let cursor = 0;
+    // Search only untouched input: replacements can contain old_text or create
+    // new matches at their boundaries, neither of which belongs to this edit.
+    for (let replaced = 0; replaced < occurrences; replaced++) {
+      const match = fuzzyFindText(working.slice(cursor), old);
+      if (!match.found || match.matchLength === 0) return { ok: false, reason: "not_found" };
+      const start = cursor + match.index;
+      parts.push(working.slice(cursor, start), next);
+      cursor = start + match.matchLength;
     }
-    return replaced === occurrences ? { ok: true, newWorking } : { ok: false, reason: "not_found" };
+    parts.push(working.slice(cursor));
+    return { ok: true, newWorking: parts.join("") };
   }
 
   if (occurrences === 0) return { ok: false, reason: "not_found" };
@@ -367,6 +371,20 @@ export function createEditTool(
           continue;
         }
 
+        if (
+          normalizedOld.length === 0 ||
+          (!working.includes(normalizedOld) && normalizeForFuzzyMatch(normalizedOld).length === 0)
+        ) {
+          outcomes[i] = {
+            ok: false,
+            failure: {
+              reason: "invalid",
+              detail: "old_text is empty after normalization; provide visible surrounding context.",
+            },
+          };
+          continue;
+        }
+
         // Aider's full fallback ladder, run only when the primary match
         // returns "not_found". Ambiguous matches deliberately don't fall
         // through — the model needs to add context, not paraphrase further.
@@ -407,6 +425,17 @@ export function createEditTool(
         }
 
         if (!result.ok && result.reason === "not_found") {
+          if (replaceAll && /^[ \t]*\.\.\.[ \t]*$/m.test(normalizedOld)) {
+            outcomes[i] = {
+              ok: false,
+              failure: {
+                reason: "invalid",
+                detail:
+                  "replace_all does not support ... elision; use complete matching text or separate uniquely anchored edits.",
+              },
+            };
+            continue;
+          }
           const elided = applyDotdotdots(working, normalizedOld, normalizedNew);
           if (elided !== null) {
             result = { ok: true, newWorking: elided };

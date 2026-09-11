@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import {
   fuzzyFindText,
   countOccurrences,
@@ -13,6 +15,60 @@ import {
 } from "./edit-diff.js";
 
 describe("fuzzyFindText", () => {
+  it("bounds empty and normalization-empty occurrence searches", async () => {
+    // A synchronous matching loop cannot be interrupted by Vitest's timeout.
+    // Exercise the actual source in a killable subprocess instead.
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      [
+        "--import",
+        import.meta.resolve("tsx"),
+        "--input-type=module",
+        "--eval",
+        `import { countOccurrences } from ${JSON.stringify(new URL("./edit-diff.ts", import.meta.url).href)};
+       import { createEditTool } from ${JSON.stringify(new URL("./edit.ts", import.meta.url).href)};
+       const needles = ["", "\\u200b", "\\ufeff", "\\u200b\\u200c"];
+       const counts = needles.map(needle => countOccurrences("hello\\n\\n", needle));
+       let writes = 0;
+       const tool = createEditTool(process.cwd(), undefined, { readFile: async () => "hello\\n\\n", writeFile: async () => { writes++; } });
+       const errors = [];
+       for (const needle of needles) {
+         try {
+           await tool.execute({ file_path: "src/tools/edit.ts", edits: [{ old_text: needle, new_text: "oops" }] }, { signal: new AbortController().signal, toolCallId: "empty-search" });
+         } catch (error) { errors.push(error.message.includes("empty after normalization")); }
+       }
+       console.log(JSON.stringify({ counts, errors, writes }));`,
+      ],
+      { timeout: 5000 },
+    );
+    expect(JSON.parse(stdout)).toEqual({
+      counts: [0, 0, 0, 0],
+      errors: [true, true, true, true],
+      writes: 0,
+    });
+  }, 10000);
+
+  it.each(["", "\u200b", "\ufeff"])(
+    "does not match blank lines for an empty fuzzy search %j",
+    (needle) => {
+      expect(fuzzyFindText("hello\n\n", needle).found).toBe(false);
+    },
+  );
+
+  it("keeps exact invisible-character searches available for intentional removal", () => {
+    expect(countOccurrences("a\u200bb\u200b", "\u200b")).toBe(2);
+    expect(fuzzyFindText("a\u200bb", "\u200b")).toMatchObject({
+      found: true,
+      index: 1,
+      matchLength: 1,
+    });
+  });
+
+  it("counts overlapping fuzzy windows for ambiguity but not global replacement", () => {
+    expect(countOccurrences("A \nA \nA \n", "A\nA")).toBe(2);
+    expect(countOccurrences("A \nA \nA \n", "A\nA", false)).toBe(1);
+  });
+
   it("finds exact match with usedFuzzy=false", () => {
     const content = "hello world\nfoo bar\n";
     const result = fuzzyFindText(content, "foo bar");

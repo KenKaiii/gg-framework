@@ -17,7 +17,7 @@ import { diffLines } from "diff";
  * Only affects MATCHING (locating old_text); the bytes written are the model's
  * new_text verbatim, so normalization can never corrupt the file.
  */
-function normalizeForFuzzyMatch(text: string): string {
+export function normalizeForFuzzyMatch(text: string): string {
   return text
     .normalize("NFKC")
     .replace(/\u200B|\u200C|\u200D|\u2060|\uFEFF/g, "") // zero-width space/joiner/non-joiner, word-joiner, BOM
@@ -292,6 +292,7 @@ export function fuzzyFindText(
   content: string,
   oldText: string,
 ): { found: boolean; index: number; matchLength: number; usedFuzzy: boolean } {
+  if (oldText.length === 0) return { found: false, index: -1, matchLength: 0, usedFuzzy: false };
   // Exact match first
   const exactIndex = content.indexOf(oldText);
   if (exactIndex !== -1) {
@@ -309,6 +310,8 @@ export function fuzzyFindText(
   const oldLines = oldText.split("\n");
   const contentLines = content.split("\n");
   const normalizedOldJoined = oldLines.map(normalizeForFuzzyMatch).join("\n");
+  if (normalizedOldJoined.length === 0)
+    return { found: false, index: -1, matchLength: 0, usedFuzzy: false };
   const normalizedCache: string[] = new Array(contentLines.length);
 
   for (let startLine = 0; startLine + oldLines.length <= contentLines.length; startLine++) {
@@ -340,7 +343,12 @@ export function fuzzyFindText(
 /**
  * Count occurrences of oldText in content (exact first, then fuzzy).
  */
-export function countOccurrences(content: string, oldText: string): number {
+export function countOccurrences(
+  content: string,
+  oldText: string,
+  allowFuzzyOverlaps = true,
+): number {
+  if (oldText.length === 0) return 0;
   // Try exact first
   let count = 0;
   let pos = 0;
@@ -354,6 +362,7 @@ export function countOccurrences(content: string, oldText: string): number {
   // multi-line needles, use line windows so trailing-whitespace normalization
   // cannot create misleading shifted overlaps.
   const normalizedOld = normalizeForFuzzyMatch(oldText);
+  if (normalizedOld.length === 0) return 0;
   if (!oldText.includes("\n")) {
     const normalizedContent = normalizeForFuzzyMatch(content);
     pos = 0;
@@ -374,7 +383,12 @@ export function countOccurrences(content: string, oldText: string): number {
       normalizedCandidate += normalizedCache[j] ??= normalizeForFuzzyMatch(contentLines[j]!);
       if (j < startLine + oldLines.length - 1) normalizedCandidate += "\n";
     }
-    if (normalizedCandidate === normalizedOld) count++;
+    if (normalizedCandidate === normalizedOld) {
+      count++;
+      // Single-match edits must still detect ambiguous overlapping windows.
+      // Global edits consume each original line at most once.
+      if (!allowFuzzyOverlaps) startLine += oldLines.length - 1;
+    }
   }
   return count;
 }
