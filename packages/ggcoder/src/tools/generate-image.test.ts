@@ -113,6 +113,9 @@ describe("generate_image param schema", () => {
         out_path: "out.png",
       }).success,
     ).toBe(true);
+    expect(tool.description).toContain("Transparent backgrounds are currently unsupported");
+    expect(schema.shape.background.description).toContain("Do not retry transparent requests");
+    // Legacy values still parse so execution can explain the backend limitation.
     for (const model of ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]) {
       expect(schema.safeParse({ prompt: "x", model, background: "transparent" }).success).toBe(
         true,
@@ -172,16 +175,13 @@ describe("generate_image — generation (no image input)", () => {
   });
 
   it.each(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"] as const)(
-    "forwards explicit model %s and transparent background",
+    "forwards explicit model %s and opaque background",
     async (model) => {
       const fetchMock = vi.fn().mockResolvedValue(makeImageSSEResponse([TINY_PNG_B64]));
       globalThis.fetch = fetchMock;
       const { createGenerateImageTool } = await import("./generate-image.js");
       const tool = createGenerateImageTool(tmpDir, fakeAuth());
-      const result = await tool.execute(
-        { prompt: "a logo", model, background: "transparent" },
-        ctx(),
-      );
+      const result = await tool.execute({ prompt: "a logo", model, background: "opaque" }, ctx());
 
       expect(fetchMock).toHaveBeenCalledOnce();
       const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
@@ -189,7 +189,7 @@ describe("generate_image — generation (no image input)", () => {
       expect(body.tools[0]).toMatchObject({
         model,
         action: "generate",
-        background: "transparent",
+        background: "opaque",
         output_format: "png",
       });
       expect(isStructured(result)).toBe(true);
@@ -283,18 +283,34 @@ describe("generate_image — edit (with image input)", () => {
 });
 
 describe("generate_image — error handling", () => {
-  it("rejects transparent JPEG before calling OpenAI", async () => {
-    const fetchMock = vi.fn();
-    globalThis.fetch = fetchMock;
-    const { createGenerateImageTool } = await import("./generate-image.js");
-    const tool = createGenerateImageTool(tmpDir, fakeAuth());
-    const result = await tool.execute(
-      { prompt: "a logo", background: "transparent", output_format: "jpeg" },
-      ctx(),
-    );
-    expect(result).toBe("Transparent backgrounds require png or webp output, not jpeg.");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
+  it.each([undefined, "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"] as const)(
+    "rejects repeated transparent requests for model %s before auth or network access",
+    async (model) => {
+      const fetchMock = vi.fn();
+      globalThis.fetch = fetchMock;
+      const auth = fakeAuth();
+      const credentials = vi.spyOn(auth, "resolveCredentials");
+      const { createGenerateImageTool } = await import("./generate-image.js");
+      const tool = createGenerateImageTool(tmpDir, auth);
+      for (const output_format of [undefined, "png", "webp", "jpeg"] as const) {
+        for (const image of [undefined, "nonexistent-reference.png"]) {
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const result = await tool.execute(
+              { prompt: "a logo", model, background: "transparent", output_format, image },
+              ctx(),
+            );
+            expect(result).toContain("Transparent backgrounds are currently unsupported");
+            expect(result).toContain("both Flare and Sunburst");
+            expect(result).toContain("No request was sent");
+            expect(result).toContain("Do not retry");
+            expect(result).toContain("do not silently substitute an opaque background");
+          }
+        }
+      }
+      expect(credentials).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
 
   it("returns a user-facing message when OpenAI is not connected", async () => {
     const { createGenerateImageTool } = await import("./generate-image.js");

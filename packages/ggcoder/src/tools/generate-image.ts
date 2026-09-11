@@ -81,7 +81,11 @@ const GenerateImageParams = z.object({
   background: z
     .enum(["opaque", "auto", "transparent"])
     .optional()
-    .describe("Background type (default auto). Transparent requires png or webp output."),
+    .describe(
+      "Background type (default auto). Use auto or opaque. Transparent is currently " +
+        "unsupported by the connected ChatGPT/Codex backend for both models and will " +
+        "be rejected locally. Do not retry transparent requests or switch models to bypass this.",
+    ),
 });
 
 type GenerateImageArgs = z.infer<typeof GenerateImageParams>;
@@ -107,7 +111,8 @@ export function createGenerateImageTool(
     name: "generate_image",
     description:
       "Generate or edit images using OpenAI's GPT Image 2.5 models: Flare (default, fast) " +
-      "or Sunburst (precise editing). Works even when a different " +
+      "or Sunburst (precise editing). Transparent backgrounds are currently unsupported " +
+      "through this tool. Works even when a different " +
       "chat provider is active — only requires OpenAI to be connected. Only use this tool when " +
       "the user explicitly asks to create, generate, or edit an image. Pass `image` with a " +
       "file path to edit an existing image (e.g. a previously generated one or a user attachment). " +
@@ -118,8 +123,15 @@ export function createGenerateImageTool(
       context: ToolContext,
     ): Promise<string | StructuredToolResult> {
       if (context.signal.aborted) return "Image generation aborted before start.";
-      if (args.background === "transparent" && args.output_format === "jpeg") {
-        return "Transparent backgrounds require png or webp output, not jpeg.";
+      // Keep the legacy parameter value parseable so cached/repeated calls get
+      // actionable guidance instead of another backend 400 or schema retry.
+      if (args.background === "transparent") {
+        return (
+          "Transparent backgrounds are currently unsupported by the connected ChatGPT/Codex " +
+          "image backend for both Flare and Sunburst, including PNG and WebP output. " +
+          "No request was sent. Do not retry with another model or format. " +
+          "Explain this limitation to the user; do not silently substitute an opaque background."
+        );
       }
 
       // Resolve OpenAI credentials at execution time (lazy — token refresh
