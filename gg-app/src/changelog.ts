@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.63.1",
+    date: "2026-09-11",
+    items: [
+      "I cut the repeat interruptions from `verification` and `Autopilot`, so your agent can keep moving instead of proving the same work again. Background checks and builds that leave your code unchanged now get the credit they earned, while real errors still get caught. Progress notices show what is actually happening, without pretending every edit is the finish line.",
+    ],
+  },
+  {
     version: "0.63.0",
     date: "2026-09-09",
     items: [
