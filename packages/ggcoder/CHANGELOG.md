@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.59.3
+
+### Patch Changes
+
+- Fix replace_all re-editing replaced text (duplicate properties, skipped occurrences), reject unsafe global elision matches, and stop empty/invisible search strings from hanging or mismatching blank lines.
+  - @kenkaiiii/gg-ai@5.59.3
+  - @kenkaiiii/gg-agent@5.59.3
+  - @kenkaiiii/gg-core@5.59.3
+
 ## 5.59.2
 
 ### Patch Changes
