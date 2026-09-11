@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.59.2
+
+### Patch Changes
+
+- Clarify agent completion status and required next actions, reject unsupported transparent image requests without repeated backend failures, and preserve prior verification after successful mixed check commands that leave source unchanged.
+  - @kenkaiiii/gg-ai@5.59.2
+  - @kenkaiiii/gg-agent@5.59.2
+  - @kenkaiiii/gg-core@5.59.2
+
 ## 5.59.1
 
 ### Patch Changes
