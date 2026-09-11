@@ -127,7 +127,7 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "@huggingface/transformers": "^3.6.0",
+    "@huggingface/transformers": "^4.2.0",
     "@mozilla/readability": "^0.6.0",
     "linkedom": "^0.18.12",
     "ogg-opus-decoder": "^1.6.13",
