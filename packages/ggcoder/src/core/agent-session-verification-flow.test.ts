@@ -171,6 +171,56 @@ const artifactBuild =
   "import fs from 'node:fs'; fs.mkdirSync('dist', {recursive:true}); fs.writeFileSync('dist/app.js', 'generated');\n";
 
 describe("verification gate flow", () => {
+  it.each([false, true])(
+    "preserves earlier verification after a mixed check/help chain (background=%s)",
+    async (background) => {
+      await prepareBuildProject(artifactBuild);
+      const { internal } = await makeSession();
+      await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+      await runRealCheck(internal, "npm run check");
+      const command = "npm run check && node build.mjs --help";
+      await runRealCheck(internal, command, background, false);
+      expect(await internal.getHookFollowUpMessages()).toBeNull();
+      expect(internal.getVerificationProblem()).toBeNull();
+      expect(internal.getVerificationEvidence()).not.toContainEqual(
+        expect.objectContaining({ command, status: "passed" }),
+      );
+    },
+  );
+
+  it("requires fresh verification when a mixed chain cannot compare workspace inputs", async () => {
+    const { internal } = await makeSession();
+    await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+    await simulateToolCall(internal, "bash", { command: "npm run check" });
+    expect(internal.getVerificationProblem()).toBeNull();
+    await simulateToolCall(internal, "bash", {
+      command: "npm run check && node script.mjs --help",
+    });
+    expect(internal.getVerificationProblem()).not.toBeNull();
+  });
+
+  it("does not turn a mixed check/help chain into fresh verification", async () => {
+    await prepareBuildProject(artifactBuild);
+    const { internal } = await makeSession();
+    await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+    await runRealCheck(internal, "npm run check && node build.mjs --help");
+    expect(internal.getVerificationProblem()).not.toBeNull();
+  });
+
+  it.each([
+    ["failure", "process.exit(1);"],
+    [
+      "source mutation",
+      "import fs from 'node:fs'; fs.writeFileSync('subject.mjs', 'export const value = 2;');",
+    ],
+  ])("keeps a mixed check/help chain unverified after %s", async (_label, script) => {
+    await prepareBuildProject(script);
+    const { internal } = await makeSession();
+    await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+    await runRealCheck(internal, "npm run check");
+    await runRealCheck(internal, "npm run check && node build.mjs --help");
+    expect(internal.getVerificationProblem()).not.toBeNull();
+  });
   it("collects a completed background build/check without demanding a polling turn", async () => {
     await prepareBuildProject(artifactBuild);
     const { internal, events } = await makeSession();

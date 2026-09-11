@@ -3708,12 +3708,17 @@ export class AgentSession {
       this.verificationGate.recordRejectedCheck(
         check.command,
         after === null
-          ? "Workspace inputs could not be compared; run a read-only check after the build"
-          : "Build changed workspace inputs; run checks against the changed source",
+          ? "Workspace inputs could not be compared; run a read-only check after the command"
+          : "Command changed workspace inputs; run checks against the changed source",
       );
       if (!passed) this.verificationGate.recordFailedVerification(check.command);
     } else if (passed) {
-      this.verificationGate.recordVerification(check.revision, check.command);
+      const classification = classifyVerificationCommand(check.command);
+      if (classification.snapshotPreserveOnly) {
+        this.verificationGate.recordRejectedCheck(check.command, classification.reason);
+      } else {
+        this.verificationGate.recordVerification(check.revision, check.command);
+      }
     } else {
       this.verificationGate.recordFailedVerification(check.command, check.revision);
     }

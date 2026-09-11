@@ -14,6 +14,8 @@ export interface VerificationCommandClassification {
   reason: string;
   /** Still rejected by transcript parsing; only the live host can prove unchanged inputs. */
   snapshotEligible?: boolean;
+  /** Comparison may preserve earlier evidence, but must never certify this command. */
+  snapshotPreserveOnly?: boolean;
 }
 
 export interface VerificationEvidence {
@@ -341,6 +343,16 @@ export function classifyVerificationCommand(command: string): VerificationComman
       !results.some((entry) => entry.reason === "working-directory prelude")
     ) {
       result.snapshotEligible = true;
+    } else if (
+      !result.mayMutate &&
+      results.some((entry) => entry.accepted) &&
+      !results.some((entry) => entry.reason === "working-directory prelude") &&
+      segments.every((segment) => !hasUnsafeShellSyntax(segment))
+    ) {
+      // Mixed check/script chains remain rejected. A host-observed successful
+      // exit plus unchanged inputs can only retain evidence from earlier checks.
+      result.snapshotEligible = true;
+      result.snapshotPreserveOnly = true;
     }
     return result;
   }

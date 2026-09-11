@@ -6,6 +6,26 @@ import {
 } from "./verification-evidence.js";
 
 describe("classifyVerificationCommand", () => {
+  it("only preserves prior evidence for the transcript's mixed check/help chain", () => {
+    expect(
+      classifyVerificationCommand(
+        "npm run lint && npm run format:check && npx tsx scripts/youtube/retention-inventory.mts --help",
+      ),
+    ).toMatchObject({
+      accepted: false,
+      snapshotEligible: true,
+      snapshotPreserveOnly: true,
+    });
+  });
+
+  it.each([
+    "npm run check && node script.mjs --help || true",
+    "npm run check; node script.mjs --help",
+    "cd ../other && npm run check && node script.mjs --help",
+    "npm run check && prettier --write .",
+  ])("does not preserve evidence for unsafe or mutating chains: %s", (command) => {
+    expect(classifyVerificationCommand(command).snapshotPreserveOnly).not.toBe(true);
+  });
   it.each([
     "pnpm build",
     "npm run build",
