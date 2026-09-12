@@ -14,6 +14,11 @@ import {
   extractFileOperations,
   splitTrackedModifiedFiles,
   buildModifiedFilesSection,
+  extractFailingTests,
+  extractTestSignals,
+  splitTrackedFailingTests,
+  buildFailingTestsSection,
+  MAX_TRACKED_FAILING_TESTS,
   resolveSummaryOutputTokens,
   HISTORICAL_TOOL_ARG_MAX_CHARS,
   MAX_TRACKED_MODIFIED_FILES,
@@ -1433,5 +1438,141 @@ describe("resolveSummaryOutputTokens", () => {
   it("scales with the window and caps at the maximum", () => {
     expect(resolveSummaryOutputTokens(200_000)).toBe(6000);
     expect(resolveSummaryOutputTokens(1_000_000)).toBe(MAX_SUMMARY_OUTPUT_TOKENS);
+  });
+});
+
+// ── failing-test carry-forward ─────────────────────────────
+
+function resultMessage(content: string, isError = false): Message {
+  return {
+    role: "tool",
+    content: [
+      {
+        type: "tool_result",
+        toolCallId: "call_1",
+        content,
+        ...(isError ? { isError: true } : {}),
+      },
+    ],
+  };
+}
+
+describe("extractFailingTests", () => {
+  it("recognises jest/vitest, pytest, and Go test failure lines", () => {
+    const failing = extractFailingTests([
+      resultMessage(
+        "FAIL src/auth/refresh.test.ts\n" +
+          "  ✕ refresh::rejects-expired-token (42 ms)\n" +
+          "FAILED tests/payments.py::test_refund_partial\n" +
+          "--- FAIL: TestQueueConsumer\n" +
+          "1 failed",
+        true,
+      ),
+    ]);
+
+    expect(failing).toContain("refresh::rejects-expired-token");
+    expect(failing).toContain("tests/payments.py::test_refund_partial");
+    expect(failing).toContain("TestQueueConsumer");
+  });
+
+  it("strips the jest duration suffix from the test name", () => {
+    const failing = extractFailingTests([resultMessage("✕ parses nested config (1.5 ms)", true)]);
+    expect(failing).toEqual(["parses nested config"]);
+  });
+
+  it("reverses a failure when a later result shows the test passing", () => {
+    const failing = extractFailingTests([
+      resultMessage("✕ refresh::rejects-expired-token (42 ms)", true),
+      resultMessage("✓ refresh::rejects-expired-token (38 ms)"),
+    ]);
+    expect(failing).toEqual([]);
+  });
+
+  it("keeps the failure when the pass came before it", () => {
+    const failing = extractFailingTests([
+      resultMessage("✓ refresh::rejects-expired-token"),
+      resultMessage("✕ refresh::rejects-expired-token (42 ms)", true),
+    ]);
+    expect(failing).toEqual(["refresh::rejects-expired-token"]);
+  });
+
+  it("ignores ordinary error output that is not a test report", () => {
+    const signals = extractTestSignals([
+      resultMessage("Error: ECONNREFUSED 127.0.0.1:5432\n    at connect (net.js:1:1)", true),
+    ]);
+    expect(signals.failing).toEqual([]);
+    expect(signals.passed).toEqual([]);
+  });
+
+  it("reads text parts inside array tool-result content", () => {
+    const failing = extractFailingTests([
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool_result",
+            toolCallId: "call_1",
+            content: [{ type: "text", text: "✕ array-case fails" }],
+          },
+        ],
+      } as Message,
+    ]);
+    expect(failing).toEqual(["array-case fails"]);
+  });
+});
+
+describe("splitTrackedFailingTests", () => {
+  it("extracts carried names and strips the block from the prose", () => {
+    const { text, tests, omitted } = splitTrackedFailingTests(
+      "Prose body.\n\n<failing-tests>\nrefresh::rejects-expired-token\n[... 3 earlier failing tests omitted]\n</failing-tests>",
+    );
+    expect(text).toBe("Prose body.");
+    expect(tests).toEqual(["refresh::rejects-expired-token"]);
+    expect(omitted).toBe(3);
+  });
+
+  it("leaves prose without a failing-tests block untouched", () => {
+    const { text, tests, omitted } = splitTrackedFailingTests("Just a summary.");
+    expect(text).toBe("Just a summary.");
+    expect(tests).toEqual([]);
+    expect(omitted).toBe(0);
+  });
+});
+
+describe("buildFailingTestsSection", () => {
+  it("returns empty string when nothing fails", () => {
+    expect(buildFailingTestsSection([])).toBe("");
+  });
+
+  it("dedupes carried and fresh names into a single block", () => {
+    const section = buildFailingTestsSection(["test-a", "test-b", "test-a"]);
+    expect(section.match(/test-a/gu)).toHaveLength(1);
+    expect(section).toContain("test-b");
+  });
+
+  it("keeps the most recent names on overflow and reports the count", () => {
+    const names = Array.from({ length: MAX_TRACKED_FAILING_TESTS + 5 }, (_v, i) => `test-${i}`);
+    const section = buildFailingTestsSection(names);
+    expect(section).toContain(`test-${names.length - 1}`);
+    expect(section).toContain("[... 5 earlier failing tests omitted]");
+  });
+
+  it("still reports prior omissions when nothing survives the merge", () => {
+    expect(buildFailingTestsSection([], 4)).toContain("[... 4 earlier failing tests omitted]");
+  });
+
+  it("survives repeated build/split generations without stacking notes", () => {
+    let section = buildFailingTestsSection(
+      Array.from({ length: MAX_TRACKED_FAILING_TESTS + 5 }, (_v, i) => `test-${i}`),
+    );
+    let carried = splitTrackedFailingTests(`Prose.${section}`);
+    for (let gen = 0; gen < 3; gen++) {
+      expect(carried.tests).toHaveLength(MAX_TRACKED_FAILING_TESTS);
+      expect(carried.tests.some((t) => t.startsWith("[..."))).toBe(false);
+      section = buildFailingTestsSection([...carried.tests, `fresh-${gen}`], carried.omitted);
+      carried = splitTrackedFailingTests(`Prose.${section}`);
+    }
+    expect(section.match(/earlier failing tests omitted/gu)).toHaveLength(1);
+    expect(section).toContain("[... 8 earlier failing tests omitted]");
   });
 });

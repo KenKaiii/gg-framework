@@ -760,6 +760,164 @@ export function buildModifiedFilesSection(paths: readonly string[], priorOmitted
   return `\n\n<modified-files>\n${kept.join("\n")}${note}\n</modified-files>`;
 }
 
+const FAILING_TESTS_BLOCK_RE = /\n*<failing-tests>\n([\s\S]*?)\n<\/failing-tests>/gu;
+
+/**
+ * Upper bound on carried failing-test names. Same reasoning as modified files:
+ * the tail is what the agent is still fixing.
+ */
+export const MAX_TRACKED_FAILING_TESTS = 20;
+
+const FAILING_OMITTED_NOTE_RE = /^\[\.\.\. (\d+) earlier failing tests omitted\]$/u;
+
+function renderFailingOmittedNote(count: number): string {
+  return `[... ${count} earlier failing tests omitted]`;
+}
+
+/**
+ * Bench G (2026-09-11) showed the summarizer reliably drops failing-test names
+ * even though the raw output was in a tool result — the exact loss class a
+ * deterministic carry-forward erases at zero model cost. Recognised reporters:
+ * jest/vitest (`✕ name (N ms)`, `FAIL path`), pytest (`FAILED id`), and Go test
+ * (`--- FAIL: name`). Each family has a matching pass signal so a later green
+ * run reverses an earlier red one instead of poisoning every future summary.
+ */
+const TEST_FAIL_LINE_RES: readonly RegExp[] = [
+  /^\s*[✕×]\s+(.+?)\s*(?:\(\d+(?:\.\d+)?\s*ms\))?$/gm,
+  /^FAILED\s+(\S+::\S+)$/gm,
+  /^--- FAIL:\s+(\S+)$/gm,
+];
+const TEST_PASS_LINE_RES: readonly RegExp[] = [
+  /^\s*[✓√+]\s+(.+?)\s*(?:\(\d+(?:\.\d+)?\s*ms\))?$/gm,
+  /^PASSED\s+(\S+::\S+)$/gm,
+  /^--- PASS:\s+(\S+)$/gm,
+];
+
+function matchTestLines(text: string, patterns: readonly RegExp[]): string[] {
+  const names: string[] = [];
+  for (const re of patterns) {
+    re.lastIndex = 0;
+    for (const match of text.matchAll(re)) {
+      const name = match[1]?.trim();
+      if (name && name.length <= 200) names.push(name);
+    }
+  }
+  return names;
+}
+
+/** One observed test event on the shared message timeline. */
+interface TestEvent {
+  fail: boolean;
+  name: string;
+}
+
+function collectTestEvents(messages: Message[]): TestEvent[] {
+  const events: TestEvent[] = [];
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) continue;
+    for (const part of message.content) {
+      if (part.type !== "tool_result") continue;
+      const text =
+        typeof part.content === "string"
+          ? part.content
+          : Array.isArray(part.content)
+            ? part.content
+                .filter((p) => p.type === "text")
+                .map((p) => p.text ?? "")
+                .join("\n")
+            : "";
+      if (!text) continue;
+      for (const name of matchTestLines(text, TEST_FAIL_LINE_RES)) {
+        events.push({ fail: true, name });
+      }
+      for (const name of matchTestLines(text, TEST_PASS_LINE_RES)) {
+        events.push({ fail: false, name });
+      }
+    }
+  }
+  return events;
+}
+
+/**
+ * Failing and passing test names observed in tool results. Raw observation
+ * lists; reversal logic lives in {@link extractFailingTests}.
+ */
+export function extractTestSignals(messages: Message[]): {
+  failing: string[];
+  passed: string[];
+} {
+  const events = collectTestEvents(messages);
+  return {
+    failing: events.filter((e) => e.fail).map((e) => e.name),
+    passed: events.filter((e) => !e.fail).map((e) => e.name),
+  };
+}
+
+/** Tests still failing at the end of the message range (passes reversed out). */
+export function extractFailingTests(messages: Message[]): string[] {
+  const events = collectTestEvents(messages);
+  // A name survives only when its LAST event is a failure — a later green run
+  // reverses an earlier red one, and a later red run keeps a regression live.
+  const lastState = new Map<string, boolean>();
+  for (const event of events) lastState.set(event.name, event.fail);
+  const firstFailOrder: string[] = [];
+  const seen = new Set<string>();
+  for (const event of events) {
+    if (event.fail && !seen.has(event.name)) {
+      seen.add(event.name);
+      firstFailOrder.push(event.name);
+    }
+  }
+  return firstFailOrder.filter((name) => lastState.get(name));
+}
+
+/**
+ * Split a previous summary into prose (files AND failing-tests blocks stripped)
+ * and its carried failing-test names. Mirrors {@link splitTrackedModifiedFiles}.
+ */
+export function splitTrackedFailingTests(summaryText: string): {
+  text: string;
+  tests: string[];
+  omitted: number;
+} {
+  const tests: string[] = [];
+  let omitted = 0;
+  const text = summaryText
+    .replace(FAILING_TESTS_BLOCK_RE, (_match, body: string) => {
+      for (const line of body.split("\n")) {
+        const entry = line.trim();
+        if (!entry) continue;
+        const note = FAILING_OMITTED_NOTE_RE.exec(entry);
+        if (note) {
+          omitted += Number(note[1]);
+          continue;
+        }
+        tests.push(entry);
+      }
+      return "";
+    })
+    .trimEnd();
+  return { text, tests, omitted };
+}
+
+/**
+ * Render the single merged failing-test block appended to a summary. Carried
+ * names that a fresh PASS signal reversed are the caller's job to filter.
+ */
+export function buildFailingTestsSection(tests: readonly string[], priorOmitted = 0): string {
+  const unique = [...new Set(tests.map((t) => t.trim()).filter(Boolean))];
+  if (unique.length === 0) {
+    return priorOmitted > 0
+      ? `\n\n<failing-tests>\n${renderFailingOmittedNote(priorOmitted)}\n</failing-tests>`
+      : "";
+  }
+  const overflow = Math.max(0, unique.length - MAX_TRACKED_FAILING_TESTS);
+  const kept = overflow > 0 ? unique.slice(-MAX_TRACKED_FAILING_TESTS) : unique;
+  const totalOmitted = priorOmitted + overflow;
+  const note = totalOmitted > 0 ? `\n${renderFailingOmittedNote(totalOmitted)}` : "";
+  return `\n\n<failing-tests>\n${kept.join("\n")}${note}\n</failing-tests>`;
+}
+
 /**
  * Convert provenance into explicit summarizer attribution and remove low-value
  * runtime control traffic. Legacy messages remain available for old sessions.
@@ -1006,9 +1164,22 @@ export async function compact(
   const carriedSummary = previousSummary
     ? splitTrackedModifiedFiles(previousSummary.text)
     : { text: "", files: [] as string[], omitted: 0 };
+  // Strip the failing-tests block too, so the re-fed previous-summary prose
+  // carries neither machine-appended section (they are merged back below).
+  const carriedTests = splitTrackedFailingTests(carriedSummary.text);
+  carriedSummary.text = carriedTests.text;
   const fileTrackingSection = buildModifiedFilesSection(
     [...carriedSummary.files, ...fileOps.modified],
     carriedSummary.omitted,
+  );
+  // Carried failing tests survive unless newer evidence shows them passing.
+  const testSignals = extractTestSignals(summarizationSource);
+  const failingTestsSection = buildFailingTestsSection(
+    [
+      ...carriedTests.tests.filter((name) => !testSignals.passed.includes(name)),
+      ...extractFailingTests(summarizationSource),
+    ],
+    carriedTests.omitted,
   );
   const classifiedMessages = classifyMessagesForSummary(summarizationSource);
 
@@ -1183,7 +1354,7 @@ export async function compact(
       : fallbackUpdate;
   }
 
-  const summaryPayload = `${summaryText}${fileTrackingSection}`;
+  const summaryPayload = `${summaryText}${fileTrackingSection}${failingTestsSection}`;
   const makeSummaryMessage = (payload: string): Message => ({
     role: "user",
     content: `[Previous conversation summary]\n\n${payload}`,
