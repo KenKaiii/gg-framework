@@ -2953,6 +2953,8 @@ export class AgentSession {
       baseUrl?: string;
     },
     mode: "manual" | "automatic" | "forced" = "manual",
+    /** User-stated focus (`/compact <focus>`): what must survive verbatim. */
+    focus?: string,
   ): Promise<void> {
     this.lastCompactionCompacted = false;
     const creds =
@@ -2988,6 +2990,7 @@ export class AgentSession {
         targetTokens: policy.targetTokens,
         signal: this.opts.signal,
         approvedPlanPath: this.approvedPlanPath,
+        focus,
       });
       contextSelection = output.result.contextSelection;
       return output;
@@ -4234,7 +4237,7 @@ export class AgentSession {
   private createSlashCommandContext(): SlashCommandContext {
     return {
       switchModel: (provider, model) => this.switchModel(provider, model),
-      compact: () => this.compact(undefined, "manual"),
+      compact: (focus?: string) => this.compact(undefined, "manual", focus),
       newSession: () => this.newSession(),
       listSessions: async () => {
         const sessions = await this.sessionManager.list(this.cwd);

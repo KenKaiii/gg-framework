@@ -75,3 +75,23 @@ describe("/add-dir", () => {
     await expect(registry().execute("/add-dir /x", ctx)).resolves.toBe("Not a directory: /x");
   });
 });
+
+describe("/compact focus", () => {
+  it("threads /compact <focus> text through to compact()", async () => {
+    const reg = registry();
+    const compact = vi.fn(async () => {});
+    const ctx = context({ compact });
+    const out = await reg.execute("/compact payment-refactor deadlines", ctx);
+    expect(compact).toHaveBeenCalledWith("payment-refactor deadlines");
+    expect(out).toContain("payment-refactor deadlines");
+  });
+
+  it("bare /compact passes no focus", async () => {
+    const reg = registry();
+    const compact = vi.fn(async () => {});
+    const ctx = context({ compact });
+    const out = await reg.execute("/compact", ctx);
+    expect(compact).toHaveBeenCalledWith(undefined);
+    expect(out).not.toContain("focus");
+  });
+});

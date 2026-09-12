@@ -5,7 +5,9 @@ import { isGgApp } from "./runtime-mode.js";
 export interface SlashCommandContext {
   // These will be wired by AgentSession
   switchModel: (provider: string, model: string) => Promise<void>;
-  compact: () => Promise<void>;
+  /** Compact now. `focus` is the user's `/compact <focus>` text: a short
+   * description of what must survive the summary verbatim. */
+  compact: (focus?: string) => Promise<void>;
   newSession: () => Promise<void>;
   listSessions: () => Promise<string>;
   getSettings: () => Record<string, unknown>;
@@ -119,10 +121,12 @@ export function createBuiltinCommands(): SlashCommand[] {
       name: "compact",
       aliases: ["c"],
       description: "Compact conversation to reduce context usage",
-      usage: "/compact",
-      async execute(_args, ctx) {
-        await ctx.compact();
-        return "Conversation compacted.";
+      usage: "/compact [focus]",
+      async execute(args, ctx) {
+        await ctx.compact(args.trim() || undefined);
+        return args.trim()
+          ? `Conversation compacted (focus: ${args.trim()}).`
+          : "Conversation compacted.";
       },
     },
     {

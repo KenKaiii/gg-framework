@@ -1085,6 +1085,11 @@ export async function compact(
     targetTokens?: number;
     signal?: AbortSignal;
     approvedPlanPath?: string;
+    /** User-stated compaction focus (`/compact <focus>`): a short description
+     * of what still matters. When present, the summarizer must preserve
+     * everything relevant to it verbatim. Optional — default behaviour is
+     * unchanged. */
+    focus?: string;
   },
 ): Promise<{ messages: Message[]; result: CompactionResult }> {
   const originalCount = messages.length;
@@ -1232,6 +1237,13 @@ export async function compact(
       `You MUST preserve all references to this plan and its approval status in the summary. ` +
       `The agent is following this plan for implementation — do not lose this context.`
     : "";
+  const focusDirective = options.focus
+    ? `\n\n### COMPACTION FOCUS\n` +
+      `The user focused this compaction on: ${options.focus}\n` +
+      `Preserve EVERYTHING in the conversation relevant to this focus — constraints, decisions, ` +
+      `facts, and open questions — verbatim where possible. Content relevant to the focus is ` +
+      `never condensed into a passing mention.`
+    : "";
   const updateInstruction = previousSummaryMessage
     ? "\n\n## Superseding a previous summary\n" +
       "The anchored <previous-summary> is this conversation's compacted memory so far. Do not treat it " +
@@ -1243,7 +1255,10 @@ export async function compact(
     : "";
 
   const summaryMessages: Message[] = [
-    { role: "system", content: COMPACTION_SYSTEM_PROMPT + planPreservation + updateInstruction },
+    {
+      role: "system",
+      content: COMPACTION_SYSTEM_PROMPT + planPreservation + focusDirective + updateInstruction,
+    },
     ...(previousSummaryMessage ? [previousSummaryMessage] : []),
     ...selectedMessages,
     { role: "user", content: COMPACTION_USER_PROMPT },
