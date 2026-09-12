@@ -99,7 +99,7 @@
     "bench:search": "tsx src/core/semantic-search-benchmark.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sandbox-runtime": "0.0.67",
+    "@anthropic-ai/sandbox-runtime": "0.0.75",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@kenkaiiii/agent-home-sdk": "^0.3.8",
     "@kenkaiiii/gg-agent": "workspace:*",
