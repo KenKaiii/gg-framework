@@ -1,7 +1,7 @@
 {
   "name": "gg-app",
   "private": true,
-  "version": "0.63.3",
+  "version": "0.63.4",
   "type": "module",
   "scripts": {
     "dev": "vite",

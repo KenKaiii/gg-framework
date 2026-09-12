@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.63.4",
+    date: "2026-09-12",
+    items: [
+      "Long sessions just got smarter about the code you're fixing. When your tests fail, the agent now keeps every failing test name in its memory even after the conversation gets compacted, and drops each one the moment it goes green. No more lost bugs resurfacing or chasing failures you already fixed. In my measurements that's `100%` of failing tests remembered where the old memory lost `1 in 6`.",
+    ],
+  },
+  {
     version: "0.63.3",
     date: "2026-09-11",
     items: [
