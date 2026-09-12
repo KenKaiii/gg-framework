@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.64.0",
+    date: "2026-09-12",
+    items: [
+      "Your existing projects now get a dedicated `refactoring` skill. I built in guidance for small, test-checked changes and older code without tests, so you can ask for a cleanup with clearer safeguards around what already works.",
+      "Tell GG Coder what matters before shrinking a long conversation. I added `/compact [focus]` so you can name the decisions or topics you want the summary to prioritize, instead of leaving that choice entirely to the agent.",
+    ],
+  },
+  {
     version: "0.63.4",
     date: "2026-09-12",
     items: [
