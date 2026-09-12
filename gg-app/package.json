@@ -22,7 +22,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^0.10.18",
+    "@mediapipe/tasks-vision": "^1.0.1",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-log": "^2.9.0",
