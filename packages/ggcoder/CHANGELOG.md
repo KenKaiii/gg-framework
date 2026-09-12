@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.60.0
+
+### Minor Changes
+
+- Add built-in refactoring guidance for existing projects, optional focus text for /compact, and opt-in internal session diagnostics.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.60.0
+- @kenkaiiii/gg-agent@5.60.0
+- @kenkaiiii/gg-core@5.60.0
+
 ## 5.59.4
 
 ### Patch Changes
