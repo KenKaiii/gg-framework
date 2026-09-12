@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.59.4
+
+### Patch Changes
+
+- Compaction summaries now carry failing test names forward deterministically: test failures parsed from tool results are appended to the summary in a tracked block, survive re-compaction, and are reversed when a later run passes.
+  - @kenkaiiii/gg-ai@5.59.4
+  - @kenkaiiii/gg-agent@5.59.4
+  - @kenkaiiii/gg-core@5.59.4
+
 ## 5.59.3
 
 ### Patch Changes
