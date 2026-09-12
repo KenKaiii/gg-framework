@@ -104,6 +104,12 @@ import {
   type ImportForeignTranscriptResult,
 } from "./foreign-session-import.js";
 import { createToolSearchTool } from "../tools/tool-search.js";
+import { createSessionStatsTool } from "../tools/session-stats.js";
+import {
+  createDiagnoseCommand,
+  isInternalDiagnosticsEnabled,
+  SessionDiagnosticsRecorder,
+} from "./internal-diagnostics.js";
 import { log } from "./logger.js";
 import { setEstimatorModel, calibrateEstimatorFromUsage } from "./compaction/token-estimator.js";
 import { calculateActiveContextTokens } from "./compaction/active-context.js";
@@ -433,6 +439,9 @@ export class AgentSession {
   // transcript rows the live run showed.
   private appMarkers: AppMarkerPayload[] = [];
   private turnMetrics: TurnMetricPayload[] = [];
+  /** Internal-only (GG_INTERNAL): live per-session cost/reliability recorder.
+   * Absent entirely in public builds — see core/internal-diagnostics.ts. */
+  private diagnosticsRecorder?: SessionDiagnosticsRecorder;
   private tools: AgentTool[] = [];
   /** Rebuilds the read tool for a new model (video byte cap is baked in at
    *  creation). Called from switchModel so video-capable models get the
@@ -775,6 +784,11 @@ export class AgentSession {
         : {}),
     });
     const tools = [...builtInTools, ...(this.opts.additionalTools ?? [])];
+    // Internal-only tool, appended last so public sessions keep a
+    // byte-identical tool block (prefix-cache stability).
+    if (isInternalDiagnosticsEnabled()) {
+      tools.push(createSessionStatsTool(() => this.diagnosticsRecorder));
+    }
     // Apply the optional tool allow-list (read-only advisory sessions). Filtering
     // here means the excluded tools are never registered with the agent loop, so
     // a hallucinated call can't mutate the repo — and buildSystemPrompt below is
@@ -877,6 +891,21 @@ export class AgentSession {
     if (this.opts.coderSlashCommands !== false) {
       const builtins = createBuiltinCommands();
       for (const cmd of builtins) this.slashCommands.register(cmd);
+
+      // Internal-only diagnostics: recorder + /diagnose exist exclusively when
+      // the internal flag is on. Public sessions never see either, so the
+      // command list and prompt stay identical to a build without this code.
+      if (isInternalDiagnosticsEnabled()) {
+        this.diagnosticsRecorder = new SessionDiagnosticsRecorder({
+          // Lazy: the session id is assigned at first prompt, not init.
+          sessionId: () => this.sessionId,
+          cwd: this.cwd,
+          provider: this.provider,
+          model: this.model,
+        });
+        this.diagnosticsRecorder.attach(this.eventBus);
+        this.slashCommands.register(createDiagnoseCommand());
+      }
 
       // Wire up /help to show all registered + prompt + custom commands.
       const helpCmd = this.slashCommands.get("help");
@@ -3576,6 +3605,9 @@ export class AgentSession {
       },
     };
     this.turnMetrics.push(payload);
+    // Internal diagnostics piggyback on the authoritative per-turn metric —
+    // one source of truth, and the record flushes to disk every turn.
+    this.diagnosticsRecorder?.recordTurnMetric(payload);
     if (this.sessionPath) await this.sessionManager.appendTurnMetric(this.sessionPath, payload);
   }
 
@@ -3972,6 +4004,7 @@ export class AgentSession {
   }
 
   async dispose(): Promise<void> {
+    this.diagnosticsRecorder?.finalize();
     this.managerAbortSignal?.removeEventListener("abort", this.managerAbortHandler);
     this.processManager?.shutdownAll();
     this.lspManager?.shutdownAll();
