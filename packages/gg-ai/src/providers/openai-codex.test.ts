@@ -17,6 +17,108 @@ describe("streamOpenAICodex", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each(["invalid_encrypted_content", undefined])(
+    "recovers rejected reasoning (%s) without changing history",
+    async (code) => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              error: {
+                code,
+                message:
+                  "The encrypted content for item rs_old could not be verified. Reason: Encrypted content could not be decrypted or parsed.",
+              },
+            }),
+            { status: 400 },
+          ),
+        )
+        .mockResolvedValueOnce(createSseResponse([{ type: "response.completed", response: {} }]));
+      vi.stubGlobal("fetch", fetchMock);
+      const messages = [
+        {
+          role: "assistant" as const,
+          content: [
+            {
+              type: "raw" as const,
+              data: { type: "reasoning", id: "rs_old", encrypted_content: "ENC_OLD", summary: [] },
+            },
+            { type: "text" as const, text: "Keep this answer" },
+            { type: "tool_call" as const, id: "call_1|fc_1", name: "read", args: {} },
+          ],
+        },
+        {
+          role: "tool" as const,
+          content: [
+            {
+              type: "tool_result" as const,
+              toolCallId: "call_1|fc_1",
+              content: "Keep this result",
+            },
+          ],
+        },
+        { role: "user" as const, content: "Continue" },
+      ];
+      const original = structuredClone(messages);
+      const result = streamOpenAICodex({
+        provider: "openai",
+        model: "gpt-6-astra",
+        apiKey: "test",
+        messages,
+      });
+      await expect(result.response).resolves.toBeDefined();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const first = JSON.parse(fetchMock.mock.calls[0][1].body);
+      const second = JSON.parse(fetchMock.mock.calls[1][1].body);
+      expect(first.input[0].type).toBe("reasoning");
+      expect(second).toEqual({ ...first, input: first.input.slice(1) });
+      expect(messages).toEqual(original);
+    },
+  );
+
+  it.each([
+    { status: 400, code: "invalid_encrypted_content", reasoning: true, attempts: 2 },
+    { status: 400, code: "invalid_encrypted_content", reasoning: false, attempts: 1 },
+    { status: 401, code: "invalid_encrypted_content", reasoning: true, attempts: 1 },
+    { status: 400, code: "invalid_request_error", reasoning: true, attempts: 1 },
+  ])(
+    "bounds reasoning recovery: $status $code reasoning=$reasoning",
+    async ({ status, code, reasoning, attempts }) => {
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: { code, message: "Rejected" } }), { status }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const result = streamOpenAICodex({
+        provider: "openai",
+        model: "gpt-6-astra",
+        apiKey: "test",
+        messages: [
+          ...(reasoning
+            ? [
+                {
+                  role: "assistant" as const,
+                  content: [
+                    {
+                      type: "raw" as const,
+                      data: { type: "reasoning", id: "rs_old", encrypted_content: "ENC" },
+                    },
+                  ],
+                },
+              ]
+            : []),
+          { role: "user", content: "Continue" },
+        ],
+      });
+      await expect(result.response).rejects.toMatchObject({
+        statusCode: status,
+        message: "Rejected",
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(attempts);
+    },
+  );
+
   it("preserves streamed function call arguments", async () => {
     vi.stubGlobal(
       "fetch",

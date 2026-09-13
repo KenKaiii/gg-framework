@@ -130,7 +130,10 @@ export function streamOpenAICodex(options: StreamOptions): StreamResult {
   return new StreamResult(runStream(options), options.signal);
 }
 
-async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, StreamResponse> {
+async function* runStream(
+  options: StreamOptions,
+  retriedWithoutReasoning = false,
+): AsyncGenerator<StreamEvent, StreamResponse> {
   const baseUrl = (options.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, "");
   const url = `${baseUrl}/codex/responses`;
 
@@ -230,6 +233,37 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     const requestId =
       parsed.requestId ??
       readHeader(response.headers, "x-request-id", "openai-request-id", "x-oai-request-id");
+
+    // A rejected encrypted replay item poisons every ordinary retry. Retry once
+    // with visible conversation/tool history only, before any output is emitted.
+    // Never alter saved messages or bypass server verification of an opaque blob.
+    if (
+      !retriedWithoutReasoning &&
+      !options.signal?.aborted &&
+      response.status === 400 &&
+      (parsed.errorObj?.code === "invalid_encrypted_content" ||
+        /encrypted content.*could not be (?:verified|decrypted|parsed)/i.test(message)) &&
+      options.messages.some(
+        (msg) =>
+          msg.role === "assistant" &&
+          Array.isArray(msg.content) &&
+          msg.content.some((part) => part.type === "raw" && isEncryptedReasoning(part.data)),
+      )
+    ) {
+      providerDiag("codex_retry_without_encrypted_reasoning", { status: response.status });
+      const messages = options.messages.map(
+        (msg): Message =>
+          msg.role === "assistant" && Array.isArray(msg.content)
+            ? {
+                ...msg,
+                content: msg.content.filter(
+                  (part) => !(part.type === "raw" && isEncryptedReasoning(part.data)),
+                ),
+              }
+            : msg,
+      );
+      return yield* runStream({ ...options, messages }, true);
+    }
 
     // ChatGPT-subscription usage-window exhaustion. The codex backend returns
     // HTTP 429 with a usage_limit_reached / usage_not_included / rate_limit_exceeded
