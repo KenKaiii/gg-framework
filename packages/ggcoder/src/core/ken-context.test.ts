@@ -74,6 +74,68 @@ describe("buildKenDigest", () => {
     platform: "darwin",
   };
 
+  it("uses host results instead of re-rejecting a completed background launch", () => {
+    const messages: Message[] = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_call",
+            id: "bg",
+            name: "bash",
+            args: { command: "pnpm test", run_in_background: true },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [{ type: "tool_result", toolCallId: "bg", content: "ID: task-1", isError: false }],
+      },
+    ];
+    const digest = buildKenDigest({
+      ...base,
+      messages,
+      verificationProblem: null,
+      verificationEvidence: [
+        { command: "pnpm test", status: "passed", reason: "Host exit code 0" },
+      ],
+    });
+    expect(digest).toContain("PASSED: `pnpm test`");
+    expect(digest).toContain("Current host gate: satisfied");
+    expect(digest).not.toContain("REJECTED: `pnpm test`");
+    expect(digest).not.toContain("background or persistent commands are not bounded evidence");
+  });
+
+  it("does not fall back to old transcript failures when restored host evidence has no command names", () => {
+    const messages: Message[] = [
+      {
+        role: "assistant",
+        content: [{ type: "tool_call", id: "old", name: "bash", args: { command: "pnpm test" } }],
+      },
+      {
+        role: "tool",
+        content: [
+          { type: "tool_result", toolCallId: "old", content: "Exit code: 1", isError: true },
+        ],
+      },
+    ];
+    const digest = buildKenDigest({
+      ...base,
+      messages,
+      verificationEvidence: [],
+      verificationProblem: null,
+    });
+    expect(digest).toContain("Current host gate: satisfied");
+    expect(digest).not.toContain("FAILED: `pnpm test`");
+    const unresolved = buildKenDigest({
+      ...base,
+      messages,
+      verificationEvidence: [],
+      verificationProblem: "Unverified: a check failed",
+    });
+    expect(unresolved).toContain("Current host gate: Unverified: a check failed");
+  });
+
   it("includes the env and the question", () => {
     const digest = buildKenDigest({ ...base, messages: [] });
     expect(digest).toContain("/tmp/proj");

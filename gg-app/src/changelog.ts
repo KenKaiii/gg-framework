@@ -22,6 +22,59 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.64.2",
+    date: "2026-09-14",
+    items: [
+      "A little housekeeping for your `GG Coder`. I refreshed the desktop foundations in this update, with no new buttons or workflows for you to learn.",
+    ],
+  },
+  {
+    version: "0.64.1",
+    date: "2026-09-13",
+    items: [
+      "Your `OpenAI` chats now get a second chance when the dreaded `encrypted content` error strikes. I added an automatic recovery attempt that keeps your messages and tool results intact, so you can get back to building without starting over.",
+    ],
+  },
+  {
+    version: "0.64.0",
+    date: "2026-09-12",
+    items: [
+      "Your existing projects now get a dedicated `refactoring` skill. I built in guidance for small, test-checked changes and older code without tests, so you can ask for a cleanup with clearer safeguards around what already works.",
+      "Tell GG Coder what matters before shrinking a long conversation. I added `/compact [focus]` so you can name the decisions or topics you want the summary to prioritize, instead of leaving that choice entirely to the agent.",
+    ],
+  },
+  {
+    version: "0.63.4",
+    date: "2026-09-12",
+    items: [
+      "Long sessions just got smarter about the code you're fixing. When your tests fail, the agent now keeps every failing test name in its memory even after the conversation gets compacted, and drops each one the moment it goes green. No more lost bugs resurfacing or chasing failures you already fixed. In my measurements that's `100%` of failing tests remembered where the old memory lost `1 in 6`.",
+    ],
+  },
+  {
+    version: "0.63.3",
+    date: "2026-09-11",
+    items: [
+      "I fixed a sneaky edit bug that could corrupt your code. Global `replace_all` edits now replace each match exactly once, so you stop seeing duplicate properties or half-finished changes that leave the agent chasing `TypeScript` errors it created itself. Fewer repair loops, cleaner diffs, faster finishes.",
+      "Your chat stays clean while the agent works. I pulled the raw post-edit diagnostic dumps out of the conversation, so edits that check out no longer spray gray error walls mid-reply. The agent still sees every real problem and fixes it, you just read the result instead of the noise.",
+    ],
+  },
+  {
+    version: "0.63.2",
+    date: "2026-09-11",
+    items: [
+      "Know where you stand without reading the whole reply. I made your agent lead with a clear status like `DONE`, `NOT FIXED`, or `NEEDS APPROVAL`, followed by what you need to do next. Finished work, remaining limits, and updates still waiting to ship no longer get buried.",
+      "I cut another source of repeat `verification` interruptions. Your agent now keeps credit for completed checks when a follow-up command leaves your code untouched, without treating that follow-up as proof of fresh checks.",
+      "No more chasing an image setting that cannot deliver. I made `Flare` and `Sunburst` explain up front that `transparent backgrounds` are currently unavailable through your ChatGPT connection, instead of retrying the same failed request or quietly giving you an opaque image.",
+    ],
+  },
+  {
+    version: "0.63.1",
+    date: "2026-09-11",
+    items: [
+      "I cut the repeat interruptions from `verification` and `Autopilot`, so your agent can keep moving instead of proving the same work again. Background checks and builds that leave your code unchanged now get the credit they earned, while real errors still get caught. Progress notices show what is actually happening, without pretending every edit is the finish line.",
+    ],
+  },
+  {
     version: "0.63.0",
     date: "2026-09-09",
     items: [

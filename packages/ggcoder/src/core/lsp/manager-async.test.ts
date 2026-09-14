@@ -83,6 +83,30 @@ describe("asynchronous post-edit diagnostics", () => {
     expect(lsp.getLatestOutcome("a.fake")?.kind).toBe("timeout");
   });
 
+  it("batches silent-file timeouts at completion rather than interrupting each edit", async () => {
+    const lsp = manager(["--silent"], { firstBudgetMs: 100, warmBudgetMs: 100 });
+    lsp.queueDiagnosticsAfterWrite("a.fake", "clean first file");
+    await lsp.flushDiagnostics();
+    expect(lsp.drainDiagnostics(true, { deferUnverified: true })).toBe("");
+    lsp.queueDiagnosticsAfterWrite("b.fake", "clean second file");
+    await lsp.flushDiagnostics();
+    expect(lsp.drainDiagnostics(true, { deferUnverified: true })).toBe("");
+    const summary = lsp.drainDiagnostics();
+    expect(summary).toContain("a.fake: diagnostics timeout; not verified");
+    expect(summary).toContain("b.fake: diagnostics timeout; not verified");
+    expect(lsp.drainDiagnostics()).toBe("");
+  });
+
+  it("clears deferred timeout notices after independent verification without claiming diagnostics passed", async () => {
+    const lsp = manager(["--silent"], { firstBudgetMs: 100 });
+    lsp.queueDiagnosticsAfterWrite("a.fake", "clean");
+    await lsp.flushDiagnostics();
+    expect(lsp.drainDiagnostics(true, { deferUnverified: true })).toBe("");
+    expect(lsp.drainDiagnostics(false)).toBe("");
+    expect(lsp.drainDiagnostics()).toBe("");
+    expect(lsp.getLatestOutcome("a.fake")?.kind).toBe("timeout");
+  });
+
   it("returns immediately, then exposes errors before completion, once", async () => {
     const lsp = manager(["--delay-ms=300"]);
     expect(lsp.queueDiagnosticsAfterWrite("a.fake", "ERROR")).toContain("queued");

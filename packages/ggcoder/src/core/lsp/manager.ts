@@ -231,12 +231,23 @@ export class LspManager {
   }
 
   /** Deliver completed, latest-write evidence once; silence is never a clean verdict. */
-  drainDiagnostics(includeUnverified = true): string {
+  drainDiagnostics(includeUnverified = true, options: { deferUnverified?: boolean } = {}): string {
     const results: string[] = [];
     for (const [file, job] of this.queuedDiagnostics) {
       if (job.running || job.cancelled || !job.outcome) continue;
-      this.queuedDiagnostics.delete(file);
       const outcome = job.outcome;
+      // Keep unavailable results for one completion summary. Actual diagnostics
+      // remain immediate, and successful independent verification can clear the
+      // queued notice without relabelling the underlying timeout as clean.
+      if (
+        includeUnverified &&
+        options.deferUnverified &&
+        !(outcome.kind === "diagnostics" && outcome.formatted) &&
+        outcome.kind !== "clean" &&
+        outcome.kind !== "unsupported"
+      )
+        continue;
+      this.queuedDiagnostics.delete(file);
       if (outcome.kind === "diagnostics" && outcome.formatted) results.push(outcome.formatted);
       else if (includeUnverified && outcome.kind !== "clean" && outcome.kind !== "unsupported") {
         results.push(
@@ -244,7 +255,7 @@ export class LspManager {
         );
       }
     }
-    if (this.diagnosticsOverflow) {
+    if (this.diagnosticsOverflow && !(includeUnverified && options.deferUnverified)) {
       if (includeUnverified)
         results.push(
           "Diagnostics capacity was exceeded; some changes are not verified. Run the project checks.",

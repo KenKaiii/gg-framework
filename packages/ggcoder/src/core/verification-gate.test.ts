@@ -95,6 +95,30 @@ describe("isCodeFilePath", () => {
 });
 
 describe("VerificationGate", () => {
+  it("shares revision-aware evidence without persisting command text across resume", () => {
+    const gate = new VerificationGate();
+    gate.recordMutation("src/a.ts");
+    gate.recordVerification(gate.revision, "pnpm test");
+    expect(gate.evidence()).toContainEqual(
+      expect.objectContaining({ command: "pnpm test", status: "passed" }),
+    );
+    const restored = new VerificationGate();
+    restored.restore(gate.snapshot());
+    expect(JSON.stringify(gate.snapshot())).not.toContain("pnpm test");
+    expect(restored.evidence()).toEqual([]);
+    expect(restored.verificationProblem()).toBeNull();
+    restored.recordMutation("src/a.ts");
+    expect(restored.evidence().some((e) => e.status === "passed")).toBe(false);
+    restored.recordFailedVerification("pnpm test");
+    expect(restored.evidence()).toContainEqual(
+      expect.objectContaining({ command: "pnpm test", status: "failed" }),
+    );
+    restored.recordVerification(restored.revision, "pnpm test");
+    expect(restored.evidence()).toContainEqual(
+      expect.objectContaining({ command: "pnpm test", status: "passed" }),
+    );
+  });
+
   it("keeps an authoritative problem after all reminder budgets are exhausted", () => {
     const gate = new VerificationGate();
     gate.recordMutation("a.ts");

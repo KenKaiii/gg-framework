@@ -104,6 +104,12 @@ import {
   type ImportForeignTranscriptResult,
 } from "./foreign-session-import.js";
 import { createToolSearchTool } from "../tools/tool-search.js";
+import { createSessionStatsTool } from "../tools/session-stats.js";
+import {
+  createDiagnoseCommand,
+  isInternalDiagnosticsEnabled,
+  SessionDiagnosticsRecorder,
+} from "./internal-diagnostics.js";
 import { log } from "./logger.js";
 import { setEstimatorModel, calibrateEstimatorFromUsage } from "./compaction/token-estimator.js";
 import { calculateActiveContextTokens } from "./compaction/active-context.js";
@@ -163,7 +169,8 @@ import {
   VERIFICATION_STATE_KIND,
   isVerificationCommand,
 } from "./verification-gate.js";
-import { classifyVerificationCommand } from "./verification-evidence.js";
+import { classifyVerificationCommand, type VerificationEvidence } from "./verification-evidence.js";
+import { captureVerificationSnapshot } from "./verification-snapshot.js";
 
 import { findUserSessionPrompt, getUserSessionPrompt } from "./session-preview.js";
 import { normalizeMessageImages } from "./message-images.js";
@@ -432,6 +439,9 @@ export class AgentSession {
   // transcript rows the live run showed.
   private appMarkers: AppMarkerPayload[] = [];
   private turnMetrics: TurnMetricPayload[] = [];
+  /** Internal-only (GG_INTERNAL): live per-session cost/reliability recorder.
+   * Absent entirely in public builds — see core/internal-diagnostics.ts. */
+  private diagnosticsRecorder?: SessionDiagnosticsRecorder;
   private tools: AgentTool[] = [];
   /** Rebuilds the read tool for a new model (video byte cap is baked in at
    *  creation). Called from switchModel so video-capable models get the
@@ -460,9 +470,17 @@ export class AgentSession {
   private hookFileEditCounts = new Map<string, number>();
   private hookToolCalls = new Map<
     string,
-    { name: string; args: Record<string, unknown>; revision: number }
+    {
+      name: string;
+      args: Record<string, unknown>;
+      revision: number;
+      sourceSnapshot?: string | null;
+    }
   >();
-  private backgroundVerification = new Map<string, { revision: number; command: string }>();
+  private backgroundVerification = new Map<
+    string,
+    { revision: number; command: string; sourceSnapshot?: string | null }
+  >();
   private idealReviewPhase: "idle" | "reviewing" | "complete" = "idle";
   /** Runtime-only suppression while Ken owns verification in autopilot mode. */
   private idealReviewSuppressed = false;
@@ -766,6 +784,11 @@ export class AgentSession {
         : {}),
     });
     const tools = [...builtInTools, ...(this.opts.additionalTools ?? [])];
+    // Internal-only tool, appended last so public sessions keep a
+    // byte-identical tool block (prefix-cache stability).
+    if (isInternalDiagnosticsEnabled()) {
+      tools.push(createSessionStatsTool(() => this.diagnosticsRecorder));
+    }
     // Apply the optional tool allow-list (read-only advisory sessions). Filtering
     // here means the excluded tools are never registered with the agent loop, so
     // a hallucinated call can't mutate the repo — and buildSystemPrompt below is
@@ -868,6 +891,21 @@ export class AgentSession {
     if (this.opts.coderSlashCommands !== false) {
       const builtins = createBuiltinCommands();
       for (const cmd of builtins) this.slashCommands.register(cmd);
+
+      // Internal-only diagnostics: recorder + /diagnose exist exclusively when
+      // the internal flag is on. Public sessions never see either, so the
+      // command list and prompt stay identical to a build without this code.
+      if (isInternalDiagnosticsEnabled()) {
+        this.diagnosticsRecorder = new SessionDiagnosticsRecorder({
+          // Lazy: the session id is assigned at first prompt, not init.
+          sessionId: () => this.sessionId,
+          cwd: this.cwd,
+          provider: this.provider,
+          model: this.model,
+        });
+        this.diagnosticsRecorder.attach(this.eventBus);
+        this.slashCommands.register(createDiagnoseCommand());
+      }
 
       // Wire up /help to show all registered + prompt + custom commands.
       const helpCmd = this.slashCommands.get("help");
@@ -1438,10 +1476,19 @@ export class AgentSession {
           // it poisoned the gate on green output and re-armed the hook into
           // every later question turn.
           const classification = classifyVerificationCommand(event.args.command);
-          this.verificationGate.requireFreshVerification(
-            !classification.accepted && classification.mayMutate,
-            event.args.command,
-          );
+          if (classification.snapshotEligible && event.args.persist !== true) {
+            const call = this.hookToolCalls.get(event.toolCallId)!;
+            call.sourceSnapshot = await captureVerificationSnapshot(this.opts.cwd, [
+              ...this.hookFileEditCounts.keys(),
+            ]);
+            if (call.sourceSnapshot === null)
+              this.verificationGate.requireFreshVerification(true, event.args.command);
+          } else {
+            this.verificationGate.requireFreshVerification(
+              !classification.accepted && classification.mayMutate,
+              event.args.command,
+            );
+          }
           await this.persistVerificationState();
         }
         break;
@@ -1510,17 +1557,32 @@ export class AgentSession {
         if (args && call && name === "bash") {
           const command = typeof args.command === "string" ? args.command : "";
           const classification = classifyVerificationCommand(command);
-          if (classification.accepted) {
+          if (classification.accepted || classification.snapshotEligible) {
             if (args.run_in_background === true && !event.isError && args.persist !== true) {
               const id = /^ID:\s*(\S+)/m.exec(event.result)?.[1];
               // No parseable ID means the check cannot be tracked to a real exit
               // code — no evidence either way. Recording a FAILURE here made
               // every later green run of a different spelling look owed.
-              if (id) this.backgroundVerification.set(id, { revision: call.revision, command });
+              if (id)
+                this.backgroundVerification.set(id, {
+                  revision: call.revision,
+                  command,
+                  ...(classification.snapshotEligible
+                    ? { sourceSnapshot: call.sourceSnapshot ?? null }
+                    : {}),
+                });
+              else if (classification.snapshotEligible)
+                this.verificationGate.requireFreshVerification(true, command);
             } else if (args.persist === true) {
               // Persistent-shell checks are not bounded evidence (steering can
               // interleave): neither a pass nor a failure. A recorded failure
               // here blocked approval for sessions that prefer the shell.
+            } else if (classification.snapshotEligible) {
+              await this.finishSnapshotVerification(
+                { command, revision: call.revision, sourceSnapshot: call.sourceSnapshot ?? null },
+                !event.isError && /^Exit code:\s*0(?:\s|$)/i.test(event.result.trim()),
+              );
+              verificationChanged = true;
             } else {
               if (!event.isError && /^Exit code:\s*0(?:\s|$)/i.test(event.result.trim())) {
                 this.verificationGate.recordVerification(call.revision, command);
@@ -1529,6 +1591,7 @@ export class AgentSession {
               }
               verificationChanged = true;
             }
+            delete call.sourceSnapshot;
           } else if (classification.candidate) {
             // Green but untrusted: remember WHY so the demand can tell the
             // agent which command shape actually clears the gate.
@@ -1536,17 +1599,8 @@ export class AgentSession {
           }
         }
         if (!event.isError && args && name === "task_output" && typeof args.id === "string") {
-          const started = this.backgroundVerification.get(args.id);
-          const proc = this.processManager?.list().find((p) => p.id === args.id);
-          if (started && proc && proc.exitCode !== null) {
-            if (proc.exitCode === 0) {
-              this.verificationGate.recordVerification(started.revision, started.command);
-            } else {
-              this.verificationGate.recordFailedVerification(started.command, started.revision);
-            }
-            this.backgroundVerification.delete(args.id);
-            verificationChanged = true;
-          }
+          verificationChanged =
+            (await this.recordFinishedBackgroundVerification(args.id)) || verificationChanged;
         }
         if (verificationChanged) await this.persistVerificationState();
         // Tool results are what push the run over the review gate, and they all
@@ -1642,8 +1696,9 @@ export class AgentSession {
     // in the same batch when both are pending.
     const diagnosticText = this.lspManager?.drainDiagnostics(
       this.getVerificationProblem() !== null,
+      { deferUnverified: true },
     );
-    if (diagnosticText) this.eventBus.emit("hook", { kind: "verification" });
+    if (diagnosticText) this.eventBus.emit("diagnostics", { text: diagnosticText });
     this.refreshVerificationArmed();
     const notified = this.notifications.drain();
     const notificationMessage: Message | null =
@@ -2050,6 +2105,14 @@ export class AgentSession {
    * blocked until harness-owned post-injection reads cover every changed file.
    */
   private async getHookFollowUpMessages(): Promise<Message[] | null> {
+    // Exit notifications and task_output refer to the same host process record.
+    // Do not force an extra polling tool/turn merely to acknowledge a known exit.
+    let backgroundChanged = false;
+    for (const id of this.backgroundVerification.keys()) {
+      backgroundChanged =
+        (await this.recordFinishedBackgroundVerification(id)) || backgroundChanged;
+    }
+    if (backgroundChanged) await this.persistVerificationState();
     // Edits return immediately; only the completion boundary waits for remaining
     // checks. Queued timeouts stay explicitly unverified, never a false all-clear.
     await this.lspManager?.flushDiagnostics(this.opts.signal);
@@ -2057,19 +2120,19 @@ export class AgentSession {
     const diagnosticText = this.lspManager?.drainDiagnostics(
       this.getVerificationProblem() !== null,
     );
-    if (diagnosticText) this.eventBus.emit("hook", { kind: "verification" });
+    if (diagnosticText) this.eventBus.emit("diagnostics", { text: diagnosticText });
     this.refreshVerificationArmed();
-    if (diagnosticText) {
-      return [
-        {
-          role: "user",
-          content: buildNotificationSteeringText([diagnosticText]),
-          provenance: { source: "runtime", kind: "notification", visibility: "hidden" },
-        },
-      ];
-    }
+    const diagnosticMessages: Message[] = diagnosticText
+      ? [
+          {
+            role: "user",
+            content: buildNotificationSteeringText([diagnosticText]),
+            provenance: { source: "runtime", kind: "notification", visibility: "hidden" },
+          },
+        ]
+      : [];
     const childCompletionFollowUp = buildSubAgentCompletionFollowUp(this.subAgentManager);
-    if (childCompletionFollowUp) return childCompletionFollowUp;
+    if (childCompletionFollowUp) return [...diagnosticMessages, ...childCompletionFollowUp];
 
     // Background processes started this run and never read block completion:
     // their progress/exit checkpoints only land on the steering path, which an
@@ -2084,7 +2147,7 @@ export class AgentSession {
       log("INFO", "process-gate", "Injecting background-process completion gate", {
         injected: String(this.processGateInjected),
       });
-      return processFollowUp;
+      return [...diagnosticMessages, ...processFollowUp];
     }
 
     // Verification gate: code was edited but nothing verified since the last
@@ -2111,9 +2174,13 @@ export class AgentSession {
               : {}),
         });
         this.refreshHookArming();
-        return verificationFollowUp;
+        return [...diagnosticMessages, ...verificationFollowUp];
       }
     }
+
+    // Address real errors before review; unavailable checks share the existing
+    // verification demand above instead of manufacturing a separate hook.
+    if (diagnosticMessages.length > 0) return diagnosticMessages;
 
     if (this.opts.selfCorrectionHooks === false || this.idealReviewSuppressed) return null;
 
@@ -2172,8 +2239,6 @@ export class AgentSession {
     // Independent reviewer first (async, bounded): its findings ride in the
     // SAME follow-up batch as the in-thread review + coverage requirements, so
     // addressing everything still costs one extra turn.
-    const independentMessages = await this.runIndependentReview(decision);
-
     this.reviewCoverage.start(this.hookFileEditCounts.keys());
     this.idealReviewPhase = "reviewing";
     const coverage = this.reviewCoverage.evidence();
@@ -2190,6 +2255,8 @@ export class AgentSession {
     // coverage is outstanding injects again. Disarm lands later, on the read
     // that closes the last gap (or when the retry budget escalates).
     this.refreshIdealReviewArmed();
+    // Announce the phase before the reviewer starts, not after its bounded wait.
+    const independentMessages = await this.runIndependentReview(decision);
     log("INFO", "ideal", "Injecting ideal review before final response", {
       coverageExpected: coverage.expected,
       coverageMissing: coverage.missing,
@@ -2886,6 +2953,8 @@ export class AgentSession {
       baseUrl?: string;
     },
     mode: "manual" | "automatic" | "forced" = "manual",
+    /** User-stated focus (`/compact <focus>`): what must survive verbatim. */
+    focus?: string,
   ): Promise<void> {
     this.lastCompactionCompacted = false;
     const creds =
@@ -2921,6 +2990,7 @@ export class AgentSession {
         targetTokens: policy.targetTokens,
         signal: this.opts.signal,
         approvedPlanPath: this.approvedPlanPath,
+        focus,
       });
       contextSelection = output.result.contextSelection;
       return output;
@@ -3538,6 +3608,9 @@ export class AgentSession {
       },
     };
     this.turnMetrics.push(payload);
+    // Internal diagnostics piggyback on the authoritative per-turn metric —
+    // one source of truth, and the record flushes to disk every turn.
+    this.diagnosticsRecorder?.recordTurnMetric(payload);
     if (this.sessionPath) await this.sessionManager.appendTurnMetric(this.sessionPath, payload);
   }
 
@@ -3639,7 +3712,57 @@ export class AgentSession {
    * instead of dropping the marker or falling back to a raw verdict string.
    * No-op persistence for transient sessions (kept in memory only).
    */
+  private async recordFinishedBackgroundVerification(id: string): Promise<boolean> {
+    const started = this.backgroundVerification.get(id);
+    const proc = this.processManager?.list().find((entry) => entry.id === id);
+    if (!started || !proc || proc.exitCode === null) return false;
+    if (started.sourceSnapshot !== undefined) {
+      await this.finishSnapshotVerification(started, proc.exitCode === 0);
+    } else if (proc.exitCode === 0) {
+      this.verificationGate.recordVerification(started.revision, started.command);
+    } else {
+      this.verificationGate.recordFailedVerification(started.command, started.revision);
+    }
+    this.backgroundVerification.delete(id);
+    return true;
+  }
+
+  getVerificationEvidence(): VerificationEvidence[] {
+    return this.verificationGate.evidence();
+  }
+
+  private async finishSnapshotVerification(
+    check: { command: string; revision: number; sourceSnapshot?: string | null },
+    passed: boolean,
+  ): Promise<void> {
+    const after = check.sourceSnapshot
+      ? await captureVerificationSnapshot(this.opts.cwd, [...this.hookFileEditCounts.keys()])
+      : null;
+    if (after === null || after !== check.sourceSnapshot) {
+      this.verificationGate.requireFreshVerification(true, check.command);
+      this.verificationGate.recordRejectedCheck(
+        check.command,
+        after === null
+          ? "Workspace inputs could not be compared; run a read-only check after the command"
+          : "Command changed workspace inputs; run checks against the changed source",
+      );
+      if (!passed) this.verificationGate.recordFailedVerification(check.command);
+    } else if (passed) {
+      const classification = classifyVerificationCommand(check.command);
+      if (classification.snapshotPreserveOnly) {
+        this.verificationGate.recordRejectedCheck(check.command, classification.reason);
+      } else {
+        this.verificationGate.recordVerification(check.revision, check.command);
+      }
+    } else {
+      this.verificationGate.recordFailedVerification(check.command, check.revision);
+    }
+  }
+
   getVerificationProblem(): string | null {
+    if ([...this.hookToolCalls.values()].some((call) => call.sourceSnapshot !== undefined)) {
+      return "Unverified: a build is still running or its workspace comparison is pending.";
+    }
     return (
       this.verificationGate.verificationProblem() ??
       (this.backgroundVerification.size > 0
@@ -3884,6 +4007,7 @@ export class AgentSession {
   }
 
   async dispose(): Promise<void> {
+    this.diagnosticsRecorder?.finalize();
     this.managerAbortSignal?.removeEventListener("abort", this.managerAbortHandler);
     this.processManager?.shutdownAll();
     this.lspManager?.shutdownAll();
@@ -4113,7 +4237,7 @@ export class AgentSession {
   private createSlashCommandContext(): SlashCommandContext {
     return {
       switchModel: (provider, model) => this.switchModel(provider, model),
-      compact: () => this.compact(undefined, "manual"),
+      compact: (focus?: string) => this.compact(undefined, "manual", focus),
       newSession: () => this.newSession(),
       listSessions: async () => {
         const sessions = await this.sessionManager.list(this.cwd);

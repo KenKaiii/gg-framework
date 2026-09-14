@@ -316,6 +316,9 @@ async function main() {
     entryPoints: [sidecarEntry],
     outfile: outFile,
     bundle: true,
+    // SDK updates add generated code. Trim formatting, not identifiers or syntax,
+    // so the shipped bundle stays within its size budget without changing names.
+    minifyWhitespace: true,
     platform: "node",
     format: "esm",
     target: "node22",

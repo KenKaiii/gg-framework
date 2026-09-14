@@ -57,6 +57,150 @@ describe("createEditTool", () => {
     expect(written).toBe("goodbye world\n");
   });
 
+  it.each([
+    {
+      label: "retention fields without duplicating the first object",
+      original:
+        "const a = { created_at: cutoff };\nconst b = { created_at: cutoff };\nconst c = { created_at: cutoff };\n",
+      oldText: "created_at: cutoff",
+      newText: "created_at: cutoff, retention_acquired_at: cutoff",
+      expected:
+        "const a = { created_at: cutoff, retention_acquired_at: cutoff };\nconst b = { created_at: cutoff, retention_acquired_at: cutoff };\nconst c = { created_at: cutoff, retention_acquired_at: cutoff };\n",
+    },
+    {
+      label: "adjacent matches with a self-containing replacement",
+      original: "aaaa",
+      oldText: "a",
+      newText: "ba",
+      expected: "babababa",
+    },
+    {
+      label: "shorter replacements",
+      original: "abab abab",
+      oldText: "abab",
+      newText: "ab",
+      expected: "ab ab",
+    },
+    {
+      label: "deletion without matching newly joined boundaries",
+      original: "aabb ab",
+      oldText: "ab",
+      newText: "",
+      expected: "ab ",
+    },
+    {
+      label: "fuzzy matches without revisiting replacement text",
+      original: "say(“hello”);\nsay(“hello”);\n",
+      oldText: 'say("hello");',
+      newText: 'say("hello"); extra();',
+      expected: 'say("hello"); extra();\nsay("hello"); extra();\n',
+    },
+    {
+      label: "multiline fuzzy matches with different original lengths",
+      original: "say(“hello”);  \nnext();\nsay(“hello”); \nnext();\n",
+      oldText: 'say("hello");\nnext();',
+      newText: 'say("hello");\nnext();\nextra();',
+      expected: 'say("hello");\nnext();\nextra();\nsay("hello");\nnext();\nextra();\n',
+    },
+    {
+      label: "exact matches without broadening to fuzzy matches",
+      original: 'say(“hello”);\nsay("hello");\nsay("hello");\n',
+      oldText: 'say("hello");',
+      newText: 'say("hello"); extra();',
+      expected: 'say(“hello”);\nsay("hello"); extra();\nsay("hello"); extra();\n',
+    },
+  ])("replace_all handles $label", async ({ original, oldText, newText, expected }) => {
+    const filePath = path.join(tmpDir, "replace-all.txt");
+    await fs.writeFile(filePath, original);
+    const tool = createEditTool(tmpDir);
+    await tool.execute(
+      {
+        file_path: "replace-all.txt",
+        edits: [{ old_text: oldText, new_text: newText, replace_all: true }],
+      },
+      { signal: new AbortController().signal, toolCallId: "replace-all-regression" },
+    );
+    expect(await fs.readFile(filePath, "utf-8")).toBe(expected);
+  });
+
+  it("replaces non-overlapping fuzzy blocks without double-counting shared lines", async () => {
+    const filePath = path.join(tmpDir, "overlap.txt");
+    await fs.writeFile(filePath, "A \nA \nA \n");
+    await createEditTool(tmpDir).execute(
+      {
+        file_path: "overlap.txt",
+        edits: [{ old_text: "A\nA", new_text: "X\nX", replace_all: true }],
+      },
+      { signal: new AbortController().signal, toolCallId: "overlapping-fuzzy" },
+    );
+    expect(await fs.readFile(filePath, "utf-8")).toBe("X\nX\nA \n");
+  });
+
+  it("rejects global elision instead of reporting a single replacement as complete", async () => {
+    const filePath = path.join(tmpDir, "elision.txt");
+    const original =
+      "function f() {\n  keep();\n  return 1;\n}\n\nfunction f() {\n  keep();\n  return 1;\n}\n";
+    await fs.writeFile(filePath, original);
+    await expect(
+      createEditTool(tmpDir).execute(
+        {
+          file_path: "elision.txt",
+          edits: [
+            {
+              old_text: "function f() {\n  ...\n  return 1;\n}",
+              new_text: "function f() {\n  ...\n  return 2;\n}",
+              replace_all: true,
+            },
+          ],
+        },
+        { signal: new AbortController().signal, toolCallId: "global-elision" },
+      ),
+    ).rejects.toThrow(/replace_all.*elision/);
+    expect(await fs.readFile(filePath, "utf-8")).toBe(original);
+  });
+
+  it("still rejects ambiguous overlapping fuzzy matches for a single edit", async () => {
+    const filePath = path.join(tmpDir, "ambiguous-overlap.txt");
+    const original = "A \nA \nA \n";
+    await fs.writeFile(filePath, original);
+    await expect(
+      createEditTool(tmpDir).execute(
+        { file_path: "ambiguous-overlap.txt", edits: [{ old_text: "A\nA", new_text: "X\nX" }] },
+        { signal: new AbortController().signal, toolCallId: "ambiguous-overlap" },
+      ),
+    ).rejects.toThrow(/old_text found 2 times/);
+    expect(await fs.readFile(filePath, "utf-8")).toBe(original);
+  });
+
+  it("permits global literal dots when the complete text actually exists", async () => {
+    const filePath = path.join(tmpDir, "literal-dots.txt");
+    await fs.writeFile(filePath, "header\n...\nend\nheader\n...\nend\n");
+    await createEditTool(tmpDir).execute(
+      {
+        file_path: "literal-dots.txt",
+        edits: [{ old_text: "header\n...\nend", new_text: "changed\n...\nend", replace_all: true }],
+      },
+      { signal: new AbortController().signal, toolCallId: "literal-dots" },
+    );
+    expect(await fs.readFile(filePath, "utf-8")).toBe("changed\n...\nend\nchanged\n...\nend\n");
+  });
+
+  it.each([false, true])(
+    "removes exact invisible characters through the edit tool (replace_all=%s)",
+    async (replaceAll) => {
+      const filePath = path.join(tmpDir, "invisible.txt");
+      await fs.writeFile(filePath, replaceAll ? "a\u200bb\u200b" : "a\u200bb");
+      await createEditTool(tmpDir).execute(
+        {
+          file_path: "invisible.txt",
+          edits: [{ old_text: "\u200b", new_text: "", replace_all: replaceAll }],
+        },
+        { signal: new AbortController().signal, toolCallId: "exact-invisible-removal" },
+      );
+      expect(await fs.readFile(filePath, "utf-8")).toBe("ab");
+    },
+  );
+
   it("applies multiple edits sequentially", async () => {
     const filePath = path.join(tmpDir, "multi.txt");
     await fs.writeFile(filePath, "alpha\nbeta\ngamma\n");

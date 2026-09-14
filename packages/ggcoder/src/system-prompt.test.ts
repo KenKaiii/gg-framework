@@ -216,16 +216,31 @@ describe("buildSystemPrompt", () => {
   });
 
   it.each([
-    [[], "038b05430516b9c792fc84063afe4c1aa26d2e4c67c350bdc4b3360a44321f78"],
-    [["ask_user"], "ad0974da5188f061a4ef0e31792bcd6334ca6df4602002bf93e7b95207e319b1"],
+    [[], "6b584e17161089263de4d0b59bc347b5b2787c88e4211dce643da1000dcd3b9e"],
+    [["ask_user"], "207ab1fb6d7da730cd7754bb46e3fd22a2225671e6f26246b896a509025890aa"],
   ] as const)(
-    "preserves the pre-extreme response policy with tools %j",
+    "preserves the explicit-status response policy with tools %j",
     async (toolNames, hash) => {
       const cwd = await makeProject();
       const prompt = await buildSystemPrompt(cwd, undefined, false, undefined, toolNames);
       const talk = prompt
         .slice(sectionIndex(prompt, "## How to Talk"), sectionIndex(prompt, "## How to Work"))
         .trimEnd();
+      for (const rule of [
+        "Final reply starts with a bold status:",
+        "DONE (requested scope completed)",
+        "NOT FIXED (problem remains)",
+        "UNVERIFIED (changed, not verified)",
+        "BLOCKED (cannot proceed)",
+        "NEEDS APPROVAL (awaiting your decision)",
+        'required user action or "No action needed,"',
+        "investigation is not implementation; implementation is not verification or deployment",
+        "Surface remaining limitations and pending deployment beside the outcome",
+        'Never say "all clear" with unresolved work',
+        "Approval questions still use the ask channel below",
+      ]) {
+        expect(talk).toContain(rule);
+      }
       expect(createHash("sha256").update(talk).digest("hex")).toBe(hash);
     },
   );
