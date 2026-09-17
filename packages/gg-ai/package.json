@@ -28,10 +28,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.124.0",
+    "@anthropic-ai/sdk": "^0.125.0",
     "@bokuweb/zstd-wasm": "^0.0.27",
-    "openai": "^7.13.0",
-    "zod": "^4.4.3"
+    "openai": "^7.15.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
