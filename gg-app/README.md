@@ -24,6 +24,19 @@ pnpm --filter gg-app test     # vitest
 pnpm --filter gg-app lint
 ```
 
+## Project colour tags
+
+Click the colour button beside an open project's name to choose a personal colour.
+**Automatic** restores the generated accent; **None** removes the decoration without
+hiding the button. **Show header stripe** adds an app-wide stripe and is off by default.
+None suppresses the stripe for that project.
+
+Choices belong to the full project folder path, so same-named folders stay separate.
+Native windows share preferences in `~/.gg/gg-app-project-colours.json`, independently
+of other app settings. These preferences are personal, survive restarts, and are not
+written into the project or shared with teammates. Browser previews use local storage
+instead; they do not share the native app's preferences.
+
 ## Architecture
 
 Each window runs its **own** Node agent sidecar pointed at its **own** project folder.

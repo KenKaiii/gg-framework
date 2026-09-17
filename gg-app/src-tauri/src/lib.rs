@@ -5,6 +5,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
+mod project_colours;
+
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 #[cfg(windows)]
@@ -5088,6 +5090,7 @@ pub fn run() {
             ..Default::default()
         })
         .manage(Windows::default())
+        .manage(project_colours::ProjectColours::default())
         .manage(RestoreTargets::default())
         .manage(AppExiting::default())
         .manage(FocusedWindow::default())
@@ -5156,6 +5159,8 @@ pub fn run() {
             agent_set_project_hidden,
             app_settings_get,
             app_settings_save,
+            project_colours::project_colours_get,
+            project_colours::project_colours_save,
             app_create_project,
             app_auth_status,
             app_auth_apikey,
