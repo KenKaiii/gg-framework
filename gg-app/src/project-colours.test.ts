@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { clearMocks, mockWindows } from "@tauri-apps/api/mocks";
+import type * as TauriCore from "@tauri-apps/api/core";
 
 const { invokeMock, listenMock } = vi.hoisted(() => ({ invokeMock: vi.fn(), listenMock: vi.fn() }));
 vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
+  ...(await importOriginal<typeof TauriCore>()),
   invoke: invokeMock,
   isTauri: () => false,
 }));
