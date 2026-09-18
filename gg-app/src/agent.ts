@@ -4,8 +4,10 @@
 //   - invoke("agent_state" | "agent_prompt" | "agent_cancel")
 //   - listen("agent-event")  ← forwarded SSE frames
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { error as logError, info as logInfo } from "@tauri-apps/plugin-log";
+import type { ProjectColourChoice } from "./projectAccent";
 
 // Per-window event bus. The Rust side emits agent traffic with `emit_to` the
 // specific window label, so each window must listen on ITS OWN webview target —
@@ -1165,6 +1167,28 @@ export async function getSettings(): Promise<AppSettings | null> {
  */
 export async function saveSettings(projectsRoot: string): Promise<void> {
   await invoke("app_settings_save", { projectsRoot });
+}
+
+/** Personal project preferences are handled in Rust, without the sidecar.
+ * The store validates these untrusted native payloads before publishing them. */
+export function getProjectColourPreferences(cwd: string | null): Promise<unknown> {
+  return invoke<unknown>("project_colours_get", { cwd });
+}
+
+/** Save a project choice or the app-wide stripe setting. Throws on failure. */
+export function saveProjectColourPreferences(
+  cwd: string | null,
+  choice: ProjectColourChoice | null,
+  stripe: boolean | null,
+): Promise<unknown> {
+  return invoke<unknown>("project_colours_save", { cwd, choice, stripe });
+}
+
+/** Unlike agent traffic, preferences are broadcast to every app window. */
+export function listenProjectColourPreferences(
+  onChange: (payload: unknown) => void,
+): Promise<UnlistenFn> {
+  return listen<unknown>("project-colours-changed", (event) => onChange(event.payload));
 }
 
 export interface InstalledPlugin {

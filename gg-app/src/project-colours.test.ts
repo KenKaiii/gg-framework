@@ -1,18 +1,29 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import { clearMocks, mockWindows } from "@tauri-apps/api/mocks";
 
 const { invokeMock, listenMock } = vi.hoisted(() => ({ invokeMock: vi.fn(), listenMock: vi.fn() }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock, isTauri: () => false }));
+vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
+  invoke: invokeMock,
+  isTauri: () => false,
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: listenMock }));
-import { createProjectColourStore, projectColourKey } from "./project-colours";
 import { PROJECT_COLOUR_NAMES } from "./projectAccent";
 
+// The real native bridge resolves this webview's label during module loading.
+mockWindows("main");
+const { createProjectColourStore, projectColourKey } = await import("./project-colours");
+
 beforeEach(() => {
+  mockWindows("main");
   vi.restoreAllMocks();
   invokeMock.mockReset();
   listenMock.mockReset();
   localStorage.clear();
 });
+
+afterEach(() => clearMocks());
 
 describe("personal project colours in the browser", () => {
   it("normalizes full identities but keeps same-named projects independent", () => {
@@ -161,6 +172,40 @@ describe("native-window preference transport", () => {
     stopSecond();
     expect(off).toHaveBeenCalledTimes(2);
     expect(callbacks.size).toBe(0);
+  });
+
+  it("uses the app-wide event and exact native reset and stripe command payloads", async () => {
+    listenMock.mockResolvedValue(vi.fn());
+    invokeMock.mockImplementation(
+      async (command: string, args: { cwd: string | null; stripe?: boolean | null }) => ({
+        ...initial,
+        projectKey: command === "project_colours_get" ? args.cwd : null,
+        stripe: args.stripe ?? false,
+        revision: command === "project_colours_save" ? 1 : 0,
+      }),
+    );
+    const store = createProjectColourStore(true);
+    const stop = store.subscribe(vi.fn());
+    expect(await store.resolveProject("/a/project")).toBe("/a/project");
+    expect(listenMock).toHaveBeenCalledWith("project-colours-changed", expect.any(Function));
+    expect(invokeMock).toHaveBeenLastCalledWith("project_colours_get", { cwd: "/a/project" });
+
+    await store.setChoice("/a/project", "Automatic");
+    expect(invokeMock).toHaveBeenLastCalledWith("project_colours_save", {
+      cwd: "/a/project",
+      choice: "Automatic",
+      stripe: null,
+    });
+    await store.setStripe(true);
+    expect(invokeMock).toHaveBeenLastCalledWith("project_colours_save", {
+      cwd: null,
+      choice: null,
+      stripe: true,
+    });
+    expect(store.getSnapshot().stripe).toBe(true);
+    await store.setStripe(false);
+    expect(store.getSnapshot().stripe).toBe(false);
+    stop();
   });
 
   it("keeps the last confirmed native choice when persistence fails", async () => {

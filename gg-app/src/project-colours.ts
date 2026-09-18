@@ -1,11 +1,15 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isTauri } from "@tauri-apps/api/core";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import {
+  getProjectColourPreferences,
+  listenProjectColourPreferences,
+  saveProjectColourPreferences,
+} from "./agent";
 import { isProjectColourChoice, type ProjectColourChoice } from "./projectAccent";
 
 const PREFIX = "gg-project-colour:";
 const STRIPE_KEY = "gg-project-colour-stripe";
-const EVENT = "project-colours-changed";
 type Override = Exclude<ProjectColourChoice, "Automatic">;
 
 interface Preferences {
@@ -126,7 +130,7 @@ export function createProjectColourStore(native = isTauri()) {
     }
   }
   async function loadNative(cwd: string | null = null): Promise<string | null> {
-    const next = applyNative(await invoke<unknown>("project_colours_get", { cwd }));
+    const next = applyNative(await getProjectColourPreferences(cwd));
     if (!next) throw new Error("Invalid project colour preferences");
     return next.projectKey;
   }
@@ -145,8 +149,8 @@ export function createProjectColourStore(native = isTauri()) {
     if (native) {
       // Listen FIRST, then read. The revision rejects an older read/response
       // arriving after a newer change from another native window.
-      ready = listen<unknown>(EVENT, (event: { payload: unknown }) => {
-        if (active) applyNative(event.payload);
+      ready = listenProjectColourPreferences((payload) => {
+        if (active) applyNative(payload);
       }).then((off: UnlistenFn) => {
         if (!active) {
           off();
@@ -205,9 +209,7 @@ export function createProjectColourStore(native = isTauri()) {
         throw new Error("A project and a known colour are required");
       if (native) {
         await ready;
-        const saved = applyNative(
-          await invoke<unknown>("project_colours_save", { cwd, choice, stripe: null }),
-        );
+        const saved = applyNative(await saveProjectColourPreferences(cwd, choice, null));
         if (!saved) throw new Error("Could not confirm the saved project colour");
       } else {
         // A key per project, NOT a read-modify-write map: other windows cannot
@@ -221,9 +223,7 @@ export function createProjectColourStore(native = isTauri()) {
       if (typeof stripe !== "boolean") throw new Error("Invalid stripe visibility");
       if (native) {
         await ready;
-        const saved = applyNative(
-          await invoke<unknown>("project_colours_save", { cwd: null, choice: null, stripe }),
-        );
+        const saved = applyNative(await saveProjectColourPreferences(null, null, stripe));
         if (!saved) throw new Error("Could not confirm saved stripe visibility");
       } else {
         window.localStorage.setItem(STRIPE_KEY, stripe ? "1" : "0");
