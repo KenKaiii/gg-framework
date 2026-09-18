@@ -8,13 +8,19 @@ import { expect, it } from "vitest";
 it("keeps rich-text rendering outside startup and production JS chunks below the warning limit", () => {
   const out = mkdtempSync(path.join(tmpdir(), "gg-markdown-split-"));
   try {
-    const build = spawnSync("pnpm", ["exec", "vite", "build", "--outDir", out, "--emptyOutDir"], {
-      cwd: fileURLToPath(new URL("../", import.meta.url)),
-      encoding: "utf8",
-      // Vitest sets NODE_ENV=test; measure the shipped React build instead.
-      env: { ...process.env, NODE_ENV: "production" },
-      timeout: 30_000,
-    });
+    // Run the installed JS entry with Node, not a platform-specific pnpm shim.
+    const viteCli = fileURLToPath(new URL("../node_modules/vite/bin/vite.js", import.meta.url));
+    const build = spawnSync(
+      process.execPath,
+      [viteCli, "build", "--outDir", out, "--emptyOutDir"],
+      {
+        cwd: fileURLToPath(new URL("../", import.meta.url)),
+        encoding: "utf8",
+        // Vitest sets NODE_ENV=test; measure the shipped React build instead.
+        env: { ...process.env, NODE_ENV: "production" },
+        timeout: 30_000,
+      },
+    );
     expect(build.error).toBeUndefined();
     expect(build.status, build.stdout + build.stderr).toBe(0);
     const manifest = JSON.parse(readFileSync(path.join(out, ".vite/manifest.json"), "utf8"));
