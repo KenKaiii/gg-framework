@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import { openProjectPath, openUrl, type WorkspaceMode, type GitHubCI } from "./agent";
 import { CIIndicator } from "./CIIndicator";
-import { projectAccent } from "./projectAccent";
+import { resolveProjectAccent } from "./projectAccent";
+import { useProjectColour } from "./project-colours";
+import { ProjectColourPicker } from "./ProjectColourPicker";
 
 interface WorkspaceHeaderProps {
   workspaceMode: WorkspaceMode;
@@ -66,14 +68,12 @@ export function WorkspaceHeader({
 }: WorkspaceHeaderProps): React.ReactElement {
   const fallbackTitle = workspaceMode === "chat" ? "GG Chat" : "GG Coder";
   const directory = cwd?.split(/[\\/]/).filter(Boolean).pop();
-  // Stable per-project colour, so a wall of identical dark windows becomes
-  // identifiable at a glance. Published as a CSS variable (not just inlined on
-  // the one rule that uses it) so descendants can opt in later.
-  const accent = projectAccent(cwd);
+  const colour = useProjectColour(cwd);
+  const accent = resolveProjectAccent(cwd, colour.choice);
 
   return (
     <div
-      className="chat-head"
+      className={`chat-head${accent && colour.stripe ? " chat-head-project-stripe" : ""}`}
       style={accent ? ({ "--project-accent": accent } as React.CSSProperties) : undefined}
     >
       <div className="chat-head-strip" data-tauri-drag-region>
@@ -92,7 +92,16 @@ export function WorkspaceHeader({
         >
           {directory ? (
             <>
-              {accent && <span className="chat-head-accent-dot" aria-hidden="true" />}
+              {cwd && (
+                <ProjectColourPicker
+                  key={cwd}
+                  cwd={cwd}
+                  choice={colour.choice}
+                  stripe={colour.stripe}
+                  ready={colour.ready}
+                  loadError={colour.error}
+                />
+              )}
               <button
                 type="button"
                 className="chat-head-cwd chat-head-link"

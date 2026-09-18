@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 // WorkspaceHeader imports agent.ts (openUrl), which reads the current webview
 // window at module load — stub it for jsdom.
@@ -15,6 +15,13 @@ vi.mock("@tauri-apps/api/webviewWindow", () => ({
 import { formatWorkspaceTitle, WorkspaceHeader } from "./WorkspaceHeader";
 
 afterEach(cleanup);
+
+// Settle asynchronous project identity before asserting header metadata.
+async function renderHeader(ui: React.ReactElement): Promise<void> {
+  await act(async () => {
+    render(ui);
+  });
+}
 
 function ChatHeaderHarness(): React.ReactElement {
   const [navHidden, setNavHidden] = useState(false);
@@ -31,11 +38,12 @@ function ChatHeaderHarness(): React.ReactElement {
 }
 
 describe("WorkspaceHeader", () => {
-  it("renders the chevron in chat mode and toggles the navbar", () => {
-    render(<ChatHeaderHarness />);
+  it("renders the chevron in chat mode and toggles the navbar", async () => {
+    await renderHeader(<ChatHeaderHarness />);
 
     expect(screen.getByText("GG Chat")).toBeDefined();
     expect(screen.getByRole("button", { name: "New chat" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /^Project colour:/ })).toBeNull();
 
     const hideToggle = screen.getByRole("button", { name: "Hide nav buttons" });
     expect(hideToggle.getAttribute("aria-expanded")).toBe("true");
@@ -59,12 +67,12 @@ describe("WorkspaceHeader", () => {
     expect(formatWorkspaceTitle("/work/app", null, "GG Coder", 1)).toBe("app │ 1 uncommitted");
   });
 
-  it("shows GitHub issue/PR counts and appends them to the window title", () => {
+  it("shows GitHub issue/PR counts and appends them to the window title", async () => {
     expect(formatWorkspaceTitle("/work/app", "main", "GG Coder", 0, 4, 1)).toBe(
       "app │ ⎇ main │ 4 issues │ 1 PR",
     );
 
-    render(
+    await renderHeader(
       <WorkspaceHeader
         workspaceMode="code"
         cwd="/work/gg-coder"
@@ -83,12 +91,12 @@ describe("WorkspaceHeader", () => {
     expect(screen.getByRole("button", { name: "1 PR" })).toBeDefined();
   });
 
-  it("shows an added-roots badge and appends it to the window title", () => {
+  it("shows an added-roots badge and appends it to the window title", async () => {
     expect(
       formatWorkspaceTitle("/work/app", "main", "GG Coder", 0, null, null, ["/work/sdk"]),
     ).toBe("app │ +1 root │ ⎇ main");
 
-    render(
+    await renderHeader(
       <WorkspaceHeader
         workspaceMode="code"
         cwd="/work/gg-coder"
@@ -104,8 +112,8 @@ describe("WorkspaceHeader", () => {
     expect(screen.getByText("+2 roots")).toBeDefined();
   });
 
-  it("hides the GitHub chips when the counts are unknown", () => {
-    render(
+  it("hides the GitHub chips when the counts are unknown", async () => {
+    await renderHeader(
       <WorkspaceHeader
         workspaceMode="code"
         cwd="/work/gg-coder"
@@ -121,13 +129,13 @@ describe("WorkspaceHeader", () => {
     expect(screen.queryByText(/PRs?$/)).toBeNull();
   });
 
-  it("hides a zero-count chip but keeps a non-zero one", () => {
+  it("hides a zero-count chip but keeps a non-zero one", async () => {
     // 3 open issues, 0 open PRs → issues chip shows, PR chip is hidden.
     expect(formatWorkspaceTitle("/work/app", "main", "GG Coder", 0, 3, 0)).toBe(
       "app │ ⎇ main │ 3 issues",
     );
 
-    render(
+    await renderHeader(
       <WorkspaceHeader
         workspaceMode="code"
         cwd="/work/gg-coder"
@@ -146,8 +154,8 @@ describe("WorkspaceHeader", () => {
     expect(screen.queryByRole("button", { name: /PRs?$/ })).toBeNull();
   });
 
-  it("makes the folder a click-to-open-location button and the branch a repo link", () => {
-    render(
+  it("makes the folder a click-to-open-location button and the branch a repo link", async () => {
+    await renderHeader(
       <WorkspaceHeader
         workspaceMode="code"
         cwd="/work/gg-coder"
@@ -163,12 +171,19 @@ describe("WorkspaceHeader", () => {
     const folder = screen.getByRole("button", { name: "gg-coder" });
     expect(folder.getAttribute("title")).toBe("/work/gg-coder — open folder");
 
+    const colour = screen.getByRole("button", { name: "Project colour: Automatic" });
+    expect(colour).not.toBe(folder);
+    expect(colour.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(colour.getAttribute("aria-expanded")).toBe("false");
+    expect(colour.hasAttribute("data-tauri-drag-region")).toBe(false);
+    expect(folder.hasAttribute("data-tauri-drag-region")).toBe(false);
+
     const branch = screen.getByRole("button", { name: "⎇ main" });
     expect(branch.getAttribute("title")).toContain("github.com/kenkaiiii/gg-coder");
   });
 
-  it("leaves the branch as static text when there is no GitHub repo URL", () => {
-    render(
+  it("leaves the branch as static text when there is no GitHub repo URL", async () => {
+    await renderHeader(
       <WorkspaceHeader
         workspaceMode="code"
         cwd="/work/gg-coder"
@@ -184,8 +199,8 @@ describe("WorkspaceHeader", () => {
     expect(screen.getByText("⎇ main")).toBeDefined();
   });
 
-  it("shows the current directory, branch, and dirty count instead of a session title", () => {
-    render(
+  it("shows the current directory, branch, and dirty count instead of a session title", async () => {
+    await renderHeader(
       <WorkspaceHeader
         workspaceMode="code"
         cwd="C:\\work\\gg-coder"

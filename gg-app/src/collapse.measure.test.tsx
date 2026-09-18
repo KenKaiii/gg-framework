@@ -5,7 +5,7 @@
  * markup, and a single window rendering a day's session passed `1.5 GB`.
  * Node count is deterministic and runs anywhere, unlike RSS.
  */
-import { fireEvent, render } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ROW_COLLAPSE_CHARS, visibleBlockCount } from "./collapse";
 
@@ -30,8 +30,12 @@ const heavyRow = [
 ].join("\n");
 
 describe("folding measured on a realistic heavy row", () => {
-  it("mounts an order of magnitude fewer DOM nodes for a big tool dump", () => {
+  it("mounts an order of magnitude fewer DOM nodes for a big tool dump", async () => {
     const { container, unmount } = render(<Markdown>{heavyRow}</Markdown>);
+    await waitFor(() => {
+      expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+      expect(container.querySelector("p")?.textContent).toBe("Here is the output:");
+    });
     const folded = container.querySelectorAll("*").length;
     const foldedChars = (container.textContent ?? "").length;
 
@@ -58,9 +62,10 @@ describe("folding measured on a realistic heavy row", () => {
     );
   });
 
-  it("keeps a normal reply at full fidelity", () => {
+  it("keeps a normal reply at full fidelity", async () => {
     const normal = "I fixed the bug.\n\n```ts\nconst x = 1;\n```\n\nAll tests pass.";
     const { container } = render(<Markdown>{normal}</Markdown>);
+    await waitFor(() => expect(container.querySelector(".code-block")).toBeTruthy());
     expect(container.querySelector("button.code-expand")).toBeNull();
     expect(container.textContent).toContain("All tests pass.");
   });

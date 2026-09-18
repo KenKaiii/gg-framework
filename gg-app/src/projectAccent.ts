@@ -1,10 +1,5 @@
-// Per-project accent identity.
-//
-// Six GG windows are six identical dark rectangles. Giving each project a stable
-// colour makes "which window is which" a glance instead of a read. The colour is
-// DERIVED from the project path, not stored — so it is instantly consistent
-// across windows, launches and machines, with nothing to configure and no state
-// to migrate.
+// Automatic per-project accent identity. Personal overrides live separately in
+// project-colours.ts; this palette and hash remain the unconfigured default.
 
 /**
  * Accent palette. Hand-picked rather than generated: an evenly spaced hue wheel
@@ -24,6 +19,39 @@ export const PROJECT_ACCENTS = [
   "#5ad1e6", // cyan
   "#c98bff", // orchid
 ] as const;
+
+export const PROJECT_COLOUR_NAMES = [
+  "Blue",
+  "Violet",
+  "Green",
+  "Amber",
+  "Coral",
+  "Teal",
+  "Pink",
+  "Lime",
+  "Cyan",
+  "Orchid",
+] as const;
+
+export type ProjectColour = (typeof PROJECT_COLOUR_NAMES)[number];
+export type ProjectColourChoice = ProjectColour | "Automatic" | "None";
+
+export function isProjectColourChoice(value: unknown): value is ProjectColourChoice {
+  return (
+    value === "Automatic" || value === "None" || PROJECT_COLOUR_NAMES.some((name) => name === value)
+  );
+}
+
+/** Only palette values can reach CSS, never raw persisted strings. */
+export function resolveProjectAccent(
+  cwd: string | null | undefined,
+  choice: ProjectColourChoice = "Automatic",
+): string | null {
+  const automatic = projectAccent(cwd);
+  if (!automatic || choice === "None") return null;
+  const index = PROJECT_COLOUR_NAMES.findIndex((name) => name === choice);
+  return index < 0 ? automatic : PROJECT_ACCENTS[index];
+}
 
 /**
  * FNV-1a (32-bit). Chosen over a hand-rolled `hash * 31 + c` because it

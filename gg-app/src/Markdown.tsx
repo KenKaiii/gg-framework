@@ -1,15 +1,62 @@
-import { memo, useCallback, useContext, useMemo, useRef, useState, createContext } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
+import {
+  Component,
+  Suspense,
+  lazy,
+  memo,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  createContext,
+  type ReactNode,
+} from "react";
 import { Check, Copy, CornerDownLeft } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { openProjectPath, sendPrompt } from "./agent";
 import { codeLanguage, codeNodeText } from "./markdown-prompt";
 import { collapsedCode, shouldCollapseCode, visibleBlockCount } from "./collapse";
 import { marked } from "marked";
-import { rehypeAnimateWords } from "./rehype-animate-words";
-import "highlight.js/styles/github-dark.css";
+
+const MarkdownRenderer = lazy(() =>
+  import("./MarkdownRenderer").then((module) => ({ default: module.MarkdownRenderer })),
+);
+
+function PlainMarkdown({ content }: { content: string }): React.ReactElement {
+  const { preview, hiddenLines } = collapsedCode(content);
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+      {expanded ? content : preview}
+      {hiddenLines > 0 && (
+        <button type="button" className="code-expand" onClick={() => setExpanded(!expanded)}>
+          {expanded ? "Show less plain text" : `Show full plain text (${hiddenLines} more lines)`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+class MarkdownRenderBoundary extends Component<
+  { content: string; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  render(): ReactNode {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <>
+        <p role="alert">Rich text could not load. Showing plain text; reopen the app to retry.</p>
+        <PlainMarkdown content={this.props.content} />
+      </>
+    );
+  }
+}
 
 interface Props {
   children: string;
@@ -278,8 +325,7 @@ function isPromptBlockComplete(raw: string): boolean {
   return /`{3,}\s*$/.test(body);
 }
 
-const ANIMATED_PLUGINS = [rehypeHighlight, rehypeAnimateWords];
-const PLUGINS = [rehypeHighlight];
+const MARKDOWN_COMPONENTS = { a: ExternalLink, pre: PreBlock };
 
 const MemoizedMarkdownBlock = memo(
   function MarkdownBlock({
@@ -294,13 +340,19 @@ const MemoizedMarkdownBlock = memo(
     const normalized = content.replace(/\\n/g, "\n").replace(/^\n+|\n+$/g, "");
     return (
       <PromptReadyContext.Provider value={promptReady}>
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={animate ? ANIMATED_PLUGINS : PLUGINS}
-          components={{ a: ExternalLink, pre: PreBlock }}
-        >
-          {normalized}
-        </ReactMarkdown>
+        <MarkdownRenderBoundary content={normalized}>
+          <Suspense
+            fallback={
+              <div aria-busy="true" aria-label="Formatting message">
+                <PlainMarkdown content={normalized} />
+              </div>
+            }
+          >
+            <MarkdownRenderer animate={animate} components={MARKDOWN_COMPONENTS}>
+              {normalized}
+            </MarkdownRenderer>
+          </Suspense>
+        </MarkdownRenderBoundary>
       </PromptReadyContext.Provider>
     );
   },

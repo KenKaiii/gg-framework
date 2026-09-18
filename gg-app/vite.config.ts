@@ -1,13 +1,24 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { env } from "node:process";
 
-// @ts-expect-error process is a nodejs global
-const host = process.env.TAURI_DEV_HOST;
+const host = env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react()],
-  build: { manifest: true }, // Lets CI budget initial JS separately from lazy chunks.
+  build: {
+    manifest: true, // Lets CI budget initial JS separately from lazy chunks.
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: "react-vendor", test: /node_modules[\\/](?:react|react-dom|scheduler)[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
