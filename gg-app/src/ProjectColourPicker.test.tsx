@@ -239,6 +239,84 @@ describe("project colour picker in the shared header", () => {
     },
   );
 
+  it("saves the latest colour clicked while an earlier choice is still saving", async () => {
+    const { container } = render(header());
+    const picker = await openPicker();
+    const actualSave = projectColourStore.setChoice;
+    let finishFirstSave!: () => void;
+    const firstSave = new Promise<void>((resolve) => {
+      finishFirstSave = resolve;
+    });
+    const save = vi
+      .spyOn(projectColourStore, "setChoice")
+      .mockImplementationOnce(async (cwd, choice) => {
+        await firstSave;
+        await actualSave(cwd, choice);
+      });
+    fireEvent.click(within(picker).getByRole("button", { name: "Blue" }));
+    fireEvent.click(within(picker).getByRole("button", { name: "Green" }));
+    fireEvent.click(within(picker).getByRole("button", { name: "Orchid" }));
+    await act(async () => {
+      finishFirstSave();
+      await firstSave;
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Project colour: Orchid" })).toBeDefined(),
+    );
+    expect(localStorage.getItem("gg-project-colour:/work/project")).toBe("Orchid");
+    expect(
+      container
+        .querySelector<HTMLElement>(".chat-head")
+        ?.style.getPropertyValue("--project-accent"),
+    ).toBe(PROJECT_ACCENTS[9]);
+    expect(save.mock.calls.map(([, choice]) => choice)).toEqual(["Blue", "Orchid"]);
+  });
+
+  it("still saves the latest queued choice when the earlier save fails", async () => {
+    render(header());
+    const picker = await openPicker();
+    let failFirstSave!: () => void;
+    const firstSave = new Promise<void>((_, reject) => {
+      failFirstSave = () => reject(new Error("temporary write failure"));
+    });
+    vi.spyOn(projectColourStore, "setChoice").mockImplementationOnce(() => firstSave);
+    fireEvent.click(within(picker).getByRole("button", { name: "Blue" }));
+    fireEvent.click(within(picker).getByRole("button", { name: "Green" }));
+    await act(async () => {
+      failFirstSave();
+      await firstSave.catch(() => undefined);
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Project colour: Green" })).toBeDefined(),
+    );
+    expect(localStorage.getItem("gg-project-colour:/work/project")).toBe("Green");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("persists an accepted queued choice after its header unmounts", async () => {
+    const { unmount } = render(header());
+    const picker = await openPicker();
+    const actualSave = projectColourStore.setChoice;
+    let finishFirstSave!: () => void;
+    const firstSave = new Promise<void>((resolve) => {
+      finishFirstSave = resolve;
+    });
+    vi.spyOn(projectColourStore, "setChoice").mockImplementationOnce(async (cwd, choice) => {
+      await firstSave;
+      await actualSave(cwd, choice);
+    });
+    fireEvent.click(within(picker).getByRole("button", { name: "Blue" }));
+    fireEvent.click(within(picker).getByRole("button", { name: "Orchid" }));
+    unmount();
+    await act(async () => {
+      finishFirstSave();
+      await firstSave;
+    });
+    await waitFor(() =>
+      expect(localStorage.getItem("gg-project-colour:/work/project")).toBe("Orchid"),
+    );
+  });
+
   it("keeps the confirmed choice and reports failed persistence", async () => {
     render(header());
     const picker = await openPicker();

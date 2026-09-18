@@ -35,6 +35,7 @@ export function ProjectColourPicker({
   const pickerRef = useRef<HTMLDivElement>(null);
   const mounted = useRef(true);
   const savingRef = useRef(false);
+  const queuedSave = useRef<(() => Promise<void>) | null>(null);
   const focusFrame = useRef<number | null>(null);
   const id = useId();
   const accent = resolveProjectAccent(cwd, choice);
@@ -166,14 +167,22 @@ export function ProjectColourPicker({
   }, [open]);
 
   async function save(action: () => Promise<void>): Promise<void> {
+    // Keep only the latest waiting choice so rapid clicks finish on that colour.
+    queuedSave.current = action;
     if (savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
-    setError(null);
     try {
-      await action();
-    } catch {
-      if (mounted.current) setError("Could not save or confirm this choice. Please try again.");
+      while (queuedSave.current) {
+        const next = queuedSave.current;
+        queuedSave.current = null;
+        if (mounted.current) setError(null);
+        try {
+          await next();
+        } catch {
+          if (mounted.current) setError("Could not save or confirm this choice. Please try again.");
+        }
+      }
     } finally {
       savingRef.current = false;
       if (mounted.current) setSaving(false);
@@ -236,9 +245,9 @@ export function ProjectColourPicker({
                   key={option}
                   className="project-colour-choice"
                   aria-pressed={option === choice}
-                  aria-disabled={!ready || saving}
+                  aria-disabled={!ready}
                   onClick={() => {
-                    if (ready && !savingRef.current) {
+                    if (ready) {
                       void save(() => projectColourStore.setChoice(cwd, option));
                     }
                   }}

@@ -1290,13 +1290,13 @@ select {
   border-bottom: 1px solid var(--border);
 }
 /* Personal colour only decorates identity, never actions or status indicators. */
-.chat-head-project-stripe::before {
+.chat-head-project-stripe .chat-head-strip::after {
   content: "";
   position: absolute;
-  top: 0;
+  bottom: 0;
   left: 0;
   right: 0;
-  height: 2px;
+  height: 6px;
   background: var(--project-accent);
   pointer-events: none;
 }
@@ -1321,15 +1321,13 @@ select {
   background: var(--surface-3);
 }
 .chat-head-accent-dot {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--project-accent);
   pointer-events: none;
 }
 .project-colour-trigger-none .chat-head-accent-dot {
-  width: 8px;
-  height: 8px;
   background: none;
   border: 1px solid var(--text-muted);
 }
@@ -1438,6 +1436,7 @@ select {
   line-height: 1.4;
 }
 .chat-head-strip {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
