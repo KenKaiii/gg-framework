@@ -9,6 +9,6 @@
     "@kenkaiiii/gg-agent": "workspace:*",
     "@kenkaiiii/gg-ai": "workspace:*",
     "@kenkaiiii/ggcoder": "workspace:*",
-    "zod": "^4.5.4"
+    "zod": "^4.6.5"
   }
 }
