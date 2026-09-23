@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.64.1
+
+### Patch Changes
+
+- Stop web requests when network access is revoked, prevent duplicate tool calls, and report shell launch failures accurately.
+  - @kenkaiiii/gg-ai@5.64.1
+  - @kenkaiiii/gg-agent@5.64.1
+  - @kenkaiiii/gg-core@5.64.1
+
 ## 5.64.0
 
 ### Minor Changes
