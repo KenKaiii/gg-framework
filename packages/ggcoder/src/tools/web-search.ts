@@ -2,7 +2,7 @@ import { parseHTML } from "linkedom";
 import { z } from "zod";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import { log } from "../core/logger.js";
-import { checkUrlPolicy, type GetNetworkPolicy } from "../core/network-guard.js";
+import { checkUrlPolicy, withNetworkPolicy, type GetNetworkPolicy } from "../core/network-guard.js";
 
 const USER_AGENTS = [
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -882,12 +882,11 @@ async function performSearch(
         signal,
         AbortSignal.timeout(ENGINE_ATTEMPT_TIMEOUT_MS),
       ]);
-      const { data: html, statusCode } = await fetchWithRetry(
+      const { data: html, statusCode } = await withNetworkPolicy(
         url,
-        headers,
+        getNetworkPolicy,
         attemptSignal,
-        method,
-        body,
+        (guardSignal) => fetchWithRetry(url, headers, guardSignal, method, body),
       );
 
       if (isRateLimited(statusCode, html)) {

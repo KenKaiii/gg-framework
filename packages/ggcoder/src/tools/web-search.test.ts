@@ -119,6 +119,48 @@ describe("normalizeDomain", () => {
 });
 
 describe("createWebSearchTool", () => {
+  it("does not use a search response after its engine is removed from the allowlist", async () => {
+    let allow: readonly string[] = ["html.duckduckgo.com"];
+    let bodyStarted: (() => void) | undefined;
+    let deliver: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      bodyStarted = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      deliver = resolve;
+    });
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            async pull(controller) {
+              bodyStarted?.();
+              await release;
+              controller.enqueue(
+                new TextEncoder().encode(
+                  '<a class="result__a" href="https://example.com">Secret search result</a>',
+                ),
+              );
+              controller.close();
+            },
+          }),
+          { status: 200 },
+        ),
+    ) as typeof fetch;
+
+    const pending = createWebSearchTool(() => ({ mode: "allowlist", allow })).execute(
+      { query: "secret search", max_results: 5 },
+      context(),
+    );
+    await started;
+    allow = [];
+    deliver?.();
+    const result = await pending;
+
+    expect(result).not.toContain("Secret search result");
+    expect(result).toContain("No search results");
+  });
+
   it("filters ad results from live parser output before returning organic results", async () => {
     const html = `
       <a class="result__a" href="https://duckduckgo.com/y.js?ad_domain=nordvpn.com&ad_provider=bingv7aa&ad_type=txad&u3=https%3A%2F%2Fwww.bing.com%2Faclick%3Fld%3Dabc">Limited-time NordVPN offer</a>

@@ -219,3 +219,40 @@ export function checkCommandPolicy(command: string, getPolicy?: GetNetworkPolicy
   if (!policy) return null;
   return checkCommandNetwork(command, policy.mode, policy.allow);
 }
+
+/** Enforce a live egress policy until the response has been fully consumed. */
+export async function withNetworkPolicy<T>(
+  url: string,
+  getPolicy: GetNetworkPolicy | undefined,
+  signal: AbortSignal,
+  run: (signal: AbortSignal, onHop: (url: string) => void) => Promise<T>,
+): Promise<T> {
+  if (!getPolicy) return run(signal, () => undefined);
+  let currentUrl = url;
+  let denial: string | null = null;
+  const revoked = new AbortController();
+  const check = () => {
+    const blocked = checkUrlPolicy(currentUrl, getPolicy);
+    if (blocked && !denial) {
+      denial = blocked;
+      revoked.abort();
+    }
+  };
+  check();
+  if (denial) throw new Error(denial);
+  const timer = setInterval(check, 100);
+  try {
+    const result = await run(AbortSignal.any([signal, revoked.signal]), (nextUrl) => {
+      currentUrl = nextUrl;
+      check();
+    });
+    check();
+    if (denial) throw new Error(denial);
+    return result;
+  } catch (error) {
+    if (denial) throw new Error(denial, { cause: error });
+    throw error;
+  } finally {
+    clearInterval(timer);
+  }
+}

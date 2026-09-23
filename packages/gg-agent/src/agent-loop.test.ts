@@ -1414,6 +1414,88 @@ describe("agentLoop", () => {
     expect(assistantTexts).not.toContain(tiny);
   }, 30_000);
 
+  it("cancels identical calls in one response but permits the same call next turn", async () => {
+    const args = z.object({ path: z.string(), flags: z.object({ a: z.number(), b: z.number() }) });
+    const execute = vi.fn(async () => "ran");
+    const tool: AgentTool<typeof args> = {
+      name: "change",
+      description: "change a file",
+      parameters: args,
+      execute,
+      executionMode: "sequential",
+    };
+    const response = (
+      content: { type: "tool_call"; id: string; name: string; args: object }[],
+    ) => ({
+      [Symbol.asyncIterator]: async function* () {
+        yield* [];
+      },
+      response: Promise.resolve({
+        message: { role: "assistant" as const, content },
+        stopReason: "tool_use",
+        usage: { inputTokens: 30, outputTokens: 10 },
+      }),
+    });
+    mockStream
+      .mockReturnValueOnce(
+        response([
+          {
+            type: "tool_call",
+            id: "a",
+            name: "change",
+            args: { path: "one", flags: { a: 1, b: 2 } },
+          },
+          {
+            type: "tool_call",
+            id: "b",
+            name: "change",
+            args: { flags: { b: 2, a: 1 }, path: "one" },
+          },
+          {
+            type: "tool_call",
+            id: "c",
+            name: "change",
+            args: { path: "two", flags: { a: 1, b: 2 } },
+          },
+          {
+            type: "tool_call",
+            id: "d",
+            name: "change",
+            args: { path: "one", flags: { a: 1, b: 2 } },
+          },
+        ]) as unknown as ReturnType<typeof stream>,
+      )
+      .mockReturnValueOnce(
+        response([
+          {
+            type: "tool_call",
+            id: "e",
+            name: "change",
+            args: { path: "one", flags: { a: 1, b: 2 } },
+          },
+        ]) as unknown as ReturnType<typeof stream>,
+      )
+      .mockReturnValueOnce(mockOkResult("done") as unknown as ReturnType<typeof stream>);
+
+    const messages: Message[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "change" },
+    ];
+    const { events } = await collectLoop(messages, {
+      provider: "anthropic",
+      model: "test",
+      tools: [tool],
+    });
+
+    expect(execute).toHaveBeenCalledTimes(4);
+    const cancelled = events.find(
+      (event) => event.type === "tool_call_end" && event.toolCallId === "b",
+    );
+    expect(cancelled).toMatchObject({ isError: true });
+    expect(messages.filter((message) => message.role === "tool")).toHaveLength(2);
+    expect(JSON.stringify(messages)).toContain("this call was not executed");
+  });
+
   it("runs parallel tools concurrently by default", async () => {
     const firstStarted = deferred();
     const releaseFirst = deferred();

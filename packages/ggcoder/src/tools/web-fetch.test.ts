@@ -74,6 +74,80 @@ describe("buildLlmsCandidates", () => {
 });
 
 describe("createWebFetchTool", () => {
+  it("aborts a stalled response when its destination is removed from the allowlist", async () => {
+    let allow: readonly string[] = ["example.com"];
+    let bodyStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      bodyStarted = resolve;
+    });
+    globalThis.fetch = vi.fn(
+      async (_url, init) =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              init?.signal?.addEventListener(
+                "abort",
+                () => controller.error(new Error("aborted")),
+                { once: true },
+              );
+            },
+            pull() {
+              bodyStarted?.();
+            },
+          }),
+          { headers: { "content-type": "text/plain" } },
+        ),
+    ) as typeof fetch;
+
+    const pending = createWebFetchTool(() => ({ mode: "allowlist", allow })).execute(
+      { url: "https://example.com/page", format: "text", prefer_llms_txt: false },
+      context(),
+    );
+    await started;
+    allow = [];
+    const result = await pending;
+
+    expect(result).toContain("Blocked by the network allowlist");
+  });
+
+  it("does not return content when the allowlist is revoked during a response body", async () => {
+    let allow: readonly string[] = ["example.com"];
+    let bodyStarted: (() => void) | undefined;
+    let deliver: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      bodyStarted = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      deliver = resolve;
+    });
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            async pull(controller) {
+              bodyStarted?.();
+              await release;
+              controller.enqueue(new TextEncoder().encode("private content"));
+              controller.close();
+            },
+          }),
+          { headers: { "content-type": "text/plain" } },
+        ),
+    ) as typeof fetch;
+
+    const pending = createWebFetchTool(() => ({ mode: "allowlist", allow })).execute(
+      { url: "https://example.com/page", format: "text", prefer_llms_txt: false },
+      context(),
+    );
+    await started;
+    allow = [];
+    deliver?.();
+    const result = await pending;
+
+    expect(result).toContain("Blocked by the network allowlist");
+    expect(result).not.toContain("private content");
+  });
+
   it("returns sanitized HTML content from fetched pages", async () => {
     const html = `
       <html>

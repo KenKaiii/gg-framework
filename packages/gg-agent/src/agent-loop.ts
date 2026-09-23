@@ -1773,6 +1773,7 @@ export async function* agentLoop(
         toolMap,
         invalidToolArgumentCounts,
         markFatalToolArgumentError,
+        seenToolCalls: new Set<string>(),
       };
       const hasSequentialToolCall = toolCalls.some(
         (toolCall) => toolMap.get(toolCall.name)?.executionMode === "sequential",
@@ -1928,6 +1929,18 @@ export async function* agentLoop(
   };
 }
 
+function canonicalToolArgs(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalToolArgs);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => [k, canonicalToolArgs(v)]),
+    );
+  }
+  return value;
+}
+
 interface ToolExecutionRecord {
   toolCallId: string;
   content: ToolResultContent;
@@ -1936,6 +1949,7 @@ interface ToolExecutionRecord {
 
 interface ToolBatchExecutionOptions {
   signal?: AbortSignal;
+  seenToolCalls: Set<string>;
   maxToolResultChars?: number;
   maxTurnToolResultChars?: number;
   toolMap: Map<string, AgentTool>;
@@ -1989,6 +2003,24 @@ async function executeSingleToolCall(
   let invalidArgAttempt: number | undefined;
 
   const tool = options.toolMap.get(toolCall.name);
+  if (tool) {
+    // Only deduplicate within this assistant response. Sort object keys so
+    // semantically identical provider JSON cannot run a side effect twice.
+    const signature = JSON.stringify([toolCall.name, canonicalToolArgs(toolCall.args)]);
+    if (options.seenToolCalls.has(signature)) {
+      const content =
+        "Tool call cancelled: an identical call already appeared in this response; this call was not executed.";
+      pushEvent({
+        type: "tool_call_end" as const,
+        toolCallId: toolCall.id,
+        result: content,
+        isError: true,
+        durationMs: Date.now() - startTime,
+      });
+      return { toolCallId: toolCall.id, content, isError: true };
+    }
+    options.seenToolCalls.add(signature);
+  }
   if (!tool) {
     resultContent = `Unknown tool: ${toolCall.name}`;
     isError = true;
@@ -2165,7 +2197,14 @@ async function* executeToolCallsMixed(
       for (const phase of phases) {
         if (options.signal?.aborted) break;
         if (phase.sequential) {
-          // Single sequential tool
+          // A different sequential call can change state (e.g. edit between
+          // reads, or cd between identical bash commands). Do not deduplicate
+          // across it; consecutive identical calls still run only once.
+          const signature = JSON.stringify([
+            phase.sequential.name,
+            canonicalToolArgs(phase.sequential.args),
+          ]);
+          if (!options.seenToolCalls.has(signature)) options.seenToolCalls.clear();
           dispatchedIds.add(phase.sequential.id);
           const record = await executeSingleToolCall(phase.sequential, options, (event) =>
             pushToolEvent(eventStream, state, event),
