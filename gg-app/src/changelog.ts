@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.70.4",
+    date: "2026-09-26",
+    items: [
+      "No more blank screens when the AI asks you a few quick questions. When a question card had two or more `Yes / No` questions, the whole window could go empty. I fixed the root cause, and now the app sets aside any card it can't draw instead of wiping your screen. Your sessions stay right where you left them.",
+    ],
+  },
+  {
     version: "0.70.3",
     date: "2026-09-23",
     items: [
