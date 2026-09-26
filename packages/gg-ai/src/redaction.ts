@@ -141,7 +141,7 @@ function isMediaObject(value: Record<string, unknown>): boolean {
 export function redactValue<T>(value: T, options: RedactionOptions = {}): T {
   const maxDepth = options.maxDepth ?? 20;
   const maxEntries = options.maxEntries ?? 10_000;
-  const seen = new WeakSet<object>();
+  const ancestors = new WeakSet<object>();
   let entries = 0;
 
   const visit = (current: unknown, depth: number, sensitive = false): unknown => {
@@ -162,9 +162,19 @@ export function redactValue<T>(value: T, options: RedactionOptions = {}): T {
     if (isBinary(current)) return current;
     if (current instanceof Date) return new Date(current.getTime());
     if (depth >= maxDepth) return TRUNCATED;
-    if (seen.has(current)) return CIRCULAR;
-    seen.add(current);
+    // Only an ancestor makes a cycle. An object reached twice through siblings
+    // (e.g. one shared options array) is ordinary data and must clone both
+    // times; `maxEntries` still bounds the work.
+    if (ancestors.has(current)) return CIRCULAR;
+    ancestors.add(current);
+    try {
+      return cloneObject(current, depth);
+    } finally {
+      ancestors.delete(current);
+    }
+  };
 
+  const cloneObject = (current: object, depth: number): unknown => {
     if (current instanceof Error) {
       const error: Record<string, unknown> = {
         name: current.name,

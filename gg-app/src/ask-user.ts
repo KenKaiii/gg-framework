@@ -74,7 +74,12 @@ export function isAskUserPrompt(data: unknown): data is AskUserPrompt {
         typeof q === "object" &&
         q !== null &&
         typeof (q as AskQuestion).id === "string" &&
-        typeof (q as AskQuestion).question === "string",
+        typeof (q as AskQuestion).question === "string" &&
+        // The band maps over `options`; a non-array here (e.g. a "[CIRCULAR]"
+        // marker from the sidecar's redactor) threw during render and blanked
+        // the whole window.
+        ((q as { options?: unknown }).options === undefined ||
+          Array.isArray((q as { options?: unknown }).options)),
     )
   );
 }

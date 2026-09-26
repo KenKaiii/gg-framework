@@ -124,6 +124,14 @@ describe("redactValue", () => {
     expect(redactValue([1, 2, 3], { maxEntries: 2 })).toEqual([1, 2, "[TRUNCATED]"]);
   });
 
+  it("clones an object shared by siblings instead of marking it circular", () => {
+    // ask_user gives every option-less confirm question the same Yes/No array;
+    // the second copy used to become "[CIRCULAR]" and crash the app's band.
+    const shared = [{ label: "Yes" }, { label: "No" }];
+    const result = redactValue({ a: { options: shared }, b: { options: shared } });
+    expect(result).toEqual({ a: { options: shared }, b: { options: shared } });
+  });
+
   it("preserves binary/media payload data while cloning media containers", () => {
     const bytes = new Uint8Array([1, 2, 3]);
     const media = { type: "image", data: "base64-image-data", mimeType: "image/png" };
