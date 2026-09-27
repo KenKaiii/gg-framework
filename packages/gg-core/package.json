@@ -41,7 +41,7 @@
     "@kenkaiiii/gg-ai": "workspace:*"
   },
   "optionalDependencies": {
-    "@huggingface/transformers": "4.2.0",
+    "@huggingface/transformers": "4.3.0",
     "ogg-opus-decoder": "^1.7.5"
   },
   "devDependencies": {
