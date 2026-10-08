@@ -15,6 +15,7 @@ import {
   getChecklistItem,
   type ChecklistItem,
 } from "./checklist-items.js";
+import { retryWindowsReplace } from "./session-storage.js";
 
 export const CHECKLIST_RESULTS = ["pass", "issues", "not-applicable"] as const;
 export type ChecklistResult = (typeof CHECKLIST_RESULTS)[number];
@@ -169,22 +170,47 @@ export function serializeChecklist(record: ChecklistRecord): string {
   return JSON.stringify({ version: 1, items }, null, 2) + "\n";
 }
 
+/** Windows refuses `mkdir` with one of these, not EEXIST, while a released lock
+ * dir is still pending delete. */
+const PENDING_DELETE_CODES = new Set(["EACCES", "EBUSY", "EPERM"]);
+
+/** Whether the lock dir is still there; a refused stat means it is mid-delete. */
+async function lockDirExists(lockPath: string): Promise<boolean> {
+  try {
+    await fs.stat(lockPath);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ENOENT";
+  }
+}
+
 /** Atomic directory creation serializes distinct tools/processes, not just one session.
  * Fail closed on a busy/interrupted writer; never steal a live lock after a timeout. */
 async function acquireWriteLock(lockPath: string, signal?: AbortSignal): Promise<Result<void>> {
   const started = performance.now();
+  let refusedWithoutLock = 0;
   while (true) {
     if (signal?.aborted) return { ok: false, error: "Checklist recording cancelled" };
     try {
       await fs.mkdir(lockPath);
       return { ok: true, value: undefined };
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-        return {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST") {
+        const fault: Result<void> = {
           ok: false,
           error: `Could not lock ${CHECKLIST_FILE}: ${(error as Error).message}`,
         };
+        if (!code || !PENDING_DELETE_CODES.has(code)) return fault;
+        // Contention while the releasing writer's lock dir is still there. With no
+        // lock dir, retry in case its delete just finished; a refusal that persists
+        // is a genuine fault (e.g. an unwritable project), never one to wait out.
+        if (!(await lockDirExists(lockPath))) {
+          if (++refusedWithoutLock > 3) return fault;
+          continue;
+        }
       }
+      refusedWithoutLock = 0;
     }
     if (performance.now() - started >= 2500) {
       return {
@@ -224,7 +250,7 @@ export async function writeChecklistEntry(
       ...(signal ? { signal } : {}),
     });
     if (signal?.aborted) return { ok: false, error: "Checklist recording cancelled" };
-    await fs.rename(temp, target);
+    await retryWindowsReplace(() => fs.rename(temp, target));
     return { ok: true, value: next };
   } catch (err) {
     return { ok: false, error: `Could not write ${CHECKLIST_FILE}: ${(err as Error).message}` };

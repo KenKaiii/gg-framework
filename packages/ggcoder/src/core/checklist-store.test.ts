@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -151,11 +151,63 @@ describe("writeChecklistEntry", () => {
   it("merges concurrent store callers without losing any item or leaving locks", async () => {
     const ids = CHECKLIST_ITEMS.map((item) => item.id);
     const results = await Promise.all(ids.map((id) => writeChecklistEntry(root, id, entry(), NOW)));
-    expect(results.every((result) => result.ok)).toBe(true);
+    expect(results.filter((result) => !result.ok)).toEqual([]);
     const stored = await readChecklist(root, NOW);
     expect(stored.ok).toBe(true);
     if (stored.ok) expect(Object.keys(stored.value.items).sort()).toEqual([...ids].sort());
     expect(await fs.readdir(root)).toEqual([CHECKLIST_FILE]);
+  });
+
+  function errno(code: string): NodeJS.ErrnoException {
+    return Object.assign(new Error(`${code}: mkdir`), { code });
+  }
+
+  it("waits out a released lock that Windows refuses with EPERM while it is pending delete", async () => {
+    const realMkdir = fs.mkdir;
+    let lockAttempts = 0;
+    const spy = vi.spyOn(fs, "mkdir").mockImplementation(async (target, options) => {
+      if (String(target).endsWith(".lock")) {
+        lockAttempts += 1;
+        if (lockAttempts === 1) {
+          // The releasing writer's lock dir is still there, mid-delete.
+          await realMkdir(target, options);
+          throw errno("EPERM");
+        }
+        // Its delete finished before we polled again.
+        await fs.rm(String(target), { recursive: true, force: true });
+      }
+      return realMkdir(target, options);
+    });
+    try {
+      expect(await writeChecklistEntry(root, "tests", entry(), NOW)).toMatchObject({ ok: true });
+      expect(lockAttempts).toBe(2);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await fs.readdir(root)).toEqual([CHECKLIST_FILE]);
+  });
+
+  it("still fails closed with the real error when no lock dir exists to wait for", async () => {
+    const realMkdir = fs.mkdir;
+    let lockAttempts = 0;
+    const spy = vi.spyOn(fs, "mkdir").mockImplementation(async (target, options) => {
+      if (String(target).endsWith(".lock")) {
+        lockAttempts += 1;
+        throw errno("EACCES");
+      }
+      return realMkdir(target, options);
+    });
+    try {
+      const result = await writeChecklistEntry(root, "tests", entry(), NOW);
+      expect(result).toEqual({
+        ok: false,
+        error: `Could not lock ${CHECKLIST_FILE}: EACCES: mkdir`,
+      });
+      expect(lockAttempts).toBeLessThanOrEqual(5);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await fs.readdir(root)).toEqual([]);
   });
 
   it("cancels a waiting writer without removing another writer's lock", async () => {
