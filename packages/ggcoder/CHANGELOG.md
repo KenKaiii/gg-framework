@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.75.1
+
+### Patch Changes
+
+- Share git/GitHub repo pollers across app windows on the same repo, recover Haiku 5.5's split `edits`/`new_text` edit arguments, and request "omitted" Anthropic adaptive thinking for faster Haiku 5.5 output.
+  - @kenkaiiii/gg-ai@5.75.1
+  - @kenkaiiii/gg-agent@5.75.1
+  - @kenkaiiii/gg-core@5.75.1
+
 ## 5.75.0
 
 ### Minor Changes
