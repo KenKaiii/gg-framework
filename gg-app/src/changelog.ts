@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.83.1",
+    date: "2026-10-08",
+    items: [
+      "Run as many windows as you like and your Mac barely notices. Any window you're not looking at now rests: critters, spinners and sparkles hold still and pick up right where they left off when you come back. Windows on the same repo also share `one` set of git and GitHub checks instead of each running their own.",
+      "`Claude Haiku 5.5` just got a turbo boost. It now writes about `25%` faster, and when it fumbles an edit I quietly catch the slip and land the change instead of letting your run fail.",
+      "Links behave perfectly now. Every link you click in chat, settings or sign-in opens straight in your default app, `mailto:` and `tel:` links included, and nothing gets left running in the background afterwards.",
+    ],
+  },
+  {
     version: "0.83.0",
     date: "2026-10-08",
     items: [
