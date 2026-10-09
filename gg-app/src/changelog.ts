@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.85.0",
+    date: "2026-10-09",
+    items: [
+      "The engine under GG Coder just learned to search by meaning. I built `embeddings` and `reranking` right into it, working across OpenAI, OpenRouter, Gemini and your own local models, so it now has the foundation for smarter, privacy-first retrieval without a single extra moving part on your machine.",
+    ],
+  },
+  {
     version: "0.84.0",
     date: "2026-10-09",
     items: [
