@@ -1258,9 +1258,9 @@ function App(): React.ReactElement {
     );
   }
 
-  // Top-right commit affordance: once a project-local `/commit` exists it shows
-  // `/commit`; until then it offers `/setup-commit` to generate one. Only shown
-  // when at least one of the two is available from the sidecar.
+  // Top-right commit affordance. `/commit` is built in (it runs the project's
+  // checks, reviews, commits and pushes), so every project gets it; the
+  // `/setup-commit` fallback only covers an older sidecar that lacks it.
   const hasCommit = commands.some((c) => c.name === "commit");
   const hasSetupCommit = commands.some((c) => c.name === "setup-commit");
   const commitCommand = hasCommit ? "commit" : hasSetupCommit ? "setup-commit" : null;

@@ -29,6 +29,11 @@ import { CORPUS_UNVERIFIED_REASON, type AutopilotVerdict } from "./autopilot-ver
 export const AUTOPILOT_PLAN_DRAFTING_REASON =
   "GG Coder is still drafting a plan (plan mode is active with nothing submitted). Finish or cancel the plan yourself; autopilot can't prompt a read-only session.";
 
+/** Injected when Autopilot finds the work unchecked before its review. */
+export const AUTOPILOT_VERIFY_PROMPT =
+  "Run the project's checks for your changes (see Verification), standalone and unpiped, " +
+  "and fix any failures.";
+
 /** Situational-awareness preamble prepended to EVERY build-session run that
  *  Autopilot Ken injects (fix prompts, plan-revision prompts, the post-approval
  *  "implement it now" run). GG Coder otherwise can't tell an autopilot-injected
@@ -138,10 +143,25 @@ export async function driveAutopilotCycle(deps: AutopilotCycleDeps): Promise<voi
     deps.emit({ type: "autopilot_human", data: { reason } });
     return true;
   };
-  if (deps.isCancelled() || stopIfUnverified()) return;
+  // Plain replies leave checks to the commit, so a turn often ends unchecked.
+  // Autopilot has a real end, so it asks for the checks once before reviewing;
+  // only work still unchecked after that goes back to the human.
+  const ensureVerified = async (round: number): Promise<boolean> => {
+    if (!deps.verificationProblem()) return true;
+    // A pending plan is reviewed by Ken in plan mode, where checks cannot run;
+    // its outcome (or the user) decides what happens to the unchecked work.
+    if (deps.planPending()) {
+      stopIfUnverified();
+      return false;
+    }
+    deps.onInjected(AUTOPILOT_VERIFY_PROMPT, round);
+    await deps.runPrompt(AUTOPILOT_VERIFY_PROMPT);
+    return !deps.isCancelled() && !stopIfUnverified();
+  };
+  if (deps.isCancelled() || !(await ensureVerified(1))) return;
   await deps.resetReviewer();
   for (let round = 1; round <= deps.maxRounds; round++) {
-    if (deps.isCancelled() || stopIfUnverified()) return;
+    if (deps.isCancelled() || !(await ensureVerified(round))) return;
     if (deps.planPending()) {
       const verdict = await deps.reviewPlan();
       if (!verdict || deps.isCancelled() || stopIfUnverified()) return;

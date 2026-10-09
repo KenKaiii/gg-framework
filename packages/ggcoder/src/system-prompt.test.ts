@@ -393,8 +393,10 @@ describe("buildSystemPrompt", () => {
       "Read before editing; follow existing conventions",
       // Replay-tested on gpt-6-astra against the pi agent: batching moved a
       // 7-file refactor from one edit per turn to all 7 in one response.
-      "Emit all edits for a change in one response, then run the affected checks once",
-      "re-run after later edits",
+      "Emit all edits for a change in one response",
+      // Where checks happen, so the model does not re-run suites mid-build:
+      // without this line Haiku 5.5 ran ~31 test runs per arena suite (vs 25).
+      "Full checks run at /commit; mid-build, run one only to prove a fix",
       "Leave changes you didn't make alone",
       "Find facts yourself",
       "Ask only about unclear requirements, real tradeoffs, secrets/access, cost, or anything destructive",

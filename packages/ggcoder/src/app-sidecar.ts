@@ -1624,7 +1624,12 @@ async function createSession(
       }
     } finally {
       const cancelled = runLifecycle.isCancellationRequested(generation);
-      const verificationProblem = cancelled ? null : session.getVerificationProblem();
+      // A plain reply has no real end (the user keeps building), so checks are
+      // left to the commit and unchecked edits are not "Unverified". Only an
+      // Autopilot cycle, which does end, reports unchecked work. A check that
+      // ran and failed still shows as failed (from the evidence).
+      const verificationProblem =
+        cancelled || !autopilotActive ? null : session.getVerificationProblem();
       if (runSucceeded && verificationProblem && ownsGeneration) {
         // Expected control outcome: run_end and the journal already carry Unverified.
         // Do not format it as a crash or persist a misleading error marker.

@@ -180,10 +180,8 @@ export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRun
   // every exit path is unit-tested; this only wires the real dependencies.
   async function runAutopilotCycle(originalRequest: string): Promise<void> {
     if (!ctx.autopilot || ctx.autopilotCancelled) return;
-    // Unverified work skips a work review silently. A pending plan still enters
-    // the cycle so driveAutopilotCycle says WHY Ken stepped aside
-    // (autopilot_human) before the plan is handed to the user.
-    if (ctx.pendingPlanPath === null && ctx.session.getVerificationProblem()) return;
+    // Unchecked work enters the cycle too: driveAutopilotCycle asks for the
+    // checks once before Ken reviews, and hands back only if still unchecked.
     const generation = ctx.runLifecycle.begin(ctx.abortOwnedWork).generation;
     ctx.pendingCancelDrain = null;
     ctx.autopilotActive = true;

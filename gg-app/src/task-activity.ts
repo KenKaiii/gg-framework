@@ -140,10 +140,10 @@ function finish(s: TaskActivity, now: number): TaskActivity {
           : "Agents still running",
     };
   }
-  if (
-    s.verification === "incomplete" ||
-    ((s.codeChanged || (s.changed && !s.scopedVerification)) && s.verification !== "passed")
-  )
+  // Only the host's "incomplete" (an Autopilot cycle's check) is unverified.
+  // A plain reply leaves checks to the commit, so unchecked edits are saved
+  // work, not a warning; a check that ran and failed was handled above.
+  if (s.verification === "incomplete")
     return {
       ...s,
       phase: "unverified",

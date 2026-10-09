@@ -5,6 +5,7 @@ import {
   frameAutopilotInjection,
   AUTOPILOT_INJECTION_PREAMBLE,
   AUTOPILOT_PLAN_DRAFTING_REASON,
+  AUTOPILOT_VERIFY_PROMPT,
   type AutopilotCycleDeps,
   type AutopilotCycleEmit,
 } from "./autopilot-cycle.js";
@@ -84,16 +85,45 @@ function pendingFlag(initial = true): { get: () => boolean; set: (v: boolean) =>
 }
 
 describe("host verification control", () => {
-  it("blocks unverified work before spending a reviewer call", async () => {
+  it("asks once for checks, then hands still-unverified work back before any review", async () => {
     const deps = makeDeps([{ kind: "all_clear" }], {
       verificationProblem: () => "Unverified: current checks are missing.",
     });
     await driveAutopilotCycle(deps);
+    expect(deps.ran).toEqual([AUTOPILOT_VERIFY_PROMPT]);
     expect(deps.review).not.toHaveBeenCalled();
     expect(deps.resetReviewer).not.toHaveBeenCalled();
     expect(deps.emitted).toEqual([
       { type: "autopilot_human", data: { reason: "Unverified: current checks are missing." } },
     ]);
+  });
+
+  it("does not ask for checks while a plan is pending (plan mode cannot run them)", async () => {
+    const deps = makeDeps([{ kind: "all_clear" }], {
+      verificationProblem: () => "Unverified: current checks are missing.",
+      planPending: () => true,
+    });
+    await driveAutopilotCycle(deps);
+    expect(deps.ran).toEqual([]);
+    expect(deps.emitted).toEqual([
+      { type: "autopilot_human", data: { reason: "Unverified: current checks are missing." } },
+    ]);
+  });
+
+  it("reviews work once the injected check run verifies it", async () => {
+    let problem: string | null = "Unverified: current checks are missing.";
+    const ran: string[] = [];
+    const deps = makeDeps([{ kind: "all_clear" }], {
+      verificationProblem: () => problem,
+      runPrompt: async (body: string) => {
+        ran.push(body);
+        problem = null;
+      },
+    });
+    await driveAutopilotCycle(deps);
+    expect(ran).toEqual([AUTOPILOT_VERIFY_PROMPT]);
+    expect(deps.review).toHaveBeenCalledTimes(1);
+    expect(deps.emitted.map((e) => e.type)).toEqual(["autopilot_done"]);
   });
 
   it("rejects ALL_CLEAR if verification becomes stale during the review", async () => {

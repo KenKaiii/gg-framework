@@ -674,8 +674,8 @@ describe("ACP mode over stdio", () => {
     const commandsDir = path.join(tmpProject, ".gg", "commands");
     await fs.mkdir(commandsDir, { recursive: true });
     await fs.writeFile(
-      path.join(commandsDir, "commit.md"),
-      "---\nname: commit\ndescription: Check, review, commit and push\n---\n\nRun the checks.\n",
+      path.join(commandsDir, "deploy.md"),
+      "---\nname: deploy\ndescription: Build and ship to staging\n---\n\nShip it.\n",
     );
     await fs.writeFile(
       path.join(commandsDir, "init.md"),
@@ -718,7 +718,7 @@ describe("ACP mode over stdio", () => {
       input: { hint: expect.any(String) },
     });
     // A project file, carried with its own frontmatter description.
-    expect(byName.get("commit")!.description).toBe("Check, review, commit and push");
+    expect(byName.get("deploy")!.description).toBe("Build and ship to staging");
     // Collisions resolve the way the session itself resolves them: a built-in
     // template beats a project file, and it is listed once.
     expect(commands.filter((command) => command.name === "init")).toHaveLength(1);

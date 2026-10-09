@@ -6,11 +6,16 @@ import { describe, expect, it } from "vitest";
 describe("desktop verification settlement", () => {
   it("reports an unresolved gate as Unverified, not an unexpected error", async () => {
     const source = await fs.readFile(new URL("./app-sidecar.ts", import.meta.url), "utf8");
-    const start = source.indexOf("const verificationProblem = cancelled ? null");
+    const start = source.indexOf("const verificationProblem =");
     const end = source.indexOf("// Autopilot's review loop", start);
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const settlement = source.slice(start, end);
+    // Checks belong to the commit: only an Autopilot cycle, which has a real
+    // end, reports unchecked work as Unverified. A plain reply never does.
+    expect(settlement).toMatch(
+      /const verificationProblem =\s*cancelled \|\| !autopilotActive \? null : session\.getVerificationProblem\(\);/,
+    );
     expect(settlement).not.toContain("broadcastError(");
     expect(settlement).toContain('log("WARN", "app-sidecar", "verification incomplete"');
     expect(settlement).toContain('verificationProblem ? "unverified"');
