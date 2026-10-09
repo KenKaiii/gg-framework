@@ -173,6 +173,38 @@ const normalizeMisnestedEdits = (raw: unknown): unknown => {
   return raw;
 };
 
+// Haiku 5.5 (bench/h2h arena, 2026-10-09: a 6-file refactor lost a turn to it)
+// flattens the `files` form into `edits`, naming the file on every item and
+// sending no top-level `file_path`:
+//   { edits: [{ file_path, old_text, new_text }, ...] }
+// Each item says which file it edits, so group them, in first-seen order, into
+// `files`. Only text-form items qualify: `files` takes no span/anchor edits, so
+// any other key keeps the existing "Provide file_path and edits" rejection.
+const FLAT_FILE_ITEM_KEYS = new Set(["file_path", "old_text", "new_text", "replace_all"]);
+
+const isFlatFileItem = (v: unknown): v is UnknownRecord & { file_path: string } =>
+  isRecord(v) &&
+  typeof v.file_path === "string" &&
+  typeof v.old_text === "string" &&
+  Object.keys(v).every((key) => FLAT_FILE_ITEM_KEYS.has(key));
+
+const groupFlatFileEdits = (raw: unknown): unknown => {
+  if (!isRecord(raw) || raw.files !== undefined || raw.file_path !== undefined) return raw;
+  const edits = coerceStringifiedEdits(raw.edits);
+  if (!Array.isArray(edits) || edits.length === 0 || !edits.every(isFlatFileItem)) return raw;
+  const byFile = new Map<string, UnknownRecord[]>();
+  for (const { file_path: filePath, ...edit } of edits) {
+    const fileEdits = byFile.get(filePath) ?? [];
+    fileEdits.push(edit);
+    byFile.set(filePath, fileEdits);
+  }
+  const { edits: _flat, ...rest } = raw;
+  return {
+    ...rest,
+    files: [...byFile].map(([filePath, fileEdits]) => ({ file_path: filePath, edits: fileEdits })),
+  };
+};
+
 // Haiku 5.5 (bench/h2h: 20 of 76 edit calls across 30 runs, and the cause of
 // a failed run) closes the `edits` string where `old_text` should end, which
 // pushes `new_text` up to the top level:
@@ -198,8 +230,34 @@ const recoverSplitOldText = (raw: unknown): unknown => {
   return { ...rest, edits: [{ old_text: oldText, new_text: newText }] };
 };
 
+// A single flat edit, the shape most agents' edit tools use:
+//   { file_path, old_text, new_text, replace_all? }
+// Haiku 5.5 sends it unprompted, and the schema used to strip the unknown
+// top-level fields, leaving `{ file_path }`: the change was lost and the call
+// failed. Lifted into `edits` only when it is the whole call (no `edits`/
+// `files`, no other keys), so nothing is merged or guessed.
+const FLAT_EDIT_KEYS = new Set(["file_path", "old_text", "new_text", "replace_all", "atomic"]);
+
+const liftFlatEdit = (raw: unknown): unknown => {
+  if (!isRecord(raw) || typeof raw.old_text !== "string") return raw;
+  if (raw.edits !== undefined || raw.files !== undefined) return raw;
+  if (!Object.keys(raw).every((key) => FLAT_EDIT_KEYS.has(key))) return raw;
+  const { old_text: oldText, new_text: newText, replace_all: replaceAll, ...rest } = raw;
+  return {
+    ...rest,
+    edits: [
+      {
+        old_text: oldText,
+        new_text: newText,
+        ...(replaceAll === undefined ? {} : { replace_all: replaceAll }),
+      },
+    ],
+  };
+};
+
 const EditParams = z.preprocess(
-  (raw: unknown) => normalizeMisnestedEdits(recoverSplitOldText(raw)),
+  (raw: unknown) =>
+    groupFlatFileEdits(normalizeMisnestedEdits(recoverSplitOldText(liftFlatEdit(raw)))),
   z.object({
     file_path: z.string().optional(),
     edits: EditList.optional(),
@@ -742,4 +800,36 @@ function resolveEditTargets(
     };
   }
   return { ok: true, value: [{ file_path, edits }] };
+}
+
+// The edit tool as Claude models see it: three flat fields, the shape every
+// other coding agent's edit tool uses (Claude Code, Copilot CLI, Goose).
+// GG's nested form (`edits[]`, `files[]`, line spans) made Haiku 5.5 send the
+// list as a JSON string in 30-57% of calls and think more per line of code
+// than any peer; with this shape it sent 166/166 edits well-formed and its
+// thinking per line of code matched the peers (bench/h2h arena, 2026-10-09).
+//
+// Only the advertised schema changes. Arguments still go through EditParams,
+// which lifts a flat call into `edits` and keeps accepting every nested shape
+// (resumed sessions, callers inside GG), so execution is identical.
+const FLAT_EDIT_SCHEMA = {
+  type: "object",
+  properties: {
+    file_path: { type: "string" },
+    old_text: { type: "string" },
+    new_text: { type: "string" },
+    replace_all: { type: "boolean" },
+  },
+  required: ["file_path", "old_text", "new_text"],
+};
+
+export function createFlatEditTool(
+  ...args: Parameters<typeof createEditTool>
+): AgentTool<typeof EditParams> {
+  return {
+    ...createEditTool(...args),
+    description:
+      "Edit a file by replacing old_text (verbatim, unique unless replace_all) with new_text.",
+    rawInputSchema: FLAT_EDIT_SCHEMA,
+  };
 }

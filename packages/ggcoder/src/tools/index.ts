@@ -14,7 +14,7 @@ import { UiRegistry } from "../core/ui-registry.js";
 import { adoptionOperations } from "../core/ui-adoption.js";
 import { createUiRegistryTool } from "./ui-registry.js";
 import { createUiAdoptTool } from "./ui-adopt.js";
-import { createEditTool } from "./edit.js";
+import { createEditTool, createFlatEditTool } from "./edit.js";
 import { createBashTool } from "./bash.js";
 import { recordBashReads } from "./bash-read-evidence.js";
 import { createFindTool } from "./find.js";
@@ -252,7 +252,8 @@ export async function createTools(
       getDiagnostics,
       opts?.getWriteGuardSettings,
     ),
-    createEditTool(
+    // Claude models get the flat edit shape (see createFlatEditTool).
+    (opts?.provider === "anthropic" ? createFlatEditTool : createEditTool)(
       cwd,
       readFiles,
       ops,

@@ -61,12 +61,18 @@ afterEach(async () => {
 });
 
 /** Exactly what a provider transform serializes for one tool definition. */
-function serializeTool(tool: { name: string; description: string; parameters: unknown }): string {
+function serializeTool(tool: {
+  name: string;
+  description: string;
+  parameters: unknown;
+  rawInputSchema?: Record<string, unknown>;
+}): string {
   return JSON.stringify(
     {
       name: tool.name,
       description: tool.description,
-      input_schema: z.toJSONSchema(tool.parameters as z.ZodType),
+      // The transform sends a pre-built schema when a tool has one.
+      input_schema: tool.rawInputSchema ?? z.toJSONSchema(tool.parameters as z.ZodType),
     },
     null,
     2,

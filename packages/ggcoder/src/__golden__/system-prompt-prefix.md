@@ -93,110 +93,28 @@ Today's date: <DATE>
 }
 {
   "name": "edit",
-  "description": "Edit files. `old_text`: verbatim, unique unless replace_all. Or `span` (from read anchors:true) + full replacement `lines`. Re-send only failed edits.",
+  "description": "Edit a file by replacing old_text (verbatim, unique unless replace_all) with new_text.",
   "input_schema": {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
       "file_path": {
         "type": "string"
       },
-      "edits": {
-        "minItems": 1,
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "old_text": {
-              "type": "string"
-            },
-            "new_text": {
-              "type": "string"
-            },
-            "replace_all": {
-              "type": "boolean"
-            },
-            "span": {
-              "type": "object",
-              "properties": {
-                "start_line": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 9007199254740991
-                },
-                "start_hash": {
-                  "type": "string"
-                },
-                "end_line": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 9007199254740991
-                },
-                "end_hash": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "start_line",
-                "start_hash",
-                "end_line",
-                "end_hash"
-              ],
-              "additionalProperties": false
-            },
-            "lines": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          "additionalProperties": {}
-        }
+      "old_text": {
+        "type": "string"
       },
-      "files": {
-        "description": "Several files: [{file_path, edits}], instead of file_path/edits",
-        "minItems": 1,
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "file_path": {
-              "type": "string"
-            },
-            "edits": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "old_text": {
-                    "type": "string"
-                  },
-                  "new_text": {
-                    "type": "string"
-                  },
-                  "replace_all": {
-                    "type": "boolean"
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": [
-            "file_path",
-            "edits"
-          ],
-          "additionalProperties": false
-        }
+      "new_text": {
+        "type": "string"
       },
-      "atomic": {
-        "description": "All-or-nothing per file",
+      "replace_all": {
         "type": "boolean"
       }
     },
-    "additionalProperties": false
+    "required": [
+      "file_path",
+      "old_text",
+      "new_text"
+    ]
   }
 }
 {
