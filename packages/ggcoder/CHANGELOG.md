@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.76.0
+
+### Minor Changes
+
+- Add a Project Health scan and 0–100 score (file size, repo hygiene, safety net, debt markers) served to the app, let checklist records carry owner-accepted findings that no longer block a pass, and remove dead TUI code.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.76.0
+- @kenkaiiii/gg-agent@5.76.0
+- @kenkaiiii/gg-core@5.76.0
+
 ## 5.75.1
 
 ### Patch Changes
