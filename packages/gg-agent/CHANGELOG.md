@@ -1,5 +1,16 @@
 # @kenkaiiii/gg-agent
 
+## 5.77.0
+
+### Minor Changes
+
+- 60a2495: gg-ai can now make embeddings and rerank documents. `embed()` and `rerank()` work through the same provider registry as `stream()`, so apps doing retrieval no longer need their own HTTP calls. `embed()` batches long inputs at each provider's limit and returns one vector per input in input order. It throws instead of padding when the count or `dimensions` don't match, and `normalize: true` L2-normalizes the output. `rerank()` returns `{ index, score }` sorted best-first and checks every index. Embeddings are available for OpenAI, OpenRouter, Gemini (native API with an AI Studio key) and local servers. Reranking is available for OpenRouter and local llama.cpp/vLLM servers. The `palsu` fake provider gets deterministic embed and rerank fakes for tests. Custom providers can add `embed`/`rerank` next to `stream`, and `providerRegistry.supports(name, "embed")` reports what a provider offers. Calling either API on a provider without it (such as Anthropic) throws a `"capability"` error. A new `providerOptions` field passes provider-specific body fields, such as OpenRouter's `provider: { zdr: true }`, to `stream()`, `embed()` and `rerank()` without overriding fields gg-ai sets. gg-agent now forwards `providerOptions` and `fetch` to every model request.
+
+### Patch Changes
+
+- Updated dependencies [60a2495]
+  - @kenkaiiii/gg-ai@5.77.0
+
 ## 5.76.0
 
 ### Patch Changes
