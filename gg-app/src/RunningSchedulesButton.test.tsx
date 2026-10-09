@@ -80,7 +80,7 @@ describe("RunningSchedulesButton", () => {
     const onStop = vi.fn();
     render(<RunningSchedulesButton schedules={[schedule({ id: "abc" })]} onStop={onStop} />);
     fireEvent.click(screen.getByRole("button", { name: /schedule/ }));
-    fireEvent.click(screen.getByRole("button", { name: "stop" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Stop schedule: check the railway logs/ }));
     expect(onStop).toHaveBeenCalledWith("abc");
   });
 

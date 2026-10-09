@@ -255,6 +255,7 @@
 .slash-item.active,
 .slash-item:hover,
 .dropdown-option.active,
+.model-menu-item[aria-checked="true"],
 .mcp-item:hover {
   background: var(--glass-clear);
   box-shadow: var(--liquid-rim-soft-small);
@@ -388,8 +389,7 @@
 .badge,
 .window-index,
 .attach-chip,
-.user-file-chip,
-.gaze-pill {
+.user-file-chip {
   border-color: transparent;
   background: var(--glass-clear);
   -webkit-backdrop-filter: var(--glass-backdrop);
@@ -571,8 +571,8 @@
 .dropdown-menu,
 .model-menu,
 .slash-menu,
-.bgtasks-menu,
-.winlayout-menu {
+.winlayout-menu,
+.pop-panel {
   background: var(--glass-float) !important;
   border-color: transparent !important;
   -webkit-backdrop-filter: var(--glass-backdrop);

@@ -117,6 +117,25 @@ describe("ChecklistScreen", () => {
     ).toBeTruthy();
     expect(within(docs).getByText("2 findings reported")).toBeTruthy();
   });
+  it("notes findings the owner accepted on a passed item", () => {
+    render(
+      <ChecklistScreen
+        {...props(
+          ready([
+            item("tests", {
+              status: "passed",
+              checkedAt: "2026-10-05T09:00:00Z",
+              result: "pass",
+              accepted: ["god files (deferred by owner)"],
+            }),
+          ]),
+        )}
+      />,
+    );
+    const tests = screen.getByRole("group", { name: "tests" });
+    expect(within(tests).getByText("Checked 5 Oct 2026 · 1 accepted as is")).toBeTruthy();
+  });
+
   it("overrides a previous pass while checking or displaying an unrecorded-run notice", () => {
     const p = props(
       ready([

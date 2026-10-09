@@ -1,8 +1,8 @@
 /**
  * Localhost detection + loopback retry helpers for HTTP MCP connections.
  *
- * Extracted purely so the retry-decision logic is unit-testable on any platform
- * (we have no Windows CI). Windows 11 resolves `localhost` → ::1 (IPv6) first,
+ * Extracted so the retry-decision logic is unit-testable on every platform, not
+ * only on the Windows CI leg. Windows 11 resolves `localhost` → ::1 (IPv6) first,
  * but many MCP servers (Playwright MCP `--port`, Node's default HTTP listen)
  * bind to 127.0.0.1 (IPv4-only). The client's first `fetch` then hits a dead
  * socket (ECONNREFUSED). These helpers decide whether a connect is local and,

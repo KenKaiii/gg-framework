@@ -47,11 +47,7 @@ async function extractFirstPrompt(sessionPath: string): Promise<string> {
           if (typeof c === "string") {
             text = c;
           } else if (Array.isArray(c)) {
-            text =
-              c
-                .filter((b) => b.type === "text" && b.text)
-                .map((b) => b.text!)
-                .join(" ") || "";
+            text = c.flatMap((b) => (b.type === "text" && b.text ? [b.text] : [])).join(" ") || "";
           } else {
             continue;
           }

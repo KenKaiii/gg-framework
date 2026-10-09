@@ -780,18 +780,30 @@ export function getVideoByteLimit(modelId: string): number | undefined {
   return model.maxVideoBytes ?? DEFAULT_MAX_VIDEO_BYTES;
 }
 
+/** Default model per hosted provider. Providers not listed default to Anthropic's. */
+const DEFAULT_MODEL_IDS: Partial<Record<Provider, string>> = {
+  xiaomi: "mimo-v2.6-pro",
+  openai: "gpt-6.1-sol",
+  gemini: "gemini-3.1-flash-lite",
+  glm: "glm-5.3",
+  moonshot: "kimi-k3",
+  minimax: "MiniMax-M3",
+  deepseek: "deepseek-v4-pro",
+  huggingface: "moonshotai/Kimi-K2.7-Code",
+  openrouter: "qwen/qwen3.8-max",
+  sakana: "fugu",
+  xai: "grok-4.7",
+};
+const FALLBACK_DEFAULT_MODEL_ID = "claude-sonnet-5-5";
+
+function registeredModel(id: string): ModelInfo {
+  const model = MODELS.find((m) => m.id === id);
+  // A default that isn't registered is a bug in this file, caught by the tests.
+  if (!model) throw new Error(`Default model "${id}" is not in the model registry`);
+  return model;
+}
+
 export function getDefaultModel(provider: Provider): ModelInfo {
-  if (provider === "xiaomi") return MODELS.find((m) => m.id === "mimo-v2.6-pro")!;
-  if (provider === "openai") return MODELS.find((m) => m.id === "gpt-6.1-sol")!;
-  if (provider === "gemini") return MODELS.find((m) => m.id === "gemini-3.1-flash-lite")!;
-  if (provider === "glm") return MODELS.find((m) => m.id === "glm-5.3")!;
-  if (provider === "moonshot") return MODELS.find((m) => m.id === "kimi-k3")!;
-  if (provider === "minimax") return MODELS.find((m) => m.id === "MiniMax-M3")!;
-  if (provider === "deepseek") return MODELS.find((m) => m.id === "deepseek-v4-pro")!;
-  if (provider === "huggingface") return MODELS.find((m) => m.id === "moonshotai/Kimi-K2.7-Code")!;
-  if (provider === "openrouter") return MODELS.find((m) => m.id === "qwen/qwen3.8-max")!;
-  if (provider === "sakana") return MODELS.find((m) => m.id === "fugu")!;
-  if (provider === "xai") return MODELS.find((m) => m.id === "grok-4.7")!;
   // Local models only exist once discovery has run, and there's no "the" local
   // model. Never throw here (callers rely on a ModelInfo): fall back to a
   // placeholder that carries the conservative defaults, so a caller asking
@@ -799,7 +811,7 @@ export function getDefaultModel(provider: Provider): ModelInfo {
   if (provider === "local") {
     return getModelsForProvider("local")[0] ?? PLACEHOLDER_LOCAL_MODEL;
   }
-  return MODELS.find((m) => m.id === "claude-sonnet-5-5")!;
+  return registeredModel(DEFAULT_MODEL_IDS[provider] ?? FALLBACK_DEFAULT_MODEL_ID);
 }
 
 /**

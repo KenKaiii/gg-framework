@@ -24,7 +24,7 @@ export default tseslint.config(
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
-      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/consistent-type-imports": "error",
       // Fire-and-forget `void asyncFn().catch()` kickoffs in effects setState
       // asynchronously inside a promise, not synchronously — the rule's static

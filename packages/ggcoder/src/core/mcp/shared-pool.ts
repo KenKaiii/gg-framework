@@ -252,15 +252,18 @@ export class SharedMcpPool {
    */
   private dispatchElicit(entry: PoolEntry): MCPElicitHandler {
     return async (request) => {
-      const candidates = [...entry.callers].filter((c) => c.activeCalls > 0 && c.onElicit);
-      if (candidates.length !== 1) {
+      const candidates = [...entry.callers].flatMap((c) =>
+        c.activeCalls > 0 && c.onElicit ? [c.onElicit] : [],
+      );
+      const [onElicit] = candidates;
+      if (candidates.length !== 1 || !onElicit) {
         log("WARN", "mcp", "cancelled a shared-server elicitation with no unique caller", {
           server: request.server,
           candidates: String(candidates.length),
         });
         return { action: "cancel" };
       }
-      return candidates[0]!.onElicit!(request);
+      return onElicit(request);
     };
   }
 

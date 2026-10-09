@@ -161,14 +161,12 @@ async function parseBundle(bundleFile: string): Promise<z.infer<typeof PluginBun
   }
   if (totalBytes > MAX_BUNDLE_BYTES) throw new Error("Plugin exceeds the 5 MB bundle limit");
   validateManifestPaths(parsed.manifest, paths);
-  if (!paths.has("plugin.json")) throw new Error("Plugin bundle is missing plugin.json");
+  const manifestFile = parsed.files.find((file) => file.path === "plugin.json");
+  if (!paths.has("plugin.json") || !manifestFile) {
+    throw new Error("Plugin bundle is missing plugin.json");
+  }
   const embeddedManifest = PluginManifestSchema.parse(
-    JSON.parse(
-      Buffer.from(
-        parsed.files.find((file) => file.path === "plugin.json")!.contentBase64,
-        "base64",
-      ).toString("utf8"),
-    ),
+    JSON.parse(Buffer.from(manifestFile.contentBase64, "base64").toString("utf8")),
   );
   if (!isDeepStrictEqual(embeddedManifest, parsed.manifest)) {
     throw new Error("Bundle manifest does not match plugin.json");

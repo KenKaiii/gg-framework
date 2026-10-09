@@ -896,31 +896,23 @@ export function App(props: AppProps) {
   );
   const handleTaskNavigate = useCallback((index: number) => navigateTaskBar(index), []);
 
-  // Resolve fresh OAuth credentials before each agent loop run.
-  // Falls back to the static props when authStorage is not available.
+  // Resolve fresh OAuth credentials before each agent loop run. Only wired up
+  // when authStorage exists; without it the loop uses the static apiKey props.
+  const authStorage = props.authStorage;
   const resolveCredentials = useCallback(
     async (opts?: { forceRefresh?: boolean; rejectedToken?: string }) => {
-      if (props.authStorage) {
-        const creds = await props.authStorage.resolveCredentials(currentProvider, {
-          ...opts,
-          storageKeys: getAuthStorageKeys(currentProvider, currentModel),
-        });
-        return {
-          apiKey: creds.accessToken,
-          accountId: creds.accountId,
-          projectId: creds.projectId,
-        };
-      }
-      return { apiKey: activeApiKey!, accountId: activeAccountId, projectId: activeProjectId };
+      if (!authStorage) throw new Error("resolveCredentials called without authStorage");
+      const creds = await authStorage.resolveCredentials(currentProvider, {
+        ...opts,
+        storageKeys: getAuthStorageKeys(currentProvider, currentModel),
+      });
+      return {
+        apiKey: creds.accessToken,
+        accountId: creds.accountId,
+        projectId: creds.projectId,
+      };
     },
-    [
-      props.authStorage,
-      currentProvider,
-      currentModel,
-      activeApiKey,
-      activeAccountId,
-      activeProjectId,
-    ],
+    [authStorage, currentProvider, currentModel],
   );
 
   // Back-reference to the loop, so callbacks defined in its own options object
@@ -941,7 +933,7 @@ export function App(props: AppProps) {
       baseUrl: activeBaseUrl,
       accountId: activeAccountId,
       projectId: activeProjectId,
-      resolveCredentials,
+      resolveCredentials: authStorage ? resolveCredentials : undefined,
       transformContext,
       getLoopBreakMessage: (stats, stage) => {
         if (!idealReviewEnabledRef.current) return null;
@@ -2267,10 +2259,11 @@ export function App(props: AppProps) {
           // re-spawning `npx` there only risks a failed
           // re-spawn that would silently drop the tools.
           const glmInvolved = newProvider === "glm" || prevProvider === "glm";
-          if (props.mcpManager && glmInvolved) {
+          const mcpManager = props.mcpManager;
+          if (mcpManager && glmInvolved) {
             void (async () => {
               // Disconnect old MCP servers
-              await props.mcpManager!.dispose();
+              await mcpManager.dispose();
 
               // Remove old MCP tools, connect new ones
               let apiKey: string | undefined;
@@ -2289,7 +2282,7 @@ export function App(props: AppProps) {
                 // ~/.gg/mcp.json and ./.gg/mcp.json) survive the reconnect —
                 // getMCPServers returns provider defaults only.
                 const servers = await getAllMcpServers(newProvider, apiKey, props.cwd);
-                const mcpTools = await props.mcpManager!.connectAll(servers);
+                const mcpTools = await mcpManager.connectAll(servers);
                 setCurrentTools((prev) => {
                   const next = [...prev.filter((t) => !t.name.startsWith("mcp__")), ...mcpTools];
                   rebuildPromptWithTools(next);

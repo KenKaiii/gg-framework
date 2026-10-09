@@ -177,6 +177,9 @@ export interface AgentState {
   gitHubRepoUrl?: string | null;
   /** GitHub Actions for the current commit; null when no runs are available. */
   gitHubCI?: GitHubCI | null;
+  /** Raw Project Health from the sidecar (code mode); validate with
+   *  `parseProjectHealth` before use. null until the first scan lands. */
+  projectHealth?: unknown;
   /** Extra workspace roots added with /add-dir. Absent on older sidecars. */
   additionalRoots?: string[];
   /** True when the active model can accept native video input. */
@@ -277,6 +280,8 @@ export interface ChecklistEntry {
   result: "pass" | "issues" | "not-applicable" | null;
   summary: string | null;
   findings: string[];
+  /** Findings the owner chose to leave as is; they don't block a pass. */
+  accepted?: string[];
   evidence: string[];
   /** Read-only setup observations, not an audit result. */
   detection?: { summary: string; facts: string[] } | null;
@@ -328,6 +333,7 @@ function checklistEntry(value: unknown): value is ChecklistEntry {
     (value.changedSinceCheck === undefined || typeof value.changedSinceCheck === "boolean") &&
     nullable("summary", 300) &&
     checklistStrings(value.findings, 300) &&
+    (value.accepted === undefined || checklistStrings(value.accepted, 300)) &&
     checklistStrings(value.evidence, 200) &&
     (detection === undefined ||
       detection === null ||
@@ -1585,40 +1591,6 @@ export async function openWhatsNewWindow(mode: "hype" | "calm"): Promise<void> {
     await logError(`open_whatsnew_window failed: ${String(e)}`);
     throw e;
   }
-}
-
-// ── Gaze focus (webcam eye/head tracking → window focus) ───────────
-
-/** Payload of the `gaze-target` event broadcast to every window. `target` is the
- *  window the gaze currently rests on (null off any window); `committed` is the
- *  window that currently holds focus. Each window paints a solid ring when it's
- *  `committed`, a soft highlight when it's the (un-committed) `target`. */
-export interface GazeTargetEvent {
-  target: string | null;
-  committed: string | null;
-}
-
-/** Map a normalized monitor point to a window. With `commit`, commit OS focus to
- *  the hit window. `committed` is the currently-focused window so the broadcast
- *  border persists. Always broadcasts `gaze-target`. Returns the hit label. */
-export async function gazeFocus(
-  nx: number,
-  ny: number,
-  commit: boolean,
-  committed: string | null,
-): Promise<string | null> {
-  try {
-    return await invoke<string | null>("gaze_focus", { nx, ny, commit, committed });
-  } catch (e) {
-    await logError(`gaze_focus failed: ${String(e)}`);
-    return null;
-  }
-}
-
-/** Subscribe THIS window to gaze-target broadcasts. Returns an unlisten fn. */
-export async function onGazeTarget(cb: (e: GazeTargetEvent) => void): Promise<() => void> {
-  const un = await appWindow.listen<GazeTargetEvent>("gaze-target", (e) => cb(e.payload));
-  return un;
 }
 
 // ── macOS menu-bar tray ────────────────────────────────────────────────────

@@ -106,29 +106,59 @@ export interface BusEventMap {
 
 type EventKey = keyof BusEventMap;
 type EventHandler<K extends EventKey> = (payload: BusEventMap[K]) => void;
+type ListenerSets = { [K in EventKey]: Set<EventHandler<K>> };
+
+/** One listener set per event, created up front so every access is typed by its
+ *  event key. A new `BusEventMap` entry fails to compile until it is added here. */
+function emptyListenerSets(): ListenerSets {
+  return {
+    text_delta: new Set(),
+    thinking_delta: new Set(),
+    tool_call_start: new Set(),
+    tool_call_update: new Set(),
+    tool_call_end: new Set(),
+    turn_end: new Set(),
+    checkpoint: new Set(),
+    agent_done: new Set(),
+    max_turns: new Set(),
+    retry: new Set(),
+    stream_rule_triggered: new Set(),
+    turn_budget_extended: new Set(),
+    truncated: new Set(),
+    error: new Set(),
+    server_tool_call: new Set(),
+    server_tool_result: new Set(),
+    diagnostics: new Set(),
+    hook: new Set(),
+    hook_armed: new Set(),
+    subagent_state: new Set(),
+    queue_drained: new Set(),
+    session_start: new Set(),
+    model_change: new Set(),
+    compaction_start: new Set(),
+    compaction_end: new Set(),
+    branch_created: new Set(),
+    user_input: new Set(),
+    slash_command: new Set(),
+  };
+}
 
 // ── EventBus ───────────────────────────────────────────────
 
 export class EventBus {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private listeners = new Map<string, Set<(...args: any[]) => void>>();
+  private readonly listeners: ListenerSets = emptyListenerSets();
 
   on<K extends EventKey>(event: K, handler: EventHandler<K>): () => void {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
-    }
-    this.listeners.get(event)!.add(handler);
+    this.listeners[event].add(handler);
     return () => this.off(event, handler);
   }
 
   off<K extends EventKey>(event: K, handler: EventHandler<K>): void {
-    this.listeners.get(event)?.delete(handler);
+    this.listeners[event].delete(handler);
   }
 
   emit<K extends EventKey>(event: K, payload: BusEventMap[K]): void {
-    const handlers = this.listeners.get(event);
-    if (!handlers) return;
-    for (const handler of handlers) {
+    for (const handler of this.listeners[event]) {
       handler(payload);
     }
   }
@@ -143,10 +173,9 @@ export class EventBus {
 
   /** Remove all listeners, freeing closures that may retain large scopes. */
   removeAllListeners(): void {
-    for (const set of this.listeners.values()) {
+    for (const set of Object.values(this.listeners)) {
       set.clear();
     }
-    this.listeners.clear();
   }
 
   forwardAgentEvent(event: AgentEvent): void {

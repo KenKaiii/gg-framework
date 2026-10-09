@@ -61,7 +61,7 @@ import { answerAskItem, dropSupersededAsks } from "./ask-user";
 import { glowPlacement, glowStateFor, glowVars } from "./window-glow";
 import { ActivityBar } from "./ActivityBar";
 import { autosizeComposer } from "./composer-autosize";
-import { createEntranceLifetime } from "./transcript-motion";
+import { createEntranceLifetime, dissolveInVisible } from "./transcript-motion";
 import { TranscriptJumpControls } from "./TranscriptJumpControls";
 import { createLiveTextStore, LiveTextContext } from "./live-text";
 import { KenActivityBar } from "./KenActivityBar";
@@ -82,6 +82,7 @@ import { useSchedules } from "./useSchedules";
 import { appendReferencedFiles, parseReferencedFiles } from "./ReferencedFiles";
 import { TasksModal } from "./TasksModal";
 import { ChecklistScreen } from "./ChecklistScreen";
+import { parseProjectHealth } from "./project-health";
 import { NotesModal } from "./NotesModal";
 import { MemoryModal } from "./MemoryModal";
 import { WakeScreen } from "./WakeScreen";
@@ -93,8 +94,6 @@ import { KenPowerBanner } from "./KenPowerBanner";
 import { ExportChatButton } from "./ExportChatButton";
 import { PlanReviewModal } from "./PlanReviewModal";
 import { McpElicitModal } from "./McpElicitModal";
-// Experimental gaze focus — disabled for now (see main.tsx).
-// import { GazeButton } from "./GazeButton";
 import { ProjectPicker } from "./ProjectPicker";
 import { ChatPicker } from "./ChatPicker";
 import { BackButton } from "./BackButton";
@@ -426,6 +425,11 @@ function App(): React.ReactElement {
   // separate from picker visibility so restore and reopened pickers are explicit.
   const [needsProject, setNeedsProject] = useState(true);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("code");
+  const rawProjectHealth = state?.projectHealth;
+  const projectHealth = useMemo(
+    () => (workspaceMode === "code" ? parseProjectHealth(rawProjectHealth) : null),
+    [workspaceMode, rawProjectHealth],
+  );
   // False until the boot-time workspace-restore check resolves.
   const [restoreChecked, setRestoreChecked] = useState(false);
   // Every window starts from the mode-neutral home screen before choosing Code or Chat.
@@ -624,6 +628,8 @@ function App(): React.ReactElement {
     let raf2 = 0;
     raf1 = requestAnimationFrame(() => {
       maybeScrollToBottom();
+      // After the first pin, so the rows that dissolve are the ones in view.
+      if (scrollRef.current) dissolveInVisible(scrollRef.current);
       raf2 = requestAnimationFrame(maybeScrollToBottom);
     });
     let cancelled = false;
@@ -1491,6 +1497,15 @@ function App(): React.ReactElement {
     }
   }
 
+  // Project Health → agent. The prompt (from the sidecar) has the agent check
+  // the findings and ask with ask_user before fixing anything. Like a checklist
+  // run it leaves the composer draft alone and returns to the chat.
+  function reviewProjectHealth(prompt: string, label: string): boolean {
+    if (!submitText(prompt, label, { keepInput: true })) return false;
+    if (showChecklist) withViewTransition(() => setShowChecklist(false));
+    return true;
+  }
+
   // A question whose answer the user chose to TYPE rather than click. The next
   // composer submit belongs to it, not to a new prompt.
   const typingAskRef = useRef<{ itemId: number; promptId: string; questionId: string } | null>(
@@ -1561,15 +1576,37 @@ function App(): React.ReactElement {
   // Pushes a shimmering "Sent to GG Coder" user bubble (the full prompt body went
   // to GG Coder, but the transcript shows the short Ken-colored label, like a
   // slash command shows `/name`), then sends the prompt to the build session.
+  // A failed send drops the bubble and says so; resolving false lets the
+  // prompt block re-enable its button.
   const sendKenRecommendedPrompt = useCallback(
-    (text: string) => {
+    async (text: string): Promise<boolean> => {
       const trimmed = text.trim();
-      if (!trimmed || !readyRef.current) return;
+      if (!trimmed || !readyRef.current) return false;
       stickToBottomRef.current = true;
       dismissOpenAsks();
-      pushItem({ kind: "user", id: nextId(), text: trimmed, kenSent: true });
+      const bubbleId = nextId();
+      pushItem({ kind: "user", id: bubbleId, text: trimmed, kenSent: true });
       endStreamingText();
-      void sendPrompt(trimmed, [], { kenSent: true }).catch(() => {});
+      try {
+        await sendPrompt(trimmed, [], { kenSent: true });
+        return true;
+      } catch (error) {
+        setItems((prev) => prev.filter((it) => it.id !== bubbleId));
+        pushItem({
+          kind: "error",
+          id: nextId(),
+          ...readChatError(
+            {
+              headline: "Ken's prompt wasn't sent",
+              message: error instanceof Error ? error.message : String(error),
+              guidance: "Click Send to GG Coder again when the agent is ready.",
+              reason: "network",
+            },
+            "error",
+          ),
+        });
+        return false;
+      }
     },
     [pushItem, endStreamingText, dismissOpenAsks, stickToBottomRef],
   );
@@ -1793,7 +1830,7 @@ function App(): React.ReactElement {
     if (running) {
       if (supersedesQuestion) noteSupersedingSend(prompt);
       const queuedWire = attachments.map(toWire);
-      const queuedImgs = attachments.filter((a) => a.previewUrl).map((a) => a.previewUrl!);
+      const queuedImgs = attachments.flatMap((a) => (a.previewUrl ? [a.previewUrl] : []));
       pushItem({
         kind: "user",
         id: bubbleId,
@@ -1818,7 +1855,7 @@ function App(): React.ReactElement {
       return;
     }
     const wire = attachments.map(toWire);
-    const imgPreviews = attachments.filter((a) => a.previewUrl).map((a) => a.previewUrl!);
+    const imgPreviews = attachments.flatMap((a) => (a.previewUrl ? [a.previewUrl] : []));
     pushItem({
       kind: "user",
       id: bubbleId,
@@ -2126,9 +2163,11 @@ function App(): React.ReactElement {
         gitHubPRs={state?.gitHubPRs}
         gitHubRepoUrl={state?.gitHubRepoUrl}
         gitHubCI={state?.gitHubCI}
+        projectHealth={projectHealth}
+        onReviewHealth={reviewProjectHealth}
         additionalRoots={state?.additionalRoots}
         navHidden={navHidden}
-        onToggleNav={toggleNav}
+        onToggleNav={() => withViewTransition(toggleNav)}
         stripExtras={
           <>
             <TitleUsageMeter currentProvider={state?.provider ?? ""} />

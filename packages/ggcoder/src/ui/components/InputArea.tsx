@@ -500,8 +500,7 @@ export function InputArea({
 
     const originalEmit = internal_eventEmitter.emit.bind(internal_eventEmitter);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const wrappedEmit = (event: string | symbol, ...args: any[]): boolean => {
+    const wrappedEmit = (event: string | symbol, ...args: unknown[]): boolean => {
       if (event === "input" && typeof args[0] === "string") {
         const data = args[0] as string;
 
@@ -672,8 +671,7 @@ export function InputArea({
       scrollTimer = setTimeout(reenableMouse, NATIVE_INTERACTION_SAFETY_MS);
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    internal_eventEmitter.emit = (event: string | symbol, ...args: any[]): boolean => {
+    internal_eventEmitter.emit = (event: string | symbol, ...args: unknown[]): boolean => {
       if (event === "input" && typeof args[0] === "string") {
         const data = args[0] as string;
         // Strip all terminal focus reports and SGR mouse sequences from the data

@@ -2,6 +2,7 @@
   "name": "gg-app",
   "private": true,
   "version": "0.83.1",
+  "description": "GG Coder desktop app: Tauri + React workspace for code, chat and motion agents",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -22,10 +23,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "1.0.1",
     "@phosphor-icons/react": "2.1.10",
-    "@react-three/fiber": "9.8.1",
-    "@react-three/postprocessing": "3.1.2",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-log": "^2.9.1",
@@ -36,15 +34,13 @@
     "highlight.js": "^11.12.0",
     "marked": "^15.0.12",
     "metal-fx": "2.0.10",
-    "postprocessing": "6.39.5",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^9.0.1",
     "rehype-highlight": "^7.0.0",
     "remark-gfm": "^4.0.0",
     "remend": "1.4.0",
-    "thinking-orbs": "0.3.1",
-    "three": "0.186.1"
+    "thinking-orbs": "0.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -52,7 +48,6 @@
     "@testing-library/react": "^16.3.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
-    "@types/three": "0.186.0",
     "@vitejs/plugin-react": "5.2.0",
     "esbuild": "0.28.2",
     "eslint": "^10.10.0",

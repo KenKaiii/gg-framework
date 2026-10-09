@@ -552,20 +552,22 @@ async function runInkTUI(opts: {
     if (sameProviderModel) {
       model = sameProviderModel;
     } else {
-      const fallback = loggedInProviders.find((p) => resolvableModelFor(p));
-      if (!fallback) {
+      const fallback = loggedInProviders
+        .map((p) => ({ provider: p, model: resolvableModelFor(p) }))
+        .find((candidate) => candidate.model !== undefined);
+      if (!fallback?.model) {
         throw new Error(
           'All logged-in providers expired or failed to authenticate. Run "ggcoder login" to re-authenticate.',
         );
       }
       console.warn(
         chalk.yellow(
-          `⚠ ${displayName(preferredProvider)} session expired — switched to ${displayName(fallback)} for this launch.\n` +
+          `⚠ ${displayName(preferredProvider)} session expired — switched to ${displayName(fallback.provider)} for this launch.\n` +
             `  Run "ggcoder login" to re-authenticate ${displayName(preferredProvider)}.`,
         ),
       );
-      provider = fallback;
-      model = resolvableModelFor(fallback)!;
+      provider = fallback.provider;
+      model = fallback.model;
     }
   } else if (expiredProviders.length > 0) {
     console.warn(
@@ -1525,10 +1527,7 @@ async function resolveActiveProvider(
 
 function extractText(content: string | Array<{ type: string; text?: string }>): string {
   if (typeof content === "string") return content;
-  return content
-    .filter((b) => b.type === "text" && b.text)
-    .map((b) => b.text!)
-    .join("\n");
+  return content.flatMap((b) => (b.type === "text" && b.text ? [b.text] : [])).join("\n");
 }
 
 function restoredPromptCommandDisplayText(text: string): string | null {

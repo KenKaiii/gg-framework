@@ -6,10 +6,6 @@ import { AppErrorBoundary } from "./AppErrorBoundary";
 import { ZoomController } from "./ZoomController";
 import { TooltipLayer } from "./TooltipLayer";
 import { WhatsNewModal } from "./WhatsNewModal";
-// Experimental: webcam gaze → window focus. Disabled for now; re-enable by
-// uncommenting this import + the <GazeController /> mount below (and the
-// <GazeButton /> in App.tsx). The full implementation lives in src/gaze/.
-// import { GazeController } from "./GazeController";
 import { tagPlatform } from "./platform";
 import { parseMode } from "./whatsnew-content";
 import { installMotionAttribute } from "./window-motion";
@@ -74,7 +70,6 @@ if (params.get("whatsnew") === "1") {
       <ZoomController />
       <TooltipLayer />
       <WhatsNewModal />
-      {/* <GazeController /> */}
     </>,
   );
 }

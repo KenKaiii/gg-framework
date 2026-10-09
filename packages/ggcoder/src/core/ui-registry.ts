@@ -125,7 +125,7 @@ export function registryKey(value: string): string {
         return `${provider}:${slug.parse(url.pathname.slice(3, -5))}`;
     }
     if (url.hostname === "ui.shadcn.com")
-      return `shadcn:${slug.parse(url.pathname.split("/").at(-1)!.slice(0, -5))}`;
+      return `shadcn:${slug.parse(url.pathname.slice(url.pathname.lastIndexOf("/") + 1, -5))}`;
     throw new Error("Not an item URL");
   }
   return `shadcn:${slug.parse(value)}`;
@@ -235,10 +235,11 @@ export class UiRegistry {
       const text = Buffer.concat(chunks).toString("utf8");
       const result = { text, url: url.href, hash: payloadHash(text) };
       while (this.cache.size >= 32 || this.cacheBytes + size > 12000000) {
-        const oldest = this.cache.keys().next().value;
+        const oldest = this.cache.entries().next().value;
         if (!oldest) break;
-        this.cacheBytes -= Buffer.byteLength(this.cache.get(oldest)!.text);
-        this.cache.delete(oldest);
+        const [oldestUrl, oldestEntry] = oldest;
+        this.cacheBytes -= Buffer.byteLength(oldestEntry.text);
+        this.cache.delete(oldestUrl);
       }
       this.cache.set(url.href, result);
       this.cacheBytes += Buffer.byteLength(text);

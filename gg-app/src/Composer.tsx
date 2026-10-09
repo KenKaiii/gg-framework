@@ -25,6 +25,7 @@ import { ScheduleHint } from "./ScheduleHint";
 import { ShimmerText } from "./ShimmerText";
 import { SlashMenu } from "./SlashMenu";
 import { theme } from "./theme";
+import { toast } from "./toast";
 import { WorkingBeam } from "./WorkingBeam";
 
 export interface ComposerProps {
@@ -190,7 +191,11 @@ export function Composer({
       <CacheExpiryNotice
         expiry={state?.cacheExpiry}
         running={running}
-        onCompact={() => void sendPrompt("/compact").catch(() => {})}
+        onCompact={() =>
+          void sendPrompt("/compact").catch(() =>
+            toast("Couldn't start compaction. Try again.", "error"),
+          )
+        }
       />
       <QueuedBar messages={visibleQueuedMessages} onCancel={handleCancelQueued} />
       <div className="inputrow">

@@ -564,12 +564,13 @@ export function useAgentLoop(
 
         try {
           // Resolve fresh credentials (handles OAuth token refresh)
+          const { resolveCredentials, transformContext } = options;
           let apiKey = options.apiKey;
           let accountId = options.accountId;
           let projectId = options.projectId;
           const credsStart = Date.now();
-          if (options.resolveCredentials) {
-            const creds = await options.resolveCredentials(credentialOpts);
+          if (resolveCredentials) {
+            const creds = await resolveCredentials(credentialOpts);
             apiKey = creds.apiKey;
             accountId = creds.accountId;
             projectId = creds.projectId;
@@ -614,10 +615,10 @@ export function useAgentLoop(
             // process sharing auth.json that refreshes this grant invalidates
             // the token resolved above, which would otherwise kill every
             // remaining turn with an authentication error.
-            ...(options.resolveCredentials
+            ...(resolveCredentials
               ? {
                   resolveCredentials: async () => {
-                    const live = await options.resolveCredentials!();
+                    const live = await resolveCredentials();
                     lastResolvedApiKey.current = live.apiKey;
                     return live;
                   },
@@ -638,9 +639,9 @@ export function useAgentLoop(
             defaultHeaders,
             // Wrap transformContext to flag when a compaction actually shrank
             // the context — the re-grounding hook keys off this.
-            transformContext: options.transformContext
+            transformContext: transformContext
               ? async (msgs, opts) => {
-                  const result = await options.transformContext!(msgs, opts);
+                  const result = await transformContext(msgs, opts);
                   if (result !== msgs && result.length < msgs.length) {
                     compactionOccurredRef.current = true;
                   }

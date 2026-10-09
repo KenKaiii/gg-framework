@@ -432,7 +432,8 @@ export function buildMemoryTools(store: MemoryStore): AgentTool[] {
         if (result.duplicateOf) {
           return `Near-duplicate already exists as ${result.duplicateOf.id}. Use update_memory if that fact changed.`;
         }
-        return `Remembered as ${result.memory!.id}. ${memoryCount(result.memories.length, "stored")}.`;
+        if (!result.memory) throw new Error("Memory store saved nothing and found no duplicate");
+        return `Remembered as ${result.memory.id}. ${memoryCount(result.memories.length, "stored")}.`;
       },
     },
     {

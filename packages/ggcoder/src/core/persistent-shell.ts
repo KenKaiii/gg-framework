@@ -450,9 +450,9 @@ export class PersistentShell {
       }
       if (!this.child && !(await this.startShell().catch(() => false))) {
         this.child = null;
-        return { exitCode: 1, output: "failed to spawn session bash" };
       }
-      const child = this.child!;
+      const child = this.child;
+      if (!child) return { exitCode: 1, output: "failed to spawn session bash" };
       const generation = this.generation;
       const res = await this.send(child, command, timeoutMs, signal, onChunk);
       if (generation !== this.generation) {

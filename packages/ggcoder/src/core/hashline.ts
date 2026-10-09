@@ -79,14 +79,15 @@ export interface EditAnchor {
 
 export type AnchorFailure = "out_of_range" | "hash_mismatch" | "reversed";
 
-export interface AnchorResolution {
-  ok: boolean;
-  /** 0-based index of the first line (only when ok). */
-  startIndex?: number;
-  /** 0-based index of the last line (only when ok). */
-  endIndex?: number;
-  reason?: AnchorFailure;
-}
+export type AnchorResolution =
+  | {
+      ok: true;
+      /** 0-based index of the first line. */
+      startIndex: number;
+      /** 0-based index of the last line. */
+      endIndex: number;
+    }
+  | { ok: false; reason: AnchorFailure };
 
 /**
  * Resolve an anchor against the current file lines (0-based). Rejects the edit

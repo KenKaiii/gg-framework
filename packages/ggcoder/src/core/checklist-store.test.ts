@@ -23,6 +23,7 @@ function entry(overrides: Partial<ChecklistEntry> = {}): ChecklistEntry {
     result: "pass",
     summary: "All good.",
     findings: [],
+    accepted: [],
     evidence: ["pnpm lint — 0 errors"],
     ...overrides,
   };
@@ -136,6 +137,26 @@ describe("readChecklist", () => {
 });
 
 describe("writeChecklistEntry", () => {
+  it("round-trips accepted findings and omits the key when there are none", async () => {
+    const accepted = ["MED god files: split later (deferred by owner)"];
+    const result = await writeChecklistEntry(root, "senior-review", entry({ accepted }), NOW);
+    expect(result.ok).toBe(true);
+    await writeChecklistEntry(root, "tests", entry(), NOW);
+    const raw = JSON.parse(await fs.readFile(path.join(root, CHECKLIST_FILE), "utf-8")) as {
+      items: Record<string, Record<string, unknown>>;
+    };
+    expect(raw.items["senior-review"]?.accepted).toEqual(accepted);
+    expect(raw.items.tests).not.toHaveProperty("accepted");
+    const read = await readChecklist(root, NOW);
+    expect(read.ok && read.value.items["senior-review"]?.accepted).toEqual(accepted);
+    expect(read.ok && read.value.items.tests?.accepted).toEqual([]);
+    const view = read.ok ? checklistView(CHECKLIST_ITEMS, read.value, NOW) : [];
+    expect(view.find((row) => row.id === "senior-review")).toMatchObject({
+      status: "passed",
+      accepted,
+    });
+  });
+
   it("writes canonical JSON with sorted ids and keeps other entries", async () => {
     await writeChecklistEntry(root, "tests", entry(), NOW);
     const result = await writeChecklistEntry(root, "ci", entry({ result: "issues" }), NOW);

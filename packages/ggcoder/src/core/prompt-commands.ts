@@ -3,6 +3,7 @@
  * into the agent loop. Each command maps to a full prompt the agent executes.
  */
 
+import { checklistSetupStep } from "./checklist-prompt.js";
 import { isGgApp } from "./runtime-mode.js";
 
 export interface PromptCommand {
@@ -186,7 +187,11 @@ After writing:
 2. Re-read the file and confirm every remaining line passes the bar: **project-specific, supported by a local file you actually read, and not already in the agent's context per the list above.**
 3. Report in one line: which file, how many bytes, and how many lines you removed as redundant.
 
-## Step 6: Restart Notice
+## Step 6: Update the checklist
+
+${checklistSetupStep(["agent-setup"])}
+
+## Step 7: Restart Notice
 
 End your reply with this exact notice so the user doesn't miss it:
 
@@ -253,7 +258,11 @@ Replace [PROJECT-SPECIFIC LINT/TYPECHECK COMMANDS] with the actual commands.
 
 Keep the command file under 30 lines.
 
-## Step 3: Confirm
+## Step 3: Update the checklist
+
+${checklistSetupStep(["commit-gate"])}
+
+## Step 4: Confirm
 
 Report that /commit is now available with quality checks, an agent code review gate, and AI-generated commit messages, and mention which local scripts/docs verified the commands.`,
   },
@@ -345,6 +354,10 @@ For EVERY file in \`.github/workflows/\`, apply and report one line per change:
   a pointer that CI lives in \`.github/workflows/\` and must stay green, and a rule to
   never commit with \`--no-verify\`. If \`CLAUDE.md\` exists, keep AGENTS.md short and
   point to it.
+
+## Update the checklist
+
+${checklistSetupStep(["ci", "git-github"])}
 
 ## Finish
 

@@ -269,7 +269,11 @@ export async function runSubagentWorkerMode(): Promise<void> {
   };
 
   const runTurn = (task: string, checks: AcceptanceCheck[]) => {
-    if (!session) throw new Error("Worker is not initialized");
+    if (!session || !initializeOptions) throw new Error("Worker is not initialized");
+    // The turn keeps its own handles: the async body below outlives this
+    // narrowing, and a model fallback swaps both mid-turn.
+    let turnSession: AgentSession = session;
+    const turnOptions: SubagentWorkerInitialize = initializeOptions;
     if (state === "running") throw new Error("Worker already has an active turn");
     output = "";
     recoveryOutput = "";
@@ -289,7 +293,7 @@ export async function runSubagentWorkerMode(): Promise<void> {
     activeTurn = (async () => {
       let loopError: Error | undefined;
       try {
-        loopError = await promptSubAgent(session!, task);
+        loopError = await promptSubAgent(turnSession, task);
       } catch (error) {
         const message = errorMessage(error);
         const fallbackModel = initializeOptions?.fallbackModel;
@@ -303,19 +307,20 @@ export async function runSubagentWorkerMode(): Promise<void> {
           !producedToolCall &&
           isModelUnavailableError(message)
         ) {
-          await session!.dispose();
+          await turnSession.dispose();
           initializeOptions = {
-            ...initializeOptions!,
+            ...turnOptions,
             model: fallbackModel,
             fallbackModel: undefined,
             thinkingLevel: subAgentThinkingLevel(
-              initializeOptions!.provider,
+              turnOptions.provider,
               fallbackModel,
-              initializeOptions!.parentThinkingLevel,
+              turnOptions.parentThinkingLevel,
             ),
           };
-          session = await createSession(initializeOptions);
-          loopError = await promptSubAgent(session, task);
+          turnSession = await createSession(initializeOptions);
+          session = turnSession;
+          loopError = await promptSubAgent(turnSession, task);
         } else {
           throw error;
         }
@@ -327,7 +332,7 @@ export async function runSubagentWorkerMode(): Promise<void> {
         recoveringAfterTimeout = true;
         try {
           recoveredAfterTimeout = await recoverTimedOutTurn(
-            session!,
+            turnSession,
             () => recoveryOutput,
             (recoveryController) => {
               controller = recoveryController;

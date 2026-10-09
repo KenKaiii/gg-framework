@@ -123,8 +123,10 @@ export function handleAuthRoutes(
           else if (provider === "moonshot" || provider === "xai") {
             // Subscription OAuth (Kimi plan / SuperGrok-X Premium) stores under
             // a distinct key so it can coexist with the provider's API key.
+            const dual = dualAuthProvider(provider);
+            if (!dual) throw new Error(`No subscription storage key for ${provider}`);
             creds = provider === "moonshot" ? await loginKimi(cb) : await loginXai(cb);
-            storageKey = dualAuthProvider(provider)!.oauthKey;
+            storageKey = dual.oauthKey;
           } else {
             throw new Error(`OAuth not implemented for ${provider}`);
           }

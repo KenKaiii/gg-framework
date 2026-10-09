@@ -71,6 +71,9 @@ describe("checklist tool", () => {
     const { tool } = harness();
     expect(tool.description).toContain("After fixing an item's recorded findings");
     expect(tool.description).toContain("record that item again");
+    expect(tool.description).toContain(
+      "Findings the user explicitly chose to leave go in `accepted`",
+    );
   });
 
   it("stamps the date from the clock and the commit from HEAD", async () => {
@@ -169,6 +172,27 @@ describe("checklist tool", () => {
       checkedAt: NOW.toISOString(),
       commit: "abc1234",
     });
+  });
+
+  it("passes with findings the user chose to leave, and lists them in status", async () => {
+    const { call } = harness({
+      gitState: async () => ({ commit: null, uncommittedChanges: false }),
+    });
+    const accepted = ["MED core/agent-session.ts: god file (deferred by owner)"];
+
+    const out = await call({ ...passArgs, accepted });
+
+    expect(out).toBe(
+      "Recorded Lint, format & type checks: pass with 1 accepted as is on 2026-10-05.",
+    );
+    expect((await readRecord()).items["quality-tools"]?.accepted).toEqual(accepted);
+    const status = await call({ action: "status" });
+    expect(status).toContain(
+      "quality-tools — Lint, format & type checks: reviewed, 1 accepted as is",
+    );
+    expect(await call({ ...passArgs, id: "docs", result: "not-applicable", accepted })).toMatch(
+      /^Error: .*cannot have accepted findings/,
+    );
   });
 
   it("rejects issues without findings and pass with findings", async () => {

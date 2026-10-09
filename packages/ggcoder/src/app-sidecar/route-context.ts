@@ -12,6 +12,7 @@ import type { RunLifecycle } from "../core/run-lifecycle.js";
 import type { HfSearchRow } from "../hf-pull.js";
 import type { ServeController } from "../modes/serve-mode.js";
 import type { GitHubCI } from "../utils/github-ci.js";
+import type { ProjectHealth } from "../core/project-health-score.js";
 import type { ProgressManager } from "./progress-manager.js";
 import type { HfPullState, SseClient, WorkspaceMode } from "./session-types.js";
 import type { Provider } from "@kenkaiiii/gg-ai";
@@ -43,6 +44,7 @@ export interface SessionRouteContext {
     gitHubPRs: number | null;
     gitHubRepoUrl: string | null;
     gitHubCI: GitHubCI | null;
+    projectHealth: ProjectHealth | null;
     tasks: BackgroundProcess[];
     additionalRoots: string[];
   };

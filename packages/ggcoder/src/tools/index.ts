@@ -301,19 +301,21 @@ export async function createTools(
   }
 
   let subAgentManager: SubAgentManager | undefined;
+  const baseProvider = opts?.provider;
+  const baseModel = opts?.model;
   if (
     !opts?.disableSubagents &&
     opts?.agents &&
     opts.agents.length > 0 &&
-    opts.provider &&
-    opts.model
+    baseProvider &&
+    baseModel
   ) {
     tools.push(
       createSubAgentTool(
         cwd,
         opts.agents,
-        () => opts.getProvider?.() ?? opts.provider!,
-        () => opts.getModel?.() ?? opts.model!,
+        () => opts.getProvider?.() ?? baseProvider,
+        () => opts.getModel?.() ?? baseModel,
         opts.getCacheKey,
         planModeRef,
         opts.getThinkingLevel,
@@ -322,8 +324,8 @@ export async function createTools(
     subAgentManager = new SubAgentManager({
       cwd,
       agents: opts.agents,
-      getProvider: () => opts.getProvider?.() ?? opts.provider!,
-      getModel: () => opts.getModel?.() ?? opts.model!,
+      getProvider: () => opts.getProvider?.() ?? baseProvider,
+      getModel: () => opts.getModel?.() ?? baseModel,
       getThinkingLevel: opts.getThinkingLevel,
       getCacheKey: opts.getCacheKey,
       getBaseUrl: opts.getBaseUrl,

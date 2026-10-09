@@ -114,6 +114,25 @@ describe("ToolExecution theming", () => {
     }
   });
 
+  it("syntax-highlights diff code with the active theme's colors on first render", () => {
+    for (const name of ALL_THEMES) {
+      const theme = loadTheme(name);
+      const out = renderThemed(
+        name,
+        <ToolExecution
+          status="done"
+          name="edit"
+          args={{ file_path: "/tmp/a.ts" }}
+          result={DIFF_RESULT}
+          isError={false}
+          details={{ diff: DIFF_RESULT }}
+        />,
+      );
+      // `const` is an hljs-keyword, which the theme maps to `secondary`.
+      expect(out).toContain(`${fgEscape(theme.secondary)}const`);
+    }
+  });
+
   it("renders MCP result lines in the theme's primary, warning and muted tokens", () => {
     // mcp__ tools take the default body path, whose line renderer colors
     // file:line:content matches with primary / warning / dim / muted tokens.

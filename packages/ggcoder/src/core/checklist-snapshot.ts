@@ -59,7 +59,7 @@ export async function readChecklistSnapshot(
         return {
           ...row,
           detection: detection.items[row.id] ?? null,
-          runPrompt: item ? checklistRunPrompt(item) : null,
+          runPrompt: item ? checklistRunPrompt(item, row.accepted) : null,
           changedSinceCheck: changedSinceCheck(row, git),
         };
       }),

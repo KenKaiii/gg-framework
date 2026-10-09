@@ -362,9 +362,11 @@ export class VerificationGate {
       revision,
     });
     if (this.evidenceRecords.size > 64) {
-      const oldest = this.evidenceRecords.keys().next().value!;
-      this.evidenceRecords.delete(oldest);
-      this.runEvidenceKeys.delete(oldest);
+      const oldest = this.evidenceRecords.keys().next().value;
+      if (oldest !== undefined) {
+        this.evidenceRecords.delete(oldest);
+        this.runEvidenceKeys.delete(oldest);
+      }
     }
   }
 

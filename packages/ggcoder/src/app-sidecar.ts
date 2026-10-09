@@ -75,6 +75,8 @@ import { resolveStartOrFallback } from "./core/resolve-start.js";
 import { getGitBranch, getGitDirtyFileCount, isGitRepo } from "./utils/git.js";
 import { getGitHubRepoSlug } from "./utils/github.js";
 import type { GitHubCI } from "./utils/github-ci.js";
+import type { ProjectHealthScan } from "./core/project-health-scan.js";
+import { scoreProjectHealth, type ProjectHealth } from "./core/project-health-score.js";
 import { type RepoPolls, createRepoPolls } from "./app-sidecar/repo-polls.js";
 import { extractPlanSteps } from "./utils/plan-steps.js";
 import { getSupportedThinkingLevels, isThinkingLevelSupported } from "./core/thinking-level.js";
@@ -969,6 +971,26 @@ async function createSession(
   let gitHubIssues: number | null = null;
   let gitHubPRs: number | null = null;
   let gitHubCI: GitHubCI | null = null;
+  // Latest Project Health scan (code mode only); scored with the live CI result.
+  let projectHealthScan: ProjectHealthScan | null = null;
+  // Footer extras go out on every git/CI/task change; score only when the scan
+  // or CI result actually changed.
+  let scoredHealth: {
+    scan: ProjectHealthScan;
+    ci: GitHubCI | null;
+    health: ProjectHealth | null;
+  } | null = null;
+  function currentProjectHealth(): ProjectHealth | null {
+    if (!projectHealthScan) return null;
+    if (scoredHealth?.scan !== projectHealthScan || scoredHealth.ci !== gitHubCI) {
+      scoredHealth = {
+        scan: projectHealthScan,
+        ci: gitHubCI,
+        health: scoreProjectHealth(projectHealthScan, gitHubCI),
+      };
+    }
+    return scoredHealth.health;
+  }
   function currentContextWindow(): number {
     const st = session.getState();
     return getContextWindow(st.model, { provider: st.provider, accountId: st.accountId });
@@ -984,6 +1006,7 @@ async function createSession(
     gitHubPRs: number | null;
     gitHubRepoUrl: string | null;
     gitHubCI: GitHubCI | null;
+    projectHealth: ProjectHealth | null;
     tasks: ReturnType<typeof session.listBackgroundProcesses>;
     additionalRoots: string[];
   } {
@@ -996,6 +1019,7 @@ async function createSession(
       gitHubPRs,
       gitHubCI,
       gitHubRepoUrl: gitHubSlug ? `https://github.com/${gitHubSlug}` : null,
+      projectHealth: currentProjectHealth(),
       tasks: session.listBackgroundProcesses(),
       // Roots added with /add-dir — the header shows a badge when non-empty.
       additionalRoots: session.getAdditionalRoots(),
@@ -1627,6 +1651,7 @@ async function createSession(
       // teardown isn't delayed by the network. Broadcasts itself on change.
       gitHubCountsPoll?.refresh();
       ciPoll.refresh();
+      healthPoll?.refresh();
       // Serialize behind any marker/tool-triggered refresh so the terminal
       // progress snapshot uses the live plan file. Once every canonical step
       // is complete, remove the approved plan from future system prompts and
@@ -2005,6 +2030,15 @@ async function createSession(
     gitHubCI = next;
     broadcast("extras", footerExtras());
   });
+  // Project Health is a code-workspace signal; chat and motion windows skip the scan.
+  const healthPoll =
+    mode === "code"
+      ? repoPolls.projectHealth.subscribe(repoKey, (next) => {
+          if (JSON.stringify(next) === JSON.stringify(projectHealthScan)) return;
+          projectHealthScan = next;
+          broadcast("extras", footerExtras());
+        })
+      : null;
 
   const routeCtx: SessionRouteContext = {
     get session() {
@@ -2241,6 +2275,7 @@ async function createSession(
     dirtyFilesPoll.unsubscribe();
     gitHubCountsPoll?.unsubscribe();
     ciPoll.unsubscribe();
+    healthPoll?.unsubscribe();
     // Stop the Telegram serve loop + dispose its per-chat sessions.
     if (serveController) await serveController.stop().catch(() => {});
     for (const c of clients) c.res.end();

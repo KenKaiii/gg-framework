@@ -1725,13 +1725,13 @@ export class SessionManager {
 
     const index = byId ?? this.buildIndex(entries);
     const branch: SessionEntry[] = [];
-    let current = leafId;
+    let current: string | null = leafId;
 
     while (current) {
       const entry = index.get(current);
       if (!entry) break;
       branch.push(entry);
-      current = entry.parentId!;
+      current = entry.parentId;
     }
 
     return branch.reverse();

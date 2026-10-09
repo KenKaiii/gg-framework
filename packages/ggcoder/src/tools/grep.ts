@@ -552,8 +552,9 @@ function formatExternalMatches(stdout: string, req: ExternalScanRequest): string
   }
 
   const results: string[] = [];
-  for (const key of [...byPath.keys()].sort()) {
-    for (const line of byPath.get(key)!) {
+  const sortedByPath = [...byPath.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  for (const [, lines] of sortedByPath) {
+    for (const line of lines) {
       results.push(line);
       if (results.length >= req.maxResults) return results;
     }

@@ -895,14 +895,12 @@ export class SubAgentManager {
     command: string,
     payload: Record<string, unknown> = {},
   ): Promise<Record<string, unknown>> {
-    if (!worker.process.stdin?.writable)
-      return Promise.reject(new Error("Subagent worker is closed"));
+    const stdin = worker.process.stdin;
+    if (!stdin?.writable) return Promise.reject(new Error("Subagent worker is closed"));
     const requestId = `${worker.agent_id}-${++worker.requestSequence}`;
     return new Promise((resolve, reject) => {
       worker.requests.set(requestId, { resolve, reject });
-      worker.process.stdin!.write(
-        `${JSON.stringify({ request_id: requestId, command, ...payload })}\n`,
-      );
+      stdin.write(`${JSON.stringify({ request_id: requestId, command, ...payload })}\n`);
     });
   }
 
@@ -918,8 +916,10 @@ export class SubAgentManager {
     const snapshot = this.snapshot(worker);
     this.snapshots.delete(worker.agent_id);
     this.snapshots.set(worker.agent_id, snapshot);
-    while (this.snapshots.size > SNAPSHOT_LIMIT)
-      this.snapshots.delete(this.snapshots.keys().next().value!);
+    for (const id of this.snapshots.keys()) {
+      if (this.snapshots.size <= SNAPSHOT_LIMIT) break;
+      this.snapshots.delete(id);
+    }
     this.options.onState?.(snapshot);
     for (const listener of this.listeners) listener(snapshot);
     if (persist) this.queuePersist();
@@ -1061,7 +1061,9 @@ export class SubAgentManager {
     const idle = [...this.workers.values()]
       .filter((worker) => this.isTerminal(worker.state))
       .sort((a, b) => a.updated_at - b.updated_at);
-    while (idle.length > RETAINED_WORKER_LIMIT) void this.close(idle.shift()!, true);
+    for (const worker of idle.slice(0, Math.max(0, idle.length - RETAINED_WORKER_LIMIT))) {
+      void this.close(worker, true);
+    }
   }
 
   private fail(worker: WorkerRecord, error: unknown, kill = true): void {

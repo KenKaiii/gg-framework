@@ -42,6 +42,8 @@
   --warning: #f0cf63;
   --on-warning: #1c1405;
   --error: #ff6b60;
+  /* Between warning and error: "improving, not there yet" (Project Health). */
+  --caution: #ff9f5c;
   --on-error: #240704;
   --secondary: #b0b6ff;
   --info: #62e8d8;
@@ -160,6 +162,10 @@
   /* Leaving is quicker than arriving: the user already decided, so get out of
      the way. Used by the view-transition exits (modal, dropdown). */
   --dur-exit: 120ms;
+  /* Popovers and menus (see "Popovers") grow in from their trigger and
+     shrink back toward it. */
+  --dur-pop-in: 280ms;
+  --dur-pop-out: 180ms;
   /* New transcript rows (your message, the reply, notices) rising into place. */
   --dur-row: 220ms;
   /* Things that resolve out of a blur (transcript rows, swapped labels, the
@@ -186,7 +192,7 @@
 
   /* Stacking layers for UI that floats over other UI. Component-internal
      stacking (0-5) stays local. Order: dropdown < popover < menu < drop
-     overlay < modal < plan review < toast < system (gaze, zoom). */
+     overlay < modal < plan review < toast < system (zoom). */
   --z-dropdown: 10;
   --z-float: 20;
   --z-popover: 50;
@@ -592,6 +598,70 @@
     animation-name: fade-in;
   }
 }
+
+/* ── Workspace load: the window resolves top to bottom ──
+   When a workspace first paints, each region dissolves in a beat after the one
+   above it (title bar, nav, chat, status, input, footer) instead of the whole
+   UI snapping in at once. Opacity and blur only, on the region's own box, so
+   nothing shifts; `backwards`, so no filter is left on anything at rest.
+   Plays once per mount (window open or reload), never on re-renders. */
+.app > .chat-head > .chat-head-strip,
+.app > .chat-head > .chat-head-nav,
+.app > .transcript-frame,
+.app > .liveregion,
+.app > .inputwrap,
+.app > .footer {
+  animation: dissolve-in var(--dur-dissolve) var(--ease-out) backwards;
+}
+.app > .picker > .picker-head,
+.app > .picker > .picker-list {
+  animation: dissolve-in var(--dur-dissolve) var(--ease-out) backwards;
+}
+.app > .chat-head > .chat-head-nav,
+.app > .picker > .picker-list {
+  animation-delay: 40ms;
+}
+.app > .transcript-frame {
+  animation-delay: 80ms;
+}
+.app > .liveregion {
+  animation-delay: 120ms;
+}
+.app > .inputwrap {
+  animation-delay: 150ms;
+}
+.app > .footer {
+  animation-delay: 180ms;
+}
+/* Title-bar segments that arrive after load (project name, health, branch,
+   counts, CI, usage meter) resolve in where they land instead of popping.
+   Keyed by presence, so a changing number doesn't replay it. Inline, so a
+   fade: a blur would need inline-block and break the strip's truncation. */
+.chat-head-title
+  > :is(
+    .chat-head-accent-dot,
+    .chat-head-cwd,
+    .chat-head-health,
+    .chat-head-branch,
+    .chat-head-dirty,
+    .chat-head-github,
+    .chat-head-ci
+  ),
+.chat-head-strip > .title-usage-meter {
+  animation: fade-in var(--dur-dissolve) var(--ease-out) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app > .chat-head > .chat-head-strip,
+  .app > .chat-head > .chat-head-nav,
+  .app > .transcript-frame,
+  .app > .liveregion,
+  .app > .inputwrap,
+  .app > .footer,
+  .app > .picker > .picker-head,
+  .app > .picker > .picker-list {
+    animation-name: fade-in;
+  }
+}
 @keyframes fade-out {
   to {
     opacity: 0;
@@ -985,19 +1055,6 @@ select {
   padding: var(--space-12);
   text-align: center;
   overflow: hidden;
-}
-/* The dithered-waves backdrop (HomeDither.tsx): fills the whole home screen,
-   edge to edge, under all content. It never takes pointer events itself (the
-   effect reads them from .home). */
-.home-dither {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-.dither-canvas {
-  width: 100%;
-  height: 100%;
 }
 /* The campfire scenery (HomeScenery.tsx): the critters' clearing in the
    pines. The renderer sizes the canvas to the window; it's pinned to the
@@ -2061,6 +2118,7 @@ select {
      preceded by a count chip; the uncommitted count before it goes too.) */
   /* Direct children only: the CI indicator keeps its own separator. */
   .chat-head-cwd,
+  .chat-head-health,
   .chat-head-uncommitted,
   .chat-head-title > .chat-head-sep:not(.chat-head-github + .chat-head-sep) {
     display: none;
@@ -2148,6 +2206,533 @@ select {
 }
 .chat-head-github:disabled {
   cursor: default;
+}
+/* Project Health percentage beside the folder name. Colour is the only
+   status signal here; the tier also reads out in the label and tooltip. */
+.chat-head-health {
+  flex: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.chat-head-health[data-tier="poor"],
+.health-popover [data-tier="poor"] {
+  color: var(--error);
+}
+.chat-head-health[data-tier="fair"],
+.health-popover [data-tier="fair"] {
+  color: var(--caution);
+}
+.chat-head-health[data-tier="healthy"],
+.health-popover [data-tier="healthy"] {
+  color: var(--success);
+}
+.chat-head-health {
+  border-radius: var(--radius-sm);
+  transition: filter var(--t-in);
+}
+.chat-head-health:hover,
+.chat-head-health[data-open] {
+  filter: brightness(1.18);
+  transition-duration: var(--dur-press);
+}
+.chat-head-health:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ── Popovers ──
+   One system for every floating panel and menu: the frosted surface (glass.css
+   swaps in the glass material), a grow-in from the trigger, a shrink-out back
+   toward it (see "Exits" below), and lists that scroll with no visible
+   scrollbar. Portaled panels (`.pop-panel`: health, background tasks,
+   schedules) get their position and `--pop-origin-x` inline from
+   `useAnchoredPopover` (popover.ts); in-tree menus set their origin here. */
+@property --pop-fade-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --pop-fade-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--pop-enter-y, -6px)) scale(0.94);
+  }
+}
+@keyframes pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--pop-exit-y, -4px)) scale(0.96);
+  }
+}
+/* Rows follow the surface in, one beat apart (capped so long lists don't drag). */
+@keyframes pop-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.pop-panel {
+  position: fixed;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  min-width: 300px;
+  max-width: min(460px, calc(100vw - 16px));
+  max-height: min(60vh, 480px, var(--pop-room, 100vh));
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface-3);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  font-family: var(--sans);
+  line-height: 1.35;
+  transform-origin: var(--pop-origin-x, 24px) top;
+  animation: pop-in var(--dur-pop-in) var(--ease-expo) backwards;
+}
+.pop-panel[data-side="above"] {
+  --pop-enter-y: 6px;
+  transform-origin: var(--pop-origin-x, 24px) bottom;
+}
+.pop-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-6);
+  padding: var(--space-7) var(--space-8) var(--space-6);
+}
+.pop-title {
+  margin: 0;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--text);
+}
+.pop-count {
+  margin-left: auto;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.pop-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.pop-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-8);
+  border-top: 1px solid var(--border);
+}
+.pop-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pop-action {
+  flex: none;
+  padding: var(--space-3) var(--space-7);
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+}
+.pop-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pop-row {
+  animation: pop-row-in var(--dur-row) var(--ease-out) backwards;
+  animation-delay: calc(60ms + min(var(--i, 0), 8) * 35ms);
+}
+
+/* Scrolling: native (compositor) scrolling with the bar hidden. The edges fade
+   wherever there is more to scroll (`data-more-*`, set by useScrollEdges), so
+   it still reads as scrollable; the fade eases in and out. `contain` stops a
+   flick at the end from rubber-banding the transcript behind. */
+.pop-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--pop-fade-top),
+    #000 calc(100% - var(--pop-fade-bottom)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--pop-fade-top),
+    #000 calc(100% - var(--pop-fade-bottom)),
+    transparent
+  );
+  transition:
+    --pop-fade-top var(--t-out),
+    --pop-fade-bottom var(--t-out);
+}
+.pop-scroll::-webkit-scrollbar {
+  display: none;
+}
+.pop-scroll[data-more-above] {
+  --pop-fade-top: 22px;
+}
+.pop-scroll[data-more-below] {
+  --pop-fade-bottom: 22px;
+}
+.pop-scroll:focus {
+  outline: none;
+}
+.pop-scroll:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+/* Panels scroll by wheel and Tab, so the smoothing only helps there; menus
+   driven by held arrow keys stay instant so the highlight never lags. */
+.pop-body.pop-scroll {
+  scroll-behavior: smooth;
+}
+
+/* A task or schedule row: status dot, two-line text, and a quiet action. */
+.pop-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: 44px;
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
+  border-radius: var(--radius-button);
+  transition: background-color var(--t-out);
+}
+.pop-item:hover {
+  background: rgb(255 255 255 / 0.05);
+  transition-duration: var(--dur-press);
+}
+.pop-item + .pop-item {
+  margin-top: var(--space-1);
+}
+/* The pixel critter leading a row or header (PopCritter.tsx). Poses match the
+   transcript's CritterLine: hop while busy, stand when idle, doze (dimmed,
+   slow breathing) while waiting, tipped over when something is wrong. */
+.pop-critter {
+  display: inline-grid;
+  flex: none;
+  place-items: end center;
+  width: calc(var(--critter-size, 14px) + 4px);
+  height: calc(var(--critter-size, 14px) + 4px);
+}
+.pop-critter img {
+  display: block;
+  width: var(--critter-size, 14px);
+  height: var(--critter-size, 14px);
+  image-rendering: pixelated;
+  user-select: none;
+  transform-origin: 50% 100%;
+}
+.pop-critter[data-pose="busy"] img {
+  animation: subagents-critter-hop 0.9s var(--ease-in-out) infinite;
+  animation-play-state: var(--loop-play-state, running);
+}
+.pop-critter[data-pose="waiting"] img {
+  opacity: 0.8;
+  animation: pop-critter-doze 2.8s var(--ease-in-out) infinite;
+  animation-play-state: var(--loop-play-state, running);
+}
+.pop-critter[data-pose="down"] img {
+  transform-origin: 50% 50%;
+  transform: rotate(-90deg);
+}
+@keyframes pop-critter-doze {
+  50% {
+    transform: scale(1.06, 0.94);
+  }
+}
+.health-popover-head .pop-critter {
+  align-self: center;
+}
+.pop-item-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.pop-item-main {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-base);
+  color: var(--text);
+}
+.pop-item-main.is-code {
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+}
+.pop-item-meta {
+  display: flex;
+  gap: var(--space-4);
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  /* --text-dim is 4.2:1 on the menu fill; muted clears AA at this size. */
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.pop-item-when {
+  margin-left: auto;
+  flex: none;
+}
+.pop-item-action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 26px;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--sans);
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+  cursor: pointer;
+  transition:
+    color var(--t-out),
+    border-color var(--t-out),
+    background-color var(--t-out);
+}
+.pop-item-action:hover {
+  border-color: var(--error);
+  color: var(--error);
+  transition-duration: var(--dur-press);
+}
+.pop-item-action:active {
+  background: rgb(255 255 255 / 0.06);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pop-panel {
+    animation-name: fade-in;
+  }
+  .pop-row,
+  .health-meter-fill,
+  .pop-critter img {
+    animation: none;
+  }
+  .pop-body.pop-scroll {
+    scroll-behavior: auto;
+  }
+}
+
+/* ── Project Health breakdown (on the shared popover) ── */
+.health-popover {
+  width: min(360px, calc(100vw - 16px));
+  min-width: 0;
+  max-height: min(72vh, 540px, var(--pop-room, 100vh));
+}
+@keyframes health-meter-in {
+  from {
+    transform: scaleX(0);
+  }
+}
+/* Header follows the rank Scorecard's level block: a big plain number, then a
+   labelled meter whose bar sits flush with the number's baseline. The tier
+   colour lives in the bar and the tier word, not the number. */
+.health-popover-head {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-7);
+  padding: var(--space-8) var(--space-8) var(--space-7);
+}
+.health-score-num {
+  flex: none;
+  color: var(--text);
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  /* Digits have no descenders: trim the box so the bar lines up with them. */
+  line-height: 0.76;
+  font-variant-numeric: tabular-nums;
+}
+.health-score-meter {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.health-score-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.health-score-tier {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.health-popover .pop-body {
+  padding: 0 var(--space-8);
+}
+.health-category {
+  padding: var(--space-6) 0;
+}
+.health-category + .health-category {
+  border-top: 1px solid var(--border);
+}
+/* Category rows follow the Scorecard's stat rows: label | bar | value. */
+.health-stat {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 64px;
+  align-items: center;
+  gap: var(--space-6);
+}
+.health-stat-label {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.health-stat-value {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* The scale the value sits on: present, never louder than the value. */
+.health-stat-goal {
+  margin-left: var(--space-2);
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  font-style: normal;
+  font-weight: 500;
+}
+.health-stat-none {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  text-align: right;
+  white-space: nowrap;
+}
+/* Recessed track, as in the Scorecard. */
+.health-meter {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.38);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.health-meter.is-lead {
+  height: 7px;
+}
+/* Fill length is a scale, not a width: it animates on the compositor. */
+.health-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: currentColor;
+  box-shadow: 0 0 8px color-mix(in srgb, currentColor 45%, transparent);
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left center;
+  animation: health-meter-in var(--dur-dissolve) var(--ease-expo) backwards;
+  animation-delay: calc(100ms + var(--i, 0) * 35ms);
+}
+.health-category-sub {
+  display: flex;
+  margin-top: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+/* Quiet until hovered: a text action, so a column of them doesn't shout. */
+.health-category-fix {
+  flex: none;
+  padding: var(--space-1) var(--space-3);
+  margin-right: calc(var(--space-3) * -1);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--sans);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.3;
+  cursor: pointer;
+  transition:
+    color var(--t-out),
+    background-color var(--t-out);
+}
+.health-category-fix:hover {
+  background: rgb(255 255 255 / 0.06);
+  color: var(--text);
+  transition-duration: var(--dur-press);
+}
+.health-capped {
+  margin: 0;
+  padding: var(--space-4) var(--space-8);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.health-capped[data-tier="poor"] {
+  color: var(--error);
+}
+.health-capped[data-tier="fair"] {
+  color: var(--caution);
+}
+.health-category-summary {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.health-findings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  padding: 0 0 0 var(--space-5);
+  border-left: 1px solid var(--border-strong);
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+.health-finding {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.health-finding-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.health-finding-main.is-path {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+}
+.health-finding-meta {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-muted);
 }
 .chat-head-ci {
   display: inline-flex;
@@ -2309,32 +2894,36 @@ select {
 .modal-backdrop {
   animation: fade-in var(--dur-enter) linear backwards;
 }
-.modal,
+.modal {
+  animation: surface-in var(--dur-enter) var(--ease-out) backwards;
+}
+/* In-tree menus grow out of their trigger like the portaled panels (Popovers). */
 .dropdown-menu,
 .winlayout-menu,
 .slash-menu,
-.model-menu,
-.bgtasks-menu {
-  animation: surface-in var(--dur-enter) var(--ease-out) backwards;
+.model-menu {
+  animation: pop-in var(--dur-pop-in) var(--ease-expo) backwards;
 }
-/* Menus hanging below their trigger drop down into place. */
-.dropdown-menu,
+.dropdown-menu {
+  transform-origin: center top;
+}
 .winlayout-menu {
-  --enter-y: -4px;
-  transform-origin: top center;
+  transform-origin: right top;
 }
-.slash-menu,
-.model-menu,
-.bgtasks-menu {
-  transform-origin: bottom center;
+.slash-menu {
+  --pop-enter-y: 6px;
+  transform-origin: 32px bottom;
+}
+.model-menu {
+  --pop-enter-y: 6px;
+  transform-origin: right bottom;
 }
 @media (prefers-reduced-motion: reduce) {
   .modal,
   .dropdown-menu,
   .winlayout-menu,
   .slash-menu,
-  .model-menu,
-  .bgtasks-menu {
+  .model-menu {
     animation-name: fade-in;
   }
 }
@@ -2392,6 +2981,34 @@ select {
 ::view-transition-group(gg-modal),
 ::view-transition-group(*.gg-floating) {
   animation-duration: var(--dur-exit);
+}
+/* Popovers shrink back toward their trigger, a little slower than the fade.
+   The snapshot can't read the panel's custom properties, so the direction
+   comes from a class: below-trigger panels rise away, above-trigger ones sink. */
+.floating-surface[data-exiting] > :is(.pop-panel, .dropdown-menu, .winlayout-menu) {
+  view-transition-class: gg-floating gg-pop-down;
+}
+.floating-surface[data-exiting] > :is(.pop-panel[data-side="above"], .slash-menu, .model-menu) {
+  view-transition-class: gg-floating gg-pop-up;
+}
+::view-transition-old(*.gg-pop-down) {
+  transform-origin: center top;
+  animation: pop-out var(--dur-pop-out) var(--ease-in) both;
+}
+::view-transition-old(*.gg-pop-up) {
+  --pop-exit-y: 4px;
+  transform-origin: center bottom;
+  animation: pop-out var(--dur-pop-out) var(--ease-in) both;
+}
+::view-transition-group(*.gg-pop-down),
+::view-transition-group(*.gg-pop-up) {
+  animation-duration: var(--dur-pop-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*.gg-pop-down),
+  ::view-transition-old(*.gg-pop-up) {
+    animation-name: fade-out;
+  }
 }
 
 /* Any scroll container inside a modal gets a thin, non-overlapping scrollbar so
@@ -2606,15 +3223,19 @@ select {
   z-index: var(--z-dropdown);
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
   max-height: 264px;
-  overflow-y: auto;
-  padding: 5px;
+  overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-card);
   background: var(--surface-3);
   box-shadow: var(--shadow-md);
-  outline: none;
+}
+.dropdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-height: 0;
+  padding: 5px;
 }
 .dropdown-option {
   display: flex;
@@ -6957,13 +7578,20 @@ select {
   bottom: calc(100% + 4px);
   left: 0;
   right: 0;
+  display: flex;
+  flex-direction: column;
   border: 1px solid;
   border-radius: var(--radius-card);
   padding: var(--space-3);
   box-shadow: var(--shadow-md);
   z-index: var(--z-popover);
   max-height: 44vh;
-  overflow-y: auto;
+  overflow: hidden;
+}
+/* The title stays put; only the rows scroll. */
+.slash-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .slash-menu-title {
   font-size: var(--fs-xs);
@@ -7547,7 +8175,7 @@ select {
    rule — they were identical declarations sitting either side of the keyframe. */
 .footer-reveal,
 .transcript-reveal {
-  animation: reveal-up var(--dur-enter) var(--ease-out) both;
+  animation: dissolve-in var(--dur-dissolve) var(--ease-out) backwards;
 }
 
 /* Shared smooth entrance: a small rise + fade. Fast, eased, no layout cost
@@ -7954,7 +8582,7 @@ select {
 }
 .picker-reveal > .picker-item,
 .picker-reveal > .picker-item-wrap {
-  animation: reveal-up var(--dur-row) var(--ease-out) both;
+  animation: dissolve-in var(--dur-dissolve) var(--ease-out) backwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -8068,58 +8696,9 @@ select {
 .bgtasks-icon {
   flex: 0 0 auto;
 }
-.bgtasks-menu {
-  /* Fixed (not absolute) so the footer's `overflow: hidden` doesn't clip the
-     upward popover. left/bottom are set inline from the button's rect. */
-  position: fixed;
-  border: 1px solid;
-  border-radius: var(--radius-card);
-  padding: var(--space-3);
-  box-shadow: var(--shadow-md);
-  z-index: var(--z-modal);
-  min-width: 280px;
-  max-width: min(440px, 90vw);
-}
-.bgtasks-empty {
-  padding: var(--space-3);
-  font-size: var(--fs-sm);
-}
-.bgtasks-item {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-button);
-  font-size: var(--fs-base);
-}
-.bgtasks-dot {
-  flex: 0 0 auto;
-  font-size: var(--fs-xs);
-}
-.bgtasks-cmd {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.bgtasks-status {
-  flex: 0 0 auto;
-  font-family: var(--sans);
-  font-size: var(--fs-xs);
-}
-.bgtasks-kill {
-  flex: 0 0 auto;
-  background: transparent;
-  border: none;
-  font-family: var(--sans);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  padding: 0;
-  transition: filter var(--t-fast);
-}
-.bgtasks-kill:hover {
-  filter: brightness(1.25);
+/* The popover itself is a .pop-panel (see "Popovers"). */
+.bgtasks-button[data-open] {
+  background: var(--surface-1);
 }
 
 /* ── Model picker (footer, native <select>) ── */
@@ -8207,15 +8786,19 @@ select {
   right: 0;
   bottom: calc(100% + 8px);
   z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
   max-width: min(640px, 90vw);
   max-height: 50vh;
-  overflow-y: auto;
-  /* No rubber-band bounce, and no scroll chaining to the transcript behind. */
-  overscroll-behavior: none;
+  overflow: hidden;
   padding: var(--space-4);
   border: 1px solid;
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-md);
+}
+.model-menu-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .model-menu-title {
   padding: var(--space-1) var(--space-3) var(--space-3);
@@ -8259,73 +8842,12 @@ select {
   cursor: pointer;
   transition: background-color var(--t-fast);
 }
+.model-menu-item[aria-checked="true"] {
+  background: var(--surface-1);
+}
 .model-menu-item:hover,
 .model-menu-item:focus-visible {
-  background: var(--surface-1) !important;
-}
-
-/* ── Gaze focus (webcam eye/head tracking) ────────────────────────────────
-   A border drawn inside the window edge when the gaze rests on it: a soft
-   amber "looking here" hover, then a solid blue ring once focus is committed
-   after the dwell. Pointer-events:none so it never intercepts clicks.
-
-   The frame is inset a few px and given the OS window corner radius so the
-   rounded window mask doesn't clip the corners off the border. macOS windows
-   round at ~10px; Windows/Linux are square-ish, so the platform classes adjust
-   both the radius and the inset. */
-.gaze-frame {
-  position: fixed;
-  inset: 3px;
-  z-index: calc(var(--z-system) - 20);
-  pointer-events: none;
-  border: 2px solid transparent;
-  border-radius: 10px;
-  transition:
-    box-shadow var(--t-fast),
-    border-color var(--t-fast);
-}
-.platform-windows .gaze-frame,
-.platform-linux .gaze-frame {
-  inset: 1px;
-  /* Matches the OS window corner, not the component scale. */
-  border-radius: var(--radius-sm);
-}
-.gaze-frame-hover {
-  border-color: color-mix(in oklch, var(--warning) 60%, transparent);
-  box-shadow: inset 0 0 22px -6px color-mix(in oklch, var(--warning) 45%, transparent);
-}
-.gaze-frame-focused {
-  border-color: var(--primary);
-  box-shadow: inset 0 0 30px -6px color-mix(in oklch, var(--primary) 55%, transparent);
-}
-
-/* Small status pill (camera owner window only), bottom-left. */
-.gaze-pill {
-  /* Pinned: inheriting the app's 1.55 body line-height made the label's line
-     box taller than its glyphs, which reads as vertically off-centre. 1 went
-     too far the other way (no descender room, label rides high); 1.25 with
-     1px less padding keeps the pill's outer height. */
-  line-height: 1.25;
-  position: fixed;
-  left: 12px;
-  bottom: 12px;
-  z-index: calc(var(--z-system) - 10);
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-5);
-  font-family: var(--sans);
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.6);
-  pointer-events: none;
-  user-select: none;
-}
-.gaze-pill svg {
-  color: var(--primary);
+  background: var(--surface-1);
 }
 
 /* ── Autopilot toggle (Material switch, Uiverse by lenin55) ──
@@ -9465,15 +9987,14 @@ select {
   border-color: var(--error);
 }
 
-/* Schedule popover rows carry an extra cadence column vs. background tasks. */
+/* Schedule rows carry a cadence and a countdown, so they get more width. */
 .schedules-menu {
-  max-width: min(520px, calc(100vw - 32px));
+  max-width: min(520px, calc(100vw - 16px));
 }
 .schedules-cadence {
-  font-family: var(--sans);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── Footer responsiveness ──

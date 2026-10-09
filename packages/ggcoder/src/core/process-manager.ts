@@ -186,6 +186,9 @@ export interface ProcessManagerOps {
 }
 
 function stopProcessTree(pid: number, ops: ProcessManagerOps = {}): void {
+  // pid 0 marks a child that never spawned. Signalling 0 (or -0) would hit
+  // this host's own process group.
+  if (pid <= 0) return;
   if (ops.killProcessTree) {
     ops.killProcessTree(pid);
     return;
@@ -280,7 +283,9 @@ export class ProcessManager {
     // otherwise emit an unhandled 'error' and crash the host.
     child.stdin?.on("error", () => {});
 
-    const pid = child.pid!;
+    // No pid means the spawn failed. 'error' then 'close' still fire, and track()
+    // records the exit, so register it with pid 0, which every kill path skips.
+    const pid = child.pid ?? 0;
     child.unref();
 
     const proc: BackgroundProcess = {
@@ -813,6 +818,7 @@ export class ProcessManager {
     if (!child || proc.exitCode !== null) {
       return `Process ${id} already exited (code ${proc.exitCode})`;
     }
+    if (proc.pid <= 0) return `Process ${id} failed to start`;
 
     const isWindows = (this.ops.platform ?? process.platform) === "win32";
     if (isWindows) {

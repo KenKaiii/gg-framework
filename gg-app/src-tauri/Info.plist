@@ -8,7 +8,7 @@
       its agent, because macOS identifies GG Coder as the responsible parent.
     -->
     <key>NSCameraUsageDescription</key>
-    <string>GG Coder uses your camera locally to track which window you're looking at and focus it. Video never leaves your machine.</string>
+    <string>GG Coder allows apps you run during development to access your camera for recording and testing.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>GG Coder allows apps you run during development to access your microphone for recording and testing.</string>
 </dict>

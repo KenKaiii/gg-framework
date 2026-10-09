@@ -227,7 +227,6 @@ pub fn run() {
             commands::agent_admin::agent_mcp_add,
             commands::agent_admin::agent_mcp_remove,
             commands::agent_admin::agent_mcp_login,
-            windows::gaze_focus,
             windows::focus_window_by_offset,
             windows::arrange_all,
             settings::window_restore_target,

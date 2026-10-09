@@ -1,7 +1,7 @@
 # @kenkaiiii/gg-ai
 
 <p align="center">
-  <strong>Unified LLM streaming API. Four providers. One interface.</strong>
+  <strong>Unified LLM streaming API. Twelve providers plus local models. One interface.</strong>
 </p>
 
 <p align="center">
@@ -40,10 +40,21 @@ Tool parameters are Zod schemas. Converted to JSON Schema at the provider bounda
 
 | Provider | Models | Notes |
 |---|---|---|
-| `anthropic` | Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 | Extended thinking, prompt caching, server-side compaction |
-| `openai` | GPT-4.1, o3, o4-mini | Supports OAuth (codex endpoint) and API keys |
-| `glm` | GLM-5.3 | Z.AI platform, OpenAI-compatible |
-| `moonshot` | Kimi K3, Kimi K2.8 Preview, Kimi K2.7 Code | Moonshot platform, OpenAI-compatible |
+| `anthropic` | Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5 | Extended thinking, prompt caching, server-side compaction |
+| `openai` | GPT-6 Astra, GPT-6.1 Sol, GPT-6 Luna | OAuth (Codex endpoint) or API key |
+| `gemini` | Gemini 3.1 Pro (Preview), 3.8 / 3.7 / 3.5 Flash, 3.5 / 3.1 Flash Lite | OAuth (Code Assist); native video input |
+| `xai` | Grok 4.7 | OpenAI-compatible, `https://api.x.ai/v1` |
+| `moonshot` | Kimi K3, K2.8 Preview, K2.7 Code, K2.7 Code HighSpeed | OpenAI-compatible; native video input |
+| `glm` | GLM-5.3, GLM-5.3-Flash | Z.AI coding endpoint, OpenAI-compatible |
+| `minimax` | MiniMax M3 | Anthropic-compatible endpoint |
+| `xiaomi` | MiMo-V2.6-Pro, MiMo-V2.6-Flash, MiMo-V2.6-Pro-UltraSpeed | OpenAI-compatible |
+| `deepseek` | DeepSeek V4 Pro, V4.1 Flash | OpenAI-compatible |
+| `sakana` | Fugu, Fugu Max, Fugu Ultra | OpenAI-compatible |
+| `openrouter` | Qwen3.8 Max, or any OpenRouter model id | OpenAI-compatible gateway |
+| `huggingface` | Kimi K2.7 Code, DeepSeek V4.1 Flash, GPT-OSS 120B | Inference Providers router, OpenAI-compatible |
+| `local` | Any model your server exposes | Ollama, LM Studio, llama.cpp, vLLM; `baseUrl` is required |
+
+The model lists are the ones GG Coder ships in its registry (`@kenkaiiii/gg-core`). `stream()` passes `model` straight through, so any id the provider accepts works. Every provider's default endpoint can be overridden with `baseUrl`, and `providerRegistry.register()` adds your own.
 
 ---
 
@@ -52,11 +63,12 @@ Tool parameters are Zod schemas. Converted to JSON Schema at the provider bounda
 | Event | Description |
 |---|---|
 | `text_delta` | Incremental text output |
-| `thinking_delta` | Extended thinking output (Anthropic) |
+| `thinking_delta` | Reasoning output, from any provider that streams it |
 | `toolcall_delta` | Streaming tool call arguments |
 | `toolcall_done` | Completed tool call with parsed args |
 | `server_toolcall` | Server-side tool invocation |
 | `server_toolresult` | Server-side tool result |
+| `keepalive` | Provider heartbeat: the stream is alive but has no new content yet |
 | `done` | Stream finished, includes stop reason |
 | `error` | Error occurred |
 
@@ -66,7 +78,7 @@ Tool parameters are Zod schemas. Converted to JSON Schema at the provider bounda
 
 | Option | Type | Description |
 |---|---|---|
-| `provider` | `"anthropic" \| "openai" \| "glm" \| "moonshot"` | Required |
+| `provider` | `Provider` (any id in the table above) | Required |
 | `model` | `string` | Required |
 | `messages` | `Message[]` | Required |
 | `tools` | `Tool[]` | Tool definitions with Zod schemas |
@@ -76,12 +88,16 @@ Tool parameters are Zod schemas. Converted to JSON Schema at the provider bounda
 | `temperature` | `number` | Sampling temperature |
 | `topP` | `number` | Nucleus sampling |
 | `stop` | `string[]` | Stop sequences |
-| `thinking` | `"low" \| "medium" \| "high" \| "max"` | Extended thinking (Anthropic) |
+| `thinking` | `"low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"` | Reasoning effort; each provider maps it to what the model supports |
 | `apiKey` | `string` | Provider API key |
 | `baseUrl` | `string` | Custom endpoint |
 | `signal` | `AbortSignal` | Cancellation |
 | `cacheRetention` | `"none" \| "short" \| "long"` | Prompt cache preference |
+| `promptCacheKey` | `string` | Stable cache routing key (OpenAI, Moonshot, Gemini) |
+| `webSearch` | `boolean` | Provider-native web search where supported |
 | `compaction` | `boolean` | Server-side compaction (Anthropic only) |
+| `clearToolUses` | `boolean` | Server-side clearing of old tool results (Anthropic only) |
+| `fetch` | `typeof fetch` | Custom fetch, e.g. for React Native |
 
 ---
 

@@ -102,7 +102,7 @@ export function McpModal({ onClose }: Props): React.ReactElement {
   useEffect(() => {
     void listProjects()
       .then(setProjects)
-      .catch(() => {});
+      .catch(() => toast("Couldn't load your projects. Type the project path instead.", "warning"));
   }, []);
 
   // Re-list when the selected project changes (project servers differ per project).

@@ -4,6 +4,7 @@ import {
   createEntranceLifetime,
   enterTranscriptRow,
   dissolveInAbove,
+  dissolveInVisible,
   teleport,
 } from "./transcript-motion";
 
@@ -115,5 +116,50 @@ describe("dissolveInAbove", () => {
       expect(anims[0]?.options.fill).toBeUndefined();
     }
     expect(firstAnims).toHaveLength(0);
+  });
+});
+
+describe("dissolveInVisible", () => {
+  function box(top: number, height: number): DOMRect {
+    return {
+      top,
+      bottom: top + height,
+      left: 0,
+      right: 0,
+      width: 0,
+      height,
+      x: 0,
+      y: top,
+    } as DOMRect;
+  }
+
+  it("blur-fades in only the restored rows that are on screen, holding nothing", () => {
+    const scroller = document.createElement("div");
+    const above = document.createElement("div");
+    const visible = [document.createElement("div"), document.createElement("div")];
+    const below = document.createElement("div");
+    scroller.append(above, ...visible, below);
+    document.body.appendChild(scroller);
+    const scrollerAnims = stubAnimate(scroller);
+    vi.spyOn(scroller, "getBoundingClientRect").mockReturnValue(box(100, 400));
+    vi.spyOn(above, "getBoundingClientRect").mockReturnValue(box(-200, 80));
+    vi.spyOn(visible[0] as HTMLElement, "getBoundingClientRect").mockReturnValue(box(120, 80));
+    vi.spyOn(visible[1] as HTMLElement, "getBoundingClientRect").mockReturnValue(box(420, 160));
+    vi.spyOn(below, "getBoundingClientRect").mockReturnValue(box(700, 80));
+    const [aboveAnims, firstAnims, secondAnims, belowAnims] = [above, ...visible, below].map(
+      stubAnimate,
+    );
+
+    dissolveInVisible(scroller);
+
+    // The rows dissolve, never the scroller itself (that would blur the frame).
+    expect(scrollerAnims).toHaveLength(0);
+    expect(aboveAnims).toHaveLength(0);
+    expect(belowAnims).toHaveLength(0);
+    for (const anims of [firstAnims, secondAnims]) {
+      expect(anims).toHaveLength(1);
+      expect(anims?.[0]?.keyframes[0]).toMatchObject({ opacity: 0, filter: "blur(8px)" });
+      expect(anims?.[0]?.options.fill).toBeUndefined();
+    }
   });
 });

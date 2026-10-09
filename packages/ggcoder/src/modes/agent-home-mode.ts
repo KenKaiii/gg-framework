@@ -123,10 +123,7 @@ export async function runAgentHomeMode(options: AgentHomeModeOptions): Promise<v
   // ── Session lifecycle ──────────────────────────────────
 
   function resolveProjectPath(sessionId?: string): string {
-    if (sessionId && sessionProjects.has(sessionId)) {
-      return sessionProjects.get(sessionId)!;
-    }
-    return defaultCwd;
+    return (sessionId ? sessionProjects.get(sessionId) : undefined) ?? defaultCwd;
   }
 
   async function createSession(sessionId: string, cwd: string): Promise<SessionState> {

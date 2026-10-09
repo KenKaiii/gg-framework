@@ -423,7 +423,7 @@ export function createEditTool(
         outcomes[i] = { ok: false, failure: { reason: "stale_anchor" } };
         continue;
       }
-      spanResolved.push({ index: i, start: res.startIndex!, end: res.endIndex!, lines: e.lines });
+      spanResolved.push({ index: i, start: res.startIndex, end: res.endIndex, lines: e.lines });
     }
     // Reject overlapping spans (keep the first, fail the rest) — overlap means
     // the model double-addressed the same region and the result is undefined.

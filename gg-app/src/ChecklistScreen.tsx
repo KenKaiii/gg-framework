@@ -60,7 +60,10 @@ function statusText(item: ChecklistEntry): string {
     const count = `${item.findings.length || "Some"} finding${item.findings.length === 1 ? "" : "s"} reported`;
     return item.changedSinceCheck ? `${count} · Code changed since, check again` : count;
   }
-  if (item.checkedAt) return `Checked ${checkedDate(item.checkedAt)}`;
+  if (item.checkedAt) {
+    const accepted = item.accepted?.length ?? 0;
+    return `Checked ${checkedDate(item.checkedAt)}${accepted > 0 ? ` · ${accepted} accepted as is` : ""}`;
+  }
   return item.detection ? `${item.detection.summary} · Not reviewed` : "Not reviewed";
 }
 

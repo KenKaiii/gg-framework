@@ -247,10 +247,11 @@ export function registerPalsuProvider(config?: PalsuProviderConfig): PalsuProvid
     },
     state,
     getModel(modelName: string): PalsuModelHandle {
-      if (!modelStates.has(modelName)) {
-        modelStates.set(modelName, { responses: [] });
+      let ms = modelStates.get(modelName);
+      if (!ms) {
+        ms = { responses: [] };
+        modelStates.set(modelName, ms);
       }
-      const ms = modelStates.get(modelName)!;
       return {
         setResponses(r) {
           ms.responses.length = 0;

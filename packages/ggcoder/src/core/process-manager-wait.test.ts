@@ -90,4 +90,30 @@ describe("ProcessManager spawn failure", () => {
     expect(await pm.waitForExitOrWake(id, 30_000)).toBe("exited");
     expect((await pm.readOutput(id)).isRunning).toBe(false);
   });
+
+  it("never signals a pid for a child that failed to spawn", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gg-process-wait-"));
+    tempDirs.push(directory);
+    const signalled: unknown[] = [];
+    const pm = new ProcessManager({
+      bgDir: directory,
+      kill: (pid) => {
+        signalled.push(pid);
+        return true;
+      },
+      killProcessTree: (pid) => void signalled.push(pid),
+    });
+    managers.push(pm);
+
+    const { id, pid } = await pm.start("echo hi", process.cwd(), {
+      file: "definitely-not-a-real-binary-xyz",
+      args: [],
+      isCmdFallback: false,
+    });
+
+    expect(pid).toBe(0);
+    expect(await pm.stop(id)).toMatch(/failed to start|already exited/);
+    pm.shutdownAll();
+    expect(signalled).toEqual([]);
+  });
 });

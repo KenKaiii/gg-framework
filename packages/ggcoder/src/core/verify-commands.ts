@@ -215,10 +215,9 @@ export function renderVerifySection(cmds: readonly VerifyCommand[]): string {
     if (list) list.push(c);
     else byLang.set(c.language, [c]);
   }
-  const sortedLangs = [...byLang.keys()].sort();
+  const sortedLangs = [...byLang.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   const lines: string[] = [];
-  for (const lang of sortedLangs) {
-    const list = byLang.get(lang)!;
+  for (const [lang, list] of sortedLangs) {
     const parts = list.map((c) => `\`${c.command}\` (${c.label})`).join(", ");
     lines.push(`- **${lang}**: ${parts}`);
   }

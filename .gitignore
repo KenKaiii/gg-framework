@@ -73,6 +73,10 @@ packages/*/.bench-*.mjs
 /gg-app/scripts/.review-control-bundle.mjs
 
 # Local research/strategy notes
+# Dated agent audit / study reports are maintainer notes, not public docs.
+/docs/*-audit-*.md
+/bench/ui-library-real-flow/REPORT.md
+/experiments/prompt-bench/review-bench.md
 /*-vs-*.md
 /*-report.md
 /fixes.md

@@ -24,6 +24,7 @@ import { RadioButton } from "./RadioButton";
 import { NewProjectModal } from "./NewProjectModal";
 import { MetalButton } from "./MetalButton";
 import { useWindowFocused } from "./useWindowFocused";
+import { toast } from "./toast";
 
 /**
  * Does this row point at another tool's transcript rather than a GG Coder
@@ -248,7 +249,7 @@ export function ProjectPicker({
       .then((picked) => {
         if (typeof picked === "string") choose(picked);
       })
-      .catch(() => {});
+      .catch((e: unknown) => toast(`Couldn't open the folder picker: ${String(e)}`, "error"));
   }
 
   return (

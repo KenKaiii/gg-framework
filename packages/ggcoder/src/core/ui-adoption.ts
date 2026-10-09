@@ -224,7 +224,9 @@ export async function planAdoption(
       if (targetSet.has(target.toLowerCase()))
         throw new Error(`Ambiguous installation target: ${target}`);
       targetSet.add(target.toLowerCase());
-      const patched = compatibilityPatch(source.id, sourcePath, file.content!);
+      if (file.content === undefined)
+        throw new Error(`Registry file has no content: ${sourcePath}`);
+      const patched = compatibilityPatch(source.id, sourcePath, file.content);
       if (patched.notice) compatibility.push(patched.notice);
       files.push({
         sourceId: `${source.id}#${index}`,

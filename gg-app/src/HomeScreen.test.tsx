@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { error as logError } from "@tauri-apps/plugin-log";
 import { authStatus, getSettings } from "./agent";
 import { HomeScreen } from "./HomeScreen";
+
+vi.mock("@tauri-apps/plugin-log", () => ({ error: vi.fn(async () => undefined) }));
 
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: vi.fn(async () => "1.0.0") }));
 vi.mock("./AsciiLogo", () => ({ AsciiLogo: () => null }));
@@ -29,6 +32,20 @@ afterEach(() => {
 });
 
 describe("HomeScreen", () => {
+  it("logs a failed setup check instead of swallowing it", async () => {
+    vi.mocked(getSettings).mockRejectedValue(new Error("settings unreadable"));
+    vi.mocked(authStatus).mockResolvedValue([]);
+
+    render(
+      <HomeScreen onProjects={vi.fn()} onChat={vi.fn()} onMotion={vi.fn()} onSettings={vi.fn()} />,
+    );
+
+    await waitFor(() =>
+      expect(logError).toHaveBeenCalledWith("Home setup check failed: Error: settings unreadable"),
+    );
+    expect(screen.getByRole("button", { name: "Code" }).getAttribute("aria-disabled")).toBe("true");
+  });
+
   it("offers Motion beside Code and Chat and opens it once set up", async () => {
     vi.mocked(getSettings).mockResolvedValue({ projectsRoot: "/workspaces", configured: true });
     vi.mocked(authStatus).mockResolvedValue([

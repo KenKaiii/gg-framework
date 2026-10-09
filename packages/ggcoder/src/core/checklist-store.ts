@@ -39,6 +39,8 @@ export interface ChecklistEntry {
   readonly result: ChecklistResult;
   readonly summary: string;
   readonly findings: readonly string[];
+  /** Findings the owner chose to leave as is, each with the reason. They don't block `pass`. */
+  readonly accepted: readonly string[];
   readonly evidence: readonly string[];
 }
 
@@ -72,6 +74,7 @@ const StoredEntry = z.object({
   result: z.enum(CHECKLIST_RESULTS),
   summary: clip(SUMMARY_MAX).catch(""),
   findings: clippedList(FINDING_MAX),
+  accepted: clippedList(FINDING_MAX),
   evidence: clippedList(EVIDENCE_MAX),
 });
 
@@ -151,9 +154,10 @@ export async function readChecklist(
   return { ok: true, value: { version: 1, items } };
 }
 
-/** Canonical JSON: ids sorted, fixed key order, 2-space indent, trailing newline. */
+/** Canonical JSON: ids sorted, fixed key order, 2-space indent, trailing newline.
+ * `accepted` is written only when non-empty, so records without it stay unchanged. */
 export function serializeChecklist(record: ChecklistRecord): string {
-  const items: Record<string, ChecklistEntry> = {};
+  const items: Record<string, Omit<ChecklistEntry, "accepted"> & { accepted?: string[] }> = {};
   for (const id of Object.keys(record.items).sort()) {
     const e = record.items[id];
     if (!e) continue;
@@ -164,6 +168,7 @@ export function serializeChecklist(record: ChecklistRecord): string {
       result: e.result,
       summary: e.summary,
       findings: [...e.findings],
+      ...(e.accepted.length > 0 ? { accepted: [...e.accepted] } : {}),
       evidence: [...e.evidence],
     };
   }
@@ -284,6 +289,7 @@ export interface ChecklistRow {
   readonly result: ChecklistResult | null;
   readonly summary: string | null;
   readonly findings: readonly string[];
+  readonly accepted: readonly string[];
   readonly evidence: readonly string[];
 }
 
@@ -310,6 +316,7 @@ export function checklistView(
       result: entry?.result ?? null,
       summary: entry?.summary ?? null,
       findings: entry?.findings ?? [],
+      accepted: entry?.accepted ?? [],
       evidence: entry?.evidence ?? [],
     };
   });

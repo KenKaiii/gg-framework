@@ -50,7 +50,7 @@
     },
     {
       "name": "checklist",
-      "description": "Read or record the project health checklist (stored in .gg-checklist.json). `status` lists every item with its status and last check; items older than 30 days are due. `record` saves the result of checking one item: the date and Git commit are filled in automatically. `issues` needs at least one finding; `pass` takes none; `evidence` lists what you actually ran or read, including scope and exclusions. Record completed checklist reviews or checks requested in normal chat; never start extra audits unasked. After fixing an item's recorded findings, re-check them and record that item again (`pass`, or `issues` with what remains) so the checklist doesn't keep showing fixed findings.",
+      "description": "Read or record the project health checklist (stored in .gg-checklist.json). `status` lists every item with its status and last check; items older than 30 days are due. `record` saves the result of checking one item: the date and Git commit are filled in automatically. `issues` needs at least one finding; `pass` takes none; `evidence` lists what you actually ran or read, including scope and exclusions. Record completed checklist reviews or checks requested in normal chat; never start extra audits unasked. After fixing an item's recorded findings, re-check them and record that item again (`pass`, or `issues` with what remains) so the checklist doesn't keep showing fixed findings. Findings the user explicitly chose to leave go in `accepted` with the reason, not `findings`, so the item can pass once everything else is fixed.",
       "schema": {
         "type": "object",
         "properties": {
@@ -118,6 +118,17 @@
               "maxLength": 300
             }
           },
+          "accepted": {
+            "default": [],
+            "description": "record: findings the user explicitly chose to leave as is, each with the reason (e.g. 'deferred by owner'); they don't block pass",
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          },
           "evidence": {
             "minItems": 1,
             "maxItems": 10,
@@ -134,7 +145,7 @@
           "action"
         ]
       },
-      "hash": "bc26dddbe5893839d9647201d1aa1a05241b8164f9f8a56917aaee4e176ac361"
+      "hash": "f98a045f33438ea0a876478cc380ede7436542697d4ffbcffbb399df51080e4d"
     },
     {
       "name": "code_nav",

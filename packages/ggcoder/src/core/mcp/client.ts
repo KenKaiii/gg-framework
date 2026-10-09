@@ -771,7 +771,8 @@ export class MCPClientManager {
     } else {
       // HTTP transport (Streamable HTTP or SSE). See connectHttp for the
       // transport-selection + auth logic.
-      const url = new URL(config.url!);
+      if (!config.url) throw new Error(`MCP server "${config.name}" needs a command or a url`);
+      const url = new URL(config.url);
       const isLocal = isLocalhost(url);
 
       try {

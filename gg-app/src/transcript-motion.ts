@@ -72,6 +72,26 @@ export function dissolveInAbove(scroller: HTMLElement, below: Element): void {
 }
 
 /**
+ * Restored history just replaced the skeleton: blur-fade in the rows on
+ * screen, together, so the chat resolves in place instead of snapping. Rows
+ * off screen are left alone (nobody sees them arrive). Same no-`fill` rule as
+ * everything here.
+ */
+export function dissolveInVisible(scroller: HTMLElement): void {
+  if (typeof scroller.animate !== "function") return;
+  const reduce = prefersReducedMotion();
+  const view = scroller.getBoundingClientRect();
+  for (const node of Array.from(scroller.children)) {
+    const box = node.getBoundingClientRect();
+    if (box.bottom < view.top || box.top > view.bottom) continue;
+    node.animate(reduce ? [{ opacity: 0 }, { opacity: 1 }] : [HIDDEN, SHOWN], {
+      duration: reduce ? 160 : 420,
+      easing: EASE_OUT,
+    });
+  }
+}
+
+/**
  * Dissolve the transcript out, `land` (jump the scroll position) while it is
  * invisible, then resolve it back in, so a long jump reads as one cut instead
  * of a blur of passing rows. Returns a cancel (for unmount, or a newer jump

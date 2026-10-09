@@ -1,7 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { StopIcon } from "@phosphor-icons/react";
 import { createPortal } from "react-dom";
 import { theme } from "./theme";
 import { FloatingSurface } from "./FloatingSurface";
+import { useAnchoredPopover, useScrollEdges } from "./popover";
+import { PopCritter } from "./PopCritter";
+import { pickCritter } from "./critter-sprites";
 import { nextRunLabel } from "./schedule-labels";
 import { describeSchedule, type ParsedSchedule } from "./scheduleCommand";
 
@@ -39,10 +43,18 @@ interface Props {
 export function RunningSchedulesButton({ schedules, onStop }: Props): React.ReactElement {
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const ref = useRef<HTMLSpanElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null);
+  // Clamped into the viewport: anchoring naively to the button's left edge
+  // pushes the popover off-screen in a narrow window, and with it the stop
+  // buttons, which would leave a schedule with no way to cancel it.
+  const { anchorRef, popoverRef, style } = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>(
+    open,
+    () => setOpen(false),
+    "above",
+  );
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const onScroll = useScrollEdges(scrollRef, open);
+  const headingId = useId();
+  const popoverId = useId();
 
   // Only tick while the popover is open — a 1s interval behind a closed menu is
   // a pointless wakeup on a desktop app that may sit idle for hours.
@@ -53,59 +65,6 @@ export function RunningSchedulesButton({ schedules, onStop }: Props): React.Reac
     return () => clearInterval(id);
   }, [open]);
 
-  useLayoutEffect(() => {
-    if (!open) return;
-    const place = (): void => {
-      const rect = buttonRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      // Clamp into the viewport. Anchoring naively to the button's left edge
-      // pushes the popover off-screen in a narrow window — and with it the stop
-      // buttons, which would leave a schedule with no way to cancel it.
-      const width = menuRef.current?.offsetWidth ?? 280;
-      const margin = 8;
-      const maxLeft = window.innerWidth - width - margin;
-      const left = Math.max(margin, Math.min(rect.left, maxLeft));
-      setPos({ left, bottom: window.innerHeight - rect.top + 8 });
-    };
-    place();
-    // A second pass once the menu has real dimensions: the first runs before the
-    // portal has been measured, so `width` is still the fallback.
-    const raf = requestAnimationFrame(place);
-    window.addEventListener("resize", place);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", place);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent): void => {
-      const t = e.target as Node;
-      if (ref.current?.contains(t) || menuRef.current?.contains(t)) return;
-      setOpen(false);
-    };
-    const id = setTimeout(() => document.addEventListener("mousedown", onDoc), 0);
-    return () => {
-      clearTimeout(id);
-      document.removeEventListener("mousedown", onDoc);
-    };
-  }, [open]);
-
-  // Close on Escape as well as outside-click, so the popover is dismissable
-  // without the pointer.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        setOpen(false);
-        buttonRef.current?.focus();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
-
   const count = schedules.length;
   useEffect(() => {
     if (count === 0) setOpen(false);
@@ -114,13 +73,15 @@ export function RunningSchedulesButton({ schedules, onStop }: Props): React.Reac
   return (
     <>
       {count > 0 && (
-        <span className="bgtasks schedules" ref={ref}>
+        <span className="bgtasks schedules">
           <button
-            ref={buttonRef}
+            ref={anchorRef}
             className="bgtasks-button"
             style={{ color: theme.secondary, borderColor: theme.border }}
             title="Active schedules — run only while this window is open"
             aria-expanded={open}
+            aria-controls={open ? popoverId : undefined}
+            data-open={open || undefined}
             onClick={() => setOpen((o) => !o)}
           >
             {"\u25F7 "}
@@ -132,46 +93,64 @@ export function RunningSchedulesButton({ schedules, onStop }: Props): React.Reac
         <FloatingSurface>
           {open && count > 0 && (
             <div
-              ref={menuRef}
-              className="bgtasks-menu schedules-menu"
-              style={{
-                background: theme.surface2,
-                borderColor: theme.border,
-                left: pos?.left ?? 0,
-                bottom: pos?.bottom ?? 0,
-                visibility: pos ? "visible" : "hidden",
-              }}
+              ref={popoverRef}
+              id={popoverId}
+              className="pop-panel bgtasks-menu schedules-menu"
+              data-side="above"
+              role="dialog"
+              aria-labelledby={headingId}
+              style={style}
             >
-              {schedules.length === 0 && (
-                <div className="bgtasks-empty" style={{ color: theme.textDim }}>
-                  no active schedules
-                </div>
-              )}
-              {schedules.map((s) => (
-                <div key={s.id} className="bgtasks-item schedules-item">
-                  <span className="bgtasks-dot" style={{ color: theme.secondary }}>
-                    {"\u23FA"}
-                  </span>
-                  <span className="bgtasks-cmd" style={{ color: theme.text }} title={s.prompt}>
-                    {shortPrompt(s.prompt)}
-                  </span>
-                  <span className="schedules-cadence" style={{ color: theme.textMuted }}>
-                    {describeSchedule(s)}
-                    {s.runCount !== null && ` \u00b7 ${s.runsCompleted}/${s.runCount}`}
-                  </span>
-                  <span className="bgtasks-status" style={{ color: theme.textDim }}>
-                    {nextRunLabel(s.nextRunAt, now)}
-                  </span>
-                  <button
-                    className="bgtasks-kill"
-                    style={{ color: theme.error }}
-                    title="Stop this schedule"
-                    onClick={() => onStop(s.id)}
-                  >
-                    stop
-                  </button>
-                </div>
-              ))}
+              <header className="pop-head">
+                <h2 id={headingId} className="pop-title">
+                  Schedules
+                </h2>
+                <span className="pop-count">{count} active</span>
+              </header>
+              <div
+                ref={scrollRef}
+                className="pop-scroll pop-body"
+                tabIndex={-1}
+                data-pop-focus
+                onScroll={onScroll}
+              >
+                <ul className="pop-list">
+                  {schedules.map((s, index) => (
+                    <li
+                      key={s.id}
+                      className="pop-row pop-item schedules-item"
+                      style={{ "--i": index } as React.CSSProperties}
+                    >
+                      <PopCritter
+                        critter={pickCritter(undefined, s.id, new Set())}
+                        pose="waiting"
+                      />
+                      <span className="pop-item-text">
+                        <span className="pop-item-main bgtasks-cmd" title={s.prompt}>
+                          {shortPrompt(s.prompt)}
+                        </span>
+                        <span className="pop-item-meta">
+                          <span className="schedules-cadence">
+                            {describeSchedule(s)}
+                            {s.runCount !== null && ` \u00b7 ${s.runsCompleted}/${s.runCount}`}
+                          </span>
+                          <span className="pop-item-when">{nextRunLabel(s.nextRunAt, now)}</span>
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        className="pop-item-action"
+                        title="Stop this schedule"
+                        aria-label={`Stop schedule: ${shortPrompt(s.prompt)}`}
+                        onClick={() => onStop(s.id)}
+                      >
+                        <StopIcon size={12} weight="fill" aria-hidden="true" />
+                        Stop
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           )}
         </FloatingSurface>,

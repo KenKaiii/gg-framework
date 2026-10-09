@@ -13,6 +13,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { CheckIcon, CopyIcon, ArrowElbowDownLeftIcon } from "@phosphor-icons/react";
 import { openProjectPath, openUrl, sendPrompt } from "./agent";
+import { toast } from "./toast";
 import { codeLanguage, codeNodeText } from "./markdown-prompt";
 import { collapsedCode, shouldCollapseCode, visibleBlockCount } from "./collapse";
 import { marked } from "marked";
@@ -181,10 +182,11 @@ const PromptReadyContext = createContext(true);
 /**
  * Handler the "Send to GG Coder" button calls when clicked. App provides one
  * that pushes a shimmering "Sent to GG Coder" user bubble into the transcript
- * (like a slash command renders) and then sends the prompt. Defaults to null, in
- * which case the button falls back to sending directly with no transcript row
- * (safe for any render outside App). */
-const PromptSendContext = createContext<((text: string) => void) | null>(null);
+ * (like a slash command renders) and then sends the prompt. Resolves false when
+ * the prompt never reached the agent, so the button can offer it again. Defaults
+ * to null, in which case the button falls back to sending directly with no
+ * transcript row (safe for any render outside App). */
+const PromptSendContext = createContext<((text: string) => Promise<boolean>) | null>(null);
 
 /**
  * A Ken-recommended GG Coder prompt. Ken wraps every runnable prompt in a
@@ -203,9 +205,20 @@ function PromptBlock({ body }: { body: string }): React.ReactElement {
     // Route through App so it can render the shimmering "Sent to GG Coder" user
     // bubble; fall back to a direct send if no handler is provided. Stays "Sent"
     // (disabled) afterward so the user can see it landed and can't double-fire.
-    if (onSend) onSend(text);
-    else void sendPrompt(text).catch(() => {});
+    // A send that failed re-enables the button so the prompt isn't lost.
     setSent(true);
+    const delivered = onSend
+      ? onSend(text)
+      : sendPrompt(text).then(
+          () => true,
+          () => {
+            toast("Couldn't send the prompt to GG Coder. Try again.", "error");
+            return false;
+          },
+        );
+    void delivered.then((ok) => {
+      if (!ok) setSent(false);
+    });
   }, [body, onSend]);
   return (
     <div className="ken-prompt-block">
@@ -272,7 +285,7 @@ function CodeBlock({ children }: { children?: React.ReactNode }): React.ReactEle
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       })
-      .catch(() => {});
+      .catch(() => toast("Couldn't copy to the clipboard.", "error"));
   }, [text]);
 
   return (

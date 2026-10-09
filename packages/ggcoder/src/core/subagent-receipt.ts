@@ -183,10 +183,10 @@ export function formatReceipt(calls: readonly ReceiptCall[], cwd: string): strin
     groups.set(call.name, group);
   }
   const items: Array<{ tool: string; text: string }> = [];
-  for (const tool of [...groups.keys()].sort()) {
-    const group = groups.get(tool)!;
-    for (const item of [...group.keys()].sort()) {
-      const count = group.get(item)!;
+  const byKey = <V>(a: [string, V], b: [string, V]): number =>
+    a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
+  for (const [tool, group] of [...groups.entries()].sort(byKey)) {
+    for (const [item, count] of [...group.entries()].sort(byKey)) {
       items.push({ tool, text: `${item}${count > 1 ? ` ×${count}` : ""}` });
     }
   }

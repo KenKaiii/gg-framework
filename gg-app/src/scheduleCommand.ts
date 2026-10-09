@@ -313,7 +313,7 @@ export function withInterval(raw: string, preset: string): { text: string; caret
   const intervalBar = tailIsCount ? bars[bars.length - 2]! : (lastBar ?? -1);
 
   const head = intervalBar === -1 ? `${raw.trimEnd()} |` : raw.slice(0, intervalBar + 1);
-  const tail = tailIsCount ? raw.slice(lastBar!).trimStart() : "";
+  const tail = tailIsCount && lastBar !== undefined ? raw.slice(lastBar).trimStart() : "";
   const filled = `${head} ${preset}`;
   return { text: tail ? `${filled} ${tail}` : filled, caret: filled.length };
 }

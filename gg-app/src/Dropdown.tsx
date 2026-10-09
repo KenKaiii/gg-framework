@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { CheckIcon, CaretDownIcon } from "@phosphor-icons/react";
 import { FloatingSurface } from "./FloatingSurface";
+import { useScrollEdges } from "./popover";
 
 export interface DropdownOption {
   value: string;
@@ -56,6 +57,7 @@ export function Dropdown({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const onListScroll = useScrollEdges(listRef, open);
   const baseId = useId();
   const listId = `${baseId}-list`;
   const optionId = (index: number): string => `${baseId}-option-${index}`;
@@ -191,38 +193,41 @@ export function Dropdown({
       </button>
       <FloatingSurface>
         {open && !unavailable && (
-          <div
-            ref={listRef}
-            id={listId}
-            className="dropdown-menu"
-            role="listbox"
-            aria-label={label}
-            aria-activedescendant={optionId(activeIndex)}
-            tabIndex={-1}
-            onKeyDown={onListKeyDown}
-          >
-            {options.map((option, index) => (
-              <div
-                key={option.value}
-                id={optionId(index)}
-                className={`dropdown-option${index === activeIndex ? " active" : ""}`}
-                role="option"
-                aria-selected={option.value === value}
-                aria-disabled={option.disabled || undefined}
-                onMouseEnter={() => !option.disabled && setActiveIndex(index)}
-                onClick={() => commit(index)}
-              >
-                <span className="dropdown-option-text">
-                  <span className="dropdown-option-label">{option.label}</span>
-                  {option.description && (
-                    <span className="dropdown-option-description">{option.description}</span>
+          <div className="dropdown-menu">
+            <div
+              ref={listRef}
+              id={listId}
+              className="pop-scroll dropdown-list"
+              role="listbox"
+              aria-label={label}
+              aria-activedescendant={optionId(activeIndex)}
+              tabIndex={-1}
+              onKeyDown={onListKeyDown}
+              onScroll={onListScroll}
+            >
+              {options.map((option, index) => (
+                <div
+                  key={option.value}
+                  id={optionId(index)}
+                  className={`dropdown-option${index === activeIndex ? " active" : ""}`}
+                  role="option"
+                  aria-selected={option.value === value}
+                  aria-disabled={option.disabled || undefined}
+                  onMouseEnter={() => !option.disabled && setActiveIndex(index)}
+                  onClick={() => commit(index)}
+                >
+                  <span className="dropdown-option-text">
+                    <span className="dropdown-option-label">{option.label}</span>
+                    {option.description && (
+                      <span className="dropdown-option-description">{option.description}</span>
+                    )}
+                  </span>
+                  {option.value === value && (
+                    <CheckIcon className="dropdown-option-check" size={14} aria-hidden="true" />
                   )}
-                </span>
-                {option.value === value && (
-                  <CheckIcon className="dropdown-option-check" size={14} aria-hidden="true" />
-                )}
-              </div>
-            ))}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </FloatingSurface>

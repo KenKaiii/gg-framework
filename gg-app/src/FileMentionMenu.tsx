@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { FileTextIcon } from "@phosphor-icons/react";
 import { theme } from "./theme";
 import type { FileHit } from "./agent";
+import { useScrollEdges } from "./popover";
 
 interface Props {
   files: readonly FileHit[];
@@ -27,6 +28,8 @@ export function FileMentionMenu({
 }: Props): React.ReactElement {
   // Keep the active row scrolled into view as the selection moves. Skip the
   // first run (mount) so opening the menu never scrolls the page/transcript.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const onScroll = useScrollEdges(scrollRef, true);
   const mounted = useRef(false);
   useEffect(() => {
     if (!mounted.current) {
@@ -43,31 +46,33 @@ export function FileMentionMenu({
       <div className="slash-menu-title" style={{ color: theme.textMuted }}>
         {isRecent ? "recent files" : "files"}
       </div>
-      {files.map((file, i) => {
-        const active = i === activeIndex;
-        const dir = file.path.slice(0, file.path.length - file.name.length);
-        return (
-          <button
-            key={file.path}
-            data-idx={i}
-            className={`slash-item mention-item${active ? " active" : ""}`}
-            onMouseEnter={() => onHover(i)}
-            onClick={() => onSelect(file)}
-          >
-            <span className="mention-icon" style={{ color: theme.textMuted }}>
-              <FileTextIcon size={14} />
-            </span>
-            <span className="mention-name" style={{ color: theme.text }}>
-              {file.name}
-            </span>
-            {dir && (
-              <span className="mention-dir" style={{ color: theme.textMuted }}>
-                {dir}
+      <div ref={scrollRef} className="pop-scroll slash-scroll" onScroll={onScroll}>
+        {files.map((file, i) => {
+          const active = i === activeIndex;
+          const dir = file.path.slice(0, file.path.length - file.name.length);
+          return (
+            <button
+              key={file.path}
+              data-idx={i}
+              className={`slash-item mention-item${active ? " active" : ""}`}
+              onMouseEnter={() => onHover(i)}
+              onClick={() => onSelect(file)}
+            >
+              <span className="mention-icon" style={{ color: theme.textMuted }}>
+                <FileTextIcon size={14} />
               </span>
-            )}
-          </button>
-        );
-      })}
+              <span className="mention-name" style={{ color: theme.text }}>
+                {file.name}
+              </span>
+              {dir && (
+                <span className="mention-dir" style={{ color: theme.textMuted }}>
+                  {dir}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -5,7 +5,8 @@ import { steroidsQuery } from "../tool-group-summary.js";
 import { Spinner } from "./Spinner.js";
 import { ToolUseLoader } from "./ToolUseLoader.js";
 import { MessageResponse } from "./MessageResponse.js";
-import { highlightCode, langFromPath } from "../utils/highlight.js";
+import { langFromPath } from "../utils/highlight.js";
+import { highlightCodeToAnsi } from "../utils/markdown-renderer.js";
 import { useTerminalSize } from "../hooks/useTerminalSize.js";
 import { computeWordDiff, type WordSegment } from "../utils/word-diff.js";
 import { DiffFrame } from "./DiffFrame.js";
@@ -310,9 +311,10 @@ export function ToolExecution(props: ToolExecutionProps) {
     args,
     props.formatters,
   );
-  const body = isDiff
-    ? buildDiffBody(diffText!, args, columns, theme)
-    : buildResultBody(name, result, isError, columns, theme);
+  const body =
+    isDiff && diffText
+      ? buildDiffBody(diffText, args, columns, theme)
+      : buildResultBody(name, result, isError, columns, theme);
 
   const headerColor = isError ? theme.error : toolNameColor(theme, name);
 
@@ -873,7 +875,7 @@ function buildDiffBody(
   const lang = langFromPath(filePath);
   const highlighted = focused.map((line) => ({
     ...line,
-    content: highlightCode(line.content, lang),
+    content: highlightCodeToAnsi(line.content, lang, theme),
   }));
 
   const maxLineNo = highlighted.reduce((m, l) => Math.max(m, l.lineNo), 0);

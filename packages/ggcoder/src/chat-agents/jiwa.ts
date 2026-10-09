@@ -411,7 +411,8 @@ export function buildJiwaTools(store: JiwaStore): AgentTool[] {
         if (result.duplicateOf) {
           return `Near-duplicate Jiwa entry already exists as ${result.duplicateOf.id}. Use update_jiwa if that instruction changed.`;
         }
-        return `Set Jiwa entry ${result.entry!.id}. ${jiwaCount(result.jiwa.length, "stored")}.`;
+        if (!result.entry) throw new Error("Jiwa store saved nothing and found no duplicate");
+        return `Set Jiwa entry ${result.entry.id}. ${jiwaCount(result.jiwa.length, "stored")}.`;
       },
     },
     {

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { theme } from "./theme";
 import { FloatingSurface } from "./FloatingSurface";
+import { useScrollEdges } from "./popover";
 import { modelDisplayName } from "./model-name";
 import { groupByProvider } from "./provider-labels";
 import { supportsNativeSelectPopup } from "./platform";
@@ -106,6 +107,8 @@ export function ModelSelect({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const onScroll = useScrollEdges(scrollRef, open);
   const menuId = useId();
   const following = Boolean(onSelectFollow && followActive);
   const value = following ? FOLLOW_VALUE : currentModel;
@@ -214,10 +217,7 @@ export function ModelSelect({
         role="menuitemradio"
         aria-checked={active}
         disabled={toolless}
-        style={{
-          color: toolless ? theme.textDim : active ? theme.primary : theme.text,
-          background: active ? theme.surface2 : "transparent",
-        }}
+        style={{ color: toolless ? theme.textDim : active ? theme.primary : theme.text }}
         onClick={() => chooseModel(model.id)}
         title={
           toolless
@@ -309,35 +309,34 @@ export function ModelSelect({
             <div className="model-menu-title" style={{ color: theme.textMuted }} aria-hidden="true">
               {title}
             </div>
-            {onSelectFollow && (
-              <button
-                className="model-menu-item model-menu-follow"
-                role="menuitemradio"
-                aria-checked={following}
-                style={{
-                  color: following ? theme.primary : theme.text,
-                  background: following ? theme.surface2 : "transparent",
-                }}
-                onClick={chooseFollow}
-                title="Ken adopts whatever model GG Coder is using"
-              >
-                Follow GG Coder
-              </button>
-            )}
-            {groups.map((group) => (
-              <div key={group.provider} className="model-menu-section">
-                <div
-                  className="model-menu-subtitle"
-                  style={{ color: theme.textMuted }}
-                  aria-hidden="true"
+            <div ref={scrollRef} className="pop-scroll model-menu-scroll" onScroll={onScroll}>
+              {onSelectFollow && (
+                <button
+                  className="model-menu-item model-menu-follow"
+                  role="menuitemradio"
+                  aria-checked={following}
+                  style={{ color: following ? theme.primary : theme.text }}
+                  onClick={chooseFollow}
+                  title="Ken adopts whatever model GG Coder is using"
                 >
-                  {group.label}
+                  Follow GG Coder
+                </button>
+              )}
+              {groups.map((group) => (
+                <div key={group.provider} className="model-menu-section">
+                  <div
+                    className="model-menu-subtitle"
+                    style={{ color: theme.textMuted }}
+                    aria-hidden="true"
+                  >
+                    {group.label}
+                  </div>
+                  <div className="model-menu-grid" role="group" aria-label={group.label}>
+                    {group.models.map((model) => renderItem(model))}
+                  </div>
                 </div>
-                <div className="model-menu-grid" role="group" aria-label={group.label}>
-                  {group.models.map((model) => renderItem(model))}
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </FloatingSurface>

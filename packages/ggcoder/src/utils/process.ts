@@ -126,7 +126,8 @@ function readProcessTable(platform: NodeJS.Platform): Array<[number, number]> {
   const rows: Array<[number, number]> = [];
   for (const line of res.stdout.split("\n")) {
     const [pid, ppid] = line.trim().split(/\s+/).map(Number);
-    if (Number.isInteger(pid) && Number.isInteger(ppid)) rows.push([pid!, ppid!]);
+    if (pid !== undefined && ppid !== undefined && Number.isInteger(pid) && Number.isInteger(ppid))
+      rows.push([pid, ppid]);
   }
   return rows;
 }
@@ -150,8 +151,8 @@ export function listDescendantPids(pid: number, options: ProcessTableOptions = {
   }
   const seen = new Set<number>();
   const queue = [pid];
-  while (queue.length > 0) {
-    for (const child of children.get(queue.shift()!) ?? []) {
+  for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+    for (const child of children.get(next) ?? []) {
       if (child === pid || seen.has(child)) continue;
       seen.add(child);
       queue.push(child);
