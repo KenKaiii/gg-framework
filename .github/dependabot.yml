@@ -19,9 +19,31 @@ updates:
     groups:
       minor-and-patch:
         update-types: ["minor", "patch"]
+    # These carry version-pinned pnpm patches (pnpm-workspace.yaml
+    # patchedDependencies). Bumping one leaves its patch unused and pnpm fails
+    # with ERR_PNPM_UNUSED_PATCH, so upgrade them by hand and regenerate the
+    # patch (`pnpm patch <pkg>@<version>`).
+    ignore:
+      - dependency-name: hyperframes
+      - dependency-name: border-beam
+      - dependency-name: metal-fx
+      # Tauri JS bindings must share major.minor with their Rust crates
+      # (scripts/tauri-version-alignment.test.mjs), and Dependabot can't bump
+      # npm and cargo in one PR. Patches flow; bump minors by hand on both
+      # sides together (`cargo update -p tauri -p tauri-plugin-…`).
+      - dependency-name: "@tauri-apps/api"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "@tauri-apps/plugin-*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   # Tauri desktop app (gg-app).
   - package-ecosystem: cargo
     directory: /gg-app/src-tauri
     schedule:
       interval: weekly
+    # Counterpart of the @tauri-apps ignore above.
+    ignore:
+      - dependency-name: tauri
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: tauri-plugin-*
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
