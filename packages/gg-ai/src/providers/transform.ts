@@ -792,6 +792,8 @@ export function toAnthropicMessages(
 } {
   let systemText: string | undefined;
   const out: Anthropic.MessageParam[] = [];
+  // `out` indices of real user messages (not tool results), for cache anchors.
+  const userTurnIdx: number[] = [];
   const idMap = new Map<string, string>();
   const keepFallbackBlocks = options?.fallbackBlocks === true;
   // Client tool calls dropped by the fallback replay rules; their results go too.
@@ -824,6 +826,7 @@ export function toAnthropicMessages(
       } else if (!msg.content.some((p) => !(p.type === "text" && p.text === ""))) {
         continue;
       }
+      userTurnIdx.push(out.length);
       out.push({
         role: "user",
         content:
@@ -898,30 +901,38 @@ export function toAnthropicMessages(
     }
   }
 
-  // Add cache_control to the last user message to cache conversation history
+  // Conversation cache breakpoints. The last user-role message (a real user
+  // message or tool results) always gets one, so the history is cached.
+  //
+  // With a 1-h TTL, only entries ending at a real user message are worth the
+  // 1-h write price: once the next user message arrives, the encoding above
+  // strips thinking from every earlier assistant turn, so a finished turn's
+  // tool-loop entries can never be read again (measured on Haiku 5.5: the next
+  // turn reads up to the previous user message and re-writes the loop). So:
+  //  - a request that opens a turn writes its user message at 1 h, and pins the
+  //    previous turn's opening message too, so that 1-h entry is found even when
+  //    the finished loop is longer than Anthropic's ~20-block cache lookback;
+  //  - a tool-loop request pins its turn's opening message at 1 h (a read that
+  //    refreshes it, so a >5 min tool run falls back to it) and writes the
+  //    growing loop at the 5-min default, which the next request reads within
+  //    seconds. Anthropic requires 1-h breakpoints before 5-min ones; this order
+  //    holds. With tools and system that is at most 4 breakpoints, the API cap.
   if (cacheControl && out.length > 0) {
-    for (let i = out.length - 1; i >= 0; i--) {
-      if (out[i].role === "user") {
-        const content = out[i].content;
-        if (typeof content === "string") {
-          out[i] = {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: content,
-                cache_control: cacheControl,
-              } as Anthropic.TextBlockParam,
-            ],
-          };
-        } else if (Array.isArray(content) && content.length > 0) {
-          const last = content[content.length - 1];
-          content[content.length - 1] = {
-            ...last,
-            cache_control: cacheControl,
-          } as (typeof content)[number];
+    let tail = out.length - 1;
+    while (tail >= 0 && out[tail]?.role !== "user") tail--;
+    if (tail !== -1) {
+      if (cacheControl.ttl === "1h") {
+        const anchor = userTurnIdx.at(-1);
+        if (anchor === tail) {
+          const previous = userTurnIdx.at(-2);
+          if (previous !== undefined) markAnthropicCacheBreakpoint(out, previous, cacheControl);
+          markAnthropicCacheBreakpoint(out, tail, cacheControl);
+        } else {
+          if (anchor !== undefined) markAnthropicCacheBreakpoint(out, anchor, cacheControl);
+          markAnthropicCacheBreakpoint(out, tail, { type: "ephemeral" });
         }
-        break;
+      } else {
+        markAnthropicCacheBreakpoint(out, tail, cacheControl);
       }
     }
   }
@@ -952,6 +963,31 @@ export function toAnthropicMessages(
   }
 
   return { system, messages: out };
+}
+
+/** Put `cache_control` on the last content block of `out[index]` (a user-role message). */
+function markAnthropicCacheBreakpoint(
+  out: Anthropic.MessageParam[],
+  index: number,
+  cacheControl: { type: "ephemeral"; ttl?: "1h" },
+): void {
+  const message = out[index];
+  if (!message) return;
+  const content = message.content;
+  if (typeof content === "string") {
+    out[index] = {
+      role: message.role,
+      content: [
+        { type: "text", text: content, cache_control: cacheControl } as Anthropic.TextBlockParam,
+      ],
+    };
+  } else if (content.length > 0) {
+    const last = content[content.length - 1];
+    content[content.length - 1] = {
+      ...last,
+      cache_control: cacheControl,
+    } as (typeof content)[number];
+  }
 }
 
 export function toAnthropicTools(

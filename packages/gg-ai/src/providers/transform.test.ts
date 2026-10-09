@@ -210,6 +210,60 @@ describe("Anthropic transform", () => {
     expect(result.system?.[1]?.text).toBe("Today's date: 17 May 2026");
   });
 
+  describe("conversation cache breakpoints with a 1-h TTL", () => {
+    const long = { type: "ephemeral" as const, ttl: "1h" as const };
+    const short = { type: "ephemeral" as const };
+    const call = (id: string): Message => ({
+      role: "assistant",
+      content: [{ type: "tool_call", id, name: "bash", args: { command: "ls" } }],
+    });
+    const result = (id: string): Message => ({
+      role: "tool",
+      content: [{ type: "tool_result", toolCallId: id, content: "ok" }],
+    });
+    // cache_control per wire message (last block), in order.
+    const marks = (messages: Message[], cc: typeof long | typeof short) =>
+      toAnthropicMessages(messages, cc).messages.map((m) => {
+        const content = m.content;
+        if (typeof content === "string") return undefined;
+        return (content.at(-1) as { cache_control?: unknown } | undefined)?.cache_control;
+      });
+
+    it("writes the opening user message of a turn at 1 h", () => {
+      expect(marks([{ role: "user", content: "fix it" }], long)).toEqual([long]);
+    });
+
+    it("pins the turn's user message at 1 h and caches the tool loop at 5 min", () => {
+      const messages: Message[] = [
+        { role: "user", content: "fix it" },
+        call("a"),
+        result("a"),
+        call("b"),
+        result("b"),
+      ];
+
+      expect(marks(messages, long)).toEqual([long, undefined, undefined, undefined, short]);
+    });
+
+    it("keeps the previous turn's opening message pinned when a new turn starts", () => {
+      const messages: Message[] = [
+        { role: "user", content: "fix it" },
+        call("a"),
+        result("a"),
+        { role: "assistant", content: "Fixed." },
+        { role: "user", content: "thanks, now test it" },
+      ];
+
+      expect(marks(messages, long)).toEqual([long, undefined, undefined, undefined, long]);
+    });
+
+    it("keeps a single breakpoint on the last message with a 5-min TTL", () => {
+      const messages: Message[] = [{ role: "user", content: "fix it" }, call("a"), result("a")];
+
+      expect(marks(messages, short)).toEqual([undefined, undefined, short]);
+    });
+  });
+
   it("adds cache_control only to the last tool definition", () => {
     const tools = toAnthropicTools(exampleTools, {
       cacheControl: { type: "ephemeral" },
