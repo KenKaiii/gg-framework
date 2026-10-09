@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.84.0",
+    date: "2026-10-09",
+    items: [
+      "Meet `Project Health`, a live score from `0` to `100` sitting right in your workspace header. My little owl inspects your repo for giant files, messy hygiene, missing safety nets and leaked secrets, shows you the worst offenders, and one click on `Review` hands any of it to your agent to sort out.",
+      "Your checklist finally respects your judgment. When you decide a finding is fine as is, choose `Accept these findings as is` and the item counts as reviewed without nagging you about it ever again. Plus checklist saves on Windows no longer trip over themselves.",
+      "Every popover got a glow up. `Background tasks` and `Schedules` now open in a sleek glassy panel with tiny pixel critters that hop, doze or tip over to show you what each job is up to at a glance. The model picker, slash commands and file mentions got matching polish, and your chat gently dissolves into view when it loads.",
+    ],
+  },
+  {
     version: "0.83.1",
     date: "2026-10-08",
     items: [
