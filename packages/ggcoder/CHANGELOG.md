@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.78.0
+
+### Minor Changes
+
+- Add a built-in `/commit` that runs the project's checks and tests, reviews, commits and pushes, and make it the verification point so plain replies no longer show unchecked edits as Unverified. Give Claude models a flat edit tool schema, cache Anthropic tool-loop turns at 5 minutes (1 hour kept on user messages), keep the working directory out of the cached system prompt, count checks with read-only commands around them as verification, and retry Cloudflare 520-524 provider errors.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.78.0
+- @kenkaiiii/gg-agent@5.78.0
+- @kenkaiiii/gg-core@5.78.0
+
 ## 5.77.0
 
 ### Patch Changes
