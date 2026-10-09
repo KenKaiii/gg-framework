@@ -321,6 +321,9 @@ function isReadOnlyUtility(command: string, parts: string[]): boolean {
           part.startsWith("-fprint") ||
           part === "-fls",
       );
+    case "rg":
+      // `--pre` runs a command on every file searched (`--pre-glob` only scopes it).
+      return !hasFlag(rest, "--pre");
     case "sort":
       // `-o` writes a file, also when clustered (`-ro`).
       return !hasFlag(rest, "-o", "--output") && !hasClusteredShortFlag(rest, new Set(["o"]));

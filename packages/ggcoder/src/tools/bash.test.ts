@@ -169,6 +169,17 @@ describe("foreground verification review", () => {
 });
 
 describe("renderBashOutput", () => {
+  it("stays quiet for a check with read-only commands around it under bash", async () => {
+    // These count (via the host's workspace comparison), so a note would only
+    // make the model re-run a suite that already passed.
+    const command = "cat src/a.js; npm test 2>&1 | grep -E 'pass|fail'";
+    expect(await renderBashOutput("ok", command, true)).toBe("ok");
+    // On the cmd.exe fallback the same chain proves nothing, so the note stays.
+    expect(await renderBashOutput("ok", command, false)).toContain(
+      "Verification evidence rejected",
+    );
+  });
+
   it("explains why a semicolon check cannot prove verification", async () => {
     const output = await renderBashOutput("diff succeeded", "npm test; git diff --stat");
     expect(output).toContain("Verification evidence rejected");

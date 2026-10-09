@@ -99,14 +99,21 @@ const GUESSED_WAIT_SECONDS = 10;
  * re-running the command. The offload is best-effort — a full disk or
  * permission error never fails the tool result.
  */
-export async function renderBashOutput(rawOutput: string, command?: string): Promise<string> {
+export async function renderBashOutput(
+  rawOutput: string,
+  command?: string,
+  /** bash with pipefail (not the cmd.exe fallback): see classifyVerificationCommand. */
+  posixShell = false,
+): Promise<string> {
   // Feedback only when the command wraps a real check. Exploration that merely
   // mentions a verifier (`ls .venv/bin | grep ruff`) is not a verification
   // attempt; nagging it made the model reshape harmless commands repeatedly.
   // Showing the note only once per session was measured and rejected: it cut
   // notes by a third but raised tool calls 27% (bench/h2h/DIRAC-FINDINGS.md).
   const check =
-    command && containsBoundedCheck(command) ? classifyVerificationCommand(command) : undefined;
+    command && containsBoundedCheck(command)
+      ? classifyVerificationCommand(command, { posixShell })
+      : undefined;
   const feedback =
     check?.candidate && !check.accepted && check.snapshotPreserveOnly
       ? "\n\n[This mixed check/inspection chain cannot establish fresh verification; it can only preserve earlier successful checks. If the current changes are not already verified, run the check standalone or chain only checks with &&. Do not claim fresh verification from this shell exit status.]"
@@ -322,7 +329,7 @@ export function createBashTool(
             ? (text) => context.onUpdate?.({ type: "bash_progress", output: text, totalBytes: 0 })
             : undefined,
         );
-        const output = await renderBashOutput(res.output, command);
+        const output = await renderBashOutput(res.output, command, !isCmdFallback);
         const exitCode =
           res.exitCode === "TIMEOUT"
             ? `TIMEOUT (${timeoutMs ?? DEFAULT_TIMEOUT}ms)` +
@@ -498,7 +505,7 @@ export function createBashTool(
           if (backgrounded) return;
 
           const rawOutput = Buffer.concat(chunks).toString("utf-8");
-          let output = await renderBashOutput(rawOutput, command);
+          let output = await renderBashOutput(rawOutput, command, !shell.isCmdFallback);
           if (outputCapped) {
             output =
               `[Output capped at ${MAX_OUTPUT_BYTES / 1024 / 1024} MB to prevent memory exhaustion]\n` +

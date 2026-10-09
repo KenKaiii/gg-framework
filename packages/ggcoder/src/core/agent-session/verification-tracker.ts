@@ -10,6 +10,7 @@ import {
 } from "../verification-gate.js";
 import { classifyVerificationCommand } from "../verification-evidence.js";
 import { captureVerificationSnapshot } from "../verification-snapshot.js";
+import { resolveShell } from "../shell.js";
 
 /** A tool call observed between its start and end events. */
 export interface TrackedToolCall {
@@ -42,11 +43,22 @@ export class VerificationTracker {
   private readonly toolCalls = new Map<string, TrackedToolCall>();
   private readonly backgroundVerification = new Map<string, BackgroundCheck>();
 
+  /** The bash tool runs under bash with pipefail (not the Windows cmd.exe
+   *  fallback), so checks with read-only commands around them may count. */
+  private readonly posixShell: boolean;
+
   constructor(
     private readonly gate: VerificationGate,
     private readonly cwd: string,
     private readonly listProcesses: () => BackgroundProcess[],
-  ) {}
+    posixShell = !resolveShell("").isCmdFallback,
+  ) {
+    this.posixShell = posixShell;
+  }
+
+  private classify(command: string) {
+    return classifyVerificationCommand(command, { posixShell: this.posixShell });
+  }
 
   recordFileMutated(relative: string): void {
     this.fileEditCounts.set(relative, (this.fileEditCounts.get(relative) ?? 0) + 1);
@@ -83,7 +95,7 @@ export class VerificationTracker {
     this.toolCalls.set(event.toolCallId, tracked);
     const startClassification =
       event.name === "bash" && typeof event.args?.command === "string"
-        ? classifyVerificationCommand(event.args.command)
+        ? this.classify(event.args.command)
         : null;
     if (
       startClassification &&
@@ -157,7 +169,7 @@ export class VerificationTracker {
     }
     if (args && call && name === "bash") {
       const command = typeof args.command === "string" ? args.command : "";
-      const classification = classifyVerificationCommand(command);
+      const classification = this.classify(command);
       if (args.review === true && event.result === REVIEW_REJECTED_BEFORE_START) {
         // The core tool rejected its arguments BEFORE spawning. Never mint
         // a pass, or poison the failed-check ledger with an unexecuted check.
@@ -261,6 +273,19 @@ export class VerificationTracker {
     const after = check.sourceSnapshot
       ? await captureVerificationSnapshot(this.cwd, [...this.fileEditCounts.keys()])
       : null;
+    const classification = this.classify(check.command);
+    const recordFailure = (revision?: number): void => {
+      if (classification.ambiguousFailure) {
+        this.gate.recordRejectedCheck(
+          check.command,
+          "exit status cannot tell a failed check from a failed read-only command",
+        );
+      } else if (revision === undefined) {
+        this.gate.recordFailedVerification(check.command);
+      } else {
+        this.gate.recordFailedVerification(check.command, revision);
+      }
+    };
     if (after === null || after !== check.sourceSnapshot) {
       this.gate.requireFreshVerification(true);
       this.gate.recordRejectedCheck(
@@ -269,16 +294,15 @@ export class VerificationTracker {
           ? "Workspace inputs could not be compared; run a read-only check after the command"
           : "Command changed workspace inputs; run checks against the changed source",
       );
-      if (!passed) this.gate.recordFailedVerification(check.command);
+      if (!passed) recordFailure();
     } else if (passed) {
-      const classification = classifyVerificationCommand(check.command);
       if (classification.snapshotPreserveOnly) {
         this.gate.recordRejectedCheck(check.command, classification.reason);
       } else {
         this.gate.recordVerification(check.revision, check.command);
       }
     } else {
-      this.gate.recordFailedVerification(check.command, check.revision);
+      recordFailure(check.revision);
     }
   }
 }

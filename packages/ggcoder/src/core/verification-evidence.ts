@@ -1,5 +1,9 @@
 import type { ContentPart, Message, ToolResult } from "@kenkaiiii/gg-ai";
-import { hasUnsafeShellSyntax, splitShellCommandSegments } from "../tools/read-only-bash.js";
+import {
+  hasUnsafeShellSyntax,
+  isReadOnlyCommand,
+  splitShellCommandSegments,
+} from "../tools/read-only-bash.js";
 
 export interface VerificationCommandClassification {
   accepted: boolean;
@@ -16,6 +20,9 @@ export interface VerificationCommandClassification {
   snapshotEligible?: boolean;
   /** Comparison may preserve earlier evidence, but must never certify this command. */
   snapshotPreserveOnly?: boolean;
+  /** A non-zero exit may come from a non-check part (`grep` matching nothing),
+   *  so it is not recorded as a failed check — only as missing evidence. */
+  ambiguousFailure?: boolean;
 }
 
 export interface VerificationEvidence {
@@ -291,8 +298,239 @@ function classifySegment(rawSegment: string): VerificationCommandClassification 
  * exit status (pipefail-protected) and the kept tail are the full evidence. */
 const PIPE_LIMITER = /^(?:tail|head)(?:\s+(?:-[1-9]\d*|-n\s*\d+|--lines(?:=|\s+)\d+))?\s*$/;
 
-/** Fail-closed classifier: bounded checks with narrowly allowed non-check preludes. */
-export function classifyVerificationCommand(command: string): VerificationCommandClassification {
+/** Fail-closed classifier: bounded checks with narrowly allowed non-check preludes.
+ *
+ * `posixShell`: the command runs under bash with pipefail (GG's bash tool on
+ * macOS/Linux, or Windows with Git Bash). Only then can read-only commands
+ * around a check count: cmd.exe has no pipefail, and there `;` is not a
+ * separator, so `cat a; npm test` would run only `cat`. Default off, so a
+ * caller that does not know the shell fails closed. */
+export function classifyVerificationCommand(
+  command: string,
+  { posixShell = false }: { posixShell?: boolean } = {},
+): VerificationCommandClassification {
+  const strict = classifyStrict(command);
+  if (strict.accepted || !posixShell || !checkWithReadOnlyContext(command)) return strict;
+  // Never certified from the transcript: the live host must also see the
+  // workspace unchanged across the run (snapshotEligible), exactly as for an
+  // ordinary build. Non-preserve-only, so a clean pass is fresh evidence.
+  return {
+    ...rejected(true, "check with read-only commands around it"),
+    snapshotEligible: true,
+    ambiguousFailure: true,
+  };
+}
+
+type Separator = "&&" | "||" | ";" | null;
+
+/** Stand-in for a `( … )` group already proven to contain only read-only commands. */
+const READ_ONLY_GROUP = "\u0000read-only-group";
+
+/** Index of the `)` closing the `(` at `open`, skipping quoted text. -1 when
+ * unbalanced or when the inside holds anything this cannot account for. */
+function closingParen(text: string, open: number): number {
+  let quote: "'" | '"' | null = null;
+  for (let i = open + 1; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') quote = ch;
+    else if (ch === "(")
+      return -1; // no nesting
+    else if (ch === ")") return i;
+  }
+  return -1;
+}
+
+/** True when `inner` (a group or `$( … )` body) runs read-only commands only. */
+function readOnlyInner(inner: string): boolean {
+  const pipelines = parsePipelines(inner);
+  return pipelines !== null && pipelines.every(({ stages }) => stages.every(isReadOnlyContext));
+}
+
+/** Quote- and operator-level parse of a command into pipelines and the
+ * separator that follows each. Null for anything this cannot fully account
+ * for: escapes, backticks, variable expansion (except `$?`), redirections
+ * (beyond a check's stderr merge), background `&`, comments, negation, brace
+ * groups. `$( … )` and `( … )` are allowed only around read-only commands. */
+function parsePipelines(command: string): Array<{ stages: string[]; next: Separator }> | null {
+  // A NUL could forge the vetted-group stand-in (and never reaches a shell).
+  if (command.includes("\u0000")) return null;
+  const text = command.replace(/\s2>(?:&1|\/dev\/null)(?=\s*(?:\||&&|;|\n|$))/g, "");
+  const pipelines: Array<{ stages: string[]; next: Separator }> = [];
+  let stages: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | null = null;
+  let afterGroup = false;
+  const endStage = (): boolean => {
+    const stage = current.trim();
+    current = "";
+    afterGroup = false;
+    if (!stage || stage.startsWith("!")) return false;
+    stages.push(stage);
+    return true;
+  };
+  const endPipeline = (next: Separator): boolean => {
+    if (!endStage()) return false;
+    pipelines.push({ stages, next });
+    stages = [];
+    return true;
+  };
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i] as string;
+    const nextCh = text[i + 1] ?? "";
+    if (quote === "'") {
+      if (ch === "'") quote = null;
+      current += ch;
+      continue;
+    }
+    if (afterGroup && !/\s/.test(ch) && !"&|;\n".includes(ch)) return null;
+    if (ch === "`" || ch === "\\") return null;
+    if (ch === "$") {
+      if (nextCh === "?") {
+        // The previous exit status: a number, it cannot run anything.
+        current += "0";
+        i++;
+        continue;
+      }
+      if (nextCh === "(") {
+        const close = closingParen(text, i + 1);
+        if (close === -1 || !readOnlyInner(text.slice(i + 2, close))) return null;
+        current += "Q";
+        i = close;
+        continue;
+      }
+      // Any other expansion (`$VAR`, `${…}`, `$'\x2d'` ANSI-C quoting) can
+      // produce text this cannot see. Only a bare `$` is literal.
+      if (nextCh !== "" && !/\s/.test(nextCh)) return null;
+    }
+    if (quote === '"') {
+      if (ch === '"') quote = null;
+      current += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      current += ch;
+      continue;
+    }
+    if (ch === "(" && current.trim() === "") {
+      const close = closingParen(text, i);
+      if (close === -1 || !readOnlyInner(text.slice(i + 1, close))) return null;
+      current = READ_ONLY_GROUP;
+      afterGroup = true;
+      i = close;
+      continue;
+    }
+    if ("(){}<>".includes(ch)) return null;
+    if (ch === "#" && (current === "" || /\s$/.test(current))) return null;
+    if (ch === "&") {
+      if (nextCh !== "&" || !endPipeline("&&")) return null;
+      i++;
+      continue;
+    }
+    if (ch === "|") {
+      if (nextCh === "|") {
+        if (!endPipeline("||")) return null;
+        i++;
+        continue;
+      }
+      if (nextCh === "&" || !endStage()) return null;
+      continue;
+    }
+    if (ch === ";" || ch === "\n") {
+      if (current.trim() === "" && stages.length === 0) continue; // blank line
+      if (!endPipeline(";")) return null;
+      continue;
+    }
+    current += ch;
+  }
+  if (quote !== null) return null;
+  if (current.trim() === "" && stages.length === 0) {
+    // Trailing separator: the last pipeline has no successor after all.
+    const last = pipelines.at(-1);
+    if (last) last.next = null;
+  } else if (!endPipeline(null)) return null;
+  return pipelines.length > 0 ? pipelines : null;
+}
+
+/** Pure stream filters allowed after a check. None exists in cmd.exe, so on a
+ * shell without pipefail the pipeline cannot exit 0 through them. */
+const PIPE_FILTERS = new Set(["tail", "head", "grep", "egrep", "fgrep", "rg", "wc", "cat"]);
+/** Read-only git around a check: no `-c`/`-C` globals (they can run helpers). */
+const CONTEXT_GIT = /^git\s+(?:status|diff|log|show)(?:\s|$)/;
+
+/** Quoted text masked so read-only screening cannot be confused by `|`, `>`
+ * or `;` inside patterns; a quoted flag (`"-o"`) stays visible to it. */
+function maskQuotes(stage: string): string | null {
+  let hiddenFlag = false;
+  const masked = stage.replace(/'[^']*'|"[^"]*"/g, (quoted) => {
+    if (/^.-/.test(quoted)) hiddenFlag = true;
+    return "Q";
+  });
+  return hiddenFlag ? null : masked;
+}
+
+function isReadOnlyContext(stage: string): boolean {
+  if (stage === READ_ONLY_GROUP) return true;
+  const masked = maskQuotes(stage);
+  if (masked === null || !isReadOnlyCommand(masked)) return false;
+  const word = masked.split(/\s+/)[0];
+  return word !== "git" || CONTEXT_GIT.test(masked);
+}
+
+function isPipeFilter(stage: string): boolean {
+  const masked = maskQuotes(stage);
+  if (masked === null) return false;
+  const words = masked.split(/\s+/);
+  if (!PIPE_FILTERS.has(words[0] ?? "")) return false;
+  // A follow mode never ends; it could only time the check out.
+  if (words.some((w) => /^(?:-f|-F|--follow(?:=.*)?|--retry)$/.test(w))) return false;
+  return isReadOnlyCommand(masked);
+}
+
+/**
+ * A real check with read-only commands around it, as models write them:
+ * `cat a.js; npm test 2>&1 | grep -E "pass|fail"`, `npm test && git diff --stat`,
+ * `(rg -n old || echo none) && npm test 2>&1 | tail -15`.
+ *
+ * Exit 0 still proves every check passed, because:
+ * - every check pipeline is a recognised bounded check piped only through pure
+ *   filters, and the agent shell runs with pipefail;
+ * - a check is never reached through `||` (`cat a || npm test` exits 0 without
+ *   testing), and from the first check on everything is joined by `&&`, so no
+ *   later command's status can replace a failed check's;
+ * - everything else is read-only; before the first check, `;` and `||` are
+ *   fine because those statuses never become the command's;
+ * - a leading `cd dir &&` may pick the directory, as for a bare check. If it
+ *   fails, a later `;` runs the check in the project root, which is still the
+ *   workspace the host compares.
+ * The host additionally compares workspace inputs before and after the run
+ * (snapshotEligible), so nothing in the chain can rewrite what was checked.
+ */
+function checkWithReadOnlyContext(command: string): boolean {
+  const pipelines = parsePipelines(command);
+  if (pipelines === null) return false;
+  let seenCheck = false;
+  let previous: Separator = null;
+  for (const [index, { stages, next }] of pipelines.entries()) {
+    const [head, ...rest] = stages as [string, ...string[]];
+    const isCheck = classifySegment(head).accepted && rest.every(isPipeFilter);
+    if (isCheck) {
+      if (previous === "||") return false;
+      seenCheck = true;
+    } else if (index === 0 && rest.length === 0 && next === "&&" && /^cd\s+\S+$/.test(head)) {
+      // working-directory prelude
+    } else if (!stages.every(isReadOnlyContext)) return false;
+    if (seenCheck && (next === ";" || next === "||")) return false;
+    previous = next;
+  }
+  return seenCheck;
+}
+
+function classifyStrict(command: string): VerificationCommandClassification {
   const candidate =
     VERIFIER_WORDS.test(command) || /(?:^|\s)(?:pnpm|npm|yarn|bun)(?:\s|$)/i.test(command);
   // Only && preserves fail-closed evidence across a chain. OR, semicolons, and

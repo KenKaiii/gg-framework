@@ -499,6 +499,37 @@ describe("verification gate flow", () => {
     expect(internal.getVerificationProblem()).toContain("Unverified");
   });
 
+  // Haiku 5.5 runs (2026-10-09) ended "Unverified" on passing suites written as
+  // `cat …; npm test | grep …` or `npm test && git diff --stat`. Real processes,
+  // real exit codes: they count when they pass, and a grep that merely matches
+  // nothing is never recorded as a failed check.
+  it.each([
+    "cat subject.mjs; npm run check 2>&1 | grep -E 'pass|fail'",
+    "npm run check && git status --short",
+    "ls && npm run check 2>&1 | tail -3",
+  ])("verifies a real passing check with read-only commands around it: %s", async (command) => {
+    await prepareBuildProject(artifactBuild);
+    execFileSync("git", ["add", "."], { cwd: tmpProject });
+    const { internal } = await makeSession();
+    await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+
+    // processManager runs commands through resolveShell, i.e. bash -o pipefail.
+    await runRealCheck(internal, command);
+
+    expect(internal.getVerificationProblem()).toBeNull();
+  });
+
+  it("never counts a real failing check piped through grep as verified", async () => {
+    await prepareBuildProject(artifactBuild);
+    await fs.writeFile(path.join(tmpProject, "subject.mjs"), "export const value = 2;\n");
+    const { internal } = await makeSession();
+    await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+
+    await runRealCheck(internal, "npm run check 2>&1 | grep -c fail");
+
+    expect(internal.getVerificationProblem()).toContain("Unverified");
+  });
+
   it("does not treat a nonzero bash exit as passing merely because the tool returned normally", async () => {
     const { internal } = await makeSession();
     await simulateToolCall(internal, "edit", { file_path: "src/foo.ts" });
