@@ -1,9 +1,28 @@
 // Core entry point
 export { stream, localWireModelId } from "./stream.js";
 
+// Embeddings + reranking (resolved through the same provider registry)
+export { embed, rerank } from "./embed.js";
+export type {
+  EmbedInputType,
+  EmbedOptions,
+  EmbedResult,
+  EmbedUsage,
+  RerankOptions,
+  RerankResponse,
+  RerankResult,
+  RerankUsage,
+  ProviderEmbedFn,
+  ProviderEmbedRequest,
+  ProviderEmbedResponse,
+  ProviderRerankFn,
+  ProviderRerankRequest,
+  ProviderRerankResponse,
+} from "./embed-types.js";
+
 // Provider registry
 export { providerRegistry } from "./provider-registry.js";
-export type { ProviderStreamFn, ProviderEntry } from "./provider-registry.js";
+export type { ProviderStreamFn, ProviderEntry, ProviderCapability } from "./provider-registry.js";
 
 // Types
 export type {
@@ -47,6 +66,8 @@ export type {
   Usage,
   StreamOptions,
   PreparedContext,
+  ProviderOptions,
+  OpenRouterProviderPreferences,
 } from "./types.js";
 
 // Classes
@@ -108,6 +129,8 @@ export {
   palsuThinking,
   palsuToolCall,
   palsuAssistantMessage,
+  palsuEmbedding,
+  palsuRerankScore,
 } from "./providers/palsu.js";
 export type {
   PalsuProviderHandle,

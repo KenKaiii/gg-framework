@@ -364,6 +364,11 @@ export interface AgentOptions {
   /** Extra HTTP headers attached to every model request (e.g. Kimi For Coding
    *  client-identity headers). Merged into the underlying SDK default headers. */
   defaultHeaders?: StreamOptions["defaultHeaders"];
+  /** Provider-specific request-body fields forwarded to every model request
+   *  (e.g. OpenRouter `provider: { zdr: true }`). See gg-ai `ProviderOptions`. */
+  providerOptions?: StreamOptions["providerOptions"];
+  /** Custom fetch implementation forwarded to the provider transport. */
+  fetch?: StreamOptions["fetch"];
   /** OpenAI service tier for latency-sensitive first-party API requests. */
   serviceTier?: StreamOptions["serviceTier"];
   /** Codex Responses-Lite request shape override (see StreamOptions). */

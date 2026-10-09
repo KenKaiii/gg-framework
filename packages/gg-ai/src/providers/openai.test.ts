@@ -139,6 +139,34 @@ describe("streamOpenAI request shaping", () => {
     }
   });
 
+  it("merges providerOptions into the chat body without overriding gg-ai fields", async () => {
+    createMock.mockResolvedValueOnce(createStreamingResult(""));
+    const result = streamOpenAI({
+      provider: "openrouter",
+      model: "vendor/model",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "token",
+      providerOptions: {
+        provider: { zdr: true, data_collection: "deny" },
+        model: "attacker/model",
+        messages: [],
+        stream: false,
+        max_completion_tokens: 1,
+      },
+      maxTokens: 500,
+    });
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const params = createMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params.provider).toEqual({ zdr: true, data_collection: "deny" });
+    expect(params.model).toBe("vendor/model");
+    expect(params.messages).toEqual([{ role: "user", content: "hi" }]);
+    expect(params.stream).toBe(true);
+    expect(params.max_completion_tokens).toBe(500);
+  });
+
   it("uses max reasoning_effort for Kimi K3 and omits K2.x/fixed sampling params", async () => {
     createMock.mockResolvedValueOnce(createStreamingResult(""));
     const result = streamOpenAI({

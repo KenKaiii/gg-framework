@@ -21,6 +21,7 @@ import {
 } from "../errors.js";
 import { StreamResult } from "../utils/event-stream.js";
 import { providerDiag } from "../utils/diag.js";
+import { mergeProviderOptions } from "../utils/provider-options.js";
 import { resolveToolSchema } from "../utils/zod-to-json-schema.js";
 import { makeStrictToolSchema, UnsupportedStrictSchemaError } from "../utils/strict-tool-schema.js";
 import { normalizePromptCacheKey } from "./prompt-cache-key.js";
@@ -234,7 +235,9 @@ async function* runStream(
     headers["x-client-request-id"] = transportSessionId;
   }
 
-  const encodedRequest = await encodeCodexRequest(body);
+  const encodedRequest = await encodeCodexRequest(
+    mergeProviderOptions(body, options.providerOptions),
+  );
   if (encodedRequest.compressed) headers["Content-Encoding"] = "zstd";
   providerDiag("codex_request_body", {
     rawBytes: encodedRequest.rawBytes,

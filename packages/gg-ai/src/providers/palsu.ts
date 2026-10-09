@@ -10,11 +10,23 @@ import type {
 } from "../types.js";
 import { StreamResult } from "../utils/event-stream.js";
 import { providerRegistry } from "../provider-registry.js";
+import type {
+  ProviderEmbedRequest,
+  ProviderEmbedResponse,
+  ProviderRerankRequest,
+  ProviderRerankResponse,
+} from "../embed-types.js";
+import { throwIfAborted } from "../utils/json-post.js";
 
 // ── Response Types ────────────────────────────────────────
 
 export interface PalsuProviderState {
+  /** `stream()` calls served. */
   callCount: number;
+  /** Embedding requests served (one per batch). */
+  embedCallCount: number;
+  /** Rerank requests served. */
+  rerankCallCount: number;
 }
 
 export type PalsuResponseFactory = (
@@ -197,6 +209,10 @@ export interface PalsuProviderConfig {
   promptCache?: boolean;
   /** Model-specific configurations with per-model response queues. */
   models?: Record<string, PalsuModelConfig>;
+  /** Vector size of the fake embeddings when the caller doesn't pass `dimensions`. Default 64. */
+  embedDimensions?: number;
+  /** Inputs per fake embedding request, to exercise batching. Default: all in one request. */
+  embedBatchSize?: number;
 }
 
 // ── Main Registration Function ────────────────────────────
@@ -218,7 +234,8 @@ export interface PalsuProviderConfig {
 export function registerPalsuProvider(config?: PalsuProviderConfig): PalsuProviderHandle {
   const name = config?.name ?? "palsu";
   const responses: PalsuResponse[] = [];
-  const state: PalsuProviderState = { callCount: 0 };
+  const state: PalsuProviderState = { callCount: 0, embedCallCount: 0, rerankCallCount: 0 };
+  const embedDimensions = config?.embedDimensions ?? PALSU_DEFAULT_EMBED_DIMENSIONS;
   const defaultResponse = config?.defaultResponse ?? palsuText("");
   const enableCache = config?.promptCache ?? false;
   let lastMessagesSerialized: string | null = null;
@@ -308,7 +325,87 @@ export function registerPalsuProvider(config?: PalsuProviderConfig): PalsuProvid
 
       return new StreamResult(gen, options.signal);
     },
+    async embed(request: ProviderEmbedRequest): Promise<ProviderEmbedResponse> {
+      throwIfAborted(request.signal);
+      state.embedCallCount++;
+      const dimensions = request.dimensions ?? embedDimensions;
+      return {
+        embeddings: request.input.map((text) => palsuEmbedding(text, dimensions)),
+        model: request.model,
+        usage: { inputTokens: request.input.reduce((n, text) => n + tokenize(text).length, 0) },
+      };
+    },
+    ...(config?.embedBatchSize !== undefined ? { embedBatchSize: config.embedBatchSize } : {}),
+    async rerank(request: ProviderRerankRequest): Promise<ProviderRerankResponse> {
+      throwIfAborted(request.signal);
+      state.rerankCallCount++;
+      return {
+        results: request.documents.map((document, index) => ({
+          index,
+          score: palsuRerankScore(request.query, document),
+        })),
+        model: request.model,
+      };
+    },
   });
 
   return handle;
+}
+
+// ── Embedding / rerank fakes ──────────────────────────────
+
+const PALSU_DEFAULT_EMBED_DIMENSIONS = 64;
+
+function tokenize(text: string): string[] {
+  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+
+/** 32-bit FNV-1a — stable across runs and platforms. */
+function fnv1a(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * Deterministic fake embedding: a signed, hashed bag of words, L2-normalized.
+ * Texts sharing words get a higher cosine similarity, so retrieval code behaves
+ * plausibly in tests. Text with no words maps to a fixed unit vector.
+ */
+export function palsuEmbedding(
+  text: string,
+  dimensions = PALSU_DEFAULT_EMBED_DIMENSIONS,
+): number[] {
+  const vector = new Array<number>(dimensions).fill(0);
+  const tokens = tokenize(text);
+  if (tokens.length === 0) {
+    vector[0] = 1;
+    return vector;
+  }
+  for (const token of tokens) {
+    const hash = fnv1a(token);
+    const slot = hash % dimensions;
+    vector[slot] = (vector[slot] ?? 0) + (hash >>> 31 === 0 ? 1 : -1);
+  }
+  const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+  if (norm === 0) {
+    // Every token cancelled out; fall back to the empty-text vector.
+    vector.fill(0);
+    vector[0] = 1;
+    return vector;
+  }
+  return vector.map((value) => value / norm);
+}
+
+/** Deterministic fake relevance: the share of distinct query words found in the document (0–1). */
+export function palsuRerankScore(query: string, document: string): number {
+  const queryTokens = new Set(tokenize(query));
+  if (queryTokens.size === 0) return 0;
+  const documentTokens = new Set(tokenize(document));
+  let hits = 0;
+  for (const token of queryTokens) if (documentTokens.has(token)) hits++;
+  return hits / queryTokens.size;
 }

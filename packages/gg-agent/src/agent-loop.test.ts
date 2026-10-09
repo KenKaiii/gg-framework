@@ -466,6 +466,23 @@ describe("agentLoop", () => {
     );
   });
 
+  it("forwards providerOptions and fetch to stream()", async () => {
+    mockStream.mockReturnValueOnce(mockOkResult("Done") as unknown as ReturnType<typeof stream>);
+    const customFetch = vi.fn() as unknown as typeof globalThis.fetch;
+    const providerOptions = { provider: { zdr: true, data_collection: "deny" } };
+
+    await collectLoop([{ role: "user", content: "test" }], {
+      provider: "openrouter",
+      model: "some/model",
+      providerOptions,
+      fetch: customFetch,
+    });
+
+    expect(mockStream).toHaveBeenCalledWith(
+      expect.objectContaining({ providerOptions, fetch: customFetch }),
+    );
+  });
+
   it("forwards prepared-context observation without retaining provider payloads", async () => {
     mockStream.mockReturnValueOnce(mockOkResult("Done") as unknown as ReturnType<typeof stream>);
     const onContextPrepared = vi.fn();

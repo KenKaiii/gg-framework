@@ -381,4 +381,62 @@ export interface StreamOptions {
    *  `User-Agent: kimi-code-cli/...` and `X-Msh-*` device headers). Merged
    *  into the underlying SDK's default headers. */
   defaultHeaders?: Record<string, string>;
+  /** Provider-specific request-body fields, merged into the JSON body of every
+   *  model request (e.g. OpenRouter's routing object:
+   *  `{ provider: { zdr: true, data_collection: "deny" } }`). Fields gg-ai
+   *  sets itself — `model`, `messages`, `tools`, `stream`, sampling and
+   *  reasoning parameters, and so on — always win; see `ProviderOptions`. */
+  providerOptions?: ProviderOptions;
+}
+
+// ── Provider-specific request options ──────────────────────
+
+/**
+ * Provider-specific JSON body fields passed through to the provider unchanged
+ * by `stream()`, `embed()` and `rerank()`.
+ *
+ * Merge rules: a field is added only when gg-ai hasn't set it on the request.
+ * Core fields (`model`, `messages`, `input`, `query`, `documents`, `stream`,
+ * `tools`, `system`, `contents`, `requests`, `dimensions`, `encoding_format`,
+ * `top_n`) are never taken from here, even when gg-ai left them unset — use the
+ * dedicated option instead. Keys are applied in sorted order, so the merged body
+ * is deterministic.
+ *
+ * ```ts
+ * providerOptions: {
+ *   provider: { zdr: true, data_collection: "deny" } satisfies OpenRouterProviderPreferences,
+ * }
+ * ```
+ */
+export type ProviderOptions = Readonly<Record<string, unknown>>;
+
+/**
+ * OpenRouter's provider-routing preferences (the `provider` body field on
+ * `/chat/completions`, `/embeddings` and `/rerank`). Pass it through
+ * `providerOptions: { provider: … }`. Only the commonly used fields are typed;
+ * anything else OpenRouter documents is passed through as-is.
+ * See https://openrouter.ai/docs/features/provider-routing.
+ */
+export interface OpenRouterProviderPreferences {
+  /** Allow backup providers when the preferred ones are unavailable (default true). */
+  allow_fallbacks?: boolean;
+  /** Only route to providers that don't retain prompts. */
+  zdr?: boolean;
+  /** `"deny"` restricts routing to providers that don't collect user data. */
+  data_collection?: "allow" | "deny";
+  /** Only route to providers that support every parameter in the request. */
+  require_parameters?: boolean;
+  /** Provider slugs to try, in order. */
+  order?: string[];
+  /** Provider slugs to allow. */
+  only?: string[];
+  /** Provider slugs to skip. */
+  ignore?: string[];
+  /** Quantization levels to allow (e.g. `"fp8"`). */
+  quantizations?: string[];
+  /** Sort strategy (`"price"`, `"throughput"`, `"latency"`) or a sort config object. */
+  sort?: string | Readonly<Record<string, unknown>>;
+  /** Maximum price per million tokens, by usage kind. */
+  max_price?: Readonly<Record<string, number | string>>;
+  [key: string]: unknown;
 }

@@ -198,6 +198,35 @@ describe("streamAnthropic request shaping", () => {
       },
     ]);
   });
+
+  it("merges providerOptions into the request without overriding core fields", async () => {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const AnthropicMock = Anthropic as unknown as {
+      nextError: Error | null;
+      nextEvents: unknown[] | null;
+    };
+    AnthropicMock.nextError = null;
+    AnthropicMock.nextEvents = [
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } },
+      { type: "message_stop" },
+    ];
+
+    const result = streamAnthropic({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "sk-ant-test",
+      providerOptions: { metadata: { user_id: "u-1" }, model: "other", stream: false },
+    });
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const params = createMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(params.metadata).toEqual({ user_id: "u-1" });
+    expect(params.model).toBe("claude-sonnet-4-5");
+    expect(params.stream).toBe(true);
+  });
 });
 
 describe("streamAnthropic non-streaming fallback", () => {

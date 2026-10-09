@@ -17,6 +17,7 @@ import {
   providerHtmlErrorMessage,
 } from "../errors.js";
 import { StreamResult } from "../utils/event-stream.js";
+import { mergeProviderOptions } from "../utils/provider-options.js";
 import {
   downgradeUnsupportedImages,
   downgradeUnsupportedVideos,
@@ -333,15 +334,19 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     }
   }
 
+  // Caller-supplied provider-specific body fields (e.g. OpenRouter's `provider`
+  // routing object). Merged last so they can only fill fields gg-ai left unset.
+  const requestParams = mergeProviderOptions(params, options.providerOptions);
+
   // Dump request body for stall diagnosis when GGAI_DUMP_REQUEST is set
   if (getEnvironment()?.GGAI_DUMP_REQUEST) {
     const fs = await import("fs");
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     const dumpPath = `/tmp/ggai-request-${ts}.json`;
-    fs.writeFileSync(dumpPath, JSON.stringify(params, null, 2));
+    fs.writeFileSync(dumpPath, JSON.stringify(requestParams, null, 2));
     fs.appendFileSync(
       "/tmp/ggai-requests.log",
-      `[${ts}] ${dumpPath} messages=${params.messages.length}\n`,
+      `[${ts}] ${dumpPath} messages=${requestParams.messages.length}\n`,
     );
   }
 
@@ -351,7 +356,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   // request/response often recovers from broken SSE connections.
   if (!useStreaming) {
     try {
-      const completion = (await client.chat.completions.create(params, {
+      const completion = (await client.chat.completions.create(requestParams, {
         signal: options.signal ?? undefined,
       })) as OpenAI.ChatCompletion;
       yield* synthesizeEventsFromCompletion(completion, !!options.thinking, endpointKey);
@@ -363,7 +368,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
 
   let stream: AsyncIterable<OpenAI.ChatCompletionChunk>;
   try {
-    stream = (await client.chat.completions.create(params, {
+    stream = (await client.chat.completions.create(requestParams, {
       signal: options.signal ?? undefined,
     })) as AsyncIterable<OpenAI.ChatCompletionChunk>;
   } catch (err) {

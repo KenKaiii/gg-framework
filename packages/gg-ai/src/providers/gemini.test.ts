@@ -132,6 +132,41 @@ describe("streamGemini", () => {
     },
   );
 
+  it("merges providerOptions into the generate request without overriding core fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          response: {
+            candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    globalThis.fetch = fetchMock;
+
+    const result = streamGemini({
+      provider: "gemini",
+      model: "gemini-3-flash-preview",
+      projectId: "test-project",
+      apiKey: "access-token",
+      streaming: false,
+      messages: [{ role: "user", content: "hi" }],
+      providerOptions: {
+        safetySettings: [{ category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" }],
+        contents: [],
+      },
+    });
+    await result.response;
+
+    const [, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    const body = JSON.parse(init.body as string) as { request: Record<string, unknown> };
+    expect(body.request.safetySettings).toEqual([
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+    ]);
+    expect(body.request.contents).toEqual([{ role: "user", parts: [{ text: "hi" }] }]);
+  });
+
   it("rewrites exclusive bounds Gemini rejects into inclusive ones", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
