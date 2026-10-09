@@ -107,7 +107,7 @@ describe("buildSystemPrompt", () => {
     expect(withFile).toContain("Use tabs.");
   });
 
-  it("renders deterministic section order and keeps only the volatile date after the marker", async () => {
+  it("renders deterministic section order and keeps Environment and the date after the marker", async () => {
     const cwd = await makeProject({
       "CLAUDE.md": "Project rules win.",
       "package.json": JSON.stringify({ scripts: { check: "tsc --noEmit" } }),
@@ -169,8 +169,13 @@ describe("buildSystemPrompt", () => {
 
     const marker = "<!-- uncached -->";
     expect(prompt.match(new RegExp(marker, "g"))).toHaveLength(1);
+    // The per-checkout Environment (working directory) sits behind the marker, so
+    // the cached block is identical wherever the project is checked out.
+    const beforeMarker = prompt.slice(0, prompt.indexOf(marker));
+    expect(beforeMarker).not.toContain(cwd);
     const afterMarker = prompt.slice(prompt.indexOf(marker) + marker.length).trim();
-    expect(afterMarker).toMatch(/^Today's date: \d{1,2} [A-Za-z]+ \d{4}$/);
+    expect(afterMarker).toMatch(/^## Environment\n\n- Working directory: /);
+    expect(afterMarker).toMatch(/\n\nToday's date: \d{1,2} [A-Za-z]+ \d{4}$/);
   });
 
   it("lists only known deferred capabilities, leaving active details to schemas", async () => {
@@ -926,10 +931,11 @@ describe("buildSubAgentSystemPrompt", () => {
     );
     expect(sectionIndex(prompt, "## Report")).toBeLessThan(sectionIndex(prompt, "## Environment"));
     expect(prompt).toContain("Project rules win.");
-    // The volatile date stays behind the cache marker, exactly as the parent's.
-    expect(prompt.indexOf("<!-- uncached -->")).toBeGreaterThan(
+    // Environment and the date stay behind the cache marker, exactly as the parent's.
+    expect(prompt.indexOf("<!-- uncached -->")).toBeLessThan(
       sectionIndex(prompt, "## Environment"),
     );
+    expect(sectionIndex(prompt, "## Environment")).toBeLessThan(prompt.indexOf("Today's date:"));
   });
 
   it("never advertises a tool the child's allow-list strips", async () => {

@@ -225,7 +225,7 @@ describe("cached prompt prefix golden", () => {
     expect(actual).toBe(expected);
   });
 
-  it("keeps the volatile date outside the cached span", async () => {
+  it("keeps the volatile date and the working directory outside the cached span", async () => {
     const { text, cwd } = await buildPrefix();
     const normalized = normalize(text, cwd);
     const marker = normalized.indexOf("<!-- uncached -->");
@@ -233,6 +233,9 @@ describe("cached prompt prefix golden", () => {
     // Nothing above the marker may carry today's date, or every turn after
     // midnight would miss the cache for the whole prefix.
     expect(normalized.slice(0, marker)).not.toContain("Today's date:");
+    // Nor the working directory, or every checkout/worktree of the same project
+    // would write its own copy of the cached system block.
+    expect(normalized.slice(0, marker)).not.toContain("<CWD>");
   });
 
   it("covers every core tool, so a description edit cannot slip past the golden", async () => {
