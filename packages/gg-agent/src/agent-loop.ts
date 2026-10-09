@@ -369,6 +369,9 @@ export function classifyOverload(
     statusCode === 503 ||
     statusCode === 504 ||
     statusCode === 507 ||
+    // Cloudflare edge errors (origin unreachable, timed out). api.anthropic.com
+    // returned a 520 HTML page mid-run in the 2026-10-09 arena; it is transient.
+    (statusCode !== undefined && statusCode >= 520 && statusCode <= 524) ||
     msg.includes("api_error") ||
     msg.includes("server_error") ||
     msg.includes("internal server error") ||
@@ -1938,6 +1941,7 @@ export async function* agentLoop(
         resolveTool: options.resolveTool,
         toolMap,
         invalidToolArgumentCounts,
+        countedInvalidArguments: new Set<string>(),
         markFatalToolArgumentError,
         seenToolCalls: new Set<string>(),
       };
@@ -2137,6 +2141,13 @@ interface ToolBatchExecutionOptions {
   toolMap: Map<string, AgentTool>;
   invalidToolArgumentCounts: Map<string, number>;
   /**
+   * Invalid-argument failures already counted in this batch. One assistant
+   * response is one attempt: parallel calls failing the same way (Haiku 5.5
+   * once sent 10 broken `edit` calls at once) add a single strike, so the
+   * model always sees the error before the 3-attempt limit can end the run.
+   */
+  countedInvalidArguments: Set<string>;
+  /**
    * `recoverable` flags the case where the failing call's raw args were a
    * completely empty object -- the signature of a provider stream that cut
    * off before emitting any `input_json_delta` for the tool call, rather
@@ -2288,8 +2299,11 @@ async function executeSingleToolCall(
         // received Z" lines so the next call comes back with valid args.
         const prettyError = prettifyError(err);
         const failureKey = `${toolCall.name}:${prettyError}`;
-        const failureCount = (options.invalidToolArgumentCounts.get(failureKey) ?? 0) + 1;
+        const alreadyCounted = options.countedInvalidArguments.has(failureKey);
+        const failureCount =
+          (options.invalidToolArgumentCounts.get(failureKey) ?? 0) + (alreadyCounted ? 0 : 1);
         options.invalidToolArgumentCounts.set(failureKey, failureCount);
+        options.countedInvalidArguments.add(failureKey);
         invalidArgAttempt = failureCount;
         const hints = argumentHints(tool, toolCall.args);
         resultContent =

@@ -251,6 +251,10 @@ describe("classifyOverload", () => {
       new ProviderError("anthropic", "Bad Gateway", { statusCode: 502 }),
       new ProviderError("anthropic", "Service Unavailable", { statusCode: 503 }),
       new ProviderError("anthropic", "Gateway Timeout", { statusCode: 504 }),
+      // Cloudflare edge errors in front of the provider (an HTML body, no api_error).
+      ...[520, 521, 522, 523, 524].map(
+        (statusCode) => new ProviderError("anthropic", "<!DOCTYPE html><html>", { statusCode }),
+      ),
       new ProviderError("openai", "exceeded request buffer limit while retrying upstream", {
         statusCode: 507,
       }),
@@ -2068,6 +2072,70 @@ describe("agentLoop", () => {
     );
     // Non-recoverable fatal — no auto-continue retry event.
     expect(events.filter((e) => e.type === "retry")).toHaveLength(0);
+    expect(result.totalTurns).toBe(3);
+  });
+
+  it("counts one strike per response when parallel calls fail with the same invalid arguments", async () => {
+    // Haiku 5.5 sent ten broken `edit` calls in one response; counting each
+    // call ended the run before the model ever saw the error.
+    const brokenBatch = {
+      message: {
+        role: "assistant" as const,
+        // Distinct args (identical calls are deduplicated earlier), same error.
+        content: ["a", "b", "c", "d"].map((id, i) => ({
+          type: "tool_call" as const,
+          id,
+          name: "bash",
+          args: { command: 100 + i },
+        })),
+      },
+      stopReason: "tool_use",
+      usage: { inputTokens: 50, outputTokens: 25 },
+    };
+    const fixed = {
+      message: {
+        role: "assistant" as const,
+        content: [{ type: "tool_call" as const, id: "e", name: "bash", args: { command: "ls" } }],
+      },
+      stopReason: "tool_use",
+      usage: { inputTokens: 50, outputTokens: 25 },
+    };
+    const done = {
+      message: { role: "assistant" as const, content: [{ type: "text" as const, text: "done" }] },
+      stopReason: "end_turn",
+      usage: { inputTokens: 50, outputTokens: 5 },
+    };
+    for (const response of [brokenBatch, fixed, done]) {
+      mockStream.mockReturnValueOnce({
+        [Symbol.asyncIterator]: async function* () {
+          yield* [];
+        },
+        response: Promise.resolve(response),
+      } as unknown as ReturnType<typeof stream>);
+    }
+
+    const { events, result } = await collectLoop(
+      [
+        { role: "system", content: "sys" },
+        { role: "user", content: "test" },
+      ],
+      {
+        provider: "anthropic",
+        model: "test",
+        tools: [
+          {
+            name: "bash",
+            description: "test",
+            parameters: z.object({ command: z.string() }),
+            execute: () => "ok",
+          },
+        ],
+      },
+    );
+
+    expect(events.filter((e) => e.type === "tool_call_end" && e.isError)).toHaveLength(4);
+    expect(events.filter((e) => e.type === "error")).toHaveLength(0);
+    expect(mockStream).toHaveBeenCalledTimes(3);
     expect(result.totalTurns).toBe(3);
   });
 
