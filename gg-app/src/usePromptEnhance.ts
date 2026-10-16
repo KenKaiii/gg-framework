@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from "react";
 import { enhancePrompt, type PromptSegment } from "./agent";
+import type { DraftEnhancement } from "./PromptEnhancement";
 import { toast } from "./toast";
 
-type Enhancement = { plain: string; segments: PromptSegment[] } | null;
+type Enhancement = DraftEnhancement | null;
 type EnhanceAnim = { oldText: string; newText: string | null } | null;
 
 /**
@@ -47,7 +48,7 @@ export function usePromptEnhance({
   // sent bubble), and park the caret at the end.
   function applyEnhanceResult(r: { enhanced: string; segments: PromptSegment[] }): void {
     setInput(r.enhanced);
-    setEnhancement({ plain: r.enhanced, segments: r.segments });
+    setEnhancement({ enhanced: r.enhanced, plain: r.enhanced, segments: r.segments });
     requestAnimationFrame(() => {
       const el = inputRef.current;
       if (el) {
@@ -108,7 +109,7 @@ export function usePromptEnhance({
     pendingEnhanceRef.current = null;
     if (r) {
       setInput(r.enhanced);
-      setEnhancement({ plain: r.enhanced, segments: r.segments });
+      setEnhancement({ enhanced: r.enhanced, plain: r.enhanced, segments: r.segments });
     }
     requestAnimationFrame(() => {
       setEnhanceAnim(null);
@@ -135,7 +136,7 @@ export function usePromptEnhance({
     // and would happily mangle the `| 15m` argument tail into something the
     // parser rejects.
     if (scheduleDraft) return setEnhanceHintVisible(false);
-    if (enhancement && enhancement.plain === input) return setEnhanceHintVisible(false);
+    if (enhancement && enhancement.enhanced === input) return setEnhanceHintVisible(false);
     setEnhanceHintVisible(true);
   }, [
     input,

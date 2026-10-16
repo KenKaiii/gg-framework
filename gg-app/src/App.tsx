@@ -135,6 +135,7 @@ import { KenPowerBanner } from "./KenPowerBanner";
 import { PlanReviewModal } from "./PlanReviewModal";
 import { McpElicitModal } from "./McpElicitModal";
 import { ProjectPicker } from "./ProjectPicker";
+import { type DraftEnhancement, followDraftEdit, rebaseSegments } from "./PromptEnhancement";
 import { ChatPicker } from "./ChatPicker";
 // The goal list and its New goal modal load on demand: they are only needed
 // once someone opens Goals.
@@ -296,13 +297,11 @@ function App(): React.ReactElement {
     removeAttachment,
   } = useAttachments();
   // The most recent prompt-enhancement result. `plain` is the text now in the
-  // textarea; `segments` drive the inline highlight overlay + the sent bubble.
-  // It's dropped the moment the textarea diverges from `plain` so highlights
-  // never misalign. `enhancing` shows the pulse on the Enhance pill mid-call.
-  const [enhancement, setEnhancement] = useState<{
-    plain: string;
-    segments: PromptSegment[];
-  } | null>(null);
+  // textarea; `segments` drive the highlighted terms in the sent bubble. Edits
+  // re-anchor the segments onto the new text (followDraftEdit), keeping every
+  // corrected term the edit didn't touch. `enhancing` shows the pulse on the
+  // Enhance pill mid-call.
+  const [enhancement, setEnhancement] = useState<DraftEnhancement | null>(null);
   const [enhancing, setEnhancing] = useState(false);
   // Composer sends so far: a change tells the composer strips (attachments,
   // @-files, cold-cache notice) to drop what the send cleared in that commit.
@@ -568,11 +567,16 @@ function App(): React.ReactElement {
   const insertDroppedFolderPaths = useCallback((paths: string[]): void => {
     if (paths.length === 0) return;
     const text = paths.join(" ");
-    setInput((prev) => {
+    const append = (prev: string): string => {
       if (!prev.trim()) return text;
       return `${prev}${/\s$/.test(prev) ? "" : " "}${text}`;
-    });
-    setEnhancement(null);
+    };
+    setInput(append);
+    // A live enhancement's `plain` is the current draft, so the same append
+    // re-anchors its highlights; a stale one is discarded on the next edit/send.
+    setEnhancement((current) =>
+      current ? followDraftEdit(current, current.plain, append(current.plain)) : null,
+    );
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
@@ -1578,6 +1582,7 @@ function App(): React.ReactElement {
     const tail = input.slice(caret);
     const next = head + tail;
     setInput(next);
+    setEnhancement((current) => followDraftEdit(current, input, next));
     setMentionedPaths((prev) => (prev.includes(file.path) ? prev : [...prev, file.path]));
     setMention(null);
     setFileMatches([]);
@@ -2246,10 +2251,12 @@ function App(): React.ReactElement {
       mentionedPaths,
       scope: "error" as const,
     };
-    // Carry the enhancer's highlighted segments into the sent bubble ONLY when
-    // the message is the unedited enhanced text (the bubble shows `trimmed`).
+    // Carry the enhancer's highlighted segments (re-anchored through any edits)
+    // into the sent bubble, aligned to the trimmed text the bubble shows.
     const sentEnhancements =
-      enhancement && enhancement.plain === trimmed ? enhancement.segments : undefined;
+      enhancement && enhancement.plain === input
+        ? (rebaseSegments(enhancement.segments, input, trimmed) ?? undefined)
+        : undefined;
     // While a run is in flight, the message is QUEUED as steering (the sidecar
     // injects it mid-loop). Attachments queue too — they're persisted and ride
     // the same native-block path when the queue drains. Queued rows render
