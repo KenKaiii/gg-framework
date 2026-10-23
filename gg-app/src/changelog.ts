@@ -22,6 +22,16 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.96.0",
+    date: "2026-10-24",
+    items: [
+      "Welcome to `GG Royale`, an online blackjack table built right into GG Coder. You play with chips you earn by actually coding: finished runs, commits, bugs you squash and deploys that go live all pay out, and you can sit at a table with other players and chat. There is no real money anywhere. Linking only shares that something happened, never your code, files or prompts, and you can wipe all your Royale data any time.",
+      "Home got a full pixel-art makeover. A hand-lettered gold `GG Coder` title now sits over an evening clearing in the pines that follows your local time of day, with drifting mist, sunbeams and fireflies, plus chunky new plate buttons and tooltips to match. Even this `What's new` window now opens beside a little campfire.",
+      "No more two-minute stalls when the AI goes quiet. If a reply hasn't started when it should, GG quietly fires a backup request and takes whichever answers first, so a stuck request costs you seconds instead of a long `Retrying…`, and a slow but healthy reply is never cut off.",
+      "I sharpened the built-in skills GG leans on for security, privacy law, databases, UI design, speed and debugging. They are leaner, more up to date and kick in at the right moments, so you get better answers with less wasted effort.",
+    ],
+  },
+  {
     version: "0.95.0",
     date: "2026-10-21",
     items: [
