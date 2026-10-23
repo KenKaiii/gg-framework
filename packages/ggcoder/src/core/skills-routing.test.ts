@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { discoverSkills, formatSkillsForPrompt, type Skill } from "./skills.js";
-import { createSkillTool } from "../tools/skill.js";
+import { createSkillTool, DELEGATION_RULES, HOST_RULES } from "../tools/skill.js";
 import { resolveContextLimits } from "./context-limits.js";
 import { buildSystemPrompt } from "../system-prompt.js";
 
@@ -34,6 +34,9 @@ describe("skill routing prompts", () => {
       "When the work is in a skill's scope below, load it before writing code",
     );
     expect(tool.description).toContain("Respect exclusions");
+    // Reviews write no code; without this Haiku 5.5 answered "is our data
+    // safe?" with no skill in 9/10 bench runs (skills-ab-haiku55).
+    expect(tool.description).toContain("before giving a review or a safety verdict");
   });
 
   it("fails loudly when asked for a skill that does not exist, pointing at a same-named tool", async () => {
@@ -98,6 +101,9 @@ describe("skill routing prompts", () => {
       );
       expect(refactoring?.content).toContain("The baseline is a gate");
       expect(refactoring?.content).toContain("Red means revert");
+      // A bare `git restore` with no per-step commits also wiped every earlier
+      // uncommitted step in the file (always the case in Goals mode).
+      expect(refactoring?.content).toContain("without per-step commits it also wipes");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -136,6 +142,52 @@ describe("skill routing prompts", () => {
     // skill path or the delegated slice runs without the skill's rules.
     expect(result).toContain("it cannot see these instructions");
     expect(result).toContain("(/skills/evidence-led-ui)");
+  });
+
+  it("appends one shared delegation protocol instead of per-skill copies", async () => {
+    const tool = createSkillTool([skill]);
+    const result = await tool.execute(
+      { skill: skill.name },
+      { signal: new AbortController().signal, toolCallId: "delegation" },
+    );
+    // Goals mode lists builder/scout/researcher/checker, Code mode owl/bee/
+    // auditor/skeptic: helpers are matched by role to whatever spawn_agent lists.
+    expect(result).toContain(DELEGATION_RULES);
+    expect(DELEGATION_RULES).toContain("use agent types your spawn_agent tool actually lists");
+    expect(DELEGATION_RULES).toContain('"not checked", never clean');
+    // Skills assume a user at the keyboard; a running goal says not to ask.
+    expect(result).toContain(HOST_RULES);
+    expect(HOST_RULES).toContain("Host rules on branches, commits and installs override the skill");
+  });
+
+  it("shows the launch-readiness rule in the live skill tool, not only the fallback prompt", () => {
+    const tool = createSkillTool([skill]);
+    expect(tool.description).toContain(
+      "durable, bulletproof, compliance-guard, lean, evidence-led-ui",
+    );
+    expect(tool.description).toContain("report-only child");
+  });
+
+  it("never names a mode-specific helper agent as a bare agent type in a bundled skill", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bundled-skills-"));
+    try {
+      const skills = await discoverSkills({ globalSkillsDir: path.join(root, "global") });
+      const bundled = skills.filter((candidate) => candidate.source === "bundled");
+      for (const candidate of bundled) {
+        // `owl`/`bee`/`auditor`/`skeptic`/`worker` exist only in Code mode; a
+        // skill that tells Goals mode to spawn one makes the spawn fail.
+        expect(candidate.content, candidate.name).not.toMatch(/`(owl|bee|auditor|skeptic|worker)`/);
+        // A skill that delegates defers the mechanics to the loader rather
+        // than carrying its own (drifting) copy.
+        if (/\bhelpers?\b/i.test(candidate.content)) {
+          expect(candidate.content, candidate.name).toContain(
+            "Helper types, brief contents and merge rules come with the skill loader",
+          );
+        }
+      }
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   it("keeps every bundled skill routable and its reference paths real", async () => {
@@ -203,8 +255,6 @@ describe("skill routing prompts", () => {
       // lets the model invent a quieter reading than the user deserves.
       expect(complianceSkill?.content).toContain("Default if unanswered");
       expect(complianceSkill?.content).toContain("the cautious reading");
-      // Findings a novice cannot act on produce no fixes.
-      expect(complianceSkill?.content).toContain("never read a statute");
       // Reading code shows intent; running it shows what ships. A review that
       // asserts from grep alone misses runtime-injected tags entirely, and a
       // fix reported without verification is worse than the original finding.
@@ -214,33 +264,44 @@ describe("skill routing prompts", () => {
       expect(complianceSkill?.content).toContain("DEDUCED");
       expect(complianceSkill?.content).toContain("Never relabel upward");
       expect(complianceSkill?.content).toContain("Never report a fix you did not verify");
+      // Licensed activity without authorisation must stay ILLEGAL, not BLOCKER;
+      // it sits with the severity ladder so even an inline gate sees it.
+      expect(complianceSkill?.content).toContain("Severity rule for licensed activities");
+
+      // The full-review workflow lives in one reference so a one-line inline
+      // gate does not load it; SKILL.md must route every full review there.
+      expect(complianceSkill?.content).toContain("`references/full-review.md`");
+      const fullReview = await fs.readFile(
+        path.join(complianceSkill?.root ?? "", "references", "full-review.md"),
+        "utf8",
+      );
+      // Findings a novice cannot act on produce no fixes.
+      expect(fullReview).toContain("never read a statute");
       // Narrative review silently drops the boring blockers; the sweep is what
       // turns "did I notice it" into "did I check it".
-      expect(complianceSkill?.content).toContain("coverage ledger");
+      expect(fullReview).toContain("coverage ledger");
       // An item never written down is an item never checked: evaluation showed
       // blockers 1 and 2 dropped while dramatic findings were reported.
-      expect(complianceSkill?.content).toContain("one row per numbered item");
+      expect(fullReview).toContain("one row per numbered item");
       // Audience and product claims live in prose, not in the schema.
-      expect(complianceSkill?.content).toContain("Read the prose, not only the code");
+      expect(fullReview).toContain("Read the prose, not only the code");
       // Held-out evaluation: the code sweep reliably missed obligations that
-      // arise from the product model or from two facts combined, and it
-      // downgraded unlicensed-activity gates to BLOCKER.
-      expect(complianceSkill?.content).toContain("second pass on the product model");
-      expect(complianceSkill?.content).toContain("Severity rule for licensed activities");
+      // arise from the product model or from two facts combined.
+      expect(fullReview).toContain("second pass on the product model");
       // Held-out evaluation: the review named the first instantiation of a duty
       // it thought of (DMCA, auto-renewal) and never reached the EU equivalent
       // (DSA, withdrawal rights) for an EU-established company.
-      expect(complianceSkill?.content).toContain("Name every jurisdiction's version");
+      expect(fullReview).toContain("Name every jurisdiction's version");
       // Mandatory coverage lived only in the ledger, so a findings-only output
       // format silently dropped it. Coverage must belong to the findings.
-      expect(complianceSkill?.content).toContain("coverage survives the output format");
+      expect(fullReview).toContain("coverage survives the output format");
       // A prohibition reported as a disclosure duty authorises the banned
       // feature; and leading with the wrong jurisdiction sends the user to the
       // wrong kind of lawyer. Both were observed in evaluation runs.
-      expect(complianceSkill?.content).toContain("Check for an outright ban");
-      expect(complianceSkill?.content).toContain("Lead with the jurisdiction");
+      expect(fullReview).toContain("Check for an outright ban");
+      expect(fullReview).toContain("Lead with the jurisdiction");
       // A point-in-time register rots; a failing test does not.
-      expect(complianceSkill?.content).toContain("leave the check behind");
+      expect(fullReview).toContain("leave the check behind");
 
       // Every referenced file must exist, since the skill routes the model to them by path.
       const referenced = [...complianceSkill!.content.matchAll(/`(references\/[\w.-]+\.md)`/g)].map(

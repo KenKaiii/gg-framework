@@ -56,11 +56,11 @@ pub(crate) struct TrayState(pub(crate) Mutex<TrayStatus>);
 pub(crate) struct TrayIntents(pub(crate) Mutex<HashMap<String, String>>);
 
 /// True for the real app windows (`main`, `project-N`) — excludes transient
-/// chrome like the borderless `whatsnew` dialog, which must never be treated as
-/// a place to route a tray action.
+/// chrome like the borderless `whatsnew` dialog and the remote `gg-royale` game
+/// window, which must never be treated as a place to route a tray action.
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) fn is_app_window(label: &str) -> bool {
-    label == "main" || label.starts_with("project-")
+    is_workspace_window(label)
 }
 
 /// App-window labels in reading order (left-to-right, top-to-bottom).

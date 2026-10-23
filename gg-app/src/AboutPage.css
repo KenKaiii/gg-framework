@@ -324,3 +324,10 @@
     background: Highlight;
   }
 }
+/* Credit for the pixel fonts (see assets/fonts/THIRD-PARTY.md). */
+.about-credits {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  text-align: center;
+}

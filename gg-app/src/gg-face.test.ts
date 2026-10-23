@@ -20,11 +20,11 @@ describe("gg-face", () => {
     for (const row of rows) expect(row).toHaveLength(CRITTER_CELLS);
   });
 
-  it("is the Robot critter everywhere but its screen (rows 5–7)", () => {
+  it("is the Robot critter everywhere but its screen (rows 6–8)", () => {
     const ready = ggFaceRows("ready");
     expect(robot).toBeDefined();
     robot?.rows.forEach((row, y) => {
-      if (y < 5 || y > 7) expect(ready[y], `row ${y}`).toBe(row);
+      if (y < 6 || y > 8) expect(ready[y], `row ${y}`).toBe(row);
     });
   });
 

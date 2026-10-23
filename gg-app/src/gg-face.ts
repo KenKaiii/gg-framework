@@ -4,7 +4,7 @@
 // colour of the status it stands for (green when done, amber when stopped or
 // waiting, red on failure), so face and status text read as one.
 
-import { CRITTERS, CRITTER_CELLS, renderPixelGrid, type CritterDef } from "./critter-sprites";
+import { CRITTERS, renderCritterRows, type CritterDef } from "./critter-sprites";
 
 export type GgFaceMood = "ready" | "happy" | "curious" | "worried" | "sad" | "shocked";
 export type GgFaceFrame = GgFaceMood | "blink";
@@ -25,42 +25,46 @@ function robot(): CritterDef {
   return def;
 }
 
-/** The robot's screen: rows 5–7, columns 4–9 (6×3). */
-const SCREEN_ROW = 5;
-const SCREEN_COL = 4;
+/** The robot's screen: rows 6–8, columns 5–12 (8×3). */
+const SCREEN_ROW = 6;
+const SCREEN_COL = 5;
 
-/** Each frame's face on the 6×3 screen. C glows; K is the dark screen. */
+/** Each frame's face on the 8×3 screen. C glows; K is the dark screen. */
 const SCREENS: Readonly<Record<GgFaceFrame, readonly string[]>> = {
   // The robot's own look: two dot eyes and a small mouth.
-  ready: ["KKKKKK", "KCKKCK", "KKCCKK"],
-  blink: ["KKKKKK", "CCKKCC", "KKCCKK"],
+  ready: ["KKKKKKKK", "KCKKKKCK", "KKKCCKKK"],
+  blink: ["KKKKKKKK", "CCKKKKCC", "KKKCCKKK"],
   // Dot eyes and a big smile.
-  happy: ["KCKKCK", "CKKKKC", "KCCCCK"],
+  happy: ["KCKKKKCK", "CKKKKKKC", "KCCCCCCK"],
   // Eyes glancing up and over, a little mouth to the side: "hmm, your call?"
-  curious: ["KKCKKC", "KKKKKK", "KKKCCK"],
+  curious: ["KKKCKKKC", "KKKKKKKK", "KKKKKCCK"],
   // Dot eyes, a tight flat mouth, and a sweat drop.
-  worried: ["KCKKCK", "KKKKKK", "KCCCCK"],
+  worried: ["KCKKKKCK", "KKKKKKKK", "KKCCCCKK"],
   // Eyes cast down and a flat mouth (with a tear and a drooping antenna).
-  sad: ["KKKKKK", "CCKKCC", "KCCCCK"],
+  sad: ["KKKKKKKK", "CCKKKKCC", "KKCCCCKK"],
   // Wide eyes and an "o" mouth.
-  shocked: ["CCKKCC", "CCKKCC", "KKCCKK"],
+  shocked: ["CCKKKKCC", "CCKKKKCC", "KKKCCKKK"],
 };
 
 /** Extra marks outside the screen: a tear for sad, a sweat drop for worried. */
 const EXTRAS: Readonly<Partial<Record<GgFaceFrame, readonly (readonly [number, number])[]>>> = {
   sad: [
-    [3, 7],
-    [3, 8],
+    [2, 8],
+    [2, 9],
   ],
   worried: [
-    [12, 4],
-    [12, 5],
+    [15, 4],
+    [15, 5],
   ],
 };
 
 /** Whole rows a frame swaps in: sad's antenna droops to one side. */
 const ROWS: Readonly<Partial<Record<GgFaceFrame, Readonly<Record<number, string>>>>> = {
-  sad: { 0: "....AA........", 1: ".....OO.......", 2: "......OO......" },
+  sad: {
+    0: ".....OAAO.........",
+    1: "......OAO.........",
+    2: ".......OO.........",
+  },
 };
 
 /** The grid for one frame: the Robot critter with that frame's face. */
@@ -86,9 +90,11 @@ export function ggFaceRows(frame: GgFaceFrame): readonly string[] {
  */
 export function renderGgFace(frame: GgFaceFrame, glow?: string): string {
   const mood: GgFaceMood = frame === "blink" ? "ready" : frame;
-  return renderPixelGrid(
+  const def = robot();
+  return renderCritterRows(
+    { ...def, materials: { ...def.materials, C: "flat", T: "flat" } },
     ggFaceRows(frame),
-    { ...robot().palette, C: glow ?? GG_FACE_GLOW[mood], T: "#7cc8ff" },
-    { width: CRITTER_CELLS, height: CRITTER_CELLS },
+    undefined,
+    { ...def.palette, C: glow ?? GG_FACE_GLOW[mood], T: "#7cc8ff" },
   );
 }

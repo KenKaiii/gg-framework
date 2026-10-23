@@ -4,6 +4,18 @@ The values to write **while building**, so the audit finds nothing. When a choic
 
 Snapshot 3 October 2026. **[V]** verified, **[S]** snapshot-volatile, **[U]** uncertain. Re-verify version-sensitive items before asserting them as current.
 
+## Contents
+
+- Secrets
+- Authentication
+- Authorization
+- Cryptography
+- Input handling
+- Web response headers
+- Cloud, containers & infrastructure
+- Logging & detection
+- Failure behavior
+
 ## Secrets
 
 **The single highest-yield control for a small team.** 28.65M new hardcoded secrets appeared on public GitHub in 2025, and 64% of valid secrets leaked in 2022 were still live in 2026 [V] — leaks are not revoked, so prevention and rotation both matter.
@@ -29,7 +41,7 @@ Baseline per **NIST SP 800-63B-4** (final 31 Jul 2025) [V]:
 Implementation:
 
 - Hash with **argon2id** (memory-hard, tuned so a verification takes ~100–300 ms on your hardware) or bcrypt where argon2 is unavailable. Never a bare SHA family hash, never MD5.
-- **OAuth**: cite **RFC 9700** (OAuth 2.0 Security BCP, Jan 2025) [V] — OAuth 2.1 is still an IETF draft as of Sep 2026 [V]. Concretely: authorization code + PKCE for every client; no implicit or password grant; exact-string redirect-URI matching; `state`/PKCE/nonce against CSRF; mix-up defense when talking to several authorization servers; short-lived access tokens; refresh tokens rotated with reuse detection or sender-constrained. Prefer a maintained library or hosted IdP over writing the flow.
+- **OAuth**: cite **RFC 9700** (OAuth 2.0 Security BCP, Jan 2025) [V] — OAuth 2.1 is still an IETF Internet-Draft (draft-ietf-oauth-v2-1-16) as of 22 Oct 2026 [V]. Concretely: authorization code + PKCE for every client; no implicit or password grant; exact-string redirect-URI matching; `state`/PKCE/nonce against CSRF; mix-up defense when talking to several authorization servers; short-lived access tokens; refresh tokens rotated with reuse detection or sender-constrained. Prefer a maintained library or hosted IdP over writing the flow.
 - Session tokens from a CSPRNG, ≥128 bits. Rotate the session identifier on login and on privilege change. Server-side revocation must exist — a stateless token you cannot revoke is an outage during an incident.
 - Constant-time comparison for tokens, signatures, and MFA codes — but **validate the shape before you compare**. A stored credential whose hex/base64 decodes to the wrong length, or whose scheme/salt/hash does not parse, must be rejected as malformed and fail closed; never fall through to the comparison. `timingSafeEqual` on two empty buffers returns true, so an unparsed record can verify any password.
 - Rate-limit and lock out on login, reset, MFA, and token exchange. Generic failure messages: never reveal whether the account exists.

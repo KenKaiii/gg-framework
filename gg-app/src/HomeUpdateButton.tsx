@@ -1,11 +1,13 @@
 import type { UpdateInfo } from "./update";
-import { SPARKLE_SRC } from "./update-key-art";
+import { PixelTip } from "./PixelTip";
+import { PCT_COLS, SPARKLE_SRC } from "./update-key-art";
 import { KEY_ART_STYLE, PixelText, UpdateArrow, UpdateBurst, UpdateMeter } from "./UpdateKeyParts";
 import "./HomeUpdateButton.css";
 
 /**
- * The home screen's update button, as an arcade key: a pixel plate with a gold
- * rim standing on its own dark-gold side, so pressing it pushes the face down.
+ * The home screen's update button, as an arcade key in GG Royale's look: a
+ * wine pixel plate with a gold rim standing on its own wooden side, so
+ * pressing it pushes the face down. Words in m5x7, GG Royale's pixel font.
  * When an update arrives, UPDATE's pixels fly in and snap together beside a
  * hopping arrow, and the versions it goes from and to. Installing turns the
  * face into an XP bar with the builder running along the top; at 100% it reads
@@ -31,14 +33,13 @@ export function HomeUpdateButton({
       : `Installing update, ${pct}%`
     : `Update to ${version ?? "the latest version"}. Installs and restarts the app.`;
 
-  return (
+  const key = (
     <button
       type="button"
       className={`home-update${installing ? " is-installing" : ""}${done ? " is-done" : ""}`}
       style={KEY_ART_STYLE}
       disabled={installing}
       aria-label={label}
-      title={installing ? undefined : `Update to ${version ?? "the latest version"}`}
       onClick={() => void appUpdate.install()}
     >
       <span className="lvl-base" aria-hidden="true" />
@@ -46,20 +47,20 @@ export function HomeUpdateButton({
         {!installing ? (
           <>
             <UpdateArrow />
-            <PixelText text="Update" cell={3} fly />
+            <PixelText text="Update" cell={2} fly />
             <span className="lvl-versions">
               {current && <span>{`v${current}`}</span>}
-              <span className="lvl-versions-to">{current ? "\u2192" : ""}</span>
+              <span className="lvl-versions-to">{current ? "to" : ""}</span>
               <span className="lvl-versions-new">{`v${version ?? ""}`}</span>
             </span>
           </>
         ) : done ? (
-          <PixelText text="Updated!" cell={3} fly spread={30} />
+          <PixelText text="Updated!" cell={2} fly spread={30} />
         ) : (
           <>
-            <PixelText text="XP" cell={3} />
+            <PixelText text="XP" cell={2} />
             <UpdateMeter pct={pct} />
-            <PixelText text={`${pct}%`} cell={3} minCols={15} />
+            <PixelText text={`${pct}%`} cell={2} minCols={PCT_COLS} />
           </>
         )}
       </span>
@@ -75,5 +76,13 @@ export function HomeUpdateButton({
         {installing ? (done ? "Update installed. Restarting." : "Installing update.") : ""}
       </span>
     </button>
+  );
+  // A GG Royale pixel tip while it's on offer (the same as Home's other keys).
+  return installing ? (
+    key
+  ) : (
+    <PixelTip text={`Update: installs v${version ?? "the latest version"} and restarts the app.`}>
+      {key}
+    </PixelTip>
   );
 }

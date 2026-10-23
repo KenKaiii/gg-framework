@@ -1,5 +1,21 @@
 # Exposure Triage
 
+## Contents
+- 1. Reach — can a stranger touch this?
+- 1b. Translate the signatures to the stack in front of you
+- 2. Personal data inventory
+- 3. Third-party recipients
+- 4. Money
+- 5. Decisions about people
+- 6. User-generated content
+- 7. Messaging
+- 8. AI surface
+- 9. Domain signal scan
+- 10. Jurisdiction inference
+- 11. Question set (max five, batched, with defaults)
+- 12. Proportionality rule
+
+
 Determine what the product actually is before deciding what applies. Everything here is code-observable; do not ask the user what the repo can answer.
 
 ## 1. Reach — can a stranger touch this?

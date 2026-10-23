@@ -38,12 +38,12 @@
   /* The rim takes the top 6px; the contents centre in what's left. */
   padding: var(--space-3) var(--rail) 0;
   border: 0;
-  background: linear-gradient(180deg, #241d63 0%, #1a1450 100%);
+  background: linear-gradient(180deg, #4c1c2c 0%, #3a1622 100%);
   box-shadow:
-    inset 0 2px 0 #0b0820,
-    inset 0 4px 0 #ffd23a,
-    inset 0 6px 0 #3d3496;
-  color: #e9e5ff;
+    inset 0 2px 0 #1e0c1f,
+    inset 0 4px 0 #e9af54,
+    inset 0 6px 0 #6e3446;
+  color: #f6d0a8;
   font: inherit;
   cursor: pointer;
   overflow: hidden;
@@ -53,7 +53,7 @@
   filter: brightness(1.12);
 }
 .update-banner:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid #f5bd63;
   outline-offset: -6px;
 }
 .update-banner-busy {
@@ -68,23 +68,24 @@
   width: 100%;
   max-width: 640px;
 }
+/* The versions, in m5x7 at 2px a pixel, like Home's key. */
 .ub-versions {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  font-family: var(--mono);
-  font-size: var(--fs-xs);
-  line-height: 1.2;
+  gap: var(--space-4);
+  font-family: "m5x7", monospace;
+  font-size: 32px;
+  line-height: 22px;
+  -webkit-font-smoothing: none;
   white-space: nowrap;
-  color: #c9c2ff;
-  font-variant-numeric: tabular-nums;
+  color: #c9a08c;
+  text-shadow: 0 2px 0 #1e0c1f;
 }
 .ub-versions-to {
-  color: #ffd23a;
+  color: #f5bd63;
 }
 .ub-versions-new {
-  color: #ffffff;
-  font-weight: 700;
+  color: #fff0e0;
 }
 
 /* The INSTALL key: Home's plate and side at the same 2px per cell, small. */
@@ -97,7 +98,7 @@
 .ub-key-face {
   display: inline-flex;
   align-items: center;
-  height: 27px;
+  height: 34px;
   margin-bottom: 3px;
   padding: 0 var(--space-3);
   border: 8px solid transparent;

@@ -1,17 +1,17 @@
 /* ── Update key parts (UpdateKeyParts.tsx) ──
    Shared by Home's update key and the workspace footer's update bar. Art, not
-   theme (like Ken's storybook art): gold pixel words, a green arrow and an XP
-   bar on the keys' deep indigo, the same in both themes. */
+   theme: GG Royale's palette (gold m5x7 words on an ink shadow, a felt-green
+   arrow and XP bar on the keys' deep wine), the same in both themes. */
 
-/* Words in the pixel font: gold, lit towards the right, on a 1px shadow. */
+/* Words in m5x7: gold, lit towards the right, on a 1-cell ink shadow. */
 .lvl-word {
   display: grid;
   flex: 0 0 auto;
 }
 .lvl-word i {
   display: block;
-  background: color-mix(in oklab, #ffd23a calc(var(--t) * 100%), #fff3b0);
-  box-shadow: 0 1px 0 #6b450c;
+  background: color-mix(in oklab, #f5bd63 calc(var(--t) * 100%), #ffe7b8);
+  box-shadow: 0 1px 0 #1e0c1f;
 }
 /* On arrival each pixel flies in from wherever it was scattered. */
 .lvl-word.is-flying i {
@@ -61,18 +61,18 @@
   display: block;
   height: 12px;
   overflow: hidden;
-  background: #0f0b30;
+  background: #1a0e14;
   box-shadow:
-    inset 0 0 0 1px #0b0820,
+    inset 0 0 0 1px #1e0c1f,
     inset 0 2px 0 rgb(0 0 0 / 0.35);
 }
-/* Green with a light top edge; the gaps between segments are cut by a mask. */
+/* Felt green with a light top edge; the gaps between segments are cut by a mask. */
 .lvl-fill {
   position: absolute;
   top: 0;
   bottom: 0;
   left: 0;
-  background: linear-gradient(#b6ffd6 0 2px, transparent 2px), linear-gradient(#3ddc84, #23a862);
+  background: linear-gradient(#b8dc98 0 2px, transparent 2px), linear-gradient(#688e50, #4c7b53);
   mask: repeating-linear-gradient(90deg, #000 0 6px, transparent 6px 8px);
   transition: width 180ms linear;
 }

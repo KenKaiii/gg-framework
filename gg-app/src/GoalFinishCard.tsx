@@ -38,7 +38,7 @@ export function GoalFinishCard({ finish, onShowChat, onClose }: Props): React.Re
       note: finish.failedWorkers > 0 ? `${finish.failedWorkers} failed` : undefined,
     },
     { label: "Turns", value: String(finish.turns) },
-    { label: "Tokens written", value: formatTokenCount(finish.outputTokens) },
+    { label: "Tokens", value: formatTokenCount(finish.outputTokens) },
   ];
   return (
     <div className="goal-finish" role="status">

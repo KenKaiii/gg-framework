@@ -1,0 +1,7 @@
+m5x7 — a 5px by 7px pixel font by Daniel Linssen
+https://managore.itch.io/m5x7
+
+Licence: Creative Commons Zero v1.0 Universal (CC0 1.0), as stated on the
+font's itch.io page (checked 23 October 2026). No credit is required; GG
+Coder credits the author anyway (see ../THIRD-PARTY.md).
+https://creativecommons.org/publicdomain/zero/1.0/

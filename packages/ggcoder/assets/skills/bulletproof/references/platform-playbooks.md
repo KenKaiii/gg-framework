@@ -6,6 +6,18 @@ Snapshot 3 October 2026. **[V]** verified, **[S]** snapshot-volatile, **[U]** un
 
 ---
 
+## Contents
+
+- Web & API
+- Mobile (iOS / Android)
+- Desktop
+- CLI & developer tooling
+- Embedded, IoT & firmware
+- Smart contracts & web3
+- ML & AI pipelines
+- Games & client-side software
+- Language hot zones
+
 ## Web & API
 
 The best-understood surface; the failures are still the same three.

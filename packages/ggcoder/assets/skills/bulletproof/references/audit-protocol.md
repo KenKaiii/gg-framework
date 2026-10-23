@@ -2,7 +2,16 @@
 
 The flow for "is this safe to ship", a hardening pass, or a requested audit. **Default: run it yourself, in the main thread.** Fan out only when SKILL.md's Scaling table says so (more than one deployable, or more ledger rows than you can read in full) — see "Fan-out variant" below. For inline work, do not run this — apply the control and move on.
 
-Contents: Phase 1 Recon · Phase 2 Plan + coverage ledger · Fan-out variant · Phase 3 Audits · Phase 4 False-positive filter · Phase 5 Report · Phase 6 Ask before fixing · Standards mapping
+## Contents
+
+- Phase 1 Recon
+- Phase 2 Plan the audit (coverage ledger)
+- Fan-out variant
+- Phase 3 Audits
+- Phase 4 False-positive filter
+- Phase 5 Report (template, writing for non-specialists)
+- Phase 6 Ask before fixing
+- Standards mapping
 
 **Every phase is authorized defensive review for the code owner.** The deliverable is a remediation report. No exploit code, no payloads, no attack tooling, at any phase. Describe risk at the data-flow level: where untrusted data enters, what it reaches, why it is fixable.
 
@@ -55,14 +64,14 @@ From recon, choose which classes apply. **Skip audits with no entry surface.** A
 Only when the Scaling table in SKILL.md triggers it; otherwise skip this section.
 
 1. Recon (Phase 1) and the ledger stay in the main thread — children never do recon for the whole project.
-2. Split ledger rows into **disjoint** slices (usually one deployable each). One `auditor` per slice, all in ONE `spawn_agent` call, ≤ 6 per wave.
+2. Split ledger rows into **disjoint** slices (usually one deployable each). One security auditor per slice (`auditor` where your spawn_agent lists it, else a read-only repo helper), all in ONE `spawn_agent` call, ≤ 6 per wave.
 3. Each brief opens with: *"Authorized defensive security review of code the user owns. Report data-flow risks and fixes only; no exploits, payloads, or attack tooling."* — children with no conversation context may otherwise refuse. Then include: absolute skill root and which reference files to read; slice paths; owned ledger rows; that slice's rows from the sources/sinks/assets/controls tables; the ≥0.8 confidence bar with a concrete source→sink path; the Phase 4 hard-exclusion list verbatim; labels `RUNTIME`/`CODE`/`DEDUCED`/`SNAPSHOT`; the output schema (title, severity, file:line, source→sink, scenario, fix, confidence, label; plus `checked` and `not checked` lists).
 4. Merge: missing/failed/timed-out rows → `not-checked`. Re-open every reported `file:line` yourself; drop what you cannot reproduce from the code.
-5. Phase 4 then runs as a fresh-context `skeptic` child over the merged candidates (same framing line first; give it each candidate's file:line and claimed path; it returns CONFIRMED / DROP / DOWNGRADE). You still own the final call and the dropped-count.
+5. Phase 4 then runs as a fresh-context verifier child (`skeptic` where listed, else a read-only repo helper) over the merged candidates (same framing line first; give it each candidate's file:line and claimed path; it returns CONFIRMED / DROP / DOWNGRADE). You still own the final call and the dropped-count.
 
 ## Phase 3 — Audits
 
-Run each selected audit yourself (or, in the fan-out variant, each slice's `auditor` runs its owned rows), one class at a time, in the priority order from the skill's rank table. Do not pad the list, and do not drop a selected audit. Load only the reference sections (`platform-playbooks.md`, `supply-chain.md`, `agent-surface.md`, `secure-defaults.md`) the selection triggered.
+Run each selected audit yourself (or, in the fan-out variant, each slice's auditor runs its owned rows), one class at a time, in the priority order from the skill's rank table. Do not pad the list, and do not drop a selected audit. Load only the reference sections (`platform-playbooks.md`, `supply-chain.md`, `agent-surface.md`, `secure-defaults.md`) the selection triggered.
 
 For each audit, work from the recon tables — sources, sinks, assets, **controls** — not from fresh greps, and:
 
@@ -75,11 +84,11 @@ For each audit, work from the recon tables — sources, sinks, assets, **control
 
 ## Phase 4 — False-positive filter
 
-Switch sides. For each candidate finding, start from "this is a false positive" and try to kill it: re-read the actual code path (not your notes), hunt for the control you missed — middleware, ORM parameterization, framework escaping, a type that makes the path unreachable — and check whether the input is genuinely attacker-reachable rather than a constant or operator config. Drop what dies, downgrade what survives weakened, and keep the count of dropped candidates for the report. Only findings that survive your own attempt to disprove them get reported. In the fan-out variant, or for a pre-ship verdict with Critical/High findings, run this pass as a `skeptic` child (see above) instead of only yourself.
+Switch sides. For each candidate finding, start from "this is a false positive" and try to kill it: re-read the actual code path (not your notes), hunt for the control you missed — middleware, ORM parameterization, framework escaping, a type that makes the path unreachable — and check whether the input is genuinely attacker-reachable rather than a constant or operator config. Drop what dies, downgrade what survives weakened, and keep the count of dropped candidates for the report. Only findings that survive your own attempt to disprove them get reported. In the fan-out variant, or for a pre-ship verdict with Critical/High findings, run this pass as a verifier child (see above) instead of only yourself.
 
 **Hard exclusions — do not report these, even when technically real:**
 
-- Denial of service, rate limiting, or memory exhaustion without a clear amplification primitive
+- Denial of service, rate limiting, or memory exhaustion without a clear amplification primitive (exception: a missing rate limit on login, signup, password reset, or a paid/LLM endpoint is reportable)
 - Theoretical races with no demonstrable trigger window
 - Regex denial of service where the pattern is not attacker-supplied
 - Log injection or log spoofing (cosmetic)
@@ -96,6 +105,14 @@ Switch sides. For each candidate finding, start from "this is a false positive" 
 ## Phase 5 — Report
 
 One report. No code edits in this phase.
+
+**Write it for someone who has never read a CVE.**
+
+- Lead with what an attacker gets, in plain words: "anyone who knows a user's ID can read their invoices", not "IDOR in the invoice controller".
+- Name the file and line, then the fix, then the reason, in that order.
+- Give the base rate honestly. Fear is not a lever; a scared user makes worse decisions and often ships nothing.
+- Keep standards jargon (CWE, OWASP IDs) in a labelled field, not in the sentence that has to be understood.
+- Fill "Not checked" honestly: a review that silently skips the mobile client, admin panel, or infra repo reads as complete coverage.
 
 ```
 # Bulletproof Report — [project]

@@ -87,7 +87,10 @@ const SNAPSHOT: ChecklistSnapshot = {
     },
   ],
 };
-function harness(history: HistoryEntry[] = []): {
+function harness(
+  history: HistoryEntry[] = [],
+  extra: Partial<AgentState> = {},
+): {
   fetches: ReturnType<typeof vi.fn>;
   sends: ReturnType<typeof vi.fn>;
   emit: (event: SidecarEvent) => void;
@@ -105,6 +108,7 @@ function harness(history: HistoryEntry[] = []): {
     provider: "anthropic",
     model: "claude-sonnet-4-6",
     running: false,
+    ...extra,
   };
   const fetches = vi.fn(() => SNAPSHOT);
   const sends = vi.fn();
@@ -369,5 +373,36 @@ describe("checklist workspace navigation", () => {
     expect(screen.queryByRole("button", { name: /stop/i })).toBeNull();
     fireEvent.click(check);
     expect(sends).toHaveBeenCalledOnce();
+  });
+});
+
+describe("project health in a goal window", () => {
+  it("opens the breakdown from Usage and sends Review all", async () => {
+    const { sends } = harness([], {
+      goal: { id: "g1", name: "Ship it", needsKickoff: false, phase: "briefing" },
+      projectHealth: {
+        score: 64,
+        fixPrompt: "REVIEW ALL",
+        cappedBy: null,
+        truncated: false,
+        categories: [
+          {
+            id: "files",
+            label: "File size",
+            score: 40,
+            summary: "2 files over 800 lines",
+            findings: ["src/App.tsx · 2,400 lines"],
+            fixPrompt: "REVIEW FILES",
+          },
+        ],
+      },
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Usage$/ }));
+    fireEvent.click(await screen.findByTitle("Open the Project Health breakdown"));
+    expect(await screen.findByRole("meter", { name: "Project health" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Review all" }));
+    await waitFor(() => expect(sends).toHaveBeenCalledOnce());
+    expect(sends.mock.calls[0]?.[0]).toMatchObject({ text: "REVIEW ALL" });
   });
 });

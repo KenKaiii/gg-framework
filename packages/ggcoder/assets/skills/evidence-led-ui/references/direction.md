@@ -86,9 +86,9 @@ Priority: real product UI at readable scale → real photography of the subject 
 - Every motion has a `prefers-reduced-motion` path that keeps meaning.
 - Auto-playing motion longer than 5 s needs pause/stop/hide (WCAG 2.2.2).
 
-## 8. Platform features worth using (verified Baseline status)
+## 8. Platform features worth using (stable Baseline)
 
-Status from the `web-features` package v3.40.1 (published 1 Oct 2026), read 3 Oct 2026 (SNAPSHOT). Re-check on https://webstatus.dev before relying on newer items.
+Stable rows only (SNAPSHOT, re-checked 22 Oct 2026). Baseline status moves monthly: for any feature not listed, or any "not yet Baseline" call, check https://webstatus.dev or the MDN compatibility table live before deciding, and record the date you checked.
 
 | Feature | Baseline | Use by default? |
 | --- | --- | --- |
@@ -98,17 +98,9 @@ Status from the `web-features` package v3.40.1 (published 1 Oct 2026), read 3 Oc
 | `<dialog>`, `inert` | Widely available | Yes, for modals and disabling background regions. |
 | Subgrid | Widely available | Yes, for aligning card internals across a row. |
 | Popover API | Newly available (Jan 2025) | Yes for menus/tooltips/popovers, with tested focus behaviour. |
-| `text-wrap: balance` | Newly available | Yes on headings (harmless fallback). |
-| `light-dark()` | Newly available | Yes when the project supports themes. |
-| `@starting-style` | Newly available | Yes for entry transitions; content must work without it. |
+| `text-wrap: balance`, `light-dark()`, `@starting-style`, `details name` | Newly available | Yes; content must work without the enhancement. |
 | Same-document view transitions | Newly available (Oct 2025) | Yes as progressive enhancement with reduced-motion opt-out. |
-| `details name` (exclusive accordions) | Newly available | Yes for simple accordions. |
-| `field-sizing: content` | Newly available (Jun 2026) | Progressive enhancement for auto-growing textareas; keep a min/max size. |
-| `text-wrap: pretty` | Not Baseline | Progressive enhancement only. |
-| CSS anchor positioning | Not Baseline (Interop 2026 focus area) | Enhancement with a fallback position, or use the project's positioning library. |
-| Scroll-driven animations | Not Baseline (Interop 2026 focus area) | Decorative enhancement only; never required for content. |
-| Cross-document view transitions | Not Baseline (Interop 2026 focus area) | Enhancement only. |
-| `interpolate-size` | Not Baseline | Enhancement only. |
+| CSS anchor positioning | Newly available (Jan 2026, Firefox 147) | Yes for tooltips/menus when the support policy allows; keep a fallback position otherwise. |
 
 "Newly available" means supported in current versions of all core browsers but not yet for 30 months; check the project's support policy before relying on it without a fallback.
 

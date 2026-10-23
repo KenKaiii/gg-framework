@@ -1,21 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { burstPieces, cellFlights, PLATE_ROWS, PLATE_SRC, pixelWord } from "./update-key-art";
+import {
+  burstPieces,
+  cellFlights,
+  PCT_COLS,
+  PLATE_ROWS,
+  PLATE_SRC,
+  pixelWord,
+} from "./update-key-art";
 
 describe("update key art", () => {
-  it("lays words out in the pixel font, one blank column between glyphs", () => {
+  it("lays words out in m5x7 (GG Royale's pixel font), with a blank column between letters", () => {
     const word = pixelWord("XP");
-    expect(word.cols).toBe(7);
-    expect(word.rows).toBe(5);
-    // X's top-left and P's top-left are lit; the gap column never is.
+    expect(word.rows).toBe(9);
+    expect(word.cols).toBeGreaterThan(8);
+    // Ink at the top-left of the X; every cell inside the word's box.
     expect(word.cells.some((c) => c.col === 0 && c.row === 0)).toBe(true);
-    expect(word.cells.some((c) => c.col === 4 && c.row === 0)).toBe(true);
-    expect(word.cells.some((c) => c.col === 3)).toBe(false);
+    expect(word.cells.every((c) => c.col < word.cols && c.row < word.rows)).toBe(true);
     expect(word.cells.every((c) => c.t >= 0 && c.t <= 1)).toBe(true);
+    // Lowercase reads as lowercase (m5x7 has both cases).
+    expect(pixelWord("Update").cells.length).not.toBe(pixelWord("UPDATE").cells.length);
   });
 
-  it("fits 100% in the 15 columns the XP readout reserves", () => {
-    expect(pixelWord("100%").cols).toBe(15);
-    expect(pixelWord("7%").cols).toBeLessThan(15);
+  it("fits 100% in the columns the XP readout reserves", () => {
+    expect(pixelWord("100%").cols).toBeLessThanOrEqual(PCT_COLS);
+    expect(pixelWord("7%").cols).toBeLessThan(PCT_COLS);
   });
 
   it("scatters a word the same way every time", () => {

@@ -68,17 +68,11 @@ Never "looks good"/"LGTM" without stating what was and was not verified. Never c
 
 ## Scaling: one agent or several
 
-| Situation | Do |
-|---|---|
-| Single-pass size (one concern, ≲ ~400 changed lines, few files) | Main thread only. Never spawn. |
-| Larger, multi-package, or > ~15 files | Main thread builds a **coverage ledger**: rows = lens (spec, standards/correctness, tests, agent checks) × file group (package/directory). Each row ends `checked-with-findings` / `checked-clean` / `not-checked(reason)`. |
-| Fan-out | ONE `spawn_agent` call, ≤ 6 read-only children per lens and/or file group: `owl` for reading; general-purpose child if it must run tests. |
-| Security-sensitive hunks (auth, input, secrets, deps, CI) | Route to bulletproof's protocol: `auditor` child briefed with the bulletproof skill root, then `skeptic` on its findings. |
-| High-stakes merge (release, > ~1,000 lines) | One fresh-context verifier child tries to disprove each blocking finding. |
-
-**Child brief** (children see nothing else): absolute skill root `…/assets/skills/code-review`; reference file(s) to read; the exact `git diff <base>...<head> -- <paths>` to run; its ledger rows; the spec text verbatim (spec lens) or the repo conventions (standards lens); the output schema — findings in the format above plus explicit `checked` and `not checked` lists. Read-only, no edits.
-
-**Merge:** a child that fails, times out, or omits a row → that row is `not checked`, never clean. Re-open every reported `file:line` before reporting it; drop what you cannot confirm. Dedupe across children. Keep spec and standards lists separate. Fixes afterwards are serialized in the main thread.
+- Single-pass size: main thread only, never spawn.
+- Larger, multi-package, or > ~15 files: build a coverage ledger (rows = lens: spec, standards, tests, agent checks × package/directory; each ends `checked-with-findings` / `checked-clean` / `not-checked(reason)`), then one read-only repo helper per row group. Brief each with the exact `git diff <base>...<head> -- <paths>` and the spec text verbatim (spec lens) or repo conventions (standards lens).
+- Security-sensitive hunks: a security auditor briefed with the bulletproof skill root, then a verifier on its findings.
+- High-stakes merge (release, > ~1,000 lines): one fresh-context verifier tries to disprove each blocking finding.
+- Merging: dedupe, and keep spec and standards lists separate. Helper types, brief contents and merge rules come with the skill loader.
 
 ## Sources (SNAPSHOT, accessed 3 October 2026)
 

@@ -186,7 +186,7 @@ export function ProjectHealthBadge({
                     />
                   </span>
                 </div>
-                <PopCritter critter={HEALTH_CRITTER} pose={HEALTH_POSE[tier]} size={28} />
+                <PopCritter critter={HEALTH_CRITTER} pose={HEALTH_POSE[tier]} size={36} />
               </header>
               {health.cappedBy && (
                 <p className="health-capped" data-tier={tier}>

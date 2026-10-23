@@ -37,14 +37,13 @@ import {
 import {
   animalSprite,
   annexTop,
-  CAT_COLORS,
-  CAT_STEP_A,
   benchTop,
   canopyTree,
   farmhouseTop,
   fireTop,
-  HEN_COLORS,
-  HEN_STAND,
+  CAT_LIT,
+  HEN_LIT,
+  lightAnimal,
   kennelTop,
   kuraTop,
   lanternTop,
@@ -615,7 +614,15 @@ export function buildFarm(options: FarmOptions = {}): Farm {
   T(house, "house", "Farmhouse", [2, 3, 4, 5, 6]);
   const kennel = T(P(lean(kennelTop(), 0.08), 335, 104, { roof: true }), "kennel", "Kennel");
   // The shiba sleeps here; it's drawn live (it can wake), so it only holds its place.
-  P(animalSprite(SHIBA_ASLEEP, SHIBA_COLORS), 338, 114, { hidden: true });
+  // The shiba asleep by its kennel, lit like the critters.
+  const shiba = lightAnimal(
+    SHIBA_ASLEEP,
+    SHIBA_COLORS,
+    { k: "O", l: "o", h: "o", s: "o", c: "w", e: "K", n: "N" },
+    { o: "fur", w: "fur", K: "flat", N: "flat" },
+    53,
+  );
+  P(animalSprite(shiba.rows, shiba.palette), 338, 114, { hidden: true });
   const board = T(P(lean(notesBoardTop(303)), 374, 106, { roof: true }), "board", "Notice board");
   const kura = T(P(lean(kuraTop(304)), 444, 120, { roof: true }), "kura", "Storehouse");
   T(P(sakuraTree(305, false), 470, 44), "sakura", "Cherry tree");
@@ -856,9 +863,11 @@ export function buildFarm(options: FarmOptions = {}): Farm {
     for (const r of ambient.roamers) {
       const spot = r.route[0];
       if (!spot) continue;
-      const grid = r.kind === "cat" ? CAT_STEP_A : HEN_STAND;
-      const colors = r.kind === "cat" ? CAT_COLORS : HEN_COLORS;
-      props.push({ sprite: animalSprite(grid, colors), x: spot.x, y: spot.y });
+      const sprite =
+        r.kind === "cat"
+          ? animalSprite(CAT_LIT.a.rows, CAT_LIT.a.palette)
+          : animalSprite(HEN_LIT.stand.rows, HEN_LIT.stand.palette);
+      props.push({ sprite, x: spot.x, y: spot.y });
     }
   }
 

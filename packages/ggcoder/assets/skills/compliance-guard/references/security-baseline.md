@@ -1,8 +1,19 @@
 # Security Baseline
 
+## Contents
+- PRE-DEPLOY BLOCKERS
+- Why AI-generated code fails here specifically
+- Security depth lives in the bulletproof skill
+- Payments
+- Data handling that maps to legal duties
+- Incident readiness
+- AI features: the compliance side
+- Assurance for B2B sales
+
+
 Security is the fastest route from "small app" to "regulatory incident": a breach triggers notification duties, class actions in states with a breach private right of action, and the deception theory that your privacy policy promised protection you did not provide. This file is the pre-deploy floor, weighted toward the failure modes that AI-generated and rapidly built apps produce most often.
 
-Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 (see `provenance.md`). Verify version numbers and vendor terms before asserting them.
+Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 and 22 Oct 2026 (see `provenance.md`). Verify version numbers and vendor terms before asserting them.
 
 ---
 
@@ -54,27 +65,12 @@ Academic and vendor studies through 2024–2026 consistently find a substantial 
 
 ---
 
-## Supply chain
+## Security depth lives in the bulletproof skill
 
-- Commit lockfiles; pin or range-pin deliberately; use `npm ci`/`pnpm i --frozen-lockfile` in CI.
-- Consider disabling install scripts by default in CI (`--ignore-scripts`) — 2025–2026 saw self-propagating npm worms that executed on install and stole credentials **[V]**.
-- Verify every package name before adding it. AI models hallucinate package names and attackers register them ("slopsquatting").
-- Run dependency vulnerability scanning and a licence scan in the same CI step (see `lawsuit-vectors.md` §6).
-- Generate an SBOM per release. Enterprise buyers and some regulatory regimes now expect one.
-- Scope CI tokens; never give a workflow a long-lived org-wide credential.
+Supply chain, authentication and account recovery, prompt injection, agent tool permissions, sandboxing, and abuse limits are covered in depth by the separate **bulletproof** skill. Load it for any fix beyond a blocker above; do not duplicate it here. The compliance-specific residue:
 
----
-
-## Authentication and account safety
-
-- Prefer a managed identity provider or passkeys over rolling your own.
-- Long passwords over composition rules; screen against known-breached password lists; do not force periodic rotation without cause **[S]** — verify against the current NIST digital identity guidance before stating specifics.
-- MFA available for all users, required for admin.
-- Account recovery is the real attack surface: single-use, short-lived, one-time tokens; no user enumeration in responses or timing; invalidate all sessions on password or email change.
-- Lock or throttle after repeated failures, per-account and per-IP.
-- Log authentication events with enough detail to reconstruct an incident, without logging credentials.
-
----
+- **Licence scan** in the same CI step as vulnerability scanning; fail on copyleft and unknown (see `lawsuit-vectors.md` §6).
+- **Hallucinated or typosquatted packages** ("slopsquatting") are a supply-chain incident with breach-notice consequences; verify every new package name.
 
 ## Payments
 
@@ -106,22 +102,13 @@ Academic and vendor studies through 2024–2026 consistently find a substantial 
 
 ---
 
-## Prompt-injection fingerprint
+## AI features: the compliance side
 
-The most common shape in AI-built apps is untrusted text interpolated straight into a prompt — an f-string, template literal, or concatenation carrying a CV, a support message, a scraped page, a filename, or a database field into the system or user message. Anything reaching the model is attacker-controlled input.
+Prompt injection, tool scoping, sandboxing and cost limits: load **bulletproof**. What stays a legal duty here:
 
-Detect any prompt string built by interpolation from a request body, a stored record, an uploaded file, or fetched web content. Then ask the two questions that set severity — **what can the model do** (tools, queries, sends, spend) and **where does its output land** (rendered HTML, a shell, another prompt, a decision about a person). Treat the untrusted span as data: fence it, keep authority at the tool layer rather than in prompt wording, and never let output reach a dangerous sink unchecked.
-
-## AI and agent security
-
-- **Prompt injection is not solvable by prompting.** Treat all retrieved, scraped, uploaded, or user-supplied content as hostile instructions. Enforce authority at the tool layer: the model requests, your code authorises.
-- **Never let model output reach a dangerous sink unchecked** — no `eval`, no shell string interpolation, no SQL from model text, no unsanitised HTML render (LLM output is a live XSS vector; render as text or sanitise).
-- **Tool permissions must be least-privilege and user-scoped.** A tool that can read "the database" will be talked into reading someone else's rows.
-- **Sandbox code execution** — isolated runtime, no network by default, no host filesystem, hard CPU/memory/time limits.
-- **Cost and abuse limits per user and globally**, with a kill switch. Unbounded LLM spend is a real business-ending failure mode.
-- **PII into prompts** — redact what you can, disclose the vendor in your privacy notice, sign the vendor's DPA, and prefer zero/limited-retention endpoints. Business/API tiers and consumer tiers of the same vendor often have different training and retention defaults **[S]** — verify the current terms for the specific endpoint before telling a user their data is not trained on.
-- **Log prompts and outputs carefully**: they frequently contain the most sensitive data in the system, and their retention is now part of your retention schedule.
-- Consult current OWASP guidance for web, API, and LLM applications for the full control set **[S]** — verify the current version numbers before citing them.
+- **PII into prompts** — redact what you can, name the vendor in the privacy notice, sign its DPA, prefer zero/limited-retention endpoints. Business/API and consumer tiers of the same vendor often differ on training and retention **[S]**; verify the specific endpoint's terms before telling a user their data is not trained on.
+- **Prompt and output logs** often hold the most sensitive data in the system; their retention belongs in the retention schedule.
+- **Unbounded per-user LLM spend** is also blocker 9 (rate limits); record it in the ledger, not only as a cost issue.
 
 ---
 

@@ -1,19 +1,15 @@
-import { GLYPH_H, GLYPHS } from "./goal-world-font";
+import { LINE_H, textPixels, textWidth } from "./pixel-text";
 import { hashKey, renderPixelGrid } from "./critter-sprites";
 import { seeded } from "./whatsnew-content";
 
 /**
  * Art for the home screen's update key (HomeUpdateButton): the
- * key's pixel plate and its side, the bobbing arrow, a sparkle, words in the
- * Goal world's pixel font, and the burst it goes off in at 100%. Colours are
- * art, not theme roles (like Ken's storybook art), so the key looks the same
- * in both themes. Everything here is computed once and deterministic.
+ * key's pixel plate and its side, the bobbing arrow, a sparkle, words in
+ * GG Royale's pixel font (m5x7), and the burst it goes off in at 100%, all in
+ * GG Royale's palette (ink, gold, wine, felt green). Colours are art, not
+ * theme roles, so the key looks the same in both themes. Everything here is
+ * computed once and deterministic.
  */
-
-/** "%" for the XP readout; the Goal world's font has no percent sign. */
-const EXTRA_GLYPHS: Readonly<Record<string, readonly string[]>> = {
-  "%": ["#.#", "..#", ".#.", "#..", "#.#"],
-};
 
 export interface PixelCell {
   readonly col: number;
@@ -28,27 +24,20 @@ export interface PixelWord {
   readonly rows: number;
 }
 
-/** `text` in the Goal world's 3x5 pixel font, one blank column between glyphs. */
+/**
+ * `text` in m5x7, GG Royale's pixel font (as the Goal world draws it): rows
+ * run from the top of the capitals to the bottom of the descenders.
+ */
 export function pixelWord(text: string): PixelWord {
-  const glyphs = [...text.toUpperCase()].map(
-    (ch) => EXTRA_GLYPHS[ch] ?? GLYPHS[ch] ?? GLYPHS["?"] ?? [],
-  );
-  const cols = glyphs.reduce((sum, glyph, i) => sum + (glyph[0]?.length ?? 0) + (i > 0 ? 1 : 0), 0);
-  const cells: PixelCell[] = [];
-  let x = 0;
-  glyphs.forEach((glyph, i) => {
-    if (i > 0) x += 1;
-    glyph.forEach((line, row) => {
-      [...line].forEach((ch, col) => {
-        if (ch !== "#") return;
-        const at = x + col;
-        cells.push({ col: at, row, t: cols > 1 ? at / (cols - 1) : 0 });
-      });
-    });
-    x += glyph[0]?.length ?? 0;
-  });
-  return { cells, cols, rows: GLYPH_H };
+  const cols = Math.max(1, textWidth(text));
+  const cells: PixelCell[] = textPixels(text)
+    .filter(([, y]) => y >= 0 && y < LINE_H)
+    .map(([x, y]) => ({ col: x, row: y, t: cols > 1 ? x / (cols - 1) : 0 }));
+  return { cells, cols, rows: LINE_H };
 }
+
+/** Columns the XP readout reserves, so "7%" to "100%" never resizes the key. */
+export const PCT_COLS = textWidth("100%");
 
 /** Where each lit cell of a word starts before it flies into place. */
 export interface CellFlight {
@@ -78,7 +67,7 @@ export interface BurstPiece {
   readonly delay: number;
 }
 
-const BURST_COLORS = ["#ffd23a", "#3ddc84", "#fff7d6", "#9adfff"] as const;
+const BURST_COLORS = ["#f5bd63", "#8fbf6a", "#fff0e0", "#cedbf9"] as const;
 
 /**
  * The pixels a key goes off in when the update lands: a ring, flung outwards.
@@ -93,7 +82,7 @@ export function burstPieces(count = 18, squash = 1): BurstPiece[] {
       dx: Math.round(Math.cos(angle) * reach * 1.9),
       dy: Math.round(Math.sin(angle) * reach * 0.8 * squash),
       size: rand() < 0.35 ? 6 : 4,
-      color: BURST_COLORS[i % BURST_COLORS.length] ?? "#ffd23a",
+      color: BURST_COLORS[i % BURST_COLORS.length] ?? "#f5bd63",
       delay: rand() * 0.08,
     };
   });
@@ -114,9 +103,9 @@ function sizedPixelSvg(rows: readonly string[], palette: Readonly<Record<string,
 }
 
 /**
- * The key's plate as a 9-slice, 12x12 cells (slice 4): a dark outline with
+ * The key's plate as a 9-slice, 12x12 cells (slice 4): an ink outline with
  * stepped corners, a gold rim lit top-left and shaded bottom-right, a lighter
- * inner edge on top and left, and the deep indigo face.
+ * inner edge on top and left, and a deep wine face (GG Royale's velvet).
  */
 export const PLATE_ROWS = [
   "..KKKKKKKK..",
@@ -134,26 +123,26 @@ export const PLATE_ROWS = [
 ] as const;
 
 export const PLATE_PALETTE = {
-  K: "#0b0820",
-  Y: "#ffd23a",
-  y: "#b8861f",
-  H: "#3d3496",
-  F: "#221b5e",
+  K: "#1e0c1f",
+  Y: "#e9af54",
+  y: "#a0743c",
+  H: "#6e3446",
+  F: "#4c1c2c",
 } as const;
 
-/** The key's side, seen under the plate: the same shape in dark gold. */
+/** The key's side, seen under the plate: the same shape in dark wood. */
 const BASE_PALETTE = {
-  K: "#0b0820",
-  Y: "#8f6216",
-  y: "#5c3b0a",
-  H: "#7a5212",
-  F: "#7a5212",
+  K: "#1e0c1f",
+  Y: "#743c36",
+  y: "#4e343f",
+  H: "#5a2e22",
+  F: "#5a2e22",
 } as const;
 
 export const PLATE_SRC = sizedPixelSvg(PLATE_ROWS, PLATE_PALETTE);
 export const BASE_SRC = sizedPixelSvg(PLATE_ROWS, BASE_PALETTE);
 
-/** The up arrow on the key: green, outlined, lit on its left edge. 9x9. */
+/** The up arrow on the key: felt green, ink outline, lit on its left edge. 9x9. */
 const ARROW_ROWS = [
   "....O....",
   "...OLO...",
@@ -167,7 +156,7 @@ const ARROW_ROWS = [
 ] as const;
 export const ARROW_SRC = renderPixelGrid(
   ARROW_ROWS,
-  { O: "#0b3d22", L: "#b6ffd6", G: "#3ddc84" },
+  { O: "#1e0c1f", L: "#b8dc98", G: "#688e50" },
   { width: 9, height: 9 },
 );
 
@@ -175,6 +164,6 @@ export const ARROW_SRC = renderPixelGrid(
 const SPARKLE_ROWS = ["..Y..", "..Y..", "YYWYY", "..Y..", "..Y.."] as const;
 export const SPARKLE_SRC = renderPixelGrid(
   SPARKLE_ROWS,
-  { Y: "#ffd23a", W: "#fffbe0" },
+  { Y: "#f5bd63", W: "#fff0d0" },
   { width: 5, height: 5 },
 );

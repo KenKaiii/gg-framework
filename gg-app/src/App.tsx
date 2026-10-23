@@ -143,6 +143,7 @@ const GoalPicker = lazy(() =>
 );
 import { BackButton } from "./BackButton";
 import { HomeScreen } from "./HomeScreen";
+import { RoyaleScreen } from "./RoyaleScreen";
 import { SettingsModal } from "./SettingsModal";
 import { initialEntryView, type EntryView } from "./app-entry-view";
 import {
@@ -494,9 +495,13 @@ function App(): React.ReactElement {
   const [restoreChecked, setRestoreChecked] = useState(false);
   // Every window starts from the mode-neutral home screen before choosing Code or Chat.
   const [entryView, setEntryView] = useState<EntryView>(initialEntryView(isSecondaryWindow));
+  // GG Royale has faded in over Home (Home holds its Royale plate down until then).
+  const [royaleShown, setRoyaleShown] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>("general");
   // Re-open the matching session picker over an already-open workspace.
   const [showPicker, setShowPicker] = useState(false);
+  // GG Royale over a workspace (from the Deck's Royale key); Back returns here.
+  const [showRoyale, setShowRoyale] = useState(false);
   // Bumped on each workspace/session choice to force re-hydration.
   const [hydrateNonce, setHydrateNonce] = useState(0);
   const { activity, handleActivityEvent } = useTaskActivity(hydrateNonce);
@@ -2493,7 +2498,10 @@ function App(): React.ReactElement {
         className={`app${windowFocused ? " window-focused" : ""}`}
         style={{ background: theme.background }}
       >
-        {entryView === "home" ? (
+        {/* GG Royale opens OVER Home (as it does over a workspace), so Home
+            stays put underneath while the game fades in, and Back fades
+            straight back to it. */}
+        {entryView === "home" || entryView === "royale" ? (
           <HomeScreen
             onProjects={() =>
               showScreen(() => {
@@ -2519,6 +2527,8 @@ function App(): React.ReactElement {
                 setEntryView("motion");
               })
             }
+            onRoyale={() => showScreen(() => setEntryView("royale"))}
+            royaleShown={royaleShown}
             onSettings={(tab) =>
               showScreen(() => {
                 setSettingsTab(tab ?? "general");
@@ -2562,6 +2572,19 @@ function App(): React.ReactElement {
             // Every window can return to the mode-neutral home screen.
             onClose={() => showScreen(() => setEntryView("home"))}
           />
+        )}
+        {entryView === "royale" && (
+          <div className="royale-overlay">
+            <RoyaleScreen
+              onShown={() => setRoyaleShown(true)}
+              onClose={() =>
+                showScreen(() => {
+                  setRoyaleShown(false);
+                  setEntryView("home");
+                })
+              }
+            />
+          </div>
         )}
         {showTraySettings && <SettingsModal onClose={closeTraySettings} />}
         <Toaster />
@@ -2956,8 +2979,10 @@ function App(): React.ReactElement {
                       ),
                     }
                   : undefined,
+              // Goal windows show the attached project's score too (Usage →
+              // Project Health), so the breakdown must open there as well.
               health:
-                workspaceMode === "code" && !state?.goal
+                workspaceMode === "code"
                   ? {
                       title: "Project Health",
                       body: (
@@ -3000,6 +3025,7 @@ function App(): React.ReactElement {
             }}
             progress={progress}
             trophies={trophies.snapshot}
+            onOpenRoyale={() => showScreen(() => setShowRoyale(true))}
             usageExtras={
               windowTotal > 1 &&
               windowIndex !== null && (
@@ -3181,6 +3207,14 @@ function App(): React.ReactElement {
           onFeedback={sendPlanFeedback}
           onReject={rejectPlan}
         />
+      )}
+
+      {/* GG Royale over this workspace, full window. The session keeps running
+          underneath; Back comes straight back to it. */}
+      {showRoyale && (
+        <div className="royale-overlay">
+          <RoyaleScreen onClose={() => showScreen(() => setShowRoyale(false))} />
+        </div>
       )}
 
       {/* Settings reached from the menu-bar tray. Rendered in every view branch

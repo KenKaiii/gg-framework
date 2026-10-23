@@ -1,23 +1,7 @@
-import {
-  BookOpenIcon,
-  ChatCircleDotsIcon,
-  CheckCircleIcon,
-  ClockIcon,
-  CoffeeIcon,
-  GlobeIcon,
-  HourglassMediumIcon,
-  LightbulbIcon,
-  MagnifyingGlassIcon,
-  PauseIcon,
-  PencilSimpleIcon,
-  TerminalWindowIcon,
-  UsersThreeIcon,
-  WarningCircleIcon,
-  type Icon,
-} from "@phosphor-icons/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { PixelGlyph } from "./PixelGlyph";
 import { drawKenPortrait } from "./goal-ken-portrait";
-import { LONG_THINK_MS, type KenStatus as Status, type KenStatusIcon } from "./goal-ken-status";
+import { LONG_THINK_MS, type KenStatus as Status } from "./goal-ken-status";
 import { useMotionLevel } from "./window-motion";
 
 interface Props {
@@ -28,22 +12,6 @@ interface Props {
   /** Told when the pointer rests on the pill and when it leaves (Ken holds his lines meanwhile). */
   readonly onHoverChange?: (hovered: boolean) => void;
 }
-
-const ICONS: Readonly<Record<KenStatusIcon, Icon>> = {
-  read: BookOpenIcon,
-  search: MagnifyingGlassIcon,
-  edit: PencilSimpleIcon,
-  run: TerminalWindowIcon,
-  web: GlobeIcon,
-  think: LightbulbIcon,
-  ask: ChatCircleDotsIcon,
-  delegate: UsersThreeIcon,
-  wait: HourglassMediumIcon,
-  paused: PauseIcon,
-  error: WarningCircleIcon,
-  done: CheckCircleIcon,
-  idle: CoffeeIcon,
-};
 
 // The dissolve between moments (match App.css, .ken-status): the text fades
 // out, the pill eases to its new size while it's hidden, and the new text
@@ -345,7 +313,6 @@ export function KenStatus({
     };
   }, [reducedMotion, away, motion]);
 
-  const BadgeIcon = ICONS[shown.icon];
   const bar = shown.icon === "run" ? "run" : shown.icon === "wait" ? "wait" : undefined;
   return (
     <div
@@ -369,7 +336,7 @@ export function KenStatus({
           </span>
           <span className="ken-status-badge">
             <span key={shown.icon} className="ken-status-badge-icon">
-              <BadgeIcon size={10} weight="bold" />
+              <PixelGlyph name={shown.icon} size={18} />
             </span>
           </span>
           <div className="ken-status-main">
@@ -393,7 +360,7 @@ export function KenStatus({
             )}
             <div className="ken-status-row ken-status-note-row">
               <p className="ken-status-note">
-                <ClockIcon size={12} weight="bold" />
+                <PixelGlyph name="clock" />
                 Long think. Normal for a big step.
               </p>
             </div>

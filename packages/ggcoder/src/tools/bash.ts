@@ -185,7 +185,10 @@ export function createBashTool(
     description:
       description +
       " Servers/watchers/REPLs: run_in_background + wake.pattern, then task_output wait_ms; " +
-      "never `&`, nohup or sleep. Leave servers running. Kill by exact PID.",
+      // "Never by name or pattern" moved here from the lean skill, which only
+      // loads for perf work: a pattern kill took down the host daemon and every
+      // sibling session.
+      "never `&`, nohup or sleep. Leave servers running. Kill by exact PID, never by name or pattern (pkill, killall, taskkill /IM): you run inside a host process.",
     parameters: BashParams,
     executionMode: "sequential",
     async execute(

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import type { UpdateInfo } from "./update";
 import { KEY_ART_STYLE, PixelText, UpdateArrow, UpdateBurst, UpdateMeter } from "./UpdateKeyParts";
+import { PCT_COLS } from "./update-key-art";
 import "./UpdateBanner.css";
 
 /**
@@ -51,12 +52,12 @@ export function UpdateBanner({
         >
           <span className="ub-row" aria-hidden="true">
             <UpdateArrow />
-            <PixelText text="Update" cell={3} fly spread={50} />
+            <PixelText text="Update" cell={2} fly spread={50} />
             <span className="ub-versions">
               {current && (
                 <>
                   <span>{`v${current}`}</span>
-                  <span className="ub-versions-to">{"\u2192"}</span>
+                  <span className="ub-versions-to">{"to"}</span>
                 </>
               )}
               <span className="ub-versions-new">{`v${version ?? ""}`}</span>
@@ -82,13 +83,13 @@ export function UpdateBanner({
         >
           {done ? (
             <span className="ub-row" aria-hidden="true">
-              <PixelText text="Updated!" cell={3} fly spread={30} />
+              <PixelText text="Updated!" cell={2} fly spread={30} />
             </span>
           ) : (
             <span className="ub-row" aria-hidden="true">
-              <PixelText text="XP" cell={3} />
+              <PixelText text="XP" cell={2} />
               <UpdateMeter pct={pct} />
-              <PixelText text={`${pct}%`} cell={3} minCols={15} />
+              <PixelText text={`${pct}%`} cell={2} minCols={PCT_COLS} />
             </span>
           )}
           {done && <UpdateBurst flat />}

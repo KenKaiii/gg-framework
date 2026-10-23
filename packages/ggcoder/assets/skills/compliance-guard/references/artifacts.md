@@ -1,6 +1,19 @@
 # Artifacts
 
-What each required document or flow must actually contain, as a skeleton to generate against. Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 (see `provenance.md`).
+## Contents
+- 1. Privacy policy
+- 2. Terms of service
+- 3. Consent and preference infrastructure
+- 4. Data subject / consumer rights flow
+- 5. Records and governance
+- 6. Accessibility statement
+- 7. AI disclosures
+- 8. Email and SMS in code
+- 9. App store gates
+- 10. Business basics (flag, do not draft)
+
+
+What each required document or flow must actually contain, as a skeleton to generate against. Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 and 22 Oct 2026 (see `provenance.md`).
 
 **Rule for every document here:** generate it with `[PLACEHOLDER]` fields for facts only the user has, never invent entity names, addresses, retention periods, or vendor lists, and mark the output as a template that needs review. State plainly which artifacts a competent developer can safely template and which genuinely need a lawyer.
 

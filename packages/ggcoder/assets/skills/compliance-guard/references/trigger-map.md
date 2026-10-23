@@ -1,8 +1,22 @@
 # Trigger Map
 
+## Contents
+- A. Universal — applies to essentially any product with real users
+- B. Tracking, analytics, advertising
+- C. Money
+- D. Users, content, community
+- E. Minors
+- F. Sensitive data classes
+- G. AI features
+- H. Messaging
+- I. Data sourcing
+- J. Regulated domains — evaluate before anything else
+- K. Fast severity heuristics
+
+
 Observable fact → what it triggers → what to actually do. This is the routing index; depth lives in the jurisdiction and vector files.
 
-Status markers: **[V]** verified against a primary source (11 Aug 2026 snapshot, spot re-verified 3 Oct 2026 — see `provenance.md`) · **[S]** snapshot claim, re-verify date/threshold before asserting · **[U]** uncertain or contested, present as uncertain.
+Status markers: **[V]** verified against a primary source (11 Aug 2026 snapshot, spot re-verified 3 Oct 2026 and 22 Oct 2026 — see `provenance.md`) · **[S]** snapshot claim, re-verify date/threshold before asserting · **[U]** uncertain or contested, present as uncertain.
 
 ---
 

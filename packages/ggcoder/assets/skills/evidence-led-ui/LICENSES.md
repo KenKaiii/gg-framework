@@ -1,6 +1,6 @@
 # Licenses and Attributions
 
-## Distributed third-party material
+## Third-party sources of derived observations
 
 ### VoltAgent/awesome-design-md
 
@@ -8,8 +8,7 @@
 - Pinned commit: `664b3e78fd1a298ba11973822da988483256d4b4`
 - License: MIT
 - Copyright: Copyright (c) 2026 VoltAgent
-- Included material: `corpus/awesome-design-md/design-md/*/DESIGN.md`
-- License copy: `corpus/awesome-design-md/LICENSE`
+- Use here: counts and short source slugs in `references/observed-patterns.md` and `references/archetypes.md` were derived from the 74 `design-md/*/DESIGN.md` files at the pinned commit. The upstream files are no longer bundled (removed 22 October 2026); read them upstream.
 
 The upstream files are provided “as is.” Their analyses of public websites do not transfer ownership of third-party trademarks, proprietary fonts, brand assets, or visual identities.
 
@@ -77,4 +76,4 @@ W3C WAI and Internationalization guidance, WHATWG HTML, MDN, web.dev Baseline an
 
 ## Original material
 
-`SKILL.md`, `scripts/*.mjs`, `data/observations.json`, `fixtures/briefs.json`, and `references/*.md` are original work produced for this installation, except for factual source names, links, measured corpus excerpts represented as short source slugs, and the third-party corpus listed above.
+`SKILL.md` and `references/*.md` are original work produced for this installation, except for factual source names, links, and measured corpus observations represented as counts and short source slugs.

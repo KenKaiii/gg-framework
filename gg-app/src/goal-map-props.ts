@@ -123,7 +123,51 @@ export function lean(sprite: Sprite, top = 0.14, ground = 0.12, ink: Rgb = LEAN_
       if (r === w - 1) out.set(dr + pad + 1, y, mix(src.rgb(r, y), ink, OUTLINE));
     }
   }
+  settle(out, first, foot, cx + pad);
   return { ...sprite, buf: out, ax: sprite.ax + pad };
+}
+
+/**
+ * Light a standing prop the way GG Royale lights its art, over its own
+ * colours: the side toward the sun (upper left) a touch brighter, the side
+ * away a touch darker, and the last few rows above its foot gathering shade
+ * where it meets the ground (the dark a thing sits in, so it stands on the
+ * map rather than floating over it). The outline is left alone, so the lines
+ * stay the line colour. Steps go through an ordered dither, not a blend.
+ */
+function settle(b: PixelBuffer, first: number, foot: number, cx: number): void {
+  const BY = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
+  const tall = Math.max(1, foot - first);
+  const SUN = 0xfff2d6;
+  for (let y = first; y <= foot && y < b.height; y++) {
+    let l = -1;
+    let r = -1;
+    for (let x = 0; x < b.width; x++) {
+      if (!b.opaque(x, y)) continue;
+      if (l < 0) l = x;
+      r = x;
+    }
+    if (l < 0) continue;
+    const half = Math.max(1, (r - l + 1) / 2);
+    for (let x = l; x <= r; x++) {
+      if (!b.opaque(x, y)) continue;
+      // Leave the line work alone: it's whatever borders the clear outside.
+      const edge = !b.opaque(x - 1, y) || !b.opaque(x + 1, y) || !b.opaque(x, y - 1);
+      if (edge) continue;
+      const d = ((BY[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16;
+      const u = (x + 0.5 - cx) / half; // -1 left … 1 right
+      const v = (y - first) / tall; // 0 top … 1 foot
+      const c = b.rgb(x, y);
+      // Sunward wash on the upper left, shade on the lower right.
+      const lit = -u * 0.5 - (v - 0.5) * 0.7;
+      if (lit > 0.42 && (lit - 0.42) * 4 > d) b.set(x, y, mix(c, SUN, 0.14));
+      else if (lit < -0.42 && (-0.42 - lit) * 4 > d) b.set(x, y, mix(c, LEAN_INK, 0.16));
+      // Contact shade: the bottom three rows darken toward the foot.
+      const fromFoot = foot - y;
+      if (fromFoot < 4 && (4 - fromFoot) / 4 > d * 0.8)
+        b.set(x, y, mix(b.rgb(x, y), LEAN_INK, 0.3));
+    }
+  }
 }
 
 function make(

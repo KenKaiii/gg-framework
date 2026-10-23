@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { createCampfireRenderer, type CampfireRenderer } from "./campfire-scene";
+import { homeLayout } from "./clearing-art";
+import { createClearingScene, sceneHour } from "./clearing-scene";
 import { BIOMES, type Biome } from "./critter-terrain";
+import { lightAt } from "./scene-light";
 import { useWindowFocused } from "./useWindowFocused";
 
-/** Embers and smoke drift slowly; 24 frames a second keeps them smooth. */
-const FRAME_MS = 1000 / 24;
-/** Where a still (reduced-motion) frame is taken: sparks up, smoke curling. */
-const STILL_SECONDS = 30;
+/** Screen px per art px, as in GG Royale (and the critters' ground). */
+const SCALE = 2;
+/** The fire and fireflies step like the game's art: 12 frames a second is plenty. */
+const FRAME_MS = 1000 / 12;
+/** Where a still (reduced-motion) frame is taken: the fire mid-flicker, embers up. */
+const STILL_SECONDS = 4;
 
 /** Terrains that belong in the campfire's clearing. */
 const SCENERY_BIOME_IDS: ReadonlySet<string> = new Set(["meadow"]);
@@ -29,59 +33,66 @@ function prefersReducedMotion(): boolean {
 
 /**
  * The home screen's backdrop: the critters' campfire clearing in the pines,
- * lit by the local clock (see scene-light.ts). Fills the home screen under
- * all content and never takes pointer events.
+ * drawn in GG Royale's pixel style (clearing-art.ts) and lit by the local
+ * clock (scene-light.ts). Fills the home screen under all content and never
+ * takes pointer events.
  *
+ * - The still layer (sky, pines, field) paints once per size and hour; each
+ *   frame copies it and paints what moves: the fire, embers and smoke,
+ *   fireflies, stars, the moon's and sun's glow, beams, mist, clouds, fliers.
  * - Background windows stop animating (the last frame stays), so an idle
  *   window costs nothing.
  * - Reduced motion draws one still frame, re-lit as the hour moves on.
  * - No 2D canvas: nothing draws, and the plain background shows.
  */
-export function HomeScenery({ hour }: { hour: number }): React.ReactElement {
+export function HomeScenery({ hour: clock }: { hour: number }): React.ReactElement {
+  const hour = sceneHour(clock);
   const focused = useWindowFocused();
   const [reduced] = useState(prefersReducedMotion);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [renderer, setRenderer] = useState<CampfireRenderer | null>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas) setRenderer(createCampfireRenderer(canvas, window.devicePixelRatio));
-  }, []);
-
-  // Before the first fit, so the scene is painted once, already lit.
-  useEffect(() => {
-    renderer?.setHour(hour);
-  }, [renderer, hour]);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
 
   useEffect(() => {
     const box = canvasRef.current?.parentElement;
-    if (!renderer || !box) return;
-    const fit = (): void => renderer.resize(box.clientWidth, box.clientHeight);
+    if (!box) return;
+    const fit = (): void => {
+      const w = Math.ceil(box.clientWidth / SCALE);
+      const h = Math.ceil(box.clientHeight / SCALE);
+      setSize((s) => (s && s.w === w && s.h === h ? s : { w, h }));
+    };
     fit();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(fit);
     observer.observe(box);
     return () => observer.disconnect();
-  }, [renderer]);
+  }, []);
 
   useEffect(() => {
-    if (!renderer) return;
-    if (reduced) {
-      renderer.frame(STILL_SECONDS);
-      return;
-    }
-    if (!focused) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d", { alpha: false });
+    if (!canvas || !ctx || !size || size.w < 1 || size.h < 1) return;
+    const { w, h } = size;
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = `${w * SCALE}px`;
+    canvas.style.height = `${h * SCALE}px`;
+    ctx.imageSmoothingEnabled = false;
+    const scene = createClearingScene(ctx, homeLayout(w, h, hour), lightAt(hour));
+    if (!scene) return;
+    const paint = (seconds: number): void => scene.paint(seconds);
+    paint(STILL_SECONDS);
+    if (reduced || !focused) return;
     let raf = 0;
     let last = -Infinity;
     const tick = (now: number): void => {
       raf = requestAnimationFrame(tick);
       if (now - last < FRAME_MS) return;
       last = now;
-      renderer.frame(now / 1000);
+      paint(now / 1000);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [renderer, focused, reduced]);
+  }, [size, hour, reduced, focused]);
 
   return (
     <div className="home-scenery" aria-hidden="true">

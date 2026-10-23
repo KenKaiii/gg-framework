@@ -1,6 +1,18 @@
 # United States
 
-Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 (see `provenance.md`). Markers: **[V]** verified against a primary/first-tier source · **[S]** snapshot, re-verify · **[U]** contested or fast-moving.
+## Contents
+- 0. Scoping reality for a tiny startup
+- 1. State comprehensive privacy laws
+- 2. California specifics
+- 3. Children and teens
+- 4. Health, biometric, genetic, location
+- 5. AI laws
+- 6. Cross-cutting federal
+- 7. PRA ranking — what actually produces suits against small companies
+- 8. Verify before relying
+
+
+Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 and 22 Oct 2026 (see `provenance.md`). Markers: **[V]** verified against a primary/first-tier source · **[S]** snapshot, re-verify · **[U]** contested or fast-moving.
 
 **PRA** = private right of action. This is the field that matters most for a small company: regulator-only laws are a compliance project, PRA laws are a lawsuit.
 
@@ -37,6 +49,8 @@ Disclose signal handling in the privacy notice.
 ```
 Honouring GPC for **every** visitor is the safe default: it satisfies the strictest state and violates none **[V]**.
 
+**Taking effect in 2027** — Oklahoma and Louisiana on 1 Jan 2027, Alabama on 1 May 2027 **[S]**; Vermont's date conflicts across trackers (1 Jan 2027 vs 1 Jan 2028) **[U]**. Delaware's threshold drops to 10,000 consumers (5,000 with data-sale revenue) from 1 Jan 2027 **[S]**. Which states add a GPC duty in 2027 is disputed (trackers disagree even on Alabama) **[U]**; honouring GPC for everyone stays the safe default.
+
 **Why an ordinary ad pixel triggers everything.** "Sale" requires no money — any disclosure for other valuable consideration counts — and "sharing" expressly covers cross-context behavioural advertising **[V]**. Meta Pixel, GA4 with ad features, TikTok, Reddit and LinkedIn tags are a sale/share/targeted ad in nearly every state. Build: a tag inventory, consent-gated loading, and an opt-out that actually severs the pixel rather than filing a form.
 
 **Sensitive data requires opt-in** in Virginia-model states (precise geolocation, race, religion, health, sex life/orientation, immigration status, biometrics, genetic data, children's data) **[V]**. California instead grants a right to limit use.
@@ -60,15 +74,21 @@ Honouring GPC for **every** visitor is the safe default: it satisfies the strict
 - *ADMT* — pre-use notice, access, and opt-out (or a qualifying exception) for automated decision-making about significant decisions (including employees, contractors, applicants). **Compliance deadline 1 Jan 2027**; ADMT deployed after that date must comply before first use. Targeted advertising alone is not a significant decision.
 - *Cyber audits* — only above revenue plus scale thresholds; first certifications due 1 Apr 2028 (>$100M revenue), 1 Apr 2029 ($50–100M), 1 Apr 2030 (<$50M) **[V]**. A pre-revenue startup is out of scope.
 
-**Delete Act / DROP** — if you sell PI of consumers you have no direct relationship with, you are a data broker. **No revenue threshold.** Registration plus, **from 1 Aug 2026**, processing consumer deletion requests through the state mechanism every 45 days with downstream deletion directives; per-day penalties apply whether or not you registered **[V]** (1 Aug 2026 / 45-day cadence re-confirmed on cppa.ca.gov/data_brokers, 3 Oct 2026). All brokers operating in 2025 or 2026 must have a DROP account **[V]**. Enforcement has already hit companies of exactly this size. Ask at design review: *do we sell PI of people who never used us?*
+**Delete Act / DROP** — if you sell PI of consumers you have no direct relationship with, you are a data broker. **No revenue threshold.** Registration plus, **from 1 Aug 2026**, processing consumer deletion requests through the state mechanism every 45 days with downstream deletion directives; per-day penalties apply whether or not you registered **[V]** (1 Aug 2026 / 45-day cadence re-confirmed on cppa.ca.gov/data_brokers, 3 Oct 2026). All brokers operating in 2025 or 2026 must have a DROP account **[V]**. AB 883 (signed Sep 2026) cuts a broker turnaround from 45 to 30 days; sources disagree whether that is the request-response deadline or the DROP check cadence **[U]**.
+
+**AB 2561 (signed 27 Sep 2026)** — an OS or app may not undo a user's privacy setting (including after an update) without consent **[S]**. Never reset privacy toggles in a migration. Enforcement has already hit companies of exactly this size. Ask at design review: *do we sell PI of people who never used us?*
 
 **Breach notice (SB 446)** — since 1 Jan 2026, notify affected California residents within **30 calendar days** of discovery, and report to the AG within **15 calendar days** of notifying individuals **[V]**.
 
 **AI transparency (SB 942 as amended by AB 853)** — covered providers are generative-AI systems with **over 1M monthly users**; duties operative 2 Aug 2026, with hosting-platform duties from 1 Jan 2027 **[V]**. Most small devs are out of scope, but the hosting-platform duty catches anyone distributing GenAI systems.
 
+**AB 2713 (2026)** amends the AI Transparency Act: large online platforms must show whether content was AI-generated or altered (provenance data) **[S]**.
+
+**AB 1609 (signed 28 Sep 2026)** — customer-service chatbot disclosure and human access for large businesses; the reported revenue threshold of $500M is **[U]**.
+
 **AB 2013 training-data transparency** — **no size threshold**. Developers of generative AI systems made available to Californians must publish training-data documentation; compliance required from 1 Jan 2026 and on substantial modification **[V]**. Catches small fine-tuners, not mere API consumers.
 
-**SB 243 companion chatbots — the highest-risk new law for small AI apps.** Effective 1 Jan 2026. Applies to chatbots sustaining a relationship or human-like emotional engagement (excludes customer-service bots, limited game NPCs, voice assistants). Requires non-human disclosure, mental-health crisis protocols, and minor protections including blocking sexual content and enforcing breaks; annual reporting to the state Office of Suicide Prevention is reported to start 1 Jul 2027 **[S]** (bill text not reachable 3 Oct 2026). **PRA: YES** — minimum $1,000 damages plus fees, and UCL pairing can reach individuals personally **[V]**.
+**SB 243 companion chatbots — the highest-risk new law for small AI apps.** Effective 1 Jan 2026. Applies to chatbots sustaining a relationship or human-like emotional engagement (excludes customer-service bots, limited game NPCs, voice assistants). Requires non-human disclosure, mental-health crisis protocols, and minor protections including blocking sexual content and enforcing breaks; annual reporting to the state Office of Suicide Prevention is reported to start 1 Jul 2027 **[S]** (bill text not reachable 3 Oct 2026). **PRA: YES** — minimum $1,000 damages plus fees, and UCL pairing can reach individuals personally **[V]**. **SB 1119** (signed 10 Sep 2026 **[V]**) adds minor protections from 1 Jan 2027, core duties 1 Jul 2027, and independent child-safety audits from 1 Jan 2029 **[S]**. **SB 867** bans toys with a companion chatbot for under-16s from 1 Jan 2027 to 1 Jan 2031 **[S]**.
 
 **Employment ADS regulations** under state anti-discrimination law add notice and recordkeeping duties for automated decision systems **[S]**.
 
@@ -84,13 +104,15 @@ Honouring GPC for **every** visitor is the safe default: it satisfies the strict
 - A written children's information security programme with vendor due diligence.
 - Parent review/deletion flows must cover biometric data.
 
-**App Store Accountability Acts (TX, UT, LA, AL) and California's Digital Age Assurance Act** — these impose duties on **app developers**, not just the stores **[V]**. Status as of 3 Oct 2026:
-- **Texas SB 2420** — in effect since the Fifth Circuit's 4 June 2026 stay pending appeal; the Supreme Court declined to block it; the merits appeal continues **[U]** (secondary sources only; court orders not opened).
+**App Store Accountability Acts (TX, UT, LA, AL) and California's Digital Age Assurance Act** — these impose duties on **app developers**, not just the stores **[V]**. Status as of 22 Oct 2026:
+- **Texas SB 2420** — in force under the Fifth Circuit's 4 June 2026 stay pending appeal; the Supreme Court denied vacatur on 6 Jul 2026 (not a merits ruling); the merits appeal was argued 4 Aug 2026 with no opinion at 22 Oct 2026 **[S]** (court orders not opened).
 - **Utah** — HB 498 (2026) pushed the main store/developer duties to **6 May 2027**, removed AG enforcement, and left a private right of action effective **31 Dec 2026** **[S]**.
 - **Louisiana** — HB 977 (signed 15 May 2026) pushed the effective date to **1 July 2027** **[S]**.
 - **California AB 1043** — effective **1 Jan 2027**: OS-level self-declared age brackets; developers must request the age signal and are then treated as having actual knowledge of the user's age range; no per-download parental consent; AG enforcement up to $2,500 negligent / $7,500 wilful per violation **[S]**.
 - **Alabama** — enacted; effective date not re-verified **[U]**.
 Build: consume the store/OS age-signal API, branch features on age category, store only a category flag, re-request consent on significant app changes.
+
+**California 2026 minors package (signed 10 Sep 2026 [V], gov.ca.gov)** — AB 1709: no addictive features (activity-based feeds, autoplay) for under-16s on covered UGC platforms from 1 Jan 2027; AB 2246 repeals and replaces the Age-Appropriate Design Code with a reasonable-steps duty for services likely accessed by under-18s, from 1 Jan 2027; AB 1856 amends AB 1043 (OS and app stores only; developers deemed to know the age range from the device signal) **[S]**.
 
 **NY SAFE for Kids** — final rules July 2026, effective **25 Jan 2027**, targeting platforms with addictive feeds **[V]**.
 
@@ -108,6 +130,8 @@ Build: consume the store/OS age-signal API, branch features on age category, sto
 
 **Washington My Health My Data Act (RCW 19.373) — the top small-company landmine.** **No revenue or volume threshold**, in effect since 31 Mar 2024 (small businesses from 30 June 2024) **[V]**. "Consumer health data" is defined broadly enough to include precise location that could indicate seeking health services. Requires a **standalone** consumer-health-data privacy policy at its own link, **separate consent for collection**, **separate consent for sharing**, and a **distinct signed authorisation to sell**, plus a geofencing prohibition and processor contracts. **PRA: YES**, via the state Consumer Protection Act: actual damages, trebling up to $25,000, and fees; the AG can separately seek civil penalties **[S]**. The lawsuits on record (from Feb 2025) target ad SDKs and website/app tracking, not hospitals **[S]**. Any period tracker, fitness, mental-health, or symptom app — or anything collecting precise location — is squarely in scope. Nevada (SB 370) and Connecticut have similar consent and geofencing rules without a PRA; New York bans geofencing health facilities; New York's broader Health Information Privacy Act had not become law at 3 Oct 2026 **[S]**.
 
+**California AB 1979 (signed Sep 2026, from 1 Jan 2027)** — a business offering a healthcare chatbot to consumers is treated as a provider of health care under the CMIA (California's medical-confidentiality law), and AI may not independently perform functions reserved to licensed clinicians **[S]**.
+
 **Illinois BIPA** — see `lawsuit-vectors.md` §3. Required **before first capture**: written notice of collection and specific purpose, notice of the retention schedule and destruction guidelines, a **written release**, a publicly available retention/destruction policy, no profiting from biometrics, and reasonable-care storage **[V]**. Texas and Washington have AG-enforced analogues.
 
 **Genetic data** — roughly 14 states require separate express consent per purpose and per disclosure; some allow private suits **[S]**. Treat raw DNA as opt-in-per-purpose and get counsel.
@@ -120,7 +144,7 @@ Build: consume the store/OS age-signal API, branch features on age category, sto
 
 ## 5. AI laws
 
-- **Colorado** — SB 24-205 never took effect: SB 26-189 (signed 14 May 2026) repealed and replaced it with a narrower automated-decision-making (ADMT) disclosure law effective **1 Jan 2027** — point-of-interaction notice, post-adverse-decision explanation, correction and human-review rights for consequential decisions. Repeal-and-reenact confirmed on leg.colorado.gov **[V]**; the 1 Jan 2027 date and obligation detail come from law-firm summaries **[U]** until the enrolled text is read. AG implementing rules are still to come; re-check them before building **[S]**.
+- **Colorado** — SB 24-205 never took effect: SB 26-189 (signed 14 May 2026) repealed and replaced it with a narrower automated-decision-making (ADMT) disclosure law effective **1 Jan 2027** — point-of-interaction notice, post-adverse-decision explanation, correction and human-review rights for consequential decisions. Repeal-and-reenact confirmed on leg.colorado.gov **[V]**; the 1 Jan 2027 date and obligation detail are consistent across law-firm summaries **[S]**. AG rules (4 CCR 904-6, also covering the HB 26-1263 chatbot law): proposed 11 Aug 2026, interim draft 6 Oct, comments close 26 Oct 2026 **[V]** (coag.gov/ai), with the rulemaking hearing that day **[S]**. Final rules are due by 1 Jan 2027 and pending xAI litigation could still delay it; re-check before building **[S]**.
 - **Texas TRAIGA (HB 149)** — signed 22 Jun 2025, effective 1 Jan 2026 (capitol.texas.gov bill history, 3 Oct 2026), reaching out-of-state developers whose AI is accessible to Texas users. Intent-based liability for AI that promotes self-harm, facilitates crime, discriminates, or produces prohibited deepfakes. AG-only with a 60-day cure; **safe harbour for documented NIST AI RMF-aligned compliance** **[V]**. Practical step for a small dev: a one-page RMF-aligned policy plus retained prompt/eval logs.
 - **Illinois HB 3773** — from 1 Jan 2026, using AI with a discriminatory *effect* in employment violates the state human-rights act; intent is no defence **[V]**.
 - **NYC Local Law 144** — annual independent bias audit plus published summary and candidate notice for automated employment decision tools used for NYC roles **[V]**.
@@ -136,7 +160,7 @@ Build: consume the store/OS age-signal API, branch features on age category, sto
 - **FTC Act §5** — any statement in your privacy policy, marketing page, app-store listing or in-app copy that is not literally true of your code is deception. Dark patterns in consent and cancellation flows are deception/unfairness; failure to maintain reasonable security is unfairness **[V]**. No federal PRA, but most state UDAP analogues have one.
 - **Consumer Reviews and Testimonials Rule** — prohibits fake, incentivised-by-sentiment, and undisclosed insider reviews, with civil penalties in the tens of thousands per violation; enforcement is active **[V]**.
 - **Negative option / click-to-cancel** — the 2024 rule was vacated by the Eighth Circuit on 8 July 2025; the FTC published a new advance notice of proposed rulemaking in March 2026, so no new federal rule is in force **[S]**. The FTC keeps pleading the same three duties (disclose terms, express informed consent, easy cancel) under §5 and ROSCA. Do not tell a user they are safe: ROSCA and roughly 30 state auto-renewal laws still govern, and California's amended law broadened liability **[V]**.
-- **TCPA** — see `lawsuit-vectors.md` §4. Consent records, revocation handling on any channel, quiet hours in the recipient's timezone, DNC scrubbing, carrier campaign registration **[V]**. Revocation: opt-outs must be honoured within 10 business days **[S]**. The 2024 "revoke-all" rule was deferred to 31 Jan 2027; on 30 Sept 2026 the FCC reportedly adopted a revised order (informational opt-outs may be limited to that message category; marketing opt-outs still stop all marketing; senders may designate exclusive opt-out methods if disclosed clearly), effective 30 days after Federal Register publication **[U]** until the published text is checked. Build to the strict reading: any STOP-type reply stops all marketing on every channel.
+- **TCPA** — see `lawsuit-vectors.md` §4. Consent records, revocation handling on any channel, quiet hours in the recipient's timezone, DNC scrubbing, carrier campaign registration **[V]**. Revocation: opt-outs must be honoured within 10 business days **[S]**. FCC 26-67 (adopted 30 Sep 2026, released 1 Oct) replaces the 2024 "revoke-all" rule and its 31 Jan 2027 date: an opt-out from an informational message may be limited to that category, a marketing opt-out still stops all marketing, callers may designate an exclusive opt-out method, and the 10-business-day window stays **[V]**. It takes effect 30 days after Federal Register publication **[V]**; publication was not found at 22 Oct 2026, so the effective date is **[U]**. Build to the strict reading: any STOP-type reply stops all marketing on every channel.
 - **CAN-SPAM** — accurate headers and subject, advertising identification, **valid physical postal address**, working opt-out honoured within **10 business days** and functional for 30 days after send; you are liable for your sending platform and affiliates **[V]**.
 - **State breach notification** — all states; deadlines and AG-notice thresholds vary; several sector rules add shorter clocks **[V]**.
 - **ADA accessibility** — **Title II** (state and local government, including their contractors' web and app content): a DOJ interim final rule of 20 Apr 2026 moved the WCAG 2.1 AA compliance dates to **26 Apr 2027** (population ≥50,000) and **26 Apr 2028** (smaller entities and special districts); the technical standard is unchanged and DOJ signalled further review **[S]** (law-firm and SBA Office of Advocacy reports; the Federal Register text was not retrieved). **Title III** (private businesses) has no technical rule and no deadline — exposure is private litigation, which rose in 2025: 3,117 federal website suits, up 27% on 2024, over 5,000 counting state courts, with e-commerce the main target **[S]**. WCAG 2.1 AA is the practical benchmark; build to 2.2 AA.
@@ -167,4 +191,4 @@ Build: consume the store/OS age-signal API, branch features on age category, sto
 
 ## 8. Verify before relying
 
-Colorado AG rules under SB 26-189 · Vermont and Nebraska children's-code dates · the FCC's revised TCPA revocation order (text and effective date) · Utah, Louisiana and Alabama app-store law dates and litigation · DOJ's further Title II review · state privacy laws taking effect in 2027 · VPPA scope · state mini-TCPA and mini-wiretap lists · genetic-privacy specifics per state · SaaS sales-tax nexus.
+Colorado AG rules under SB 26-189 · Vermont and Nebraska children's-code dates · FCC 26-67 effective date (Federal Register publication) · Utah, Louisiana and Alabama app-store law dates and litigation · DOJ's further Title II review · state privacy laws taking effect in 2027 · VPPA scope · state mini-TCPA and mini-wiretap lists · genetic-privacy specifics per state · SaaS sales-tax nexus.

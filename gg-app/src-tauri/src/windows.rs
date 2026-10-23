@@ -44,7 +44,11 @@ pub(crate) fn restore_sibling_windows(window: &tauri::Window) {
     let siblings: Vec<WebviewWindow> = {
         let mut map = state.0.lock_or_recover();
         let mut out = Vec::new();
-        for (sib_label, win) in app.webview_windows() {
+        for (sib_label, win) in app
+            .webview_windows()
+            .into_iter()
+            .filter(|(l, _)| is_workspace_window(l))
+        {
             map.insert(sib_label.clone(), false);
             if sib_label != label {
                 out.push(win);
@@ -148,7 +152,7 @@ pub(crate) fn build_app_window(
 /// issues" note.
 #[tauri::command]
 pub(crate) async fn setup_windows(app: tauri::AppHandle, count: usize) -> Result<(), String> {
-    let existing = app.webview_windows().len();
+    let existing = workspace_window_count(&app);
     let to_create = count.saturating_sub(existing);
     for _ in 0..to_create {
         let label = next_window_label(&app);
@@ -315,7 +319,7 @@ pub(crate) fn focus_window_by_offset(app: tauri::AppHandle, offset: i32) -> Resu
 /// hits the main-thread queue.
 #[tauri::command]
 pub(crate) async fn arrange_all(app: tauri::AppHandle) -> Result<(), String> {
-    let count = app.webview_windows().len();
+    let count = workspace_window_count(&app);
     let tiles = sorted_windows(&app, count);
     let rects = if tiles.is_empty() {
         Vec::new()
@@ -465,7 +469,11 @@ pub(crate) fn tile_rects(
 /// The first `count` open windows (main first, then project-N ascending). Returns
 /// the live window handles in label order. `take`-limited by `count`.
 pub(crate) fn sorted_windows(app: &tauri::AppHandle, count: usize) -> Vec<WebviewWindow> {
-    let mut windows: Vec<WebviewWindow> = app.webview_windows().into_values().collect();
+    let mut windows: Vec<WebviewWindow> = app
+        .webview_windows()
+        .into_values()
+        .filter(|w| is_workspace_window(w.label()))
+        .collect();
     // Deterministic order: main first, then project-N ascending.
     windows.sort_by_key(|w| label_rank(w.label()));
     windows.into_iter().take(count).collect()
@@ -504,6 +512,22 @@ pub(crate) fn arrange_windows(app: &tauri::AppHandle, count: usize) {
     for (win, rect) in tiles.iter().zip(rects.iter()) {
         apply_tile(win, *rect);
     }
+}
+
+/// True for real workspace windows (`main`, `project-N`). Transient chrome —
+/// the `whatsnew` dialog and the remote `gg-royale` game window — is excluded
+/// from tiling, the focus cycle / reading order, the restore snapshot (those
+/// never get a `Windows` map entry) and the "last window closed" logic.
+pub(crate) fn is_workspace_window(label: &str) -> bool {
+    label == "main" || label.starts_with("project-")
+}
+
+/// How many workspace windows are open (transient windows excluded).
+pub(crate) fn workspace_window_count(app: &tauri::AppHandle) -> usize {
+    app.webview_windows()
+        .keys()
+        .filter(|l| is_workspace_window(l))
+        .count()
 }
 
 pub(crate) fn label_rank(label: &str) -> (u8, u32) {
@@ -571,6 +595,10 @@ pub(crate) fn compute_window_order(app: &tauri::AppHandle) -> Vec<String> {
     let mut positions: Vec<(String, i32, i32)> = Vec::with_capacity(windows.len());
     let mut min_height: i32 = i32::MAX;
     for (label, win) in &windows {
+        // Transient windows (whatsnew, gg-royale) are not in the focus cycle.
+        if !is_workspace_window(label) {
+            continue;
+        }
         let (Ok(pos), Ok(size)) = (win.outer_position(), win.outer_size()) else {
             continue;
         };
@@ -591,7 +619,12 @@ pub(crate) fn broadcast_window_order(app: &tauri::AppHandle) {
     let order = compute_window_order(app);
     let focused = app.state::<FocusedWindow>().0.lock_or_recover().clone();
     let payload = serde_json::json!({ "order": order, "focused": focused });
-    for label in app.webview_windows().keys() {
+    // Never emit to the remote gg-royale page (it has no IPC anyway).
+    for label in app
+        .webview_windows()
+        .keys()
+        .filter(|l| is_workspace_window(l))
+    {
         let _ = app.emit_to(
             EventTarget::webview_window(label.clone()),
             "window-order",
@@ -603,6 +636,14 @@ pub(crate) fn broadcast_window_order(app: &tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transient_windows_are_not_workspace_windows() {
+        assert!(is_workspace_window("main"));
+        assert!(is_workspace_window("project-3"));
+        assert!(!is_workspace_window("whatsnew"));
+        assert!(!is_workspace_window(crate::commands::royale::ROYALE_LABEL));
+    }
 
     #[test]
     fn whatsnew_url_only_passes_known_moods() {

@@ -1,17 +1,15 @@
 import { useEffect, useId, useMemo, useState, type CSSProperties } from "react";
-import {
-  CodeIcon,
-  ChatCircleTextIcon,
-  FilmSlateIcon,
-  GearSixIcon,
-  TargetIcon,
-} from "@phosphor-icons/react";
 import { getVersion } from "@tauri-apps/api/app";
 import { error as logError } from "@tauri-apps/plugin-log";
-import { AsciiLogo } from "./AsciiLogo";
+import { HomeTitle } from "./HomeTitle";
+import { PixelIconButton } from "./PixelIconButton";
+import { PixelTip } from "./PixelTip";
+import { PlateButton } from "./PlateButton";
 import { HomeScenery, withScenery } from "./HomeScenery";
 import { HomeCritters } from "./HomeCritters";
 import { HomeUpdateButton } from "./HomeUpdateButton";
+import { RoyaleBadge, useRoyaleLauncher, useRoyaleSummary } from "./RoyaleKey";
+import { preconnectRoyale, warmRoyale } from "./royale-warm";
 import { useHomeBackgroundEnabled } from "./home-background";
 import { groundFilter, lightAt } from "./scene-light";
 import { useLocalHour } from "./use-local-hour";
@@ -39,6 +37,13 @@ interface Props {
   onGoals: () => void;
   onChat: () => void;
   onMotion: () => void;
+  /** Shows GG Royale full-window (after the first-use consent). */
+  onRoyale: () => void;
+  /**
+   * GG Royale is on screen (it fades in over Home once the game is ready).
+   * Until then the Royale plate stays pressed, so the click visibly took.
+   */
+  royaleShown?: boolean;
   /** Opens full-screen Settings, optionally on a given tab. */
   onSettings: (tab?: SettingsTabId) => void;
   /**
@@ -52,6 +57,7 @@ interface Props {
 /**
  * App entry screen: the shimmering GG Coder banner over the primary actions.
  * Code, Chat and Motion require a configured workspace folder and connected AI provider;
+ * GG Royale (the online game) needs neither, so it is never dimmed;
  * everything else lives in full-screen Settings (the bottom-right gear).
  */
 export function HomeScreen({
@@ -59,6 +65,8 @@ export function HomeScreen({
   onGoals,
   onChat,
   onMotion,
+  onRoyale,
+  royaleShown = false,
   onSettings,
   refreshSignal = 0,
 }: Props): React.ReactElement {
@@ -69,7 +77,20 @@ export function HomeScreen({
   // never shifts sideways when the number arrives.
   const [versionRead, setVersionRead] = useState(false);
   const appUpdate = useAppUpdate();
-  const goalsNoteId = useId();
+  const royaleNoteId = useId();
+  // Held down from the moment Royale starts opening until it's on screen.
+  const [royaleOpening, setRoyaleOpening] = useState(false);
+  const royale = useRoyaleLauncher(() => {
+    setRoyaleOpening(true);
+    onRoyale();
+  });
+  useEffect(() => {
+    if (royaleShown) setRoyaleOpening(false);
+  }, [royaleShown]);
+  // Open the connection to the game server while Home is up, so opening
+  // Royale skips that setup (only once linked and agreed: see royale-warm).
+  useEffect(() => preconnectRoyale(), []);
+  const royaleCounts = useRoyaleSummary();
 
   useEffect(() => {
     void getVersion()
@@ -153,71 +174,83 @@ export function HomeScreen({
             </span>
           </>
         )}
-        <button
-          className="home-whatsnew"
-          type="button"
-          title="See the latest updates"
-          onClick={() => void openWhatsNewWindow("calm").catch(() => {})}
-        >
-          What&apos;s new
-        </button>
+        <PixelTip text="What's new: the latest updates, and everything since.">
+          <button
+            className="home-whatsnew"
+            type="button"
+            onClick={() => void openWhatsNewWindow("calm").catch(() => {})}
+          >
+            What&apos;s new
+          </button>
+        </PixelTip>
       </div>
-      <AsciiLogo />
+      <HomeTitle />
       <div className="home-tagline">Cause the other coding agents piss me off</div>
       <div className="home-actions">
-        <button
-          type="button"
-          className={`btn btn-primary home-action${ready ? "" : " is-dimmed"}`}
-          aria-disabled={ready ? undefined : true}
-          onClick={() => handleWorkspace(onProjects)}
-        >
-          <CodeIcon size={18} weight="bold" aria-hidden="true" />
-          Code
-        </button>
-        {/* Goals is new, so a Beta pill sits on its top border. */}
-        <div className="home-action-slot">
-          <button
-            type="button"
-            className={`btn btn-primary home-action${ready ? "" : " is-dimmed"}`}
-            aria-disabled={ready ? undefined : true}
-            aria-describedby={goalsNoteId}
+        {/* GG Royale's plate buttons, its word in Alagard, each with a pixel tip. */}
+        <PixelTip text="Code: open a project and build it with the agent.">
+          <PlateButton
+            className="home-action"
+            label="Code"
+            dimmed={!ready}
+            onClick={() => handleWorkspace(onProjects)}
+          />
+        </PixelTip>
+        <PixelTip text="Goals: hand over a bigger goal and let a team of agents work on it.">
+          <PlateButton
+            className="home-action"
+            label="Goals"
+            dimmed={!ready}
             onClick={() => handleWorkspace(onGoals)}
-          >
-            <TargetIcon size={18} weight="bold" aria-hidden="true" />
-            Goals
-          </button>
-          <span id={goalsNoteId} className="home-action-beta">
-            Beta
+          />
+        </PixelTip>
+        <PixelTip text="Chat: talk things through, no project needed.">
+          <PlateButton
+            className="home-action"
+            label="Chat"
+            dimmed={!ready}
+            onClick={() => handleWorkspace(onChat)}
+          />
+        </PixelTip>
+        <PixelTip text="Motion: make videos and animations.">
+          <PlateButton
+            className="home-action"
+            label="Motion"
+            dimmed={!ready}
+            onClick={() => handleWorkspace(onMotion)}
+          />
+        </PixelTip>
+        {/* GG Royale: the online game, full-window in this window; new, so it
+            carries a New tag. */}
+        <div className="home-action-slot">
+          <PixelTip text="Royale: blackjack against the bugs in your code, with chips you earn by coding.">
+            <PlateButton
+              className="home-action"
+              label="Royale"
+              held={royaleOpening}
+              aria-describedby={royaleNoteId}
+              // Pointing at it (or tabbing to it) fetches the sign-in code early.
+              onPointerEnter={() => warmRoyale()}
+              onFocus={() => warmRoyale()}
+              onClick={royale.launch}
+            />
+          </PixelTip>
+          <span id={royaleNoteId} className="home-action-beta">
+            New
           </span>
+          <RoyaleBadge summary={royaleCounts} />
         </div>
-        <button
-          type="button"
-          className={`btn btn-primary home-action${ready ? "" : " is-dimmed"}`}
-          aria-disabled={ready ? undefined : true}
-          onClick={() => handleWorkspace(onChat)}
-        >
-          <ChatCircleTextIcon size={18} weight="bold" aria-hidden="true" />
-          Chat
-        </button>
-        <button
-          type="button"
-          className={`btn btn-primary home-action${ready ? "" : " is-dimmed"}`}
-          aria-disabled={ready ? undefined : true}
-          onClick={() => handleWorkspace(onMotion)}
-        >
-          <FilmSlateIcon size={18} weight="bold" aria-hidden="true" />
-          Motion
-        </button>
       </div>
-      <button
-        type="button"
-        className="icon-circle home-settings"
-        aria-label="Settings"
-        title="Settings"
-        onClick={() => onSettings()}
-      >
-        <GearSixIcon size={20} weight="bold" aria-hidden="true" />
-      </button>
+      {royale.consent}
+      {/* Settings: a GG Royale pixel gear. */}
+      <PixelTip text="Settings: AI providers, your projects folder, and more.">
+        <PixelIconButton
+          className="home-settings"
+          icon="gear"
+          label="Settings"
+          onClick={() => onSettings()}
+        />
+      </PixelTip>
       {/* Along the bottom edge: every critter, out playing. */}
       <HomeCritters biome={biome} />
       {/* Top centre: the update button, only while an update is out. */}

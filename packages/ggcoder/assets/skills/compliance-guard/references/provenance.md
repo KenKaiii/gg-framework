@@ -1,8 +1,18 @@
 # Provenance and Volatility
 
+## Contents
+- Snapshot
+- Confidence markers
+- What decays fastest
+- Known gaps at snapshot
+- Using this with web access
+- Re-verification log — 3 October 2026
+- Re-verification log — 22 October 2026
+
+
 ## Snapshot
 
-These references were compiled on **11 August 2026** and spot re-verified on **3 October 2026** (see *Re-verification log* below) from primary and first-tier sources: EUR-Lex and the Official Journal, EDPB, national data protection authorities, ICO, Ofcom, the European Commission, the FTC, CPPA, state legislature and AG sites, US federal court opinions, the Copyright Office, NIST, OWASP, PCI SSC, and platform developer documentation.
+These references were compiled on **11 August 2026** and spot re-verified on **3 October 2026** and **22 October 2026** (see *Re-verification log* below) from primary and first-tier sources: EUR-Lex and the Official Journal, EDPB, national data protection authorities, ICO, Ofcom, the European Commission, the FTC, CPPA, state legislature and AG sites, US federal court opinions, the Copyright Office, NIST, OWASP, PCI SSC, and platform developer documentation.
 
 ## Confidence markers
 
@@ -21,7 +31,7 @@ Re-verify these before relying on them, in rough order of volatility:
 1. **US state AI laws** — effective dates have moved repeatedly, some are enjoined, some were repealed and replaced mid-cycle, and federal preemption efforts are active.
 2. **State privacy law scope** — new states take effect on 1 January and 1 July cycles; thresholds and cure periods change.
 3. **EU AI Act dates** — amended in July 2026; any guidance written before mid-2026 is unreliable on the high-risk timeline.
-4. **EU data/ePrivacy reform** — the data-protection half of the Digital Omnibus is **not law**; at 3 Oct 2026 it was in first reading with no Council mandate. Do not build to proposed cookie or browser-signal provisions.
+4. **EU data/ePrivacy reform** — the data-protection half of the Digital Omnibus is **not law**; at 22 Oct 2026 Coreper had twice failed to vote a Council mandate (7 and 11 Oct) and no trilogue had begun. Do not build to proposed cookie or browser-signal provisions.
 5. **EU–US transfer framework** — valid at snapshot, with an appeal pending.
 6. **Wiretap/pixel litigation** — statutory reform and appellate decisions are actively reshaping which theories survive.
 7. **Age-verification and minors' laws** — rapid state adoption plus constitutional litigation.
@@ -79,3 +89,24 @@ Marker rule applied in pass 2: **[V]** only where a primary source was actually 
 **Still unverified after pass 2:** primary text for Reg 2026/1744, SB 690, the FCC order, Colorado's effective date, the Title II IFR, COPPA FR text, PCI SSC documents, and Ofcom's register. Not re-checked at all: genetic-privacy state list, VPPA, NY SAFE for Kids, Delete Act/DROP, CA SB 942/AB 2013/SB 243, Texas TRAIGA, CRA, DSA, NIS2, DPF appeal, consent-or-pay, adult-content AV state count, everything in `sector-gates.md`, `artifacts.md`, `trigger-map.md`, `exposure-triage.md`.
 
 Pass 1 sources: whitecase.com, acompli.ie, fenwick.com, procopio.com, seyfarth.com, troutmanprivacy.com, burr.com, commlawgroup.com, mslawgroup.com, kelleydrye.com, crowell.com, mofo.com, recordinglaw.com. Pass 2 adds: legislation.gov.uk/uksi/2026/82, cppa.ca.gov/regulations/ccpa_updates.html, cppa.ca.gov/announcements/2025/20250923.html, ftc.gov/news-events/news/press-releases/2026/05/ftc-begins-enforcing-take-it-down-act, leg.colorado.gov/bills/sb26-189, reedsmith.com (Title II IFR), advocacy.sba.gov, adatitleiii.com, wsgr.com (Data Act), lw.com and davispolk.com (COPPA), insideprivacy.com (BIPA), loeb.com and recordinglaw.com (Utah/Louisiana), enzuzo.com (MHMDA), 360advanced.com (PCI), reedsmith.com (OSA).
+
+## Re-verification log — 22 October 2026
+
+Web search plus the primary pages named below. **[V]** only where a primary source (regulator, official journal, court, government site, or the instrument itself) was read; otherwise **[S]**; conflicting sources **[U]**.
+
+| Item | Result | Marker | Source | File |
+|---|---|---|---|---|
+| Digital Omnibus (data) | Not law; Coreper votes 7 and 11 Oct failed; Presidency text of 2 Oct keeps cookies in ePrivacy 5(3), deletes 88a/88b incl. browser signal, 4-month re-ask; post-12 Oct mandate status unclear | [S] / [U] | agenceurope.eu, research.eutechreg.com, ppc.land | `eu-uk.md` |
+| DPF appeal C-703/25 P | Pending; Microsoft admitted as intervener 4 Jun 2026 | [S] | dataguidance.com, haerting.ch | `eu-uk.md` |
+| CRA reporting | Applies since 11 Sep 2026 via ENISA SRP; legacy products covered | [V] date/SRP, [S] clocks/legacy | digital-strategy.ec.europa.eu/en/policies/cra-reporting, enisa.europa.eu SRP press release, hlc.com | `eu-uk.md` |
+| UK OSA | Register published 10 Jul 2026; age-assurance fines (Feb, Sep 2026) | [V] | ofcom.org.uk bulletin Oct 2026 and fine notices | `eu-uk.md` |
+| EU AI Act 2 Dec 2026 dates | Unchanged from 3 Oct OJ check; now ~6 weeks out | [V] (3 Oct) | OJ L 2026/1744 | `eu-uk.md` |
+| CA SB 690 | Operative 1 Jan 2027; retroactive to pending claims in actions filed on/after 1 Jan 2025; not demand letters | [U]→[S] | ketch.com, glaserweil.com, bakerdonelson.com, calawyers.org | `lawsuit-vectors.md` |
+| FCC 26-67 | Adopted 30 Sep, released 1 Oct 2026; effective 30 days after FR publication; replaces 31 Jan 2027 date; FR publication not found | [V] / effective date [U] | docs.fcc.gov/public/attachments/FCC-26-67A1.pdf | `us.md` |
+| Colorado SB 26-189 | Effective 1 Jan 2027; AG rules comment close and hearing 26 Oct 2026 | [S] date, [V] comments | coag.gov/ai, secureprivacy.ai | `us.md` |
+| Texas SB 2420 | Stay in force; SCOTUS denied vacatur 6 Jul; argued 4 Aug; no opinion | [S] | texasdatalaw.com, recordinglaw.com | `us.md` |
+| 2027 state privacy laws | OK, LA 1 Jan 2027; AL 1 May 2027; VT conflicting (2027 vs 2028); DE threshold 10,000 from 2027; GPC 2027 list conflicting | [S] / [U] | regwatch.io, privacyworld.blog, complyjet.com, risingline.com | `us.md` |
+| CA 2026 bills | SB 1119, SB 867, AB 1709, AB 2246, AB 1856 signed 10 Sep ([V] gov.ca.gov); AB 2713, AB 1979, AB 1609, AB 883, AB 2561 signed ([S]); AB 1609 $500M threshold and AB 883 30-day scope [U] | mixed | gov.ca.gov, calawyers.org, wsgr.com, kelleydrye.com, govbuddy.com | `us.md` |
+| ADA Title II | Dates unchanged (26 Apr 2027 / 26 Apr 2028); NFB challenge reported, no ruling | [S] (ada.gov not opened) | titleii.org, consumerfinancialserviceslawmonitor.com | `us.md` |
+
+**Not re-checked on 22 Oct 2026:** everything in `sector-gates.md`, `artifacts.md`, `trigger-map.md`, `exposure-triage.md`; PCI DSS; COPPA; BIPA; MHMDA; Utah, Louisiana and Alabama app-store laws; CA SB 243 / SB 942 / AB 2013; Delete Act cadence beyond AB 883; DSA; NIS2; EAA; UK DUAA; consent-or-pay.

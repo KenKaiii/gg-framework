@@ -98,7 +98,7 @@ const POKE_MS = 1400; // how long a poke's bubble stays up
 /** Visible width of the terrain patch, in cells. */
 export const PATCH_COLS = 85;
 /** Critter sprite edge, in cells. */
-const CRITTER_CELLS = 14;
+const CRITTER_CELLS = 18;
 /** Weather particles across the screen: few, so it stays calm. */
 const WEATHER_COUNT = 34;
 /** Screen weather runs this many times slower than a lane's. */
@@ -154,30 +154,73 @@ export function patchOffset(spot: number): number {
 }
 
 /**
- * The same critter with its eyes shut, for blinks. Chibi eyes (whites over
- * two-pixel pupils) become skin over a lid line. Eyes that are just a tall dark
- * pixel (the ghost's) lose their top half, so they squint shut.
+ * The same critter with its eyes shut, for blinks. An eye is a clump of
+ * shine (W) and pupil (K) cells: it fills with the skin round it, and its
+ * bottom row becomes the lid line. Critters with glowing eyes and no shine
+ * (the robot's screen, the wizard and knight under their hats) dim their top
+ * row of glow (E) instead.
  */
 export function withEyesClosed(critter: CritterDef): CritterDef {
-  const rows = critter.rows.map((row) =>
-    row.includes("W") && row.includes("K")
-      ? row.replace(/[WK]/g, "B")
-      : row.includes("KK")
-        ? row.replace(/K/g, "O")
-        : row,
-  );
-  if (rows.some((row, i) => row !== critter.rows[i])) return { ...critter, rows };
-
-  // Tall eyes: the first dark row whose pixels continue straight down.
-  const top = critter.rows.findIndex((row, i) => {
-    const below = critter.rows[i + 1] ?? "";
-    return row.includes("K") && [...row].every((ch, x) => ch !== "K" || below[x] === "K");
-  });
-  if (top < 0) return critter;
-  return {
-    ...critter,
-    rows: critter.rows.map((row, i) => (i === top ? row.replace(/K/g, "B") : row)),
-  };
+  const grid = critter.rows.map((row) => [...row]);
+  const h = grid.length;
+  const at = (x: number, y: number): string => grid[y]?.[x] ?? ".";
+  const seen = new Set<string>();
+  let changed = false;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < (grid[y]?.length ?? 0); x++) {
+      if (at(x, y) !== "W" || seen.has(`${x},${y}`)) continue;
+      // The eye: W and K cells joined to this shine.
+      const eye: [number, number][] = [];
+      const stack: [number, number][] = [[x, y]];
+      seen.add(`${x},${y}`);
+      while (stack.length) {
+        const [cx, cy] = stack.pop() ?? [0, 0];
+        eye.push([cx, cy]);
+        for (const [nx, ny] of [
+          [cx + 1, cy],
+          [cx - 1, cy],
+          [cx, cy + 1],
+          [cx, cy - 1],
+        ] as const) {
+          const k = at(nx, ny);
+          if ((k === "W" || k === "K") && !seen.has(`${nx},${ny}`)) {
+            seen.add(`${nx},${ny}`);
+            stack.push([nx, ny]);
+          }
+        }
+      }
+      // The skin round it: its commonest neighbour that's part of the face.
+      const count = new Map<string, number>();
+      for (const [cx, cy] of eye) {
+        for (const [nx, ny] of [
+          [cx + 1, cy],
+          [cx - 1, cy],
+          [cx, cy + 1],
+          [cx, cy - 1],
+        ] as const) {
+          const k = at(nx, ny);
+          if (!"WKOCMN.".includes(k)) count.set(k, (count.get(k) ?? 0) + 1);
+        }
+      }
+      const skin = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "B";
+      const bottom = Math.max(...eye.map(([, ey]) => ey));
+      for (const [cx, cy] of eye) {
+        const row = grid[cy];
+        if (row) row[cx] = cy === bottom ? "O" : skin;
+      }
+      changed = true;
+    }
+  }
+  if (!changed) {
+    // Glowing eyes: the top row of glow goes dark.
+    const top = grid.findIndex((row) => row.includes("E"));
+    const row = grid[top];
+    if (row) {
+      for (let x = 0; x < row.length; x++) if (row[x] === "E") row[x] = "K";
+      changed = true;
+    }
+  }
+  return changed ? { ...critter, rows: grid.map((row) => row.join("")) } : critter;
 }
 
 /**

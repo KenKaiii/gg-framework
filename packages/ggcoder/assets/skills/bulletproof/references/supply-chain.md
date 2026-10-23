@@ -2,7 +2,7 @@
 
 A03:2025 is Software Supply Chain Failures — promoted because this is now the dominant compromise route for small teams. Your dependencies, your CI, and your release pipeline are all code you ship, written by people you have not met.
 
-Snapshot 3 October 2026. **[V]** verified, **[S]** volatile, **[U]** uncertain.
+Snapshot 3 October 2026, publishing and worm items re-verified 22 October 2026. **[V]** verified, **[S]** volatile, **[U]** uncertain.
 
 ## Adding a dependency
 
@@ -13,7 +13,7 @@ Before adding any package — and **especially** one you or a model produced fro
 3. **Check character-level lookalikes** against the package you meant: hyphen vs underscore, singular vs plural, scoped vs unscoped, `-js` suffix, homoglyphs.
 4. **Prefer what is already in the project.** The safest dependency is the one you do not add. For a few dozen lines, write the code.
 5. **Pin it.** Exact version in the manifest, lockfile committed, and for containers and Actions pin by digest or commit SHA.
-6. **Let it age.** Malicious worm versions were typically pulled within hours, so a cooldown blocks most of them. Set one [S]: npm ≥ 11.10 `min-release-age=<days>` in `.npmrc`; pnpm ≥ 10.16 `minimumReleaseAge` (minutes; defaults to 1440 from v11); Yarn ≥ 4.10 `npmMinimalAgeGate`. Exempt a version only to take an urgent security fix.
+6. **Let it age.** Malicious worm versions were typically pulled within hours, so a cooldown blocks most of them. Set one in whatever package manager the project uses (npm `min-release-age`, pnpm `minimumReleaseAge`, Yarn `npmMinimalAgeGate`); check the installed version supports it rather than trusting a remembered minimum [S]. Exempt a version only to take an urgent security fix.
 
 ## Install-time execution
 
@@ -30,9 +30,10 @@ If others install your code, you are their supply chain.
 
 - **npm state of play** [V]: classic tokens were permanently revoked on 9 Dec 2025; `npm login` now yields 2-hour session tokens; granular write tokens enforce 2FA by default (Bypass-2FA is opt-in) and are capped at 90 days. npm intends to end direct publishing with Bypass-2FA tokens around Jan 2027 [U].
 - **Trusted publishing (OIDC) instead of stored tokens.** A token in CI is the exact asset every worm enumerates. But OIDC alone did not stop TanStack or ChainDrop: put `id-token: write` only on the publish job, never in a job that runs PR code or restores a cache a PR could have written.
-- **Staged publishing** (GA 22 May 2026, npm CLI ≥ 11.15.0) [V]: CI uploads to a stage queue and a maintainer approves with 2FA; since Sep 2026 approval waits for npm's malware scan. For a solo maintainer, this is the single best publish control — a stolen CI identity can stage but not release.
+- **Staged publishing** (GA 22 May 2026, npm CLI ≥ 11.15.0) [V]: CI uploads to a stage queue and a maintainer approves with 2FA; since Sep 2026 approval waits for npm's malware scan; since 2 Oct 2026 it also covers creating brand-new packages [V]. For a solo maintainer, this is the single best publish control — a stolen CI identity can stage but not release.
+- **Bind trust to immutable IDs.** Until its first publish, an npm trusted-publishing config matched the repo by renameable `owner/repo` name, so whoever claimed a freed name could publish ("SlugFest", disclosed 13 Oct 2026) [S]. Since 2 Oct 2026 unvalidated configs expire after 48 hours [V] and npm refuses trusted-publishing tokens from `issue_comment` workflows as well as `pull_request_target` [S]. Publish once right after creating a binding, recreate bindings after any rename or transfer, and apply the same rule to your own authorization code: key on IDs, not names.
 - 2FA on the registry and source-control accounts, phishing-resistant (passkey/security key) where possible.
-- Generate provenance/attestations — but **provenance proves where an artifact was built, not that the build was honest.** Both 2026 worms shipped valid provenance [V].
+- Generate provenance/attestations — but **provenance proves where an artifact was built, not that the build was honest.** ChainDrop (Aug 2026) and the `tensorlake@0.5.144` worm (8 Oct 2026, GHSA-rqxj-g25x-4v9v [V], via a preinstall hook) both shipped valid provenance [S].
 - Verify what is in the tarball before it ships: `npm pack --dry-run` or equivalent. Ship no source maps, no `.env`, no test fixtures, no internal docs. A source-map leak has already exposed a major product's source [S].
 - Review the diff of every release, including dependency bumps. Maintainer-account compromise is the entry point in most of these incidents; a second pair of eyes on the release commit is the cheapest control.
 
@@ -65,7 +66,9 @@ The highest-value target, because CI holds every credential at once — 59% of m
 
 - Automated dependency updates with a review gate, plus a scanner that fails the build on known-exploited vulnerabilities in reachable code — not on every advisory, or the team learns to ignore it.
 - Track a real SBOM (CycloneDX or SPDX) generated in CI per release. It is a regulatory obligation for some products [V], and independently it is the only way to answer "are we affected" in hours instead of days.
-- Median time from CVE publication to confirmed exploitation is now roughly 80 days [S]. **The controllable variable is your patch latency**, not their speed.
+- **The controllable variable is your patch latency**, not the attacker's speed.
+- **Run a currently patched runtime line.** Node ships security releases several times a year (21 Oct 2026 covered a Brotli decoder out-of-bounds write and a TLS hostname-check bypass) [V]; stay on a supported line and take its patch releases, rather than pinning a remembered version.
+- **After a framework upgrade, check its transitive native dependencies.** Next.js's 14 Oct 2026 advisories included unauthenticated RCE through SVG handling in image optimization and `next/og` (native `sharp`/librsvg) [V]: the framework version was the fix, but the reachable code was a native image library. List native deps (`npm ls sharp`, lockfile) and confirm they moved too.
 - Subscribe to advisories for your actual stack. For a small team, three feeds you read beats thirty you filter.
 
 ## If you suspect compromise

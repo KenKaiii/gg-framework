@@ -4,7 +4,7 @@
 
 Choose the archetype by the screen’s job, not the company category. A developer company’s billing console is application UI; its API reference is documentation; its launch page is marketing/brand. Hybrid screens may borrow one secondary archetype, but one must lead.
 
-All coverage and counts come from `data/observations.json`, commit `664b3e78fd1a298ba11973822da988483256d4b4`, extraction version 1. Each section names two aligned references and one contrast. References are observational analyses, not templates to copy.
+All coverage and counts come from extraction version 1 of [`VoltAgent/awesome-design-md`](https://github.com/VoltAgent/awesome-design-md) at commit `664b3e78fd1a298ba11973822da988483256d4b4`. Each section names two aligned references and one contrast by upstream slug: the source is `https://github.com/VoltAgent/awesome-design-md/blob/664b3e78fd1a298ba11973822da988483256d4b4/design-md/<slug>/DESIGN.md`. References are observational analyses, not templates to copy.
 
 Every archetype also follows `craft-rulings.md`: no emoji UI, one coherent icon family, uniform key lines, reuse of local primitives, purposeful non-abrupt feedback without generic hover lift, intentional typography, measured contrast, consistent flow, and no generated em dashes in UI copy. Every implemented surface must also pass the applicable `production-contract.md` checks; archetype evidence never overrides semantics, accessibility, resilience, performance, platform, or trust requirements.
 

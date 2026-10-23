@@ -2,7 +2,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HomeScenery, withScenery } from "./HomeScenery";
-import { CONTENT_HALF_WIDTH, flicker, layoutCampfire, ridgeAt, sunDisc } from "./campfire-scene";
+import { HOME_CONTENT_HALF, homeLayout } from "./clearing-art";
 import { BIOMES } from "./critter-terrain";
 
 beforeEach(() => {
@@ -31,72 +31,78 @@ describe("HomeScenery", () => {
   });
 });
 
-describe("layoutCampfire", () => {
-  it("is the same clearing every time for the same window", () => {
-    expect(layoutCampfire(1280, 800)).toEqual(layoutCampfire(1280, 800));
+// The home clearing in art px (2 screen px each): 1280×800 is 640×400.
+describe("homeLayout", () => {
+  it("is the same clearing every time for the same window and hour", () => {
+    expect(homeLayout(640, 400, 18.4)).toEqual(homeLayout(640, 400, 18.4));
   });
 
-  it("keeps the sky's details above the ridge and the pines at the edges", () => {
-    const layout = layoutCampfire(1280, 800);
-    for (const star of layout.stars) expect(star.y).toBeLessThan(layout.horizon);
-    for (let x = 0; x < layout.width; x += 40) {
-      expect(ridgeAt(layout, x)).toBeLessThan(layout.horizon);
-    }
-    // The middle stays open for the logo and buttons.
-    for (const pine of layout.pines) {
-      expect(pine.x < layout.width * 0.3 || pine.x > layout.width * 0.7).toBe(true);
-    }
+  it("keeps the pines at the edges, leaving the middle open for the logo and buttons", () => {
+    const { pines, w } = homeLayout(640, 400, 18.4);
+    expect(pines.length).toBeGreaterThan(0);
+    for (const pine of pines) expect(pine.x < w * 0.3 || pine.x > w * 0.7).toBe(true);
   });
 
-  it("sits the owl on a pine at the left, below the top of the window", () => {
-    const { owl, width, height } = layoutCampfire(1280, 800);
-    expect(owl.x).toBeLessThan(width * 0.2);
-    expect(owl.y).toBeGreaterThan(0);
-    expect(owl.y).toBeLessThan(height);
+  it("lights each pine on the side facing the middle", () => {
+    const { pines, w } = homeLayout(640, 400, 18.4);
+    for (const pine of pines) expect(pine.light).toBe(pine.x < w / 2 ? 1 : -1);
   });
 
-  it("sends the embers up from the middle, where the fire is", () => {
-    const { embers, width } = layoutCampfire(1280, 800);
-    for (const ember of embers) {
-      expect(ember.x0).toBeGreaterThan(width * 0.25);
-      expect(ember.x0).toBeLessThan(width * 0.75);
-    }
+  it.each([
+    [640, 400],
+    [450, 300],
+    [960, 540],
+  ])(
+    "puts the fire in the middle of the field, above the critters' lane, in a %ix%i window",
+    (w, h) => {
+      const { fire, horizon } = homeLayout(w, h, 21);
+      expect(fire.x).toBe(Math.round(w / 2));
+      expect(fire.base).toBeGreaterThan(horizon);
+      // The lane opens ~45 art px tall for the critters' speech bubbles.
+      expect(fire.base).toBeLessThanOrEqual(h - 48);
+    },
+  );
+
+  it("sits the owl on a pine at the left, inside the window", () => {
+    const { owl, w, h } = homeLayout(640, 400, 23.5);
+    expect(owl).not.toBeNull();
+    expect(owl?.x).toBeLessThan(w * 0.2);
+    expect(owl?.y).toBeGreaterThan(0);
+    expect(owl?.y).toBeLessThan(h);
   });
 
   it("stays sane in a tiny window", () => {
-    const layout = layoutCampfire(20, 30);
+    const layout = homeLayout(10, 15, 12);
     expect(layout.horizon).toBeGreaterThan(0);
-    expect(layout.horizon).toBeLessThan(layout.height);
+    expect(layout.horizon).toBeLessThan(layout.h);
   });
 });
 
-describe("sunDisc", () => {
+describe("the home sun", () => {
+  // Windows wide enough for the sun beside the row of plate buttons.
   it.each([
-    [1280, 800],
-    [900, 600],
-    [1920, 1080],
-  ])("never puts the sun behind the logo or buttons in a %ix%i window", (width, height) => {
-    const layout = layoutCampfire(width, height);
+    [640, 400],
+    [800, 450],
+    [960, 540],
+  ])("never sits behind the logo or buttons in a %ix%i window", (w, h) => {
     for (let minute = 0; minute < 24 * 60; minute += 5) {
-      const sun = sunDisc(layout, minute / 60);
-      const onScreen = sun.y + sun.r > 0 && sun.elevation > -0.05;
-      if (!onScreen) continue;
-      expect(Math.abs(sun.x - width / 2)).toBeGreaterThanOrEqual(CONTENT_HALF_WIDTH + sun.r - 0.5);
+      const { sun } = homeLayout(w, h, minute / 60);
+      if (!sun || sun.y + sun.r < 0) continue;
+      expect(Math.abs(sun.x - w / 2)).toBeGreaterThanOrEqual(HOME_CONTENT_HALF + sun.r - 0.5);
+    }
+  });
+
+  it("keeps inside a narrow window, at its edge", () => {
+    for (let minute = 0; minute < 24 * 60; minute += 15) {
+      const { sun, w } = homeLayout(450, 300, minute / 60);
+      if (!sun) continue;
+      expect(sun.x - sun.r).toBeGreaterThanOrEqual(0);
+      expect(sun.x + sun.r).toBeLessThanOrEqual(w);
     }
   });
 
   it("rises on the left and sets on the right", () => {
-    const layout = layoutCampfire(1280, 800);
-    expect(sunDisc(layout, 7).x).toBeLessThan(640);
-    expect(sunDisc(layout, 18.5).x).toBeGreaterThan(640);
-  });
-});
-
-describe("flicker", () => {
-  it("breathes within a gentle range, never going dark or flaring", () => {
-    for (let t = 0; t < 60; t += 0.05) {
-      expect(flicker(t)).toBeGreaterThan(0.65);
-      expect(flicker(t)).toBeLessThan(1.05);
-    }
+    expect(homeLayout(640, 400, 7).sun?.x).toBeLessThan(320);
+    expect(homeLayout(640, 400, 18.5).sun?.x).toBeGreaterThan(320);
   });
 });

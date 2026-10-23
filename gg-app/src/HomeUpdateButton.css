@@ -1,6 +1,6 @@
 /* ── Home's update key (HomeUpdateButton.tsx) ──
-   An arcade key at the top of Home: a pixel plate (indigo face, gold rim)
-   standing on its dark-gold side. Both are 9-slice pixel art from
+   An arcade key at the top of Home in GG Royale's look: a pixel plate (wine
+   face, gold rim) standing on its wooden side. Both are 9-slice pixel art from
    update-key-art.ts, drawn 2px per cell, so the stepped corners stay crisp at
    any width. The words, arrow, XP meter and burst are the shared parts
    (UpdateKeyParts.css). Pressing pushes the face down onto its side; nothing
@@ -8,7 +8,8 @@
 .home-update {
   position: relative;
   display: block;
-  width: 284px;
+  width: max-content;
+  min-width: 284px;
   height: 44px;
   padding: 0;
   border: 0;
@@ -21,16 +22,19 @@
   cursor: default;
 }
 .home-update:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid #f5bd63;
   outline-offset: 4px;
-  border-radius: var(--radius-sm);
 }
+/* The side sits behind; the face is in flow, so the key is as wide as its
+   words and versions (at least 284px), whatever the version numbers. */
 .lvl-base,
 .lvl-face {
+  border: 8px solid transparent;
+}
+.lvl-base {
   position: absolute;
   left: 0;
   right: 0;
-  border: 8px solid transparent;
 }
 .lvl-base {
   top: 6px;
@@ -38,14 +42,15 @@
   border-image: var(--lvl-base) 4 fill / 8px stretch;
 }
 .lvl-face {
-  top: 0;
-  bottom: 4px;
+  position: relative;
+  box-sizing: border-box;
+  height: 40px;
   display: flex;
   align-items: center;
   gap: var(--space-5);
   padding: 0 var(--space-3);
   border-image: var(--lvl-plate) 4 fill / 8px stretch;
-  color: #e9e5ff;
+  color: #f6d0a8;
   transition:
     transform 70ms var(--ease-out),
     filter var(--t-fast);
@@ -63,25 +68,27 @@
   transform: translateY(-2px);
 }
 
+/* The versions, in m5x7 at the key's 2px pixel: from (muted cream), "to"
+   (gold), the new one (bright). */
 .lvl-versions {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-4);
   min-width: 0;
   margin-left: auto;
-  font-family: var(--mono);
-  font-size: var(--fs-xs);
-  line-height: 1.2;
+  font-family: "m5x7", monospace;
+  font-size: 32px;
+  line-height: 22px;
+  -webkit-font-smoothing: none;
   white-space: nowrap;
-  color: #c9c2ff;
-  font-variant-numeric: tabular-nums;
+  color: #c9a08c;
+  text-shadow: 0 2px 0 #1e0c1f;
 }
 .lvl-versions-to {
-  color: #ffd23a;
+  color: #f5bd63;
 }
 .lvl-versions-new {
-  color: #ffffff;
-  font-weight: 700;
+  color: #fff0e0;
 }
 
 /* Two twinkles on the key's corners, out of step with each other. */

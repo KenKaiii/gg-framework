@@ -15,7 +15,6 @@ vi.mock("@tauri-apps/api/webviewWindow", () => ({
 }));
 vi.mock("@tauri-apps/plugin-log", () => ({ error: vi.fn().mockResolvedValue(undefined) }));
 
-const fixed = (): number => 0.3;
 const latest = CHANGELOG[0];
 if (!latest) throw new Error("changelog is empty");
 
@@ -46,7 +45,7 @@ describe("WhatsNewWindow", () => {
   // Both moods must put the newest release's words on screen: animation is
   // decoration, never the only way to read the notes.
   it.each(WHATSNEW_MODES)("%s shows every new feature and the history", (mode) => {
-    const html = renderToStaticMarkup(<WhatsNewWindow mode={mode} random={fixed} />);
+    const html = renderToStaticMarkup(<WhatsNewWindow mode={mode} />);
 
     expect(html).toContain(`data-mode="${mode}"`);
     expect(html).toContain(`What&#x27;s new in GG Coder v${latest.version}`);
@@ -56,18 +55,29 @@ describe("WhatsNewWindow", () => {
     expect(html).toContain("wn-history");
   });
 
-  // The frame is drawn with background layers (border-image drew nothing in
-  // the app's WebKit): all eight pieces must be handed to the stylesheet.
-  it("hands the log frame's eight pieces to the stylesheet as backgrounds", async () => {
-    const { container } = render(<WhatsNewWindow random={fixed} />);
-    const logs = container.querySelector<HTMLElement>(".wn-camp-logs");
+  // GG Royale's look: the clearing canvas, the notes as rows on a board,
+  // and the one action as the game's plate button. Opening doesn't focus it
+  // (no ring until the keyboard reaches it); Enter closes the window.
+  it("puts the notes on a lounge board with a plate button to leave", async () => {
+    const { container, getByRole } = render(<WhatsNewWindow mode="hype" />);
 
-    expect(logs?.style.backgroundImage.match(/url\(/g)).toHaveLength(8);
+    expect(container.querySelector("canvas.wn-backdrop")).not.toBeNull();
+    expect(container.querySelectorAll(".wn-board .wn-row")).toHaveLength(latest.items.length);
+    const done = getByRole("button", { name: "Let's go" });
+    expect(done.classList).toContain("plate-button");
+    expect(document.activeElement).not.toBe(done);
     await waitFor(() => expect(container.querySelector('[data-phase="open"]')).not.toBeNull());
+    vi.useFakeTimers();
+    fireEvent.keyDown(document, { key: "Enter" });
+    expect(container.querySelector('[data-phase="closing"]')).not.toBeNull();
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(closeWindow).toHaveBeenCalledTimes(1);
   });
 
   it("starts hidden, then asks Rust to show it and fades in", async () => {
-    const { container } = render(<WhatsNewWindow random={fixed} />);
+    const { container } = render(<WhatsNewWindow />);
     const card = container.querySelector(".whatsnew-window");
 
     expect(invoke).toHaveBeenCalledWith("reveal_whatsnew_window");
@@ -75,7 +85,7 @@ describe("WhatsNewWindow", () => {
   });
 
   it("fades out before closing the window, and only closes once", async () => {
-    const { container, getByRole } = render(<WhatsNewWindow random={fixed} />);
+    const { container, getByRole } = render(<WhatsNewWindow />);
     const card = container.querySelector(".whatsnew-window");
     await waitFor(() => expect(card?.getAttribute("data-phase")).toBe("open"));
     vi.useFakeTimers();

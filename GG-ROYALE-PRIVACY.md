@@ -18,13 +18,14 @@ players aged 18 and over.
 |---|---|---|
 | Your player name | So other players can see who they're playing with | Until you delete your data |
 | Game progress: chips, wins, streaks, rewards, locker items, season and bosses | To run the game | Until you delete your data |
-| From GG Coder: that a coding run finished, how many commits it made, and the kind of bug it fixed (one word, like "test" or "type") | To give you chips and bosses for real work | Until you delete your data |
+| From GG Coder: that a coding run finished, how many commits it made, the kind of bug it fixed (one word, like "test" or "type"), that one of your goals made progress today, and that a deploy happened | To give you chips and bosses for real work | Until you delete your data |
 | What you say at a table | To show it to the other players there | The last 20 lines of a table, while the table is open |
 | Reports you send about other players | So we can deal with abuse | Until reviewed, then deleted |
 | Your IP address | Briefly, to stop too many sign-ups from one place | A rolling one-hour window |
 
-GG Royale **never** receives your code, files, file names, prompts, commands,
-command output or anything from your projects.
+GG Royale **never** receives your code, files, file names, goal names,
+prompts, commands, command output, website addresses or anything from your
+projects.
 
 ## Who else sees it
 

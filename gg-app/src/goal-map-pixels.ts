@@ -219,24 +219,28 @@ export class PixelBuffer {
 
   /**
    * Ring every opaque shape with a 1px outline, tinted by the colour it borders
-   * (so a tree is ringed in near-black green and a cabin in near-black brown).
+   * (so a tree is ringed in near-black green and a cabin in near-black brown),
+   * and lit the way GG Royale's lines are: lighter on the top and left, where
+   * the sun falls on the shape's edge, and full ink on the bottom and right,
+   * where it turns away. Outer corners (touching the shape only diagonally)
+   * stay clear, so silhouettes read round rather than boxed.
    */
   outline(strength = 0.68, ink: Rgb = E.ink): void {
     const marks: Array<[number, number, Rgb]> = [];
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         if (this.opaque(x, y)) continue;
-        for (const [nx, ny] of [
-          [x, y - 1],
-          [x, y + 1],
-          [x - 1, y],
-          [x + 1, y],
-        ] as const) {
-          if (this.opaque(nx, ny)) {
-            marks.push([x, y, darken(this.rgb(nx, ny), strength, ink)]);
-            break;
-          }
-        }
+        // Which sides of the shape this ring pixel sits on.
+        const below = this.opaque(x, y + 1); // the ring is above: the lit top edge
+        const right = this.opaque(x + 1, y); // the ring is left of it: lit
+        const above = this.opaque(x, y - 1); // the ring is under it: shade
+        const left = this.opaque(x - 1, y); // the ring is right of it: shade
+        if (!below && !right && !above && !left) continue;
+        const from = below ? [x, y + 1] : right ? [x + 1, y] : above ? [x, y - 1] : [x - 1, y];
+        const touch = this.rgb(from[0] ?? x, from[1] ?? y);
+        // Lit edges (top and left only) take 30% less ink.
+        const lit = (below || right) && !above && !left;
+        marks.push([x, y, darken(touch, lit ? strength * 0.7 : strength, ink)]);
       }
     }
     for (const [x, y, c] of marks) this.set(x, y, c);

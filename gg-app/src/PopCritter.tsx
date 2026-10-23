@@ -20,7 +20,7 @@ export function critterById(id: string): CritterDef {
 export function PopCritter({
   critter,
   pose,
-  size = 14,
+  size = 18,
 }: {
   critter: CritterDef;
   pose: PopCritterPose;

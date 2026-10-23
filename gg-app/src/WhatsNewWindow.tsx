@@ -2,10 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { error as logError } from "@tauri-apps/plugin-log";
-import { XIcon } from "@phosphor-icons/react";
 import { recentChangelog } from "./changelog";
 import type { WhatsNewMode } from "./whatsnew-content";
-import { WhatsNewCampfire } from "./WhatsNewCampfire";
+import { WhatsNewLounge } from "./WhatsNewLounge";
 import "./WhatsNew.css";
 
 /**
@@ -13,9 +12,9 @@ import "./WhatsNew.css";
  * Tauri window built by Rust `open_whatsnew_window`, reached via the
  * `?whatsnew=1` flag in main.tsx). Two moods share one window:
  *   - `hype`: the one-time show right after an update relaunch.
- *   - `calm`: the same campfire, settled, for the home screen's button.
+ *   - `calm`: the same lounge, settled, for the home screen's button.
  * The window owns opening and closing (Escape, ×, the footer button); the
- * campfire design owns the banner, the new features and the history.
+ * lounge design owns the banner, the new features and the history.
  *
  * Opening: Rust builds the window hidden. Once this has rendered, it asks Rust
  * to show it, then fades the card in, so there's never an empty or
@@ -41,11 +40,8 @@ function closeWindow(): void {
 
 export function WhatsNewWindow({
   mode = "calm",
-  random = Math.random,
 }: {
   mode?: WhatsNewMode;
-  /** Picks this opening's critters; injectable for tests. */
-  random?: () => number;
 }): React.ReactElement | null {
   const [phase, setPhase] = useState<Phase>("hidden");
   const closing = useRef(false);
@@ -79,10 +75,12 @@ export function WhatsNewWindow({
     window.setTimeout(closeWindow, CLOSE_MS);
   }, []);
 
-  // Escape closes the window (the borderless window has no native chrome).
+  // Escape closes the window (the borderless window has no native chrome), and
+  // so does Enter, unless a focused control (the close key, the plate) takes it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") close();
+      const onControl = e.target instanceof HTMLElement && e.target.closest("button, a") !== null;
+      if (e.key === "Escape" || (e.key === "Enter" && !onControl)) close();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -93,21 +91,10 @@ export function WhatsNewWindow({
 
   return (
     <div className="whatsnew-window" data-mode={mode} data-phase={phase}>
-      <WhatsNewCampfire
-        latest={latest}
-        earlier={earlier}
-        mode={mode}
-        random={random}
-        onClose={close}
-      />
-      <button
-        className="modal-close wn-close"
-        type="button"
-        aria-label="Close"
-        title="Close"
-        onClick={close}
-      >
-        <XIcon size={14} weight="bold" aria-hidden="true" />
+      <WhatsNewLounge latest={latest} earlier={earlier} mode={mode} onClose={close} />
+      <button className="wn-close" type="button" aria-label="Close" title="Close" onClick={close}>
+        {/* A 5×5 pixel x, drawn rather than typed so it sits dead centre. */}
+        <span className="wn-close-x" aria-hidden="true" />
       </button>
     </div>
   );

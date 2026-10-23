@@ -222,7 +222,7 @@ export function makeCritterWork(api: CritterApi): CritterWork {
     {
       id: "dig",
       run: async (c, job, ok) => {
-        const shovel = prop(c, "shovel", { at: { x: 11, y: 0 }, origin: "50% 100%" });
+        const shovel = prop(c, "shovel", { at: { x: 14, y: 0 }, origin: "50% 100%" });
         await loop(
           job,
           ok,
@@ -261,7 +261,7 @@ export function makeCritterWork(api: CritterApi): CritterWork {
       id: "binoculars",
       run: async (c, job, ok) => {
         // Front-on binoculars over the eyes: two round lenses read at real size.
-        const at = { x: "center" as const, y: 5 };
+        const at = { x: "center" as const, y: 7 };
         let bino = prop(c, "binoculars", { at });
         await loop(job, ok, async () => {
           await wait(rand(700, 1200));
@@ -282,7 +282,7 @@ export function makeCritterWork(api: CritterApi): CritterWork {
       w: 4,
       run: async (c, job, ok) => {
         // Held up beside the head; cyan glass so it stands out from the purple robe.
-        const ball = prop(c, "crystal", { at: { x: 11, y: 6 }, flicker: 300 });
+        const ball = prop(c, "crystal", { at: { x: 14, y: 8 }, flicker: 300 });
         await lean(c, 8, 1);
         await loop(job, ok, async () => {
           fx.stars(c, fx.frontX(c, 14), 28, 1, "#8fdcff");
@@ -301,7 +301,7 @@ export function makeCritterWork(api: CritterApi): CritterWork {
       id: "hammer",
       w: (c) => (c.def.id === "builder" || c.def.id === "knight" ? 4 : 1),
       run: async (c, job, ok) => {
-        const hammer = prop(c, "hammer", { at: { x: 11, y: 2 }, origin: "50% 100%" });
+        const hammer = prop(c, "hammer", { at: { x: 14, y: 3 }, origin: "50% 100%" });
         await loop(
           job,
           ok,

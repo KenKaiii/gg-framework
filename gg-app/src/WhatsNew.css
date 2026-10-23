@@ -1,123 +1,263 @@
-/* ── What's new window: the campfire design (WhatsNewCampfire.tsx) ──
-   Every animation here is an ENTRANCE that ends on the element's resting
-   style (`both` fill, `from` keyframes only), or a decorative loop. So with
-   reduced motion, where all of it switches off, every word is still there.
-   `[data-mode="hype"]` is the one-time post-update show; `calm` is the home
-   screen's button. */
+/* ── What's new window (WhatsNewLounge.tsx) ──
+   GG Royale's look at 2 screen px per art px over the home screen's evening
+   clearing: the gold title, the notes on a dark board like the game's Daily
+   screen, and a plate button on the grass. m5x7 for text, Alagard for titles. Every motion
+   is an entrance that ends at rest (`both` fill), so with reduced motion,
+   where it all switches off, every word is still there. */
 
-/* ── Shared frame ──
-   Under the night scene the window is an app page: the page base (--bg), the
-   app's cards for the stories, and theme ink, so it reads like Settings in
-   either theme. The scene above is art and stays dark in both. */
 .whatsnew-window {
-  /* The story numbers, in the fire's colour: ember orange on dark, a deep
-     amber that holds 5.3:1 on the light theme's cards. */
-  --wn-ember: #ffb35c;
-  background: var(--bg);
-  color: var(--text);
+  /* One art pixel, in screen px. */
+  --wn-px: 2px;
+  --wn-ink: #1e0c1f;
+  --wn-cream: #f6d0a8;
+  --wn-text: #e6dcd0;
+  --wn-gold: #f5bd63;
+  /* The clearing's sky overhead, behind its canvas while it paints. */
+  background: #18132e;
+  color: var(--wn-text);
+  font-family: "m5x7", monospace;
+  font-size: calc(var(--wn-px) * 16);
+  line-height: calc(var(--wn-px) * 12);
+  -webkit-font-smoothing: none;
+  font-smooth: never;
 }
-:root[data-theme="light"] .whatsnew-window {
-  --wn-ember: #9a4a00;
+.whatsnew-window :focus-visible {
+  outline: var(--wn-px) solid var(--wn-gold);
+  outline-offset: var(--wn-px);
 }
-.wn-close {
+
+.wn-lounge {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.wn-backdrop {
   position: absolute;
-  top: var(--space-8);
-  right: var(--space-8);
-  z-index: var(--z-float);
+  top: 0;
+  left: 0;
+  image-rendering: pixelated;
+  pointer-events: none;
 }
-.wn-scroll {
+
+/* ── Header: the title art and the version ── */
+.wn-lounge-head {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: calc(var(--wn-px) * 11) 0 calc(var(--wn-px) * 5);
+}
+.wn-lounge-title {
+  display: block;
+  width: calc(201px * 2);
+  height: calc(39px * 2);
+  image-rendering: pixelated;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.wn-lounge-version {
+  margin: calc(var(--wn-px) * 1) 0 0;
+  color: var(--wn-cream);
+  text-shadow: 0 var(--wn-px) 0 var(--wn-ink);
+}
+
+/* ── The board (the Daily's panel) ── */
+.wn-board {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  margin: 0 calc(var(--wn-px) * 15) calc(var(--wn-px) * 15);
+  background: #251c22;
+  border-radius: calc(var(--wn-px) * 3);
+  box-shadow:
+    0 0 0 var(--wn-px) var(--wn-ink),
+    inset 0 0 0 var(--wn-px) #4e343f,
+    0 calc(var(--wn-px) * 3) 0 var(--wn-px) var(--wn-ink);
+}
+.wn-board-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-10) var(--space-12) var(--space-12);
+  margin: var(--wn-px);
+  padding: calc(var(--wn-px) * 7) calc(var(--wn-px) * 9) calc(var(--wn-px) * 9);
 }
-.wn-actions {
+.wn-board-scroll::-webkit-scrollbar {
+  width: calc(var(--wn-px) * 5);
+}
+.wn-board-scroll::-webkit-scrollbar-track {
+  background: #1a0e14;
+}
+.wn-board-scroll::-webkit-scrollbar-thumb {
+  background: #8a6a2a;
+  border: var(--wn-px) solid #1a0e14;
+  border-radius: 0;
+}
+.wn-board-title,
+.wn-history-title {
+  margin: 0 0 calc(var(--wn-px) * 5);
+  font-family: "Alagard", serif;
+  font-size: calc(var(--wn-px) * 16);
+  font-weight: normal;
+  line-height: calc(var(--wn-px) * 16);
+  color: var(--wn-cream);
+  text-shadow: 0 var(--wn-px) 0 var(--wn-ink);
+}
+
+/* ── Rows (the Daily's job rows) ── */
+.wn-rows,
+.wn-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--wn-px) * 3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.wn-row,
+.wn-history-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: calc(var(--wn-px) * 5);
+  padding: calc(var(--wn-px) * 3) calc(var(--wn-px) * 5) calc(var(--wn-px) * 5);
+  background: #2e2029;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 calc(var(--wn-px) * -1) 0 #221820;
+}
+.wn-history-item {
+  display: block;
+  background: #2a1d25;
+}
+.wn-tag {
+  align-self: start;
+  min-width: calc(var(--wn-px) * 11);
+  margin-top: calc(var(--wn-px) * 1);
+  padding: 0 calc(var(--wn-px) * 3);
+  background: var(--wn-gold);
+  color: var(--wn-ink);
+  text-align: center;
+  border-radius: var(--wn-px);
+  box-shadow: 0 0 0 var(--wn-px) var(--wn-ink);
+}
+.wn-row-copy {
+  min-width: 0;
+}
+/* The headline in gold, a step apart from its paragraph, so each note reads
+   as a title and its story (like the Daily's job names over their rows). */
+.wn-headline {
+  margin: 0;
+  font: inherit;
+  color: var(--wn-gold);
+}
+.wn-body {
+  margin: calc(3 * var(--wn-px)) 0 0;
+  color: var(--wn-text);
+}
+.whatsnew-highlight {
+  font-weight: normal;
+  color: var(--wn-gold);
+}
+
+/* ── Earlier releases: same board, quieter ── */
+.wn-history {
+  margin-top: calc(var(--wn-px) * 13);
+}
+.wn-history-release + .wn-history-release {
+  margin-top: calc(var(--wn-px) * 9);
+}
+.wn-history-version {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--wn-px) * 5);
+  margin: 0 0 calc(var(--wn-px) * 3);
+  font: inherit;
+  color: #c9a08c;
+}
+.wn-history-version time {
+  color: #a8808c;
+}
+.wn-history-item .wn-headline {
+  color: #e6c8a8;
+}
+.wn-history-item .wn-body {
+  color: #cfc2b6;
+}
+
+/* ── Footer: the plate on the grass ── */
+.wn-lounge-foot {
+  position: relative;
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-5);
-  padding: var(--space-8) var(--space-12) var(--space-10);
-  border-top: 1px solid var(--border);
+  justify-content: center;
+  /* Exactly the patch of grass (GROUND_FROM_BOTTOM art px), so the whole
+     plate and socket sit on it. */
+  height: calc(var(--wn-px) * 58);
+  padding-top: calc(var(--wn-px) * 5);
 }
-.wn-done {
-  min-width: 112px;
-  line-height: 1.3;
-}
-.wn-eyebrow {
-  margin: 0 0 var(--space-2);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  line-height: 1.3;
+.wn-lounge-foot .plate-button {
+  --plate-scale: 1.5;
 }
 
-/* A bullet's hook sentence leads; the detail follows in a softer ink. */
-.wn-headline {
-  margin: 0;
-  font-size: var(--fs-xl);
-  font-weight: 650;
-  line-height: 1.35;
-  letter-spacing: -0.012em;
-  color: var(--text);
-  text-wrap: balance;
-}
-.wn-body {
-  margin: var(--space-3) 0 0;
-  font-size: var(--fs-md);
-  line-height: 1.6;
-  color: var(--text-secondary);
-  text-wrap: pretty;
-}
-.whatsnew-highlight {
-  color: color-mix(in srgb, var(--secondary) 72%, var(--text));
-  font: inherit;
-  font-weight: 700;
-}
-
-/* Pixel art: critters step by blinking frame B over frame A. */
-.wn-sprite {
-  position: relative;
-  display: inline-block;
-  flex: none;
-  width: var(--sprite);
-  height: var(--sprite);
-}
-.wn-sprite img,
-.wn-pixel {
-  image-rendering: pixelated;
-  user-select: none;
-}
-.wn-sprite img {
+/* ── Close key ── */
+.wn-close {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: calc(var(--wn-px) * 7);
+  right: calc(var(--wn-px) * 7);
+  z-index: var(--z-float);
+  display: grid;
+  place-items: center;
+  width: calc(var(--wn-px) * 13);
+  height: calc(var(--wn-px) * 13);
+  /* The bottom pixel row is the key's shade: centre the x on the face above it. */
+  padding: 0 0 var(--wn-px);
+  border: 0;
+  border-radius: var(--wn-px);
+  background: #3e2832;
+  color: var(--wn-cream);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 var(--wn-px) var(--wn-ink),
+    inset 0 calc(var(--wn-px) * -1) 0 #2a1a22,
+    0 var(--wn-px) 0 var(--wn-px) var(--wn-ink);
 }
-.wn-sprite-step {
-  opacity: 0;
-  animation: wn-step 0.36s steps(1, end) infinite;
-  animation-play-state: var(--loop-play-state, running);
+/* The x: five art pixels square, the two diagonals, in cream. */
+.wn-close-x {
+  width: calc(var(--wn-px) * 5);
+  height: calc(var(--wn-px) * 5);
+  background: currentColor;
+  clip-path: polygon(
+    0 0,
+    20% 0,
+    50% 30%,
+    80% 0,
+    100% 0,
+    100% 20%,
+    70% 50%,
+    100% 80%,
+    100% 100%,
+    80% 100%,
+    50% 70%,
+    20% 100%,
+    0 100%,
+    0 80%,
+    30% 50%,
+    0 20%
+  );
 }
-.wn-flip {
-  display: inline-block;
-  transform: scaleX(-1);
+.wn-close:hover {
+  background: #4e343f;
+}
+.wn-close:active {
+  translate: 0 var(--wn-px);
 }
 
-/* Content entrances: a staged reveal in hype. Calm has none: the window's own
-   fade-in is its only entrance, so it opens in one motion. */
-[data-mode="hype"] .wn-rise {
-  animation: wn-rise 0.7s var(--ease-out) var(--d, 0s) both;
-}
-
-/* ── Open and close ──
-   Rust keeps the window hidden until the first frame has painted (see
-   `reveal_whatsnew_window`), so it appears fully transparent; then the card
-   fades and settles in. Closing plays the reverse before the window goes.
-   Keyframes, not transitions: they always play from their first frame, even
-   if the hidden window never computed the starting style. The close duration
-   is WhatsNewWindow.tsx's CLOSE_MS. */
+/* ── Opening and closing ── */
 .whatsnew-window[data-phase="hidden"] {
   opacity: 0;
 }
@@ -127,466 +267,26 @@
 .whatsnew-window[data-phase="closing"] {
   animation: wn-window-out 160ms var(--ease-in) both;
 }
-
-/* ── History: the archive is always calm ──
-   No cards, but the same left edge as the stories' contents: each release is
-   inset by a card's padding, so the versions line up with the story numbers
-   and the text above. The title's rule runs the full width. */
-.wn-history {
-  margin-top: 32px;
-}
-.wn-history-release {
-  padding-inline: var(--space-9);
-}
-.wn-history-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
-  margin: 0 0 var(--space-9);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  line-height: 1.3;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.wn-history-title::before,
-.wn-history-title::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--border-strong);
-}
-.wn-history-release + .wn-history-release {
-  margin-top: var(--space-12);
-}
-.wn-history-version {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
-  margin: 0 0 var(--space-6);
-  font-size: var(--fs-sm);
-  font-weight: 700;
-  line-height: 1.3;
-  color: var(--text-secondary);
-}
-.wn-history-version time {
-  font-weight: 500;
-  color: var(--text-dim);
-}
-.wn-history-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-.wn-history-item .wn-headline {
-  font-size: var(--fs-md);
-  font-weight: 600;
-}
-.wn-history-item .wn-body {
-  margin-top: var(--space-1);
-  font-size: var(--fs-base);
-  line-height: 1.55;
-  color: var(--text-muted);
-}
-
-/* ── Campfire scene ── */
-.wn-camp-scene {
-  position: relative;
-  flex: none;
-  height: 216px;
-  overflow: hidden;
-  background: linear-gradient(180deg, #0a0e28 0%, #1b1940 46%, #45284a 82%, #683548 100%);
-}
-.wn-camp-star {
-  position: absolute;
-  width: 2px;
-  height: 2px;
-  background: #fff;
-  opacity: 0.75;
-  animation: wn-twinkle 3.4s ease-in-out infinite;
-  animation-play-state: var(--loop-play-state, running);
-}
-.wn-camp-star.big {
-  width: 3px;
-  height: 3px;
-}
-/* Centred in the clear sky above the fire, between the two stands of pines. */
-.wn-camp-copy {
-  position: absolute;
-  z-index: 5;
-  top: var(--space-11);
-  left: 0;
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-6);
-}
-/* The home screen's banner (AsciiLogo + its App.css shimmer), at half size:
-   89 mono columns at 4.5px is about 240px wide. */
-.wn-camp-copy .ascii-logo {
-  font-size: 4.5px;
-}
-/* The version in the arcade pixel font, lit in the fire's colours: pale
-   flame on the left warming to the ember orange of the story numbers. */
-.wn-pixel-version {
-  display: grid;
-}
-.wn-pixel-version i {
-  display: block;
-  border-radius: 1px;
-}
-/* Resting glow. Every filter keyframe below lists the SAME functions in the
-   same order (brightness, then drop-shadow): if the lists differ the browser
-   can't blend them and the glow snaps instead of fading. */
-.wn-camp-version {
-  filter: brightness(1) drop-shadow(0 0 8px rgb(255 150 60 / 0.45));
-  animation: wn-camp-firelit 2.4s ease-in-out infinite;
-  animation-play-state: var(--loop-play-state, running);
-}
-.wn-camp-version i {
-  background: color-mix(in oklab, #ffb35c calc(var(--t) * 100%), #ffe7c2);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.22);
-}
-.wn-camp-glow {
-  position: absolute;
-  z-index: 1;
-  left: 50%;
-  bottom: -60px;
-  width: 380px;
-  height: 230px;
-  transform: translateX(-50%);
-  background: radial-gradient(
-    closest-side,
-    rgb(255 150 60 / 0.5),
-    rgb(255 110 40 / 0.14) 62%,
-    transparent
-  );
-  animation: wn-glow 2.4s ease-in-out infinite;
-  animation-play-state: var(--loop-play-state, running);
-}
-.wn-camp-tree {
-  position: absolute;
-  z-index: 2;
-  bottom: 30px;
-}
-.wn-camp-ground {
-  position: absolute;
-  z-index: 3;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 34px;
-  background:
-    radial-gradient(ellipse 170px 26px at 50% 0, rgb(255 140 60 / 0.32), transparent), #0c1118;
-}
-
-/* ── Log frame: a pixel log frame round the whole window, and a log
-   beam between the banner and the stories. 3px per art cell, like the
-   critters. Corners are notched to match the frame art. ── */
-.whatsnew-window {
-  --log: 15px;
-  padding: var(--log);
-  border-radius: 0;
-  clip-path: polygon(
-    6px 0,
-    calc(100% - 6px) 0,
-    calc(100% - 6px) 3px,
-    calc(100% - 3px) 3px,
-    calc(100% - 3px) 6px,
-    100% 6px,
-    100% calc(100% - 6px),
-    calc(100% - 3px) calc(100% - 6px),
-    calc(100% - 3px) calc(100% - 3px),
-    calc(100% - 6px) calc(100% - 3px),
-    calc(100% - 6px) 100%,
-    6px 100%,
-    6px calc(100% - 3px),
-    3px calc(100% - 3px),
-    3px calc(100% - 6px),
-    0 calc(100% - 6px),
-    0 6px,
-    3px 6px,
-    3px 3px,
-    6px 3px
-  );
-}
-/* The frame is eight background layers (images set inline, in
-   logFramePieces' order): four corners on top, then the four edges tiling
-   the full length beneath them. Background images, not border-image: the
-   app's WebKit drew no border-image here at all. The edges also run under
-   the corners' notches; the window's clip-path cuts those pixels away. */
-.wn-camp-logs {
-  position: absolute;
-  inset: 0;
-  z-index: 25;
-  pointer-events: none;
-  background-position:
-    0 0,
-    100% 0,
-    0 100%,
-    100% 100%,
-    0 0,
-    0 100%,
-    0 0,
-    100% 0;
-  background-size:
-    var(--log) var(--log),
-    var(--log) var(--log),
-    var(--log) var(--log),
-    var(--log) var(--log),
-    18px var(--log),
-    18px var(--log),
-    var(--log) 18px,
-    var(--log) 18px;
-  background-repeat:
-    no-repeat, no-repeat, no-repeat, no-repeat, repeat-x, repeat-x, repeat-y, repeat-y;
-}
-.wn-camp-beam {
-  flex: none;
-  height: var(--log);
-  background-size: 18px var(--log);
-  background-repeat: repeat-x;
-}
-.wn-close {
-  top: calc(var(--log) + var(--space-6));
-  right: calc(var(--log) + var(--space-6));
-}
-/* The × sits on the night sky, which stays dark in the light theme too, so it
-   keeps the night palette (as Home's controls do, see Deck.css). */
-:root[data-theme="light"] .wn-close {
-  --text: var(--night-text);
-  --text-dim: var(--night-text-dim);
-  --ink-rgb: var(--night-ink-rgb);
-}
-.wn-camp-fire {
-  position: absolute;
-  z-index: 4;
-  left: 50%;
-  bottom: 22px;
-  width: 40px;
-  height: 50px;
-  transform: translateX(-50%);
-}
-.wn-camp-flames {
-  position: absolute;
-  inset: 0;
-  transform-origin: 50% 100%;
-}
-.wn-camp-flames img {
-  position: absolute;
-  inset: 0;
-}
-.wn-camp-flames .frame-1 {
-  opacity: 0;
-  animation: wn-step 0.42s steps(1, end) infinite;
-  animation-play-state: var(--loop-play-state, running);
-}
-.wn-camp-ember {
-  position: absolute;
-  left: 50%;
-  bottom: 34px;
-  width: 3px;
-  height: 3px;
-  background: #ffc35c;
-  box-shadow: 0 0 6px #ff8a1f;
-  opacity: 0;
-  animation: wn-ember 2.6s var(--ease-out) infinite;
-  animation-play-state: var(--loop-play-state, running);
-}
-.wn-camp-seat {
-  position: absolute;
-  z-index: 4;
-  left: calc(50% + var(--x));
-  bottom: 24px;
-  line-height: 0;
-}
-.wn-camp-critter {
-  transform-origin: 50% 100%;
-  animation: wn-breathe 3.2s ease-in-out infinite;
-  animation-play-state: var(--loop-play-state, running);
-}
-
-[data-mode="hype"] .wn-camp-flames {
-  animation: wn-ignite 0.7s var(--ease-pop) 0.1s both;
-}
-[data-mode="hype"] .wn-camp-glow {
-  animation:
-    wn-flare 1.4s var(--ease-out) both,
-    wn-glow 2.4s ease-in-out 1.4s infinite;
-  animation-play-state: running, var(--loop-play-state, running);
-}
-/* Hype: the banner rises out of the glow, then the version's pixels fly in
-   from all over the sky and snap together with a flare. */
-[data-mode="hype"] .wn-camp-copy .ascii-logo {
-  animation: wn-rise 0.8s var(--ease-out) 0.6s both;
-}
-[data-mode="hype"] .wn-camp-version i {
-  animation: wn-px-fly 0.9s var(--ease-expo) calc(var(--d) + 0.9s) both;
-}
-/* Once the last pixel lands: the glow swells, then eases back into the
-   firelight flicker over the next couple of seconds. */
-[data-mode="hype"] .wn-camp-version {
-  animation:
-    wn-camp-flare 2.2s ease-in-out 2s,
-    wn-camp-firelit 2.4s ease-in-out 4.2s infinite;
-  animation-play-state: running, var(--loop-play-state, running);
-}
-[data-mode="hype"] .wn-camp-seat {
-  animation: wn-arrive 1.1s var(--ease-out) var(--d) both;
-}
-[data-mode="hype"] .wn-camp-critter {
-  animation:
-    wn-hop 0.42s ease-out calc(var(--d) + 1.1s) 2,
-    wn-breathe 3.2s ease-in-out calc(var(--d) + 2s) infinite;
-  animation-play-state: running, var(--loop-play-state, running);
-}
-[data-mode="hype"] .wn-camp-critter .wn-sprite-step {
-  animation-delay: var(--d);
-  animation-iteration-count: 3;
-}
-
-.wn-camp-stories {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-}
-/* Each story is one of the app's cards (as on the Settings pages). */
-.wn-camp-story {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: var(--space-6);
-  padding: var(--space-8) var(--space-9) var(--space-9);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  background: var(--surface-1);
-}
-.wn-camp-num {
-  font-family: var(--mono);
-  font-size: var(--fs-2xl);
-  font-weight: 700;
-  line-height: 1.2;
-  color: var(--wn-ember);
-}
-
-/* ── Shared keyframes ── */
-@keyframes wn-step {
-  0% {
-    opacity: 0;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-@keyframes wn-rise {
-  from {
-    opacity: 0;
-    transform: translateY(14px) scale(0.98);
-    filter: blur(4px);
-  }
-}
-@keyframes wn-twinkle {
-  50% {
-    opacity: 0.15;
-  }
-}
-@keyframes wn-glow {
-  50% {
-    opacity: 0.72;
-    transform: translateX(-50%) scale(0.95);
-  }
-}
-@keyframes wn-flare {
-  0% {
-    opacity: 0;
-    transform: translateX(-50%) scale(0.3);
-  }
-  30% {
-    opacity: 1;
-    transform: translateX(-50%) scale(1.45);
-  }
-}
-@keyframes wn-ignite {
-  from {
-    opacity: 0;
-    transform: scale(0.1);
-  }
-}
-@keyframes wn-ember {
-  0% {
-    opacity: 0;
-    transform: translate(0, 0);
-  }
-  15% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    transform: translate(var(--drift), var(--rise));
-  }
-}
-@keyframes wn-arrive {
-  from {
-    transform: translateX(var(--from));
-  }
-}
-@keyframes wn-hop {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  45% {
-    transform: translateY(-12px);
-  }
-}
-@keyframes wn-breathe {
-  50% {
-    transform: scaleY(0.95);
-  }
-}
-@keyframes wn-px-fly {
-  from {
-    opacity: 0;
-    transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(0.3);
-  }
-}
-@keyframes wn-camp-flare {
-  0%,
-  100% {
-    filter: brightness(1) drop-shadow(0 0 8px rgb(255 150 60 / 0.45));
-  }
-  30% {
-    filter: brightness(1.55) drop-shadow(0 0 20px rgb(255 190 90 / 0.85));
-  }
-}
-/* A slow breath in the fire's rhythm, too faint to pull the eye. */
-@keyframes wn-camp-firelit {
-  0%,
-  100% {
-    filter: brightness(1) drop-shadow(0 0 8px rgb(255 150 60 / 0.45));
-  }
-  50% {
-    filter: brightness(1.08) drop-shadow(0 0 12px rgb(255 150 60 / 0.6));
-  }
-}
-
 @keyframes wn-window-in {
   from {
     opacity: 0;
-    transform: scale(0.97);
   }
 }
 @keyframes wn-window-out {
   to {
     opacity: 0;
-    transform: scale(0.98);
+  }
+}
+
+/* Hype: rows rise in, one after another, in stepped art pixels. */
+.whatsnew-window[data-mode="hype"][data-phase="open"] .wn-row-in {
+  animation: wn-row-rise 320ms steps(4, end) both;
+  animation-delay: calc(200ms + var(--i, 0) * 110ms);
+}
+@keyframes wn-row-rise {
+  from {
+    opacity: 0;
+    translate: 0 calc(var(--wn-px) * 8);
   }
 }
 

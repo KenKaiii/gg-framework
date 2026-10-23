@@ -1,0 +1,8 @@
+Alagard — a medieval pixel font by Hewett Tsoi (Pix3M)
+https://www.dafont.com/alagard.font
+
+Terms: listed by the author as "100% free", free for personal and commercial
+use, with credit to the author requested. GG Coder ships it unmodified and
+credits it in ../THIRD-PARTY.md and in the app (Settings > About).
+
+Credit: "Alagard" pixel font by Hewett Tsoi.

@@ -1,6 +1,6 @@
 # Provenance
 
-**Snapshot date: 3 October 2026** (previous full snapshot 12 August 2026). Items re-verified on 3 Oct 2026 are listed below; anything else carries its marker from the earlier snapshot. Security facts decay faster than any other content in this repository — a version number, a CVE, a default, or an incident detail that was accurate at snapshot time may be wrong by the time you read it.
+**Snapshot date: 3 October 2026**, partially re-verified **22 October 2026** (previous full snapshot 12 August 2026). Items re-verified on either date are listed below; anything else carries its marker from the earlier snapshot. Security facts decay faster than any other content in this repository — a version number, a CVE, a default, or an incident detail that was accurate at snapshot time may be wrong by the time you read it.
 
 ## Confidence markers
 
@@ -21,7 +21,7 @@ Unmarked engineering guidance (parameterize queries, fail closed, least privileg
 | OWASP Top 10:2025 order (A01 Broken Access Control … A03 Software Supply Chain Failures … A10 Mishandling of Exceptional Conditions; SSRF folded into A01) | top10.owasp.org/2025 |
 | 2025 CWE Top 25: 1 XSS, 2 SQLi, 3 CSRF, 4 Missing Authorization | MITRE CWE Top 25 (Dec 2025) |
 | OWASP Top 10 for Agentic Applications 2026 (ASI01–ASI10), published 9 Dec 2025 | OWASP GenAI Security Project |
-| MCP 2025-11-25: CIMD preferred, DCR optional, RFC 9728 discovery fallback, 403 on bad Origin | modelcontextprotocol.io changelog |
+| MCP 2025-11-25 (superseded 22 Oct: see below) | modelcontextprotocol.io changelog |
 | npm: classic tokens revoked 9 Dec 2025; 2-h session tokens; staged publishing GA 22 May 2026 (CLI 11.15.0); npm 12 scripts off by default (8 Jul 2026) | GitHub Changelog; npm release notes |
 | GitHub Actions: SHA-pin enforcement policy (Aug 2025); `pull_request_target` default-branch source (8 Dec 2025); checkout fork-ref refusal (Jun/Jul 2026) | GitHub Changelog |
 | TanStack compromise chain (11 May 2026) | TanStack postmortem |
@@ -38,6 +38,23 @@ Unmarked engineering guidance (parameterize queries, fail closed, least privileg
 | Adaptive attacks bypass 12 prompt-injection defenses | Nasr et al., arXiv 2510.09023 |
 
 Dropped as not re-verifiable this pass: specific breakout-time figures, the "38% of organizations" workflow statistic, the 77-extension campaign count, the March 2026 scanner-action tag incident, ATT&CK campaign IDs, and Anthropic's banned-account mapping figures.
+
+## Re-verified 22 October 2026
+
+| Claim | Marker | Primary source |
+|---|---|---|
+| MCP current spec 2026-07-28: stateless (no initialize / `Mcp-Session-Id`), `Mcp-Method`/`Mcp-Name` headers, `requestState`, cacheable listings, DCR deprecated for CIMD, RFC 9207 `iss`, Roots/Sampling/Logging deprecated ≥12 months, MCP Apps | [V] (coordinator) | claude.com/blog/bringing-mcp-2026-07-28-to-claude; modelcontextprotocol.io/specification/2026-07-28 |
+| MCP Streamable HTTP: MUST validate `Origin`, 403 if present and invalid; SHOULD bind localhost | [V] | modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http |
+| OAuth 2.1 still an Internet-Draft (draft-ietf-oauth-v2-1-16) | [V] | datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/ |
+| npm: unvalidated trusted-publishing configs expire; staged publishing supports new packages (both 2 Oct 2026) | [V] | github.blog/changelog (2026-10-02 entries) |
+| npm refuses trusted-publishing tokens from `issue_comment`; 48-hour validation window; SlugFest (Bloom Security, 13 Oct 2026) | [S] | Secondary reporting (workos.com, cybersecuritynews.com); changelog body not readable this pass |
+| `tensorlake@0.5.144` malware advisory, 8 Oct 2026 | [V] | github.com/advisories/GHSA-rqxj-g25x-4v9v |
+| tensorlake: valid provenance, preinstall hook, pushed to main | [S] | Aikido, StepSecurity reporting |
+| Next.js 14 Oct 2026 critical RCEs (`use cache` typed arrays; SVG via sharp/librsvg) + Server Actions DoS | [V] (coordinator) | Next.js advisories |
+| Node.js 21 Oct 2026 security releases incl. Brotli decoder OOB write and TLS hostname bypass | [V] | nodejs.org/en/blog/vulnerability/october-2026-security-releases |
+| CWE Top 25 2025 is still the latest edition | [V] | cwe.mitre.org/top25 |
+
+Changed this pass: `threat-landscape.md` rewritten as technique + fingerprint (counts and statistics dropped); package-manager version minimums for release-age cooldowns replaced with a rule; the "~80 days to exploitation" figure dropped.
 
 ## Source classes
 

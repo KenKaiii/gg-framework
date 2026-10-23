@@ -8,7 +8,7 @@ describe("critter roster", () => {
   });
 
   it.each(CRITTERS.map((c) => [c.id, c] as const))(
-    "%s is a full 14×14 grid with every colour defined in both frames",
+    "%s is a full 18×18 grid with every colour defined in both frames",
     (_id, critter) => {
       expect(critter.rows).toHaveLength(CRITTER_CELLS);
       const rows = [...critter.rows, ...Object.values(critter.alt)];
@@ -30,7 +30,7 @@ describe("renderCritterFrame", () => {
   it("renders an SVG data URL using the critter's colours", () => {
     const svg = decodeURIComponent(renderCritterFrame(bee, 0));
     expect(svg.startsWith('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
-    expect(svg).toContain('viewBox="0 0 14 14"');
+    expect(svg).toContain('viewBox="0 0 18 18"');
     expect(svg).toContain(bee.palette.B);
   });
 

@@ -914,9 +914,16 @@ export function cloudTile(size: number, color: Rgb, maxAlpha: number, seed: numb
       const top = corner(x0, y0) + (corner(x0 + 1, y0) - corner(x0, y0)) * tx;
       const bottom = corner(x0, y0 + 1) + (corner(x0 + 1, y0 + 1) - corner(x0, y0 + 1)) * tx;
       const n = top + (bottom - top) * ty;
-      // Only the densest third forms a cloud; three flat steps inside it.
+      // Only the densest third forms a cloud: a flat core, and a rim that
+      // breaks up through an ordered dither (GG Royale shades with dither,
+      // not soft alpha), so the shadow's edge reads as pixels.
       const k = Math.max(0, (n - 0.55) / 0.45);
-      const stepped = Math.ceil(k * 3) / 3;
+      const B = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
+      const t = ((B[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16;
+      // The core is two flat steps; only its thin outer rim is dithered, at
+      // a sparse quarter, so a cloud's shade has a pixel edge, not a veil.
+      // The dotted fringe is a thin band, so it never spreads into a screen.
+      const stepped = k > 0.5 ? 1 : k > 0.2 ? 0.66 : k > 0.14 && t < 0.25 ? 0.5 : 0;
       const i = (y * size + x) * 4;
       out.data[i] = (color >> 16) & 255;
       out.data[i + 1] = (color >> 8) & 255;

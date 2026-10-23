@@ -2,6 +2,20 @@
    property is just a string: swapping it re-rasterises the gradient instantly,
    which is why the idle -> working -> done changes snapped. Declaring the type
    makes it a real animatable colour. */
+/* GG Royale's pixel fonts, shared so the app and the game look of a piece:
+   m5x7 (Daniel Linssen, CC0) for body text, Alagard (Hewett Tsoi, free with
+   credit) for titles and plate buttons. Both are drawn on a 16px grid, so use
+   them at 16px or a whole multiple of it. */
+@font-face {
+  font-family: "m5x7";
+  src: url("./assets/fonts/m5x7/m5x7.ttf") format("truetype");
+  font-display: block;
+}
+@font-face {
+  font-family: "Alagard";
+  src: url("./assets/fonts/alagard/alagard.ttf") format("truetype");
+  font-display: block;
+}
 @font-face {
   font-family: "Sora";
   src: url("./assets/fonts/sora/sora-latin.woff2") format("woff2");
@@ -1169,8 +1183,8 @@ select {
   overflow: hidden;
 }
 /* The campfire scenery (HomeScenery.tsx): the critters' clearing in the
-   pines. The renderer sizes the canvas to the window; it's pinned to the
-   bottom edge so the fire's glow always sits right under the critters. */
+   pines, in GG Royale's pixel style at 2 screen px per art px. Pinned to the
+   bottom edge so the field always meets the critters' ground. */
 .home-scenery {
   position: absolute;
   inset: 0;
@@ -1182,6 +1196,7 @@ select {
   position: absolute;
   left: 0;
   bottom: 0;
+  image-rendering: pixelated;
 }
 /* The critters' ground takes the scenery's light (set on .home by the clock). */
 .home-critters .critter-terrain {
@@ -1189,7 +1204,7 @@ select {
 }
 /* Home content sits above the backdrop. The scenery keeps the sky dark
    behind the text, so the text goes without a halo. */
-.home > .ascii-logo,
+.home > .home-title,
 .home > .home-version-row,
 .home > .home-tagline,
 .home > .home-actions {
@@ -1197,8 +1212,8 @@ select {
   z-index: 1;
 }
 /* Entry: each block fades + rises in sequence so the page assembles smoothly
-   on load instead of snapping in all at once. The logo's shimmer and glitch
-   loops run on its inner .ascii-logo-glitch. */
+   on load instead of snapping in all at once. The title is still after that:
+   no looping motion. */
 .home > .home-version-row,
 .home > .home-tagline,
 .home > .home-actions,
@@ -1209,7 +1224,7 @@ select {
 .home > .home-version-row {
   animation-delay: 40ms;
 }
-.home > .ascii-logo {
+.home > .home-title {
   animation: reveal-up 460ms var(--ease-out) 120ms both;
 }
 .home > .home-tagline {
@@ -1230,7 +1245,7 @@ select {
   .home > .home-version-corner {
     animation: none;
   }
-  .home > .ascii-logo {
+  .home > .home-title {
     animation: none;
   }
 }
@@ -1244,7 +1259,8 @@ select {
 .home {
   --home-terrain-px: 2px;
   --home-critter-floor: calc(var(--home-terrain-px) * 8);
-  --home-above-critters: calc(var(--home-critter-floor) + 28px + 48px + 6px);
+  /* 36px: the critter sprite, 18 cells at 2px. */
+  --home-above-critters: calc(var(--home-critter-floor) + 36px + 48px + 6px);
 }
 .home > .home-critters {
   position: absolute;
@@ -1479,25 +1495,35 @@ select {
 .ken-power-overlay ~ .transcript {
   opacity: 0;
 }
-/* Terminal-style line in the empty chat body — mono face, blue halo. It
-   flashes in and dissolves. */
+/* One line in the empty chat body, in GG Royale's Alagard. It flashes in
+   and dissolves. */
 .ken-power-banner {
-  font-family: var(--mono);
-  font-size: var(--fs-2xl);
-  letter-spacing: 0.02em;
-  color: var(--text);
-  text-shadow: 0 0 12px rgba(77, 157, 255, 0.35);
+  /* GG Royale's title face, unsmoothed, with its two-step ink drop. */
+  font-family: "Alagard", serif;
+  font-size: var(--fs-4xl);
+  line-height: 1.2;
+  -webkit-font-smoothing: none;
+  color: #f6d0a8;
+  text-shadow: 0 2px 0 #1e0c1f;
+  /* On its own Royale panel, so it reads the same on either theme. */
+  padding: var(--space-3) var(--space-8) var(--space-4) var(--space-4);
+  background: #3a2433;
+  box-shadow:
+    0 0 0 2px #1e0c1f,
+    inset 0 2px 0 #5a3a4a,
+    inset 0 -3px 0 #24141f,
+    0 4px 0 2px #1e0c1f;
   white-space: pre;
   text-align: center;
   /* Ken's face (KenFace mood on/off) leads the words. */
   display: flex;
   align-items: center;
-  gap: var(--space-6);
+  gap: var(--space-5);
   animation: ken-power-flash 1150ms var(--ease-out) both;
 }
 .ken-power-banner .ken-face {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
 }
 /* Scale-and-fade "power flash": pops in slightly undersized (like the zoom
    HUD), rests at full size while held, then grows a touch further as it
@@ -1535,10 +1561,17 @@ select {
     opacity: 1;
   }
 }
+/* Like the game's subtitle under "Royale": Alagard in warm cream with an ink
+   drop, on the same pixel grid as the title. */
 .home-tagline {
-  margin-top: -12px;
-  font-size: var(--fs-lg);
-  color: var(--text);
+  margin-top: calc(-4 * var(--home-px));
+  font-family: "Alagard", serif;
+  font-size: calc(16 * var(--home-px));
+  line-height: calc(16 * var(--home-px));
+  -webkit-font-smoothing: none;
+  color: #f6d0a8;
+  text-shadow: 0 var(--home-px) 0 #1e0c1f;
+  text-align: center;
 }
 .home-link {
   /* Links read as links: the accent, never plain white (which vanished on
@@ -1557,51 +1590,215 @@ select {
 .home-link:hover {
   text-decoration-color: currentColor;
 }
+/* ── Home title ──
+   "GG Coder" in GG Royale's title lettering: a pixel image at a whole number
+   of screen pixels per art pixel (2×, 1× in very small windows). */
+.home-title {
+  --title-scale: 2;
+  margin: 0;
+  line-height: 0;
+}
+.home-title-art {
+  display: block;
+  width: calc(201px * var(--title-scale));
+  height: calc(39px * var(--title-scale));
+  image-rendering: pixelated;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+@media (max-width: 479px), (max-height: 420px) {
+  .home-title {
+    --title-scale: 1;
+  }
+}
+
+/* ── Plate buttons (PlateButton.tsx) ──
+   GG Royale's buttons: three 100×46 pixel canvases (socket, plate, lip) at
+   --plate-scale, the word in Alagard on its 16px grid. Dark lettering, cream
+   while pointed at, as in the game. */
+.plate-button {
+  --plate-scale: 2;
+  position: relative;
+  flex: none;
+  width: calc(100px * var(--plate-scale));
+  height: calc(46px * var(--plate-scale));
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.plate-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+.plate-face {
+  position: absolute;
+  inset: 0;
+  translate: 0 calc(var(--plate-y, 0) * 1px * var(--plate-scale));
+  pointer-events: none;
+}
+.plate-word {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(7px * var(--plate-scale));
+  font-family: "Alagard", serif;
+  font-size: calc(16px * var(--plate-scale));
+  line-height: calc(16px * var(--plate-scale));
+  font-weight: 400;
+  -webkit-font-smoothing: none;
+  color: #1e2a33;
+  text-align: center;
+  white-space: nowrap;
+}
+.plate-button:hover:not(.is-dimmed) .plate-word {
+  color: #f2ead2;
+}
+/* Wine plate (Cancel): the game's dark wine lettering, pale rose on hover. */
+.plate-button.is-wine .plate-word {
+  color: #2a0612;
+}
+.plate-button.is-wine:hover:not(.is-dimmed) .plate-word {
+  color: #f2d8c8;
+}
+.plate-button:focus-visible {
+  outline: calc(1px * var(--plate-scale)) solid #f5bd63;
+  outline-offset: calc(1px * var(--plate-scale));
+}
+/* Prerequisites unmet: sunk in its socket and dull (the game's disabled
+   plate), but still clickable so it can say what's missing. */
+.plate-button.is-dimmed,
+.plate-button.is-dimmed:hover {
+  opacity: 1;
+  filter: none;
+}
+.plate-button.is-dimmed .plate-layer {
+  filter: saturate(0.6) brightness(0.8);
+}
+
 /* ── Home actions ──
-   The three ways in (Code, Chat, Motion) as big pills under the banner, and Settings as
-   a gear pinned to the bottom-right corner. */
+   The ways in (Code, Goals, Chat, Motion, GG Royale) as GG Royale plates under
+   the title, and Settings as a gear pinned to the top-right corner. */
 .home-actions {
   display: flex;
-  gap: var(--space-6);
+  /* Five modes: wrap onto a second centred row in narrow windows. The row gap
+     leaves room for the New tag that sits on the Royale plate's top edge. */
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-8) var(--space-4);
+  max-width: calc(100vw - 2 * var(--space-10));
 }
-.home-action {
-  gap: var(--space-4);
-  min-width: 132px;
-  height: 44px;
-  padding: 0 var(--space-11);
-  font-size: var(--fs-lg);
+@media (max-width: 679px), (max-height: 560px) {
+  .home-actions .plate-button {
+    --plate-scale: 1;
+  }
 }
-/* A pill with a tag pinned to the middle of its top border (Goals' "Beta").
-   The tag is out of flow, so the pills stay level and the home column keeps
+/* A plate with a tag pinned to the middle of its top edge (Royale's "New").
+   The tag is out of flow, so the plates stay level and the home column keeps
    its centring; clicks fall through it to the button. */
 .home-action-slot {
   position: relative;
   display: flex;
 }
+/* The tag: a little GG Royale label, m5x7 on the game's red with an ink
+   outline and a shaded foot, drawn in --tag-px art pixels (2px, 1px in small
+   windows, matching the plates). */
+.home-actions {
+  --tag-px: 2px;
+}
 .home-action-beta {
   position: absolute;
-  top: 0;
+  top: calc(-2 * var(--tag-px));
   left: 50%;
   z-index: 1;
   transform: translate(-50%, -50%);
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-pill);
-  /* Deep red in both themes; white ink was asked for and clears 5:1 on it. */
-  background: var(--steroids-deep);
-  color: #ffffff;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  line-height: 1.2;
+  padding: 0 calc(3 * var(--tag-px)) calc(2 * var(--tag-px));
+  border-radius: calc(2 * var(--tag-px));
+  background: #c2444d;
+  color: #fff0e0;
+  box-shadow:
+    0 0 0 var(--tag-px) #1e0c1f,
+    inset 0 calc(-1 * var(--tag-px)) 0 #921f25;
+  font-family: "m5x7", monospace;
+  font-size: calc(16 * var(--tag-px));
+  font-weight: 400;
+  line-height: calc(11 * var(--tag-px));
+  -webkit-font-smoothing: none;
   white-space: nowrap;
   pointer-events: none;
 }
+@media (max-width: 679px), (max-height: 560px) {
+  .home-actions {
+    --tag-px: 1px;
+  }
+}
+/* GG Royale's live badge, on the button's top-right corner: red count for
+   rewards waiting (same deep red as the New tag), a quiet pill for players. */
+.royale-key-slot {
+  position: relative;
+  display: inline-flex;
+}
+.royale-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  transform: translate(25%, -50%);
+  min-width: 18px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.royale-badge.is-claim {
+  border-color: transparent;
+  background: var(--steroids-deep);
+  color: #ffffff;
+}
+/* On Home's plate: pinned to the plate's corner (7 art pixels in from the
+   socket's edge) and drawn like the New tag, in the same --tag-px pixels. */
+.home-action-slot .royale-badge {
+  top: calc(-2 * var(--tag-px));
+  right: calc(7 * var(--tag-px));
+  min-width: 0;
+  padding: 0 calc(3 * var(--tag-px)) calc(2 * var(--tag-px));
+  border: 0;
+  border-radius: calc(2 * var(--tag-px));
+  background: #cedbf9;
+  color: #1e0c1f;
+  box-shadow:
+    0 0 0 var(--tag-px) #1e0c1f,
+    inset 0 calc(-1 * var(--tag-px)) 0 #a9b8e4;
+  font-family: "m5x7", monospace;
+  font-size: calc(16 * var(--tag-px));
+  font-weight: 400;
+  line-height: calc(11 * var(--tag-px));
+  -webkit-font-smoothing: none;
+}
+.home-action-slot .royale-badge.is-claim {
+  background: #c2444d;
+  color: #fff0e0;
+  box-shadow:
+    0 0 0 var(--tag-px) #1e0c1f,
+    inset 0 calc(-1 * var(--tag-px)) 0 #921f25;
+}
+/* The padding is hit area: the gear itself sits 16px down, 20px in. */
 .home-settings {
   position: absolute;
-  top: 16px;
-  right: 20px;
+  top: calc(16px - 3 * var(--icon-px));
+  right: calc(20px - 3 * var(--icon-px));
   z-index: 1;
-  width: 44px;
-  height: 44px;
 }
 
 /* ── Settings screen ──
@@ -1858,6 +2055,8 @@ select {
 }
 .home-settings {
   flex: 0 0 auto;
+}
+.btn.home-settings {
   width: 36px;
   height: 36px;
 }
@@ -2061,6 +2260,103 @@ select {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+/* GG Royale: the game fills the WHOLE window, under the title bar too. The
+   header floats over it (no fill, no border): Back on the left beside the
+   traffic lights, the title centred in the window. The bar stays a drag
+   region; the game below it takes every pointer event it isn't covering. */
+.royale-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+}
+.royale-screen {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+}
+.royale-stage {
+  position: absolute;
+  inset: 0;
+  /* The deep wine of the game's closed curtain, behind the game. */
+  background: #2a0a16;
+}
+.royale-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  /* Hidden until the game's curtain is painted shut, then faded in on it
+     (RoyaleScreen.tsx). Opacity only: no filter over a live page. */
+  opacity: 0;
+  transition: opacity 260ms var(--ease-out);
+}
+.royale-frame.is-shown {
+  opacity: 1;
+}
+/* The way in: invisible (and click-through) while the game loads, so the
+   screen you came from stays put; once the game's curtain is painted shut,
+   the whole screen fades in on it and the game opens the curtain. No loading
+   screen. The way out is a plain screen change, like every other screen. */
+.royale-screen {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-dissolve) var(--ease-out);
+}
+.royale-screen.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .royale-frame,
+  .royale-screen {
+    transition: none;
+  }
+}
+.picker-head.royale-head {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 1;
+  justify-content: center;
+  background: linear-gradient(rgb(0 0 0 / 0.45), rgb(0 0 0 / 0));
+  border-bottom: 0;
+}
+.picker-head.royale-head > .btn-icon {
+  position: absolute;
+  left: var(--page-pad);
+  top: 50%;
+  translate: 0 -50%;
+}
+.platform-macos .picker-head.royale-head > .btn-icon {
+  left: 84px;
+}
+/* Centred on the WINDOW, not on what's left beside the traffic lights and
+   Back: pinned to the bar's middle, so nothing else can nudge it. */
+.picker-head.royale-head > .picker-title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  max-width: calc(100% - 2 * 140px);
+  text-transform: none;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+  pointer-events: none;
+}
+.royale-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  /* Paired with the wine stage behind it. */
+  color: #e6c9a8;
+  font-size: var(--fs-sm);
 }
 .picker-head {
   position: relative;
@@ -2529,13 +2825,13 @@ select {
   display: inline-grid;
   flex: none;
   place-items: end center;
-  width: calc(var(--critter-size, 14px) + 4px);
-  height: calc(var(--critter-size, 14px) + 4px);
+  width: calc(var(--critter-size, 18px) + 4px);
+  height: calc(var(--critter-size, 18px) + 4px);
 }
 .pop-critter img {
   display: block;
-  width: var(--critter-size, 14px);
-  height: var(--critter-size, 14px);
+  width: var(--critter-size, 18px);
+  height: var(--critter-size, 18px);
   image-rendering: pixelated;
   user-select: none;
   transform-origin: 50% 100%;
@@ -4731,9 +5027,8 @@ select {
 
 /* ── Ken needs you (GoalAskNotice.tsx) ───────────────────────────────────
    Ken (GG Goals) is blocked on a question: a card just under the header, in
-   the storybook style of his dialogue box (art shared through --ken-frame,
-   --ken-plate, --ken-swirl below), with his thinking face beside the
-   question. It drops in and settles when it appears, then stays still until
+   GG Royale's style of his dialogue box (the panel, plate and keys shared
+   below), with his thinking face beside the question. It drops in and settles when it appears, then stays still until
    the user goes to the chat. */
 .goal-ask {
   position: absolute;
@@ -4748,8 +5043,8 @@ select {
 }
 .goal-ask-sign {
   position: relative;
-  max-width: min(560px, 100%);
-  padding-top: 46px; /* room for the name plate, clear of the header */
+  max-width: min(680px, 100%);
+  padding-top: 34px; /* room for the name plate, clear of the header */
   animation: goal-ask-drop 520ms var(--ease-out) both;
   pointer-events: auto;
 }
@@ -4762,48 +5057,19 @@ select {
   align-items: center;
   gap: var(--space-5);
   padding: var(--space-4) var(--space-3) var(--space-1);
-  border: 16px solid transparent;
-  border-image: var(--ken-frame) 20 fill / 16px stretch;
-  filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.35));
-  color: var(--ken-ink);
-}
-.goal-ask-board::before {
-  content: "";
-  position: absolute;
-  inset: -12px;
-  z-index: -1;
-  background: var(--ken-swirl) right -10px bottom -40px / 220px auto no-repeat;
-  opacity: 0.75;
-  clip-path: polygon(
-    10px 0,
-    calc(100% - 10px) 0,
-    100% 10px,
-    100% calc(100% - 10px),
-    calc(100% - 10px) 100%,
-    10px 100%,
-    0 calc(100% - 10px),
-    0 10px
-  );
+  border: 0;
+  padding: var(--space-12) var(--space-8) var(--space-7);
+  background: var(--ken-panel);
+  box-shadow: var(--ken-panel-shadow);
+  color: var(--ken-text);
 }
 .goal-ask-title {
   position: absolute;
-  left: -4px;
-  top: -34px;
+  left: 10px;
+  top: -17px;
   margin: 0;
-  min-width: 170px;
-  height: 28px;
-  border-style: solid;
-  border-width: 0 26px;
-  border-image: var(--ken-plate) 0 34 fill / 0 26px stretch;
-  color: #fff8ec;
-  font:
-    14px/28px "Young Serif",
-    Georgia,
-    serif;
-  letter-spacing: 0.02em;
   text-align: center;
   white-space: nowrap;
-  text-shadow: 0 1px 0 #000;
 }
 /* Ken's thinking face, head and shoulders, at a whole 2x so the pixels
    stay even (the crop trims his empty left edge and his chest). */
@@ -4812,6 +5078,10 @@ select {
   width: 64px;
   height: 58px;
   overflow: hidden;
+  background: #251c22;
+  box-shadow:
+    0 0 0 2px #1e0c1f,
+    inset 0 0 0 2px var(--ken-rule);
 }
 .goal-ask-ken canvas {
   display: block;
@@ -4827,11 +5097,9 @@ select {
 }
 .goal-ask-question {
   margin: 0;
-  font:
-    15px/1.4 "Young Serif",
-    Georgia,
-    serif;
-  color: var(--ken-ink);
+  font-size: 32px;
+  line-height: 22px;
+  color: var(--ken-text);
   /* Two lines at most; the whole question is in the chat. */
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -4840,45 +5108,15 @@ select {
   overflow: hidden;
 }
 .goal-ask-more {
-  margin: var(--space-1) 0 0;
-  font:
-    13px/1.3 "Young Serif",
-    Georgia,
-    serif;
-  color: #7a5a38;
+  margin: var(--space-2) 0 0;
+  font-size: 32px;
+  line-height: 20px;
+  color: var(--ken-dim);
 }
-/* The button: dark and gold, like the name plate. */
+/* The button: see the shared Royale keys above. */
 .goal-ask-answer {
   flex: 0 0 auto;
-  height: 30px;
-  padding: 0 var(--space-6);
-  border: 1.5px solid #b8933f;
-  border-radius: 6px;
-  background: linear-gradient(#4a3419, #1c130a);
-  color: #fff8ec;
-  font:
-    13px/1.3 "Young Serif",
-    Georgia,
-    serif;
-  letter-spacing: 0.02em;
   white-space: nowrap;
-  cursor: pointer;
-  box-shadow: 0 2px 0 rgb(0 0 0 / 0.3);
-  transition:
-    filter var(--dur-press) var(--ease-hover),
-    border-color var(--dur-press) var(--ease-hover);
-}
-.goal-ask-answer:hover {
-  filter: brightness(1.25);
-  border-color: #e0c06a;
-}
-.goal-ask-answer:active {
-  filter: brightness(0.9);
-  box-shadow: none;
-}
-.goal-ask-answer:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 3px;
 }
 /* Drops in from under the header and settles with a little give. */
 @keyframes goal-ask-drop {
@@ -4919,8 +5157,8 @@ select {
   pointer-events: none;
 }
 .goal-finish-sign {
-  width: min(500px, 100%);
-  padding-top: 34px; /* room for the name plate */
+  width: min(560px, 100%);
+  padding-top: 26px; /* room for the name plate */
   animation: goal-ask-drop 520ms var(--ease-out) both;
   pointer-events: auto;
 }
@@ -4937,7 +5175,20 @@ select {
 }
 .goal-finish-board .goal-ask-title {
   margin: 0;
-  font-weight: normal;
+}
+/* The outcome tints the plate: gold done, ochre unchecked, red stuck. */
+.goal-finish-board[data-outcome="unverified"] .goal-ask-title {
+  background: #d19d50;
+}
+.goal-finish-board[data-outcome="failed"] .goal-ask-title {
+  background: #c2444d;
+  color: #fff0e0;
+  text-shadow: 0 1px 0 #1e0c1f;
+  box-shadow:
+    0 0 0 2px #1e0c1f,
+    inset 0 -3px 0 #921f25,
+    inset 0 2px 0 #e06a6a,
+    0 4px 0 2px #1e0c1f;
 }
 .goal-finish-said {
   display: flex;
@@ -4947,19 +5198,20 @@ select {
 .goal-finish-line {
   min-width: 0;
   margin: 0;
-  font:
-    15px/1.4 "Young Serif",
-    Georgia,
-    serif;
-  color: var(--ken-ink);
+  font-size: 32px;
+  line-height: 22px;
+  color: var(--ken-text);
 }
-/* The score: four cells on a row, split by fine rules in the frame's brown. */
+/* The score: four cells in a recessed tray, like the game's leaderboard. */
 .goal-finish-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 0;
-  padding: var(--space-3) 0;
-  border-block: 1px solid #c9a477;
+  padding: var(--space-5) 0 var(--space-7);
+  background: #251c22;
+  box-shadow:
+    0 0 0 2px #1e0c1f,
+    inset 0 0 0 2px var(--ken-rule);
 }
 .goal-finish-stat {
   min-width: 0;
@@ -4967,59 +5219,39 @@ select {
   text-align: center;
 }
 .goal-finish-stat + .goal-finish-stat {
-  border-inline-start: 1px solid #c9a477;
+  border-inline-start: 1px dashed #3a2a33;
 }
 .goal-finish-stat dt {
-  font:
-    12px/1.3 "Young Serif",
-    Georgia,
-    serif;
-  color: #7a5a38;
+  font-size: 32px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #8a6a74;
 }
 .goal-finish-stat dd {
-  margin: var(--space-1) 0 0;
-  font:
-    20px/1.2 "Young Serif",
-    Georgia,
-    serif;
-  color: var(--ken-ink);
+  margin: var(--space-5) 0 0;
+  font-size: 28px;
+  line-height: 26px;
+  color: var(--ken-gold);
   font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 2px 0 #1e0c1f,
+    0 3px 0 rgb(30 12 31 / 0.5);
 }
 .goal-finish-note {
   display: block;
-  font-size: var(--fs-sm);
-  line-height: 1.3;
-  color: #8a2e1c;
+  margin-top: var(--space-1);
+  font-size: 32px;
+  line-height: 18px;
+  color: #ff8a7a;
+  text-shadow: none;
 }
 .goal-finish-actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--space-3);
-}
-/* Close: the quiet one, outlined on the parchment beside the dark button. */
-.goal-finish-close {
-  height: 30px;
-  padding: 0 var(--space-5);
-  border: 1.5px solid #8a643c;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ken-ink);
-  font:
-    13px/1.3 "Young Serif",
-    Georgia,
-    serif;
-  cursor: pointer;
-  transition:
-    background-color var(--dur-press) var(--ease-hover),
-    border-color var(--dur-press) var(--ease-hover);
-}
-.goal-finish-close:hover {
-  background-color: rgb(138 100 60 / 0.12);
-  border-color: #4a3520;
-}
-.goal-finish-close:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 3px;
+  gap: var(--space-7);
+  padding-bottom: var(--space-2);
 }
 @media (max-width: 520px) {
   .goal-finish-stats {
@@ -5044,17 +5276,142 @@ select {
    opens, the name plate slides in, Ken rises from behind the box and
    settles. Out, quicker: Ken sinks, then the box drops away. ENTER_MS /
    EXIT_MS in KenDialogue.tsx match these timings. */
-/* Ken's storybook art, shared by his dialogue box and his question sign. */
+/* Ken's signs, in GG Royale's look: square panels with a 1px ink outline,
+   a lighter top lip and a shaded bottom lip, a drop of ink under them; text in
+   m5x7 (body) and Alagard (names, titles, buttons), unsmoothed, sized on the
+   fonts' own pixel grid (16px = one m5x7 cap height at 2x). Art, not theme. */
 :is(.ken-dialogue, .goal-ask, .goal-finish, .ken-status) {
-  --ken-ink: #4a3520;
-  --ken-frame: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48'%3E%3Cpolygon points='12,0 36,0 48,12 48,36 36,48 12,48 0,36 0,12' fill='%238a643c'/%3E%3Cpolygon points='12.62,1.5 35.38,1.5 46.5,12.62 46.5,35.38 35.38,46.5 12.62,46.5 1.5,35.38 1.5,12.62' fill='%23fff7e6'/%3E%3Cpolygon points='13.45,3.5 34.55,3.5 44.5,13.45 44.5,34.55 34.55,44.5 13.45,44.5 3.5,34.55 3.5,13.45' fill='%23c9a477'/%3E%3Cpolygon points='13.86,4.5 34.14,4.5 43.5,13.86 43.5,34.14 34.14,43.5 13.86,43.5 4.5,34.14 4.5,13.86' fill='%23f6e5c8'/%3E%3C/svg%3E");
-  --ken-plate: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='36' viewBox='0 0 120 36'%3E%3Cdefs%3E%3ClinearGradient id='p' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%234a3419'/%3E%3Cstop offset='1' stop-color='%231c130a'/%3E%3C/linearGradient%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23f8e594'/%3E%3Cstop offset='.55' stop-color='%23c99f3e'/%3E%3Cstop offset='1' stop-color='%238a6420'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpolygon points='22,4 98,4 108,18 98,32 22,32 12,18' fill='url(%23p)' stroke='%23b8933f' stroke-width='1.5'/%3E%3Cpolygon points='2,18 15,6 28,18 15,30' fill='url(%23g)' stroke='%234a3108' stroke-width='1.2'/%3E%3Ccircle cx='15' cy='18' r='4.4' fill='%239a7426' stroke='%234a3108' stroke-width='1'/%3E%3Ccircle cx='13.8' cy='16.8' r='1.6' fill='%23fff6c8'/%3E%3Cpolygon points='92,18 105,6 118,18 105,30' fill='url(%23g)' stroke='%234a3108' stroke-width='1.2'/%3E%3Ccircle cx='105' cy='18' r='4.4' fill='%239a7426' stroke='%234a3108' stroke-width='1'/%3E%3Ccircle cx='103.8' cy='16.8' r='1.6' fill='%23fff6c8'/%3E%3C/svg%3E");
-  --ken-swirl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='140' viewBox='0 0 220 140' fill='none' stroke='%23e4cca4' stroke-width='1.6'%3E%3Ccircle cx='150' cy='96' r='40'/%3E%3Ccircle cx='150' cy='96' r='27'/%3E%3Cpath d='M150 69a13 13 0 1 1-13 13'/%3E%3Cpath d='M110 96c0-40 30-66 70-66'/%3E%3Cpath d='M190 96c0 30-20 44-40 44'/%3E%3Ccircle cx='60' cy='40' r='22'/%3E%3Cpath d='M60 18a11 11 0 1 0 11 11'/%3E%3Cpath d='M38 40c-14 0-26 12-26 30'/%3E%3C/svg%3E");
+  --ken-ink: #1e0c1f;
+  /* The panel: the game's dusky wine card. */
+  --ken-panel: #3a2433;
+  --ken-panel-hi: #5a3a4a;
+  --ken-panel-lo: #24141f;
+  --ken-text: #f0d2c4;
+  --ken-dim: #c9a08c;
+  --ken-gold: #f5bd63;
+  --ken-rule: #4e343f;
+  /* The name plate: the game's gold tooltip head. */
+  --ken-plate-bg: #e9af54;
+  --ken-plate-lo: #c47a3a;
+  --ken-panel-shadow:
+    0 0 0 2px #1e0c1f, inset 0 2px 0 var(--ken-panel-hi), inset 0 -3px 0 var(--ken-panel-lo),
+    0 4px 0 2px #1e0c1f, 0 10px 18px rgb(0 0 0 / 0.35);
+  -webkit-font-smoothing: none;
+  font-smooth: never;
 }
+/* Young Serif: still the About page's display face (AboutPage.css). */
 @font-face {
   font-family: "Young Serif";
   src: url("./assets/fonts/young-serif/young-serif-normal.woff2") format("woff2");
   font-display: swap;
+}
+/* One pixel-grid body font, one title font. */
+:is(
+  .ken-dialogue-box,
+  .goal-ask-question,
+  .goal-ask-more,
+  .goal-finish-line,
+  .goal-finish-stat dt,
+  .goal-finish-note,
+  .ken-status-card,
+  .ken-status-detail,
+  .ken-status-note,
+  .ken-status-time
+) {
+  font-family: "m5x7", monospace;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+:is(
+  .ken-dialogue-name,
+  .goal-ask-title,
+  .goal-ask-answer,
+  .goal-finish-close,
+  .goal-finish-stat dd
+) {
+  font-family: "Alagard", serif;
+  font-weight: 400;
+}
+/* The name plate on a panel's top edge: a gold tab with an ink outline and
+   the game's two-step drop, the name in Alagard ink. */
+:is(.ken-dialogue-name, .goal-ask-title) {
+  height: 30px;
+  padding: 0 var(--space-6);
+  border: 0;
+  border-image: none;
+  border-radius: 0;
+  background: var(--ken-plate-bg);
+  box-shadow:
+    0 0 0 2px #1e0c1f,
+    inset 0 -3px 0 var(--ken-plate-lo),
+    inset 0 2px 0 #f8d488,
+    0 4px 0 2px #1e0c1f;
+  color: #1e0c1f;
+  font-size: var(--fs-4xl);
+  line-height: 26px;
+  letter-spacing: 0;
+  text-shadow: 0 2px 0 #f8d488;
+}
+/* The buttons: the game's raised slate key (Answer, Read summary) and a quiet
+   wine one beside it (Close). Pressing sinks them a pixel. */
+:is(.goal-ask-answer, .goal-finish-close) {
+  height: 32px;
+  padding: 0 var(--space-7) 3px;
+  border: 0;
+  border-radius: 0;
+  font-size: var(--fs-4xl);
+  line-height: 29px;
+  letter-spacing: 0;
+  filter: none;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-press) var(--ease-hover),
+    translate var(--dur-press) var(--ease-hover);
+}
+.goal-ask-answer {
+  background: #688e50;
+  color: #1e2a33;
+  box-shadow:
+    0 0 0 2px #1e0c1f,
+    inset 0 2px 0 #8ab070,
+    inset 0 -3px 0 #4c7b53,
+    0 4px 0 2px #1e0c1f;
+}
+.goal-ask-answer:hover {
+  background: #7aa25e;
+  color: #f2ead2;
+  border-color: transparent;
+  filter: none;
+}
+.goal-finish-close {
+  background: #593139;
+  color: #f2d8c8;
+  box-shadow:
+    0 0 0 2px #1e0c1f,
+    inset 0 2px 0 #7a4650,
+    inset 0 -3px 0 #4c0b2f,
+    0 4px 0 2px #1e0c1f;
+}
+.goal-finish-close:hover {
+  background: #6a3a44;
+  border-color: transparent;
+}
+:is(.goal-ask-answer, .goal-finish-close):active {
+  translate: 0 2px;
+  box-shadow:
+    0 0 0 2px #1e0c1f,
+    inset 0 2px 0 rgb(0 0 0 / 0.2),
+    0 2px 0 2px #1e0c1f;
+  filter: none;
+}
+:is(.goal-ask-answer, .goal-finish-close):focus-visible {
+  outline: 2px solid var(--ken-gold);
+  outline-offset: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.goal-ask-answer, .goal-finish-close) {
+    transition: none;
+  }
 }
 .ken-dialogue {
   position: absolute;
@@ -5066,8 +5423,9 @@ select {
 }
 .ken-dialogue-portrait {
   position: absolute;
-  left: 26px;
+  left: 104px;
   top: 0;
+  height: 120px;
   overflow: hidden; /* Ken rises from behind the box's top edge */
 }
 .ken-dialogue-portrait canvas {
@@ -5083,74 +5441,57 @@ select {
   display: block;
   width: 100%;
   margin: 0;
-  padding: var(--space-5) 28px var(--space-1) var(--space-3);
-  border: 16px solid transparent;
-  border-image: var(--ken-frame) 20 fill / 16px stretch;
-  background: none;
-  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
-  color: var(--ken-ink);
-  font:
-    14px/1.42 "Young Serif",
-    Georgia,
-    serif;
+  padding: 26px 34px var(--space-7) var(--space-9);
+  border: 0;
+  background: var(--ken-panel);
+  box-shadow: var(--ken-panel-shadow);
+  color: var(--ken-text);
+  font-size: 32px;
+  line-height: 22px;
   text-align: start;
   cursor: pointer;
   transform-origin: 50% 100%;
 }
-.ken-dialogue-box::before {
-  content: "";
-  position: absolute;
-  inset: -12px;
-  z-index: -1;
-  background: var(--ken-swirl) right -10px bottom -18px / 260px auto no-repeat;
-  opacity: 0.75;
-  clip-path: polygon(
-    10px 0,
-    calc(100% - 10px) 0,
-    100% 10px,
-    100% calc(100% - 10px),
-    calc(100% - 10px) 100%,
-    10px 100%,
-    0 calc(100% - 10px),
-    0 10px
-  );
-}
 .ken-dialogue-box:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
+  outline: 2px solid var(--ken-gold);
+  outline-offset: 4px;
 }
 .ken-dialogue-name {
   position: absolute;
-  left: -4px;
-  top: -34px;
+  left: 14px;
+  top: -17px;
   z-index: 2;
-  min-width: 150px;
-  height: 28px;
-  border-style: solid;
-  border-width: 0 26px;
-  border-image: var(--ken-plate) 0 34 fill / 0 26px stretch;
-  color: #fff8ec;
-  font:
-    14px/28px "Young Serif",
-    Georgia,
-    serif;
-  letter-spacing: 0.02em;
+  min-width: 70px;
   text-align: center;
-  text-shadow: 0 1px 0 #000;
 }
 .ken-dialogue-text {
   display: block;
   /* Room for three lines, so the box never grows as a line types out. */
-  min-height: calc(3 * 1.42em);
+  min-height: calc(3 * 22px);
 }
+/* The game's "more" mark: a gold pixel arrow with an ink drop. */
 .ken-dialogue-more {
   position: absolute;
-  right: -2px;
-  bottom: 0;
-  border: 6px solid transparent;
-  border-top: 8px solid #6b3fa0;
-  border-bottom: 0;
-  filter: drop-shadow(0 1px 0 #2c1846);
+  right: 10px;
+  bottom: 8px;
+  width: 10px;
+  height: 6px;
+  background: var(--ken-gold);
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% 34%,
+    80% 34%,
+    80% 67%,
+    60% 67%,
+    60% 100%,
+    40% 100%,
+    40% 67%,
+    20% 67%,
+    20% 34%,
+    0 34%
+  );
+  filter: drop-shadow(0 2px 0 #1e0c1f);
   opacity: 0;
 }
 .ken-dialogue-more[data-on] {
@@ -5224,15 +5565,14 @@ select {
   }
 }
 /* ── What Ken is doing (KenStatus.tsx) ──────────────────────────────────
-   Bottom right of the Workers view: a pill in Ken's storybook style, his
-   face in a medallion with the kind of work as a badge, one line, and how
+   Bottom right of the Workers view: a panel in GG Royale's style, his
+   face in a recessed square with the kind of work as a badge, one line, and how
    long he's been at it. It grows on hover to show one more line, and steps
    aside (a dissolve) while Ken talks or a sign is up: one thing at a time.
-   The tone inks are art on the parchment (all 5:1 or better on #f6e5c8).
-   His frame can't follow a round end, so its rings are a border and inset
-   shadows in the frame's own colours. */
+   Royale's square panel; the tone shows on the badge and the sweep, in the
+   game's own badge colours (white glyphs on each meet 3:1 or better). */
 .ken-status {
-  --status-ink: #1d6b62;
+  --status-ink: #3f8a7a;
   position: absolute;
   right: var(--space-8);
   bottom: var(--space-8);
@@ -5247,16 +5587,16 @@ select {
     transform 260ms var(--ease-out);
 }
 .ken-status[data-tone="ask"] {
-  --status-ink: #7a5300;
+  --status-ink: #c88a3c;
 }
 .ken-status[data-tone="error"] {
-  --status-ink: #a3271d;
+  --status-ink: #c2444d;
 }
 .ken-status[data-tone="done"] {
-  --status-ink: #2b6e3a;
+  --status-ink: #4c7b53;
 }
 .ken-status:is([data-tone="paused"], [data-tone="idle"]) {
-  --status-ink: #6b5238;
+  --status-ink: #6a5a74;
 }
 .ken-status[data-away] {
   opacity: 0;
@@ -5268,24 +5608,18 @@ select {
     transform 180ms var(--ease-in);
 }
 .ken-status-card {
-  --frame: inset 0 0 0 2px #fff7e6, inset 0 0 0 3px #c9a477;
   position: relative;
   overflow: hidden;
   max-width: min(320px, 100%);
-  /* 5px keeps the medallion's ring clear of the frame's inner ring. */
-  padding: 5px var(--space-8) 5px 5px;
-  border: 1.5px solid #8a643c;
-  /* Half the closed height (a full pill), and a radius it can ease from to
-     the open card's corners; 9999px would snap. */
-  border-radius: var(--radius-input);
-  background: #f6e5c8;
-  box-shadow: var(--frame);
-  filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.35));
-  color: var(--ken-ink);
-  font:
-    14px/1.3 "Young Serif",
-    Georgia,
-    serif;
+  padding: var(--space-3) var(--space-7) var(--space-4) var(--space-3);
+  border: 0;
+  /* The game's panels are square; a pixel cut at each corner. */
+  border-radius: 0;
+  background: var(--ken-panel);
+  box-shadow: var(--ken-panel-shadow);
+  color: var(--ken-text);
+  font-size: 32px;
+  line-height: 20px;
   pointer-events: auto;
   cursor: default;
 }
@@ -5294,43 +5628,44 @@ select {
 }
 .ken-status[data-open] .ken-status-card {
   width: 312px;
-  border-radius: var(--radius-bubble);
-}
-/* Closing keeps the open layout until the end; the corners round back as it shrinks. */
-.ken-status[data-collapsing] .ken-status-card {
-  border-radius: var(--radius-input);
 }
 /* Size changes are driven from KenStatus (MORPH_MS there): width, height and
    corners ease together on one curve. */
 .ken-status-card.is-sizing {
   transition:
     width 400ms var(--ease-expo),
-    height 400ms var(--ease-expo),
-    border-radius 400ms var(--ease-expo);
+    height 400ms var(--ease-expo);
 }
 .ken-status-head {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr);
-  column-gap: var(--space-4);
+  /* Room for the badge, which hangs off the face's lower right. */
+  column-gap: var(--space-9);
   align-items: start;
 }
 /* His face at one CSS pixel per art pixel, centred (the head is 26 of the
    circle's 32px), the brass ring just outside so all of it is his. */
+/* His face in a recessed square, like the game's character card. */
 .ken-status-face {
   grid-area: 1 / 1;
   display: block;
   width: 32px;
   height: 32px;
   overflow: hidden;
-  border-radius: 50%;
-  background: #ead3ad;
-  box-shadow: 0 0 0 1.5px #c9a477;
+  border-radius: 0;
+  background: #251c22;
+  box-shadow:
+    0 0 0 2px #1e0c1f,
+    inset 0 0 0 2px var(--ken-rule);
 }
+/* His whole head, ear to ear, in the square: the portrait's head is 32 of
+   its 36 cells, drawn at 1px per cell and pulled up so his crown meets the
+   top. The badge sits outside, at the square's lower right. */
 .ken-status-face canvas {
   display: block;
   width: 36px;
   height: 44px;
-  margin-top: var(--space-1);
+  margin: calc(-1 * var(--space-1)) 0 0 0;
   image-rendering: pixelated;
 }
 .ken-status-face.is-hopping canvas {
@@ -5350,13 +5685,15 @@ select {
   justify-self: end;
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
-  margin: var(--space-10) -6px 0 0;
-  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  margin: var(--space-10) -17px 0 0;
+  border-radius: 0;
   background: var(--status-ink);
   color: #fff8e8;
-  box-shadow: 0 0 0 1.5px #f6e5c8;
+  box-shadow:
+    0 0 0 2px #1e0c1f,
+    inset 0 -2px 0 rgb(0 0 0 / 0.3);
   transition: background-color 420ms var(--ease-in-out);
 }
 .ken-status-badge-icon {
@@ -5463,11 +5800,10 @@ select {
   flex: none;
   margin-left: auto;
   padding-left: var(--space-4);
-  font-family: var(--sans);
-  font-size: var(--fs-sm);
-  line-height: 1.3;
+  font-size: 32px;
+  line-height: 20px;
   font-variant-numeric: tabular-nums;
-  color: #6b5238;
+  color: var(--ken-dim);
 }
 /* Three dots after "Thinking", one lit at a time. */
 .ken-status-dots {
@@ -5478,9 +5814,9 @@ select {
   color: var(--status-ink);
 }
 .ken-status-dots i {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
+  width: 2px;
+  height: 2px;
+  border-radius: 0;
   background: currentColor;
   opacity: 0.3;
   animation: ken-status-dot 1.2s var(--ease-in-out) infinite;
@@ -5530,10 +5866,11 @@ select {
 }
 .ken-status-detail {
   display: -webkit-box;
-  margin: var(--space-1) 0 0;
+  margin: var(--space-2) 0 0;
   overflow: hidden;
-  font-size: var(--fs-base);
-  line-height: 1.35;
+  font-size: 32px;
+  line-height: 20px;
+  color: var(--ken-dim);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -5544,9 +5881,9 @@ select {
   align-items: center;
   gap: var(--space-2);
   margin: var(--space-3) 0 0;
-  font-size: var(--fs-xs);
-  line-height: 1.3;
-  color: #6b5238;
+  font-size: 32px;
+  line-height: 20px;
+  color: var(--ken-dim);
 }
 .ken-status-note svg {
   flex: none;
@@ -6532,8 +6869,9 @@ select {
   position: relative;
   display: inline-block;
   flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
+  /* One cell per CSS px (18×18), kept crisp. */
+  width: 18px;
+  height: 18px;
   transform-origin: 50% 100%;
 }
 .ken-face-layer {
@@ -6988,14 +7326,14 @@ select {
 }
 .subagents-critter {
   flex: 0 0 auto;
-  width: 16px;
+  width: 20px;
   display: inline-flex;
   align-items: center;
 }
-/* One sprite cell per CSS px (14×14), kept crisp. */
+/* One sprite cell per CSS px (18×18), kept crisp. */
 .subagents-critter-img {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   display: block;
   image-rendering: pixelated;
   user-select: none;
@@ -7142,11 +7480,11 @@ select {
    the first critter is summoned, which steals height from the flexible
    transcript so the chat slides up instead of being covered (the transcript's
    resize observer keeps the newest message pinned through the transition).
-   Open height = sprite (14 cells × --critter-px) + room for a hovering bee and
+   Open height = sprite (18 cells × --critter-px) + room for a hovering bee and
    the bubble/badge above it, so nothing a critter shows overlaps the chat. */
 .critter-lane {
   --critter-px: 2px;
-  --critter-size: calc(var(--critter-px) * 14);
+  --critter-size: calc(var(--critter-px) * 18);
   flex: 0 0 auto;
   position: relative;
   /* Above the transcript so summon beams and bubbles may glow over it. */
@@ -7773,36 +8111,83 @@ select {
   pointer-events: none;
   animation: critter-pop 180ms var(--ease-pop) both;
 }
-/* White speech bubble with dark ink, in the app font. Clipping lives on the
-   inner text so the tail (::after) can sit outside the box. */
+/* GG Royale's speech bubble, on the critters' pixel grid (--critter-px per
+   art pixel): m5x7 on blue-white paper, a 1-pixel ink outline, a shaded
+   bottom and a thick ink lip (the game's .t-say). Fixed art colours, the same
+   in both themes. Clipping lives on the inner text so the tail can sit
+   outside the box. */
 .critter-bubble {
-  bottom: calc(100% + 8px);
-  font-family: var(--sans);
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  line-height: 1.35;
-  padding: 3px var(--space-4);
-  border-radius: var(--radius-button);
-  background: var(--speech-bg);
-  color: var(--on-speech);
-  /* Bubble shadows scale with the bubble: 8px blur here (11px text), 10px on
-     the larger .wake-bubble (19px text). */
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  --bp: var(--critter-px);
+  bottom: calc(100% + 7 * var(--bp));
+  font-family: "m5x7", monospace;
+  font-size: calc(16 * var(--bp));
+  font-weight: 400;
+  line-height: calc(11 * var(--bp));
+  -webkit-font-smoothing: none;
+  padding: var(--bp) calc(5 * var(--bp)) calc(4 * var(--bp));
+  border-radius: calc(3 * var(--bp));
+  background: #cedbf9;
+  color: #1e0c1f;
+  box-shadow:
+    0 0 0 var(--bp) #1e0c1f,
+    inset 0 calc(-2 * var(--bp)) 0 #a9b8e4,
+    0 calc(2 * var(--bp)) 0 var(--bp) #1e0c1f;
 }
 .critter-bubble-text {
   display: block;
-  max-width: 220px;
+  max-width: calc(144 * var(--bp));
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The tail: a stepped ink point (7×5 art pixels) with the shade running down
+   its middle, like the Goal world's bubbles. */
+.critter-bubble::before,
 .critter-bubble::after {
   content: "";
   position: absolute;
   top: 100%;
   left: 50%;
-  margin-left: -4px;
-  border: 4px solid transparent;
-  border-top-color: var(--speech-bg);
+  width: calc(7 * var(--bp));
+  height: calc(5 * var(--bp));
+  transform: translateX(-50%);
+}
+.critter-bubble::before {
+  background: #1e0c1f;
+  clip-path: polygon(
+    0% 0%,
+    100% 0%,
+    100% 20%,
+    85.71% 20%,
+    85.71% 60%,
+    71.43% 60%,
+    71.43% 80%,
+    57.14% 80%,
+    57.14% 100%,
+    42.86% 100%,
+    42.86% 80%,
+    28.57% 80%,
+    28.57% 60%,
+    14.29% 60%,
+    14.29% 20%,
+    0% 20%
+  );
+}
+.critter-bubble::after {
+  background: #a9b8e4;
+  clip-path: polygon(
+    14.29% 0%,
+    85.71% 0%,
+    85.71% 20%,
+    71.43% 20%,
+    71.43% 40%,
+    57.14% 40%,
+    57.14% 80%,
+    42.86% 80%,
+    42.86% 40%,
+    28.57% 40%,
+    28.57% 20%,
+    14.29% 20%
+  );
 }
 .critter-badge {
   bottom: calc(100% + 2px);
@@ -8158,8 +8543,8 @@ select {
   position: absolute;
   left: calc(var(--critter-px) * 6);
   bottom: var(--critter-px);
-  width: calc(var(--critter-px) * 14);
-  height: calc(var(--critter-px) * 14);
+  width: calc(var(--critter-px) * 18);
+  height: calc(var(--critter-px) * 18);
   border-radius: 50%;
   border: 2px solid transparent;
   border-top-color: rgba(255, 255, 255, 0.9);
@@ -9457,46 +9842,120 @@ select {
   align-self: center;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: calc(5 * var(--home-px));
 }
 .home-version-row.is-pending {
   visibility: hidden;
 }
-/* The version is a label, not a control: same size as What's new, lighter
-   weight and ink. */
+/* The version and What's new stay at 2px art pixels until the title drops to
+   1× (max-width 479px / max-height 420px, see .home-title), so they always
+   match it; at 1px they were too small to read in small windows. */
+.home > .home-version-row {
+  --home-px: 2px;
+}
+@media (max-width: 479px), (max-height: 420px) {
+  .home > .home-version-row {
+    --home-px: 1px;
+  }
+}
+/* GG Royale's pixel type on Home: m5x7 / Alagard at a whole multiple of
+   their 16px grid (--home-px screen pixels per art pixel), fixed art colours
+   that read on the night scene in both themes. */
+.home {
+  --home-px: 2px;
+}
+@media (max-width: 679px), (max-height: 560px) {
+  .home {
+    --home-px: 1px;
+  }
+}
+/* The version is a label, not a control: m5x7 in the game's muted cream. */
 .home-version {
-  font-family: var(--sans);
-  font-size: var(--fs-md);
-  font-weight: 500;
-  line-height: 1.3;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
+  font-family: "m5x7", monospace;
+  font-size: calc(16 * var(--home-px));
+  line-height: calc(11 * var(--home-px));
+  -webkit-font-smoothing: none;
+  color: #c9a08c;
+  text-shadow: 0 var(--home-px) 0 #1e0c1f;
 }
 .home-version-sep {
-  color: var(--text-secondary);
+  display: none;
 }
-/* Small text button to the right of the version that re-opens the What's-new
-   window. Borderless + muted so it reads as a quiet secondary link, not a CTA. */
+/* What's new: a little GG Royale paper tag (the speech bubble's paper, ink
+   outline, shaded foot). Pointing at it lifts it a pixel; pressing sinks it. */
 .home-whatsnew {
-  background: transparent;
-  border: none;
-  padding: 0;
-  font-family: var(--sans);
-  font-size: var(--fs-md);
-  font-weight: 600;
-  color: var(--text);
+  padding: 0 calc(4 * var(--home-px)) calc(2 * var(--home-px));
+  border: 0;
+  border-radius: calc(2 * var(--home-px));
+  background: #cedbf9;
+  color: #1e0c1f;
+  box-shadow:
+    0 0 0 var(--home-px) #1e0c1f,
+    inset 0 calc(-1 * var(--home-px)) 0 #a9b8e4,
+    0 var(--home-px) 0 var(--home-px) #1e0c1f;
+  font-family: "m5x7", monospace;
+  font-size: calc(16 * var(--home-px));
+  font-weight: 400;
+  line-height: calc(11 * var(--home-px));
+  -webkit-font-smoothing: none;
   cursor: pointer;
-  letter-spacing: -0.005em;
-  /* Underline drawn clear at rest so hover fades it (see .home-link). */
-  text-decoration: underline;
-  text-decoration-color: transparent;
-  transition:
-    color var(--t-fast),
-    text-decoration-color var(--t-fast);
 }
 .home-whatsnew:hover {
-  color: var(--primary);
-  text-decoration-color: currentColor;
+  translate: 0 calc(-1 * var(--home-px));
+  background: #e4ecff;
+  box-shadow:
+    0 0 0 var(--home-px) #1e0c1f,
+    inset 0 calc(-1 * var(--home-px)) 0 #a9b8e4,
+    0 calc(2 * var(--home-px)) 0 var(--home-px) #1e0c1f;
+}
+.home-whatsnew:active {
+  translate: 0 var(--home-px);
+  box-shadow:
+    0 0 0 var(--home-px) #1e0c1f,
+    inset 0 calc(-1 * var(--home-px)) 0 #a9b8e4;
+}
+.home-whatsnew:focus-visible {
+  outline: var(--home-px) solid #f5bd63;
+  outline-offset: calc(2 * var(--home-px));
+}
+
+/* ── Pixel icon buttons (PixelIconButton.tsx) ──
+   A GG Royale sprite icon at --icon-px per art pixel. The padding keeps the
+   hit area at 24px or more when the sprite drops to 1px art pixels. Pointing
+   at it lifts it a pixel and rings it in the game's hover colour; pressing
+   sinks it. */
+.pixel-icon-button {
+  --icon-px: 2px;
+  box-sizing: content-box;
+  width: calc(var(--icon-w) * var(--icon-px));
+  height: calc(var(--icon-h) * var(--icon-px));
+  padding: calc(3 * var(--icon-px));
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.pixel-icon-button > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.pixel-icon-button:hover > canvas {
+  translate: 0 calc(-1 * var(--icon-px));
+  filter: drop-shadow(var(--icon-px) 0 0 #d0cbb1) drop-shadow(calc(-1 * var(--icon-px)) 0 0 #d0cbb1)
+    drop-shadow(0 var(--icon-px) 0 #d0cbb1) drop-shadow(0 calc(-1 * var(--icon-px)) 0 #d0cbb1);
+}
+.pixel-icon-button:active > canvas {
+  translate: 0 var(--icon-px);
+}
+.pixel-icon-button:focus-visible {
+  outline: var(--icon-px) solid #f5bd63;
+  outline-offset: calc(-1 * var(--icon-px));
+}
+@media (max-width: 679px), (max-height: 560px) {
+  .pixel-icon-button {
+    --icon-px: 1px;
+  }
 }
 
 .footer {
@@ -11832,5 +12291,153 @@ select {
   .ask-options .btn:active:not(:disabled),
   .ask-options .btn[data-key-press] {
     scale: none;
+  }
+}
+
+/* ── GG Royale link box (RoyaleKey.tsx) ──
+   The shared modal dressed as a GG Royale board: dark wine-brown board with
+   an ink edge, Alagard title, m5x7 text on the 2px pixel grid, plate buttons. */
+.modal.royale-consent {
+  --rc-px: 2px;
+  width: min(calc(310 * var(--rc-px)), calc(100vw - 32px));
+  background: #251c22 !important;
+  border: 0;
+  border-radius: calc(3 * var(--rc-px));
+  box-shadow:
+    0 0 0 var(--rc-px) #1e0c1f,
+    inset 0 0 0 var(--rc-px) #4e343f,
+    0 calc(3 * var(--rc-px)) 0 var(--rc-px) #1e0c1f;
+  color: #e6dcd0;
+}
+.modal.royale-consent .modal-title {
+  font-family: "Alagard", serif;
+  font-size: calc(16 * var(--rc-px));
+  font-weight: 400;
+  line-height: calc(16 * var(--rc-px));
+  -webkit-font-smoothing: none;
+  color: #f6d0a8 !important;
+  text-shadow: 0 var(--rc-px) 0 #1e0c1f;
+}
+.modal.royale-consent .modal-close {
+  color: #f6d0a8;
+}
+.royale-consent-body {
+  display: flex;
+  flex-direction: column;
+  gap: calc(5 * var(--rc-px));
+  font-family: "m5x7", monospace;
+  font-size: calc(16 * var(--rc-px));
+  line-height: calc(11 * var(--rc-px));
+  -webkit-font-smoothing: none;
+}
+.royale-consent-body p {
+  margin: 0;
+}
+.royale-consent-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(3 * var(--rc-px));
+  color: #c9a08c;
+}
+.royale-consent-links a {
+  color: #f5bd63;
+  text-decoration: underline;
+  text-underline-offset: calc(2 * var(--rc-px));
+}
+.royale-consent-links a:focus-visible,
+.royale-consent-tick input:focus-visible {
+  outline: var(--rc-px) solid #f5bd63;
+  outline-offset: var(--rc-px);
+}
+/* The 18+ tick: a pixel box in the board's colours. */
+.royale-consent-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(4 * var(--rc-px));
+  align-self: flex-start;
+  padding: calc(2 * var(--rc-px)) calc(4 * var(--rc-px)) calc(3 * var(--rc-px));
+  border-radius: calc(2 * var(--rc-px));
+  background: #2e2029;
+  box-shadow: inset 0 calc(-1 * var(--rc-px)) 0 #221820;
+  color: #f6d0a8;
+  cursor: pointer;
+}
+.royale-consent-tick.is-nudged {
+  box-shadow:
+    0 0 0 var(--rc-px) #c2444d,
+    inset 0 calc(-1 * var(--rc-px)) 0 #221820;
+}
+.royale-consent-tick input {
+  appearance: none;
+  margin: 0;
+  width: calc(7 * var(--rc-px));
+  height: calc(7 * var(--rc-px));
+  background: #1a0e14;
+  box-shadow: 0 0 0 var(--rc-px) #4e343f;
+  cursor: pointer;
+}
+.royale-consent-tick input:checked {
+  background: #8fd0a0;
+  box-shadow:
+    0 0 0 var(--rc-px) #1e0c1f,
+    inset 0 calc(-1 * var(--rc-px)) 0 #5a9a6a;
+}
+.royale-consent-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: calc(4 * var(--rc-px));
+  margin-top: calc(6 * var(--rc-px));
+}
+/* Plates at the board's own 2px grid, like Home's. */
+.royale-consent-actions .plate-button {
+  --plate-scale: 2;
+}
+@media (max-width: 679px), (max-height: 560px) {
+  .modal.royale-consent {
+    --rc-px: 1px;
+  }
+  .royale-consent-actions .plate-button {
+    --plate-scale: 1;
+  }
+}
+
+/* ── Pixel tooltip (PixelTip.tsx) ── */
+.pixel-tip-anchor {
+  display: contents;
+}
+/*
+   GG Royale's text tooltip (blackjack.css .tip-body), at 2 screen pixels per
+   art pixel: m5x7 on the game's orange-gold card, ink text, a 1px darker
+   foot and a soft drop, the "Name:" in the game's blue. */
+.pixel-tip {
+  --tip-px: 2px;
+  position: fixed;
+  z-index: var(--z-overlay);
+  max-width: min(calc(120 * var(--tip-px)), calc(100vw - 16px));
+  padding: calc(3 * var(--tip-px)) calc(5 * var(--tip-px)) calc(5 * var(--tip-px));
+  translate: -50% 0;
+  background: #de9b57;
+  color: #1e0c1f;
+  box-shadow:
+    0 var(--tip-px) 0 #c47a3a,
+    0 calc(2 * var(--tip-px)) 0 #1e0c1f66;
+  font-family: "m5x7", monospace;
+  font-size: calc(16 * var(--tip-px));
+  line-height: calc(11 * var(--tip-px));
+  -webkit-font-smoothing: none;
+  text-align: left;
+  pointer-events: none;
+  white-space: normal;
+  width: max-content;
+}
+.pixel-tip.is-above {
+  translate: -50% -100%;
+}
+.pixel-tip-key {
+  color: #34347e;
+}
+@media (max-width: 679px), (max-height: 560px) {
+  .pixel-tip {
+    --tip-px: 1px;
   }
 }

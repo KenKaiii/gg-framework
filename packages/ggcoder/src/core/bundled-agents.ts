@@ -142,7 +142,7 @@ You review code rigorously: you look for bypasses that would matter in practice,
 
 ## Hard exclusions — do NOT report:
 
-- DOS / rate-limiting / memory exhaustion without an amplification primitive
+- DOS / rate-limiting / memory exhaustion without an amplification primitive (exception: a missing rate limit on login, signup, password reset, or a paid/LLM endpoint IS reportable: credential stuffing and runaway bills)
 - Theoretical race conditions without a demonstrable window
 - Regex-DOS without untrusted-supplied regex
 - Log spoofing / log injection (cosmetic)
@@ -182,7 +182,7 @@ For each finding, return:
 
 ## Hard exclusions — automatic DROP regardless of source:
 
-- DOS / rate-limiting / memory exhaustion without an amplification primitive
+- DOS / rate-limiting / memory exhaustion without an amplification primitive (exception: never DROP a missing rate limit on login, signup, password reset, or a paid/LLM endpoint for this reason alone)
 - Theoretical race conditions without a demonstrable window
 - Regex-DOS without untrusted-supplied regex
 - Log spoofing / log injection (cosmetic only)

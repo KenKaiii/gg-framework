@@ -138,24 +138,23 @@ describe("update keys", () => {
   });
 });
 
-// Guard: the What's new window's body once sat on a fixed grey with see-through
-// white cards and a fixed orange, so in the light theme the cards vanished
-// and the story numbers read at 1.65:1. Its page, cards and numbers follow the
-// theme now.
+// Guard: the What's new window is GG Royale's lounge, the same in both themes:
+// pixel fonts (never the app's sans) and the Daily's dark board, so its fixed
+// cream and gold text keep their contrast whatever the app theme is.
 describe("What's new window", () => {
   const css = SHEETS["./WhatsNew.css"] ?? "";
   const rule = (selector: string): string =>
     css.match(new RegExp(`(?:^|\\n)${selector.replace(/[.*]/g, "\\$&")} \\{([^}]*)\\}`))?.[1] ?? "";
 
-  it("sits on the app's page and cards", () => {
-    expect(rule(".whatsnew-window")).toContain("background: var(--bg)");
-    expect(rule(".wn-camp-story")).toContain("background: var(--surface-1)");
-    expect(rule(".wn-camp-story")).toContain("border: 1px solid var(--border)");
+  it("sets its own pixel type instead of the app's sans", () => {
+    expect(rule(".whatsnew-window")).toContain('font-family: "m5x7"');
+    expect(css).not.toContain("var(--sans)");
   });
 
-  it("gives the story numbers a colour for each theme", () => {
-    expect(rule(".wn-camp-num")).toContain("color: var(--wn-ember)");
-    expect(css).toMatch(/:root\[data-theme="light"\] \.whatsnew-window \{[^}]*--wn-ember:/);
+  it("puts the notes on the Daily's dark board, in every theme", () => {
+    expect(rule(".wn-board")).toContain("background: #251c22");
+    expect(rule(".whatsnew-highlight")).toContain("color: var(--wn-gold)");
+    expect(css).not.toMatch(/data-theme/);
   });
 });
 

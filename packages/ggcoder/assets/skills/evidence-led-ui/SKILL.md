@@ -1,8 +1,8 @@
 ---
 name: evidence-led-ui
-description: Use when building or reviewing UI visuals. Do NOT use for behaviour-only changes.
+description: Use when building, changing or reviewing UI: pages, sections, components, layout, styling, visual polish, accessibility. Do NOT use for behaviour-only changes.
 license: See LICENSES.md
-compatibility: Full review requires filesystem inspection and rendered screenshots (deferred `screenshot` tool); web research and device tooling are optional and unavailable checks must be reported as unverified.
+compatibility: Full review requires filesystem inspection and rendered screenshots (deferred `screenshot` tool); web research and device tooling are optional and unavailable checks must be reported as unverified. Baseline rows, WCAG 3.0 status and ADA Title II dates re-verified 22 October 2026.
 ---
 
 # Evidence-Led UI
@@ -72,29 +72,24 @@ Details and fixes: `references/craft-rulings.md`.
 
 ## Scaling: one agent or several
 
-| Situation | Policy |
-| --- | --- |
-| Small edit, build, redesign | Main thread only. One thesis, one author; never split a design across children. |
-| Review of one or two flows you can render and read yourself | Main thread only. |
-| Review of many screens/flows, or several apps | Build a ledger: rows = flows/screens × {slop tells, states, accessibility contract, responsive}. Fan out read-only general-purpose children (they have the `skill` tool), one per disjoint flow, all in ONE `spawn_agent` call, ≤ 6 per wave. |
-| A dated legal or platform claim needs checking | One `researcher` child. |
+- Stay single-threaded for small edits, builds, redesigns, and reviews of one or two flows you can render yourself. One thesis, one author; never split a design across children.
+- Fan out a review of many screens, flows or apps: read-only repo helpers, one per disjoint flow, each owning ledger rows (flow × {slop tells, states, accessibility contract, responsive}) and capturing desktop and mobile screenshots; they read `references/anti-defaults.md`, `references/quality-rubric.md` and the accessibility sections of `references/production-contract.md`.
+- One researcher for a dated legal or platform claim. Fixes stay on the main thread (or editors on disjoint files) against the single thesis.
 
-Each child brief contains: the absolute skill root path (the `Skill root directory` shown when this skill loaded), files to read (`references/anti-defaults.md`, `references/quality-rubric.md`, the accessibility sections of `references/production-contract.md`), the flow's routes and how to run the app, the ledger rows it owns, the instruction to capture desktop and mobile screenshots with the `screenshot` tool, the evidence labels, and the output schema: findings (screen, screenshot or file:line, label, severity, fix) plus explicit `checked` and `not checked` lists. Children do not edit.
-
-Merge: a failed, timed-out, or silent row is `not checked`, never clean. Re-open each reported file:line or re-capture before reporting it. Large pre-ship reviews get one fresh verifier child that tries to disprove the findings. Fixes stay on the main thread (or `bee` children on strictly disjoint files) against the single thesis; run checks once after merging.
+Helper types, brief contents and merge rules come with the skill loader.
 
 ## Reference map
 
 Load only what the task needs; resolve paths from the skill root.
 
-- `references/direction.md`: content-first, thesis template, type, OKLCH colour, spacing, imagery, motion, verified Baseline features, INP practice.
+- `references/direction.md`: content-first, thesis template, type, OKLCH colour, spacing, imagery, motion, stable Baseline features, INP practice.
 - `references/anti-defaults.md`: slop tells with replacement moves and the neighbour test.
 - `references/craft-rulings.md`: icons, geometry, insets, focus vs selection, regression matrix, type loading, contrast, copy rules.
 - `references/production-contract.md`: pass/fail semantics, WCAG/ADA/EAA context, forms, performance, platform, trust, AI, release evidence.
 - `references/quality-rubric.md`: rendered scoring gate.
 - `references/ui-libraries.md`: Bklit/Kokonut adoption and Motion APIs.
-- `references/archetypes.md`: surface-specific direction and corpus source slugs.
+- `references/archetypes.md`: surface-specific direction and upstream source slugs.
 - `references/observed-patterns.md`: measured corpus observations; read only the section that answers a question; keep numerator/denominator with any claim.
 - `references/methodology.md`, `references/provenance.md`, `LICENSES.md`: method, sources, standards status, licences, Refero boundary.
 
-Never load `data/observations.json` or the raw `corpus/` into context; open one raw source only to audit one claim. Corpus frequencies are observations of public surfaces, not brand truth or a reason to pick a colour, font, or layout. Mobile/native has no corpus documents; use platform guidance. Refero only through an authorized MCP or user export.
+The raw corpus is not bundled; to audit one claim, read that source at the pinned upstream commit listed in `references/provenance.md`. Corpus frequencies are observations of public surfaces, not brand truth or a reason to pick a colour, font, or layout. Mobile/native has no corpus documents; use platform guidance. Refero only through an authorized MCP or user export.

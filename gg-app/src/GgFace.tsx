@@ -18,7 +18,7 @@ const FRAMES: Readonly<Record<GgFaceFrame, string>> = {
  */
 export function GgFace({
   mood,
-  size = 14,
+  size = 18,
 }: {
   mood: GgFaceMood;
   size?: number;

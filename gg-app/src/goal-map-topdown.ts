@@ -4,10 +4,12 @@
 // tree is mostly canopy. Vertical faces are short bands under their tops.
 // Matched pixel by pixel against hand-made farm-sim art. Pure.
 
-import { PixelBuffer, hash, mix, noise, stream, type Rgb } from "./goal-map-pixels";
+import { PixelBuffer, hash, mix, noise, stream, type Palette, type Rgb } from "./goal-map-pixels";
 import type { Sprite } from "./goal-map-props";
 import type { Spot } from "./goal-farm-travel";
+import { shadeGrid, type Material } from "./critter-shade";
 import { PAPER, THATCH, W, blob, thatchBlotch, type Bay } from "./goal-map-farm";
+import { BARK_BROWN, barkTrunk } from "./goal-map-bark";
 
 const LINE: Rgb = 0x3a1406;
 
@@ -24,6 +26,27 @@ function sprite(
   draw(buf);
   if (outline > 0) buf.outline(outline, LINE);
   return { buf, ax, ay, ...(shadow ? { shadow } : {}) };
+}
+
+/** A 4×4 ordered (Bayer) dither threshold, 0–1. */
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
+function bayer4(x: number, y: number): number {
+  return ((BAYER4[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16;
+}
+
+/**
+ * A step of `ramp` (darkest first) for a light level `v` (0 darkest … 1
+ * lightest), the way GG Royale shades: whole steps, meeting through an
+ * ordered dither rather than a blend.
+ */
+function rampStep(ramp: readonly Rgb[], v: number, x: number, y: number): Rgb {
+  const n = ramp.length - 1;
+  const t = Math.max(0, Math.min(n, v * n));
+  const lo = Math.floor(t);
+  // Solid steps; only a narrow seam between two of them is dithered.
+  const f = t - lo;
+  const up = f > 0.65 || (f > 0.35 && (f - 0.35) / 0.3 > bayer4(x, y));
+  return ramp[up ? Math.min(n, lo + 1) : lo] ?? ramp[0] ?? 0;
 }
 
 /** Thatch colour at (x, y): mid-brown with ragged lighter patches and darker hollows. */
@@ -62,8 +85,16 @@ function shojiFront(b: PixelBuffer, x: number, y: number, pw: number, ph: number
     for (let px = x + 2; px < x + pw - 2; px++) {
       const bar = (px - x - 2) % 3 === 2 || (py - y - 2) % 3 === 2;
       if (bar) continue;
+      // The paper glows with the daylight on it: brightest high on the left,
+      // a step softer low on the right, the pane under each bar a touch
+      // shaded by it (the paper is set back behind its lattice).
       const corner = (px - x - 2) % 3 === 0 && (py - y - 2) % 3 === 0;
-      b.set(px, py, corner ? 0xfffaf0 : PAPER.lit);
+      const under = (py - y - 2) % 3 === 0;
+      const v = 0.75 - ((px - x) / pw) * 0.3 - ((py - y) / (paperBottom - y)) * 0.25;
+      let c: Rgb = v > 0.55 ? PAPER.lit : mix(PAPER.lit, PAPER.base, 0.55);
+      if (corner && v > 0.45) c = 0xfffaf0;
+      else if (under) c = mix(c, PAPER.base, 0.35);
+      b.set(px, py, c);
     }
   }
   // The rail under the paper, then the kickboard's raised panel.
@@ -416,7 +447,26 @@ export function farmhouseTop(seed: number, bays: readonly Bay[], noren: Rgb): Sp
           // front slope (the left a little more, the sun being up and left).
           const light = onLeftHip ? 0.6 : onRightHip ? 0.4 : 0.15 - t * 0.2;
           let c = thatchAt(x, y, seed, light);
+          // The whole roof is one heavy, rounded mass: lit high on the left
+          // where it bellies toward the sun, settling into shade low on the
+          // right, laid over the patch texture as a dithered wash (so the
+          // straw keeps its own patches and hollows).
+          const u = (x - (cx - halfW)) / Math.max(1, 2 * halfW);
+          const form = (0.55 - u) * 1.2 + (0.45 - t) * 1.1;
+          // Lit and shaded areas take whole steps of the thatch's own ramp:
+          // full patches of light, full patches of shade, a dithered seam.
+          const BY = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
+          const d = ((BY[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16;
+          // Only the bodies of the patches move (base stays base where the
+          // form is middling), so the straw's own pattern stays crisp.
+          if (form > 0.5 || (form > 0.3 && (form - 0.3) / 0.2 > d)) {
+            if (c === THATCH.base) c = mix(THATCH.base, THATCH.hi, 0.45);
+          } else if (form < -0.5 || (form < -0.3 && (-0.3 - form) / 0.2 > d)) {
+            if (c === THATCH.base) c = mix(THATCH.base, THATCH.lo, 0.65);
+          }
+          // The hip seams: a dark crease with a lit lip on the sunward side.
           if (Math.abs(x - seamL) < 1 || Math.abs(x - seamR) < 1) c = THATCH.lo;
+          else if (Math.abs(x - seamL - 1) < 1) c = mix(c, THATCH.hi, 0.5);
           b.set(x, y, c);
         }
       }
@@ -608,8 +658,20 @@ export function kuraTop(seed: number): Sprite {
       for (let y = WALL_TOP; y <= WALL_BOTTOM; y++) {
         for (let x = WALL_L; x <= WALL_R; x++) {
           const k = (x - WALL_L) % 5;
-          let c: Rgb = k === 0 ? KW.seam : k === 1 ? KW.lit : KW.board;
-          if (hash(x, y >> 1, seed + 31) < 0.05 && k > 1) c = KW.dark; // grain
+          const plank = Math.floor((x - WALL_L) / 5);
+          // The wall faces us, lit from the left: the boards on the left
+          // catch more sun than those on the right, each its own shade.
+          const across = (x - WALL_L) / (WALL_R - WALL_L);
+          const v = 0.7 - across * 0.45 + (hash(plank, 0, seed + 30) - 0.5) * 0.18;
+          let c: Rgb = rampStep([KW.dark, KW.board, KW.lit, KW.hi], v, x, y);
+          if (k === 0) c = KW.seam;
+          else if (k === 1 && v > 0.35) c = mix(c, KW.hi, 0.4); // each board's lit edge
+          // Grain: long, broken, slightly wavy lines down each board.
+          const gx = x + Math.round(Math.sin(y / 3 + plank) * 0.5);
+          if (k > 1 && hash(gx, Math.floor(y / 4), seed + 31) < 0.12) c = mix(c, KW.dark, 0.55);
+          // A knot on some boards.
+          if (k === 3 && Math.floor(y / 6) === 1 + (plank % 2) && hash(plank, 1, seed) < 0.3)
+            c = KW.dark;
           b.set(x, y, c);
         }
       }
@@ -662,7 +724,13 @@ export function kuraTop(seed: number): Sprite {
           // Each slope is lit in its middle, darker toward the ridge and the eave.
           const span = leftSide ? RIDGE_L - l : r - RIDGE_R;
           const along = leftSide ? (x - l) / span : (r - x) / span;
-          const lit = (leftSide ? 0.6 : -0.3) + (along > 0.2 && along < 0.8 ? 0.2 : -0.25);
+          // Each slope rolls over from its crown to the eave as one rounded
+          // mass (smoothly, not in two bands), the left catching the sun and
+          // the right turned away, with a dithered seam between its steps.
+          const roll = Math.sin(Math.min(1, Math.max(0, along)) * Math.PI);
+          const BY = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
+          const dith = ((BY[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16 - 0.5;
+          const lit = (leftSide ? 0.55 : -0.32) + (roll - 0.55) * 0.75 + dith * 0.18;
           let c = straw(x, y, lit, seed);
           // The creases where the slopes rise to meet the ridge.
           const toRidge = leftSide ? RIDGE_L - 1 - x : x - RIDGE_R - 1;
@@ -837,7 +905,11 @@ export function kennelTop(): Sprite {
         const y0 = Math.round(slopeTop(t));
         const y1 = Math.round(eave(t));
         for (let y = y0; y <= y1; y++) {
-          let c: Rgb = right ? KN.base : KN.light;
+          // The left slope faces the sun (up and left), the right turns
+          // away; each falls into shade toward its eave, in whole steps.
+          const down = (y - y0) / Math.max(1, y1 - y0);
+          const v = (right ? 0.34 : 0.8) - down * 0.32;
+          let c: Rgb = rampStep([KN.grain, KN.mid, KN.base, KN.light, KN.hi], v, x, y);
           if (y > y1 - 2)
             c = y === y1 ? KN.dark : KN.grain; // the eave's thickness
           else if (Math.abs(x - cx) === 1)
@@ -963,19 +1035,8 @@ export function tubTop(): Sprite {
         }
       }
       // Tall stones standing up its sides, and low ones round its foot.
-      const stone = (x: number, y: number, rx: number, ry: number, seed: number): void => {
-        for (let yy = Math.floor(y - ry); yy <= y + ry; yy++) {
-          for (let xx = Math.floor(x - rx); xx <= x + rx; xx++) {
-            const nx = (xx + 0.5 - x) / rx;
-            const ny = (yy + 0.5 - y) / ry;
-            if (Math.abs(nx) ** 2.4 + Math.abs(ny) ** 2.4 > 1) continue;
-            const lit = -nx * 0.5 - ny * 0.8;
-            const tone: Rgb =
-              lit > 0.35 ? STONE.hi : lit > -0.2 ? STONE.light : ny > 0.6 ? STONE.mid : STONE.base;
-            b.set(xx, yy, stoneAt(xx, yy, seed, tone));
-          }
-        }
-      };
+      const stone = (x: number, y: number, rx: number, ry: number, seed: number): void =>
+        roundStone(b, x, y, rx, ry, seed);
       stone(4.5, 30, 4.2, 7, 81);
       stone(31.5, 30, 4.2, 7, 82);
       stone(9, 38.5, 5.4, 4, 83);
@@ -1007,6 +1068,18 @@ function pad(
   seed: number,
 ): void {
   const ry = r * 0.78;
+  // A pad laid over others casts a band of shade onto what's under it, just
+  // below and right of its own rim (where the sun, up and left, can't reach),
+  // so stacked clumps read as layers with depth.
+  for (let y = Math.floor(cy - ry); y <= cy + ry + 3; y++) {
+    for (let x = Math.floor(cx - r); x <= cx + r + 3; x++) {
+      if (!b.opaque(x, y)) continue;
+      const dx = (x + 0.5 - cx - 1.5) / r;
+      const dy = (y + 0.5 - cy - 1.8) / ry;
+      if (dx * dx + dy * dy > 1.02) continue;
+      b.set(x, y, T.deep, 0.55);
+    }
+  }
   for (let y = Math.floor(cy - ry - 2); y <= cy + ry + 2; y++) {
     for (let x = Math.floor(cx - r - 2); x <= cx + r + 2; x++) {
       const dx = (x + 0.5 - cx) / r;
@@ -1034,9 +1107,20 @@ function pad(
       if (Math.abs(vein - 0.5) < 0.045 && rimDist > 0.12) c = lit > 0.2 ? T.base : T.dark;
       else if (Math.abs(vein - 0.5) < 0.1 && vein > 0.5 && lit > -0.1)
         c = lit > 0.4 ? T.hi : T.light;
-      if (rimDist < 0.12 && dy > -0.2) c = T.deep; // the dark lower rim
-      // Leaf clusters: small lighter flecks on the lit half.
-      if (lit > 0 && hash(x, y, seed + 3) < 0.06) c = T.hi;
+      if (rimDist < 0.12 && dy > -0.2)
+        c = T.deep; // the dark lower rim
+      // Rim light: the sunward edge of the pad catches a bright line.
+      else if (rimDist < 0.1 && dx < 0.1 && dy < 0.1) c = T.hi;
+      // Leaf scallops on the lit half: little two-pixel cups, a lit top
+      // over its own shade, in a loose grid (not scattered flecks).
+      const gx = Math.floor((x + (Math.floor(y / 3) % 2) * 2) / 4);
+      const gy = Math.floor(y / 3);
+      if (lit > -0.1 && rimDist > 0.15 && hash(gx, gy, seed + 3) < 0.42) {
+        const lx = (x + (Math.floor(y / 3) % 2) * 2) % 4;
+        const ly = y % 3;
+        if (ly === 0 && lx > 0 && lx < 3) c = lit > 0.35 ? T.hi : T.light;
+        else if (ly === 1 && lx === 3) c = lit > 0.35 ? T.base : T.dark;
+      }
       b.set(x, y, c);
     }
   }
@@ -1063,23 +1147,16 @@ export function canopyTree(seed: number, tones: "green" | "olive" = "green", siz
     h - 3,
     (b) => {
       const cx = w / 2;
-      // The trunk and the branches that hold the pads.
+      // The trunk (goal-map-bark.ts) and the branches that hold the pads.
       const trunkTop = h - R * 1.6;
-      for (let y = Math.round(trunkTop); y < h - 3; y++) {
-        const lean = Math.round(Math.sin((y - trunkTop) / 6 + seed) * 1.5);
-        for (let x = 0; x < 6; x++) {
-          b.set(Math.round(cx - 3) + x + lean, y, x === 0 ? W.light : x > 3 ? W.deep : W.face);
-        }
-      }
-      // Roots splaying out at the foot.
-      for (const [dx, len] of [
-        [-5, 4],
-        [6, 3],
-        [-2, 2],
-      ] as const) {
-        for (let k = 0; k < len; k++)
-          b.set(Math.round(cx + dx * (k / len)), h - 4 + Math.min(1, k), W.face);
-      }
+      const crown = barkTrunk(b, {
+        x: cx,
+        foot: h - 4,
+        top: Math.round(trunkTop),
+        width: Math.round(5 * size),
+        lean: Math.sin(seed) * 2,
+        seed,
+      });
       // Pads: arranged in tiers, the top of the crown first, the lowest last.
       // Each tree its own crown: four to seven pads, placed by the seed.
       const pads: Array<[number, number, number]> = [
@@ -1092,15 +1169,19 @@ export function canopyTree(seed: number, tones: "green" | "olive" = "green", siz
         if (y > R * 3.1) break;
         pads.push([cx + side * R * (0.5 + rnd() * 0.4), y, R * (0.7 + rnd() * 0.16)]);
       }
-      // Branches into each pad, drawn before the pads so they peek through.
+      // Branches into each pad, drawn before the pads so they peek through:
+      // thick at the trunk and thinning out, lit along their upper edge.
       for (const [px, py] of pads) {
-        const steps = Math.max(4, Math.round(Math.hypot(px - cx, trunkTop - py) / 1.5));
+        const steps = Math.max(4, Math.round(Math.hypot(px - crown.x, crown.y - py) / 1.5));
         for (let k = 0; k <= steps; k++) {
           const t = k / steps;
-          const bx = Math.round(cx + (px - cx) * t);
-          const by = Math.round(trunkTop + (py + R * 0.3 - trunkTop) * t);
-          b.set(bx, by, W.face);
-          b.set(bx + 1, by, W.deep);
+          const bx = Math.round(crown.x + (px - crown.x) * t);
+          const by = Math.round(crown.y + (py + R * 0.3 - crown.y) * t);
+          const thick = t < 0.45 ? 2 : 1;
+          b.set(bx, by - 1, BARK_BROWN.light);
+          for (let d = 0; d < thick; d++) b.set(bx + d, by, BARK_BROWN.base);
+          b.set(bx + thick, by, BARK_BROWN.deep);
+          b.set(bx, by + 1, BARK_BROWN.shadow);
         }
       }
       for (const [px, py, r] of pads) pad(b, px, py, r, T, seed + Math.round(px * 3 + py));
@@ -1305,21 +1386,33 @@ export function paintFallingWater(
   b.set(mouth.x + 4, pour.y, POND.pale);
 }
 
-/** A koi from above, head to the left: orange and white, its fins and shadow dark. */
+/**
+ * A kohaku koi from above, head to the left: a tapered white body with
+ * orange patches (lit along their top, deeper below), two eyes at the head,
+ * pale side fins and a forked tail, all a little cooled by the water over it.
+ */
 export const KOI: readonly string[] = [
-  "........kk..........",
-  ".......kgk..........",
-  "...kkkkggkkkkkk.....",
-  "..kOoogkoOogkoOkk..k",
-  ".kOOoogkoOogkooggkkk",
-  "..kooogkoooggkogk..k",
-  "...kkkkggkkkkkk.....",
-  ".......kgk..........",
-  "........kk..........",
+  "......kk............",
+  ".....kffk...........",
+  "..kkkkwwkkkkk....kk.",
+  ".keOwwwwOOOwwkk.kffk",
+  "kOOOwwwwOOOOwwwkkffk",
+  ".keoWWWWoooWWkk.kffk",
+  "..kkkkWWkkkkk....kk.",
+  ".....kffk...........",
+  "......kk............",
 ];
 
-/** Koi colours: a dark green line and body, orange patches lit along their top. */
-export const KOI_COLORS = { k: 0x2c4a32, g: 0x3f6e4c, o: 0xe0784a, O: 0xf2a070 } as const;
+/** Koi colours, seen through the water: white and orange scales, pale fins. */
+export const KOI_COLORS = {
+  k: 0x2c4a32,
+  w: 0xf4f1e6,
+  W: 0xc8d6cc,
+  O: 0xf2a070,
+  o: 0xd8683a,
+  e: 0x1a2a20,
+  f: 0xa8cfc0,
+} as const;
 
 // ── Farm animals ────────────────────────────────────────────
 // Read from hand-drawn ones and seen at the same high angle as everything
@@ -1469,11 +1562,99 @@ export const SHIBA_COLORS = {
   n: 0x1a0a04,
 } as const;
 
-/** A still sprite from an animal grid, anchored at its feet; casts a tight contact shadow. */
-export function animalSprite(
+/**
+ * An animal grid lit the way the critters are (critter-shade.ts): its
+ * hand-placed light and shade keys are folded into one material per part
+ * (`merge`), then the shader models each part from the top left, with
+ * hue-shifted ramps and outlines coloured from what they wrap. Handed back as
+ * rows and a palette (one key per colour) for the farm's grid painters.
+ */
+export function lightAnimal(
   rows: readonly string[],
   colors: Readonly<Record<string, number>>,
-): Sprite {
+  merge: Readonly<Record<string, string>>,
+  materials: Readonly<Record<string, Material>>,
+  seed: number,
+): { rows: string[]; palette: Record<string, string> } {
+  const folded = rows.map((row) =>
+    [...row].map((k) => (k === "." ? "." : (merge[k] ?? k))).join(""),
+  );
+  const palette: Record<string, string> = {};
+  for (const [k, c] of Object.entries(colors))
+    palette[merge[k] ?? k] ??= `#${c.toString(16).padStart(6, "0")}`;
+  for (const [k, c] of Object.entries(colors))
+    if (!merge[k]) palette[k] = `#${c.toString(16).padStart(6, "0")}`;
+  const lit = shadeGrid({ rows: folded, palette, materials, seed, relief: 0.8 });
+  const out: Record<string, string> = {};
+  const keyOf = new Map<string, string>();
+  const grid = lit.map((row) =>
+    row
+      .map((c) => {
+        if (!c) return ".";
+        let k = keyOf.get(c);
+        if (!k) {
+          k = String.fromCharCode(0x100 + keyOf.size);
+          keyOf.set(c, k);
+          out[k] = c;
+        }
+        return k;
+      })
+      .join(""),
+  );
+  return { rows: grid, palette: out };
+}
+
+/** The hen's keys folded for lighting: k is her outline, the whites one feather coat. */
+const HEN_MERGE: Readonly<Record<string, string>> = {
+  k: "O",
+  h: "w",
+  s: "w",
+  d: "w",
+  R: "r",
+  Y: "y",
+  e: "K",
+};
+const HEN_MATERIALS: Readonly<Record<string, Material>> = {
+  w: "fur",
+  r: "skin",
+  y: "flat",
+  K: "flat",
+};
+
+/** The hen's frames, lit, keyed by which frame. */
+export const HEN_LIT = {
+  stand: lightAnimal(HEN_STAND, HEN_COLORS, HEN_MERGE, HEN_MATERIALS, 41),
+  walk: lightAnimal(HEN_WALK, HEN_COLORS, HEN_MERGE, HEN_MATERIALS, 41),
+  peck: lightAnimal(HEN_PECK, HEN_COLORS, HEN_MERGE, HEN_MATERIALS, 41),
+} as const;
+
+/** The cat's keys folded for lighting: one ginger coat, one cream, pink ears and nose flat. */
+const CAT_MERGE: Readonly<Record<string, string>> = {
+  k: "O",
+  l: "o",
+  h: "o",
+  s: "o",
+  d: "o",
+  c: "w",
+  e: "K",
+  n: "N",
+};
+const CAT_MATERIALS: Readonly<Record<string, Material>> = {
+  o: "fur",
+  w: "fur",
+  p: "flat",
+  K: "flat",
+  N: "flat",
+};
+
+/** The cat's two steps, lit. */
+export const CAT_LIT = {
+  a: lightAnimal(CAT_STEP_A, CAT_COLORS, CAT_MERGE, CAT_MATERIALS, 47),
+  b: lightAnimal(CAT_STEP_B, CAT_COLORS, CAT_MERGE, CAT_MATERIALS, 47),
+} as const;
+
+/** A still sprite from an animal grid, anchored at its feet; casts a tight contact shadow. */
+export function animalSprite(rows: readonly string[], colors: Palette): Sprite {
   const w = rows[0]?.length ?? 0;
   const h = rows.length;
   return sprite(w, h, Math.floor(w / 2), h - 2, (b) => b.stamp(rows, colors, 0, 0), { a: 0.26 }, 0);
@@ -1507,39 +1688,53 @@ function paintPondWater(
   const cells: Array<[number, number]> = [];
   for (let i = 0; i < 15; i++)
     cells.push([cx + (rnd() - 0.5) * rx * 2, cy + (rnd() - 0.5) * ry * 2]);
-  const tones: ReadonlyArray<readonly [number, Rgb]> = [
-    [0.8, POND.foam],
-    [0.68, POND.pale],
-    [0.53, POND.light],
-    [0.37, POND.base],
-    [0.24, POND.mid],
-    [-Infinity, POND.deep],
-  ];
+  const ramp: readonly Rgb[] = [POND.deep, POND.mid, POND.base, POND.light, POND.pale];
   for (let y = Math.floor(cy - ry - 1); y <= cy + ry + 1; y++) {
     for (let x = Math.floor(cx - rx - 1); x <= cx + rx + 1; x++) {
       const nx = (x + 0.5 - cx) / rx;
       const ny = (y + 0.5 - cy) / ry;
       if (!shape(nx, ny)) continue;
+      // Water the way GG Royale paints it: depth first (pale and shallow at
+      // the rim, deep jade in the middle), the sky's light reflected across
+      // the upper left, a few broad slow patches, all in solid steps that
+      // meet through a narrow dithered seam, so it reads calm, not grainy.
+      const r = Math.hypot(nx, ny);
+      // The rim itself sits under the stones, so the shallows start well in.
+      const shallow = Math.min(1, Math.max(0, r - 0.2) / 0.55);
+      const sky = Math.max(0, -nx * 0.6 - ny * 0.85);
+      const patch = (noise(x * 0.6, y, 11, seed + 11) - 0.5) * 0.5;
       // Churned white only right where the spout's water lands; round it the
       // water stays jade, so the falling water and its ripples show against it.
       const splash = Math.max(0, 1 - Math.hypot(x - pour.x, (y - pour.y) * 1.6) / 4);
       // Calmer, deeper water where the ripples spread, so they read.
       const calm = Math.max(0, 1 - Math.hypot(x - pour.x, (y - pour.y) * 2.2) / 14);
-      let v =
-        -calm * 0.32 +
-        noise(x, y * 1.5, 7, seed + 11) * 0.72 +
-        noise(x, y, 2.4, seed + 12) * 0.28 -
-        ny * 0.14 +
-        splash * 0.7;
-      // A checker dither along each tone's edge, so the patches shade into one another.
-      for (const [at] of tones) if (Math.abs(v - at) < 0.025) v += (x + y) % 2 === 0 ? 0.03 : -0.03;
-      let c: Rgb = POND.deep;
-      for (const [at, tone] of tones) {
-        if (v > at) {
-          c = tone;
-          break;
-        }
-      }
+      // Deep in the middle, pale toward the stones, the sky's light across
+      // the upper left: the centre falls two whole steps below the rim.
+      const deepness = Math.max(0, 1 - r / 0.7) ** 0.8;
+      const v =
+        0.78 -
+        deepness * 0.7 +
+        shallow * 0.1 +
+        sky * 0.22 +
+        patch * 0.7 -
+        calm * 0.08 +
+        splash * 0.9;
+      let c = v > 0.98 ? POND.foam : rampStep(ramp, Math.min(1, v), x, y);
+      // Glints: a few short horizontal dashes of light where the sky shows,
+      // one per cell at most, never two cells stacked.
+      const gx = Math.floor(x / 9);
+      const gy = Math.floor(y / 5);
+      const g = hash(gx, gy, seed + 16);
+      const ox = Math.floor(hash(gx, gy, seed + 17) * 5);
+      if (
+        sky > 0.12 &&
+        g < 0.4 &&
+        (gx + gy) % 2 === 0 &&
+        y % 5 === 2 &&
+        x % 9 >= ox &&
+        x % 9 < ox + 2 + (g < 0.12 ? 1 : 0)
+      )
+        c = POND.foam;
       // The net of dark lines: cell edges, broken here and there, gone in the foam.
       let near = Infinity;
       let next = Infinity;
@@ -1553,7 +1748,8 @@ function paintPondWater(
           near = d;
         } else if (d < next) next = d;
       }
-      if (next - near < 1 && v < 0.78 && noise(x, y, 4, seed + 13) > 0.2) c = POND.crack;
+      // Thinner and only in the deeper water, so the shallows stay clean.
+      if (next - near < 0.7 && v < 0.6 && noise(x, y, 4, seed + 13) > 0.3) c = POND.crack;
       b.set(x, y, c);
     }
   }
@@ -1593,12 +1789,33 @@ function shadeUnderStones(b: PixelBuffer, water: Uint8ClampedArray): void {
 }
 
 function lilyPad(b: PixelBuffer, x: number, y: number, r: number, seed: number): void {
-  b.ellipse(x, y, r + 1, r * 0.7 + 1, KOI_COLORS.k);
-  b.ellipse(x, y, r, r * 0.7, 0x6f9a3a);
-  b.ellipse(x - r * 0.25, y - r * 0.2, r * 0.6, r * 0.38, 0x94b84c);
-  // The notch: a wedge cut to the middle.
   const dir = hash(1, 1, seed) < 0.5 ? 1 : -1;
-  for (let k = 0; k <= r; k++) b.set(Math.round(x + dir * k), Math.round(y + k * 0.3), POND.light);
+  const ry = r * 0.7;
+  const LEAF = [0x3e6a2a, 0x5a8a34, 0x6f9a3a, 0x94b84c, 0xb4d466] as const;
+  // Its shadow on the water, down and right.
+  b.ellipse(x + 1, y + 1, r + 1, ry + 1, POND.deep);
+  for (let py = Math.floor(y - ry - 1); py <= y + ry + 1; py++) {
+    for (let px = Math.floor(x - r - 1); px <= x + r + 1; px++) {
+      const nx = (px + 0.5 - x) / r;
+      const ny = (py + 0.5 - y) / ry;
+      const d = nx * nx + ny * ny;
+      // The notch: a wedge cut from the edge to the middle.
+      const inNotch =
+        Math.sign(nx) === dir && Math.abs(ny - nx * dir * 0.3) < 0.18 && Math.abs(nx) > 0.05;
+      if (d > 1.25 || inNotch) continue;
+      if (d > 1) {
+        b.set(px, py, KOI_COLORS.k);
+        continue;
+      }
+      const lit = -nx * 0.5 - ny * 0.8 + (1 - d) * 0.4;
+      let c = rampStep(LEAF, Math.max(0, Math.min(1, 0.45 + lit * 0.5)), px, py);
+      // Veins running out from the middle.
+      const ang = Math.atan2(ny, nx);
+      if (d > 0.08 && Math.abs(Math.sin(ang * 3 + seed)) < 0.12) c = LEAF[1];
+      b.set(px, py, c);
+    }
+  }
+  b.set(Math.round(x - r * 0.35), Math.round(y - ry * 0.4), LEAF[4]);
 }
 
 interface PondStone {
@@ -1645,13 +1862,51 @@ function pondRing(cx: number, cy: number, rx: number, ry: number, seed: number):
 }
 
 const ROCK = {
-  hi: 0xdedcd3,
-  top: 0xcfc9c1,
-  facet: 0xbab3aa,
-  crack: 0xa8a097,
-  side: 0xb3aca4,
-  sideDark: 0x9c948b,
+  hi: 0xf2ece0,
+  top: 0xd8d0c4,
+  facet: 0xbfb8b2,
+  crack: 0x7e7884,
+  side: 0x9f99a0,
+  sideDark: 0x7e7884,
 } as const;
+/** The pond stones' full ramp, cool violet shade to warm sheen (as the stepping stones). */
+const ROCK_STEPS: readonly Rgb[] = [0x5e5864, 0x7e7884, 0x9f99a0, 0xbfb8b2, 0xd8d0c4, 0xf2ece0];
+
+/**
+ * A rounded stone, drawn like the pond's and the path's: its own ink outline
+ * (lighter along the sunlit upper left), a low dome lit from the upper left
+ * in solid ramp steps, two planes meeting on its crown, a violet-grey side.
+ */
+function roundStone(
+  b: PixelBuffer,
+  x: number,
+  y: number,
+  rx: number,
+  ry: number,
+  seed: number,
+): void {
+  const inside = (xx: number, yy: number, grow: number): boolean => {
+    const nx = (xx + 0.5 - x) / (rx + grow);
+    const ny = (yy + 0.5 - y) / (ry + grow);
+    return Math.abs(nx) ** 2.4 + Math.abs(ny) ** 2.4 <= 1;
+  };
+  const ang = hash(seed, 9, 4) * Math.PI;
+  for (let yy = Math.floor(y - ry - 1); yy <= y + ry + 1; yy++) {
+    for (let xx = Math.floor(x - rx - 1); xx <= x + rx + 1; xx++) {
+      if (!inside(xx, yy, 1)) continue;
+      const nx = (xx + 0.5 - x) / rx;
+      const ny = (yy + 0.5 - y) / ry;
+      if (!inside(xx, yy, 0)) {
+        b.set(xx, yy, nx < 0.2 && ny < 0.1 ? mix(LINE, ROCK_STEPS[1] ?? LINE, 0.4) : LINE);
+        continue;
+      }
+      const dome = 1 - Math.min(1, nx * nx + ny * ny);
+      const plane = nx * Math.cos(ang) + ny * Math.sin(ang) > 0.1 ? -0.14 : 0.06;
+      const lit = -nx * 0.5 - ny * 0.65 + dome * 0.42 + plane;
+      b.set(xx, yy, rampStep(ROCK_STEPS, Math.max(0, Math.min(1, 0.5 + lit * 0.5)), xx, yy));
+    }
+  }
+}
 
 /**
  * One stone: a chunky, slightly squared shape ringed in dark line. Its pale
@@ -1673,22 +1928,46 @@ function paintPondStone(b: PixelBuffer, s: PondStone): void {
   const x1 = Math.ceil(s.x + s.hw + 3);
   const y0 = Math.floor(s.y - s.hh - 3);
   const y1 = Math.ceil(s.y + s.hh + 3);
-  for (let y = y0; y <= y1; y++)
-    for (let x = x0; x <= x1; x++) if (inside(x, y, 1)) b.set(x, y, LINE);
+  // The outline: lighter where the sun catches the stone's upper-left edge.
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      // The whole grown shape, so it cuts a line over any stone drawn before.
+      if (!inside(x, y, 1)) continue;
+      const nx = (x + 0.5 - s.x) / s.hw;
+      const ny = (y + 0.5 - s.y) / s.hh;
+      // Lit only where the stone meets water or grass; where it laps over a
+      // stone already drawn, the join stays full ink so the two separate.
+      const under = b.opaque(x, y) ? b.rgb(x, y) : -1;
+      const onStone =
+        under === LINE ||
+        (Object.values(ROCK) as number[]).includes(under) ||
+        ROCK_STEPS.includes(under);
+      b.set(x, y, !onStone && nx < 0.2 && ny < 0.1 ? mix(LINE, ROCK.side, 0.38) : LINE);
+    }
+  }
+  const BY = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
   const tilt = (hash(5, 5, s.seed) - 0.5) * 0.5;
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       if (!inside(x, y, 0)) continue;
       const nx = (x + 0.5 - s.x) / s.hw;
       const ny = (y + 0.5 - s.y) / s.hh;
+      const d = ((BY[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16;
       const face = 0.42 + tilt * nx + Math.sin(nx * 3 + s.seed) * 0.08;
       let c: Rgb;
-      if (ny > face) c = ny > 0.82 || (ny > face + 0.3 && nx > 0.3) ? ROCK.sideDark : ROCK.side;
-      else {
-        const lit = -nx * 0.55 - ny * 0.75;
-        c = lit > 0.62 ? ROCK.hi : ROCK.top;
-        if (lit < 0.3 && noise(x, y, 3.2, s.seed) > 0.6) c = ROCK.facet;
-        if (nx > 0.78 && lit < 0) c = ROCK.facet;
+      if (ny > face) {
+        // The side: lit where it turns to the sun, violet-grey turning away,
+        // darkest and wet at the waterline.
+        c = nx < -0.35 ? (ROCK_STEPS[2] ?? ROCK.side) : (ROCK_STEPS[1] ?? ROCK.sideDark);
+        if (ny > 0.72 && (ny - 0.72) * 5 > d) c = ROCK_STEPS[0] ?? ROCK.sideDark;
+      } else {
+        // The top: a low dome lit from the upper left, cut into two planes
+        // (the one turned to the sun a step brighter), in solid ramp steps.
+        const dome = 1 - Math.min(1, nx * nx + ny * ny);
+        const ang = hash(9, 9, s.seed) * Math.PI;
+        const plane = nx * Math.cos(ang) + ny * Math.sin(ang) > 0.1 ? -0.15 : 0.06;
+        const lit = -nx * 0.5 - ny * 0.6 + dome * 0.45 + plane;
+        c = rampStep(ROCK_STEPS, Math.max(0, Math.min(1, 0.52 + lit * 0.48)), x, y);
       }
       b.set(x, y, c);
     }
@@ -1880,13 +2159,10 @@ export function lanternTop(): Sprite {
       b.ellipse(cx, 26.4, 8.4, 2.8, STONE.mid);
       b.ellipse(cx, 25.2, 6.2, 2, STONE.base);
       // The post, with a ring halfway.
+      const POST: readonly Rgb[] = [STONE.side, STONE.mid, STONE.base, STONE.light, STONE.hi];
       for (let y = 18; y < 25; y++) {
         for (let x = cx - 2; x <= cx + 2; x++) {
-          b.set(
-            x,
-            y,
-            stoneAt(x, y, 61, x === cx - 2 ? STONE.light : x === cx + 2 ? STONE.mid : STONE.base),
-          );
+          b.set(x, y, stoneAt(x, y, 61, POST[4 - (x - (cx - 2))] ?? STONE.base));
         }
       }
       b.rect(cx - 3, 21, 7, 1, STONE.mid);
@@ -1897,10 +2173,31 @@ export function lanternTop(): Sprite {
           b.set(
             x,
             y,
-            stoneAt(x, y, 62, x < cx - 3 ? STONE.light : x > cx + 3 ? STONE.mid : STONE.base),
+            stoneAt(
+              x,
+              y,
+              62,
+              x < cx - 3
+                ? STONE.light
+                : x > cx + 3
+                  ? x === cx + 5
+                    ? STONE.side
+                    : STONE.mid
+                  : STONE.base,
+            ),
           );
         }
       }
+      // The window's glow warming the stone round it.
+      for (const [gx, gy] of [
+        [cx - 4, 13],
+        [cx - 4, 14],
+        [cx + 3, 13],
+        [cx + 3, 14],
+        [cx - 2, 11],
+        [cx + 1, 11],
+      ] as const)
+        b.set(gx, gy, mix(b.rgb(gx, gy), 0xffcf6a, 0.3));
       b.rect(cx - 3, 12, 6, 4, 0x6a4a1a);
       b.rect(cx - 2, 12, 4, 4, 0xffcf6a);
       b.rect(cx - 2, 12, 4, 1, 0xfff0b0);
@@ -1912,8 +2209,13 @@ export function lanternTop(): Sprite {
           const dx = (x + 0.5 - cx) / 11.5;
           const dy = (y + 0.5 - 6.5) / 5.5;
           if (dx * dx + dy * dy > 1) continue;
-          const lit = -dx * 0.6 - dy * 0.7;
-          let tone: Rgb = lit > 0.3 ? STONE.light : lit > -0.25 ? STONE.base : STONE.mid;
+          const lit = -dx * 0.6 - dy * 0.7 + (1 - dx * dx - dy * dy) * 0.3;
+          let tone: Rgb = rampStep(
+            [STONE.side, STONE.mid, STONE.base, STONE.light, STONE.hi],
+            Math.max(0, Math.min(1, 0.5 + lit * 0.6)),
+            x,
+            y,
+          );
           // Ridges radiating from the knob.
           const a = Math.atan2(dy, dx);
           if (Math.abs(Math.sin(a * 2)) < 0.12 && dx * dx + dy * dy > 0.15) tone = STONE.side;
@@ -1957,11 +2259,23 @@ export function teaBenchTop(): Sprite {
       }
       for (let y = 28; y < 38; y++) {
         for (let x = 4; x < 42; x++) {
+          // The felt drapes over the seat: lit along the top, rolling over
+          // its front edge into shade, folds hanging down the front, the
+          // left end catching more sun than the right.
+          const across = (x - 4) / 38;
           let c: Rgb = y < 30 ? RED.lit : y > 35 ? RED.dark : RED.base;
-          if (y === 28) c = RED.hi;
+          if (y === 28) c = across < 0.85 ? RED.hi : RED.lit;
           if (y === 37) c = RED.deep;
-          if (y > 30 && y < 35 && noise(x, y, 3, 71) > 0.7) c = RED.lit; // felt nap
-          if (y === 35 && x % 6 === 0) c = RED.deep; // the cloth's fold
+          if (y >= 30 && y <= 35 && across > 0.75) c = y > 33 ? RED.dark : RED.base;
+          // Folds: soft vertical creases down the front, each a lit ridge
+          // beside its shaded valley.
+          if (y > 34 && y < 37) {
+            const k = (x + Math.floor(hash(Math.floor(x / 6), 0, 71) * 3)) % 6;
+            if (k === 0) c = RED.deep;
+            else if (k === 1) c = RED.base;
+          }
+          // The felt's nap: a faint brushed sheen on the top.
+          if (y > 29 && y < 33 && (x + y * 3) % 7 === 0 && across < 0.7) c = RED.lit;
           b.set(x, y, c);
         }
       }
@@ -2027,14 +2341,21 @@ function paintBoards(
   size: number,
   seed: number,
 ): void {
-  const tones = [KN.light, KN.base, KN.light, KN.hi] as const;
+  const RAMP: readonly Rgb[] = [KN.mid, KN.base, KN.light, KN.hi];
   for (let y = y0; y < y0 + h; y++) {
     for (let x = x0; x < x0 + w; x++) {
       const across = along === "x" ? y - y0 : x - x0;
       const run = along === "x" ? x - x0 : y - y0;
       const board = Math.floor(across / size);
       const at = across % size;
-      let c: Rgb = tones[Math.floor(hash(board, 0, seed) * tones.length)] ?? KN.base;
+      // The whole surface lit from the upper left (each board a little its
+      // own shade on top of that), in solid steps with a dithered seam.
+      const v =
+        0.78 -
+        ((x - x0) / Math.max(1, w)) * 0.38 -
+        ((y - y0) / Math.max(1, h)) * 0.22 +
+        (hash(board, 0, seed) - 0.5) * 0.2;
+      let c: Rgb = rampStep(RAMP, v, x, y);
       if (at === size - 1)
         c = KN.dark; // the seam
       else if (at === 0 && board > 0)
@@ -2050,11 +2371,22 @@ function paintBoards(
 }
 
 /** Darken a band under an overhang, `rows` deep, fading out. */
+/**
+ * The shade an eave throws on the wall under it, as GG Royale lays shadow: a
+ * solid band right under the edge (the umbra), then a dithered fall-off, not
+ * a smooth fade.
+ */
 function eaveShadow(b: PixelBuffer, x0: number, y0: number, w: number, rows: number): void {
-  for (let k = 0; k < rows; k++) {
-    const a = 0.5 * (1 - k / rows);
+  const solid = Math.max(1, Math.ceil(rows * 0.5));
+  for (let k = 0; k < rows + 2; k++) {
     for (let x = x0; x < x0 + w; x++) {
-      if (b.opaque(x, y0 + k)) b.set(x, y0 + k, mix(b.rgb(x, y0 + k), LINE, a));
+      const y = y0 + k;
+      if (!b.opaque(x, y)) continue;
+      if (k < solid) b.set(x, y, mix(b.rgb(x, y), LINE, 0.46));
+      else {
+        const t = (k - solid + 1) / (rows + 2 - solid + 1);
+        if (t < 1 - bayer4(x, y)) b.set(x, y, mix(b.rgb(x, y), LINE, 0.3));
+      }
     }
   }
 }
@@ -2124,11 +2456,16 @@ export function annexTop(seed: number): Sprite {
           const shifted = x + k * 13;
           const j = Math.floor(shifted / boardLen);
           const local = slant % course;
-          let c: Rgb = hash(j, k, seed + 3) < 0.5 ? KN.light : KN.hi;
+          // The roof's own light: lit high on the left, shaded low on the right.
+          const v =
+            0.78 - (x / w) * 0.34 - (y / roofH) * 0.26 + (hash(j, k, seed + 3) - 0.5) * 0.12;
+          let c: Rgb = rampStep([KN.grain, KN.mid, KN.base, KN.light, KN.hi], v, x, y);
           if (local === 0)
             c = KN.grain; // the seam under the course above
+          else if (local === 1)
+            c = KN.mid; // the shadow the course above casts on this one
           else if (local === course - 1)
-            c = KN.base; // the course's shaded underside
+            c = mix(c, KN.hi, 0.35); // the course's lit lower lip
           else if (noise(x, y * 2, 6, seed + 5) > 0.78) c = KN.base; // grain
           if (shifted % boardLen === 0 && local > 0 && local < course - 1) c = KN.mid; // board ends
           if (x === inset) c = KN.hi;
@@ -2276,8 +2613,11 @@ export function stoveTop(): Sprite {
       // The top slab.
       for (let y = 1; y < lip; y++) {
         for (let x = 1; x < w - 1; x++) {
-          let c: Rgb = noise(x, y, 4, 73) > 0.55 ? CLAY.hi : CLAY.light;
-          if (hash(x, y, 74) < 0.03) c = CLAY.base;
+          // Smoothed clay, lit from the upper left; a few soot smudges and
+          // trowel marks, darker round the pot holes.
+          const v = 0.82 - (x / w) * 0.32 - (y / lip) * 0.2 + (noise(x, y, 6, 73) - 0.5) * 0.12;
+          let c: Rgb = rampStep([CLAY.base, CLAY.light, CLAY.hi], v, x, y);
+          if (hash(x >> 1, y, 74) < 0.04) c = CLAY.base;
           if (y === 1 || y === lip - 2) c = CLAY.hi;
           if (y === lip - 1) c = CLAY.base;
           if (x === w - 2) c = CLAY.base;
@@ -2522,17 +2862,7 @@ export function fireTop(flames = true): Sprite {
         const sy = cy + Math.sin(a) * 6.2;
         const rx = 2.8 + hash(i, 2, 9) * 1.4;
         const ry = 2 + hash(i, 3, 9) * 0.9;
-        for (let y = Math.floor(sy - ry - 1); y <= sy + ry + 1; y++) {
-          for (let x = Math.floor(sx - rx - 1); x <= sx + rx + 1; x++) {
-            const nx = (x + 0.5 - sx) / rx;
-            const ny = (y + 0.5 - sy) / ry;
-            if (Math.abs(nx) ** 2.2 + Math.abs(ny) ** 2.2 > 1) continue;
-            const lit = -nx * 0.5 - ny * 0.8;
-            const tone: Rgb =
-              lit > 0.35 ? STONE.hi : lit > -0.25 ? STONE.light : ny > 0.5 ? STONE.mid : STONE.base;
-            b.set(x, y, stoneAt(x, y, 90 + i, tone));
-          }
-        }
+        roundStone(b, sx, sy, rx, ry, 90 + i);
         // Soot on the stones facing the fire.
         b.set(
           Math.round(sx - Math.cos(a) * rx * 0.6),

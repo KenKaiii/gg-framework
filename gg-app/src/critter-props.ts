@@ -2,6 +2,13 @@
 // format as critter-sprites.ts: `.` is transparent, any other character is a
 // key into PROP_PALETTE. Drawn facing right; mirrored in CSS when the critter
 // faces left. Colours are art, not theme roles, so they stay literal here.
+//
+// Like the critters, the grids are material maps: at render time each prop
+// gets an outline round it and is lit by critter-shade.ts (form shading from
+// the top left, hue-shifted ramps, outlines coloured from what they wrap), so
+// a book in a critter's paws is shaded the same way as the paws.
+
+import { renderColorGrid, shadeGrid, type Material } from "./critter-shade";
 
 const PROP_PALETTE: Readonly<Record<string, string>> = {
   O: "#1b1c24", // outline
@@ -123,6 +130,9 @@ const PROP_GRIDS: Readonly<Record<PropName, PropGrid>> = {
   },
 };
 
+/** Cells of outline round each rendered prop (renderProp): place it this much out. */
+export const PROP_PAD = 1;
+
 /** A rendered prop: size in sprite cells and data-URL frames. */
 export interface PropArt {
   readonly w: number;
@@ -131,27 +141,60 @@ export interface PropArt {
   readonly f1: string | null;
 }
 
-/** One grid as an SVG data URL (same approach as renderCritterFrame). */
-function renderGrid(rows: readonly string[]): string {
-  const w = rows[0]?.length ?? 0;
-  const rects: string[] = [];
-  rows.forEach((row, y) => {
-    let x = 0;
-    while (x < row.length) {
-      const ch = row[x];
-      let end = x + 1;
-      while (end < row.length && row[end] === ch) end++;
-      const color = ch === undefined || ch === "." ? undefined : PROP_PALETTE[ch];
-      if (color) {
-        rects.push(`<rect x="${x}" y="${y}" width="${end - x}" height="1" fill="${color}"/>`);
-      }
-      x = end;
+/** How each key takes the light; the screens, glows and hand-placed shades stay as drawn. */
+const PROP_MATERIALS: Readonly<Record<string, Material>> = {
+  W: "cloth",
+  B: "cloth",
+  H: "cloth",
+  G: "metal",
+  M: "gel",
+  C: "glass",
+  P: "glass",
+  Y: "glow",
+  L: "flat",
+  b: "flat",
+  g: "flat",
+  c: "flat",
+  p: "flat",
+  y: "flat",
+  K: "flat",
+  N: "flat",
+  m: "flat",
+  R: "flat",
+  w: "flat",
+};
+
+/** The grid with an outline ("O") one cell round everything drawn, so it reads against fur. */
+function outlined(rows: readonly string[]): string[] {
+  const w = (rows[0]?.length ?? 0) + 2;
+  const h = rows.length + 2;
+  const at = (x: number, y: number): string => rows[y - 1]?.[x - 1] ?? ".";
+  const out: string[] = [];
+  for (let y = 0; y < h; y++) {
+    let row = "";
+    for (let x = 0; x < w; x++) {
+      const k = at(x, y);
+      if (k !== ".") row += k;
+      else
+        row += [at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1)].some((n) => n !== ".")
+          ? "O"
+          : ".";
     }
-  });
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${rows.length}" ` +
-    `shape-rendering="crispEdges">${rects.join("")}</svg>`;
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    out.push(row);
+  }
+  return out;
+}
+
+/** One grid, outlined and lit, as an SVG data URL (same approach as renderCritterFrame). */
+function renderGrid(rows: readonly string[], seed: number): string {
+  const grid = outlined(rows);
+  return renderColorGrid(
+    shadeGrid({ rows: grid, palette: PROP_PALETTE, materials: PROP_MATERIALS, seed }),
+    {
+      width: grid[0]?.length ?? 0,
+      height: grid.length,
+    },
+  );
 }
 
 /** A prop's raw pixel rows and palette, for callers that draw to a canvas. */
@@ -167,10 +210,12 @@ export function propGrid(name: PropName): {
 /** Render a prop's frames. Pure; callers cache the result. */
 export function renderProp(name: PropName): PropArt {
   const grid = PROP_GRIDS[name];
+  const seed = [...name].reduce((n, ch) => n * 31 + ch.charCodeAt(0), 7);
+  // Two cells bigger each way than the grid: the outline round it.
   return {
-    w: grid.f0[0]?.length ?? 0,
-    h: grid.f0.length,
-    f0: renderGrid(grid.f0),
-    f1: grid.f1 ? renderGrid(grid.f1) : null,
+    w: (grid.f0[0]?.length ?? 0) + 2,
+    h: grid.f0.length + 2,
+    f0: renderGrid(grid.f0, seed),
+    f1: grid.f1 ? renderGrid(grid.f1, seed) : null,
   };
 }

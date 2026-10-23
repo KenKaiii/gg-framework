@@ -1,8 +1,22 @@
 # Sector Gates
 
+## Contents
+- 1. Health and wellness
+- 2. Legal, financial, and professional advice
+- 3. Money movement and crypto
+- 4. Gambling, contests, and game monetisation
+- 5. Children, education, vulnerable users
+- 6. Content, platforms, UGC
+- 7. Decisions about people
+- 8. Other gated verticals
+- 9. Data sourcing legality
+- RED FLAG PHRASE TABLE
+- How to deliver a gate finding
+
+
 Domains where **building the thing is the problem**, not the privacy policy. Evaluate these *before* any other checklist: if the product cannot lawfully exist as described, nothing downstream matters.
 
-Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 (see `provenance.md`). Markers: **[V]** verified · **[S]** re-verify · **[U]** genuinely unresolved.
+Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 and 22 Oct 2026 (see `provenance.md`). Markers: **[V]** verified · **[S]** re-verify · **[U]** genuinely unresolved.
 
 Each entry gives the trigger, the **safe subset** a small dev can ship, and the **red line** that means stop.
 

@@ -7,7 +7,7 @@
 import { CRITTERS, frameRows } from "./critter-sprites";
 import { GLYPHS as GLYPHS_3X5 } from "./goal-world-font";
 import { paintGround, scatterDetails, type MapGrid } from "./goal-map-ground";
-import { E, PixelBuffer, darken, hash, type Rgb } from "./goal-map-pixels";
+import { E, PixelBuffer, darken, hash, mix, noise, type Rgb } from "./goal-map-pixels";
 import type { Sprite } from "./goal-map-props";
 
 export interface PlacedProp {
@@ -188,12 +188,55 @@ function castShadow(mask: Float32Array, width: number, height: number, p: Placed
   }
 }
 
-/** Darken the ground under every cast shadow, in one flat tone per strength. */
+/** A 4×4 ordered (Bayer) dither threshold, 0–1. */
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
+function bayer(x: number, y: number): number {
+  return ((BAYER[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16;
+}
+
+/**
+ * Darken the ground under every cast shadow, the way GG Royale lays shadow:
+ * a core of one flat tone (the umbra), its last pixel a step darker where it
+ * meets the light (a crisp contact edge), and a two-pixel penumbra round it
+ * that thins out through an ordered dither rather than a blur.
+ */
 function applyShadows(buf: PixelBuffer, mask: Float32Array, ink: Rgb): void {
-  for (let y = 0; y < buf.height; y++) {
-    for (let x = 0; x < buf.width; x++) {
-      const a = mask[y * buf.width + x] ?? 0;
-      if (a > 0) buf.set(x, y, darken(buf.rgb(x, y), Math.min(0.6, a * 1.1), ink));
+  const W = buf.width;
+  const H = buf.height;
+  const at = (x: number, y: number): number =>
+    x < 0 || y < 0 || x >= W || y >= H ? 0 : (mask[y * W + x] ?? 0);
+  // How far each unshadowed pixel is from shadow (1 or 2), and its strength.
+  const near = (x: number, y: number): [number, number] => {
+    let best = 0;
+    let dist = 3;
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        const a = at(x + dx, y + dy);
+        if (a <= 0) continue;
+        const d = Math.max(Math.abs(dx), Math.abs(dy));
+        if (d < dist || (d === dist && a > best)) {
+          dist = d;
+          best = a;
+        }
+      }
+    }
+    return [dist, best];
+  };
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const a = at(x, y);
+      if (a > 0) {
+        // The umbra, a touch darker on its lit (top and left) edge.
+        const edge = at(x, y - 1) <= 0 || at(x - 1, y) <= 0;
+        const k = Math.min(0.62, a * 1.1 + (edge ? 0.06 : 0));
+        buf.set(x, y, darken(buf.rgb(x, y), k, ink));
+        continue;
+      }
+      const [d, s] = near(x, y);
+      if (d > 2 || s <= 0) continue;
+      // The penumbra: dithered out over two pixels.
+      const cover = d === 1 ? 0.55 : 0.22;
+      if (bayer(x, y) < cover) buf.set(x, y, darken(buf.rgb(x, y), Math.min(0.5, s * 0.75), ink));
     }
   }
 }
@@ -305,6 +348,37 @@ function recolor(buf: PixelBuffer, map: ReadonlyMap<Rgb, Rgb>): void {
 }
 
 /**
+ * Give the open ground form, the way GG Royale lays a floor: over the flat
+ * colours, broad soft swells of light and hollows of shade (as gentle rises
+ * and dips in a lawn or a yard catch the sun from the upper left), each a
+ * single step of the ground's own colour reached through an ordered dither,
+ * so the map reads as land with relief rather than a flat sheet. Only grass
+ * and earth take it; floors, decks, water and walls keep their own light.
+ */
+function shapeGround(buf: PixelBuffer, code: readonly string[], seed: number): void {
+  const SUN = 0xfff4cc;
+  const SHADE = 0x24140a;
+  const W = buf.width;
+  for (let y = 0; y < buf.height; y++) {
+    for (let x = 0; x < W; x++) {
+      const k = code[y * W + x];
+      if (k !== "." && k !== "S" && k !== "d" && k !== "s") continue;
+      // A rolling height field; its slope toward the sun is the light.
+      const h = (px: number, py: number): number =>
+        noise(px, py, 38, seed + 61) + noise(px, py, 15, seed + 62) * 0.35;
+      const slope = (h(x - 3, y - 3) - h(x + 3, y + 3)) * 6;
+      const t = bayer(x, y);
+      const c = buf.rgb(x, y);
+      // Solid swells with a thin dithered rim, never a speckled field.
+      const lit = slope > 0.5 || (slope > 0.38 && (slope - 0.38) / 0.12 > t);
+      const dark = slope < -0.5 || (slope < -0.38 && (-0.38 - slope) / 0.12 > t);
+      if (lit) buf.set(x, y, mix(c, SUN, 0.09));
+      else if (dark) buf.set(x, y, mix(c, SHADE, 0.12));
+    }
+  }
+}
+
+/**
  * Paint a whole map scene. Props in `leaveOut` aren't drawn, though their
  * shadows are (the goal farm paints a copy without its trees and bushes, to
  * redraw one swaying in place without its still self showing behind it).
@@ -317,6 +391,7 @@ export function composeMap(
   scatterDetails(ground, scene.seed);
   const buf = ground.buf;
   if (scene.groundColors) recolor(buf, scene.groundColors);
+  shapeGround(buf, ground.code, scene.seed);
 
   const ink = scene.ink ?? E.ink;
   for (const p of scene.props) if (p.flat) drawProp(buf, p);

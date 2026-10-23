@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { KEN_LINES, WORKER_LINES, pickWorkLine } from "./goal-farm-lines";
-import { GLYPHS, textWidth, wrapText } from "./goal-world-font";
+import { M5X7 } from "./pixel-font-m5x7";
+import { BUBBLE_TEXT_MAX } from "./goal-farm-render";
+import { textWidth, wrapText } from "./pixel-text";
 import { WORK_KINDS } from "./goal-world-agents";
 import { createFarmWorld, stepFarm, syncFarm } from "./goal-farm-sim";
 import { buildFarm } from "./goal-farm-map";
@@ -24,12 +26,12 @@ describe("what the farm's critters say", () => {
   it("says only what the pixel font can draw, in at most two short lines", () => {
     for (const line of all) {
       for (const ch of line) {
-        if (ch !== " ") expect(GLYPHS[ch.toUpperCase()], `${line} (${ch})`).toBeDefined();
+        if (ch !== " ") expect(M5X7[ch], `${line} (${ch})`).toBeDefined();
       }
-      const lines = wrapText(line, 76);
+      const lines = wrapText(line, BUBBLE_TEXT_MAX);
       expect(lines.length, line).toBeLessThanOrEqual(2);
       expect(lines.join(" "), line).toBe(line);
-      for (const l of lines) expect(textWidth(l), line).toBeLessThanOrEqual(76);
+      for (const l of lines) expect(textWidth(l), line).toBeLessThanOrEqual(BUBBLE_TEXT_MAX);
     }
   });
 

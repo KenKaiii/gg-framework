@@ -10,17 +10,9 @@ These files are independent analyses of public websites. They are not official b
 
 ## Deterministic extraction
 
-Run:
+The counts were produced on 13 July 2026 by a standard-library Node analyzer that verified each source's SHA-256, parsed headings and frontmatter, and wrote deterministic observations. The raw corpus, the analyzer and its generated data are not bundled (removed 22 October 2026 to keep the package small); the derived counts below and in `references/observed-patterns.md` are the retained record. Re-deriving a count means reading the sources at the pinned upstream commit.
 
-```bash
-node scripts/analyze-corpus.mjs
-```
-
-The analyzer uses only Node.js standard-library APIs. It checks every source against the SHA-256 in `data/corpus-manifest.json`, parses Markdown headings and optional YAML-like frontmatter, updates parser status in the manifest, and writes `data/observations.json` deterministically.
-
-After any skill-package change, run `node scripts/validate-skill.mjs`. The validator checks frontmatter, progressive-disclosure structure, linked files, corpus hashes and totals, generated evidence consistency, fixture divergence, source boundaries, binding craft rules, and the production-contract release gate.
-
-At extraction version 1, **64/74 documents** use frontmatter plus prose and **10/74** use numbered prose without frontmatter. All **74/74** are parsed; unsupported files would be retained with an explicit reason rather than silently dropped. Counts come from `data/observations.json`, source commit `664b3e…`, extraction version 1.
+At extraction version 1, **64/74 documents** use frontmatter plus prose and **10/74** use numbered prose without frontmatter. All **74/74** are parsed; unsupported files would be retained with an explicit reason rather than silently dropped. Counts come from extraction version 1 at source commit `664b3e…`.
 
 ## What the parser measures
 
@@ -52,7 +44,7 @@ The manifest preserves the ten upstream README groupings, including the two-file
 - documentation/developer tools;
 - mobile/native (**0 documents**).
 
-This mapping is analytical judgment, recorded explicitly in `scripts/analyze-corpus.mjs`; it is not supplied by upstream. A source appears in exactly one analytical archetype so denominators remain auditable.
+This mapping is analytical judgment, recorded in the (unbundled) analyzer; it is not supplied by upstream. A source appears in exactly one analytical archetype so denominators remain auditable.
 
 ## Known limitations
 

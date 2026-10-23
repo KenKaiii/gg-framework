@@ -5,7 +5,7 @@ description: Use when a bug resists the obvious fix or is flaky. Do NOT use when
 
 # Root-Cause
 
-Build a feedback loop, then let evidence kill hypotheses. Each phase has a gate. Keep a hypothesis log in your replies: `H# | prediction | experiment | result | verdict`.
+Build a feedback loop, then let evidence kill hypotheses. Each phase has a gate. Keep a hypothesis log as working notes (`H# | prediction | experiment | result | verdict`); show it in the final answer when the ask was "why", otherwise summarise it in one line.
 
 ## Phase 1 — Build the loop
 
@@ -41,6 +41,6 @@ Hard rules: three failed fixes → the hypothesis list is wrong; return to Phase
 ## Scaling: one agent or several
 
 - Reproduction, shrinking, and experiments: main thread only — one variable at a time.
-- Wide codebase (several packages could own the bug): in Phase 3 you may send one read-only `owl` per hypothesis in a single `spawn_agent` call; brief = symptom, repro command, paths, "return file:line evidence for/against; do not run or edit". Treat replies as `CODE` leads to re-open, not verdicts.
+- Wide codebase (several packages could own the bug): in Phase 3 you may send one read-only repo helper per hypothesis; brief = symptom, repro command, paths, "return file:line evidence for/against; do not run or edit". Treat replies as `CODE` leads to re-open, not verdicts. Helper types, brief contents and merge rules come with the skill loader.
 
 Sources (accessed 3 October 2026): https://git-scm.com/docs/git-bisect; https://www.debuggingbook.org/html/DeltaDebugger.html

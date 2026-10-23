@@ -59,10 +59,26 @@ export function createSkillTool(
           `If you delegate part of this work to a child agent, it cannot see these instructions: put the skill root (${skill.root}), the exact reference files it must read, and the output you need in its brief.`,
         );
       }
+      parts.push(DELEGATION_RULES, HOST_RULES);
       return parts.join("\n");
     },
   };
 }
+
+// One copy of the fan-out mechanics every bundled skill used to repeat in its
+// own Scaling section (~1-1.5 KB each). Skills keep only *when* to fan out and
+// how to slice; helpers are named by role because the agent roster differs by
+// mode (Code: owl/bee/auditor/skeptic; Goals: scout/builder/checker), and a
+// skill that names a missing agent makes the spawn fail.
+export const DELEGATION_RULES =
+  "Delegation, only where the skill's Scaling section allows it: use agent types your spawn_agent tool actually lists, matched by role: read-only repo helper (owl or scout), web researcher (researcher), security auditor and verifier (auditor and skeptic where listed, else a read-only helper), editor on strictly disjoint files (bee or builder). " +
+  "Start parallel children in ONE spawn_agent call, at most 6. Each brief: the skill root, the reference files to read, its paths, the ledger rows it owns, the evidence labels, and output as findings with file:line plus explicit `checked` and `not checked` lists; children stay read-only unless the skill says otherwise. " +
+  'A child that fails, times out, or skips a row leaves that row "not checked", never clean. Re-open every file:line a child reports before relying on it. Edits, database commands, and benchmarks stay serialized in the main thread.';
+
+// Skills are written for a user at the keyboard; some hosts (a running goal)
+// say not to ask now, and forbid branches or commits a skill may suggest.
+export const HOST_RULES =
+  "If your host instructions say not to ask the user right now (e.g. a running goal), use the default or recommended answer the skill gives for each question and report what you chose. Host rules on branches, commits and installs override the skill.";
 
 function generateSkillDescription(skills: Skill[], limits: ContextLimits = CONTEXT_LIMITS): string {
   if (skills.length === 0) {
@@ -81,7 +97,12 @@ function generateSkillDescription(skills: Skill[], limits: ContextLimits = CONTE
     // found the reverse on Sonnet 5.5: a description that opened with when NOT
     // to load meant 0 skill loads in 132 runs, including security work. So it
     // leads with the trigger and keeps the rename exclusion explicit.
-    `Specialised method checklists. When the work is in a skill's scope below, load it before writing code. Match the work, not the topic: routine fixes and renames need none. Respect exclusions; never reload one.\n\n` +
+    // "before writing code" alone: Haiku 5.5 skipped every skill on "Is our
+    // users' data safe?" (a review, not code) in 9 of 10 bench runs.
+    `Specialised method checklists. When the work is in a skill's scope below, load it before writing code, and before giving a review or a safety verdict. Match the work, not the topic: routine fixes and renames need none. Respect exclusions; never reload one.\n` +
+    // Previously only in the no-skill-tool fallback prompt, so normal sessions
+    // never saw it and launch checks picked one skill and skipped the rest.
+    `Launch-readiness asks ("ready to ship?"): cover every in-scope skill (durable, bulletproof, compliance-guard, lean, evidence-led-ui), one report-only child each in one spawn_agent call where delegation is available.\n\n` +
     `${lines.join("\n")}${overflow}`
   );
 }

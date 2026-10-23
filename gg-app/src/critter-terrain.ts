@@ -11,7 +11,8 @@
 // anything else is a palette key. Colours are art, not theme roles. All the
 // timing lives in App.css; the constants below mirror it.
 
-import { hashKey, renderPixelGrid } from "./critter-sprites";
+import { INK_COLOR, mixColor, renderColorGrid, shadeGrid, type ShadedGrid } from "./critter-shade";
+import { hashKey } from "./critter-sprites";
 
 /** Rows in the ground strip: open air on top, then ground. */
 export const TERRAIN_ROWS = 20;
@@ -170,9 +171,9 @@ const MEADOW: Biome = {
     prop([".MMM.", "MwMwM", "..w.."], 26),
     prop(FLOWER_K, 38, 0, "sway"),
     prop([".gGg.", "gGGGg", "gGgGd", "gdgdd"], 47),
-    prop([".rR.", "rRRq"], 60),
-    prop([".Y.", "YoY", ".Y.", ".g.", "gg.", ".g."], 72, 0, "sway"),
-    prop(FLOWER_K, 76, 0, "sway"),
+    prop([".rR.", "rRRq"], 57),
+    prop(FLOWER_K, 63, 0, "sway"),
+    prop([".Y.", "YoY", ".Y.", ".g.", "gg.", ".g."], 68, 0, "sway"),
     prop(["g.g", "gdg"], 95, 0, "sway"),
     prop(FLOWER_Y, 104, 0, "sway"),
     prop([".MM.", "MMwM", ".w..", "MMw."], 113),
@@ -268,7 +269,7 @@ const BEACH: Biome = {
         "....k....",
         "...kkk...",
       ],
-      70,
+      75,
       0,
       "sway",
     ),
@@ -421,7 +422,7 @@ const SPACE: Biome = {
     prop([".z..", ".zZ.", "zzZz", "zZZZ"], 50, 0, "glow"),
     prop(DIM, 57, 8, "twinkle"),
     prop(CRATER, 63, -2),
-    prop(STAR, 72, 6, "twinkle"),
+    prop(STAR, 7, 6, "twinkle"),
     prop(["....a", "....m", ".mmmm", "mMmMm", "w.w.w"], 79),
     prop(DIM, 88, 10, "twinkle"),
     prop(["..c.", ".cgd", "cgdd"], 95),
@@ -556,6 +557,157 @@ export function groundRows(biome: Biome): string[] {
   return rows;
 }
 
+/** A 4×4 ordered (Bayer) dither threshold, 0–1. */
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
+const bayer = (x: number, y: number): number => ((BAYER[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16;
+
+/**
+ * The ground strip as finished pixels, drawn the way GG Royale draws ground:
+ * - the surface layer has a lit top edge and hangs over the soil below in a
+ *   ragged lip (2–3 pixel clumps, as grass or packed sand overhangs), with a
+ *   band of shadow under it;
+ * - each soil layer meets the next in a dithered seam instead of a hard line,
+ *   with its speckles kept for grain;
+ * - a few stones sit in the deep soil, outlined and lit from the top left;
+ * - the soil darkens towards the bottom, so the strip has depth;
+ * - tufts above the surface stand 1–2 pixels tall with a lit tip.
+ * Seeded per biome: the same strip every time, and it tiles (every feature
+ * wraps round the strip's ends).
+ */
+export function paintGround(biome: Biome): ShadedGrid {
+  const keys = groundRows(biome);
+  const color = (k: string | undefined): string | null =>
+    k === undefined || k === "." ? null : (biome.palette[k] ?? null);
+  const random = seeded(hashKey(`ground:${biome.id}`));
+  const W = GROUND_COLS;
+  const out: (string | null)[][] = keys.map((row) => [...row].map((k) => color(k)));
+  const layerColor = (i: number): string | null => {
+    const layer = biome.layers[i];
+    return layer ? color(layer.base) : null;
+  };
+  const top = TERRAIN_FLOOR_ROW;
+  const set = (x: number, y: number, c: string | null): void => {
+    const row = out[y];
+    if (row && c) row[((x % W) + W) % W] = c;
+  };
+  const get = (x: number, y: number): string | null => out[y]?.[((x % W) + W) % W] ?? null;
+
+  // Dithered seams: the top quarter of each layer's first row takes the
+  // colour of the layer above through a Bayer pattern.
+  for (let i = 1; i < biome.layers.length; i++) {
+    const above = layerColor(i - 1);
+    const here = layerColor(i);
+    if (!above || !here || above === here) continue;
+    const y = top + i;
+    for (let x = 0; x < W; x++) if (bayer(x, y) < 0.32) set(x, y, above);
+  }
+
+  // Depth: the last rows darken.
+  const rowsDown = TERRAIN_ROWS - top;
+  for (let y = top; y < TERRAIN_ROWS; y++) {
+    const t = (y - top) / Math.max(1, rowsDown - 1);
+    if (t < 0.55) continue;
+    for (let x = 0; x < W; x++) {
+      const c = get(x, y);
+      if (c) set(x, y, mixColor(c, INK_COLOR, (t - 0.55) * 0.55));
+    }
+  }
+
+  // Stones in the deep soil.
+  const deep = top + Math.max(3, Math.round(rowsDown * 0.45));
+  const stone = biome.palette.P ?? biome.palette.r ?? layerColor(0) ?? "#8a8494";
+  for (let n = 0; n < 4; n++) {
+    const sx = Math.floor(random() * W);
+    const sy = deep + Math.floor(random() * Math.max(1, TERRAIN_ROWS - deep - 2));
+    const wide = random() < 0.5 ? 3 : 2;
+    const soil = get(sx, sy) ?? stone;
+    const line = mixColor(soil, INK_COLOR, 0.45);
+    for (let dx = -1; dx <= wide; dx++) {
+      set(sx + dx, sy - 1, dx >= 0 && dx < wide ? line : null);
+      set(sx + dx, sy + 2, dx >= 0 && dx < wide ? line : null);
+    }
+    for (let dy = 0; dy < 2; dy++) {
+      set(sx - 1, sy + dy, line);
+      set(sx + wide, sy + dy, line);
+      for (let dx = 0; dx < wide; dx++) {
+        const lit = dx === 0 && dy === 0;
+        const shade = dx === wide - 1 && dy === 1;
+        set(
+          sx + dx,
+          sy + dy,
+          lit ? mixColor(stone, "#ffffff", 0.3) : shade ? mixColor(stone, INK_COLOR, 0.3) : stone,
+        );
+      }
+    }
+  }
+
+  // The surface: a lit top edge, and a ragged lip hanging into the soil
+  // with a band of shadow under it.
+  const surface = layerColor(0);
+  const second = layerColor(1);
+  if (surface) {
+    const lit = mixColor(surface, "#fff6d8", 0.28);
+    for (let x = 0; x < W; x++) set(x, top, lit);
+    let x = 0;
+    while (x < W) {
+      const run = 2 + Math.floor(random() * 3);
+      const hang = random() < 0.5 ? 1 : random() < 0.7 ? 2 : 0;
+      for (let i = 0; i < run && x + i < W; i++) {
+        const cx = x + i;
+        for (let d = 1; d <= hang; d++)
+          set(cx, top + d, d === hang ? mixColor(surface, INK_COLOR, 0.18) : surface);
+        // Shadow under the lip.
+        const under = top + hang + 1;
+        const soil = get(cx, under);
+        if (soil && soil !== surface) set(cx, under, mixColor(soil, INK_COLOR, 0.32));
+        if (second && hang === 0) {
+          const s2 = get(cx, top + 1);
+          if (s2) set(cx, top + 1, mixColor(s2, INK_COLOR, 0.2));
+        }
+      }
+      x += run;
+    }
+  }
+
+  // Tufts: each 1–2 px tall, the tip lit.
+  const tuftRow = top - 1;
+  for (let x = 0; x < W; x++) {
+    const c = out[tuftRow]?.[x];
+    if (!c) continue;
+    const tall = random() < 0.4;
+    if (tall) {
+      set(x, tuftRow - 1, mixColor(c, "#fff6d8", 0.3));
+    } else {
+      set(x, tuftRow, mixColor(c, "#fff6d8", 0.15));
+    }
+  }
+  return out;
+}
+
+/** Each stamp's keys, outlined: a ring of "O" round everything drawn, one cell out. */
+function outlined(stamp: readonly string[]): string[] {
+  const w = stampWidth(stamp) + 2;
+  const h = stamp.length + 2;
+  const at = (x: number, y: number): string => stamp[y - 1]?.[x - 1] ?? ".";
+  const rows: string[] = [];
+  for (let y = 0; y < h; y++) {
+    let row = "";
+    for (let x = 0; x < w; x++) {
+      const k = at(x, y);
+      if (k !== ".") {
+        // A stamp's own "O" (a colour in some palettes) becomes "Ø", so the
+        // shader doesn't take it for an outline.
+        row += k === "O" ? "Ø" : k;
+        continue;
+      }
+      const near = [at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1)].some((n) => n !== ".");
+      row += near ? "O" : ".";
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
 /** Where a prop lives: sunk into the ground (moves with it), standing on it
  *  (sprouts from the surface), or floating in the sky (drifts in). */
 export type PropLayer = "sunk" | "ground" | "sky";
@@ -601,43 +753,50 @@ const stampWidth = (stamp: readonly string[]): number =>
 
 /** Everything a biome draws, rendered once (repeated stamps share one image). */
 export function renderTerrain(biome: Biome): TerrainArt {
+  // Props and travelers are drawn like the critters: outlined, and lit by
+  // critter-shade.ts. The outline adds a cell all round, so each sits a cell
+  // left and a cell lower than its stamp (its outline's foot on the ground).
+  const palette: Palette = { ...biome.palette, O: INK_COLOR, Ø: biome.palette.O ?? INK_COLOR };
+  const materials = Object.fromEntries(
+    Object.keys(palette)
+      .filter((k) => k !== "O")
+      .map((k) => [k, "fur" as const]),
+  );
   const urls = new Map<string, string>();
   const image = (stamp: readonly string[]): string => {
     const key = stamp.join("/");
     const cached = urls.get(key);
     if (cached) return cached;
-    const url = renderPixelGrid(stamp, biome.palette, {
-      width: stampWidth(stamp),
-      height: stamp.length,
-    });
+    const rows = outlined(stamp);
+    const url = renderColorGrid(
+      shadeGrid({ rows, palette, materials, seed: hashKey(`${biome.id}:${key}`) }),
+      { width: stampWidth(rows), height: rows.length },
+    );
     urls.set(key, url);
     return url;
   };
   const floor = TERRAIN_ROWS - TERRAIN_FLOOR_ROW;
   return {
-    ground: renderPixelGrid(groundRows(biome), biome.palette, {
-      width: GROUND_COLS,
-      height: TERRAIN_ROWS,
-    }),
+    ground: renderColorGrid(paintGround(biome), { width: GROUND_COLS, height: TERRAIN_ROWS }),
     props: [...biome.decor]
       .sort((a, b) => a.x - b.x)
       .map((p) => ({
         url: image(p.stamp),
-        x: p.x,
-        width: stampWidth(p.stamp),
-        height: p.stamp.length,
-        bottom: floor + p.lift,
+        x: p.x - 1,
+        width: stampWidth(p.stamp) + 2,
+        height: p.stamp.length + 2,
+        bottom: floor + p.lift - 1,
         layer: propLayer(p.lift),
         motion: p.motion,
       })),
     travelers: (biome.travelers ?? []).map((t) => ({
       kind: t.kind,
       url: image(t.stamp),
-      width: stampWidth(t.stamp),
-      height: t.stamp.length,
+      width: stampWidth(t.stamp) + 2,
+      height: t.stamp.length + 2,
       period: t.period,
       delay: t.delay,
-      bottom: floor + t.lift,
+      bottom: floor + t.lift - 1,
     })),
   };
 }

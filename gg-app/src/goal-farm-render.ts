@@ -5,7 +5,7 @@
 // dragonfly, and the critters walking about.
 
 import { frameRows, type CritterDef } from "./critter-sprites";
-import { FARM_CRITTER_H, FARM_CRITTER_W, farmCritterLook } from "./goal-farm-critters";
+import { FARM_CRITTER_H, FARM_CRITTER_W, farmCritterLook, litFarmGrid } from "./goal-farm-critters";
 import { drawChochin, drawFarmWork } from "./goal-farm-held";
 import { composeMap, type PlacedProp } from "./goal-map-compose";
 import { PixelBuffer, hash } from "./goal-map-pixels";
@@ -31,10 +31,10 @@ import {
   type WeatherLook,
 } from "./goal-farm-sky";
 import {
-  CAT_COLORS,
+  CAT_LIT,
   CAT_STEP_A,
-  CAT_STEP_B,
-  HEN_COLORS,
+  HEN_LIT,
+  lightAnimal,
   HEN_PECK,
   HEN_STAND,
   HEN_WALK,
@@ -46,7 +46,7 @@ import {
   SHIBA_ASLEEP,
   SHIBA_COLORS,
 } from "./goal-map-topdown";
-import { drawText, GLYPH_H, textWidth, wrapText } from "./goal-world-font";
+import { drawText, LINE_PITCH, textWidth, wrapText } from "./pixel-text";
 import { SURFACE, type Farm } from "./goal-farm-map";
 import { ARRIVE_MS, LEAVE_MS, type Actor, type FarmWorld } from "./goal-farm-sim";
 import { tripPose, type Spot } from "./goal-farm-travel";
@@ -299,9 +299,17 @@ function silhouette(def: CritterDef): Record<string, string> {
 
 const SUMMON_PETALS = ["#ffffff", "#f8c8d4", "#fde58a", "#bfe08a"] as const;
 
+/** A 4×4 ordered (Bayer) dither threshold for a pixel, 0–1. */
+const BAYER_R = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
+function bayerAt(x: number, y: number): number {
+  return ((BAYER_R[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16;
+}
+
 /**
  * A critter being summoned in at `p` (0 → 1), or out (the same, run
- * backwards): a soft column of sunlight pours down where it will stand, a
+ * backwards). Pixel art doesn't fade through transparency, so everything
+ * here thins out by dropping pixels through an ordered dither instead:
+ * a column of sunlight pours down where it will stand, a
  * ring of petals spreads on the ground, its white silhouette grows out of
  * the light with a little squash and stretch, then warms into its colours,
  * and a few petals scatter. Quiet, warm and small, to suit the farm.
@@ -322,21 +330,28 @@ function drawSummon(
   if (light > 0) {
     const tall = 40;
     const reach = Math.round(tall * pour);
-    ctx.fillStyle = "#fff4d8";
-    ctx.globalAlpha = 0.16 * light;
-    ctx.fillRect(x - 7, y - tall, 14, reach);
-    ctx.globalAlpha = 0.32 * light;
-    ctx.fillRect(x - 4, y - tall, 8, reach);
-    ctx.fillStyle = "#ffffff";
-    ctx.globalAlpha = 0.45 * light;
-    ctx.fillRect(x - 1, y - tall, 2, reach);
+    // Three bands, densest in the middle: each a dithered screen of light
+    // that thins (loses pixels) as the light fades, thinner toward the top.
+    for (let yy = 0; yy < reach; yy++) {
+      const py = Math.round(y - tall + yy);
+      const up = 0.55 + 0.45 * (yy / tall);
+      for (let dx = -7; dx < 7; dx++) {
+        const px = Math.round(x + dx);
+        const band = Math.abs(dx + 0.5);
+        const cover = (band < 1.5 ? 0.8 : band < 4.5 ? 0.45 : 0.2) * light * up;
+        if (bayerAt(px, py) >= cover) continue;
+        ctx.fillStyle = band < 1.5 ? "#ffffff" : "#fff4d8";
+        ctx.fillRect(px, py, 1, 1);
+      }
+    }
   }
   // The ring of petals spreading out on the ground.
   if (p > 0.15 && p < 0.8) {
     const k = (p - 0.15) / 0.65;
     const rx = 3 + k * 11;
-    ctx.globalAlpha = 1 - k;
+    // As it spreads, petals drop out one by one rather than fading.
     for (let i = 0; i < 12; i++) {
+      if (((i * 7) % 12) / 12 < k) continue;
       const a = (i / 12) * Math.PI * 2;
       ctx.fillStyle = SUMMON_PETALS[i % SUMMON_PETALS.length] ?? "#ffffff";
       ctx.fillRect(Math.round(x + Math.cos(a) * rx), Math.round(y + Math.sin(a) * rx * 0.4), 1, 1);
@@ -345,24 +360,32 @@ function drawSummon(
   ctx.globalAlpha = 1;
   // Its shadow widening under it.
   const sh = Math.max(0, Math.min(1, (p - 0.25) / 0.35));
-  if (sh > 0) shadow(ctx, x, y + 1, Math.max(1, Math.round(5 * sh)), 1, 0.3 * sh);
+  if (sh > 0) shadow(ctx, x, y + 1, Math.max(1, Math.round(7 * sh)), 1, 0.3 * sh);
   // The body: in colour once it has a shape, the white silhouette over it fading as it lands.
   if (p > 0.22) {
     const { sx, sy, dy } = summonShape(p);
     const feet = y + dy;
-    drawGridScaled(ctx, rows, def.palette, x, feet, sx, sy, facing === -1);
+    const lit = litFarmGrid(def, rows);
+    drawGridScaled(ctx, lit.rows, lit.palette, x, feet, sx, sy, facing === -1);
     const white = p < 0.62 ? 1 : Math.max(0, 1 - (p - 0.62) / 0.3);
     if (white > 0) {
-      ctx.globalAlpha = white;
-      drawGridScaled(ctx, rows, silhouette(def), x, feet, sx, sy, facing === -1);
-      ctx.globalAlpha = 1;
+      // The white silhouette breaks up pixel by pixel as the colours come through.
+      const thinned =
+        white >= 1
+          ? rows
+          : rows.map((row, ry) =>
+              [...row]
+                .map((k2, rx2) => (k2 !== "." && bayerAt(rx2, ry) < white ? k2 : "."))
+                .join(""),
+            );
+      drawGridScaled(ctx, thinned, silhouette(def), x, feet, sx, sy, facing === -1);
     }
   }
   // A few petals scattering as it lands.
   if (p > 0.5 && p < 0.95) {
     const k = (p - 0.5) / 0.45;
-    ctx.globalAlpha = 1 - k;
     for (let i = 0; i < 6; i++) {
+      if (((i * 5) % 6) / 6 < k) continue;
       const a = -Math.PI * (0.15 + (i / 5) * 0.7);
       const r = 4 + k * 10;
       const sway = Math.sin(now / 200 + i) * 1;
@@ -378,25 +401,56 @@ function drawSummon(
   }
 }
 
-/** The widest a speech bubble's text runs before it wraps onto a second line (font cells). */
-const BUBBLE_TEXT_MAX = 76;
+/** The widest a speech bubble's text runs before it wraps onto a second line (pixels). */
+export const BUBBLE_TEXT_MAX = 104;
 
+/** GG Royale's speech bubble: blue-white paper, ink outline, a shaded lip. */
+const BUBBLE = { ink: "#1e0c1f", paper: "#cedbf9", shade: "#a9b8e4", text: "#1e0c1f" };
+
+/**
+ * A speech bubble in GG Royale's style, its tail pointing down at (cx, top):
+ * m5x7 text on blue-white paper with a 1px ink outline and rounded corners,
+ * a 2px shade along the bottom and a thick ink lip under it, and a tail that
+ * runs out of the shade through the lip.
+ */
 function drawBubble(ctx: Ctx, text: string, cx: number, top: number, mapWidth: number): void {
   const lines = wrapText(text, BUBBLE_TEXT_MAX);
-  const w = Math.max(...lines.map(textWidth)) + 4;
-  const h = lines.length * (GLYPH_H + 1) - 1 + 4;
-  const x = Math.min(mapWidth - w - 1, Math.max(1, Math.round(cx - w / 2)));
-  const y = Math.round(top - h - 3);
-  ctx.fillStyle = "#2a1406";
-  ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
-  ctx.fillStyle = "#fff8ec";
-  ctx.fillRect(x, y, w, h);
-  ctx.fillRect(Math.round(cx) - 1, y + h, 3, 1);
-  ctx.fillRect(Math.round(cx), y + h + 1, 1, 1);
+  const w = Math.max(...lines.map(textWidth)) + 8;
+  const h = lines.length * LINE_PITCH - 1 + 5;
+  const x = Math.min(mapWidth - w - 2, Math.max(2, Math.round(cx - w / 2)));
+  const y = Math.round(top - h - 6);
+  // The tail stays under the bubble even where the bubble is pushed off-centre.
+  const tx = Math.min(x + w - 5, Math.max(x + 4, Math.round(cx)));
+  const { ink, paper, shade } = BUBBLE;
+  // Outline and lip: ink one pixel round the paper and three under it, with
+  // the outer corners cut.
+  ctx.fillStyle = ink;
+  ctx.fillRect(x, y - 1, w, h + 4);
+  ctx.fillRect(x - 1, y, w + 2, h + 2);
+  // Paper, with a 2px shade along its bottom, and its corners rounded off.
+  ctx.fillStyle = paper;
+  ctx.fillRect(x, y, w, h - 2);
+  ctx.fillStyle = shade;
+  ctx.fillRect(x, y + h - 2, w, 2);
+  ctx.fillStyle = ink;
+  ctx.fillRect(x, y, 1, 1);
+  ctx.fillRect(x + w - 1, y, 1, 1);
+  ctx.fillRect(x, y + h - 1, 1, 1);
+  ctx.fillRect(x + w - 1, y + h - 1, 1, 1);
+  // Tail: the shade runs down through the lip, ringed in ink, to a point.
+  const yb = y + h;
+  ctx.fillRect(tx - 3, yb, 7, 1);
+  ctx.fillRect(tx - 2, yb + 1, 5, 2);
+  ctx.fillRect(tx - 1, yb + 3, 3, 1);
+  ctx.fillRect(tx, yb + 4, 1, 1);
+  ctx.fillStyle = shade;
+  ctx.fillRect(tx - 2, yb, 5, 1);
+  ctx.fillRect(tx - 1, yb + 1, 3, 1);
+  ctx.fillRect(tx, yb + 2, 1, 2);
   lines.forEach((line, i) => {
     // Each line centred in the bubble.
-    const lx = x + 2 + Math.floor((w - 4 - textWidth(line)) / 2);
-    drawText(ctx, line, lx, y + 2 + i * (GLYPH_H + 1), "#2a1406");
+    const lx = x + Math.floor((w - textWidth(line)) / 2);
+    drawText(ctx, line, lx, y + 3 + i * LINE_PITCH, BUBBLE.text);
   });
 }
 
@@ -443,9 +497,10 @@ function drawKenMark(
   const fill = (x: number, y: number): boolean => inMarkBubble(x, y) || inMarkTail(x, y);
   for (let y = 0; y < MARK_H; y++) {
     for (let x = 0; x < MARK_W; x++) {
-      if (fill(x, y)) ctx.fillStyle = "#fff8ec";
+      if (fill(x, y))
+        ctx.fillStyle = fill(x, y + 1) || !inMarkBubble(x, y) ? BUBBLE.paper : BUBBLE.shade;
       else if (fill(x - 1, y) || fill(x + 1, y) || fill(x, y - 1) || fill(x, y + 1)) {
-        ctx.fillStyle = "#2a1406";
+        ctx.fillStyle = BUBBLE.ink;
       } else continue;
       ctx.fillRect(x0 + x, y0 + y, 1, 1);
     }
@@ -453,12 +508,12 @@ function drawKenMark(
   if (mark === "thinking") {
     const lit = still ? -1 : Math.floor(now / 420) % 3;
     for (let i = 0; i < 3; i++) {
-      ctx.fillStyle = i === lit || still ? "#2a1406" : "#c9b79a";
+      ctx.fillStyle = i === lit || still ? BUBBLE.ink : BUBBLE.shade;
       ctx.fillRect(x0 + 4 + i * 4, y0 + 6, 2, 2);
     }
     return;
   }
-  ctx.fillStyle = "#2a1406";
+  ctx.fillStyle = BUBBLE.ink;
   for (const [gx, gy, rows] of MARK_GLYPHS[mark]) {
     rows.forEach((row, dy) => {
       for (let dx = 0; dx < row.length; dx++) {
@@ -584,7 +639,7 @@ function actorItems(
         }
         return;
       }
-      shadow(ctx, px, py + 1, 5, 1, 0.3 * alpha);
+      shadow(ctx, px, py + 1, 7, 1, 0.3 * alpha);
       // A poke: a hop, a spin (turning to face the other way and back), or a wave (a little bob).
       const hop =
         poked?.action === "jump"
@@ -598,7 +653,8 @@ function actorItems(
       ctx.globalAlpha = alpha;
       // GG Goals stands apart: a gold ring on the ground round its feet.
       if (actor.coordinator) drawKenRing(ctx, px, py, now);
-      drawGrid(ctx, rows, def.palette, left, top, turned === -1);
+      const lit = litFarmGrid(def, rows);
+      drawGrid(ctx, lit.rows, lit.palette, left, top, turned === -1);
       // Lamplight falls on it as a figure standing at its feet (see LitBody).
       bodies.push({ x0: left, y0: top, rows, flip: turned === -1, feet: py });
       if (poked?.action === "jump" && pk < 0.6) {
@@ -832,8 +888,9 @@ function ambientItems(
         const y = Math.round(ky - KOI.length / 2);
         drawGrid(ctx, KOI, KOI_HEX, x, y, right);
         if (flick) {
-          ctx.fillStyle = KOI_HEX.o;
-          ctx.fillRect(right ? x : x + (KOI[0]?.length ?? 1) - 1, y + 2, 1, 3);
+          // The tail fin sweeps a pixel out to one side.
+          ctx.fillStyle = KOI_HEX.f;
+          ctx.fillRect(right ? x : x + (KOI[0]?.length ?? 1) - 1, y + 3, 1, 3);
         }
       },
     });
@@ -960,8 +1017,6 @@ function hexPalette(colors: Readonly<Record<string, number>>): Record<string, st
   );
 }
 
-const CAT_HEX = hexPalette(CAT_COLORS);
-const HEN_HEX = hexPalette(HEN_COLORS);
 const SHADOW_HEX: Record<string, string> = Object.fromEntries(
   [...new Set([...CAT_STEP_A, ...HEN_STAND, ...HEN_WALK, ...HEN_PECK].join(""))].map((k) => [
     k,
@@ -969,44 +1024,93 @@ const SHADOW_HEX: Record<string, string> = Object.fromEntries(
   ]),
 );
 
-const BUTTERFLY_WINGS: ReadonlyArray<readonly [string, string]> = [
-  ["#fbf6e8", "#d8cfb8"],
-  ["#f6d24a", "#c8a02a"],
-  ["#f29a4a", "#c8682a"],
-  ["#bfe0f0", "#8ab4cc"],
+/** Butterfly wings: lit, base and the dark vein edge, per kind. */
+const BUTTERFLY_WINGS: ReadonlyArray<readonly [string, string, string]> = [
+  ["#ffffff", "#ece2c8", "#a8987a"],
+  ["#fbe27a", "#e8b838", "#9a6a1a"],
+  ["#ffc07a", "#e8823a", "#9a4a1a"],
+  ["#e2f2fa", "#a8cce0", "#5a7a94"],
 ];
+const INSECT_INK = "#2a1406";
 
-/** A butterfly from above: two pairs of wings on a dark body, open or closed. */
+/**
+ * A butterfly from above, drawn like GG Royale's small props: an ink body,
+ * forewings and hindwings each lit on their upper edge with a darker vein
+ * line at the trailing edge, open or folded up.
+ */
 function drawButterfly(ctx: Ctx, x: number, y: number, kind: number, open: number): void {
-  const [wing, edge] = BUTTERFLY_WINGS[kind % BUTTERFLY_WINGS.length] ?? ["#fbf6e8", "#d8cfb8"];
+  const [lit, wing, vein] = BUTTERFLY_WINGS[kind % BUTTERFLY_WINGS.length] ?? [
+    "#ffffff",
+    "#ece2c8",
+    "#a8987a",
+  ];
   const px = Math.round(x);
   const py = Math.round(y);
-  ctx.fillStyle = "#2a1406";
-  ctx.fillRect(px, py - 1, 1, 3);
+  const dot = (dx: number, dy: number, c: string): void => {
+    ctx.fillStyle = c;
+    ctx.fillRect(px + dx, py + dy, 1, 1);
+  };
   if (open) {
-    ctx.fillStyle = wing;
-    ctx.fillRect(px - 2, py - 2, 2, 2);
-    ctx.fillRect(px + 1, py - 2, 2, 2);
-    ctx.fillStyle = edge;
-    ctx.fillRect(px - 1, py, 1, 2);
-    ctx.fillRect(px + 1, py, 1, 2);
+    // Forewings (bigger, up), hindwings (smaller, down), each side.
+    for (const side of [-1, 1] as const) {
+      const fx = side < 0 ? -3 : 1;
+      dot(fx, -2, lit);
+      dot(fx + 1, -2, lit);
+      dot(fx, -1, wing);
+      dot(fx + 1, -1, wing);
+      dot(side < 0 ? fx : fx + 1, 0, vein);
+      dot(side < 0 ? -2 : 1, 1, wing);
+      dot(side < 0 ? -2 : 1, 2, vein);
+    }
   } else {
-    ctx.fillStyle = wing;
-    ctx.fillRect(px - 1, py - 2, 1, 2);
-    ctx.fillRect(px + 1, py - 2, 1, 2);
+    // Folded up over the back: a single lit blade each side.
+    dot(-1, -3, lit);
+    dot(-1, -2, wing);
+    dot(1, -3, lit);
+    dot(1, -2, wing);
+    dot(-1, -1, vein);
+    dot(1, -1, vein);
   }
+  // The body, over the wings.
+  ctx.fillStyle = INSECT_INK;
+  ctx.fillRect(px, py - 2, 1, 4);
 }
 
+/**
+ * A dragonfly from above: a long blue body, lit along its back, darker at the
+ * tail tip, with a big-eyed head; two pairs of glassy wings, lit along their
+ * leading edge, beating.
+ */
 function drawDragonfly(ctx: Ctx, x: number, y: number, flap: number): void {
-  ctx.fillStyle = "#3a8ad8";
-  ctx.fillRect(Math.round(x) - 3, Math.round(y), 7, 1);
+  const px = Math.round(x);
+  const py = Math.round(y);
+  // Wings, under the body.
+  const glass = flap ? "#e8f4ff" : "#cfe2f4";
+  const edge = flap ? "#ffffff" : "#e8f4ff";
+  for (const [wx, wy] of [
+    [-2, -2 + flap],
+    [1, -2 + flap],
+    [-2, 1 - flap],
+    [1, 1 - flap],
+  ] as const) {
+    ctx.fillStyle = glass;
+    ctx.fillRect(px + wx, py + wy, 2, 2);
+    ctx.fillStyle = edge;
+    ctx.fillRect(px + wx, py + wy, 2, 1);
+  }
+  // The body: lit back, shaded underside, a darker tail tip.
   ctx.fillStyle = "#2a5aa8";
-  ctx.fillRect(Math.round(x) + 4, Math.round(y), 1, 1);
-  ctx.fillStyle = flap ? "#d8ecff" : "#bcd6f0";
-  ctx.fillRect(Math.round(x) - 2, Math.round(y) - 2 + flap, 2, 2);
-  ctx.fillRect(Math.round(x) + 1, Math.round(y) - 2 + flap, 2, 2);
-  ctx.fillRect(Math.round(x) - 2, Math.round(y) + 1 - flap, 2, 2);
-  ctx.fillRect(Math.round(x) + 1, Math.round(y) + 1 - flap, 2, 2);
+  ctx.fillRect(px - 3, py + 1, 7, 1);
+  ctx.fillStyle = "#4a9ae8";
+  ctx.fillRect(px - 3, py, 7, 1);
+  ctx.fillStyle = "#1a3a78";
+  ctx.fillRect(px + 3, py, 2, 1);
+  // The head and its two big eyes.
+  ctx.fillStyle = "#1a3a78";
+  ctx.fillRect(px - 5, py, 2, 1);
+  ctx.fillStyle = "#7ac8ff";
+  ctx.fillRect(px - 5, py - 1, 1, 1);
+  ctx.fillRect(px - 5, py + 1, 1, 1);
 }
 
 /**
@@ -1284,16 +1388,20 @@ function relightBoxes(
 }
 
 /** A wooden bucket from the high camera: banded staves, the water inside showing when full. */
-const WELL_BUCKET = [".ooooo.", "oWwwwWo", "oHHHHHo", "oBbBbBo", "oBbBbBo", ".ooooo."];
+/** The well's bucket: water (or its dark inside) at the top, an iron hoop lit on its left, staves lit left to shaded right. */
+const WELL_BUCKET = [".ooooo.", "oWWwwwo", "oHHhhho", "oLBbBDo", "oLBbBDo", ".ooooo."];
 
 function drawWellBucket(ctx: Ctx, x: number, y: number, full: boolean): void {
   const colors: Record<string, string> = {
     o: "#2a1406",
     W: full ? WATER_HEX.pale : "#5a3a1e",
     w: full ? WATER_HEX.light : "#4a2e16",
-    H: "#6a6a72",
+    H: "#9a9aa4",
+    h: "#5a5a64",
+    L: "#c8904c",
     B: "#a0703a",
     b: "#8a5a2c",
+    D: "#64381a",
   };
   WELL_BUCKET.forEach((row, r) => {
     for (let c = 0; c < row.length; c++) {
@@ -1348,7 +1456,7 @@ function drawKenCrown(ctx: Ctx, px: number, top: number, now: number): void {
 /** A soft gold ring on the ground round GG Goals' feet, breathing gently. */
 function drawKenRing(ctx: Ctx, px: number, py: number, now: number): void {
   const pulse = 0.5 + 0.5 * Math.sin(now / 520);
-  const rx = 8;
+  const rx = 10;
   const ry = 3;
   ctx.fillStyle = "#ffd23a";
   for (let i = 0; i < 28; i++) {
@@ -1361,17 +1469,34 @@ function drawKenRing(ctx: Ctx, px: number, py: number, now: number): void {
   ctx.globalAlpha = 1;
 }
 
-/** A small name label under a critter's feet: pixel text on a dark plate. */
+/**
+ * A name tag under a critter's feet, drawn as GG Royale's name plate (the
+ * same tab as on Ken's signs): a gold plate with an ink outline cut at the
+ * corners, a pale top lip, a shaded bottom lip and a drop of ink under it,
+ * the name in m5x7 ink capitals with a pale line under each stroke.
+ */
 function drawNameplate(ctx: Ctx, text: string, px: number, y: number): void {
-  const w = textWidth(text) + 4;
+  const w = textWidth(text) + 8;
+  const h = 7 + 6;
   const x = Math.round(px - w / 2);
-  ctx.globalAlpha = 0.82;
-  ctx.fillStyle = "#1a1208";
-  ctx.fillRect(x, y, w, GLYPH_H + 3);
+  const INK = "#1e0c1f";
+  // The drop: a row of ink under the plate.
+  ctx.globalAlpha = 0.7;
+  ctx.fillStyle = INK;
+  ctx.fillRect(x + 1, y + h, w - 2, 1);
   ctx.globalAlpha = 1;
-  ctx.fillStyle = "#d99a1a";
-  ctx.fillRect(x, y + GLYPH_H + 2, w, 1);
-  drawText(ctx, text, x + 2, y + 1, "#ffe48a");
+  // The outline, its corners cut.
+  ctx.fillRect(x + 1, y, w - 2, h);
+  ctx.fillRect(x, y + 1, w, h - 2);
+  // The plate and its lips.
+  ctx.fillStyle = "#e9af54";
+  ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.fillStyle = "#f8d488";
+  ctx.fillRect(x + 1, y + 1, w - 2, 1);
+  ctx.fillStyle = "#c47a3a";
+  ctx.fillRect(x + 1, y + h - 3, w - 2, 2);
+  drawText(ctx, text, x + 4, y + 4, "#f8d488");
+  drawText(ctx, text, x + 4, y + 3, INK);
 }
 
 /** How long a relit campfire's flames take to grow back up from the embers. */
@@ -1562,12 +1687,19 @@ function drawRain(
       const k = 1 - t / FALL;
       const hx = Math.round(x + k * 5);
       const hy = Math.round(y - k * RAIN_DROP);
-      ctx.globalAlpha = 0.45 * k;
-      ctx.fillStyle = "#b8cce0";
-      ctx.fillRect(hx + 1, hy - 3, 1, 2);
-      ctx.globalAlpha = 0.85 * k;
+      // A raindrop as a slanted streak: a bright head catching the light, a
+      // cooler body, and a thin tail broken through a dither, falling down
+      // to the left like the wind that drives it.
+      ctx.globalAlpha = 0.9 * k;
       ctx.fillStyle = "#eef6ff";
-      ctx.fillRect(hx, hy - 1, 1, 2);
+      ctx.fillRect(hx, hy, 1, 1);
+      ctx.fillStyle = "#b8cce0";
+      ctx.fillRect(hx, hy - 1, 1, 1);
+      ctx.fillRect(hx + 1, hy - 2, 1, 1);
+      if ((i + Math.floor(s * 30)) % 2 === 0) {
+        ctx.fillStyle = "#8aa4c0";
+        ctx.fillRect(hx + 1, hy - 3, 1, 1);
+      }
       continue;
     }
     if (phase !== "landed") continue;
@@ -1576,25 +1708,38 @@ function drawRain(
     const code = surface[y * width + x] ?? SURFACE.ground;
     if (code === SURFACE.side) continue;
     const ring = code === SURFACE.water || atmo.puddles?.[y * width + x] === 1;
-    ctx.globalAlpha = 0.75 * (1 - u) * k;
-    ctx.fillStyle = ring ? "#e8f2f8" : "#eef6ff";
+    ctx.globalAlpha = 0.85 * k;
     if (ring) {
-      // A ring spreading on the water.
+      // A ring spreading on the water: its far edge lit by the sky, its near
+      // edge a darker trough; it thins out (pixels drop away) as it widens.
       const r = 1 + u * 3;
-      for (let k = 0; k < 8; k++) {
-        const a = (k / 8) * Math.PI * 2;
+      const steps = 10;
+      for (let j = 0; j < steps; j++) {
+        if (((j * 7) % 10) / 10 < u * 0.7) continue;
+        const a = (j / steps) * Math.PI * 2;
+        const far = Math.sin(a) < 0;
+        ctx.fillStyle = far ? "#f0f8ff" : "#6a8aa0";
         ctx.fillRect(Math.round(x + Math.cos(a) * r), Math.round(y + Math.sin(a) * r * 0.5), 1, 1);
       }
     } else if (u < 0.5) {
-      // A tiny crown of spray.
+      // A crown of spray: droplets thrown up and out, lit on top.
+      ctx.fillStyle = "#eef6ff";
       ctx.fillRect(x - 1, y - 1, 1, 1);
       ctx.fillRect(x + 1, y - 1, 1, 1);
       ctx.fillRect(x, y - 2, 1, 1);
+      ctx.fillStyle = "#8aa4c0";
+      ctx.fillRect(x, y, 1, 1);
     } else {
+      // The droplets landing out to each side, and a wet dot where it hit.
+      ctx.fillStyle = "#b8cce0";
       ctx.fillRect(x - 2, y, 1, 1);
       ctx.fillRect(x + 2, y, 1, 1);
+      ctx.fillStyle = "#5a6a7a";
+      ctx.globalAlpha = 0.4 * k;
+      ctx.fillRect(x, y, 1, 1);
     }
   }
+  ctx.globalAlpha = 1;
 }
 
 /**
@@ -1614,7 +1759,15 @@ function drawSnow(ctx: Ctx, farm: Farm, s: number, count: number, phase: Phase, 
       const k = 1 - t / FALL;
       const sway = Math.sin(s * 1.6 + i) * 2.5 * k;
       ctx.globalAlpha = 0.9 * k;
-      ctx.fillRect(Math.round(x + sway + k * 3), Math.round(y - k * SNOW_DROP), big, big);
+      const fx = Math.round(x + sway + k * 3);
+      const fy = Math.round(y - k * SNOW_DROP);
+      ctx.fillRect(fx, fy, big, big);
+      if (big === 2) {
+        // A bigger flake: lit white, a cool shade on its lower right.
+        ctx.fillStyle = "#cfe0f0";
+        ctx.fillRect(fx + 1, fy + 1, 1, 1);
+        ctx.fillStyle = "#ffffff";
+      }
       continue;
     }
     if (phase !== "landed") continue;
@@ -1756,7 +1909,26 @@ function roamersNow(
 const SHIBA_AWAKE: readonly string[] = SHIBA_ASLEEP.map((row, y) =>
   y === 5 ? `${row.slice(0, 3)}we${row.slice(5)}` : row,
 );
-const SHIBA_HEX = hexPalette(SHIBA_COLORS);
+/** The shiba's keys folded for lighting (critter-shade.ts): one orange coat, one white. */
+const SHIBA_MERGE = { k: "O", l: "o", h: "o", s: "o", c: "w", e: "K", n: "N" } as const;
+const SHIBA_MATERIALS = { o: "fur", w: "fur", K: "flat", N: "flat" } as const;
+const SHIBA_LIT = {
+  asleep: lightAnimal(SHIBA_ASLEEP, SHIBA_COLORS, SHIBA_MERGE, SHIBA_MATERIALS, 53),
+  awake: lightAnimal(SHIBA_AWAKE, SHIBA_COLORS, SHIBA_MERGE, SHIBA_MATERIALS, 53),
+} as const;
+
+/** Every key of a palette in the shadow's colour (lit grids have their own keys). */
+const SHADOWS = new WeakMap<Readonly<Record<string, string>>, Record<string, string>>();
+function shadowOf(palette: Readonly<Record<string, string>>): Record<string, string> {
+  const have = SHADOWS.get(palette);
+  if (have) return have;
+  const made = {
+    ...SHADOW_HEX,
+    ...Object.fromEntries(Object.keys(palette).map((k) => [k, "#2a1406"])),
+  };
+  SHADOWS.set(palette, made);
+  return made;
+}
 
 /** How an animal is drawn this frame: its grid, where, which way, squashed or flipped over. */
 interface AnimalLook {
@@ -1786,31 +1958,31 @@ const visit = (p: number, ramp: number): number =>
 function henLook(pose: RoamPose, r: Reaction | null, now: number, seed: number): AnimalLook {
   const step = Math.floor(now / 140) % 2;
   const pecking = !pose.moving && Math.floor(now / 380 + seed) % 4 === 0;
-  let rows = pecking ? HEN_PECK : pose.moving && step ? HEN_WALK : HEN_STAND;
+  let lit = pecking ? HEN_LIT.peck : pose.moving && step ? HEN_LIT.walk : HEN_LIT.stand;
   let dy = 0;
   let sy = 1;
   let say: string | null = null;
   if (r) {
     const p = progress(r, now);
     if (r.action === "startle") {
-      rows = HEN_STAND;
+      lit = HEN_LIT.stand;
       dy = -7 * arc(Math.min(1, p / 0.45));
       if (p < 0.7) say = "Bawk!";
     } else if (r.action === "flap") {
-      rows = Math.floor(now / 70) % 2 ? HEN_WALK : HEN_STAND;
+      lit = Math.floor(now / 70) % 2 ? HEN_LIT.walk : HEN_LIT.stand;
       dy = -Math.abs(Math.sin(p * Math.PI * 3)) * 3;
     } else if (r.action === "peck") {
-      rows = Math.floor(now / 90) % 2 ? HEN_PECK : HEN_STAND;
+      lit = Math.floor(now / 90) % 2 ? HEN_LIT.peck : HEN_LIT.stand;
     } else if (r.action === "egg") {
       // A squat, then up again: the egg is left where she sat (see drawPlay).
       const sit = now - r.start < 1100;
       sy = sit ? 0.82 : 1;
-      rows = HEN_STAND;
+      lit = HEN_LIT.stand;
     }
   }
   return {
-    rows,
-    palette: HEN_HEX,
+    rows: lit.rows,
+    palette: lit.palette,
     x: pose.x,
     y: pose.y + dy,
     flip: pose.facing === 1,
@@ -1823,7 +1995,7 @@ function henLook(pose: RoamPose, r: Reaction | null, now: number, seed: number):
 
 function catLook(pose: RoamPose, r: Reaction | null, now: number): AnimalLook {
   const step = pose.moving ? Math.floor(now / 160) % 2 : 0;
-  let rows = step ? CAT_STEP_B : CAT_STEP_A;
+  let lit = step ? CAT_LIT.b : CAT_LIT.a;
   let sx = 1;
   let sy = 1;
   let dx = 0;
@@ -1832,7 +2004,7 @@ function catLook(pose: RoamPose, r: Reaction | null, now: number): AnimalLook {
   let say: string | null = null;
   if (r) {
     const p = progress(r, now);
-    rows = CAT_STEP_A;
+    lit = CAT_LIT.a;
     if (r.action === "hiss") {
       // Its back arched high, fur on end.
       const k = visit(p, 0.15);
@@ -1854,8 +2026,8 @@ function catLook(pose: RoamPose, r: Reaction | null, now: number): AnimalLook {
     }
   }
   return {
-    rows,
-    palette: CAT_HEX,
+    rows: lit.rows,
+    palette: lit.palette,
     x: pose.x + dx,
     y: pose.y + dy,
     flip: pose.facing === -1,
@@ -1867,17 +2039,17 @@ function catLook(pose: RoamPose, r: Reaction | null, now: number): AnimalLook {
 }
 
 function shibaLook(at: Spot, r: Reaction | null, now: number): AnimalLook {
-  let rows: readonly string[] = SHIBA_ASLEEP;
+  let lit: { rows: string[]; palette: Record<string, string> } = SHIBA_LIT.asleep;
   let dy = 0;
   let dx = 0;
   let upside = false;
   let say: string | null = null;
   if (r) {
     const p = progress(r, now);
-    rows = SHIBA_AWAKE;
+    lit = SHIBA_LIT.awake;
     if (r.action === "yawn") {
       if (p > 0.15 && p < 0.65) say = "Yawn~";
-      if (p > 0.85) rows = SHIBA_ASLEEP;
+      if (p > 0.85) lit = SHIBA_LIT.asleep;
     } else if (r.action === "wag") {
       dx = Math.floor(now / 80) % 2 ? 1 : 0;
     } else if (r.action === "roll") {
@@ -1888,8 +2060,8 @@ function shibaLook(at: Spot, r: Reaction | null, now: number): AnimalLook {
     }
   }
   return {
-    rows,
-    palette: SHIBA_HEX,
+    rows: lit.rows,
+    palette: lit.palette,
     x: at.x + dx,
     y: at.y + dy,
     flip: false,
@@ -1904,7 +2076,7 @@ function shibaLook(at: Spot, r: Reaction | null, now: number): AnimalLook {
 function drawLook(ctx: Ctx, look: AnimalLook, ground: number): void {
   const rows = look.upside ? [...look.rows].reverse() : look.rows;
   ctx.globalAlpha = 0.26;
-  drawGridScaled(ctx, rows, SHADOW_HEX, look.x - 1, ground + 4, look.sx, 1, look.flip);
+  drawGridScaled(ctx, rows, shadowOf(look.palette), look.x - 1, ground + 4, look.sx, 1, look.flip);
   ctx.globalAlpha = 1;
   drawGridScaled(ctx, rows, look.palette, look.x, look.y + 2, look.sx, look.sy, look.flip);
 }
@@ -2367,38 +2539,62 @@ function puffAt(ctx: Ctx, x: number, y: number, p: number, color: string, seed: 
 
 /** A small bird from above, wings up or down. */
 function drawBird(ctx: Ctx, x: number, y: number, flap: number): void {
+  // A sparrow from above: a brown body lit along its back, a pale breast,
+  // wings beating up and down with darker tips, an orange beak.
   const px = Math.round(x);
   const py = Math.round(y);
-  ctx.fillStyle = "#3a2a1e";
+  ctx.fillStyle = "#2a1a12";
+  ctx.fillRect(px - 1, py - 1, 4, 3);
+  ctx.fillStyle = "#8a5a34";
   ctx.fillRect(px, py, 2, 1);
-  ctx.fillRect(px - 2, py - 1 + flap, 2, 1);
-  ctx.fillRect(px + 2, py - 1 + flap, 2, 1);
+  ctx.fillStyle = "#c08a58";
+  ctx.fillRect(px, py - 1, 2, 1); // the lit back
+  ctx.fillStyle = "#e8d8c0";
+  ctx.fillRect(px + 1, py + 1, 1, 1);
+  // Wings, beating.
+  const wy = py - 1 + flap;
+  ctx.fillStyle = "#6a4426";
+  ctx.fillRect(px - 3, wy, 2, 1);
+  ctx.fillRect(px + 3, wy, 2, 1);
+  ctx.fillStyle = "#2a1a12";
+  ctx.fillRect(px - 4, wy + (flap ? 0 : -1), 1, 1);
+  ctx.fillRect(px + 5, wy + (flap ? 0 : -1), 1, 1);
   ctx.fillStyle = "#f2a630";
-  ctx.fillRect(px + 2, py, 1, 1);
+  ctx.fillRect(px + 3, py, 1, 1);
 }
 
 /** A tiny pixel heart. */
 function drawHeart(ctx: Ctx, x: number, y: number): void {
+  // A heart like GG Royale's: an ink outline, the red body, a lit lobe on the
+  // left and a deeper red point at the bottom right.
   const px = Math.round(x);
   const py = Math.round(y);
-  ctx.fillStyle = "#e8445a";
-  ctx.fillRect(px - 2, py, 2, 1);
-  ctx.fillRect(px + 1, py, 2, 1);
-  ctx.fillRect(px - 2, py + 1, 5, 1);
-  ctx.fillRect(px - 1, py + 2, 3, 1);
-  ctx.fillRect(px, py + 3, 1, 1);
-  ctx.fillStyle = "#ffb0bc";
-  ctx.fillRect(px - 2, py, 1, 1);
+  const rows = [".oo.oo.", "oRRoRRo", "oRLRRRo", "oRRRRDo", ".oRRDo.", "..oDo..", "...o..."];
+  const pal: Record<string, string> = { o: "#1e0c1f", R: "#e8445a", L: "#ffb0bc", D: "#a8243a" };
+  rows.forEach((row, r) => {
+    for (let c = 0; c < row.length; c++) {
+      const colour = pal[row[c] ?? "."];
+      if (!colour) continue;
+      ctx.fillStyle = colour;
+      ctx.fillRect(px - 3 + c, py - 1 + r, 1, 1);
+    }
+  });
 }
 
 /** A little "z", for snoring. */
 function drawZ(ctx: Ctx, x: number, y: number): void {
+  // A sleepy "z", cream with an ink outline so it reads on grass or dirt.
   const px = Math.round(x);
   const py = Math.round(y);
-  ctx.fillStyle = "#fff8ec";
-  ctx.fillRect(px, py, 3, 1);
-  ctx.fillRect(px + 1, py + 1, 1, 1);
-  ctx.fillRect(px, py + 2, 3, 1);
+  const rows = ["ooooo", "oZZZo", "oooZo", ".oZo.", "oZooo", "oZZZo", "ooooo"];
+  rows.forEach((row, r) => {
+    for (let c = 0; c < row.length; c++) {
+      const k = row[c];
+      if (k === ".") continue;
+      ctx.fillStyle = k === "Z" ? "#fff8ec" : "#1e0c1f";
+      ctx.fillRect(px - 1 + c, py - 2 + r, 1, 1);
+    }
+  });
 }
 
 /**
@@ -3408,12 +3604,29 @@ function drawPiece(ctx: Ctx, d: Debris, x: number, y: number, resting: boolean):
     return;
   }
   if (d.kind === "fruit") {
+    // A little round fruit: an ink outline with its corners cut, the fruit's
+    // colour, a lit cheek on its upper left, a deeper shade on its lower
+    // right, and a stalk on top (a leaf with it, while it's still falling).
+    const lit = d.color === "#f6c83a" ? "#fde58a" : "#ffb0bc";
+    const deep = shadeOf(d.color);
     ctx.fillStyle = "#3a1406";
-    ctx.fillRect(px - 1, py - 2, 4, 4);
+    ctx.fillRect(px - 1, py - 2, 4, 1);
+    ctx.fillRect(px - 2, py - 1, 6, 3);
+    ctx.fillRect(px - 1, py + 2, 4, 1);
     ctx.fillStyle = d.color;
-    ctx.fillRect(px, py - 1, 2, 2);
-    ctx.fillStyle = d.color === "#f6c83a" ? "#fde58a" : "#ffb0bc";
+    ctx.fillRect(px - 1, py - 1, 4, 3);
+    ctx.fillStyle = lit;
+    ctx.fillRect(px - 1, py - 1, 1, 1);
     ctx.fillRect(px, py - 1, 1, 1);
+    ctx.fillStyle = deep;
+    ctx.fillRect(px + 2, py, 1, 2);
+    ctx.fillRect(px + 1, py + 1, 1, 1);
+    ctx.fillStyle = "#5a3a1a";
+    ctx.fillRect(px + 1, py - 3, 1, 1);
+    if (!resting) {
+      ctx.fillStyle = "#6aa03a";
+      ctx.fillRect(px + 2, py - 3, 1, 1);
+    }
     return;
   }
   // Leaves, petals, feathers, shavings: lying flat, a lit pixel and a shaded one.

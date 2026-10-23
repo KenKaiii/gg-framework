@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "bash",
-      "description": "Run a non-interactive bash command (TERM=dumb, pipefail) in the project root. Servers/watchers/REPLs: run_in_background + wake.pattern, then task_output wait_ms; never `&`, nohup or sleep. Leave servers running. Kill by exact PID.",
+      "description": "Run a non-interactive bash command (TERM=dumb, pipefail) in the project root. Servers/watchers/REPLs: run_in_background + wake.pattern, then task_output wait_ms; never `&`, nohup or sleep. Leave servers running. Kill by exact PID, never by name or pattern (pkill, killall, taskkill /IM): you run inside a host process.",
       "schema": {
         "type": "object",
         "properties": {
@@ -46,7 +46,7 @@
           "command"
         ]
       },
-      "hash": "23b49343843555ff1a22ece3ab3796e58a867fb685da2d8226a5101be0d4be27"
+      "hash": "fb1336438cf245042ec08c5d854b3926e13b8e91a0e53aefc26f1af426dee718"
     },
     {
       "name": "checklist",

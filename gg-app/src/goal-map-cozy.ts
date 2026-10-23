@@ -4,6 +4,7 @@
 // the odds and ends that make a farm feel lived in. Same rules as
 // goal-map-props.ts: light from the top left, tinted outlines, pure.
 
+import { BARK_CHERRY, barkTrunk } from "./goal-map-bark";
 import {
   PixelBuffer,
   WARM_INK,
@@ -87,12 +88,14 @@ interface Tones {
   readonly deep: Rgb;
 }
 
+/** Blossom, from a near-white lit edge down to a deep rose in the shade
+ * (wider than the petal colours themselves, so the clumps model). */
 const SAKURA: Tones = {
-  hi: K.sakuraLight,
-  light: mix(K.sakura, K.sakuraLight, 0.5),
+  hi: 0xfff0f4,
+  light: K.sakuraLight,
   base: K.sakura,
-  dark: K.sakuraDark,
-  deep: K.sakuraDeep,
+  dark: mix(K.sakuraDark, 0xb0587a, 0.35),
+  deep: mix(K.sakuraDeep, 0x6a2a4a, 0.3),
 };
 const LEAF: Tones = {
   hi: K.leafLight,
@@ -118,6 +121,15 @@ const AMBER: Tones = {
 
 /** A rounded, bumpy clump of foliage, shaded on its own. */
 function clump(b: PixelBuffer, cx: number, cy: number, r: number, t: Tones, seed: number): void {
+  // The shade this clump throws on whatever it overlaps: a band just below
+  // and right of its rim, where the sun (up and left) can't reach.
+  for (let y = Math.floor(cy - r); y <= cy + r + 3; y++) {
+    for (let x = Math.floor(cx - r); x <= cx + r + 3; x++) {
+      if (!b.opaque(x, y)) continue;
+      if (Math.hypot(x + 0.5 - cx - 1.4, y + 0.5 - cy - 1.6) > r + 0.4) continue;
+      b.set(x, y, t.deep, 0.5);
+    }
+  }
   for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) {
     for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) {
       const dx = x + 0.5 - cx;
@@ -125,10 +137,11 @@ function clump(b: PixelBuffer, cx: number, cy: number, r: number, t: Tones, seed
       const dist = Math.hypot(dx, dy);
       const rim = r + (noise(x, y, 2, seed) - 0.5) * 1.6;
       if (dist > rim) continue;
-      const covered = b.opaque(x, y);
-      let shade = -(dx / r) * 0.55 - (dy / r) * 0.8 + (noise(x, y, 2, seed + 3) - 0.5) * 0.6;
-      if (covered && dy < 0 && dist > rim - 1.4) shade -= 0.9;
-      const c =
+      // Lit from the top left as one dome, in solid steps; the noise only
+      // nudges the steps, so the clump reads as a shape, not a smear.
+      const shade = -(dx / r) * 0.55 - (dy / r) * 0.8 + (noise(x, y, 3, seed + 3) - 0.5) * 0.22;
+      const edge = rim - dist;
+      let c =
         shade > 0.6
           ? t.hi
           : shade > 0.2
@@ -138,11 +151,23 @@ function clump(b: PixelBuffer, cx: number, cy: number, r: number, t: Tones, seed
               : shade > -0.75
                 ? t.dark
                 : t.deep;
+      // A dark lower rim and a lit upper-left one, a pixel each.
+      if (edge < 1 && dy > -r * 0.15) c = t.deep;
+      else if (edge < 1 && dx < r * 0.2 && dy < 0) c = t.hi;
+      // Little cups of blossom or leaf: a lit top over its own shade, in a
+      // loose staggered grid across the lit half.
+      const row = Math.floor(y / 3);
+      const sx = x + (row % 2) * 2;
+      if (shade > -0.25 && edge > 1.2 && hash(Math.floor(sx / 4), row, seed + 7) < 0.45) {
+        if (y % 3 === 0 && sx % 4 > 0 && sx % 4 < 3) c = shade > 0.3 ? t.hi : t.light;
+        else if (y % 3 === 1 && sx % 4 === 3) c = shade > 0.3 ? t.base : t.dark;
+      }
       b.set(x, y, c);
     }
   }
 }
 
+/** A trunk from its left edge `x` and top `y`, `w` wide and `h` tall (see goal-map-bark.ts). */
 function trunk(
   b: PixelBuffer,
   x: number,
@@ -151,17 +176,17 @@ function trunk(
   h: number,
   seed: number,
   lean = 0,
+  cherry = false,
 ): void {
-  for (let yy = 0; yy < h; yy++) {
-    const off = Math.round(lean * (1 - yy / h) * 3);
-    for (let xx = 0; xx < w; xx++) {
-      let c: Rgb = xx === 0 ? K.woodLight : xx >= w - 2 ? K.woodDeep : K.woodDark;
-      if (hash(xx, Math.floor(yy / 3), seed) < 0.18 && xx > 0) c = K.woodDeep;
-      b.set(x + xx + off, y + yy, c);
-    }
-  }
-  b.set(x - 1, y + h - 1, K.woodDark);
-  b.set(x + w, y + h - 1, K.woodDeep);
+  barkTrunk(b, {
+    x: x + w / 2,
+    foot: y + h - 1,
+    top: y,
+    width: w,
+    lean: lean * 3,
+    seed,
+    ...(cherry ? { tones: BARK_CHERRY, lenticels: true } : {}),
+  });
 }
 
 // ── Trees ────────────────────────────────────────────────────
@@ -182,7 +207,7 @@ export function sakuraTree(seed: number, large = true): Sprite {
     Math.round(cx),
     trunkTop + trunkH,
     (b) => {
-      trunk(b, Math.round(cx - 2), trunkTop, 4, trunkH, seed, 0.6);
+      trunk(b, Math.round(cx - 2), trunkTop, large ? 5 : 4, trunkH, seed, 0.6, true);
       const blobs: Array<[number, number, number]> = [
         [0, 0, R * 0.62],
         [-R * 0.5, -R * 0.15, R * 0.5],
@@ -1191,6 +1216,8 @@ export function tallGrass(seed: number, tone: "green" | "gold" = "green"): Sprit
   const light = tone === "gold" ? 0xd8c25a : K.grassLight;
   const base = tone === "gold" ? 0xb39a34 : K.grass;
   const dark = tone === "gold" ? 0x7d6a1e : K.grassDark;
+  // The tips catch the sun: a warm, pale step above the light.
+  const hi = mix(light, 0xfff4cc, 0.38);
   return make(
     16,
     13,
@@ -1206,23 +1233,45 @@ export function tallGrass(seed: number, tone: "green" | "gold" = "green"): Sprit
       const lean = habit === 3 ? (hash(seed, 4, 7) < 0.5 ? -1 : 1) * 0.6 : 0;
       const heads = hash(seed, 5, 7) < 0.3;
       const x0 = 8 - widthOf / 2;
+      // The clump's own shade at its foot, where the blades crowd out the light.
       b.ellipse(8, 11, widthOf / 2 + 0.5, 1.6, dark);
       const blades = Math.max(3, Math.round(widthOf * 0.75) + Math.floor(rnd() * 3));
-      for (let i = 0; i < blades; i++) {
+      // Back blades (the middle ones, tallest) first, so the outer ones cross them.
+      const order = Array.from({ length: blades }, (_, i) => i).sort(
+        (p, q) => Math.abs(p - (blades - 1) / 2) - Math.abs(q - (blades - 1) / 2),
+      );
+      for (const i of order) {
         const bx = x0 + (i / Math.max(1, blades - 1)) * widthOf + (rnd() - 0.5) * 1.5;
         const height = Math.max(2, Math.round(tallest * (0.45 + rnd() * 0.55)));
         const splay = (bx - 8) * 0.22 + lean + (rnd() - 0.5) * 0.6;
+        // A blade leaning toward the sun (left) is lit along its length; one
+        // leaning away stays in its own shade until its tip.
+        const sunward = splay < 0;
         let tipX = 0;
         for (let k = 0; k < height; k++) {
           const t = k / height;
           const x = Math.round(bx + splay * t * 2);
           const y = 11 - k;
-          b.set(x, y, t > 0.7 ? light : t > 0.3 ? base : dark);
+          const c =
+            t > 0.82
+              ? hi
+              : t > 0.55
+                ? sunward
+                  ? light
+                  : base
+                : t > 0.25
+                  ? sunward
+                    ? base
+                    : dark
+                  : dark;
+          b.set(x, y, c);
           tipX = x;
         }
         if (heads && i % 2 === 0 && height > 4) {
-          b.set(tipX, 11 - height, 0xe8d8a0);
-          b.set(tipX, 10 - height, 0xd8c070);
+          // A seed head: a lit grain over a shaded one, nodding over.
+          b.set(tipX, 11 - height, 0xf2e6b4);
+          b.set(tipX + (splay < 0 ? -1 : 1), 11 - height, 0xd8c070);
+          b.set(tipX, 10 - height, 0xb89a48);
         }
       }
     },
@@ -1232,23 +1281,31 @@ export function tallGrass(seed: number, tone: "green" | "gold" = "green"): Sprit
 
 /** A low clump of flowers on leaves. */
 export function flowerClump(seed: number, petal: Rgb): Sprite {
+  // A low clump of leaves (pads lit from the upper left, shade between them)
+  // with a few five-petal flowers on it: each petal lit on the sunny side
+  // and a shade darker on the far one, round a gold centre with a lit pixel.
   return make(
     14,
     10,
     7,
     9,
     (b) => {
-      b.ellipse(7, 7, 5.5, 2.4, K.leafDark);
-      b.ellipse(6, 6.5, 3, 1.6, K.leaf);
+      clump(b, 4.6, 7, 2.8, LEAF, seed);
+      clump(b, 9.4, 7.2, 2.8, LEAF, seed + 1);
+      clump(b, 7, 6, 2.6, LEAF, seed + 2);
       const rnd = stream(seed);
-      for (let i = 0; i < 4; i++) {
-        const x = Math.round(2 + rnd() * 9);
-        const y = Math.round(2 + rnd() * 4);
-        b.set(x, y - 1, petal);
-        b.set(x - 1, y, petal);
+      const lit = mix(petal, 0xffffff, 0.35);
+      const shade = mix(petal, WARM_INK, 0.22);
+      for (let i = 0; i < 3; i++) {
+        const x = Math.round(3 + rnd() * 8);
+        const y = Math.round(3 + rnd() * 3);
+        b.set(x, y - 1, lit);
+        b.set(x - 1, y, lit);
         b.set(x + 1, y, petal);
-        b.set(x, y + 1, mix(petal, WARM_INK, 0.2));
+        b.set(x - 1, y + 1, petal);
+        b.set(x + 1, y + 1, shade);
         b.set(x, y, 0xf6d24a);
+        b.set(x, y + 1, 0xc8941a);
       }
     },
     undefined,
@@ -1548,6 +1605,11 @@ export function stake(): Sprite {
 
 /** A wisp of steam or smoke: a few soft puffs drifting up and to the side. */
 export function steam(seed: number): Sprite {
+  // Steam drawn the way GG Royale draws smoke: rounded puffs, each lit white
+  // on its upper left with a cool shade on its lower right, getting bigger
+  // and thinner as they rise (pixels drop out through an ordered dither,
+  // rather than the puff going see-through).
+  const BY = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
   return make(
     10,
     18,
@@ -1558,11 +1620,19 @@ export function steam(seed: number): Sprite {
       for (let i = 0; i < 4; i++) {
         const y = 15 - i * 4;
         const x = 4 + Math.round(Math.sin(i * 1.3 + rnd()) * 2) + (i > 1 ? 1 : 0);
-        const r = 1.4 + i * 0.4;
+        const r = 1.4 + i * 0.45;
+        // How much of the puff's rim is left: full low down, thin high up
+        // (its middle stays solid, so it never breaks into a checker).
+        const keep = 1 - i * 0.28;
         for (let yy = Math.floor(y - r); yy <= y + r; yy++) {
           for (let xx = Math.floor(x - r); xx <= x + r; xx++) {
-            if (Math.hypot(xx + 0.5 - x, yy + 0.5 - y) <= r)
-              b.set(xx, yy, 0xffffff, 0.55 - i * 0.1);
+            const dx = (xx + 0.5 - x) / r;
+            const dy = (yy + 0.5 - y) / r;
+            if (dx * dx + dy * dy > 1) continue;
+            const t = ((BY[(yy & 3) * 4 + (xx & 3)] ?? 0) + 0.5) / 16;
+            if (dx * dx + dy * dy > 0.4 && t > keep) continue;
+            const lit = -dx * 0.55 - dy * 0.7;
+            b.set(xx, yy, lit > 0.3 ? 0xffffff : lit > -0.35 ? 0xe8e6ec : 0xc4c2d0);
           }
         }
       }
@@ -1574,8 +1644,12 @@ export function steam(seed: number): Sprite {
 
 /** Sakura petals scattered on the ground under a tree. */
 export function petals(seed: number, count = 9, spread = 18): Sprite {
+  // Fallen cherry petals lying on the ground: each a little oval (two or
+  // three pixels, turned its own way), lit on its sunny end and a deeper
+  // rose on the other, the odd one curled with its notch showing.
   const w = spread * 2 + 4;
   const h = Math.round(spread * 0.8) + 4;
+  const deep = mix(K.sakuraDark, 0xb0587a, 0.35);
   return make(
     w,
     h,
@@ -1586,8 +1660,40 @@ export function petals(seed: number, count = 9, spread = 18): Sprite {
       for (let i = 0; i < count; i++) {
         const x = Math.round(2 + rnd() * (w - 4));
         const y = Math.round(2 + rnd() * (h - 4));
-        b.set(x, y, K.sakuraLight);
-        if (rnd() < 0.6) b.set(x + 1, y, K.sakura);
+        const turn = Math.floor(rnd() * 4);
+        const big = rnd() < 0.45;
+        // Its lit end, then its body, then (bigger ones) the shaded tip.
+        const steps: ReadonlyArray<readonly [number, number]> =
+          turn === 0
+            ? [
+                [0, 0],
+                [1, 0],
+                [2, 0],
+              ]
+            : turn === 1
+              ? [
+                  [0, 0],
+                  [0, 1],
+                  [0, 2],
+                ]
+              : turn === 2
+                ? [
+                    [0, 0],
+                    [1, 1],
+                    [2, 1],
+                  ]
+                : [
+                    [0, 0],
+                    [1, 0],
+                    [1, 1],
+                  ];
+        const tones = [K.sakuraLight, K.sakura, deep] as const;
+        steps.forEach(([dx, dy], k) => {
+          if (k === 2 && !big) return;
+          b.set(x + dx, y + dy, tones[k] ?? K.sakura);
+        });
+        // A curled petal shows its paler underside notch.
+        if (big && rnd() < 0.3) b.set(x, y + (turn === 1 ? 0 : 1), 0xfff0f4);
       }
     },
     undefined,

@@ -1,6 +1,6 @@
 ---
 name: clarify
-description: Use when requirements are genuinely unsettled. Do NOT use for routine work.
+description: Use when requirements are genuinely unsettled, or the user asks to be interviewed on a plan, spec or design. Do NOT use for routine work.
 ---
 
 # Clarify
@@ -34,6 +34,6 @@ Hand-offs (shared-language skill): newly settled domain terms → glossary; a de
 
 ## Scaling: one agent or several
 
-Main thread only. Fact-finding spanning several packages may go to `owl` (repo) or `researcher` (web) children in one `spawn_agent` call; the interview itself is never delegated.
+Main thread only; the interview itself is never delegated. Fact-finding across several packages or the web may go to read-only repo helpers or a researcher. Helper types, brief contents and merge rules come with the skill loader.
 
 Sources (accessed 3 October 2026): Given-When-Then — https://martinfowler.com/bliki/GivenWhenThen.html

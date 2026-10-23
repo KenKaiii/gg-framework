@@ -2,7 +2,7 @@
 
 ## Evidence key
 
-Unless a paragraph says otherwise, every count below comes from `data/observations.json`, source commit `664b3e78fd1a298ba11973822da988483256d4b4`, extraction version 1. Fractions are **observed documents / relevant documents**; numeric distributions state their sample count. These are observations, not defaults.
+Unless a paragraph says otherwise, every count below comes from a deterministic extraction (version 1) of [`VoltAgent/awesome-design-md`](https://github.com/VoltAgent/awesome-design-md) at commit `664b3e78fd1a298ba11973822da988483256d4b4`. The raw files and generated data are not bundled; read the sources upstream. Fractions are **observed documents / relevant documents**; numeric distributions state their sample count. These are observations, not defaults.
 
 ## Theme is conditional, not a premium preset
 

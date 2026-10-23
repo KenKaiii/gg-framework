@@ -2,7 +2,7 @@
 
 ## Contents
 
-- Included corpus and nature of observations
+- Upstream corpus (not bundled) and nature of observations
 - Refero boundary
 - Accessibility standards
 - UI craft research
@@ -12,19 +12,19 @@
 - Q4 2026 refresh (3 October 2026): slop tells, platform status, legal dates
 - Refresh policy
 
-## Included corpus
+## Upstream corpus (not bundled)
 
 - **Source:** [`VoltAgent/awesome-design-md`](https://github.com/VoltAgent/awesome-design-md)
 - **Pinned commit:** [`664b3e78fd1a298ba11973822da988483256d4b4`](https://github.com/VoltAgent/awesome-design-md/tree/664b3e78fd1a298ba11973822da988483256d4b4)
 - **Archive:** `https://codeload.github.com/VoltAgent/awesome-design-md/tar.gz/664b3e78fd1a298ba11973822da988483256d4b4`
 - **Retrieved:** 2026-07-13
-- **License:** MIT, copyright 2026 VoltAgent; retained at `corpus/awesome-design-md/LICENSE`
-- **Included:** all 74 `design-md/*/DESIGN.md` files present in the pinned archive
+- **License:** MIT, copyright 2026 VoltAgent (see `LICENSES.md`)
+- **Analyzed:** all 74 `design-md/*/DESIGN.md` files present in the pinned archive; removed from this package on 22 October 2026, only derived counts and slugs remain
 - **Excluded:** upstream previews, screenshots, media, fonts, website assets, private requests, and non-`DESIGN.md` content
 
-Every copied document has its own SHA-256, category, byte count, and parser status in `data/corpus-manifest.json`. The analyzer verifies hashes before producing observations.
+The analyzer verified each document's SHA-256 before producing observations; the manifest was not kept after the corpus was unbundled.
 
-The pinned archive contains 74 documents. This differs from both the initial planning estimate of 75 and the upstream README badge of 73 at that commit. The manifest records the discrepancy rather than silently modifying the corpus.
+The pinned archive contains 74 documents. This differs from both the initial planning estimate of 75 and the upstream README badge of 73 at that commit. The extraction recorded the discrepancy rather than silently modifying the corpus.
 
 ## Nature of the observations
 
@@ -48,7 +48,7 @@ Therefore this skill must not bulk-scrape Refero, call undocumented Refero endpo
 - **Web conformance floor:** [Web Content Accessibility Guidelines (WCAG) 2.2](https://www.w3.org/TR/WCAG22/), W3C Recommendation dated 12 December 2024 in the current publication fetched 2026-07-21. The [W3C WCAG overview](https://www.w3.org/WAI/standards-guidelines/wcag/) encourages the latest version and states that WCAG 2.2 conformance is backward compatible with WCAG 2.1 and 2.0.
 - **Native application guidance:** [WCAG2ICT](https://www.w3.org/TR/wcag2ict-22/) explains how Level A and AA criteria apply to non-web software. It is informative guidance, not a normative standard, and native work still needs platform and product-specific accessibility requirements.
 - **U.S. ADA context:** The Department of Justice [ADA web accessibility guidance](https://www.ada.gov/resources/web-guidance/) explains equal access and effective communication under Titles II and III. The current [Title II web and mobile app rule fact sheet](https://www.ada.gov/resources/2024-03-08-web-rule/) names WCAG 2.1 Level AA as its technical standard and documents scope, exceptions, and compliance timing. These sources were checked 2026-07-21.
-- **Not the conformance target:** [W3C Accessibility Guidelines (WCAG) 3.0](https://www.w3.org/TR/wcag-3.0/) is a W3C Working Draft (dated 10 September 2026 when re-checked 3 October 2026). W3C says publication as a Working Draft does not imply endorsement and that it is inappropriate to cite as anything other than work in progress.
+- **Not the conformance target:** [W3C Accessibility Guidelines (WCAG) 3.0](https://www.w3.org/TR/wcag-3.0/) is a W3C Working Draft (dated 10 September 2026 when re-checked 22 October 2026). W3C says publication as a Working Draft does not imply endorsement and that it is inappropriate to cite as anything other than work in progress.
 
 WCAG 2.2 Level AA is the default engineering floor because it includes and extends WCAG 2.1, but technical WCAG conformance alone does not prove compliance with the ADA or another law. Project, procurement, contractual, platform, and jurisdictional requirements may exceed this floor. Use the current official standard and obtain qualified product or legal review before making a legal-compliance claim.
 
@@ -67,7 +67,7 @@ The binding rulings in `references/craft-rulings.md` use these current sources:
 - [Google Fonts CSS API](https://developers.google.com/fonts/docs/getting_started) and [web.dev font practices](https://web.dev/articles/font-best-practices): explicit families/weights, `font-display`, early discovery, preconnect for third-party origins, and layout-shift testing;
 - [Google Fonts metadata](https://fonts.google.com/metadata/fonts), fetched 14 July 2026: current family availability and popularity ordering used for the inspiration list.
 
-The motion recommendations were also checked against the pinned local corpus. Several observed systems use color, underline, border, surface, icon, or opacity feedback instead of generic scale/translate hover lift. These remain independent observations, not official brand guidance.
+The motion recommendations were also checked against the pinned upstream corpus. Several observed systems use color, underline, border, surface, icon, or opacity feedback instead of generic scale/translate hover lift. These remain independent observations, not official brand guidance.
 
 Refero content was not accessed for this update because no authorized Refero MCP or user-provided export was available. The existing Refero boundary remains unchanged.
 
@@ -104,7 +104,7 @@ No source skill text is bundled or renamed. This skill rejects fixed palette/fon
 
 The package structure was checked against the [Agent Skills specification](https://agentskills.io/specification), [Anthropic skill-authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices.md), [OpenAI Skills guidance](https://platform.openai.com/docs/guides/tools-skills), and [Agent Skills evaluation guidance](https://agentskills.io/skill-creation/evaluating-skills): loader-visible name/description metadata, a concise directly actionable `SKILL.md`, references one level from the root, focused on-demand documents, self-contained scripts, explicit validation, and evaluation-driven iteration. The installed GG Coder loader reads `name` and `description`; the portable `license` and `compatibility` fields are retained for other Agent Skills clients and safely ignored by GG Coder.
 
-`SKILL.md` remains below the recommended 500-line limit. Reference files over 100 lines include a contents overview so an agent preview exposes the file's scope. Detailed corpus data stays out of runtime context unless a specific claim requires it. The existing external A/B artifacts are unscored and predate the current contracts, so they are benchmark inputs rather than evidence that the current skill improves quality.
+`SKILL.md` remains below the recommended 500-line limit. Reference files over 100 lines include a contents overview so an agent preview exposes the file's scope. Raw corpus data is not bundled; audits read the pinned upstream sources. The existing external A/B artifacts are unscored and predate the current contracts, so they are benchmark inputs rather than evidence that the current skill improves quality.
 
 ## Q4 2026 refresh (3 October 2026)
 
@@ -118,14 +118,14 @@ All accessed 3 October 2026 (SNAPSHOT).
 
 ### Platform status
 
-- Baseline statuses in `references/direction.md` § 8 read from the [`web-features`](https://www.npmjs.com/package/web-features) package v3.40.1 (published 1 Oct 2026), the data behind [webstatus.dev](https://webstatus.dev).
+- Baseline statuses in `references/direction.md` § 8 originally read from the [`web-features`](https://www.npmjs.com/package/web-features) package v3.40.1 (1 Oct 2026). Re-checked 22 Oct 2026: CSS anchor positioning became Baseline Newly available with Firefox 147 ([web.dev, Jan 2026](https://web.dev/blog/web-platform-01-2026)); `progress()` and `alpha()` became Baseline Newly available in Sep 2026 ([web.dev, Sep 2026](https://web.dev/blog/web-platform-09-2026)). The table now keeps stable rows only and defers newer features to a live [webstatus.dev](https://webstatus.dev) check.
 - [Interop 2026 focus areas](https://github.com/web-platform-tests/interop/blob/main/2026/README.md) and [WebKit's announcement](https://webkit.org/blog/17818/announcing-interop-2026/): anchor positioning, scroll-driven animations, view transitions, dialogs and popovers, container style queries, among others.
-- [WCAG 2.2](https://www.w3.org/TR/WCAG22/) Recommendation 12 Dec 2024; [WCAG 3.0](https://www.w3.org/TR/wcag-3.0/) Working Draft 10 Sep 2026.
+- [WCAG 2.2](https://www.w3.org/TR/WCAG22/) Recommendation 12 Dec 2024; [WCAG 3.0](https://www.w3.org/TR/wcag-3.0/) Working Draft 10 Sep 2026 (still latest on 22 Oct 2026).
 - [web.dev INP](https://web.dev/articles/inp): good at 200 ms or less, 75th percentile.
 
 ### Legal dates
 
-- ADA Title II: DOJ interim final rule published 20 April 2026 (91 Fed. Reg. 20902) extends compliance to 26 April 2027 / 26 April 2028; WCAG 2.1 AA unchanged. Secondary confirmations: [Reed Smith](https://www.reedsmith.com/articles/doj-extends-digital-accessibility-compliance-dates-under-title-ii-of-the-ada/), [Seyfarth](https://www.adatitleiii.com/2026/04/doj-extends-ada-title-ii-website-accessibility-deadlines-for-governmental-entities-but-litigation-and-compliance-risks-remain/). Primary: [ada.gov web rule](https://www.ada.gov/resources/2024-03-08-web-rule/).
+- ADA Title II: DOJ interim final rule published 20 April 2026 (91 Fed. Reg. 20902) extends compliance to 26 April 2027 / 26 April 2028; WCAG 2.1 AA unchanged. Secondary confirmations: [Reed Smith](https://www.reedsmith.com/articles/doj-extends-digital-accessibility-compliance-dates-under-title-ii-of-the-ada/), [Seyfarth](https://www.adatitleiii.com/2026/04/doj-extends-ada-title-ii-website-accessibility-deadlines-for-governmental-entities-but-litigation-and-compliance-risks-remain/). Primary: [ada.gov web rule](https://www.ada.gov/resources/2024-03-08-web-rule/) (dates re-checked 22 Oct 2026). Pending challenge: NFB v. DOJ, D. Md., filed May 2026, no ruling found as of 12 Oct 2026 (secondary: [titleii.org](https://titleii.org/title-ii-updates)).
 - European Accessibility Act (Directive (EU) 2019/882): applies from 28 June 2025; [European Commission EAA page](https://commission.europa.eu/strategy-and-policy/policies/justice-and-fundamental-rights/disability/union-equality-strategy-rights-persons-disabilities-2021-2030/european-accessibility-act_en).
 
 ## Refresh policy
@@ -133,8 +133,8 @@ All accessed 3 October 2026 (SNAPSHOT).
 A corpus refresh must be explicit:
 
 1. choose and record a new upstream commit;
-2. replace only the licensed `DESIGN.md` snapshot and upstream license;
-3. regenerate every hash and parser status;
+2. read the licensed `DESIGN.md` files at that commit outside the package;
+3. record every hash and parser status;
 4. rerun analysis and inspect changed denominators/outliers;
 5. update synthesis claims and examples;
 6. rerun validation.

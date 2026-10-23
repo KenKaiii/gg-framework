@@ -22,17 +22,17 @@ Pick both consciously; they dictate the tier. An app where users type for hours 
 
 **3-2-1 floor**: at least 3 copies, 2 different media/systems, 1 off-site (different provider or account is fine). A dump cron writing to the same VPS is one disk failure from zero.
 
-### Managed-provider baselines (`SNAPSHOT` 3 Oct 2026 — verify the project's actual settings before quoting)
+### Managed-provider baselines (`SNAPSHOT` — Neon, AWS RDS, Cloudflare D1 re-checked on official docs 22 Oct 2026; other rows unchecked since 3 Oct 2026; verify the project's actual settings before quoting)
 
 | Provider | What the docs say |
 |---|---|
-| Supabase | Daily backups: Pro 7 days, Team 14, Enterprise up to 30. PITR is a paid **add-on** (Pro+, needs at least Small compute). Backups exclude Storage objects — restoring does not bring back deleted files. Custom-role passwords not in daily backups |
+| Supabase (3 Oct 2026) | Daily backups: Pro 7 days, Team 14, Enterprise up to 30. PITR is a paid **add-on** (Pro+, needs at least Small compute). Backups exclude Storage objects — restoring does not bring back deleted files. Custom-role passwords not in daily backups |
 | Neon | Restore window (WAL history) powers instant restore, time travel, and branching from the past: Free capped at 6 hours (1 GB); Launch default 1 day, max 7; Scale default 1 day, max 30 |
-| PlanetScale Postgres | Scheduled + on-demand backups and PITR via WAL archiving; check the branch's schedule |
+| PlanetScale Postgres (3 Oct 2026) | Scheduled + on-demand backups and PITR via WAL archiving; check the branch's schedule |
 | AWS RDS | Retention 0–35 days; default 1 day via API/CLI, 7 days via console. 0 disables automated backups and PITR |
 | Cloudflare D1 | Time Travel always on: restore to any minute in the last 30 days |
-| Turso | PITR: Free 24 hours; Developer 10, Scaler 30, Pro 90 days; deleted DBs restorable up to 5 days on paid plans |
-| Firestore | Without PITR, version retention is 1 hour; enabling PITR gives 7 days. Scheduled exports for longer history |
+| Turso (3 Oct 2026) | PITR: Free 24 hours; Developer 10, Scaler 30, Pro 90 days; deleted DBs restorable up to 5 days on paid plans |
+| Firestore (3 Oct 2026) | Without PITR, version retention is 1 hour; enabling PITR gives 7 days. Scheduled exports for longer history |
 | MongoDB Atlas | Cloud backups / continuous backup by cluster tier — not verified this snapshot; check the cluster's backup policy |
 
 Not re-verified this snapshot (removed): Crunchy Bridge numbers. Aurora: same 1–35 day continuous backup model as RDS — confirm per cluster.
@@ -90,4 +90,4 @@ Check-then-act without a constraint (`if not exists: insert`) is a bug that just
 
 ---
 
-**Provenance:** snapshot 3 October 2026. Accessed 3 Oct 2026: https://supabase.com/docs/guides/platform/backups ; https://neon.com/docs/introduction/restore-window ; https://planetscale.com/docs/postgres/backups ; https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithAutomatedBackups.BackupRetention.html ; https://developers.cloudflare.com/d1/reference/time-travel/ ; https://docs.turso.tech/features/point-in-time-recovery ; https://cloud.google.com/firestore/native/docs/use-pitr ; https://fly.io/blog/litestream-revamped/ ; https://litestream.io/ ; https://www.pgbouncer.org/config.html ; https://www.pgbouncer.org/changelog.html ; https://neon.com/docs/connect/connection-pooling ; https://supabase.com/docs/guides/database/connecting-to-postgres ; https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html . Earlier sources: Postgres WAL/PITR documentation and pgBackRest/Barman/WAL-G docs, Litestream documentation (SQLite WAL replication), provider documentation for Supabase/Neon/RDS/Crunchy/MongoDB Atlas backup tiers (tier specifics are `SNAPSHOT` — they change often), PgBouncer documentation (transaction-mode feature matrix), SQLite documentation (WAL, busy_timeout, foreign_keys pragma, VACUUM INTO), current disaster-recovery practice guides (3-2-1, RPO/RTO, restore drills). Provider tiers and defaults decay fastest — re-verify before asserting.
+**Provenance:** snapshot 3 October 2026; Neon restore window, RDS retention and D1 Time Travel re-checked 22 Oct 2026. Accessed 3 Oct 2026: https://supabase.com/docs/guides/platform/backups ; https://neon.com/docs/introduction/restore-window ; https://planetscale.com/docs/postgres/backups ; https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithAutomatedBackups.BackupRetention.html ; https://developers.cloudflare.com/d1/reference/time-travel/ ; https://docs.turso.tech/features/point-in-time-recovery ; https://cloud.google.com/firestore/native/docs/use-pitr ; https://fly.io/blog/litestream-revamped/ ; https://litestream.io/ ; https://www.pgbouncer.org/config.html ; https://www.pgbouncer.org/changelog.html ; https://neon.com/docs/connect/connection-pooling ; https://supabase.com/docs/guides/database/connecting-to-postgres ; https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html . Earlier sources: Postgres WAL/PITR documentation and pgBackRest/Barman/WAL-G docs, Litestream documentation (SQLite WAL replication), provider documentation for Supabase/Neon/RDS/Crunchy/MongoDB Atlas backup tiers (tier specifics are `SNAPSHOT` — they change often), PgBouncer documentation (transaction-mode feature matrix), SQLite documentation (WAL, busy_timeout, foreign_keys pragma, VACUUM INTO), current disaster-recovery practice guides (3-2-1, RPO/RTO, restore drills). Provider tiers and defaults decay fastest — re-verify before asserting.

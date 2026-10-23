@@ -1081,10 +1081,10 @@ describe("goal farm play", () => {
       },
     ) as unknown as CanvasRenderingContext2D;
     drawFarm(ctx, {} as CanvasImageSource, w, 30_000, 30_000, [], null, null, null, null);
-    // The crown's gold and its red jewel, and the nameplate's gold lettering.
+    // The crown's gold and its red jewel, and the nameplate's gold plate.
     expect(fills.has("#ffd23a")).toBe(true);
     expect(fills.has("#e8313f")).toBe(true);
-    expect(fills.has("#ffe48a")).toBe(true);
+    expect(fills.has("#e9af54")).toBe(true);
     // Without GG Goals on the farm, none of it.
     const alone = createFarmWorld(farm, () => 0.4);
     const workersOnly = agents.filter((a) => !a.coordinator);
@@ -1095,7 +1095,7 @@ describe("goal farm play", () => {
     fills.clear();
     drawFarm(ctx, {} as CanvasImageSource, alone, 30_000, 30_000, [], null, null, null, null);
     expect(fills.has("#e8313f")).toBe(false);
-    expect(fills.has("#ffe48a")).toBe(false);
+    expect(fills.has("#e9af54")).toBe(false);
   });
 
   it("leaves the hover glow off a thing while it reacts to a click, and back once it settles", () => {

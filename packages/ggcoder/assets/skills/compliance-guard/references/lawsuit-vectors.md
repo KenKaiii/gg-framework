@@ -1,6 +1,18 @@
 # Lawsuit & Demand-Letter Vectors
 
-How a small app actually gets sued or extorted, ranked by real base rate rather than statutory maximum. Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 (see `provenance.md`) — verify any date, amount, or case posture before stating it as current.
+## Contents
+- 1. Web accessibility demand letters — highest base rate
+- 2. Wiretap / pixel / session-replay claims — highest volume in privacy
+- 3. Biometric claims (Illinois BIPA and analogues)
+- 4. TCPA / SMS
+- 5. Subscription / auto-renewal class actions
+- 6. IP demand letters
+- 7. Consumer-protection / advertising
+- 8. Platform and structural risks
+- Top vectors to check first on any consumer web app
+
+
+How a small app actually gets sued or extorted, ranked by real base rate rather than statutory maximum. Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 and 22 Oct 2026 (see `provenance.md`) — verify any date, amount, or case posture before stating it as current.
 
 **The core asymmetry:** most regulators do not chase solo developers. Private plaintiffs and demand-letter mills do, because the process is automated: a bot scans public sites for a technical fingerprint, a letter goes out, and settling is cheaper than defending. Optimise against *fingerprints*, not against theoretical liability.
 
@@ -35,7 +47,7 @@ How a small app actually gets sued or extorted, ranked by real base rate rather 
 
 **Scale:** pen-register-style claims have become a dominant share of active privacy litigation, driven by ordinary analytics and ad tools **[V]**. Statutory damages of **$5,000 per violation** are the leverage **[V]**.
 
-**Relief status:** California SB 690 was signed on 30 September 2026 and is operative 1 January 2027: private suits under the pen-register/trap-and-trace section (§638.51) over a website or app are removed (Attorney General only), with retroactive reach to pending claims filed within the prior two years **[U]** (consistent across law-firm reports; the leginfo text was not retrieved). It does **not** touch §631/§632 wiretap claims, which remain the main pixel/session-replay/chat-widget theory **[S]**. The fix is unchanged: consent-gate every third-party request.
+**Relief status:** California SB 690 was signed on 30 September 2026 and is operative 1 January 2027: private suits under the pen-register/trap-and-trace section (§638.51) over a website or app are removed (Attorney General only), and it applies retroactively to pending claims in actions filed on or after 1 January 2025 **[S]** (consistent across law-firm reports and the California Lawyers Association tracker; leginfo text not opened). It does **not** affect demand letters: a pre-suit letter is not a "pending claim in an action", though from 2027 a §638.51 letter threatens a suit its sender cannot bring **[S]**. It does **not** touch §631/§632 wiretap claims, which remain the main pixel/session-replay/chat-widget theory **[S]**. The fix is unchanged: consent-gate every third-party request.
 
 **Fingerprint:** any third-party request firing on page load before consent — Meta/TikTok/LinkedIn pixels, GA, session replay, chat widgets, A/B tools. Server-side tagging does **not** cure it if the third party still receives the data.
 

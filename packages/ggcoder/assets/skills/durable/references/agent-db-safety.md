@@ -49,7 +49,7 @@ Run the migration on the branch, record the result and timing, then present the 
 
 ## Tool interlocks — respect, never bypass
 
-- **Prisma** (`SNAPSHOT`): dangerous CLI actions such as `migrate reset` refuse when run by a detected AI agent and require `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION` set to the user's exact consent message. Stop and ask; only the user's literal words may be passed.
+- **Prisma** (`SNAPSHOT` 22 Oct 2026): the Prisma 7 CLI refuses dangerous actions such as `migrate reset` when it detects an AI agent, until `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION` holds the user's exact consent message. Stop and ask; only the user's literal words may be passed. Separately, Prisma Console now enrolls a coding agent with its own credential: by default it works freely on preview branches, and writes to production, deletes and connection-string creation wait for the user's approval in the Console. Never approve your own request or use the user's login to get around it.
 - Prompts like "data loss will occur, continue?" (`db push`, `drizzle-kit push`) are a stop sign. Never pipe `yes`, never add `--force`/`--accept-data-loss` yourself.
 - Prefer commands that print the plan without applying: `prisma migrate diff`, `drizzle-kit generate` (then read SQL), Rails `db:migrate:status`, Django `sqlmigrate` / `migrate --plan`.
 
@@ -66,4 +66,4 @@ Before any `DELETE`/`UPDATE` you are asked to run: execute the same `WHERE` as `
 
 ---
 
-**Provenance:** snapshot 3 October 2026. Sources (accessed 3 Oct 2026): The Register via Slashdot, 21 Jul 2025 — https://developers.slashdot.org/story/25/07/21/1338204/ ; heise, 25 Jul 2025 — https://www.heise.de/en/news/Artificial-intelligence-Vibe-coding-service-Replit-deletes-production-database-10499597.html ; incident summary — https://openleash.com/blog/ai-agents-deleted-production-databases-replit-pocketos ; Prisma CLI reference (AI-agent consent) — https://www.prisma.io/docs/orm/reference/prisma-cli-reference . Branching surfaces from provider docs; verify flags before asserting.
+**Provenance:** snapshot 3 October 2026. Sources (accessed 3 Oct 2026): The Register via Slashdot, 21 Jul 2025 — https://developers.slashdot.org/story/25/07/21/1338204/ ; heise, 25 Jul 2025 — https://www.heise.de/en/news/Artificial-intelligence-Vibe-coding-service-Replit-deletes-production-database-10499597.html ; incident summary — https://openleash.com/blog/ai-agents-deleted-production-databases-replit-pocketos ; Prisma 7 CLI reference (AI-agent consent, re-verified 22 Oct 2026) — https://www.prisma.io/docs/orm/v7/reference/prisma-cli-reference ; Prisma agent enrollment (22 Oct 2026) — https://www.prisma.io/changelog/2026-10-02 . Branching surfaces from provider docs; verify flags before asserting.

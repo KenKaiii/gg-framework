@@ -1,6 +1,6 @@
 ---
 name: shared-language
-description: Use when domain terms drift or a decision needs an ADR. Do NOT use for renames.
+description: Use when domain terms drift (glossary, CONTEXT.md) or a hard-to-reverse decision needs an ADR (decision record). Do NOT use for renames.
 ---
 
 # Shared Language
@@ -27,6 +27,6 @@ Only when a decision is **hard to reverse**, **surprising without context**, and
 
 ## Scaling: one agent or several
 
-Main thread only. On a large repo, one `owl` may inventory competing terms across packages (occurrences with file:line); the main thread decides and edits.
+Main thread only. On a large repo, one read-only repo helper may inventory competing terms across packages (occurrences with file:line); the main thread decides and edits. Helper types, brief contents and merge rules come with the skill loader.
 
-Sources (accessed 3 October 2026): MADR 4.0.0, latest release (2024-09-17) — https://adr.github.io/madr/; ubiquitous language — https://martinfowler.com/bliki/UbiquitousLanguage.html
+Sources (re-checked 22 October 2026): MADR 4.0.0, still the latest release (2024-09-17) — https://adr.github.io/madr/; ubiquitous language — https://martinfowler.com/bliki/UbiquitousLanguage.html

@@ -689,7 +689,7 @@ export function makeCritterSocial(api: CritterApi): CritterSocial {
       run: async (a, b, ok) => {
         faceEach(a, b);
         // The find is held up over both heads; no speech, the prop carries it.
-        const thing = fx.prop(a, pick(["gem", "bulb", "book"] as const), { at: { x: 9, y: 12 } });
+        const thing = fx.prop(a, pick(["gem", "bulb", "book"] as const), { at: { x: 11, y: 16 } });
         await hop(a, 4);
         await wait(700);
         if (!ok()) {

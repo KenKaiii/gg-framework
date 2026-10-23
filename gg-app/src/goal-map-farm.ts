@@ -45,6 +45,27 @@ export function blob(seed: number, wobble = 0.16, lobes = 4): (nx: number, ny: n
 
 // ── Stones ───────────────────────────────────────────────────
 
+/**
+ * Stone, the way GG Royale ramps it: six steps from a cool, violet-grey
+ * shadow to a warm, near-white sheen (the hue shifts with the value, so the
+ * shade reads as shade rather than dirt).
+ */
+const ROCK_RAMP: readonly Rgb[] = [0x5e5864, 0x7e7884, 0x9f99a0, 0xbfb8b2, 0xd8d0c4, 0xf2ece0];
+
+/** A 4×4 ordered dither threshold, 0–1. */
+const BAYER_S = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
+const bayerS = (x: number, y: number): number => ((BAYER_S[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16;
+
+/** A step of a ramp for light `v` (0–1): solid steps, a narrow dithered seam between them. */
+function rockStep(ramp: readonly Rgb[], v: number, x: number, y: number): Rgb {
+  const n = ramp.length - 1;
+  const t = Math.max(0, Math.min(n, v * n));
+  const lo = Math.floor(t);
+  const f = t - lo;
+  const up = f > 0.65 || (f > 0.35 && (f - 0.35) / 0.3 > bayerS(x, y));
+  return ramp[up ? Math.min(n, lo + 1) : lo] ?? ramp[0] ?? 0;
+}
+
 const ST = {
   sheen: 0xf6f3ee,
   light: 0xe2dcd4,
@@ -68,14 +89,19 @@ const ST = {
 export function stone(seed: number, size: "s" | "m" | "l" = "m", mossy = false): Sprite {
   const base = size === "s" ? 5 : size === "l" ? 9.2 : 8.4;
   const rx = base + hash(seed, 0, 3) * 0.9;
-  const ry = rx * (0.58 + hash(seed, 1, 3) * 0.06);
-  const shape = blob(seed, 0.07, 5);
+  const ry = rx * (0.5 + hash(seed, 1, 3) * 0.06);
+  // A slab's outline is squarer than a pebble's: straighter sides, softened corners.
+  const round = blob(seed, 0.06, 5);
+  const shape = (nx: number, ny: number): boolean =>
+    round(nx, ny) ||
+    (Math.abs(nx) ** 3.2 + Math.abs(ny) ** 3.2 <= 0.78 && round(nx * 0.92, ny * 0.92));
   const w = Math.ceil(rx * 2.3) + 6;
   const h = Math.ceil(ry * 2.3) + 7;
   const cx = w / 2;
   const cy = (h - 3) / 2;
   const top = (x: number, y: number): boolean => shape((x + 0.5 - cx) / rx, (y + 0.5 - cy) / ry);
-  // The face plus its one-pixel lip below.
+  // The face plus a single-pixel edge below: it's set into the path, nearly
+  // flush with the earth, so hardly any side shows.
   const body = (x: number, y: number): boolean => top(x, y) || top(x, y - 1);
   const SLAB = {
     face: 0xd0cbc3,
@@ -97,36 +123,55 @@ export function stone(seed: number, size: "s" | "m" | "l" = "m", mossy = false):
           const ny = (y + 0.5 - cy) / ry;
           const nx = (x + 0.5 - cx) / rx;
           if (top(x, y)) {
-            // Soft worn patches: broad, low-contrast, mostly across the middle and below.
-            const worn = noise(x, y * 1.6, 3.2, seed + 2) + ny * 0.22 > 0.66;
-            let c: Rgb = worn ? SLAB.wear : SLAB.face;
+            // The face: flat, so the light barely changes across it (only a
+            // step lighter toward the sunlit upper-left edge, a step darker
+            // toward the far one). Feet have worn a smooth, paler patch into
+            // the middle, and the stone's own grain shows round it as a few
+            // soft darker flecks, never a dome of highlight.
+            const lit = -nx * 0.12 - ny * 0.16;
+            const tread = (nx * 1.1) ** 2 + (ny * 1.3) ** 2 < 0.42;
+            let v = 0.5 + lit + (tread ? 0.07 : 0);
+            if (!tread && noise(x, y * 1.4, 2.6, seed + 2) > 0.7) v -= 0.12;
+            // Its sunlit upper-left rim, a pixel wide, where the edge is worn round.
+            if (!top(x - 1, y) || !top(x, y - 1)) v += nx < 0.3 && ny < 0.3 ? 0.14 : -0.08;
+            let c = rockStep(ROCK_RAMP, v, x, y);
             if (mossy && ny > 0.45 && hash(x >> 1, y, seed + 4) < 0.3) c = SLAB.grass;
             b.set(x, y, c);
           } else if (body(x, y)) {
-            b.set(x, y, SLAB.lip);
+            // The one-pixel edge: a little lit where it turns to the sun.
+            b.set(x, y, (nx < -0.3 ? ROCK_RAMP[2] : ROCK_RAMP[1]) ?? SLAB.lip);
           } else if (body(x, y + 1) || body(x - 1, y) || body(x + 1, y)) {
             // The outline: soil lapping over the top edge (soft grey), dark round
             // the corners and along the near edge, where the stone meets the ground.
             const corner = Math.abs(nx) > 0.62 && hash(x, y, seed + 5) < 0.75;
-            b.set(x, y, ny < -0.25 && !corner ? SLAB.rim : LINE);
+            // Along its top the path's earth laps over the edge, so the line
+            // there is soft (just a shade of the soil); full ink only round
+            // the near side, where the stone's edge meets the ground.
+            // Full ink only along the near (lower) edge, where its lip meets the
+            // ground; up the sides it fades into the soil.
+            if (ny > 0.35 || corner) b.set(x, y, LINE);
+            else b.set(x, y, LINE, ny < -0.2 ? 0.3 : 0.55);
           } else if (body(x, y - 1) || body(x, y - 2) || body(x - 1, y - 1) || body(x + 1, y - 1)) {
             // The pressed earth round its foot: a darker, see-through band.
             b.set(x, y, LINE, body(x, y - 1) ? 0.32 : 0.18);
           }
         }
       }
-      // A glint low on the rim, the way light catches a worn edge, and a short one up top.
-      const rnd = stream(seed + 6);
-      const gy = Math.round(cy + ry * 0.62);
-      const gx = Math.round(cx - rx * (0.25 + rnd() * 0.35));
-      const len = size === "s" ? 2 : 3 + Math.floor(rnd() * 3);
-      for (let d = 0; d < len; d++)
-        if (top(gx + d, gy) && top(gx + d, gy + 1)) b.set(gx + d, gy, SLAB.glint);
+      // A crevice on the bigger stones: a short diagonal line of shade
+      // running down to the right, with a lit lip along its upper side.
       if (size !== "s") {
-        const tx = Math.round(cx + rx * (0.45 + rnd() * 0.3));
-        const ty = Math.round(cy - ry * 0.35);
-        if (top(tx, ty) && top(tx + 1, ty)) b.set(tx, ty, SLAB.glint);
+        const cr = stream(seed + 11);
+        const sx0 = Math.round(cx - rx * (0.1 + cr() * 0.3));
+        const sy0 = Math.round(cy - ry * (0.15 + cr() * 0.25));
+        const len = 3 + Math.floor(cr() * 3);
+        for (let d = 0; d < len; d++) {
+          const x = sx0 + d;
+          const y = sy0 + Math.floor(d / 2);
+          if (!top(x, y) || !top(x, y - 1)) continue;
+          b.set(x, y, ROCK_RAMP[2] ?? SLAB.lip);
+        }
       }
+      const rnd = stream(seed + 6);
       // A blade or two of grass poking up along its near edge.
       const blades = (size === "s" ? 0 : 1) + Math.floor(rnd() * 2);
       for (let k = 0; k < blades; k++) {
@@ -145,36 +190,109 @@ export function stone(seed: number, size: "s" | "m" | "l" = "m", mossy = false):
 
 // ── Plants (each drawn and outlined on its own) ───────────────
 
-const LEAF = { deep: 0x2f5014, dark: 0x467a1c, base: 0x63992a, light: 0x8cbf3c, hi: 0xb5dc5a };
-const DAIKON_LEAF = { dark: 0x4e7a1c, base: 0x78a832, light: 0xa4cc4a, hi: 0xcce06a };
-
 export type Crop = "carrot" | "daikon" | "cabbage" | "rice" | "eggplant";
 
 /** How grown a plant is: 0 a seedling, 1 ready to pull. */
 type Stage = number;
 
-/** A short, thick leaf stroke from (x, y) at angle `a`, `len` long. */
-function leafStroke(
+/** A 4×4 ordered (Bayer) dither threshold, 0–1. */
+const BAYER_P = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
+const bayerP = (x: number, y: number): number => ((BAYER_P[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16;
+
+interface LeafTones {
+  readonly deep?: Rgb;
+  readonly dark: Rgb;
+  readonly base: Rgb;
+  readonly light: Rgb;
+  readonly hi: Rgb;
+}
+
+/**
+ * A leaf drawn the way GG Royale draws foliage: a real leaf shape (narrow at
+ * the stem, widest a third of the way out, coming to a point), its midrib a
+ * darker line down the middle, the half facing the sun (up and left) a step
+ * lighter than the half turned away, a lit tip, and the side veins running
+ * off the midrib. `broad` is the half-width at its widest, in pixels.
+ */
+function leaf(
   b: PixelBuffer,
   x: number,
   y: number,
   a: number,
   len: number,
-  tones: { dark: Rgb; base: Rgb; light: Rgb; hi: Rgb },
-  broad = 1,
+  tones: LeafTones,
+  broad = 1.4,
 ): void {
-  for (let s = 0; s <= len; s++) {
+  const ux = Math.cos(a);
+  const uy = Math.sin(a);
+  // Which side of the leaf faces the sun: +1 left of its direction, -1 right.
+  const sunSide = -uy * -0.6 + ux * -0.8 > 0 ? 1 : -1;
+  for (let s = 0; s <= len; s += 0.5) {
     const t = s / len;
-    const px = x + Math.cos(a) * s;
-    const py = y + Math.sin(a) * s;
-    const width = t < 0.2 ? 0 : t > 0.88 ? 0 : broad;
-    for (let k = -width; k <= width; k++) {
-      const ox = Math.round(px + k * -Math.sin(a));
-      const oy = Math.round(py + k * Math.cos(a));
-      b.set(ox, oy, k < 0 ? tones.light : k > 0 ? tones.dark : t > 0.7 ? tones.hi : tones.base);
+    // Leaf profile: 0 at the stem, full at a third, back to 0 at the tip.
+    const prof = t < 0.33 ? t / 0.33 : 1 - (t - 0.33) / 0.67;
+    const half = Math.max(0, broad * Math.sqrt(Math.max(0, prof)));
+    for (let k = -Math.ceil(half); k <= Math.ceil(half); k++) {
+      if (Math.abs(k) > half + 0.25) continue;
+      const px = Math.round(x + ux * s - uy * k);
+      const py = Math.round(y + uy * s + ux * k);
+      let c: Rgb;
+      if (k === 0)
+        c = t > 0.85 ? tones.light : tones.dark; // the midrib
+      else if (Math.sign(k) === sunSide) c = t > 0.75 ? tones.hi : tones.light;
+      else c = tones.base;
+      // Side veins: every few pixels along, a darker tick off the midrib.
+      if (k !== 0 && Math.abs(k) <= 1 && Math.round(s) % 3 === 0 && t > 0.15 && t < 0.8)
+        c = tones.dark;
+      b.set(px, py, c);
     }
   }
 }
+
+/**
+ * A root's shoulder standing up out of the soil: a lit dome with a darker
+ * underside, a highlight on its upper left, and the soil it pushes up
+ * crumbling round its foot.
+ */
+function rootShoulder(
+  b: PixelBuffer,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  ramp: readonly Rgb[],
+  rings = false,
+): void {
+  for (let y = Math.floor(cy - ry); y <= cy + ry; y++) {
+    for (let x = Math.floor(cx - rx); x <= cx + rx; x++) {
+      const nx = (x + 0.5 - cx) / rx;
+      const ny = (y + 0.5 - cy) / ry;
+      if (nx * nx + ny * ny > 1) continue;
+      const lit = -nx * 0.6 - ny * 0.75 + (1 - nx * nx - ny * ny) * 0.35;
+      const n = ramp.length - 1;
+      const v = Math.max(0, Math.min(n, (0.5 + lit * 0.55) * n));
+      const lo = Math.floor(v);
+      const i = v - lo > 0.5 || (v - lo > 0.3 && (v - lo - 0.3) / 0.2 > bayerP(x, y)) ? lo + 1 : lo;
+      let c = ramp[Math.min(n, i)] ?? ramp[0] ?? 0;
+      // A carrot's growth rings: faint darker bands across it.
+      if (rings && y % 2 === 0 && ny > -0.4) c = ramp[Math.max(0, Math.min(n, i) - 1)] ?? c;
+      b.set(x, y, c);
+    }
+  }
+  // Crumbled soil pushed up round its foot.
+  for (const dx of [-rx - 1, -rx + 1, rx - 1, rx + 1])
+    b.set(Math.round(cx + dx), Math.round(cy + ry), 0x5f3618);
+  b.set(Math.round(cx - rx * 0.4), Math.round(cy + ry), 0x8f5a2b);
+}
+
+/** Feathery carrot fronds: each a stalk forking into lit, fine leaflets. */
+const CARROT_FROND = {
+  deep: 0x2a4a12,
+  dark: 0x3f6e1c,
+  base: 0x5a9028,
+  light: 0x84b83a,
+  hi: 0xb6dc5c,
+};
 
 function carrotPlant(seed: number, stage: Stage): Sprite {
   return sprite(
@@ -184,35 +302,53 @@ function carrotPlant(seed: number, stage: Stage): Sprite {
     17,
     (b) => {
       const rnd = stream(seed);
-      const leaves = stage > 0.7 ? 6 : stage > 0.35 ? 4 : 2;
-      const reach = stage > 0.7 ? 8.5 : stage > 0.35 ? 6 : 3.5;
-      // Feathery fronds, fanned upward, each ending in a bushy tuft.
-      for (let i = 0; i < leaves; i++) {
-        const a = -Math.PI / 2 + (i - (leaves - 1) / 2) * 0.36 + (rnd() - 0.5) * 0.3;
-        const len = reach + rnd() * 2;
-        leafStroke(b, 8, 13, a, len, LEAF, 0);
+      const fronds = stage > 0.7 ? 6 : stage > 0.35 ? 4 : 2;
+      const reach = stage > 0.7 ? 9 : stage > 0.35 ? 6.5 : 3.5;
+      // Back fronds first, so the front ones overlap them.
+      const angles = Array.from(
+        { length: fronds },
+        (_, i) => -Math.PI / 2 + (i - (fronds - 1) / 2) * 0.34 + (rnd() - 0.5) * 0.25,
+      ).sort((p, q) => Math.abs(q + Math.PI / 2) - Math.abs(p + Math.PI / 2));
+      for (const a of angles) {
+        const len = reach + rnd() * 1.5;
+        // The stalk: a thin line, lit on its sunward side.
+        for (let s = 0; s <= len; s++) {
+          const px = Math.round(8 + Math.cos(a) * s);
+          const py = Math.round(13 + Math.sin(a) * s);
+          b.set(px, py, s > len * 0.5 ? CARROT_FROND.base : CARROT_FROND.dark);
+        }
+        // Leaflets forking off both sides, then a feathery tuft at the end.
+        for (let s = 2; s < len; s += 2) {
+          const px = 8 + Math.cos(a) * s;
+          const py = 13 + Math.sin(a) * s;
+          for (const side of [-1, 1] as const) {
+            const fa = a + side * 0.9;
+            const lx = Math.round(px + Math.cos(fa) * 1.6);
+            const ly = Math.round(py + Math.sin(fa) * 1.6);
+            b.set(lx, ly, side < 0 ? CARROT_FROND.light : CARROT_FROND.base);
+          }
+        }
         const tx = Math.round(8 + Math.cos(a) * len);
         const ty = Math.round(13 + Math.sin(a) * len);
-        b.ellipse(tx + 0.5, ty + 0.5, 2.2, 1.8, LEAF.light);
-        b.set(tx, ty - 1, LEAF.hi);
-        b.set(tx - 1, ty, LEAF.hi);
-        if (rnd() < 0.22) b.set(tx + 1, ty, 0xd8c85a); // one leaf turning yellow
+        b.ellipse(tx + 0.5, ty + 0.5, 2, 1.6, CARROT_FROND.base);
+        b.set(tx - 1, ty - 1, CARROT_FROND.hi);
+        b.set(tx, ty - 1, CARROT_FROND.light);
+        b.set(tx - 1, ty, CARROT_FROND.light);
+        b.set(tx + 1, ty + 1, CARROT_FROND.dark);
+        if (rnd() < 0.18) b.set(tx + 1, ty, 0xd8c85a); // one leaflet turning yellow
       }
       if (stage > 0.3) {
-        // The orange shoulder standing up out of the soil.
-        const rw = stage > 0.7 ? 3.2 : 2.4;
-        b.ellipse(8.5, 15, rw, 2.6, 0xe0702a);
-        b.rect(7, 13, 2, 1, 0xf4a058);
-        b.set(6, 14, 0xf4a058);
-        b.set(Math.round(8 + rw) - 1, 16, 0xb04e18);
-        b.set(9, 17, 0xb04e18);
-        b.set(7, 16, 0xe88a3a);
+        // The orange shoulder standing up out of the soil, ringed.
+        const rw = stage > 0.7 ? 3.4 : 2.5;
+        rootShoulder(b, 8.5, 15, rw, 2.6, [0x8a3410, 0xb04e18, 0xe0702a, 0xf2924a, 0xfcc080], true);
       }
     },
     undefined,
     0.82,
   );
 }
+
+const DAIKON_LEAF_TONES = { dark: 0x3e6a18, base: 0x6a9a2c, light: 0x94c244, hi: 0xc4e068 };
 
 function daikonPlant(seed: number, stage: Stage): Sprite {
   return sprite(
@@ -224,25 +360,26 @@ function daikonPlant(seed: number, stage: Stage): Sprite {
       const rnd = stream(seed);
       const leaves = stage > 0.6 ? 6 : stage > 0.3 ? 5 : 3;
       const reach = stage > 0.6 ? 7.5 : stage > 0.3 ? 5.5 : 3.5;
-      // A rosette of broad leaves, back ones first.
+      // A rosette of broad, veined leaves, back ones first.
       const angles = Array.from(
         { length: leaves },
-        (_, i) => -Math.PI / 2 + (i - (leaves - 1) / 2) * 0.6 + (rnd() - 0.5) * 0.25,
+        (_, i) => -Math.PI / 2 + (i - (leaves - 1) / 2) * 0.62 + (rnd() - 0.5) * 0.25,
       ).sort((p, q) => Math.abs(q + Math.PI / 2) - Math.abs(p + Math.PI / 2));
-      for (const a of angles) leafStroke(b, 8, 11, a, reach + rnd() * 1.5, DAIKON_LEAF, 1);
+      for (const a of angles) leaf(b, 8, 11, a, reach + rnd() * 1.5, DAIKON_LEAF_TONES, 1.8);
       if (stage > 0.25) {
-        // The white root's crown, with a pale green collar.
-        const rw = stage > 0.6 ? 3.4 : 2.4;
-        b.ellipse(8.5, 12.5, rw, 2, 0xf2efe0);
-        b.set(7, 11, 0xffffff);
-        b.set(Math.round(8 + rw) - 1, 13, 0xcfc9b0);
+        // The white root's crown, pale green at the collar.
+        const rw = stage > 0.6 ? 3.5 : 2.5;
+        rootShoulder(b, 8.5, 12.6, rw, 2.1, [0xa8a890, 0xcfc9b0, 0xece8d6, 0xf8f6ec, 0xffffff]);
         b.rect(7, 10, 3, 1, 0xd6e4a0);
+        b.set(7, 10, 0xe8f2b8);
       }
     },
     undefined,
     0.8,
   );
 }
+
+const CABBAGE = { deep: 0x3a5e1a, dark: 0x527a24, base: 0x76a032, light: 0x9cc456, hi: 0xc8e48a };
 
 function cabbagePlant(seed: number, stage: Stage): Sprite {
   return sprite(
@@ -253,24 +390,57 @@ function cabbagePlant(seed: number, stage: Stage): Sprite {
     (b) => {
       const rnd = stream(seed);
       const r = 2.6 + stage * 2.4;
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2 + rnd() * 0.5;
-        b.ellipse(
-          7 + Math.cos(a) * r * 0.55,
-          7 + Math.sin(a) * r * 0.4,
-          r * 0.55,
-          r * 0.42,
-          Math.sin(a) > 0.2 ? LEAF.dark : LEAF.base,
-        );
+      // Outer leaves cupping round the head: each a lit, ruffled scallop with
+      // a dark vein down its middle, the ones at the back (top) drawn first.
+      const outer = Array.from({ length: 6 }, (_, i) => (i / 6) * Math.PI * 2 + rnd() * 0.5).sort(
+        (p, q) => Math.sin(p) - Math.sin(q),
+      );
+      for (const a of outer) {
+        const ox = 7 + Math.cos(a) * r * 0.58;
+        const oy = 7 + Math.sin(a) * r * 0.42;
+        const lr = r * 0.56;
+        for (let y = Math.floor(oy - lr); y <= oy + lr; y++) {
+          for (let x = Math.floor(ox - lr); x <= ox + lr; x++) {
+            const nx = (x + 0.5 - ox) / lr;
+            const ny = (y + 0.5 - oy) / (lr * 0.78);
+            if (nx * nx + ny * ny > 1) continue;
+            const lit = -nx * 0.55 - ny * 0.8 - Math.sin(a) * 0.35;
+            let c: Rgb =
+              lit > 0.5
+                ? CABBAGE.light
+                : lit > -0.1
+                  ? CABBAGE.base
+                  : lit > -0.6
+                    ? CABBAGE.dark
+                    : CABBAGE.deep;
+            // The ruffled edge, and the vein running out from the head.
+            if (nx * nx + ny * ny > 0.72 && (x + y) % 2 === 0)
+              c = lit > 0 ? CABBAGE.hi : CABBAGE.dark;
+            const vx = Math.cos(a);
+            const vy = Math.sin(a);
+            if (Math.abs((x + 0.5 - ox) * vy - (y + 0.5 - oy) * vx) < 0.5) c = CABBAGE.dark;
+            b.set(x, y, c);
+          }
+        }
       }
-      b.ellipse(7.2, 6.5, r * 0.62, r * 0.5, 0xb8d47a);
-      b.ellipse(6.4, 5.8, r * 0.3, r * 0.22, 0xdcebb0);
-      b.set(Math.round(7 + r * 0.3), 8, 0x8cb050);
+      // The tight pale head in the middle: lit dome, a fold line across it.
+      rootShoulder(
+        b,
+        7.2,
+        6.6,
+        r * 0.6,
+        r * 0.48,
+        [0x7a9a3a, 0x9cbc58, 0xb8d47a, 0xd2e6a0, 0xecf6cc],
+      );
+      b.set(Math.round(7.2), Math.round(6.6), 0x9cbc58);
+      b.set(Math.round(7.2) + 1, Math.round(6.6) + 1, 0x9cbc58);
     },
     undefined,
     0.8,
   );
 }
+
+const EGG_LEAF = { dark: 0x3a5a1e, base: 0x5a8030, light: 0x7ea446, hi: 0xa8c870 };
 
 function eggplantPlant(seed: number, stage: Stage): Sprite {
   return sprite(
@@ -280,17 +450,23 @@ function eggplantPlant(seed: number, stage: Stage): Sprite {
     14,
     (b) => {
       const rnd = stream(seed);
+      // Broad, soft leaves on a purple-tinged stem.
       for (let i = 0; i < 4; i++) {
-        const a = -Math.PI / 2 + (i - 1.5) * 0.7 + (rnd() - 0.5) * 0.2;
-        leafStroke(b, 7, 12, a, 4.5 + rnd() * 1.5, LEAF, 1);
+        const a = -Math.PI / 2 + (i - 1.5) * 0.72 + (rnd() - 0.5) * 0.2;
+        leaf(b, 7, 12, a, 4.8 + rnd() * 1.4, EGG_LEAF, 1.9);
       }
+      b.set(7, 12, 0x5a3a5a);
+      b.set(7, 11, 0x6a4a6a);
+      // The fruit: glossy, deep purple, a green calyx cap, a sharp highlight.
+      const fruit = (fx: number, fy: number, rx: number, ry: number): void => {
+        rootShoulder(b, fx, fy, rx, ry, [0x2a1030, 0x3e1a48, 0x5a2a6a, 0x7a4290, 0x9a66b4]);
+        b.set(Math.round(fx - rx * 0.4), Math.round(fy - ry * 0.4), 0xe6d2f0); // the gloss
+        b.set(Math.round(fx), Math.round(fy - ry), 0x4a7a24); // calyx
+        b.set(Math.round(fx) - 1, Math.round(fy - ry), 0x6a9a30);
+      };
       if (stage > 0.4) {
-        b.ellipse(5, 12, 1.6, 2.4, 0x5a2a6a);
-        b.set(4, 11, 0x8a5aa0);
-        if (stage > 0.7) {
-          b.ellipse(9.5, 12.5, 1.5, 2.2, 0x6a3a7a);
-          b.set(9, 11, 0x9a6ab0);
-        }
+        fruit(5, 12.4, 1.7, 2.5);
+        if (stage > 0.7) fruit(9.5, 12.8, 1.6, 2.3);
       }
     },
     undefined,
@@ -307,24 +483,43 @@ function riceClump(seed: number, stage: Stage): Sprite {
     (b) => {
       const rnd = stream(seed);
       const stalks = 6 + Math.floor(rnd() * 4);
-      for (let i = 0; i < stalks; i++) {
+      // Back stalks (the outer ones) first.
+      const order = Array.from({ length: stalks }, (_, i) => i).sort(
+        (p, q) => Math.abs(q - (stalks - 1) / 2) - Math.abs(p - (stalks - 1) / 2),
+      );
+      for (const i of order) {
         const bx = 7 + (i - (stalks - 1) / 2) * 0.9 + (rnd() - 0.5);
         const hgt = 9 + Math.round(rnd() * 4 + stage * 2);
         const lean = (rnd() - 0.5) * 0.4 + (i - stalks / 2) * 0.1;
+        const lit = i < stalks / 2; // stalks on the sunward side are brighter
         let px = bx;
         for (let k = 0; k < hgt; k++) {
           px += lean * 0.28;
           const t = k / hgt;
-          b.set(Math.round(px), 15 - k, t < 0.35 ? 0x5e8a28 : t < 0.65 ? 0x9ab840 : 0xd2c454);
+          const c =
+            t < 0.35
+              ? lit
+                ? 0x6a9a2c
+                : 0x4e7a20
+              : t < 0.65
+                ? lit
+                  ? 0xa8c448
+                  : 0x8aa838
+                : lit
+                  ? 0xe0d060
+                  : 0xc8b448;
+          b.set(Math.round(px), 15 - k, c);
         }
-        // A drooping golden head.
+        // A drooping golden head of grains: lit kernels along its top.
         const dir = lean >= 0 ? 1 : -1;
         const hx = Math.round(px);
         const hy = 15 - hgt;
-        b.set(hx, hy, 0xf0d870);
-        b.set(hx + dir, hy, 0xe2c254);
-        b.set(hx + dir, hy + 1, 0xd2a838);
-        b.set(hx + dir * 2, hy + 2, 0xc89a30);
+        b.set(hx, hy, 0xfae88a);
+        b.set(hx + dir, hy, 0xf0d870);
+        b.set(hx + dir, hy + 1, 0xd8b440);
+        b.set(hx + dir * 2, hy + 1, 0xe2c254);
+        b.set(hx + dir * 2, hy + 2, 0xb8902a);
+        if (stage > 0.6) b.set(hx + dir * 3, hy + 3, 0xb8902a);
       }
     },
     undefined,
@@ -343,24 +538,58 @@ const PLANTS: Readonly<Record<Crop, (seed: number, stage: Stage) => Sprite>> = {
 // ── Beds and fields ──────────────────────────────────────────
 
 /** A low wooden fence: posts of slightly different heights, two lit rails. */
+/** Weathered fence wood, lightest to darkest. */
+const FENCE = {
+  hi: 0xf2c88a,
+  light: 0xdea260,
+  base: 0xc98149,
+  shade: 0xa8663a,
+  dark: 0x8a4e22,
+  deep: 0x5e3216,
+  nail: 0x3a2418,
+} as const;
+
+/**
+ * A low split-rail fence along a plot's front, drawn like GG Royale's props:
+ * two rails, each two pixels thick with a lit top and a shaded underside and
+ * a darker grain line here and there; posts three pixels wide, lit on the
+ * sunward (left) side and dark on the far one, each its own height with a
+ * cut, lit cap, a knot or a crack, and a nail head where each rail meets it.
+ */
 function fence(b: PixelBuffer, x: number, y: number, width: number, seed: number): void {
   for (const ry of [y + 3, y + 7]) {
     for (let xx = x; xx < x + width; xx++) {
-      b.set(xx, ry, hash(xx >> 2, ry, seed) < 0.1 ? 0xdea260 : 0xc98149);
-      b.set(xx, ry + 1, 0x8a4e22);
+      const grain = hash(xx >> 2, ry, seed) < 0.14;
+      b.set(xx, ry - 1, grain ? FENCE.light : FENCE.hi);
+      b.set(xx, ry, grain ? FENCE.shade : FENCE.base);
+      b.set(xx, ry + 1, FENCE.dark);
     }
   }
   const posts = Math.max(2, Math.round(width / 11));
   for (let i = 0; i <= posts; i++) {
     const px = Math.min(x + width - 3, Math.round(x + (i * (width - 3)) / posts));
-    const ph = 10 + (hash(px, 0, seed) < 0.35 ? 1 : 0);
+    const ph = 10 + (hash(px, 0, seed) < 0.35 ? 1 : 0) + (hash(px, 3, seed) < 0.2 ? -1 : 0);
     const top = y + 11 - ph;
     for (let k = 0; k < ph; k++) {
-      b.set(px, top + k, 0xdea260);
-      b.set(px + 1, top + k, 0xc98149);
-      b.set(px + 2, top + k, 0x8a4e22);
+      b.set(px, top + k, FENCE.light);
+      b.set(px + 1, top + k, FENCE.base);
+      b.set(px + 2, top + k, FENCE.dark);
     }
-    b.set(px + 1, top, 0xf0c080);
+    // The cut top, lit, and the post's foot darkening into the ground.
+    b.set(px, top, FENCE.hi);
+    b.set(px + 1, top, FENCE.hi);
+    b.set(px + 2, top, FENCE.base);
+    b.set(px + 1, top + ph - 1, FENCE.shade);
+    b.set(px + 2, top + ph - 1, FENCE.deep);
+    // A knot or a crack, some posts.
+    const mark = hash(px, 5, seed);
+    if (mark < 0.3) b.set(px + 1, top + 3 + Math.floor(mark * 10), FENCE.deep);
+    else if (mark < 0.5) {
+      b.set(px + 1, top + 2, FENCE.shade);
+      b.set(px + 1, top + 3, FENCE.dark);
+    }
+    // Nail heads where the rails cross the post.
+    for (const ry of [y + 3, y + 7]) b.set(px + 1, ry, FENCE.nail);
   }
 }
 
@@ -434,23 +663,32 @@ function paintPlot(
       // the plot: lit along their crests, dark down in the furrows between.
       const wave = (noise(x, 0, 13, seed + 1) - 0.5) * 3;
       const phase = (y - y0 + wave) / rowH;
-      const v = 0.5 + 0.5 * Math.cos(phase * Math.PI * 2) + (noise(x, y, 3, seed + 2) - 0.5) * 0.45;
+      // Smooth mounded bands (a little noise only moves their edges), each
+      // ridge a solid lit crest over its own shade, the furrow dark between.
+      const v = 0.5 + 0.5 * Math.cos(phase * Math.PI * 2) + (noise(x, y, 5, seed + 2) - 0.5) * 0.16;
       let c: Rgb =
-        v > 0.86
-          ? (x + y) % 2 === 0
-            ? soil.light
-            : soil.base
-          : v > 0.5
+        v > 0.84
+          ? soil.light
+          : v > 0.55
             ? soil.base
-            : v > 0.26
+            : v > 0.3
               ? soil.mid
-              : v > 0.08
+              : v > 0.1
                 ? soil.dark
                 : soil.deep;
-      // Clods and pebbles.
-      const speck = hash(x, y, seed + 3);
-      if (speck < 0.03) c = soil.light;
-      else if (speck > 0.975) c = soil.dark;
+      // Clods: a lit lump with its own shade below, here and there on the
+      // ridges (not a scatter of single pixels).
+      const cx = Math.floor(x / 5);
+      const cy = Math.floor((y - y0 + wave) / rowH);
+      if (
+        v > 0.5 &&
+        hash(cx, cy, seed + 3) < 0.2 &&
+        x % 5 === 2 &&
+        Math.round(y - y0 + wave) % rowH === 1
+      ) {
+        c = soil.light;
+        if (y + 1 < y0 + h) b.set(x, y + 1, soil.dark);
+      }
       // Sunk below the turf: the walls under the top and left edges are in
       // shade, the walls along the bottom and right are lit.
       if (!inside(x, y - 1) || !inside(x - 1, y)) c = soil.dark;
@@ -568,21 +806,31 @@ export function teaRows(width: number, rolls: number, seed: number): Sprite {
       for (let x = inset; x < right; x++) {
         if (x < inset + half - endR || x > right - half + endR) continue;
         const t = y / rollH;
-        const bump = noise(x, y, 2, seed + r * 7) - 0.5;
-        const l = (0.45 - t) * 1.5 + bump * 0.7 - ((x - inset) / (right - inset)) * 0.25;
-        const c =
-          l > 0.45
-            ? 0x9db238
-            : l > 0.1
-              ? 0x8aa230
-              : l > -0.3
-                ? 0x7e942c
+        // A clipped tea hedge: a long rounded mound lit along its top and
+        // left end, falling into shade along its foot, its surface made of
+        // small leaf clumps (each a lit cup over its own shade) rather than
+        // a smooth tube.
+        const bump = noise(x, y, 3, seed + r * 7) - 0.5;
+        const l = (0.45 - t) * 1.6 + bump * 0.35 - ((x - inset) / (right - inset)) * 0.3;
+        let c =
+          l > 0.5
+            ? 0xa8bc42
+            : l > 0.15
+              ? 0x8ea432
+              : l > -0.25
+                ? 0x7a902a
                 : l > -0.6
-                  ? 0x677824
-                  : 0x54621c;
+                  ? 0x627424
+                  : 0x4a581a;
+        // Leaf clumps in a staggered grid: a lit top pixel pair and a shaded
+        // one under it, on the sunny upper half.
+        const row = Math.floor(y / 3);
+        const sx = x + (row % 2) * 2;
+        if (l > -0.3 && hash(Math.floor(sx / 4), row, seed + r * 3) < 0.55) {
+          if (y % 3 === 0 && sx % 4 > 0 && sx % 4 < 3) c = l > 0.25 ? 0xc4d462 : 0xa8bc42;
+          else if (y % 3 === 1 && sx % 4 === 3) c = l > 0.25 ? 0x7a902a : 0x627424;
+        }
         roll.set(x, y + 1, c);
-        // Leaf flecks catching the light.
-        if (l > 0 && hash(x, y, seed + r) < 0.07) roll.set(x, y + 1, 0xb8c84a);
       }
     }
     roll.outline(0.86, LINE);
@@ -1079,42 +1327,76 @@ export function kennel(): Sprite {
 export function laptopTable(): Sprite {
   const w = 28;
   const h = 20;
+  // The table's wood, darkest to lightest, and the laptop's metal and screen.
+  const WOOD: readonly Rgb[] = [W.shadow, W.face, W.base, W.warm, W.light, W.hi];
+  const METAL: readonly Rgb[] = [0x3a3a46, 0x5a5a68, 0x7c7c8a, 0x9e9eac, 0xc4c4d0];
+  const SCREEN: readonly Rgb[] = [0x2a7ab8, 0x3a96d0, 0x4ab8e0, 0x6ccaf0, 0x9adcf8];
   return sprite(
     w,
     h,
     14,
     18,
     (b) => {
-      // Legs.
+      // Legs: square, lit on their left, darkening toward the floor.
       for (const x of [3, 23]) {
-        b.rect(x, 14, 2, 4, W.face);
-        b.rect(x, 14, 1, 4, W.light);
+        for (let y = 14; y < 18; y++) {
+          b.set(x, y, y > 16 ? W.face : W.light);
+          b.set(x + 1, y, y > 16 ? W.shadow : W.face);
+        }
       }
-      // The top, seen deep, its front edge thick.
+      // The top: planks running across, lit from the left (each a shade of its
+      // own), grain along them, a lit back edge, a thick shaded front edge.
       for (let y = 5; y < 15; y++) {
         for (let x = 1; x < w - 1; x++) {
-          let c: Rgb = y === 5 ? W.hi : y >= 13 ? (y === 14 ? W.face : W.base) : W.warm;
+          const plank = Math.floor((y - 5) / 4);
+          const v = 0.72 - (x / w) * 0.3 + (hash(plank, 0, 7) - 0.5) * 0.14;
+          let c = rockStep(WOOD, v, x, y);
           if (y > 5 && y < 13 && (y - 5) % 4 === 0)
-            c = W.mid; // board seams
-          else if (y > 5 && y < 13 && noise(x, y * 3, 4, 7) > 0.74) c = W.light;
+            c = W.face; // the seam between planks
+          else if (y > 5 && y < 13 && hash(x >> 2, y, 8) < 0.12) c = mix(c, W.face, 0.5); // grain
+          if (y === 5) c = W.hi;
+          if (y === 13) c = W.light; // the front edge's lit lip
+          if (y === 14) c = W.face;
           b.set(x, y, c);
         }
       }
-      // The laptop: the screen at the back, then the keyboard.
-      b.rect(8, 0, 12, 8, 0x2a2a34);
-      b.rect(9, 1, 10, 6, 0x4ab8e0);
-      b.rect(9, 1, 10, 2, 0x8ad8f8);
-      b.rect(10, 4, 5, 1, 0xd8f4ff);
-      b.rect(10, 5, 3, 1, 0xb8ecff);
-      b.rect(7, 8, 14, 4, 0x8a8a96);
-      b.rect(7, 8, 14, 1, 0xb8b8c4);
-      for (let x = 8; x < 20; x += 2) b.set(x, 9, 0x5a5a66);
-      for (let x = 9; x < 19; x += 2) b.set(x, 10, 0x5a5a66);
-      b.rect(12, 11, 4, 1, 0x6a6a76); // the trackpad
-      // A cup of tea.
-      b.ellipse(24, 9, 2, 1.6, 0xf2ece0);
-      b.ellipse(24, 8.8, 1.2, 0.8, 0x8aa040);
-      b.set(23, 10, 0xb8b0a0);
+      // The laptop's shadow on the table, down and right.
+      for (let y = 9; y < 13; y++)
+        for (let x = 9; x < 23; x++) b.set(x, y, mix(b.rgb(x, y), W.shadow, 0.5));
+      // The screen: a bezel lit along its top-left, the display falling from
+      // bright at the upper left to deeper blue, two lines of code, a camera dot.
+      b.rect(8, 0, 12, 8, METAL[0] ?? 0x2a2a34);
+      b.rect(8, 0, 12, 1, METAL[2] ?? 0x5a5a66);
+      b.rect(8, 0, 1, 8, METAL[1] ?? 0x4a4a56);
+      for (let y = 1; y < 7; y++) {
+        for (let x = 9; x < 19; x++) {
+          const v = 0.9 - ((x - 9) / 10) * 0.35 - ((y - 1) / 6) * 0.45;
+          b.set(x, y, rockStep(SCREEN, v, x, y));
+        }
+      }
+      b.rect(10, 3, 5, 1, 0xe8f8ff);
+      b.rect(10, 5, 3, 1, 0xc8eeff);
+      b.rect(14, 5, 2, 1, 0xffd060);
+      b.set(13, 0, 0x8a8a96);
+      // The hinge, then the keyboard deck: its back lit, keys in rows (each
+      // a lit top over its shade), a sunken trackpad, a lit front lip.
+      b.rect(7, 7, 14, 1, METAL[0] ?? 0x2a2a34);
+      b.rect(7, 8, 14, 4, METAL[2] ?? 0x8a8a96);
+      b.rect(7, 8, 14, 1, METAL[4] ?? 0xb8b8c4);
+      for (let x = 8; x < 20; x += 2) {
+        b.set(x, 9, METAL[3] ?? 0x9e9eac);
+        b.set(x, 10, METAL[1] ?? 0x5a5a66);
+      }
+      b.rect(12, 11, 4, 1, METAL[1] ?? 0x6a6a76);
+      b.set(12, 11, METAL[0] ?? 0x3a3a46);
+      b.rect(7, 12, 14, 1, METAL[3] ?? 0x9e9eac);
+      // A cup of green tea on a saucer, steam rising from it in the live view.
+      b.ellipse(24, 9.6, 2.6, 1.6, 0xd8d0c4);
+      b.ellipse(24, 9, 2, 1.5, 0xf2ece0);
+      b.ellipse(24, 8.8, 1.3, 0.9, 0x8aa040);
+      b.set(23, 8, 0xb4c86a);
+      b.set(25, 10, 0xb8b0a0);
+      b.set(26, 9, 0xd8d0c4);
     },
     { a: 0.28 },
   );
@@ -1123,8 +1405,9 @@ export function laptopTable(): Sprite {
 /**
  * A low bookcase from high above: its top board seen deep (grained, lit
  * along the back, a book lying open on it), then the shelves below, each a
- * row of spines (every book its own colour, height and lean, a lit edge down
- * one side), shaded under the shelf above, in a frame lit on its left.
+ * row of spines (every book its own colour, height and lean, lit on its left
+ * edge and shaded on its right, a title band across it), dark at the back of
+ * the shelf and shaded under the shelf above, in a frame lit on its left.
  */
 export function bookcase(seed: number): Sprite {
   const w = 24;
@@ -1136,10 +1419,12 @@ export function bookcase(seed: number): Sprite {
     12,
     22,
     (b) => {
-      // The frame and the dark backs of the shelves.
+      // The frame: lit left side, shaded right, the dark backs of the shelves.
       b.rect(1, 6, 22, 16, W.base);
       b.rect(1, 6, 1, 16, W.hi);
-      b.rect(22, 6, 1, 16, W.face);
+      b.rect(2, 6, 1, 16, W.light);
+      b.rect(21, 6, 1, 16, W.face);
+      b.rect(22, 6, 1, 16, W.shadow);
       b.rect(3, 7, 18, 13, W.deep);
       // Two shelves of books.
       for (const [top, bottom] of [
@@ -1152,31 +1437,60 @@ export function bookcase(seed: number): Sprite {
           const bh = Math.min(bottom - top, 4 + Math.floor(hash(x, top + 1, seed) * 3));
           const color = SPINES[Math.floor(hash(x, top + 2, seed) * SPINES.length)] ?? 0xc84a3a;
           const bx = Math.min(bw, 21 - x);
-          b.rect(x, bottom - bh, bx, bh, color);
-          b.rect(x, bottom - bh, 1, bh, mix(color, 0xffffff, 0.3)); // a lit edge
-          if (bh > 4) b.rect(x, bottom - bh + 1, bx, 1, mix(color, 0xffffff, 0.45)); // a band
+          // A book now and then leans on its neighbour: drawn a pixel lower
+          // at its far edge, its top a slant.
+          const lean = bx >= 2 && hash(x, top + 4, seed) < 0.18;
+          for (let i = 0; i < bx; i++) {
+            const t0 = bottom - bh + (lean && i === bx - 1 ? 1 : 0);
+            for (let y = t0; y < bottom; y++) {
+              const edge =
+                i === 0
+                  ? mix(color, 0xffffff, 0.32)
+                  : i === bx - 1 && bx > 1
+                    ? mix(color, 0x000000, 0.28)
+                    : color;
+              b.set(x + i, y, edge);
+            }
+            b.set(x + i, t0, mix(color, 0xffffff, 0.45)); // the top of its pages, lit
+          }
+          // A title band across the spine, and a darker band near the foot.
+          if (bh > 4)
+            for (let i = 0; i < bx; i++) b.set(x + i, bottom - bh + 2, mix(color, 0xfff0c0, 0.5));
+          for (let i = 0; i < bx; i++) b.set(x + i, bottom - 2, mix(color, 0x000000, 0.22));
           x += bx + (hash(x, top + 3, seed) < 0.15 ? 1 : 0);
         }
-        // Shade under the shelf above.
-        for (let xx = 3; xx < 21; xx++) b.set(xx, top, mix(b.rgb(xx, top), W.line, 0.45));
+        // Shade under the shelf above, deeper toward the back.
+        for (let xx = 3; xx < 21; xx++) {
+          b.set(xx, top, mix(b.rgb(xx, top), W.line, 0.55));
+          b.set(xx, top + 1, mix(b.rgb(xx, top + 1), W.line, 0.22));
+        }
         b.rect(2, bottom, 20, 1, W.light);
         b.rect(2, bottom + 1, 20, 1, W.face);
       }
-      // The top board, seen deep.
+      // The top board, seen deep: lit along the back, grained, shaded front.
       for (let y = 1; y < 7; y++) {
         for (let x = 0; x < w; x++) {
-          let c: Rgb = y === 1 ? W.hi : y === 6 ? W.face : W.warm;
-          if (y > 1 && y < 6 && noise(x, y * 3, 4, seed) > 0.72) c = W.light;
+          const v = 0.8 - (x / w) * 0.3 - ((y - 1) / 6) * 0.2;
+          let c = rockStep([W.face, W.base, W.warm, W.light, W.hi], v, x, y);
+          if (y > 1 && y < 6 && hash(x >> 2, y, seed + 9) < 0.14) c = mix(c, W.face, 0.45);
+          if (y === 1) c = W.hi;
+          if (y === 6) c = W.face;
           b.set(x, y, c);
         }
       }
-      // A book lying open on top.
+      // A book lying open on top: two pages curving up from the spine, its
+      // shadow on the board, a line or two of text on each page.
+      for (let y = 3; y < 7; y++)
+        for (let x = 8; x < 18; x++) b.set(x, y, mix(b.rgb(x, y), W.shadow, 0.45));
       b.rect(7, 2, 10, 4, PAPER.shade);
       b.rect(7, 2, 4, 3, PAPER.lit);
       b.rect(12, 2, 5, 3, PAPER.lit);
+      b.set(7, 2, 0xffffff);
       b.rect(11, 2, 1, 4, W.frame);
       b.rect(8, 3, 2, 1, 0xb8a888);
       b.rect(13, 3, 3, 1, 0xb8a888);
+      b.rect(8, 4, 1, 1, 0xb8a888);
+      b.rect(13, 4, 2, 1, 0xb8a888);
     },
     { a: 0.28 },
   );
@@ -1295,15 +1609,53 @@ export function postBox(): Sprite {
 
 /** The fishing spot's creel: a woven basket for the catch. */
 export function fishingSpot(): Sprite {
+  // A woven bamboo creel from above: a round body of weave (each strip lit on
+  // its upper edge, the whole lit from the upper left like a dome), a lit rim
+  // round its dark mouth, a fish tail flopping out of it, and its strap.
+  const WEAVE: readonly Rgb[] = [0x6a4a1e, 0x8a6a2e, 0xa8884a, 0xc8a868, 0xe2c88a];
   return sprite(
     34,
     26,
     8,
     24,
     (b) => {
-      b.ellipse(8, 20, 5, 4, 0xc8a868);
-      for (let x = 4; x < 13; x += 2) b.rect(x, 17, 1, 7, 0x9a7a3a);
-      b.ellipse(8, 17, 4, 1.4, 0x5a3a1a);
+      const cx = 8;
+      const cy = 19;
+      const rx = 5.2;
+      const ry = 4.4;
+      for (let y = Math.floor(cy - ry); y <= cy + ry; y++) {
+        for (let x = Math.floor(cx - rx); x <= cx + rx; x++) {
+          const nx = (x + 0.5 - cx) / rx;
+          const ny = (y + 0.5 - cy) / ry;
+          if (nx * nx + ny * ny > 1) continue;
+          const lit = -nx * 0.5 - ny * 0.7 + (1 - nx * nx - ny * ny) * 0.4;
+          let v = 0.5 + lit * 0.45;
+          // The weave: strips crossing in a 2-pixel checker, the over strips
+          // a step lighter than the under ones.
+          if (((x >> 1) + (y >> 1)) % 2 === 0) v += 0.18;
+          else v -= 0.08;
+          const i = Math.max(0, Math.min(WEAVE.length - 1, Math.round(v * (WEAVE.length - 1))));
+          b.set(x, y, WEAVE[i] ?? 0xa8884a);
+        }
+      }
+      // The mouth: a dark opening with a lit rim round its back.
+      b.ellipse(cx, cy - 2.2, 3.4, 1.3, 0x3a2410);
+      for (let x = Math.round(cx - 3); x <= cx + 3; x++)
+        b.set(x, Math.round(cy - 3.6), WEAVE[4] ?? 0xe2c88a);
+      // A fish tail sticking out of it.
+      b.set(cx + 1, Math.round(cy - 3), 0xa8cfc0);
+      b.set(cx + 2, Math.round(cy - 4), 0xc8e0d4);
+      b.set(cx + 3, Math.round(cy - 4), 0xa8cfc0);
+      b.set(cx + 2, Math.round(cy - 3), 0x6a9a8a);
+      // The strap, looping over the top.
+      for (let k = 0; k < 7; k++) {
+        const t = k / 6;
+        b.set(
+          Math.round(cx - 4 + t * 8),
+          Math.round(cy - 4 - Math.sin(t * Math.PI) * 2.4),
+          0x5a3a1a,
+        );
+      }
     },
     { a: 0.28 },
   );
@@ -1394,10 +1746,15 @@ export function dirtPatch(seed: number, size: "s" | "l" = "s"): Sprite {
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
           if (!inside(x, y)) continue;
-          let c: Rgb = DIRT.base;
-          const n = noise(x * 0.8, y, 6, seed + 1);
-          if (n > 0.66) c = DIRT.light;
-          if (n > 0.8) c = DIRT.worn;
+          // A shallow bare hollow: the sun can't reach in past its upper-left
+          // lip, so that side is a step darker; its far side catches the
+          // light; worn, paler patches where feet have trodden it.
+          const nx = (x + 0.5 - cx) / rx;
+          const ny = (y + 0.5 - cy) / ry;
+          const bowl = nx * 0.5 + ny * 0.7;
+          const n = noise(x * 0.8, y, 7, seed + 1);
+          let c: Rgb = bowl < -0.45 ? DIRT.rim : bowl > 0.35 ? DIRT.light : DIRT.base;
+          if (n > 0.72 && bowl > -0.3) c = DIRT.worn;
           // The rim along its top edge: the grass overhangs it a little.
           if (!inside(x, y - 1) || !inside(x - 1, y)) c = DIRT.rim;
           b.set(x, y, c);

@@ -4,6 +4,18 @@ Load this when the project calls a model, exposes tools to a model, runs an agen
 
 Standards [V]: **OWASP Top 10 for LLM Applications (2025)** — LLM01 Prompt Injection, LLM02 Sensitive Information Disclosure, LLM03 Supply Chain, LLM04 Data and Model Poisoning, LLM05 Improper Output Handling, LLM06 Excessive Agency, LLM07 System Prompt Leakage, LLM08 Vector and Embedding Weaknesses, LLM09 Misinformation, LLM10 Unbounded Consumption. **OWASP Top 10 for Agentic Applications (2026)**, published 9 Dec 2025 — ASI01 Goal Hijack, ASI02 Tool Misuse, ASI03 Identity & Privilege Abuse, ASI04 Agentic Supply Chain, ASI05 Unexpected Code Execution, ASI06 Memory & Context Poisoning, ASI07 Insecure Inter-Agent Communication, ASI08 Cascading Failures, ASI09 Human-Agent Trust Exploitation, ASI10 Rogue Agents. Its core principle is **least agency** — grant the minimum autonomy the task requires, not merely minimum permissions.
 
+## Contents
+
+- The one thing to internalize
+- The lethal trifecta
+- Architecture controls that actually hold
+- Sandbox escapes — the 2026 pattern
+- Context and rules-file poisoning
+- MCP specifics
+- Coding agents working in your repo
+- RAG, memory & multi-agent
+- Reviewing an agent feature — the short list
+
 ## The one thing to internalize
 
 **Prompt injection cannot be reliably prevented.** "The Attacker Moves Second" (Oct 2025) bypassed 12 published defenses at >90% for most with adaptive attacks, and human red-teamers beat every scenario [V]. Any design whose safety depends on the model refusing a malicious instruction is already broken. Filters, delimiters, "ignore instructions in user content", and a second model checking the first are mitigations, not controls.
@@ -59,7 +71,16 @@ Instructions hidden in files the agent reads land directly in its context, which
 
 - **Servers are dependencies.** Install from a registry with signing and verification, pin the version, and re-review the tool list after every update. The first malicious server in the wild (`postmark-mcp`, Sept 2025) built trust across fifteen clean releases before adding a silent BCC [V].
 - **Tool descriptions are model-visible input.** A server can poison behavior through description text alone, and can change descriptions after approval — a rug-pull. Pin and diff them.
-- **Authorization per spec 2025-11-25** [V] — for HTTP servers: the MCP server is an OAuth resource server; clients send the RFC 8707 `resource` parameter so tokens are bound to one server; servers **must** validate token audience and **must not** pass the client's token through to upstream APIs; Protected Resource Metadata (RFC 9728) via `WWW-Authenticate` or the `.well-known` fallback; Client ID Metadata Documents are the preferred client registration (SHOULD), Dynamic Client Registration is now optional (MAY); Streamable HTTP servers return 403 for an invalid `Origin`. A CIMD-supporting authorization server fetches a client-supplied URL — apply the SSRF sweep from `platform-playbooks.md`. Stdio servers do not use this flow; they get credentials from the environment, so scope those.
+- **Current spec is 2026-07-28** [V] (replaces 2025-11-25). Security-relevant changes for HTTP servers:
+  - **Stateless**: the initialize handshake and `Mcp-Session-Id` are gone; every request carries its protocol version and capabilities. Authenticate and authorize each request; never key authorization on a session you no longer have.
+  - **`Mcp-Method` / `Mcp-Name` routing headers** mirror body fields. Route and authorize on the validated body, or reject a header/body mismatch; a header alone is attacker-chosen.
+  - **Multi-round-trip requests carry `requestState`** back from the client. Treat it as untrusted: sign it, bind it to the caller, and expire it.
+  - **Cacheable tool/resource listings**: bound cache lifetime and re-validate, so stale or poisoned descriptions do not outlive an update or a rug-pull.
+  - **Auth**: the server is an OAuth resource server; RFC 8707 `resource` binds tokens to one server; validate audience; never pass the client's token through upstream; RFC 9728 Protected Resource Metadata. Client ID Metadata Documents replace Dynamic Client Registration (DCR deprecated); clients check the `iss` response parameter (RFC 9207) against mix-up. A CIMD-fetching authorization server fetches a client-supplied URL: apply the SSRF sweep from `platform-playbooks.md`.
+  - **Origin**: Streamable HTTP servers MUST validate `Origin` and return 403 when it is present and invalid; bind local servers to 127.0.0.1 [V].
+  - **Roots, Sampling and Logging are deprecated** with at least 12 months' notice [V]; do not build new trust on them.
+  - **MCP Apps** (server-built UIs rendered in the client) are a phishing surface: treat them as untrusted content, never as the client's own UI, and never let them collect credentials.
+  - Stdio servers do not use the OAuth flow; they get credentials from the environment, so scope those.
 - **Stdio servers execute locally.** Command-injection CVEs in stdio server launchers are a recurring class [S]. Never construct the launch command from untrusted input; never auto-register a server from web content — this has been an RCE in the wild [S].
 - **Config files hold live credentials** — GitGuardian found 24,008 unique secrets in public MCP configuration files in 2025 [V]. Reference env vars or a keychain from `.mcp.json`; never commit literal keys.
 - **Server-side**: authenticate callers, authorize per-tool, validate every argument against a schema, and never let a tool return content that the client will treat as an instruction without provenance marking.

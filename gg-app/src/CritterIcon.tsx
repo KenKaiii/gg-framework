@@ -6,7 +6,7 @@ const BUILDER = CRITTERS.find((critter) => critter.id === "builder") ?? CRITTERS
 const SRC = BUILDER ? renderCritterFrame(BUILDER, 0) : "";
 
 /** A small critter, beside the footer's Critters model picker. Decorative. */
-export function CritterIcon({ size = 14 }: { size?: number }): React.ReactElement {
+export function CritterIcon({ size = 18 }: { size?: number }): React.ReactElement {
   return (
     <span className="critter-icon" style={{ width: size, height: size }} aria-hidden="true">
       <img src={SRC} alt="" draggable={false} />

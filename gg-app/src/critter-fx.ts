@@ -7,7 +7,7 @@
 // behind (a prop's flicker is a self-rescheduling `later`, not setInterval).
 
 import { CRITTER_CELLS } from "./critter-sprites";
-import { renderProp, type PropArt, type PropName } from "./critter-props";
+import { PROP_PAD, type PropArt, type PropName, renderProp } from "./critter-props";
 import type { Critter } from "./critter-types";
 
 /** Equal to `--ease-pop` in App.css; scripts/motion-tokens.test.mjs enforces it. */
@@ -53,11 +53,11 @@ interface Spot {
 // Spots in sprite cells for a critter facing right (x = left edge, y = bottom
 // edge). Facing left mirrors x. "center" keeps it over the head.
 const SPOTS: Readonly<Record<SpotName, Spot>> = {
-  hand: { x: 11, y: 2 },
-  ground: { x: 13, y: 0 },
-  up: { x: 10, y: 8 },
-  eye: { x: 11, y: 7 },
-  head: { x: "center", y: 14 },
+  hand: { x: 14, y: 3 },
+  ground: { x: 16, y: 0 },
+  up: { x: 13, y: 10 },
+  eye: { x: 14, y: 9 },
+  head: { x: "center", y: 18 },
 };
 
 export interface PropOptions {
@@ -221,14 +221,16 @@ export function makeCritterFx(deps: FxDeps): CritterFx {
     node.style.width = `${PX * art.w}px`;
     node.style.height = `${PX * art.h}px`;
     const dx = (opts.dx ?? 0) * c.dir;
+    // The art carries an outline PROP_PAD cells round it: set it that far
+    // out, so the prop itself sits on its spot.
     const cellX =
       spot.x === "center"
         ? CRITTER_CELLS / 2 - art.w / 2
         : c.dir > 0
-          ? spot.x
-          : CRITTER_CELLS - spot.x - art.w;
+          ? spot.x - PROP_PAD
+          : CRITTER_CELLS - spot.x - art.w + PROP_PAD;
     node.style.left = `${PX * (cellX + dx)}px`;
-    node.style.bottom = `${PX * (spot.y + (opts.dy ?? 0))}px`;
+    node.style.bottom = `${PX * (spot.y - PROP_PAD + (opts.dy ?? 0))}px`;
     if (opts.mirror !== false && c.dir < 0) img.style.transform = "scaleX(-1)";
     node.style.transformOrigin = opts.origin ?? "50% 100%";
     if (opts.behind) c.react.prepend(node);
@@ -374,7 +376,7 @@ export function makeCritterFx(deps: FxDeps): CritterFx {
 
   const mid = (): number => SIZE / 2;
   const headY = (): number => SIZE * 0.85;
-  const frontX = (c: Critter, cells = 13): number =>
+  const frontX = (c: Critter, cells = 16): number =>
     (c.dir > 0 ? cells : CRITTER_CELLS - cells) * PX;
 
   function sparks(c: Critter, n: number, outward = true): void {
@@ -501,7 +503,7 @@ export function makeCritterFx(deps: FxDeps): CritterFx {
       particle(c, {
         cls: "critter-pt-dot",
         color: pick(["#7b5a3a", "#5c4129", "#a07850"]),
-        x: frontX(c, 12),
+        x: frontX(c, 15),
         y: 0,
         dx: -c.dir * rand(10, 26),
         dy: -2,
@@ -574,8 +576,8 @@ export function makeCritterFx(deps: FxDeps): CritterFx {
     for (let i = 0; i < n; i++) {
       particle(c, {
         cls: "critter-pt-blub",
-        x: frontX(c, 12),
-        y: 14,
+        x: frontX(c, 15),
+        y: 18,
         dx: c.dir * rand(2, 10),
         dy: rand(16, 26),
         s0: 0.5,

@@ -10,7 +10,7 @@ import {
   withEyesClosed,
   type WakeMode,
 } from "./WakeScreen";
-import { CRITTERS } from "./critter-sprites";
+import { CRITTERS, renderCritterFrame } from "./critter-sprites";
 import {
   BIOMES,
   DECOR_COLS,
@@ -58,7 +58,7 @@ describe("clearSpot", () => {
     (_id, biome) => {
       const spot = clearSpot(biome);
       const floor = TERRAIN_ROWS - TERRAIN_FLOOR_ROW;
-      const half = 7; // the critter is 14 cells wide
+      const half = 9; // the critter is 18 cells wide
       for (const p of renderTerrain(biome).props) {
         if (p.layer === "sunk" || p.bottom - floor >= 18) continue;
         // Compare on the repeating strip, from the spot's point of view.
@@ -90,6 +90,13 @@ describe("withEyesClosed", () => {
       expect(closed.rows).toHaveLength(c.rows.length);
       expect(closed.rows).not.toEqual(c.rows);
       closed.rows.forEach((row, i) => expect(row).toHaveLength(c.rows[i]?.length ?? -1));
+    },
+  );
+
+  it.each(CRITTERS.map((c) => [c.id, c] as const))(
+    "%s: renders its blink as its own image, not the cached open eyes",
+    (_id, c) => {
+      expect(renderCritterFrame(withEyesClosed(c), 0)).not.toBe(renderCritterFrame(c, 0));
     },
   );
 });
