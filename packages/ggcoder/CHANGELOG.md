@@ -1,5 +1,18 @@
 # @kenkaiiii/ggcoder
 
+## 5.86.0
+
+### Minor Changes
+
+- Hedge a late first stream event with one duplicate request when the prompt prefix is provably warm, so a hung provider request no longer costs ~2 minutes of retrying; add the GG Royale sidecar endpoints (linking, bug-fixed and deploy signals); refresh the bundled skills.
+
+### Patch Changes
+
+- Updated dependencies
+  - @kenkaiiii/gg-agent@5.86.0
+  - @kenkaiiii/gg-ai@5.86.0
+  - @kenkaiiii/gg-core@5.86.0
+
 ## 5.85.0
 
 ### Minor Changes
