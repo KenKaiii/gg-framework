@@ -124,8 +124,14 @@ d("PersistentShell", () => {
     expect(bgPid).toBeGreaterThan(0);
     for (let i = 0; i < 50 && alive(bgPid); i++) await new Promise((r) => setTimeout(r, 50));
     expect(alive(bgPid)).toBe(false);
-    // No descendants of the shell survive at all.
-    expect(listDescendantPids(shellPid(sh)!)).toEqual([]);
+    // No descendants of the shell survive at all. They were all signalled, but
+    // the run settles on the sentinel, so a loaded Linux runner can still show
+    // the nested subshell mid-exit; wait for that the same way as for bgPid.
+    const pid = shellPid(sh)!;
+    for (let i = 0; i < 50 && listDescendantPids(pid).length > 0; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(listDescendantPids(pid)).toEqual([]);
   });
 
   it("a builtin busy loop that ignores the interrupt falls back to a restart with state restored", async () => {
