@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.96.1",
+    date: "2026-10-24",
+    items: [
+      "Heads up on `Gemini`: Google is suspending accounts for using their Gemini subscription through third-party harnesses. That's any third-party tool, not just GG Coder. I'm not supporting that trash here, so Gemini is gone from the login list, the model picker and startup. If you were signed in, GG simply moves you to another provider and your account stays safe.",
+      "Grok subscription chats are back. xAI started rejecting older clients with an `HTTP 426` error, so I updated GG to speak their latest `Grok CLI` version and your Grok plan works again right away.",
+      "Your agent now reads routine command output in far fewer tokens. Long `git log` and `git status` output, folder listings and all-green test runs get trimmed down to just the facts, so every session runs a little cheaper and a little faster. Failures always come through in full.",
+    ],
+  },
+  {
     version: "0.96.0",
     date: "2026-10-24",
     items: [
