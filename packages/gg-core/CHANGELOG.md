@@ -1,5 +1,14 @@
 # @kenkaiiii/gg-core
 
+## 5.86.1
+
+### Patch Changes
+
+- 1c91814: Fix Grok subscription (OAuth) chats failing with HTTP 426: report Grok CLI version 1.0.67, since xAI's chat proxy now rejects clients below 1.0.13.
+- 1c91814: Remove Gemini from login lists, model pickers and startup. Google is suspending accounts that use their Gemini subscription through third-party harnesses (any of them, not just GG Coder), so GG Coder no longer supports signing in to Gemini. Existing stored credentials are left untouched but are no longer used.
+- Updated dependencies [1c91814]
+  - @kenkaiiii/gg-ai@5.86.1
+
 ## 5.86.0
 
 ### Patch Changes

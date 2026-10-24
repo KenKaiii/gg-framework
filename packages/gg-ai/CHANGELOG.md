@@ -1,5 +1,11 @@
 # @kenkaiiii/gg-ai
 
+## 5.86.1
+
+### Patch Changes
+
+- 1c91814: Fix Grok subscription (OAuth) chats failing with HTTP 426: report Grok CLI version 1.0.67, since xAI's chat proxy now rejects clients below 1.0.13.
+
 ## 5.86.0
 
 ## 5.85.0

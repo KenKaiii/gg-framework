@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.86.1
+
+### Patch Changes
+
+- 1c91814: Remove Gemini from login lists, model pickers and startup. Google is suspending accounts that use their Gemini subscription through third-party harnesses (any of them, not just GG Coder), so GG Coder no longer supports signing in to Gemini. Existing stored credentials are left untouched but are no longer used.
+- 1c91814: Trim routine boilerplate from small bash output: `git log` headers fold to one line per commit, `git status` drops its `(use "git …")` hints, `ls -l` states a shared owner/group once, and all-green vitest/jest runs list a count instead of every passing file. Failing runs, file lists and anything that doesn't match these shapes pass through unchanged.
+- Updated dependencies [1c91814]
+- Updated dependencies [1c91814]
+  - @kenkaiiii/gg-core@5.86.1
+  - @kenkaiiii/gg-ai@5.86.1
+  - @kenkaiiii/gg-agent@5.86.1
+
 ## 5.86.0
 
 ### Minor Changes
