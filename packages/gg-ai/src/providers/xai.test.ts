@@ -132,6 +132,13 @@ describe("xai provider transport", () => {
     const headers = (options.defaultHeaders ?? {}) as Record<string, string>;
     expect(headers["X-XAI-Token-Auth"]).toBe("xai-grok-cli");
     expect(headers["x-grok-client-version"]).toMatch(/^\d+\.\d+/);
+    // The proxy 426s every request below its 1.0.13 floor (unless overridden).
+    if (process.env.GROK_CLI_VERSION === undefined) {
+      const [major = 0, minor = 0, patch = 0] = (headers["x-grok-client-version"] ?? "")
+        .split(".")
+        .map(Number);
+      expect(major * 1e6 + minor * 1e3 + patch).toBeGreaterThanOrEqual(1_000_013);
+    }
     // The proxy routes by override header, so the model must travel in it.
     expect(headers["x-grok-model-override"]).toBe("grok-4.5");
   });

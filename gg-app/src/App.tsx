@@ -221,7 +221,7 @@ const PLACEHOLDER_SHUFFLE_FRAME_MS = 24;
 // video analysis. Shared by the live send path and history restore so the
 // resumed transcript matches the live one exactly.
 const VIDEO_CAPABILITY_WARNING =
-  "This model can't watch video directly. The agent can still extract frames or audio with ffmpeg if needed — switch to a video-capable model (Gemini, Kimi, MiniMax) for native video analysis.";
+  "This model can't watch video directly. The agent can still extract frames or audio with ffmpeg if needed — switch to a video-capable model (Kimi, MiniMax, MiMo) for native video analysis.";
 
 function shufflePlaceholderFrame(target: string, frame: number): string {
   const revealCount = Math.ceil((target.length * frame) / PLACEHOLDER_SHUFFLE_FRAMES);

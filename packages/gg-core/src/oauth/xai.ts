@@ -53,16 +53,16 @@ const DEFAULT_CLI_BASE_URL = "https://cli-chat-proxy.grok.com/v1";
 const OAUTH_SCOPE = "openid profile email offline_access grok-cli:access api:access";
 
 /**
- * Client version reported to the chat proxy. The proxy hard-gates on this: with
- * no version it answers "Your Grok CLI version (none) is outdated. Please update
- * to version 0.1.202 or later", so the value has to look like a real Grok CLI
- * build, not a placeholder. Grok CLI ships 0.1.x/0.2.x versions — every known
- * third-party client pins one in that range (0.1.202 … 0.2.106).
+ * Client version reported to the chat proxy. The proxy hard-gates on this with
+ * a semver minimum (prereleases don't satisfy it): below the floor every
+ * request gets HTTP 426 "Your Grok CLI version (x) is outdated". The floor was
+ * 0.1.202, then rose to 1.0.13 around 2026-10-01, which broke the old 0.2.101
+ * pin. 1.0.67 is the stable Grok CLI per x.ai/cli/stable (2026-10-24).
  *
  * Overridable via GROK_CLI_VERSION so a bumped proxy floor can be worked around
  * without waiting for a release.
  */
-const DEFAULT_GROK_CLI_VERSION = "0.2.101";
+const DEFAULT_GROK_CLI_VERSION = "1.0.67";
 
 /**
  * Fallback poll budget when the device-authorization response omits `expires_in`.

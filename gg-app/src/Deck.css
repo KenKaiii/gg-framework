@@ -396,8 +396,12 @@
   text-transform: uppercase;
   white-space: nowrap;
 }
+/* The tally is plain text beside a row of keys: the keys' 6px gap glued it to
+   the Chat / Workers switch. Extra room on both sides sets it apart from the
+   title and the controls (18px to the switch, 22px from the title at its
+   tightest). */
 .chat-head-trail .goal-tally {
-  margin: 0;
+  margin: 0 var(--space-6);
   font-size: var(--fs-xs);
 }
 .chat-head-trail .rank-xp-chip-layer {

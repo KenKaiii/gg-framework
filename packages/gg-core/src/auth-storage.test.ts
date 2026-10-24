@@ -14,6 +14,7 @@ import {
   providerStorageKeys,
   readStoredBaseUrlSync,
 } from "./auth-storage.js";
+import { isHiddenProvider } from "./hidden-providers.js";
 
 const refreshOpenAIToken = vi.hoisted(() => vi.fn());
 vi.mock("./oauth/openai.js", () => ({ refreshOpenAIToken }));
@@ -401,7 +402,8 @@ describe("AuthStorage — Xiaomi dual credential (Token Plan vs. API Credits)", 
     const picked = await both.resolveCredentials("gemini", { storageKeys: keys });
     // The key carries the public API base URL — the transport routes on it.
     expect(picked).toMatchObject({ accessToken: "aistudio-key", baseUrl: GEMINI_API_KEY_BASE_URL });
-    expect(await both.hasProviderAuth("gemini")).toBe(true);
+    // Credentials still resolve while Gemini is hidden; it just isn't "connected".
+    expect(await both.hasProviderAuth("gemini")).toBe(!isHiddenProvider("gemini"));
 
     // OAuth only, and expired: reached through the list, it must still refresh.
     const oauthOnly = await makeStorage();
@@ -422,7 +424,20 @@ describe("AuthStorage — Xiaomi dual credential (Token Plan vs. API Credits)", 
     // API key only satisfies hasProviderAuth too.
     const keyOnly = await makeStorage();
     await keyOnly.setCredentials(GEMINI_API_KEY, oauthCreds("k", ""));
-    expect(await keyOnly.hasProviderAuth("gemini")).toBe(true);
+    expect(await keyOnly.hasProviderAuth("gemini")).toBe(!isHiddenProvider("gemini"));
+  });
+
+  it("reports a hidden provider as not connected even with credentials on disk", async () => {
+    // Pickers and startup filter on hasProviderAuth, so this is what keeps a
+    // hidden provider (Gemini, for now) out of them for users with old logins.
+    expect(isHiddenProvider("gemini")).toBe(true);
+    const storage = await makeStorage();
+    await storage.setCredentials("gemini", oauthCreds("oauth-token"));
+    await storage.setCredentials(GEMINI_API_KEY, oauthCreds("k", ""));
+    expect(await storage.hasProviderAuth("gemini")).toBe(false);
+    // Other providers are unaffected.
+    await storage.setCredentials("anthropic", oauthCreds("a"));
+    expect(await storage.hasProviderAuth("anthropic")).toBe(true);
   });
 
   it("resolveCredentials prefers the first storageKey, falling back to the next when only that's configured", async () => {

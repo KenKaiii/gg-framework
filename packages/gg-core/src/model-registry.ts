@@ -1,6 +1,9 @@
 import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import { isKimiCodingEndpoint } from "./oauth/kimi.js";
 import { GEMINI_API_KEY, MOONSHOT_OAUTH_KEY, XIAOMI_CREDITS_KEY } from "./auth-storage.js";
+import { isHiddenProvider } from "./hidden-providers.js";
+
+export { HIDDEN_PROVIDERS, isHiddenProvider } from "./hidden-providers.js";
 
 export interface ModelInfo {
   id: string;
@@ -879,6 +882,14 @@ export function getModel(id: string): ModelInfo | undefined {
 
 export function getModelsForProvider(provider: Provider): ModelInfo[] {
   return getAllModels().filter((m) => m.provider === provider);
+}
+
+/**
+ * Models offered in lists that don't filter by login (Telegram `/m`, the
+ * agent's model list): everything except hidden providers' models.
+ */
+export function getListedModels(): ModelInfo[] {
+  return getAllModels().filter((m) => !isHiddenProvider(m.provider));
 }
 
 /** True when running `modelId` spends real money (Claude fast mode, MiMo UltraSpeed). */

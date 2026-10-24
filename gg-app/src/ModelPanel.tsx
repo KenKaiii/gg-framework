@@ -351,7 +351,7 @@ export function ModelPanel({
         )}
         {searching && flat.length === 0 && (
           <p className="deck-note">
-            No model matches &ldquo;{query}&rdquo;. Try a provider name, like &ldquo;gemini&rdquo;.
+            No model matches &ldquo;{query}&rdquo;. Try a provider name, like &ldquo;grok&rdquo;.
           </p>
         )}
       </div>

@@ -4,6 +4,7 @@ import type { ProcessManager } from "../core/process-manager.js";
 import { killProcessTree } from "../utils/process.js";
 import { truncateTail, MAX_BYTES, describeCompressed } from "./truncate.js";
 import { compressToolOutput } from "./compress.js";
+import { compactRoutineOutput } from "./routine-output.js";
 import { writeOverflow } from "./overflow.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 import { getSafeToolEnv } from "./safe-env.js";
@@ -121,7 +122,9 @@ const GUESSED_WAIT_SECONDS = 10;
  */
 export async function renderBashOutput(rawOutput: string): Promise<string> {
   const result = truncateTail(rawOutput);
-  if (!result.truncated) return result.content;
+  // Under the limit: drop routine boilerplate (git log/status labels, ls
+  // owner columns, green per-file test lines) — see routine-output.ts.
+  if (!result.truncated) return compactRoutineOutput(result.content);
   const overflowPath =
     Buffer.byteLength(rawOutput, "utf-8") > MAX_BYTES
       ? await writeOverflow(rawOutput, "bash").catch(() => null)

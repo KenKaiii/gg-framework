@@ -608,46 +608,26 @@ describe("dual-auth providers (OAuth + API key)", () => {
     expect(after.connected).toBe(true);
   }, 90_000);
 
-  it("adds a Gemini API key beside the Google sign-in, uses it first, and removes it alone", async () => {
+  // Gemini is hidden (gg-core hidden-providers.ts): Google no longer serves
+  // personal accounts over sign-in. Restore the dual-method test from git
+  // history ("adds a Gemini API key beside the Google sign-in") when un-hiding.
+  it("hides Gemini from the provider list and the model picker, even with a login on disk", async () => {
     const session = await createSession();
-    // An existing Google sign-in (Code Assist), as every current user has it.
     await fs.writeFile(
       path.join(tmpHome, ".gg", "auth.json"),
       JSON.stringify({
         gemini: { accessToken: "oauth", refreshToken: "r", expiresAt: Date.now() + 1_000_000 },
+        "gemini-api": { accessToken: "k", refreshToken: "", expiresAt: Date.now() + 1_000_000 },
       }),
     );
-    const before = await providerStatus(session, "gemini");
-    expect(before.methods).toEqual(["oauth", "apikey"]);
-    // The OAuth login under `gemini` is not mistaken for an API key.
-    expect(before.connectedMethods).toEqual(["oauth"]);
+    const status = await request("GET", "/auth/status", { session });
+    expect(status.status).toBe(200);
+    const values = (status.json.providers as { value: string }[]).map((p) => p.value);
+    expect(values).not.toContain("gemini");
+    expect(values).toContain("xai");
 
-    await request("POST", "/auth/apikey", {
-      session,
-      body: { provider: "gemini", key: "aistudio-key" },
-    });
-    const stored = JSON.parse(
-      await fs.readFile(path.join(tmpHome, ".gg", "auth.json"), "utf8"),
-    ) as Record<string, { accessToken: string; baseUrl?: string }>;
-    // Saved under its own key with the public API base URL; the login is untouched.
-    expect(stored["gemini-api"]).toMatchObject({
-      accessToken: "aistudio-key",
-      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-    });
-    expect(stored.gemini?.accessToken).toBe("oauth");
-
-    const both = await providerStatus(session, "gemini");
-    expect(both.connectedMethods).toEqual(["oauth", "apikey"]);
-    expect(both.activeMethod).toBe("apikey");
-    expect(String(both.priorityNote)).toMatch(/API key first/);
-
-    const out = await request("POST", "/auth/logout", {
-      session,
-      body: { provider: "gemini", method: "apikey" },
-    });
-    expect(out.status).toBe(200);
-    const after = await providerStatus(session, "gemini");
-    expect(after.connectedMethods).toEqual(["oauth"]);
-    expect(after.activeMethod).toBe("oauth");
+    const models = await request("GET", "/models", { session });
+    const providers = (models.json.models as { provider: string }[]).map((m) => m.provider);
+    expect(providers).not.toContain("gemini");
   }, 90_000);
 });

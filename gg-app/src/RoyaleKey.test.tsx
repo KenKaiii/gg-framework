@@ -99,6 +99,18 @@ describe("RoyaleKey badge", () => {
   });
 });
 
+/**
+ * The game frame, once the screen is listening to it. The frame appears when
+ * the sign-in URL arrives (outside act), and the message listener is a passive
+ * effect that can land a tick later on a slow runner; flush it before sending
+ * the game's signals, or they'd go to nobody.
+ */
+async function findFrame(): Promise<HTMLIFrameElement> {
+  const frame = (await screen.findByLabelText("GG Royale")) as HTMLIFrameElement;
+  await act(async () => {});
+  return frame;
+}
+
 describe("RoyaleScreen", () => {
   it("embeds the game full-window in a sandboxed frame, with Back", async () => {
     agent.openRoyale.mockResolvedValue("https://royale.test/#code=abc");
@@ -118,7 +130,7 @@ describe("RoyaleScreen", () => {
     agent.openRoyale.mockResolvedValue("https://royale.test/#code=abc");
     const onClose = vi.fn();
     render(<RoyaleScreen onClose={onClose} />);
-    const frame = (await screen.findByLabelText("GG Royale")) as HTMLIFrameElement;
+    const frame = await findFrame();
     const win = frame.contentWindow!;
     const say = (
       t: string,
@@ -148,7 +160,7 @@ describe("RoyaleScreen", () => {
   it("signs the game straight back in when it lost its sign-in, at most once per half minute", async () => {
     agent.openRoyale.mockResolvedValue("https://royale.test/#code=abc");
     render(<RoyaleScreen onClose={vi.fn()} />);
-    const frame = (await screen.findByLabelText("GG Royale")) as HTMLIFrameElement;
+    const frame = await findFrame();
     expect(agent.openRoyale).toHaveBeenCalledTimes(1);
     const say = (t: string) =>
       act(() => {
@@ -177,7 +189,7 @@ describe("RoyaleScreen", () => {
     localStorage.setItem("gg-royale-consent", "2");
     const onClose = vi.fn();
     render(<RoyaleScreen onClose={onClose} />);
-    const frame = (await screen.findByLabelText("GG Royale")) as HTMLIFrameElement;
+    const frame = await findFrame();
     const say = (t: string, source: Window | null) =>
       act(() => {
         window.dispatchEvent(

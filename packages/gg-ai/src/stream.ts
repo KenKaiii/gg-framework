@@ -55,14 +55,13 @@ const KIMI_CODE_USER_AGENT = `kimi-code-cli/${process.env.KIMI_CODE_VERSION ?? "
 const GROK_CLI_PROXY_HOST = "cli-chat-proxy.grok.com";
 
 /**
- * Client identity the Grok CLI chat proxy requires. It hard-gates on this: with
- * no version it answers "Your Grok CLI version (none) is outdated. Please update
- * to version 0.1.202 or later", so the value must look like a real Grok CLI build
- * (they ship 0.1.x/0.2.x) rather than a placeholder. Overridable via
+ * Client identity the Grok CLI chat proxy requires. It hard-gates the version
+ * with a semver minimum (HTTP 426 "Your Grok CLI version (x) is outdated"
+ * below it); the floor rose to 1.0.13 around 2026-10-01. Overridable via
  * GROK_CLI_VERSION. Keep in sync with gg-core's `grokCliHeaders()`, the
  * login-side source of truth.
  */
-const GROK_CLI_VERSION = process.env.GROK_CLI_VERSION ?? "0.2.101";
+const GROK_CLI_VERSION = process.env.GROK_CLI_VERSION ?? "1.0.67";
 
 // ── Register built-in providers ────────────────────────────
 

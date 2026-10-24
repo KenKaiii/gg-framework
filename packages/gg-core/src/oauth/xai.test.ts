@@ -206,4 +206,19 @@ describe("Grok CLI endpoint helpers", () => {
     // Omitting the model omits the override rather than sending an empty one.
     expect(grokCliHeaders()["x-grok-model-override"]).toBeUndefined();
   });
+
+  it("reports a client version at or above the proxy's 1.0.13 floor", () => {
+    // Below the floor the proxy answers HTTP 426 on every request (the old
+    // 0.2.101 pin broke all Grok subscription chats around 2026-10-01).
+    const saved = process.env.GROK_CLI_VERSION;
+    delete process.env.GROK_CLI_VERSION;
+    try {
+      const version = grokCliHeaders()["x-grok-client-version"] ?? "";
+      expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+      const [major = 0, minor = 0, patch = 0] = version.split(".").map(Number);
+      expect(major * 1e6 + minor * 1e3 + patch).toBeGreaterThanOrEqual(1_000_013);
+    } finally {
+      if (saved !== undefined) process.env.GROK_CLI_VERSION = saved;
+    }
+  });
 });

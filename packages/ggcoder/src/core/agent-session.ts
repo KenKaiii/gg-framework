@@ -80,7 +80,12 @@ import {
 } from "./compaction/compactor.js";
 import { getHistoryMessageVisibility } from "./session-history.js";
 import { sourceFingerprint as computeSourceFingerprint } from "./session-compaction.js";
-import { getAuthStorageKeys, getContextWindow, getModel, MODELS } from "./model-registry.js";
+import {
+  getAuthStorageKeys,
+  getContextWindow,
+  getListedModels,
+  getModel,
+} from "./model-registry.js";
 import { discoverSkillsWithBlocked, type BlockedSkill, type Skill } from "./skills.js";
 import { ensureAppDirs } from "../config.js";
 import {
@@ -4868,9 +4873,9 @@ export class AgentSession {
       },
       getModelList: () => {
         const current = `Current: ${this.provider}:${this.model}\n\nAvailable models:\n`;
-        const list = MODELS.map((m) => `  ${m.provider}:${m.id} — ${m.name} (${m.costTier})`).join(
-          "\n",
-        );
+        const list = getListedModels()
+          .map((m) => `  ${m.provider}:${m.id} — ${m.name} (${m.costTier})`)
+          .join("\n");
         return current + list;
       },
       quit: () => {

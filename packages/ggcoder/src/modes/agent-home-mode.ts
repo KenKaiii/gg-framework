@@ -9,7 +9,7 @@ import { formatUserError } from "../utils/error-handler.js";
 import { log, closeLogger } from "../core/logger.js";
 import { installTerminationHandlers } from "../core/shutdown.js";
 import { getAppPaths } from "../config.js";
-import { MODELS, getContextWindow } from "../core/model-registry.js";
+import { MODELS, getContextWindow, getListedModels } from "../core/model-registry.js";
 import { estimateConversationTokens } from "../core/compaction/token-estimator.js";
 import { PROMPT_COMMANDS } from "../core/prompt-commands.js";
 import { loadCustomCommands } from "../core/custom-commands.js";
@@ -389,8 +389,8 @@ export async function runAgentHomeMode(options: AgentHomeModeOptions): Promise<v
         if (args) {
           // Direct switch: /m 3 (number) or /m opus (name fragment)
           const num = parseInt(args, 10);
-          if (!isNaN(num) && num >= 1 && num <= MODELS.length) {
-            const selected = MODELS[num - 1]!;
+          if (!isNaN(num) && num >= 1 && num <= getListedModels().length) {
+            const selected = getListedModels()[num - 1]!;
             if (selected.billing?.paid) {
               reply(stream, paidModelRefusal(selected.name), isNewSession, targetSessionId);
               return;
@@ -403,7 +403,7 @@ export async function runAgentHomeMode(options: AgentHomeModeOptions): Promise<v
           }
           // Try matching by name fragment
           const lower = args.toLowerCase();
-          const match = MODELS.find(
+          const match = getListedModels().find(
             (m) => m.name.toLowerCase().includes(lower) || m.id.toLowerCase().includes(lower),
           );
           if (match) {
@@ -428,7 +428,7 @@ export async function runAgentHomeMode(options: AgentHomeModeOptions): Promise<v
 
         // No args — show numbered list
         let listText = `**Models**\n\n`;
-        const modelList = [...MODELS];
+        const modelList = getListedModels();
         modelList.forEach((m, i) => {
           const active = m.id === currentModel ? " \u2190" : "";
           listText += `${i + 1}. ${m.name}${active}\n`;

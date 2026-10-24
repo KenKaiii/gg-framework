@@ -9,6 +9,7 @@ import {
   XIAOMI_CREDITS_KEY,
   dualAuthProvider,
 } from "./auth-storage.js";
+import { isHiddenProvider } from "./hidden-providers.js";
 
 export type AuthMethod = "oauth" | "apikey";
 
@@ -76,8 +77,10 @@ export interface AuthMethodMeta {
  * lists that provider's models and feeds both the CLI login screen and the
  * app's provider list, so `auth-providers.test.ts` pins each one to the model
  * registry — a registry change that isn't reflected here fails the suite.
+ * Hidden providers (see `hidden-providers.ts`) keep their row here but are
+ * left out of the exported list.
  */
-export const AUTH_PROVIDERS: AuthProviderMeta[] = [
+const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
   {
     value: "anthropic",
     label: "Anthropic",
@@ -224,6 +227,11 @@ export const AUTH_PROVIDERS: AuthProviderMeta[] = [
     apiKeyLabel: "Hugging Face",
   },
 ];
+
+/** Every provider a user can connect right now, in login-screen order. */
+export const AUTH_PROVIDERS: AuthProviderMeta[] = ALL_AUTH_PROVIDERS.filter(
+  (p) => !isHiddenProvider(p.value),
+);
 
 export function getAuthProvider(value: string): AuthProviderMeta | undefined {
   return AUTH_PROVIDERS.find((p) => p.value === value);

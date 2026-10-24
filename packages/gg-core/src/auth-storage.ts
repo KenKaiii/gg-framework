@@ -10,6 +10,7 @@ import { refreshKimiToken } from "./oauth/kimi.js";
 import { refreshXaiToken } from "./oauth/xai.js";
 import { withFileLock } from "./file-lock.js";
 import { log } from "./logger.js";
+import { isHiddenProvider } from "./hidden-providers.js";
 
 type AuthData = Record<string, OAuthCredentials>;
 
@@ -275,6 +276,9 @@ export class AuthStorage {
    * satisfies it.
    */
   async hasProviderAuth(provider: string): Promise<boolean> {
+    // A hidden provider counts as not connected, so pickers and startup skip
+    // it even when old credentials are still on disk.
+    if (isHiddenProvider(provider)) return false;
     await this.ensureFresh();
     const dual = dualAuthProvider(provider);
     if (dual) {
