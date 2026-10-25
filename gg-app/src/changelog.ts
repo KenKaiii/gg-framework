@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.96.3",
+    date: "2026-10-25",
+    items: [
+      "The little critter that greets you on a fresh window got a glow-up. Its speech bubble is now proper chunky pixel art in the same `m5x7` lettering and stepped tail the `GG Royale` critters talk in, and the critter itself stands at its true size with a shadow underneath instead of looking squished.",
+      "Your built-in malware guard now stays sharp on `Windows` too. I fixed a sneaky case where a quick refresh of the daily threat feed could leave GG holding yesterday's list, so freshly flagged bad packages get caught the moment they land.",
+    ],
+  },
+  {
     version: "0.96.2",
     date: "2026-10-25",
     items: [

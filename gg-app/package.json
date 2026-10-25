@@ -1,7 +1,7 @@
 {
   "name": "gg-app",
   "private": true,
-  "version": "0.96.2",
+  "version": "0.96.3",
   "description": "GG Coder desktop app: Tauri + React workspace for code, chat and motion agents",
   "type": "module",
   "scripts": {
