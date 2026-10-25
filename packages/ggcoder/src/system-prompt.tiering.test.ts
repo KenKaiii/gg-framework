@@ -1,10 +1,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { createTools } from "./tools/index.js";
+import { buildToolSteering } from "./tools/prompt-hints.js";
 import {
   AUTO_LOADED_TOOL_NAMES,
   CORE_TOOL_NAMES,
@@ -199,5 +200,68 @@ describe("tool tiering in the system prompt", () => {
     // of truth (corpus-gap and not-installed fallbacks); the index block cap
     // is still the tiering guard.
     expect(prompt.length).toBeLessThan(13_100);
+  });
+});
+
+describe("one-command change steering", () => {
+  let previousGgBash: string | undefined;
+  beforeEach(() => {
+    // Force the POSIX shell branch so this holds on the Windows CI leg too.
+    previousGgBash = process.env.GG_BASH;
+    process.env.GG_BASH = "/bin/bash";
+  });
+  afterEach(() => {
+    if (previousGgBash === undefined) delete process.env.GG_BASH;
+    else process.env.GG_BASH = previousGgBash;
+  });
+
+  it("replaces the edit preference and script rule when bash is available", async () => {
+    const cwd = await makeProject();
+    const prompt = await buildSystemPrompt(cwd, [], false, undefined, ["bash", "edit", "write"]);
+    expect(prompt).toContain("Make each change in one `bash` command that writes only what's new");
+    expect(prompt).not.toContain("Prefer `edit` over `write`");
+    expect(prompt).not.toContain("Mechanical multi-file changes");
+  });
+
+  it("keeps the edit preference and script rule without bash", async () => {
+    const cwd = await makeProject();
+    const prompt = await buildSystemPrompt(cwd, [], false, undefined, ["edit", "write"]);
+    expect(prompt).toContain("Prefer `edit` over `write` for changes to existing files.");
+    expect(prompt).toContain("Mechanical multi-file changes");
+    expect(prompt).not.toContain("Make each change in one `bash` command");
+  });
+
+  it("falls back to the edit preference under the cmd.exe shell", () => {
+    expect(buildToolSteering(["bash", "edit", "write"], false)).toContain(
+      "Prefer `edit` over `write`",
+    );
+    expect(buildToolSteering(["bash", "edit", "write"], false)).not.toContain("one `bash` command");
+  });
+});
+
+describe("Environment file list", () => {
+  it("renders the files it is given, noting when the list is capped", async () => {
+    const cwd = await makeProject();
+    const prompt = await buildSystemPrompt(
+      cwd,
+      [],
+      false,
+      undefined,
+      ["bash"],
+      undefined,
+      undefined,
+      {
+        projectFiles: { total: 75, shown: ["package.json", "src/a.js"] },
+      },
+    );
+    expect(prompt).toContain(
+      `- Working directory: ${cwd}\n- Files (75, shallowest 2 shown): package.json, src/a.js\n`,
+    );
+  });
+
+  it("omits the line outside a git work tree", async () => {
+    const cwd = await makeProject();
+    const prompt = await buildSystemPrompt(cwd, [], false, undefined, ["bash"]);
+    expect(prompt).not.toContain("- Files (");
   });
 });

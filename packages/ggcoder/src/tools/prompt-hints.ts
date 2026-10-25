@@ -53,10 +53,23 @@ export const TOOL_PROMPT_HINTS: Record<string, string> = {
  */
 export const TOOL_STEERING_CLAUSES: ReadonlyArray<{
   needs: readonly string[];
+  /** Render only when changes go through one POSIX `bash` command (true) or not (false). */
+  oneCommandChanges?: boolean;
   text: string;
 }> = [
   {
+    // Arena 2026-10-25 (Haiku 5.5, 8 tasks × 10 reps): with this replacing the
+    // edit-preference line and the Work section's script rule, GG ran the suite
+    // 21% faster and 19% cheaper, in fewer turns; on a one-line fix in a 700-line
+    // file it still never rewrote the file. `python3` is named because Haiku
+    // otherwise reaches for GNU `sed -i`, which fails on macOS.
+    needs: ["bash"],
+    oneCommandChanges: true,
+    text: "Make each change in one `bash` command that writes only what's new: `cat > file <<'EOF'` for a small file that mostly changes, a `python3` replace asserting exactly one match for a few lines of a bigger file, `cat >>` for added tests; end it with the test command.",
+  },
+  {
     needs: ["edit", "write"],
+    oneCommandChanges: false,
     text: "Prefer `edit` over `write` for changes to existing files.",
   },
   {
@@ -72,10 +85,26 @@ export const TOOL_STEERING_CLAUSES: ReadonlyArray<{
   },
 ];
 
+/**
+ * Changes go through one shell command when `bash` is available and runs a
+ * POSIX shell (not the cmd.exe fallback on bash-less Windows).
+ */
+export function usesOneCommandChanges(
+  activeTools: readonly string[],
+  posixShell: boolean,
+): boolean {
+  return posixShell && activeTools.includes("bash");
+}
+
 /** Build the steering line from whichever clauses apply to the active tools. */
-export function buildToolSteering(activeTools: readonly string[]): string {
+export function buildToolSteering(activeTools: readonly string[], posixShell = true): string {
   const active = new Set(activeTools);
-  return TOOL_STEERING_CLAUSES.filter((c) => c.needs.every((n) => active.has(n)))
+  const oneCommand = usesOneCommandChanges(activeTools, posixShell);
+  return TOOL_STEERING_CLAUSES.filter(
+    (c) =>
+      c.needs.every((n) => active.has(n)) &&
+      (c.oneCommandChanges === undefined || c.oneCommandChanges === oneCommand),
+  )
     .map((c) => c.text)
     .join(" ");
 }

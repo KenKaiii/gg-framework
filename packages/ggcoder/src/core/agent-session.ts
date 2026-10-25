@@ -169,6 +169,7 @@ import {
   withJudgeTimeout,
 } from "./semantic-loop-check.js";
 import { buildEnvDeltaMessage, buildLanguageUpdateMessage } from "./env-delta.js";
+import { listProjectFiles, type ProjectFileList } from "./project-files.js";
 import {
   wrapSteeringText,
   buildNotificationSteeringText,
@@ -640,6 +641,8 @@ export class AgentSession {
    * delta; anything that changes WITHOUT one is caught by the hook below.
    */
   private renderedEnvironment: SystemPromptEnvironment = {};
+  /** Project files as of the first prompt build (undefined until then). */
+  private projectFiles: ProjectFileList | null | undefined;
   /** Wall-clock start of the current run; scopes the background-process gate. */
   private runStartedAt = 0;
   /** Gate injections spent this run, capped by MAX_PROCESS_GATE_INJECTIONS. */
@@ -3977,7 +3980,7 @@ export class AgentSession {
       this.settingsManager.get("networkMode") === "allowlist"
         ? this.settingsManager.get("networkAllow")
         : [];
-    return { additionalRoots: this.additionalRoots, networkAllow };
+    return { additionalRoots: this.additionalRoots, networkAllow, projectFiles: this.projectFiles };
   }
 
   /**
@@ -3989,6 +3992,9 @@ export class AgentSession {
    */
   private async buildBasePrompt(planMode: boolean, approvedPlanPath?: string): Promise<string> {
     if (this.customSystemPrompt) return this.customSystemPrompt;
+    // Listed once: a rebuild (plan mode, /add-dir, compaction) must not churn the
+    // prompt as the agent adds files.
+    if (this.projectFiles === undefined) this.projectFiles = await listProjectFiles(this.cwd);
     const toolNames = this.tools.map((tool) => tool.name);
     const deferredToolNames = this.deferredToolNamesForPrompt(toolNames);
     // Whatever is rendered now is what the model has been told.
