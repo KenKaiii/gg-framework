@@ -31,27 +31,28 @@ GG Coder is a desktop AI app for coding, chatting, running whole goals and makin
 
 **The leanest coding agent I've tested.** I raced GG Coder against 19 other coding agents on the same model. GG used the least of all of them, and none were faster: two matched its speed, the rest were 10–58% slower.
 
-| Agent              | GG Coder's speed | GG Coder's usage |
-| ------------------ | ---------------- | ---------------- |
-| Goose              | same speed       | 11% less         |
-| GitHub Copilot CLI | same speed       | 25% less         |
-| Codewhale          | 10% faster       | 32% less         |
-| Kimi Code          | 14% faster       | 46% less         |
-| Claude Code        | 19% faster       | 55% less         |
-| Oh My Pi           | 23% faster       | 37% less         |
-| Crush              | 24% faster       | 52% less         |
-| Factory Droid      | 28% faster       | 27% less         |
-| Dirac              | 32% faster       | 48% less         |
-| ForgeCode          | 34% faster       | 65% less         |
-| Deep Agents        | 37% faster       | 54% less         |
-| DeepSeek-Reasonix  | 39% faster       | 45% less         |
-| Mistral Vibe       | 41% faster       | 61% less         |
-| Prime Agent        | 45% faster       | 54% less         |
-| Qwen Code          | 46% faster       | 70% less         |
-| Xum                | 46% faster       | 70% less         |
-| Docker Agent       | 47% faster       | 37% less         |
-| Hermes Agent       | 56% faster       | 35% less         |
-| jcode              | 58% faster       | 74% less         |
+| Agent              | Speed         | Usage            |
+| ------------------ | ------------- | ---------------- |
+| **GG Coder**       | **fastest**   | **lowest**       |
+| Goose              | same as GG    | GG uses 11% less |
+| GitHub Copilot CLI | same as GG    | GG uses 25% less |
+| Codewhale          | GG 10% faster | GG uses 32% less |
+| Kimi Code          | GG 14% faster | GG uses 46% less |
+| Claude Code        | GG 19% faster | GG uses 55% less |
+| Oh My Pi           | GG 23% faster | GG uses 37% less |
+| Crush              | GG 24% faster | GG uses 52% less |
+| Factory Droid      | GG 28% faster | GG uses 27% less |
+| Dirac              | GG 32% faster | GG uses 48% less |
+| ForgeCode          | GG 34% faster | GG uses 65% less |
+| Deep Agents        | GG 37% faster | GG uses 54% less |
+| DeepSeek-Reasonix  | GG 39% faster | GG uses 45% less |
+| Mistral Vibe       | GG 41% faster | GG uses 61% less |
+| Prime Agent        | GG 45% faster | GG uses 54% less |
+| Qwen Code          | GG 46% faster | GG uses 70% less |
+| Xum                | GG 46% faster | GG uses 70% less |
+| Docker Agent       | GG 47% faster | GG uses 37% less |
+| Hermes Agent       | GG 56% faster | GG uses 35% less |
+| jcode              | GG 58% faster | GG uses 74% less |
 
 On a subscription, less usage means more work out of your plan. The same allowance covers about **2.2x** the coding it would in Claude Code, and about **1.6x** what it would in Oh My Pi.
 
