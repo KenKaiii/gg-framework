@@ -12,6 +12,7 @@ import {
   syncThreatFeed,
   threatFeedPath,
   type ThreatFeedData,
+  writeJsonAtomic,
 } from "./threat-feed.js";
 
 vi.mock("./logger.js", () => ({ log: vi.fn() }));
@@ -119,6 +120,21 @@ describe("syncThreatFeed", () => {
     await syncThreatFeed({ dir, fetch: ok, now: () => NOW + 1000 });
     expect(calls.some((u) => u.includes("MAL-2026-1.json"))).toBe(true);
     expect(feedMatches(loadThreatFeed(dir), "npm", "pkg-mal-2026-1", "1.0.0")).toHaveLength(1);
+  });
+
+  it("re-reads a rewritten feed even when the write kept the same mtime", async () => {
+    const file = threatFeedPath(dir);
+    const stamp = new Date(NOW);
+    const entry = { id: "MAL-2026-1", versions: ["1.0.0"], ranges: [] };
+    await writeJsonAtomic(file, { sync: {}, entries: {} });
+    fs.utimesSync(file, stamp, stamp);
+    expect(loadThreatFeed(dir).entries).toEqual({});
+    // Windows file times tick coarsely, so a quick second write can share the mtime.
+    await writeJsonAtomic(file, { sync: {}, entries: { "npm:pkg-mal-2026-1": [entry] } });
+    fs.utimesSync(file, stamp, stamp);
+    expect(feedMatches(loadThreatFeed(dir), "npm", "pkg-mal-2026-1", "1.0.0")).toEqual([
+      "MAL-2026-1",
+    ]);
   });
 
   it("a read-only GG dir rejects (caller logs) and leaves the old feed intact", async () => {

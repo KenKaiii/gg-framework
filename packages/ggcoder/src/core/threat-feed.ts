@@ -77,17 +77,23 @@ export function emptyFeed(): ThreatFeedData {
   return { sync: {}, entries: {} };
 }
 
-/** Read the feed (missing/corrupt → empty). Cached by mtime so repeat reads are free. */
-const loadCache = new Map<string, { mtimeMs: number; data: ThreatFeedData }>();
+/**
+ * Read the feed (missing/corrupt → empty). Cached by file identity so repeat
+ * reads are free. mtime alone is not enough: Windows file times tick coarsely,
+ * so two quick atomic writes can share one; the replaced file's inode and size
+ * tell them apart.
+ */
+const loadCache = new Map<string, { stamp: string; data: ThreatFeedData }>();
 export function loadThreatFeed(dir?: string): ThreatFeedData {
   const file = threatFeedPath(dir);
   try {
-    const { mtimeMs } = fs.statSync(file);
+    const { mtimeMs, size, ino } = fs.statSync(file);
+    const stamp = `${mtimeMs}:${size}:${ino}`;
     const hit = loadCache.get(file);
-    if (hit && hit.mtimeMs === mtimeMs) return hit.data;
+    if (hit && hit.stamp === stamp) return hit.data;
     const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<ThreatFeedData>;
     const data: ThreatFeedData = { sync: raw.sync ?? {}, entries: raw.entries ?? {} };
-    loadCache.set(file, { mtimeMs, data });
+    loadCache.set(file, { stamp, data });
     return data;
   } catch {
     return emptyFeed();
