@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.96.2",
+    date: "2026-10-25",
+    items: [
+      "This is a whole new level for GG Coder. I raced it against `19` other coding agents on the same model, `Claude Code` included, and GG finished first on speed and used the least of every single one of them. Your agent now makes each change in one clean move and already knows your project's files before it starts, so a typical task lands about `21%` faster than last version while burning less of your plan. The fastest coding agent I have ever tested.",
+    ],
+  },
+  {
     version: "0.96.1",
     date: "2026-10-24",
     items: [
