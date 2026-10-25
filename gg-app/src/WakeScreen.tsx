@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CritterTerrain } from "./CritterTerrain";
-import { CRITTERS, renderCritterFrame, type CritterDef } from "./critter-sprites";
+import { CRITTER_CELLS, CRITTERS, renderCritterFrame, type CritterDef } from "./critter-sprites";
 import {
   DECOR_COLS,
   TERRAIN_FLOOR_ROW,
@@ -97,8 +97,6 @@ const POKE_MS = 1400; // how long a poke's bubble stays up
 
 /** Visible width of the terrain patch, in cells. */
 export const PATCH_COLS = 85;
-/** Critter sprite edge, in cells. */
-const CRITTER_CELLS = 18;
 /** Weather particles across the screen: few, so it stays calm. */
 const WEATHER_COUNT = 34;
 /** Screen weather runs this many times slower than a lane's. */
@@ -407,10 +405,14 @@ export function WakeScreen({
     width: `${(PATCH_COLS + DECOR_COLS) * TERRAIN_PX}px`,
   };
 
+  // The critter's box and everything placed round it (the bubble, the art's
+  // height) follow the sprite's real size, so a resized sprite never squashes.
+  const sceneStyle: Style = { "--wake-critter": `${CRITTER_CELLS * TERRAIN_PX}px` };
+
   return (
     <div className="wake-screen transcript-reveal" aria-label="Ready to start">
       {!reduced && <WakeWeather biome={biome} />}
-      <div className="wake-scene">
+      <div className="wake-scene" style={sceneStyle}>
         <p className="wake-bubble">
           <span className="wake-bubble-text">{poke ?? text}</span>
           {poke === null && (
@@ -433,6 +435,7 @@ export function WakeScreen({
             onClick={onPoke}
             aria-label={`Say hi to the ${critter.name}`}
           >
+            <span className="critter-shadow" />
             <span key={hops} className={`wake-critter-body${hops > 0 ? " wake-hop" : ""}`}>
               <img
                 src={blink ? shut : open}
