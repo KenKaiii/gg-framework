@@ -29,34 +29,34 @@ GG Coder is a desktop AI app for coding, chatting, running whole goals and makin
 
 ## Why GG Coder
 
-**The leanest coding agent I've tested.** I raced GG Coder against 19 other coding agents on the same model. GG used the least of all of them, and none were faster: two matched its speed, the rest were 10–58% slower.
+**The leanest coding agent I've tested.** I raced GG Coder against 19 other coding agents on the same model, all in one race. GG was the fastest and used the least of all 20.
 
-| Agent              | Speed         | Usage            |
-| ------------------ | ------------- | ---------------- |
-| **GG Coder**       | **fastest**   | **lowest**       |
-| Goose              | same as GG    | GG uses 11% less |
-| GitHub Copilot CLI | same as GG    | GG uses 25% less |
-| Codewhale          | GG 10% faster | GG uses 32% less |
-| Kimi Code          | GG 14% faster | GG uses 46% less |
-| Claude Code        | GG 19% faster | GG uses 55% less |
-| Oh My Pi           | GG 23% faster | GG uses 37% less |
-| Crush              | GG 24% faster | GG uses 52% less |
-| Factory Droid      | GG 28% faster | GG uses 27% less |
-| Dirac              | GG 32% faster | GG uses 48% less |
-| ForgeCode          | GG 34% faster | GG uses 65% less |
-| Deep Agents        | GG 37% faster | GG uses 54% less |
-| DeepSeek-Reasonix  | GG 39% faster | GG uses 45% less |
-| Mistral Vibe       | GG 41% faster | GG uses 61% less |
-| Prime Agent        | GG 45% faster | GG uses 54% less |
-| Qwen Code          | GG 46% faster | GG uses 70% less |
-| Xum                | GG 46% faster | GG uses 70% less |
-| Docker Agent       | GG 47% faster | GG uses 37% less |
-| Hermes Agent       | GG 56% faster | GG uses 35% less |
-| jcode              | GG 58% faster | GG uses 74% less |
+| Agent              | Time for the full suite | Usage per suite | GG Coder compared          |
+| ------------------ | ----------------------- | --------------- | -------------------------- |
+| **GG Coder**       | **99 s**                | **$0.015**      |                            |
+| Codewhale          | 110 s                   | $0.022          | 10% faster, 32% less usage |
+| Kimi Code          | 120 s                   | $0.029          | 18% faster, 47% less usage |
+| GitHub Copilot CLI | 125 s                   | $0.027          | 21% faster, 44% less usage |
+| Goose              | 126 s                   | $0.021          | 22% faster, 27% less usage |
+| ForgeCode          | 138 s                   | $0.042          | 28% faster, 63% less usage |
+| Claude Code        | 141 s                   | $0.039          | 30% faster, 60% less usage |
+| Factory Droid      | 144 s                   | $0.026          | 32% faster, 40% less usage |
+| Crush              | 153 s                   | $0.038          | 36% faster, 59% less usage |
+| Dirac              | 154 s                   | $0.030          | 36% faster, 48% less usage |
+| Mistral Vibe       | 155 s                   | $0.037          | 36% faster, 58% less usage |
+| DeepSeek-Reasonix  | 157 s                   | $0.026          | 37% faster, 40% less usage |
+| Oh My Pi           | 167 s                   | $0.031          | 41% faster, 50% less usage |
+| Xum                | 172 s                   | $0.047          | 43% faster, 68% less usage |
+| Prime Agent        | 176 s                   | $0.031          | 44% faster, 51% less usage |
+| Docker Agent       | 176 s                   | $0.023          | 44% faster, 33% less usage |
+| Deep Agents        | 189 s                   | $0.041          | 48% faster, 62% less usage |
+| Hermes Agent       | 191 s                   | $0.040          | 48% faster, 61% less usage |
+| Qwen Code          | 212 s                   | $0.063          | 54% faster, 76% less usage |
+| jcode              | 236 s                   | $0.058          | 58% faster, 74% less usage |
 
-On a subscription, less usage means more work out of your plan. The same allowance covers about **2.2x** the coding it would in Claude Code, and about **1.6x** what it would in Oh My Pi.
+On a subscription, less usage means more work out of your plan. The same allowance covers about **2.5x** the coding it would in Claude Code, and about **2.0x** what it would in Oh My Pi.
 
-<sub>Every agent on Claude Haiku 5.5, across more than 3,000 test runs. Each row compares GG Coder with that agent in the same race: 18 October 2026 for Goose, GitHub Copilot CLI, Claude Code, Oh My Pi, Crush, Factory Droid, Deep Agents, Qwen Code and Hermes Agent; 25 October 2026 for the rest.</sub>
+<sub>Every agent on Claude Haiku 5.5, across more than 3,000 test runs. The table is one race on 25 October 2026: 7 tasks, 5 runs each, every agent on a current version.</sub>
 
 ## What you get
 
