@@ -29,7 +29,9 @@ GG Coder is a desktop AI app for coding, chatting, running whole goals and makin
 
 ## Why GG Coder
 
-**The leanest coding agent I've tested.** I raced GG Coder against 9 other coding agents on the same model. GG had the fastest time, level with Goose and Copilot, and was the cheapest of all 10.
+**The leanest coding agent I've tested.** I raced GG Coder against 19 other coding agents on the same model, in two races. GG used the least of all of them, tied the fastest in the first race and was the fastest outright in the second.
+
+**Race 1: established agents**
 
 | Agent              | Time for the full suite | Usage per suite | GG Coder compared          |
 | ------------------ | ----------------------- | --------------- | -------------------------- |
@@ -44,9 +46,25 @@ GG Coder is a desktop AI app for coding, chatting, running whole goals and makin
 | Qwen Code          | 229 s                   | $0.319          | 46% faster, 70% less usage |
 | Hermes Agent       | 285 s                   | $0.146          | 56% faster, 35% less usage |
 
+**Race 2: newer agents**
+
+| Agent             | Time for the full suite | Usage per suite | GG Coder compared          |
+| ----------------- | ----------------------- | --------------- | -------------------------- |
+| **GG Coder**      | **94 s**                | **$0.015**      |                            |
+| Codewhale         | 105 s                   | $0.022          | 10% faster, 32% less usage |
+| Docker Agent      | 179 s                   | $0.024          | 47% faster, 37% less usage |
+| DeepSeek-Reasonix | 154 s                   | $0.027          | 39% faster, 45% less usage |
+| Kimi Code         | 110 s                   | $0.028          | 14% faster, 46% less usage |
+| Dirac             | 138 s                   | $0.029          | 32% faster, 48% less usage |
+| Prime Agent       | 173 s                   | $0.033          | 45% faster, 54% less usage |
+| Mistral Vibe      | 161 s                   | $0.038          | 41% faster, 61% less usage |
+| ForgeCode         | 143 s                   | $0.043          | 34% faster, 65% less usage |
+| Xum               | 175 s                   | $0.049          | 46% faster, 70% less usage |
+| jcode             | 224 s                   | $0.056          | 58% faster, 74% less usage |
+
 On a subscription, less usage means more work out of your plan. The same allowance covers about **2.2x** the coding it would in Claude Code, and about **1.6x** what it would in Oh My Pi.
 
-<sub>Every agent on Claude Haiku 5.5, across more than 3,000 test runs.</sub>
+<sub>Every agent on Claude Haiku 5.5, across more than 3,000 test runs. Each race compares agents within that race only (race 1 on 18 October, race 2 on 25 October 2026, GG on its build of the day), so numbers aren't comparable across the two tables.</sub>
 
 ## What you get
 
