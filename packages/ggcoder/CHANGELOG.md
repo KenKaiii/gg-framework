@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.86.3
+
+### Patch Changes
+
+- Fix the threat feed cache serving a stale feed when a rewrite keeps the same file mtime (coarse Windows timestamps).
+  - @kenkaiiii/gg-ai@5.86.3
+  - @kenkaiiii/gg-agent@5.86.3
+  - @kenkaiiii/gg-core@5.86.3
+
 ## 5.86.2
 
 ### Patch Changes

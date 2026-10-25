@@ -1,6 +1,6 @@
 {
   "name": "@kenkaiiii/gg-ai",
-  "version": "5.86.2",
+  "version": "5.86.3",
   "type": "module",
   "description": "Unified LLM streaming API for Anthropic, OpenAI, Gemini, xAI, Moonshot, GLM, DeepSeek, OpenRouter, local models and more",
   "license": "MIT",

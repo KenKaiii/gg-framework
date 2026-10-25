@@ -1,6 +1,6 @@
 {
   "name": "@kenkaiiii/ggcoder",
-  "version": "5.86.2",
+  "version": "5.86.3",
   "type": "module",
   "description": "Lean CLI coding agent for 12 LLM providers and local models, with OAuth for Anthropic, OpenAI and Gemini",
   "license": "MIT",
