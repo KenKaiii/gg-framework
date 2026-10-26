@@ -51,3 +51,27 @@ export function scroller(c, box) {
     /** clip drawing to the list area */ clip(x, f) { x.save(); x.beginPath(); x.rect(box.x, box.y, box.w, box.h); x.clip(); f(); x.restore(); },
   };
 }
+
+/**
+ * Mouse for keyboard-driven overlay screens (owner: "mouse must always be usable"). Declare clickable areas in canvas
+ * pixels each frame (or once); hovering highlights through onHover, clicking calls onPick. Cursor turns to a hand
+ * over an area. For lists: mouse.rows(i => ({ x, y, w, h }), count, { hover: i => sel = i, pick: i => choose(i) }).
+ * @param {any} ov overlay @param {HTMLCanvasElement} c @param {number} W @param {number} H
+ */
+export function mouse(ov, c, W, H) {
+  /** @type {{ x: number, y: number, w: number, h: number, hover?: () => void, pick?: () => void }[]} */
+  let areas = [];
+  const at = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H]; };
+  const find = (px, py) => areas.find(a => px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h);
+  let last = null;
+  const move = e => { const a = find(...at(e)); c.style.cursor = a ? 'pointer' : ''; if (a && a !== last) a.hover?.(); last = a || null; };
+  const down = e => { if (e.button !== 0) return; const a = find(...at(e)); if (a?.pick) { e.preventDefault(); a.hover?.(); a.pick(); } };
+  c.addEventListener('pointermove', move); c.addEventListener('pointerdown', down);
+  ov.onClose?.(() => { c.removeEventListener('pointermove', move); c.removeEventListener('pointerdown', down); });
+  return {
+    /** replace all areas */ set(list) { areas = list; },
+    /** a list: rect(i) gives each row's box */ rows(rect, n, o) { areas = Array.from({ length: n }, (_, i) => ({ ...rect(i), hover: () => o.hover?.(i), pick: () => o.pick?.(i) })); },
+    /** add one area (buttons) */ add(a) { areas.push(a); },
+    clear() { areas = []; },
+  };
+}

@@ -7,7 +7,7 @@ const W = 320, H = 180, PX = 160, PY = 112;
 
 /** @param {any} ctx */
 export function printerGame(ctx) {
-  const ov = ctx.overlay({ title: 'PC LOAD LETTER?!', sub: 'the printer had it coming', help: '<kbd>space</kbd> smash &nbsp; <kbd>r</kbd> new printer &nbsp; <kbd>esc</kbd> leave' });
+  const ov = ctx.overlay({ title: 'PC LOAD LETTER?!', sub: 'the printer had it coming', help: '<kbd>space</kbd>/<kbd>click</kbd> smash &nbsp; <kbd>r</kbd>/<kbd>click</kbd> new printer (after) &nbsp; <kbd>esc</kbd> leave' });
   const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const r = rng(7);
   const st = { hp: 100, hits: 0, shake: 0, flash: 0, swing: 0, parts: [], pops: [], dead: 0, best: 0, t0: 0, time: 0 };
@@ -23,7 +23,8 @@ export function printerGame(ctx) {
   };
   const kd = e => { if (e.code === 'Escape') return; if (e.code === 'KeyR') { SFX.play('pc.boot', { vol: 0.4 }); reset(); ov.setSub('the printer had it coming'); e.preventDefault(); return; } if (!e.repeat && /Space|Enter|Key[A-Z]|Digit/.test(e.code)) { e.preventDefault(); hit(); } };
   addEventListener('keydown', kd); ov.onClose(() => removeEventListener('keydown', kd));
-  c.addEventListener('pointerdown', hit);
+  c.style.cursor = 'pointer';
+  c.addEventListener('pointerdown', e => { if (e.button !== 0) return; if (st.dead && (performance.now() - st.t0) / 1000 - st.time > 1.2) { SFX.play('pc.boot', { vol: 0.4 }); reset(); ov.setSub('the printer had it coming'); return; } hit(); });
 
   /** Pixel printer, more broken as hp drops. */
   const printer = (t) => {

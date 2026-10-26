@@ -20,7 +20,7 @@ function cpuMove(b) { let best = -9, at = -1; for (const i of [4, 0, 2, 6, 8, 1,
 
 /** @param {any} ctx */
 export function startWopr(ctx) {
-  const ov = ctx.overlay({ title: 'W.O.P.R.', sub: 'old CRT on the workbench', help: '<kbd>1-9</kbd> or <kbd>click</kbd> place X <kbd>enter</kbd> again <kbd>esc</kbd> leave' });
+  const ov = ctx.overlay({ title: 'W.O.P.R.', sub: 'old CRT on the workbench', help: '<kbd>1-9</kbd> or <kbd>click</kbd> place X <kbd>enter</kbd>/<kbd>click</kbd> again <kbd>esc</kbd> leave' });
   const W = 480, H = 270; const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const st = { t: 0, b: Array(9).fill(''), phase: 'intro', msgT: 0, sims: 0, simB: Array(9).fill(''), simT: 0, pop: -1, popT: 0, games: 0 };
   const cell = { x: 0, y: 0, s: 42 };
@@ -33,7 +33,8 @@ export function startWopr(ctx) {
   const reset = () => { SFX.play('crt.on', { vol: 0.4 }); st.b = Array(9).fill(''); st.phase = 'play'; };
   const kd = e => { if (/^Digit[1-9]$|^Numpad[1-9]$/.test(e.code)) place(+e.code.slice(-1) - 1); else if ((e.code === 'Enter' || e.code === 'KeyR') && st.phase === 'moral' && st.t - st.msgT > 2) reset(); };
   const ck = e => { const r = c.getBoundingClientRect(); const px = (e.clientX - r.left) * W / r.width, py = (e.clientY - r.top) * H / r.height;
-    const cx = Math.floor((px - cell.x) / cell.s), cy = Math.floor((py - cell.y) / cell.s); if (cx >= 0 && cx < 3 && cy >= 0 && cy < 3) place(cy * 3 + cx); };
+    const cx = Math.floor((px - cell.x) / cell.s), cy = Math.floor((py - cell.y) / cell.s); if (st.phase === 'moral' && st.t - st.msgT > 2) { reset(); return; } if (cx >= 0 && cx < 3 && cy >= 0 && cy < 3) place(cy * 3 + cx); };
+  c.style.cursor = 'pointer';
   addEventListener('keydown', kd); c.addEventListener('click', ck); ov.onClose(() => { removeEventListener('keydown', kd); c.removeEventListener('click', ck); });
   const typed = (s, t0, cps = 20) => s.slice(0, Math.max(0, Math.floor((st.t - t0) * cps)));
   const grid = (b, gx, gy, s, col) => {

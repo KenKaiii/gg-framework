@@ -1,7 +1,7 @@
 // @ts-check
 // Typing race: 30 seconds of dev/AI words, WPM + accuracy, best WPM saved. A ghost bar races your best.
 import { SFX } from '../sfx.js';
-import { loop, text } from './util.js';
+import { loop, text, mouse } from './util.js';
 import { best, saveBest, seat, closeUp, win, today } from './computer-util.js';
 
 const WORDS = 'prompt context agent diff commit deploy refactor token model tests review branch merge rebase lint build cache async await promise schema vector embed latency stack trace bug patch rollback env secret config hotfix sprint ship vibe pipeline docker kernel npm yarn json regex lambda'.split(' ');
@@ -9,9 +9,9 @@ const WORDS = 'prompt context agent diff commit deploy refactor token model test
 /** @param {any} ctx */
 export function startTyping(ctx) {
   const stand = seat(ctx);
-  const ov = ctx.overlay({ title: 'TYPE RACER 3000', sub: '30 seconds · dev words', help: '<kbd>type</kbd> the words <kbd>space</kbd> next word <kbd>enter</kbd> restart <kbd>esc</kbd> leave' });
+  const ov = ctx.overlay({ title: 'TYPE RACER 3000', sub: '30 seconds · dev words', help: '<kbd>type</kbd> the words <kbd>space</kbd> next word <kbd>enter</kbd>/<kbd>click</kbd> restart <kbd>esc</kbd> leave' });
   ov.onClose(stand); { const sl = ctx.it?.slot; closeUp(ctx, ov, sl ? sl.x : 3, 1.0, sl ? sl.z - 0.9 : 1.8); }
-  const W = 480, H = 270; const { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const W = 480, H = 270; const { x, c } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   let s = today().seed; const r = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
   let g; const reset = () => { g = { list: Array.from({ length: 80 }, () => WORDS[Math.floor(r() * WORDS.length)]), i: 0, buf: '', ok: 0, bad: 0, chars: 0, t: -1, end: false, pop: 0, rec: false, shake: 0 }; };
   reset();
@@ -24,7 +24,9 @@ export function startTyping(ctx) {
   };
   const cap = e => { if (e.code !== 'Escape') { e.stopPropagation(); onKey(e); } };
   addEventListener('keydown', cap, true); ov.onClose(() => removeEventListener('keydown', cap, true));
-  loop(ov, (dt, t) => {
+  // mouse: typing needs the keyboard; once the race ends, clicking the result card races again
+  const M = mouse(ov, c, W, H);
+  loop(ov, (dt, t) => { if (g.end) M.set([{ x: 100, y: 80, w: 280, h: 110, pick: () => { reset(); SFX.play('ui.click'); } }]); else M.clear();
     if (g.t >= 0 && !g.end) { g.t += dt; if (g.t >= DUR) { g.end = true; const w = Math.round(g.chars / 5 / (DUR / 60)); g.wpm = w; g.rec = w > 0 && saveBest('wpm', w); SFX.play('typewriter.ding'); SFX.play(g.rec ? 'win' : 'score', { delay: 0.3 }); }
       else if (g.t > DUR - 5 && Math.floor(g.t) !== Math.floor(g.t - dt)) SFX.play('countdown', { vol: 0.5 }); }
     g.pop = Math.max(0, g.pop - dt); g.shake = Math.max(0, g.shake - dt);

@@ -4,7 +4,7 @@ import { FONT } from '../fonts.js';
 import { setView, clearView, hideOccluders, worldOf } from './view.js';
 
 const CSS = `
-.fb-cap{position:fixed;left:50%;bottom:56px;transform:translate(-50%,8px);opacity:0;transition:opacity .25s,transform .25s;z-index:41;pointer-events:none;
+.fb-cap{position:fixed;left:50%;bottom:56px;transform:translate(-50%,8px);opacity:0;transition:opacity .25s,transform .25s;z-index:41;pointer-events:auto;cursor:pointer;
  background:rgba(14,16,20,.92);box-shadow:inset 0 0 0 1px #263228,0 12px 40px rgba(0,0,0,.5);border-radius:6px;padding:10px 18px 12px;text-align:center;-webkit-font-smoothing:none;max-width:80vw}
 .fb-cap.on{opacity:1;transform:translate(-50%,0)}
 .fb-cap .t{font:32px/32px ${FONT.title};color:#e0a458;text-shadow:0 2px 0 #3a2410}
@@ -19,7 +19,7 @@ export function caption(title, line) {
   css(); const el = document.createElement('div'); el.className = 'fb-cap'; el.setAttribute('role', 'status');
   const t = document.createElement('div'); t.className = 't'; t.textContent = title;
   const l = document.createElement('div'); l.className = 'l'; l.textContent = line;
-  const h = document.createElement('div'); h.className = 'h'; h.textContent = 'E / esc to carry on';
+  const h = document.createElement('div'); h.className = 'h'; h.textContent = 'E / esc / click to carry on';
   el.append(t, l, h); document.body.appendChild(el); requestAnimationFrame(() => el.classList.add('on'));
   return { el, set(tt, ll) { if (tt != null) t.textContent = tt; if (ll != null) l.textContent = ll; }, remove() { el.classList.remove('on'); setTimeout(() => el.remove(), 260); } };
 }
@@ -37,12 +37,13 @@ export function moment(ctx, o) {
   const cap = caption(o.title, o.line); let on = true, t = 0, last = performance.now(), shakeA = 0;
   const api = { cap, shake: a => { shakeA = Math.max(shakeA, a); }, stop: () => stop() };
   const stop = () => {
-    if (!on) return; on = false; removeEventListener('keydown', key, true); clearView(S); cap.remove();
+    if (!on) return; on = false; removeEventListener('keydown', key, true); cap.el.removeEventListener('pointerdown', click); clearView(S); cap.remove();
     try { o.end?.(); } catch (e) { console.warn(e); }
     if (S.act?.current === me) ctx.done();
   };
   const key = e => { if (t > 0.35 && (e.code === 'KeyE' || e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); e.stopPropagation(); stop(); } };
-  addEventListener('keydown', key, true);
+  const click = e => { if (t > 0.35 && e.button === 0) { e.preventDefault(); e.stopPropagation(); stop(); } };
+  addEventListener('keydown', key, true); cap.el.addEventListener('pointerdown', click);
   const step = now => {
     if (!on) return; if (S.act?.current !== me) { stop(); return; }
     const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt;

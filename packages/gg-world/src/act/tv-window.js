@@ -1,13 +1,13 @@
 // @ts-check
 // "Look outside" (den + bedroom windows): a little pixel skyline at night. Rain on the glass in the bedroom, the moon in
 // the den, windows across the street flicker; one of them is a dev typing (green phosphor). Space wipes the fog off.
-import { text, loop, rng } from './util.js';
+import { text, loop, rng, mouse } from './util.js';
 import { SFX } from '../sfx.js';
 /** @param {any} ctx */
 export function startWindow(ctx) {
   const rain = ctx.R.id === 'bedroom';
-  const ov = ctx.overlay({ title: 'Outside', sub: rain ? 'bedroom window · raining again' : 'den window · clear night', help: '<kbd>space</kbd> wipe the glass <kbd>esc</kbd> leave' });
-  const { x } = ov.canvas(320, 180); x.imageSmoothingEnabled = false;
+  const ov = ctx.overlay({ title: 'Outside', sub: rain ? 'bedroom window · raining again' : 'den window · clear night', help: '<kbd>space</kbd> wipe the glass <kbd>click</kbd> wipe <kbd>esc</kbd> leave' });
+  const { c, x } = ov.canvas(320, 180); x.imageSmoothingEnabled = false;
   const r = rng(rain ? 7 : 3), blds = []; let bx = -4;
   while (bx < 320) { const w = 18 + (r() * 30 | 0), h = 40 + (r() * 90 | 0), wins = []; for (let yy = 180 - h + 6; yy < 172; yy += 7) for (let xx = bx + 3; xx < bx + w - 3; xx += 5) if (r() < 0.35) wins.push([xx, yy, r()]); blds.push({ x: bx, w, h, wins }); bx += w + (r() * 4 | 0); }
   const dev = blds[Math.floor(blds.length / 2)].wins[2] || [150, 120, 0];
@@ -15,6 +15,7 @@ export function startWindow(ctx) {
   let fog = 0.6, msg = 0;
   const onKey = e => { if (e.code === 'Space') { e.preventDefault(); fog = 0; msg = 2; SFX.play('squeak', { vol: 0.35 }); } };
   addEventListener('keydown', onKey); ov.onClose(() => removeEventListener('keydown', onKey));
+  mouse(ov, c, 320, 180).set([{ x: 0, y: 0, w: 320, h: 180, pick: () => onKey({ code: 'Space', preventDefault() {} }) }]);
   loop(ov, (dt, t) => {
     fog = Math.min(0.6, fog + dt * 0.04); msg = Math.max(0, msg - dt);
     const g = x.createLinearGradient(0, 0, 0, 180); g.addColorStop(0, '#0b0d1c'); g.addColorStop(1, '#2a2440'); x.fillStyle = g; x.fillRect(0, 0, 320, 180);

@@ -29,7 +29,7 @@ export function makeMaze(seed) {
 
 /** @param {any} ctx */
 export function startMaze(ctx) {
-  const ov = ctx.overlay({ title: 'Dream Architect', sub: 'design a maze that takes one minute to solve', help: '<kbd>&larr;&rarr;</kbd> around <kbd>&uarr;</kbd> inward <kbd>&darr;</kbd> outward <kbd>enter</kbd> again <kbd>esc</kbd> leave' });
+  const ov = ctx.overlay({ title: 'Dream Architect', sub: 'design a maze that takes one minute to solve', help: '<kbd>&larr;&rarr;</kbd> around <kbd>&uarr;</kbd> inward <kbd>&darr;</kbd> outward <kbd>enter</kbd> again <kbd>click</kbd> step toward the pointer <kbd>esc</kbd> leave' });
   const W = 480, H = 270, { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const day = today(), M = makeMaze(day.seed), P = pops();
   const st = { r: M.start[0], s: M.start[1], t: 0, run: 0, done: false, paid: loadNum('maze-paid-' + day.key), trail: [] };
@@ -61,10 +61,19 @@ export function startMaze(ctx) {
       if (r < RINGS - 1) { const k = secs(r + 1) / n; for (let i = 0; i < k; i++) if (o[r + 1][s * k + i].in) { nx.push([r + 1, s * k + i, 'ArrowDown']); break; } }
       for (const [a, b, c] of nx) if (!prev.has(key(a, b))) { prev.set(key(a, b), [r, s, c]); q.push([a, b]); } }
     const out = ['ArrowUp']; let cur = end; while (cur) { const p = prev.get(key(cur[0], cur[1])); if (!p) break; out.unshift(p[2]); cur = p; } return out; } } });
+  // mouse: click steps one cell toward the pointer (inner ring = in, outer = out, same ring = around); click again when done
+  let rotNow = 0;
+  const md = e => { if (e.button !== 0) return; e.preventDefault(); if (st.done) { kd({ code: 'Enter', preventDefault() {} }); return; }
+    const b = c.getBoundingClientRect(), px = (e.clientX - b.left) / b.width * W - CX, py = (e.clientY - b.top) / b.height * H - CY;
+    const ring = Math.floor((Math.hypot(px, py) - R0) / RW);
+    if (ring < st.r) { move('in'); return; } if (ring > st.r) { move('out'); return; }
+    const n = secs(st.r), a = ((Math.atan2(py, px) - rotNow) / (Math.PI * 2) * n % n + n) % n, d = ((a - (st.s + 0.5)) % n + n * 1.5) % n - n / 2;
+    if (Math.abs(d) >= 0.5) move(d > 0 ? 'cw' : 'ccw'); };
+  c.addEventListener('pointerdown', md); c.style.cursor = 'pointer'; ov.onClose(() => c.removeEventListener('pointerdown', md));
   const ang = (s, r) => (s / secs(r)) * Math.PI * 2;
   loop(ov, dt => {
     st.t += dt; if (!st.done) st.run += dt; shake = Math.max(0, shake - dt);
-    const rot = st.t * 0.06; // the dream slowly folds
+    const rot = rotNow = st.t * 0.06; // the dream slowly folds
     const bg = x.createRadialGradient(CX, CY, 10, CX, CY, 300); bg.addColorStop(0, '#2c4a86'); bg.addColorStop(1, '#141c38'); x.fillStyle = bg; x.fillRect(0, 0, W, H);
     x.strokeStyle = 'rgba(180,200,255,0.08)'; for (let i = 0; i < W; i += 12) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, H); x.stroke(); }
     x.save(); x.translate(CX + (Math.random() - 0.5) * shake * 10, CY);

@@ -1,7 +1,7 @@
 // @ts-check
 // Sparring: a cartoony timing duel vs a cocky NPC. Read the wind-up, then block (high), dodge (low) or jab (open guard).
 // No blood: a knock-down is a comic stagger with stars. Win streak + best saved.
-import { loop, text } from './util.js';
+import { loop, text, mouse } from './util.js';
 import { SFX } from '../sfx.js';
 import { load, save, pops, INK, AMBER, GREEN, RED, PINK } from './fightclub-util.js';
 import { drawFighter, drawBackdrop, drawCrowd, dust } from './fightclub-fighter.js';
@@ -14,8 +14,8 @@ const TAUNT = ['Is that all?', 'I am Jack\'s smirking face.', 'Hit me. I dare yo
 
 /** @param {any} ctx */
 export function startSpar(ctx) {
-  const ov = ctx.overlay({ title: 'The Ring', sub: 'sparring vs Tyrone', help: '<kbd>↑</kbd> block high <kbd>↓</kbd> dodge low <kbd>→</kbd>/<kbd>space</kbd> jab when open <kbd>enter</kbd> rematch <kbd>esc</kbd> leave' });
-  const W = 480, H = 270; const { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const ov = ctx.overlay({ title: 'The Ring', sub: 'sparring vs Tyrone', help: '<kbd>↑</kbd> block high <kbd>↓</kbd> dodge low <kbd>→</kbd>/<kbd>space</kbd> jab when open <kbd>click</kbd> high / middle / low third = block / jab / dodge <kbd>enter</kbd>/<kbd>click</kbd> rematch <kbd>esc</kbd> leave' });
+  const W = 480, H = 270; const { x, c } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const rec = load('spar', { streak: 0, best: 0, wins: 0 });
   const P = pops();
   /** @type {any} */ let st;
@@ -47,6 +47,9 @@ export function startSpar(ctx) {
   };
   st.ctx = ctx;
   addEventListener('keydown', kd); ov.onClose(() => removeEventListener('keydown', kd));
+  // mouse: click the top third = block, middle = jab, bottom third = dodge (same timing rules as the keys); click when done = rematch
+  const fake = code => ({ code, preventDefault() {} });
+  mouse(ov, c, W, H).set([['ArrowUp', 0], ['Space', 1], ['ArrowDown', 2]].map(([code, i]) => ({ x: 0, y: +i * H / 3, w: W, h: H / 3, pick: () => kd(/** @type {any} */ (fake(code))) })));
   const D = dust(); let hype = 0;
   loop(ov, (dt, t) => {
     st.t += dt; st.shake = Math.max(0, st.shake - dt); st.flash = Math.max(0, st.flash - dt * 2); st.sayT -= dt;

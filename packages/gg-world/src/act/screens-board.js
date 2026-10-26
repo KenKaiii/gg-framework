@@ -1,12 +1,12 @@
 // @ts-check
 // Basement whiteboard: "The Plan". ←→ rewrite step 2, space ticks the next step off with a marker scribble.
 import { SFX } from '../sfx.js';
-import { text, loop, keys } from './util.js';
+import { text, loop, keys, mouse } from './util.js';
 const STEP2 = ['???', 'blame the intern', 'rewrite it in Rust', 'add more AI', 'pray to CI', 'git push --force', 'it works on my machine'];
 /** @param {any} ctx */
 export function startBoard(ctx) {
-  const ov = ctx.overlay({ title: 'The Plan', sub: 'basement whiteboard', help: '<kbd>←→</kbd> rewrite step 2 <kbd>space</kbd> tick off a step <kbd>esc</kbd> leave' });
-  const { x } = ov.canvas(320, 180); x.imageSmoothingEnabled = false;
+  const ov = ctx.overlay({ title: 'The Plan', sub: 'basement whiteboard', help: '<kbd>←→</kbd> rewrite step 2 <kbd>space</kbd> tick off a step <kbd>click</kbd> step 2 rewrite · board tick <kbd>esc</kbd> leave' });
+  const { c, x } = ov.canvas(320, 180); x.imageSmoothingEnabled = false;
   const k = keys(ov); let i = 0, ticks = 0, flash = 0, wipe = 0;
   const best = () => Number(localStorage.getItem('nr.plan.done') || 0);
   const onKey = e => {
@@ -14,6 +14,8 @@ export function startBoard(ctx) {
     if (e.code === 'Space') { e.preventDefault(); if (ticks < 3) { ticks++; flash = 0.4; SFX.play(ticks === 3 ? 'success' : 'tick', { vol: 0.5 }); if (ticks === 3) localStorage.setItem('nr.plan.done', String(best() + 1)); } else { ticks = 0; wipe = 0.3; SFX.play('swoosh', { vol: 0.3 }); } }
   };
   addEventListener('keydown', onKey); ov.onClose(() => removeEventListener('keydown', onKey)); void k;
+  const fire = code => onKey({ code, preventDefault() {} });
+  mouse(ov, c, 320, 180).set([{ x: 36, y: 76 + 26 - 14, w: 230, h: 20, pick: () => fire('ArrowRight') }, { x: 18, y: 14, w: 284, h: 144, pick: () => fire('Space') }]);
   loop(ov, (dt, t) => {
     flash = Math.max(0, flash - dt); wipe = Math.max(0, wipe - dt);
     x.fillStyle = '#2a2440'; x.fillRect(0, 0, 320, 180);           // wall

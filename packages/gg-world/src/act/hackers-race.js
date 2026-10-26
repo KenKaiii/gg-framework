@@ -9,20 +9,30 @@ const W = 320, H = 180, HOR = 70;
 
 /** @param {any} ctx */
 export function startRace(ctx) {
-  const ov = ctx.overlay({ title: 'SLIPSTREAM', sub: 'insert coin. mess with the best.', help: '<kbd>←→</kbd> steer <kbd>↑</kbd> throttle <kbd>space</kbd> start <kbd>esc</kbd> leave' });
-  const { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false; const K = keys(ov);
+  const ov = ctx.overlay({ title: 'SLIPSTREAM', sub: 'insert coin. mess with the best.', help: '<kbd>←→</kbd> steer <kbd>↑</kbd> throttle <kbd>space</kbd> start <kbd>mouse</kbd> steer <kbd>hold click</kbd> throttle <kbd>esc</kbd> leave' });
+  const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false; const K = keys(ov);
   let me = handle(ctx.S), seed = 1;
   /** @type {any} */ let g;
   const reset = state => { me = handle(ctx.S); g = { state, lane: 0, spd: 0, dist: 0, z: 0, cars: [], next: 1, shake: 0, flash: 0, r: rng(seed++ * 977 + Date.now() % 1000), rank: -1, table: load('cyb-race-top', []) }; };
   reset('title');
   ctx.R.hackersDbg = { ...(ctx.R.hackersDbg || {}), race: () => g }; ov.onClose(() => { if (ctx.R.hackersDbg) delete ctx.R.hackersDbg.race; });
-  const onKey = e => { if (e.code === 'Space' && g.state !== 'play') { e.preventDefault(); reset('play'); SFX.play('arcade.coin'); SFX.play('go', { delay: 0.25 }); } };
+  const start = () => { reset('play'); SFX.play('arcade.coin'); SFX.play('go', { delay: 0.25 }); };
+  const onKey = e => { if (e.code === 'Space' && g.state !== 'play') { e.preventDefault(); start(); } };
+  // mouse: the pointer steers (bike heads for the pointer's x at the normal steer rate), hold the button to throttle,
+  // click to start / race again
+  const ms = { x: -1, down: false };
+  const mx = e => { const r = c.getBoundingClientRect(); return (e.clientX - r.left) / r.width * W; };
+  const pm = e => { ms.x = mx(e); }, pd = e => { if (e.button !== 0) return; e.preventDefault(); ms.x = mx(e); if (g.state !== 'play') start(); else ms.down = true; }, pu = () => { ms.down = false; }, pl = () => { ms.x = -1; ms.down = false; };
+  c.addEventListener('pointermove', pm); c.addEventListener('pointerdown', pd); addEventListener('pointerup', pu); c.addEventListener('pointerleave', pl);
+  ov.onClose(() => { c.removeEventListener('pointermove', pm); c.removeEventListener('pointerdown', pd); removeEventListener('pointerup', pu); c.removeEventListener('pointerleave', pl); });
   addEventListener('keydown', onKey); ov.onClose(() => removeEventListener('keydown', onKey));
   const proj = (lx, z) => { const s = 1 / (z * 0.02 + 1), y = HOR + (H - HOR) * s; return { x: W / 2 + lx * 140 * s - g.lane * 140 * s, y, s }; };
   loop(ov, (dt, t) => {
     if (g.state === 'play') {
-      const steer = (K.has('ArrowRight') ? 1 : 0) - (K.has('ArrowLeft') ? 1 : 0); g.lane = Math.max(-1.1, Math.min(1.1, g.lane + steer * dt * 1.8));
-      const top = 60 + g.dist / 120; g.spd += ((K.has('ArrowUp') || K.has('Space') ? top : top * 0.6) - g.spd) * dt * 0.8;
+      let steer = (K.has('ArrowRight') ? 1 : 0) - (K.has('ArrowLeft') ? 1 : 0);
+      if (!steer && ms.x >= 0) { const want = Math.max(-1.1, Math.min(1.1, (ms.x - W / 2) / 140)), d = want - g.lane; steer = Math.abs(d) < 0.03 ? 0 : Math.max(-1, Math.min(1, d / (dt * 1.8))); }
+      g.lane = Math.max(-1.1, Math.min(1.1, g.lane + steer * dt * 1.8));
+      const top = 60 + g.dist / 120; g.spd += ((K.has('ArrowUp') || K.has('Space') || ms.down ? top : top * 0.6) - g.spd) * dt * 0.8;
       g.dist += g.spd * dt; g.z += g.spd * dt;
       g.next -= dt; if (g.next <= 0) { g.next = Math.max(0.35, 1.2 - g.dist / 4000) * (0.6 + g.r() * 0.8); const boost = g.r() < 0.18; g.cars.push({ lx: [-0.75, 0, 0.75][Math.floor(g.r() * 3)], z: 120, c: ['#ff4fd8', '#3ff0ff', '#f5d33a', '#9dff3d'][Math.floor(g.r() * 4)], boost }); }
       for (const c of g.cars) { c.z -= (g.spd - (c.boost ? 0 : 25)) * dt * 0.6;
@@ -56,7 +66,7 @@ export function startRace(ctx) {
       text(x, g.state === 'title' ? 'SLIPSTREAM' : 'WIPEOUT', W / 2, 46, { title: true, size: 16, align: 'center', color: '#ff4fd8' });
       text(x, 'HIGH SCORES', W / 2, 64, { align: 'center', color: '#3ff0ff' });
       for (let i = 0; i < 5; i++) { const e = g.table[i]; const hl = i === g.rank && (t * 3) % 1 < 0.6; text(x, `${i + 1}. ${e ? e.n : '---'}`, 84, 82 + i * 14, { color: hl ? '#ffffff' : '#c8c0d8' }); text(x, e ? String(e.s) : '', 236, 82 + i * 14, { align: 'right', color: hl ? '#ffffff' : '#9dff3d' }); }
-      text(x, `${me}: press space`, W / 2, 152, { align: 'center', color: '#ffcf8a' }); }
+      text(x, `${me}: space / click`, W / 2, 152, { align: 'center', color: '#ffcf8a' }); }
     scan(x, W, H);
   });
 }

@@ -2,7 +2,7 @@
 // Payphone phreaking: crack today's 4-tone code (from the date) in 6 tries, Mastermind-style feedback per tone.
 // Pays coins once per day via coins(S).
 import { SFX } from '../sfx.js';
-import { text, loop, rng, coins } from './util.js';
+import { text, loop, rng, coins, mouse } from './util.js';
 import { backdrop, scan, load, save, today } from './hackers-util.js';
 
 // DTMF-ish soft beep per digit (two sines, short)
@@ -13,8 +13,8 @@ const TRIES = 6, PAY = 5;
 /** @param {any} ctx */
 export function startPhone(ctx) {
   const { S } = ctx; ctx.R.hackers?.fire('phone');
-  const ov = ctx.overlay({ title: 'Payphone', sub: 'free calls for the elite', help: '<kbd>0-9</kbd> dial <kbd>⌫</kbd> undo <kbd>enter</kbd> send / redial <kbd>esc</kbd> hang up' });
-  const W = 320, H = 180; const { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const ov = ctx.overlay({ title: 'Payphone', sub: 'free calls for the elite', help: '<kbd>0-9</kbd> dial <kbd>⌫</kbd> undo <kbd>enter</kbd> send / redial <kbd>click</kbd> keypad (* undo, # send) <kbd>esc</kbd> hang up' });
+  const W = 320, H = 180; const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const day = today(), r = rng(day * 31 + 7), code = Array.from({ length: 4 }, () => String(Math.floor(r() * 10)));
   const paid = load('cyb-phone-paid', 0) === day;
   const st = { cur: '', rows: /** @type {{g:string, f:number[]}[]} */ ([]), won: false, lost: false, press: '', pt: 0, shake: 0, msg: paid ? 'already phreaked today. still fun.' : `crack it for ${PAY} coins` };
@@ -29,17 +29,24 @@ export function startPhone(ctx) {
       if (!paid && load('cyb-phone-paid', 0) !== day) { coins(S).spend(-PAY); save('cyb-phone-paid', day); st.msg = `line open! +${PAY} coins`; ctx.api.toast(`Free call. +${PAY} coins`); } else st.msg = 'line open! (paid out today)'; }
     else if (st.rows.length >= TRIES) { st.lost = true; st.shake = 0.5; SFX.play('fail', { delay: 0.7 }); SFX.play('static', { delay: 0.7, vol: 0.5 }); st.msg = `traced! code was ${code.join('')}`; }
   };
+  const dial = d => { if (st.cur.length >= 4 || st.won || st.lost) return false; st.cur += d; st.press = d; st.pt = 0.2; SFX.play('cyb.dtmf', { pitch: 0.8 + (+d) * 0.04, jitter: 0 }); return true; };
+  const undo = () => { st.cur = st.cur.slice(0, -1); SFX.play('ui.back'); };
+  const enter = () => { if (st.won || st.lost) { SFX.play('dial'); st.rows = []; st.cur = ''; st.won = st.lost = false; st.msg = load('cyb-phone-paid', 0) === day ? 'already phreaked today. still fun.' : `crack it for ${PAY} coins`; } else send(); };
   const onKey = e => {
-    if (/^Digit\d$|^Numpad\d$/.test(e.code) && st.cur.length < 4 && !st.won && !st.lost) { const d = e.code.slice(-1); st.cur += d; st.press = d; st.pt = 0.2; SFX.play('cyb.dtmf', { pitch: 0.8 + (+d) * 0.04, jitter: 0 }); }
-    else if (e.code === 'Backspace') { st.cur = st.cur.slice(0, -1); SFX.play('ui.back'); }
-    else if (e.code === 'Enter' && (st.won || st.lost)) { SFX.play('dial'); st.rows = []; st.cur = ''; st.won = st.lost = false; st.msg = load('cyb-phone-paid', 0) === day ? 'already phreaked today. still fun.' : `crack it for ${PAY} coins`; }
-    else if (e.code === 'Enter') send();
+    if (/^Digit\d$|^Numpad\d$/.test(e.code)) { if (!dial(e.code.slice(-1))) return; }
+    else if (e.code === 'Backspace') undo();
+    else if (e.code === 'Enter') enter();
     else return; e.preventDefault();
   };
+  // mouse: click keypad buttons (digits dial, * undo, # send / redial); boxes follow the per-frame shake offset
+  const m = mouse(ov, c, W, H);
+  const press = k => { if (k === '*') undo(); else if (k === '#') { st.press = '#'; st.pt = 0.2; enter(); } else dial(k); };
   addEventListener('keydown', onKey); ov.onClose(() => removeEventListener('keydown', onKey));
   loop(ov, (dt, t) => {
     st.pt = Math.max(0, st.pt - dt); st.shake = Math.max(0, st.shake - dt);
-    x.save(); x.translate(st.shake ? Math.round(Math.sin(t * 80) * 3) : 0, 0);
+    const ox = st.shake ? Math.round(Math.sin(t * 80) * 3) : 0;
+    m.rows(i => ({ x: 22 + (i % 3) * 28 + ox, y: 50 + Math.floor(i / 3) * 28, w: 22, h: 22 }), KEYS.length, { pick: i => press(KEYS[i]) });
+    x.save(); x.translate(ox, 0);
     backdrop(x, W, H, t, '#ffcf8a');
     // keypad
     x.fillStyle = '#5a5e6a'; x.fillRect(14, 14, 96, 152); x.fillStyle = '#2a2c34'; x.fillRect(20, 20, 84, 22);

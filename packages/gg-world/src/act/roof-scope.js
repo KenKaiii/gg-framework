@@ -16,8 +16,8 @@ const save = s => { try { localStorage.setItem('nr-scope', JSON.stringify(s)); }
 
 /** @param {any} ctx */
 function start(ctx) {
-  const ov = ctx.overlay({ title: 'Telescope', sub: 'the roof · tonight\'s sky', help: '<kbd>←↑↓→</kbd> pan <kbd>space</kbd> hold to log <kbd>esc</kbd> leave' });
-  const { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false; const k = keys(ov);
+  const ov = ctx.overlay({ title: 'Telescope', sub: 'the roof · tonight\'s sky', help: '<kbd>←↑↓→</kbd> pan <kbd>space</kbd> hold to log <kbd>drag</kbd> pan <kbd>hold click</kbd> log <kbd>esc</kbd> leave' });
+  const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false; const k = keys(ov);
   const r = rng(day()), st = load(); if (st.day !== day()) { st.day = day(); st.found = []; st.paid = false; }
   const stars = Array.from({ length: 420 }, () => ({ x: r() * SKY, y: r() * SKYH, b: r(), s: r() < 0.08 ? 2 : 1 }));
   const con = CON[(r() * CON.length) | 0], odd = ODD[(r() * ODD.length) | 0];
@@ -28,6 +28,11 @@ function start(ctx) {
   ];
   let cx = SKY / 2, cy = SKYH / 2, hold = 0, msg = '', msgT = 0, shoot = null, shake = 0;
   const say = (m, t = 2.6) => { msg = m; msgT = t; };
+  // mouse: drag the sky to pan, hold the button to log (like holding space)
+  let drag = null, mHeld = false; c.style.cursor = 'grab';
+  c.addEventListener('pointerdown', e => { if (e.button !== 0) return; e.preventDefault(); drag = [e.clientX, e.clientY]; mHeld = true; c.setPointerCapture?.(e.pointerId); c.style.cursor = 'grabbing'; });
+  c.addEventListener('pointermove', e => { if (!drag) return; const b = c.getBoundingClientRect(); cx -= (e.clientX - drag[0]) / b.width * W; cy -= (e.clientY - drag[1]) / b.height * H; drag = [e.clientX, e.clientY]; });
+  const mup = () => { drag = null; mHeld = false; c.style.cursor = 'grab'; }; c.addEventListener('pointerup', mup); c.addEventListener('pointercancel', mup);
   say(`tonight: ${con[0]}, a satellite, and... a ${odd[0]}?`, 4);
   loop(ov, (dt, t) => {
     const sp = 120 * dt; if (k.has('ArrowLeft')) cx -= sp; if (k.has('ArrowRight')) cx += sp; if (k.has('ArrowUp')) cy -= sp; if (k.has('ArrowDown')) cy += sp;
@@ -37,7 +42,7 @@ function start(ctx) {
     // what's in the crosshair?
     let aim = null; for (const tg of targets) if (!st.found.includes(tg.id) && Math.hypot(tg.x - cx, tg.y - cy) < 16) aim = tg;
     const shot = shoot && Math.hypot(shoot.x - cx, shoot.y - cy) < 30;
-    if (k.has('Space') && (aim || shot)) hold += dt; else hold = Math.max(0, hold - dt * 2);
+    if ((k.has('Space') || mHeld) && (aim || shot)) hold += dt; else hold = Math.max(0, hold - dt * 2);
     if (hold > 0.9) { hold = 0; shake = 0.3; SFX.play(shot ? 'magic' : 'ping', { vol: 0.5 });
       if (shot) { shoot = null; coins(ctx.S).spend(-5); say('shooting star! made a wish: green CI. +5c'); }
       else if (aim) { st.found.push(aim.id); say(`logged ${aim.name}: ${aim.line}`, 3.4);

@@ -10,7 +10,7 @@ const NPCS = [['Grumbold (dwarf)', 0.7], ['Shadowsneak (rogue)', 0.95], ['Healbo
 
 /** @param {any} ctx */
 export function startLoot(ctx) {
-  const ov = ctx.overlay({ title: 'Loot Roll', sub: 'dice table · something dropped!', help: '<kbd>N</kbd> need <kbd>G</kbd> greed <kbd>P</kbd> pass <kbd>space</kbd> next drop <kbd>esc</kbd> leave' });
+  const ov = ctx.overlay({ title: 'Loot Roll', sub: 'dice table · something dropped!', help: '<kbd>N</kbd> need <kbd>G</kbd> greed <kbd>P</kbd> pass <kbd>space</kbd> next drop <kbd>click</kbd> buttons <kbd>esc</kbd> leave' });
   const W = 480, H = 270; const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const col = load('loot', { items: {}, rolls: 0 });
   const r = rng((Date.now() & 0xffff) + 7); const P = pops();

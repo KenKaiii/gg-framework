@@ -12,7 +12,7 @@ const W = 480, H = 270, GW = 30, GH = 24, TRACE = 75, PAY = 5, DL = 2.2;
 /** @param {any} ctx */
 export function startGibson(ctx) {
   const { S } = ctx; ctx.R.hackers?.fire('gibson');
-  const ov = ctx.overlay({ title: 'Hack the Gibson', sub: 'find the garbage file', help: '<kbd>←→</kbd> turn <kbd>↑↓</kbd> fly <kbd>space</kbd> boost <kbd>esc</kbd> jack out' });
+  const ov = ctx.overlay({ title: 'Hack the Gibson', sub: 'find the garbage file', help: '<kbd>←→</kbd> turn <kbd>↑↓</kbd> fly <kbd>space</kbd> boost <kbd>hold click</kbd> fly, pointer turns <kbd>esc</kbd> jack out' });
   const day = today(); let tries = 0;
   /** @type {any} */ let g = null; /** @type {any} */ let sc = null;
   const hud = ov.canvas(W, H); const x = hud.x; x.imageSmoothingEnabled = false;
@@ -31,7 +31,15 @@ export function startGibson(ctx) {
   reset();
   ov.onClose(() => { sc?.dispose(); sc = null; if (ctx.R.hackersDbg) delete ctx.R.hackersDbg.gibson; });
   const solid = (px, pz) => { const i = Math.floor(px), j = Math.floor(pz); return i < 0 || j < 0 || i >= GW || j >= GH || g.tow[j * GW + i] > 0; };
-  const onKey = e => { if (e.code === 'Space' && (g.state === 'won' || g.state === 'lost')) { e.preventDefault(); reset(); SFX.play('pc.boot', { vol: 0.6 }); } };
+  const again = () => { reset(); SFX.play('pc.boot', { vol: 0.6 }); };
+  const onKey = e => { if (e.code === 'Space' && (g.state === 'won' || g.state === 'lost')) { e.preventDefault(); again(); } };
+  // mouse: hold the button to fly forward; while held, the pointer's offset from centre turns (same max turn rate as
+  // the keys). Click to hack again after a win / bust.
+  const ms = { x: W / 2, down: false };
+  const mx = e => { const r = hud.c.getBoundingClientRect(); return (e.clientX - r.left) / r.width * W; };
+  const pm = e => { ms.x = mx(e); }, pd = e => { if (e.button !== 0) return; e.preventDefault(); ms.x = mx(e); if (g.state === 'won' || g.state === 'lost') again(); else ms.down = true; }, pu = () => { ms.down = false; };
+  hud.c.addEventListener('pointermove', pm); hud.c.addEventListener('pointerdown', pd); addEventListener('pointerup', pu); hud.c.addEventListener('pointerleave', pu);
+  ov.onClose(() => { hud.c.removeEventListener('pointermove', pm); hud.c.removeEventListener('pointerdown', pd); removeEventListener('pointerup', pu); hud.c.removeEventListener('pointerleave', pu); });
   addEventListener('keydown', onKey); ov.onClose(() => removeEventListener('keydown', onKey));
   loop(ov, (dt, t) => {
     if (!sc) return;
@@ -39,8 +47,10 @@ export function startGibson(ctx) {
     const d = Math.hypot(g.px - g.fi - 0.5, g.pz - g.fj - 0.5), near = Math.max(0, 1 - d / 14);
     if (g.state === 'play') {
       g.t += dt;
-      g.yaw += ((K.has('ArrowRight') || K.has('KeyD') ? 1 : 0) - (K.has('ArrowLeft') || K.has('KeyA') ? 1 : 0)) * dt * 2.2;
-      const mv = ((K.has('ArrowUp') || K.has('KeyW') ? 1 : 0) - (K.has('ArrowDown') || K.has('KeyS') ? 0.6 : 0)) * (K.has('Space') ? 4.2 : 2.6) * dt;
+      let turn = (K.has('ArrowRight') || K.has('KeyD') ? 1 : 0) - (K.has('ArrowLeft') || K.has('KeyA') ? 1 : 0);
+      if (!turn && ms.down) { const o = (ms.x - W / 2) / (W * 0.3); turn = Math.abs(o) < 0.08 ? 0 : Math.max(-1, Math.min(1, o)); }
+      g.yaw += turn * dt * 2.2;
+      const mv = ((K.has('ArrowUp') || K.has('KeyW') || ms.down ? 1 : 0) - (K.has('ArrowDown') || K.has('KeyS') ? 0.6 : 0)) * (K.has('Space') ? 4.2 : 2.6) * dt;
       const nx = g.px + Math.cos(g.yaw) * mv, nz = g.pz + Math.sin(g.yaw) * mv;
       if (!solid(nx, g.pz)) g.px = nx; if (!solid(g.px, nz)) g.pz = nz; g.bob += Math.abs(mv);
       g.ping -= dt; if (g.ping <= 0) { g.ping = Math.max(0.18, d / 10); g.pings.push({ a: 1, hot: near }); SFX.play('ping', { vol: 0.15 + near * 0.35, pitch: 0.7 + near * 0.7 }); }
@@ -86,9 +96,9 @@ export function startGibson(ctx) {
     if (g.state === 'won') {
       const k = Math.sin(t * 8) * 0.5 + 0.5;
       text(x, 'HACK THE PLANET', W / 2 + (g.glitch ? (Math.random() - 0.5) * 10 : 0), 78, { size: 32, title: true, align: 'center', color: k > 0.5 ? '#ff4fd8' : '#3ff0ff', shadow: '#000' });
-      text(x, `${g.t.toFixed(1)}s  ${g.msg}`, W / 2, 166, { align: 'center', color: '#9dff3d', shadow: '#000' }); text(x, 'space: hack again', W / 2, 182, { align: 'center', color: '#c8c0d8', shadow: '#000' });
+      text(x, `${g.t.toFixed(1)}s  ${g.msg}`, W / 2, 166, { align: 'center', color: '#9dff3d', shadow: '#000' }); text(x, 'space / click: hack again', W / 2, 182, { align: 'center', color: '#c8c0d8', shadow: '#000' });
     }
-    if (g.state === 'lost') { x.fillStyle = 'rgba(30,0,10,0.75)'; x.fillRect(100, 100, 280, 60); text(x, 'TRACE COMPLETE. BUSTED.', W / 2, 124, { title: true, align: 'center', color: '#ff6b6b' }); text(x, 'space: hack again', W / 2, 146, { align: 'center', color: '#c8c0d8' }); }
+    if (g.state === 'lost') { x.fillStyle = 'rgba(30,0,10,0.75)'; x.fillRect(100, 100, 280, 60); text(x, 'TRACE COMPLETE. BUSTED.', W / 2, 124, { title: true, align: 'center', color: '#ff6b6b' }); text(x, 'space / click: hack again', W / 2, 146, { align: 'center', color: '#c8c0d8' }); }
     if (g.glitch > 0) { for (let i = 0; i < 6; i++) { const y = Math.random() * H; x.fillStyle = i % 2 ? `rgba(255,79,216,${g.glitch * 0.5})` : `rgba(63,240,255,${g.glitch * 0.5})`; x.fillRect(0, y, W, 2 + Math.random() * 8); } x.fillStyle = `rgba(255,255,255,${g.glitch * 0.25})`; x.fillRect(0, 0, W, H); }
     scan(x, W, H);
   });

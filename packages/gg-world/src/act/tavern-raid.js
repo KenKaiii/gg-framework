@@ -12,7 +12,7 @@ SFX.define('tav.charge', (o, t, p, K) => { K.tone(o, t, { type: 'sawtooth', f: 1
 
 /** @param {any} ctx */
 export function startRaid(ctx) {
-  const ov = ctx.overlay({ title: 'Raid Plan', sub: 'the easel by the west wall', help: '<kbd>space</kbd> hold the hothead back <kbd>enter</kbd> try again <kbd>esc</kbd> leave' });
+  const ov = ctx.overlay({ title: 'Raid Plan', sub: 'the easel by the west wall', help: '<kbd>space</kbd> hold the hothead back <kbd>enter</kbd> try again <kbd>click</kbd> hold / retry <kbd>esc</kbd> leave' });
   const W = 480, H = 270; const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const rec = load('raid', { best: 0, clears: 0 }); const P = pops();
   let g, t = 0, againB = null;

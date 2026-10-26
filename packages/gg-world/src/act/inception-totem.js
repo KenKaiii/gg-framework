@@ -13,7 +13,7 @@ import { hook, seeThrough, loadNum, saveNum, pops, panel } from './inception-uti
 /** @param {any} ctx */
 export function startTotem(ctx) {
   const { R, S } = ctx, I = R.inception, ts = I.topSpin; let wob = false;
-  const ov = ctx.overlay({ title: 'The Totem', sub: 'is this a dream?', help: '<kbd>space</kbd> spin / leave the room <kbd>esc</kbd> stop' });
+  const ov = ctx.overlay({ title: 'The Totem', sub: 'is this a dream?', help: '<kbd>space</kbd> spin / leave the room <kbd>click</kbd> same <kbd>esc</kbd> stop' });
   const W = 480, H = 270, { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false; seeThrough(ov, c, 0.08);
   setView(S, { target: worldOf(R, 9.2, 0.82, 4.2), dir: { x: 0.25, y: 0.42, z: 1 }, zoom: 0.55 }); hideOccluders(S); const meVis = S.me.root.visible; S.me.root.visible = false; // the player would stand between camera and top
   const st = { phase: 'ready', t: 0, pt: 0, pot: 0, streak: 0, banked: 0, fate: 'fall', T: 0, black: 0, msg: 'Press SPACE to spin the top.', msgC: '#e8dcc0', shake: 0 };
@@ -33,6 +33,8 @@ export function startTotem(ctx) {
   const kd = e => { if (e.code !== 'Space') return; e.preventDefault();
     if (st.phase === 'ready' || st.phase === 'fell') spin();
     else if (st.phase === 'spin') { bank(); st.msg = 'You leave before it decides. Streak ' + st.streak + '.'; st.msgC = '#6ee7a0'; } };
+  // mouse: a click anywhere is the space key
+  const md = e => { if (e.button === 0) { e.preventDefault(); kd({ code: 'Space', preventDefault() {} }); } }; c.addEventListener('pointerdown', md); c.style.cursor = 'pointer'; ov.onClose(() => c.removeEventListener('pointerdown', md));
   addEventListener('keydown', kd); hook({ totem: { get phase() { return st.phase; }, get streak() { return st.streak; }, get banked() { return st.banked; } } });
   ov.onClose(() => { removeEventListener('keydown', kd); hook({ totem: null }); ts.on = true; ts.speed = 30; ts.tilt = 0; ts.wob = 0; clearView(S); S.me.root.visible = meVis; });
   loop(ov, dt => {

@@ -1,18 +1,18 @@
 // @ts-check
 // Soap-making: render (hold to heat into the zone), mix (alternate ←/→), pour (hold to the line), cut (space on the marks).
 // Quality -> bars -> coins via coins(S). Daily order from the date (scent + bars wanted) pays a bonus once a day.
-import { loop, text, coins, rng } from './util.js';
+import { loop, text, coins, rng, mouse } from './util.js';
 import { SFX } from '../sfx.js';
 import { load, save, today, pops, BG, INK, PINK, AMBER, GREEN, RED } from './fightclub-util.js';
 
 const SCENTS = [['rose', '#f2a6c0'], ['lavender', '#b8a0e8'], ['mint', '#9ee8c0'], ['lemon', '#f0e08a'], ['tar', '#8a7a70']];
 const STEPS = ['RENDER', 'MIX', 'POUR', 'CUT'];
-const HELP = ['hold <kbd>space</kbd> to heat, release in the green', 'tap <kbd>←</kbd> <kbd>→</kbd> alternately to stir', 'hold <kbd>space</kbd> to pour, stop at the line', 'press <kbd>space</kbd> when the knife is on a mark'];
+const HELP = ['hold <kbd>space</kbd>/<kbd>mouse</kbd> to heat, release in the green', 'tap <kbd>←</kbd> <kbd>→</kbd> (or click left / right half) alternately to stir', 'hold <kbd>space</kbd>/<kbd>mouse</kbd> to pour, stop at the line', 'press <kbd>space</kbd>/<kbd>click</kbd> when the knife is on a mark'];
 
 /** @param {any} ctx */
 export function startSoap(ctx) {
   const ov = ctx.overlay({ title: 'Paper St. Soap Co.', sub: 'the workbench', help: HELP[0] + ' <kbd>esc</kbd> leave' });
-  const W = 480, H = 270; const { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const W = 480, H = 270; const { x, c } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const day = today(), r = rng(day * 7 + 3);
   const order = { scent: SCENTS[Math.floor(r() * SCENTS.length)], bars: 6 + Math.floor(r() * 5) };
   const rec = load('soap', { day: 0, orderDone: false, batches: 0, best: 0, total: 0 });
@@ -29,7 +29,7 @@ export function startSoap(ctx) {
     if (paid && !rec.orderDone && st.scent === order.scent && st.bars >= order.bars) { bonus = 40; rec.orderDone = true; }
     st.bonus = bonus; st.pay += bonus; SFX.play(bonus ? 'win' : 'bubble', { delay: 0.3 }); if (st.pay) wallet.spend(-st.pay, null);
     rec.batches++; rec.best = Math.max(rec.best, st.bars); rec.total += st.bars; save('soap', rec);
-    ov.setHelp('<kbd>enter</kbd> next batch <kbd>←</kbd><kbd>→</kbd> scent <kbd>esc</kbd> leave');
+    ov.setHelp('<kbd>enter</kbd>/<kbd>click</kbd> next batch <kbd>←</kbd><kbd>→</kbd> scent <kbd>esc</kbd> leave');
   };
   const kd = (/** @type {KeyboardEvent} */ e) => {
     if (/Arrow|Space/.test(e.code)) e.preventDefault();
@@ -46,6 +46,17 @@ export function startSoap(ctx) {
     else if (st.step === 2 && st.fill > 0) next(Math.max(0, 1 - Math.abs(st.fill - st.line) * 7));
   };
   addEventListener('keydown', kd); addEventListener('keyup', ku); ov.onClose(() => { removeEventListener('keydown', kd); removeEventListener('keyup', ku); });
+  // mouse mirrors the keys: hold = space (heat / pour), click = space (cut), left / right half = ←/→ (stir),
+  // click the scent line = next scent (before heating), click when done = next batch
+  const fake = code => ({ code, preventDefault() {} });
+  const pd = (/** @type {PointerEvent} */ e) => { if (e.button !== 0) return; e.preventDefault(); const r = c.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W, py = (e.clientY - r.top) / r.height * H;
+    if (st.end) kd(fake('Enter'));
+    else if (st.step === 0 && st.q.length === 0 && st.heat === 0 && py >= 34 && py <= 54 && px <= 240) kd(fake('ArrowRight'));
+    else if (st.step === 1) kd(fake(px < W / 2 ? 'ArrowLeft' : 'ArrowRight'));
+    else kd(fake('Space')); };
+  const pu = () => ku(fake('Space'));
+  c.addEventListener('pointerdown', pd); addEventListener('pointerup', pu); ov.onClose(() => removeEventListener('pointerup', pu));
+  const M = mouse(ov, c, W, H); M.set([{ x: 0, y: 0, w: W, h: H }]);
   loop(ov, (dt, t) => {
     st.t += dt; st.flash = Math.max(0, st.flash - dt);
     if (!st.end) {

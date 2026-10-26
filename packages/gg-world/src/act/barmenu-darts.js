@@ -1,6 +1,6 @@
 // @ts-check
 // Bar darts: 3 darts, the aim drifts (you've had a few), space throws. Board-scored (bull 50, outer bull 25, rings x3/x2).
-import { text, loop } from './util.js';
+import { text, loop, mouse } from './util.js';
 import { SFX } from '../sfx.js';
 const NUM = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
 const CX = 160, CY = 92, RB = 70;
@@ -14,8 +14,8 @@ function score(dx, dy) {
 }
 /** @param {any} ctx */
 export function startDarts(ctx) {
-  const ov = ctx.overlay({ title: 'Darts', sub: 'bar, SW corner · 3 darts', help: '<kbd>space</kbd> throw <kbd>r</kbd> new round <kbd>esc</kbd> leave' });
-  const { x } = ov.canvas(320, 180); x.imageSmoothingEnabled = false;
+  const ov = ctx.overlay({ title: 'Darts', sub: 'bar, SW corner · 3 darts', help: '<kbd>space</kbd>/<kbd>click</kbd> throw <kbd>r</kbd>/<kbd>click</kbd> new round <kbd>esc</kbd> leave' });
+  const { x, c } = ov.canvas(320, 180); x.imageSmoothingEnabled = false;
   const best = () => Number(localStorage.getItem('nr.darts.best') || 0);
   let darts = [], total = 0, pop = null, shake = 0, fly = null, seed = Math.random() * 100;
   const throwDart = t => {
@@ -24,7 +24,10 @@ export function startDarts(ctx) {
     fly = { tx: ax, ty: ay, k: 0 }; SFX.play('swoosh', { vol: 0.4 });
   };
   let now = 0;
-  const onKey = e => { if (e.code === 'Space') { e.preventDefault(); throwDart(now); } if (e.code === 'KeyR' && darts.length === 3 && !fly) { darts = []; total = 0; pop = null; SFX.play('shuffle', { vol: 0.4 }); } };
+  const onKey = e => { if (e.code === 'Space') { e.preventDefault(); throwDart(now); } if (e.code === 'KeyR') again(); };
+  const again = () => { if (darts.length === 3 && !fly) { darts = []; total = 0; pop = null; SFX.play('shuffle', { vol: 0.4 }); } };
+  // mouse: click throws; after the 3rd dart, click starts a new round
+  mouse(ov, c, 320, 180).set([{ x: 0, y: 0, w: 320, h: 180, pick: () => darts.length === 3 ? again() : throwDart(now) }]);
   addEventListener('keydown', onKey); ov.onClose(() => removeEventListener('keydown', onKey));
   loop(ov, (dt, t) => {
     now = t; shake = Math.max(0, shake - dt * 3);

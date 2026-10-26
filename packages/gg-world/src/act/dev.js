@@ -13,4 +13,6 @@ export function installDev(S) {
         if (S.room !== R) S.W.travel?.(id); return S.act.tryStart(it, R, { toast: S.ui?.toast || (() => {}), bubble: () => {} }); } }
     return false;
   };
+  // @ts-ignore  every activity id (test sweeps)
+  window.__actIds = () => ACTIVITIES.map(a => a.id);
 }

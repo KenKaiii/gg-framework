@@ -1,6 +1,6 @@
 // @ts-check
 // Activities for Hawkins Living Room: talk through the Christmas-lights alphabet, and roll a d20 at the campaign table.
-import { loop, text } from './util.js';
+import { loop, text, mouse } from './util.js';
 import { typer } from './films-a-crt.js';
 import { SFX } from '../sfx.js';
 
@@ -18,8 +18,8 @@ const on = (id) => (it, R) => R.id === 'hawkins' && it.id === id;
  *  @param {any} ctx */
 function lights(ctx) {
   const { R } = ctx;
-  const ov = ctx.overlay({ title: 'The Lights', sub: 'Hawkins · someone is listening', help: '<kbd>type</kbd> a word <kbd>enter</kbd> spell it <kbd>esc</kbd> leave' });
-  const W = 480, H = 270, { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const ov = ctx.overlay({ title: 'The Lights', sub: 'Hawkins · someone is listening', help: '<kbd>type</kbd> a word <kbd>enter</kbd> spell it <kbd>click</kbd> a letter to light it <kbd>esc</kbd> leave' });
+  const W = 480, H = 270, { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const st = { t: 0, seq: /** @type {number[]} */ ([]), t0: 0, last: 0, word: '', shake: 0, idleN: 0 };
   const ABC = ROWS.join('');
   const spell = w => { const s = w.toUpperCase().replace(/[^A-Z ]/g, '').slice(0, 14); if (!s.trim()) return; st.word = s; st.seq = [...s].map(c => ABC.indexOf(c)); st.t0 = st.t; R.hawk?.spell(s); };
@@ -29,6 +29,8 @@ function lights(ctx) {
   const ROW_Y = [74, 132, 190], SAG = 7;
   const wireY = (ri, px) => ROW_Y[ri] - 34 + Math.sin(((px - 24) / (W - 48)) * Math.PI) * SAG + Math.sin(px * 0.11 + ri) * 1.2;
   const pos = []; ROWS.forEach((row, ri) => [...row].forEach((_, i) => { const px = 44 + (i + 0.5) * (W - 88) / row.length + (rnd(ri * 9 + i) - 0.5) * 6; pos.push({ x: px, y: ROW_Y[ri] + (rnd(ri * 9 + i + 50) - 0.5) * 4, ri, wy: wireY(ri, px), tilt: (rnd(ri * 9 + i + 90) - 0.5) * 0.12 }); }));
+  // mouse: click a painted letter (or its bulb) and it lights up, like spelling a one-letter word
+  const m = mouse(ov, c, W, H);
   const colOf = k => COLS[(k * 5 + Math.floor(k / 9)) % COLS.length];
 
   // ---- static backdrop, drawn once: wallpaper, lamp light, painted letters, wires -------------------------------------
@@ -72,7 +74,9 @@ function lights(ctx) {
     const litK = litNow < 0 ? 0 : Math.min(1, ph / 0.08) * (ph > 0.6 ? Math.max(0, 1 - (ph - 0.6) / 0.15) : 1);
     // all bulbs breathe faintly; while the house "listens" (idle) they swell together, slowly
     const idleK = busy ? 0 : Math.max(0, Math.sin(t * 0.7)) * 0.12;
-    x.save(); if (st.shake) x.translate(Math.round(Math.sin(t * 60) * 2), 0);
+    const ox = st.shake ? Math.round(Math.sin(t * 60) * 2) : 0;
+    m.rows(k => ({ x: pos[k].x - 12 + ox, y: pos[k].wy, w: 24, h: pos[k].y + 6 - pos[k].wy }), pos.length, { pick: k => { st.last = st.t; spell(ABC[k]); } });
+    x.save(); if (ox) x.translate(ox, 0);
     x.drawImage(bg, 0, 0);
     // light: lit bulb throws its colour onto the wall + its letter
     if (litNow >= 0) { const p = pos[litNow], c = colOf(litNow); x.save(); x.globalCompositeOperation = 'lighter';
@@ -93,12 +97,13 @@ function lights(ctx) {
 
 /** d20 at the campaign table. @param {any} ctx */
 function d20(ctx) {
-  const ov = ctx.overlay({ title: 'Roll for initiative', sub: 'The campaign table · a monster mini watches', help: '<kbd>space</kbd> roll <kbd>esc</kbd> leave' });
-  const W = 320, H = 180, { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const ov = ctx.overlay({ title: 'Roll for initiative', sub: 'The campaign table · a monster mini watches', help: '<kbd>space</kbd>/<kbd>click</kbd> roll <kbd>esc</kbd> leave' });
+  const W = 320, H = 180, { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const st = { t: 0, roll: 0, res: 0, shown: 1, best: 0, n: 0, pops: /** @type {{x:number,y:number,vx:number,vy:number,c:string,l:number}[]} */ ([]) };
   const go = () => { if (st.roll > 0) return; st.roll = 1.1; st.res = 1 + Math.floor(Math.random() * 20); SFX.play('dice'); SFX.play('dice', { delay: 0.45, vol: 0.6 }); };
   const kd = e => { if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); go(); } };
   addEventListener('keydown', kd); ov.onClose(() => removeEventListener('keydown', kd)); go();
+  mouse(ov, c, W, H).set([{ x: 0, y: 0, w: W, h: H, pick: go }]); // click anywhere on the table = roll
   const line = n => n === 20 ? 'NAT 20! The Demogorgon flees.' : n === 1 ? 'Nat 1. It got you. (it always does)' : n >= 15 ? 'Fireball! Solid hit.' : n >= 8 ? 'You hit it. It is annoyed.' : 'Miss. Should have cast protection.';
   loop(ov, dt => {
     st.t += dt; const t = st.t;

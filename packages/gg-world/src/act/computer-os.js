@@ -31,7 +31,7 @@ export function startDesktop(ctx) {
   const flag = (cx, cy) => { const cl = ms.cells[cy * MW + cx]; if (!cl.o && !ms.over) { cl.f = !cl.f; SFX.play(cl.f ? 'snap' : 'ui.back', { vol: 0.6 }); } };
   const go = app => { if (app !== st.app) SFX.play(app === 'desk' ? 'ui.back' : 'pc.boot', { vol: 0.5 }); st.app = app; if (app === 'snake') snakeNew(); if (app === 'mines') minesNew();
     ov.setHelp(app === 'desk' ? '<kbd>1</kbd> Snake <kbd>2</kbd> Mines <kbd>click</kbd> icons <kbd>esc</kbd> leave'
-      : app === 'snake' ? '<kbd>arrows</kbd> steer <kbd>space</kbd> restart <kbd>backspace</kbd> desktop' : '<kbd>click</kbd> open <kbd>right-click/F</kbd> flag <kbd>arrows+space</kbd> also <kbd>backspace</kbd> desktop'); };
+      : app === 'snake' ? '<kbd>arrows</kbd> steer <kbd>space</kbd>/<kbd>click</kbd> restart <kbd>click</kbd> turn toward pointer <kbd>backspace</kbd>/<kbd>x</kbd> desktop' : '<kbd>click</kbd> open <kbd>right-click/F</kbd> flag <kbd>arrows+space</kbd> also <kbd>backspace</kbd>/<kbd>x</kbd> desktop'); };
   const onKey = e => {
     if (e.code === 'Backspace') { go('desk'); return; }
     if (st.app === 'desk') { if (e.code === 'Digit1') go('snake'); if (e.code === 'Digit2') go('mines'); return; }
@@ -43,6 +43,12 @@ export function startDesktop(ctx) {
   addEventListener('keydown', cap, true); ov.onClose(() => removeEventListener('keydown', cap, true));
   const onClick = e => { const p = pos(c, e); e.preventDefault();
     if (st.app === 'desk') { if (p.x < 60 && p.y > 10 && p.y < 50) go('snake'); else if (p.x < 60 && p.y > 54 && p.y < 94) go('mines'); else if (p.x > 380 && p.y > 170) { st.tip = (st.tip + 1) % TIPS.length; SFX.play('pop'); } return; }
+    // the drawn [x] on each window goes back to the desktop
+    const xb = st.app === 'snake' ? [SN.ox - 6 + SN.cols * SN.cell + 12 - 17, SN.oy - 26 + 5] : [MX - 8 + MW * MC + 16 - 17, MY - 30 + 5];
+    if (e.button === 0 && p.x >= xb[0] - 1 && p.x <= xb[0] + 12 && p.y >= xb[1] - 1 && p.y <= xb[1] + 11) { go('desk'); return; }
+    if (st.app === 'snake' && e.button === 0) { if (sn.dead) { snakeNew(); SFX.play('go'); return; } // click restarts; alive, click steers toward the pointer
+      const h = sn.body[0], dx = p.x - (SN.ox + (h[0] + 0.5) * SN.cell), dy = p.y - (SN.oy + (h[1] + 0.5) * SN.cell);
+      const d = sn.dir[0] ? [0, Math.sign(dy) || 1] : [Math.sign(dx) || 1, 0]; sn.next = d; SFX.play('key', { vol: 0.4 }); return; }
     if (st.app === 'mines') { const cx = Math.floor((p.x - MX) / MC), cy = Math.floor((p.y - MY) / MC); if (ms.over && e.button === 0) { minesNew(); return; } if (cx >= 0 && cy >= 0 && cx < MW && cy < MH) { ms.cur = [cx, cy]; if (e.button === 2) flag(cx, cy); else open(cx, cy); } } };
   c.addEventListener('mousedown', onClick); c.addEventListener('contextmenu', e => e.preventDefault());
   void k;

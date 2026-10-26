@@ -11,7 +11,7 @@ const cardSfx = (k, delay = 0) => { SFX.play('card.flip', { delay }); SFX.play(k
 
 /** @param {any} ctx */
 export function startDuel(ctx) {
-  const ov = ctx.overlay({ title: 'Tavern Duel', sub: 'vs the innkeeper · 5 turns', help: '<kbd>1-3</kbd> play card <kbd>space</kbd> end turn <kbd>enter</kbd> rematch <kbd>esc</kbd> leave' });
+  const ov = ctx.overlay({ title: 'Tavern Duel', sub: 'vs the innkeeper · 5 turns', help: '<kbd>1-3</kbd> play card <kbd>space</kbd> end turn <kbd>enter</kbd> rematch <kbd>click</kbd> cards / buttons <kbd>esc</kbd> leave' });
   const W = 480, H = 270; const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const rec = load('duel', { streak: 0, best: 0, wins: 0 });
   const r = rng((Date.now() & 0xffff) + 3); const P = pops(); const draw = () => CARDS[Math.floor(r() * (CARDS.length - 0.3))];

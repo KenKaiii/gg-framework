@@ -57,8 +57,10 @@ const denCrt = {
   match: (it, R) => R.id === 'den' && it.id === 'tv',
   start(ctx) {
     const cfg = { ...TVS.den, dir: { x: 0.1, y: 0.25, z: 1 }, zoom: 0.8 };
-    const ov = openSet(ctx, cfg, { title: 'Super Commit Bros', sub: 'den CRT · level 1-2 · grab the coins, reach the flag', help: '<kbd>&larr;</kbd><kbd>&rarr;</kbd> run &nbsp; <kbd>space</kbd> jump &nbsp; <kbd>esc</kbd> leave' });
-    SFX.play('crt.on', { vol: 0.5 }); const tv = makeTV('crt'), { x } = ov.canvas(tv.CW, tv.CH), k = keys(ov), game = makePlatformer();
+    const ov = openSet(ctx, cfg, { title: 'Super Commit Bros', sub: 'den CRT · level 1-2 · grab the coins, reach the flag', help: '<kbd>&larr;</kbd><kbd>&rarr;</kbd> run &nbsp; <kbd>space</kbd>/<kbd>click</kbd> jump &nbsp; <kbd>esc</kbd> leave' });
+    SFX.play('crt.on', { vol: 0.5 }); const tv = makeTV('crt'), { c, x } = ov.canvas(tv.CW, tv.CH), k = keys(ov), game = makePlatformer();
+    // mouse: hold click = jump (space)
+    c.addEventListener('pointerdown', e => { if (e.button === 0) { e.preventDefault(); k.add('Space'); c.setPointerCapture?.(e.pointerId); } }); const up = () => k.delete('Space'); c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
     let start = -1;
     loop(ov, (dt, t) => {
       if (start < 0) start = t; const age = t - start;

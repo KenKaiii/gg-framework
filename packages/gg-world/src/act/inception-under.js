@@ -20,7 +20,7 @@ export function startUnder(ctx) {
   const seat = () => { if (S.me.root.parent !== R.root && S.W?.put) S.W.put(S.me, R); up = sitPlayer(S, R, it.slot); S.me.root.position.y = 0.05; rig.rotation.x = -0.35; }; // recline
   seat();
   const stand = () => { rig.rotation.x = rx; up(); };
-  const ov = ctx.overlay({ title: 'Go Under', sub: 'a dream within a dream', help: '<kbd>space</kbd> lock the digit <kbd>esc</kbd> wake up' });
+  const ov = ctx.overlay({ title: 'Go Under', sub: 'a dream within a dream', help: '<kbd>space</kbd> lock the digit <kbd>click</kbd> same <kbd>esc</kbd> wake up' });
   const W = 480, H = 270, { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false; seeThrough(ov, c, 0.12);
   hideOccluders(S); const P = pops();
   const st = { lv: 0, t: 0, lt: 0, a: 0, zoneA: 0, code: [], phase: 'drop', pt: 0, run: 0, fail: false, shake: 0 };
@@ -37,6 +37,8 @@ export function startUnder(ctx) {
     else { st.shake = 0.6; st.lt += 1.5; SFX.play('ui.deny'); P.add('-1.5s', W / 2, 110, '#ff8a7a'); } };
   const kd = e => { if (e.code !== 'Space') return; e.preventDefault();
     if (st.phase === 'done') { st.lv = 0; st.code = []; st.run = 0; st.phase = 'drop'; st.pt = 0; newZone(); SFX.play('whoosh', { pitch: 0.8 }); } else lock(); };
+  // mouse: a click anywhere is the space key
+  const md = e => { if (e.button === 0) { e.preventDefault(); kd({ code: 'Space', preventDefault() {} }); } }; c.addEventListener('pointerdown', md); c.style.cursor = 'pointer'; ov.onClose(() => c.removeEventListener('pointerdown', md));
   addEventListener('keydown', kd);
   hook({ under: { get phase() { return st.phase; }, get lv() { return st.lv; }, get code() { return st.code.join(''); },
     aim() { const d = Math.abs(((st.a - st.zoneA) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI); return st.phase === 'play' && d < LV[st.lv].zone / 4; } } });

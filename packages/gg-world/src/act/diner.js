@@ -1,6 +1,6 @@
 // @ts-check
 // Jackrabbit Diner activities: a one-page diner menu ($5 shake, cherry pie + black coffee) and the twist contest.
-import { text, coins, loop } from './util.js';
+import { mouse, text, coins, loop } from './util.js';
 import { holdProp } from '../rooms/props-hand.js';
 import { moment } from './films-b-fx.js';
 import { SFX } from '../sfx.js';
@@ -30,7 +30,7 @@ function menu(ctx) {
   const { S, U } = ctx; const wal = coins(S);
   let sel = MENU.findIndex(m => m.id === ctx.it.id); if (sel < 0) sel = 0;
   const ov = ctx.overlay({ title: 'Jackrabbit Diner', sub: 'open all night. no refunds.', help: '<kbd>&uarr;&darr;</kbd>pick <kbd>enter</kbd>order <kbd>esc</kbd>leave' });
-  const { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   let shake = 0, msg = '', msgT = 0;
   const order = () => {
     const it = MENU[sel];
@@ -40,6 +40,8 @@ function menu(ctx) {
   };
   const onKey = e => { if (e.code === 'ArrowUp') { sel = (sel + MENU.length - 1) % MENU.length; SFX.play('ui.select'); } else if (e.code === 'ArrowDown') { sel = (sel + 1) % MENU.length; SFX.play('ui.select'); } else if (e.code === 'Enter' || e.code === 'Space') order(); };
   addEventListener('keydown', onKey); ov.onClose(() => removeEventListener('keydown', onKey));
+  // mouse: hover a dish to pick it, click to order
+  mouse(ov, c, W, H).rows(i => ({ x: 22, y: 52 + i * 30 - 13, w: W - 44, h: 28 }), MENU.length, { hover: i => { if (sel !== i) { sel = i; SFX.play('ui.select'); } }, pick: () => order() });
   loop(ov, (dt, t) => {
     shake = Math.max(0, shake - dt); msgT -= dt; const sx = shake ? Math.sin(t * 80) * 3 : 0;
     x.fillStyle = '#140f1c'; x.fillRect(0, 0, W, H);

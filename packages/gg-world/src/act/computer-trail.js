@@ -2,7 +2,7 @@
 // Oregon Commit: get your feature from Localhost to Production in 6 legs. Each leg pick 1 of 3; random fates.
 // Wins counted and saved; "You died of a merge conflict."
 import { SFX } from '../sfx.js';
-import { loop, text, rng } from './util.js';
+import { loop, text, rng, mouse } from './util.js';
 import { crt } from './films-a-crt.js';
 import { store, closeUp } from './computer-util.js';
 
@@ -12,9 +12,9 @@ const DEATHS = ['You died of a merge conflict.', 'You died of dysentery (npm ins
 
 /** @param {any} ctx */
 export function startTrail(ctx) {
-  const ov = ctx.overlay({ title: 'Oregon Commit', sub: 'LAN corner PC', help: '<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> choose <kbd>enter</kbd> new run <kbd>esc</kbd> leave' });
+  const ov = ctx.overlay({ title: 'Oregon Commit', sub: 'LAN corner PC', help: '<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/<kbd>click</kbd> choose <kbd>enter</kbd>/<kbd>click</kbd> new run <kbd>esc</kbd> leave' });
   closeUp(ctx, ov, -4.6, 0.6, 5.2, 1.6);
-  const W = 480, H = 270; const { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const W = 480, H = 270; const { x, c } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const r = rng((Date.now() & 0xffffff) + 1);
   let g; const reset = () => { g = { leg: 0, hp: 3, log: ['Your party: you, an agent, 3 coffees.'], over: '', flash: 0 }; }; reset();
   const choose = n => { if (g.over) return; const [, risk] = OPTS[n]; SFX.play('key');
@@ -27,7 +27,10 @@ export function startTrail(ctx) {
   const onKey = e => { const m = /^(Digit|Numpad)([1-3])$/.exec(e.code); if (m) choose(+m[2] - 1); if (e.code === 'Enter') { reset(); SFX.play('pc.boot', { vol: 0.5 }); } };
   const cap = e => { if (e.code !== 'Escape') { e.stopPropagation(); onKey(e); } };
   addEventListener('keydown', cap, true); ov.onClose(() => removeEventListener('keydown', cap, true));
-  loop(ov, dt => { g.flash = Math.max(0, g.flash - dt);
+  // mouse: click an option row (drawn at sy + 130 + i*14); when the run is over, click anywhere = new run
+  const SX = 66, SY = 26, SW = 348; const M = mouse(ov, c, W, H);
+  const newRun = () => { reset(); SFX.play('pc.boot', { vol: 0.5 }); };
+  loop(ov, dt => { if (g.over) M.set([{ x: 0, y: 0, w: W, h: H, pick: newRun }]); else M.rows(i => ({ x: SX + 6, y: SY + 130 + i * 14 - 11, w: SW - 12, h: 14 }), 3, { pick: choose }); g.flash = Math.max(0, g.flash - dt);
     crt(x, W, H, (sx, sy, sw) => { const G = '#6ee7a0';
       // trail strip
       const y0 = sy + 22; x.fillStyle = '#2f7a52'; x.fillRect(sx + 12, y0, sw - 24, 2);

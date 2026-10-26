@@ -3,7 +3,7 @@
 // "why"; at the end a summary card of the 5 tips (ticked if you got them), best score saved, +25 coins for a
 // perfect run once per day. Questions are practical habits, not trivia.
 import { SFX } from '../sfx.js';
-import { loop, text, coins } from './util.js';
+import { loop, text, coins, mouse } from './util.js';
 import { crt } from './films-a-crt.js';
 import { today, store, wrap, closeUp } from './computer-util.js';
 
@@ -32,22 +32,25 @@ export function pick(seed) { const idx = BANK.map((_, i) => i); let s = seed; fo
 /** @param {any} ctx */
 export function startPrompt(ctx) {
   const d = today(), qs = pick(d.seed);
-  const ov = ctx.overlay({ title: 'Prompt School', sub: 'Daily lesson · ' + d.s + ' · new one tomorrow', help: '<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> answer <kbd>enter</kbd> next <kbd>esc</kbd> leave' });
+  const ov = ctx.overlay({ title: 'Prompt School', sub: 'Daily lesson · ' + d.s + ' · new one tomorrow', help: '<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/<kbd>click</kbd> answer <kbd>enter</kbd>/<kbd>click</kbd> next <kbd>esc</kbd> leave' });
   closeUp(ctx, ov, -3.1, 1.2, -6.4, 1.2);
-  const W = 480, H = 270; const { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const W = 480, H = 270; const { x, c } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const st = { i: 0, pick: -1, score: 0, t: 0, flash: 0, shake: 0, done: false, reward: '', got: /** @type {boolean[]} */ ([]) };
-  const answer = n => { if (st.done || st.pick >= 0 || n >= 3) return; st.pick = n; const ok = n === qs[st.i][2]; st.got[st.i] = ok; SFX.play('key'); if (ok) { st.score++; st.flash = 0.6; SFX.play('success', { delay: 0.08 }); } else { st.shake = 0.5; SFX.play('ui.deny', { delay: 0.08 }); } ov.setHelp('<kbd>enter</kbd> ' + (st.i === N - 1 ? 'results' : 'next question') + ' <kbd>esc</kbd> leave'); };
-  const next = () => { if (st.done) { restart(); return; } if (st.pick < 0) return; st.i++; st.pick = -1; SFX.play('page'); if (st.i >= N) finish(); else ov.setHelp('<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> answer <kbd>esc</kbd> leave'); };
-  const restart = () => { SFX.play('pc.boot', { vol: 0.5 }); Object.assign(st, { i: 0, pick: -1, score: 0, done: false, reward: '', got: [] }); ov.setHelp('<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> answer <kbd>esc</kbd> leave'); };
+  const answer = n => { if (st.done || st.pick >= 0 || n >= 3) return; st.pick = n; const ok = n === qs[st.i][2]; st.got[st.i] = ok; SFX.play('key'); if (ok) { st.score++; st.flash = 0.6; SFX.play('success', { delay: 0.08 }); } else { st.shake = 0.5; SFX.play('ui.deny', { delay: 0.08 }); } ov.setHelp('<kbd>enter</kbd>/<kbd>click</kbd> ' + (st.i === N - 1 ? 'results' : 'next question') + ' <kbd>esc</kbd> leave'); };
+  const next = () => { if (st.done) { restart(); return; } if (st.pick < 0) return; st.i++; st.pick = -1; SFX.play('page'); if (st.i >= N) finish(); else ov.setHelp('<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/<kbd>click</kbd> answer <kbd>esc</kbd> leave'); };
+  const restart = () => { SFX.play('pc.boot', { vol: 0.5 }); Object.assign(st, { i: 0, pick: -1, score: 0, done: false, reward: '', got: [] }); ov.setHelp('<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/<kbd>click</kbd> answer <kbd>esc</kbd> leave'); };
   const finish = () => { st.done = true; const b = Number(store('promptBest')) || 0; if (st.score > b) store('promptBest', st.score);
     if (st.score === N) { if (store('promptPaid') !== d.s) { store('promptPaid', d.s); try { coins(ctx.S).spend(-25); st.reward = '+25 coins for a perfect lesson!'; } catch { st.reward = 'Perfect lesson!'; } } else st.reward = 'Perfect again (coins paid today).'; }
     else st.reward = '5/5 pays 25 coins. Retry: enter.';
     SFX.play(st.score === N ? 'win' : st.score >= 3 ? 'score' : 'fail', { delay: 0.1 }); if (st.score === N) SFX.play('sparkle', { delay: 0.5 });
-    ov.setHelp('<kbd>enter</kbd> retry <kbd>esc</kbd> leave'); };
+    ov.setHelp('<kbd>enter</kbd>/<kbd>click</kbd> retry <kbd>esc</kbd> leave'); };
   const onKey = e => { const m = /^(Digit|Numpad)([1-3])$/.exec(e.code); if (m) answer(+m[2] - 1); if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); next(); } };
   const cap = e => { if (e.code !== 'Escape') { e.stopPropagation(); onKey(e); } };
   addEventListener('keydown', cap, true); ov.onClose(() => removeEventListener('keydown', cap, true));
-  loop(ov, dt => {
+  // mouse: click an answer (same boxes as the drawn rows); after answering / on the results card, click anywhere = enter
+  const SX = 66, SY = 26, SW = 348; const M = mouse(ov, c, W, H);
+  const areas = () => { if (st.done || st.pick >= 0) M.set([{ x: 0, y: 0, w: W, h: H, pick: next }]); else M.rows(k => ({ x: SX + 6, y: SY + 70 + k * 18 - 13, w: SW - 12, h: 17 }), 3, { pick: answer }); };
+  loop(ov, dt => { areas();
     st.t += dt; st.flash = Math.max(0, st.flash - dt * 1.5); st.shake = Math.max(0, st.shake - dt);
     x.save(); x.translate(st.shake > 0 ? Math.round(Math.sin(st.t * 90) * 4 * st.shake) : 0, 0);
     crt(x, W, H, (sx, sy, sw) => {

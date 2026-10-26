@@ -33,7 +33,7 @@ export function button(x, label, bx, by, w, h, o = {}) {
   return { x: bx, y: by, w, h };
 }
 /** Click -> canvas px. @param {HTMLCanvasElement} c */
-export function onClick(ov, c, W, H, f) { const h = e => { const r = c.getBoundingClientRect(); f((e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height); }; c.addEventListener('click', h); ov.onClose(() => c.removeEventListener('click', h)); }
+export function onClick(ov, c, W, H, f) { const h = e => { const r = c.getBoundingClientRect(); f((e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height); }; c.addEventListener('click', h); c.style.cursor = 'pointer'; ov.onClose(() => c.removeEventListener('click', h)); }
 export const hit = (b, px, py) => b && px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h;
 /** keydown listener auto-removed. */
 export function onKey(ov, f) { const h = e => f(e.code, e); addEventListener('keydown', h); ov.onClose(() => removeEventListener('keydown', h)); }

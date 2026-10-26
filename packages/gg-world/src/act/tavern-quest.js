@@ -19,7 +19,7 @@ const LOOT = ['Rubber Duck of Debugging', 'Mug of Infinite Coffee', 'Hoodie of N
 
 /** @param {any} ctx */
 export function startQuests(ctx) {
-  const ov = ctx.overlay({ title: 'Quest Log', sub: 'The Prancing Murloc · daily quests', help: '<kbd>↑↓</kbd> pick <kbd>enter</kbd> accept / check in / turn in <kbd>esc</kbd> leave' });
+  const ov = ctx.overlay({ title: 'Quest Log', sub: 'The Prancing Murloc · daily quests', help: '<kbd>↑↓</kbd> pick <kbd>enter</kbd> accept / check in / turn in <kbd>click</kbd> pick / button <kbd>esc</kbd> leave' });
   const W = 480, H = 270; const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const { key, r } = today(); const idx = [...POOL.keys()].sort((a, b) => ((a * 7 + key.length) % 3) - ((b * 7) % 3) || r() - 0.5).slice(0, 3);
   const quests = idx.map(i => POOL[i]);
@@ -35,6 +35,9 @@ export function startQuests(ctx) {
   onKey(ov, code => { if (loot && loot.t > 0.4 && /Enter|Space/.test(code)) { loot = null; SFX.play('ui.click'); return; }
     if (code === 'ArrowUp') { sel = (sel + 2) % 3; SFX.play('ui.select'); } else if (code === 'ArrowDown') { sel = (sel + 1) % 3; SFX.play('ui.select'); } else if (code === 'Enter' || code === 'Space') act(sel); });
   onClick(ov, c, W, H, (px, py) => { if (loot) { loot = null; return; } btns.forEach((b, i) => { if (hit(b.row, px, py) && sel !== i) { sel = i; SFX.play('ui.select'); } if (hit(b.btn, px, py)) { sel = i; act(i); } }); });
+  // mouse hover picks a quest row (click already picks / presses the button)
+  const mv = e => { if (loot) return; const b = c.getBoundingClientRect(), px = (e.clientX - b.left) * W / b.width, py = (e.clientY - b.top) * H / b.height; btns.forEach((bb, i) => { if (hit(bb.row, px, py) && sel !== i) { sel = i; SFX.play('ui.select'); } }); };
+  c.addEventListener('pointermove', mv); ov.onClose(() => c.removeEventListener('pointermove', mv));
   loop(ov, dt => {
     t += dt; backdrop(x, W, H, t);
     panel(x, 16, 22, 196, 230); panel(x, 232, 22, 232, 230);

@@ -1,6 +1,6 @@
 // @ts-check
 // Catalogue corner: "what kind of furniture defines you?" Four picks -> a personality verdict. Last verdict + count saved.
-import { loop, text } from './util.js';
+import { loop, text, mouse } from './util.js';
 import { SFX } from '../sfx.js';
 import { load, save, pops, BG, INK, PINK, AMBER } from './fightclub-util.js';
 
@@ -14,8 +14,8 @@ const VERDICT = [['Complete as a person.', 'The catalogue owns you.'], ['Charmin
 
 /** @param {any} ctx */
 export function startCatalogue(ctx) {
-  const ov = ctx.overlay({ title: 'Furniture Quiz', sub: 'the catalogue corner', help: '<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> or <kbd>↑</kbd><kbd>↓</kbd> <kbd>enter</kbd> pick <kbd>esc</kbd> leave' });
-  const W = 480, H = 270; const { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const ov = ctx.overlay({ title: 'Furniture Quiz', sub: 'the catalogue corner', help: '<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> or <kbd>↑</kbd><kbd>↓</kbd> <kbd>enter</kbd>/<kbd>click</kbd> pick <kbd>esc</kbd> leave' });
+  const W = 480, H = 270; const { x, c } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const rec = load('cat', { last: '', n: 0 }); const P = pops();
   let q = 0, sel = 0, tally = [0, 0, 0], res = -1, pick = 0;
   const choose = (/** @type {number} */ i) => {
@@ -25,7 +25,9 @@ export function startCatalogue(ctx) {
   };
   const kd = (/** @type {KeyboardEvent} */ e) => { const d = /^Digit([1-3])$/.exec(e.code); if (d) choose(+d[1] - 1); else if (e.code === 'ArrowUp') { sel = (sel + 2) % 3; SFX.play('ui.select'); } else if (e.code === 'ArrowDown') { sel = (sel + 1) % 3; SFX.play('ui.select'); } else if (e.code === 'Enter') choose(sel); };
   addEventListener('keydown', kd); ov.onClose(() => removeEventListener('keydown', kd));
-  loop(ov, (dt) => {
+  // mouse: hover a card to select, click to pick; on the verdict, click anywhere to retake
+  const M = mouse(ov, c, W, H);
+  loop(ov, (dt) => { if (res >= 0) M.set([{ x: 0, y: 0, w: W, h: H, pick: () => choose(0) }]); else M.rows(i => ({ x: 80, y: 84 + i * 44, w: 320, h: 36 }), 3, { hover: i => { if (sel !== i) { sel = i; SFX.play('ui.select'); } }, pick: choose });
     pick = Math.max(0, pick - dt);
     x.fillStyle = '#e8e0cc'; x.fillRect(0, 0, W, H); x.fillStyle = BG; x.fillRect(0, 0, W, 34);
     text(x, 'HJÄLP CATALOGUE  p.' + (12 + q * 7), 16, 24, { title: true, color: '#ffe14a' });

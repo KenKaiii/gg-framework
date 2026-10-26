@@ -1,7 +1,7 @@
 // @ts-check
 // Rules board close-up: eight rules, the first two bleeped (try to read them: 1/2 or click), plus today's homework card
 // (date-seeded dare). Mark it done once a day for a streak and 15 coins.
-import { loop, text, coins } from './util.js';
+import { loop, text, coins, mouse } from './util.js';
 import { SFX } from '../sfx.js';
 
 // the TV-censor bleep: a soft 1 kHz sine, short
@@ -15,9 +15,9 @@ const DARES = ['Ship a commit before midnight.', 'Delete 50 lines you are proud 
 
 /** @param {any} ctx */
 export function startRules(ctx) {
-  const ov = ctx.overlay({ title: 'The Rules', sub: 'chalkboard by the workbench', help: '<kbd>1</kbd> <kbd>2</kbd> try reading the first rules <kbd>enter</kbd> homework done <kbd>esc</kbd> leave' });
+  const ov = ctx.overlay({ title: 'The Rules', sub: 'chalkboard by the workbench', help: '<kbd>1</kbd> <kbd>2</kbd> /<kbd>click</kbd> try reading the first rules <kbd>enter</kbd>/<kbd>click card</kbd> homework done <kbd>esc</kbd> leave' });
   setView(ctx.S, { target: worldOf(ctx.R, 8.4, 1.3, -6.0), dir: { x: 0.15, y: 0.35, z: 1 }, zoom: 1.1 }); hideOccluders(ctx.S); ov.onClose(() => clearView(ctx.S));
-  const W = 480, H = 270; const { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const W = 480, H = 270; const { x, c } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const day = today(), dare = DARES[(day * 2654435761 >>> 0) % DARES.length];
   const rec = load('rules', { last: 0, streak: 0, done: 0, bleeps: 0 });
   const yest = today(new Date(Date.now() - 864e5)), doneToday = () => rec.last === day;
@@ -25,9 +25,12 @@ export function startRules(ctx) {
   const tryRead = (/** @type {number} */ i) => { bleepRow = i; bleepT = 0.8; SFX.play('fc.bleep'); shake = 0.3; rec.bleeps++; msg = BLEEPS[rec.bleeps % BLEEPS.length]; P.add(msg, 230, 92 + i * 22, RED); save('rules', rec); ctx.R?.fc?.flash(); };
   const kd = (/** @type {KeyboardEvent} */ e) => {
     if (e.code === 'Digit1' || e.code === 'Numpad1') tryRead(0); else if (e.code === 'Digit2' || e.code === 'Numpad2') tryRead(1);
-    else if (e.code === 'Enter' && doneToday()) SFX.play('ui.deny');
-    else if (e.code === 'Enter' && !doneToday()) { rec.streak = rec.last === yest ? rec.streak + 1 : 1; rec.last = day; rec.done++; save('rules', rec); coins(ctx.S).spend(-15, null); stamp = 0.01; SFX.play('thud', { delay: 0.12 }); SFX.play('success', { delay: 0.2 }); P.add('+15c', 380, 150, '#ffe14a'); }
+    else if (e.code === 'Enter') homework();
   };
+  const homework = () => { if (doneToday()) { SFX.play('ui.deny'); return; } { rec.streak = rec.last === yest ? rec.streak + 1 : 1; rec.last = day; rec.done++; save('rules', rec); coins(ctx.S).spend(-15, null); stamp = 0.01; SFX.play('thud', { delay: 0.12 }); SFX.play('success', { delay: 0.2 }); P.add('+15c', 380, 150, '#ffe14a'); }
+  };
+  // mouse: click rule 1 / 2 to try reading it, click the homework card to mark it done
+  mouse(ov, c, W, H).set([0, 1].map(i => ({ x: 22, y: 58 + i * 22, w: 266, h: 20, pick: () => tryRead(i) })).concat([{ x: 314, y: 34, w: 160, h: 200, pick: homework }]));
   addEventListener('keydown', kd); ov.onClose(() => removeEventListener('keydown', kd));
   loop(ov, (dt, t) => {
     shake = Math.max(0, shake - dt); bleepT = Math.max(0, bleepT - dt); if (stamp > 0 && stamp < 1) stamp = Math.min(1, stamp + dt * 3);
