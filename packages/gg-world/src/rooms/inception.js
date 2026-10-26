@@ -58,7 +58,7 @@ export function build(ctx) { void ctx;
   const caseGlow = gl('#ffb36b', 0.8, 0.5, C.x + 0.2, 0.7, C.z);
   // ----- spinning-top table (E) with two sofas
   st(P.topTable(), 9.2, 0, 4.2, 0, true);
-  const top = live(P.spinTop(), 9.2, 0.745, 4.2);
+  const top = live(P.spinTop(), 9.2, 0.749, 4.2); // resting on the leather inset
   st(P.sofa('#5a6a8a'), 9.2, 0, 6.6, Math.PI, true); st(P.sofa('#5a6a8a'), 11.7, 0, 4.2, -H, true);
   pool('#ffb36b', 4, 0.25, 9.6, 4.8);
   // ----- Limbo coast (SW) with a lit water strip

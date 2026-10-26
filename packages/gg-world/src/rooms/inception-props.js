@@ -58,20 +58,34 @@ export function penrose() {
   return g;
 }
 
-/** Small round side table for the spinning top. */
+/** Small round side table for the spinning top: polished walnut with a turned edge, a green leather inset, a brass
+ *  ring, a turned brass column and a three-footed base. (It's seen up close in the totem game.) */
 export function topTable() {
   const g = new THREE.Group();
-  put(g, cyl(0.42, 0.42, 0.05, WOOD, 24), 0, 0.72, 0);
-  put(g, cyl(0.04, 0.05, 0.7, BRASS, 8), 0, 0.36, 0);
-  put(g, cyl(0.24, 0.28, 0.04, BRASS, 16), 0, 0.02, 0);
+  const walnut = mat('#5a3420', { roughness: 0.32, metalness: 0.05 }), leather = mat('#1f4a3a', { roughness: 0.75 });
+  // top: a turned profile (chamfered underside, rounded lip), leather inset sitting 2 mm proud of the wood
+  const prof = [[0, 0.68], [0.38, 0.68], [0.42, 0.69], [0.435, 0.705], [0.435, 0.73], [0.425, 0.745], [0, 0.745]].map(p => new THREE.Vector2(p[0], p[1]));
+  put(g, mesh(new THREE.LatheGeometry(prof, 40), walnut), 0, 0, 0);
+  put(g, cyl(0.37, 0.37, 0.004, leather, 40), 0, 0.747, 0);
+  put(g, mesh(new THREE.TorusGeometry(0.372, 0.006, 6, 48).rotateX(Math.PI / 2), BRASS), 0, 0.748, 0);
+  // turned column: bead, waist, collar
+  const col = [[0, 0.06], [0.05, 0.06], [0.06, 0.1], [0.035, 0.18], [0.03, 0.45], [0.045, 0.5], [0.03, 0.55], [0.035, 0.66], [0.06, 0.68], [0, 0.68]].map(p => new THREE.Vector2(p[0], p[1]));
+  put(g, mesh(new THREE.LatheGeometry(col, 20), BRASS), 0, 0, 0);
+  // three curved feet
+  for (let k = 0; k < 3; k++) { const a = k / 3 * Math.PI * 2, f = rbox(0.05, 0.05, 0.3, walnut, 0.02); f.position.set(Math.sin(a) * 0.14, 0.035, Math.cos(a) * 0.14); f.rotation.set(0.12, a, 0); g.add(f); }
   return g;
 }
 
-/** The totem: small brass spinning top (live; spun by the room / activity). */
+/** The totem: a small turned-brass spinning top (live; spun by the room / activity). Smooth lathe profile, a darker
+ *  engraved band and a steel tip so the spin reads, and a tiny cap on the stem. */
 export function spinTop() {
   const g = new THREE.Group();
-  const prof = [[0, 0], [0.012, 0.01], [0.06, 0.06], [0.07, 0.075], [0.05, 0.09], [0.012, 0.1], [0.012, 0.15], [0, 0.155]].map(p => new THREE.Vector2(p[0], p[1]));
-  put(g, mesh(new THREE.LatheGeometry(prof, 16), mat('#d8b070', { metalness: 0.85, roughness: 0.25 })), 0, 0, 0);
+  const brass = mat('#d8a85a', { metalness: 0.9, roughness: 0.22 }), band = mat('#7a5220', { metalness: 0.8, roughness: 0.35 }), steel = mat('#c8ccd4', { metalness: 1, roughness: 0.15 });
+  const prof = [[0, 0.004], [0.006, 0.008], [0.03, 0.03], [0.055, 0.052], [0.068, 0.066], [0.071, 0.074], [0.066, 0.082], [0.045, 0.094], [0.016, 0.104], [0.011, 0.11], [0.011, 0.152], [0.016, 0.158], [0, 0.162]].map(p => new THREE.Vector2(p[0], p[1]));
+  put(g, mesh(new THREE.LatheGeometry(prof, 40), brass), 0, 0, 0);
+  put(g, mesh(new THREE.TorusGeometry(0.069, 0.004, 6, 40).rotateX(Math.PI / 2), band), 0, 0.072, 0);
+  put(g, mesh(new THREE.TorusGeometry(0.05, 0.003, 6, 40).rotateX(Math.PI / 2), band), 0, 0.09, 0);
+  put(g, mesh(new THREE.ConeGeometry(0.007, 0.012, 10).rotateX(Math.PI), steel), 0, 0.004, 0);
   return g;
 }
 
