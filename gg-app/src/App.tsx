@@ -143,7 +143,7 @@ const GoalPicker = lazy(() =>
 );
 import { BackButton } from "./BackButton";
 import { HomeScreen } from "./HomeScreen";
-import { RoyaleScreen } from "./RoyaleScreen";
+import { WorldScreen } from "./WorldScreen";
 import { SettingsModal } from "./SettingsModal";
 import { initialEntryView, type EntryView } from "./app-entry-view";
 import {
@@ -495,13 +495,13 @@ function App(): React.ReactElement {
   const [restoreChecked, setRestoreChecked] = useState(false);
   // Every window starts from the mode-neutral home screen before choosing Code or Chat.
   const [entryView, setEntryView] = useState<EntryView>(initialEntryView(isSecondaryWindow));
-  // GG Royale has faded in over Home (Home holds its Royale plate down until then).
-  const [royaleShown, setRoyaleShown] = useState(false);
+  // World has faded in over Home (Home holds its World plate down until then).
+  const [worldShown, setWorldShown] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>("general");
   // Re-open the matching session picker over an already-open workspace.
   const [showPicker, setShowPicker] = useState(false);
-  // GG Royale over a workspace (from the Deck's Royale key); Back returns here.
-  const [showRoyale, setShowRoyale] = useState(false);
+  // World over a workspace (from the Deck's World key); Back returns here.
+  const [showWorld, setShowWorld] = useState(false);
   // Bumped on each workspace/session choice to force re-hydration.
   const [hydrateNonce, setHydrateNonce] = useState(0);
   const { activity, handleActivityEvent } = useTaskActivity(hydrateNonce);
@@ -2498,10 +2498,10 @@ function App(): React.ReactElement {
         className={`app${windowFocused ? " window-focused" : ""}`}
         style={{ background: theme.background }}
       >
-        {/* GG Royale opens OVER Home (as it does over a workspace), so Home
+        {/* World opens OVER Home (as it does over a workspace), so Home
             stays put underneath while the game fades in, and Back fades
             straight back to it. */}
-        {entryView === "home" || entryView === "royale" ? (
+        {entryView === "home" || entryView === "world" ? (
           <HomeScreen
             onProjects={() =>
               showScreen(() => {
@@ -2527,8 +2527,8 @@ function App(): React.ReactElement {
                 setEntryView("motion");
               })
             }
-            onRoyale={() => showScreen(() => setEntryView("royale"))}
-            royaleShown={royaleShown}
+            onWorld={() => showScreen(() => setEntryView("world"))}
+            worldShown={worldShown}
             onSettings={(tab) =>
               showScreen(() => {
                 setSettingsTab(tab ?? "general");
@@ -2573,13 +2573,14 @@ function App(): React.ReactElement {
             onClose={() => showScreen(() => setEntryView("home"))}
           />
         )}
-        {entryView === "royale" && (
-          <div className="royale-overlay">
-            <RoyaleScreen
-              onShown={() => setRoyaleShown(true)}
+        {entryView === "world" && (
+          <div className="world-overlay">
+            <WorldScreen
+              player={progress}
+              onShown={() => setWorldShown(true)}
               onClose={() =>
                 showScreen(() => {
-                  setRoyaleShown(false);
+                  setWorldShown(false);
                   setEntryView("home");
                 })
               }
@@ -3025,7 +3026,7 @@ function App(): React.ReactElement {
             }}
             progress={progress}
             trophies={trophies.snapshot}
-            onOpenRoyale={() => showScreen(() => setShowRoyale(true))}
+            onOpenWorld={() => showScreen(() => setShowWorld(true))}
             usageExtras={
               windowTotal > 1 &&
               windowIndex !== null && (
@@ -3209,11 +3210,11 @@ function App(): React.ReactElement {
         />
       )}
 
-      {/* GG Royale over this workspace, full window. The session keeps running
+      {/* World over this workspace, full window. The session keeps running
           underneath; Back comes straight back to it. */}
-      {showRoyale && (
-        <div className="royale-overlay">
-          <RoyaleScreen onClose={() => showScreen(() => setShowRoyale(false))} />
+      {showWorld && (
+        <div className="world-overlay">
+          <WorldScreen player={progress} onClose={() => showScreen(() => setShowWorld(false))} />
         </div>
       )}
 

@@ -8,8 +8,6 @@ import { PlateButton } from "./PlateButton";
 import { HomeScenery, withScenery } from "./HomeScenery";
 import { HomeCritters } from "./HomeCritters";
 import { HomeUpdateButton } from "./HomeUpdateButton";
-import { RoyaleBadge, useRoyaleLauncher, useRoyaleSummary } from "./RoyaleKey";
-import { preconnectRoyale, warmRoyale } from "./royale-warm";
 import { useHomeBackgroundEnabled } from "./home-background";
 import { groundFilter, lightAt } from "./scene-light";
 import { useLocalHour } from "./use-local-hour";
@@ -37,13 +35,13 @@ interface Props {
   onGoals: () => void;
   onChat: () => void;
   onMotion: () => void;
-  /** Shows GG Royale full-window (after the first-use consent). */
-  onRoyale: () => void;
+  /** Shows World full-window. */
+  onWorld: () => void;
   /**
-   * GG Royale is on screen (it fades in over Home once the game is ready).
-   * Until then the Royale plate stays pressed, so the click visibly took.
+   * World is on screen (it fades in over Home once the game is ready).
+   * Until then the World plate stays pressed, so the click visibly took.
    */
-  royaleShown?: boolean;
+  worldShown?: boolean;
   /** Opens full-screen Settings, optionally on a given tab. */
   onSettings: (tab?: SettingsTabId) => void;
   /**
@@ -57,7 +55,7 @@ interface Props {
 /**
  * App entry screen: the shimmering GG Coder banner over the primary actions.
  * Code, Chat and Motion require a configured workspace folder and connected AI provider;
- * GG Royale (the online game) needs neither, so it is never dimmed;
+ * World (the local game) needs neither, so it is never dimmed;
  * everything else lives in full-screen Settings (the bottom-right gear).
  */
 export function HomeScreen({
@@ -65,8 +63,8 @@ export function HomeScreen({
   onGoals,
   onChat,
   onMotion,
-  onRoyale,
-  royaleShown = false,
+  onWorld,
+  worldShown = false,
   onSettings,
   refreshSignal = 0,
 }: Props): React.ReactElement {
@@ -77,20 +75,12 @@ export function HomeScreen({
   // never shifts sideways when the number arrives.
   const [versionRead, setVersionRead] = useState(false);
   const appUpdate = useAppUpdate();
-  const royaleNoteId = useId();
-  // Held down from the moment Royale starts opening until it's on screen.
-  const [royaleOpening, setRoyaleOpening] = useState(false);
-  const royale = useRoyaleLauncher(() => {
-    setRoyaleOpening(true);
-    onRoyale();
-  });
+  const worldNoteId = useId();
+  // Held down from the moment World starts opening until it's on screen.
+  const [worldOpening, setWorldOpening] = useState(false);
   useEffect(() => {
-    if (royaleShown) setRoyaleOpening(false);
-  }, [royaleShown]);
-  // Open the connection to the game server while Home is up, so opening
-  // Royale skips that setup (only once linked and agreed: see royale-warm).
-  useEffect(() => preconnectRoyale(), []);
-  const royaleCounts = useRoyaleSummary();
+    if (worldShown) setWorldOpening(false);
+  }, [worldShown]);
 
   useEffect(() => {
     void getVersion()
@@ -220,28 +210,26 @@ export function HomeScreen({
             onClick={() => handleWorkspace(onMotion)}
           />
         </PixelTip>
-        {/* GG Royale: the online game, full-window in this window; new, so it
+        {/* World: the local 3D game, full-window in this window; new, so it
             carries a New tag. */}
         <div className="home-action-slot">
-          <PixelTip text="Royale: blackjack against the bugs in your code, with chips you earn by coding.">
+          <PixelTip text="World: a 3D game world to wander, right here on your machine.">
             <PlateButton
               className="home-action"
-              label="Royale"
-              held={royaleOpening}
-              aria-describedby={royaleNoteId}
-              // Pointing at it (or tabbing to it) fetches the sign-in code early.
-              onPointerEnter={() => warmRoyale()}
-              onFocus={() => warmRoyale()}
-              onClick={royale.launch}
+              label="World"
+              held={worldOpening}
+              aria-describedby={worldNoteId}
+              onClick={() => {
+                setWorldOpening(true);
+                onWorld();
+              }}
             />
           </PixelTip>
-          <span id={royaleNoteId} className="home-action-beta">
+          <span id={worldNoteId} className="home-action-beta">
             New
           </span>
-          <RoyaleBadge summary={royaleCounts} />
         </div>
       </div>
-      {royale.consent}
       {/* Settings: a GG Royale pixel gear. */}
       <PixelTip text="Settings: AI providers, your projects folder, and more.">
         <PixelIconButton

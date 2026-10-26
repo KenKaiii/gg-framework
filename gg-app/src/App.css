@@ -1736,63 +1736,6 @@ select {
     --tag-px: 1px;
   }
 }
-/* GG Royale's live badge, on the button's top-right corner: red count for
-   rewards waiting (same deep red as the New tag), a quiet pill for players. */
-.royale-key-slot {
-  position: relative;
-  display: inline-flex;
-}
-.royale-badge {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 1;
-  transform: translate(25%, -50%);
-  min-width: 18px;
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  line-height: 1.2;
-  text-align: center;
-  white-space: nowrap;
-  pointer-events: none;
-}
-.royale-badge.is-claim {
-  border-color: transparent;
-  background: var(--steroids-deep);
-  color: #ffffff;
-}
-/* On Home's plate: pinned to the plate's corner (7 art pixels in from the
-   socket's edge) and drawn like the New tag, in the same --tag-px pixels. */
-.home-action-slot .royale-badge {
-  top: calc(-2 * var(--tag-px));
-  right: calc(7 * var(--tag-px));
-  min-width: 0;
-  padding: 0 calc(3 * var(--tag-px)) calc(2 * var(--tag-px));
-  border: 0;
-  border-radius: calc(2 * var(--tag-px));
-  background: #cedbf9;
-  color: #1e0c1f;
-  box-shadow:
-    0 0 0 var(--tag-px) #1e0c1f,
-    inset 0 calc(-1 * var(--tag-px)) 0 #a9b8e4;
-  font-family: "m5x7", monospace;
-  font-size: calc(16 * var(--tag-px));
-  font-weight: 400;
-  line-height: calc(11 * var(--tag-px));
-  -webkit-font-smoothing: none;
-}
-.home-action-slot .royale-badge.is-claim {
-  background: #c2444d;
-  color: #fff0e0;
-  box-shadow:
-    0 0 0 var(--tag-px) #1e0c1f,
-    inset 0 calc(-1 * var(--tag-px)) 0 #921f25;
-}
 /* The padding is hit area: the gear itself sits 16px down, 20px in. */
 .home-settings {
   position: absolute;
@@ -2261,27 +2204,26 @@ select {
   flex-direction: column;
   height: 100%;
 }
-/* GG Royale: the game fills the WHOLE window, under the title bar too. The
+/* World: the game fills the WHOLE window, under the title bar too. The
    header floats over it (no fill, no border): Back on the left beside the
    traffic lights, the title centred in the window. The bar stays a drag
    region; the game below it takes every pointer event it isn't covering. */
-.royale-overlay {
+.world-overlay {
   position: fixed;
   inset: 0;
   z-index: var(--z-overlay);
 }
-.royale-screen {
+.world-screen {
   position: relative;
   min-height: 0;
   height: 100%;
 }
-.royale-stage {
+.world-stage {
   position: absolute;
   inset: 0;
-  /* The deep wine of the game's closed curtain, behind the game. */
-  background: #2a0a16;
+  background: #000;
 }
-.royale-frame {
+.world-frame {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -2289,33 +2231,33 @@ select {
   border: 0;
   display: block;
   /* Hidden until the game's curtain is painted shut, then faded in on it
-     (RoyaleScreen.tsx). Opacity only: no filter over a live page. */
+     (WorldScreen.tsx). Opacity only: no filter over a live page. */
   opacity: 0;
   transition: opacity 260ms var(--ease-out);
 }
-.royale-frame.is-shown {
+.world-frame.is-shown {
   opacity: 1;
 }
 /* The way in: invisible (and click-through) while the game loads, so the
    screen you came from stays put; once the game's curtain is painted shut,
    the whole screen fades in on it and the game opens the curtain. No loading
    screen. The way out is a plain screen change, like every other screen. */
-.royale-screen {
+.world-screen {
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--dur-dissolve) var(--ease-out);
 }
-.royale-screen.is-visible {
+.world-screen.is-visible {
   opacity: 1;
   pointer-events: auto;
 }
 @media (prefers-reduced-motion: reduce) {
-  .royale-frame,
-  .royale-screen {
+  .world-frame,
+  .world-screen {
     transition: none;
   }
 }
-.picker-head.royale-head {
+.picker-head.world-head {
   position: absolute;
   inset: 0 0 auto 0;
   z-index: 1;
@@ -2323,18 +2265,18 @@ select {
   background: linear-gradient(rgb(0 0 0 / 0.45), rgb(0 0 0 / 0));
   border-bottom: 0;
 }
-.picker-head.royale-head > .btn-icon {
+.picker-head.world-head > .btn-icon {
   position: absolute;
   left: var(--page-pad);
   top: 50%;
   translate: 0 -50%;
 }
-.platform-macos .picker-head.royale-head > .btn-icon {
+.platform-macos .picker-head.world-head > .btn-icon {
   left: 84px;
 }
 /* Centred on the WINDOW, not on what's left beside the traffic lights and
    Back: pinned to the bar's middle, so nothing else can nudge it. */
-.picker-head.royale-head > .picker-title {
+.picker-head.world-head > .picker-title {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -2346,7 +2288,7 @@ select {
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
   pointer-events: none;
 }
-.royale-status {
+.world-status {
   position: absolute;
   inset: 0;
   display: flex;
@@ -2354,8 +2296,7 @@ select {
   align-items: center;
   justify-content: center;
   gap: var(--space-6);
-  /* Paired with the wine stage behind it. */
-  color: #e6c9a8;
+  color: var(--text);
   font-size: var(--fs-sm);
 }
 .picker-head {
@@ -12296,113 +12237,6 @@ select {
   .ask-options .btn:active:not(:disabled),
   .ask-options .btn[data-key-press] {
     scale: none;
-  }
-}
-
-/* ── GG Royale link box (RoyaleKey.tsx) ──
-   The shared modal dressed as a GG Royale board: dark wine-brown board with
-   an ink edge, Alagard title, m5x7 text on the 2px pixel grid, plate buttons. */
-.modal.royale-consent {
-  --rc-px: 2px;
-  width: min(calc(310 * var(--rc-px)), calc(100vw - 32px));
-  background: #251c22 !important;
-  border: 0;
-  border-radius: calc(3 * var(--rc-px));
-  box-shadow:
-    0 0 0 var(--rc-px) #1e0c1f,
-    inset 0 0 0 var(--rc-px) #4e343f,
-    0 calc(3 * var(--rc-px)) 0 var(--rc-px) #1e0c1f;
-  color: #e6dcd0;
-}
-.modal.royale-consent .modal-title {
-  font-family: "Alagard", serif;
-  font-size: calc(16 * var(--rc-px));
-  font-weight: 400;
-  line-height: calc(16 * var(--rc-px));
-  -webkit-font-smoothing: none;
-  color: #f6d0a8 !important;
-  text-shadow: 0 var(--rc-px) 0 #1e0c1f;
-}
-.modal.royale-consent .modal-close {
-  color: #f6d0a8;
-}
-.royale-consent-body {
-  display: flex;
-  flex-direction: column;
-  gap: calc(5 * var(--rc-px));
-  font-family: "m5x7", monospace;
-  font-size: calc(16 * var(--rc-px));
-  line-height: calc(11 * var(--rc-px));
-  -webkit-font-smoothing: none;
-}
-.royale-consent-body p {
-  margin: 0;
-}
-.royale-consent-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: calc(3 * var(--rc-px));
-  color: #c9a08c;
-}
-.royale-consent-links a {
-  color: #f5bd63;
-  text-decoration: underline;
-  text-underline-offset: calc(2 * var(--rc-px));
-}
-.royale-consent-links a:focus-visible,
-.royale-consent-tick input:focus-visible {
-  outline: var(--rc-px) solid #f5bd63;
-  outline-offset: var(--rc-px);
-}
-/* The 18+ tick: a pixel box in the board's colours. */
-.royale-consent-tick {
-  display: inline-flex;
-  align-items: center;
-  gap: calc(4 * var(--rc-px));
-  align-self: flex-start;
-  padding: calc(2 * var(--rc-px)) calc(4 * var(--rc-px)) calc(3 * var(--rc-px));
-  border-radius: calc(2 * var(--rc-px));
-  background: #2e2029;
-  box-shadow: inset 0 calc(-1 * var(--rc-px)) 0 #221820;
-  color: #f6d0a8;
-  cursor: pointer;
-}
-.royale-consent-tick.is-nudged {
-  box-shadow:
-    0 0 0 var(--rc-px) #c2444d,
-    inset 0 calc(-1 * var(--rc-px)) 0 #221820;
-}
-.royale-consent-tick input {
-  appearance: none;
-  margin: 0;
-  width: calc(7 * var(--rc-px));
-  height: calc(7 * var(--rc-px));
-  background: #1a0e14;
-  box-shadow: 0 0 0 var(--rc-px) #4e343f;
-  cursor: pointer;
-}
-.royale-consent-tick input:checked {
-  background: #8fd0a0;
-  box-shadow:
-    0 0 0 var(--rc-px) #1e0c1f,
-    inset 0 calc(-1 * var(--rc-px)) 0 #5a9a6a;
-}
-.royale-consent-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: calc(4 * var(--rc-px));
-  margin-top: calc(6 * var(--rc-px));
-}
-/* Plates at the board's own 2px grid, like Home's. */
-.royale-consent-actions .plate-button {
-  --plate-scale: 2;
-}
-@media (max-width: 679px), (max-height: 560px) {
-  .modal.royale-consent {
-    --rc-px: 1px;
-  }
-  .royale-consent-actions .plate-button {
-    --plate-scale: 1;
   }
 }
 

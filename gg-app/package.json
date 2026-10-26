@@ -5,8 +5,8 @@
   "description": "GG Coder desktop app: Tauri + React workspace for code, chat and motion agents",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "node ../packages/gg-world/build.mjs --if-stale && vite",
+    "build": "node ../packages/gg-world/build.mjs --if-stale && tsc && vite build",
     "check": "tsc --noEmit",
     "lint": "eslint --cache 'src/**/*.{ts,tsx}'",
     "lint:fix": "eslint --cache 'src/**/*.{ts,tsx}' --fix",
