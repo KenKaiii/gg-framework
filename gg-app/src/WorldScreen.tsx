@@ -136,6 +136,27 @@ export function WorldScreen({
     if (shown) frame.current?.focus();
   }, [shown]);
 
+  // Keys that land on the app instead of the game (focus on Back / the cloud key, or the app window itself, which is
+  // where WebKit leaves it after clicking app buttons): Escape still closes what's open in the game, and every other
+  // key moves focus back into the game so the next press works. The consent box keeps its own keys.
+  const asking = save.asking;
+  useEffect(() => {
+    if (!shown) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.defaultPrevented || e.isComposing || asking) return;
+      // (the target can be the window or the document itself, which have no closest())
+      const t = e.target instanceof Element ? e.target : null;
+      if (t?.closest("input, textarea, [contenteditable='true'], [role='dialog']")) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        post({ t: "key", key: "Escape" });
+      }
+      frame.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shown, asking, post]);
+
   const failed = slow && !shown;
   const visible = shown || failed;
   const onShownRef = useRef(onShown);

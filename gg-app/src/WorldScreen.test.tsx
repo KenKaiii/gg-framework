@@ -90,3 +90,22 @@ describe("WorldScreen", () => {
     }
   });
 });
+
+describe("WorldScreen keys", () => {
+  it("passes Escape to the game when focus is on the app (closes what's open in World)", () => {
+    // consent already answered (the consent box keeps Escape for itself while it is open)
+    localStorage.setItem("gg-world-save-consent", JSON.stringify({ v: 1, on: false }));
+    render(<WorldScreen onClose={vi.fn()} player={{ level: 1, percent: 0, xp: 0 }} />);
+    const frame = screen.getByLabelText<HTMLIFrameElement>("World");
+    const win = frame.contentWindow;
+    if (!win) throw new Error("no frame window");
+    const post = vi.spyOn(win, "postMessage").mockImplementation(() => {});
+    ready(win);
+    screen.getByRole("button", { name: "Back" }).focus();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(post).toHaveBeenCalledWith(
+      { gg: "world", t: "key", key: "Escape" },
+      window.location.origin,
+    );
+  });
+});

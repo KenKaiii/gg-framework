@@ -9,7 +9,7 @@ import { openCreator, wallet } from './creator.js';
 import { initEdit } from './edit.js';
 import { ROOM_IDS } from './rooms/index.js';
 import { initActivities } from './act/registry.js';
-import { plateHTML, plateClass } from './nameplate.js';
+import { plateHTML, plateClass, tierOf } from './nameplate.js';
 import { passagesWorld, ROOM_NAMES } from './rooms/floorplan.js';
 const PASSAGES_W = passagesWorld(); const _pv = new THREE.Vector3();
 import { installDev } from './act/dev.js';
@@ -78,8 +78,12 @@ export function initUI(S, W) {
   // chat log: what people say (plus ships), newest at the bottom, last 6 kept
   // the log scrolls (wheel / trackpad, native and smooth); a new line keeps it pinned to the bottom unless you've
   // scrolled up to read older ones; 60 lines kept
+  // names in the chat look like the nameplates: the title font, coloured by level tier (owner: names must stand out)
+  const levelOfName = who => { if (!who) return 0; if (who === 'You' || who === S.player?.name) return S.player?.level || 1;
+    const m = S.members.find(x => x.d.name === who); if (m) return m.d.level; return S.residents?.list.some(n => n.def.name === who) || who === 'Dex' ? -1 : 0; };
   const chatLine = (who, txt, cls = '') => { const pinned = clog.scrollHeight - clog.scrollTop - clog.clientHeight < 24;
-    const d = h('div', 'cm ' + cls, `${who ? `<u>${esc(who)}</u>` : ''}${esc(txt)}`); clog.appendChild(d); if (!chat.classList.contains('typing') && cls !== 'me') setUnread(unread + 1);
+    const lv = levelOfName(who), tc = lv === -1 ? 'npc' : lv > 0 ? 't' + tierOf(lv) : '';
+    const d = h('div', 'cm ' + cls, `${who ? `<u class="${tc}">${esc(who)}</u>` : ''}${esc(txt)}`); clog.appendChild(d); if (!chat.classList.contains('typing') && cls !== 'me') setUnread(unread + 1);
     while (clog.children.length > 60) clog.firstChild?.remove(); if (pinned || cls === 'me') clog.scrollTop = clog.scrollHeight; };
   U.chatLine = chatLine;
   U.feed = () => {}; // the chat is for chat only (owner): ships are celebrated in the world, not posted here

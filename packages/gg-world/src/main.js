@@ -50,6 +50,8 @@ addEventListener('message', e => {
     P.level = lv; P.xp = Math.max(0, Math.min(1, (Number(d.percent) || 0) / 100)); window.__S.ui?.refreshHud?.(); if (typeof d.name === 'string' && d.name.trim() && !P.namedHere) P.name = d.name.trim().slice(0, 16); }
   else if (d.t === 'profile' && window.__S) applyProfile(window.__S, d.profile);
   else if (d.t === 'radio') onRadio(d);
+  // a key the app caught (focus was on the app, not the game): replay it here so the game's own handlers run
+  else if (d.t === 'key' && d.key === 'Escape') { const ev = { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }; (document.activeElement && document.activeElement !== document.body ? document.activeElement : window).dispatchEvent(new KeyboardEvent('keydown', ev)); dispatchEvent(new KeyboardEvent('keyup', ev)); }
   else if (d.t === 'note' && window.__S?.ui && typeof d.text === 'string') window.__S.ui.toast?.(d.text.slice(0, 90));
   else if (d.t === 'xp' && window.__S?.ui) { const n = Math.max(0, Math.floor(Number(d.amount) || 0)); if (n) window.__S.ui.toast?.(`+${n} XP${d.why ? ' · ' + String(d.why).slice(0, 30) : ''}`); }
 });
