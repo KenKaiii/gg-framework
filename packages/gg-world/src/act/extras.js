@@ -9,6 +9,7 @@
 //   - remove seats (filter rooms[id].slots) or block floor (rooms[id].block(x0, z0, x1, z1)) for new furniture
 //   - return a tick(t, dt, S) function (called every frame while the room's floor is visible)
 // Coordinates are room-local (same as the room files). Errors are caught per module so one bad extra can't break the game.
+import { placeHotspots } from '../rooms/focus.js';
 import * as THREE from 'three';
 import poolX from './extras-pool.js';
 import screensX from './extras-screens.js';
@@ -29,6 +30,8 @@ export function installExtras(ctx) {
       if (typeof tick === 'function') { const byFloor = new Set(); for (const id in ctx.rooms) byFloor.add(ctx.rooms[id]); EXTRA_TICKS.push(tick); }
     } catch (e) { console.warn('extras ' + m.id + ' failed', e); }
   }
+  // hotspots the extras added (pool, pinball, film props...): put their hover rings on their objects too
+  for (const R of Object.values(ctx.rooms)) try { placeHotspots(R); } catch (e) { console.warn('placeHotspots ' + R.id, e); }
 }
 /** @type {((t:number, dt:number, S:any) => void)[]} */
 export const EXTRA_TICKS = [];

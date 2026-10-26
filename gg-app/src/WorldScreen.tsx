@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BackButton } from "./BackButton";
+import { useWorldRadio } from "./world-radio";
 import { useWorldSave, type WorldProfile } from "./world-save";
 import { WorldCloudKey, WorldConsent } from "./WorldSaveUi";
 
@@ -69,6 +70,7 @@ export function WorldScreen({
     frame.current?.contentWindow?.postMessage({ gg: "world", ...msg }, window.location.origin);
   }, []);
   const save = useWorldSave({ ready, level: player?.level, post });
+  const radio = useWorldRadio(post);
   const onGameSaveRef = useRef<(p: WorldProfile) => void>(save.onGameSave);
   useEffect(() => {
     onGameSaveRef.current = save.onGameSave;
@@ -77,8 +79,15 @@ export function WorldScreen({
   useEffect(() => {
     const onMessage = (e: MessageEvent): void => {
       if (e.source !== frame.current?.contentWindow || e.origin !== window.location.origin) return;
-      const data = e.data as { gg?: unknown; t?: unknown; profile?: unknown } | null;
+      const data = e.data as {
+        gg?: unknown;
+        t?: unknown;
+        profile?: unknown;
+        station?: unknown;
+        volume?: unknown;
+      } | null;
       if (!data || data.gg !== "world") return;
+      if (radio.onGameMessage(data)) return;
       if (data.t === "ready") {
         setReady(true);
         setShown(true);
@@ -94,7 +103,7 @@ export function WorldScreen({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [radio]);
 
   // Tell the game who's playing: on ready, and whenever progress changes.
   const level = player?.level;

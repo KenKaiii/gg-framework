@@ -21,7 +21,8 @@ import fightclubActs from './fightclub.js';
 import inceptionActs from './inception.js';
 import tavernActs from './tavern.js';
 import roofScope from './roof-scope.js';
+import radio from './radio.js';
 import sample from './_sample.js';
 
 /** @type {any[]} */
-export const ACTIVITIES = [...pool, ...screens, ...tv, ...pinball, ...arcade, ...barmenu, ...filmsA, ...filmsB, ...screeningActs, ...dinerActs, ...libraryActs, ...garageActs, ...overlookActs, ...hawkinsActs, ...biolabActs, ...hackersActs, ...computerActs, ...fightclubActs, ...inceptionActs, ...tavernActs, ...roofScope, sample].filter(Boolean);
+export const ACTIVITIES = [...radio, ...pool, ...screens, ...tv, ...pinball, ...arcade, ...barmenu, ...filmsA, ...filmsB, ...screeningActs, ...dinerActs, ...libraryActs, ...garageActs, ...overlookActs, ...hawkinsActs, ...biolabActs, ...hackersActs, ...computerActs, ...fightclubActs, ...inceptionActs, ...tavernActs, ...roofScope, sample].filter(Boolean);

@@ -58,7 +58,7 @@ export function initUI(S, W) {
   const chatBtn = /** @type {HTMLButtonElement} */ (h('button', 'key ib chatbtn')); chatBtn.type = 'button'; chatBtn.title = 'Chat (Enter)'; chatBtn.setAttribute('aria-label', 'Open chat');
   chatBtn.innerHTML = '<i class="pxi"></i><b class="unread"></b>'; /** @type {HTMLElement} */ (chatBtn.firstChild).style.setProperty('--m', pxMask(ICONS.chat)); root.appendChild(chatBtn);
   let unread = 0; const setUnread = n => { unread = n; const u = /** @type {HTMLElement} */ (chatBtn.querySelector('.unread')); u.textContent = n > 9 ? '9+' : n ? String(n) : ''; };
-  const openChat = () => { if (U.blocking) return; SFX.play('ui.open'); chat.classList.add('typing'); chatBtn.classList.add('hid'); setUnread(0); U.blocking = true; setTimeout(() => chatIn.focus(), 10); };
+  const openChat = () => { if (U.blocking) return; SFX.play('ui.open'); chat.classList.add('typing'); chatBtn.classList.add('hid'); setUnread(0); clog.scrollTop = clog.scrollHeight; /* open at the newest */ U.blocking = true; setTimeout(() => chatIn.focus(), 10); };
   chatBtn.addEventListener('click', () => { chatBtn.blur(); openChat(); });
   const chatIn = /** @type {HTMLInputElement} */ (chat.querySelector('input'));
   const prof = h('div', 'card modal profile'); root.appendChild(prof);
@@ -76,7 +76,11 @@ export function initUI(S, W) {
   U.bubble = (agent, txt, secs = 3, cls = '') => { if (!agent || !agent.root.parent?.visible || agent.root.parent.parent?.visible === false) return; const b = h('div', 'bub ' + cls, esc(txt)); root.appendChild(b); const uk = U.uiScale || 1; bubbles.push({ b, agent, t: Math.max(secs, 4), y: 0, w0: b.offsetWidth * uk, h0: b.offsetHeight * uk }); // on-screen size (scaled) // measured once (no per-frame layout reads)
     const mine = bubbles.filter(q => q.agent === agent); while (mine.length > 3) { const old = mine.shift(); old.b.remove(); bubbles.splice(bubbles.indexOf(old), 1); } };
   // chat log: what people say (plus ships), newest at the bottom, last 6 kept
-  const chatLine = (who, txt, cls = '') => { const d = h('div', 'cm ' + cls, `${who ? `<u>${esc(who)}</u>` : ''}${esc(txt)}`); clog.appendChild(d); if (!chat.classList.contains('typing') && cls !== 'me') setUnread(unread + 1); while (clog.children.length > 12) clog.firstChild?.remove(); };
+  // the log scrolls (wheel / trackpad, native and smooth); a new line keeps it pinned to the bottom unless you've
+  // scrolled up to read older ones; 60 lines kept
+  const chatLine = (who, txt, cls = '') => { const pinned = clog.scrollHeight - clog.scrollTop - clog.clientHeight < 24;
+    const d = h('div', 'cm ' + cls, `${who ? `<u>${esc(who)}</u>` : ''}${esc(txt)}`); clog.appendChild(d); if (!chat.classList.contains('typing') && cls !== 'me') setUnread(unread + 1);
+    while (clog.children.length > 60) clog.firstChild?.remove(); if (pinned || cls === 'me') clog.scrollTop = clog.scrollHeight; };
   U.chatLine = chatLine;
   U.feed = () => {}; // the chat is for chat only (owner): ships are celebrated in the world, not posted here
   U.celebrate = m => { fx.confetti(m.agent.pos.clone()); }; // the line itself comes from the person (director), not a fixed 'shipped vX!'
@@ -127,7 +131,9 @@ export function initUI(S, W) {
   const targets = () => {
     if (S.t - tAt > 0.4 || tFloor !== S.floor) { tAt = S.t; tFloor = S.floor; tCache = [];
       for (const Rm of roomsOf(S.floor)) { const o = Rm.root.position;
-        for (const it of Rm.interact || []) tCache.push({ kind: 'item', it, R: Rm, label: it.label, wx: it.x + o.x, wz: it.z + o.z, r: it.r || 1, pos: new THREE.Vector3(it.x + o.x, 1.6, it.z + o.z) });
+        for (const it of Rm.interact || []) tCache.push({ kind: 'item', it, R: Rm, label: it.label, wx: it.x + o.x, wz: it.z + o.z, r: it.r || 1, pos: new THREE.Vector3(it.x + o.x, 1.6, it.z + o.z),
+          // the object itself (rooms/focus.js), for the hover ring / glow / click marker
+          vx: (it.vx ?? it.x) + o.x, vz: (it.vz ?? it.z) + o.z, vr: it.vr, vh: it.vh });
         for (const sl of Rm.slots || []) { if (Rm.taken?.has(sl.id)) continue; const wx = sl.x + o.x, wz = sl.z + o.z, pos = new THREE.Vector3(wx, 1.4, wz);
           if (sl.act) tCache.push({ kind: 'item', it: { id: sl.id, kind: 'seat', act: sl.act, slot: sl, x: sl.x, z: sl.z, label: sl.actLabel || 'Sit down' }, R: Rm, label: sl.actLabel || 'Sit down', wx, wz, r: 0.55, pos, slot: sl });
           else if (/^Sit_/.test(sl.anim || '')) tCache.push({ kind: 'seat', slot: sl, R: Rm, label: SEAT_WORD[sl.kind] || 'Sit down', wx, wz, r: 0.5, pos }); } } }
@@ -164,7 +170,9 @@ export function initUI(S, W) {
   installCursors();
   // UI scale follows the window (owner: small windows must not drown in big bubbles; big ones not too small):
   // 1.0 at ~1280 x 760, clamped 0.72 (always readable) .. 1.25 (never huge)
-  const setUiScale = () => { const k = Math.max(0.72, Math.min(1.25, Math.min(innerWidth / 1280, innerHeight / 760))); document.documentElement.style.setProperty('--ui', k.toFixed(3)); U.uiScale = k; };
+  const setUiScale = () => { const k = Math.max(0.72, Math.min(1.25, Math.min(innerWidth / 1280, innerHeight / 760))); document.documentElement.style.setProperty('--ui', k.toFixed(3)); U.uiScale = k;
+    // chat / DMs: a gentler curve with a higher floor (0.95), so the text stays readable in small windows
+    document.documentElement.style.setProperty('--ui-chat', Math.max(0.95, Math.min(1.2, 0.6 + k * 0.5)).toFixed(3)); };
   setUiScale(); addEventListener('resize', setUiScale);
   // inside the app, its Back button and the window's traffic lights sit over our top-left: start the HUD below them
   if (window.parent !== window) document.documentElement.classList.add('embedded');

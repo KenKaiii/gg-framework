@@ -10,9 +10,8 @@ const CSS = `
 .act .stage{position:relative;display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(.97);transition:opacity .25s,transform .25s}
 .act.on .stage{opacity:1;transform:none}
 .act canvas{display:block;image-rendering:pixelated;border-radius:6px;box-shadow:0 0 0 1px #263228,0 20px 60px rgba(0,0,0,.6)}
-.act .top{position:fixed;top:14px;left:14px;right:14px;display:flex;align-items:center;gap:12px;pointer-events:none}
-.act .ttl{font-family:${FONT.title};font-size:32px;line-height:32px;color:#e0a458;text-shadow:0 2px 0 #3a2410}
-.act .sub{font-size:16px;line-height:16px;color:#8e9a88}
+.act .top{position:fixed;top:14px;right:14px;display:flex;align-items:center;gap:12px;pointer-events:none}
+.act .ttl,.act .sub{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap} /* visually hidden: screen readers still get the name */
 .act .x{all:unset;pointer-events:auto;margin-left:auto;cursor:pointer;font:16px/16px ${FONT.body};padding:8px 12px;border-radius:6px;background:rgba(14,16,20,.9);box-shadow:inset 0 0 0 1px #263228;color:#c9d1c4}
 .act .x:hover{box-shadow:inset 0 0 0 1px #3d7a52;color:#e8efe4}.act .x:focus-visible{outline:2px solid #6ee7a0;outline-offset:2px}
 .act .help{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);font-size:16px;line-height:16px;color:#8e9a88;background:rgba(14,16,20,.9);padding:8px 12px;border-radius:6px;box-shadow:inset 0 0 0 1px #263228;white-space:nowrap}

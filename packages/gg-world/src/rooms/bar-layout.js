@@ -62,7 +62,7 @@ export function barInteract() {
     { id: 'jukebox', x: 1.55, z: -4.8, r: 0.9, label: 'Change track', kind: 'jukebox' },
     { id: 'payphone', x: 4.75, z: -5.2, r: 0.8, label: 'Pick up the payphone', kind: 'payphone' },
     { id: 'tv', x: -8.0, z: -3.3, r: 1.0, label: 'Watch the deploy feed', kind: 'tv' },
-    { id: 'dartboard', x: -6.4, z: 4.95, r: 0.9, label: 'Throw darts', kind: 'darts' },
+    { id: 'dartboard', x: -6.4, z: 4.95, r: 0.9, label: 'Throw darts', kind: 'darts', vx: -6.85, vz: 4.95, vr: 0.45, vh: 2.0 }, // ring under the board on the wall
     { id: 'decks', x: 7.1, z: -3.5, r: 1.0, label: 'Spin the decks', kind: 'decks' },
   ];
 }

@@ -14,6 +14,7 @@ import * as FX from './kit-fx.js';
 import { roomInfo, FLOORS, floorOf } from './floorplan.js';
 import { fitSeats } from './seatfit.js';
 import { autoBlock } from './autoblock.js';
+import { focusHotspots } from './focus.js';
 
 const matCache = new Map();
 /** Cached standard material. @param {string} color @param {object} [o] */
@@ -227,7 +228,7 @@ export function makeRoom(o) {
   // After baking, nothing under R.static (or the wall shells) ever moves: freeze their local matrices so three.js stops
   // recomputing them every frame. World matrices still follow the room root (it's placed once by the floor plan).
   const freeze = g => g.traverse(o => { o.updateMatrix(); o.matrixAutoUpdate = false; });
-  R.finish = () => { try { fitSeats(R); } catch (e) { console.warn('fitSeats ' + R.id, e); } try { autoBlock(R); } catch (e) { console.warn('autoBlock ' + R.id, e); } try { groundShade(R); } catch (e) { console.warn('groundShade ' + R.id, e); } bake(R.static); for (const k in R.walls) { bake(R.walls[k].full); } queueMicrotask(() => { bakeColours([R.static, ...Object.values(R.walls).map(x => x.full)], R.root); freeze(R.static); for (const k in R.walls) { const w = R.walls[k]; if (w.full) freeze(w.full); if (w.stub) freeze(w.stub); } }); };
+  R.finish = () => { try { fitSeats(R); } catch (e) { console.warn('fitSeats ' + R.id, e); } try { autoBlock(R); } catch (e) { console.warn('autoBlock ' + R.id, e); } try { focusHotspots(R); } catch (e) { console.warn('focusHotspots ' + R.id, e); } try { groundShade(R); } catch (e) { console.warn('groundShade ' + R.id, e); } bake(R.static); for (const k in R.walls) { bake(R.walls[k].full); } queueMicrotask(() => { bakeColours([R.static, ...Object.values(R.walls).map(x => x.full)], R.root); freeze(R.static); for (const k in R.walls) { const w = R.walls[k]; if (w.full) freeze(w.full); if (w.stub) freeze(w.stub); } }); };
   return R;
 }
 

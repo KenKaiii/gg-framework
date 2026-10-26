@@ -4,6 +4,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { StableBloomPass } from './bloom.js';
 import { EMBED, fromApp, tellApp, applyProfile, flushSave } from './bridge.js';
+import { onRadio, askRadio } from './act/radio.js';
 import { makeOutside } from './outside.js';
 import { SFX, SURFACE } from './sfx.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
@@ -48,6 +49,7 @@ addEventListener('message', e => {
   else if (d.t === 'player' && window.__S?.player) { const P = window.__S.player; const lv = Math.max(1, Math.min(999, Math.floor(Number(d.level) || 1)));
     P.level = lv; P.xp = Math.max(0, Math.min(1, (Number(d.percent) || 0) / 100)); window.__S.ui?.refreshHud?.(); if (typeof d.name === 'string' && d.name.trim() && !P.namedHere) P.name = d.name.trim().slice(0, 16); }
   else if (d.t === 'profile' && window.__S) applyProfile(window.__S, d.profile);
+  else if (d.t === 'radio') onRadio(d);
   else if (d.t === 'note' && window.__S?.ui && typeof d.text === 'string') window.__S.ui.toast?.(d.text.slice(0, 90));
   else if (d.t === 'xp' && window.__S?.ui) { const n = Math.max(0, Math.floor(Number(d.amount) || 0)); if (n) window.__S.ui.toast?.(`+${n} XP${d.why ? ' · ' + String(d.why).slice(0, 30) : ''}`); }
 });
@@ -188,6 +190,6 @@ async function start() {
   try { const { initUI } = await import('./night-ui.js'); S.ui = initUI(S, W); } catch (e) { console.warn('ui', e); }
   G.ready = true; sync();
   // tell the app once two frames are on screen (so it fades World in on a drawn scene, never a black frame)
-  requestAnimationFrame(() => requestAnimationFrame(() => tellApp({ t: 'ready' })));
+  requestAnimationFrame(() => requestAnimationFrame(() => { tellApp({ t: 'ready' }); askRadio(); }));
 }
 start().catch(e => console.error(e));
