@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { StableBloomPass } from './bloom.js';
+import { EMBED, fromApp, tellApp, applyProfile, flushSave } from './bridge.js';
 import { makeOutside } from './outside.js';
 import { SFX, SURFACE } from './sfx.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
@@ -41,16 +42,16 @@ window.__game = { pause() { G.paused = true; sync(); SFX.suspend(); }, resume() 
 //   { gg: 'world', t: 'xp', amount, why? }                      you earned XP while coding: a small celebration
 // The game sends { gg: 'world', t: 'ready' } once the first frame is drawn (the app fades World in then).
 // Standalone (opened directly, no parent app) it keeps its demo player.
-const EMBED = window.parent !== window;
-const fromApp = e => EMBED && e.source === window.parent && e.origin === location.origin;
 addEventListener('message', e => {
   if (!fromApp(e)) return; const d = e.data; if (!d || d.gg !== 'world') return;
-  if (d.t === 'pause') window.__game.pause(); else if (d.t === 'resume') window.__game.resume();
+  if (d.t === 'pause') { if (window.__S) flushSave(window.__S); window.__game.pause(); } else if (d.t === 'resume') window.__game.resume();
   else if (d.t === 'player' && window.__S?.player) { const P = window.__S.player; const lv = Math.max(1, Math.min(999, Math.floor(Number(d.level) || 1)));
     P.level = lv; P.xp = Math.max(0, Math.min(1, (Number(d.percent) || 0) / 100)); window.__S.ui?.refreshHud?.(); if (typeof d.name === 'string' && d.name.trim() && !P.namedHere) P.name = d.name.trim().slice(0, 16); }
+  else if (d.t === 'profile' && window.__S) applyProfile(window.__S, d.profile);
+  else if (d.t === 'note' && window.__S?.ui && typeof d.text === 'string') window.__S.ui.toast?.(d.text.slice(0, 90));
   else if (d.t === 'xp' && window.__S?.ui) { const n = Math.max(0, Math.floor(Number(d.amount) || 0)); if (n) window.__S.ui.toast?.(`+${n} XP${d.why ? ' · ' + String(d.why).slice(0, 30) : ''}`); }
 });
-export const tellApp = msg => { if (EMBED) try { window.parent.postMessage({ gg: 'world', ...msg }, location.origin); } catch { /* not embedded */ } };
+addEventListener('pagehide', () => { if (window.__S) flushSave(window.__S); }); // Back unmounts the frame: send a pending save first
 document.addEventListener('visibilitychange', () => { G.hidden = document.hidden; sync(); if (document.hidden) SFX.suspend(); else if (!G.paused) SFX.resume(); });
 
 export const LOOK_KEY = 'night-rooms-look';

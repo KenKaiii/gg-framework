@@ -1,6 +1,7 @@
 // @ts-check
 // Wardrobe / shop (C). XP -> level -> coins. Items have prices + level locks; owned items are free to switch.
 import { portrait } from './portrait.js';
+import { saveSoon } from './bridge.js';
 
 const ITEMS = {
   body: [['rogue', 'Hoodie', 0, 1], ['knight', 'Jacket', 0, 1], ['mage', 'Robe', 250, 15], ['barbarian', 'Vest', 400, 30]],
@@ -22,7 +23,7 @@ const NAMES = { body: 'Outfit', head: 'Hair style', acc: 'Headwear', silly: 'Rid
 export function wallet(S) {
   if (!S.wallet) { let w = null; try { w = JSON.parse(localStorage.getItem('night-rooms-wallet') || 'null'); } catch { /* ignore */ } S.wallet = w && typeof w.spent === 'number' ? w : { spent: 0, owned: [] }; }
   const W = S.wallet; const coins = () => S.player.level * 80 - W.spent;
-  return { get coins() { return coins(); }, owns: id => W.owned.includes(id), spend(n, id) { if (n > 0 && coins() < n) return false; W.spent += n; if (id) W.owned.push(id); try { localStorage.setItem('night-rooms-wallet', JSON.stringify(W)); } catch { /* ignore */ } return true; } };
+  return { get coins() { return coins(); }, owns: id => W.owned.includes(id), spend(n, id) { if (n > 0 && coins() < n) return false; W.spent += n; if (id) W.owned.push(id); saveSoon(S); try { localStorage.setItem('night-rooms-wallet', JSON.stringify(W)); } catch { /* ignore */ } return true; } };
 }
 
 export function openCreator(S, root, done) {
@@ -52,7 +53,7 @@ export function openCreator(S, root, done) {
     el.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', () => {
       if (/** @type {HTMLElement} */ (b).dataset.x === 'save') {
         for (const [k, v] of cart()) wl.spend(priceOf(k, v), k + ':' + v);
-        S.player.look = look; S.player.name = (name.trim() || 'You').slice(0, 14); S.player.namedHere = !!name.trim(); try { localStorage.setItem('night-rooms-look', JSON.stringify({ ...look, name: S.player.name })); } catch { /* ignore */ } S.me.av.fx.wave = 1.5;
+        S.player.look = look; S.player.name = (name.trim() || 'You').slice(0, 14); S.player.namedHere = !!name.trim(); saveSoon(S); try { localStorage.setItem('night-rooms-look', JSON.stringify({ ...look, name: S.player.name })); } catch { /* ignore */ } S.me.av.fx.wave = 1.5;
       } else S.me.av.setLook(S.player.look);
       done();
     }));
