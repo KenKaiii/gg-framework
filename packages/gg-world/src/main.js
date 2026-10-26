@@ -47,7 +47,7 @@ addEventListener('message', e => {
   if (!fromApp(e)) return; const d = e.data; if (!d || d.gg !== 'world') return;
   if (d.t === 'pause') window.__game.pause(); else if (d.t === 'resume') window.__game.resume();
   else if (d.t === 'player' && window.__S?.player) { const P = window.__S.player; const lv = Math.max(1, Math.min(999, Math.floor(Number(d.level) || 1)));
-    P.level = lv; P.xp = Math.max(0, Math.min(1, (Number(d.percent) || 0) / 100)); if (typeof d.name === 'string' && d.name.trim() && !P.namedHere) P.name = d.name.trim().slice(0, 16); }
+    P.level = lv; P.xp = Math.max(0, Math.min(1, (Number(d.percent) || 0) / 100)); window.__S.ui?.refreshHud?.(); if (typeof d.name === 'string' && d.name.trim() && !P.namedHere) P.name = d.name.trim().slice(0, 16); }
   else if (d.t === 'xp' && window.__S?.ui) { const n = Math.max(0, Math.floor(Number(d.amount) || 0)); if (n) window.__S.ui.toast?.(`+${n} XP${d.why ? ' · ' + String(d.why).slice(0, 30) : ''}`); }
 });
 export const tellApp = msg => { if (EMBED) try { window.parent.postMessage({ gg: 'world', ...msg }, location.origin); } catch { /* not embedded */ } };

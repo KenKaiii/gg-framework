@@ -38,7 +38,9 @@ export function initUI(S, W) {
   online.addEventListener('click', () => { toggleWhere(); online.blur(); });
   addEventListener('keydown', e => { if (e.code === 'Tab' && !/INPUT|TEXTAREA/.test(/** @type {HTMLElement} */ (document.activeElement)?.tagName || '')) { e.preventDefault(); toggleWhere(); } });
   // room bar: every room always one click away (plus doors and the M map)
-  const tabs = h('nav', 'key rooms'); tabs.setAttribute('aria-label', 'Floors'); root.appendChild(tabs);
+  // floor tabs: hidden (owner); the roof / basement are reached by the stairs and the map. Kept built so the map and
+  // the who's-where list can still travel between floors with the same code.
+  const tabs = h('nav', 'key rooms'); tabs.setAttribute('aria-label', 'Floors'); tabs.style.display = 'none'; root.appendChild(tabs);
   const tabBtns = {};
   for (const f of FLOOR_ORDER) { const b = /** @type {HTMLButtonElement} */ (h('button', 'rt')); b.type = 'button'; b.dataset.f = f; tabs.appendChild(b); tabBtns[f] = b;
     b.addEventListener('click', () => { if (U.blocking || S.fade || S.floor === f) return; W.travel(S.floors[f].rooms[0].id); b.blur(); }); }
@@ -71,7 +73,7 @@ export function initUI(S, W) {
   const plate = (agent, cls) => { let p = plates.get(agent); if (!p) { p = h('div', 'np ' + cls); root.appendChild(p); plates.set(agent, p); } return p; };
   const bubbles = [];
   // several lines from one person stack upward (newest lowest, nearest the head); at most 3 show, older ones shrink and fade
-  U.bubble = (agent, txt, secs = 3, cls = '') => { if (!agent || !agent.root.parent?.visible || agent.root.parent.parent?.visible === false) return; const b = h('div', 'bub ' + cls, esc(txt)); root.appendChild(b); bubbles.push({ b, agent, t: Math.max(secs, 4), y: 0, w0: b.offsetWidth, h0: b.offsetHeight }); // measured once (no per-frame layout reads)
+  U.bubble = (agent, txt, secs = 3, cls = '') => { if (!agent || !agent.root.parent?.visible || agent.root.parent.parent?.visible === false) return; const b = h('div', 'bub ' + cls, esc(txt)); root.appendChild(b); const uk = U.uiScale || 1; bubbles.push({ b, agent, t: Math.max(secs, 4), y: 0, w0: b.offsetWidth * uk, h0: b.offsetHeight * uk }); // on-screen size (scaled) // measured once (no per-frame layout reads)
     const mine = bubbles.filter(q => q.agent === agent); while (mine.length > 3) { const old = mine.shift(); old.b.remove(); bubbles.splice(bubbles.indexOf(old), 1); } };
   // chat log: what people say (plus ships), newest at the bottom, last 6 kept
   const chatLine = (who, txt, cls = '') => { const d = h('div', 'cm ' + cls, `${who ? `<u>${esc(who)}</u>` : ''}${esc(txt)}`); clog.appendChild(d); if (!chat.classList.contains('typing') && cls !== 'me') setUnread(unread + 1); while (clog.children.length > 12) clog.firstChild?.remove(); };
@@ -160,6 +162,12 @@ export function initUI(S, W) {
   };
   const interact = () => { if (U.blocking) return; if (S.seated) { standUp(); return; } S.pending = null; interactWith(near()); };
   installCursors();
+  // UI scale follows the window (owner: small windows must not drown in big bubbles; big ones not too small):
+  // 1.0 at ~1280 x 760, clamped 0.72 (always readable) .. 1.25 (never huge)
+  const setUiScale = () => { const k = Math.max(0.72, Math.min(1.25, Math.min(innerWidth / 1280, innerHeight / 760))); document.documentElement.style.setProperty('--ui', k.toFixed(3)); U.uiScale = k; };
+  setUiScale(); addEventListener('resize', setUiScale);
+  // inside the app, its Back button and the window's traffic lights sit over our top-left: start the HUD below them
+  if (window.parent !== window) document.documentElement.classList.add('embedded');
   // DOM buttons click / hover softly (overlay close buttons play their own close sound)
   const BTN = 'button,.rt,.go,.rm,.opt,.sw,.btn,[data-r],.who';
   let hovEl = null;
@@ -206,7 +214,7 @@ export function initUI(S, W) {
   });
   const v = new THREE.Vector3();
   const scr = (o, y, R) => { v.copy(o); if (R) v.add(R.root.position); v.setY(o.y + y).project(S.cam); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; };
-  let hudT = 0;
+  let hudT = 0; U.refreshHud = () => { hudT = 0; }; // the app sent the real level: redraw the HUD next frame
   U.update = (dt, t) => {
     fx.update(dt, t);
     if ((toastT -= dt) < 0) toastEl.style.display = 'none';

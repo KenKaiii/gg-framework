@@ -215,8 +215,8 @@ export function HomeScreen({
         <div className="home-action-slot">
           <PixelTip text="World: a 3D game world to wander, right here on your machine.">
             <PlateButton
-              className="home-action"
-              label="World"
+              className={`home-action${worldOpening ? " is-loading" : ""}`}
+              label={worldOpening ? "Loading" : "World"}
               held={worldOpening}
               aria-describedby={worldNoteId}
               onClick={() => {
@@ -225,8 +225,18 @@ export function HomeScreen({
               }}
             />
           </PixelTip>
-          <span id={worldNoteId} className="home-action-beta">
-            New
+          {/* While World loads (it takes a moment to build the scene), the tag shows three pulsing pixel dots, so
+              Home never looks frozen. */}
+          <span id={worldNoteId} className={`home-action-beta${worldOpening ? " is-loading" : ""}`}>
+            {worldOpening ? (
+              <span className="home-loading-dots" aria-label="Loading World">
+                <i />
+                <i />
+                <i />
+              </span>
+            ) : (
+              "New"
+            )}
           </span>
         </div>
       </div>

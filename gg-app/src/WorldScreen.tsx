@@ -93,7 +93,6 @@ export function WorldScreen({
     <div className={`picker world-screen${visible ? " is-visible" : ""}`} aria-busy={!visible}>
       <div className="picker-head world-head" data-tauri-drag-region>
         <BackButton label="Back" onClick={onClose} />
-        <span className="picker-title">World</span>
       </div>
       <div className="world-stage">
         {!failed && (

@@ -9,7 +9,7 @@
 //    lamps: the floor light pool, floorlights.js POOL); step back up after a long stretch of headroom. The chosen level is remembered per machine.
 import * as THREE from 'three';
 
-const Q_KEY = 'night-rooms-quality';
+const Q_KEY = 'night-rooms-quality-2'; // -2: the old key holds levels lowered by the WebKit frame-gate bug (fixed); start fresh
 /** Quality levels, best first. */
 // div: render at devicePixelRatio / div. Always a whole number of SCREEN pixels per canvas pixel: at e.g. 1.5x on a 2x
 // Retina screen the browser resamples the canvas by 1.33, so every 1 px camera step lands on a different sub-pixel phase
@@ -29,16 +29,24 @@ export function makePerf(o) {
   renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
   const P = {
     level: 0, forced: /** @type {number|null} */ (null), lastFrame: 0, shadowT: 0, dirty: true,
-    intervalEma: 16.7, slowT: 0, fastT: 0, warm: 0, maxLamps: 16,
+    intervalEma: 16.7, /* see gate() */ slowT: 0, fastT: 0, warm: 0, maxLamps: 16, hiHz: false, rafGaps: /** @type {number[]} */ ([]), rafLast: 0,
     /** mark the shadow map stale (something that casts moved, floor changed, etc.) */
     shadowDirty() { P.dirty = true; },
+    active: () => !document.hidden && (document.hasFocus() || window.parent !== window),
     /** call at the top of the animation loop; false = skip this frame entirely */
     gate(now) {
-      const cap = /[?&]fps=30/.test(location.search) ? 31 : 61; // ?fps=30: A/B test of a 30 fps cap
-      const minGap = document.hasFocus() ? 1000 / cap : 1000 / 31;
-      if (now - P.lastFrame < minGap) return false;
+      // Frame gate. At 60: never skip a display frame. (It used to require 16.4 ms between frames, but WebKit, which
+      // the Mac app uses, reports whole-millisecond times: every 15-16 ms frame was dropped -> ~40 fps, and the slow-
+      // frame detector then lowered the quality too.) Only on 120 Hz screens, and for the 30 fps modes, frames are
+      // skipped, with a 25% tolerance so jittery timestamps never drop a frame that should draw.
+      // 'Active' = the page is visible and either focused or embedded in the app (a frame inside the app window only has
+      // focus after a click, so hasFocus() alone throttled World to 30 fps until you clicked into it)
+      const cap = /[?&]fps=30/.test(location.search) || !P.active() ? 30 : 60; // ?fps=30: A/B test of a 30 fps cap
+      if (cap < 60 || P.hiHz) { if (now - P.lastFrame < (1000 / cap) * 0.75) return false; }
+      else if (now - P.lastFrame < 4) return false; // same-frame duplicate callbacks
       const gap = Math.min(250, now - P.lastFrame); P.lastFrame = now;
-      if (document.hasFocus() && gap < 200) { P.intervalEma += (gap - P.intervalEma) * 0.05; }
+      if (P.rafGaps.length < 60 && gap > 2 && gap < 40) { P.rafGaps.push(gap); if (P.rafGaps.length === 60) { const g = P.rafGaps.slice().sort((a, b) => a - b)[30]; P.hiHz = g < 11; } }
+      if (P.active() && gap < 200) { P.intervalEma += (gap - P.intervalEma) * 0.05; }
       return true;
     },
     /** call once per rendered frame, before rendering */
@@ -46,7 +54,7 @@ export function makePerf(o) {
       // shadows: refresh on demand, plus a 2 Hz safety net
       P.shadowT += dt; if (P.dirty || P.shadowT > 4) { renderer.shadowMap.needsUpdate = true; P.dirty = false; P.shadowT = 0; }
       // adaptive quality (skip the first seconds: shader compiles and asset uploads)
-      P.warm += dt; if (P.forced != null || P.warm < 5 || !document.hasFocus()) return;
+      P.warm += dt; if (P.forced != null || P.warm < 5 || !P.active()) return;
       if (P.intervalEma > 1000 / 45) { P.slowT += dt; P.fastT = 0; } else if (P.intervalEma < 1000 / 57) { P.fastT += dt; P.slowT = 0; } else { P.slowT = 0; P.fastT = 0; }
       if (P.slowT > 2.5 && P.level < LEVELS.length - 1) { P.set(P.level + 1); P.slowT = 0; P.intervalEma = 16.7; }
       else if (P.fastT > 20 && P.level > 0) { P.set(P.level - 1); P.fastT = 0; }

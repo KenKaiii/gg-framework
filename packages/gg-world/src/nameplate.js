@@ -29,7 +29,7 @@ const CROWN = { 7: ['#ffe08a', '#b8862a', '#ff4fd8', '#3ddcff'], 8: ['#cfd8ff', 
 function deco(t) {
   let d = '';
   if (t >= 5) d += '<span class="aura"></span>';
-  if (t >= 6 && t <= 10) d += '<span class="halo full-only"></span>';
+  // (no halo: a floating ring above the name read as a stray circle; the tier shows in the level chip + name glow)
   if (CROWN[t]) d += `<span class="crown full-only">${crownSvg(...CROWN[t])}</span>`;
   if (t === 8) d += '<span class="fx stars full-only"><i></i><i></i><i></i><i></i></span>';
   if (t === 9) d += '<span class="fx embers full-only"><i></i><i></i><i></i><i></i><i></i><i></i></span>';
@@ -52,7 +52,7 @@ export function plateHTML(o) {
 export const plateClass = (lv, full, extra = '') => `np t${tierOf(lv) || 'x'}${full ? '' : ' mini'}${extra ? ' ' + extra : ''}`;
 
 export const PLATE_CSS = `
-.np{position:absolute;transform:translate(-50%,-100%);display:flex;align-items:center;gap:6px;height:20px;white-space:nowrap;isolation:isolate;pointer-events:none;
+.np{position:absolute;transform:translate(-50%,-100%) scale(var(--ui,1));transform-origin:50% 100%;display:flex;align-items:center;gap:6px;height:20px;white-space:nowrap;isolation:isolate;pointer-events:none;
   font:16px/16px ${FONT.title};color:#eef2ea;text-shadow:0 1px 0 #000,0 0 3px #000,0 0 6px rgba(0,0,0,.8);z-index:5}
 .np .orb{min-width:24px;height:18px;padding:0 6px;border-radius:9px;display:inline-grid;place-items:center;font:16px/16px ${FONT.body};color:#0b0a12;background:var(--orb,#7d877f);text-shadow:none;box-shadow:0 0 0 1px rgba(0,0,0,.6)}
 .np .st{font:16px/16px ${FONT.body};color:#9aa79c}

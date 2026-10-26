@@ -27,11 +27,16 @@ const tail = shade => { const rows = ['IsssssI', '.IsssI.', '.IIsII.', '..IsI..'
 const KIND = { talk: ['#cedbf9', '#a9b8e4'], use: ['#f5bd63', '#c8862a'], go: ['#b9e3a0', '#7fb563'], note: ['#fff3dc', '#e2cba4'] }; // note = game notices / tips
 const skin = ([paper, sh]) => `background:${paper};box-shadow:inset 0 -4px 0 ${sh},0 0 0 2px #1e0c1f,0 6px 0 0 #1e0c1f`;
 export const CSS = `
+/* window-size scale (night-ui sets --ui from the window: clamp 0.72..1.25). Fixed HUD panels zoom; things placed at a
+   screen point (bubbles, prompts, plates, the hover tip) scale with transform so their anchor stays put. */
+.hud-top,.chatp,.chatbtn,.ibar,.dlg,.toast,.roomcard,.where,.editbar{zoom:var(--ui,1)}
+.modal.profile,.modal.mapp,.modal.creator{zoom:var(--ui,1)}
 #ui{position:fixed;inset:0;pointer-events:none;font:16px/16px ${B};color:#c9d1c4;user-select:none;-webkit-font-smoothing:none;-moz-osx-font-smoothing:grayscale;font-smooth:never;text-rendering:optimizeSpeed}
 #ui *{box-sizing:border-box}
 #ui b,#ui strong,#ui h1,#ui h2,#ui h3,#ui h4{font-weight:normal}
 #ui input,#ui button,#ui select{font:inherit;-webkit-font-smoothing:none}
 .card{background:#1f2226;border:0;border-radius:8px;color:#e8ebef;box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 2px 0 #0b0c0e,0 18px 40px rgba(0,0,0,.55)}
+.embedded .hud-top{top:60px}
 .hud-top{position:absolute;top:16px;left:16px;display:flex;flex-direction:column;align-items:flex-start;gap:10px}
 /* Alloy keys (the app's raised graphite controls): lit top edge, dark lip, soft drop */
 .key{background:#2c3035;border-radius:6px;box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 2px 0 #0b0c0e,0 6px 14px rgba(0,0,0,.45);color:#e8ebef}
@@ -43,6 +48,7 @@ export const CSS = `
 .dot{display:inline-block;width:8px;height:8px;background:#7fdc95;flex:none}
 .who{all:unset;box-sizing:border-box;pointer-events:auto;cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 12px 8px;font:16px/16px ${B};-webkit-font-smoothing:none;transition:background-color .15s}
 .who .mu{color:#a1a8b1}.who:hover{background:#33383e}.who:focus-visible{outline:2px solid #8fa3ff;outline-offset:2px}
+.embedded .where{top:162px}
 .where{position:absolute;top:118px;left:16px;padding:10px 12px 12px;line-height:20px;min-width:230px;max-width:340px;pointer-events:auto}
 .where b{font-family:${B};color:#e8ebef}.where .cur{color:#8fa3ff}.where i{font-style:normal;color:#949ba5}
 .where .s{margin-left:3px}.where .s.p{color:#7fdc95}.where .s.t{color:#8fa3ff}.where .s.d{color:#f0c75e}.where .s.i{color:#949ba5}
@@ -52,7 +58,7 @@ kbd{font:16px/16px ${B};background:#161b17;border:1px solid #263228;border-radiu
 /* speech bubble = the critters' bubble from the app (gg-app goal-farm-render.ts drawBubble), at 2 screen px per art px:
    m5x7 ink text on blue-white paper, 1 art px ink outline, 2 art px shade along the bottom, a 3 art px ink lip under it,
    and a 7 x 5 pixel tail that runs out of the shade through the lip */
-.bub{z-index:6;position:absolute;transform:translate(-50%,calc(-100% - 12px)) scale(var(--k,1));transform-origin:50% 100%;transition:transform .2s ease;max-width:224px;width:max-content;padding:4px 8px 8px;text-align:center;white-space:normal;
+.bub{z-index:6;position:absolute;transform:translate(-50%,calc(-100% - 12px * var(--ui,1))) scale(calc(var(--k,1) * var(--ui,1)));transform-origin:50% 100%;transition:transform .2s ease;max-width:224px;width:max-content;padding:4px 8px 8px;text-align:center;white-space:normal;
   ${skin(KIND.talk)};color:#1e0c1f;font:32px/22px ${B};-webkit-font-smoothing:none;border-radius:2px;animation:pop .25s ease}
 .bub:after{content:"";position:absolute;left:50%;top:100%;width:14px;height:10px;transform:translateX(-50%);image-rendering:pixelated;
   background:${tail(KIND.talk[1])} center/100% 100% no-repeat}
@@ -62,7 +68,7 @@ kbd{font:16px/16px ${B};background:#161b17;border:1px solid #263228;border-radiu
 /* prompts, hover tooltip, chat and toast share the critter bubble's look (paper, ink outline, shade, lip) */
 .prompt,.hovertip,.toast{${skin(KIND.use)};color:#1e0c1f;font:32px/22px ${B};-webkit-font-smoothing:none;border-radius:2px;white-space:nowrap}
 .prompt.go{${skin(KIND.go)}}.hovertip.talk{${skin(KIND.talk)}}.toast{${skin(KIND.note)}}
-.prompt{position:absolute;transform:translate(-50%,calc(-100% - 12px));padding:4px 10px 8px 6px;z-index:12}
+.prompt{position:absolute;transform:translate(-50%,calc(-100% - 12px * var(--ui,1))) scale(var(--ui,1));transform-origin:50% 100%;padding:4px 10px 8px 6px;z-index:12}
 .prompt:after{content:"";position:absolute;left:50%;top:100%;width:14px;height:10px;transform:translateX(-50%);image-rendering:pixelated;background:${tail(KIND.use[1])} center/100% 100% no-repeat}
 .prompt.go:after{background-image:${tail(KIND.go[1])}}
 .pi{display:inline-flex;align-items:center;gap:8px;vertical-align:top}
@@ -70,7 +76,7 @@ kbd{font:16px/16px ${B};background:#161b17;border:1px solid #263228;border-radiu
 .ico{display:inline-block;flex:none;background:center/100% 100% no-repeat;image-rendering:pixelated}
 .ico.arr{width:14px;height:10px;background-image:url("data:image/svg+xml,${encodeURIComponent(px(ARROW))}")}
 .ico.chev{width:8px;height:14px;background-image:url("data:image/svg+xml,${encodeURIComponent(px(CHEV))}")}
-.hovertip{position:fixed;z-index:30;pointer-events:none;display:none;padding:4px 10px 8px;transform:translate(16px,18px)}
+.hovertip{position:fixed;z-index:30;pointer-events:none;display:none;padding:4px 10px 8px;transform:translate(16px,18px) scale(var(--ui,1));transform-origin:0 0}
 .hovertip .nm{color:#34347e}
 .prompt.in{animation:prIn .16s ease-out}@keyframes prIn{from{opacity:0;margin-top:4px}to{opacity:1;margin-top:0}}
 @media (prefers-reduced-motion: reduce){.prompt.in{animation:none}}

@@ -1710,6 +1710,40 @@ select {
 .home-actions {
   --tag-px: 2px;
 }
+.home-loading-dots {
+  display: inline-flex;
+  gap: calc(2 * var(--tag-px));
+  align-items: center;
+  height: calc(5 * var(--tag-px));
+}
+.home-loading-dots i {
+  width: calc(2 * var(--tag-px));
+  height: calc(2 * var(--tag-px));
+  background: currentColor;
+  animation: home-loading-dot 900ms steps(2, end) infinite;
+  animation-play-state: var(--loop-play-state, running);
+}
+.home-loading-dots i:nth-child(2) {
+  animation-delay: 150ms;
+}
+.home-loading-dots i:nth-child(3) {
+  animation-delay: 300ms;
+}
+@keyframes home-loading-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-loading-dots i {
+    animation: none;
+    opacity: 0.8;
+  }
+}
 .home-action-beta {
   position: absolute;
   top: calc(-2 * var(--tag-px));
