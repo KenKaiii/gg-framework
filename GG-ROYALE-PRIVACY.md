@@ -1,6 +1,6 @@
 # GG Royale: privacy and table rules
 
-Last updated: 23 October 2026
+Last updated: 26 October 2026
 
 GG Royale is an online blackjack game inside the GG Coder app. It's run by
 Ken Kai. Questions or requests: **ken@kenkais.com**.
@@ -51,6 +51,38 @@ sent unless you link again. You can also email ken@kenkais.com.
 
 You can mute or report any player from the table. Reports are read by a
 person, and players who break the rules can be removed.
+
+## GG World
+
+World is a 3D game mode that runs on your computer, inside GG Coder. The other
+people in it are simulated for now: you don't meet or talk to real players.
+
+**Online save is optional and off until you agree.** The first time you play,
+World asks whether to save online. Until you say yes (and confirm you're 18 or
+over), nothing about World leaves your computer.
+
+If you turn it on, World keeps only:
+
+- your World name (if you chose one),
+- how your character looks,
+- the cosmetic items you own,
+- how many coins you've spent,
+- your coding level.
+
+Your World name is the same name as your GG Royale player name (one name per
+player). Changing it in World changes it in GG Royale too.
+
+The online save runs on Cloudflare (Workers and D1), the same service GG Royale
+uses. It's linked to this computer the same way GG Royale is: a private key
+GG Coder keeps on your computer.
+
+It never gets your code, files, prompts or project names. It's kept so your
+save survives reinstalls and carries over to your other computers, and it's
+kept until you delete it.
+
+To delete it: in World, open the cloud key next to Back and choose **Delete my
+online save**, or email ken@kenkais.com. Deleting your GG Royale data also
+deletes your World save.
 
 ## Changes
 

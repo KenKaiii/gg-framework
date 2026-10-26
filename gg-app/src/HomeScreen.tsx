@@ -213,7 +213,7 @@ export function HomeScreen({
         {/* World: the local 3D game, full-window in this window; new, so it
             carries a New tag. */}
         <div className="home-action-slot">
-          <PixelTip text="World: a 3D game world to wander, right here on your machine.">
+          <PixelTip text="World: a cozy 3D hangout for coders, with your coding level and an optional online save.">
             <PlateButton
               className={`home-action${worldOpening ? " is-loading" : ""}`}
               label={worldOpening ? "Loading" : "World"}

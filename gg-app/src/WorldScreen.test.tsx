@@ -3,6 +3,13 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorldScreen } from "./WorldScreen";
 
+vi.mock("./agent", () => ({
+  openUrl: vi.fn(),
+  worldSaveGet: vi.fn(async () => ({ status: 0, body: null })),
+  worldSavePut: vi.fn(async () => ({ status: 0, body: null })),
+  worldSaveDelete: vi.fn(async () => ({ status: 0, body: null })),
+}));
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -54,7 +61,7 @@ describe("WorldScreen", () => {
         player={{ level: 8, percent: 3, xp: 1300 }}
       />,
     );
-    expect(post).toHaveBeenLastCalledWith(
+    expect(post).toHaveBeenCalledWith(
       { gg: "world", t: "player", level: 8, percent: 3, xp: 1300 },
       window.location.origin,
     );

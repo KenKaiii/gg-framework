@@ -17,7 +17,12 @@ import { ROYALE_BUG_CATEGORIES, type RoyaleBugCategory } from "./royale-bug.js";
  *  GG_ROYALE_URL or royale.json `serverUrl`. */
 export const DEFAULT_ROYALE_URL = "https://gg-royale.buzzbeamaustralia.workers.dev";
 
+/** The live GG World server (online save). Used only alongside the live
+ *  GG Royale server; GG_WORLD_URL overrides it. */
+export const DEFAULT_WORLD_URL = "https://gg-world.buzzbeamaustralia.workers.dev";
+
 const REPORT_TIMEOUT_MS = 5_000;
+const WORLD_TIMEOUT_MS = 8_000;
 const OPEN_TIMEOUT_MS = 10_000;
 
 export interface RoyaleFile {
@@ -38,6 +43,17 @@ export interface RoyaleSummary {
   playing: number;
 }
 
+/**
+ * A World server reply, passed through for the app to read: `status` is the
+ * HTTP status (409 stale ver, 400 validation with `body.error`, ...), or 0
+ * when the server couldn't be reached / online save is unavailable. Never
+ * throws.
+ */
+export interface WorldResult {
+  status: number;
+  body: unknown;
+}
+
 export interface RoyaleOptions {
   agentDir: string;
   version: string;
@@ -54,6 +70,12 @@ export interface Royale {
   reportRun: (input: RunOutcome) => void;
   /** Badge counts; null when unlinked or on any error. Never throws. */
   summary: () => Promise<RoyaleSummary | null>;
+  /** GG World online save: GET /api/world/profile. Links on first use. */
+  worldGet: () => Promise<WorldResult>;
+  /** PUT /api/world/profile with `{ ver, patch }`. */
+  worldPut: (ver: number, patch: unknown) => Promise<WorldResult>;
+  /** DELETE /api/world/me. */
+  worldDelete: () => Promise<WorldResult>;
 }
 
 function count(v: unknown): number {
@@ -306,5 +328,58 @@ export function createRoyale(opts: RoyaleOptions): Royale {
     }
   }
 
-  return { status, open, unlink, reportRun, summary };
+  /**
+   * The World server paired with the Royale server we talk to: GG_WORLD_URL,
+   * else the live World server only when Royale is the live default. A dev
+   * Royale target without GG_WORLD_URL has no World server (null), so a
+   * device token never reaches a server it wasn't minted for.
+   */
+  function worldBase(): string | null {
+    const fromEnv = env.GG_WORLD_URL;
+    if (fromEnv && fromEnv.length > 0) return stripSlashes(fromEnv);
+    return target() === stripSlashes(DEFAULT_ROYALE_URL) ? DEFAULT_WORLD_URL : null;
+  }
+
+  async function world(method: "GET" | "PUT" | "DELETE", route: string, body?: unknown) {
+    const base = worldBase();
+    if (!base) return { status: 0, body: { error: "Online save isn't available here." } };
+    try {
+      const linked = await link();
+      // Nothing to delete without a link: don't sign up just to delete.
+      if (!linked && method === "DELETE") return { status: 200, body: { deleted: true } };
+      const file = linked ?? (await register(target()));
+      const res = await doFetch(`${base}${route}`, {
+        method,
+        headers: {
+          authorization: `Bearer ${file.deviceToken}`,
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(WORLD_TIMEOUT_MS),
+      });
+      let parsed: unknown = null;
+      try {
+        parsed = await res.json();
+      } catch {
+        parsed = null;
+      }
+      return { status: res.status, body: parsed };
+    } catch (err) {
+      log("DEBUG", "royale", "world request failed", {
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return { status: 0, body: { error: "Couldn't reach the server." } };
+    }
+  }
+
+  return {
+    status,
+    open,
+    unlink,
+    reportRun,
+    summary,
+    worldGet: () => world("GET", "/api/world/profile"),
+    worldPut: (ver, patch) => world("PUT", "/api/world/profile", { ver, patch }),
+    worldDelete: () => world("DELETE", "/api/world/me"),
+  };
 }

@@ -102,6 +102,55 @@ pub(crate) async fn agent_royale_open(
     Ok(validate_royale_url(raw)?.to_string())
 }
 
+/// Proxy: GG World online save, read (`GET /world/save`). Returns the World
+/// server's `{ status, body }` as-is (status 0 = unreachable/unavailable).
+#[tauri::command]
+pub(crate) async fn agent_world_get(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let res = client
+        .get(format!("{}/world/save", sidecar_base(port)))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    sidecar_json(res).await
+}
+
+/// Proxy: GG World online save, write `{ ver, patch }` (`PUT /world/save`).
+#[tauri::command]
+pub(crate) async fn agent_world_put(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+    ver: i64,
+    patch: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let res = client
+        .put(format!("{}/world/save", sidecar_base(port)))
+        .json(&serde_json::json!({ "ver": ver, "patch": patch }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    sidecar_json(res).await
+}
+
+/// Proxy: delete the GG World online save (`DELETE /world/save`).
+#[tauri::command]
+pub(crate) async fn agent_world_delete(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let res = client
+        .delete(format!("{}/world/save", sidecar_base(port)))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    sidecar_json(res).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

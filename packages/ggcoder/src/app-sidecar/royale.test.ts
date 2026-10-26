@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_ROYALE_URL, createRoyale } from "./royale.js";
+import { DEFAULT_ROYALE_URL, DEFAULT_WORLD_URL, createRoyale } from "./royale.js";
 
 let dir: string;
 
@@ -323,5 +323,75 @@ describe("royale", () => {
       });
       expect((await r.status()).linked).toBe(true);
     });
+  });
+});
+
+describe("world online save", () => {
+  const worldServer = (url: string, init: RequestInit) => {
+    if (url.endsWith("/api/device/register")) return json({ playerId: "p1", deviceToken: "tok" });
+    if (url.endsWith("/api/world/profile") && init.method === "PUT") {
+      return json({ error: "stale" }, 409);
+    }
+    if (url.endsWith("/api/world/profile")) return json({ profile: null, ver: 0, updatedAt: 0 });
+    if (url.endsWith("/api/world/me")) return json({ deleted: true });
+    return json({}, 404);
+  };
+
+  it("registers on first use with the live server and sends the token only to the paired World server", async () => {
+    const { calls, fetchImpl } = mockServer(worldServer);
+    const r = createRoyale({ agentDir: dir, version: "1", env: {}, fetchImpl });
+    expect(await r.worldGet()).toEqual({
+      status: 200,
+      body: { profile: null, ver: 0, updatedAt: 0 },
+    });
+    expect(calls.map((c) => c.url)).toEqual([
+      `${DEFAULT_ROYALE_URL}/api/device/register`,
+      `${DEFAULT_WORLD_URL}/api/world/profile`,
+    ]);
+    expect(calls[1]?.init.headers).toMatchObject({ authorization: "Bearer tok" });
+    await r.worldGet();
+    expect(calls.filter((c) => c.url.endsWith("/register"))).toHaveLength(1);
+  });
+
+  it("is unavailable for a dev Royale server without GG_WORLD_URL (no network at all)", async () => {
+    const { calls, fetchImpl } = mockServer(worldServer);
+    const r = createRoyale({
+      agentDir: dir,
+      version: "1",
+      env: { GG_ROYALE_URL: "http://localhost:1" },
+      fetchImpl,
+    });
+    expect((await r.worldGet()).status).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("uses GG_WORLD_URL with the dev link, passes 409 through, and deletes", async () => {
+    const { calls, fetchImpl } = mockServer(worldServer);
+    const r = createRoyale({
+      agentDir: dir,
+      version: "1",
+      env: { GG_ROYALE_URL: "http://localhost:1", GG_WORLD_URL: "http://localhost:2/" },
+      fetchImpl,
+    });
+    const put = await r.worldPut(3, { look: { hat: 1 } });
+    expect(put).toEqual({ status: 409, body: { error: "stale" } });
+    expect(calls[0]?.url).toBe("http://localhost:1/api/device/register");
+    expect(calls[1]?.url).toBe("http://localhost:2/api/world/profile");
+    expect(calls[1]?.init.method).toBe("PUT");
+    expect(JSON.parse(String(calls[1]?.init.body))).toEqual({
+      ver: 3,
+      patch: { look: { hat: 1 } },
+    });
+    expect(await r.worldDelete()).toEqual({ status: 200, body: { deleted: true } });
+    expect(calls[2]?.url).toBe("http://localhost:2/api/world/me");
+    expect(calls[2]?.init.method).toBe("DELETE");
+  });
+
+  it("never throws on a network failure", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    }) as unknown as typeof fetch;
+    const r = createRoyale({ agentDir: dir, version: "1", env: {}, fetchImpl });
+    expect((await r.worldGet()).status).toBe(0);
   });
 });

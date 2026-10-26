@@ -2322,6 +2322,61 @@ select {
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
   pointer-events: none;
 }
+/* Online save: the cloud key beside Back, and its small panel. */
+.picker-head.world-head > .world-cloud {
+  position: absolute;
+  left: calc(var(--page-pad) + 36px);
+  top: 50%;
+  translate: 0 -50%;
+}
+.platform-macos .picker-head.world-head > .world-cloud {
+  left: 120px;
+}
+.world-cloud-panel {
+  position: absolute;
+  top: calc(100% + var(--space-4));
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  min-width: 220px;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  background: var(--surface-2);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+}
+.world-cloud-panel .btn {
+  justify-content: flex-start;
+}
+.world-cloud-status {
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.world-cloud-danger {
+  color: var(--error);
+}
+.modal.world-consent {
+  width: min(440px, calc(100vw - 32px));
+}
+.world-consent-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.world-consent-body p {
+  margin: 0;
+}
+.world-consent-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
 .world-status {
   position: absolute;
   inset: 0;

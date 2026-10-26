@@ -531,6 +531,29 @@ async function main(): Promise<void> {
       });
       return;
     }
+    // GG World online save (same device link). Always 200 with the World
+    // server's { status, body } so the app can tell 409/400/unreachable apart.
+    if (url === "/world/save" && (method === "GET" || method === "PUT" || method === "DELETE")) {
+      void daemonReadBody(req, res).then(async (raw) => {
+        if (raw === null) return;
+        if (method === "GET") {
+          daemonJson(res, 200, await royale.worldGet());
+        } else if (method === "DELETE") {
+          daemonJson(res, 200, await royale.worldDelete());
+        } else {
+          let parsed: { ver?: unknown; patch?: unknown } = {};
+          try {
+            parsed = JSON.parse(raw || "{}") as { ver?: unknown; patch?: unknown };
+          } catch {
+            daemonJson(res, 400, { error: "invalid JSON" });
+            return;
+          }
+          const ver = typeof parsed.ver === "number" ? parsed.ver : 0;
+          daemonJson(res, 200, await royale.worldPut(ver, parsed.patch ?? {}));
+        }
+      });
+      return;
+    }
     if (method === "POST" && url === "/royale/unlink") {
       void daemonReadBody(req, res).then(async (raw) => {
         if (raw === null) return;

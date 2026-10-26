@@ -646,6 +646,51 @@ export async function unlinkRoyale(): Promise<void> {
   await invoke("agent_royale_unlink");
 }
 
+/**
+ * A GG World online-save reply, as the World server sent it: `status` is its
+ * HTTP status (409 stale ver, 400 with `body.error`), or 0 when it couldn't be
+ * reached or online save isn't available. Never throws.
+ */
+export interface WorldSaveResult {
+  status: number;
+  body: unknown;
+}
+
+function worldSaveResult(r: unknown): WorldSaveResult {
+  const o = typeof r === "object" && r !== null ? (r as Record<string, unknown>) : {};
+  return { status: typeof o.status === "number" ? o.status : 0, body: o.body ?? null };
+}
+
+async function worldSaveCall(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<WorldSaveResult> {
+  try {
+    await waitForReady();
+    return worldSaveResult(await invoke<unknown>(command, args));
+  } catch {
+    return { status: 0, body: null };
+  }
+}
+
+/** Read the GG World online save (links this device on first use). */
+export function worldSaveGet(): Promise<WorldSaveResult> {
+  return worldSaveCall("agent_world_get");
+}
+
+/** Write the GG World online save: `patch` on top of server version `ver`. */
+export function worldSavePut(
+  ver: number,
+  patch: Record<string, unknown>,
+): Promise<WorldSaveResult> {
+  return worldSaveCall("agent_world_put", { ver, patch });
+}
+
+/** Delete the GG World online save. */
+export function worldSaveDelete(): Promise<WorldSaveResult> {
+  return worldSaveCall("agent_world_delete");
+}
+
 /** Non-2xx sidecar errors throw from the proxy; also reject a malformed body. */
 function keepAwakeEnabled(result: { enabled?: unknown; error?: unknown }): boolean {
   if (typeof result.enabled === "boolean") return result.enabled;
