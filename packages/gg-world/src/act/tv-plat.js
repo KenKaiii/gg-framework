@@ -1,6 +1,7 @@
 // @ts-check
 // "Super Commit Bros": a tiny retro platformer for the den CRT (160×120 buffer). Collect coins, stomp bugs, reach the
 // flag before the timer runs out. Pure function of input + dt; drawn with fillRect pixel art.
+import { PAL, panel, title, button, glow, ease, clamp, keyChip } from './art.js';
 import { text, rng } from './util.js';
 import { SFX } from '../sfx.js';
 
@@ -22,7 +23,8 @@ function level() {
 
 export function makePlatformer() {
   let L, p, cam, time, score, got, state, parts, shake, lastJump, checkpoint;
-  const reset = () => { L = level(); p = { x: 16, y: 96, vx: 0, vy: 0, on: 0, face: 1, inv: 0 }; cam = 0; time = TIME; score = 0; got = 0; state = 'play'; parts = []; shake = 0; lastJump = false; checkpoint = 16; };
+  let endT = -1, best = 0, newBest = false, t0 = -1; try { best = Number(localStorage.getItem('gg-plat-best')) || 0; } catch { /* */ }
+  const reset = () => { t0 = -1; L = level(); p = { x: 16, y: 96, vx: 0, vy: 0, on: 0, face: 1, inv: 0 }; cam = 0; time = TIME; score = 0; got = 0; state = 'play'; parts = []; shake = 0; lastJump = false; checkpoint = 16; };
   reset();
   const at = (x, y) => { const c = Math.floor(x / T), r = Math.floor(y / T); if (c < 0 || c >= COLS) return 1; if (r < 0 || r >= ROWS) return 0; return L.solid[r * COLS + c]; };
   const pop = (x, y, c, n, txt) => { for (let i = 0; i < n; i++) parts.push({ x, y, vx: (Math.random() - 0.5) * 70, vy: -Math.random() * 70 - 20, l: 0.5, c }); if (txt) parts.push({ x, y: y - 4, vx: 0, vy: -20, l: 0.8, txt, c }); };
@@ -56,6 +58,7 @@ export function makePlatformer() {
   }
   /** @param {CanvasRenderingContext2D} b @param {number} t */
   function draw(b, t) {
+    if (state === 'play' && t0 < 0) t0 = t; const age = t0 < 0 ? 0 : t - t0;
     const R = (c, x, y, w, h) => { b.fillStyle = c; b.fillRect(Math.round(x), Math.round(y), w, h); };
     R('#1e2240', 0, 0, 160, 120); for (let i = 0; i < 30; i++) R(i % 4 ? '#5a5a88' : '#e0a458', ((i * 53 - cam * 0.2) % 180 + 180) % 180 - 10, (i * 37) % 70, 1, 1);
     R('#ffe8b0', 120, 22, 6, 6); R('#ffe8b0', 119, 23, 8, 4);
@@ -73,15 +76,26 @@ export function makePlatformer() {
       R('#141418', p.x + (p.face > 0 ? 0 : -2), p.y - 7, 1, 1); R('#1a1824', p.x - 3 + run, p.y + 3, 2, 1); R('#1a1824', p.x + 1 - run, p.y + 3, 2, 1); }
     for (const q of parts) { if (q.txt) text(b, q.txt, q.x, q.y, { align: 'center', color: q.c, shadow: '#141418' }); else R(q.c, q.x, q.y, 2, 2); }
     b.restore();
-    R('#ffd84a', 4, 5, 5, 6); text(b, got + '/' + L.coins.length, 12, 11, { color: '#ffd84a', shadow: '#141418' });
-    text(b, 'T' + Math.ceil(time), 156, 11, { align: 'right', color: time < 10 && Math.floor(t * 4) % 2 ? '#ff4fd8' : '#e8f5e0', shadow: '#141418' });
-    text(b, String(score).padStart(6, '0'), 80, 11, { align: 'center', color: '#e8f5e0', shadow: '#141418' });
+    R('#ffd84a', 4, 5, 5, 6); title(b, got + '/' + L.coins.length, 12, 11, { size: 16, body: true, align: 'left', color: '#ffd84a' });
+    title(b, 'T' + Math.ceil(time), 156, 11, { size: 16, body: true, align: 'right', color: time < 10 && Math.floor(t * 1.5) % 2 ? '#ff4fd8' : '#e8f5e0' });
+    title(b, String(score).padStart(6, '0'), 80, 11, { size: 16, body: true, color: '#e8f5e0' });
+    // HUD chips on top of the screen, then the kit title card (first seconds) or the result card
+    if (state === 'play' && age < 3.2) { const k = ease.outBack(clamp(age / 0.4, 0, 1)); b.save(); b.globalAlpha = clamp(3.2 - age, 0, 1); b.translate(80, 62); b.scale(k, k); b.translate(-80, -62);
+      panel(b, 10, 30, 140, 64, { style: 'neon', r: 3 }); title(b, 'SUPER COMMIT', 80, 50, { size: 16, color: PAL.goldHi, glow: PAL.pink });
+      let X = 18; X += keyChip(b, '<', X, 70) + 1; X += keyChip(b, '>', X, 70) + 3; title(b, 'run', X, 70, { size: 16, body: true, align: 'left' }); X += 22; X += keyChip(b, 'SPC', X, 70) + 3; title(b, 'jump', X, 70, { size: 16, body: true, align: 'left' });
+      title(b, 'click: jump. reach the flag', 80, 87, { size: 16, body: true, color: PAL.dim }); b.restore(); }
     if (state !== 'play') {
-      R('rgba(10,8,20,.75)', 20, 34, 120, 52);
-      text(b, state === 'win' ? 'LEVEL 1-2 CLEAR' : 'TIME UP. GIT GUD.', 80, 52, { align: 'center', color: state === 'win' ? '#6ee7a0' : '#ff4fd8' });
-      text(b, 'score ' + score + '  coins ' + got, 80, 66, { align: 'center', color: '#e8f5e0' });
-      if (Math.floor(t * 2) % 2) text(b, 'SPACE: again', 80, 80, { align: 'center', color: '#e0a458' });
-    } else if (t < 0) { /* noop */ }
+      if (endT < 0) { endT = 0; if (score > best) { best = score; newBest = true; try { localStorage.setItem('gg-plat-best', String(best)); } catch { /* */ } } else newBest = false; }
+      endT += 1 / 60; const k = ease.outBack(clamp(endT / 0.45, 0, 1)), win = state === 'win';
+      b.fillStyle = `rgba(6,4,14,${clamp(endT * 3, 0, 0.6)})`; b.fillRect(0, 0, 160, 120);
+      b.save(); b.translate(80, 60); b.scale(k, k); b.translate(-80, -60);
+      panel(b, 8, 18, 144, 92, { style: 'neon', r: 3 }); glow(b, 80, 38, 60, win ? PAL.green : PAL.pink, 0.25);
+      title(b, win ? 'CLEAR!' : 'TIME UP', 80, 44, { size: 32, color: win ? PAL.green : PAL.pink, glow: win ? PAL.green : PAL.pink });
+      title(b, 'score ' + score + '  coins ' + got, 80, 62, { size: 16, body: true });
+      title(b, (newBest ? 'NEW BEST ' : 'best ') + best, 80, 76, { size: 16, body: true, color: newBest ? PAL.goldHi : PAL.dim });
+      button(b, 22, 82, 70, 20, 'AGAIN', { primary: true, hot: Math.sin(t * 3) > 0.3 }); keyChip(b, 'ESC', 96, 96); title(b, 'quit', 127, 96, { size: 16, body: true, align: 'left', color: PAL.dim });
+      b.restore();
+    } else endT = -1;
   }
   return { step, draw, get state() { return state; }, get time() { return time; } };
 }

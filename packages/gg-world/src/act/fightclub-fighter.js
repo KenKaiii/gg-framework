@@ -63,7 +63,9 @@ export function drawFighter(x, cx, gy, dir, pose, t, c) {
 function star(x, px, py) { px = Math.round(px / 2) * 2; py = Math.round(py / 2) * 2; x.fillStyle = OL; x.fillRect(px - 4, py - 2, 10, 6); x.fillRect(px - 2, py - 4, 6, 10); x.fillStyle = '#ffe14a'; x.fillRect(px - 2, py, 6, 2); x.fillRect(px, py - 2, 2, 6); }
 
 /** Basement backdrop: concrete block wall, pipes, bare bulb + cone, ring floor. */
-export function drawBackdrop(x, W, H, t, sway) {
+export function drawBackdrop(x, W, H, t, sway) { drawWall(x, W, H); drawBulb(x, W, H, sway); }
+/** the static part of the basement (cache it) */
+export function drawWall(x, W, H) {
   x.fillStyle = '#5a5450'; x.fillRect(0, 0, W, H);
   for (let r = 0; r < 12; r++) for (let k = 0; k < 14; k++) { const ox = (r % 2) * 20; x.fillStyle = (r * 7 + k * 3) % 5 ? '#625c56' : '#6a645c'; x.fillRect(k * 40 - ox + 1, r * 18 + 1, 38, 16); }
   x.fillStyle = 'rgba(40,30,24,0.25)'; x.fillRect(60, 40, 14, 150); x.fillRect(380, 60, 10, 120);
@@ -74,7 +76,10 @@ export function drawBackdrop(x, W, H, t, sway) {
   x.fillStyle = '#8a847a'; x.fillRect(0, 196, W, H - 196); x.fillStyle = '#6e685e'; x.fillRect(0, 196, W, 4);
   x.fillStyle = 'rgba(60,44,30,0.3)'; x.fillRect(120, 230, 40, 6); x.fillRect(330, 250, 30, 4);
   x.fillStyle = '#ece6d0'; for (let k = 70; k < 410; k += 26) x.fillRect(k, 222, 20, 3);
-  // bulb + cone
+  const v = x.createRadialGradient(W / 2, H * 0.55, H * 0.3, W / 2, H / 2, W * 0.65); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(10,6,8,0.6)'); x.fillStyle = v; x.fillRect(0, 0, W, H);
+}
+/** swinging bare bulb + light cone */
+export function drawBulb(x, W, H, sway) {
   const bx = 240 + Math.round(sway * 6);
   x.fillStyle = OL; x.fillRect(239, 0, 2, 54); x.fillRect(bx - 12, 54, 24, 8); x.fillStyle = '#7a7e82'; x.fillRect(bx - 11, 55, 22, 6);
   x.fillStyle = '#fff2c0'; x.fillRect(bx - 4, 62, 8, 7);

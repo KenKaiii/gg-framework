@@ -61,6 +61,16 @@ export function serverRack(seed = 1) {
   const r = rng(seed); const units = [];
   let y = 0.12; while (y < H - 0.2) { const uh = r() < 0.3 ? 0.18 : 0.09; units.push([y + uh / 2, uh]); y += uh + 0.025; }
   for (const [uy, uh] of units) { put(g, rbox(W - 0.14, uh, 0.04, mat(r() < 0.5 ? '#23262e' : '#1b1d24', { metalness: 0.5, roughness: 0.5 }), 0.01), 0, uy, D / 2 + 0.01); }
+  // detail: rounded side panels, top vent slots, rack ears with screws, handles, a cable comb + patch cables down the side
+  const side = mat('#1d2026', { metalness: 0.45, roughness: 0.55 }), ear = metal();
+  for (const sx of [-1, 1]) put(g, rbox(0.02, H, D - 0.02, side, 0.008), sx * (W / 2 + 0.005), H / 2, 0);
+  for (let k = 0; k < 6; k++) put(g, rbox(W - 0.16, 0.006, 0.03, mat('#0c0d10'), 0.002), 0, H + 0.002, -0.25 + k * 0.1);
+  for (const [uy, uh] of units) for (const sx of [-1, 1]) { put(g, rbox(0.012, uh * 0.6, 0.02, ear, 0.004), sx * (W / 2 - 0.09), uy, D / 2 + 0.04);
+    if (uh > 0.1) put(g, rbox(0.1, 0.012, 0.012, ear, 0.004), sx * 0.12, uy - uh * 0.3, D / 2 + 0.04); }
+  const cols = ['#2a6ad8', '#e8c43a', '#3ddc84', '#d8443a'];
+  for (let k = 0; k < 4; k++) { const x = W / 2 - 0.1 - k * 0.012, top = H - 0.3 - r() * 0.6;
+    put(g, mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(x - 0.12, top, D / 2 + 0.05), new THREE.Vector3(x, top - 0.1, D / 2 + 0.07), new THREE.Vector3(x + 0.01, 0.3, D / 2 + 0.06), new THREE.Vector3(x, 0.02, D / 2 - 0.1)]), 16, 0.006, 4), mat(cols[k], { roughness: 0.5 })), 0, 0, 0); }
+  put(g, rbox(0.012, H - 0.3, 0.008, mat('#103020', { emissive: '#3ddc84', emissiveIntensity: 0.6 }), 0.003), -W / 2 + 0.08, H / 2, D / 2 + 0.03); // status strip
   const n = units.length * 6; const leds = new THREE.InstancedMesh(new THREE.BoxGeometry(0.022, 0.016, 0.01), new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }), n);
   const m4 = new THREE.Matrix4(); let i = 0;
   for (const [uy] of units) for (let k = 0; k < 6; k++) { m4.makeTranslation(-0.2 + k * 0.035 + (k > 2 ? 0.16 : 0), uy, D / 2 + 0.04); leds.setMatrixAt(i++, m4); }
@@ -104,6 +114,14 @@ export function monitorWall() {
   const cs = screenPlane(0.42, 0.34, 0); cs.position.set(0, 0.02, 0.205); crt.add(cs); screens.push(cs);
   crt.position.set(0.8, 1.02, 0); crt.rotation.y = -0.25; g.add(crt);
   put(g, rbox(0.5, 0.025, 0.16, black(), 0.008), -0.2, 0.785, 0.15); // keyboard
+  const key = mat('#2a2c34', { roughness: 0.6 }); for (let r = 0; r < 4; r++) for (let c = 0; c < 12; c++) put(g, rbox(0.03, 0.012, 0.028, key, 0.004), -0.42 + c * 0.04, 0.802, 0.1 + r * 0.034);
+  put(g, rbox(0.26, 0.004, 0.22, mat('#1a2a3a', { roughness: 1 }), 0.002), 0.28, 0.772, 0.15); // mouse pad + mouse
+  const ms = put(g, mesh(new THREE.SphereGeometry(0.035, 10, 6), black()), 0.28, 0.78, 0.15); ms.scale.set(0.8, 0.45, 1.2);
+  for (const x of [-0.95, 0.5]) { put(g, rbox(0.12, 0.2, 0.12, black(), 0.02), x, 0.87, -0.2); put(g, mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.01, 12).rotateX(Math.PI / 2), mat('#3a3d44', { metalness: 0.5 })), x, 0.88, -0.138); } // speakers
+  put(g, rbox(0.5, 0.6, 0.6, wood, 0.015), 0.7, 0.4, 0); for (const y of [0.2, 0.42, 0.62]) { put(g, rbox(0.46, 0.005, 0.005, mat('#1a120e'), 0.001), 0.7, y + 0.08, 0.301); put(g, rbox(0.1, 0.02, 0.02, metal(), 0.005), 0.7, y, 0.31); } // drawer pedestal
+  put(g, rbox(0.22, 0.48, 0.48, black(), 0.02), -0.7, 0.24, -0.02); put(g, rbox(0.012, 0.012, 0.005, glowMat('#3ddc84', 2), 0.003), -0.62, 0.42, 0.22); // tower PC
+  put(g, mesh(new THREE.CylinderGeometry(0.04, 0.037, 0.1, 12), mat('#d8d2c4', { roughness: 0.4 })), -0.75, 0.82, 0.2); // mug
+  put(g, mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([[-0.2, 0.9, -0.33], [-0.25, 0.77, -0.33], [-0.4, 0.5, -0.32], [-0.6, 0.3, -0.25]].map(v => new THREE.Vector3(...v))), 12, 0.025, 6), black()), 0, 0, 0); // cable bundle
   return { g, screens };
 }
 
@@ -154,6 +172,11 @@ export function couch() {
   put(g, rbox(2.1, 0.62, 0.22, f, 0.1), 0, 0.7, -0.35); for (const x of [-0.98, 0.98]) put(g, rbox(0.2, 0.58, 0.9, f, 0.09), x, 0.45, 0);
   put(g, rbox(0.38, 0.32, 0.12, mat('#2a4a3a', { roughness: 0.95 }), 0.06), -0.7, 0.66, -0.18); // pillow
   put(g, rbox(0.3, 0.06, 0.2, mat('#7a6a5a'), 0.02), 0.3, 0.83, -0.3); // duct-tape patch
+  for (const x of [-0.48, 0.48]) put(g, rbox(0.9, 0.42, 0.14, c, 0.07), x, 0.72, -0.22); // back cushions
+  for (const x of [-0.98, 0.98]) { const roll = mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.9, 14), f); roll.rotation.x = Math.PI / 2; put(g, roll, x, 0.74, 0); }
+  const btn = mat('#2a201a'); for (const x of [-0.75, -0.25, 0.25, 0.75]) put(g, mesh(new THREE.SphereGeometry(0.016, 6, 4), btn), x, 0.78, -0.145);
+  for (const x of [-0.95, 0.95]) for (const z of [-0.35, 0.35]) put(g, mesh(new THREE.CylinderGeometry(0.03, 0.022, 0.1, 8), mat('#2a1a10')), x, 0.05, z);
+  const bl = put(g, rbox(0.5, 0.04, 0.7, mat('#7a3a2a', { roughness: 1 }), 0.02), 0.72, 0.54, 0.05); bl.rotation.z = 0.1; // throw blanket
   return g;
 }
 

@@ -1,18 +1,19 @@
 // @ts-check
 // Procedural pixel-art PARODY trailers for the Screening Room big screen (320x136, 2.35:1). Each: { name, dur, draw }.
 import { text } from './util.js';
+import { title } from './art.js';
 
 /** @typedef {{ name: string, dur: number, draw: (x: CanvasRenderingContext2D, W: number, H: number, t: number) => void }} Film */
 const fade = (x, W, H, t, dur) => { const a = Math.max(0, 1 - t / 0.5, 1 - (dur - t) / 0.5); if (a > 0) { x.fillStyle = `rgba(0,0,0,${Math.min(1, a)})`; x.fillRect(0, 0, W, H); } };
 const stars = (x, W, H, n, seed, drift = 0) => { let s = seed; for (let i = 0; i < n; i++) { s = (s * 1664525 + 1013904223) >>> 0; const px = s % W; s = (s * 1664525 + 1013904223) >>> 0; x.fillStyle = i % 7 ? '#8a90b0' : '#fff'; x.fillRect((px + drift * (1 + i % 3)) % W, s % H, 1, 1); } };
-const card = (x, W, H, a, b, col = '#e0a458') => { x.fillStyle = '#050508'; x.fillRect(0, 0, W, H); text(x, a, W / 2, H / 2 - 4, { size: 32, title: true, color: col, align: 'center', shadow: '#000' }); if (b) text(x, b, W / 2, H / 2 + 22, { color: '#d8ccb8', align: 'center' }); };
+const card = (x, W, H, a, b, col = '#e0a458') => { const g = x.createRadialGradient(W / 2, H / 2, 4, W / 2, H / 2, W * 0.6); g.addColorStop(0, '#1a1418'); g.addColorStop(1, '#030305'); x.fillStyle = g; x.fillRect(0, 0, W, H); title(x, a, W / 2, H / 2 - 4, { size: 32, color: col, glow: col, glowR: 10 }); if (b) title(x, b, W / 2, H / 2 + 22, { size: 16, body: true, color: '#d8ccb8' }); };
 
 /** @type {Film[]} */
 export const FILMS = [
   { name: 'Now showing', dur: 6, draw(x, W, H, t) {
     x.fillStyle = '#12060a'; x.fillRect(0, 0, W, H);
     for (let i = 0; i < 40; i++) { const on = (i + Math.floor(t * 8)) % 3 === 0; const px = i < 20 ? 14 + i * 14.6 : 14 + (i - 20) * 14.6, py = i < 20 ? 10 : H - 10; x.fillStyle = on ? '#ffd98a' : '#5a3a20'; x.fillRect(px, py - 2, 4, 4); }
-    text(x, 'NOW SHOWING', W / 2, 50, { size: 32, title: true, color: '#ffcf8a', align: 'center', shadow: '#5a1a10' });
+    title(x, 'NOW SHOWING', W / 2, 50, { size: 32, color: '#ffcf8a', glow: '#ff8a4a', glowR: 10 });
     ['JAWZ', 'DEPLOY ON FRIDAY', 'REPO WARS'].forEach((s, i) => text(x, (Math.floor(t * 2) % 3 === i ? '> ' : '  ') + s, W / 2, 78 + i * 16, { color: i === Math.floor(t * 2) % 3 ? '#6ee7a0' : '#d8ccb8', align: 'center' }));
     fade(x, W, H, t, this.dur);
   } },
@@ -26,8 +27,8 @@ export const FILMS = [
     const beat = Math.max(0.12, 0.7 - t * 0.07), on = (t % beat) < beat / 2, fx = W + 20 - t * 30;
     x.fillStyle = '#7a8690'; x.beginPath(); x.moveTo(fx, 72); x.lineTo(fx + 10, 50 + (on ? 1 : 0)); x.lineTo(fx + 18, 72); x.fill();
     x.fillStyle = '#cfe6ff'; x.fillRect(fx - 4, 72, 26, 1);
-    text(x, on ? 'duh-DUM' : 'duh...', W / 2, 30, { color: on ? '#ff6a5a' : '#8aa', align: 'center' });
-    if (t > 5) { x.fillStyle = 'rgba(0,0,0,0.55)'; x.fillRect(0, H - 34, W, 34); text(x, "You're gonna need a bigger repo.", W / 2, H - 14, { color: '#ffffff', align: 'center', shadow: '#000' }); }
+    title(x, on ? 'duh-DUM' : 'duh...', W / 2, 32, on ? { size: 32, color: '#ff6a5a', glow: 'rgba(255,60,40,0.6)', glowR: 10 } : { size: 16, color: '#8aa' });
+    if (t > 5) { const g2 = x.createLinearGradient(0, H - 40, 0, H); g2.addColorStop(0, 'rgba(0,0,0,0)'); g2.addColorStop(1, 'rgba(0,0,0,0.7)'); x.fillStyle = g2; x.fillRect(0, H - 40, W, 40); title(x, "You're gonna need a bigger repo.", W / 2, H - 12, { size: 16, body: true, color: '#fff6e0' }); }
     fade(x, W, H, t, this.dur);
   } },
   { name: 'Deploy on Friday', dur: 11, draw(x, W, H, t) {
@@ -42,8 +43,8 @@ export const FILMS = [
     if (t > 3.6) text(x, 'DEPLOYED', 136, 78, { color: '#3ddc84' });
     x.strokeStyle = '#8a8a96'; x.beginPath(); x.arc(60, 34, 14, 0, 7); x.stroke(); x.beginPath(); x.moveTo(60, 34); x.lineTo(60, 23); x.moveTo(60, 34); x.lineTo(68, 36); x.stroke();
     text(x, 'FRI 4:59 PM', 60, 64, { color: '#ffb36b', align: 'center' });
-    if (t > 4.6) { const ring = Math.floor(t * 8) % 2; x.fillStyle = ring ? '#ff4040' : '#601010'; x.fillRect(236, 82, 14, 10); text(x, 'PAGER: 37 ALERTS', 243, 116, { color: '#ff6a5a', align: 'center' }); }
-    if (t > 6.4) { x.fillStyle = '#000'; x.fillRect(280, 30, 22, 66); x.beginPath(); x.arc(291, 28, 10, 0, 7); x.fill(); text(x, 'The call is coming from... prod.', W / 2, 18, { color: '#fff', align: 'center', shadow: '#000' }); }
+    if (t > 4.6) { const ring = Math.floor(t * 8) % 2; x.fillStyle = ring ? '#ff4040' : '#601010'; x.fillRect(236, 82, 14, 10); title(x, 'PAGER: 37 ALERTS', 243, 116, { size: 16, body: true, color: '#ff6a5a' }); }
+    if (t > 6.4) { x.fillStyle = '#000'; x.fillRect(280, 30, 22, 66); x.beginPath(); x.arc(291, 28, 10, 0, 7); x.fill(); title(x, 'The call is coming from... prod.', W / 2, 18, { size: 16, body: true, color: '#fff6e0' }); }
     fade(x, W, H, t, this.dur);
   } },
   { name: 'Repo Wars', dur: 15, draw(x, W, H, t) {

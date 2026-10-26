@@ -11,8 +11,12 @@ const metal = () => mat('#2e3038', { metalness: 0.6, roughness: 0.45 });
 export function hackTable(len = 3.6) {
   const g = new THREE.Group(); const top = mat('#7a5236'), leg = metal();
   put(g, rbox(len, 0.05, 0.95, top, 0.02), 0, 0.74, 0);
+  for (let i = 1; i < 6; i++) put(g, rbox(len - 0.02, 0.002, 0.006, mat('#4a3020'), 0.001), 0, 0.766, -0.475 + i * 0.158); // plank seams
   put(g, rbox(len - 0.1, 0.06, 0.04, leg, 0.01), 0, 0.68, 0);
   for (const x of [-len / 2 + 0.12, -0.05, 0.05, len / 2 - 0.12]) for (const z of [-0.38, 0.38]) put(g, rbox(0.04, 0.7, 0.04, leg, 0.01), x, 0.35, z);
+  for (const x of [-len / 2 + 0.12, len / 2 - 0.12]) put(g, rbox(0.04, 0.04, 0.8, leg, 0.01), x, 0.1, 0); // foot rails
+  put(g, rbox(len * 0.6, 0.06, 0.16, mat('#2a2d34', { metalness: 0.5, roughness: 0.5 }), 0.01), 0, 0.6, 0); // under-desk cable tray
+  for (const [x, z, c] of [[-1.2, 0.25, '#d8d2c4'], [1.1, -0.28, '#a8342a']]) { put(g, mesh(new THREE.CylinderGeometry(0.04, 0.037, 0.1, 12), mat(c, { roughness: 0.4 })), x, 0.815, z); put(g, mesh(new THREE.TorusGeometry(0.025, 0.007, 5, 10), mat(c)), x + 0.045, 0.815, z); }
   // power strip + cable run down the middle
   put(g, rbox(0.5, 0.04, 0.08, mat('#15161c'), 0.01), 0.2, 0.785, 0);
   const led = mesh(new THREE.BoxGeometry(0.02, 0.01, 0.02), glowMat('#ff5a3a', 2)); led.position.set(-0.03, 0.81, 0); g.add(led);

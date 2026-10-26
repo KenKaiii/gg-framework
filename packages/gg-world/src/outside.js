@@ -81,6 +81,32 @@ varying vec3 vWP; uniform vec3 uTint; uniform vec3 uSky; uniform vec4 uB; unifor
   const hood = buildHood({ root, B, GY, P, patch, r, colored, quad, geo, radialTex });
   const { glowM, pools, bulbs } = hood;
 
+  // from the roof: the whole neighbourhood sits DROP lower, and the house below the roof is one solid block (flat tar
+  // roof, painted siding, windows that light up at night) so the roof is the top of a real building, not a floating deck
+  const DROP = 6.4, house = new THREE.Group(); house.name = 'outside-roofhouse'; house.visible = false; scene.add(house);
+  const hcv = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(/** @type {CanvasRenderingContext2D} */ (c.getContext('2d')), w, h); const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; return t; };
+  const sidingT = hcv(256, 256, (g, w, h) => { g.fillStyle = '#c9c1b2'; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 10) { g.fillStyle = 'rgba(70,60,50,0.22)'; g.fillRect(0, y, w, 2); }
+    for (const fy of [0.12, 0.6]) { g.fillStyle = '#efe9dc'; g.fillRect(w * 0.3 - 6, h * fy - 6, w * 0.4 + 12, h * 0.28 + 12); g.fillStyle = '#2c3442'; g.fillRect(w * 0.3, h * fy, w * 0.4, h * 0.28); g.fillStyle = '#efe9dc'; g.fillRect(w * 0.5 - 2, h * fy, 4, h * 0.28); g.fillRect(w * 0.3, h * (fy + 0.14) - 2, w * 0.4, 4);
+      g.fillStyle = '#5a6a5a'; g.fillRect(w * 0.3 - 22, h * fy - 4, 14, h * 0.28 + 8); g.fillRect(w * 0.7 + 8, h * fy - 4, 14, h * 0.28 + 8); } });
+  const litT = hcv(256, 256, (g, w, h) => { for (const fy of [0.12, 0.6]) { const r2 = r(); if (r2 < 0.25) continue; g.fillStyle = r2 < 0.6 ? '#ffcf8a' : '#ffe2b0'; g.fillRect(w * 0.3, h * fy, w * 0.4, h * 0.28); } });
+  const tarT = hcv(256, 256, (g, w, h) => { g.fillStyle = '#8e8a84'; g.fillRect(0, 0, w, h); for (let i = 0; i < 6000; i++) { const v = 100 + r() * 60 | 0; g.fillStyle = `rgba(${v},${v - 3},${v - 6},0.55)`; g.fillRect(r() * w, r() * h, 2, 2); }
+    g.fillStyle = 'rgba(60,56,52,0.45)'; for (let k = 0; k < w; k += 64) { g.fillRect(k, 0, 3, h); g.fillRect(0, k + 20, w, 2); } }); // membrane seams + gravel
+  const HW = B.x1 - B.x0, HD = B.z1 - B.z0, HH = DROP + 0.62 - 0.45, hy = -0.45 - HH / 2;
+  const side = (rep) => { const t = sidingT.clone(); t.repeat.set(rep, 1); t.needsUpdate = true; return patch(new THREE.MeshBasicMaterial({ map: t })); };
+  const sideLit = (rep) => { const t = litT.clone(); t.repeat.set(rep, 1); t.needsUpdate = true; return new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, opacity: 0 }); };
+  const topT = tarT.clone(); topT.repeat.set(HW / 6, HD / 6); topT.needsUpdate = true;
+  const rx = Math.round(HD / 3.4), rz = Math.round(HW / 3.4), hb = new THREE.BoxGeometry(HW, HH, HD);
+  const tarM = patch(new THREE.MeshBasicMaterial({ map: topT }));
+  const block = new THREE.Mesh(hb, [side(rx), side(rx), tarM, tarM, side(rz), side(rz)]); block.position.set(cx, hy, cz); house.add(block);
+  const litMs = [sideLit(rx), sideLit(rx), null, null, sideLit(rz), sideLit(rz)], blank = new THREE.MeshBasicMaterial({ visible: false });
+  const lit = new THREE.Mesh(hb, litMs.map(m => m || blank)); lit.position.copy(block.position); lit.scale.setScalar(1.002); lit.renderOrder = 2; house.add(lit);
+  const cornM = patch(new THREE.MeshBasicMaterial({ color: '#e8e2d6' })); // white cornice + a low lip round the flat roof
+  for (const [w, d, x, z] of [[HW + 0.5, 0.5, cx, B.z0], [HW + 0.5, 0.5, cx, B.z1], [0.5, HD + 0.5, B.x0, cz], [0.5, HD + 0.5, B.x1, cz]]) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.3, d), cornM); m.position.set(x, -0.3, z); house.add(m); }
+  { const sk = patch(new THREE.MeshBasicMaterial({ color: '#8a9aa8' })), ac = patch(new THREE.MeshBasicMaterial({ color: '#b4b0a8' })); // skylights + AC boxes on the lower roof
+    for (let i = 0; i < 14; i++) { const x = cx - HW / 2 + 4 + r() * (HW - 8), z = cz - HD / 2 + 4 + r() * (HD - 8); if (x < 13 && z < 10) continue; const a = r() < 0.5;
+      const m = new THREE.Mesh(a ? new THREE.BoxGeometry(1.4, 0.35, 1.0) : new THREE.BoxGeometry(1.1, 0.7, 1.1), a ? sk : ac); m.position.set(x, -0.45 + (a ? 0.17 : 0.35), z); house.add(m); } }
+  for (const o of house.children) { o.castShadow = false; o.receiveShadow = false; }
+
   // rain: streaks + splashes, round the camera target, never inside the house
   const NR = 1100, rp = new Float32Array(NR * 6), rs = new Float32Array(NR * 6); for (let i = 0; i < NR; i++) { const a = r(), b = r(), c3 = r(); for (let v = 0; v < 2; v++) { rs.set([a, b, c3], i * 6 + v * 3); rp.set([0, v, 0], i * 6 + v * 3); } }
   const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.BufferAttribute(rp, 3)); rg.setAttribute('seed', new THREE.BufferAttribute(rs, 3));
@@ -115,11 +141,12 @@ varying vec3 vWP; uniform vec3 uTint; uniform vec3 uSky; uniform vec4 uB; unifor
     /** tests / dev: force a time ('dusk' or an hour) and/or weather; null = live UTC */
     set(o) { if ('time' in o) force.time = o.time == null ? null : String(o.time); if ('weather' in o) force.weather = o.weather; st.nextLook = 0; if (o.instant) { st.wx = { ...WX[force.weather || weatherAt()] }; } },
     update(dt, t) {
-      root.visible = S.floor === 'main';
+      const onRoof = S.floor === 'roof'; root.visible = S.floor === 'main' || onRoof; root.position.y = onRoof ? -DROP : 0; house.visible = onRoof;
       U.uTime.value = t; RU.uT.value = t; RU.uO.value.set(S.target.x, 0, S.target.z);
       if ((st.nextLook -= dt) <= 0) { st.nextLook = 2;
         const now = new Date(); const fh = forcedHour(); st.hour = fh ?? (now.getUTCHours() + now.getUTCMinutes() / 60 + now.getUTCSeconds() / 3600);
-        st.weather = force.weather && WX[force.weather] ? force.weather : weatherAt(now); st.wxTarget = WX[st.weather]; }
+        st.weather = force.weather && WX[force.weather] ? force.weather : weatherAt(now); st.wxTarget = WX[st.weather];
+        if (S.floor === 'basement') { const Lk = lookAt(st.hour); scene.traverse(o => { if (o.name === 'basement-window') /** @type {any} */ (o).material.color.copy(Lk.sky).lerp(Lk.tint, 0.5).multiplyScalar(Lk.lamp > 0.5 ? 0.5 : 1.25); }); } } // window wells follow the sky
       // weather eases (rain starts / stops over ~20 s)
       const k = Math.min(1, dt / 8); for (const key in st.wx) st.wx[key] += (st.wxTarget[key] - st.wx[key]) * k;
       const L = lookAt(st.hour); st.phase = L.phase; const w = st.wx;
@@ -128,7 +155,7 @@ varying vec3 vWP; uniform vec3 uTint; uniform vec3 uSky; uniform vec4 uB; unifor
       const dark = Math.max(L.lamp, w.rain * 0.5 * (1 - L.lamp) + L.lamp); glowM.opacity = Math.max(L.win, w.grey * 0.3) * 0.95; pools.material.opacity = dark * 0.85; bulbs.material.color.set('#ffe2a8').multiplyScalar(0.25 + dark * 0.9);
       RU.uA.value = w.rain; rain.visible = splash.visible = w.rain > 0.02;
       // skip draw calls for effects that are fully faded out (day: no lamp pools, no lit windows, no headlights)
-      glowM.visible = glowM.opacity > 0.01; pools.material.visible = pools.material.opacity > 0.01;
+      glowM.visible = glowM.opacity > 0.01; for (const m of litMs) if (m) { m.opacity = glowM.opacity * 0.9; m.visible = m.opacity > 0.01; } pools.material.visible = pools.material.opacity > 0.01;
       // background: sky on the ground floor and the roof, the old dark in the basement
       if (S.floor !== 'basement') { if (!(scene.background instanceof THREE.Color)) scene.background = new THREE.Color(); /** @type {THREE.Color} */ (scene.background).copy(sky); }
       else /** @type {THREE.Color} */ (scene.background).set('#0b0a12');

@@ -2,7 +2,7 @@
 // "Wake up, Neo" terminal close-up: the scripted sequence, a knock in the world, then a tiny joke shell.
 import { SFX } from '../sfx.js';
 import { loop, text } from './util.js';
-import { crt, typer, wrap } from './films-a-crt.js';
+import { crt, typer, wrap, blinkOn, titleCard, rainTile } from './films-a-crt.js';
 
 const SCRIPT = ['Wake up, Neo...', 'The Matrix has you...', 'Follow the white rabbit.', 'Knock, knock, Neo.'];
 const CPS = 20, HOLD = 0.5;
@@ -39,7 +39,7 @@ export function startTerminal(ctx) {
     if (st.log.length > 40) st.log.splice(0, st.log.length - 40);
   }, 34);
   // script timeline
-  const starts = []; let acc = 0.6; for (const s of SCRIPT) { starts.push(acc); acc += s.length / CPS + HOLD + 0.5; }
+  const starts = []; let acc = 3.0; for (const s of SCRIPT) { starts.push(acc); acc += s.length / CPS + HOLD + 0.5; }
   const knockAt = acc;
   loop(ov, dt => {
     st.t += dt; const t = st.t;
@@ -53,18 +53,20 @@ export function startTerminal(ctx) {
     const ox = st.shake > 0 ? Math.round(Math.sin(t * 90) * 3 * st.shake * 2) : 0;
     x.save(); x.translate(ox, 0);
     crt(x, W, H, (sx, sy, sw, shh) => {
+      const rain = rainTile(sw, shh), ry = (t * 9) % shh; x.save(); x.globalAlpha = st.phase === 'script' ? 0.16 : 0.1; x.drawImage(rain, sx, sy + ry - shh); x.drawImage(rain, sx, sy + ry); x.restore();
       if (st.phase === 'script') {
         let i = starts.length - 1; while (i > 0 && t < starts[i]) i--;
         const n = Math.max(0, Math.min(SCRIPT[i].length, Math.floor((t - starts[i]) * CPS)));
-        const s = SCRIPT[i].slice(0, n), cur = (t * 2.2) % 1 < 0.55 ? '█' : '';
+        const s = SCRIPT[i].slice(0, n), cur = blinkOn(t) ? '█' : '';
         text(x, s + cur, sx + 16, sy + 44, { size: 32, color: G });
       } else {
         const lines = []; for (const l of st.log) for (const w of wrap(x, l.s, sw - 28)) lines.push({ s: w, c: l.c });
-        lines.push({ s: '> ' + sh.buf + ((t * 2.2) % 1 < 0.55 ? '_' : ''), c: G });
+        lines.push({ s: '> ' + sh.buf + (blinkOn(t) ? '_' : ''), c: G });
         const max = Math.floor((shh - 20) / 16), vis = lines.slice(-max);
         vis.forEach((l, k) => text(x, l.s, sx + 14, sy + 24 + k * 16, { color: l.c }));
       }
-    }, { flash: st.flash });
+    }, { flash: st.flash, beige: '#2c3430', key: 'neo' });
     x.restore();
+    titleCard(x, W, H, t, { name: 'Wake up, Neo', sub: 'watch the screen, then type commands', keys: [['type', 'command'], ['enter', 'run'], ['esc', 'leave']], color: '#6ee7a0' });
   });
 }

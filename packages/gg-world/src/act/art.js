@@ -168,3 +168,6 @@ export function particles() {
 }
 /** screen shake that settles */
 export function shaker() { let m = 0, t = 0; return { kick(n = 5) { m = Math.max(m, n); }, apply(x, dt) { t += dt; m = Math.max(0, m - dt * 30); if (m > 0) x.translate(Math.round(Math.sin(t * 70) * m), Math.round(Math.cos(t * 53) * m * 0.6)); } }; }
+
+/** a keyboard key chip (metal keycap with a label); returns its width. Use for how-to-play lines. */
+export function keyChip(x, s, X, Y) { const w = Math.max(18, s.length * 6 + 10); panel(x, X, Y - 12, w, 16, { style: 'metal', r: 2 }); title(x, s, X + w / 2, Y, { size: 16, body: true }); return w; }

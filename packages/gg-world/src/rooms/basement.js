@@ -29,6 +29,20 @@ export function build(ctx) {
     R.onWall(side, rbox(len, 0.05, 0.22, mat('#3a3d44', { metalness: 0.6, roughness: 0.5 }), 0.01), 0, 2.55, 0.16);
     for (let i = 0; i < 3; i++) { const c = mesh(new THREE.CylinderGeometry(0.02, 0.02, len, 6), mat(['#1a1a1a', '#2a4a6a', '#2d6a3a'][i])); c.rotation.z = Math.PI / 2; R.onWall(side, c, 0, 2.6, 0.1 + i * 0.05); }
   }
+  // --- small high windows at lawn level (window wells): grass blades against the sky; outside.js tints them to the time of day
+  const wellT = TX.canvasTex('bs-well', 256, 96, (x, w, h) => { const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#ffffff'); g.addColorStop(0.6, '#c8d0d8'); x.fillStyle = g; x.fillRect(0, 0, w, h);
+    const r = TX.rand(7); x.fillStyle = '#4a6a3a'; x.fillRect(0, h * 0.72, w, h); for (let i = 0; i < 220; i++) { const bx = r() * w, bh = 10 + r() * 30; x.strokeStyle = r() < 0.5 ? '#3a5a2e' : '#5a7a44'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(bx, h); x.quadraticCurveTo(bx + (r() - 0.5) * 6, h - bh * 0.6, bx + (r() - 0.5) * 12, h - bh - h * 0.2); x.stroke(); }
+    x.fillStyle = '#6a6460'; x.fillRect(0, h * 0.9, w, h); });
+  const frameM = mat('#3a3a40', { roughness: 0.9 }), sillM = mat('#7a7670', { roughness: 1 }), glassM = new THREE.MeshBasicMaterial({ map: wellT, color: '#3a4258', toneMapped: false });
+  for (const wx of [-1.0, 3.2, 6.5]) { const wg = new THREE.Group();
+    put(wg, rbox(0.98, 0.42, 0.1, frameM, 0.02), 0, 0, 0.0); const gl = put(wg, mesh(new THREE.PlaneGeometry(0.86, 0.3), glassM), 0, 0, 0.052); gl.name = 'basement-window'; gl.castShadow = false;
+    put(wg, rbox(0.03, 0.3, 0.03, frameM, 0.005), 0, 0, 0.06); put(wg, rbox(1.06, 0.05, 0.2, sillM, 0.01), 0, -0.235, 0.06);
+    R.onWall('n', wg, wx, 2.2, 0.03); }
+  const winGlow = FX.glow('#9fb4d8', 1.4, 0.12); winGlow.position.set(3.2, 2.0, -D2 + 0.4); L.add(winGlow);
+  // --- floor cable runs: racks to the hack table, bundled and taped down
+  const cab = (pts, c, rr = 0.018) => S.add(mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p))), 40, rr, 6), mat(c, { roughness: 0.6 })));
+  for (const [i, c] of [[0, '#1a1a1a'], [1, '#2a4a6a'], [2, '#c86a1e']]) cab([[-6.1 + i * 0.1, 0.02, -D2 + 1.0], [-5.6, 0.02, -4.0 + i * 0.05], [-4.6, 0.02, -2.0 + i * 0.08], [-3.4, 0.02, -0.1 + i * 0.06], [-2.6 + i * 0.05, 0.02, 0.45]], c);
+  for (const [x, z] of [[-5.3, -3.4], [-4.1, -1.2]]) put(S, rbox(0.12, 0.012, 0.26, mat('#8a8070', { roughness: 1 }), 0.002), x, 0.03, z, 0.6); // gaffer tape
   // --- rugs: lounge + beanbag corner
   for (const [x, z, w, d, k, a, b, c, sd] of [[3.4, 2.9, 4.2, 3.2, 'persian', '#3a2430', '#5a3a3a', '#8a6a4a', 9], [-3.0, 4.3, 2.6, 1.8, 'persian', '#1e2a44', '#2a4a6a', '#9a7a2e', 4]]) {
     const rug = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat('#ffffff', { map: TX.rug(k, a, b, c, sd), polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 })); rug.rotation.x = -Math.PI / 2; rug.position.set(x, 0.014, z); rug.userData.noGround = true; rug.receiveShadow = true; S.add(rug); }
@@ -47,8 +61,10 @@ export function build(ctx) {
   const rig = P.miningRig(); put(S, rig.g, -1.0, 0.3, -D2 + 0.45); R.block(-1.55, -D2, -0.45, -D2 + 0.8);
   // --- fridge corner + poster
   const fr = P.fridge(); put(S, fr.g, 6.9, 0, -D2 + 0.45); R.blockObj(fr.g);
-  R.onWall('n', new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.85), mat('#ffffff', { map: TX.poster('movie', 'THERE IS NO SPOON') })), 5.4, 1.75);
-  R.onWall('n', new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.78), mat('#ffffff', { map: TX.poster('retro', 'SUDO MAKE ME A SANDWICH') })), 4.3, 1.6);
+  R.onWall('n', new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.85), mat('#ffffff', { map: TX.poster('movie', 'THERE IS NO SPOON') })), 5.4, 1.75, 0.032);
+  R.onWall('n', new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.78), mat('#ffffff', { map: TX.poster('retro', 'SUDO MAKE ME A SANDWICH') })), 4.3, 1.6, 0.032);
+  for (const [x, w, h, y] of [[5.4, 0.6, 0.85, 1.75], [4.3, 0.55, 0.78, 1.6]]) { R.onWall('n', rbox(w + 0.06, h + 0.06, 0.02, mat('#141218', { roughness: 0.5 }), 0.005), x, y, 0.01); // black poster frames + tape
+    put(R.walls.n.decor, rbox(0.08, 0.03, 0.004, mat('#d8d0b0', { roughness: 1 }), 0.001), x - w / 2 + 0.02, y + h / 2, 0.03).rotation.z = 0.6; }
   for (const [x, z, h] of [[6.1, -D2 + 0.4, 0.5], [6.1, -D2 + 0.4, 0.9]]) { const b = rbox(0.55, 0.4, 0.45, mat(h > 0.6 ? '#9a7a2e' : '#4e3d34'), 0.02); put(S, b, x, h - 0.3, z, h * 0.2); R.blockObj(b); }
 
   // --- workbench (west wall) + stool + whiteboard

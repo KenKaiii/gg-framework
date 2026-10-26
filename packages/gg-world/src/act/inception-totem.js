@@ -16,7 +16,19 @@ export function startTotem(ctx) {
   const { R, S } = ctx, I = R.inception, ts = I.topSpin; let wob = false;
   const ov = ctx.overlay({ title: 'The Totem', sub: 'is this a dream?', help: '<kbd>space</kbd> spin / leave the room <kbd>click</kbd> same <kbd>esc</kbd> stop' });
   const W = 480, H = 270, { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false; seeThrough(ov, c, 0.08);
-  setView(S, { target: worldOf(R, 9.2, 0.82, 4.2), dir: { x: 0.25, y: 0.42, z: 1 }, zoom: 0.55 }); hideOccluders(S); const meVis = S.me.root.visible; S.me.root.visible = false; // the player would stand between camera and top
+  const camT = worldOf(R, 9.2, 0.82, 4.2), camD = { x: 0.25, y: 0.42, z: 1 }; const camL = Math.hypot(camD.x, camD.y, camD.z);
+  setView(S, { target: camT, dir: camD, zoom: 0.55 });
+  // anyone (seated NPCs, visitors) standing on the camera line would block the close-up: hide them while it's open
+  /** @type {Map<any, boolean>} */ const hidden = new Map(); const _p = camT.clone();
+  let people = [], scanT = 0; // avatar roots (anything with a skinned mesh), rescanned once a second
+  // each avatar is a glTF 'Scene' node holding a rig with a 'head' bone; hide that inner node (the world culler drives the outer root)
+  const scan = () => { const L = []; (S.scene || R.root).traverse(m => { if (m.name !== 'head' || !m.isBone && !m.parent) return; let o = m; while (o.parent && o.name !== 'Scene') o = o.parent; if (o.name !== 'Scene' || L.some(p => p.o === o)) return; let me = false; for (let q = o; q; q = q.parent) if (q === S.me.root) me = true; if (!me) L.push({ o, h: m }); }); people = L; };
+  const hidePeople = (dt = 1) => { if ((scanT -= dt) <= 0) { scanT = 1; scan(); }
+    for (const { o, h } of people) { if (o === S.me.root || o.parent == null) continue;
+    if (h) h.getWorldPosition(_p); else { o.getWorldPosition(_p); _p.y += 0.9; } const vx = _p.x - camT.x, vy = _p.y - camT.y, vz = _p.z - camT.z, along = (vx * camD.x + vy * camD.y + vz * camD.z) / camL;
+    const perp = Math.sqrt(Math.max(0, vx * vx + vy * vy + vz * vz - along * along)), block = along > 0.3 && perp < 1.5;
+    if (block && !hidden.has(o)) { hidden.set(o, true); o.visible = false; } else if (!block && hidden.has(o)) { o.visible = true; hidden.delete(o); } } };
+  hidePeople(); hideOccluders(S); const meVis = S.me.root.visible; S.me.root.visible = false; // the player would stand between camera and top
   let btn = null, hoverBtn = false;
   c.addEventListener('pointermove', e => { const r = c.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W, py = (e.clientY - r.top) / r.height * H; hoverBtn = !!btn && px >= btn.x && px <= btn.x + btn.w && py >= btn.y && py <= btn.y + btn.h; });
   const st = { phase: 'ready', t: 0, pt: 0, pot: 0, streak: 0, banked: 0, fate: 'fall', T: 0, black: 0, msg: 'Press SPACE to spin the top.', msgC: '#e8dcc0', shake: 0 };
@@ -39,7 +51,7 @@ export function startTotem(ctx) {
   // mouse: a click anywhere is the space key
   const md = e => { if (e.button === 0) { e.preventDefault(); kd({ code: 'Space', preventDefault() {} }); } }; c.addEventListener('pointerdown', md); c.style.cursor = 'pointer'; ov.onClose(() => c.removeEventListener('pointerdown', md));
   addEventListener('keydown', kd); hook({ totem: { get phase() { return st.phase; }, get streak() { return st.streak; }, get banked() { return st.banked; } } });
-  ov.onClose(() => { removeEventListener('keydown', kd); hook({ totem: null }); ts.on = true; ts.speed = 30; ts.tilt = 0; ts.wob = 0; clearView(S); S.me.root.visible = meVis; });
+  ov.onClose(() => { removeEventListener('keydown', kd); hook({ totem: null }); ts.on = true; ts.speed = 30; ts.tilt = 0; ts.wob = 0; clearView(S); S.me.root.visible = meVis; for (const [o] of hidden) o.visible = true; hidden.clear(); });
   // HUD drawn with the mini-game art kit (art.js): glass stat chips, a framed message strip, an animated banner on
   // results, particles on a bank, screen shake on a topple, a soft warm light over the table
   const fx = particles(), shake = shaker(); let bannerT = -1, bannerS = '', bannerSub = '', bannerC = PAL.gold, potShown = 0;
@@ -47,7 +59,7 @@ export function startTotem(ctx) {
   const oldBank = bank; const bank2 = mult => { const before = st.banked; oldBank(mult); const got = st.banked - before; fx.burst(W / 2, 128, { n: 26 + Math.min(40, got) }); if (mult > 1) { fx.confetti(W); showBanner('DREAMING', 'it never stopped: double pot', PAL.purple); } else showBanner('BANKED', '+' + got + '   streak ' + st.streak, PAL.green); };
   st.bankFn = bank2;
   loop(ov, dt => {
-    st.t += dt; st.shake = Math.max(0, st.shake - dt * 2);
+    hidePeople(dt); st.t += dt; st.shake = Math.max(0, st.shake - dt * 2);
     if (st.phase === 'spin') {
       st.pt += dt; st.pot += dt * (4 + st.pt * 3) * (1 + st.streak * 0.25);
       const left = st.T - st.pt;

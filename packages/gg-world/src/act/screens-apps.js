@@ -1,5 +1,6 @@
 // @ts-check
 // The three mini-apps shown on close-up screens: trading terminal (studio), deploy news (bar), server dashboard (basement).
+import { PAL, panel, title, glow, button } from './art.js';
 import { text, rng } from './util.js';
 import { market } from './screens-market.js';
 
@@ -26,7 +27,7 @@ export function tradingApp(S, ov) {
       acc += dt; if (acc > 0.5) { acc = 0; for (const r of live) { if (r.real && r.sym !== '$VIBE') continue; const k = r.sym === '$VIBE' ? 0.02 : 0.002; const d = (jit() - 0.5) * k; r.price *= 1 + d; r.chg += d * 100; r.series.push(r.price); r.series.shift(); } }
       flash = Math.max(0, flash - dt * 2); tape += dt * 40;
       x.fillStyle = '#0a0d12'; x.fillRect(0, 0, w, h);
-      x.fillStyle = '#1e2240'; x.fillRect(0, 0, w, 18); text(x, 'VIBETRADE PRO', 6, 13, { color: AM2 }); text(x, m.real ? 'LIVE' : 'SIMULATED', w - 6, 13, { align: 'right', color: m.real ? G : DIM });
+      { const hg = x.createLinearGradient(0, 0, 0, 18); hg.addColorStop(0, '#2e3460'); hg.addColorStop(1, '#161a34'); x.fillStyle = hg; x.fillRect(0, 0, w, 18); x.fillStyle = 'rgba(255,255,255,0.15)'; x.fillRect(0, 0, w, 1); } title(x, 'VIBETRADE PRO', 6, 13, { size: 16, body: true, align: 'left', color: AM2 }); if (m.real) glow(x, w - 20, 9, 16, '#6ee7a0', 0.3 + Math.sin(t * 2) * 0.1); title(x, m.real ? 'LIVE' : 'SIMULATED', w - 6, 13, { size: 16, body: true, align: 'right', color: m.real ? G : DIM });
       text(x, new Date().toISOString().slice(11, 19) + ' UTC', w / 2 + 30, 13, { align: 'center', color: DIM });
       live.forEach((r, i) => {
         const y = 26 + i * 18;
@@ -123,9 +124,12 @@ export function serverApp(S, ov) {
       // logs
       box(4, 116, w - 8, h - 140, 'journalctl -f'); log.forEach((l, i) => text(x, l, 10, 132 + i * 12, { color: l.includes('err') ? RED : l.includes('warn') ? AM2 : l.includes('ack') ? MAG : G }));
       text(x, `load ${(cpu.reduce((a, b) => a + b, 0) / 2).toFixed(2)}  ·  tasks 420  ·  alerts acked ${acked}  ·  up 69d`, 6, h - 6, { color: DIM });
-      if (alert) { const on = (t * 3 | 0) % 2; x.fillStyle = on ? 'rgba(160,20,20,.92)' : 'rgba(110,10,10,.92)'; x.fillRect(w / 2 - 150, h / 2 - 30, 300, 56); x.strokeStyle = RED; x.lineWidth = 2; x.strokeRect(w / 2 - 150, h / 2 - 30, 300, 56);
-        text(x, '!! ALERT !!', w / 2, h / 2 - 12, { align: 'center', color: '#fff', title: true }); text(x, alert, w / 2, h / 2 + 6, { align: 'center', color: '#ffe0d0' }); text(x, 'SPACE / click to acknowledge', w / 2, h / 2 + 20, { align: 'center', color: '#ffb0a0' }); }
-      if (ackFlash) { x.fillStyle = `rgba(110,231,160,${ackFlash * 0.25})`; x.fillRect(0, 0, w, h); text(x, 'ACK  +1 karma', w / 2, h / 2, { align: 'center', color: G, size: 32 }); }
+      if (alert) { const pulse = 0.5 + Math.sin(t * 3) * 0.5; x.fillStyle = `rgba(80,0,0,${0.25 + pulse * 0.15})`; x.fillRect(0, 0, w, h);
+        glow(x, w / 2, h / 2, 190, '#ff3a3a', 0.25 + pulse * 0.15); panel(x, w / 2 - 150, h / 2 - 40, 300, 76, { style: 'metal' });
+        x.fillStyle = '#e8c33a'; for (let i = 0; i < 300 - 8; i += 12) { x.beginPath(); x.moveTo(w / 2 - 146 + i, h / 2 - 36); x.lineTo(w / 2 - 140 + i, h / 2 - 36); x.lineTo(w / 2 - 146 + i + 2, h / 2 - 30); x.lineTo(w / 2 - 152 + i + 2, h / 2 - 30); x.fill(); } // hazard stripe
+        title(x, '!! ALERT !!', w / 2, h / 2 - 8, { size: 16, color: PAL.red, glow: '#ff3a3a' }); title(x, alert, w / 2, h / 2 + 10, { size: 16, body: true, color: PAL.cream });
+        button(x, w / 2 - 70, h / 2 + 16, 140, 16, 'SPACE / CLICK: ACK', { primary: true, hot: pulse > 0.6 }); }
+      if (ackFlash) { x.fillStyle = `rgba(110,231,160,${ackFlash * 0.25})`; x.fillRect(0, 0, w, h); x.save(); x.globalAlpha = Math.min(1, ackFlash * 2); title(x, 'ACK  +1 karma', w / 2, h / 2 + 8, { size: 32, color: PAL.green, glow: PAL.green }); x.restore(); }
       x.restore();
     },
   };

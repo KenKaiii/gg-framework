@@ -6,6 +6,7 @@ import * as den from './den.js';
 import * as bedroom from './bedroom.js';
 import * as roof from './roof.js';
 import * as basement from './basement.js';
+import * as engine from './engine.js';
 import * as kitchen from './kitchen.js';
 import * as studio from './studio.js';
 import * as screening from './screening.js';
@@ -21,5 +22,5 @@ import * as fightclub from './fightclub.js';
 import * as inception from './inception.js';
 import * as tavern from './tavern.js';
 
-export const ROOM_MODULES = { bar, den, bedroom, kitchen, studio, screening, diner, library, garage, overlook, hawkins, biolab, hackers, computer, fightclub, inception, tavern, roof, basement };
-export const ROOM_IDS = /** @type {const} */ (['bar', 'den', 'bedroom', 'kitchen', 'studio', 'screening', 'diner', 'library', 'garage', 'overlook', 'hawkins', 'biolab', 'hackers', 'computer', 'fightclub', 'inception', 'tavern', 'roof', 'basement']);
+export const ROOM_MODULES = { bar, den, bedroom, kitchen, studio, screening, diner, library, garage, overlook, hawkins, biolab, hackers, computer, fightclub, inception, tavern, roof, basement, engine };
+export const ROOM_IDS = /** @type {const} */ (['bar', 'den', 'bedroom', 'kitchen', 'studio', 'screening', 'diner', 'library', 'garage', 'overlook', 'hawkins', 'biolab', 'hackers', 'computer', 'fightclub', 'inception', 'tavern', 'roof', 'basement', 'engine']);

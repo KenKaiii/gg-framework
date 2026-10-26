@@ -3,6 +3,7 @@
 import { loop, text, mouse } from './util.js';
 import { typer } from './films-a-crt.js';
 import { SFX } from '../sfx.js';
+import { PAL, bg, panel, badge, button, banner, title, glow, noise, particles, shaker, shade } from './art.js';
 
 // one Christmas bulb flaring: a warm electric buzz + soft glassy tick
 SFX.define('hawkins.bulb', (o, t, p, K) => { K.tone(o, t, { type: 'sawtooth', f: 120 * p, v: 0.05, a: 0.01, d: 0.25 }); K.bell(o, t, { f: 1400 * p, ratio: 2.7, idx: 0.8, v: 0.06, d: 0.2 }); });
@@ -86,12 +87,12 @@ function lights(ctx) {
     // halo on the lit bulb itself
     if (litNow >= 0) { const p = pos[litNow]; x.save(); x.globalCompositeOperation = 'lighter'; const gh = x.createRadialGradient(p.x, p.wy + 9, 0, p.x, p.wy + 9, 14); gh.addColorStop(0, 'rgba(255,250,230,0.9)'); gh.addColorStop(1, 'rgba(255,250,230,0)'); x.globalAlpha = litK; x.fillStyle = gh; x.fillRect(p.x - 14, p.wy - 5, 28, 28); x.restore(); }
     x.restore();
-    // bottom strip: the spelled message and your typing
-    const sg = x.createLinearGradient(0, 214, 0, H); sg.addColorStop(0, 'rgba(12,6,8,0)'); sg.addColorStop(0.35, 'rgba(12,6,8,0.85)'); sg.addColorStop(1, 'rgba(12,6,8,0.95)'); x.fillStyle = sg; x.fillRect(0, 214, W, H - 214);
+    // bottom strip: a framed wood panel with the spelled message and your typing
+    const sp = panel(x, 8, 218, W - 16, 46, { style: 'wood' });
     const shown = busy ? st.word.slice(0, Math.min(st.word.length, i + 1)) : '';
-    if (shown) text(x, shown, W / 2, 246, { size: 32, title: true, color: '#ff7a5a', align: 'center', shadow: '#3a0c08' });
-    text(x, '> ' + sh.buf + ((t * 2.2) % 1 < 0.55 ? '_' : ''), 14, 262, { color: '#f0c27a' });
-    if (!busy && !sh.buf) text(x, 'leave it alone and it talks back', W - 14, 262, { color: '#8a7466', align: 'right' });
+    if (shown) title(x, shown, W / 2, 244, { size: 32, color: '#ff7a5a', glow: 'rgba(255,90,60,0.7)', glowR: 10 });
+    else title(x, '> ' + sh.buf + ((t * 2.2) % 1 < 0.55 ? '_' : ''), 20, 238, { size: 16, body: true, align: 'left', color: PAL.goldHi });
+    if (!busy && !sh.buf) title(x, 'type a word + ENTER, or click a letter. leave it alone and it talks back', W / 2, sp.y + 40, { size: 16, body: true, color: PAL.dim });
   });
 }
 
@@ -105,23 +106,45 @@ function d20(ctx) {
   addEventListener('keydown', kd); ov.onClose(() => removeEventListener('keydown', kd)); go();
   mouse(ov, c, W, H).set([{ x: 0, y: 0, w: W, h: H, pick: go }]); // click anywhere on the table = roll
   const line = n => n === 20 ? 'NAT 20! The Demogorgon flees.' : n === 1 ? 'Nat 1. It got you. (it always does)' : n >= 15 ? 'Fireball! Solid hit.' : n >= 8 ? 'You hit it. It is annoyed.' : 'Miss. Should have cast protection.';
+  const fx = particles(), shk = shaker(), table = feltTable(W, H); let hot = false, shownN = 0, bannerT = -1;
+  c.addEventListener('pointermove', e => { const q = c.getBoundingClientRect(), px = (e.clientX - q.left) / q.width * W, py = (e.clientY - q.top) / q.height * H; hot = px > W - 80 && py > H - 34; });
   loop(ov, dt => {
     st.t += dt; const t = st.t;
     if (st.roll > 0) { st.roll -= dt; st.shown = 1 + Math.floor(Math.random() * 20); if (st.roll <= 0) { st.shown = st.res; st.n++; st.best = Math.max(st.best, st.res); SFX.play(st.res === 20 ? 'win' : st.res === 1 ? 'fail' : st.res >= 15 ? 'success' : st.res >= 8 ? 'score' : 'ui.deny');
-      const c = st.res === 20 ? '#3ddc84' : st.res === 1 ? '#ff4040' : '#ffb36b'; for (let i = 0; i < (st.res === 20 ? 40 : 14); i++) { const a = Math.random() * 6.3, v = 40 + Math.random() * 90; st.pops.push({ x: 160, y: 80, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, c, l: 1 }); } } }
-    const g = x.createRadialGradient(160, 90, 10, 160, 90, 200); g.addColorStop(0, '#4a3020'); g.addColorStop(1, '#140c08'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+      const col = st.res === 20 ? PAL.green : st.res === 1 ? PAL.red : PAL.gold; fx.burst(160, 80, { n: st.res === 20 ? 50 : 16, colors: [col, PAL.goldHi, PAL.cream], speed: 90 });
+      if (st.res === 20) { fx.confetti(W); bannerT = 0; } if (st.res === 1) { shk.kick(6); bannerT = 0; } } }
+    shownN += (st.n - shownN) * Math.min(1, dt * 10);
+    x.drawImage(table, 0, 0); glow(x, 160, 70, 110, '#ffcf8a', 0.12 + 0.03 * Math.sin(t * 1.4));
+    x.save(); shk.apply(x, dt);
     const rolling = st.roll > 0, rot = rolling ? t * 14 : 0, R = 38 + (rolling ? Math.sin(t * 30) * 3 : 0), cx = 160 + (rolling ? Math.sin(t * 9) * 30 : 0), cy = 80 + (rolling ? -Math.abs(Math.sin(t * 11)) * 18 : 0);
-    x.fillStyle = 'rgba(0,0,0,0.4)'; x.beginPath(); x.ellipse(cx, 124, 34, 6, 0, 0, 7); x.fill();
+    x.fillStyle = 'rgba(0,0,0,0.45)'; x.beginPath(); x.ellipse(cx, 124, 34, 6, 0, 0, 7); x.fill();
+    if (!rolling && st.n && (st.res === 20 || st.res >= 15)) glow(x, cx, cy, 60, st.res === 20 ? PAL.green : PAL.gold, 0.3 + 0.1 * Math.sin(t * 2));
     const hex = []; for (let k = 0; k < 6; k++) hex.push([cx + Math.cos(rot + k * Math.PI / 3 + Math.PI / 6) * R, cy + Math.sin(rot + k * Math.PI / 3 + Math.PI / 6) * R]);
-    x.fillStyle = '#8a1a2a'; x.beginPath(); hex.forEach(([a, b], k) => k ? x.lineTo(a, b) : x.moveTo(a, b)); x.closePath(); x.fill();
-    x.strokeStyle = '#c84a5a'; x.lineWidth = 2; x.beginPath(); for (const k of [0, 2, 4]) { x.moveTo(hex[k][0], hex[k][1]); x.lineTo(hex[(k + 2) % 6][0], hex[(k + 2) % 6][1]); } x.stroke();
-    x.strokeStyle = '#5a0a1a'; x.stroke(); x.beginPath(); hex.forEach(([a, b], k) => k ? x.lineTo(a, b) : x.moveTo(a, b)); x.closePath(); x.stroke();
-    text(x, String(st.shown), cx, cy + 8, { size: 32, title: true, color: '#f5e6c8', align: 'center', shadow: true });
-    for (const p of st.pops) { p.l -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 120 * dt; if (p.l > 0) { x.fillStyle = p.c; x.fillRect(p.x | 0, p.y | 0, 2, 2); } }
-    st.pops = st.pops.filter(p => p.l > 0);
-    if (!rolling && st.n) text(x, line(st.res), 160, 152, { color: st.res === 20 ? '#3ddc84' : st.res === 1 ? '#ff6a50' : '#e0a458', align: 'center' });
-    text(x, 'rolls ' + st.n + '  best ' + st.best, 8, 172, { color: '#6a5a50' });
+    // faceted die: six triangles from the centre, lit from the top-left
+    for (let k = 0; k < 6; k++) { const [a1, b1] = hex[k], [a2, b2] = hex[(k + 1) % 6], lit = 0.5 + 0.5 * Math.cos(rot + k * Math.PI / 3 + Math.PI / 6 + Math.PI * 0.75 + Math.PI / 6);
+      x.fillStyle = shade('#a01c30', lit * 0.5 - 0.25); x.beginPath(); x.moveTo(cx, cy); x.lineTo(a1, b1); x.lineTo(a2, b2); x.closePath(); x.fill(); }
+    x.fillStyle = '#c8304a'; x.beginPath(); for (const k of [0, 2, 4]) x.lineTo(cx + (hex[k][0] - cx) * 0.62, cy + (hex[k][1] - cy) * 0.62); x.closePath(); x.fill();
+    x.strokeStyle = '#ff8a9a'; x.lineWidth = 1; x.stroke(); x.strokeStyle = '#3a0610'; x.lineWidth = 2; x.beginPath(); hex.forEach(([a, b], k) => k ? x.lineTo(a, b) : x.moveTo(a, b)); x.closePath(); x.stroke();
+    title(x, String(st.shown), cx, cy + 8, { size: 32, color: st.n && !rolling && st.res === 20 ? PAL.goldHi : PAL.cream });
+    fx.draw(x, dt); x.restore();
+    // HUD: rolls + best chips, the roll button, the verdict strip
+    badge(x, 8, 8, 'rolls', Math.round(shownN), { style: 'wood', color: PAL.cream, w: 58 }); badge(x, W - 66, 8, 'best', st.best || '-', { style: 'wood', color: PAL.gold, w: 58 });
+    const vp = panel(x, 8, H - 34, W - 96, 26, { style: 'paper' });
+    title(x, !st.n ? 'roll for initiative...' : rolling ? 'rolling...' : line(st.res), vp.x + vp.w / 2, vp.y + 18, { size: 16, body: true, color: !rolling && st.res === 1 ? '#a01c1c' : !rolling && st.res === 20 ? '#1a6a3a' : PAL.paperInk, ink: 'rgba(255,246,224,0.6)' });
+    button(x, W - 80, H - 34, 72, 26, 'ROLL', { primary: true, hot, disabled: rolling, down: rolling });
+    if (bannerT >= 0) { bannerT += dt; banner(x, W, H, st.res === 20 ? 'NAT 20!' : 'NAT 1', st.res === 20 ? 'the Demogorgon flees' : 'it got you', bannerT, { color: st.res === 20 ? PAL.green : PAL.red, style: st.res === 20 ? 'neon' : 'wood' }); if (bannerT > 1.6) bannerT = -1; }
   });
+}
+
+/** Cached campaign table: wood rim, green felt, a hand-drawn dungeon map and a DM screen edge. */
+function feltTable(W, H) {
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'));
+  bg.vignette(x, W, H, '#2a1810', '#4a3020');
+  panel(x, 4, 4, W - 8, H - 8, { style: 'felt', r: 8 });
+  x.save(); x.translate(232, 46); x.rotate(0.12); x.fillStyle = 'rgba(0,0,0,0.3)'; x.fillRect(2, 3, 64, 50); x.fillStyle = PAL.paper; x.fillRect(0, 0, 64, 50); noise(x, 0, 0, 64, 50, 0.06, 2);
+  x.strokeStyle = PAL.paperInk; x.lineWidth = 1; x.strokeRect(6, 6, 20, 14); x.strokeRect(36, 10, 22, 18); x.strokeRect(10, 30, 16, 14); x.beginPath(); x.moveTo(26, 13); x.lineTo(36, 18); x.moveTo(18, 20); x.lineTo(18, 30); x.stroke(); x.fillStyle = PAL.red; x.fillRect(46, 18, 3, 3); x.restore();
+  x.save(); x.translate(20, 50); x.rotate(-0.08); x.fillStyle = 'rgba(0,0,0,0.3)'; x.fillRect(2, 3, 52, 40); x.fillStyle = '#e8dcc0'; x.fillRect(0, 0, 52, 40); for (let i = 0; i < 6; i++) { x.fillStyle = 'rgba(58,36,20,0.4)'; x.fillRect(4, 6 + i * 5, 30 + (i * 7) % 14, 1); } title(x, 'HP 7', 26, 38, { size: 16, body: true, color: PAL.red }); x.restore();
+  return cv;
 }
 
 /** @type {any[]} */

@@ -6,8 +6,8 @@ import { stubRoom } from './rooms/stub.js';
 import { FLOORS, JOINED, PASSAGES, roomInfo, floorOf } from './rooms/floorplan.js';
 import { floorSlab } from './rooms/kit.js';
 
-const LINKS = { bar: ['roof'], den: ['basement'], bedroom: [], kitchen: [], studio: [], screening: [], diner: [], library: [], garage: [], overlook: [], hawkins: [], biolab: [], hackers: [], computer: [], fightclub: [], inception: [], tavern: [], roof: ['bar'], basement: ['den'] };
-const NAMES = { bar: 'The Bar', den: 'The Den', bedroom: 'Your Bedroom', kitchen: 'The Kitchen', studio: 'The Studio', screening: 'The Screening Room', diner: 'Jackrabbit Diner', library: 'The Restricted Section', garage: "Doc's Garage", overlook: 'The Overlook Hall', hawkins: 'Hawkins Living Room', biolab: 'Lab 426', roof: 'The Roof', basement: 'The Basement', hackers: 'Club Cyberdelia', computer: 'The Computer Lab', fightclub: 'Paper Street', inception: 'Limbo', tavern: 'The Prancing Murloc' };
+const LINKS = { engine: [], bar: ['roof'], den: ['basement'], bedroom: [], kitchen: [], studio: [], screening: [], diner: [], library: [], garage: [], overlook: [], hawkins: [], biolab: [], hackers: [], computer: [], fightclub: [], inception: [], tavern: [], roof: ['bar'], basement: ['den'] };
+const NAMES = { bar: 'The Bar', den: 'The Den', bedroom: 'Your Bedroom', kitchen: 'The Kitchen', studio: 'The Studio', screening: 'The Screening Room', diner: 'Jackrabbit Diner', library: 'The Restricted Section', garage: "Doc's Garage", overlook: 'The Overlook Hall', hawkins: 'Hawkins Living Room', biolab: 'Lab 426', roof: 'The Roof', basement: 'The Basement', hackers: 'Club Cyberdelia', computer: 'The Computer Lab', fightclub: 'Paper Street', inception: 'Limbo', tavern: 'The Prancing Murloc', engine: 'The Engine Room' };
 const FLOOR_ORDER = ['main', 'roof', 'basement'];
 
 /** open the grid cells of every archway on the room's side (a room that skips a shared wall gets none from the kit) */

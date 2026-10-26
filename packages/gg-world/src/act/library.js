@@ -30,7 +30,7 @@ export default [
   { id: 'lib-hat', match: on('hat'), start(ctx) {
     const lib = ctx.R.lib, n = (lib.sorted = (lib.sorted ?? Math.floor(Math.random() * HOUSES.length)) + 1) % HOUSES.length, [house, why] = HOUSES[n];
     lib.wobble = 2.4; let said = false; SFX.play('rattle', { vol: 0.3, delay: 0.3 }); SFX.play('ui.type', { delay: 0.8 }); SFX.play('heartbeat', { vol: 0.4, delay: 1.2 }); const show = hideMe(ctx.S);
-    moment(ctx, { at: [-2.9, 0.95, -2.55], dir: { x: 0.55, y: 0.45, z: 1 }, zoom: 0.75, title: 'The old hat', line: 'Hmm... difficult. Very difficult. Lots of tabs open...', secs: 5.2,
+    moment(ctx, { at: [-2.9, 0.78, -2.55], dir: { x: 0.55, y: 0.45, z: 1 }, zoom: 0.75, title: 'The old hat', line: 'Hmm... difficult. Very difficult. Lots of tabs open...', secs: 5.2,
       tick: (dt, t, api) => { if (t > 2.3 && !said) { said = true; lib.burst(); api.shake(0.03); SFX.play('sparkle'); SFX.play('levelup', { delay: 0.15, vol: 0.7 }); api.cap.set(house, why); ctx.U?.bubble?.(ctx.S.me, house, 3); } }, end: show });
   } },
   { id: 'lib-ring', match: on('ring'), start(ctx) {

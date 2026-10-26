@@ -18,9 +18,14 @@ export default [{
     // mouse: any click fires (and starts a game); holding on the left / right third steers like the arrow keys
     const M = mouse(ov, c, 320, 240); let held = '';
     const steer = e => { if (held) k.delete(held); held = ''; if (!(e.buttons & 1)) return; const r = c.getBoundingClientRect(), f = (e.clientX - r.left) / r.width; held = f < 1 / 3 ? 'ArrowLeft' : f > 2 / 3 ? 'ArrowRight' : ''; if (held) k.add(held); };
-    M.set([{ x: 0, y: 0, w: 320, h: 240, pick: () => game.tap('Space') }]);
+    let btns = [];
+    const at = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * 320, (e.clientY - r.top) / r.height * 240]; };
+    const hit = e => { const [px, py] = at(e); return btns.find(b => px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h); };
+    c.addEventListener('pointermove', e => { const b = hit(e); game.hover(b ? b.id : ''); c.style.cursor = b || game.mode === 'play' ? 'pointer' : ''; });
+    M.set([{ x: 0, y: 0, w: 320, h: 240, pick: () => { if (game.mode === 'play') game.tap('Space'); } }]);
+    c.addEventListener('pointerdown', e => { if (e.button !== 0 || game.mode === 'play') return; const b = hit(e); if (b?.id === 'leave') ov.close(); else if (b?.id === 'play' || game.mode === 'attract') game.replay(); });
     c.addEventListener('pointerdown', steer); c.addEventListener('pointermove', steer); addEventListener('pointerup', steer);
     ov.onClose(() => removeEventListener('pointerup', steer));
-    loop(ov, (dt, t) => { game.update(dt); game.draw(t); });
+    loop(ov, (dt, t) => { game.update(dt); btns = game.draw(t) || []; });
   },
 }];

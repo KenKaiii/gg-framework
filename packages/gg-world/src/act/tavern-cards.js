@@ -2,6 +2,8 @@
 // Tavern Duel art: wooden table + felt, pixel portraits, illustrated cards (frame, mana gem, icon, rarity border).
 import { text } from './util.js';
 import { RARITY, INK } from './tavern-ui.js';
+import { PAL, panel as artPanel, glow, noise, title, rr, shade } from './art.js';
+import { cached } from './fightclub-ui.js';
 
 /** @typedef {{ n:string, m:number, d?:number, h?:number, b?:number, c:string, t:string, ic:string, r:number }} Card */
 /** @type {Card[]} */
@@ -15,20 +17,20 @@ export const CARDS = [
 ];
 export const CW = 68, CH = 92;
 
-/** @param {CanvasRenderingContext2D} x */
+/** Wooden table + green felt + candles; static, so drawn once to an offscreen canvas per size. @param {CanvasRenderingContext2D} x */
+const TABLES = new Map();
 export function table(x, W, H) {
-  x.fillStyle = '#4a2a14'; x.fillRect(0, 0, W, H);
-  for (let i = 0; i < H; i += 18) { x.fillStyle = i % 36 ? '#5e3a1e' : '#563418'; x.fillRect(0, i, W, 17); x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(0, i + 17, W, 1);
-    for (let k = 0; k < 6; k++) { x.fillStyle = 'rgba(255,200,140,0.06)'; x.fillRect((i * 13 + k * 83) % W, i + 5 + (k % 3) * 4, 30, 1); } }
-  x.fillStyle = '#2a1408'; x.fillRect(22, 14, W - 44, H - 28);
-  x.fillStyle = '#2f5a3a'; x.fillRect(26, 18, W - 52, H - 36);
-  x.strokeStyle = '#d8a43a'; x.lineWidth = 1; x.strokeRect(31.5, 23.5, W - 63, H - 47);
-  x.fillStyle = 'rgba(0,0,0,0.12)'; for (let i = 0; i < 300; i++) x.fillRect(26 + ((i * 97) % (W - 52)), 18 + ((i * 61) % (H - 36)), 1, 1);
-  // candle glow corners
-  for (const [cx, cy] of [[14, 14], [W - 14, H - 14]]) { const g = x.createRadialGradient(cx, cy, 0, cx, cy, 70); g.addColorStop(0, 'rgba(255,180,90,0.35)'); g.addColorStop(1, 'rgba(255,180,90,0)'); x.fillStyle = g; x.fillRect(cx - 70, cy - 70, 140, 140);
-    x.fillStyle = '#f0e6c8'; x.fillRect(cx - 3, cy - 8, 6, 12); x.fillStyle = '#ffd070'; x.fillRect(cx - 1, cy - 12, 3, 4); }
+  let b = TABLES.get(W + 'x' + H); if (!b) { b = cached(W, H, cx => drawTable(cx, W, H)); TABLES.set(W + 'x' + H, b); } b(x, 0, 0);
 }
-
+function drawTable(x, W, H) {
+  artPanel(x, 0, 0, W, H, { style: 'wood', r: 0 });
+  const f = artPanel(x, 22, 14, W - 44, H - 28, { style: 'felt', r: 6 });
+  const g = x.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, W * 0.55); g.addColorStop(0, 'rgba(120,200,140,0.18)'); g.addColorStop(1, 'rgba(0,0,0,0.35)'); x.fillStyle = g; x.fillRect(f.x + 2, f.y + 2, f.w - 4, f.h - 4);
+  noise(x, f.x + 2, f.y + 2, f.w - 4, f.h - 4, 0.05, 41);
+  x.strokeStyle = PAL.goldD; x.lineWidth = 1; x.strokeRect(31.5, 23.5, W - 63, H - 47); x.strokeStyle = 'rgba(255,232,160,0.25)'; x.strokeRect(33.5, 25.5, W - 67, H - 51);
+  for (const [cx, cy] of [[14, 14], [W - 14, H - 14]]) { glow(x, cx, cy, 70, '#ffb45a', 0.4);
+    x.fillStyle = '#2a1808'; x.fillRect(cx - 4, cy - 9, 8, 14); x.fillStyle = '#f0e6c8'; x.fillRect(cx - 3, cy - 8, 6, 12); x.fillStyle = '#fff8e8'; x.fillRect(cx - 3, cy - 8, 2, 12); x.fillStyle = '#ffd070'; x.fillRect(cx - 1, cy - 12, 3, 4); }
+}
 /** Pixel portrait. kind 'keep' (bearded innkeeper) or 'you' (hooded coder with glowing laptop). @param {CanvasRenderingContext2D} x */
 export function portrait(x, px, py, kind, hurt = 0) {
   x.fillStyle = '#d8a43a'; x.fillRect(px - 2, py - 2, 48, 48); x.fillStyle = '#2a1a10'; x.fillRect(px, py, 44, 44);
@@ -58,14 +60,15 @@ export function card(x, k, px, py, o = {}) {
   if (o.back || sx < 0) { x.fillStyle = '#3a2412'; x.fillRect(0, 0, CW, CH); x.fillStyle = '#6a2a3a'; x.fillRect(4, 4, CW - 8, CH - 8); x.strokeStyle = '#d8a43a'; x.strokeRect(8.5, 8.5, CW - 17, CH - 17);
     x.fillStyle = '#d8a43a'; x.fillRect(CW / 2 - 6, CH / 2 - 6, 12, 12); x.restore(); return; }
   const rc = RARITY[k.r][1];
-  x.fillStyle = rc; x.fillRect(0, 0, CW, CH); x.fillStyle = '#3a2412'; x.fillRect(2, 2, CW - 4, CH - 4);
-  x.fillStyle = o.dim ? '#a89878' : '#e8d6a8'; x.fillRect(4, 4, CW - 8, CH - 8);
-  x.fillStyle = k.c; x.fillRect(8, 16, CW - 16, 36); x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(8, 48, CW - 16, 4);
+  if (o.glow) glow(x, CW / 2, CH / 2, CW * 0.9, '#ffd890', 0.25 + Math.sin(t * 2) * 0.08);
+  x.fillStyle = rc; rr(x, 0, 0, CW, CH, 4); x.fill(); x.fillStyle = '#3a2412'; rr(x, 2, 2, CW - 4, CH - 4, 3); x.fill();
+  const pg = x.createLinearGradient(0, 4, 0, CH - 4); pg.addColorStop(0, o.dim ? '#a89878' : '#f6e8c4'); pg.addColorStop(1, o.dim ? '#7a6a54' : '#d8c296'); x.fillStyle = pg; x.fillRect(4, 4, CW - 8, CH - 8);
+  const ag = x.createLinearGradient(0, 16, 0, 52); ag.addColorStop(0, shade(k.c, 0.25)); ag.addColorStop(1, shade(k.c, -0.3)); x.fillStyle = '#2a1808'; x.fillRect(7, 15, CW - 14, 38); x.fillStyle = ag; x.fillRect(8, 16, CW - 16, 36); x.fillStyle = 'rgba(255,255,255,0.3)'; x.fillRect(8, 16, CW - 16, 1);
   icon(x, k.ic, CW / 2, 34, t);
   x.fillStyle = '#1a3a8a'; x.beginPath(); x.moveTo(10, 2); x.lineTo(18, 10); x.lineTo(10, 18); x.lineTo(2, 10); x.closePath(); x.fill();
-  x.fillStyle = '#6aa0ff'; x.fillRect(7, 6, 3, 3); text(x, String(k.m), 10, 15, { color: '#fff', align: 'center' });
-  x.fillStyle = '#5e3a20'; x.fillRect(6, 54, CW - 12, 14); text(x, k.n.length > 11 ? k.n.split(' ')[0] : k.n, CW / 2, 65, { color: '#ffe8b0', align: 'center' });
+  x.fillStyle = '#6aa0ff'; x.fillRect(7, 6, 3, 3); title(x, String(k.m), 10, 15, { size: 16, body: true });
+  x.fillStyle = '#5e3a20'; x.fillRect(6, 54, CW - 12, 14); x.fillStyle = '#8a5a3a'; x.fillRect(6, 54, CW - 12, 1); title(x, k.n.length > 11 ? k.n.split(' ')[0] : k.n, CW / 2, 65, { size: 16, body: true, color: PAL.goldHi });
   text(x, k.t, CW / 2, 84, { color: INK, align: 'center' });
-  if (o.glow) { x.strokeStyle = `rgba(110,231,106,${0.6 + Math.sin(t * 5) * 0.3})`; x.lineWidth = 2; x.strokeRect(-1, -1, CW + 2, CH + 2); }
+  if (o.glow) { x.strokeStyle = `rgba(255,216,144,${0.65 + Math.sin(t * 3) * 0.25})`; x.lineWidth = 2; rr(x, -1, -1, CW + 2, CH + 2, 5); x.stroke(); }
   x.restore();
 }

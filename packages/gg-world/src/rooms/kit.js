@@ -34,7 +34,7 @@ export function glowMat(color, power = 2.2, o = {}) {
 const boxCache = new Map();
 /** Rounded box mesh, centred. @param {number} w @param {number} h @param {number} d @param {THREE.Material} m @param {number} [r] */
 export function rbox(w, h, d, m, r = 0.04) {
-  r = Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3); if (r < 0.002) r = 0;
+  r = Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3); if (r < 0.01) r = 0; /* sub-cm bevels are invisible at room zoom but cost ~900 verts each once baked */
   const key = [w, h, d, r].map(v => v.toFixed(3)).join();
   let g = boxCache.get(key);
   if (!g) { g = r ? new RoundedBoxGeometry(w, h, d, 2, r) : new THREE.BoxGeometry(w, h, d); boxCache.set(key, g); }
@@ -125,8 +125,14 @@ export function bakeColours(roots, scope) {
       const gs = list.map(o => {
         const g = o.geometry, n = g.attributes.position.count, c = o.material.color, a = new Float32Array(n * 3);
         for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; } // linear, as the shader reads it
-        g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g;
+        g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+        /* normalise so mergeGeometries never rejects the group: same attribute set (position/normal/uv/color) on every part */
+        for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) g.deleteAttribute(k);
+        if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(n * 2), 2));
+        if (!g.attributes.normal) g.computeVertexNormals();
+        return g;
       });
+      if (gs.some(g => !!g.index) !== gs.every(g => !!g.index)) { for (const g of gs) g.deleteAttribute('color'); continue; }
       const merged = mergeGeometries(gs, false); if (!merged) { for (const g of gs) g.deleteAttribute('color'); continue; }
       const out = new THREE.Mesh(releaseAfterUpload(merged), vcMat(sig)); out.castShadow = list[0].castShadow; out.receiveShadow = list[0].receiveShadow; out.matrixAutoUpdate = false; out.userData.baked = true;
       for (const o of list) { o.removeFromParent(); o.geometry.dispose(); } root.add(out);

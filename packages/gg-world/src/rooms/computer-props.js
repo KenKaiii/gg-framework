@@ -34,28 +34,40 @@ export function osScreen(k = 0) {
   });
 }
 
+/** CRT back: a 4-sided frustum (wide at the bezel, narrow at the back), axis along z. */
+function crtBackGeo(wf, hf, wb, hb, d) { const g = new THREE.CylinderGeometry(Math.SQRT1_2, Math.SQRT1_2, 1, 4, 1); g.rotateY(Math.PI / 4); g.rotateX(Math.PI / 2);
+  const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const front = p.getZ(i) > 0, sx = front ? wf : wb, sy = front ? hf : hb; p.setXYZ(i, p.getX(i) * sx, p.getY(i) * sy, p.getZ(i) * d); } g.computeVertexNormals(); return g; }
+/** Keyboard top texture: rows of beige keycaps with dark gaps. */
+function keysTex() { return TX.canvasTex('computer-keys', 128, 48, (x, w, h) => { x.fillStyle = '#6e6650'; x.fillRect(0, 0, w, h);
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 15; c++) { const kx = 3 + c * 8.2 + (r % 2) * 3, ky = 3 + r * 11; if (kx > w - 9) continue; x.fillStyle = '#e4dabc'; x.fillRect(kx, ky, 7, 9); x.fillStyle = '#fff6dc'; x.fillRect(kx, ky, 7, 1); x.fillStyle = '#a89c7c'; x.fillRect(kx, ky + 8, 7, 1); }
+  x.fillStyle = '#e4dabc'; x.fillRect(30, 3 + 4 * 11 - 1 > h - 3 ? h - 5 : 47, 60, 3); }); }
+
 /** Instanced PC stations: per-station [x, z, ry]; each = beige CRT + screen + tower + keyboard + mouse + chair. */
 export function stations(list) {
   const g = new THREE.Group();
   const parts = [
-    [new THREE.BoxGeometry(0.52, 0.44, 0.46), BEIGE, 0, 1.02, -0.05],
-    [new THREE.BoxGeometry(0.38, 0.32, 0.3), BEIGE2, 0, 1.0, -0.38],
-    [new THREE.BoxGeometry(0.3, 0.06, 0.26), BEIGE2, 0, 0.79, -0.05],
-    [new THREE.BoxGeometry(0.2, 0.44, 0.44), BEIGE, 0.62, 0.22, -0.1],
-    [new THREE.BoxGeometry(0.46, 0.03, 0.16), BEIGE, 0, 0.775, 0.3],
-    [new THREE.BoxGeometry(0.06, 0.025, 0.1), BEIGE2, 0.34, 0.77, 0.3],
+    [rbox(0.52, 0.44, 0.2, BEIGE, 0.035).geometry, BEIGE, 0, 1.02, 0.08],                    // bezel (rounded)
+    [crtBackGeo(0.48, 0.4, 0.3, 0.26, 0.36), BEIGE2, 0, 1.02, -0.2],                          // tapered tube back
+    [new THREE.CylinderGeometry(0.12, 0.16, 0.06, 16), BEIGE2, 0, 0.79, -0.05],               // swivel foot
+    [rbox(0.2, 0.44, 0.44, BEIGE, 0.02).geometry, BEIGE, 0.62, 0.22, -0.1],                   // tower
+    [rbox(0.46, 0.03, 0.16, BEIGE, 0.008).geometry, BEIGE, 0, 0.775, 0.3],                    // keyboard base
+    [new THREE.PlaneGeometry(0.43, 0.13).rotateX(-Math.PI / 2 + 0.08), mat('#ffffff', { map: keysTex(), roughness: 0.6 }), 0, 0.792, 0.3], // keycaps
+    [rbox(0.06, 0.025, 0.1, BEIGE2, 0.012).geometry, BEIGE2, 0.34, 0.77, 0.3],                // mouse
+    [new THREE.BoxGeometry(0.44, 0.34, 0.01), DARK, 0, 1.04, 0.176],                          // screen recess
+    [new THREE.BoxGeometry(0.12, 0.012, 0.01), DARK, 0.62, 0.36, 0.125],                      // floppy slot
+    [new THREE.BoxGeometry(0.025, 0.012, 0.006), glowMat('#6eff7a', 2), 0.2, 0.84, 0.181],     // power LED
     // chair: seat, back, post, base
     [new THREE.BoxGeometry(0.46, 0.08, 0.44), mat('#3a4a7a', { roughness: 0.8 }), 0, 0.46, 0.9],
     [new THREE.BoxGeometry(0.44, 0.48, 0.07), mat('#3a4a7a', { roughness: 0.8 }), 0, 0.78, 1.12],
     [new THREE.CylinderGeometry(0.035, 0.035, 0.4, 8), METAL, 0, 0.22, 0.9],
     [new THREE.CylinderGeometry(0.26, 0.26, 0.04, 10), METAL, 0, 0.04, 0.9],
   ];
-  const scr = [new THREE.PlaneGeometry(0.4, 0.31), 0, 1.04, 0.181];
+  const scr = [new THREE.PlaneGeometry(0.4, 0.31), 0, 1.04, 0.184];
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0);
   const fill = (im, ox, oy, oz) => { list.forEach(([x, z, ry], i) => { q.setFromAxisAngle(up, ry); const p = new THREE.Vector3(ox, oy, oz).applyQuaternion(q).add(new THREE.Vector3(x, 0, z)); m4.compose(p, q, one); im.setMatrixAt(i, m4); }); im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); };
   for (const [geo, m, ox, oy, oz] of parts) { const im = new THREE.InstancedMesh(geo, m, list.length); im.castShadow = false; im.receiveShadow = true; fill(im, ox, oy, oz); im.userData.live = true; g.add(im); }
   const sm = new THREE.MeshBasicMaterial({ map: osScreen(0), toneMapped: false });
-  const sim = new THREE.InstancedMesh(scr[0], sm, list.length); fill(sim, 0, 1.04, 0.181); sim.userData.live = true; g.add(sim);
+  const sim = new THREE.InstancedMesh(scr[0], sm, list.length); fill(sim, 0, 1.04, 0.184); sim.userData.live = true; g.add(sim);
   g.userData.live = true; g.userData.screens = sim;
   return g;
 }
@@ -141,13 +153,24 @@ export function floppies() {
   return g;
 }
 
+/** One proper beige CRT (bezel + tapered back + recess + LED + keyboard) facing +z, screen material given. Base at y=0. */
+export function crtPC(screenMat, o = {}) {
+  const g = new THREE.Group(), w = o.w ?? 0.52, h = o.h ?? 0.44;
+  put(g, rbox(w, h, 0.2, BEIGE, 0.035), 0, h / 2 + 0.06, 0.08);
+  put(g, mesh(crtBackGeo(w - 0.04, h - 0.04, w * 0.58, h * 0.6, 0.36), BEIGE2), 0, h / 2 + 0.06, -0.2);
+  put(g, cyl(0.12, 0.16, 0.06, BEIGE2, 16), 0, 0.03, -0.05);
+  put(g, new THREE.Mesh(new THREE.BoxGeometry(w - 0.08, h - 0.1, 0.01), DARK), 0, h / 2 + 0.08, 0.176);
+  put(g, new THREE.Mesh(new THREE.PlaneGeometry(w - 0.12, h - 0.13), screenMat), 0, h / 2 + 0.08, 0.184);
+  put(g, new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.012, 0.006), glowMat('#6eff7a', 2)), w / 2 - 0.06, 0.1, 0.181);
+  if (o.keys !== false) { put(g, rbox(0.46, 0.03, 0.16, BEIGE, 0.008), 0, 0.015, 0.36); const k = new THREE.Mesh(new THREE.PlaneGeometry(0.43, 0.13).rotateX(-Math.PI / 2 + 0.08), mat('#ffffff', { map: keysTex(), roughness: 0.6 })); put(g, k, 0, 0.032, 0.36); }
+  return g;
+}
+
 /** Helpdesk terminal on a stand (Prompt School): green phosphor CRT. */
 export function terminalStand() {
   const g = new THREE.Group();
   put(g, rbox(0.9, 0.95, 0.6, WOOD, 0.03), 0, 0.475, 0);
-  put(g, rbox(0.55, 0.48, 0.5, BEIGE, 0.05), 0, 1.2, -0.04);
-  put(g, new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.33), new THREE.MeshBasicMaterial({ map: TX.termScreen(7, '#6ee7a0'), toneMapped: false })), 0, 1.22, 0.215);
-  put(g, rbox(0.46, 0.03, 0.16, BEIGE2, 0.01), 0, 0.965, 0.18);
+  put(g, crtPC(new THREE.MeshBasicMaterial({ map: TX.termScreen(7, '#6ee7a0'), toneMapped: false }), { w: 0.55, h: 0.48 }), 0, 0.95, -0.12);
   put(g, new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.14), new THREE.MeshBasicMaterial({ map: TX.label('PROMPT SCHOOL', '#6ee7a0', '#0a1a10', 256, 48), toneMapped: false })), 0, 1.62, 0.0);
   return g;
 }

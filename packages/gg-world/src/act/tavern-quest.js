@@ -3,6 +3,9 @@
 import { SFX } from '../sfx.js';
 import { loop, text, coins } from './util.js';
 import { panel, backdrop, button, onClick, onKey, hit, load, save, today, pops, lootCard, RARITY, INK, GOLDC } from './tavern-ui.js';
+import { PAL, shaker, particles, title } from './art.js';
+import { cardFlow } from './fightclub-ui.js';
+const SURF = (x, X, Y, w, h) => panel(x, X + 5, Y + 5, w - 10, h - 10);
 
 const POOL = [
   ['Slay the Bugs', 'Squash 3 bugs in the Forest of Legacy Code.', 3],
@@ -30,13 +33,16 @@ export function startQuests(ctx) {
     else if (q.s === 'on' && q.n < need) { q.n++; P.add(`${q.n}/${need}`, 330, 200, '#1eff00'); SFX.play('tick'); if (q.n >= need) { P.add('Complete!', 330, 180, GOLDC); SFX.play('success', { delay: 0.1 }); } }
     else if (q.s === 'done') SFX.play('ui.deny', { vol: 0.5 });
     else if (q.s === 'on') { q.s = 'done'; const rar = 1 + Math.floor(r() * 3 + i * 0.6) % 5, gold = 10 + rar * 10; coins(ctx.S).spend(-gold);
-      loot = { item: LOOT[(i + key.length + rar) % LOOT.length], rar, t: 0 }; SFX.play('levelup', { delay: 0.1 }); SFX.play('sparkle', { delay: 0.4 }); P.add(`+${gold} coins`, 330, 200, GOLDC); }
+      loot = { item: LOOT[(i + key.length + rar) % LOOT.length], rar, t: 0 }; SFX.play('levelup', { delay: 0.1 }); SFX.play('sparkle', { delay: 0.4 }); P.add(`+${gold} coins`, 330, 200, GOLDC); fx.burst(W / 2, H / 2, { n: 40, colors: [RARITY[rar][1], PAL.goldHi, '#fff'] }); }
     save('quests', st); };
-  onKey(ov, code => { if (loot && loot.t > 0.4 && /Enter|Space/.test(code)) { loot = null; SFX.play('ui.click'); return; }
+  const fx = particles();
+  const F = cardFlow(ov, c, W, H, { surface: (x, X, Y, w, h) => { panel(x, X + 5, Y + 5, w - 10, h - 10); x.fillStyle = 'rgba(40,20,8,0.5)'; x.fillRect(X + 5, Y + 5, w - 10, h - 10); }, accent: PAL.gold });
+  F.setCard({ title: 'QUEST BOARD', sub: 'three daily quests from the Elder', lines: ['Accept, check in as you go, turn in for coins + loot.'], chips: [['[↑]', '[↓]', 'pick', '|', '[enter]', 'accept / check in / turn in'], ['[click]', 'a quest, then its button']] });
+  onKey(ov, code => { if (F.phase !== 'play') return; if (loot && loot.t > 0.4 && /Enter|Space/.test(code)) { loot = null; SFX.play('ui.click'); return; }
     if (code === 'ArrowUp') { sel = (sel + 2) % 3; SFX.play('ui.select'); } else if (code === 'ArrowDown') { sel = (sel + 1) % 3; SFX.play('ui.select'); } else if (code === 'Enter' || code === 'Space') act(sel); });
-  onClick(ov, c, W, H, (px, py) => { if (loot) { loot = null; return; } btns.forEach((b, i) => { if (hit(b.row, px, py) && sel !== i) { sel = i; SFX.play('ui.select'); } if (hit(b.btn, px, py)) { sel = i; act(i); } }); });
+  onClick(ov, c, W, H, (px, py) => { if (F.phase !== 'play') return; if (loot) { loot = null; return; } btns.forEach((b, i) => { if (hit(b.row, px, py) && sel !== i) { sel = i; SFX.play('ui.select'); } if (hit(b.btn, px, py)) { sel = i; act(i); } }); });
   // mouse hover picks a quest row (click already picks / presses the button)
-  const mv = e => { if (loot) return; const b = c.getBoundingClientRect(), px = (e.clientX - b.left) * W / b.width, py = (e.clientY - b.top) * H / b.height; btns.forEach((bb, i) => { if (hit(bb.row, px, py) && sel !== i) { sel = i; SFX.play('ui.select'); } }); };
+  const mv = e => { if (loot || F.phase !== 'play') return; const b = c.getBoundingClientRect(), px = (e.clientX - b.left) * W / b.width, py = (e.clientY - b.top) * H / b.height; btns.forEach((bb, i) => { if (hit(bb.row, px, py) && sel !== i) { sel = i; SFX.play('ui.select'); } }); };
   c.addEventListener('pointermove', mv); ov.onClose(() => c.removeEventListener('pointermove', mv));
   loop(ov, dt => {
     t += dt; backdrop(x, W, H, t);
@@ -58,6 +64,7 @@ export function startQuests(ctx) {
     text(x, 'self-reported. the Elder trusts you.', 348, 240, { color: '#9a7a5a', align: 'center' });
     if (!loot) P.draw(x, dt);
     if (loot) { loot.t += dt; x.fillStyle = 'rgba(10,6,4,0.82)'; x.fillRect(0, 0, W, H); lootCard(x, W, H, loot.item, loot.rar, Math.min(1, loot.t * 3));
-      text(x, 'Click or Enter to continue', W / 2, H / 2 + 60, { color: '#c8a878', align: 'center' }); text(x, 'You receive loot:', W / 2, H / 2 - 50, { color: RARITY[loot.rar][1], align: 'center', shadow: '#000' }); }
+      title(x, 'Click or Enter to continue', W / 2, H / 2 + 60, { size: 16, body: true, color: PAL.cream }); title(x, 'You receive loot:', W / 2, H / 2 - 50, { size: 16, color: RARITY[loot.rar][1] }); }
+    fx.draw(x, dt); F.draw(x, dt);
   });
 }

@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { mat, glowMat, rbox, put, mesh } from './kit.js';
 import * as TX from './tex.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const cyl = (rt, rb, h, m, seg = 14) => mesh(new THREE.CylinderGeometry(rt, rb, h, seg), m);
 export const WOOD = mat('#7a5a3a', { roughness: 0.85 }), DWOOD = mat('#4a3424', { roughness: 0.8 }), METAL = mat('#6a6e72', { metalness: 0.6, roughness: 0.45 });
@@ -130,19 +131,43 @@ export function tv() {
   return { g, scr };
 }
 
-/** Rules board on an easel: chalkboard with rules (first two bleeped). */
+/** Rules board on an easel: a framed slate (chalk-dust smudges, chalk lettering, first two rules bleeped), bevelled
+ * wood frame, a chalk tray with sticks and a rear prop leg. Matches the 2D close-up (fightclub-rules.js). Frame + legs
+ * are merged into one mesh (one draw call); slate and chalk are two more. */
 export function rulesBoard() {
-  const tex = TX.canvasTex('fc-rules', 256, 192, (x, w, h) => {
-    x.fillStyle = '#2e3a30'; x.fillRect(0, 0, w, h); x.fillStyle = '#e8e4d0'; x.font = '30px m5x7'; x.fillText('THE RULES', 74, 26);
-    x.font = '22px m5x7';
-    const L = ['1. ████ ████████', '2. ████ ████████', '3. Someone yells stop', '4. Two guys to a fight', '5. One fight at a time', '6. No shirts, no shoes', '7. As long as it takes', '8. First night? Fight.'];
-    L.forEach((s, i) => { x.fillStyle = i < 2 ? '#ff7a8a' : '#e8e4d0'; x.fillText(s, 14, 50 + i * 18); });
+  const tex = TX.canvasTex('fc-rules2', 512, 384, (x, w, h) => {
+    const sg = x.createRadialGradient(w * 0.45, h * 0.4, 20, w / 2, h / 2, w * 0.7); sg.addColorStop(0, '#3a4a3e'); sg.addColorStop(1, '#1e2a22'); x.fillStyle = sg; x.fillRect(0, 0, w, h);
+    const g = TX.rand(17);
+    for (let i = 0; i < 14; i++) { x.fillStyle = 'rgba(230,240,230,0.05)'; x.beginPath(); x.ellipse(g() * w, g() * h, 40 + g() * 50, 10 + g() * 12, g() * 3, 0, 7); x.fill(); } // erased smudges
+    for (let i = 0; i < 2500; i++) { x.fillStyle = `rgba(${g() > 0.5 ? '255,255,255' : '0,0,0'},${0.05 * g()})`; x.fillRect(g() * w, g() * h, 2, 2); }
+    const chalk = (s, X, Y, size, col) => { x.font = size + 'px m5x7'; x.fillStyle = 'rgba(10,16,12,0.7)'; x.fillText(s, X + 2, Y + 2); x.fillStyle = col; x.fillText(s, X, Y); x.globalAlpha = 0.25; x.fillText(s, X + 1, Y - 1); x.globalAlpha = 1; };
+    chalk('THE RULES', 150, 58, 60, '#f0ece0'); x.fillStyle = 'rgba(240,236,224,0.6)'; x.fillRect(150, 66, 212, 3);
+    const L = ['1. You do not ', '2. You DO NOT ', '3. Someone yells stop', '4. Two guys to a fight', '5. One fight at a time', '6. No shirts, no shoes', '7. As long as it takes', '8. First night? Fight.'];
+    L.forEach((t, i) => { const y = 106 + i * 36; chalk(t, 28, y, 40, i < 2 ? '#ff9aa8' : '#e8ece0'); if (i < 2) { x.fillStyle = '#ff9aa8'; x.fillRect(250, y - 26, 110, 30); x.fillRect(380, y - 26, 70, 30); } });
   });
-  const g = new THREE.Group();
-  for (const s of [-1, 1]) { const l = rbox(0.05, 1.9, 0.05, DWOOD, 0.01); l.rotation.x = -0.1; put(g, l, s * 0.6, 0.95, 0); }
-  put(g, rbox(1.4, 1.05, 0.05, DWOOD, 0.02), 0, 1.35, 0.06);
-  const b = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.95), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.35 }));
-  put(g, b, 0, 1.35, 0.09);
+  const g = new THREE.Group(), lean = -0.1;
+  // frame + easel legs, merged
+  const parts = [], add = (geo, px, py, pz, rx = 0) => { geo = geo.index ? geo.toNonIndexed() : geo; const m = new THREE.Matrix4().makeRotationX(rx).setPosition(px, py, pz); geo.applyMatrix4(m); parts.push(geo); };
+  const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+  for (const sx of [-1, 1]) add(box(0.06, 1.95, 0.06), sx * 0.62, 0.97, 0, lean);          // front legs
+  add(box(0.05, 1.8, 0.05), 0, 0.9, -0.42, 0.28);                                            // rear prop leg
+  add(box(1.5, 0.08, 0.07), 0, 1.92, 0.05); add(box(1.5, 0.08, 0.07), 0, 0.84, 0.05);        // top / bottom rails
+  for (const sx of [-1, 1]) add(box(0.08, 1.16, 0.07), sx * 0.71, 1.38, 0.05);               // stiles
+  add(box(1.5, 0.03, 0.16), 0, 0.79, 0.11);                                                    // chalk tray
+  add(box(1.5, 0.04, 0.02), 0, 0.81, 0.19);                                                    // tray lip
+  const frame = new THREE.Mesh(mergeGeometries(parts), mat('#6a4630', { roughness: 0.75 })); frame.castShadow = true; g.add(frame);
+  // inner bevel strip (lighter wood) as a thin merged ring
+  const bev = []; const ring = (geo, px, py) => { geo = geo.toNonIndexed(); geo.translate(px, py, 0.09); bev.push(geo); };
+  ring(box(1.36, 0.02, 0.01), 0, 1.875); ring(box(1.36, 0.02, 0.01), 0, 0.885); ring(box(0.02, 1.0, 0.01), -0.67, 1.38); ring(box(0.02, 1.0, 0.01), 0.67, 1.38);
+  g.add(new THREE.Mesh(mergeGeometries(bev), mat('#a8744c', { roughness: 0.6 })));
+  const slate = new THREE.Mesh(new THREE.PlaneGeometry(1.34, 0.99), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.3 }));
+  put(g, slate, 0, 1.38, 0.086);
+  // chalk sticks + a felt eraser on the tray (one merged mesh, vertex colours)
+  const ch = []; const stick = (px, rz, col) => { const geo = new THREE.CylinderGeometry(0.012, 0.012, 0.09, 6).toNonIndexed(); geo.rotateZ(Math.PI / 2 + rz); geo.translate(px, 0.82, 0.12); const c = new THREE.Color(col), n = geo.attributes.position.count; geo.setAttribute('color', new THREE.Float32BufferAttribute(Array.from({ length: n * 3 }, (_, i) => [c.r, c.g, c.b][i % 3]), 3)); ch.push(geo); };
+  stick(-0.35, 0.1, '#f0ece0'); stick(-0.22, -0.2, '#f2a6c0'); stick(0.1, 0.05, '#f0ece0');
+  const er = new THREE.BoxGeometry(0.16, 0.04, 0.06).toNonIndexed(); er.translate(0.4, 0.83, 0.12); const n = er.attributes.position.count, top = new THREE.Color('#8a7a5a'), fel = new THREE.Color('#3a3a40');
+  er.setAttribute('color', new THREE.Float32BufferAttribute(Array.from({ length: n }, (_, i) => { const c = er.attributes.position.getY(i) > 0.83 ? top : fel; return [c.r, c.g, c.b]; }).flat(), 3)); ch.push(er);
+  g.add(new THREE.Mesh(mergeGeometries(ch), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 })));
   return g;
 }
 

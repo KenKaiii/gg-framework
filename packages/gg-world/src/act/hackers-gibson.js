@@ -3,8 +3,9 @@
 // find the garbage file before the trace closes in. Scanner pings hotter as you near it. On find: download bar,
 // glitch flash, HACK THE PLANET banner. Best time saved; first win of the day pays coins.
 import { SFX } from '../sfx.js';
-import { text, loop, rng, keys, coins } from './util.js';
-import { scan, load, save, today } from './hackers-util.js';
+import { loop, rng, keys, coins } from './util.js';
+import { PAL, panel, title, glow, badge, banner, particles, shaker, rr } from './art.js';
+import { scan, load, save, today, howTo, btns } from './hackers-util.js';
 import { gibsonScene } from './hackers-gibson-scene.js';
 
 const W = 480, H = 270, GW = 30, GH = 24, TRACE = 75, PAY = 5, DL = 2.2;
@@ -17,7 +18,7 @@ export function startGibson(ctx) {
   /** @type {any} */ let g = null; /** @type {any} */ let sc = null;
   const hud = ov.canvas(W, H); const x = hud.x; x.imageSmoothingEnabled = false;
   hud.c.style.position = 'absolute'; hud.c.style.left = '0'; hud.c.style.top = '0'; hud.c.style.boxShadow = 'none';
-  const K = keys(ov);
+  const K = keys(ov); const fx = particles(), sh = shaker(), B2 = btns(hud.c, W, H); let endT = 0, introT = 0;
   const reset = () => {
     const r = rng(day * 13 + tries++ * 101); const tow = new Uint8Array(GW * GH);
     for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) tow[j * GW + i] = (i % 3 && j % 3 && r() < 0.85) ? 1 + Math.floor(r() * 4) : 0;
@@ -25,7 +26,7 @@ export function startGibson(ctx) {
     for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) tow[j * GW + i] = 0;
     sc?.dispose(); sc = gibsonScene(tow, GW, GH, fi, fj);
     const c = sc.canvas; c.style.imageRendering = 'pixelated'; c.style.display = 'block'; c.style.borderRadius = '6px'; hud.c.before(c);
-    g = { tow, fi, fj, px: 0.5, pz: 0.5, yaw: 0.25, t: 0, state: 'play', ping: 0, pings: [], best: load('cyb-gibson-best', 0), msg: '', dl: 0, glitch: 0, bob: 0, wonT: 0 };
+    endT = 0; introT = 0; g = { tow, fi, fj, px: 0.5, pz: 0.5, yaw: 0.25, t: 0, state: 'play', ping: 0, pings: [], best: load('cyb-gibson-best', 0), msg: '', dl: 0, glitch: 0, bob: 0, wonT: 0 };
     ctx.R.hackersDbg = { ...(ctx.R.hackersDbg || {}), gibson: () => g };
   };
   reset();
@@ -56,10 +57,10 @@ export function startGibson(ctx) {
       g.ping -= dt; if (g.ping <= 0) { g.ping = Math.max(0.18, d / 10); g.pings.push({ a: 1, hot: near }); SFX.play('ping', { vol: 0.15 + near * 0.35, pitch: 0.7 + near * 0.7 }); }
       if (d < 0.75) { g.state = 'dl'; g.dl = 0; SFX.play('magic'); SFX.play('typewriter', { delay: 0.2, vol: 0.5 }); }
       if (g.t > TRACE - 10 && Math.floor(g.t) !== Math.floor(g.t - dt)) SFX.play('countdown', { vol: 0.5 });
-      if (g.t >= TRACE) { g.state = 'lost'; g.glitch = 0.8; SFX.play('static'); SFX.play('fail', { delay: 0.2 }); }
+      if (g.t >= TRACE) { g.state = 'lost'; g.glitch = 0.8; sh.kick(8); SFX.play('static'); SFX.play('fail', { delay: 0.2 }); }
     } else if (g.state === 'dl') {
       g.dl += dt / DL; g.t += dt * 0.0; if (Math.random() < dt * 0.2) g.glitch = 0.25; // rare glitch event (was ~5x per second)
-      if (g.dl >= 1) { g.state = 'won'; g.glitch = 1; SFX.play('win'); SFX.play('zap', { vol: 0.5 }); const tm = Math.round(g.t * 10) / 10;
+      if (g.dl >= 1) { g.state = 'won'; g.glitch = 1; fx.confetti(W); fx.burst(W / 2, H / 2, { n: 50, colors: ['#ff4fd8', '#3ff0ff', '#9dff3d'], speed: 120 }); SFX.play('win'); SFX.play('zap', { vol: 0.5 }); const tm = Math.round(g.t * 10) / 10;
         if (!g.best || tm < g.best) { g.best = tm; save('cyb-gibson-best', tm); g.msg = 'NEW BEST'; }
         if (load('cyb-gibson-paid', 0) !== day) { save('cyb-gibson-paid', day); coins(S).spend(-PAY); g.msg += ` +${PAY} coins`; ctx.api.toast(`Garbage file downloaded. +${PAY} coins`); } }
     }
@@ -75,31 +76,45 @@ export function startGibson(ctx) {
       cam.position.set(g.px, fy, g.pz); cam.lookAt(g.px + Math.cos(g.yaw), fy + (g.state === 'dl' ? -0.15 : 0.08), g.pz + Math.sin(g.yaw)); }
     cam.rotation.z += Math.sin(t * 0.7) * 0.01 + (g.glitch ? (Math.random() - 0.5) * 0.08 * g.glitch : 0);
     sc.render(t, near);
-    // HUD
-    x.clearRect(0, 0, W, H);
-    const tr = Math.min(1, g.t / TRACE); x.fillStyle = 'rgba(40,10,30,0.8)'; x.fillRect(10, 8, 220, 10); x.fillStyle = tr > 0.75 ? ((t * 6) % 1 < 0.5 ? '#ff3a5a' : '#ff9a3a') : '#ff4fd8'; x.fillRect(10, 8, 220 * tr, 10);
-    text(x, 'TRACE', 236, 18, { color: '#ff9ad8', shadow: '#000' }); text(x, `${g.t.toFixed(1)}s  best ${g.best ? g.best.toFixed(1) + 's' : '--'}`, W - 10, 18, { align: 'right', color: '#9dff3d', shadow: '#000' });
-    // scanner (bottom-left): rings + heat + arrow to the file
+    // HUD (art kit): trace meter, timer badges, radar scanner, download card, results
+    x.clearRect(0, 0, W, H); introT += dt; if (g.state === 'won' || g.state === 'lost') endT += dt;
+    x.save(); sh.apply(x, dt);
+    const v = x.createRadialGradient(W / 2, H / 2, H * 0.4, W / 2, H / 2, W * 0.7); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(10,0,20,0.55)'); x.fillStyle = v; x.fillRect(0, 0, W, H);
+    const tr = Math.min(1, g.t / TRACE), hotT = tr > 0.75;
+    const tp = panel(x, 8, 8, 236, 34, { style: 'neon', r: 3 });
+    title(x, 'TRACE', tp.x + 8, tp.y + 14, { size: 16, body: true, align: 'left', color: '#ff9ad8' });
+    x.fillStyle = '#0a0414'; rr(x, tp.x + 8, tp.y + 19, tp.w - 16, 9, 2); x.fill();
+    const tg = x.createLinearGradient(tp.x + 8, 0, tp.x + tp.w - 8, 0); tg.addColorStop(0, '#ff4fd8'); tg.addColorStop(1, '#ff3a5a'); x.fillStyle = hotT ? (0.5 + 0.5 * Math.sin(t * 5) > 0.5 ? '#ff3a5a' : '#ff9a3a') : tg;
+    rr(x, tp.x + 8, tp.y + 19, Math.max(4, (tp.w - 16) * tr), 9, 2); x.fill(); x.fillStyle = 'rgba(255,255,255,0.35)'; x.fillRect(tp.x + 9, tp.y + 20, Math.max(2, (tp.w - 18) * tr), 1);
+    title(x, Math.ceil(TRACE - g.t) + 's left', tp.x + tp.w - 8, tp.y + 14, { size: 16, body: true, align: 'right', color: hotT ? PAL.red : PAL.cream });
+    badge(x, W - 162, 8, 'time', g.t.toFixed(1) + 's', { w: 76, color: '#9dff3d', style: 'neon' }); badge(x, W - 82, 8, 'best', g.best ? g.best.toFixed(1) + 's' : '--', { w: 74, color: '#3ff0ff', style: 'neon' });
     if (g.state === 'play' || g.state === 'dl') {
-    const sx = 44, sy = H - 44; x.fillStyle = 'rgba(5,4,12,0.7)'; x.beginPath(); x.arc(sx, sy, 32, 0, 7); x.fill();
-    for (const p of g.pings) { x.strokeStyle = `rgba(157,255,61,${p.a})`; x.beginPath(); x.arc(sx, sy, 32 * (1 - p.a), 0, 7); x.stroke(); }
-    const ang = Math.atan2(g.fj + 0.5 - g.pz, g.fi + 0.5 - g.px) - g.yaw - Math.PI / 2;
-    x.save(); x.translate(sx, sy); x.rotate(ang); x.fillStyle = near > 0.7 ? '#ffcf8a' : '#9dff3d'; x.beginPath(); x.moveTo(0, -24); x.lineTo(6, -12); x.lineTo(-6, -12); x.fill(); x.restore();
-    text(x, `${d.toFixed(1)} blk`, sx, sy + 5, { align: 'center', color: '#c8ffd0' });
-    text(x, near > 0.8 ? 'HOT' : near > 0.5 ? 'warm' : 'cold', sx + 40, sy + 26, { color: near > 0.8 ? '#ffcf8a' : '#6aa850', shadow: '#000' }); }
-    if (tr > 0.6 && g.state === 'play') { x.fillStyle = `rgba(255,30,60,${(tr - 0.6) * 0.6 * (0.6 + 0.4 * Math.sin(t * 10))})`; x.fillRect(0, 0, W, 5); x.fillRect(0, H - 5, W, 5); x.fillRect(0, 0, 5, H); x.fillRect(W - 5, 0, 5, H); }
-    if (g.state === 'dl' || g.state === 'won') {
-      x.fillStyle = 'rgba(8,6,16,0.8)'; x.fillRect(120, 100, 240, 46);
-      text(x, g.state === 'dl' ? 'DOWNLOADING garbage.dat' : 'garbage.dat  COPIED', W / 2, 118, { align: 'center', color: '#ffcf8a' });
-      x.strokeStyle = '#9dff3d'; x.strokeRect(134.5, 126.5, 212, 12); x.fillStyle = '#9dff3d'; x.fillRect(136, 128, 209 * Math.min(1, g.dl), 9);
+      const sx = 48, sy = H - 48; x.fillStyle = 'rgba(0,0,0,0.45)'; x.beginPath(); x.arc(sx + 2, sy + 4, 38, 0, 7); x.fill();
+      const rg = x.createRadialGradient(sx, sy, 2, sx, sy, 36); rg.addColorStop(0, '#0c2a14'); rg.addColorStop(1, '#040c08'); x.fillStyle = rg; x.beginPath(); x.arc(sx, sy, 36, 0, 7); x.fill();
+      x.strokeStyle = '#9dff3d'; x.lineWidth = 2; x.globalAlpha = 0.9; x.beginPath(); x.arc(sx, sy, 36, 0, 7); x.stroke(); x.lineWidth = 1; x.globalAlpha = 0.25; x.beginPath(); x.arc(sx, sy, 24, 0, 7); x.moveTo(sx - 36, sy); x.lineTo(sx + 36, sy); x.moveTo(sx, sy - 36); x.lineTo(sx, sy + 36); x.stroke(); x.globalAlpha = 1;
+      for (const p of g.pings) { x.strokeStyle = `rgba(157,255,61,${p.a})`; x.beginPath(); x.arc(sx, sy, 36 * (1 - p.a), 0, 7); x.stroke(); }
+      const ang = Math.atan2(g.fj + 0.5 - g.pz, g.fi + 0.5 - g.px) - g.yaw - Math.PI / 2, hc = near > 0.7 ? '#ffcf8a' : '#9dff3d';
+      x.save(); x.translate(sx, sy); x.rotate(ang); x.fillStyle = hc; x.shadowColor = hc; x.shadowBlur = 8; x.beginPath(); x.moveTo(0, -30); x.lineTo(7, -16); x.lineTo(-7, -16); x.fill(); x.restore();
+      glow(x, sx, sy, 40, hc, 0.12 + near * 0.3);
+      title(x, d.toFixed(1), sx, sy + 5, { size: 16, body: true, color: '#eaffd0' });
+      const heat = near > 0.8 ? 'HOT' : near > 0.5 ? 'WARM' : 'COLD'; title(x, heat, sx + 46, sy + 30, { size: 16, align: 'left', color: near > 0.8 ? '#ffcf8a' : near > 0.5 ? '#e0e070' : '#6aa8c8', glow: near > 0.8 ? '#ff9a3a' : undefined });
+      if (g.state === 'play' && introT < 4) { x.globalAlpha = Math.min(1, (4 - introT) * 1.5); const ip = panel(x, W / 2 - 150, H - 58, 300, 46, { style: 'glass' });
+        title(x, 'Find the garbage file before the trace.', W / 2, ip.y + 17, { size: 16, body: true, color: '#ffcf8a' }); howTo(x, W, ip.y + 37, [['←→', 'turn'], ['↑', 'fly'], ['space', 'boost'], ['hold click', 'fly']]); x.globalAlpha = 1; }
     }
-    if (g.state === 'won') {
-      const k = Math.sin(t * 8) * 0.5 + 0.5;
-      text(x, 'HACK THE PLANET', W / 2 + (g.glitch ? (Math.random() - 0.5) * 10 : 0), 78, { size: 32, title: true, align: 'center', color: k > 0.5 ? '#ff4fd8' : '#3ff0ff', shadow: '#000' });
-      text(x, `${g.t.toFixed(1)}s  ${g.msg}`, W / 2, 166, { align: 'center', color: '#9dff3d', shadow: '#000' }); text(x, 'space / click: hack again', W / 2, 182, { align: 'center', color: '#c8c0d8', shadow: '#000' });
-    }
-    if (g.state === 'lost') { x.fillStyle = 'rgba(30,0,10,0.75)'; x.fillRect(100, 100, 280, 60); text(x, 'TRACE COMPLETE. BUSTED.', W / 2, 124, { title: true, align: 'center', color: '#ff6b6b' }); text(x, 'space / click: hack again', W / 2, 146, { align: 'center', color: '#c8c0d8' }); }
-    if (g.glitch > 0) { for (let i = 0; i < 6; i++) { const y = Math.random() * H; x.fillStyle = i % 2 ? `rgba(255,79,216,${g.glitch * 0.5})` : `rgba(63,240,255,${g.glitch * 0.5})`; x.fillRect(0, y, W, 2 + Math.random() * 8); } x.fillStyle = `rgba(255,255,255,${g.glitch * 0.25})`; x.fillRect(0, 0, W, H); }
+    if (tr > 0.6 && g.state === 'play') { x.fillStyle = `rgba(255,30,60,${(tr - 0.6) * 0.6 * (0.6 + 0.4 * Math.sin(t * 4))})`; x.fillRect(0, 0, W, 5); x.fillRect(0, H - 5, W, 5); x.fillRect(0, 0, 5, H); x.fillRect(W - 5, 0, 5, H); }
+    if (g.state === 'dl') { const dp = panel(x, W / 2 - 120, 96, 240, 52, { style: 'crt' });
+      title(x, 'DOWNLOADING garbage.dat', W / 2, dp.y + 18, { size: 16, body: true, color: '#ffcf8a', ink: '#020a04' });
+      x.fillStyle = '#031006'; rr(x, dp.x + 12, dp.y + 26, dp.w - 24, 14, 2); x.fill(); x.fillStyle = '#9dff3d'; for (let k = 0; k < Math.floor((dp.w - 28) / 6 * Math.min(1, g.dl)); k++) x.fillRect(dp.x + 14 + k * 6, dp.y + 28, 5, 10);
+      glow(x, W / 2, dp.y + 33, 90, '#9dff3d', 0.15); }
+    fx.draw(x, dt);
+    x.restore();
+    if (g.state === 'won' || g.state === 'lost') { const won = g.state === 'won';
+      if (endT < 1.5) banner(x, W, H, won ? 'HACK THE PLANET' : 'BUSTED', won ? `${g.t.toFixed(1)}s ${g.msg}` : 'trace complete', endT, { color: won ? '#ff4fd8' : PAL.red });
+      else { const rp = panel(x, W / 2 - 110, 74, 220, 122, { style: 'neon' });
+        title(x, won ? 'garbage.dat COPIED' : 'TRACE COMPLETE', W / 2, rp.y + 24, { size: 16, color: won ? '#9dff3d' : PAL.red, glow: won ? '#9dff3d' : PAL.red, glowR: 8 });
+        badge(x, rp.x + 22, rp.y + 36, 'time', won ? g.t.toFixed(1) + 's' : '--', { w: 84, color: '#9dff3d' }); badge(x, rp.x + rp.w - 106, rp.y + 36, 'best', g.best ? g.best.toFixed(1) + 's' : '--', { w: 84, color: '#3ff0ff' });
+        if (g.msg && won) title(x, g.msg.trim(), W / 2, rp.y + 86, { size: 16, body: true, color: PAL.gold });
+        B2.draw(x, W / 2 - 50, rp.y + 96, 100, 20, 'HACK AGAIN', { primary: true }); } }
     scan(x, W, H);
   });
 }

@@ -1,11 +1,12 @@
 // @ts-check
 // Procedural pixel-art TV channels (night palette, dev parody). Each draws a full frame into a small buffer.
 import { text } from './util.js';
+import { title } from './art.js';
 
 /** @typedef {{ name: string, glow: string, draw: (b: CanvasRenderingContext2D, W: number, H: number, t: number, S: any) => void }} Channel */
 const R = (b, c, x, y, w, h) => { b.fillStyle = c; b.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
 const hash = n => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
-const cap = (b, W, H, s, c = '#f2e6c8') => { R(b, 'rgba(0,0,0,.55)', 0, H - 15, W, 15); text(b, s, W / 2, H - 4, { align: 'center', color: c }); };
+const cap = (b, W, H, s, c = '#f2e6c8') => { const g = b.createLinearGradient(0, H - 18, 0, H); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.4, 'rgba(0,0,0,.6)'); g.addColorStop(1, 'rgba(0,0,0,.75)'); b.fillStyle = g; b.fillRect(0, H - 18, W, 18); title(b, s, W / 2, H - 4, { size: 16, body: true, color: c }); };
 const stars = (b, W, h, t, n = 24) => { for (let i = 0; i < n; i++) if (hash(i + Math.floor(t * 2 + i) * 0.01) > 0.15) R(b, hash(i * 3) > 0.7 ? '#e0a458' : '#8e8aa8', hash(i) * W, hash(i * 7) * h, 1, 1); };
 /** Little pixel person. */
 const guy = (b, x, y, skin, top, hair, k = 1) => { R(b, top, x - 3 * k, y - 9 * k, 6 * k, 7 * k); R(b, skin, x - 2 * k, y - 14 * k, 4 * k, 5 * k); R(b, hair, x - 2 * k, y - 15 * k, 4 * k, 2 * k); R(b, '#1a1824', x - 3 * k, y - 2 * k, 2 * k, 2 * k); R(b, '#1a1824', x + 1 * k, y - 2 * k, 2 * k, 2 * k); };

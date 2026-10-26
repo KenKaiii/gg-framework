@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { mat, glowMat, rbox, put, mesh } from './kit.js';
 import * as TX from './tex.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const WOOD = () => mat('#3a2418', { roughness: 0.8 });
 export const DARK = () => mat('#24160f', { roughness: 0.85 });
@@ -116,15 +117,43 @@ export function stool(h = 0.55) {
   return g;
 }
 
-/** The old patched pointy hat (sits at y=0, ~0.55 tall). Face crease toward +z. */
+/**
+ * The old patched pointy hat (sits at y=0, ~0.55 tall). Face crease toward +z.
+ * One swept body: rings follow a spine that slouches back then flops forward at the tip, the radius dips in creases
+ * (soft cloth folds) and a wavy floppy brim; brow / mouth folds are dark tubes sunk into the cloth with a few
+ * stitches and a patch. 3 draw calls (cloth, dark folds + stitches, patch); the mouth stays its own mesh (animated).
+ */
 export function sortingHat() {
-  const g = new THREE.Group(), cl = mat('#5a4030', { roughness: 0.95 }), cr = mat('#2a1a12', { roughness: 0.95 });
-  put(g, mesh(new THREE.CylinderGeometry(0.3, 0.32, 0.03, 20), cl), 0, 0.015, 0);
-  const cone = mesh(new THREE.LatheGeometry([[0.2, 0], [0.19, 0.1], [0.15, 0.2], [0.11, 0.3], [0.06, 0.38], [0.0, 0.42]].map(([r, y]) => new THREE.Vector2(r, y)), 14), cl); g.add(cone);
-  const tip = mesh(new THREE.ConeGeometry(0.06, 0.22, 10), cl); tip.position.set(0.07, 0.45, 0); tip.rotation.z = -1.0; g.add(tip);
-  put(g, rbox(0.13, 0.025, 0.03, cr, 0.01), -0.05, 0.2, 0.15).rotation.z = 0.25;  // brows
-  put(g, rbox(0.1, 0.025, 0.03, cr, 0.01), 0.07, 0.21, 0.145).rotation.z = -0.3;
-  const mouth = rbox(0.16, 0.03, 0.03, cr, 0.01); mouth.position.set(0, 0.1, 0.18); g.add(mouth);
+  const g = new THREE.Group(), cl = mat('#5e4230', { roughness: 0.95, side: THREE.DoubleSide }), cr = mat('#20140e', { roughness: 0.95 }), pt = mat('#3e4a2a', { roughness: 0.95, side: THREE.DoubleSide });
+  // spine: up, leaning back, the top third folding over toward the face
+  const N = 16, SEG = 18, spine = [], rad = [];
+  for (let i = 0; i <= N; i++) { const k = i / N, fold = Math.max(0, k - 0.55) / 0.45;
+    spine.push(new THREE.Vector3(Math.sin(fold * 2.2) * 0.17 + k * 0.02, k * 0.44 - fold * fold * 0.12, -0.04 * k + fold * 0.08));
+    rad.push(0.2 * Math.pow(1 - k, 0.85) * (1 - 0.08 * Math.sin(k * 15)) + 0.004); }
+  const pos = [], idx = [];
+  for (let i = 0; i <= N; i++) { const p = spine[i], q = spine[Math.min(N, i + 1)], o = spine[Math.max(0, i - 1)], tan = q.clone().sub(o).normalize();
+    const side = new THREE.Vector3(0, 0, 1).cross(tan).normalize(), up = tan.clone().cross(side).normalize();
+    for (let j = 0; j <= SEG; j++) { const a = j / SEG * Math.PI * 2, crease = 1 - 0.07 * Math.max(0, Math.sin(a * 5 + i * 0.7)) - (i < 6 ? 0.05 * Math.max(0, Math.cos(a - Math.PI / 2)) * Math.sin(i) : 0), r = rad[i] * crease;
+      pos.push(p.x + (side.x * Math.cos(a) + up.x * Math.sin(a)) * r, p.y + (side.y * Math.cos(a) + up.y * Math.sin(a)) * r, p.z + (side.z * Math.cos(a) + up.z * Math.sin(a)) * r); } }
+  for (let i = 0; i < N; i++) for (let j = 0; j < SEG; j++) { const a = i * (SEG + 1) + j, b = a + SEG + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+  const body = new THREE.BufferGeometry(); body.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); body.setIndex(idx); body.computeVertexNormals();
+  // brim: a wavy, drooping annulus
+  const brim = new THREE.RingGeometry(0.17, 0.33, 28, 2), bp = brim.attributes.position;
+  for (let v = 0; v < bp.count; v++) { const X = bp.getX(v), Y = bp.getY(v), r = Math.hypot(X, Y), a = Math.atan2(Y, X), droop = (r - 0.17) / 0.16;
+    bp.setXYZ(v, X, 0.03 + droop * (Math.sin(a * 3 + 0.6) * 0.03 - 0.02), Y); }
+  brim.computeVertexNormals();
+  const brimN = brim.toNonIndexed(); brimN.deleteAttribute('uv'); const cloth = mesh(mergeGeometries([body.toNonIndexed(), brimN]), cl); g.add(cloth);
+  // face folds: sunken creases for brows + eye slits, a stitched seam and stitches; merged into one dark mesh
+  const tube = (pts, r) => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(([x, y, z]) => new THREE.Vector3(x, y, z))), 8, r, 4, false);
+  const zf = y => 0.2 * Math.pow(1 - y / 0.44, 0.85) - 0.012;
+  const folds = [tube([[-0.13, 0.2, zf(0.2) - 0.02], [-0.07, 0.225, zf(0.22)], [-0.01, 0.205, zf(0.2)]], 0.012), tube([[0.02, 0.21, zf(0.21)], [0.07, 0.232, zf(0.23)], [0.12, 0.215, zf(0.21) - 0.02]], 0.012),
+    tube([[-0.09, 0.17, zf(0.17)], [-0.06, 0.175, zf(0.17) + 0.004], [-0.03, 0.168, zf(0.17)]], 0.008), tube([[0.04, 0.172, zf(0.17)], [0.07, 0.178, zf(0.17) + 0.004], [0.1, 0.17, zf(0.17)]], 0.008),
+    tube([[0.16, 0.06, 0.02], [0.13, 0.16, 0.0], [0.09, 0.27, -0.03]], 0.004)];
+  for (let i = 0; i < 6; i++) { const y = 0.07 + i * 0.035, st = new THREE.BoxGeometry(0.03, 0.006, 0.008); st.rotateZ(0.6); st.translate(0.15 - i * 0.01, y, 0.03 - i * 0.008); folds.push(st); }
+  g.add(mesh(mergeGeometries(folds.map(f => { const n = f.index ? f.toNonIndexed() : f; for (const k of Object.keys(n.attributes)) if (k !== 'position' && k !== 'normal') n.deleteAttribute(k); return n; })), cr));
+  const patch = new THREE.PlaneGeometry(0.07, 0.06); patch.rotateY(-1.2); patch.translate(-0.16, 0.14, -0.06); g.add(mesh(patch, pt));
+  // mouth: a dark wide fold that opens when the hat speaks
+  const mouth = mesh(new THREE.CapsuleGeometry(0.012, 0.13, 3, 6).rotateZ(Math.PI / 2), cr); mouth.position.set(0, 0.11, zf(0.11) + 0.004); g.add(mouth);
   return { g, mouth };
 }
 

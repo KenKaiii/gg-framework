@@ -3,6 +3,9 @@
 import { SFX } from '../sfx.js';
 import { loop, text, rng } from './util.js';
 import { panel, backdrop, button, onClick, onKey, hit, load, save, pops, lootCard, RARITY, INK, GOLDC } from './tavern-ui.js';
+import { PAL, shaker, particles, title } from './art.js';
+import { cardFlow } from './fightclub-ui.js';
+const SURF = (x, X, Y, w, h) => panel(x, X + 5, Y + 5, w - 10, h - 10);
 
 const ITEMS = ['Boots of Escaping Meetings', 'Helm of Merge Conflicts', 'Staff of Stack Overflow', 'Gloves of Ctrl+Z', 'Ring of the 10x Dev',
   'Amulet of Works On My Machine', 'Shoulderpads of Scope Creep', 'Belt of Tech Debt', 'Tome of Undocumented APIs', 'Dagger of Hotfix', 'Grog-Stained Tabard', 'Cloak of Dark Mode'];
@@ -27,28 +30,32 @@ export function startLoot(ctx) {
     drop.win = best >= 0 && score(drop.rolls[best]) >= 0 ? best : -1; drop.phase = 'roll'; drop.t = 0;
     col.rolls++; if (drop.win === 0) { col.items[drop.item] = Math.max(col.items[drop.item] || 0, drop.rar); }
     save('loot', col); };
+  const fx = particles(), sh = shaker();
+  const F = cardFlow(ov, c, W, H, { surface: (x, X, Y, w, h) => { panel(x, X + 5, Y + 5, w - 10, h - 10); x.fillStyle = 'rgba(40,20,8,0.5)'; x.fillRect(X + 5, Y + 5, w - 10, h - 10); }, accent: PAL.gold, start: () => newDrop() });
+  F.setCard({ title: 'LOOT ROLL', sub: 'something dropped! roll for it', lines: ['Need beats Greed; highest roll wins.'], chips: [['[N]', 'need', '|', '[G]', 'greed', '|', '[P]', 'pass', '|', '[space]', 'next'], ['[click]', 'the buttons']] });
   newDrop();
-  onKey(ov, code => { if (code === 'KeyN') choose('need'); else if (code === 'KeyG') choose('greed'); else if (code === 'KeyP') choose('pass'); else if (code === 'Space' && drop.phase === 'done') newDrop(); });
-  onClick(ov, c, W, H, (px, py) => { for (const k of ['need', 'greed', 'pass']) if (hit(b[k], px, py)) choose(k); if (hit(b.next, px, py) && drop.phase === 'done') newDrop(); });
+  onKey(ov, code => { if (F.phase !== 'play') return; if (code === 'KeyN') choose('need'); else if (code === 'KeyG') choose('greed'); else if (code === 'KeyP') choose('pass'); else if (code === 'Space' && drop.phase === 'done') newDrop(); });
+  onClick(ov, c, W, H, (px, py) => { if (F.phase !== 'play') return; for (const k of ['need', 'greed', 'pass']) if (hit(b[k], px, py)) choose(k); if (hit(b.next, px, py) && drop.phase === 'done') newDrop(); });
   loop(ov, dt => {
-    t += dt; drop.t += dt; backdrop(x, W, H, t);
+    t += dt; drop.t += dt; x.save(); sh.apply(x, dt); backdrop(x, W, H, t);
     lootCard(x, W, 150, drop.item, drop.rar, Math.min(1, drop.t * 3 + (drop.phase === 'choose' ? 0 : 1)));
     if (drop.phase === 'choose') { const k = 1 + Math.sin(t * 6) * 0.04;
       b.need = button(x, 'Need (dice)', 92, 120, 92, 24, { on: true }); b.greed = button(x, 'Greed (coin)', 194, 120, 92, 24); b.pass = button(x, 'Pass', 296, 120, 92, 24);
-      text(x, 'Need beats Greed. Ties go to whoever yells first.', W / 2, 165 * k / k, { color: '#c8a878', align: 'center' }); }
+      title(x, 'Need beats Greed. Ties go to whoever yells first.', W / 2, 165 * k / k, { size: 16, body: true, color: PAL.cream }); }
     else { panel(x, 110, 112, 260, 96);
       drop.rolls.forEach((q, i) => { const show = drop.t > 0.4 + i * 0.45, y = 130 + i * 20; if (show && i >= drop.shown) { drop.shown = i + 1; if (q.kind !== 'pass') SFX.play('dice', { vol: 0.5, pitch: 1 + i * 0.05 }); } const spin = 1 + Math.floor((t * 37 + i * 13) % 100);
         text(x, q.who, 120, y, { color: INK }); text(x, q.kind === 'pass' ? 'passed' : q.kind, 270, y, { color: q.kind === 'need' ? '#a8302a' : '#5a5a2a' });
         text(x, q.kind === 'pass' ? '-' : String(show ? q.v : spin), 360, y, { color: show && i === drop.win && drop.phase === 'done' ? '#1a8a1a' : INK, align: 'right' }); });
       if (drop.phase === 'roll' && drop.t > 0.4 + drop.rolls.length * 0.45) { drop.phase = 'done'; drop.t2 = 0;
         SFX.play(drop.win === 0 ? 'win' : 'fail', { vol: drop.win === 0 ? 1 : 0.6 });
+        if (drop.win === 0) { fx.burst(W / 2, 75, { n: 40, colors: [RARITY[drop.rar][1], PAL.goldHi, '#fff'] }); if (drop.rar >= 4) fx.confetti(W); } else sh.kick(4);
         if (drop.win === 0) P.add('LOOT GET!', W / 2, 34, RARITY[drop.rar][1]); else P.add(drop.win < 0 ? 'Everyone passed. It rots.' : drop.rolls[drop.win].who + ' wins', W / 2, 34, '#ff8a6a'); }
       if (drop.phase === 'done') { b.next = button(x, 'Next drop (space)', 170, 218, 140, 24, { on: true });
         if (drop.win === 0) { x.fillStyle = `rgba(255,210,58,${Math.max(0, 0.4 - (drop.t2 = (drop.t2 || 0) + dt))})`; x.fillRect(0, 0, W, H); } } }
     const have = Object.values(col.items); const by = RARITY.map((_, i) => have.filter(v => v === i).length);
-    text(x, `Collection ${have.length}/${ITEMS.length}`, 12, 260, { color: GOLDC });
-    RARITY.forEach(([n, cc], i) => { if (i === 1) return; text(x, `${by[i]}`, 150 + i * 40, 260, { color: cc }); x.fillStyle = cc; x.fillRect(140 + i * 40, 252, 6, 6); });
-    text(x, `rolls: ${col.rolls}`, 468, 260, { color: '#8a7a6a', align: 'right' });
-    P.draw(x, dt);
+    title(x, `Collection ${have.length}/${ITEMS.length}`, 12, 260, { size: 16, body: true, align: 'left', color: GOLDC });
+    RARITY.forEach(([n, cc], i) => { if (i === 1) return; title(x, `${by[i]}`, 150 + i * 40, 260, { size: 16, body: true, align: 'left', color: cc }); x.fillStyle = cc; x.fillRect(140 + i * 40, 252, 6, 6); });
+    title(x, `rolls: ${col.rolls}`, 468, 260, { size: 16, body: true, align: 'right', color: PAL.dim });
+    P.draw(x, dt); fx.draw(x, dt); x.restore(); F.draw(x, dt);
   });
 }

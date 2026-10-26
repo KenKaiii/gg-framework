@@ -1,11 +1,12 @@
 // @ts-check
 // 'bar-menu': a 2-page bar menu card (bar counter) and a 1-page cooler card (roof). Order with coins; Dex reacts,
 // you get the right prop in hand, and a few drinks do something.
-import { text, coins, loop } from './util.js';
+import { coins, loop } from './util.js';
 import { holdProp } from '../rooms/props-hand.js';
 import { DRINKS, BITES, COOLER, icon } from './barmenu-data.js';
 import { startDarts } from './barmenu-darts.js';
 import { SFX } from '../sfx.js';
+import { PAL, panel, title, coin, shine, rr } from './art.js';
 
 const W = 480, H = 270;
 const BROKE = ['card declined. dex is judging you.', 'not enough coins. ship something first.', 'tab says no. tab says go code.', 'you can afford water. from the tap.'];
@@ -61,7 +62,7 @@ function openMenu(ctx, cooler) {
     if (wal.balance < it.price || !wal.spend(it.price, it.name)) { shake = 0.35; SFX.play('ui.deny'); msg = BROKE[(tab.length + i) % BROKE.length]; msgT = 2.5; return; }
     tab.push({ name: it.name, price: it.price }); ov.close(); serve(S, U, it, cooler);
   };
-  const tabs = () => pages.map((p, i) => ({ i, x: 24 + i * 140, w: 132, y: 44, h: 18 }));
+  const tabs = () => cooler ? [] : pages.map((p, i) => ({ i, x: 236 + i * 64, w: 60, y: 46, h: 18 }));
   const onKey = e => {
     if (closed) return; const n = items().length, per = Math.ceil(n / cols);
     if (e.code === 'ArrowDown') { sel = (sel + 1) % n; SFX.play('ui.select'); } else if (e.code === 'ArrowUp') { sel = (sel + n - 1) % n; SFX.play('ui.select'); }
@@ -77,59 +78,59 @@ function openMenu(ctx, cooler) {
   c.addEventListener('mouseleave', () => { hover = -1; });
   c.addEventListener('click', e => { const { mx, my } = local(e); const t = tabs().find(t => mx >= t.x && mx < t.x + t.w && my >= t.y && my < t.y + t.h); if (t) return go(t.i); const i = hit(mx, my); if (i >= 0) order(i); });
 
+  // cached card: a wooden menu board (bar) or a crate lid (cooler) holding a cream paper menu with brass corners
+  const BACK = document.createElement('canvas'); BACK.width = W; BACK.height = H; {
+    const g = /** @type {CanvasRenderingContext2D} */ (BACK.getContext('2d'));
+    const gr = g.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, W * 0.7); gr.addColorStop(0, '#3a2418'); gr.addColorStop(1, '#120a08'); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    panel(g, 4, 4, W - 8, H - 8, { style: cooler ? 'metal' : 'wood', r: 6 });
+    panel(g, 14, 12, W - 28, H - 24, { style: 'paper', r: 3 });
+    g.strokeStyle = 'rgba(90,58,34,0.45)'; g.lineWidth = 1; g.strokeRect(19.5, 17.5, W - 39, H - 35);
+    for (const [a2, b2] of [[14, 12], [W - 22, 12], [14, H - 20], [W - 22, H - 20]]) { g.fillStyle = PAL.goldD; g.fillRect(a2, b2, 8, 8); g.fillStyle = PAL.goldHi; g.fillRect(a2 + 1, b2 + 1, 6, 1); g.fillStyle = '#3a2410'; g.fillRect(a2 + 3, b2 + 3, 2, 2); }
+    g.fillStyle = 'rgba(90,58,34,0.5)'; g.fillRect(24, 66, W - 48, 1); g.fillRect(24, H - 52, W - 48, 1);
+    // little ornament under the title
+    g.fillStyle = 'rgba(120,70,30,0.35)'; for (let i = 0; i < 3; i++) g.fillRect(W / 2 - 6 + i * 5, 62, 2, 2);
+  }
+  const INK = PAL.paperInk, SOFT = '#7a5a3a', LIGHT = 'rgba(255,248,230,0.6)';
   loop(ov, (dt, t) => {
     flip = Math.max(0, flip - dt * 4); shake = Math.max(0, shake - dt); msgT = Math.max(0, msgT - dt);
     const sx = shake ? Math.round(Math.sin(t * 80) * 3 * shake / 0.35) : 0;
-    x.setTransform(1, 0, 0, 1, sx, 0);
-    // leather card
-    x.fillStyle = '#17110f'; x.fillRect(-4, 0, W + 8, H);
-    x.fillStyle = '#241a16'; x.fillRect(6, 6, W - 12, H - 12);
-    for (let i = 0; i < 260; i++) { const a = (i * 7919) % (W - 16), b = (i * 104729) % (H - 16); x.fillStyle = i % 3 ? 'rgba(0,0,0,.18)' : 'rgba(255,220,180,.04)'; x.fillRect(8 + a, 8 + b, 2, 1); }
-    x.strokeStyle = '#7a5a2e'; x.lineWidth = 1; x.strokeRect(10.5, 10.5, W - 21, H - 21);
-    x.strokeStyle = '#3a2a18'; x.strokeRect(13.5, 13.5, W - 27, H - 27);
-    for (const [a, b] of [[10, 10], [W - 14, 10], [10, H - 14], [W - 14, H - 14]]) { x.fillStyle = '#e0a458'; x.fillRect(a, b, 4, 4); }
+    x.setTransform(1, 0, 0, 1, sx, 0); x.drawImage(BACK, 0, 0);
     // header
-    text(x, cooler ? 'THE COOLER' : 'THE TERMINAL', 24, 36, { title: true, size: 32, color: '#e0a458', shadow: '#3a2410' });
-    text(x, cooler ? 'honour system. mostly.' : 'est. localhost', W - 24, 22, { align: 'right', color: '#8e7a5e' });
-    const blink = Math.sin(t * 6) > 0 ? '#ffb36b' : '#e0a458';
-    x.fillStyle = blink; x.fillRect(W - 120, 28, 6, 6); x.fillStyle = '#7a4a22'; x.fillRect(W - 119, 29, 4, 4);
-    text(x, `${wal.balance} coins`, W - 24, 36, { align: 'right', color: '#ffd08a' });
-    // tabs
-    for (const tb of tabs()) {
-      const on = tb.i === page; x.fillStyle = on ? '#3a2a1c' : '#1c1512'; x.fillRect(tb.x, tb.y, tb.w, tb.h);
-      x.fillStyle = on ? '#e0a458' : '#4a3a28'; x.fillRect(tb.x, tb.y + tb.h - 2, tb.w, 2);
-      text(x, pages[tb.i].name, tb.x + tb.w / 2, tb.y + 13, { align: 'center', color: on ? '#ffd08a' : '#8e7a5e' });
+    title(x, cooler ? 'THE COOLER' : 'THE TERMINAL', 28, 42, { size: 32, align: 'left', color: '#a8401a', ink: '#3a1a08' });
+    title(x, cooler ? 'honour system. mostly.' : 'est. localhost', 30, 58, { size: 16, body: true, align: 'left', color: SOFT, ink: LIGHT });
+    // wallet chip
+    panel(x, W - 120, 22, 96, 22, { style: 'wood', r: 3 }); coin(x, W - 106, 33, 6, t * 0.4); title(x, `${wal.balance}`, W - 32, 38, { size: 16, align: 'right', color: PAL.gold });
+    // tabs: paper tabs, the open one sits forward
+    if (!cooler) for (const tb of tabs()) {
+      const on = tb.i === page; x.save(); x.fillStyle = on ? '#a8401a' : '#d8c296'; rr(x, tb.x, tb.y + 2, tb.w, tb.h - 2, 3); x.fill(); x.restore();
+      title(x, pages[tb.i].name.split(' ')[0], tb.x + tb.w / 2, tb.y + 15, { size: 16, body: true, color: on ? PAL.cream : SOFT, ink: on ? '#3a1a08' : LIGHT });
     }
-    if (!cooler) text(x, `${page + 1}/2  \u2190 \u2192`, W - 24, 57, { align: 'right', color: '#6b5a44' });
-    x.fillStyle = '#4a3a28'; x.fillRect(24, 66, W - 48, 1);
     // items (slide in on page flip)
     const off = Math.round(flip * flip * 40);
     x.globalAlpha = 1 - flip * 0.8;
     items().forEach((it, i) => {
-      const p = pos(i), px = p.x + off, py = p.y, can = wal.balance >= it.price, isSel = i === sel;
-      if (isSel) { x.fillStyle = can ? 'rgba(224,164,88,.14)' : 'rgba(200,56,44,.12)'; x.fillRect(px - 4, py - 4, colW, rowHOf() - 4); x.fillStyle = can ? '#e0a458' : '#c8382c'; x.fillRect(px - 4, py - 4, 2, rowHOf() - 4); }
+      const p = pos(i), px = p.x + off, py = p.y, can = wal.balance >= it.price, isSel = i === sel, rh = rowHOf() - 4;
+      if (isSel) { x.fillStyle = can ? 'rgba(245,189,99,.35)' : 'rgba(200,56,44,.18)'; rr(x, px - 4, py - 4, colW, rh, 3); x.fill(); x.fillStyle = can ? '#a8401a' : '#c8382c'; x.fillRect(px - 4, py - 4, 3, rh); if (can) shine(x, px - 4, py - 4, colW, rh, t); }
       x.globalAlpha = (1 - flip * 0.8) * (can ? 1 : 0.45);
-      icon(x, it.icon, px, py + (isSel ? Math.round(Math.sin(t * 8)) : 0), it.tint);
-      text(x, it.name, px + 22, py + 11, { color: isSel ? '#fff1d6' : '#e8d8b8' });
-      text(x, it.desc, px + 22, py + 24, { color: '#8e7a5e' });
-      x.fillStyle = '#ffd08a'; x.fillRect(px + colW - 30, py + 4, 5, 5); x.fillStyle = '#b07a30'; x.fillRect(px + colW - 29, py + 5, 3, 3);
-      text(x, String(it.price), px + colW - 12, py + 11, { align: 'right', color: can ? '#ffd08a' : '#c8382c' });
+      icon(x, it.icon, px, py + (isSel ? Math.round(Math.sin(t * 4)) : 0), it.tint);
+      title(x, it.name, px + 22, py + 11, { size: 16, body: true, align: 'left', color: INK, ink: LIGHT });
+      if (rowHOf() > 30) title(x, it.desc, px + 22, py + 24, { size: 16, body: true, align: 'left', color: SOFT, ink: 'rgba(0,0,0,0)' });
+      else title(x, (it.desc.length > 26 ? it.desc.slice(0, 25) + '.' : it.desc), px + 22, py + 22, { size: 16, body: true, align: 'left', color: SOFT, ink: 'rgba(0,0,0,0)' });
+      title(x, String(it.price), px + colW - 12, py + 12, { size: 16, align: 'right', color: can ? '#a8401a' : '#c8382c', ink: LIGHT });
       x.globalAlpha = 1 - flip * 0.8;
     });
     x.globalAlpha = 1;
-    // footer: tab on page 2, else hint
-    const fy = H - 46;
-    x.fillStyle = '#4a3a28'; x.fillRect(24, fy, W - 48, 1);
+    // footer: tonight's tab, the hint / the decline
+    const fy = H - 52;
     if (page === 1 || cooler) {
-      const total = tab.reduce((s, o) => s + o.price, 0);
-      const last = tab.slice(-3).map(o => o.name).join(', ');
-      text(x, "TONIGHT'S TAB", 24, fy + 16, { title: true, color: '#e0a458' });
-      text(x, tab.length ? `${tab.length} item${tab.length > 1 ? 's' : ''}: ${last}${tab.length > 3 ? '...' : ''}` : "empty. suspiciously sober.", 144, fy + 16, { color: '#c8b898' });
-      text(x, `${total} coins`, W - 24, fy + 16, { align: 'right', color: '#ffd08a' });
-    } else text(x, 'all drinks served with a side of judgement', W / 2, fy + 16, { align: 'center', color: '#6b5a44' });
+      const total = tab.reduce((s, o) => s + o.price, 0), last = tab.slice(-2).map(o => o.name).join(', ');
+      title(x, "TAB", 28, fy + 17, { size: 16, align: 'left', color: '#a8401a', ink: LIGHT });
+      title(x, tab.length ? `${tab.length}: ${last}${tab.length > 2 ? '...' : ''}` : 'empty. suspiciously sober.', 66, fy + 16, { size: 16, body: true, align: 'left', color: INK, ink: 'rgba(0,0,0,0)' });
+      title(x, `${total} coins`, W - 28, fy + 16, { size: 16, body: true, align: 'right', color: '#a8401a', ink: 'rgba(0,0,0,0)' });
+    } else title(x, 'all drinks served with a side of judgement', W / 2, fy + 16, { size: 16, body: true, color: SOFT, ink: 'rgba(0,0,0,0)' });
     const line = msgT ? msg : (wal.balance < items()[sel]?.price ? "can't afford that one. dex saw." : '');
-    if (line) text(x, line, W / 2, fy + 30, { align: 'center', color: '#ff6b5a' });
-    else text(x, 'enter / click to order', W / 2, fy + 30, { align: 'center', color: '#5a4a36' });
+    if (line) title(x, line, W / 2, fy + 31, { size: 16, body: true, color: '#c8382c', ink: LIGHT });
+    else title(x, cooler ? 'arrows pick, enter / click to grab' : 'arrows pick + page, enter / click to order', W / 2, fy + 31, { size: 16, body: true, color: SOFT, ink: 'rgba(0,0,0,0)' });
     x.setTransform(1, 0, 0, 1, 0, 0);
   });
 }

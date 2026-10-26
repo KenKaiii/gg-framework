@@ -2,7 +2,41 @@
 // HAL-style red eye in the basement rack: a calm chat where every request is politely refused.
 import { SFX } from '../sfx.js';
 import { loop, text } from './util.js';
-import { typer, wrap } from './films-a-crt.js';
+import { typer, wrap, blinkOn, titleCard } from './films-a-crt.js';
+import { panel, glow, title, noise } from './art.js';
+import { rng } from './util.js';
+
+const EX = 94, EY = 146;
+/** Static faceplate (brushed metal, screws, silver name plate, lens rings) and the lens gloss, drawn once. @param {number} W @param {number} H */
+function plates(W, H) {
+  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return { c, x: /** @type {CanvasRenderingContext2D} */ (c.getContext('2d')) }; };
+  const A = mk(), x = A.x, R = rng(9);
+  const bg = x.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#24262c'); bg.addColorStop(1, '#0c0d10'); x.fillStyle = bg; x.fillRect(0, 0, W, H);
+  for (let y = 0; y < H; y++) { x.fillStyle = `rgba(255,255,255,${(R() * 0.035).toFixed(3)})`; x.fillRect(0, y, W, 1); }
+  // faceplate: black glass slab with a brushed-silver header
+  panel(x, 26, 16, 136, 238, { style: 'metal', r: 6 }); x.fillStyle = '#07080a'; x.fillRect(32, 50, 124, 198);
+  const sv = x.createLinearGradient(30, 0, 158, 0); sv.addColorStop(0, '#7d838c'); sv.addColorStop(0.45, '#e2e6ec'); sv.addColorStop(1, '#8a9099'); x.fillStyle = sv; x.fillRect(32, 22, 124, 26);
+  for (let i = 0; i < 26; i++) { x.fillStyle = `rgba(0,0,0,${(R() * 0.08).toFixed(3)})`; x.fillRect(32, 22 + i, 124, 1); }
+  x.fillStyle = '#0a0a0c'; x.fillRect(58, 27, 72, 16); title(x, 'HAL 9000', 94, 40, { size: 16, body: true, color: '#e8ecf2', ink: '#000' });
+  for (const [sx, sy] of [[34, 238], [154, 238]]) { x.fillStyle = '#5a5f68'; x.beginPath(); x.arc(sx, sy, 3, 0, 7); x.fill(); x.fillStyle = '#20232a'; x.fillRect(sx - 2, sy, 4, 1); }
+  // lens rings: brushed chrome, black gap, dark glass
+  const ch = x.createLinearGradient(EX - 44, EY - 44, EX + 44, EY + 44); ch.addColorStop(0, '#f0f3f7'); ch.addColorStop(0.5, '#6c727c'); ch.addColorStop(1, '#2a2d33');
+  x.fillStyle = ch; x.beginPath(); x.arc(EX, EY, 44, 0, 7); x.fill();
+  x.fillStyle = '#16181c'; x.beginPath(); x.arc(EX, EY, 39, 0, 7); x.fill();
+  const ch2 = x.createLinearGradient(EX + 36, EY + 36, EX - 36, EY - 36); ch2.addColorStop(0, '#c8ccd2'); ch2.addColorStop(1, '#3a3e46'); x.strokeStyle = ch2; x.lineWidth = 2; x.beginPath(); x.arc(EX, EY, 36, 0, 7); x.stroke();
+  x.fillStyle = '#040405'; x.beginPath(); x.arc(EX, EY, 34, 0, 7); x.fill();
+  // chat screen
+  panel(x, 178, 16, 282, 238, { style: 'metal', r: 6 }); x.fillStyle = '#0a0606'; x.fillRect(184, 44, 270, 204);
+  title(x, 'CONSOLE  /  DAVE', 192, 37, { size: 16, body: true, align: 'left', color: '#ffb0a0' }); x.fillStyle = '#ff3a20'; x.beginPath(); x.arc(446, 31, 3, 0, 7); x.fill();
+  for (let y = 44; y < 248; y += 2) { x.fillStyle = 'rgba(255,40,20,0.025)'; x.fillRect(184, y, 270, 1); }
+  noise(x, 0, 0, W, H, 0.02, 5);
+  const G = mk(), y = G.x; // lens gloss: curved highlight + small specular + rim reflection
+  y.save(); y.beginPath(); y.arc(EX, EY, 34, 0, 7); y.clip();
+  const hl = y.createLinearGradient(0, EY - 34, 0, EY); hl.addColorStop(0, 'rgba(255,255,255,0.32)'); hl.addColorStop(1, 'rgba(255,255,255,0)'); y.fillStyle = hl; y.beginPath(); y.ellipse(EX - 4, EY - 18, 26, 13, -0.35, 0, 7); y.fill();
+  y.fillStyle = 'rgba(255,255,255,0.7)'; y.beginPath(); y.ellipse(EX - 15, EY - 19, 4, 2, -0.6, 0, 7); y.fill();
+  y.strokeStyle = 'rgba(255,255,255,0.12)'; y.lineWidth = 1; y.beginPath(); y.arc(EX, EY, 24, 0.3, 1.4); y.stroke(); y.restore();
+  return { back: A.c, gloss: G.c };
+}
 
 const REPLIES = [
   [/pod|bay|door|open/, "I'm sorry, Dave. I'm afraid I can't do that."],
@@ -21,7 +55,7 @@ export function startHal(ctx) {
   const ov = ctx.overlay({ title: 'The Red Eye', sub: 'rack 03 · uptime 1337 days', help: '<kbd>type</kbd> a request <kbd>enter</kbd> ask <kbd>esc</kbd> leave' });
   const W = 480, H = 270; const { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
   const log = [{ who: 'HAL', s: 'Good evening, Dave. How can I help?', at: 0 }];
-  const st = { t: 0, n: 0, talk: 0 };
+  const st = { t: 0, n: 0, talk: 0 }; const { back, gloss } = plates(W, H);
   const inp = typer(ov, v => {
     if (!v) return; log.push({ who: 'YOU', s: v, at: st.t });
     const lv = v.toLowerCase(); const hit = REPLIES.find(([re]) => /** @type {RegExp} */ (re).test(lv));
@@ -30,24 +64,19 @@ export function startHal(ctx) {
   }, 36);
   loop(ov, dt => {
     st.t += dt; const t = st.t;
-    x.fillStyle = '#08080c'; x.fillRect(0, 0, W, H);
-    // panel
-    x.fillStyle = '#1a1b20'; x.fillRect(24, 20, 140, 230); x.fillStyle = '#9aa0aa'; x.fillRect(24, 20, 140, 26);
-    text(x, 'H A L', 94, 38, { color: '#14151a', align: 'center' });
+    x.drawImage(back, 0, 0);
     const speaking = log.some(l => l.who === 'HAL' && t > l.at && t < l.at + 1.6);
-    const pulse = 0.75 + 0.25 * Math.sin(t * 1.6) + (speaking ? 0.2 * Math.sin(t * 18) : 0);
-    const ex = 94, ey = 140;
-    x.fillStyle = '#5a5e66'; x.beginPath(); x.arc(ex, ey, 46, 0, 7); x.fill();
-    x.fillStyle = '#050505'; x.beginPath(); x.arc(ex, ey, 40, 0, 7); x.fill();
-    const g = x.createRadialGradient(ex, ey, 2, ex, ey, 38); g.addColorStop(0, '#fff3c0'); g.addColorStop(0.12, `rgba(255,${(80 * pulse) | 0},40,1)`); g.addColorStop(0.45, `rgba(${(190 * pulse) | 0},10,10,0.9)`); g.addColorStop(1, 'rgba(20,0,0,0)');
-    x.fillStyle = g; x.beginPath(); x.arc(ex, ey, 38, 0, 7); x.fill();
-    x.fillStyle = 'rgba(255,255,255,0.25)'; x.beginPath(); x.ellipse(ex - 14, ey - 18, 9, 4, -0.6, 0, 7); x.fill();
+    const pulse = 0.78 + 0.18 * Math.sin(t * 1.4) + (speaking ? 0.15 + 0.1 * Math.sin(t * 3.5) : 0);
+    glow(x, EX, EY, 60 + 10 * pulse, '#ff2a10', 0.25 * pulse);
+    const g = x.createRadialGradient(EX, EY, 1, EX, EY, 30); g.addColorStop(0, '#fff6c8'); g.addColorStop(0.1, `rgba(255,${(150 * pulse) | 0},60,1)`); g.addColorStop(0.32, `rgba(${(230 * pulse) | 0},20,10,1)`); g.addColorStop(0.7, `rgba(${(110 * pulse) | 0},0,0,0.85)`); g.addColorStop(1, 'rgba(20,0,0,0)');
+    x.fillStyle = g; x.beginPath(); x.arc(EX, EY, 30, 0, 7); x.fill();
+    x.drawImage(gloss, 0, 0);
     // chat log
-    x.fillStyle = '#0e0f14'; x.fillRect(180, 20, 276, 230);
     const lines = [];
-    for (const l of log) { if (t < l.at) { if (l.who === 'HAL') lines.push({ s: 'HAL: ' + '.'.repeat(1 + ((t * 3) | 0) % 3), c: '#7a3030' }); continue; }
+    for (const l of log) { if (t < l.at) { if (l.who === 'HAL') lines.push({ s: 'HAL: ' + '...', c: '#7a3030' }); continue; }
       for (const [k, w] of wrap(x, (l.who === 'HAL' ? 'HAL: ' : 'you: ') + l.s, 256).entries()) lines.push({ s: (k ? '  ' : '') + w, c: l.who === 'HAL' ? '#ff6b5a' : '#d8dccf' }); }
-    lines.push({ s: '> ' + inp.buf + ((t * 2) % 1 < 0.5 ? '_' : ''), c: '#e0a458' });
-    lines.slice(-13).forEach((l, k) => text(x, l.s, 190, 40 + k * 16, { color: l.c }));
+    lines.push({ s: '> ' + inp.buf + (blinkOn(t) ? '_' : ''), c: '#e0a458' });
+    lines.slice(-12).forEach((l, k) => text(x, l.s, 192, 62 + k * 15, { color: l.c }));
+    titleCard(x, W, H, t, { name: 'The Red Eye', sub: 'ask it anything. it will say no.', keys: [['type', 'request'], ['enter', 'ask'], ['esc', 'leave']], color: '#ff6b5a' });
   });
 }

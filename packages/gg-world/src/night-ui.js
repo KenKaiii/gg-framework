@@ -192,7 +192,7 @@ export function initUI(S, W) {
   const ibar = h('div', 'ibar'); root.appendChild(ibar);
   const ib = (title, rows, fn) => { const b = /** @type {HTMLButtonElement} */ (h('button', 'key ib')); b.type = 'button'; b.title = title; b.setAttribute('aria-label', title); b.innerHTML = '<i class="pxi"></i>'; /** @type {HTMLElement} */ (b.firstChild).style.setProperty('--m', pxMask(rows)); b.addEventListener('click', () => { b.blur(); if (!U.blocking) fn(); }); ibar.appendChild(b); return b; };
   ib('Map (M)', ICONS.map, () => openMap());
-  ib('Wardrobe (C)', ICONS.shirt, () => { U.blocking = true; creatorEl = openCreator(S, root, () => { creatorEl?.remove(); creatorEl = null; U.blocking = false; }); });
+  ib('Wardrobe (C)', ICONS.shirt, () => { if (creatorEl) return; U.blocking = true; creatorEl = openCreator(S, root, () => { creatorEl?.remove(); creatorEl = null; U.blocking = false; }); });
   snd.className = 'key ib snd'; ibar.appendChild(snd);
   const MK = makeMarker(S); U.marker = MK;
   const PTR = initPointer(S, U, W, { targets, people: peopleT, interactWith, showProfile: m => showProfile(m), standUp, inReach });
@@ -210,7 +210,7 @@ export function initUI(S, W) {
     if (e.code === 'KeyE') interact();
     if (e.code === 'Enter') { e.preventDefault(); openChat(); }
     if (e.code === 'KeyM') openMap();
-    if (e.code === 'KeyC') { U.blocking = true; creatorEl = openCreator(S, root, () => { creatorEl?.remove(); creatorEl = null; U.blocking = false; }); }
+    if (e.code === 'KeyC' && !creatorEl) { U.blocking = true; creatorEl = openCreator(S, root, () => { creatorEl?.remove(); creatorEl = null; U.blocking = false; }); }
     if (e.code === 'KeyB') edit.toggle();
     const em = EMO[e.code]; if (em) { SFX.play('pop'); S.me.path = null; S.me.av.startEmote(em[0]); S.me.lockAnim = 2.5; U.bubble(S.me, em[1], 2.5); }
   });

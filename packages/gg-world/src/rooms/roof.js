@@ -1,5 +1,5 @@
 // @ts-check
-// The Roof: an apartment rooftop at night, the not-gaming chill spot. Low parapet, city skyline backdrop,
+// The Roof: an apartment rooftop at night, the not-gaming chill spot. Low parapet over the suburb (outside.js),
 // stairwell hut (door to The Terminal), festoon lights, oil-drum fire, hammock, telescope, green server exhaust.
 import { SFX } from '../sfx.js';
 import { roomGlow, liveProp } from './bar-glow.js';
@@ -9,7 +9,7 @@ import * as FX from './kit-fx.js';
 import * as TX from './tex.js';
 import * as P from './roof-props.js';
 import { clutter } from './roof-clutter.js';
-import { gravel, stucco, backdrop } from './roof-sky.js';
+import { gravel, stucco } from './roof-sky.js';
 import * as Z from './roof-zones.js';
 import { roomInfo } from './floorplan.js';
 
@@ -28,7 +28,7 @@ export function build(ctx) {
     doors: [{ side: 'n', at: DOOR_X, to: stairs.to, label: stairs.label, glow: '#3ddc84' }] });
   const W = R.w, D = R.d, S = R.static, L = R.live, big = new Set();
   const cast = o => { big.add(o); return o; };
-  const city = backdrop(L, W, D); { const cut = R.cutaway; R.cutaway = dir => { cut(dir); city.show(dir); }; } city.show(new THREE.Vector3(-1, 0, -1));
+  const cyl = (rt, rb, h, m, n = 12) => mesh(new THREE.CylinderGeometry(rt, rb, h, n), m);
 
   // stairwell hut behind the north parapet (the kit door frame is its doorway), stairs going down inside
   const hutM = mat('#ffffff', { map: stucco() }), hx0 = DOOR_X - 1.4, hx1 = DOOR_X + 2.5, HH = 3.0, dz = -D / 2;
@@ -36,7 +36,24 @@ export function build(ctx) {
   put(hut, rbox(hx1 - hx0, HH, 1.6, hutM, 0.03), (hx0 + hx1) / 2, HH / 2, dz - 0.25 - 0.8);
   const front = (x0, x1, y0, y1) => put(hut, rbox(x1 - x0, y1 - y0, 0.12, hutM, 0.01), (x0 + x1) / 2, (y0 + y1) / 2, dz - 0.06);
   front(hx0, DOOR_X - 0.6, 1.1, HH); front(DOOR_X + 0.6, hx1, 1.1, HH); front(DOOR_X - 0.6, DOOR_X + 0.6, 2.35, HH);
-  put(hut, rbox(hx1 - hx0 + 0.2, 0.1, 1.9, mat('#2a2230'), 0.03), (hx0 + hx1) / 2, HH + 0.05, dz - 0.9);
+  { // corrugated metal roof sloping back, with a drip edge, corner trim boards, a meter box and stickers by the door
+    const RW = hx1 - hx0 + 0.3, RD = 2.0, cg = new THREE.PlaneGeometry(RW, RD, 64, 1), cp = cg.attributes.position;
+    for (let i = 0; i < cp.count; i++) cp.setZ(i, Math.sin(cp.getX(i) * 40) * 0.018);
+    cg.rotateX(-Math.PI / 2 + 0.08); cg.computeVertexNormals();
+    const tin = mat('#5a5048', { metalness: 0.3, roughness: 0.7, side: THREE.DoubleSide });
+    put(hut, mesh(cg, tin), (hx0 + hx1) / 2, HH + 0.08, dz - 0.9);
+    put(hut, rbox(RW, 0.06, 0.06, mat('#5a5e64', { metalness: 0.5, roughness: 0.5 }), 0.02), (hx0 + hx1) / 2, HH + 0.13, dz + 0.1); // drip edge
+    const trim = mat('#d8cfc0', { roughness: 0.8 });
+    for (const x of [hx0 + 0.04, hx1 - 0.04]) put(hut, rbox(0.1, HH, 0.06, trim, 0.015), x, HH / 2, dz - 0.03);
+    put(hut, rbox(hx1 - hx0, 0.1, 0.06, trim, 0.015), (hx0 + hx1) / 2, HH - 0.05, dz - 0.03);
+    for (const [x, y] of [[DOOR_X - 0.62, 1.2], [DOOR_X + 0.62, 1.2]]) put(hut, rbox(0.08, 2.4, 0.08, trim, 0.02), x, y, dz + 0.0); // door casing
+    put(hut, rbox(1.32, 0.1, 0.08, trim, 0.02), DOOR_X, 2.4, dz);
+    put(hut, rbox(0.3, 0.42, 0.14, mat('#6a6e74', { metalness: 0.4, roughness: 0.6 }), 0.03), DOOR_X - 1.05, 1.4, dz + 0.07); // meter box
+    put(hut, cyl(0.06, 0.06, 0.02, mat('#d8e0e8', { roughness: 0.2 }), 14).rotateX(Math.PI / 2), DOOR_X - 1.05, 1.45, dz + 0.15);
+    put(hut, cyl(0.02, 0.02, 1.4, mat('#4a4e54', { metalness: 0.5 }), 6), DOOR_X - 1.05, 0.5, dz + 0.04); // conduit down
+    const stk = [['#ff4fd8', 0.16, 0.1], ['#3ddc84', 0.12, 0.12], ['#ffe14f', 0.14, 0.08], ['#4fa8ff', 0.1, 0.1]];
+    stk.forEach(([c, w, h], i) => put(hut, rbox(/** @type {number} */ (w), /** @type {number} */ (h), 0.004, mat(/** @type {string} */ (c), { roughness: 0.6 }), 0.001), DOOR_X - 0.88 + (i % 2) * 0.15, 0.62 + i * 0.11, dz + 0.005, 0).rotation.z = (i - 1.5) * 0.25);
+  }
   for (let i = 0; i < 4; i++) put(S, rbox(1.0, 0.06, 0.26, mat('#2a2230'), 0.01), DOOR_X, -0.1 - i * 0.18, dz - 0.25 - i * 0.26);
   const spray = mesh(new THREE.PlaneGeometry(1.75, 1.2), new THREE.MeshBasicMaterial({ map: sprayTex(), transparent: true, depthWrite: false, color: '#e8d8e8' }));
   spray.position.set(DOOR_X + 1.55, 1.85, dz + 0.005); spray.rotation.z = 0.03; L.add(spray);
@@ -96,7 +113,7 @@ export function build(ctx) {
     { x: 0, y: 3.0, z: 0.5, color: '#ffcf8a', i: 16, d: 16 },
     { x: 6.0, y: 1.5, z: -2.0, color: '#ffb36b', i: 5, d: 6 },
     { x: DOOR_X, y: 2.3, z: dz + 0.6, color: '#ffb36b', i: 4, d: 6 }] });
-  R.meta = { id: 'roof', name: 'The Roof', blurb: 'Fire drum, string lights, cold beers and the whole city. No laptops required (but welcome).' };
+  R.meta = { id: 'roof', name: 'The Roof', blurb: 'Fire drum, string lights, cold beers and the whole street below. No laptops required (but welcome).' };
   R.spawn = { x: DOOR_X, z: dz + 1.0, face: 0 };
   const sit = (id, kind, x, z, face, prop, label, y) => ({ id: 'roof-' + id, kind, x, z, ...(y ? { y } : {}), face, anim: 'Sit_Chair_Idle', prop, label });
   const stand = (id, x, z, face, prop, label) => ({ id: 'roof-' + id, kind: 'stand', x, z, face, anim: 'Idle', prop, label });
@@ -130,7 +147,7 @@ export function build(ctx) {
     dr.fire.children.forEach((c, i) => { c.scale.set(1, 0.95 + 0.15 * Math.sin(t * (2.2 + i * 0.4) + i * 2), 1); c.rotation.y = t * (1 + i * 0.3); });
     for (let i = 0; i < N; i++) { const k = (t * 0.45 + i / N) % 1; sp[i * 3] = FX0 + Math.sin(i * 7.1 + t) * 0.15 * (1 + k); sp[i * 3 + 1] = 0.9 + k * 1.8; sp[i * 3 + 2] = FZ + Math.cos(i * 3.3 + t * 0.8) * 0.15 * (1 + k); }
     sg.attributes.position.needsUpdate = true; smoke.userData.tick(t);
-    bulbs(t); if (city.blinks[0]) { const k = 0.4 + 0.6 * Math.pow(0.5 + 0.5 * Math.sin(t * 2.6), 2); city.blinks[0].material.color.setRGB(3 * k, 0.56 * k, 0.56 * k); }
+    bulbs(t);
     for (const fan of v.fans) fan.rotation.y = t * 1.1;
     vg.material.opacity = 0.3 * (1 - 0.12 * (0.5 + 0.5 * Math.sin(t * 1.85)));
   };

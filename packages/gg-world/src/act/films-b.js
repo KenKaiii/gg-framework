@@ -25,10 +25,10 @@ export default [
   } },
   { id: 'fb-case', sfx: false, match: on('bar', 'fb-case'), start(ctx) {
     SFX.play('snap'); setTimeout(() => SFX.play('snap'), 250); SFX.play('magic', { delay: 0.9, vol: 0.6 });
-    const fx = ctx.R.fbx; fx.openWant = 1; goldWash(4.2); let said = 0;
+    const fx = ctx.R.fbx; fx.openWant = 1; goldWash(4.2); let said = 0; const me = ctx.S.me?.root, meVis = me?.visible; if (me) me.visible = false; // the player stands between camera and case
     moment(ctx, { at: [-7.85, 0.95, 2.8], dir: { x: 0.7, y: 1.3, z: 0.25 }, zoom: 0.95, title: 'The briefcase', line: '*click* *click*', secs: 4.5,
       tick: (dt, t, api) => { if (t > 1.1 && said < 1) { said = 1; api.cap.set(null, "It's... beautiful."); } if (t > 2.8 && said < 2) { said = 2; api.cap.set(null, 'You close it. Some things stay unexplained.'); fx.openWant = 0; } },
-      end: () => { fx.openWant = 0; } });
+      end: () => { fx.openWant = 0; if (me) me.visible = meVis; } });
   } },
   { id: 'fb-water', sfx: false, match: on('bar', 'fb-water'), start(ctx) {
     const fx = ctx.R.fbx; fx.quake = 5; let last = -1;

@@ -36,7 +36,8 @@ export const FLOORS = {
     tavern: { w: 32, d: 18, x: 37, z: 47 },      // The Prancing Murloc: x 21..53, z 38..56 (World of Warcraft inn)
   } },
   roof: { name: 'Rooftop', rooms: { roof: { w: 20, d: 14, x: 0, z: 0 } } },
-  basement: { name: 'Basement', rooms: { basement: { w: 16, d: 11, x: 0, z: 0 } } },
+  // The Engine Room (owner: GG Coder itself, "how it all runs", with Ken fixing things) joins the basement to the east
+  basement: { name: 'Basement', rooms: { basement: { w: 16, d: 11, x: 0, z: 0 }, engine: { w: 22, d: 14, x: 19, z: 0 } } },
 };
 
 /** Open archways between neighbouring rooms on the same floor.
@@ -71,9 +72,10 @@ export const PASSAGES = [
   { north: 'computer', south: 'tavern', x: 26, w: 2.6 },
   { north: 'fightclub', south: 'tavern', x: 46, w: 3.0 },
   { west: 'inception', east: 'tavern', z: 47, w: 3.0 },
+  { west: 'basement', east: 'engine', z: 0, w: 2.6 },
 ];
 /** Floors whose rooms are joined into one building (shared walls + one slab). */
-export const JOINED = new Set(['main']);
+export const JOINED = new Set(['main', 'basement']); // basement + engine room are walked between
 
 
 /** Stairs between floors (rendered as doors on a back wall; walking into one changes floor). */
@@ -86,7 +88,7 @@ export const STAIRS = [
 export const ROOM_NAMES = { bar: 'The Terminal', den: 'The Den', bedroom: 'Night Shift', kitchen: 'The Kitchen', studio: 'The Studio',
   screening: 'Screening Room', diner: 'Jackrabbit Diner', library: 'Restricted Section', garage: "Doc's Garage",
   overlook: 'The Overlook', hawkins: 'Hawkins', biolab: 'Lab 426',
-  hackers: 'Club Cyberdelia', computer: 'The Computer Lab', fightclub: 'Paper Street', inception: 'Limbo', tavern: 'The Prancing Murloc', roof: 'The Roof', basement: 'The Basement' };
+  hackers: 'Club Cyberdelia', computer: 'The Computer Lab', fightclub: 'Paper Street', inception: 'Limbo', tavern: 'The Prancing Murloc', engine: 'The Engine Room', roof: 'The Roof', basement: 'The Basement' };
 /** Every opening on a floor in WORLD coords: { floor, x, z, a, b, w } (a/b = the two rooms it joins). */
 export function passagesWorld() {
   const out = [];

@@ -4,7 +4,8 @@
 // a teapot, a blinking 'deploy' satellite). Centre a target and hold Space to log it. Log all three for coins once a
 // day; a rare shooting star is a bonus. Progress for the day + nights logged are saved (localStorage, try/catch).
 import { SFX } from '../sfx.js';
-import { text, loop, keys, rng, coins } from './util.js';
+import { loop, keys, rng, coins } from './util.js';
+import { PAL, panel, title, glow, particles, keyChip, clamp } from './art.js';
 
 const W = 320, H = 180, SKY = 900, SKYH = 420;
 const ODD = [['red roadster', 'someone launched a car. respect.'], ['teapot', 'Russell was right.'], ['deploy satellite', 'it blinks every time prod breaks.'], ['whale', 'it is not a whale. it is a whale.']];
@@ -26,6 +27,16 @@ function start(ctx) {
     { id: 'sat', name: 'a satellite', x: 100 + r() * 700, y: 40 + r() * 300, line: 'probably running someone\'s cron job.', vx: 6 },
     { id: 'odd', name: odd[0], x: 100 + r() * 700, y: 50 + r() * 300, line: odd[1], vx: -3 },
   ];
+  // cached eyepiece: brass barrel with a knurled rim and soft inner shadow, drawn once
+  const EYE = document.createElement('canvas'); EYE.width = W; EYE.height = H; {
+    const g = /** @type {CanvasRenderingContext2D} */ (EYE.getContext('2d'));
+    const bg = g.createRadialGradient(W / 2, H / 2, 80, W / 2, H / 2, 220); bg.addColorStop(0, '#1a1410'); bg.addColorStop(1, '#050304'); g.fillStyle = bg; g.beginPath(); g.rect(0, 0, W, H); g.arc(W / 2, H / 2, 82, 0, Math.PI * 2, true); g.fill();
+    const br = g.createLinearGradient(0, H / 2 - 92, 0, H / 2 + 92); br.addColorStop(0, '#ffe8a0'); br.addColorStop(0.4, '#c8862a'); br.addColorStop(1, '#4a2a10'); g.strokeStyle = br; g.lineWidth = 8; g.beginPath(); g.arc(W / 2, H / 2, 86, 0, 7); g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1; for (let a = 0; a < 72; a++) { const an = a / 72 * Math.PI * 2; g.beginPath(); g.moveTo(W / 2 + Math.cos(an) * 83, H / 2 + Math.sin(an) * 83); g.lineTo(W / 2 + Math.cos(an) * 89, H / 2 + Math.sin(an) * 89); g.stroke(); }
+    const ins = g.createRadialGradient(W / 2, H / 2, 60, W / 2, H / 2, 82); ins.addColorStop(0, 'rgba(0,0,0,0)'); ins.addColorStop(1, 'rgba(0,0,0,0.7)'); g.fillStyle = ins; g.beginPath(); g.arc(W / 2, H / 2, 82, 0, 7); g.fill();
+    g.fillStyle = 'rgba(160,200,255,0.06)'; g.beginPath(); g.ellipse(W / 2 - 30, H / 2 - 40, 40, 14, -0.5, 0, 7); g.fill();
+  }
+  const fx = particles(); let intro = 0, prevFound = st.found.length;
   let cx = SKY / 2, cy = SKYH / 2, hold = 0, msg = '', msgT = 0, shoot = null, shake = 0;
   const say = (m, t = 2.6) => { msg = m; msgT = t; };
   // mouse: drag the sky to pan, hold the button to log (like holding space)
@@ -68,19 +79,23 @@ function start(ctx) {
     else { x.fillStyle = '#6a7ab8'; x.fillRect(qx - 6, qy - 1, 10, 3); x.fillRect(qx + 4, qy - 2, 2, 1); x.fillRect(qx + 4, qy + 2, 2, 1); x.fillStyle = '#fff'; x.fillRect(qx - 4, qy - 1, 1, 1); }
     if (shoot) { shoot.life -= dt; shoot.x += 160 * dt; shoot.y += 70 * dt; const px = shoot.x - ox, py = shoot.y - oy; x.strokeStyle = `rgba(255,240,200,${Math.max(0, shoot.life)})`; x.beginPath(); x.moveTo(px, py); x.lineTo(px - 18, py - 8); x.stroke(); if (shoot.life <= 0) shoot = null; }
     // eyepiece: round vignette + crosshair + hold ring
-    x.fillStyle = '#05050c'; x.beginPath(); x.rect(0, 0, W, H); x.arc(W / 2, H / 2, 82, 0, Math.PI * 2, true); x.fill();
-    x.strokeStyle = 'rgba(224,164,88,.6)'; x.beginPath(); x.arc(W / 2, H / 2, 82, 0, 7); x.stroke();
+    if (aim || shot) glow(x, W / 2, H / 2, 30, '#6ee7a0', 0.25 + Math.sin(t * 4) * 0.08);
+    x.drawImage(EYE, 0, 0);
     x.strokeStyle = aim || shot ? '#6ee7a0' : 'rgba(224,164,88,.5)'; x.beginPath(); x.moveTo(W / 2 - 10, H / 2); x.lineTo(W / 2 - 3, H / 2); x.moveTo(W / 2 + 3, H / 2); x.lineTo(W / 2 + 10, H / 2); x.moveTo(W / 2, H / 2 - 10); x.lineTo(W / 2, H / 2 - 3); x.moveTo(W / 2, H / 2 + 3); x.lineTo(W / 2, H / 2 + 10); x.stroke();
     // a faint arrow on the rim points to the nearest target not logged yet (so it's a hunt, not a needle in a haystack)
     let nb = null, nd = 1e9; for (const tg of targets) if (!found(tg.id)) { const d = Math.hypot(tg.x - cx, tg.y - cy); if (d < nd) { nd = d; nb = tg; } }
     if (nb && nd > 70) { const a = Math.atan2(nb.y - cy, nb.x - cx), ax = W / 2 + Math.cos(a) * 74, ay = H / 2 + Math.sin(a) * 74;
       x.fillStyle = `rgba(255,214,150,${0.75 + 0.25 * Math.sin(t * 5)})`; x.beginPath(); x.moveTo(ax + Math.cos(a) * 8, ay + Math.sin(a) * 8); x.lineTo(ax + Math.cos(a + 2.5) * 6, ay + Math.sin(a + 2.5) * 6); x.lineTo(ax + Math.cos(a - 2.5) * 6, ay + Math.sin(a - 2.5) * 6); x.fill(); }
     if (hold > 0) { x.strokeStyle = '#6ee7a0'; x.lineWidth = 2; x.beginPath(); x.arc(W / 2, H / 2, 16, -Math.PI / 2, -Math.PI / 2 + (hold / 0.9) * Math.PI * 2); x.stroke(); x.lineWidth = 1; }
-    // logbook on the left, line at the bottom
-    text(x, 'LOG', 8, 14, { size: 16, title: true, color: '#e0a458' });
-    targets.forEach((tg, i) => text(x, (found(tg.id) ? '[x] ' : '[ ] ') + tg.name, 8, 30 + i * 12, { size: 16, color: found(tg.id) ? '#6ee7a0' : '#8e9a88' }));
-    if (aim) text(x, 'hold space', W / 2, H / 2 + 30, { size: 16, color: '#6ee7a0', align: 'center', shadow: '#000' });
-    if (msgT > 0) text(x, msg, W / 2, H - 8, { size: 16, color: '#ffe2b0', align: 'center', shadow: '#000' });
+    if (st.found.length > prevFound) { fx.burst(W / 2, H / 2, { n: 24, colors: [PAL.green, PAL.goldHi, PAL.cream], speed: 60, gravity: 30 }); if (st.found.length === 3) fx.confetti(W); } prevFound = st.found.length;
+    fx.draw(x, dt); intro += dt;
+    // logbook: a little paper card with ticks
+    panel(x, 4, 4, 92, 58, { style: 'paper', r: 2 }); title(x, 'LOG', 10, 18, { size: 16, align: 'left', color: '#a8401a', ink: 'rgba(255,255,255,0.5)' }); title(x, st.found.length + '/3', 90, 18, { size: 16, body: true, align: 'right', color: PAL.paperInk, ink: 'rgba(0,0,0,0)' });
+    targets.forEach((tg, i) => { const f = found(tg.id), y = 32 + i * 12; x.strokeStyle = PAL.paperInk; x.lineWidth = 1; x.strokeRect(10.5, y - 7.5, 7, 7); if (f) { x.strokeStyle = '#2a7a4a'; x.lineWidth = 2; x.beginPath(); x.moveTo(11, y - 4); x.lineTo(14, y - 1); x.lineTo(19, y - 9); x.stroke(); }
+      title(x, tg.name.length > 12 ? tg.name.slice(0, 11) + '.' : tg.name, 22, y, { size: 16, body: true, align: 'left', color: f ? '#2a7a4a' : PAL.paperInk, ink: 'rgba(0,0,0,0)' }); });
+    if (aim) title(x, 'hold space', W / 2, H / 2 + 32, { size: 16, body: true, color: PAL.green });
+    if (intro < 4.5 && !st.paid) { x.save(); x.globalAlpha = clamp(4.5 - intro, 0, 1); panel(x, W - 104, 4, 100, 44, { style: 'glass', r: 2 }); let X = W - 98; X += keyChip(x, 'ARROWS', X, 22) + 3; title(x, 'pan', X, 22, { size: 16, body: true, align: 'left' }); X = W - 98; X += keyChip(x, 'SPC', X, 40) + 3; title(x, 'hold: log', X, 40, { size: 16, body: true, align: 'left' }); x.restore(); }
+    if (msgT > 0) { x.save(); x.globalAlpha = clamp(msgT * 2, 0, 1); const m = panel(x, 20, H - 24, W - 40, 20, { style: 'glass', r: 3 }); title(x, msg, W / 2, m.y + 14, { size: 16, body: true, color: PAL.goldHi }); x.restore(); }
   });
 }
 

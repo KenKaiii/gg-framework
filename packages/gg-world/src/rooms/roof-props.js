@@ -16,6 +16,9 @@ export function sofa(len = 2.2) {
   for (let i = 0; i < 2; i++) put(g, rbox(len / 2 - 0.2, 0.2, 0.7, cush, 0.08), (i - 0.5) * (len / 2 - 0.15), 0.33, 0.07);
   put(g, rbox(len, 0.6, 0.2, fab, 0.08), 0, 0.5, -0.36);
   for (const sx of [-1, 1]) put(g, rbox(0.18, 0.5, 0.86, fab, 0.07), sx * (len / 2 - 0.09), 0.42, 0);
+  for (let i = 0; i < 2; i++) put(g, rbox(len / 2 - 0.25, 0.4, 0.14, cush, 0.07), (i - 0.5) * (len / 2 - 0.15), 0.64, -0.22);
+  for (const sx of [-1, 1]) { const a = mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.86, 14), fab); a.rotation.x = Math.PI / 2; put(g, a, sx * (len / 2 - 0.09), 0.68, 0); }
+  for (let i = 0; i < 2; i++) put(g, rbox(len / 2 - 0.22, 0.004, 0.005, mat('#2a2030'), 0.001), (i - 0.5) * (len / 2 - 0.15), 0.432, 0.42);
   const pil = put(g, rbox(0.42, 0.36, 0.14, mat('#7a3e34', { roughness: 1 }), 0.07), -len / 2 + 0.42, 0.62, -0.2); pil.rotation.z = 0.25;
   return g;
 }

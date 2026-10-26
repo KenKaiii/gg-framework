@@ -62,7 +62,7 @@ export function build(ctx) {
   const pizza = mat('#c8a070', { roughness: 0.9 });
   st(rbox(2.4, 0.38, 1.1, P.WOOD, 0.05), -5.0, 0.19, 5.3);
   st(rbox(0.55, 0.06, 0.55, pizza, 0.01), -5.6, 0.41, 5.2, 0.2, false); const pzTop = flatM(rbox(0.55, 0.06, 0.55, pizza, 0.01), -5.5, 0.47, 5.25, -0.1);
-  st(rbox(0.5, 0.36, 0.42, P.BEIGE, 0.05), -4.4, 0.56, 5.2, 0, false);
+  { const tp = P.crtPC(new THREE.MeshBasicMaterial({ map: P.osScreen(1), toneMapped: false }), { w: 0.46, h: 0.38, keys: false }); st(tp, -4.4, 0.38, 5.12, 0, false); } // Oregon Commit LAN PC (close-up)
   const bean = (c, x, z) => { const b = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 10), mat(c, { roughness: 0.95 })); b.scale.set(1, 0.55, 1); st(b, x, 0.25, z); };
   bean('#b04fd8', -7.2, 4.8); bean('#3d6ad8', -2.8, 4.8); bean('#e0a458', -1.0, 6.0);
   // rug under the LAN corner

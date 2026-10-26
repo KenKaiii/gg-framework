@@ -4,8 +4,9 @@
 // perfect run once per day. Questions are practical habits, not trivia.
 import { SFX } from '../sfx.js';
 import { loop, text, coins, mouse } from './util.js';
-import { crt } from './films-a-crt.js';
-import { today, store, wrap, closeUp } from './computer-util.js';
+import { PAL, title, glow, banner, particles, shaker, rr, badge } from './art.js';
+import { howTo, btns } from './hackers-util.js';
+import { today, store, wrap, closeUp, monitor } from './computer-util.js';
 
 /** [question, [answers], correct, why (shown after answering), tip (summary card, <= ~44 chars)] */
 export const BANK = [
@@ -35,11 +36,12 @@ export function startPrompt(ctx) {
   const ov = ctx.overlay({ title: 'Prompt School', sub: 'Daily lesson · ' + d.s + ' · new one tomorrow', help: '<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/<kbd>click</kbd> answer <kbd>enter</kbd>/<kbd>click</kbd> next <kbd>esc</kbd> leave' });
   closeUp(ctx, ov, -3.1, 1.2, -6.4, 1.2);
   const W = 480, H = 270; const { x, c } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const mon = monitor(W, H, 'PROMPT SCHOOL  CRT-93'), fx = particles(), sh = shaker(), B2 = btns(c, W, H); let endT = 0;
   const st = { i: 0, pick: -1, score: 0, t: 0, flash: 0, shake: 0, done: false, reward: '', got: /** @type {boolean[]} */ ([]) };
-  const answer = n => { if (st.done || st.pick >= 0 || n >= 3) return; st.pick = n; const ok = n === qs[st.i][2]; st.got[st.i] = ok; SFX.play('key'); if (ok) { st.score++; st.flash = 0.6; SFX.play('success', { delay: 0.08 }); } else { st.shake = 0.5; SFX.play('ui.deny', { delay: 0.08 }); } ov.setHelp('<kbd>enter</kbd>/<kbd>click</kbd> ' + (st.i === N - 1 ? 'results' : 'next question') + ' <kbd>esc</kbd> leave'); };
+  const answer = n => { if (st.done || st.pick >= 0 || n >= 3) return; st.pick = n; const ok = n === qs[st.i][2]; st.got[st.i] = ok; SFX.play('key'); if (ok) { st.score++; st.flash = 0.6; fx.burst(W / 2, 150, { n: 22, colors: ['#6ee7a0', '#b8f5d0', '#ffe8a0'] }); SFX.play('success', { delay: 0.08 }); } else { st.shake = 0.5; sh.kick(5); SFX.play('ui.deny', { delay: 0.08 }); } ov.setHelp('<kbd>enter</kbd>/<kbd>click</kbd> ' + (st.i === N - 1 ? 'results' : 'next question') + ' <kbd>esc</kbd> leave'); };
   const next = () => { if (st.done) { restart(); return; } if (st.pick < 0) return; st.i++; st.pick = -1; SFX.play('page'); if (st.i >= N) finish(); else ov.setHelp('<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/<kbd>click</kbd> answer <kbd>esc</kbd> leave'); };
   const restart = () => { SFX.play('pc.boot', { vol: 0.5 }); Object.assign(st, { i: 0, pick: -1, score: 0, done: false, reward: '', got: [] }); ov.setHelp('<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/<kbd>click</kbd> answer <kbd>esc</kbd> leave'); };
-  const finish = () => { st.done = true; const b = Number(store('promptBest')) || 0; if (st.score > b) store('promptBest', st.score);
+  const finish = () => { st.done = true; endT = 0; if (st.score === N) fx.confetti(W); const b = Number(store('promptBest')) || 0; if (st.score > b) store('promptBest', st.score);
     if (st.score === N) { if (store('promptPaid') !== d.s) { store('promptPaid', d.s); try { coins(ctx.S).spend(-25); st.reward = '+25 coins for a perfect lesson!'; } catch { st.reward = 'Perfect lesson!'; } } else st.reward = 'Perfect again (coins paid today).'; }
     else st.reward = '5/5 pays 25 coins. Retry: enter.';
     SFX.play(st.score === N ? 'win' : st.score >= 3 ? 'score' : 'fail', { delay: 0.1 }); if (st.score === N) SFX.play('sparkle', { delay: 0.5 });
@@ -48,31 +50,43 @@ export function startPrompt(ctx) {
   const cap = e => { if (e.code !== 'Escape') { e.stopPropagation(); onKey(e); } };
   addEventListener('keydown', cap, true); ov.onClose(() => removeEventListener('keydown', cap, true));
   // mouse: click an answer (same boxes as the drawn rows); after answering / on the results card, click anywhere = enter
-  const SX = 66, SY = 26, SW = 348; const M = mouse(ov, c, W, H);
-  const areas = () => { if (st.done || st.pick >= 0) M.set([{ x: 0, y: 0, w: W, h: H, pick: next }]); else M.rows(k => ({ x: SX + 6, y: SY + 70 + k * 18 - 13, w: SW - 12, h: 17 }), 3, { pick: answer }); };
+  const SX = 48, SY = 20, SW = 384; const M = mouse(ov, c, W, H);
+  const areas = () => { if (st.done || st.pick >= 0) M.set([{ x: 0, y: 0, w: W, h: H, pick: next }]); else M.rows(k => ({ x: SX + 6, y: SY + 76 + k * 24, w: SW - 12, h: 21 }), 3, { pick: answer }); };
   loop(ov, dt => { areas();
     st.t += dt; st.flash = Math.max(0, st.flash - dt * 1.5); st.shake = Math.max(0, st.shake - dt);
-    x.save(); x.translate(st.shake > 0 ? Math.round(Math.sin(st.t * 90) * 4 * st.shake) : 0, 0);
-    crt(x, W, H, (sx, sy, sw) => {
-      const G = '#6ee7a0', D = '#2f9a62';
-      if (st.done) {
-        text(x, 'TODAY\'S TIPS', sx + 10, sy + 18, { color: G }); text(x, st.score + '/' + N, sx + sw - 10, sy + 18, { align: 'right', color: st.score === N ? '#ffcf8a' : G });
-        qs.forEach((q, k) => text(x, (st.got[k] ? '+ ' : '- ') + q[4], sx + 10, sy + 42 + k * 18, { color: st.got[k] ? '#b8f5d0' : '#ff9a8a' }));
-        text(x, st.reward, sx + 10, sy + 142, { color: '#ffcf8a' });
-        text(x, 'best ' + (store('promptBest') || 0) + '/' + N + ' · new lesson tomorrow', sx + 10, sy + 160, { color: D });
-        return;
-      }
-      const q = qs[st.i]; text(x, 'LESSON ' + (st.i + 1) + '/' + N, sx + 10, sy + 16, { color: D }); text(x, 'score ' + st.score, sx + sw - 10, sy + 16, { align: 'right', color: D });
-      wrap(x, /** @type {string} */ (q[0]), sw - 24).forEach((l, k) => text(x, l, sx + 10, sy + 36 + k * 16, { color: G }));
+    x.save(); sh.apply(x, dt);
+    mon.draw(x, st.t); const S = mon.scr, sx = S.x + 6, sy = S.y, sw = S.w - 12, G = '#6ee7a0', D = '#3aa86e', INK = '#020a04';
+    const T = (s, X, Y, col, o = {}) => title(x, s, X, Y, { size: 16, body: true, align: 'left', color: col, ink: INK, ...o });
+    if (st.flash > 0) glow(x, W / 2, H / 2, 200, '#6eff7a', st.flash * 0.25);
+    if (st.done) {
+      endT += dt;
+      title(x, "TODAY'S TIPS", sx + 8, sy + 22, { size: 16, align: 'left', color: G, ink: INK, glow: 'rgba(110,255,150,0.5)' });
+      badge(x, sx + sw - 154, sy + 6, 'score', st.score + '/' + N, { w: 70, h: 32, color: st.score === N ? PAL.gold : G, style: 'metal' });
+      badge(x, sx + sw - 80, sy + 6, 'best', (store('promptBest') || 0) + '/' + N, { w: 74, h: 32, color: PAL.cyan, style: 'metal' });
+      qs.forEach((q, k) => { const y = sy + 56 + k * 19, ok = st.got[k], a = Math.min(1, Math.max(0, (endT - k * 0.12) / 0.25)); x.globalAlpha = a;
+        x.fillStyle = ok ? '#3ddc84' : '#e8645a'; rr(x, sx + 8, y - 11, 13, 13, 3); x.fill(); x.fillStyle = INK; if (ok) { x.fillRect(sx + 11, y - 5, 2, 2); x.fillRect(sx + 13, y - 3, 2, 2); x.fillRect(sx + 15, y - 9, 2, 6); } else { x.fillRect(sx + 11, y - 8, 7, 2); x.fillRect(sx + 11, y - 4, 7, 2); }
+        T(/** @type {string} */ (q[4]), sx + 28, y, ok ? '#d8ffe4' : '#ffb0a0'); x.globalAlpha = 1; });
+      T(st.reward, sx + 8, sy + 158, PAL.gold);
+      B2.draw(x, sx + sw - 96, sy + 142, 96, 20, 'RETRY', { primary: true });
+      if (endT < 1.4) banner(x, W, H, st.score === N ? 'PERFECT' : st.score + ' / ' + N, st.score === N ? 'you know your agent' : 'new lesson tomorrow', endT, { color: st.score === N ? PAL.gold : G, style: 'crt' });
+    } else {
+      const q = qs[st.i];
+      for (let k = 0; k < N; k++) { x.fillStyle = k < st.i ? (st.got[k] ? '#3ddc84' : '#e8645a') : k === st.i ? '#ffcf8a' : '#1a3a24'; rr(x, sx + 8 + k * 14, sy + 8, 10, 6, 2); x.fill(); }
+      T('LESSON ' + (st.i + 1) + '/' + N, sx + 84, sy + 16, D); T('score ' + st.score, sx + sw - 8, sy + 16, D, { align: 'right' });
+      wrap(x, /** @type {string} */ (q[0]), sw - 20).forEach((l, k) => title(x, l, sx + 8, sy + 40 + k * 16, { size: 16, align: 'left', color: '#d8ffe4', ink: INK }));
       /** @type {string[]} */ (q[1]).forEach((a, k) => {
-        const y = sy + 70 + k * 18, ok = k === q[2], sel = k === st.pick;
-        if (st.pick >= 0 && (ok || sel)) { x.fillStyle = ok ? 'rgba(61,220,132,0.25)' : 'rgba(255,90,90,0.25)'; x.fillRect(sx + 6, y - 13, sw - 12, 17); }
-        text(x, (k + 1) + ') ' + a, sx + 12, y, { color: st.pick >= 0 ? (ok ? '#b8f5d0' : sel ? '#ff8080' : D) : G });
+        const y = sy + 76 + k * 24, ok = k === q[2], sel = k === st.pick, hot = st.pick < 0 && B2.hot(SX + 6, y, SW - 12, 21);
+        const bgc = st.pick >= 0 ? (ok ? 'rgba(61,220,132,0.3)' : sel ? 'rgba(255,90,90,0.3)' : 'rgba(255,255,255,0.03)') : hot ? 'rgba(110,231,160,0.22)' : 'rgba(110,231,160,0.07)';
+        x.fillStyle = bgc; rr(x, sx + 2, y, sw - 4, 21, 3); x.fill(); x.strokeStyle = st.pick >= 0 && (ok || sel) ? (ok ? '#3ddc84' : '#e8645a') : hot ? G : 'rgba(110,231,160,0.25)'; x.lineWidth = 1; rr(x, sx + 2.5, y + 0.5, sw - 5, 20, 3); x.stroke();
+        if (hot) glow(x, sx + sw / 2, y + 10, 120, G, 0.12);
+        x.fillStyle = '#d8d0e8'; rr(x, sx + 7, y + 4, 14, 13, 2); x.fill(); x.font = '16px m5x7'; x.textAlign = 'center'; x.fillStyle = INK; x.fillText(String(k + 1), sx + 14, y + 15);
+        T(a, sx + 28, y + 15, st.pick >= 0 ? (ok ? '#d8ffe4' : sel ? '#ffb0a0' : D) : hot ? '#ffffff' : G);
       });
       if (st.pick >= 0) { const ok = st.pick === q[2];
-        text(x, ok ? 'CORRECT' : 'NOT QUITE', sx + 10, sy + 132, { color: ok ? '#ffcf8a' : '#ff8080' });
-        wrap(x, /** @type {string} */ (q[3]), sw - 24).slice(0, 2).forEach((l, k) => text(x, l, sx + 10, sy + 148 + k * 15, { color: '#e0d6b8' })); }
-    }, { flash: st.flash * 0.3 });
-    x.restore();
+        title(x, ok ? 'CORRECT' : 'NOT QUITE', sx + 8, sy + 166, { size: 16, align: 'left', color: ok ? PAL.gold : PAL.red, ink: INK, glow: ok ? PAL.gold : undefined, glowR: 6 });
+        wrap(x, /** @type {string} */ (q[3]), sw - 100).slice(0, 2).forEach((l, k) => T(l, sx + 92, sy + 156 + k * 14, '#f0e6c8'));
+      } else howTo(x, W, sy + S.h - 8, [['1-3', 'answer'], ['click', 'answer'], ['enter', 'next']]);
+    }
+    fx.draw(x, dt); x.restore();
   });
 }

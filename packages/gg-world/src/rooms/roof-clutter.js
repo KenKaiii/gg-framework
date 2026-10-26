@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { mat, glowMat, rbox, put, mesh } from './kit.js';
 import * as TX from './tex.js';
+import { crate as mkCrate } from './roof-zones.js';
 
 /** @param {THREE.Group} S @param {THREE.Group} L @param {any} R @param {number} fx @param {number} fz fire-pit centre */
 export function clutter(S, L, R, fx, fz) {
@@ -16,7 +17,7 @@ export function clutter(S, L, R, fx, fz) {
   rug.rotation.x = -Math.PI / 2; rug.position.set(fx, 0.065, fz + 0.9); S.add(rug);
   // speaker on a crate stack by the west parapet + green power LED
   const crate = mat('#6a4a2e', { roughness: 1 }), slat = mat('#4a3020');
-  const mk = (x, y, z, ry) => { const g = put(S, new THREE.Group(), x, y, z, ry); put(g, rbox(0.5, 0.36, 0.4, crate, 0.02), 0, 0.18, 0); for (const yy of [0.08, 0.28]) put(g, rbox(0.52, 0.06, 0.42, slat, 0.01), 0, yy, 0); return g; };
+  const mk = (x, y, z, ry) => put(S, mkCrate(), x, y, z, ry); void crate; void slat;
   const SX = -9.3, SZ = -1.2; mk(SX, 0, SZ, 0.2); mk(SX, 0.36, SZ + 0.02, -0.1); mk(SX + 0.5, 0, SZ + 0.3, 0.6); R.block(SX - 0.3, SZ - 0.3, SX + 0.85, SZ + 0.6);
   const spk = put(S, new THREE.Group(), SX, 0, SZ, 0.8); put(spk, rbox(0.32, 0.46, 0.28, mat('#1a181f', { roughness: 0.6 }), 0.04), 0, 0.95, 0);
   for (const [y, rr] of [[1.05, 0.09], [0.84, 0.06]]) { const c = mesh(new THREE.CylinderGeometry(rr, rr, 0.02, 16), mat('#2c2a34', { roughness: 0.4 })); c.rotation.x = Math.PI / 2; c.position.set(0, y, 0.14); spk.add(c); }
