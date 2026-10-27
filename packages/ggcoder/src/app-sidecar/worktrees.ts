@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getGitDirtyFileCount, runBackgroundGit } from "../utils/git.js";
+import { getGitDirtyFileCount, realpathNative, runBackgroundGit } from "../utils/git.js";
 
 /**
  * A project's git worktrees for Home (open, review, clean up) and the setup
@@ -40,7 +40,12 @@ async function git(args: readonly string[], cwd: string, timeoutMs = TIMEOUT_MS)
   return stdout;
 }
 
-const realOr = (p: string): Promise<string> => fs.realpath(p).catch(() => p);
+// `native`: on Windows it expands 8.3 short names (RUNNER~1), so a path from git
+// and one from Node compare equal.
+const realOr = (p: string): Promise<string> =>
+  // A deleted folder can't be resolved; `path.resolve` still normalises it
+  // (git prints forward slashes on Windows).
+  realpathNative(p).catch(() => path.resolve(p));
 
 interface Porcelain {
   path: string;

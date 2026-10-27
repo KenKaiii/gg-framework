@@ -7,6 +7,7 @@ import { execFileSync, spawn, type ChildProcessByStdio } from "node:child_proces
 import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { realpathNative } from "./utils/git.js";
 
 /**
  * Boots the REAL app sidecar daemon and drives it over HTTP, because the bug
@@ -470,7 +471,9 @@ describe("two windows on one checkout", () => {
     expect(picked.status).toBe(200);
     expect(picked.json.kind).toBe("moved");
     const tree = picked.json.path as string;
-    expect(tree.startsWith(await fs.realpath(path.join(tmpHome, ".gg", "worktrees")))).toBe(true);
+    expect(tree.startsWith(await realpathNative(path.join(tmpHome, ".gg", "worktrees")))).toBe(
+      true,
+    );
     // The shared folder (and window B on it) stays on its branch.
     expect(g("branch", "--show-current").trim()).toBe("develop");
     expect(
@@ -494,7 +497,7 @@ describe("two windows on one checkout", () => {
     const state = await request("GET", "/state", { session: moved.json.sessionId as string });
     expect(state.json.gitBranch).toBe("feature/x");
     // Home opens on the project, not the worktree folder.
-    expect(state.json.worktreeOf).toBe(await fs.realpath(repo));
+    expect(state.json.worktreeOf).toBe(await realpathNative(repo));
 
     // It can't be removed while a window is open in it; after closing, it can.
     const blocked = await request("POST", "/git/worktrees/remove", {

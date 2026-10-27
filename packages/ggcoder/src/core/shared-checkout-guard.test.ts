@@ -90,7 +90,7 @@ describe("shared-checkout guard (real repo)", () => {
   let worktree: string;
 
   beforeAll(() => {
-    root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gg-shared-checkout-")));
+    root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "gg-shared-checkout-")));
     repo = path.join(root, "repo");
     fs.mkdirSync(path.join(repo, "src"), { recursive: true });
     git(repo, "init", "-q");
@@ -145,7 +145,7 @@ describe("shared-checkout guard (real repo)", () => {
 
   it("checks the worktree's own root, not the main checkout's", async () => {
     const seen: string[] = [];
-    await checkSharedCheckoutSwitch(`git -C ${worktree} switch feature`, sharedWith(0, seen));
+    await checkSharedCheckoutSwitch(`git -C '${worktree}' switch feature`, sharedWith(0, seen));
     expect(seen).toEqual([worktree]);
   });
 

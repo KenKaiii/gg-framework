@@ -83,7 +83,7 @@ import {
   registerRuntimeModels,
 } from "./core/model-registry.js";
 import { resolveStartOrFallback } from "./core/resolve-start.js";
-import { getGitBranch, getGitDirtyFileCount, isGitRepo } from "./utils/git.js";
+import { getGitBranch, getGitDirtyFileCount, isGitRepo, realpathNative } from "./utils/git.js";
 import {
   anyOtherWindowBusyOnCheckout,
   branchChangeNote,
@@ -463,7 +463,7 @@ async function main(): Promise<void> {
               if (resumed.note) pendingMoveNotes.set(sessionPath, resumed.note);
               if (resumed.notice) pendingCheckoutNotices.set(sessionPath, resumed.notice);
               if (resumed.created) {
-                pendingSetups.add(await fs.realpath(resumed.cwd).catch(() => resumed.cwd));
+                pendingSetups.add(await realpathNative(resumed.cwd).catch(() => resumed.cwd));
               }
               if (sessionCwd !== requestedCwd) {
                 log("INFO", "app-sidecar", "resuming on its recorded branch", {
@@ -2785,7 +2785,7 @@ async function createSession(
     queueMoveNote: (sessionPath, note) => pendingMoveNotes.set(sessionPath, note),
     recordCheckout: (record) => session.recordCheckout(record),
     queueSetup: async (worktreePath) => {
-      pendingSetups.add(await fs.realpath(worktreePath).catch(() => worktreePath));
+      pendingSetups.add(await realpathNative(worktreePath).catch(() => worktreePath));
     },
     windowsIn: (root) => otherWindowsOnCheckout(root, ""),
     othersBusyIn: (root) => otherWindowBusyOnCheckout(root, opts.id),
@@ -2794,7 +2794,7 @@ async function createSession(
   // A brand-new worktree runs its setup (install) once, as a background task
   // the user and the agent can both see, the first time a window opens in it.
   async function startPendingWorktreeSetup(): Promise<void> {
-    const real = await fs.realpath(gitCwd).catch(() => gitCwd);
+    const real = await realpathNative(gitCwd).catch(() => gitCwd);
     if (!pendingSetups.delete(real)) return;
     const setup = await resolveSetupCommand(real).catch(() => null);
     const started = setup
