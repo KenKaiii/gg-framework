@@ -155,7 +155,11 @@ import {
 import { extractPlanSteps, findCompletedMarkers } from "../utils/plan-steps.js";
 import { readFileSync } from "node:fs";
 import { clampThinkingForPlanMode } from "./thinking-level.js";
-import { pruneStaleToolResults, shouldPruneToolResults } from "./compaction/tool-result-pruner.js";
+import {
+  pruneStaleToolResults,
+  shouldPruneToolResults,
+  stablePrefixEnd,
+} from "./compaction/tool-result-pruner.js";
 import { discoverAgents, type AgentDefinition } from "./agents.js";
 import { enhancePrompt, type EnhanceResult } from "../utils/prompt-enhancer.js";
 import { detectLanguages, detectProjectStack, type LanguageId } from "./language-detector.js";
@@ -744,6 +748,10 @@ export class AgentSession {
    *  transport-specific windows (e.g. OpenAI Codex OAuth's smaller window)
    *  without re-resolving credentials on every poll. */
   private lastAccountId?: string;
+  /** Where the last prune made history stable; becomes the cache anchor on the next step. */
+  private pendingCacheAnchor: Message | null = null;
+  /** The message currently carrying `cacheAnchor` (see applyPendingCacheAnchor). */
+  private cacheAnchored: Message | null = null;
   private baseUrl?: string;
   private maxTokens: number;
   private thinkingLevel?: ThinkingLevel;
@@ -2281,18 +2289,7 @@ export class AgentSession {
         accountId: creds.accountId,
         approvedPlanPath: this.approvedPlanPath,
       });
-      let activeTokens: number | undefined;
-      if (this.providerContext) {
-        const anchorIndex = this.messages.lastIndexOf(this.providerContext.anchor);
-        if (anchorIndex >= 0) {
-          activeTokens = calculateActiveContextTokens(this.messages, {
-            usage: this.providerContext.usage,
-            pendingMessages: this.messages.slice(anchorIndex + 1),
-          });
-        } else {
-          this.providerContext = null;
-        }
-      }
+      const activeTokens = this.idleActiveContextTokens();
       log("INFO", "compaction", "Pre-run compaction decision", {
         provider: this.provider,
         model: this.model,
@@ -2517,25 +2514,20 @@ export class AgentSession {
             // tokens to be worth a cache rewrite. In-place mutation preserves
             // anchors; drop the retained usage afterwards since it counted the
             // pruned content.
-            if (shouldPruneToolResults(activeTokens, policy.targetTokens)) {
-              const pruneResult = pruneStaleToolResults(messages);
-              if (pruneResult.pruned) {
-                this.cacheDiagnostics.noteEdit("tool_prune", pruneResult.freedTokens);
-                this.providerContext = null;
-                log("INFO", "compaction", "Pruned stale tool outputs", {
-                  prunedResults: String(pruneResult.prunedResults),
-                  compactedToolCalls: String(pruneResult.compactedToolCalls),
-                  freedTokens: String(pruneResult.freedTokens),
-                });
-                // The measured size counted the pruned content, so take the
-                // freed tokens off it. Never swap the provider's count for a
-                // whole-history estimate here: that estimate rides a shared
-                // chars-per-token ratio, and it once read a 234K-token MiMo
-                // context (23% of 1M) as ~400K and compacted it against a 340K
-                // trigger.
-                activeTokens = Math.max(0, activeTokens - pruneResult.freedTokens);
-              }
-            }
+            // Move the cache anchor the last prune left pending, never in the
+            // request that pruned: that one still reads through the previous
+            // anchor. The new anchor's cache entry is created by reading the
+            // previous request's tail, so a prune in this same step (which edits
+            // history before that tail) waits one step.
+            const freedTokens = this.applyPendingCacheAnchor(messages)
+              ? 0
+              : this.pruneToolOutputsIfDue(messages, activeTokens, policy.targetTokens);
+            // The measured size counted the pruned content, so take the freed
+            // tokens off it. Never swap the provider's count for a
+            // whole-history estimate here: that estimate rides a shared
+            // chars-per-token ratio, and it once read a 234K-token MiMo context
+            // (23% of 1M) as ~400K and compacted it against a 340K trigger.
+            activeTokens = Math.max(0, activeTokens - freedTokens);
 
             if (Date.now() < this.compactionRetryAfter) return messages;
             // An approved plan runs as ONE run, so step boundaries are only
@@ -4459,6 +4451,106 @@ export class AgentSession {
    * same system/tools/thinking/cache options — with `max_tokens: 1`, so the
    * first real reply is a cache read instead of a cold write.
    */
+  /**
+   * Context size between runs: the last provider usage plus messages appended
+   * after it, or undefined when there is no usable sample (callers estimate).
+   * Same measurement the pre-run compaction check makes.
+   */
+  private idleActiveContextTokens(): number | undefined {
+    if (!this.providerContext) return undefined;
+    const anchorIndex = this.messages.lastIndexOf(this.providerContext.anchor);
+    if (anchorIndex < 0) {
+      this.providerContext = null;
+      return undefined;
+    }
+    return calculateActiveContextTokens(this.messages, {
+      usage: this.providerContext.usage,
+      pendingMessages: this.messages.slice(anchorIndex + 1),
+    });
+  }
+
+  /**
+   * Prune stale tool outputs in place once the context is big enough for the
+   * freed tokens to be worth a cache rewrite. In-place mutation preserves usage
+   * anchors; the retained usage is dropped since it counted the pruned content.
+   * Shared by the in-flight context transform and prewarm so both send the same
+   * prefix. Returns the freed tokens (0 when nothing was pruned).
+   */
+  private pruneToolOutputsIfDue(
+    messages: Message[],
+    activeTokens: number,
+    targetTokens: number,
+  ): number {
+    if (!shouldPruneToolResults(activeTokens, targetTokens)) return 0;
+    const pruneResult = pruneStaleToolResults(messages);
+    if (!pruneResult.pruned) return 0;
+    this.cacheDiagnostics.noteEdit("tool_prune", pruneResult.freedTokens);
+    this.providerContext = null;
+    this.pendingCacheAnchor = stablePrefixEnd(messages) ?? null;
+    log("INFO", "compaction", "Pruned stale tool outputs", {
+      prunedResults: String(pruneResult.prunedResults),
+      compactedToolCalls: String(pruneResult.compactedToolCalls),
+      freedTokens: String(pruneResult.freedTokens),
+    });
+    return pruneResult.freedTokens;
+  }
+
+  /**
+   * Pin the provider's long-lived cache breakpoint (`Message.cacheAnchor`) where
+   * the last prune made history stable. Without it every prune fell back to the
+   * run's opening message and re-sent the whole run: in live sessions a prune
+   * freed ~24K tokens and re-wrote ~400K. Returns true when the anchor moved.
+   */
+  private applyPendingCacheAnchor(messages: Message[]): boolean {
+    const next = this.pendingCacheAnchor;
+    this.pendingCacheAnchor = null;
+    if (!next || next === this.cacheAnchored || !messages.includes(next)) return false;
+    if (this.cacheAnchored) delete this.cacheAnchored.cacheAnchor;
+    next.cacheAnchor = true;
+    this.cacheAnchored = next;
+    return true;
+  }
+
+  /**
+   * Apply the next request's context policy before warming: report when its
+   * pre-run check will compact, otherwise prune now exactly as it would.
+   * Prewarm is Anthropic-only, so the cached account id never changes the window.
+   */
+  private prepareContextForPrewarm(): "compaction_due" | "ready" {
+    if (!this.settingsManager.get("autoCompact")) return "ready";
+    const contextWindow = getContextWindow(this.model, {
+      provider: this.provider,
+      accountId: this.lastAccountId,
+    });
+    const policy = resolveCompactionPolicy({
+      provider: this.provider,
+      model: this.model,
+      contextWindow,
+      threshold: this.settingsManager.get("compactThreshold"),
+      accountId: this.lastAccountId,
+      approvedPlanPath: this.approvedPlanPath,
+    });
+    const activeTokens = this.idleActiveContextTokens();
+    if (
+      Date.now() >= this.compactionRetryAfter &&
+      shouldCompact(
+        this.messages,
+        contextWindow,
+        policy.threshold,
+        activeTokens,
+        policy.targetTokens,
+      )
+    ) {
+      return "compaction_due";
+    }
+    this.pruneToolOutputsIfDue(
+      this.messages,
+      activeTokens ?? estimateConversationTokens(this.messages),
+      policy.targetTokens,
+    );
+    return "ready";
+  }
+
   async prewarm(signal?: AbortSignal): Promise<{ ok: boolean; reason: string; usage?: Usage }> {
     if (this.provider !== "anthropic") return { ok: false, reason: "provider" };
     if (this.settingsManager?.get("cachePrewarm") === false) {
@@ -4479,6 +4571,16 @@ export class AgentSession {
     // The await above yields: re-check that no run or other prewarm began.
     if (this.runLoopDepth > 0) return { ok: false, reason: "run_active" };
     if (this.prewarmController) return { ok: false, reason: "in_flight" };
+    // Warm what the next request will actually send. Its pre-run check compacts
+    // an over-trigger history (rewriting the whole prefix, so warming now is
+    // waste), and its first model step prunes stale tool outputs when due:
+    // apply that same in-place prune now, so the request finds nothing left to
+    // prune and the warmed prefix matches it. Measured with `bench:context`: a
+    // 700K session wrote its full history at the 1-h price here, then rewrote
+    // it on the very next request.
+    if (this.prepareContextForPrewarm() === "compaction_due") {
+      return { ok: false, reason: "compaction_due" };
+    }
     // End at the last user/tool message: the next real turn appends a new user
     // message after the trailing assistant reply, and its cache lookback hits
     // the entry written at this boundary. A request must end on a user turn.
