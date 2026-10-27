@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as GgAgentModule from "@kenkaiiii/gg-agent";
 import type * as McpModule from "./mcp/index.js";
 import { useFakeHome } from "../test-support/fake-home.js";
+import { stablePrefixEnd } from "./compaction/tool-result-pruner.js";
 import {
   stream,
   StreamResult,
@@ -182,6 +183,123 @@ describe("AgentSession.prewarm", () => {
     } finally {
       await session.dispose();
       await fs.rm(project, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("skips when the next prompt will compact the history anyway", async () => {
+    // threshold 0.1 of 1M = 100K-token trigger; ~143K tokens of history
+    await fs.writeFile(
+      path.join(tempHome, ".gg", "settings.json"),
+      JSON.stringify({ compactThreshold: 0.1 }),
+    );
+    const session = await createSession(500_000);
+    // compaction needs at least four messages
+    session
+      .getMessages()
+      .push({ role: "user", content: "and then?" }, { role: "assistant", content: "ok" });
+    try {
+      expect(await session.prewarm()).toMatchObject({ ok: false, reason: "compaction_due" });
+      expect(vi.mocked(stream)).not.toHaveBeenCalled();
+    } finally {
+      await session.dispose();
+    }
+  }, 30_000);
+
+  it("applies a due tool-output prune first, so the next request warms and prunes nothing", async () => {
+    // threshold 0.1 of 1M: prune is due from 50K tokens, compaction from 100K;
+    // ten ~8.6K-token tool results (~86K) sit between the two.
+    await fs.writeFile(
+      path.join(tempHome, ".gg", "settings.json"),
+      JSON.stringify({ compactThreshold: 0.1 }),
+    );
+    const session = await createSession(1_000);
+    const history = session.getMessages();
+    for (let i = 0; i < 10; i++) {
+      const id = `toolu_${i}`;
+      history.push(
+        { role: "user", content: `step ${i}` },
+        {
+          role: "assistant",
+          content: [{ type: "tool_call", id, name: "bash", args: { command: `cat part${i}.log` } }],
+        },
+        {
+          role: "tool",
+          content: [{ type: "tool_result", toolCallId: id, content: `${i}`.repeat(30_000) }],
+        },
+        { role: "assistant", content: `noted part ${i}` },
+      );
+    }
+    try {
+      expect(await session.prewarm()).toMatchObject({ ok: true, reason: "warmed" });
+      const warmMessages = vi.mocked(stream).mock.calls[0]?.[0].messages ?? [];
+      expect(JSON.stringify(warmMessages)).toContain("[Pruned:");
+
+      await session.prompt("next question");
+      const [realMessages, real] = agentLoopMock.mock.calls[0] as [
+        Message[],
+        {
+          transformContext: (m: Message[], o: { pendingMessages: Message[] }) => Promise<Message[]>;
+        },
+      ];
+      expect(realMessages.slice(0, warmMessages.length)).toEqual(warmMessages);
+      // The request's own context transform finds nothing further to prune (it
+      // only pins the cache anchor the prewarm's prune left pending).
+      const content = (messages: Message[]) => JSON.stringify(messages.map((m) => m.content));
+      const before = content(realMessages);
+      await real.transformContext(realMessages, { pendingMessages: [] });
+      expect(content(realMessages)).toBe(before);
+    } finally {
+      await session.dispose();
+    }
+  }, 30_000);
+
+  it("pins the cache anchor where a prune left history stable, one step later", async () => {
+    // threshold 0.1 of 1M: prune is due from 50K tokens, compaction from 100K.
+    await fs.writeFile(
+      path.join(tempHome, ".gg", "settings.json"),
+      JSON.stringify({ compactThreshold: 0.1 }),
+    );
+    const session = await createSession(1_000);
+    const history = session.getMessages();
+    for (let i = 0; i < 10; i++) {
+      const id = `toolu_${i}`;
+      history.push(
+        {
+          role: "assistant",
+          content: [{ type: "tool_call", id, name: "bash", args: { command: `cat part${i}.log` } }],
+        },
+        {
+          role: "tool",
+          content: [{ type: "tool_result", toolCallId: id, content: `${i}`.repeat(30_000) }],
+        },
+      );
+    }
+    try {
+      await session.prompt("next question");
+      const [loopMessages, loop] = agentLoopMock.mock.calls[0] as [
+        Message[],
+        {
+          transformContext: (m: Message[], o: { pendingMessages: Message[] }) => Promise<Message[]>;
+        },
+      ];
+      const anchored = () => loopMessages.filter((m) => m.cacheAnchor === true);
+
+      // Step 1 prunes; the request it feeds still reads through the old anchor.
+      await loop.transformContext(loopMessages, { pendingMessages: [] });
+      expect(JSON.stringify(loopMessages)).toContain("[Pruned:");
+      expect(anchored()).toEqual([]);
+      const expected = stablePrefixEnd(loopMessages);
+      expect(expected).toBeDefined();
+
+      // Step 2 moves the anchor there and prunes nothing in the same request.
+      const before = JSON.stringify(loopMessages);
+      await loop.transformContext(loopMessages, { pendingMessages: [] });
+      expect(anchored()).toEqual([expected]);
+      expect(JSON.stringify(loopMessages.map(({ cacheAnchor: _, ...m }) => m))).toBe(
+        JSON.stringify(JSON.parse(before).map(({ cacheAnchor: _, ...m }: Message) => m)),
+      );
+    } finally {
+      await session.dispose();
     }
   }, 30_000);
 

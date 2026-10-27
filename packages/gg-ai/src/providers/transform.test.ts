@@ -17,6 +17,7 @@ import {
 import { supportsStrictToolSampling } from "../utils/strict-tool-schema.js";
 import type { Message, Tool } from "../types.js";
 import { markContinuesTurn } from "../utils/turn-continuation.js";
+import { markCacheAnchor } from "../utils/cache-anchor.js";
 
 const exampleTools: Tool[] = [
   {
@@ -317,6 +318,53 @@ describe("Anthropic transform", () => {
       ];
 
       expect(marks(messages, long)).toEqual([long, undefined, undefined, undefined, short]);
+    });
+
+    it("pins a cache-anchor hint inside the run instead of the turn's opening message", () => {
+      // A prune after the hint then re-sends only what follows it (live Haiku 5.5:
+      // read 75.8K / wrote 18.3K after a prune, vs read 0 / wrote 94.1K without).
+      const messages: Message[] = [
+        { role: "user", content: "fix it" },
+        call("a"),
+        markCacheAnchor(result("a")),
+        call("b"),
+        result("b"),
+      ];
+
+      expect(marks(messages, long)).toEqual([undefined, undefined, long, undefined, short]);
+      // 5-min retention has no turn anchor: the hint joins the tail breakpoint.
+      expect(marks(messages, short)).toEqual([undefined, undefined, short, undefined, short]);
+    });
+
+    it("ignores a cache-anchor hint from an earlier turn", () => {
+      const messages: Message[] = [
+        { role: "user", content: "fix it" },
+        call("a"),
+        markCacheAnchor(result("a")),
+        { role: "assistant", content: "done" },
+        { role: "user", content: "now test it" },
+        call("b"),
+        result("b"),
+      ];
+
+      // Settling the earlier turn stripped its thinking: the hint is behind the edit.
+      expect(marks(messages, long)).toEqual([
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        long,
+        undefined,
+        short,
+      ]);
+      // A turn-opening request keeps pinning the previous turn's opening message.
+      expect(marks(messages.slice(0, 5), long)).toEqual([
+        long,
+        undefined,
+        undefined,
+        undefined,
+        long,
+      ]);
     });
 
     it("treats a runtime notice as part of the tool loop, not a new turn", () => {
