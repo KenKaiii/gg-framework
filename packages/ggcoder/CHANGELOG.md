@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.87.0
+
+### Minor Changes
+
+- World mode replaces GG Royale (live multiplayer hangout, online save). Skills trimmed to the two that change results (compliance-guard, durable); bulletproof and lean stay for Checklist audits only; the rest are removed. OpenAI models get a skill-loading rule; the skill tool now requires a skill name. Removed the unused code_search and code_nav tools.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.87.0
+- @kenkaiiii/gg-agent@5.87.0
+- @kenkaiiii/gg-core@5.87.0
+
 ## 5.86.3
 
 ### Patch Changes
