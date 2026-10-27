@@ -17,7 +17,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const srcTauri = join(here, "..", "src-tauri");
 const binDir = join(srcTauri, "binaries");
 const sidecar = join(srcTauri, "sidecar", "app-sidecar.mjs");
-const evidenceSkill = join(srcTauri, "sidecar", "skills", "evidence-led-ui", "SKILL.md");
+const complianceSkill = join(srcTauri, "sidecar", "skills", "compliance-guard", "SKILL.md");
 
 function fail(msg) {
   console.error(`SMOKE FAIL: ${msg}`);
@@ -257,7 +257,7 @@ function smokeLeanPayload() {
 
 async function main() {
   if (!existsSync(sidecar)) fail(`bundled sidecar missing: ${sidecar}`);
-  if (!existsSync(evidenceSkill)) fail(`bundled evidence-led-ui skill missing: ${evidenceSkill}`);
+  if (!existsSync(complianceSkill)) fail(`bundled compliance-guard skill missing: ${complianceSkill}`);
   const node = nodeBin();
   console.log(`smoke: ${node} ${sidecar}`);
 

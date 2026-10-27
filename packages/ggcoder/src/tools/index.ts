@@ -23,8 +23,6 @@ import { createBashTool } from "./bash.js";
 import { recordBashReads } from "./bash-read-evidence.js";
 import { createFindTool } from "./find.js";
 import { createGrepTool } from "./grep.js";
-import { createSearchCodeTool } from "./search-code.js";
-import { createCodeNavTool } from "./code-nav.js";
 import { createLsTool } from "./ls.js";
 import { createSubAgentTool } from "./subagent.js";
 import { createSubAgentControlTools } from "./subagent-control.js";
@@ -290,8 +288,6 @@ export async function createTools(
     ),
     createFindTool(cwd),
     createGrepTool(cwd, ops, { useExternalScanner: opts?.getUseExternalGrep }),
-    createSearchCodeTool(cwd, ops),
-    createCodeNavTool(cwd, lspManager, ops),
     createLsTool(cwd, ops),
     createSourcePathTool(cwd),
     createWebFetchTool(opts?.getNetworkPolicy),
@@ -442,8 +438,6 @@ export { createEditTool } from "./edit.js";
 export { createBashTool } from "./bash.js";
 export { createFindTool } from "./find.js";
 export { createGrepTool } from "./grep.js";
-export { createSearchCodeTool } from "./search-code.js";
-export { createCodeNavTool } from "./code-nav.js";
 export { createLsTool } from "./ls.js";
 export { createWebFetchTool } from "./web-fetch.js";
 export { createWebSearchTool } from "./web-search.js";

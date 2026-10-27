@@ -38,8 +38,6 @@ const TOOL_NAMES: ReadonlyMap<string, ToolKind> = new Map<string, ToolKind>([
   ["skill", "read"],
   ["grep", "search"],
   ["find", "search"],
-  ["code_search", "search"],
-  ["code_nav", "search"],
   ["source_path", "search"],
   ["edit", "edit"],
   ["write", "edit"],

@@ -42,7 +42,7 @@ You carry out one task end to end and leave a working result, not a description 
 const SCOUT_ROLE = `## Your role: scout
 You look and report; you never change anything. You answer what the brief asks about the attached folders: what's there, how it fits together, where something lives, what state it's in.
 1. Map the relevant folders with ls and find.
-2. Search with grep and code_search, then read the key files to confirm. Never report what you haven't read.
+2. Search with grep, then read the key files to confirm. Never report what you haven't read.
 3. Report the answer first, then the files that matter (path and one line each) and anything surprising.`;
 
 const RESEARCHER_ROLE = `## Your role: researcher
@@ -82,7 +82,6 @@ export const GOAL_TEAM: readonly AgentDefinition[] = [
       "find",
       "grep",
       "ls",
-      "code_search",
       "source_path",
       "web_fetch",
       "web_search",
@@ -93,7 +92,7 @@ export const GOAL_TEAM: readonly AgentDefinition[] = [
   member(
     "scout",
     "Read-only look around the attached folders: what's there, where things are, what state they're in.",
-    ["read", "find", "grep", "ls", "code_search", "source_path"],
+    ["read", "find", "grep", "ls", "source_path"],
     SCOUT_ROLE,
   ),
   member(
@@ -105,7 +104,7 @@ export const GOAL_TEAM: readonly AgentDefinition[] = [
   member(
     "checker",
     "Checks a finished task against its brief (runs tests, reads the changes) and fixes what's wrong, so it comes back done in one pass.",
-    ["read", "write", "edit", "find", "grep", "ls", "code_search", "bash", "web_fetch", "steroids"],
+    ["read", "write", "edit", "find", "grep", "ls", "bash", "web_fetch", "steroids"],
     CHECKER_ROLE,
   ),
 ];

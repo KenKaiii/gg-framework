@@ -77,7 +77,7 @@ const QUESTIONS: Question[] = [
   },
 ];
 
-// ── AST chunking + BM25 retrieval live in ./code-retrieval.ts (shared with code_search) ──
+// ── AST chunking + BM25 retrieval live in ./code-retrieval.ts  ──
 
 // ── Model call ──────────────────────────────────────────────
 

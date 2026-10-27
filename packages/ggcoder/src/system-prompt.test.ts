@@ -947,7 +947,7 @@ describe("buildSubAgentSystemPrompt", () => {
 
     const prompt = await buildSubAgentSystemPrompt("You are Owl. Explore this repo.", {
       cwd,
-      toolNames: ["read", "grep", "code_search"],
+      toolNames: ["read", "grep", "source_path"],
     });
 
     expect(prompt.startsWith("You are Owl. Explore this repo.")).toBe(true);
@@ -971,14 +971,14 @@ describe("buildSubAgentSystemPrompt", () => {
 
     const prompt = await buildSubAgentSystemPrompt("You are Owl.", {
       cwd,
-      toolNames: ["read", "grep", "code_search"],
+      toolNames: ["read", "grep", "source_path"],
     });
 
     const toolsSection = prompt.slice(
       sectionIndex(prompt, "## Tools"),
       sectionIndex(prompt, "## Report"),
     );
-    expect(toolsSection).toContain("code_search");
+    expect(toolsSection).toContain("source_path");
     expect(toolsSection).not.toContain("**write**");
     expect(toolsSection).not.toContain("**bash**");
     expect(prompt).not.toContain("## Delegation");

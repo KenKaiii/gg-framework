@@ -73,7 +73,7 @@ export class DeferredToolCatalog {
    * Every returned tool is promoted, and a promoted schema is billed on every
    * later request, so only the best match and near-ties (≥ 75% of its score)
    * come back. Raw substring matching used to drag in unrelated tools — "web
-   * search" loaded code_search, steroids and spawn_agent alongside
+   * search" loaded steroids and spawn_agent alongside
    * web_search, and "list" matched `checklist`. A deferred built-in the model
    * then calls by name still runs at once (AgentSession.promoteDeferredBuiltin),
    * so dropping weak matches costs no turn.

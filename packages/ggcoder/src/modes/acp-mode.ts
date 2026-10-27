@@ -352,7 +352,6 @@ const TOOL_KINDS: Record<string, string> = {
   ls: "read",
   find: "read",
   grep: "search",
-  code_search: "search",
   web_search: "search",
   edit: "edit",
   write: "edit",

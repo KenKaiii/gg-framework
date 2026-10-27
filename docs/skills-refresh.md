@@ -9,11 +9,11 @@ Last full pass: **22 October 2026**.
 
 ## 1. Is each skill still earning its place?
 
-| Check                                               | How                                                                                                                                                                                                         |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Does it change behaviour?                           | Run the routing probes in the private bench (`skill-for-tdd`, `skill-for-security`, `skill-not-for-rename`) or a real task with and without the skill. A skill that changes nothing is a removal candidate. |
-| Does it overlap another skill or the system prompt? | Each rule should live in one place. Always-on safety rules belong in the system prompt or a tool description, not in a skill that only loads for one kind of work.                                          |
-| Is the description routable?                        | ≤ 240 bytes, "Use when/for …" + the words users actually say, plus a "Do NOT use" clause (enforced by `skills-routing.test.ts`).                                                                            |
+| Check                                               | How                                                                                                                                                                                                                                |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Does it change behaviour?                           | Run the skill-value A/B in the private bench (`sv-*` tasks, `--variants on,off`: the same build with and without its skills) and the routing probes (`skill-not-for-rename`). A skill that changes nothing is a removal candidate. |
+| Does it overlap another skill or the system prompt? | Each rule should live in one place. Always-on safety rules belong in the system prompt or a tool description, not in a skill that only loads for one kind of work.                                                                 |
+| Is the description routable?                        | ≤ 240 bytes, "Use when/for …" + the words users actually say, plus a "Do NOT use" clause (enforced by `skills-routing.test.ts`).                                                                                                   |
 
 ## 2. Shape (Anthropic skill-authoring guidance)
 
@@ -34,7 +34,6 @@ Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-p
 | ---------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | compliance-guard | EU (AI Act, Digital Omnibus, CRA, DSA, EAA), UK (OSA/Ofcom), US state privacy/AI/minors laws, CIPA/TCPA, ADA Title II | EUR-Lex, Official Journal, regulators, legislature sites, Federal Register, court dockets    |
 | bulletproof      | MCP spec revision, OAuth 2.1 draft, npm/PyPI registry policy, framework advisories, CWE Top 25 / OWASP lists          | modelcontextprotocol.io, IETF datatracker, GitHub changelog, GHSA/NVD, vendor security blogs |
-| evidence-led-ui  | Baseline browser support, WCAG 3 status, ADA/EAA dates                                                                | web.dev, webstatus.dev, MDN, W3C, ada.gov                                                    |
 | durable          | Postgres / Prisma / Drizzle versions, provider backup and PITR defaults                                               | release notes, provider docs                                                                 |
 | lean             | Node release schedule, Core Web Vitals, framework majors                                                              | nodejs.org, web.dev                                                                          |
 | others           | Source links only                                                                                                     | —                                                                                            |

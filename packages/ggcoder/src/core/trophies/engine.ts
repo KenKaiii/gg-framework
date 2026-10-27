@@ -270,8 +270,6 @@ export function runDelta(run: TrophyRunFacts): TrophyDelta {
   if (used.has("screenshot")) count.screenshots = 1;
   if (used.has("debug")) count.debugRuns = 1;
   if (used.has("ui_adopt")) count.uiComponents = 1;
-  if (used.has("code_search")) count.codeSearches = 1;
-  if (used.has("code_nav")) count.codeNavs = 1;
   if (has(MEMORY_TOOLS)) count.memoriesSaved = 1;
   if (has(SOUL_TOOLS)) count.soulNotes = 1;
   if (used.has("delegate_to_agent")) count.handoffs = 1;

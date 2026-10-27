@@ -70,9 +70,10 @@ describe("Astra/Sol async orchestration policy", () => {
   );
 
   it(
-    "leaves other models unchanged",
+    "leaves other models without orchestration guidance",
     async () => {
-      await expect(systemPrompt("gpt-6-luna", "ultra")).resolves.toBe("base prompt");
+      const prompt = await systemPrompt("gpt-6-luna", "ultra");
+      expect(prompt).not.toContain("## Async subagent orchestration");
     },
     INIT_TIMEOUT_MS,
   );

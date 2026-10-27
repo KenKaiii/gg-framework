@@ -3,9 +3,12 @@ import type { AgentTool } from "@kenkaiiii/gg-agent";
 import { CONTEXT_LIMITS, type ContextLimits } from "../core/context-limits.js";
 import { renderSkillLines, type BlockedSkill, type Skill } from "../core/skills.js";
 
+// Haiku 5.5, loading 3 skills in parallel, sent `{ args }` with no `skill` in
+// 3 of 9 calls (bench/prompt-diet skills-haiku-fix-1027, review-data); each
+// failed call cost a turn. Field descriptions make the required name explicit.
 const parameters = z.object({
-  skill: z.string(),
-  args: z.string().optional(),
+  skill: z.string().describe("Required: the exact skill name from the list. One skill per call."),
+  args: z.string().optional().describe("Optional context for the skill."),
 });
 
 export function createSkillTool(
@@ -36,7 +39,10 @@ export function createSkillTool(
         // Thrown, not returned: a plain-text "not found" reads as success to the
         // model. Bench (glm-ab7): GLM "loaded" skill "enter_plan", believed it was
         // in plan mode, and edited without the plan step. Name the real tool.
-        const available = skills.map((s) => s.name).join(", ");
+        const available = skills
+          .filter((s) => !s.hidden)
+          .map((s) => s.name)
+          .join(", ");
         throw new Error(
           `Skill "${input.skill}" not found; nothing was loaded. Skills: ${available || "none"}. ` +
             `If "${input.skill}" is a tool, call that tool directly instead.`,
@@ -81,7 +87,7 @@ export const HOST_RULES =
   "If your host instructions say not to ask the user right now (e.g. a running goal), use the default or recommended answer the skill gives for each question and report what you chose. Host rules on branches, commits and installs override the skill.";
 
 function generateSkillDescription(skills: Skill[], limits: ContextLimits = CONTEXT_LIMITS): string {
-  if (skills.length === 0) {
+  if (!skills.some((s) => !s.hidden)) {
     return "Invoke a skill by name. No skills are currently available.";
   }
 
@@ -102,7 +108,7 @@ function generateSkillDescription(skills: Skill[], limits: ContextLimits = CONTE
     `Specialised method checklists. When the work is in a skill's scope below, load it before writing code, and before giving a review or a safety verdict. Match the work, not the topic: routine fixes and renames need none. Respect exclusions; never reload one.\n` +
     // Previously only in the no-skill-tool fallback prompt, so normal sessions
     // never saw it and launch checks picked one skill and skipped the rest.
-    `Launch-readiness asks ("ready to ship?"): cover every in-scope skill (durable, bulletproof, compliance-guard, lean, evidence-led-ui), one report-only child each in one spawn_agent call where delegation is available.\n\n` +
+    `Launch-readiness asks ("ready to ship?"): cover every in-scope skill (durable, compliance-guard), one report-only child each in one spawn_agent call where delegation is available.\n\n` +
     `${lines.join("\n")}${overflow}`
   );
 }

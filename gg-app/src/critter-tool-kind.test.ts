@@ -25,8 +25,6 @@ describe("toolKindOf", () => {
     ["bash: pnpm test", "run"],
     ["grep: foo", "search"],
     ["find: **/*.md", "search"],
-    ["code_search: where is X", "search"],
-    ["code_nav: symbol", "search"],
     ["edit: /a/b.ts", "edit"],
     ["write: /a/b.ts", "edit"],
     ["web_fetch: https://example.com", "web"],

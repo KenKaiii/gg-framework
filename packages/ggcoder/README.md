@@ -67,21 +67,21 @@ You can still add your own MCPs in `~/.gg/mcp.json` or `.gg/mcp.json`. But start
 
 Switch mid-conversation with `/model`. Not locked to anyone.
 
-| Provider          | Models                                                                                      | Auth             |
-| ----------------- | ------------------------------------------------------------------------------------------- | ---------------- |
-| **Anthropic**     | Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5                                           | OAuth            |
-| **OpenAI**        | GPT-6 Astra, GPT-6.1 Sol, GPT-6 Luna                                                        | OAuth            |
-| **Gemini**        | Gemini 3.1 Pro (Preview), 3.8 Flash, 3.5 Flash, 3.5 Flash Lite, 3.1 Flash Lite              | OAuth            |
-| **xAI (Grok)**    | Grok 4.7                                                                                    | OAuth or API key |
-| **Moonshot**      | Kimi K3, K2.8 Preview (Kimi sign-in), K2.7 Code, K2.7 Code HighSpeed                        | OAuth or API key |
-| **Z.AI (GLM)**    | GLM-5.3, GLM-5.3-Flash                                                                      | API key          |
-| **MiniMax**       | MiniMax M3                                                                                  | API key          |
-| **Xiaomi (MiMo)** | MiMo-V2.6-Pro, MiMo-V2.6-Flash, MiMo-V2.6-Pro-UltraSpeed                                    | API key          |
-| **DeepSeek**      | DeepSeek V4 Pro, V4.1 Flash                                                                 | API key          |
-| **Sakana (Fugu)** | Fugu, Fugu Max, Fugu Ultra                                                                  | API key          |
-| **OpenRouter**    | Qwen3.8 Max                                                                                 | API key          |
-| **Hugging Face**  | Kimi K2.7 Code, DeepSeek V4.1 Flash, GPT-OSS 120B (Inference Providers router)              | API key          |
-| **Local**         | Any model on an OpenAI-compatible server: Ollama, LM Studio, llama.cpp, vLLM                | None             |
+| Provider          | Models                                                                         | Auth             |
+| ----------------- | ------------------------------------------------------------------------------ | ---------------- |
+| **Anthropic**     | Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5                              | OAuth            |
+| **OpenAI**        | GPT-6 Astra, GPT-6.1 Sol, GPT-6 Luna                                           | OAuth            |
+| **Gemini**        | Gemini 3.1 Pro (Preview), 3.8 Flash, 3.5 Flash, 3.5 Flash Lite, 3.1 Flash Lite | OAuth            |
+| **xAI (Grok)**    | Grok 4.7                                                                       | OAuth or API key |
+| **Moonshot**      | Kimi K3, K2.8 Preview (Kimi sign-in), K2.7 Code, K2.7 Code HighSpeed           | OAuth or API key |
+| **Z.AI (GLM)**    | GLM-5.3, GLM-5.3-Flash                                                         | API key          |
+| **MiniMax**       | MiniMax M3                                                                     | API key          |
+| **Xiaomi (MiMo)** | MiMo-V2.6-Pro, MiMo-V2.6-Flash, MiMo-V2.6-Pro-UltraSpeed                       | API key          |
+| **DeepSeek**      | DeepSeek V4 Pro, V4.1 Flash                                                    | API key          |
+| **Sakana (Fugu)** | Fugu, Fugu Max, Fugu Ultra                                                     | API key          |
+| **OpenRouter**    | Qwen3.8 Max                                                                    | API key          |
+| **Hugging Face**  | Kimi K2.7 Code, DeepSeek V4.1 Flash, GPT-OSS 120B (Inference Providers router) | API key          |
+| **Local**         | Any model on an OpenAI-compatible server: Ollama, LM Studio, llama.cpp, vLLM   | None             |
 
 Every hosted model above except GLM-5.3, DeepSeek V4 Pro, and GPT-OSS 120B accepts images.
 
@@ -152,7 +152,6 @@ GG Coder comes with a focused set of tools. Only six core tools — `read`, `wri
 | `skill`                           | Load a skill's instructions                                                                            |
 | `tool_search`                     | Load an on-demand tool by capability                                                                   |
 | `find` / `ls`                     | Find files by glob pattern / list a directory                                                          |
-| `code_search` / `code_nav`        | Find code by meaning / jump to exact definitions and callers                                           |
 | `web_fetch` / `web_search`        | Fetch a URL / search the web                                                                           |
 | `steroids`                        | Find real production repos similar to yours and read how they do it                                    |
 | `source_path`                     | Locate an installed dependency's source                                                                |
@@ -203,21 +202,14 @@ Reusable behaviors across projects. Drop `.md` files in:
 
 They get loaded into the system prompt automatically. The agent knows what it can do without you explaining it each session. <kbd>Ctrl+S</kbd> opens a pane to browse and toggle them.
 
-Eleven ship built in, and route themselves when the work matches:
+Two ship built in, and route themselves when the work matches:
 
-| Skill              | Fires on                                                                                                                                                                                                                                                                                                                            |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bulletproof`      | Code an attacker will reach — auth, untrusted input, secrets, dependencies, CI/release, agent/MCP tool surfaces — and "is this safe to ship" reviews. Works on any target: web, API, CLI, desktop, mobile, embedded, contracts, ML.                                                                                                 |
-| `clarify`          | Requirements or a design genuinely unsettled — interrogating or stress-testing a plan before building, or a mid-build decision that materially changes the result.                                                                                                                                                                  |
-| `code-review`      | Reviewing written work — a diff, PR, or branch — on both what was asked for and how well it is built.                                                                                                                                                                                                                               |
-| `compliance-guard` | Legal exposure — personal data, payments, UGC, email/SMS, minors, or a licensed/regulated feature.                                                                                                                                                                                                                                  |
-| `durable`          | User data must not be lost — first database/table, migrations, backfills/imports, destructive operations, backups and recovery; any store (Postgres, MySQL, SQLite, Mongo, serverless).                                                                                                                                             |
-| `evidence-led-ui`  | Broad or design-sensitive UI work — new screens, redesigns, design systems, accessibility passes.                                                                                                                                                                                                                                   |
-| `lean`             | Speed and resource efficiency — slow loading/startup, jank, high CPU, memory leaks and hogging, zombie/orphan processes, bundle bloat, dead code/styles, Core Web Vitals; while building anything that should stay fast, or a perf pass on an existing project. Any stack: web, backend, Electron, Tauri, mobile, native, game, ML. |
-| `refactoring`      | Restructuring existing code without changing behavior — "refactor", "clean up", "reduce tech debt", "modernize" or migrate legacy code; test-guarded steps, revert-on-red, characterization tests for untested code.                                                                                                                |
-| `root-cause`       | A bug that resists the obvious fix, makes no sense, or keeps coming back — gated diagnosis from red repro to ranked hypotheses to regression test.                                                                                                                                                                                  |
-| `shared-language`  | Fuzzy or drifting domain vocabulary, recurring naming decisions, and hard-to-reverse decisions worth recording (glossary + decision records).                                                                                                                                                                                       |
-| `tdd`              | Test-driven development — red-green-refactor with pre-agreed seams, when the user asks for test-first work.                                                                                                                                                                                                                         |
+| Skill              | Fires on                                                                                                                                                                                |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `compliance-guard` | Legal exposure — personal data, consent, marketing email/SMS, payments, UGC, minors, or a licensed/regulated feature.                                                                   |
+| `durable`          | User data must not be lost — first database/table, migrations, backfills/imports, destructive operations, backups and recovery; any store (Postgres, MySQL, SQLite, Mongo, serverless). |
+
+Two more, `bulletproof` (security) and `lean` (performance), are hidden from routine work and load only for the app's Checklist audits.
 
 ---
 

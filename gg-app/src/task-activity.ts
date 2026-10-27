@@ -174,7 +174,7 @@ function finish(s: TaskActivity, now: number): TaskActivity {
 }
 
 function toolPhase(name: string, args: Record<string, unknown>): string {
-  if (["read", "grep", "find", "ls", "code_search", "code_nav", "source_path"].includes(name))
+  if (["read", "grep", "find", "ls", "source_path"].includes(name))
     return "Reading the relevant code…";
   if (["edit", "write"].includes(name)) return "Making the changes…";
   if (["web_search", "web_fetch", "steroids"].includes(name)) return "Checking references…";
@@ -416,16 +416,9 @@ export function reduceTaskActivity(s: TaskActivity, e: SidecarEvent, now: number
       if (tool) {
         const activeTools = { ...s.activeTools };
         delete activeTools[id];
-        const research = [
-          "read",
-          "grep",
-          "find",
-          "ls",
-          "web_search",
-          "web_fetch",
-          "code_search",
-          "code_nav",
-        ].includes(tool.name);
+        const research = ["read", "grep", "find", "ls", "web_search", "web_fetch"].includes(
+          tool.name,
+        );
         s = {
           ...s,
           activeTools,

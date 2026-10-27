@@ -58,8 +58,6 @@ export const TROPHY_COUNTERS = [
   "cancels",
   "memoriesSaved",
   "soulNotes",
-  "codeSearches",
-  "codeNavs",
   "checklistRecords",
   "filesTouched",
   "bigRuns",

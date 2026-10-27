@@ -75,7 +75,7 @@ describe("skill routing prompts", () => {
     expect(prompt).toContain("never reload one");
     // A "ready to launch?" ask matches several skills at once; without a fixed
     // order the model picks one and silently skips the rest.
-    expect(prompt).toContain("durable, bulletproof, compliance-guard, lean, evidence-led-ui");
+    expect(prompt).toContain("(durable, compliance-guard)");
     expect(prompt).toContain('a failed child is "not checked", never clean');
 
     const tool = createSkillTool([skill]);
@@ -87,23 +87,33 @@ describe("skill routing prompts", () => {
     expect(tool.description).toContain("never reload one");
   });
 
-  it("routes requested API behavior changes away from the pure-refactor workflow", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bundled-skill-contract-"));
+  it("keeps Checklist-only skills out of every list the model sees", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bundled-hidden-"));
     try {
       const skills = await discoverSkills({ globalSkillsDir: path.join(root, "global") });
-      const refactoring = skills.find((candidate) => candidate.name === "refactoring");
-      expect(refactoring?.description).toContain("behind an unchanged contract");
-      expect(refactoring?.description).toContain("Do NOT use for renames, bug fixes");
-      expect(refactoring?.content).toContain('not the word "refactor"');
-      expect(refactoring?.content).toContain("Do not manufacture a separate pure-rename stage");
-      expect(refactoring?.content).toContain(
-        "Existing authorization and safety controls still apply",
+      const visible = skills
+        .filter((s) => !s.hidden)
+        .map((s) => s.name)
+        .sort();
+      expect(visible).toEqual(["compliance-guard", "durable"]);
+      expect(
+        skills
+          .filter((s) => s.hidden)
+          .map((s) => s.name)
+          .sort(),
+      ).toEqual(["bulletproof", "lean"]);
+      const catalog = formatSkillsForPrompt(skills);
+      const tool = createSkillTool(skills);
+      for (const hidden of ["bulletproof", "lean"]) {
+        expect(catalog).not.toContain(`**${hidden}**`);
+        expect(tool.description).not.toContain(`**${hidden}**`);
+      }
+      // The Checklist's Security audit still loads it by name.
+      const loaded = await tool.execute(
+        { skill: "bulletproof" },
+        { signal: new AbortController().signal, toolCallId: "checklist" },
       );
-      expect(refactoring?.content).toContain("The baseline is a gate");
-      expect(refactoring?.content).toContain("Red means revert");
-      // A bare `git restore` with no per-step commits also wiped every earlier
-      // uncommitted step in the file (always the case in Goals mode).
-      expect(refactoring?.content).toContain("without per-step commits it also wipes");
+      expect(loaded).toContain('<skill_content name="bulletproof">');
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -126,6 +136,12 @@ describe("skill routing prompts", () => {
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("tells the model the skill name is required", () => {
+    const tool = createSkillTool([skill]);
+    expect(tool.parameters.shape.skill.description).toContain("Required");
+    expect(tool.parameters.safeParse({ args: "context only" }).success).toBe(false);
   });
 
   it("keeps loaded skill instructions below project and file/module rules", async () => {
@@ -162,9 +178,7 @@ describe("skill routing prompts", () => {
 
   it("shows the launch-readiness rule in the live skill tool, not only the fallback prompt", () => {
     const tool = createSkillTool([skill]);
-    expect(tool.description).toContain(
-      "durable, bulletproof, compliance-guard, lean, evidence-led-ui",
-    );
+    expect(tool.description).toContain("(durable, compliance-guard)");
     expect(tool.description).toContain("report-only child");
   });
 
@@ -217,22 +231,6 @@ describe("skill routing prompts", () => {
           ).resolves.toBeUndefined();
         }
       }
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it("discovers evidence-led-ui for a fresh user from bundled assets", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bundled-skills-"));
-    try {
-      const skills = await discoverSkills({ globalSkillsDir: path.join(root, "global") });
-      const evidenceSkill = skills.find((candidate) => candidate.name === "evidence-led-ui");
-
-      expect(evidenceSkill?.source).toBe("bundled");
-      // `root` is a real filesystem path and uses the platform separator, so
-      // build the expected fragment the same way instead of hardcoding "/".
-      expect(evidenceSkill?.root).toContain(path.join("assets", "skills", "evidence-led-ui"));
-      expect(evidenceSkill?.content).toContain("# Evidence-Led UI");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -373,62 +371,6 @@ describe("skill routing prompts", () => {
         await expect(
           fs.access(path.join(skillRoot, ...relative.split("/"))),
         ).resolves.toBeUndefined();
-      }
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it("discovers the workflow skills for a fresh user from bundled assets", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bundled-skills-"));
-    try {
-      const skills = await discoverSkills({ globalSkillsDir: path.join(root, "global") });
-
-      // Each bundled workflow skill carries the one discipline marker that
-      // makes it work — a skill that loses its marker has become prose.
-      const expectations: Array<{ name: string; markers: string[] }> = [
-        // Interviews must not outsource homework to the user.
-        { name: "clarify", markers: ["Never ask for facts", "Ask only the frontier"] },
-        // Seams are agreed before tests exist; expected values never recompute
-        // the implementation's logic.
-        { name: "tdd", markers: ["No test at an unagreed seam", "outside source of truth"] },
-        // Theory is gated behind a red, deterministic, fast repro command;
-        // a "why" question must end at the answer, not a fix the user never
-        // asked for (skills outrank the prompt, so the guard lives here too).
-        {
-          name: "root-cause",
-          markers: [
-            "No red command, no Phase 2",
-            "One variable",
-            "change code only when the user asks for the fix",
-            // Suiteless projects: a mandated regression test would contradict
-            // the prompt's "no suite unless asked" rule.
-            "never introduce a suite unasked",
-          ],
-        },
-        // The glossary stays a glossary; ADRs are superseded, never edited.
-        // CONTEXT.md is not in CONTEXT_FILES, so the glossary only pays off
-        // across sessions via the pointer line the skill plants.
-        {
-          name: "shared-language",
-          markers: [
-            "glossary and nothing else",
-            "supersede, never edit",
-            "CONTEXT.md is not auto-loaded",
-          ],
-        },
-        // Spec and standards findings stay unlabeled-merge-proof; security
-        // defers to bulletproof instead of duplicating its lane.
-        { name: "code-review", markers: ["never merge the lists", "bulletproof"] },
-      ];
-
-      for (const { name, markers } of expectations) {
-        const skill = skills.find((candidate) => candidate.name === name);
-        expect(skill?.source, name).toBe("bundled");
-        expect(skill?.root, name).toContain(path.join("assets", "skills", name));
-        for (const marker of markers) {
-          expect(skill?.content, `${name}: ${marker}`).toContain(marker);
-        }
       }
     } finally {
       await fs.rm(root, { recursive: true, force: true });

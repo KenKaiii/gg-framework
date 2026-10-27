@@ -64,7 +64,6 @@ export const CHECKLIST_ITEMS = [
     description: "I use this to keep names consistent and big decisions written down.",
     check:
       "Each domain concept has one name across code and docs, a glossary (CONTEXT.md or similar) exists for non-trivial domains, and hard-to-reverse decisions are recorded (ADRs).",
-    skill: "shared-language",
   },
   {
     id: "git-github",
@@ -99,7 +98,6 @@ export const CHECKLIST_ITEMS = [
     description: "I use this to check that tests pass and cover the parts that really matter.",
     check:
       "A test suite exists, runs green now, and covers the critical paths with real code paths rather than mocks alone.",
-    skill: "tdd",
   },
   {
     id: "ci",
@@ -128,7 +126,6 @@ export const CHECKLIST_ITEMS = [
       "I use this to spot dead code, repetition and files that are getting hard to work with.",
     check:
       "Look for duplicated logic, dead code, unused exports and very large files or functions that are hard to change safely.",
-    skill: "refactoring",
   },
   {
     id: "errors-logging",
@@ -156,7 +153,6 @@ export const CHECKLIST_ITEMS = [
       "I use this to check that colours, spacing and components come from one shared place.",
     check:
       "Colour, type, spacing and radius tokens are defined in one place and shared components exist for repeated UI. Not applicable without a UI.",
-    skill: "evidence-led-ui",
   },
   {
     id: "styling-consistency",
@@ -165,7 +161,6 @@ export const CHECKLIST_ITEMS = [
     description: "I use this to catch one-off styles that don't match the rest of the app.",
     check:
       "Find hard-coded colours and sizes and one-off styles where shared tokens or components already exist. Not applicable without a UI.",
-    skill: "evidence-led-ui",
   },
   {
     id: "motion-consistency",
@@ -174,7 +169,6 @@ export const CHECKLIST_ITEMS = [
     description: "I use this to keep animations consistent and check they respect reduced motion.",
     check:
       "Animations use shared durations and easings, and reduced-motion preferences are respected. Not applicable without a UI.",
-    skill: "evidence-led-ui",
   },
   {
     id: "accessibility",
@@ -184,7 +178,6 @@ export const CHECKLIST_ITEMS = [
       "I use this to catch things that make the app hard to read or use without a mouse.",
     check:
       "Text contrast is sufficient, everything works by keyboard with visible focus, and controls and images have labels or alt text. Not applicable without a UI.",
-    skill: "evidence-led-ui",
   },
   {
     id: "ui-states",
@@ -194,7 +187,6 @@ export const CHECKLIST_ITEMS = [
       "I check what people see while loading, when there's nothing to show or when things break.",
     check:
       "Every screen handles loading, empty and error states, and layouts survive small screens and long text. Not applicable without a UI.",
-    skill: "evidence-led-ui",
   },
   {
     id: "security",

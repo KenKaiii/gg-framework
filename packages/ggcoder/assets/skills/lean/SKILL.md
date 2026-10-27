@@ -1,6 +1,8 @@
 ---
 name: lean
 description: "Use when speed or resource use matters: slow pages or startup, memory leaks, high CPU, bundle size, N+1 queries. Do NOT use for correctness bugs."
+# Checklist audits only (Security, Dependencies, Secrets / Performance); hidden from routine coding after the 27 Oct 2026 skill-value bench.
+hidden: true
 license: Performance engineering guidance, not a benchmark certification. Sources and snapshot date are recorded at the foot of each reference file.
 compatibility: Snapshot dated 3 October 2026; Node release schedule, Core Web Vitals browser support and the current Next.js version re-verified 22 October 2026. Thresholds and tool names decay — re-verify before asserting them as current.
 ---
