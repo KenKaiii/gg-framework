@@ -8,23 +8,6 @@ import { loadProgress, peekProgress, updateProgress } from "../core/progress/sto
 import { awardPrompt, awardCommits } from "../core/progress/engine.js";
 import { detectNewCommits, repoKey } from "../core/progress/git-xp.js";
 import { rebuildFromSessions } from "../core/progress/rebuild.js";
-import type { RoyaleBugCategory } from "./royale-bug.js";
-
-/** What a finished run did, beyond its commits, for GG Royale. */
-export interface RunExtras {
-  /** The goal this run worked on (its coordinator's run), if any. */
-  goalId?: string | null;
-  /** The run handed work to workers (spawn_agent). */
-  workers?: boolean;
-  /** A deploy or publish command ran and succeeded. */
-  deployed?: boolean;
-}
-
-/** One run's outcome as GG Royale hears it (counts and labels only). */
-export interface RunOutcome extends RunExtras {
-  commits: number;
-  bug?: RoyaleBugCategory | null;
-}
 import type { ProgressFile, ProgressSnapshot } from "../core/progress/types.js";
 
 // ── Progress ("Ranks") ──────────────────────────────────────────────────
@@ -38,13 +21,7 @@ export interface ProgressManager {
   /** Current snapshot for GET /progress + the SSE ready path. */
   snapshot: () => ProgressSnapshot;
   /** Award XP for one successfully completed run (prompt + any new commits). */
-  awardRun: (
-    cwd: string,
-    runStartedAt: number,
-    originId?: string,
-    bug?: RoyaleBugCategory | null,
-    extras?: RunExtras,
-  ) => Promise<void>;
+  awardRun: (cwd: string, runStartedAt: number, originId?: string) => Promise<void>;
   /** Close the ~/.gg fs.watch + clear any pending debounce (leak-free shutdown). */
   dispose: () => void;
 }
@@ -52,9 +29,6 @@ export interface ProgressManager {
 export async function createProgressManager(
   agentDir: string,
   broadcastAll: (snapshot: ProgressSnapshot, originId?: string) => void,
-  /** Optional: called after each successful run award with the number of newly
-   *  detected commits (0 if none). Must not throw (GG Royale reporting). */
-  onRunAwarded?: (outcome: RunOutcome) => void,
 ): Promise<ProgressManager> {
   // Boot: recovery chain main → backup → coding + chat session rebuild → empty.
   const coderSessionsDir = path.join(agentDir, "sessions");
@@ -76,16 +50,9 @@ export async function createProgressManager(
     return buildSnapshot(file);
   }
 
-  async function awardRun(
-    cwd: string,
-    runStartedAt: number,
-    originId?: string,
-    bug?: RoyaleBugCategory | null,
-    extras: RunExtras = {},
-  ): Promise<void> {
+  async function awardRun(cwd: string, runStartedAt: number, originId?: string): Promise<void> {
     try {
       const now = Date.now();
-      let newCommits = 0;
       const updated = await updateProgress(async (f) => {
         const levelBefore = levelForXp(f.xp);
         awardPrompt(f, now, cwd);
@@ -100,7 +67,6 @@ export async function createProgressManager(
             const detected = await detectNewCommits(cwd, lastHead, runStartedAt);
             if (detected && detected.commits.length > 0) {
               awardCommits(f, detected.commits, now, cwd);
-              newCommits = detected.commits.length;
             }
           }
           f.repos[key] = { lastHead: probe.head };
@@ -118,13 +84,6 @@ export async function createProgressManager(
       file = updated;
       lastSeenNonce = updated.lastEvent?.nonce ?? null;
       broadcastAll(buildSnapshot(updated), originId);
-      try {
-        onRunAwarded?.({ commits: newCommits, ...(bug ? { bug } : {}), ...extras });
-      } catch (err) {
-        log("DEBUG", "app-sidecar", "run outcome hook failed", {
-          message: err instanceof Error ? err.message : String(err),
-        });
-      }
     } catch (err) {
       log("DEBUG", "app-sidecar", "progress award failed", {
         message: err instanceof Error ? err.message : String(err),

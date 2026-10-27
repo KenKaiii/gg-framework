@@ -25,6 +25,7 @@ const soft = (t, seed = 0, amp = 0.15) => 1 - amp * 0.45 * (0.5 + 0.5 * (0.6 * M
 import * as TX from './tex.js';
 import * as P from './fightclub-props.js';
 import * as J from './fightclub-junk.js';
+import { rickTex, tickRick } from './rick-screen.js';
 
 export const RING = { x: -2.5, z: 1.0, s: 4.6 };
 const H = Math.PI / 2;
@@ -116,7 +117,7 @@ export function build(ctx) {
     { id: 'rules', x: 8.4, z: -5.2, r: 1.0, label: 'Read the rules', kind: 'gadget' },
     { id: 'catalogue', x: 8.2, z: 2.8, r: 1.1, label: 'Take the furniture quiz', kind: 'gadget' },
     { id: 'bag', x: 8.0, z: -2.0, r: 1.0, label: 'Hit the bag', kind: 'gadget' },
-    { id: 'tv', x: -8.8, z: 4.0, r: 1.0, label: 'Watch the old TV', kind: 'tv' },
+    { id: 'tv', x: -8.8, z: 4.0, r: 1.0, label: 'Watch TV', kind: 'tv' },
     { id: 'paulson', x: -9.0, z: 2.6, r: 0.9, label: 'Look at the photo', kind: 'gadget' },
     { id: 'monkey', x: 5.4, z: -5.3, r: 0.8, label: 'Poke the helmet', kind: 'gadget' },
     { id: 'washer', x: 9.3, z: 0.9, r: 0.8, label: 'Kick the washer', kind: 'machine' },
@@ -144,7 +145,7 @@ export function build(ctx) {
   };
   /** activities can trigger the room gags */
   R.fc = { hit: () => { hit = now; }, flash: () => { flash = now; } };
-  const scrM = /** @type {THREE.MeshBasicMaterial} */ (T.scr.material);
+  const scrM = /** @type {THREE.MeshBasicMaterial} */ (T.scr.material); scrM.map = rickTex(); scrM.needsUpdate = true;
   // light realism: workbench bulb pool + wash on the partition, TV glow, candle wash, catalogue lamp pool
   softPlanes(R.live, [[4.3, 0.024, -5.2, 3.0, 2.6, 'f', '#ffb36b', 0.2], [4.3, 1.7, -6.68, 2.8, 2.4, 's', '#ffb36b', 0.16], [-8.9, 0.024, 4.6, 2.0, 1.8, 'f', '#9ab8c8', 0.18],
     [-10.66, 0.9, 2.6, 1.0, 1.0, 'e', '#ffb36b', 0.25], [-9.3, 0.024, 2.6, 1.2, 1.2, 'f', '#ffb36b', 0.15], [6.9, 0.024, 4.6, 2.4, 2.0, 'f', '#fff0d0', 0.15], [-7.05, 2.45, -6.66, 2.2, 1.0, 's', '#ffd6e4', 0.1]]);
@@ -160,7 +161,7 @@ export function build(ctx) {
     const hs = t - hit; bag.rotation.x = hs >= 0 && hs < 3 ? Math.sin(hs * 7) * 0.45 * Math.exp(-hs * 1.2) : Math.sin(t * 0.6) * 0.01;
     const fs = t - flash, sub = fs >= 0 && fs < 3 && Math.abs(fs - 1.2) < 0.5;
     const c = 0.55 + 0.12 * Math.sin(t * 1.4) + 0.06 * Math.sin(t * 0.8);
-    scrM.color.setRGB(0.5 * c, 0.65 * c, 0.75 * c); tvGlow.material.opacity = 0.35 * c * (sub ? 1.6 : 1);
+    tickRick(t); scrM.color.setScalar(0.95 * c); tvGlow.material.opacity = 0.35 * c * (sub ? 1.6 : 1);
     { const pk = t - pokeAt; poke.material.opacity = pk >= 0 && pk < 1.2 ? 0.6 * (1 - pk / 1.2) : 0; }
     { const u = (t - puffAt) / 1.6; if (u >= 0 && u < 1) { poke.position.set(9.85, 1.3 + u * 1.2, -0.45); poke.scale.setScalar(1 + u * 2.5); poke.material.color.set(0xd8e4f0); poke.material.opacity = 0.5 * Math.sin(u * Math.PI); } else if (u >= 1 && u < 1.2) poke.scale.setScalar(1); } // steam puff rises from the boiler
     { const u = (t - soapAt) / 1.2; if (u >= 0 && u < 1.1) { const k = u < 1 ? Math.sin(u * Math.PI) : 0; sm4.makeTranslation(-8.65, 0.18 + 2 * 0.667 + 0.09 + k * 0.06, -6.27 + k * 0.25); soapBars.setMatrixAt(SOAP_I, sm4); soapBars.instanceMatrix.needsUpdate = true; } } // a soap bar slides out to be sniffed

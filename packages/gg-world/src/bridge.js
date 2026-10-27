@@ -1,6 +1,6 @@
 // @ts-check
-// App bridge (GG Coder). World runs in a same-origin frame inside the app. Messages carry `gg: 'world'` and are only
-// exchanged with the parent window on this origin.
+// App bridge (GG Coder). World runs in a SEALED frame inside the app (no same-origin: see boot.js). Messages carry
+// `gg: 'world'` and are only exchanged with the parent window (the app), on the app's origin.
 //   app -> game: player {level, percent, xp} | pause | resume | xp {amount, why} | profile {profile} | note {text}
 //   game -> app: ready | save {profile}
 // The app owns the online save (consent, device link, server); the game only says what changed and takes what the
@@ -8,8 +8,10 @@
 import { wallet } from './creator.js';
 
 export const EMBED = window.parent !== window;
-export const fromApp = (/** @type {MessageEvent} */ e) => EMBED && e.source === window.parent && e.origin === location.origin;
-export const tellApp = (/** @type {Record<string, unknown>} */ msg) => { if (EMBED) try { window.parent.postMessage({ gg: 'world', ...msg }, location.origin); } catch { /* not embedded */ } };
+/** the app's origin (boot.js reads it from the frame's ancestors; a sealed frame's own origin is "null") */
+const APP = /** @type {any} */ (globalThis).__ggAppOrigin || location.origin;
+export const fromApp = (/** @type {MessageEvent} */ e) => EMBED && e.source === window.parent && (APP === '*' || e.origin === APP);
+export const tellApp = (/** @type {Record<string, unknown>} */ msg) => { if (EMBED) try { window.parent.postMessage({ gg: 'world', ...msg }, APP); } catch { /* not embedded */ } };
 
 const LOOK_KEYS = ['body', 'head', 'hair', 'skin', 'top', 'bottom', 'acc', 'accColor'];
 

@@ -1,22 +1,11 @@
 // @ts-check
 // WarGames homage: tic-tac-toe against a computer that never loses and never takes a win, then the famous moral.
 import { SFX } from '../sfx.js';
-import { loop, text } from './util.js';
-import { crt, titleCard } from './films-a-crt.js';
-import { button, title, panel, glow } from './art.js';
-
-/** NORAD big board: dot-matrix continents, grid, labels (drawn once into the CRT backdrop cache). @param {CanvasRenderingContext2D} x @param {number} W @param {number} H */
-function norad(x, W, H) {
-  x.fillStyle = '#050a12'; x.fillRect(0, 0, W, H);
-  x.fillStyle = 'rgba(255,170,60,0.08)'; for (let i = 0; i < W; i += 20) x.fillRect(i, 0, 1, H); for (let j = 0; j < H; j += 20) x.fillRect(0, j, W, 1);
-  const land = [[95, 70, 55, 30], [125, 150, 22, 40], [235, 62, 28, 18], [245, 130, 30, 42], [330, 70, 80, 30], [400, 170, 26, 14]];
-  for (let px = 2; px < W; px += 4) for (let py = 2; py < H; py += 4) if (land.some(([cx, cy, rx, ry]) => ((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2 < 1)) { x.fillStyle = 'rgba(255,176,70,0.45)'; x.fillRect(px, py, 2, 2); }
-  title(x, 'NORAD  /  CRYSTAL PALACE', 8, 16, { size: 16, body: true, align: 'left', color: '#ffb347' });
-}
-const ARCS = [[100, 75, 340, 70], [80, 85, 380, 60], [130, 70, 250, 60], [340, 75, 95, 60], [360, 80, 120, 85], [320, 65, 70, 70]];
+import { loop } from './util.js';
+import { gx } from './gx.js';
+import { crtDevice, esc, CURSOR, MONO } from './films-a-crt.js';
 
 const LINES = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
-const C = '#ffb347', G = '#ffe0a0';
 /** @param {string[]} b */
 const winner = b => { for (const [a, c, d] of LINES) if (b[a] && b[a] === b[c] && b[a] === b[d]) return b[a]; return b.every(Boolean) ? 'draw' : null; };
 /** Computer ('O') value: player win -1, draw 0, own win -0.5 (it plays for the draw). @param {string[]} b @param {boolean} cpu */
@@ -31,77 +20,55 @@ function cpuMove(b) { let best = -9, at = -1; for (const i of [4, 0, 2, 6, 8, 1,
 
 /** @param {any} ctx */
 export function startWopr(ctx) {
-  const ov = ctx.overlay({ title: 'W.O.P.R.', sub: 'old CRT on the workbench', help: '<kbd>1-9</kbd> or <kbd>click</kbd> place X <kbd>enter</kbd>/<kbd>click</kbd> again <kbd>esc</kbd> leave' });
-  const W = 480, H = 270; const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
-  const st = { t: 0, b: Array(9).fill(''), phase: 'intro', msgT: 0, sims: 0, simB: Array(9).fill(''), simT: 0, pop: -1, popT: 0, games: 0 };
-  const cell = { x: 0, y: 0, s: 42 };
+  const ov = ctx.overlay({ title: 'W.O.P.R.', sub: 'old CRT on the workbench', help: '<kbd>1-9</kbd> or <kbd>click</kbd> place X' });
+  const K = gx(ov), hud = K.hud([{ id: 'games', label: 'Games played', value: 0 }], [{ id: 'def', label: 'DEFCON', value: 5, tone: 'gold' }]);
+  const scene = K.scene({ aspect: 4 / 3, maxW: 900 });
+  const dev = crtDevice(scene, { name: 'W.O.P.R.  /  NORAD', ph: '#ffc061', glow: 'rgba(255,160,50,.55)', bg0: '#0a0602', bg1: '#1d1206', case: 'linear-gradient(160deg,#5c5c55,#3c3c37 60%,#2a2a26)', top: true, fs: '4cqh' });
+  if (!document.getElementById('wopr-style')) { const s = document.createElement('style'); s.id = 'wopr-style'; s.textContent = `
+.wopr-g{display:grid;grid-template-columns:repeat(3,1fr);width:46cqh;height:46cqh;margin:2cqh 0 0 auto;position:absolute;right:4%;top:4%}
+.wopr-g.sm{position:static;width:9cqh;height:9cqh;margin:0;display:inline-grid;font-size:2cqh}
+.wopr-g>*{all:unset;display:grid;place-items:center;font:600 9cqh/1 ${MONO};color:#ffe0a0;cursor:pointer;border-color:rgba(255,179,71,.55);border-style:solid;border-width:0 .4cqh .4cqh 0;transition:transform .3s}
+.wopr-g.sm>*{font-size:2cqh;border-width:0 .2cqh .2cqh 0;cursor:default}
+.wopr-g>*:nth-child(3n){border-right:0}.wopr-g>*:nth-child(n+7){border-bottom:0}
+.wopr-g>.o{color:#ffb347}.wopr-g>.n{font-size:3cqh;color:rgba(255,179,71,.3)}.wopr-g>.n:hover{color:#ffe0a0}
+.wopr-g>.pop{animation:wopr-pop .4s cubic-bezier(.3,1.6,.6,1)}@keyframes wopr-pop{from{transform:scale(1.5)}}`; document.head.appendChild(s); }
+  const st = { t: 0, b: Array(9).fill(''), phase: 'wait', msgT: 0, sims: 0, simB: Array(9).fill(''), simT: 0, pop: -1, games: 0, shown: false };
   const place = i => {
     if (st.phase !== 'play' || st.b[i]) return;
-    st.b[i] = 'X'; st.pop = i; st.popT = st.t; SFX.play('beep', { vol: 0.35 }); SFX.play('blip', { vol: 0.3, pitch: 0.8, delay: 0.25 });
+    st.b[i] = 'X'; st.pop = i; SFX.play('beep', { vol: 0.35 }); SFX.play('blip', { vol: 0.3, pitch: 0.8, delay: 0.25 });
     if (!winner(st.b)) { const m = cpuMove(st.b); st.b[m] = 'O'; }
-    if (winner(st.b)) { st.games++; st.phase = 'sim'; SFX.play('eerie', { vol: 0.4 }); st.msgT = st.t; st.simT = st.t; st.sims = 0; }
+    if (winner(st.b)) { st.games++; hud.set('games', st.games); st.phase = 'sim'; SFX.play('eerie', { vol: 0.4 }); st.msgT = st.t; st.simT = st.t; st.sims = 0; }
   };
-  const reset = () => { SFX.play('crt.on', { vol: 0.4 }); st.b = Array(9).fill(''); st.phase = 'play'; };
-  const kd = e => { if (/^Digit[1-9]$|^Numpad[1-9]$/.test(e.code)) place(+e.code.slice(-1) - 1); else if ((e.code === 'Enter' || e.code === 'KeyR') && st.phase === 'moral' && st.t - st.msgT > 2) reset(); };
-  const ck = e => { const r = c.getBoundingClientRect(); const px = (e.clientX - r.left) * W / r.width, py = (e.clientY - r.top) * H / r.height;
-    const cx = Math.floor((px - cell.x) / cell.s), cy = Math.floor((py - cell.y) / cell.s); if (st.phase === 'moral' && st.t - st.msgT > 2) { if (resultOn() && hitBox(leaveB, px, py)) { ov.close(); return; } reset(); return; } if (cx >= 0 && cx < 3 && cy >= 0 && cy < 3) place(cy * 3 + cx); };
-  const leaveB = { x: 244, y: 224, w: 84, h: 26 }, againB = { x: 152, y: 224, w: 84, h: 26 }; let hover = '';
-  const resultOn = () => st.phase === 'moral' && st.t - st.msgT > 5;
-  const hitBox = (b, px, py) => px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h;
-  const mv = e => { const r = c.getBoundingClientRect(); const px = (e.clientX - r.left) * W / r.width, py = (e.clientY - r.top) * H / r.height; hover = !resultOn() ? '' : hitBox(leaveB, px, py) ? 'leave' : hitBox(againB, px, py) ? 'again' : ''; };
-  c.addEventListener('pointermove', mv); ov.onClose(() => c.removeEventListener('pointermove', mv));
-  c.style.cursor = 'pointer';
-  addEventListener('keydown', kd); c.addEventListener('click', ck); ov.onClose(() => { removeEventListener('keydown', kd); c.removeEventListener('click', ck); });
-  const typed = (s, t0, cps = 20) => s.slice(0, Math.max(0, Math.floor((st.t - t0) * cps)));
-  const grid = (b, gx, gy, s, col) => {
-    x.fillStyle = col; for (let k = 1; k < 3; k++) { x.fillRect(gx + k * s - 1, gy + 2, 2, s * 3 - 4); x.fillRect(gx + 2, gy + k * s - 1, s * 3 - 4, 2); }
-    b.forEach((v, i) => { const px = gx + (i % 3) * s + s / 2, py = gy + Math.floor(i / 3) * s + s / 2;
-      const k = i === st.pop && b === st.b ? 1 + Math.max(0, 0.4 - (st.t - st.popT)) * 1.5 : 1;
-      if (!v) { if (b === st.b && st.phase === 'play') text(x, String(i + 1), px, py + 5, { color: '#5a3a14', align: 'center' }); return; }
-      x.strokeStyle = v === 'X' ? G : C; x.lineWidth = 2; const r = s * 0.28 * k; x.beginPath();
-      if (v === 'X') { x.moveTo(px - r, py - r); x.lineTo(px + r, py + r); x.moveTo(px + r, py - r); x.lineTo(px - r, py + r); } else x.arc(px, py, r, 0, 7);
-      x.stroke(); });
-  };
+  const reset = () => { SFX.play('crt.on', { vol: 0.4 }); dev.flash(); st.b = Array(9).fill(''); st.phase = 'play'; st.shown = false; hud.set('def', 5, { tone: 'gold' }); };
+  const kd = e => { if (/^Digit[1-9]$|^Numpad[1-9]$/.test(e.code)) place(+e.code.slice(-1) - 1); };
+  addEventListener('keydown', kd); ov.onClose(() => removeEventListener('keydown', kd));
+  dev.txt.addEventListener('click', e => { const c = /** @type {HTMLElement} */ (e.target).closest('[data-i]'); if (c) place(Number(/** @type {HTMLElement} */ (c).dataset.i)); });
+  const typed = (s, t0, cps = 20) => esc(s.slice(0, Math.max(0, Math.floor((st.t - t0) * cps))));
+  const grid = (b, sm) => `<div class="wopr-g${sm ? ' sm' : ''}">${b.map((v, i) => v ? `<b class="${v === 'O' ? 'o' : ''}${!sm && i === st.pop ? ' pop' : ''}">${v}</b>` : sm ? '<b></b>' : `<button class="n" data-i="${i}" aria-label="cell ${i + 1}">${st.phase === 'play' ? i + 1 : ''}</button>`).join('')}</div>`;
+  let prev = '';
   loop(ov, dt => {
-    st.t += dt; const t = st.t;
-    if (st.phase === 'intro' && t > 5.4) st.phase = 'play';
-    if (st.phase === 'sim') { // the computer plays itself, faster and faster
+    st.t += dt; const t = st.t; let h = '';
+    if (st.phase === 'intro' && t - st.msgT > 2.6) st.phase = 'play';
+    if (st.phase === 'sim') {
       if (t - st.simT > Math.max(0.03, 0.28 - st.sims * 0.012)) { st.simT = t;
         const e = st.simB.map((v, i) => v ? -1 : i).filter(i => i >= 0); const w = winner(st.simB);
         if (w || !e.length) { st.simB = Array(9).fill(''); st.sims++; } else { const turnX = e.length % 2 === 1; st.simB[swapMove(st.simB, turnX ? 'X' : 'O')] = turnX ? 'X' : 'O'; } }
       if (t - st.msgT > 4.5) { st.phase = 'moral'; st.msgT = t; }
+      const def = Math.max(1, 5 - Math.floor(st.sims / 3)); hud.set('def', def, { tone: def < 3 ? 'bad' : 'gold' });
     }
-    crt(x, W, H, (sx, sy, sw, sh) => {
-      x.fillStyle = '#02060c'; x.fillRect(sx - 8, sy - 8, sw + 16, sh + 16);
-      if (st.phase === 'intro') { text(x, typed('GREETINGS PROFESSOR FALKEN.', 3.0), sx + 14, sy + 30, { color: C }); text(x, typed('SHALL WE PLAY A GAME?', 4.4), sx + 14, sy + 54, { color: C }); return; }
-      if (st.phase === 'moral') {
-        text(x, typed('A STRANGE GAME.', st.msgT), sx + sw / 2, sy + sh / 2 - 20, { color: C, align: 'center' });
-        text(x, typed('THE ONLY WINNING MOVE IS', st.msgT + 1), sx + sw / 2, sy + sh / 2 + 4, { color: C, align: 'center' });
-        text(x, typed('NOT TO PLAY.', st.msgT + 2.4), sx + sw / 2, sy + sh / 2 + 22, { color: C, align: 'center' });
-        if (t - st.msgT > 3.4) text(x, typed('HOW ABOUT A NICE GAME OF CHESS?', st.msgT + 3.4, 30), sx + sw / 2, sy + sh / 2 + 44, { color: '#a8702a', align: 'center' });
-        return;
-      }
-      text(x, 'TIC-TAC-TOE', sx + 14, sy + 20, { color: C });
-      text(x, 'YOU: X   WOPR: O', sx + 14, sy + 38, { color: '#a8702a' });
-      cell.x = sx + sw - 146; cell.y = sy + 14; grid(st.b, cell.x, cell.y, cell.s, '#a8702a');
-      if (st.phase === 'play') text(x, 'YOUR MOVE.', sx + 14, sy + 70, { color: G });
-      if (st.phase === 'sim') {
-        text(x, 'DRAW.', sx + 14, sy + 70, { color: C });
-        text(x, 'SIMULATING... ' + st.sims, sx + 14, sy + 90, { color: '#a8702a' });
-        const mx = sx + 14, my = sy + 98; for (let k = 0; k < 4; k++) grid(k === 0 ? st.simB : Array(9).fill('').map((_, i) => (i + k + st.sims) % 3 === 0 ? 'X' : (i * k + st.sims) % 4 === 1 ? 'O' : ''), mx + k * 40, my, 12, '#5a3a14');
-        x.fillStyle = `rgba(127,214,255,${(0.03 + 0.03 * Math.sin(t * 2.5)).toFixed(3)})`; x.fillRect(sx - 8, sy - 8, sw + 16, sh + 16); // slow glow, no strobe
-      }
-    }, { glow: C, beige: '#5a5a52', key: 'wopr', backdrop: norad, box: { x: 90, y: 34, w: 300, h: 212 } });
-    // live board: DEFCON readout and slow missile tracks while it simulates
-    const def = st.phase === 'sim' || st.phase === 'moral' ? Math.max(1, 5 - Math.floor(st.sims / 3)) : 5;
-    panel(x, 398, 4, 76, 22, { style: 'metal', r: 3 }); title(x, 'DEFCON ' + def, 436, 20, { size: 16, body: true, color: def < 3 ? '#ff5a3a' : C });
-    if (st.phase === 'sim') { x.save(); x.beginPath(); x.rect(0, 0, W, H); x.rect(90, 34, 300, 212); x.clip('evenodd'); /* tracks stay on the wall map, not over the CRT */ x.strokeStyle = 'rgba(255,90,50,0.7)'; x.lineWidth = 1; const n = Math.min(ARCS.length, 1 + st.sims);
-      for (let k = 0; k < n; k++) { const [ax, ay, bx2, by2] = ARCS[k], mx = (ax + bx2) / 2, my = Math.min(ay, by2) - 45; x.beginPath(); x.moveTo(ax, ay); x.quadraticCurveTo(mx, my, bx2, by2); x.stroke(); glow(x, bx2, by2, 8, '#ff5a3a', 0.4 + 0.2 * Math.sin(t * 2)); } x.restore(); }
-    if (resultOn()) { const k = Math.min(1, (t - st.msgT - 5) / 0.4); x.save(); x.globalAlpha = k;
-      panel(x, 140, 196, 200, 66, { style: 'metal' }); title(x, 'GAMES PLAYED ' + st.games, 240, 214, { size: 16, body: true, color: C });
-      button(x, 152, 224, 84, 26, 'Play again', { primary: true, hot: hover === 'again' }); button(x, 244, 224, 84, 26, 'Leave', { hot: hover === 'leave' }); x.restore(); }
-    titleCard(x, W, H, t, { name: 'W.O.P.R.', sub: 'tic-tac-toe vs the war computer', keys: [['1-9', 'place'], ['click', 'place'], ['esc', 'leave']], color: C });
+    if (st.phase === 'wait') h = '';
+    else if (st.phase === 'intro') h = `<div>${typed('GREETINGS PROFESSOR FALKEN.', st.msgT)}</div><div>${typed('SHALL WE PLAY A GAME?', st.msgT + 1.4)}${CURSOR}</div>`;
+    else if (st.phase === 'moral') {
+      h = `<div style="margin:auto;text-align:center;font-size:1.3em"><div>${typed('A STRANGE GAME.', st.msgT)}</div><div>${typed('THE ONLY WINNING MOVE IS', st.msgT + 1)}</div><div>${typed('NOT TO PLAY.', st.msgT + 2.4)}</div><div style="opacity:.6;margin-top:1em;font-size:.75em">${t - st.msgT > 3.4 ? typed('HOW ABOUT A NICE GAME OF CHESS?', st.msgT + 3.4, 30) : ''}</div></div>`;
+      if (t - st.msgT > 5 && !st.shown) { st.shown = true; K.result({ title: 'A strange game', big: st.games, line: 'The only winning move is not to play.', stats: [[st.games, 'Games played']], again: 'Play again', onAgain: reset }); }
+    } else {
+      h = `<div>TIC-TAC-TOE</div><div style="opacity:.6">YOU: X &nbsp; WOPR: O</div><div style="margin-top:1em;color:#ffe0a0">${st.phase === 'play' ? 'YOUR MOVE.' + CURSOR : 'DRAW.'}</div>`;
+      if (st.phase === 'sim') h += `<div style="opacity:.7">SIMULATING... ${st.sims}</div><div style="display:flex;gap:2cqh;margin-top:1em;opacity:.7">${[0, 1, 2, 3].map(k => grid(k === 0 ? st.simB : Array(9).fill('').map((_, i) => (i + k + st.sims) % 3 === 0 ? 'X' : (i * k + st.sims) % 4 === 1 ? 'O' : ''), true)).join('')}</div>`;
+      h += grid(st.b, false);
+    }
+    if (h !== prev) { prev = h; dev.txt.innerHTML = h; }
   });
+  K.card({ title: 'W.O.P.R.', text: 'Tic-tac-toe against the war computer.', how: [[['1-9'], 'place'], [['Click'], 'place']], cta: 'Log on', onGo: () => { SFX.play('crt.on', { vol: 0.4 }); dev.flash(); st.phase = 'intro'; st.msgT = st.t; } });
 }
 /** Best move for `who` (both sides play for a draw). @param {string[]} b @param {string} who */
 function swapMove(b, who) { const s = who === 'O' ? b : b.map(v => v === 'X' ? 'O' : v === 'O' ? 'X' : ''); return cpuMove(s.slice()); }

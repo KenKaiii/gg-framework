@@ -154,13 +154,11 @@ pub fn run() {
             commands::agent::agent_delete_jiwa,
             commands::agent::agent_progress,
             commands::agent::agent_trophies,
-            commands::royale::agent_royale_status,
-            commands::royale::agent_royale_summary,
-            commands::royale::agent_royale_open,
-            commands::royale::agent_royale_unlink,
-            commands::royale::agent_world_get,
-            commands::royale::agent_world_put,
-            commands::royale::agent_world_delete,
+            commands::world::agent_world_get,
+            commands::world::agent_world_put,
+            commands::world::agent_world_delete,
+            commands::world::agent_world_live,
+            commands::world::agent_world_account_delete,
             commands::agent::agent_keep_awake_get,
             commands::agent::agent_keep_awake_set,
             commands::agent::agent_usage,
@@ -311,7 +309,7 @@ pub fn run() {
                 // Update peers: the closed window is gone from the reading order.
                 broadcast_window_order(app);
                 // The last workspace window closed: transient windows (the
-                // remote gg-royale game, whatsnew) must not keep the app alive
+                // whatsnew) must not keep the app alive
                 // on their own, so close them and let the normal quit run.
                 if is_workspace_window(window.label())
                     && !app
@@ -319,10 +317,8 @@ pub fn run() {
                         .keys()
                         .any(|l| l != window.label() && is_workspace_window(l))
                 {
-                    for label in [commands::royale::ROYALE_LABEL, "whatsnew"] {
-                        if let Some(w) = app.get_webview_window(label) {
-                            let _ = w.close();
-                        }
+                    if let Some(w) = app.get_webview_window("whatsnew") {
+                        let _ = w.close();
                     }
                 }
             }

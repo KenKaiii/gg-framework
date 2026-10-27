@@ -12,6 +12,7 @@ import * as TX from './tex.js';
 import * as P from './den-props.js';
 import * as D from './den-decor.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { rickTex, tickRick } from './rick-screen.js';
 
 /** @param {any} ctx */
 export function build(ctx) {
@@ -34,7 +35,6 @@ export function build(ctx) {
   const cab = put(S, P.tvCabinet(), -2.2, 0, -5.55); R.blockObj(cab);
   const tv = P.crt(); tv.g.position.set(-2.2, 0.66, -5.6); tv.g.rotation.y = 0.06; S.add(tv.g);
   const tvGlow = live(FX.glow('#7fc8ff', 2.4, 0.35)); tvGlow.position.set(-2.15, 1.15, -5.1);
-  const frames = Array.from({ length: 10 }, (_, i) => TX.gameScreen(i));
   const ledM = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff4fd8').multiplyScalar(2.4), toneMapped: false });
   const led = new THREE.Mesh(mergeGeometries([new THREE.BoxGeometry(2.3, 0.03, 0.03), new THREE.BoxGeometry(0.03, 1.0, 0.03).translate(-1.15, -0.5, 0), new THREE.BoxGeometry(0.03, 1.0, 0.03).translate(1.15, -0.5, 0)]), ledM); led.userData.live = true; R.onWall('n', led, -2.2, 1.72, 0.12);
   const ledGlow = live(FX.glow('#ff4fd8', 3.4, 0.22)); ledGlow.position.set(-2.2, 1.7, -5.8);
@@ -55,10 +55,7 @@ export function build(ctx) {
   // ZONE 2: fighting-game TV, two players standing (north centre)
   const cab2 = put(S, P.tvCabinet(), 0.7, 0, -5.6); cab2.scale.set(0.6, 1, 0.8); R.blockObj(cab2);
   const tv2 = P.crt(); tv2.g.position.set(0.7, 0.66, -5.65); tv2.g.scale.setScalar(0.85); S.add(tv2.g);
-  const fight = [0, 1, 2, 3].map(i => TX.canvasTex('denfight' + i, 128, 96, (x, w, h) => { const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#3a1a5a'); g.addColorStop(1, '#c0559a'); x.fillStyle = g; x.fillRect(0, 0, w, h); x.fillStyle = '#1a0a1a'; x.fillRect(0, 74, w, 22);
-    const a = 30 + (i % 2) * 8, b = 92 - (i > 1 ? 8 : 0); x.fillStyle = '#3ddc84'; x.fillRect(a, 44, 12, 30); x.fillRect(a + 10, 50 + (i % 2) * 2, 10 + (i % 2) * 8, 5); x.fillStyle = '#ff4fd8'; x.fillRect(b, 44, 12, 30); x.fillRect(b - 10 - (i > 1 ? 8 : 0), 52, 10 + (i > 1 ? 8 : 0), 5);
-    x.fillStyle = '#ffd166'; x.fillRect(6, 6, 50 - i * 6, 6); x.fillRect(72 + i * 4, 6, 50 - i * 4, 6); x.fillStyle = '#fff'; x.font = '15px m5x7'; x.fillText('VS', 58, 13); for (let y = 0; y < h; y += 2) { x.fillStyle = 'rgba(0,0,0,0.2)'; x.fillRect(0, y, w, 1); } }, { nearest: true }));
-  const scr2 = /** @type {THREE.MeshBasicMaterial} */ (tv2.screen.material); scr2.map = fight[0];
+  const scr2 = /** @type {THREE.MeshBasicMaterial} */ (tv2.screen.material); scr2.map = rickTex();
   put(S, P.controller('#2b2838'), 0.3, 0.67, -5.35, 0.2);
 
   // ZONE 3: arcade row of 3 cabinets (north-east)
@@ -122,7 +119,7 @@ export function build(ctx) {
   void fC;
   R.interact = [
     { id: 'arcade', x: 3.5, z: -4.6, r: 1.6, label: 'Insert coin', kind: 'arcade' },
-    { id: 'tv', x: -2.2, z: -4.5, r: 1.1, label: 'Change the game', kind: 'tv' },
+    { id: 'tv', x: -2.2, z: -4.5, r: 1.1, label: 'Watch TV', kind: 'tv' },
     { id: 'window', x: 5.8, z: -3.2, r: 1.0, label: 'Look outside', kind: 'window' },
   ];
   const st8 = { flash: -9, tvOff: 0 };
@@ -143,8 +140,8 @@ export function build(ctx) {
   const scr = /** @type {THREE.MeshBasicMaterial} */ (tv.screen.material), arM = /** @type {THREE.MeshBasicMaterial} */ (ar.screen.material);
   R.tick = (t) => {
     st8.t = t;
-    scr.map = frames[(Math.floor(t * 5) + st8.tvOff) % frames.length];
-    const f = (1 - 0.06 * (0.5 + 0.5 * Math.sin(t * 2.42))); scr.color.setScalar(1.6 * f); scr2.map = fight[Math.floor(t * 0.7) % fight.length]; tvGlow.material.opacity = 0.3 * f;
+    tickRick(t); if (scr.map !== rickTex()) scr.map = rickTex();
+    const f = (1 - 0.06 * (0.5 + 0.5 * Math.sin(t * 2.42))); scr.color.setScalar(1.05 * f); scr2.color.setScalar(1.0); tvGlow.material.opacity = 0.3 * f;
     R.rig.points[0].intensity = 8 * f; const bm = /** @type {any} */ (fairy.userData.bulbs).material; bm.color.setScalar(0.85 + 0.15 * Math.sin(t * 1.7));
     const pulse = 0.85 + 0.15 * Math.sin(t * 0.8); ledM.color.set('#ff4fd8').multiplyScalar(2.4 * pulse); R.rig.points[1].intensity = 9 * pulse * (0.9 + 0.1 * Math.sin(t * 9));
     lava.blobs.forEach((bl, i) => { bl.position.y = 0.33 + Math.sin(t * 0.4 + i * 2.1) * 0.12; bl.position.x = Math.sin(t * 0.3 + i) * 0.015; bl.scale.setScalar(1 + 0.3 * Math.sin(t * 0.7 + i)); });

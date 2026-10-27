@@ -3,6 +3,26 @@
 // Layout copied from the usual game "locker": live full-body preview on the left, category tabs on the right, each tab
 // a fixed-height grid of tiles; Randomise / Undo / Reset / Save along the bottom.
 import { saveSoon } from './bridge.js';
+import { findProblem } from './chat-guard.js';
+/** Set once the first-visit wardrobe has been saved (or the player already had a name / an online save). */
+export const FIRST_KEY = 'night-rooms-setup';
+
+/** The same name rules as the World server (gg-royale shared avatar.ts nameProblem), plus no links or ads. '' = fine. */
+const RESERVED = ['bot', 'the bug', 'bug', 'dealer', 'the dealer', 'house', 'the house', 'admin', 'administrator', 'mod', 'moderator', 'staff', 'support', 'gg', 'gg coder', 'gg royale', 'system', 'server', 'you', 'player', 'anonymous'];
+/** @param {unknown} raw */
+export function nameProblem(raw) {
+  const n = String(raw || '').trim(), lo = n.toLowerCase();
+  if (!n) return 'Pick a name first';
+  if (n.length < 3) return 'At least 3 characters';
+  if (n.length > 14) return 'Up to 14 characters';
+  if (!/^[A-Za-z0-9 ]+$/.test(n)) return 'Letters, numbers and one space only';
+  if ((n.match(/ /g) || []).length > 1) return 'Only one space';
+  if (!/[A-Za-z]/.test(n)) return 'Needs at least one letter';
+  if (/(.)\1{3}/i.test(n.replace(/ /g, ''))) return 'Try another name'; // "aaaaaa", "xxxxx
+  if (RESERVED.includes(lo) || lo.startsWith('bot ') || lo.startsWith('gg ')) return 'That name is reserved. Try another';
+  if (findProblem(n)) return 'Try another name';
+  return '';
+}
 import { makePreview } from './creator-preview.js';
 
 const ITEMS = {
@@ -39,10 +59,11 @@ const clone = l => ({ ...l, silly: [...(l.silly || [])], scale: { head: 1, width
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] || c);
 const tabMem = { cur: 'body' };
 
-export function openCreator(S, root, done) {
-  const el = document.createElement('div'); el.className = 'card modal creator'; el.style.display = 'flex'; root.appendChild(el);
+/** @param {any} S @param {HTMLElement} root @param {() => void} done @param {{ first?: boolean }} [o] first visit: welcome + a name is needed */
+export function openCreator(S, root, done, o = {}) {
+  const el = document.createElement('div'); el.className = 'card modal creator' + (o.first ? ' first' : ''); el.style.display = 'flex'; root.appendChild(el);
   const saved = clone(S.player.look); let look = clone(saved); const hist = [];
-  const wl = wallet(S); const lvl = S.player.level; let name = S.player.namedHere ? S.player.name : '';
+  const wl = wallet(S); const lvl = S.player.level; let name = S.player.namedHere ? S.player.name : (o.first && S.player.appName) || '';
   const priceOf = (k, v) => { const it = ITEMS[k]?.find(i => i[0] === v); if (it) return it[2]; if (k === 'skin' && WEIRD_SKIN.has(v)) return 100; return 0; };
   const lockOf = (k, v) => ITEMS[k]?.find(i => i[0] === v)?.[3] || 1;
   const wearing = (k, v) => k === 'silly' ? saved.silly.includes(v) : saved[k] === v; // already worn (e.g. the default headphones): never charged
@@ -50,13 +71,18 @@ export function openCreator(S, root, done) {
   const cart = () => { const ids = []; for (const k of ['body', 'head', 'acc', 'skin']) if (!owned(k, look[k])) ids.push([k, look[k]]); for (const s of look.silly) if (!owned('silly', s)) ids.push(['silly', s]); return ids; };
   const total = () => cart().reduce((a, [k, v]) => a + priceOf(k, v), 0);
 
-  el.innerHTML = `<div class="cl"><div class="cpw"></div><input id="cn" maxlength="14" placeholder="Your name" aria-label="Name"></div>
-    <div class="cr"><div class="chd"><h3>Wardrobe</h3><span class="coins"></span></div><div class="ctabs" role="tablist">${TABS.map(([k, n]) => `<button class="ctab" role="tab" data-t="${k}">${n}</button>`).join('')}</div>
-    <div class="cpane"></div><div class="cft"><button class="btn" data-x="rand">Randomise</button><button class="btn" data-x="undo">Undo</button><button class="btn" data-x="reset">Reset</button><button class="btn" data-x="cancel">Cancel</button><button class="btn p" data-x="save"></button></div></div>`;
+  el.innerHTML = `<div class="cl"><div class="cpw"></div><input id="cn" maxlength="14" placeholder="Your name" aria-label="Name" aria-describedby="cnhint" autocomplete="off" spellcheck="false"><div class="cnhint" id="cnhint" aria-live="polite"></div></div>
+    <div class="cr"><div class="chd"><h3>${o.first ? 'Welcome to World' : 'Wardrobe'}</h3><span class="coins"></span></div>${o.first ? '<p class="cfirst">Pick a name and a look. You can change them any time in the wardrobe (C).</p>' : ''}<div class="ctabs" role="tablist">${TABS.map(([k, n]) => `<button class="ctab" role="tab" data-t="${k}">${n}</button>`).join('')}</div>
+    <div class="cpane"></div><div class="cft"><button class="btn" data-x="rand">Randomise</button><button class="btn" data-x="undo">Undo</button><button class="btn" data-x="reset">Reset</button>${o.first ? '' : '<button class="btn" data-x="cancel">Cancel</button>'}<button class="btn p" data-x="save"></button></div></div>`;
   const pv = makePreview(S.A, look, /** @type {HTMLElement} */ (el.querySelector('.cpw')));
   const pane = /** @type {HTMLElement} */ (el.querySelector('.cpane'));
   const nm = /** @type {HTMLInputElement} */ (el.querySelector('#cn')); nm.value = name;
-  nm.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') cancel(); if (e.key === 'Enter') nm.blur(); }); nm.addEventListener('input', () => { name = nm.value; });
+  const hint = /** @type {HTMLElement} */ (el.querySelector('#cnhint'));
+  /** Under the name box: what the name still needs (3-14 letters/numbers, one space), or a tick once it's fine. */
+  const showHint = () => { const n = nm.value.trim(); const np = n ? nameProblem(n) : '';
+    hint.textContent = !n ? (o.first ? '3 to 14 letters or numbers, one space' : '') : np || `${n.length}/14`; hint.classList.toggle('bad', !!np && n.length > 0); hint.classList.toggle('ok', !!n && !np); };
+  showHint();
+  nm.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') cancel(); if (e.key === 'Enter') nm.blur(); }); nm.addEventListener('input', () => { let v = nm.value.replace(/[^A-Za-z0-9 ]/g, '').replace(/^ +/, '').replace(/ {2,}/g, ' '); const sp = v.indexOf(' '); if (sp >= 0) v = v.slice(0, sp + 1) + v.slice(sp + 1).replace(/ /g, ''); v = v.slice(0, 14); if (v !== nm.value) nm.value = v; name = nm.value; showHint(); });
 
   const tile = (k, v, n, on) => { const lk = lockOf(k, v) > lvl; const tag = lk ? `<small class="lk">Lv ${lockOf(k, v)}</small>` : !owned(k, v) ? `<small>${priceOf(k, v)}c</small>` : owned(k, v) && priceOf(k, v) ? '<small class="own">owned</small>' : '';
     return `<button class="ct ${on ? 'on' : ''}" ${lk ? 'disabled' : ''} data-k="${k}" data-v="${v}"><span>${esc(n)}</span>${tag}</button>`; };
@@ -99,16 +125,20 @@ export function openCreator(S, root, done) {
   });
   el.addEventListener('input', e => { const B = /** @type {HTMLInputElement} */ (e.target); if (!B.dataset?.s) return; look.scale[B.dataset.s] = +B.value; pv.set(look); });
   el.addEventListener('pointerdown', e => { const B = /** @type {HTMLInputElement} */ (e.target); if (B.dataset?.s) { hist.push(clone(look)); render(); } });
-  function cancel() { S.me.av.setLook(S.player.look); done(); }
+  function cancel() { if (o.first) return; /* the first visit ends with a name */ S.me.av.setLook(S.player.look); done(); }
   function save() {
     if (total() > wl.coins) return;
+    // the name first, before anything is paid for: a bad name keeps the wardrobe open so it can be fixed
+    const n = name.trim().replace(/\s+/g, ' ').slice(0, 14), np = n ? nameProblem(n) : o.first ? 'Pick a name first' : '';
+    if (np) { S.ui?.toast?.(np); nm.focus(); return; }
     for (const [k, v] of cart()) wl.spend(priceOf(k, v), k + ':' + v);
     for (const k of ['body', 'head', 'acc', 'skin']) if (priceOf(k, saved[k]) > 0) wl.spend(0, k + ':' + saved[k]); for (const v of saved.silly || []) if (priceOf('silly', v) > 0) wl.spend(0, 'silly:' + v); /* already-worn items become owned, never charged later */
     const L = clone(look); for (const k of ['head', 'width', 'height']) L.scale[k] = Math.min(2, Math.max(0.5, Math.round(L.scale[k] * 100) / 100));
-    S.player.look = L; const n = name.trim().slice(0, 14); S.player.namedHere = !!n; S.player.name = n || S.player.name || 'You';
+    S.player.look = L; S.player.namedHere = !!n; S.player.name = n || S.player.name || 'You';
     S.me.av.setLook(L); S.me.av.fx.wave = 1.5;
     try { localStorage.setItem('night-rooms-look', JSON.stringify({ ...L, name: n || undefined })); } catch { /* ignore */ }
-    saveSoon(S); S.ui?.refreshHud?.(); S.ui?.toast?.('Look saved'); done();
+    try { localStorage.setItem(FIRST_KEY, '1'); } catch { /* storage off */ }
+    saveSoon(S); S.ui?.refreshHud?.(); S.ui?.toast?.(o.first ? `Welcome, ${S.player.name}` : 'Look saved'); done();
   }
   render(); return el;
 }

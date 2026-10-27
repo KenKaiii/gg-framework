@@ -17,8 +17,13 @@ export class Member {
     this.agent = new Agent(A, { scene: this.room.root, grid: this.room.grid }, d.look, 0, 0); W.put(this.agent, this.room);
     this.seat(this.home, 'laptop', this.homeRoom); this.apply('prompting');
   }
-  get active() { return this.room.floorId === this.S.floor && this.status !== 'offline'; }
+  get active() { return this.room.floorId === this.S.floor && this.status !== 'offline' && !this.liveHidden; } // liveHidden: real players took this spot (net.js top-up)
   get busy() { return this.phase !== 'seated'; }
+  /** real players took this spot (net.js top-up): free the avatar entirely (not just hidden); unpark() rebuilds it */
+  park() { if (this.parked) return; this.parked = true; this.phase = 'seated'; this.release(this.slot); this.glide = null; const a = this.agent; if (a) { a.av.dispose(); } this.agent = /** @type {any} */ (null); this.prop = null; }
+  unpark() { if (!this.parked) return; this.parked = false; this.room = this.homeRoom; this.slot = this.home; this.slotRoom = this.homeRoom; this.phase = 'seated';
+    this.agent = new Agent(this.S.A, { scene: this.room.root, grid: this.room.grid }, this.d.look, 0, 0); this.W.put(this.agent, this.room);
+    this.homeRoom.taken?.add(this.home.id); this.seat(this.home, 'laptop', this.homeRoom); const st = this.status; this.apply(st === 'offline' ? 'offline' : st === 'deploying' ? 'prompting' : st); this.agent.root.visible = st !== 'offline'; }
   /** pick a free slot in room R (laptop-friendly first for home) */
   claim(R, laptop) {
     R.taken = R.taken || new Set(); const sl = R.slots.filter(s => !R.taken.has(s.id) && !s.act); // activity seats stay free for the player
@@ -52,6 +57,7 @@ export class Member {
   }
   moveTo(R, s, prop, then) { this.release(this.slot); this.slot = s; this.slotRoom = R; this.phase = 'walk'; this.goTo(R, s, prop, then); }
   event(ev) {
+    if (this.parked) { if (ev.type === 'offline' || ev.type === 'online') this.status = ev.type === 'offline' ? 'offline' : 'prompting'; else if (this.status !== 'offline' && /^(prompting|thinking|idle)$/.test(ev.type)) this.status = ev.type; return; } // no avatar: only remember online / status
     const a = this.agent; const t = ev.type;
     if (t === 'offline') { this.apply('offline'); a.root.visible = false; this.phase = 'seated'; this.release(this.slot); this.slot = this.home; this.slotRoom = this.homeRoom; this.seat(this.home, 'laptop', this.homeRoom); this.lastSeen = 1 + (this.d.level % 4); this.hooks.feed(`${this.d.name} logged off`); return; }
     if (t === 'online') {
@@ -81,6 +87,7 @@ export class Member {
   }
   update(dt, t) {
     const a = this.agent; this.timer -= dt;
+    if (this.liveHidden || !a) { if (a && a.root.visible) a.root.visible = false; return; } // a real player took this spot (net.js)
     if (this.phase === 'deploy-watch' && this.timer <= 0) {
       this.phase = 'deploy-cheer'; this.timer = 2.8; this.d.shipped++;
       if (this.active) { const y0 = a.root.position.y; a.stand(); a.root.position.y = y0; const p = standPoint(this.room, this.slot); this.glide = { fx: a.root.position.x, fz: a.root.position.z, tx: p.x, tz: p.z, t: 0, fy: y0, y: 0 }; a.once('Cheer', 2.6); this.setProp(null); }

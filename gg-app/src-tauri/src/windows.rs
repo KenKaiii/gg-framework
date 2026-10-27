@@ -515,7 +515,7 @@ pub(crate) fn arrange_windows(app: &tauri::AppHandle, count: usize) {
 }
 
 /// True for real workspace windows (`main`, `project-N`). Transient chrome —
-/// the `whatsnew` dialog and the remote `gg-royale` game window — is excluded
+/// the `whatsnew` dialog — is excluded
 /// from tiling, the focus cycle / reading order, the restore snapshot (those
 /// never get a `Windows` map entry) and the "last window closed" logic.
 pub(crate) fn is_workspace_window(label: &str) -> bool {
@@ -595,7 +595,7 @@ pub(crate) fn compute_window_order(app: &tauri::AppHandle) -> Vec<String> {
     let mut positions: Vec<(String, i32, i32)> = Vec::with_capacity(windows.len());
     let mut min_height: i32 = i32::MAX;
     for (label, win) in &windows {
-        // Transient windows (whatsnew, gg-royale) are not in the focus cycle.
+        // Transient windows (whatsnew) are not in the focus cycle.
         if !is_workspace_window(label) {
             continue;
         }
@@ -619,7 +619,6 @@ pub(crate) fn broadcast_window_order(app: &tauri::AppHandle) {
     let order = compute_window_order(app);
     let focused = app.state::<FocusedWindow>().0.lock_or_recover().clone();
     let payload = serde_json::json!({ "order": order, "focused": focused });
-    // Never emit to the remote gg-royale page (it has no IPC anyway).
     for label in app
         .webview_windows()
         .keys()
@@ -642,7 +641,6 @@ mod tests {
         assert!(is_workspace_window("main"));
         assert!(is_workspace_window("project-3"));
         assert!(!is_workspace_window("whatsnew"));
-        assert!(!is_workspace_window(crate::commands::royale::ROYALE_LABEL));
     }
 
     #[test]

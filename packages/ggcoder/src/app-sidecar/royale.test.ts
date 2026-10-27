@@ -2,12 +2,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_ROYALE_URL, DEFAULT_WORLD_URL, createRoyale } from "./royale.js";
+import { DEFAULT_WORLD_URL, LEGACY_ROYALE_URL, createWorldLink } from "./royale.js";
 
 let dir: string;
 
 beforeEach(async () => {
-  dir = await fs.mkdtemp(path.join(os.tmpdir(), "gg-royale-"));
+  dir = await fs.mkdtemp(path.join(os.tmpdir(), "gg-world-link-"));
 });
 
 afterEach(async () => {
@@ -19,7 +19,7 @@ interface Call {
   init: RequestInit;
 }
 
-function mockServer(handler: (url: string, init: RequestInit) => Response | Promise<Response>) {
+function mockServer(handler: (url: string, init: RequestInit) => Response) {
   const calls: Call[] = [];
   const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -32,366 +32,122 @@ function mockServer(handler: (url: string, init: RequestInit) => Response | Prom
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-const okServer = (url: string) => {
-  if (url.endsWith("/api/device/register")) return json({ playerId: "p1", deviceToken: "tok" });
-  if (url.endsWith("/api/device/login-code")) return json({ code: "a b", expiresAt: 1 });
-  return json({ found: 1 });
-};
+const okServer = (url: string) =>
+  url.endsWith("/api/world/device/register")
+    ? json({ playerId: "new", deviceToken: "newtok" }, 201)
+    : json({ ver: 1 });
 
-describe("royale", () => {
-  it("is unlinked by default and uses the env base without trailing slashes", async () => {
-    const r = createRoyale({ agentDir: dir, version: "1", env: {} });
-    expect(await r.status()).toEqual({ linked: false, serverUrl: DEFAULT_ROYALE_URL });
-    const r2 = createRoyale({ agentDir: dir, version: "1", env: { GG_ROYALE_URL: "http://x//" } });
-    expect((await r2.status()).serverUrl).toBe("http://x");
-  });
+const file = () => path.join(dir, "royale.json");
+const auth = (c: Call | undefined) =>
+  (c?.init.headers as Record<string, string> | undefined)?.authorization;
 
-  it("open registers, stores 0600 file, and returns a code URL", async () => {
+async function saveLink(serverUrl: string | undefined) {
+  await fs.writeFile(
+    file(),
+    JSON.stringify({ playerId: "old", deviceToken: "oldtok", linkedAt: 1, serverUrl }),
+  );
+}
+
+describe("world link", () => {
+  it("signs up with gg-world on first use and stores a 0600 link", async () => {
     const { calls, fetchImpl } = mockServer(okServer);
-    const r = createRoyale({
-      agentDir: dir,
-      version: "9.9",
-      env: { GG_ROYALE_URL: "http://localhost:1/" },
-      fetchImpl,
-      now: () => 42,
-    });
-    expect(await r.open()).toEqual({ url: "http://localhost:1/#code=a%20b" });
-    expect(calls[0]?.url).toBe("http://localhost:1/api/device/register");
+    const w = createWorldLink({ agentDir: dir, version: "9.9", env: {}, fetchImpl, now: () => 42 });
+    expect((await w.worldGet()).status).toBe(200);
+    expect(calls[0]?.url).toBe(`${DEFAULT_WORLD_URL}/api/world/device/register`);
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ client: "gg-coder", version: "9.9" });
-    expect(calls[1]?.init.headers).toMatchObject({ authorization: "Bearer tok" });
-    const file = path.join(dir, "royale.json");
-    expect(JSON.parse(await fs.readFile(file, "utf8"))).toMatchObject({
-      playerId: "p1",
-      deviceToken: "tok",
+    expect(calls[1]?.url).toBe(`${DEFAULT_WORLD_URL}/api/world/profile`);
+    expect(auth(calls[1])).toBe("Bearer newtok");
+    const saved = JSON.parse(await fs.readFile(file(), "utf8")) as Record<string, unknown>;
+    expect(saved).toEqual({
+      playerId: "new",
+      deviceToken: "newtok",
       linkedAt: 42,
+      serverUrl: DEFAULT_WORLD_URL,
     });
-    if (process.platform !== "win32") {
-      expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
-    }
-    expect((await r.status()).linked).toBe(true);
-    // Second open reuses the link.
-    await r.open();
-    expect(calls.filter((c) => c.url.endsWith("/register"))).toHaveLength(1);
-    await r.unlink();
-    expect((await r.status()).linked).toBe(false);
+    if (process.platform !== "win32") expect((await fs.stat(file())).mode & 0o777).toBe(0o600);
   });
 
-  it("gives clear errors for unreachable servers and bad responses", async () => {
-    const down = createRoyale({
-      agentDir: dir,
-      version: "1",
-      env: {},
-      fetchImpl: (async () => {
-        throw new TypeError("fetch failed");
-      }) as unknown as typeof fetch,
-    });
-    await expect(down.open()).rejects.toThrow(/Couldn't reach the GG Royale server/);
-    const bad = createRoyale({
-      agentDir: dir,
-      version: "1",
-      env: {},
-      fetchImpl: mockServer(() => json({ nope: true })).fetchImpl,
-    });
-    await expect(bad.open()).rejects.toThrow(/unexpected sign-up response/);
-    const err = createRoyale({
-      agentDir: dir,
-      version: "1",
-      env: {},
-      fetchImpl: mockServer(() => json({}, 500)).fetchImpl,
-    });
-    await expect(err.open()).rejects.toThrow(/HTTP 500/);
-    expect((await err.status()).linked).toBe(false);
-  });
-
-  it("reports a deploy, and a goal once a day when its run did real work; never the goal's name", async () => {
+  it.each([
+    ["the old live Royale URL", LEGACY_ROYALE_URL],
+    ["the old Royale URL with a slash", `${LEGACY_ROYALE_URL}/`],
+    ["no serverUrl", undefined],
+  ])("an existing link with %s is reused for gg-world, never re-registered", async (_l, url) => {
+    await saveLink(url);
+    const before = await fs.readFile(file(), "utf8");
     const { calls, fetchImpl } = mockServer(okServer);
-    let clock = Date.parse("2026-10-23T10:00:00Z");
-    const r = createRoyale({ agentDir: dir, version: "1", env: {}, fetchImpl, now: () => clock });
-    await r.open();
-    const bodies = () => calls.map((c) => JSON.parse(String(c.init.body)) as { kind: string });
-    const kinds = () => bodies().map((b) => b.kind);
-    const settle = () => new Promise((res) => setTimeout(res, 30));
-
-    // A goal run that only talked (no commits, no workers): just a run.
-    calls.length = 0;
-    r.reportRun({ commits: 0, goalId: "goal-secret-name" });
-    await settle();
-    expect(kinds()).toEqual(["run"]);
-
-    // Its first working run today counts the goal; the next doesn't.
-    calls.length = 0;
-    r.reportRun({ commits: 1, goalId: "goal-secret-name" });
-    await vi.waitFor(() => expect(calls).toHaveLength(3));
-    expect(kinds()).toEqual(["run", "commit", "goal"]);
-    calls.length = 0;
-    r.reportRun({ commits: 0, workers: true, goalId: "goal-secret-name" });
-    await settle();
-    expect(kinds()).toEqual(["run"]);
-    // Another goal the same day still counts, and so does tomorrow (even after a restart).
-    calls.length = 0;
-    r.reportRun({ commits: 0, workers: true, goalId: "other-goal" });
-    await vi.waitFor(() => expect(calls).toHaveLength(2));
-    expect(kinds()).toEqual(["run", "goal"]);
-    clock += 24 * 3_600_000;
-    const restarted = createRoyale({
-      agentDir: dir,
-      version: "1",
-      env: {},
-      fetchImpl,
-      now: () => clock,
-    });
-    calls.length = 0;
-    restarted.reportRun({ commits: 0, workers: true, goalId: "goal-secret-name" });
-    await vi.waitFor(() => expect(calls).toHaveLength(2));
-    expect(kinds()).toEqual(["run", "goal"]);
-
-    // A deploy is one more report.
-    calls.length = 0;
-    r.reportRun({ commits: 0, deployed: true });
-    await vi.waitFor(() => expect(calls).toHaveLength(2));
-    expect(bodies()).toEqual([
-      { kind: "run", count: 1, at: clock },
-      { kind: "deploy", count: 1, at: clock },
-    ]);
-
-    // Nothing about the goal leaves the machine, and the day file holds only hashes.
-    for (const c of calls) expect(String(c.init.body)).not.toContain("goal-secret");
-    const day = await fs.readFile(path.join(dir, "royale-goals.json"), "utf8");
-    expect(day).not.toContain("goal-secret");
-  });
-
-  it("reportRun sends only kind/count/at when linked, nothing otherwise, never throws", async () => {
-    const { calls, fetchImpl } = mockServer(okServer);
-    const r = createRoyale({ agentDir: dir, version: "1", env: {}, fetchImpl, now: () => 7 });
-    r.reportRun({ commits: 3 });
-    await vi.waitFor(async () => {
-      await new Promise((res) => setTimeout(res, 20));
-      expect(calls).toHaveLength(0);
-    });
-    await r.open();
-    calls.length = 0;
-    r.reportRun({ commits: 3 });
-    await vi.waitFor(() => expect(calls).toHaveLength(2));
-    expect(calls.map((c) => JSON.parse(String(c.init.body)))).toEqual([
-      { kind: "run", count: 1, at: 7 },
-      { kind: "commit", count: 3, at: 7 },
-    ]);
-    calls.length = 0;
-    r.reportRun({ commits: 0 });
-    await vi.waitFor(() => expect(calls).toHaveLength(1));
-    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ kind: "run", count: 1, at: 7 });
-
-    // bug label rides only on the run report, and nothing else is added.
-    calls.length = 0;
-    r.reportRun({ commits: 2, bug: "type" });
-    await vi.waitFor(() => expect(calls).toHaveLength(2));
-    expect(calls.map((c) => JSON.parse(String(c.init.body)))).toEqual([
-      { kind: "run", count: 1, at: 7, bug: "type" },
-      { kind: "commit", count: 2, at: 7 },
-    ]);
-    calls.length = 0;
-    r.reportRun({ commits: 0, bug: null });
-    r.reportRun({ commits: 0, bug: "/Users/me/secret" as never });
-    await vi.waitFor(() => expect(calls).toHaveLength(2));
-    for (const c of calls) {
-      expect(JSON.parse(String(c.init.body))).toEqual({ kind: "run", count: 1, at: 7 });
-    }
-
-    const failing = createRoyale({
-      agentDir: dir,
-      version: "1",
-      env: {},
-      fetchImpl: (async () => {
-        throw new Error("down");
-      }) as unknown as typeof fetch,
-    });
-    expect(() => failing.reportRun({ commits: 1 })).not.toThrow();
-    await new Promise((res) => setTimeout(res, 20));
-  });
-
-  describe("summary", () => {
-    const link = () =>
-      fs.writeFile(
-        path.join(dir, "royale.json"),
-        JSON.stringify({ playerId: "p1", deviceToken: "tok", linkedAt: 1, serverUrl: "http://x" }),
-      );
-
-    it("returns null without any network call when not linked", async () => {
-      const { calls, fetchImpl } = mockServer(() => json({ claimable: 1 }));
-      const r = createRoyale({ agentDir: dir, version: "1", env: {}, fetchImpl });
-      expect(await r.summary()).toBeNull();
-      expect(calls).toHaveLength(0);
-    });
-
-    it("returns parsed counts with the bearer token, coercing bad numbers to 0", async () => {
-      await link();
-      const { calls, fetchImpl } = mockServer(() =>
-        json({ claimable: 2, streak: -1, playing: 1.5 }),
-      );
-      const r = createRoyale({
-        agentDir: dir,
-        version: "1",
-        env: { GG_ROYALE_URL: "http://x" },
-        fetchImpl,
-      });
-      expect(await r.summary()).toEqual({ claimable: 2, streak: 0, playing: 0 });
-      expect(calls[0]?.url).toBe("http://x/api/device/summary");
-      expect((calls[0]?.init.headers as Record<string, string>).authorization).toBe("Bearer tok");
-      expect(calls[0]?.init.body).toBeUndefined();
-    });
-
-    it("returns null on HTTP error, bad JSON or network failure", async () => {
-      await link();
-      const cases: (typeof fetch)[] = [
-        mockServer(() => json({}, 401)).fetchImpl,
-        mockServer(() => new Response("not json", { status: 200 })).fetchImpl,
-        (async () => {
-          throw new TypeError("fetch failed");
-        }) as unknown as typeof fetch,
-      ];
-      for (const fetchImpl of cases) {
-        const r = createRoyale({ agentDir: dir, version: "1", env: {}, fetchImpl });
-        await expect(r.summary()).resolves.toBeNull();
-      }
-    });
-  });
-
-  describe("one link per server", () => {
-    const save = (o: object) => fs.writeFile(path.join(dir, "royale.json"), JSON.stringify(o));
-
-    it("never sends a device token to a different server than the one it was made with", async () => {
-      await save({
-        playerId: "p1",
-        deviceToken: "dev-token",
-        linkedAt: 1,
-        serverUrl: "http://localhost:5173",
-      });
-      const { calls, fetchImpl } = mockServer((url) =>
-        url.endsWith("/register")
-          ? json({ playerId: "p2", deviceToken: "live-token" }, 201)
-          : json({ code: "c0de" }, 201),
-      );
-      const r = createRoyale({ agentDir: dir, version: "1", env: {}, fetchImpl });
-      expect((await r.status()).linked).toBe(false);
-      expect(await r.summary()).toBeNull();
-      r.reportRun({ commits: 1 });
-      await new Promise((res) => setTimeout(res, 20));
-      expect(calls).toHaveLength(0);
-      // Opening links afresh with the live game; the dev token is never sent.
-      const { url } = await r.open();
-      expect(url).toBe(`${DEFAULT_ROYALE_URL}/#code=c0de`);
-      expect(calls.every((c) => !JSON.stringify(c.init.headers ?? {}).includes("dev-token"))).toBe(
-        true,
-      );
-      const saved = JSON.parse(await fs.readFile(path.join(dir, "royale.json"), "utf8"));
-      expect(saved).toMatchObject({
-        playerId: "p2",
-        deviceToken: "live-token",
-        serverUrl: DEFAULT_ROYALE_URL,
-      });
-    });
-
-    it("links again, once, if the server no longer knows this link", async () => {
-      await save({ playerId: "old", deviceToken: "gone", linkedAt: 1, serverUrl: "http://x" });
-      let codes = 0;
-      const { calls, fetchImpl } = mockServer((url, init) => {
-        if (url.endsWith("/register")) return json({ playerId: "new", deviceToken: "fresh" }, 201);
-        codes++;
-        const auth = (init.headers as Record<string, string>).authorization;
-        return auth === "Bearer gone"
-          ? json({ error: "invalid device token" }, 401)
-          : json({ code: "ok" }, 201);
-      });
-      const r = createRoyale({
-        agentDir: dir,
-        version: "1",
-        env: { GG_ROYALE_URL: "http://x" },
-        fetchImpl,
-      });
-      expect((await r.open()).url).toBe("http://x/#code=ok");
-      expect(codes).toBe(2);
-      expect(calls.filter((c) => c.url.endsWith("/register"))).toHaveLength(1);
-    });
-
-    it("a link saved before serverUrl was stored counts as a live-game link", async () => {
-      await save({ playerId: "p1", deviceToken: "tok", linkedAt: 1 });
-      const r = createRoyale({
-        agentDir: dir,
-        version: "1",
-        env: {},
-        fetchImpl: mockServer(() => json({})).fetchImpl,
-      });
-      expect((await r.status()).linked).toBe(true);
-    });
-  });
-});
-
-describe("world online save", () => {
-  const worldServer = (url: string, init: RequestInit) => {
-    if (url.endsWith("/api/device/register")) return json({ playerId: "p1", deviceToken: "tok" });
-    if (url.endsWith("/api/world/profile") && init.method === "PUT") {
-      return json({ error: "stale" }, 409);
-    }
-    if (url.endsWith("/api/world/profile")) return json({ profile: null, ver: 0, updatedAt: 0 });
-    if (url.endsWith("/api/world/me")) return json({ deleted: true });
-    return json({}, 404);
-  };
-
-  it("registers on first use with the live server and sends the token only to the paired World server", async () => {
-    const { calls, fetchImpl } = mockServer(worldServer);
-    const r = createRoyale({ agentDir: dir, version: "1", env: {}, fetchImpl });
-    expect(await r.worldGet()).toEqual({
-      status: 200,
-      body: { profile: null, ver: 0, updatedAt: 0 },
-    });
+    const w = createWorldLink({ agentDir: dir, version: "1", env: {}, fetchImpl });
+    await w.worldGet();
+    await w.worldLive();
+    await w.worldPut(1, { a: 1 });
+    expect(calls.some((c) => c.url.includes("/register"))).toBe(false);
     expect(calls.map((c) => c.url)).toEqual([
-      `${DEFAULT_ROYALE_URL}/api/device/register`,
+      `${DEFAULT_WORLD_URL}/api/world/profile`,
+      `${DEFAULT_WORLD_URL}/api/world/live`,
       `${DEFAULT_WORLD_URL}/api/world/profile`,
     ]);
-    expect(calls[1]?.init.headers).toMatchObject({ authorization: "Bearer tok" });
-    await r.worldGet();
-    expect(calls.filter((c) => c.url.endsWith("/register"))).toHaveLength(1);
+    for (const c of calls) expect(auth(c)).toBe("Bearer oldtok");
+    expect(await fs.readFile(file(), "utf8")).toBe(before);
   });
 
-  it("is unavailable for a dev Royale server without GG_WORLD_URL (no network at all)", async () => {
-    const { calls, fetchImpl } = mockServer(worldServer);
-    const r = createRoyale({
+  it("GG_WORLD_URL overrides, and a link from another server never reaches the live one", async () => {
+    await saveLink("http://localhost:8787");
+    const { calls, fetchImpl } = mockServer(okServer);
+    const dev = createWorldLink({
       agentDir: dir,
       version: "1",
-      env: { GG_ROYALE_URL: "http://localhost:1" },
+      env: { GG_WORLD_URL: "http://localhost:8787/" },
       fetchImpl,
     });
-    expect((await r.worldGet()).status).toBe(0);
+    await dev.worldGet();
+    expect(calls[0]?.url).toBe("http://localhost:8787/api/world/profile");
+    expect(auth(calls[0])).toBe("Bearer oldtok");
+
+    calls.length = 0;
+    const live = createWorldLink({ agentDir: dir, version: "1", env: {}, fetchImpl });
+    await live.worldGet();
+    expect(calls[0]?.url).toBe(`${DEFAULT_WORLD_URL}/api/world/device/register`);
+    expect(auth(calls[1])).toBe("Bearer newtok");
+    expect(calls.every((c) => auth(c) !== "Bearer oldtok")).toBe(true);
+  });
+
+  it("passes statuses through and never throws on a network failure", async () => {
+    await saveLink(undefined);
+    const conflict = mockServer(() => json({ error: "stale" }, 409));
+    const w = createWorldLink({
+      agentDir: dir,
+      version: "1",
+      env: {},
+      fetchImpl: conflict.fetchImpl,
+    });
+    expect(await w.worldPut(1, {})).toEqual({ status: 409, body: { error: "stale" } });
+    const down = vi.fn(async () => {
+      throw new Error("offline");
+    }) as unknown as typeof fetch;
+    const w2 = createWorldLink({ agentDir: dir, version: "1", env: {}, fetchImpl: down });
+    expect((await w2.worldGet()).status).toBe(0);
+  });
+
+  it("deleting the save without a link doesn't sign up", async () => {
+    const { calls, fetchImpl } = mockServer(okServer);
+    const w = createWorldLink({ agentDir: dir, version: "1", env: {}, fetchImpl });
+    expect((await w.worldDelete()).status).toBe(200);
+    expect((await w.accountDelete()).status).toBe(200);
     expect(calls).toHaveLength(0);
   });
 
-  it("uses GG_WORLD_URL with the dev link, passes 409 through, and deletes", async () => {
-    const { calls, fetchImpl } = mockServer(worldServer);
-    const r = createRoyale({
-      agentDir: dir,
-      version: "1",
-      env: { GG_ROYALE_URL: "http://localhost:1", GG_WORLD_URL: "http://localhost:2/" },
-      fetchImpl,
-    });
-    const put = await r.worldPut(3, { look: { hat: 1 } });
-    expect(put).toEqual({ status: 409, body: { error: "stale" } });
-    expect(calls[0]?.url).toBe("http://localhost:1/api/device/register");
-    expect(calls[1]?.url).toBe("http://localhost:2/api/world/profile");
-    expect(calls[1]?.init.method).toBe("PUT");
-    expect(JSON.parse(String(calls[1]?.init.body))).toEqual({
-      ver: 3,
-      patch: { look: { hat: 1 } },
-    });
-    expect(await r.worldDelete()).toEqual({ status: 200, body: { deleted: true } });
-    expect(calls[2]?.url).toBe("http://localhost:2/api/world/me");
-    expect(calls[2]?.init.method).toBe("DELETE");
-  });
+  it("account delete calls DELETE /api/world/account and removes the link only on success", async () => {
+    await saveLink(LEGACY_ROYALE_URL);
+    const fail = mockServer(() => json({ error: "nope" }, 500));
+    const w = createWorldLink({ agentDir: dir, version: "1", env: {}, fetchImpl: fail.fetchImpl });
+    expect((await w.accountDelete()).status).toBe(500);
+    await expect(fs.stat(file())).resolves.toBeTruthy();
 
-  it("never throws on a network failure", async () => {
-    const fetchImpl = vi.fn(async () => {
-      throw new TypeError("fetch failed");
-    }) as unknown as typeof fetch;
-    const r = createRoyale({ agentDir: dir, version: "1", env: {}, fetchImpl });
-    expect((await r.worldGet()).status).toBe(0);
+    const ok = mockServer(() => json({ deleted: true }));
+    const w2 = createWorldLink({ agentDir: dir, version: "1", env: {}, fetchImpl: ok.fetchImpl });
+    expect(await w2.accountDelete()).toEqual({ status: 200, body: { deleted: true } });
+    expect(ok.calls[0]?.url).toBe(`${DEFAULT_WORLD_URL}/api/world/account`);
+    expect(ok.calls[0]?.init.method).toBe("DELETE");
+    expect(auth(ok.calls[0])).toBe("Bearer oldtok");
+    await expect(fs.stat(file())).rejects.toThrow();
   });
 });

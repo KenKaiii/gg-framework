@@ -10,6 +10,7 @@ import { SFX, SURFACE } from './sfx.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { loadAssets } from './assets.js';
 import { buildRooms } from './roomset.js';
+import { tickTipsy, leanBody, makeTipsyScreen } from './tipsy.js';
 import { Agent } from './agent.js';
 import { DEFAULT_LOOK } from './avatar.js';
 import { initWorld } from './play.js';
@@ -19,6 +20,7 @@ import { installExtras, tickExtras } from './act/extras.js';
 import { makePerf, makeBlobs } from './perf.js';
 import { Avatar } from './avatar.js';
 import { makeCuller } from './cull.js';
+import { initNet } from './net.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(devicePixelRatio || 1); /* perf.js sets the real ratio (whole screen px per canvas px) */ renderer.setSize(innerWidth, innerHeight);
@@ -28,6 +30,7 @@ renderer.setTransparentSort((a, b) => a.groupOrder - b.groupOrder || a.renderOrd
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.3;
 document.body.style.cssText = 'margin:0;overflow:hidden;background:#0b0a12;height:100vh';
 document.body.appendChild(renderer.domElement);
+const tipsyScreen = makeTipsyScreen(renderer.domElement);
 const scene = new THREE.Scene(); scene.background = new THREE.Color('#0b0a12');
 const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 200);
 const G = { paused: false, hidden: false, ready: false };
@@ -45,9 +48,9 @@ window.__game = { pause() { G.paused = true; sync(); SFX.suspend(); }, resume() 
 // Standalone (opened directly, no parent app) it keeps its demo player.
 addEventListener('message', e => {
   if (!fromApp(e)) return; const d = e.data; if (!d || d.gg !== 'world') return;
-  if (d.t === 'pause') { if (window.__S) flushSave(window.__S); window.__game.pause(); } else if (d.t === 'resume') window.__game.resume();
+  if (d.t === 'pause') { if (window.__S) flushSave(window.__S); /** @type {any} */ (globalThis).__ggFlushStore?.(); window.__game.pause(); } else if (d.t === 'resume') window.__game.resume();
   else if (d.t === 'player' && window.__S?.player) { const P = window.__S.player; const lv = Math.max(1, Math.min(999, Math.floor(Number(d.level) || 1)));
-    P.level = lv; P.xp = Math.max(0, Math.min(1, (Number(d.percent) || 0) / 100)); window.__S.ui?.refreshHud?.(); if (typeof d.name === 'string' && d.name.trim() && !P.namedHere) P.name = d.name.trim().slice(0, 16); }
+    P.level = lv; P.xp = Math.max(0, Math.min(1, (Number(d.percent) || 0) / 100)); window.__S.ui?.refreshHud?.(); if (typeof d.name === 'string' && d.name.trim()) P.appName = d.name.trim().replace(/[^A-Za-z0-9 ]/g, '').slice(0, 14); }
   else if (d.t === 'profile' && window.__S) applyProfile(window.__S, d.profile);
   else if (d.t === 'radio') onRadio(d);
   // a key the app caught (focus was on the app, not the game): replay it here so the game's own handlers run
@@ -64,10 +67,19 @@ const ZOOM_KEY = 'night-rooms-zoom';
 const FOLLOW_ZOOM = 10.5;
 function loadLook() { try { const s = localStorage.getItem(LOOK_KEY); return s ? { ...DEFAULT_LOOK, ...JSON.parse(s) } : { ...DEFAULT_LOOK, top: '#2b2d42', bottom: '#1b1b2f', accColor: '#3ddc84' }; } catch { return { ...DEFAULT_LOOK }; } }
 
+/** boot timings (ms since page start), read by tools/tests as window.__boot */
+const BOOT = /** @type {any} */ (window).__boot = [];
+const mark = (/** @type {string} */ n) => BOOT.push([n, Math.round(performance.now())]);
+/** Loading progress for the app's loading screen (0..1 + what's happening). */
+const progress = (/** @type {number} */ p, /** @type {string} */ label) => tellApp({ t: 'progress', p, label });
 async function start() {
+  mark('start'); progress(0.03, 'Unpacking');
   const [A] = await Promise.all([loadAssets(), installFonts()]);
-  const { rooms, failed, floors } = buildRooms({ A, scene, renderer });
+  mark('assets'); progress(0.08, 'Unpacking');
+  const { rooms, failed, floors } = await buildRooms({ A, scene, renderer, onRoom: (/** @type {number} */ i, /** @type {number} */ n, /** @type {string} */ name) => progress(0.08 + 0.62 * (i / n), `Building ${name}`) });
+  mark('rooms');
   installExtras({ A, rooms, scene, renderer });
+  mark('extras');
   // Nothing above or inside a room's baked geometry ever moves after placement. three.js recomputes a subtree whenever
   // an ancestor has matrixAutoUpdate on (it flags 'world matrix changed' every frame), so freeze the scene, the floor
   // groups and the room roots: only things that really move (characters, live props) recompute their matrices now.
@@ -84,10 +96,18 @@ async function start() {
   const perf = makePerf({ renderer, bloom, scene, onRatio: () => { comp.setPixelRatio(renderer.getPixelRatio()); comp.setSize(innerWidth, innerHeight); } }); const blobs = makeBlobs(scene);
   const S = { perfCtl: perf, comp, bloom, A, rooms, floors, floor: 'main', failed, room: rooms.bar, player, cam, renderer, scene, ui: null, keys: new Set(), rot: 0, rotSmooth: 0, zoom: 5.5, zoomMul: 1, target: new THREE.Vector3(), t: 0, me: /** @type {any} */ (null), hooks: [], fade: null };
   const me = new Agent(A, { scene: rooms.bar.root, grid: rooms.bar.grid }, player.look, rooms.bar.spawn.x, rooms.bar.spawn.z); me.isPlayer = true; S.me = me;
+  mark('state');
+  await new Promise(r => setTimeout(r, 0)); // let the app paint (World shares its thread)
   const W = initWorld(S); S.W = W;
-  const OUT = makeOutside(S, scene); S.outside = OUT; // the city outside (outside.js); ?outside=0 turns it off
+  progress(0.72, 'Planting the street');
+  await new Promise(r => setTimeout(r, 0));
+  const OUT = await makeOutside(S, scene); S.outside = OUT;
+  progress(0.86, 'Waking everyone up');
+  await new Promise(r => setTimeout(r, 0)); // the city outside (outside.js); ?outside=0 turns it off
   try { initCrew(S, W); } catch (e) { console.warn('crew', e); }
+  mark('outside+crew');
   W.enter('bar', null);
+  mark('enter'); progress(0.92, 'Turning the lights on');
   addEventListener('keydown', e => {
     const el = /** @type {HTMLElement} */ (document.activeElement); if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
     S.keys.add(e.code);
@@ -106,8 +126,8 @@ async function start() {
   addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); comp.setSize(innerWidth, innerHeight); bloom.resolution.set(innerWidth / 2, innerHeight / 2); });
   const camDir = new THREE.Vector3(), fwd = new THREE.Vector3(), right = new THREE.Vector3(), tv = new THREE.Vector3();
   const _ip = new THREE.Vector3(), _vt = new THREE.Vector3(), _vp = new THREE.Vector3(), _lt = new THREE.Vector3(), _up = new THREE.Vector3();
-  // level speed: +0.3% per level (owner: level 100 = 30% faster); the walk/run clips play faster by the same factor
-  const spdK = () => 1 + Math.max(0, (S.player?.level || 1) - 1) * 0.003; S.speedK = spdK;
+  // level speed: +0.8% per level (owner: level 100 = ~80% faster); the walk/run clips play faster by the same factor
+  const spdK = () => 1 + Math.max(0, (S.player?.level || 1) - 1) * 0.008; S.speedK = spdK;
   const _wp = new THREE.Vector3(), _sr = new THREE.Vector3(), _su = new THREE.Vector3(), _fs = new THREE.Vector3(), _ft = new THREE.Vector3(); S.wpos = a => a.root.getWorldPosition(_wp);
   S.zoomBase = FOLLOW_ZOOM; const cull = makeCuller(cam); S.cull = cull;
   /** walls facing the camera drop (room cutaway); shared walls of rooms you're not in drop so you see the neighbours */
@@ -125,6 +145,7 @@ async function start() {
     const _pt = performance.now();
     clock.update(); const dt = S.freezeT ? 0 : Math.min(clock.getDelta(), 0.05); /* freezeT: debug (tools/flicker-scan.mjs) */ S.t += dt; const t = S.t; const R = S.room;
     S.rotSmooth += (S.rot - S.rotSmooth) * Math.min(1, dt * 8);
+    const TP = tickTipsy(S, dt); // drinking: 5 levels of tipsy (tipsy.js)
     const a = Math.PI / 4 + S.rotSmooth * Math.PI / 2;
     // follow camera: fixed zoom (the v3 floor framing), target eases toward the player, nudged to the back walls so the HUD stays clear
     const rp = R.root.position, px = me.pos.x + rp.x, pz = me.pos.z + rp.z, back = 0.6;
@@ -133,7 +154,7 @@ async function start() {
     S.zoomBase += (FOLLOW_ZOOM - S.zoomBase) * Math.min(1, dt * 1.5);
     // S.view (set by activities, see act/view.js) blends the camera to a close-up: bird's-eye over the pool table,
     // over-the-shoulder at a TV, etc. viewK goes 0 -> 1 smoothly; normal iso camera when it's 0.
-    const V = S.view; S.viewK = (S.viewK || 0) + ((V ? 1 : 0) - (S.viewK || 0)) * Math.min(1, dt * 3.2);
+    const V = S.view; S.viewK = (S.viewK || 0) + ((V ? 1 : 0) - (S.viewK || 0)) * Math.min(1, dt * (V?.speed ?? S.lastView?.speed ?? 3.2)); // lean-in views glide faster
     const isoPos = _ip.set(S.target.x + Math.sin(a) * 30, S.target.y + 30 * Math.SQRT1_2, S.target.z + Math.cos(a) * 30);
     S.zoomMul += ((S.zoomGoal ?? S.zoomMul) - S.zoomMul) * (1 - Math.exp(-dt / 0.22));
     let z = S.zoomBase * S.zoomMul;
@@ -142,7 +163,7 @@ async function start() {
       _vt.copy(L.target); _vp.copy(L.dir).normalize().multiplyScalar(30).add(_vt);
       cam.position.lerpVectors(isoPos, _vp, vk); _lt.lerpVectors(S.target, _vt, vk);
       cam.up.set(0, 1, 0).lerp(_up.set(L.up?.x ?? 0, L.up?.y ?? 1, L.up?.z ?? 0), vk).normalize(); cam.lookAt(_lt);
-      z = z + (L.zoom - z) * vk;
+      z = Math.exp(Math.log(z) + (Math.log(L.zoom) - Math.log(z)) * vk); // log-space: leaning in eases like a lens
     } else { cam.up.set(0, 1, 0); cam.position.copy(isoPos); cam.lookAt(S.target); }
     const asp = innerWidth / innerHeight; cam.left = -z * asp; cam.right = z * asp; cam.top = z; cam.bottom = -z; cam.updateProjectionMatrix();
     if (!V && S.viewK < 0.002 && Math.abs(S.rotSmooth - Math.round(S.rotSmooth)) < 1e-3) { // snap the camera to the device-pixel grid
@@ -159,11 +180,16 @@ async function start() {
     }
     const run = !(k.has('ShiftLeft') || k.has('ShiftRight')); // run by default, hold Shift to walk
     if (mx || mz) {
-      const l = Math.hypot(mx, mz), sp = (run ? 4.6 : 2.4) * spdK() * dt; if (S.seated) S.ui?.standUp?.(); S.pending = null; me.path = null; me.stand();
+      // tipsy: weave sideways as you walk (perpendicular to where you're going) and a little slower
+      if (TP.level > 0) { const l0 = Math.hypot(mx, mz); const px = -mz / l0, pz = mx / l0; mx += px * TP.drift * 0.6; mz += pz * TP.drift * 0.6; }
+      const l = Math.hypot(mx, mz), sp = (run ? 4.6 : 2.4) * spdK() * TP.speed * dt; if (S.seated) S.ui?.standUp?.(); S.pending = null; me.path = null; me.stand(); if (me.av.em) { me.av.endEmote(); me.lockAnim = 0; } /* walking ends an emote */
       const nx = me.pos.x + mx / l * sp, nz = me.pos.z + mz / l * sp;
-      if (W.freeAt(R, nx, me.pos.z)) me.pos.x = nx; if (W.freeAt(R, me.pos.x, nz)) me.pos.z = nz;
+      // boxed in by furniture (a pocket or inside a piece): let the player walk out instead of being stuck
+      const loose = R.grid.boxedIn(me.pos.x, me.pos.z);
+      if (W.freeAt(R, nx, me.pos.z) || (loose && R.grid.inner(nx, me.pos.z))) me.pos.x = nx; if (W.freeAt(R, me.pos.x, nz) || (loose && R.grid.inner(me.pos.x, nz))) me.pos.z = nz;
       me.turnTo(Math.atan2(mx, mz), dt, 12); me.av.play(run ? 'Running_A' : 'Walking_A', { fade: 0.15 }); { const _a = me.av.current; if (_a) _a.timeScale = spdK(); }; me.av.update(dt);
-    } else { if (me.path) me.speed = (run ? 4.6 : 2.4) * spdK(); me.update(dt); }
+    } else { if (me.path) me.speed = (run ? 4.6 : 2.4) * spdK() * TP.speed; me.update(dt); }
+    leanBody(me.av, TP.swayZ); tipsyScreen.update(TP.level, TP.k, S.tipsy?.sway || 0, t);
     W.update(dt, t);
     const FL = W.lights[S.floor]; FL?.pre();
     tickExtras(t, dt, S);
@@ -189,9 +215,15 @@ async function start() {
   };
   // @ts-ignore
   window.__S = S; S.scene = scene; S.renderer = renderer; S.THREE = THREE; // debug handles (tools)
+  mark('pre-ui');
   try { const { initUI } = await import('./night-ui.js'); S.ui = initUI(S, W); } catch (e) { console.warn('ui', e); }
+  try { S.net = initNet(S, W); } catch (e) { console.warn('net', e); } // multiplayer (net.js): idle until the app says 'online'
+  // first visit: the wardrobe opens once the world is on screen. Inside the app, give the online save a moment to bring
+  // an existing name first (the app sends 'profile' within a second or two when it has one); standalone: straight away.
+  setTimeout(() => { try { S.ui?.maybeFirstSetup?.(); } catch (e) { console.warn('setup', e); } }, EMBED ? 2600 : 900);
+  mark('ui');
   G.ready = true; sync();
   // tell the app once two frames are on screen (so it fades World in on a drawn scene, never a black frame)
-  requestAnimationFrame(() => requestAnimationFrame(() => { tellApp({ t: 'ready' }); askRadio(); }));
+  requestAnimationFrame(() => requestAnimationFrame(() => { progress(1, 'Ready'); tellApp({ t: 'ready' }); askRadio(); }));
 }
 start().catch(e => console.error(e));

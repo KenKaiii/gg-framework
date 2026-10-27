@@ -219,7 +219,7 @@ export function feedTex() {
 export function tv(tex) {
   const g = new THREE.Group();
   put(g, rbox(0.62, 0.48, 0.42, METAL(), 0.06), 0, 0, 0);
-  const sm = new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color('#ffffff').multiplyScalar(1.3) });
+  const sm = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
   put(g, mesh(new THREE.PlaneGeometry(0.46, 0.36), sm), -0.03, 0.01, 0.215);
   put(g, rbox(0.05, 0.05, 0.4, DARK(), 0.01), 0, -0.3, -0.25);
   return g;

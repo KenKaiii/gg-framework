@@ -10,23 +10,8 @@ import * as FX from './kit-fx.js';
 import * as TX from './tex.js';
 import * as P from './studio-props.js';
 import * as DP from './den-props.js';
+import { rickTex, tickRick } from './rick-screen.js';
 
-/** Animated stock chart on its own canvas. */
-function chartScreen() {
-  const c = document.createElement('canvas'); c.width = 256; c.height = 144; const x = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
-  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
-  const draw = (t) => {
-    x.fillStyle = '#0a0d1a'; x.fillRect(0, 0, 256, 144); x.strokeStyle = '#1c2340'; x.lineWidth = 1;
-    for (let i = 0; i < 256; i += 32) { x.beginPath(); x.moveTo(i, 20); x.lineTo(i, 144); x.stroke(); }
-    let v = 70, prev = 70; const ys = [];
-    for (let i = 0; i < 24; i++) { const k = i + Math.floor(t * 2); v = 70 + Math.sin(k * 0.7) * 22 + Math.sin(k * 0.23) * 30 - (i - 12) * 1.2; ys.push(v); }
-    ys.forEach((y, i) => { const up = y <= prev; x.fillStyle = up ? '#3ddc84' : '#ff4f6a'; const top = Math.min(y, prev), h = Math.max(3, Math.abs(y - prev)); x.fillRect(10 + i * 10, top + 10, 6, h); x.fillRect(12 + i * 10, top + 4, 2, h + 12); prev = y; });
-    const last = ys[ys.length - 1], up = last < ys[ys.length - 2];
-    x.fillStyle = '#ffffff'; x.font = '24px m5x7'; x.fillText('$VIBE', 8, 16); x.fillStyle = up ? '#3ddc84' : '#ff4f6a'; x.fillText((up ? '▲ +' : '▼ -') + (Math.abs(Math.sin(t)) * 9).toFixed(1) + '%', 80, 16);
-    x.fillStyle = '#ffcf8a'; x.font = '16px m5x7'; x.fillText('HODL', 210, 16); tex.needsUpdate = true;
-  };
-  draw(0); return { tex, draw };
-}
 
 /** @param {any} ctx */
 export function build(ctx) { void ctx;
@@ -63,8 +48,7 @@ export function build(ctx) { void ctx;
 
   // ---- ZONE 2: lounge (south-west) ----
   put(S, plane(4.4, 3.0, mat('#ffffff', { map: TX.rug('persian', '#2a1840', '#5b2a86', '#4fd8ff'), polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 })), -3.8, 0.014, 2.4);
-  const chart = chartScreen();
-  solid(put(S, P.tvUnit(chart.tex), -6.0, 0, 2.5, H / 2));
+  solid(put(S, P.tvUnit(rickTex()), -6.0, 0, 2.5, H / 2));
   const tvGlow = live(FX.glow('#4fd8ff', 2.6, 0.3)); tvGlow.position.set(-5.6, 1.2, 2.5);
   solid(put(S, P.sofa(2.6, '#3b2a5a', [true, false]), -1.95, 0, 2.3, -H / 2));
   solid(put(S, P.sofa(1.9, '#3b2a5a', [true, false]), -3.55, 0, 3.55, H));
@@ -85,7 +69,7 @@ export function build(ctx) { void ctx;
     points: [{ x: 3.0, y: 1.7, z: -2.0, color: '#ffe8d0', i: 7, d: 6 }, { x: 5.8, y: 1.6, z: -3.2, color: '#b04fd8', i: 10, d: 7 },
       { x: -1.7, y: 1.5, z: 0.9, color: '#ffb36b', i: 11, d: 7 }, { x: -5.2, y: 1.2, z: 2.5, color: '#4fd8ff', i: 8, d: 7 }] });
 
-  R.meta = { id: 'studio', name: 'The Studio', blurb: 'Stream desk, podcast mics, a big chart that only goes up (sometimes).' };
+  R.meta = { id: 'studio', name: 'The Studio', blurb: 'Stream desk, podcast mics, a big TV that only plays one song.' };
   R.spawn = { x: 0, z: 0, face: H };
   const tvAt = (x, z) => Math.atan2(-6.0 - x, 2.5 - z);
   R.slots = [
@@ -98,7 +82,7 @@ export function build(ctx) { void ctx;
     { id: 'studio-sofa4', kind: 'sofa', x: -3.2, z: 3.5, face: H, anim: 'Sit_Chair_Idle', prop: 'laptop', label: 'L-sofa corner' },
     { id: 'studio-sofa5', kind: 'sofa', x: -4.0, z: 3.5, face: H, anim: 'Sit_Chair_Idle', prop: 'laptop', label: 'L-sofa end' },
     { id: 'studio-beanbag', kind: 'beanbag', x: -3.75, z: 1.1, y: 0.25, face: tvAt(-3.75, 1.1), anim: 'Sit_Floor_Idle', prop: 'controller', label: 'Beanbag' },
-    { id: 'studio-tv', kind: 'stand', x: -4.9, z: 0.9, face: tvAt(-4.9, 0.9), anim: 'Idle', prop: 'beer', label: 'Watching the chart' },
+    { id: 'studio-tv', kind: 'stand', x: -4.9, z: 0.9, face: tvAt(-4.9, 0.9), anim: 'Idle', prop: 'beer', label: 'Watching TV' },
     { id: 'studio-vinyl', kind: 'stand', x: -5.0, z: -2.9, face: -H / 2, anim: 'Idle', prop: 'phone', label: 'Digging records' },
     { id: 'studio-board', kind: 'stand', x: -3.2, z: -2.8, face: H, anim: 'Idle', prop: 'phone', label: 'Whiteboard plans' },
     { id: 'studio-guest', kind: 'stand', x: 3.4, z: -0.6, face: H, anim: 'Idle', prop: 'beer', label: 'Watching the stream' },
@@ -106,7 +90,7 @@ export function build(ctx) { void ctx;
   R.interact = [
     { id: 'onair', x: 2.7, z: -3.0, r: 1.0, label: 'Go live', kind: 'sign' },
     { id: 'turntable', x: -5.0, z: -3.0, r: 1.0, label: 'Drop the needle', kind: 'jukebox' },
-    { id: 'tv', x: -4.6, z: 2.0, r: 1.3, label: 'Check the chart', kind: 'tv' },
+    { id: 'tv', x: -4.6, z: 2.0, r: 1.3, label: 'Watch TV', kind: 'tv' },
   ];
   const st = { t: 0, live: -99, spin: -99 };
   R.onInteract = (id, api) => {
@@ -125,7 +109,6 @@ export function build(ctx) { void ctx;
   R.npc = null;
   R.camera = { zoom: 5.5, target: new THREE.Vector3(0, 0.8, 0) };
   const pal = ['#b04fd8', '#ff4fd8', '#4fd8ff', '#3ddc84'].map(c => new THREE.Color(c)); const tmp = new THREE.Color();
-  let lastChart = -1;
   R.tick = (t) => {
     st.t = t;
     const k = (t * 0.25) % 4, i = Math.floor(k); tmp.copy(pal[i]).lerp(pal[(i + 1) % 4], k - i);
@@ -136,7 +119,7 @@ export function build(ctx) { void ctx;
     const fast = t - st.spin < 8; vs.platter.rotation.y -= (fast ? 0.35 : 0.06);
     notes.forEach((n, j) => { const p = ((t * 0.5 + j / 3) % 1); n.position.set(-5.8 + Math.sin(p * 6 + j) * 0.15 + p * 0.3, 1.1 + p * 1.0, -3.2 + j * 0.15); });
     noteM.opacity = fast ? 0.9 : 0;
-    const ct2 = Math.floor(t * 4); if (ct2 !== lastChart) { lastChart = ct2; chart.draw(t * 0.5); }
+    tickRick(t);
     const f = (1 - 0.06 * (0.5 + 0.5 * Math.sin(t * 2.24))); R.rig.points[3].intensity = 8 * f; /** @type {any} */ (tvGlow.material).opacity = 0.3 * f;
   };
   const bx = new THREE.Box3(), sz = new THREE.Vector3(); S.updateMatrixWorld(true);

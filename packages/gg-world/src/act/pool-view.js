@@ -3,7 +3,6 @@
 // ghost ball and a pocket flash ring. All in one group placed at the table centre (room-local). ~23 draw calls.
 import * as THREE from 'three';
 import { BR, BX, BZ, POCKETS, HEAD_U, STRIPE } from './pool-phys.js';
-import { CFONT } from '../fonts.js';
 
 export const TOP = 1.0;                      // y of our felt (just above the baked cue lying on the table)
 export const COLORS = ['#f2ead8', '#e8c33a', '#2a55b8', '#c8322a', '#6a3aa0', '#e07a2a', '#2a8a4a', '#8a2a1e', '#141414'];
@@ -32,7 +31,7 @@ function ballTex(n) {
   if (STRIPE(n)) { x.fillStyle = col; x.fillRect(0, 30, 256, 68); }
   if (n === 0) { x.fillStyle = '#c8322a'; for (const cx of [64, 192]) { x.beginPath(); x.arc(cx, 64, 6, 0, 7); x.fill(); } return tex(c); }
   for (const cx of [64, 192]) { x.fillStyle = '#fbf6ea'; x.beginPath(); x.ellipse(cx, 64, 30, 28, 0, 0, 7); x.fill();
-    x.fillStyle = '#111'; x.font = '60px m5x7'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(String(n), cx, 62); }
+    x.fillStyle = '#111'; x.font = '700 50px Sora, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(String(n), cx, 62); }
   return tex(c);
 }
 const tex = c => { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; };

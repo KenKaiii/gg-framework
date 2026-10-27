@@ -70,6 +70,19 @@ function remapped(key, headMesh, hairHex, skinHex) {
 function findMesh(scene, name) { let m = null; scene.traverse(o => { if (o.name === name && o.isMesh) m = o; }); return m; }
 
 const _q = new THREE.Quaternion(), _e = new THREE.Euler();
+/** How long each emote lasts (s). */
+const EMOTE_SECS = /** @type {Record<string, number>} */ ({ cringe: 4, wave: 2.4, dance: 5, kiss: 2.6, sleep: 7, worm: 4.2 });
+/** A little heart sprite at the avatar's head (blow a kiss). @param {any} av */
+function heart(av) { return emSprite(av, '#ff6b9a', (g, w) => { g.beginPath(); g.moveTo(w / 2, w * 0.8); g.bezierCurveTo(w * 0.05, w * 0.45, w * 0.2, w * 0.08, w / 2, w * 0.32); g.bezierCurveTo(w * 0.8, w * 0.08, w * 0.95, w * 0.45, w / 2, w * 0.8); g.fill(); }, 0.28); }
+/** Z's over a sleeping avatar. @param {any} av */
+function zzz(av) { return emSprite(av, '#cfe0ff', (g, w) => { g.font = `700 ${w * 0.7}px Sora, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('z', w * 0.35, w * 0.6); g.font = `700 ${w * 0.45}px Sora, sans-serif`; g.fillText('z', w * 0.72, w * 0.3); }, 0.32); }
+/** @param {any} av @param {string} color @param {(g: CanvasRenderingContext2D, w: number) => void} draw @param {number} size */
+function emSprite(av, color, draw, size) {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d')); g.fillStyle = color; draw(g, 64);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })); sp.scale.setScalar(size); sp.position.set(0.15, 1.15, 0.1);
+  av.root.add(sp); const rm = sp.removeFromParent.bind(sp); /** @type {any} */ (sp).remove = () => { rm(); tex.dispose(); sp.material.dispose(); }; return sp;
+}
 export const DEFAULT_LOOK = { body: 'rogue', head: 'rogue', skin: '#f2c6a0', hair: '#5a3825', top: '#6fa8dc', bottom: '#4a4e69', acc: 'headphones', accColor: '#f28b82' };
 
 export class Avatar {
@@ -189,15 +202,48 @@ export class Avatar {
     }
     mergeGroup(g, 'acc-' + kind); this.bones.head.add(g); return g;
   }
-  /** emotes layered procedurally: facepalm, slowclap, flip, cringe */
-  startEmote(n) { this.em = n; this.emT = n === 'cringe' ? 4 : 2.6; if (n === 'flip') this.play('Jump_Full_Short', { once: true }); if (n === 'cringe') this.play('Cheer'); }
+  /**
+   * Emotes, keys 1-5 (owner: each a unique, funny thing): 1 wave, 2 dance (the floss), 3 blow a kiss, 4 lie down and
+   * sleep on the floor, 5 the worm (well, a breakdance flop). Layered procedurally on the bones; no new clips. The old
+   * ones (facepalm, slowclap, flip, cringe) are kept for activities that use them (the diner).
+   * @param {string} n
+   */
+  startEmote(n) {
+    this.em = n; this.emT = EMOTE_SECS[n] ?? 2.6; this.em0 = this.emT;
+    if (n === 'flip') this.play('Jump_Full_Short', { once: true });
+    if (n === 'cringe') this.play('Cheer');
+    if (n === 'dance') this.play('Cheer');
+    if (n === 'sleep') this.play('Sit_Floor_Idle', { fade: 0.35 });
+    if (n === 'worm') this.play('Sit_Floor_Idle', { fade: 0.2 });
+    if (n === 'wave' || n === 'kiss') this.play('Idle');
+  }
+  /** Stop an emote (walking interrupts it). */
+  endEmote() { if (!this.em) return; this.em = null; this.rig.rotation.set(0, 0, 0); this.rig.position.set(0, 0, 0); this.emFx?.remove?.(); this.emFx = null; }
   emote(dt) {
-    if (!this.em) return; this.emT -= dt; const t = this.t, k = Math.min(1, this.emT * 2);
-    if (this.emT <= 0) { this.em = null; this.rig.rotation.z = 0; this.rig.position.y = 0; this.play('Idle'); return; }
+    if (!this.em) return; this.emT -= dt; const t = this.t, k = Math.min(1, this.emT * 2), into = Math.min(1, (this.em0 - this.emT) * 3);
+    if (this.emT <= 0) { this.endEmote(); this.play('Idle'); return; }
     if (this.em === 'facepalm') { this.fxq = 1; this.rot('upperarm.r', -1.25 * k, 0, 0.75 * k); this.rot('lowerarm.r', -2.2 * k, 0, 0); this.rot('head', 0.35 * k, 0, Math.sin(t * 3) * 0.12 * k); }
     if (this.em === 'slowclap') { const s = Math.max(0, Math.sin(t * 3.2)) * 0.45; this.rot('upperarm.l', -0.9 * k, 0, -0.4 - s); this.rot('upperarm.r', -0.9 * k, 0, 0.4 + s); this.rot('lowerarm.l', -0.8 * k, 0, 0); this.rot('lowerarm.r', -0.8 * k, 0, 0); this.rot('head', 0.1, 0, 0.15); }
     if (this.em === 'flip') { this.rot('upperarm.l', 0, 0, -2.4 * k); this.rot('upperarm.r', 0, 0, 2.4 * k); }
     if (this.em === 'cringe') { this.rig.rotation.z = Math.sin(t * 9) * 0.18; this.rig.position.y = Math.abs(Math.sin(t * 9)) * 0.08; this.rot('hips', 0, Math.sin(t * 9) * 0.5, 0); this.rot('head', 0, -Math.sin(t * 9) * 0.6, 0); }
+    // 1 wave (rig axes, measured: upperarm +x raises the arm, ~1.25 rad = up and out; y swings it in/out; z fore/aft,
+    // mirrored per side; past ~2 rad the arm crosses behind the head): arm up and out, waving side to side; a bounce
+    if (this.em === 'wave') { const w = Math.sin(t * 8); this.rot('upperarm.r', (1.25 + w * 0.15) * k, w * 0.55 * k, 0); this.rot('lowerarm.r', (0.5 + w * 0.4) * k, 0, 0); this.rot('chest', 0, 0, -0.1 * k); this.rot('head', 0, 0.25 * k, -0.1 * k); this.rig.position.y = Math.abs(Math.sin(t * 4)) * 0.06 * k; }
+    // 2 dance: the floss: both arms down and out, swinging across the body together (fore/aft) while the hips swing the
+    // other way; hopping on the beat, turning slowly
+    if (this.em === 'dance') { const b = Math.sin(t * 7), s = Math.sign(b) * Math.pow(Math.abs(b), 0.6) * k;
+      this.rot('upperarm.l', 0.5 * k, 0, -s * 1.1); this.rot('upperarm.r', 0.5 * k, 0, s * 1.1); this.rot('lowerarm.l', 0.2 * k, 0, 0); this.rot('lowerarm.r', 0.2 * k, 0, 0);
+      this.rot('hips', 0, s * 0.7, -s * 0.3); this.rot('chest', 0, -s * 0.4, s * 0.2); this.rot('head', 0, s * 0.3, -s * 0.15); this.rig.position.y = Math.abs(Math.sin(t * 7)) * 0.1 * k; this.rig.rotation.y = Math.sin(t * 1.2) * 0.5 * k; }
+    // 3 blow a kiss: hand up to the lips (arm forward + raised, elbow bent), lean in, then fling it out wide and up; a heart
+    if (this.em === 'kiss') { const p = 1 - this.emT / this.em0, out = Math.max(0, (p - 0.45) / 0.55);
+      this.rot('upperarm.r', (1.25 - out * 0.25) * k, 0, (0.85 - out * 0.85) * k); this.rot('lowerarm.r', (1.5 - out * 1.4) * k, 0, 0); this.rot('upperarm.l', out * 1.0 * k, 0, 0); this.rot('head', (0.25 - out * 0.55) * k, 0, 0.2 * k); this.rot('chest', (0.22 - out * 0.4) * k, 0, 0); this.rig.position.y = out * 0.08 * k; this.rig.rotation.y = out * 0.5 * k;
+      if (out > 0 && !this.emFx) this.emFx = heart(this); if (this.emFx) { this.emFx.position.y += dt * 0.6; this.emFx.position.z += dt * 0.25; this.emFx.material.opacity = Math.max(0, 1 - out * 1.1); } }
+    if (this.em === 'sleep') { const d = Math.min(1, into) * k; this.rig.rotation.x = -1.45 * d; this.rig.position.y = 0.12 * d; this.rig.position.z = -0.35 * d;
+      this.rot('chest', Math.sin(t * 1.4) * 0.05, 0, 0); this.rot('upperarm.l', 0, 0, -0.3); this.rot('upperarm.r', 0, 0, 0.3); this.rot('head', 0.2, 0.5, 0);
+      if (!this.emFx && into >= 1) this.emFx = zzz(this); if (this.emFx) { const m = this.emFx; m.position.y = 0.9 + ((t * 0.35) % 1) * 0.7; m.material.opacity = 0.9 - ((t * 0.35) % 1) * 0.9; } }
+    // 5 the worm: flop down and ripple along the floor, then hop back up
+    if (this.em === 'worm') { const d = Math.min(1, into) * k, w = Math.sin(t * 8); this.rig.rotation.x = -1.35 * d; this.rig.position.y = (0.15 + Math.max(0, w) * 0.12) * d;
+      this.rot('hips', w * 0.5 * d, 0, 0); this.rot('chest', -w * 0.6 * d, 0, 0); this.rot('head', w * 0.4 * d, 0, 0); this.rot('upperarm.l', 0, 0, -1.2 * d); this.rot('upperarm.r', 0, 0, 1.2 * d); }
   }
   /** @param {string} name @param {{once?: boolean, fade?: number, speed?: number}} [o] */
   play(name, o = {}) {

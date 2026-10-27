@@ -8,7 +8,7 @@ import { setView, clearView, worldOf } from './view.js';
 
 /** Wrap an activity start: blend the camera to a close-up of the prop behind the overlay; always clear it on exit. */
 const withView = (start, y = 0.9, zoom = 2.2) => (/** @type {any} */ ctx) => {
-  const { S, R, it } = ctx; setView(S, { target: worldOf(R, it.x, y, it.z), dir: { x: 1, y: 0.95, z: 1 }, zoom });
+  const { S, R, it } = ctx; setView(S, { target: worldOf(R, it.vx ?? it.x, y, it.vz ?? it.z), /* the table itself, not where you stand */ dir: { x: 1, y: 0.95, z: 1 }, zoom });
   const ov0 = ctx.overlay; ctx.overlay = (/** @type {any} */ o) => { const ov = ov0(o); ov.onClose(() => clearView(S)); return ov; };
   try { start(ctx); } catch (e) { clearView(S); throw e; }
 };

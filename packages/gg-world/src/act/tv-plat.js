@@ -1,8 +1,9 @@
 // @ts-check
 // "Super Commit Bros": a tiny retro platformer for the den CRT (160×120 buffer). Collect coins, stomp bugs, reach the
-// flag before the timer runs out. Pure function of input + dt; drawn with fillRect pixel art.
-import { PAL, panel, title, button, glow, ease, clamp, keyChip } from './art.js';
-import { text, rng } from './util.js';
+// flag before the timer runs out. Pure function of input + dt; the picture is fillRect pixel art (a CRT game, so it
+// stays retro, drawn crisp by tv-screen.js). No text in the picture: score/time/cards are the GX HUD in Sora; floating
+// words ('+100', 'SQUASHED') go out through onPop(x, y, text, tone) in buffer pixels.
+import { rng } from './util.js';
 import { SFX } from '../sfx.js';
 
 const T = 8, ROWS = 15, COLS = 96, TIME = 45;
@@ -21,21 +22,22 @@ function level() {
   return { solid, coins, bugs, flagX: (COLS - 5) * T };
 }
 
-export function makePlatformer() {
+/** @param {{ onPop?: (x: number, y: number, text: string, tone?: string) => void, onEnd?: (r: { win: boolean, score: number, got: number, total: number, best: number, newBest: boolean }) => void }} [cb] */
+export function makePlatformer(cb = {}) {
   let L, p, cam, time, score, got, state, parts, shake, lastJump, checkpoint;
-  let endT = -1, best = 0, newBest = false, t0 = -1; try { best = Number(localStorage.getItem('gg-plat-best')) || 0; } catch { /* */ }
-  const reset = () => { t0 = -1; L = level(); p = { x: 16, y: 96, vx: 0, vy: 0, on: 0, face: 1, inv: 0 }; cam = 0; time = TIME; score = 0; got = 0; state = 'play'; parts = []; shake = 0; lastJump = false; checkpoint = 16; };
+  let best = 0; try { best = Number(localStorage.getItem('gg-plat-best')) || 0; } catch { /* */ }
+  const reset = () => { L = level(); p = { x: 16, y: 96, vx: 0, vy: 0, on: 0, face: 1, inv: 0 }; cam = 0; time = TIME; score = 0; got = 0; state = 'play'; parts = []; shake = 0; lastJump = false; checkpoint = 16; };
   reset();
   const at = (x, y) => { const c = Math.floor(x / T), r = Math.floor(y / T); if (c < 0 || c >= COLS) return 1; if (r < 0 || r >= ROWS) return 0; return L.solid[r * COLS + c]; };
-  const pop = (x, y, c, n, txt) => { for (let i = 0; i < n; i++) parts.push({ x, y, vx: (Math.random() - 0.5) * 70, vy: -Math.random() * 70 - 20, l: 0.5, c }); if (txt) parts.push({ x, y: y - 4, vx: 0, vy: -20, l: 0.8, txt, c }); };
+  const pop = (x, y, c, n, txt) => { for (let i = 0; i < n; i++) parts.push({ x, y, vx: (Math.random() - 0.5) * 70, vy: -Math.random() * 70 - 20, l: 0.5, c }); if (txt) cb.onPop?.(x - cam, y - 4, txt, c === '#ffd84a' ? 'gold' : c === '#6ee7a0' ? 'up' : 'pink'); };
   const hurt = () => { if (p.inv > 0) return; SFX.play('arcade.boom', { vol: 0.4, pitch: 0.7 }); shake = 6; time = Math.max(0, time - 3); pop(p.x, p.y, '#ff4fd8', 10, '-3s'); p.x = checkpoint; p.y = 80; p.vx = p.vy = 0; p.inv = 1.2; };
   /** @param {number} dt @param {Set<string>} k */
   function step(dt, k) {
     for (const q of parts) { q.l -= dt; q.x += q.vx * dt; q.y += q.vy * dt; if (!q.txt) q.vy += 300 * dt; }
     parts = parts.filter(q => q.l > 0); shake = Math.max(0, shake - dt * 20);
     const jump = k.has('Space') || k.has('ArrowUp') || k.has('KeyW');
-    if (state !== 'play') { if (jump && !lastJump) { SFX.play('go'); reset(); } lastJump = jump; return; }
-    time -= dt; if (time <= 0) { time = 0; state = 'lose'; shake = 8; SFX.play('fail'); }
+    if (state !== 'play') { lastJump = jump; return; }
+    time -= dt; if (time <= 0) { time = 0; state = 'lose'; shake = 8; SFX.play('fail'); end(); }
     const dir = (k.has('ArrowRight') || k.has('KeyD') ? 1 : 0) - (k.has('ArrowLeft') || k.has('KeyA') ? 1 : 0);
     p.vx += (dir * 80 - p.vx) * Math.min(1, dt * (p.on ? 14 : 6)); if (dir) p.face = dir;
     if (jump && !lastJump && p.on) { p.vy = -195; p.on = 0; SFX.play('arcade.jump', { vol: 0.4 }); pop(p.x, p.y + 6, '#8a83a0', 4); }
@@ -53,12 +55,13 @@ export function makePlatformer() {
       g.x += g.vx * dt; if (at(g.x + (g.vx > 0 ? 4 : -4), g.y) || !at(g.x + (g.vx > 0 ? 4 : -4), g.y + 6)) g.vx = -g.vx;
       if (Math.abs(g.x - p.x) < 7 && Math.abs(g.y - p.y) < 8) { if (p.vy > 20 && p.y < g.y - 2) { g.dead = 0.01; p.vy = -150; SFX.play('squeak', { vol: 0.4 }); score += 250; shake = 3; pop(g.x, g.y, '#6ee7a0', 10, 'SQUASHED'); } else hurt(); }
     }
-    if (p.x >= L.flagX) { state = 'win'; SFX.play('win'); score += Math.ceil(time) * 10; shake = 4; for (let i = 0; i < 4; i++) pop(p.x, p.y - 10, ['#ffd84a', '#ff4fd8', '#6ee7a0'][i % 3], 10); }
+    if (p.x >= L.flagX) { state = 'win'; SFX.play('win'); score += Math.ceil(time) * 10; shake = 4; for (let i = 0; i < 4; i++) pop(p.x, p.y - 10, ['#ffd84a', '#ff4fd8', '#6ee7a0'][i % 3], 10); end(); }
     cam += (Math.max(0, Math.min(COLS * T - 160, p.x - 64)) - cam) * Math.min(1, dt * 8);
   }
+  function end() { let nb = false; if (score > best) { best = score; nb = true; try { localStorage.setItem('gg-plat-best', String(best)); } catch { /* */ } }
+    cb.onEnd?.({ win: state === 'win', score, got, total: L.coins.length, best, newBest: nb }); }
   /** @param {CanvasRenderingContext2D} b @param {number} t */
   function draw(b, t) {
-    if (state === 'play' && t0 < 0) t0 = t; const age = t0 < 0 ? 0 : t - t0;
     const R = (c, x, y, w, h) => { b.fillStyle = c; b.fillRect(Math.round(x), Math.round(y), w, h); };
     R('#1e2240', 0, 0, 160, 120); for (let i = 0; i < 30; i++) R(i % 4 ? '#5a5a88' : '#e0a458', ((i * 53 - cam * 0.2) % 180 + 180) % 180 - 10, (i * 37) % 70, 1, 1);
     R('#ffe8b0', 120, 22, 6, 6); R('#ffe8b0', 119, 23, 8, 4);
@@ -74,28 +77,8 @@ export function makePlatformer() {
     if (!(p.inv > 0 && Math.floor(t * 16) % 2)) { const run = p.on && Math.abs(p.vx) > 10 ? Math.floor(t * 12) % 2 : 0;
       R('#3a2a6a', p.x - 3, p.y - 1, 6, 4); R('#6ee7a0', p.x - 3, p.y - 4, 6, 3); R('#f0c8a0', p.x - 2, p.y - 8, 4, 4); R('#1a1824', p.x - 3, p.y - 9, 6, 2); R('#e0a458', p.x + p.face * 2 - 1, p.y - 9, 3, 1);
       R('#141418', p.x + (p.face > 0 ? 0 : -2), p.y - 7, 1, 1); R('#1a1824', p.x - 3 + run, p.y + 3, 2, 1); R('#1a1824', p.x + 1 - run, p.y + 3, 2, 1); }
-    for (const q of parts) { if (q.txt) text(b, q.txt, q.x, q.y, { align: 'center', color: q.c, shadow: '#141418' }); else R(q.c, q.x, q.y, 2, 2); }
+    for (const q of parts) R(q.c, q.x, q.y, 2, 2);
     b.restore();
-    R('#ffd84a', 4, 5, 5, 6); title(b, got + '/' + L.coins.length, 12, 11, { size: 16, body: true, align: 'left', color: '#ffd84a' });
-    title(b, 'T' + Math.ceil(time), 156, 11, { size: 16, body: true, align: 'right', color: time < 10 && Math.floor(t * 1.5) % 2 ? '#ff4fd8' : '#e8f5e0' });
-    title(b, String(score).padStart(6, '0'), 80, 11, { size: 16, body: true, color: '#e8f5e0' });
-    // HUD chips on top of the screen, then the kit title card (first seconds) or the result card
-    if (state === 'play' && age < 3.2) { const k = ease.outBack(clamp(age / 0.4, 0, 1)); b.save(); b.globalAlpha = clamp(3.2 - age, 0, 1); b.translate(80, 62); b.scale(k, k); b.translate(-80, -62);
-      panel(b, 10, 30, 140, 64, { style: 'neon', r: 3 }); title(b, 'SUPER COMMIT', 80, 50, { size: 16, color: PAL.goldHi, glow: PAL.pink });
-      let X = 18; X += keyChip(b, '<', X, 70) + 1; X += keyChip(b, '>', X, 70) + 3; title(b, 'run', X, 70, { size: 16, body: true, align: 'left' }); X += 22; X += keyChip(b, 'SPC', X, 70) + 3; title(b, 'jump', X, 70, { size: 16, body: true, align: 'left' });
-      title(b, 'click: jump. reach the flag', 80, 87, { size: 16, body: true, color: PAL.dim }); b.restore(); }
-    if (state !== 'play') {
-      if (endT < 0) { endT = 0; if (score > best) { best = score; newBest = true; try { localStorage.setItem('gg-plat-best', String(best)); } catch { /* */ } } else newBest = false; }
-      endT += 1 / 60; const k = ease.outBack(clamp(endT / 0.45, 0, 1)), win = state === 'win';
-      b.fillStyle = `rgba(6,4,14,${clamp(endT * 3, 0, 0.6)})`; b.fillRect(0, 0, 160, 120);
-      b.save(); b.translate(80, 60); b.scale(k, k); b.translate(-80, -60);
-      panel(b, 8, 18, 144, 92, { style: 'neon', r: 3 }); glow(b, 80, 38, 60, win ? PAL.green : PAL.pink, 0.25);
-      title(b, win ? 'CLEAR!' : 'TIME UP', 80, 44, { size: 32, color: win ? PAL.green : PAL.pink, glow: win ? PAL.green : PAL.pink });
-      title(b, 'score ' + score + '  coins ' + got, 80, 62, { size: 16, body: true });
-      title(b, (newBest ? 'NEW BEST ' : 'best ') + best, 80, 76, { size: 16, body: true, color: newBest ? PAL.goldHi : PAL.dim });
-      button(b, 22, 82, 70, 20, 'AGAIN', { primary: true, hot: Math.sin(t * 3) > 0.3 }); keyChip(b, 'ESC', 96, 96); title(b, 'quit', 127, 96, { size: 16, body: true, align: 'left', color: PAL.dim });
-      b.restore();
-    } else endT = -1;
   }
-  return { step, draw, get state() { return state; }, get time() { return time; } };
+  return { step, draw, reset, get state() { return state; }, get time() { return time; }, get score() { return score; }, get got() { return got; }, get total() { return L.coins.length; }, get best() { return best; } };
 }

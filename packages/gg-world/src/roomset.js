@@ -31,7 +31,15 @@ function floorLinks(f) {
 }
 
 /** @param {any} ctx @returns {{rooms: Record<string, any>, failed: string[], floors: Record<string, any>}} */
-export function buildRooms(ctx) {
+/**
+ * Build every room. Async and yielding between rooms: World shares the app's main thread (a sealed iframe in WebKit
+ * runs in the same process), so one long build froze the whole app for ~1.3 s. Yielding lets the app paint (its
+ * loading dots keep moving) and stay responsive while World loads.
+ * @param {any} ctx
+ */
+export async function buildRooms(ctx) {
+  const yieldNow = () => new Promise(r => setTimeout(r, 0));
+  let slice = performance.now();
   /** @type {Record<string, any>} */ const rooms = {}; const failed = [];
   /** @type {Record<string, any>} */ const floors = {};
   for (const f of FLOOR_ORDER) {
@@ -39,8 +47,10 @@ export function buildRooms(ctx) {
     floors[f] = { id: f, name: FLOORS[f].name, root, rooms: [], links: floorLinks(f), joined: JOINED.has(f) };
     if (JOINED.has(f)) root.add(floorSlab(Object.values(FLOORS[f].rooms)));
   }
+  await yieldNow(); slice = performance.now(); // the floor slabs above, then the rooms
   for (const id of ROOM_IDS) {
     let R; const f = floorOf(id) || 'main', fp = FLOORS[f].rooms[id];
+    const tb = performance.now();
     try { R = /** @type {any} */ (ROOM_MODULES)[id].build(ctx); if (!R || !R.root || !R.grid) throw new Error('invalid room'); }
     catch (e) { console.warn('room ' + id + ' failed, using stub:', e); failed.push(id); R = stubRoom(ctx, { id, name: NAMES[id], to: LINKS[id] }); }
     if (R.live) R.live.traverse(o => { o.castShadow = false; }); // animated -> no stepping shadows (shadow map refreshes at 2 Hz)
@@ -60,8 +70,12 @@ export function buildRooms(ctx) {
       return { to: d.to, label: d.label || NAMES[d.to] || d.to, door: { x: p.x, z: p.z }, inside, face: Math.atan2(c.x, c.z), stairs: floorOf(d.to) !== f };
     });
     for (const ex of R.exits) R.grid.rect(Math.min(ex.door.x, ex.inside.x) - 0.25, Math.min(ex.door.z, ex.inside.z) - 0.25, Math.max(ex.door.x, ex.inside.x) + 0.25, Math.max(ex.door.z, ex.inside.z) + 0.25, 0);
-    floors[f].rooms.push(R); rooms[id] = R;
+    floors[f].rooms.push(R); rooms[id] = R; /** @type {any} */ (window).__boot?.push(['room ' + id, Math.round(performance.now() - tb)]);
+    ctx.onRoom?.(ROOM_IDS.indexOf(id) + 1, ROOM_IDS.length, roomLabel(R));
+    if (performance.now() - slice > 50) { await yieldNow(); slice = performance.now(); } // the app's loading screen gets a turn
   }
   return { rooms, failed, floors };
 }
+/** "the bar", "the Den"...: a room's name for the loading screen. @param {any} R */
+function roomLabel(R) { const n = String(R?.meta?.name || R?.id || 'the rooms').trim(); return /^the\s/i.test(n) ? 'the ' + n.slice(4) : n; }
 export { NAMES, FLOOR_ORDER };

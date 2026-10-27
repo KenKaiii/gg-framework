@@ -53,7 +53,9 @@ const colored = (g, color) => { g = g.index ? g.toNonIndexed() : g; const N = g.
   g.deleteAttribute('normal'); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
 
 /** @param {any} S @param {THREE.Scene} scene */
-export function makeOutside(S, scene) {
+/** Async (yields while building): see buildHood. @param {any} S @param {any} scene */
+export async function makeOutside(S, scene) {
+  const yieldNow = () => new Promise(res => setTimeout(res, 0));
   const q = new URLSearchParams(location.search); if (q.get('outside') === '0') return null;
   const rooms = Object.values(FLOORS.main.rooms); const B = { x0: Math.min(...rooms.map(r => r.x - r.w / 2)) - 0.3, x1: Math.max(...rooms.map(r => r.x + r.w / 2)) + 0.3, z0: Math.min(...rooms.map(r => r.z - r.d / 2)) - 0.3, z1: Math.max(...rooms.map(r => r.z + r.d / 2)) + 0.3 };
   const cx = (B.x0 + B.x1) / 2, cz = (B.z0 + B.z1) / 2, P = 60, GY = -0.62, r = rnd(42);
@@ -78,7 +80,8 @@ varying vec3 vWP; uniform vec3 uTint; uniform vec3 uSky; uniform vec4 uB; unifor
 #include <opaque_fragment>`); }; m.customProgramCacheKey = () => 'outside' + JSON.stringify(opt); return m; };
 
   // the neighbourhood (outside-hood.js): plot, street, park, houses, trees, lamps, cars
-  const hood = buildHood({ root, B, GY, P, patch, r, colored, quad, geo, radialTex });
+  const hood = await buildHood({ root, B, GY, P, patch, r, colored, quad, geo, radialTex });
+  await yieldNow();
   const { glowM, pools, bulbs } = hood;
 
   // from the roof: the whole neighbourhood sits DROP lower, and the house below the roof is one solid block (flat tar

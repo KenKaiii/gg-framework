@@ -1,8 +1,8 @@
 // @ts-check
 // Jackrabbit Diner activities: a one-page diner menu ($5 shake, cherry pie + black coffee) and the twist contest.
-import { mouse, coins, loop } from './util.js';
-import { PAL, bg, panel, badge, button, title, glow, noise, shine, coin, particles, shaker, clamp, rr } from './art.js';
-import { CFONT } from '../fonts.js';
+import { coins } from './util.js';
+import { gx, GX } from './gx.js';
+import { FONT } from '../fonts.js';
 import { holdProp } from '../rooms/props-hand.js';
 import { moment } from './films-b-fx.js';
 import { SFX } from '../sfx.js';
@@ -20,99 +20,84 @@ function holdFries(av) {
   for (const k in cache) cache[k].visible = k === 'fries';
 }
 
-const W = 320, H = 180;
 const MENU = [
   { id: 'shake', name: 'The $5 Shake', price: 5, prop: 'cocktail', desc: 'vanilla. cherry on top. pricey.', say: 'is that a five dollar shake?', after: "that's a pretty f***ing good milkshake." },
   { id: 'pie', name: 'Cherry Pie + Coffee', price: 3, prop: 'mug', desc: 'black as a moonless night', say: 'damn fine cup of coffee.', after: 'and hot! ...that pie, too.' },
   { id: 'fries', name: 'Fries, Extra Grease', price: 2, prop: 'fries', desc: 'reheated since 1958', say: 'fries. the debugger of hunger.', after: 'grease on the trackpad. worth it.' }];
-const say = (S, U, t, s = 3.5) => S.ui?.bubble?.(S.me, t, s) ?? U?.bubble?.(S.me, t, s);
+const say = (S, U, t, s = 3.5) => { const B = S.ui?.bubble || U?.bubble; B?.(S.me, t, s); }; // once (bubble returns nothing)
+
+/** Small SVG dish icons (viewBox 0 0 48 48). */
+const DISH = {
+  shake: '<path d="M14 16h20l-4 24h-12z" fill="url(#dn-glass)" stroke="#9fb4c0" stroke-width="1"/><path d="M15 18h18l-1 6H16z" fill="#fff6e6" opacity=".9"/><path d="M13 16c0-7 22-7 22 0z" fill="#fff4e0"/><circle cx="25" cy="8" r="3.4" fill="#d8203a"/><circle cx="24" cy="7" r="1" fill="#fff" opacity=".7"/><path d="M28 2l-3 16" stroke="#ff7ab8" stroke-width="2" stroke-linecap="round"/><rect x="17" y="40" width="14" height="3" rx="1.5" fill="#aab2bd"/>',
+  pie: '<path d="M4 34L30 34L24 18z" fill="#e0a458"/><path d="M8 30h18" stroke="#a0182a" stroke-width="5" stroke-linecap="round"/><rect x="31" y="20" width="12" height="16" rx="3" fill="#f2efe8"/><path d="M43 24c4 0 4 7 0 7" fill="none" stroke="#f2efe8" stroke-width="2"/><rect x="32" y="21" width="10" height="3" rx="1.5" fill="#3a1a10"/><path d="M35 15c-2-3 2-4 0-7M39 15c-2-3 2-4 0-7" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="1.4" stroke-linecap="round"/>',
+  fries: '<g stroke="#f2c14e" stroke-width="3" stroke-linecap="round"><path d="M17 22l-2-14M21 22l0-16M25 22l1-15M29 22l2-13M23 22l-3-12M27 22l4-11"/></g><path d="M12 20h24l-4 22H16z" fill="#c8242c"/><path d="M12 20h24l-1 4H13z" fill="#e8424a"/><circle cx="24" cy="31" r="4" fill="#fff"/>',
+};
+let dinerStyled = false;
+function dinerStyle() {
+  if (dinerStyled) return; dinerStyled = true;
+  const st = document.createElement('style');
+  st.textContent = `
+.dn-menu{position:absolute;inset:0;border-radius:22px;padding:10px;background:linear-gradient(160deg,#f4f6f9,#8a909c 45%,#e2e5ea 60%,#7d838e);box-shadow:0 30px 60px -18px rgba(0,0,0,.85),0 0 40px -8px rgba(255,95,210,.35);font-family:${FONT.app};color:#3a2418}
+.dn-vinyl{height:100%;box-sizing:border-box;border-radius:14px;padding:12px;background:radial-gradient(ellipse at 30% 0%,#e0404a,#8a1620 80%);box-shadow:inset 0 2px 0 rgba(255,255,255,.25),inset 0 -6px 14px rgba(0,0,0,.35)}
+.dn-card{position:relative;height:100%;box-sizing:border-box;border-radius:8px;padding:4cqh 4.5cqw 3cqh;display:flex;flex-direction:column;background:linear-gradient(180deg,#fbf3df,#ecdab3);overflow:hidden;box-shadow:inset 0 0 0 1px rgba(120,60,20,.2)}
+.dn-card::after{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(125deg,rgba(255,255,255,.5),rgba(255,255,255,0) 30%)}
+.dn-card h2{margin:0;text-align:center;font-size:max(17px,5.6cqh);font-weight:800;letter-spacing:.06em;color:#c8242c;text-shadow:0 0 18px rgba(255,80,120,.35)}
+.dn-card .tag{margin:.6cqh 0 0;text-align:center;font-size:max(11px,2.6cqh);font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:#8a5a3a}
+.dn-card .rule{height:5px;margin:1.8cqh 0 1cqh;border-top:2px solid #c8242c;border-bottom:1px solid #c8242c}
+.dn-row{display:flex;align-items:center;gap:3cqw;padding:1.3cqh 2cqw;border-radius:12px;cursor:pointer;transition:background-color .2s,box-shadow .2s,transform .2s}
+.dn-row svg{width:max(34px,10cqh);height:max(34px,10cqh);flex:none;transition:transform .3s cubic-bezier(.3,1.6,.6,1)}
+.dn-row>span:nth-child(2){min-width:0}.dn-row .nm{white-space:nowrap;display:block;font-size:max(13px,4cqh);font-weight:700;letter-spacing:-.01em;color:#3a2418}
+.dn-row .ds{display:block;margin-top:2px;font-size:max(10.5px,2.7cqh);color:#7a5a48;font-style:italic}
+.dn-row .pr{margin-left:auto;min-width:max(44px,11cqh);height:max(44px,11cqh);display:grid;place-items:center;border-radius:50%;background:#c8242c;color:#fff;font-size:max(13px,3.6cqh);font-weight:800;box-shadow:0 3px 8px -3px rgba(120,0,0,.6)}
+.dn-row.on{background:rgba(200,36,44,.1);box-shadow:inset 0 0 0 2px rgba(255,95,210,.65),0 0 22px -6px ${GX.pink}}
+.dn-row.on svg{transform:translateY(-3px) rotate(-4deg) scale(1.08)}
+.dn-row.on .pr{background:${GX.warning};color:#3a2418}
+.dn-row.no .pr{background:#8a8494}
+.dn-card .rows{margin:auto 0;display:grid;gap:.6cqh}.dn-foot{display:flex;align-items:center;gap:10px;padding-top:1.2cqh}
+.dn-foot .wal{font-size:max(12px,3cqh);font-weight:600;color:#7a5a48}
+.dn-foot .wal b{color:#3a2418;font-size:1.25em}
+.dn-foot .msg{flex:1;text-align:center;font-size:max(12px,2.9cqh);font-weight:700;color:#c8242c;opacity:0;transition:opacity .3s}
+.dn-shake{animation:dn-shake .35s}
+@keyframes dn-shake{20%{transform:translateX(-8px)}40%{transform:translateX(7px)}60%{transform:translateX(-5px)}80%{transform:translateX(3px)}}
+@media (prefers-reduced-motion: reduce){.dn-shake{animation:none}.dn-row svg{transition:none}}`;
+  document.head.appendChild(st);
+}
 
 /** @param {any} ctx */
 function menu(ctx) {
   const { S, U } = ctx; const wal = coins(S);
   let sel = MENU.findIndex(m => m.id === ctx.it.id); if (sel < 0) sel = 0;
-  const ov = ctx.overlay({ title: 'Jackrabbit Diner', sub: 'open all night. no refunds.', help: '<kbd>&uarr;&darr;</kbd> or hover: pick <kbd>enter</kbd> or click: order <kbd>esc</kbd> leave' });
-  const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
-  let shake = 0, msg = '', msgT = 0;
+  const ov = ctx.overlay({ title: 'Jackrabbit Diner', sub: 'open all night. no refunds.', help: '<kbd>&uarr;&darr;</kbd> / hover pick <kbd>enter</kbd> / click order' });
+  dinerStyle();
+  const K = gx(ov);
+  const hud = K.hud([{ id: 'wal', label: 'Wallet', value: wal.balance, tone: 'gold' }], [{ id: 'ord', label: 'Your order', value: '$' + MENU[sel].price }]);
+  const scene = K.scene({ aspect: 1.3, maxW: 720 });
+  const box = document.createElement('div'); box.className = 'dn-menu';
+  box.innerHTML = `<svg width="0" height="0" style="position:absolute"><defs><linearGradient id="dn-glass" x1="0" x2="1"><stop offset="0" stop-color="#dfeef5"/><stop offset=".5" stop-color="#fff"/><stop offset="1" stop-color="#b9d3de"/></linearGradient></defs></svg>
+    <div class="dn-vinyl"><div class="dn-card"><h2>JACKRABBIT SLIM'S</h2><p class="tag">open all night · no refunds</p><div class="rule"></div><div class="rows"></div>
+    <div class="dn-foot"><span class="wal">Wallet <b></b></span><span class="msg">Card declined. Go ship something.</span><button class="gx-btn pri" type="button">Order</button></div></div></div>`;
+  scene.appendChild(box);
+  const rowsEl = /** @type {HTMLElement} */ (box.querySelector('.rows')), walEl = /** @type {HTMLElement} */ (box.querySelector('.wal b')), msgEl = /** @type {HTMLElement} */ (box.querySelector('.msg')), btn = /** @type {HTMLButtonElement} */ (box.querySelector('.gx-btn'));
+  const rows = MENU.map((m, i) => { const r = document.createElement('div'); r.className = 'dn-row';
+    r.innerHTML = `<svg viewBox="0 0 48 48">${DISH[m.id]}</svg><span><span class="nm"></span><span class="ds"></span></span><span class="pr">$${m.price}</span>`;
+    /** @type {HTMLElement} */ (r.querySelector('.nm')).textContent = m.name; /** @type {HTMLElement} */ (r.querySelector('.ds')).textContent = m.desc;
+    r.addEventListener('pointerenter', () => pick(i)); r.addEventListener('click', () => { pick(i); order(); }); rowsEl.appendChild(r); return r; });
+  const render = () => { const can = wal.balance >= MENU[sel].price;
+    rows.forEach((r, i) => { r.classList.toggle('on', i === sel); r.classList.toggle('no', wal.balance < MENU[i].price); });
+    walEl.textContent = String(wal.balance); btn.textContent = can ? `Order · $${MENU[sel].price}` : 'Too broke'; btn.className = 'gx-btn' + (can ? ' pri' : '');
+    hud.set('wal', wal.balance); hud.set('ord', '$' + MENU[sel].price, { tone: can ? 'up' : 'bad' }); };
+  const pick = i => { if (sel === i) return; sel = i; SFX.play('ui.select'); render(); };
+  let msgTo = 0;
   const order = () => {
     const it = MENU[sel];
-    if (wal.balance < it.price || !wal.spend(it.price, it.name)) { shake = 0.35; msg = 'card declined. go ship something.'; msgT = 2.5; SFX.play('ui.deny'); return; }
+    if (wal.balance < it.price || !wal.spend(it.price, it.name)) { box.classList.remove('dn-shake'); void box.offsetWidth; box.classList.add('dn-shake'); msgEl.style.opacity = '1'; clearTimeout(msgTo); msgTo = setTimeout(() => { msgEl.style.opacity = '0'; }, 2500); SFX.play('ui.deny'); return; }
     ov.close(); SFX.play('register', { delay: 0.1 }); SFX.play(it.prop === 'mug' ? 'pour' : it.prop === 'fries' ? 'fizz' : 'espresso', { delay: 0.5, vol: 0.6 }); SFX.play(it.prop === 'fries' ? 'paper' : 'glass', { delay: 0.9, vol: 0.6 }); say(S, U, it.say); try { S.me.once?.('Interact', 1.2); } catch { /* anim */ }
     setTimeout(() => it.prop === 'fries' ? holdFries(S.me.av) : holdProp(S.me.av, it.prop), 400); setTimeout(() => say(S, U, it.after, 3), 4200);
   };
-  const onKey = e => { if (e.code === 'ArrowUp') { sel = (sel + MENU.length - 1) % MENU.length; SFX.play('ui.select'); } else if (e.code === 'ArrowDown') { sel = (sel + 1) % MENU.length; SFX.play('ui.select'); } else if (e.code === 'Enter' || e.code === 'Space') order(); };
-  addEventListener('keydown', onKey); ov.onClose(() => removeEventListener('keydown', onKey));
-  // mouse: hover a dish to pick it, click to order; buttons below
-  const ms = mouse(ov, c, W, H); let hotB = -1;
-  const rowsArea = () => MENU.map((m, i) => ({ x: 30, y: ROW0 + i * ROWH - 4, w: 214, h: ROWH - 2, hover: () => { if (sel !== i) { sel = i; SFX.play('ui.select'); } }, pick: () => order() }));
-  ms.set([...rowsArea(), { x: 252, y: 118, w: 56, h: 22, hover: () => { hotB = 0; }, pick: () => order() }, { x: 252, y: 146, w: 56, h: 20, hover: () => { hotB = 1; }, pick: () => ov.close() }]);
-  c.addEventListener('pointerleave', () => { hotB = -1; }); c.addEventListener('pointermove', e => { const r = c.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W; if (px < 248) hotB = -1; });
-  const bgc = dinerBackdrop(), fx = particles(), sh = shaker(); let selY = ROW0 + sel * ROWH, cn = wal.balance, prevSel = sel;
-  loop(ov, (dt, t) => {
-    shake = Math.max(0, shake - dt); msgT -= dt; if (shake > 0.3) sh.kick(4);
-    if (sel !== prevSel) { prevSel = sel; fx.sparkle(40, ROW0 + sel * ROWH + 8, PAL.pink); }
-    selY += (ROW0 + sel * ROWH - selY) * Math.min(1, dt * 16); cn += (wal.balance - cn) * Math.min(1, dt * 8);
-    x.drawImage(bgc, 0, 0);
-    glow(x, 60, 12, 70, PAL.pink, 0.16 + 0.06 * Math.sin(t * 1.8)); glow(x, 270, 12, 60, PAL.cyan, 0.14 + 0.05 * Math.sin(t * 1.6 + 1));
-    x.save(); sh.apply(x, dt);
-    // the laminated menu: red vinyl + chrome trim, cream card inside
-    menuCard(x, 16, 8, 236, 164);
-    title(x, "JACKRABBIT SLIM'S", 134, 32, { size: 16, color: '#c8242c', ink: '#fff6e0', glow: 'rgba(255,80,120,0.4)' });
-    x.fillStyle = '#c8242c'; x.fillRect(40, 38, 188, 1); x.fillRect(40, 40, 188, 1);
-    // selection: a pink neon bar that glides between rows
-    const sy = Math.round(selY) - 4; panel(x, 28, sy, 216, ROWH - 2, { style: 'neon', r: 3 }); glow(x, 136, sy + 15, 120, PAL.pink, 0.10 + 0.05 * Math.sin(t * 3));
-    MENU.forEach((m, i) => { const y = ROW0 + i * ROWH, on = i === sel;
-      dish(x, m.id, 46, y + 14, t, on);
-      title(x, m.name, 64, y + 10, { size: 16, body: true, align: 'left', color: on ? '#fff' : PAL.paperInk, ink: on ? PAL.ink : 'rgba(255,246,224,0.7)' });
-      x.save(); x.font = CFONT.body(16); x.fillStyle = on ? '#ffd0ec' : '#7a5a48'; x.fillText(m.desc, 64, y + 22); x.restore();
-      priceTag(x, 222, y + 8, m.price, on, wal.balance >= m.price); });
-    x.restore();
-    // right column: wallet + order / leave
-    badge(x, 252, 10, 'wallet', Math.round(cn), { w: 58, color: PAL.gold, style: 'metal' }); coin(x, 300, 36, 4, t);
-    const it = MENU[sel], can = wal.balance >= it.price;
-    badge(x, 252, 50, 'order', '$' + it.price, { w: 58, color: can ? PAL.green : PAL.red, style: 'metal' });
-    if (!can) title(x, 'too broke', 281, 104, { size: 16, body: true, color: can ? PAL.dim : PAL.red });
-    button(x, 252, 118, 56, 22, 'ORDER', { primary: can, hot: hotB === 0, disabled: !can }); if (can && hotB !== 0) shine(x, 252, 118, 56, 22, t);
-    button(x, 252, 146, 56, 20, 'LEAVE', { hot: hotB === 1 });
-    fx.draw(x, dt);
-    if (msgT > 0) { const k = clamp(msgT / 0.3, 0, 1); x.globalAlpha = k; panel(x, 34, 140, 200, 24, { style: 'neon', r: 3 }); title(x, msg, 134, 157, { size: 16, body: true, color: PAL.red }); x.globalAlpha = 1; }
-  });
-}
-
-const ROW0 = 50, ROWH = 36;
-/** Static diner backdrop (cached): neon-lit wall with a chrome rail, checkerboard floor. */
-function dinerBackdrop() {
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'));
-  bg.vignette(x, W, H, '#2a1430', '#4a2448');
-  for (let i = 0; i < W; i += 10) { x.fillStyle = 'rgba(255,255,255,0.03)'; x.fillRect(i, 0, 5, 120); }
-  x.fillStyle = '#c8cdd6'; x.fillRect(0, 118, W, 3); x.fillStyle = '#fff'; x.fillRect(0, 118, W, 1); x.fillStyle = '#6a707a'; x.fillRect(0, 121, W, 1);
-  for (let j = 0; j < 7; j++) for (let i = 0; i < 21; i++) { x.fillStyle = (i + j) % 2 ? '#1a1620' : '#d8d0c4'; x.fillRect(i * 16 - (j % 2) * 0, 122 + j * 9, 16, 9); }
-  const v = x.createLinearGradient(0, 122, 0, H); v.addColorStop(0, 'rgba(0,0,0,0.25)'); v.addColorStop(1, 'rgba(0,0,0,0.65)'); x.fillStyle = v; x.fillRect(0, 122, W, H - 122);
-  noise(x, 0, 0, W, H, 0.03, 5); return cv;
-}
-/** Laminated menu: red vinyl cover with chrome trim around a cream card. */
-function menuCard(x, X, Y, w, h) {
-  x.fillStyle = 'rgba(0,0,0,0.45)'; rr(x, X + 3, Y + 5, w, h, 6); x.fill();
-  let g = x.createLinearGradient(0, Y, 0, Y + h); g.addColorStop(0, '#f0f2f6'); g.addColorStop(0.5, '#8a909c'); g.addColorStop(1, '#d8dce4'); x.fillStyle = g; rr(x, X, Y, w, h, 6); x.fill();
-  g = x.createLinearGradient(0, Y, 0, Y + h); g.addColorStop(0, '#d8303a'); g.addColorStop(1, '#8a1620'); x.fillStyle = g; rr(x, X + 3, Y + 3, w - 6, h - 6, 4); x.fill();
-  g = x.createLinearGradient(0, Y, 0, Y + h); g.addColorStop(0, '#fbf2dc'); g.addColorStop(1, '#ead8b0'); x.fillStyle = g; rr(x, X + 8, Y + 8, w - 16, h - 16, 2); x.fill();
-  noise(x, X + 8, Y + 8, w - 16, h - 16, 0.04, 9);
-  x.fillStyle = 'rgba(255,255,255,0.35)'; x.beginPath(); x.moveTo(X + 8, Y + 8); x.lineTo(X + 70, Y + 8); x.lineTo(X + 8, Y + 60); x.fill(); // laminate glare
-  for (const [cx, cy] of [[X + 5, Y + 5], [X + w - 6, Y + 5], [X + 5, Y + h - 6], [X + w - 6, Y + h - 6]]) { x.fillStyle = '#fff'; x.fillRect(cx, cy, 2, 2); x.fillStyle = '#5a606a'; x.fillRect(cx + 1, cy + 1, 1, 1); } // rivets
-}
-/** Price tag: a little red star burst with the price. */
-function priceTag(x, X, Y, n, on, can) {
-  x.save(); x.translate(X, Y); x.fillStyle = can ? (on ? PAL.gold : '#c8242c') : '#7a7488'; x.beginPath();
-  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2, r = i % 2 ? 9 : 12; x.lineTo(Math.cos(a) * r, Math.sin(a) * r); } x.closePath(); x.fill(); x.restore();
-  title(x, '$' + n, X, Y + 5, { size: 16, body: true, color: on && can ? PAL.ink : '#fff', ink: on && can ? 'rgba(255,240,200,0.5)' : PAL.ink });
-}
-/** Little drawn dish icons. */
-function dish(x, id, X, Y, t, on) {
-  const bob = on ? Math.round(Math.sin(t * 4) * 1.5) : 0; X = Math.round(X); Y = Math.round(Y) + bob;
-  x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(X - 8, Y + 6, 16, 2);
-  if (id === 'shake') { x.fillStyle = '#cfe6f0'; x.beginPath(); x.moveTo(X - 6, Y - 10); x.lineTo(X + 6, Y - 10); x.lineTo(X + 3, Y + 4); x.lineTo(X - 3, Y + 4); x.fill(); x.fillStyle = '#fff4e0'; x.fillRect(X - 6, Y - 14, 12, 5); x.beginPath(); x.arc(X, Y - 14, 5, Math.PI, 0); x.fill(); x.fillStyle = '#d8203a'; x.beginPath(); x.arc(X + 1, Y - 19, 2.5, 0, 7); x.fill(); x.fillStyle = '#ff7ab8'; x.fillRect(X + 3, Y - 24, 1, 10); x.fillStyle = '#aab'; x.fillRect(X - 3, Y + 4, 6, 2); }
-  else if (id === 'pie') { x.fillStyle = '#e0a458'; x.beginPath(); x.moveTo(X - 9, Y + 3); x.lineTo(X + 7, Y + 3); x.lineTo(X + 4, Y - 6); x.closePath(); x.fill(); x.fillStyle = '#a0182a'; x.fillRect(X - 6, Y - 1, 11, 3); x.fillStyle = '#3a1a10'; x.fillRect(X + 6, Y - 9, 6, 8); x.fillStyle = '#eee'; x.fillRect(X + 5, Y - 10, 8, 2); if (on) { x.fillStyle = 'rgba(255,255,255,0.5)'; x.fillRect(X + 8, Y - 14 - Math.round((t * 6) % 3), 1, 3); } }
-  else { x.fillStyle = '#f2c14e'; for (let i = 0; i < 6; i++) x.fillRect(X - 5 + i * 2, Y - 12 + (i % 3) * 2, 1, 8); x.fillStyle = '#c8242c'; x.beginPath(); x.moveTo(X - 7, Y - 5); x.lineTo(X + 7, Y - 5); x.lineTo(X + 4, Y + 5); x.lineTo(X - 4, Y + 5); x.fill(); x.fillStyle = '#fff'; x.fillRect(X - 2, Y - 2, 4, 4); }
+  btn.addEventListener('click', order);
+  const onKey = e => { if (e.code === 'ArrowUp') { e.preventDefault(); pick((sel + MENU.length - 1) % MENU.length); } else if (e.code === 'ArrowDown') { e.preventDefault(); pick((sel + 1) % MENU.length); } else if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); order(); } };
+  addEventListener('keydown', onKey); ov.onClose(() => { removeEventListener('keydown', onKey); clearTimeout(msgTo); });
+  render();
 }
 
 /** Twist contest: a close-up on the dance floor while the player twists, then the floor crowns a winner. @param {any} ctx */

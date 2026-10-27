@@ -30,7 +30,9 @@ function sidingTextures(rand) {
 }
 
 /** @param {any} ctx */
-export function buildHood(ctx) {
+/** Async: yields between sections so building the town never blocks the app for long (World shares its thread). @param {any} ctx */
+export async function buildHood(ctx) {
+  const yieldNow = () => new Promise(res => setTimeout(res, 0));
   const { root, B, GY, P, patch, r, colored, quad, geo, radialTex } = ctx; const C = h => new THREE.Color(h);
   const cxB = (B.x0 + B.x1) / 2, czB = (B.z0 + B.z1) / 2;
   const Q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1);
@@ -45,6 +47,7 @@ export function buildHood(ctx) {
   const onPatio = (x, z, pad = 0) => PATIO.some(q => Math.hypot(x - q.x, z - q.z) < 2.3 + pad);
   const onPlotPath = (x, z, pad = 0) => (Math.abs(x - cxB) < 1.0 + pad && dS(z) > 4.4 && dS(z) < FOOT_IN + 0.2) || (Math.abs(z - czB) < 1.0 + pad && dW(x) > 4.4 && dW(x) < FOOT_IN + 0.2) || onPatio(x, z, pad);
 
+  await yieldNow();
   // ---- houses (planned first: the ground paints their driveways) ----------------------------------------------------
   const houses = []; const lots = (along0, along1, cb) => { for (let a = along0; a < along1;) { const lw = 13 + r() * 4; cb(a + lw / 2, lw); a += lw; } };
   const SET = 5.5; // front garden depth
@@ -58,6 +61,7 @@ export function buildHood(ctx) {
   const driveRect = h => { const side = h.w / 2 + 1.9, len = SET + 0.4; return { cl: side * h.drive, cz: h.d / 2 + len / 2, w: 3.0, l: len }; };
   const inDrive = (x, z, pad) => houses.some(h => { if (!h.drive) return false; const D = driveRect(h), lx = (x - h.x) * h.rx + (z - h.z) * h.fx * 0 + (z - h.z) * h.rz, lz = (x - h.x) * h.fx + (z - h.z) * h.fz; return Math.abs(lx - D.cl) < D.w / 2 + pad && Math.abs(lz - D.cz) < D.l / 2 + pad; });
 
+  await yieldNow();
   // ---- ground: one painted plane -------------------------------------------------------------------------------------
   const ppm = 6, X0 = B.x0 - P, Z0 = B.z0 - P, GW = Math.round((B.x1 - B.x0 + 2 * P) * ppm), GH = Math.round((B.z1 - B.z0 + 2 * P) * ppm);
   const cv = document.createElement('canvas'); cv.width = GW; cv.height = GH; const g = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'));
@@ -98,6 +102,7 @@ export function buildHood(ctx) {
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(B.x1 - B.x0 + 2 * P, B.z1 - B.z0 + 2 * P).rotateX(-Math.PI / 2), patch(new THREE.MeshBasicMaterial({ map: gtex }), { ground: true }));
   ground.position.set(cxB, GY, czB); root.add(ground);
 
+  await yieldNow();
   // ---- static geometry, merged: kerbs, fence, hedges, houses, benches ---------------------------------------------------
   const solid = []; const wall = { pos: [], uv: [], col: [] }, glow = { pos: [], uv: [], col: [] };
   const LDIR = new THREE.Vector3(0.45, 1, 0.3).normalize(), sh = (nx, nz) => 0.58 + 0.42 * Math.max(0, nx * LDIR.x + nz * LDIR.z);
@@ -154,6 +159,7 @@ export function buildHood(ctx) {
   const water = new THREE.Mesh(new THREE.CircleGeometry(1, 48).rotateX(-Math.PI / 2), patch(new THREE.MeshBasicMaterial({ color: C('#3e5e6e') }), { water: true }));
   water.scale.set(POND.rx, 1, POND.rz); water.position.set(POND.x, GY + 0.03, POND.z); root.add(water);
 
+  await yieldNow();
   // ---- trees: 3 leafy kinds + pines + bushes, instanced (trunks share one mesh) ---------------------------------------
   // foliage: per-face light/dark speckle (reads as clusters of leaves) + the underside of the crown in shade
   const leafy = (geom) => { const g2 = geom.index ? geom.toNonIndexed() : geom; g2.computeVertexNormals(); g2.computeBoundingBox(); const Pp = g2.attributes.position, Nn = g2.attributes.normal, n = Pp.count, a = new Float32Array(n * 3), bb = g2.boundingBox;
@@ -191,6 +197,7 @@ export function buildHood(ctx) {
   KINDS.forEach((K, ki) => { const list = treeList.filter(t => t.kind === ki); if (!list.length) return; const im = new THREE.InstancedMesh(K.g, patch(new THREE.MeshBasicMaterial({ vertexColors: true })), list.length);
     list.forEach((t, i) => { im.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(t.x, GY, t.z), new THREE.Quaternion().setFromAxisAngle(Y, t.yaw), new THREE.Vector3(t.s * t.sx, t.s * t.sy, t.s * t.sx))); im.setColorAt(i, C(K.col[Math.floor(r() * K.col.length)]).multiplyScalar(0.86 + r() * 0.26)); }); root.add(im); });
 
+  await yieldNow();
   // ---- soft shadows on the ground (no shadow maps): offset away from the moon/sun, merged into one mesh ----------------
   const shTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x2 = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d')); const gr = x2.createRadialGradient(32, 32, 4, 32, 32, 32); gr.addColorStop(0, 'rgba(0,0,0,0.75)'); gr.addColorStop(0.6, 'rgba(0,0,0,0.35)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); x2.fillStyle = gr; x2.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
   const shadowQuads = []; const SHX = -0.35, SHZ = -0.25; // shadows fall a little north-west
@@ -198,6 +205,7 @@ export function buildHood(ctx) {
   for (const t of treeList) { const K = KINDS[t.kind], rr = K.rad * t.s * t.sx * 2.3, hgt = (K.trunk + K.rad) * t.s * t.sy; blob(t.x + SHX * hgt * 0.35, t.z + SHZ * hgt * 0.35, rr, rr * 0.85, t.yaw, t.kind === 4 ? 0.8 : 1); }
   for (const h of houses) blob(h.x + SHX * 2.4, h.z + SHZ * 2.4, h.w + 3.2, h.d + 3.2, h.yaw, 0.9);
   // (the ground shader uses vertex colour as strength)
+  await yieldNow();
   // ---- lamps: street lamps on the footpaths + porch lights -----------------------------------------------------------
   const lampsAt = []; for (let a = B.z0 - 40; a < B.z1 + 44; a += 16) lampsAt.push([B.x0 - 10.4, a, -Math.PI / 2]); for (let a = B.x0 - 36; a < B.x1 + 44; a += 16) lampsAt.push([a, B.z1 + 10.4, Math.PI]);
   const lampGeo = mergeGeometries([colored(new THREE.CylinderGeometry(0.07, 0.1, 4.0, 8).translate(0, 2.0, 0), C('#2e3036')), colored(new THREE.BoxGeometry(0.08, 0.08, 1.0).translate(0, 3.95, -0.45), C('#2e3036')), colored(new THREE.CylinderGeometry(0.24, 0.32, 0.22, 10).translate(0, 3.85, -0.92), C('#2e3036'))]);
@@ -210,6 +218,7 @@ export function buildHood(ctx) {
   root.add(lamps, bulbs, pools);
   for (const [x, z] of lampsAt) blob(x + SHX * 1.2, z + SHZ * 1.2, 1.0, 1.0, 0, 0.6);
 
+  await yieldNow();
   // ---- cars: parked on driveways; traffic only on the street ---------------------------------------------------------
   const CARC = ['#d8d4cc', '#a83434', '#2e5288', '#1e1e24', '#4a6a5a', '#8a8a92', '#c8b48a', '#6a3a5a', '#e0e0e4', '#5a7aa8', '#9a4a2a', '#2a3a2a', '#b8b0a0', '#7a1e2e'];
   const parked = houses.filter(h => h.drive).map(h => { const Dr = driveRect(h), lx = Dr.cl, lz = Dr.cz + (r() - 0.5) * 0.6; return { x: h.x + h.rx * lx + h.fx * lz, z: h.z + h.rz * lx + h.fz * lz, yaw: h.yaw + (r() < 0.5 ? 0 : Math.PI), kind: Math.floor(r() * 3) /* no taxis at home */, col: CARC[Math.floor(r() * CARC.length)] }; });

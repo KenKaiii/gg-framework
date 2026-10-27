@@ -11,6 +11,7 @@ import * as TX from './tex.js';
 import * as P from './bar-props.js';
 import * as Z from './bar-zones.js';
 import { dressWalls, barSlots, barNpc, barInteract } from './bar-layout.js';
+import { rickTex, tickRick } from './rick-screen.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -47,7 +48,7 @@ export function build(ctx) {
   const neon = mesh(new THREE.PlaneGeometry(2.6, 0.65), neonM); neon.castShadow = false; neon.userData.live = true; neon.name = 'rx-neon';
   R.onWall('n', neon, -4.2, 2.86, 0.08);
   const neonGlow = FX.glow('#3ddc84', 2.0, 0.18); put(L, neonGlow, -4.2, 2.8, -5.7);
-  const feed = P.feedTex(); put(S, P.tv(feed), -8.3, 2.55, -5.3, 0.7);
+  put(S, P.tv(rickTex()), -8.3, 2.55, -5.3, 0.7); // every TV plays Never Gonna Give You Up (rick-screen.js)
 
   // ---- north wall east of the bar: jukebox, stair door, payphone ----
   const jb = P.jukebox(); put(S, jb.g, 1.55, 0, -5.62); R.block(1.05, -6, 2.05, -5.3);
@@ -152,7 +153,7 @@ export function build(ctx) {
     const dk = t - dropT, beat = dk < 6 ? 0.7 + 0.3 * Math.sin(t * 3.5) : 0.85 + 0.15 * Math.sin(t * 2.2);
     pts[3].intensity = 8 * beat; stagePool.material.opacity = 0.3 * beat;
     for (const p of dj.platters) p.rotation.y = t * 3.5;
-    feed.offset.y = (t * 0.05) % 1;
+    tickRick(t);
     const k = t - noteT;
     notes.forEach((s, i) => { const u = (k - i * 0.25) / 2; if (u < 0 || u > 1) { s.visible = false; return; } s.visible = true; s.material.color.copy(c); s.material.opacity = Math.sin(u * Math.PI); s.position.set(1.55 + Math.sin(u * 6 + i) * 0.3, 1.4 + u * 1.2, -5.3); });
     const rk = t - ringT; pp.handset.rotation.z = rk < 2.5 ? Math.sin(t * 60) * 0.12 * (1 - rk / 2.5) : 0;

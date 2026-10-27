@@ -1,16 +1,46 @@
 // @ts-check
 // Eight Ball at the bar's pool table: bird's-eye 3D view, real 2D physics (pool-phys.js), 3D balls/cue (pool-view.js),
 // a transparent overlay with a small HUD strip. You vs 'House'. Esc puts the world back exactly as it was.
+import { TOP as TOP_INSET, bottomOf } from './overlay.js';
+import { hideBlockers } from './view.js';
 import * as THREE from 'three';
 import { setView, clearView, worldOf, hideOccluders } from './view.js';
 import { text, loop, coins, rng } from './util.js';
 import { FONT } from '../fonts.js';
-import { PAL, panel, badge, button, banner, title, glow, noise, particles, clamp, keyChip, ease } from './art.js';
+import { gx } from './gx.js';
 import * as P from './pool-phys.js';
 import { SFX } from '../sfx.js';
 import { buildView, TOP, colorOf } from './pool-view.js';
 
-const NAMES = ['YOU', 'HOUSE'];
+const NAMES = ['You', 'House'];
+// score bar: dark lacquer panels like the table's own trim, Sora, the app's own type
+const HUD_CSS = `
+.pool-hud{position:fixed;left:50%;transform:translateX(-50%);display:grid;grid-template-columns:1fr auto 1fr;gap:8px;z-index:3;pointer-events:none;
+  font-family:Sora,sans-serif;-webkit-font-smoothing:antialiased;color:#e8ebef}
+.pool-hud .side,.pool-hud .mid{border-radius:12px;background:rgba(21,23,26,.74);-webkit-backdrop-filter:blur(12px) saturate(1.2);backdrop-filter:blur(12px) saturate(1.2);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 0 0 1px rgba(255,255,255,.07),0 10px 24px -12px rgba(0,0,0,.8)}
+.pool-hud .side{padding:8px 14px;display:flex;flex-direction:column;justify-content:center;gap:6px;min-width:0;transition:box-shadow .3s}
+.pool-hud .s1{text-align:right}.pool-hud .s1 .row{flex-direction:row-reverse}.pool-hud .s1 .pips{justify-content:flex-end}
+.pool-hud .row{display:flex;justify-content:flex-start;align-items:baseline;gap:12px}
+.pool-hud b{font:700 20px/1.1 Sora,sans-serif;letter-spacing:-.02em;color:#a1a8b1;transition:color .3s,text-shadow .3s}
+.pool-hud i{font:600 11px/1.3 Sora,sans-serif;font-style:normal;color:#c2c7ce;white-space:nowrap;padding:3px 8px;border-radius:6px;background:#2c3035}
+.pool-hud .s0.on{box-shadow:inset 0 1px 0 rgba(255,220,170,.14),inset 0 0 0 2px rgba(127,220,149,.55),0 0 22px rgba(127,220,149,.18),0 8px 24px rgba(0,0,0,.45)}
+.pool-hud .s1.on{box-shadow:inset 0 1px 0 rgba(255,220,170,.14),inset 0 0 0 2px rgba(240,199,94,.55),0 0 22px rgba(240,199,94,.18),0 8px 24px rgba(0,0,0,.45)}
+.pool-hud .s0.on b{color:#7fdc95;text-shadow:0 0 12px rgba(127,220,149,.45)}.pool-hud .s1.on b{color:#f0c75e;text-shadow:0 0 12px rgba(240,199,94,.45)}
+.pool-hud .pips{display:flex;gap:4px;flex-wrap:wrap}
+.pool-hud .pips span{width:14px;height:14px;border-radius:50%;opacity:.3;
+  background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.75) 0 12%,transparent 30%),var(--c);box-shadow:inset 0 -2px 3px rgba(0,0,0,.45),0 1px 2px rgba(0,0,0,.5)}
+.pool-hud .pips span.st{background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.75) 0 12%,transparent 30%),linear-gradient(#f2ead8 0 26%,var(--c) 26% 74%,#f2ead8 74%)}
+.pool-hud .pips span.in{opacity:1}.pool-hud .pips span.gh{background:none;box-shadow:inset 0 0 0 1px rgba(255,220,170,.22);opacity:1}
+.pool-hud .mid{padding:8px 16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-width:180px}
+.pool-hud .mid span{font:600 15px/1.25 Sora,sans-serif;white-space:nowrap}
+.pool-hud .pw{width:100%;height:8px;border-radius:4px;background:#0c0806;box-shadow:inset 0 1px 2px rgba(0,0,0,.8),0 0 0 1px rgba(232,180,90,.35);overflow:hidden}
+.pool-hud .pw u{display:block;height:100%;transform-origin:left;transform:scaleX(0);border-radius:4px;background:linear-gradient(90deg,#3fbf7a,#7fdc95)}
+.pool-hud .pw u.warm{background:linear-gradient(90deg,#3fbf7a,#e8b04a)}.pool-hud .pw u.hot{background:linear-gradient(90deg,#e8b04a,#ff5a4a)}
+.pool-hud.small b,.pool-hud.small .mid span{font-size:13px;line-height:1.2}.pool-hud.small .mid{min-width:120px;padding:6px 10px}
+.pool-hud.small .side{padding:6px 10px}.pool-hud.small .pips span{width:10px;height:10px}
+.pool-hud.tiny{grid-template-columns:1fr 1fr;row-gap:6px}.pool-hud.tiny .mid{grid-column:1 / span 2;grid-row:2;min-width:0}
+`;
 const QUIPS_WIN = ['House pays. House is not happy about it.', 'Clean. Like a rebase with no conflicts.', 'Ship it. The table is yours.'];
 const QUIPS_LOSE = ['Skill issue. Rack again?', 'House always wins. Mostly.', 'That shot needed a code review.'];
 const QUIPS_EARLY8 = ['Sank the 8 early. Bold. Wrong, but bold.', 'Black ball, prod deploy, Friday. Classic.'];
@@ -20,14 +50,21 @@ export default [{
   match: (it, R) => it.id === 'pool' && R.id === 'bar',
   start(ctx) {
     const { S, R } = ctx;
-    const ov = ctx.overlay({ title: 'Eight Ball', sub: 'you vs the House', help: '<kbd>mouse</kbd>aim <kbd>hold click / space</kbd>power, release to shoot <kbd>&larr; &rarr;</kbd>fine aim <kbd>esc</kbd>leave' });
-    ov.el.style.background = 'transparent'; ov.el.style.alignItems = 'flex-start'; ov.el.style.cursor = 'crosshair';
-    ov.stage.style.marginTop = '12px';
-    const { c: hc, x: hx } = ov.canvas(400, 40, 2); hc.style.boxShadow = 'none'; hc.style.borderRadius = '0';
+    const ov = ctx.overlay({ title: 'Eight Ball', sub: 'you vs the House', help: '<kbd>mouse</kbd>aim <kbd>hold click / space</kbd>power, release to shoot <kbd>&larr; &rarr;</kbd>fine aim' });
+    const K = gx(ov);
+    ov.el.style.background = 'transparent'; ov.el.style.cursor = 'crosshair';
+    // ---- score bar: crisp HTML in Sora, sized to the table on screen ----
+    if (!document.getElementById('pool-hud-css')) { const st = document.createElement('style'); st.id = 'pool-hud-css'; st.textContent = HUD_CSS; document.head.appendChild(st); }
+    const hudEl = document.createElement('div'); hudEl.className = 'pool-hud';
+    hudEl.innerHTML = [0, 1].map(s => `<div class="side s${s}"><div class="row"><b>${NAMES[s]}</b><i></i></div><div class="pips"></div></div>`).join('').replace('</div></div><div class="side s1">', '</div></div><div class="mid"><span></span><div class="pw"><u></u></div></div><div class="side s1">');
+    ov.el.appendChild(hudEl);
+    const sides = [...hudEl.querySelectorAll('.side')], midT = /** @type {HTMLElement} */ (hudEl.querySelector('.mid span')), pwU = /** @type {HTMLElement} */ (hudEl.querySelector('.pw u'));
+    const help = /** @type {HTMLElement} */ (ov.el.querySelector('.help'));
 
     // ---- world: view, hide what sits above the felt ----
     const base = worldOf(R, 0.6, TOP, 1.0);
     setView(S, { target: base, dir: { x: 0, y: 1, z: 0.001 }, up: { x: 0, y: 0, z: -1 }, zoom: 0.95 }); hideOccluders(S);
+    const people = hideBlockers(S, S.scene, base, { x: 0, y: 1, z: 0 }, { me: true, radius: 2.2 }); ov.onClose(() => people.restore()); // nobody's head over the felt
     const hidden = [];
     R.static.traverse(o => { if (o.isInstancedMesh && o.count === 12 && o.visible) hidden.push(o); });
     for (const o of R.live.children) if (o.visible && Math.hypot(o.position.x - 0.6, o.position.z - 1.0) < 0.4 && (o.position.y > 1.2 || (/** @type {any} */ (o).geometry?.type === 'CircleGeometry'))) hidden.push(o); // lamp, its glow sprite, the additive floor pool
@@ -40,9 +77,9 @@ export default [{
     ov.onClose(() => { clearView(S); for (const o of hidden) o.visible = true; for (const [p, i] of dimmed) p.raw = i; V.dispose(); });
 
     // ---- popups + end panel (HTML, transparent) ----
-    const pop = document.createElement('div'); pop.style.cssText = `position:fixed;left:0;right:0;top:22%;text-align:center;font:32px/32px ${FONT.title};color:#ffb36b;text-shadow:0 3px 0 #3a2410,0 0 18px rgba(255,180,100,.4);pointer-events:none;opacity:0;transition:opacity .3s`;
+    const pop = document.createElement('div'); pop.style.cssText = `position:fixed;left:0;right:0;top:22%;text-align:center;font:800 30px/1.2 ${FONT.app};letter-spacing:-.02em;z-index:3;color:#f0c75e;text-shadow:0 2px 12px rgba(0,0,0,.7);pointer-events:none;opacity:0;transition:opacity .3s`;
     ov.el.appendChild(pop); let popT = 0;
-    const say = (s, col = '#ffb36b') => { pop.textContent = s; pop.style.color = col; pop.style.opacity = '1'; popT = 1.6; };
+    const say = (s, col = '#f0c75e') => { pop.textContent = s; pop.style.color = col; pop.style.opacity = '1'; popT = 1.6; };
 
     let r = rng((Math.random() * 1e9) | 0);
     /** @type {any} */ let G;
@@ -51,48 +88,37 @@ export default [{
       say('Break!');
     };
     newGame();
-    // full-screen kit card (title card at start, result card at the end), drawn on its own canvas over the 3D table
-    const CW = 480, CH = 270, card = document.createElement('canvas'); card.width = CW; card.height = CH;
-    card.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(96vw,170vh);aspect-ratio:16/9;image-rendering:pixelated;pointer-events:none;z-index:2';
-    ov.el.appendChild(card); const cx2 = /** @type {CanvasRenderingContext2D} */ (card.getContext('2d')); cx2.imageSmoothingEnabled = false;
-    const fx = particles(); let best = 0; try { best = Number(localStorage.getItem('gg-pool-wins')) || 0; } catch { /* private */ }
+    K.card({ title: 'Eight Ball', kicker: 'You vs the House', text: 'Solids or stripes, then the 8. Win a rack for 20 coins.', how: [[['Mouse'], 'aim'], [['Hold', 'Space'], 'power'], [['\u2190', '\u2192'], 'fine aim']], cta: 'Break', onGo: () => say('Break!') });
+    // ---- layout, redone on every resize: score bar on top, the table zoomed + shifted to fill the space left between it
+    // and the help bar, the cards fitted over the table at a crisp scale ----
+    const TW = 2.3 * 1.03, TD = 1.25 * 1.03; // table incl. rails (+ a little air), world units
+    const view = /** @type {any} */ (S.view), aimAt = base.clone();
+    const layout = () => {
+      const vw = innerWidth, vh = innerHeight, top = TOP_INSET(), bot = bottomOf(help), side = vw < 560 ? 8 : 16;
+      hudEl.classList.toggle('small', vw < 760 || vh < 520); hudEl.classList.toggle('tiny', vw < 520);
+      let ppu = 0, hudH = 0;
+      for (let i = 0; i < 2; i++) { // the bar's height depends on its width, which follows the table: settle in two passes
+        const barW = Math.min(vw - side * 2, Math.max(Math.min(560, vw - side * 2), TW * (ppu || 200))); hudEl.style.width = barW + 'px';
+        hudH = hudEl.offsetHeight; ppu = Math.min((vw - side * 2) / TW, (vh - top - hudH - 10 - bot) / TD); }
+      ppu = Math.max(40, ppu); const th0 = TD * ppu, y0 = top + Math.max(0, (vh - top - bot - (hudH + 10 + th0)) / 2); // bar + table as one centred block
+      hudEl.style.top = Math.round(y0) + 'px'; const cy = y0 + hudH + 10 + th0 / 2; // where the table's centre goes on screen
+      view.zoom = vh / (2 * ppu); aimAt.set(base.x, base.y, base.z - (cy - vh / 2) / ppu); // camera up = world -z
+      const th = 1.25 * ppu;
+      pop.style.top = Math.round(cy - th / 2 + th * 0.12) + 'px'; pop.style.fontSize = (vw < 640 ? 22 : 30) + 'px';
+    };
+    layout(); addEventListener('resize', layout); ov.onClose(() => removeEventListener('resize', layout)); requestAnimationFrame(layout);
+    let best = 0; try { best = Number(localStorage.getItem('gg-pool-wins')) || 0; } catch { /* private */ }
     let noSave = false;
-    const R0 = { on: false, win: false, quip: '', t: 0, reward: 0, hot: '', btns: /** @type {any[]} */ ([]), intro: 3.5, wins: 0 };
+    const R0 = { reward: 0, wins: 0 };
     const finish = (win, why) => {
       SFX.play(win ? 'win' : 'fail');
       G.phase = 'over';
-      if (win) { try { coins(S).spend(-20); R0.reward = 20; } catch { R0.reward = 0; } R0.wins++; if (R0.wins > best) { best = R0.wins; if (!noSave) try { localStorage.setItem('gg-pool-wins', String(best)); } catch { /* */ } } fx.confetti(CW); fx.burst(CW / 2, CH / 2 - 20, { n: 40 }); } else { R0.reward = 0; R0.wins = 0; }
+      if (win) { try { coins(S).spend(-20); R0.reward = 20; } catch { R0.reward = 0; } R0.wins++; if (R0.wins > best) { best = R0.wins; if (!noSave) try { localStorage.setItem('gg-pool-wins', String(best)); } catch { /* */ } } K.swell(); } else { R0.reward = 0; R0.wins = 0; }
       const q = win ? QUIPS_WIN : why === 'early8' ? QUIPS_EARLY8 : QUIPS_LOSE;
-      R0.on = true; R0.win = win; R0.quip = q[(r() * q.length) | 0]; R0.t = 0; card.style.pointerEvents = 'auto';
+      K.result({ title: win ? 'You win' : 'House wins', big: win ? '+' + R0.reward : '0', line: q[(r() * q.length) | 0], stats: [[R0.wins, 'Streak'], [best, 'Best streak']], again: "Rack 'em", onAgain: again });
     };
-    const cardAt = e => { const rc = card.getBoundingClientRect(); const px = (e.clientX - rc.left) / rc.width * CW, py = (e.clientY - rc.top) / rc.height * CH; return R0.btns.find(b => px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h); };
     if (typeof (/** @type {any} */ (globalThis)).__actIds === 'function') /** @type {any} */ (globalThis).__pool = { finish: w => { noSave = true; finish(w, 'win'); } }; ov.onClose(() => { /** @type {any} */ (globalThis).__pool = null; }); // test hook
-    const again = () => { R0.on = false; card.style.pointerEvents = 'none'; newGame(); };
-    card.addEventListener('pointermove', e => { const b = cardAt(e); R0.hot = b ? b.id : ''; card.style.cursor = b ? 'pointer' : ''; });
-    card.addEventListener('pointerdown', e => { e.stopPropagation(); const b = cardAt(e); if (!b) return; SFX.play('ui.tap'); if (b.id === 'again') again(); else ov.close(); });
-    const endKey = e => { if (!R0.on || R0.t < 0.6) return; if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); again(); } };
-    addEventListener('keydown', endKey); ov.onClose(() => removeEventListener('keydown', endKey));
-    let feltCache = null; const feltStrip = () => { if (feltCache) return feltCache; const c = document.createElement('canvas'); c.width = 400; c.height = 40; const g = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
-      panel(g, 0, 0, 400, 38, { style: 'wood', r: 4 }); panel(g, 4, 3, 130, 32, { style: 'felt', r: 3 }); panel(g, 266, 3, 130, 32, { style: 'felt', r: 3 }); panel(g, 138, 3, 124, 32, { style: 'metal', r: 3 });
-      for (const X of [2, 397]) { g.fillStyle = PAL.goldD; g.fillRect(X - 1, 3, 3, 32); g.fillStyle = PAL.goldHi; g.fillRect(X - 1, 3, 1, 32); } // brass caps
-      feltCache = c; return c; };
-    let lastHud = performance.now();
-    function drawCard() {
-      const now = performance.now(), dt = Math.min(0.05, (now - lastHud) / 1000); lastHud = now; const x = cx2; x.clearRect(0, 0, CW, CH);
-      if (R0.intro > 0 && !R0.on) { R0.intro -= dt; const a = clamp(R0.intro, 0, 1), k = ease.outBack(clamp((3.5 - R0.intro) / 0.4, 0, 1)); x.save(); x.globalAlpha = a; x.translate(CW / 2, 70); x.scale(k, k); x.translate(-CW / 2, -70);
-        panel(x, CW / 2 - 130, 22, 260, 96, { style: 'felt' }); glow(x, CW / 2, 50, 120, '#ffcf8a', 0.15);
-        title(x, 'EIGHT BALL', CW / 2, 54, { size: 32, color: PAL.goldHi, glow: PAL.gold, glowR: 8 });
-        let X = CW / 2 - 118; title(x, 'mouse: aim, hold + release', X, 76, { size: 16, body: true, align: 'left' }); X += 162; X += keyChip(x, 'SPACE', X, 76) + 4; title(x, 'power', X, 76, { size: 16, body: true, align: 'left' });
-        X = CW / 2 - 70; X += keyChip(x, '<', X, 98) + 2; X += keyChip(x, '>', X, 98) + 4; title(x, 'fine aim', X, 98, { size: 16, body: true, align: 'left', color: PAL.cream });
-        x.restore(); }
-      if (R0.on) { R0.t += dt; banner(x, CW, CH - 40, R0.win ? 'YOU WIN' : 'HOUSE WINS', R0.quip, R0.t, { color: R0.win ? PAL.green : PAL.red, style: 'felt' });
-        R0.btns = []; if (R0.t > 0.4) {
-          badge(x, CW / 2 - 116, 168, 'reward', R0.reward ? '+' + R0.reward : '0', { color: PAL.gold, w: 74, style: 'wood' });
-          badge(x, CW / 2 - 37, 168, 'streak', R0.wins, { color: PAL.green, w: 74, style: 'wood' }); badge(x, CW / 2 + 42, 168, 'best', best, { color: PAL.cyan, w: 74, style: 'wood' });
-          R0.btns.push({ id: 'again', ...button(x, CW / 2 - 108, 214, 104, 26, "RACK 'EM", { primary: true, hot: R0.hot === 'again' }) });
-          R0.btns.push({ id: 'leave', ...button(x, CW / 2 + 4, 214, 104, 26, 'LEAVE', { hot: R0.hot === 'leave' }) }); } }
-      fx.draw(x, dt);
-    }
+    function again() { newGame(); }
     // ---- input ----
     const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(TOP + P.BR)), hit = new THREE.Vector3();
     const toTable = e => { const rc = S.renderer.domElement.getBoundingClientRect(); ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1); ray.setFromCamera(ndc, S.cam); if (!ray.ray.intersectPlane(plane, hit)) return null; const l = V.g.worldToLocal(hit.clone()); return [l.x, l.z]; };
@@ -101,9 +127,9 @@ export default [{
     const aimAtMouse = () => { if (!mouse || G.turn !== 0) return; const cb = G.balls[0];
       if (G.phase === 'place') { const [u, v] = P.placeCue(G.balls, mouse[0], mouse[1]); cb.u = u; cb.v = v; }
       else if (G.phase === 'aim') { const d = Math.hypot(mouse[0] - cb.u, mouse[1] - cb.v); if (d > 0.01) G.ang = Math.atan2(mouse[1] - cb.v, mouse[0] - cb.u); } };
-    const press = () => { if (G.turn !== 0) return; if (G.phase === 'place') { G.phase = 'aim'; say('Your shot', '#6ee7a0'); return; } if (G.phase === 'aim') { G.phase = 'charge'; G.hold = 0; } };
+    const press = () => { if (G.turn !== 0) return; if (G.phase === 'place') { G.phase = 'aim'; say('Your shot', '#7fdc95'); return; } if (G.phase === 'aim') { G.phase = 'charge'; G.hold = 0; } };
     const release = () => { if (G.phase !== 'charge') return; if (G.hold < 0.14) { G.phase = 'aim'; G.power = 0; return; } fire(G.power); };
-    const onDown = e => { if (e.button !== 0 || G.phase === 'over' || /** @type {HTMLElement} */ (e.target).closest('button')) return; R0.intro = Math.min(R0.intro, 0.4); onMove(e); press(); };
+    const onDown = e => { if (e.button !== 0 || G.phase === 'over' || /** @type {HTMLElement} */ (e.target).closest('button, .gx-layer')) return; onMove(e); press(); };
     const onUp = e => { if (e.button === 0) release(); };
     const held = new Set();
     const kd = e => { if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) press(); } if (/Arrow(Left|Right)/.test(e.code)) { e.preventDefault(); held.add(e.code); } };
@@ -133,8 +159,8 @@ export default [{
       const mine = G.groups[by]; const scored = obj.some(n => !mine || (mine === 'solids' ? P.SOLID(n) : P.STRIPE(n)));
       if (cuePot) { const cb = G.balls[0]; cb.on = true; cb.sink = 0; cb.pocket = null; const [u, v] = P.placeCue(G.balls, P.HEAD_U - 0.2, 0); cb.u = u; cb.v = v; V.balls[0].scale.setScalar(1); }
       if (foul) { SFX.play('fail', { vol: 0.5 }); say(foul + (other === 0 ? ' Ball in hand.' : ''), '#ff6b6b'); G.turn = other; G.inHand = true; }
-      else if (scored) { SFX.play(by === 0 ? 'score' : 'ui.tap', { vol: 0.6 }); if (!G.groups[by] || obj.length) say(obj.length > 1 ? `${obj.length} down!` : by === 0 ? pick(['Nice pot', 'Clean', 'Filthy', 'Sunk']) : 'House pots', by === 0 ? '#6ee7a0' : '#ffb36b'); G.inHand = false; }
-      else { G.turn = other; G.inHand = false; if (!popT) say(other === 0 ? 'Your shot' : "House's shot", other === 0 ? '#6ee7a0' : '#ffb36b'); }
+      else if (scored) { SFX.play(by === 0 ? 'score' : 'ui.tap', { vol: 0.6 }); if (!G.groups[by] || obj.length) say(obj.length > 1 ? `${obj.length} down!` : by === 0 ? pick(['Nice pot', 'Clean', 'Filthy', 'Sunk']) : 'House pots', by === 0 ? '#7fdc95' : '#f0c75e'); G.inHand = false; }
+      else { G.turn = other; G.inHand = false; if (!popT) say(other === 0 ? 'Your shot' : "House's shot", other === 0 ? '#7fdc95' : '#f0c75e'); }
       if (G.turn === 0) G.phase = G.inHand ? 'place' : 'aim'; else G.phase = 'ai', G.ai = null;
       aimAtMouse();
     };
@@ -187,28 +213,23 @@ export default [{
       V.cue.children[0].visible = true;
       // juice: pocket ring + camera shake
       if (G.ring > 0) { G.ring = Math.max(0, G.ring - dt * 2.2); V.ring.position.set(G.ringP[0], TOP + 0.002, G.ringP[1]); V.ring.scale.setScalar(0.04 + (1 - G.ring) * 0.12); /** @type {any} */ (V.ring.material).opacity = G.ring * 0.9; } else /** @type {any} */ (V.ring.material).opacity = 0;
-      G.shake = Math.max(0, G.shake - dt * 0.4); if (S.view) S.view.target.set(base.x + (Math.random() - 0.5) * G.shake * 0.2, base.y, base.z + (Math.random() - 0.5) * G.shake * 0.2);
-      hud(); drawCard();
+      G.shake = Math.max(0, G.shake - dt * 0.4); if (S.view) S.view.target.set(aimAt.x + (Math.random() - 0.5) * G.shake * 0.2, aimAt.y, aimAt.z + (Math.random() - 0.5) * G.shake * 0.2); people.tick(dt);
+      hud();
     });
 
+    let hudKey = '';
     function hud() {
-      const x = hx; x.clearRect(0, 0, 400, 40); x.imageSmoothingEnabled = false; x.drawImage(feltStrip(), 0, 0); const tt = performance.now() / 1000;
-      for (const s of [0, 1]) {
-        const L = s === 0, x0 = L ? 10 : 390, al = L ? 'left' : 'right', on = G.turn === s && G.phase !== 'over';
-        if (on) glow(x, L ? 60 : 340, 18, 60, L ? '#6ee7a0' : '#ffb36b', 0.18 + Math.sin(tt * 3) * 0.06);
-        title(x, NAMES[s], x0, 15, { size: 16, color: on ? (L ? PAL.green : PAL.gold) : PAL.dim, align: al });
-        title(x, G.groups[s] || 'open', L ? 128 : 272, 15, { size: 16, body: true, color: PAL.cream, align: L ? 'right' : 'left' });
-        const set = G.groups[s] ? (G.groups[s] === 'solids' ? [1, 2, 3, 4, 5, 6, 7] : [9, 10, 11, 12, 13, 14, 15]) : G.pots[s];
-        set.forEach((n, i) => { const cx = L ? 14 + i * 12 : 386 - i * 12, gone = G.pots[s].includes(n);
-          x.globalAlpha = gone ? 1 : 0.35; x.fillStyle = 'rgba(0,0,0,0.5)'; x.beginPath(); x.arc(cx + 1, 29, 4.5, 0, 7); x.fill(); x.fillStyle = colorOf(n); x.beginPath(); x.arc(cx, 28, 4.5, 0, 7); x.fill();
-          if (P.STRIPE(n)) { x.fillStyle = '#f2ead8'; x.fillRect(cx - 4, 24, 8, 2); x.fillRect(cx - 4, 30, 8, 2); } x.fillStyle = 'rgba(255,255,255,0.7)'; x.fillRect(cx - 2, 25, 2, 1); x.globalAlpha = 1; });
-      }
-      const ph = G.phase, cx = 200;
+      const ph = G.phase, tt = performance.now() / 1000;
       const msg = ph === 'over' ? 'game over' : ph === 'place' ? 'ball in hand: click' : ph === 'roll' ? 'rolling...' : G.turn === 1 ? 'House lines up' + '...'.slice(0, ((tt / 0.3) | 0) % 4) : ph === 'charge' ? 'release to shoot' : 'aim, hold to shoot';
-      title(x, msg, cx, 16, { size: 16, body: true, color: PAL.cream });
-      x.fillStyle = '#0a0806'; x.fillRect(cx - 52, 22, 104, 9);
-      const pw = G.power; if (pw > 0) { const pc = pw > 0.85 ? PAL.red : pw > 0.5 ? PAL.gold : PAL.green; const g = x.createLinearGradient(0, 23, 0, 30); g.addColorStop(0, '#fff'); g.addColorStop(0.3, pc); g.addColorStop(1, '#000'); x.fillStyle = g; x.fillRect(cx - 51, 23, 102 * pw, 7); glow(x, cx - 51 + 102 * pw, 26, 10, pc, 0.6); }
-      x.fillStyle = PAL.goldD; x.fillRect(cx - 52, 21, 104, 1); x.fillRect(cx - 52, 31, 104, 1);
+      const key = [msg, G.turn, ph, G.groups.join(), G.pots.map(p => p.join('.')).join('|')].join('/');
+      pwU.style.transform = `scaleX(${G.power.toFixed(3)})`; pwU.className = G.power > 0.85 ? 'hot' : G.power > 0.5 ? 'warm' : '';
+      if (key === hudKey) return; hudKey = key; midT.textContent = msg;
+      for (const s of [0, 1]) {
+        const el = sides[s], on = G.turn === s && ph !== 'over'; el.classList.toggle('on', on);
+        /** @type {HTMLElement} */ (el.querySelector('i')).textContent = G.groups[s] || 'open';
+        const set = G.groups[s] ? (G.groups[s] === 'solids' ? [1, 2, 3, 4, 5, 6, 7] : [9, 10, 11, 12, 13, 14, 15]) : G.pots[s];
+        /** @type {HTMLElement} */ (el.querySelector('.pips')).innerHTML = set.map(n => `<span class="${P.STRIPE(n) ? 'st' : ''}${G.pots[s].includes(n) ? ' in' : ''}" style="--c:${colorOf(n)}"></span>`).join('') + '<span class="gh"></span>'.repeat(Math.max(0, 7 - set.length)); /* empty slots until a group is set */
+      }
     }
   },
 }];

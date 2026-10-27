@@ -9,7 +9,7 @@
 //   badge(x, X, Y, label, value, { color })      a stat chip (label small, value big), e.g. POT / STREAK / BEST
 //   button(x, X, Y, W, H, label, { hot, primary, disabled })   shaded, bevelled pixel button (+ hover glow when hot)
 //   banner(x, W, H, title, sub, t, { color })    big animated result / title card (WIN / BUST / LEVEL 2), eases in
-//   title(x, s, X, Y, { size, color, glow })     Alagard heading with an ink outline and optional glow
+//   title(x, s, X, Y, { size, color, glow })     m5x7 heading with an ink outline and optional glow
 //   shine(x, X, Y, W, H, t)                      a moving highlight sweep over a panel (attention)
 //   fx = particles()                             fx.burst(x, y, { n, colors, speed, gravity }), fx.confetti(W), fx.sparkle(x, y), fx.draw(x, dt)
 //   shake = shaker(); shake.kick(6); x.save(); shake.apply(x, dt); ... x.restore()   screen shake that settles
@@ -34,7 +34,7 @@ export { shade };
 
 /** text with an ink outline (crisp on any background) */
 export function title(x, s, X, Y, o = {}) {
-  const size = o.size || 16; x.save(); x.font = o.body ? CFONT.body(size) : CFONT.title(size); x.textAlign = o.align || 'center'; x.textBaseline = 'alphabetic';
+  const size = o.size || 16; x.save(); x.font = CFONT.body(size); /* m5x7 for all mini-game text (owner) */ x.textAlign = o.align || 'center'; x.textBaseline = 'alphabetic';
   X = Math.round(X); Y = Math.round(Y);
   if (o.glow) { x.shadowColor = o.glow; x.shadowBlur = o.glowR || 10; x.fillStyle = o.glow; x.fillText(s, X, Y); x.shadowBlur = 0; }
   x.fillStyle = o.ink || PAL.ink; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [0, 2], [1, 2], [-1, 2]]) x.fillText(s, X + dx, Y + dy);
@@ -129,8 +129,11 @@ export function button(x, X, Y, W, H, label, o = {}) {
 /** animated result / title card. t = seconds since shown. */
 export function banner(x, W, H, s, sub, t, o = {}) {
   const k = clamp(t / 0.45, 0, 1), sc = ease.outBack(k), a = clamp(t / 0.2, 0, 1);
-  x.save(); x.globalAlpha = a * 0.55; x.fillStyle = '#000'; x.fillRect(0, 0, W, H); x.globalAlpha = a;
   const bw = Math.min(W - 40, 300), bh = sub ? 74 : 54, cy = H / 2;
+  // soft shadow behind the banner only (no dimmed rectangle: its edges show over the game / the world behind)
+  x.save(); x.globalAlpha = a * 0.6; x.translate(W / 2, cy); x.scale(1, (bh + 70) / (bw + 70)); const sh = x.createRadialGradient(0, 0, 0, 0, 0, (bw + 70) / 2);
+  sh.addColorStop(0, 'rgba(0,0,0,0.85)'); sh.addColorStop(0.6, 'rgba(0,0,0,0.5)'); sh.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = sh; x.beginPath(); x.arc(0, 0, (bw + 70) / 2, 0, 7); x.fill(); x.restore();
+  x.save(); x.globalAlpha = a;
   x.translate(W / 2, cy); x.scale(sc, sc); x.translate(-W / 2, -cy);
   panel(x, W / 2 - bw / 2, cy - bh / 2, bw, bh, { style: o.style || 'neon' });
   glow(x, W / 2, cy, bw * 0.6, o.color || PAL.gold, 0.25);

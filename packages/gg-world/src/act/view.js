@@ -14,7 +14,7 @@ import * as THREE from 'three';
 /** Room-local point -> world point. */
 export function worldOf(R, x, y, z) { return new THREE.Vector3(x + R.root.position.x, y, z + R.root.position.z); }
 /** @param {any} S @param {{target:THREE.Vector3, dir:{x:number,y:number,z:number}, up?:{x:number,y:number,z:number}, zoom:number}} v */
-export function setView(S, v) { S.view = { target: v.target.clone(), dir: new THREE.Vector3(v.dir.x, v.dir.y, v.dir.z), up: v.up, zoom: v.zoom }; }
+export function setView(S, v) { S.view = { target: v.target.clone(), dir: new THREE.Vector3(v.dir.x, v.dir.y, v.dir.z), up: v.up, zoom: v.zoom, speed: /** @type {any} */ (v).speed ?? 5 }; }
 export function clearView(S) { S.view = null; S.wallsDown = false; }
 /** Lower every wall on the current floor while a close-up is active (the main loop restores normal cutaways). */
 export function hideOccluders(S) { S.wallsDown = true; }

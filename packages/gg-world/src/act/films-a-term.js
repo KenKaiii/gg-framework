@@ -1,8 +1,8 @@
 // @ts-check
 // "Wake up, Neo" terminal close-up: the scripted sequence, a knock in the world, then a tiny joke shell.
 import { SFX } from '../sfx.js';
-import { loop, text } from './util.js';
-import { crt, typer, wrap, blinkOn, titleCard, rainTile } from './films-a-crt.js';
+import { gx } from './gx.js';
+import { crtDevice, typer, esc, CURSOR } from './films-a-crt.js';
 
 const SCRIPT = ['Wake up, Neo...', 'The Matrix has you...', 'Follow the white rabbit.', 'Knock, knock, Neo.'];
 const CPS = 20, HOLD = 0.5;
@@ -27,46 +27,36 @@ function run(raw) {
 /** @param {any} ctx */
 export function startTerminal(ctx) {
   const { R } = ctx;
-  const ov = ctx.overlay({ title: 'Terminal', sub: 'Night Shift · your PC', help: '<kbd>watch</kbd>... <kbd>esc</kbd> leave' });
-  const W = 480, H = 270; const { x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
-  const st = { t: 0, phase: 'script', flash: 0, log: /** @type {{s:string,c:string}[]} */ ([]), shake: 0, bye: -1 };
+  const ov = ctx.overlay({ title: 'Terminal', sub: 'Night Shift · your PC', help: '<kbd>watch</kbd> the screen' });
+  const K = gx(ov), scene = K.scene({ aspect: 4 / 3, maxW: 900 });
+  const dev = crtDevice(scene, { name: 'OMNIVIEW 14', fs: '4.2cqh' });
+  const log = /** @type {{s:string,c:string}[]} */ ([]); let phase = 'wait', timers = /** @type {any[]} */ ([]), started = false;
+  const later = (ms, f) => timers.push(setTimeout(() => ov.el.isConnected && f(), ms));
+  ov.onClose(() => timers.forEach(clearTimeout));
+  const draw = (scriptLine) => {
+    if (phase !== 'shell') { dev.txt.classList.add('gxcrt-top'); dev.txt.innerHTML = `<div style="font-size:1.6em">${esc(scriptLine || '')}${CURSOR}</div>`; return; }
+    dev.txt.classList.remove('gxcrt-top');
+    dev.txt.innerHTML = log.slice(-18).map(l => `<div style="color:${l.c}">${esc(l.s)}</div>`).join('') + `<div>&gt; ${esc(sh.buf)}${CURSOR}</div>`;
+  };
   const sh = typer(ov, v => {
-    if (st.phase !== 'shell') return;
-    st.log.push({ s: '> ' + v, c: G }); SFX.play('blip', { vol: 0.3, delay: 0.15 });
+    if (phase !== 'shell') return;
+    log.push({ s: '> ' + v, c: G }); SFX.play('blip', { vol: 0.3, delay: 0.15 });
     const out = run(v);
-    if (out === 'exit') { st.log.push({ s: 'goodbye, mr. anderson.', c: '#e0a458' }); st.bye = st.t + 1.1; return; }
-    for (const l of out) st.log.push({ s: l, c: l === 'it was you' ? '#ff6b6b' : '#b8f5d0' });
-    if (st.log.length > 40) st.log.splice(0, st.log.length - 40);
-  }, 34);
-  // script timeline
-  const starts = []; let acc = 3.0; for (const s of SCRIPT) { starts.push(acc); acc += s.length / CPS + HOLD + 0.5; }
-  const knockAt = acc;
-  loop(ov, dt => {
-    st.t += dt; const t = st.t;
-    if (st.bye > 0 && t > st.bye) { st.bye = -1; ov.close(); return; }
-    if (st.phase === 'script' && t >= knockAt) {
-      st.phase = 'shell'; st.flash = 1; st.shake = 0.5; R.filmsA?.knock();
-      st.log.push({ s: '*knock knock*', c: '#e0a458' }, { s: 'type help', c: DIM });
-      ov.setHelp('<kbd>type</kbd> a command <kbd>enter</kbd> run <kbd>esc</kbd> leave'); ov.setSub('somebody is at the door');
-    }
-    st.flash = Math.max(0, st.flash - dt * 1.4); st.shake = Math.max(0, st.shake - dt);
-    const ox = st.shake > 0 ? Math.round(Math.sin(t * 90) * 3 * st.shake * 2) : 0;
-    x.save(); x.translate(ox, 0);
-    crt(x, W, H, (sx, sy, sw, shh) => {
-      const rain = rainTile(sw, shh), ry = (t * 9) % shh; x.save(); x.globalAlpha = st.phase === 'script' ? 0.16 : 0.1; x.drawImage(rain, sx, sy + ry - shh); x.drawImage(rain, sx, sy + ry); x.restore();
-      if (st.phase === 'script') {
-        let i = starts.length - 1; while (i > 0 && t < starts[i]) i--;
-        const n = Math.max(0, Math.min(SCRIPT[i].length, Math.floor((t - starts[i]) * CPS)));
-        const s = SCRIPT[i].slice(0, n), cur = blinkOn(t) ? '█' : '';
-        text(x, s + cur, sx + 16, sy + 44, { size: 32, color: G });
-      } else {
-        const lines = []; for (const l of st.log) for (const w of wrap(x, l.s, sw - 28)) lines.push({ s: w, c: l.c });
-        lines.push({ s: '> ' + sh.buf + (blinkOn(t) ? '_' : ''), c: G });
-        const max = Math.floor((shh - 20) / 16), vis = lines.slice(-max);
-        vis.forEach((l, k) => text(x, l.s, sx + 14, sy + 24 + k * 16, { color: l.c }));
-      }
-    }, { flash: st.flash, beige: '#2c3430', key: 'neo' });
-    x.restore();
-    titleCard(x, W, H, t, { name: 'Wake up, Neo', sub: 'watch the screen, then type commands', keys: [['type', 'command'], ['enter', 'run'], ['esc', 'leave']], color: '#6ee7a0' });
-  });
+    if (out === 'exit') { log.push({ s: 'goodbye, mr. anderson.', c: '#e0a458' }); draw(); later(1100, () => ov.close()); return; }
+    for (const l of out) log.push({ s: l, c: l === 'it was you' ? '#ff6b6b' : '#b8f5d0' });
+    if (log.length > 40) log.splice(0, log.length - 40);
+    draw();
+  }, 34, () => draw());
+  const play = () => {
+    if (started) return; started = true; phase = 'script'; let at = 600;
+    for (const s of SCRIPT) { for (let n = 0; n <= s.length; n++) { const k = n; later(at + k * 1000 / CPS, () => { draw(s.slice(0, k)); if (k) SFX.play('key', { vol: 0.15, jitter: 0.2 }); }); } at += s.length * 1000 / CPS + (HOLD + 0.5) * 1000; }
+    later(at, () => {
+      phase = 'shell'; dev.flash(); K.swell(); R.filmsA?.knock();
+      dev.el.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(5px)' }, { transform: 'translateX(0)' }], { duration: 400 });
+      log.push({ s: '*knock knock*', c: '#e0a458' }, { s: 'type help', c: DIM }); draw();
+      ov.setHelp('<kbd>type</kbd> a command <kbd>enter</kbd> run'); ov.setSub('somebody is at the door');
+    });
+  };
+  draw('');
+  K.card({ title: 'Wake up, Neo', text: 'Watch the screen. Then type commands.', how: [[['Type'], 'command'], [['Enter'], 'run']], cta: 'Watch', onGo: play });
 }

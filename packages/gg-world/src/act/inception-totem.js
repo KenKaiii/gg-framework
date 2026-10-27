@@ -6,16 +6,17 @@ import { SFX } from '../sfx.js';
 // top spin-up purr and the topple clatter
 SFX.define('limbo.spin', (o, t, p, K) => K.tone(o, t, { type: 'triangle', f: 300 * p, f1: 520 * p, v: 0.06, a: 0.02, d: 0.35 }));
 SFX.define('limbo.topple', (o, t, p, K) => { [0, 0.09, 0.16, 0.21].forEach((d, i) => K.tone(o, t + d, { type: 'sine', f: (900 - i * 60) * p, v: 0.08 - i * 0.015, d: 0.05 })); });
-import { loop, text, coins } from './util.js';
-import { PAL, panel as artPanel, badge, button, banner, title, glow, shine, coin, particles, shaker } from './art.js';
+import { loop, coins } from './util.js';
 import { setView, clearView, hideOccluders, worldOf } from './view.js';
-import { hook, seeThrough, loadNum, saveNum, pops, panel } from './inception-util.js';
+import { hook, loadNum, saveNum } from './inception-util.js';
+import { gx, GX } from './gx.js';
+import { FONT } from '../fonts.js';
 
 /** @param {any} ctx */
 export function startTotem(ctx) {
   const { R, S } = ctx, I = R.inception, ts = I.topSpin; let wob = false;
-  const ov = ctx.overlay({ title: 'The Totem', sub: 'is this a dream?', help: '<kbd>space</kbd> spin / leave the room <kbd>click</kbd> same <kbd>esc</kbd> stop' });
-  const W = 480, H = 270, { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false; seeThrough(ov, c, 0.08);
+  const ov = ctx.overlay({ title: 'The Totem', sub: 'is this a dream?', help: '<kbd>space</kbd> / <kbd>click</kbd> spin, or leave the room to bank it' });
+  const K = gx(ov);
   const camT = worldOf(R, 9.2, 0.82, 4.2), camD = { x: 0.25, y: 0.42, z: 1 }; const camL = Math.hypot(camD.x, camD.y, camD.z);
   setView(S, { target: camT, dir: camD, zoom: 0.55 });
   // anyone (seated NPCs, visitors) standing on the camera line would block the close-up: hide them while it's open
@@ -29,37 +30,43 @@ export function startTotem(ctx) {
     const perp = Math.sqrt(Math.max(0, vx * vx + vy * vy + vz * vz - along * along)), block = along > 0.3 && perp < 1.5;
     if (block && !hidden.has(o)) { hidden.set(o, true); o.visible = false; } else if (!block && hidden.has(o)) { o.visible = true; hidden.delete(o); } } };
   hidePeople(); hideOccluders(S); const meVis = S.me.root.visible; S.me.root.visible = false; // the player would stand between camera and top
-  let btn = null, hoverBtn = false;
-  c.addEventListener('pointermove', e => { const r = c.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W, py = (e.clientY - r.top) / r.height * H; hoverBtn = !!btn && px >= btn.x && px <= btn.x + btn.w && py >= btn.y && py <= btn.y + btn.h; });
-  const st = { phase: 'ready', t: 0, pt: 0, pot: 0, streak: 0, banked: 0, fate: 'fall', T: 0, black: 0, msg: 'Press SPACE to spin the top.', msgC: '#e8dcc0', shake: 0 };
-  let best = loadNum('totem-streak'), bestBank = loadNum('totem-bank'); const P = pops();
+  const st = { phase: 'ready', t: 0, pt: 0, pot: 0, streak: 0, banked: 0, fate: 'fall', T: 0, black: 0, msg: 'Spin the top.', msgC: GX.text2 };
+  let best = loadNum('totem-streak'), bestBank = loadNum('totem-bank');
+  const hud = K.hud([{ id: 'pot', label: 'Pot', tone: 'gold' }, { id: 'streak', label: 'Streak', tone: 'up' }, { id: 'banked', label: 'Banked' }],
+    [{ id: 'best', label: 'Best streak', value: best, tone: 'teal' }, { id: 'bank', label: 'Best bank', value: bestBank, tone: 'pink' }]);
+  // the message strip + action button, docked above the help line
+  const bar = document.createElement('div');
+  bar.style.cssText = `position:fixed;left:50%;bottom:118px;transform:translateX(-50%);z-index:3;display:flex;align-items:center;gap:14px;padding:10px 10px 10px 18px;border-radius:14px;background:rgba(21,23,26,.78);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 0 0 1px rgba(255,255,255,.07),0 12px 30px -12px rgba(0,0,0,.8);font:500 14px/1.3 ${FONT.app};color:${GX.text2};max-width:calc(100vw - 40px)`;
+  bar.innerHTML = '<span class="m"></span><button class="gx-btn pri" type="button">Spin</button>';
+  const msgEl = /** @type {HTMLElement} */ (bar.querySelector('.m')), actBtn = /** @type {HTMLElement} */ (bar.querySelector('button'));
+  ov.el.appendChild(bar);
+  const veil = document.createElement('div'); veil.style.cssText = 'position:fixed;inset:0;z-index:4;background:#000;opacity:0;pointer-events:none;transition:opacity .2s'; ov.el.appendChild(veil);
+  let lastMsg = '', lastAct = '';
+  const P = { add: (s, _x, _y, c) => K.pop(innerWidth / 2, innerHeight * 0.42 + (c ? 34 : 0), s, c || 'gold') };
   const spin = () => {
     SFX.play('whoosh'); SFX.play('limbo.spin', { delay: 0.1 });
     st.phase = 'spin'; st.pt = 0; st.pot = 0; const r = Math.random();
     st.fate = r < 0.15 ? 'dream' : 'fall'; st.T = st.fate === 'dream' ? 7 + Math.random() * 2 : 1.6 + Math.random() * 7.5;
-    ts.on = true; ts.speed = 40; ts.tilt = 0; ts.wob = 0; st.msg = 'It spins... SPACE to walk away and bank it.'; st.msgC = '#e8dcc0';
+    ts.on = true; ts.speed = 40; ts.tilt = 0; ts.wob = 0; st.msg = 'It spins... leave the room to bank the pot.'; st.msgC = GX.text2;
   };
   const bank = (mult = 1) => {
-    const got = Math.floor(st.pot * mult); st.banked += got; st.streak++; P.add('+' + got, W / 2, 120);
-    const cn = Math.floor(got / 25); if (cn > 0) { coins(S).spend(-cn); P.add('+' + cn + ' coins', W / 2, 140, '#6ee7a0'); }
+    const got = Math.floor(st.pot * mult); st.banked += got; st.streak++; P.add('+' + got);
+    const cn = Math.floor(got / 25); if (cn > 0) { coins(S).spend(-cn); P.add('+' + cn + ' coins', 0, 0, 'up'); }
     if (st.streak > best) { best = st.streak; saveNum('totem-streak', best); } if (st.banked > bestBank) { bestBank = st.banked; saveNum('totem-bank', bestBank); }
     st.phase = 'ready'; SFX.play(mult > 1 ? 'win' : 'success'); SFX.play('step.marble', { delay: 0.25, vol: 0.6 });
   };
   const kd = e => { if (e.code !== 'Space') return; e.preventDefault();
     if (st.phase === 'ready' || st.phase === 'fell') spin();
-    else if (st.phase === 'spin') { (st.bankFn || bank)(); st.msg = 'You leave before it decides. Streak ' + st.streak + '.'; st.msgC = PAL.green; } };
-  // mouse: a click anywhere is the space key
-  const md = e => { if (e.button === 0) { e.preventDefault(); kd({ code: 'Space', preventDefault() {} }); } }; c.addEventListener('pointerdown', md); c.style.cursor = 'pointer'; ov.onClose(() => c.removeEventListener('pointerdown', md));
+    else if (st.phase === 'spin') { (st.bankFn || bank)(); st.msg = 'You leave before it decides. Streak ' + st.streak + '.'; st.msgC = GX.success; } };
+  // mouse: a click anywhere (but the overlay's own buttons) is the space key
+  const md = e => { if (e.button !== 0 || (e.target instanceof Element && e.target.closest('button,a,.gx-layer') && e.target !== actBtn)) return; e.preventDefault(); kd({ code: 'Space', preventDefault() {} }); };
+  ov.el.addEventListener('pointerdown', md); ov.el.style.cursor = 'pointer';
   addEventListener('keydown', kd); hook({ totem: { get phase() { return st.phase; }, get streak() { return st.streak; }, get banked() { return st.banked; } } });
   ov.onClose(() => { removeEventListener('keydown', kd); hook({ totem: null }); ts.on = true; ts.speed = 30; ts.tilt = 0; ts.wob = 0; clearView(S); S.me.root.visible = meVis; for (const [o] of hidden) o.visible = true; hidden.clear(); });
-  // HUD drawn with the mini-game art kit (art.js): glass stat chips, a framed message strip, an animated banner on
-  // results, particles on a bank, screen shake on a topple, a soft warm light over the table
-  const fx = particles(), shake = shaker(); let bannerT = -1, bannerS = '', bannerSub = '', bannerC = PAL.gold, potShown = 0;
-  const showBanner = (s, sub, c) => { bannerT = 0; bannerS = s; bannerSub = sub; bannerC = c; };
-  const oldBank = bank; const bank2 = mult => { const before = st.banked; oldBank(mult); const got = st.banked - before; fx.burst(W / 2, 128, { n: 26 + Math.min(40, got) }); if (mult > 1) { fx.confetti(W); showBanner('DREAMING', 'it never stopped: double pot', PAL.purple); } else showBanner('BANKED', '+' + got + '   streak ' + st.streak, PAL.green); };
+  const bank2 = mult => { bank(mult); if (mult > 1) { K.pop(innerWidth / 2, innerHeight * 0.32, 'Dreaming: double pot', 'pink'); } else K.pop(innerWidth / 2, innerHeight * 0.32, 'Banked', 'up'); };
   st.bankFn = bank2;
   loop(ov, dt => {
-    hidePeople(dt); st.t += dt; st.shake = Math.max(0, st.shake - dt * 2);
+    hidePeople(dt); st.t += dt;
     if (st.phase === 'spin') {
       st.pt += dt; st.pot += dt * (4 + st.pt * 3) * (1 + st.streak * 0.25);
       const left = st.T - st.pt;
@@ -67,35 +74,15 @@ export function startTotem(ctx) {
       if (st.fate === 'fall') { ts.speed = 40 * Math.max(0.25, left / st.T); ts.tilt = left < 1.4 ? (1.4 - left) * 0.18 : 0.01; }
       else { ts.speed = 40; ts.tilt = 0.005; }
       if (left <= 0) {
-        if (st.fate === 'fall') { st.phase = 'fell'; ts.on = false; ts.wob = 1.35; st.pot = 0; st.streak = 0; st.shake = 1; shake.kick(7); SFX.play('limbo.topple'); SFX.play('fail', { delay: 0.35, vol: 0.7 }); st.msg = 'It fell. You were awake. Pot lost.'; st.msgC = PAL.red; showBanner('IT FELL', 'you were awake. pot lost', PAL.red); }
+        if (st.fate === 'fall') { st.phase = 'fell'; ts.on = false; ts.wob = 1.35; st.pot = 0; st.streak = 0; K.pop(innerWidth / 2, innerHeight * 0.32, 'It fell', 'bad'); SFX.play('limbo.topple'); SFX.play('fail', { delay: 0.35, vol: 0.7 }); st.msg = 'It fell. You were awake. Pot lost.'; st.msgC = GX.error; }
         else { st.phase = 'black'; st.black = 0; SFX.play('eerie'); SFX.play('heartbeat', { delay: 0.6, vol: 0.6 }); }
       }
     }
-    if (st.phase === 'black') { st.black += dt; if (st.black > 2.2) { bank2(2); st.msg = 'It never stopped. Double pot!'; st.msgC = PAL.goldHi; } }
-    potShown += (st.pot - potShown) * Math.min(1, dt * 12);
-    x.clearRect(0, 0, W, H);
-    x.save(); shake.apply(x, dt);
-    // soft lamp light over the table + a faint edge vignette so the HUD sits on the scene, not on a flat box
-    glow(x, W / 2, 120, 150, '#ffcf8a', 0.10);
-    const v = x.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, W * 0.7); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(10,6,18,0.45)'); x.fillStyle = v; x.fillRect(0, 0, W, H);
-    // left: the live run
-    badge(x, 10, 10, 'pot', Math.floor(potShown), { color: PAL.gold, w: 84 });
-    badge(x, 98, 10, 'streak', st.streak, { color: PAL.green, w: 70 });
-    badge(x, 172, 10, 'banked', st.banked, { color: PAL.cream, w: 78 });
-    if (st.phase === 'spin') shine(x, 10, 10, 84, 34, st.t);
-    // right: records
-    badge(x, W - 162, 10, 'best streak', best, { color: PAL.cyan, w: 76 }); badge(x, W - 82, 10, 'best bank', bestBank, { color: PAL.pink, w: 72 });
-    if (st.phase === 'spin') coin(x, 100 + 0, 27, 4, st.t); // tiny coin ticking on the pot chip
-    // the wobble warning
-    if (st.phase === 'spin' && st.fate === 'fall' && st.T - st.pt < 1.4) { const k = 0.6 + Math.sin(st.t * 22) * 0.4; title(x, 'WOBBLE...', W / 2 + Math.sin(st.t * 30) * 2, 92, { size: 32, color: PAL.red, glow: 'rgba(232,100,90,' + k + ')', glowR: 14 }); }
-    // message strip + the action button
-    const m = artPanel(x, 36, H - 42, W - 72, 30, { style: 'glass' });
-    title(x, st.msg, W / 2 - 36, m.y + 20, { size: 16, body: true, color: st.msgC === '#e8dcc0' ? PAL.cream : st.msgC });
-    const label = st.phase === 'spin' ? 'LEAVE' : 'SPIN';
-    btn = button(x, W - 108, H - 40, 66, 26, label, { primary: st.phase !== 'spin', hot: hoverBtn });
-    fx.draw(x, dt);
-    x.restore();
-    if (bannerT >= 0) { bannerT += dt; banner(x, W, H, bannerS, bannerSub, bannerT, { color: bannerC }); if (bannerT > 1.6) bannerT = -1; }
-    if (st.phase === 'black') { x.fillStyle = `rgba(0,0,0,${Math.min(1, st.black * 2)})`; x.fillRect(0, 0, W, H); if (st.black > 0.8) title(x, '...', W / 2, H / 2, { size: 32, color: '#888' }); }
+    if (st.phase === 'black') { st.black += dt; if (st.black > 2.2) { bank2(2); st.msg = 'It never stopped. Double pot!'; st.msgC = GX.warning; } }
+    if (st.phase === 'spin' && st.fate === 'fall' && st.T - st.pt < 1.4) { st.msg = 'It wobbles...'; st.msgC = GX.error; }
+    hud.set('pot', Math.floor(st.pot)); hud.set('streak', st.streak); hud.set('banked', st.banked); hud.set('best', best); hud.set('bank', bestBank);
+    if (st.msg !== lastMsg) { lastMsg = st.msg; msgEl.textContent = st.msg; } msgEl.style.color = st.msgC;
+    const act = st.phase === 'spin' ? 'Leave the room' : 'Spin'; if (act !== lastAct) { lastAct = act; actBtn.textContent = act; actBtn.className = 'gx-btn' + (st.phase === 'spin' ? '' : ' pri'); }
+    veil.style.opacity = st.phase === 'black' ? String(Math.min(1, st.black * 2)) : '0';
   });
 }

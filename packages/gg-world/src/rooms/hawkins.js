@@ -25,6 +25,7 @@ function softPlanes(parent, items, shade = false) {
 const soft = (t, seed = 0, amp = 0.15) => 1 - amp * 0.45 * (0.5 + 0.5 * (0.6 * Math.sin(t * 1.7 + seed) + 0.4 * Math.sin(t * 0.9 + seed * 2.1)));
 import * as TX from './tex.js';
 import * as P from './hawkins-props.js';
+import { rickTex, tickRick } from './rick-screen.js';
 
 /** @param {any} ctx */
 export function build(ctx) {
@@ -53,7 +54,7 @@ export function build(ctx) {
   put(S, plane(4.8, 3.4, mat('#ffffff', { map: TX.rug('shag', '#7a5a2a', '#a07a3a') })), -4.4, 0.005, 2.6);
   const tv = P.consoleTV(); put(S, tv.g, -6.9, 0, 2.6, Math.PI / 2); R.blockObj(tv.g);
   const tvGlow = live(FX.glow('#c8d8ff', 2.0, 0.25)); tvGlow.position.set(-6.3, 0.9, 2.75);
-  const statics = P.staticFrames(4); const scr = /** @type {THREE.MeshBasicMaterial} */ (tv.screen.material); scr.map = statics[0];
+  const scr = /** @type {THREE.MeshBasicMaterial} */ (tv.screen.material); scr.map = rickTex();
   for (let i = 0; i < 4; i++) put(S, rbox(0.2, 0.035, 0.11, mat(['#1a1a1a', '#3a2a5a', '#1a1a1a', '#5a1a1a'][i], { roughness: 0.6 }), 0.008), -6.9, 0.93 + i * 0.037, 2.15, i * 0.2); // VHS on the TV
   const sofa = put(S, P.sofa(), -2.7, 0, 2.6, -Math.PI / 2); R.blockObj(sofa);
   const ct = put(S, P.coffeeTable(), -4.3, 0, 2.6, Math.PI / 2); ct.userData.ground = { k: 1.5 }; R.blockObj(ct);
@@ -116,7 +117,7 @@ export function build(ctx) {
     { id: 'waffles', x: -4.4, z: 3.3, r: 0.9, label: 'Frozen waffles', kind: 'food' },
     { id: 'dnd', x: DX, z: DZ, r: 1.7, label: 'Roll a d20', kind: 'dice' },
     { id: 'phone', x: -2.6, z: 0.6, r: 0.8, label: 'Pick up the phone', kind: 'phone' },
-    { id: 'tv', x: -6.1, z: 2.6, r: 1.0, label: 'Whack the TV', kind: 'tv' },
+    { id: 'tv', x: -6.1, z: 2.6, r: 1.0, label: 'Watch TV', kind: 'tv' },
     { id: 'bike', x: -7.6, z: -2.4, r: 0.9, label: 'Ring the bike bell', kind: 'bike' },
     { id: 'lamp', x: -2.4, z: 3.9, r: 0.7, label: 'Click the lamp', kind: 'lamp' },
     { id: 'pizza', x: 7.7, z: 3.3, r: 0.8, label: 'Check the pizza box', kind: 'food' },
@@ -156,7 +157,7 @@ export function build(ctx) {
     pts[0].intensity = base[0] * lampF; lamp.shade.emissiveIntensity = lampF; lampGlow.material.opacity = 0.4 * lampF;
     pts[1].intensity = base[1] * fk; pools.forEach((o, n) => { o.material.opacity = o.userData.op * (n === 2 ? pulse * 0.8 : n === 0 ? lampF : fk); }); pendGlow.material.opacity = 0.3 * fk;
     pts[2].intensity = base[2] * pulse; riftGlow.material.opacity = 0.3 * pulse; /** @type {any} */ (rift.material).color.setScalar(1.2 * pulse);
-    const tf = soft(t, 7, 0.3, 2); pts[3].intensity = base[3] * fk * (0.9 + 0.1 * Math.sin(t * 1.7)); scr.map = statics[(Math.floor(t * 2.5) + hk.tvOff) % statics.length]; scr.color.setScalar(0.95 * tf * fk); tvGlow.material.opacity = 0.25 * tf * fk;
+    const tf = soft(t, 7, 0.3, 2); pts[3].intensity = base[3] * fk * (0.9 + 0.1 * Math.sin(t * 1.7)); tickRick(t); scr.color.setScalar(0.95 * tf * fk); tvGlow.material.opacity = 0.25 * tf * fk;
     // bulbs
     const i = Math.floor((t - hk.t0) / STEP), on = i < hk.seq.length ? hk.seq[i] : -1;
     for (let b = 0; b < AW.pos.length; b++) { const g = b === on ? 3.5 : (0.35 + 0.08 * Math.sin(t * 0.8 + b)) * (fk < 1 ? 0.3 + 1.6 * (1 - fk) : 1); AW.bulbs.setColorAt(b, col.set(AW.cols[b]).multiplyScalar(g)); }

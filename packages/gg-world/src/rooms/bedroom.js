@@ -7,6 +7,7 @@ import { makeRoom, lightRig, mat, put, rng, bake, rbox } from './kit.js';
 import * as FX from './kit-fx.js';
 import * as TX from './tex.js';
 import * as P from './bedroom-props.js';
+import { rickTex, tickRick } from './rick-screen.js';
 
 /** @param {any} ctx */
 export function build(ctx) {
@@ -109,7 +110,7 @@ export function build(ctx) {
   for (const it of R.interact) if (RSND[it.id]) it.sfx = false;
   { const oi = R.onInteract; R.onInteract = (id, api) => { const it = R.interact.find(e => e.id === id), o = R.root.position; if (it) RSND[id]?.({ x: o.x + it.x, y: 1, z: o.z + it.z }); oi(id, api); }; }
 
-  const frames = [0, 1, 2, 3].map(i => TX.gameScreen(i)); const base = R.rig.points.map(p => p.intensity);
+  const base = R.rig.points.map(p => p.intensity);
   roomGlow(R, [], { pools: 1.5 }); // dim room: lamp/desk pools read clearly without lifting the ambient
   R.finish();
   // shadow budget: only big wood/beige/wall/blind surfaces cast moon shadows
@@ -122,7 +123,7 @@ export function build(ctx) {
   R.tick = (t, dt) => {
     beam.visible = beam2.visible = R.walls.w.full.visible;
     now = t; for (const f of ticks) f(t, dt);
-    tv.userData.screen.map = frames[Math.floor(t * 5) % 4];
+    tickRick(t); tv.userData.screen.map = rickTex();
     
     const dim = t < dimUntil ? 0.25 + 0.75 * Math.min(1, Math.abs(t - dimUntil + 1.5) / 1.5) : 1;
     const L = R.rig.points; L[0].intensity = base[0] * dim * 1; L[1].intensity = base[1] * dim * (1 - 0.15 * (0.5 + 0.5 * Math.sin(t * 2.86)));

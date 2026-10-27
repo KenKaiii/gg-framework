@@ -1,14 +1,14 @@
 // @ts-check
 // 'bar-menu': a 2-page bar menu card (bar counter) and a 1-page cooler card (roof). Order with coins; Dex reacts,
 // you get the right prop in hand, and a few drinks do something.
-import { coins, loop } from './util.js';
+import { coins } from './util.js';
+import { gx } from './gx.js';
 import { holdProp } from '../rooms/props-hand.js';
-import { DRINKS, BITES, COOLER, icon } from './barmenu-data.js';
+import { DRINKS, BITES, COOLER } from './barmenu-data.js';
 import { startDarts } from './barmenu-darts.js';
 import { SFX } from '../sfx.js';
-import { PAL, panel, title, coin, shine, rr } from './art.js';
+import { startDrink } from '../tipsy.js';
 
-const W = 480, H = 270;
 const BROKE = ['card declined. dex is judging you.', 'not enough coins. ship something first.', 'tab says no. tab says go code.', 'you can afford water. from the tap.'];
 
 /** Remove any held prop from an avatar. @param {any} av */
@@ -23,7 +23,7 @@ function greenTint() {
 
 /** Apply an order in the world after the menu closed. */
 function serve(S, U, item, cooler) {
-  const me = S.me, dex = !cooler && S.dex?.agent, say = (a, t, s = 3) => S.ui?.bubble?.(a, t, s) ?? U?.bubble?.(a, t, s);
+  const me = S.me, dex = !cooler && S.dex?.agent, say = (a, t, s = 3) => { const B = S.ui?.bubble || U?.bubble; B?.(a, t, s); }; // once (bubble() returns nothing, so `a() ?? b()` said every line twice)
   if (dex) { dex.face = Math.atan2(me.pos.x - dex.pos.x, me.pos.z - dex.pos.z); dex.root.rotation.y = dex.face; try { dex.once('Interact', 1.6); } catch { /* anim missing */ } say(dex, item.say, 3.5); }
   else say(me, item.say, 3);
   try { me.once?.('Interact', 1.2); } catch { /* ignore */ }
@@ -31,7 +31,7 @@ function serve(S, U, item, cooler) {
   SFX.play('register', { vol: 0.5, at }); SFX.play(snd, { delay: dex ? 0.4 : 0.1, at }); SFX.play('glass', { vol: 0.5, delay: dex ? 0.75 : 0.35, at });
   if (item.fx === 'red') SFX.play('eerie', { delay: 0.9, vol: 0.5 });
   if (item.fx === 'round') SFX.play('success', { delay: 0.9 });
-  setTimeout(() => { holdProp(me.av, item.prop); }, dex ? 700 : 300);
+  setTimeout(() => { holdProp(me.av, item.prop); startDrink(S, item.id, item.prop, p => holdProp(me.av, p)); }, dex ? 700 : 300);
   if (item.fx === 'red') { setTimeout(greenTint, 900); setTimeout(() => say(me, 'whoa.', 2.5), 1600); }
   if (item.fx === 'blue') setTimeout(() => say(me, 'nothing happened. comfy.', 3), 1800);
   if (item.fx === 'round') {
@@ -45,94 +45,79 @@ function serve(S, U, item, cooler) {
 /** @param {any} ctx @param {boolean} cooler */
 function openMenu(ctx, cooler) {
   const { S, U } = ctx;
-  const pages = cooler ? [{ name: 'COOLER', items: COOLER }] : [{ name: 'DRINKS', items: DRINKS }, { name: 'BITES & SPECIALS', items: BITES }];
+  const pages = cooler ? [{ name: 'Cooler', items: COOLER }] : [{ name: 'Drinks', items: DRINKS }, { name: 'Bites & specials', items: BITES }];
   const tab = S.barTab || (S.barTab = []);
-  const ov = ctx.overlay({ title: cooler ? 'The Cooler' : 'The Terminal', sub: cooler ? 'roof bar cart, self service' : 'bar menu, ask Dex', help: `<kbd>&uarr;&darr;</kbd>pick ${cooler ? '' : '<kbd>&larr;&rarr;</kbd>page '}<kbd>enter</kbd>order <kbd>esc</kbd>leave` });
-  const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
-  const wal = coins(S);
-  let page = 0, sel = 0, flip = 0, shake = 0, msg = '', msgT = 0, hover = -1, closed = false;
+  const ov = ctx.overlay({ title: cooler ? 'The Cooler' : 'The Terminal', sub: cooler ? 'roof bar cart, self service' : 'bar menu, ask Dex', help: `<kbd>&uarr;&darr;</kbd>pick ${cooler ? '' : '<kbd>&larr;&rarr;</kbd>page '}<kbd>enter</kbd>order` });
+  const K = gx(ov), wal = coins(S);
+  const hud = K.hud([{ id: 'coins', label: 'Coins', value: wal.balance, tone: 'gold' }], [{ id: 'tab', label: 'Tonight\'s tab', value: tab.reduce((s, o) => s + o.price, 0) }]);
+  const scene = K.scene({ aspect: cooler ? 1.05 : 1.45, maxW: 980 });
+  let page = 0, sel = 0, closed = false;
   ov.onClose(() => { closed = true; });
-  const cols = 2, colW = 212, top = 74;
-  const rowHOf = () => cooler ? 44 : items().length > 8 ? 30 : 36;
+  const st = document.createElement('style'); st.textContent = `
+.bm{position:absolute;inset:0;border-radius:22px;padding:2.2%;background:${cooler ? 'linear-gradient(160deg,#6d757e,#3b4148 60%,#2a2e33)' : 'linear-gradient(160deg,#5a2f1b,#3a1d10 55%,#26130a)'};box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 2px rgba(0,0,0,.35),0 30px 60px -20px rgba(0,0,0,.85)}
+.bm::before{content:'';position:absolute;inset:0;border-radius:inherit;opacity:.35;mix-blend-mode:overlay;background:repeating-linear-gradient(${cooler ? '90deg,#fff 0 1px,transparent 1px 3px' : '2deg,#000 0 2px,transparent 2px 7px'})}
+.bm .pp{position:relative;height:100%;box-sizing:border-box;border-radius:8px;padding:3.2cqh 4cqw;display:flex;flex-direction:column;color:#2b1a0e;background:radial-gradient(ellipse at 50% 20%,#fbf3df,#efe0bd 70%,#e2cc9e);box-shadow:inset 0 0 0 1px rgba(90,58,34,.35),inset 0 0 40px rgba(120,80,30,.25),0 4px 10px rgba(0,0,0,.4)}
+.bm .pp::after{content:'';position:absolute;inset:10px;border:1px solid rgba(120,70,30,.4);border-radius:4px;pointer-events:none}
+.bm header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;border-bottom:1px solid rgba(90,58,34,.4);padding-bottom:1.6cqh}
+.bm h1{margin:0;font:800 clamp(20px,6cqh,46px)/1 Sora;letter-spacing:-.02em;color:#9b3a16}
+.bm .tag{font:500 clamp(11px,2.3cqh,15px)/1.3 Sora;color:#7a5a3a;margin-top:4px}
+.bm .tabs{display:flex;gap:6px}
+.bm .tabs button{all:unset;cursor:pointer;padding:6px 12px;border-radius:999px;font:600 clamp(11px,2.2cqh,14px)/1.2 Sora;color:#7a5a3a;background:rgba(120,70,30,.12)}
+.bm .tabs button.on{background:#9b3a16;color:#fbf3df}
+.bm ul{list-style:none;margin:1.6cqh 0 0;padding:0;flex:1;display:grid;grid-template-columns:${cooler ? '1fr' : '1fr 1fr'};grid-auto-flow:column;grid-template-rows:repeat(var(--rows),1fr);column-gap:3cqw;min-height:0}
+.bm li{display:flex;align-items:center;gap:10px;padding:0 10px;border-radius:8px;cursor:pointer;min-height:0;transition:background-color .15s}
+.bm li .t{flex:1;min-width:0}
+.bm li b{display:block;font:700 clamp(12px,2.6cqh,17px)/1.2 Sora;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bm li small{display:block;font:400 clamp(10px,2cqh,13px)/1.25 Sora;color:#7a5a3a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bm li .dot{width:12px;height:12px;border-radius:50%;flex:none;box-shadow:inset 0 -2px 3px rgba(0,0,0,.3)}
+.bm li .pr{display:inline-flex;align-items:center;gap:5px;font:700 clamp(12px,2.5cqh,16px)/1 Sora;color:#9b3a16;font-variant-numeric:tabular-nums}
+.bm li .pr i{width:.9em;height:.9em;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffe9a8,#e0a632 60%,#9a6a14);box-shadow:0 1px 1px rgba(0,0,0,.3)}
+.bm li .ob{all:unset;font:600 11px/1 Sora;padding:5px 9px;border-radius:6px;background:#2b1a0e;color:#fbf3df;opacity:0;transition:opacity .15s}
+.bm li.sel{background:rgba(240,170,80,.3)}.bm li.sel .ob{opacity:1}
+.bm li.no{opacity:.45}.bm li.no.sel{background:rgba(200,56,44,.15)}
+.bm footer{display:flex;justify-content:space-between;gap:12px;border-top:1px solid rgba(90,58,34,.4);padding-top:1.4cqh;font:500 clamp(11px,2.1cqh,14px)/1.3 Sora;color:#7a5a3a}
+.bm footer .m{color:#c0392b;font-weight:600}
+.bm.shake{animation:bm-sh .35s}@keyframes bm-sh{25%{translate:-6px}75%{translate:6px}}
+@media (prefers-reduced-motion: reduce){.bm.shake{animation:none}}`;
+  ov.el.appendChild(st);
+  const card = document.createElement('div'); card.className = 'bm';
+  card.innerHTML = `<div class="pp"><header><div><h1>${cooler ? 'The Cooler' : 'The Terminal'}</h1><div class="tag">${cooler ? 'Honour system. Mostly.' : 'Est. localhost'}</div></div><div class="tabs"></div></header><ul></ul><footer><span class="f"></span><span class="m"></span></footer></div>`;
+  scene.appendChild(card);
+  const ul = /** @type {HTMLElement} */ (card.querySelector('ul')), tabsEl = /** @type {HTMLElement} */ (card.querySelector('.tabs'));
+  const foot = /** @type {HTMLElement} */ (card.querySelector('.f')), msgEl = /** @type {HTMLElement} */ (card.querySelector('.m'));
   const items = () => pages[page].items;
-  const pos = i => { const n = items().length, per = Math.ceil(n / cols), col = Math.floor(i / per), row = i % per; return { x: 24 + col * (colW + 8), y: top + row * rowHOf() }; };
-  const go = p => { if (p < 0 || p >= pages.length || p === page) return; page = p; sel = 0; flip = 1; SFX.play('page'); };
+  const per = () => cooler ? items().length : Math.ceil(items().length / 2);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] || c);
+  let msgTimer = 0;
+  const say = m => { msgEl.textContent = m; clearTimeout(msgTimer); msgTimer = /** @type {any} */ (setTimeout(() => { msgEl.textContent = ''; }, 2500)); };
+  const mark = () => [...ul.children].forEach((li, i) => li.classList.toggle('sel', i === sel));
+  const render = () => {
+    tabsEl.innerHTML = cooler ? '' : pages.map((p, i) => `<button type="button" class="${i === page ? 'on' : ''}">${esc(p.name)}</button>`).join('');
+    [...tabsEl.children].forEach((b, i) => b.addEventListener('click', () => go(i)));
+    ul.style.setProperty('--rows', String(per()));
+    ul.innerHTML = items().map(it => `<li class="${wal.balance >= it.price ? '' : 'no'}"><span class="dot" style="background:${it.tint || '#c0803a'}"></span><span class="t"><b>${esc(it.name)}</b><small>${esc(it.desc)}</small></span><span class="pr">${it.price}<i></i></span><button class="ob" type="button" tabindex="-1">Order</button></li>`).join('');
+    [...ul.children].forEach((li, i) => { li.addEventListener('mouseenter', () => { sel = i; mark(); }); li.addEventListener('click', () => order(i)); });
+    const total = tab.reduce((s, o) => s + o.price, 0);
+    foot.textContent = page === 1 || cooler ? (tab.length ? `Tab: ${tab.length} (${tab.slice(-2).map(o => o.name).join(', ')}${tab.length > 2 ? '...' : ''}), ${total} coins` : 'Tab: empty. Suspiciously sober.') : 'All drinks served with a side of judgement.';
+    mark();
+  };
+  const go = p => { if (p < 0 || p >= pages.length || p === page) return; page = p; sel = 0; SFX.play('page'); render(); };
   const order = i => {
     const it = items()[i]; if (!it) return;
-    if (wal.balance < it.price || !wal.spend(it.price, it.name)) { shake = 0.35; SFX.play('ui.deny'); msg = BROKE[(tab.length + i) % BROKE.length]; msgT = 2.5; return; }
-    tab.push({ name: it.name, price: it.price }); ov.close(); serve(S, U, it, cooler);
+    if (wal.balance < it.price || !wal.spend(it.price, it.name)) { card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake'); SFX.play('ui.deny'); say(BROKE[(tab.length + i) % BROKE.length]); return; }
+    tab.push({ name: it.name, price: it.price }); hud.set('coins', wal.balance); ov.close(); serve(S, U, it, cooler);
   };
-  const tabs = () => cooler ? [] : pages.map((p, i) => ({ i, x: 236 + i * 64, w: 60, y: 46, h: 18 }));
   const onKey = e => {
-    if (closed) return; const n = items().length, per = Math.ceil(n / cols);
+    if (closed) return; const n = items().length, pp = per();
     if (e.code === 'ArrowDown') { sel = (sel + 1) % n; SFX.play('ui.select'); } else if (e.code === 'ArrowUp') { sel = (sel + n - 1) % n; SFX.play('ui.select'); }
-    else if (e.code === 'ArrowRight') { if (sel + per < n && !cooler && page === pages.length - 1) sel += per; else if (page < pages.length - 1) go(page + 1); else if (sel + per < n) sel += per; }
-    else if (e.code === 'ArrowLeft') { if (sel >= per) sel -= per; else go(page - 1); }
+    else if (e.code === 'ArrowRight') { if (sel + pp < n && !cooler && page === pages.length - 1) sel += pp; else if (page < pages.length - 1) return go(page + 1), e.preventDefault(); else if (sel + pp < n) sel += pp; }
+    else if (e.code === 'ArrowLeft') { if (sel >= pp && !cooler) sel -= pp; else return go(page - 1), e.preventDefault(); }
     else if (e.code === 'Enter' || e.code === 'Space') order(sel); else return;
-    e.preventDefault(); e.stopPropagation();
+    e.preventDefault(); e.stopPropagation(); mark();
+    if (wal.balance < (items()[sel]?.price ?? 0)) say("Can't afford that one. Dex saw.");
   };
   addEventListener('keydown', onKey); ov.onClose(() => removeEventListener('keydown', onKey));
-  const local = e => { const b = c.getBoundingClientRect(); return { mx: (e.clientX - b.left) * W / b.width, my: (e.clientY - b.top) * H / b.height }; };
-  const hit = (mx, my) => items().findIndex((_, i) => { const p = pos(i); return mx >= p.x - 4 && mx < p.x + colW && my >= p.y - 4 && my < p.y + rowHOf() - 4; });
-  c.addEventListener('mousemove', e => { const { mx, my } = local(e); hover = hit(mx, my); if (hover >= 0) sel = hover; c.style.cursor = hover >= 0 || tabs().some(t => mx >= t.x && mx < t.x + t.w && my >= t.y && my < t.y + t.h) ? 'pointer' : ''; });
-  c.addEventListener('mouseleave', () => { hover = -1; });
-  c.addEventListener('click', e => { const { mx, my } = local(e); const t = tabs().find(t => mx >= t.x && mx < t.x + t.w && my >= t.y && my < t.y + t.h); if (t) return go(t.i); const i = hit(mx, my); if (i >= 0) order(i); });
-
-  // cached card: a wooden menu board (bar) or a crate lid (cooler) holding a cream paper menu with brass corners
-  const BACK = document.createElement('canvas'); BACK.width = W; BACK.height = H; {
-    const g = /** @type {CanvasRenderingContext2D} */ (BACK.getContext('2d'));
-    const gr = g.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, W * 0.7); gr.addColorStop(0, '#3a2418'); gr.addColorStop(1, '#120a08'); g.fillStyle = gr; g.fillRect(0, 0, W, H);
-    panel(g, 4, 4, W - 8, H - 8, { style: cooler ? 'metal' : 'wood', r: 6 });
-    panel(g, 14, 12, W - 28, H - 24, { style: 'paper', r: 3 });
-    g.strokeStyle = 'rgba(90,58,34,0.45)'; g.lineWidth = 1; g.strokeRect(19.5, 17.5, W - 39, H - 35);
-    for (const [a2, b2] of [[14, 12], [W - 22, 12], [14, H - 20], [W - 22, H - 20]]) { g.fillStyle = PAL.goldD; g.fillRect(a2, b2, 8, 8); g.fillStyle = PAL.goldHi; g.fillRect(a2 + 1, b2 + 1, 6, 1); g.fillStyle = '#3a2410'; g.fillRect(a2 + 3, b2 + 3, 2, 2); }
-    g.fillStyle = 'rgba(90,58,34,0.5)'; g.fillRect(24, 66, W - 48, 1); g.fillRect(24, H - 52, W - 48, 1);
-    // little ornament under the title
-    g.fillStyle = 'rgba(120,70,30,0.35)'; for (let i = 0; i < 3; i++) g.fillRect(W / 2 - 6 + i * 5, 62, 2, 2);
-  }
-  const INK = PAL.paperInk, SOFT = '#7a5a3a', LIGHT = 'rgba(255,248,230,0.6)';
-  loop(ov, (dt, t) => {
-    flip = Math.max(0, flip - dt * 4); shake = Math.max(0, shake - dt); msgT = Math.max(0, msgT - dt);
-    const sx = shake ? Math.round(Math.sin(t * 80) * 3 * shake / 0.35) : 0;
-    x.setTransform(1, 0, 0, 1, sx, 0); x.drawImage(BACK, 0, 0);
-    // header
-    title(x, cooler ? 'THE COOLER' : 'THE TERMINAL', 28, 42, { size: 32, align: 'left', color: '#a8401a', ink: '#3a1a08' });
-    title(x, cooler ? 'honour system. mostly.' : 'est. localhost', 30, 58, { size: 16, body: true, align: 'left', color: SOFT, ink: LIGHT });
-    // wallet chip
-    panel(x, W - 120, 22, 96, 22, { style: 'wood', r: 3 }); coin(x, W - 106, 33, 6, t * 0.4); title(x, `${wal.balance}`, W - 32, 38, { size: 16, align: 'right', color: PAL.gold });
-    // tabs: paper tabs, the open one sits forward
-    if (!cooler) for (const tb of tabs()) {
-      const on = tb.i === page; x.save(); x.fillStyle = on ? '#a8401a' : '#d8c296'; rr(x, tb.x, tb.y + 2, tb.w, tb.h - 2, 3); x.fill(); x.restore();
-      title(x, pages[tb.i].name.split(' ')[0], tb.x + tb.w / 2, tb.y + 15, { size: 16, body: true, color: on ? PAL.cream : SOFT, ink: on ? '#3a1a08' : LIGHT });
-    }
-    // items (slide in on page flip)
-    const off = Math.round(flip * flip * 40);
-    x.globalAlpha = 1 - flip * 0.8;
-    items().forEach((it, i) => {
-      const p = pos(i), px = p.x + off, py = p.y, can = wal.balance >= it.price, isSel = i === sel, rh = rowHOf() - 4;
-      if (isSel) { x.fillStyle = can ? 'rgba(245,189,99,.35)' : 'rgba(200,56,44,.18)'; rr(x, px - 4, py - 4, colW, rh, 3); x.fill(); x.fillStyle = can ? '#a8401a' : '#c8382c'; x.fillRect(px - 4, py - 4, 3, rh); if (can) shine(x, px - 4, py - 4, colW, rh, t); }
-      x.globalAlpha = (1 - flip * 0.8) * (can ? 1 : 0.45);
-      icon(x, it.icon, px, py + (isSel ? Math.round(Math.sin(t * 4)) : 0), it.tint);
-      title(x, it.name, px + 22, py + 11, { size: 16, body: true, align: 'left', color: INK, ink: LIGHT });
-      if (rowHOf() > 30) title(x, it.desc, px + 22, py + 24, { size: 16, body: true, align: 'left', color: SOFT, ink: 'rgba(0,0,0,0)' });
-      else title(x, (it.desc.length > 26 ? it.desc.slice(0, 25) + '.' : it.desc), px + 22, py + 22, { size: 16, body: true, align: 'left', color: SOFT, ink: 'rgba(0,0,0,0)' });
-      title(x, String(it.price), px + colW - 12, py + 12, { size: 16, align: 'right', color: can ? '#a8401a' : '#c8382c', ink: LIGHT });
-      x.globalAlpha = 1 - flip * 0.8;
-    });
-    x.globalAlpha = 1;
-    // footer: tonight's tab, the hint / the decline
-    const fy = H - 52;
-    if (page === 1 || cooler) {
-      const total = tab.reduce((s, o) => s + o.price, 0), last = tab.slice(-2).map(o => o.name).join(', ');
-      title(x, "TAB", 28, fy + 17, { size: 16, align: 'left', color: '#a8401a', ink: LIGHT });
-      title(x, tab.length ? `${tab.length}: ${last}${tab.length > 2 ? '...' : ''}` : 'empty. suspiciously sober.', 66, fy + 16, { size: 16, body: true, align: 'left', color: INK, ink: 'rgba(0,0,0,0)' });
-      title(x, `${total} coins`, W - 28, fy + 16, { size: 16, body: true, align: 'right', color: '#a8401a', ink: 'rgba(0,0,0,0)' });
-    } else title(x, 'all drinks served with a side of judgement', W / 2, fy + 16, { size: 16, body: true, color: SOFT, ink: 'rgba(0,0,0,0)' });
-    const line = msgT ? msg : (wal.balance < items()[sel]?.price ? "can't afford that one. dex saw." : '');
-    if (line) title(x, line, W / 2, fy + 31, { size: 16, body: true, color: '#c8382c', ink: LIGHT });
-    else title(x, cooler ? 'arrows pick, enter / click to grab' : 'arrows pick + page, enter / click to order', W / 2, fy + 31, { size: 16, body: true, color: SOFT, ink: 'rgba(0,0,0,0)' });
-    x.setTransform(1, 0, 0, 1, 0, 0);
-  });
+  render();
 }
 
 export default [

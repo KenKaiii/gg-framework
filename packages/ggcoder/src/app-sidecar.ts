@@ -123,9 +123,7 @@ import {
 } from "./app-sidecar/app-settings.js";
 import { KEN_ALLOWED_TOOLS } from "./app-sidecar/ken-context.js";
 import { type ProgressManager, createProgressManager } from "./app-sidecar/progress-manager.js";
-import { createRoyale } from "./app-sidecar/royale.js";
-import { classifyFixedCheck } from "./app-sidecar/royale-bug.js";
-import { detectDeploy } from "./app-sidecar/royale-deploy.js";
+import { createWorldLink } from "./app-sidecar/royale.js";
 import { type TrophyManager, createTrophyManager } from "./app-sidecar/trophy-manager.js";
 import { localTrophyDate } from "./core/trophies/engine.js";
 import { handleSessionRoutes } from "./app-sidecar/session-routes.js";
@@ -309,16 +307,12 @@ async function main(): Promise<void> {
   // XP/rank progress — loaded once per daemon; awards fan out to every window.
   // Each frame is tagged `origin: true` only for the session that earned the
   // XP, so that window alone plays sounds/chips while the rest just re-render.
-  // GG Royale (opt-in, web-hosted game mode): only "a run finished / N commits".
-  const royale = createRoyale({ agentDir: paths.agentDir, version: VERSION });
-  const progress = await createProgressManager(
-    paths.agentDir,
-    (snapshot, originId) => {
-      for (const ctx of sessions.values())
-        ctx.broadcast("progress", { ...snapshot, origin: ctx.id === originId });
-    },
-    (outcome) => royale.reportRun(outcome),
-  );
+  // GG World online save + live tickets (opt-in; one device link in ~/.gg/royale.json).
+  const world = createWorldLink({ agentDir: paths.agentDir, version: VERSION });
+  const progress = await createProgressManager(paths.agentDir, (snapshot, originId) => {
+    for (const ctx of sessions.values())
+      ctx.broadcast("progress", { ...snapshot, origin: ctx.id === originId });
+  });
 
   // Trophies — daemon-level like progress. XP totals (commits, streak, level)
   // come from the progress snapshot rather than being counted twice.
@@ -502,46 +496,24 @@ async function main(): Promise<void> {
       return;
     }
 
-    // GG Royale link state is app-wide (one device link), so no session header.
-    if (method === "GET" && url === "/royale") {
-      void royale
-        .status()
-        .then((status) => daemonJson(res, 200, status))
-        .catch((err: unknown) =>
-          daemonJson(res, 500, { error: err instanceof Error ? err.message : String(err) }),
-        );
-      return;
-    }
-    if (method === "GET" && url === "/royale/summary") {
-      // summary() never throws; null = unlinked or unreachable.
-      void royale.summary().then((summary) => daemonJson(res, 200, summary));
-      return;
-    }
-    if (method === "POST" && url === "/royale/open") {
+    // GG World online save (one device link, app-wide so no session header). Always 200 with the World
+    // server's { status, body } so the app can tell 409/400/unreachable apart.
+    if (url === "/world/live" && method === "POST") {
       void daemonReadBody(req, res).then(async (raw) => {
         if (raw === null) return;
-        try {
-          daemonJson(res, 200, await royale.open());
-        } catch (err) {
-          log("WARN", "app-sidecar", "royale open failed", {
-            message: err instanceof Error ? err.message : String(err),
-          });
-          daemonJson(res, 502, { error: err instanceof Error ? err.message : String(err) });
-        }
+        daemonJson(res, 200, await world.worldLive());
       });
       return;
     }
-    // GG World online save (same device link). Always 200 with the World
-    // server's { status, body } so the app can tell 409/400/unreachable apart.
     if (url === "/world/save" && (method === "GET" || method === "PUT" || method === "DELETE")) {
       void daemonReadBody(req, res).then(async (raw) => {
         if (raw === null) return;
         if (method === "GET") {
-          daemonJson(res, 200, await royale.worldGet());
+          daemonJson(res, 200, await world.worldGet());
         } else if (method === "DELETE") {
-          daemonJson(res, 200, await royale.worldDelete());
+          daemonJson(res, 200, await world.worldDelete());
         } else {
-          let parsed: { ver?: unknown; patch?: unknown } = {};
+          let parsed: { ver?: unknown; patch?: unknown };
           try {
             parsed = JSON.parse(raw || "{}") as { ver?: unknown; patch?: unknown };
           } catch {
@@ -549,20 +521,15 @@ async function main(): Promise<void> {
             return;
           }
           const ver = typeof parsed.ver === "number" ? parsed.ver : 0;
-          daemonJson(res, 200, await royale.worldPut(ver, parsed.patch ?? {}));
+          daemonJson(res, 200, await world.worldPut(ver, parsed.patch ?? {}));
         }
       });
       return;
     }
-    if (method === "POST" && url === "/royale/unlink") {
+    if (method === "DELETE" && url === "/world/account") {
       void daemonReadBody(req, res).then(async (raw) => {
         if (raw === null) return;
-        try {
-          await royale.unlink();
-          daemonJson(res, 200, { ok: true });
-        } catch (err) {
-          daemonJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
-        }
+        daemonJson(res, 200, await world.accountDelete());
       });
       return;
     }
@@ -1918,14 +1885,8 @@ async function createSession(
           // A hash, so the trophies file never holds project paths.
           project: createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 16),
         };
-        const runMessages = session.getMessages().slice(messagesBeforeRun);
         void progress
-          .awardRun(cwd, runStartedAt, opts.id, classifyFixedCheck(runMessages), {
-            // GG Royale: a goal's working run, and a successful deploy.
-            goalId: goal?.record.id ?? null,
-            workers: runFacts.tools.some((t) => t.name === "spawn_agent"),
-            deployed: detectDeploy(runMessages),
-          })
+          .awardRun(cwd, runStartedAt, opts.id)
           .then(() => trophies.recordRun(runFacts, opts.id));
       }
       // A run may have switched branches, changed files, or spawned/finished

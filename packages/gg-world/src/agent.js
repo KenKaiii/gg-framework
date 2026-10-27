@@ -27,7 +27,7 @@ export class Agent {
       if (d <= step) { this.pos.x = tgt.x; this.pos.z = tgt.z; this.path.shift(); }
       else { this.pos.x += dx / d * step; this.pos.z += dz / d * step; this.turnTo(Math.atan2(dx, dz), dt, 10); }
       // moving always plays the walk/run clip and cancels any reaction lock (a sit or cheer pose must never slide)
-      this.lockAnim = 0; const run = this.speed > 3; const a = this.av.play(run ? 'Running_A' : 'Walking_A', { fade: 0.2 }); if (a) a.timeScale = Math.max(1, this.speed / (run ? 4.6 : 2.4)); // faster player (level) = faster stride
+      this.lockAnim = 0; if (this.av.em) this.av.endEmote?.(); /* clicking to walk ends an emote */ const run = this.speed > 3; const a = this.av.play(run ? 'Running_A' : 'Walking_A', { fade: 0.2 }); if (a) a.timeScale = Math.max(1, this.speed / (run ? 4.6 : 2.4)); // faster player (level) = faster stride
       this.av.fx.type = 0; this.av.fx.think = 0; this.av.rig.rotation.x = 0; // seated-only layers off while walking
       if (!this.path.length) { this.path = null; const cb = this.onArrive; this.onArrive = null; this.av.play('Idle'); cb && cb(); }
     } else if (!this.sitting && this.lockAnim <= 0) {

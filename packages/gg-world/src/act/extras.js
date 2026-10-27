@@ -14,13 +14,14 @@ import * as THREE from 'three';
 import poolX from './extras-pool.js';
 import screensX from './extras-screens.js';
 import tvX from './extras-tv.js';
+import codeX from './extras-gg-coder.js';
 import pinballX from './extras-pinball.js';
 import barmenuX from './extras-barmenu.js';
 import filmsAX from './extras-films-a.js';
 import filmsBX from './extras-films-b.js';
 import roomsX from './extras-rooms.js';
 
-const MODULES = [poolX, screensX, tvX, pinballX, barmenuX, filmsAX, filmsBX, roomsX].filter(Boolean);
+const MODULES = [poolX, screensX, tvX, codeX, pinballX, barmenuX, filmsAX, filmsBX, roomsX].filter(Boolean);
 
 /** @param {{A:any, rooms:Record<string, any>, scene:any, renderer:any}} ctx */
 export function installExtras(ctx) {

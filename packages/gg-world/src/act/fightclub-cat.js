@@ -1,10 +1,8 @@
 // @ts-check
-// Catalogue corner: "what kind of furniture defines you?" Four picks -> a personality verdict. Last verdict + count saved.
-import { loop, mouse } from './util.js';
+// Catalogue corner (GX kit: a flat-pack catalogue page, three product tiles per spread): "what kind of furniture defines you?" Four picks -> a personality verdict. Last verdict + count saved.
 import { SFX } from '../sfx.js';
-import { load, save, pops, PINK } from './fightclub-util.js';
-import { PAL, bg, panel, title, glow, particles, shine } from './art.js';
-import { cardFlow, cached } from './fightclub-ui.js';
+import { load, save } from './fightclub-util.js';
+import { gx } from './gx.js';
 
 const QS = [
   ['Pick a coffee table', ['yin-yang glass top', 'reclaimed door', 'pizza box stack']],
@@ -14,51 +12,62 @@ const QS = [
 ];
 const VERDICT = [['Complete as a person.', 'The catalogue owns you.'], ['Charming disaster.', 'Your sofa has stories.'], ['Pure vibe coder.', 'Furniture is a social construct.']];
 
+const COL = ['#8fd0e8', '#8a5a3a', '#c8a060', '#5a6a8a', '#9a7a5a', '#c87a3a', '#f0e6c8', '#ffe8a0', '#6ee7ff', '#7ac87a', '#c8c0b0', '#3a3a40'];
+// one product drawing per question (table, sofa, lamp, dinner set), tinted per option
+const ART = [
+  c => `<ellipse cx="60" cy="88" rx="44" ry="6" fill="#000" opacity=".12"/><rect x="18" y="44" width="84" height="8" rx="3" fill="${c}"/><rect x="18" y="44" width="84" height="3" rx="2" fill="#fff" opacity=".4"/><rect x="26" y="52" width="5" height="34" fill="#4a3a30"/><rect x="89" y="52" width="5" height="34" fill="#4a3a30"/>`,
+  c => `<ellipse cx="60" cy="88" rx="50" ry="6" fill="#000" opacity=".12"/><rect x="16" y="34" width="88" height="34" rx="10" fill="${c}"/><rect x="10" y="50" width="100" height="26" rx="9" fill="${c}"/><rect x="10" y="50" width="100" height="26" rx="9" fill="#000" opacity=".12"/><rect x="22" y="76" width="5" height="10" fill="#333"/><rect x="93" y="76" width="5" height="10" fill="#333"/>`,
+  c => `<ellipse cx="60" cy="90" rx="26" ry="5" fill="#000" opacity=".12"/><circle cx="60" cy="38" r="24" fill="${c}"/><circle cx="52" cy="30" r="9" fill="#fff" opacity=".45"/><rect x="58" y="62" width="4" height="24" fill="#555"/><rect x="44" y="84" width="32" height="5" rx="2" fill="#555"/>`,
+  c => `<ellipse cx="60" cy="88" rx="46" ry="6" fill="#000" opacity=".12"/><ellipse cx="60" cy="72" rx="40" ry="12" fill="${c}"/><ellipse cx="60" cy="70" rx="28" ry="7" fill="#fff" opacity=".35"/><path d="M24 30h20l-3 34h-14z" fill="${c}"/><path d="M76 30h20l-3 34h-14z" fill="${c}"/><rect x="26" y="32" width="5" height="26" fill="#fff" opacity=".4"/>`,
+];
+const CSS = `
+.fk-page{position:absolute;inset:0;border-radius:6px;overflow:hidden;background:#fbfaf6;color:#111;box-shadow:0 30px 60px -20px rgba(0,0,0,.85),inset 0 0 0 1px rgba(0,0,0,.08);display:flex;flex-direction:column}
+.fk-page::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:6%;translate:-50%;background:linear-gradient(90deg,transparent,rgba(60,40,20,.12),transparent);pointer-events:none}
+.fk-mast{display:flex;align-items:baseline;gap:1.6cqw;padding:1.3cqw 2.4cqw 1.1cqw;background:#0058a3;border-bottom:.45cqw solid #ffda1a;color:#fff}
+.fk-mast b{font-size:3.4cqw;font-weight:800;letter-spacing:-.02em;color:#ffda1a}.fk-mast span{font-size:1.4cqw;opacity:.85}.fk-mast i{margin-left:auto;font-style:normal;font-size:1.4cqw;color:#ffda1a}
+.fk-q{margin:2.2cqw 0 0;text-align:center;font-size:3.2cqw;font-weight:800;letter-spacing:-.02em;color:#0058a3}
+.fk-row{flex:1;display:flex;gap:2cqw;padding:2cqw 3cqw 1cqw}
+.fk-tile{all:unset;position:relative;flex:1;display:flex;flex-direction:column;align-items:center;border-radius:8px;padding:1.4cqw;cursor:pointer;background:#f0eee8;transition:transform .2s cubic-bezier(.22,1,.36,1),box-shadow .2s,background-color .2s}
+.fk-tile svg{width:78%;flex:1}
+.fk-tile.sel{background:#fff6c8;transform:translateY(-.6cqw);box-shadow:0 0 0 .3cqw #ffda1a,0 16px 26px -14px rgba(0,0,0,.5)}
+.fk-tile .n{font-size:1.75cqw;font-weight:700;text-align:center;line-height:1.25}
+.fk-tile .k{position:absolute;top:1cqw;left:1cqw}
+.fk-tile .p{margin-top:.8cqw;padding:.2cqw .9cqw .3cqw;background:#ffda1a;box-shadow:0 .3cqw 0 #e8c000;font-size:2.2cqw;font-weight:800;color:#c01a1a}
+.fk-dots{display:flex;justify-content:center;gap:.8cqw;padding:0 0 1.6cqw}.fk-dots i{width:1cqw;height:1cqw;border-radius:50%;background:#e2dccb}.fk-dots i.d{background:#0058a3}.fk-dots i.c{background:#ffda1a}
+`;
+
 /** @param {any} ctx */
 export function startCatalogue(ctx) {
-  const ov = ctx.overlay({ title: 'Furniture Quiz', sub: 'the catalogue corner', help: '<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> or <kbd>↑</kbd><kbd>↓</kbd> <kbd>enter</kbd>/<kbd>click</kbd> pick / start / retake <kbd>esc</kbd> leave' });
-  const W = 480, H = 270; const { x, c } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
-  const rec = load('cat', { last: '', n: 0 }); const P = pops();
-  let q = 0, sel = 0, tally = [0, 0, 0], res = -1, pick = 0;
+  const ov = ctx.overlay({ title: 'Furniture Quiz', sub: 'the catalogue corner', help: '<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> or <kbd>↑</kbd><kbd>↓</kbd> <kbd>enter</kbd>/<kbd>click</kbd> pick / start / retake' });
+  const K = gx(ov);
+  if (!document.getElementById('fk-style')) { const s = document.createElement('style'); s.id = 'fk-style'; s.textContent = CSS; document.head.appendChild(s); }
+  const rec = load('cat', { last: '', n: 0 });
+  let q = 0, sel = 0, tally = [0, 0, 0], res = -1, playing = false;
+  const hud = K.hud([{ id: 'page', label: 'Page', value: '1 / 4' }], [{ id: 'n', label: 'Quizzes', value: rec.n, tone: 'gold' }]);
+  const scene = K.scene({ aspect: 16 / 10, maxW: 1100 });
+  const pg = document.createElement('div'); pg.className = 'fk-page'; scene.appendChild(pg);
+  pg.innerHTML = `<div class="fk-mast"><b>HJÄLP</b><span></span><i>what defines you?</i></div><div class="fk-q"></div><div class="fk-row"></div><div class="fk-dots"></div>`;
+  const $ = s => /** @type {HTMLElement} */ (pg.querySelector(s));
+  const tiles = [0, 1, 2].map(i => { const b = document.createElement('button'); b.className = 'fk-tile'; b.type = 'button';
+    b.addEventListener('pointerenter', () => { if (playing && res < 0 && sel !== i) { sel = i; SFX.play('ui.select'); draw(); } });
+    b.addEventListener('click', () => { if (playing && res < 0) choose(i); }); $('.fk-row').appendChild(b); return b; });
+  const draw = () => { const qq = Math.min(q, QS.length - 1);
+    $('.fk-mast span').textContent = 'catalogue  p.' + (12 + qq * 7); $('.fk-q').textContent = QS[qq][0];
+    tiles.forEach((b, i) => { b.classList.toggle('sel', playing && i === sel);
+      b.innerHTML = `<span class="gx-key k">${i + 1}</span><svg viewBox="0 0 120 96">${ART[qq](COL[qq * 3 + i])}</svg><span class="n">${QS[qq][1][i].replace(/</g, '&lt;')}</span><span class="p">${99 + i * 50 + qq * 20},-</span>`; });
+    $('.fk-dots').innerHTML = QS.map((_, i) => `<i class="${i < q ? 'd' : i === q ? 'c' : ''}"></i>`).join(''); hud.set('page', `${qq + 1} / 4`); };
   const choose = (/** @type {number} */ i) => {
-    if (res >= 0) { SFX.play('ui.back'); q = 0; tally = [0, 0, 0]; res = -1; return; }
-    tally[i]++; P.add('+ defines you', 240, 90 + i * 40, PINK); pick = 0.3; q++; sel = 0; SFX.play('ui.click'); SFX.play('page', { delay: 0.08 });
-    fx.burst(240, 100 + i * 44, { n: 12, colors: ['#ffe14a', '#0058a3', '#fff'] });
-    if (q >= QS.length) { res = tally.indexOf(Math.max(...tally)); rec.last = VERDICT[res][0]; rec.n++; save('cat', rec); SFX.play('magic', { delay: 0.2 });
-      F.finish({ title: 'VERDICT', sub: VERDICT[res][0] + ' ' + VERDICT[res][1], color: ['#ffe14a', PAL.pink, PAL.cyan][res], win: true,
-        stats: [['glass', tally[0], '#ffe14a'], ['curbside', tally[1], PAL.pink], ['vibe', tally[2], PAL.cyan], ['quizzes', rec.n, PAL.cream]] }); }
-  };
-  const kd = (/** @type {KeyboardEvent} */ e) => { if (F.phase !== 'play' || res >= 0) return; const d = /^Digit([1-3])$/.exec(e.code); if (d) choose(+d[1] - 1); else if (e.code === 'ArrowUp') { sel = (sel + 2) % 3; SFX.play('ui.select'); } else if (e.code === 'ArrowDown') { sel = (sel + 1) % 3; SFX.play('ui.select'); } else if (e.code === 'Enter') choose(sel); };
+    tally[i]++; const b = tiles[i].getBoundingClientRect(); K.pop(b.left + b.width / 2, b.top + b.height * 0.3, '+ defines you', 'pink');
+    q++; sel = 0; SFX.play('ui.click'); SFX.play('page', { delay: 0.08 });
+    if (q >= QS.length) { res = tally.indexOf(Math.max(...tally)); rec.last = VERDICT[res][0]; rec.n++; save('cat', rec); SFX.play('magic', { delay: 0.2 }); K.swell(); hud.set('n', rec.n);
+      K.result({ title: 'Verdict', big: VERDICT[res][0], line: VERDICT[res][1], stats: [[tally[0], 'Glass'], [tally[1], 'Curbside'], [tally[2], 'Vibe'], [rec.n, 'Quizzes']], again: 'Retake', onAgain: again });
+      const big = /** @type {HTMLElement | null} */ (ov.el.querySelector('.gx-card .big')); if (big) { big.style.fontSize = '30px'; big.style.letterSpacing = '-.02em'; big.style.color = ['#ffda1a', '#ff5fd2', '#44e3cf'][res]; }
+      return; }
+    draw(); };
+  const again = () => { q = 0; tally = [0, 0, 0]; res = -1; sel = 0; draw(); };
+  const kd = (/** @type {KeyboardEvent} */ e) => { if (!playing || res >= 0) return; const d = /^Digit([1-3])$/.exec(e.code); if (d) choose(+d[1] - 1);
+    else if (e.code === 'ArrowUp' || e.code === 'ArrowLeft') { sel = (sel + 2) % 3; SFX.play('ui.select'); draw(); } else if (e.code === 'ArrowDown' || e.code === 'ArrowRight') { sel = (sel + 1) % 3; SFX.play('ui.select'); draw(); } else if (e.code === 'Enter') choose(sel); };
   addEventListener('keydown', kd); ov.onClose(() => removeEventListener('keydown', kd));
-  // mouse: hover a card to select, click to pick; on the verdict, click anywhere to retake
-  const M = mouse(ov, c, W, H); const fx = particles();
-  const F = cardFlow(ov, c, W, H, { style: 'paper', accent: '#0058a3', again: () => { q = 0; tally = [0, 0, 0]; res = -1; sel = 0; } });
-  F.setCard({ title: 'HJALP QUIZ', sub: 'what kind of furniture defines you?', lines: ['Four pages, three picks each. Be honest.'], chips: [['[1]', '[2]', '[3]', 'or', '[↑]', '[↓]', '[enter]'], ['[click]', 'a product']] });
-  // a glossy catalogue spread: blue + yellow masthead, white page with soft gutter shading (cached)
-  const page = cached(W, H, b => { bg.vignette(b, W, H, '#c8c0b0');
-    panel(b, 10, 40, W - 20, H - 48, { style: 'paper', r: 2 }); const g = b.createLinearGradient(W / 2 - 18, 0, W / 2 + 18, 0); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.5, 'rgba(60,40,20,0.18)'); g.addColorStop(1, 'rgba(0,0,0,0)'); b.fillStyle = g; b.fillRect(W / 2 - 18, 42, 36, H - 52);
-    b.fillStyle = '#003f7a'; b.fillRect(0, 0, W, 36); b.fillStyle = '#0058a3'; b.fillRect(0, 0, W, 33); b.fillStyle = 'rgba(255,255,255,0.15)'; b.fillRect(0, 0, W, 1); b.fillStyle = '#ffda1a'; b.fillRect(0, 33, W, 3); });
-  const icon = (qi, i, X, Y) => { // tiny product drawings
-    x.save(); x.translate(X, Y); x.fillStyle = PAL.ink;
-    const k = qi * 3 + i, col = ['#8fd0e8', '#8a5a3a', '#c8a060', '#5a6a8a', '#9a7a5a', '#c87a3a', '#f0e6c8', '#ffe8a0', '#6ee7ff', '#7ac87a', '#c8c0b0', '#3a3a40'][k];
-    x.fillRect(-10, -7, 20, 14); x.fillStyle = col; x.fillRect(-9, -6, 18, 12); x.fillStyle = 'rgba(255,255,255,0.45)'; x.fillRect(-9, -6, 18, 2); x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(-9, 3, 18, 3); x.restore(); };
-  loop(ov, (dt) => { if (res >= 0 || F.phase !== 'play') M.clear(); else M.rows(i => ({ x: 80, y: 84 + i * 44, w: 320, h: 36 }), 3, { hover: i => { if (sel !== i) { sel = i; SFX.play('ui.select'); } }, pick: choose });
-    pick = Math.max(0, pick - dt);
-    page(x, 0, 0);
-    title(x, 'HJÄLP', 16, 26, { size: 32, align: 'left', color: '#ffda1a', ink: '#002a5a' }); title(x, 'catalogue  p.' + (12 + q * 7), 108, 24, { size: 16, body: true, align: 'left', color: '#fff', ink: '#002a5a' });
-    title(x, `quizzes ${rec.n}`, W - 12, 24, { size: 16, body: true, align: 'right', color: '#ffda1a', ink: '#002a5a' });
-    if (res < 0) { const qq = Math.min(q, QS.length - 1);
-      title(x, QS[qq][0], 240, 70, { size: 32, color: '#0058a3', ink: 'rgba(255,255,255,0.7)' });
-      QS[qq][1].forEach((s2, i) => { const y = 84 + i * 44, on = i === sel, X = 80 - (on ? pick * 20 : 0);
-        if (on) glow(x, 240, y + 18, 170, '#ffe14a', 0.25);
-        panel(x, X, y, 320, 36, { style: on ? 'paper' : 'paper', r: 3 }); if (on) { x.fillStyle = 'rgba(255,218,26,0.35)'; x.fillRect(X + 2, y + 2, 316, 32); shine(x, X, y, 320, 36, F.t); }
-        icon(qq, i, X + 22, y + 18);
-        title(x, `${i + 1}. ${s2}`, X + 40, y + 23, { size: 16, body: true, align: 'left', color: PAL.paperInk, ink: 'rgba(0,0,0,0)' });
-        x.fillStyle = '#ffda1a'; x.fillRect(X + 262, y + 6, 52, 24); x.fillStyle = '#e8c000'; x.fillRect(X + 262, y + 26, 52, 4);
-        title(x, `${99 + i * 50 + qq * 20},-`, X + 310, y + 24, { size: 16, align: 'right', color: '#c01a1a', ink: 'rgba(0,0,0,0)' }); });
-      for (let i = 0; i < QS.length; i++) { x.fillStyle = PAL.ink; x.fillRect(214 + i * 14, 240, 10, 10); x.fillStyle = i < q ? '#0058a3' : i === q ? '#ffda1a' : '#e8dcc0'; x.fillRect(215 + i * 14, 241, 8, 8); }
-    }
-    fx.draw(x, dt);
-    P.draw(x, dt); F.draw(x, dt);
-  });
+  draw();
+  K.card({ title: 'HJÄLP Quiz', text: 'What kind of furniture defines you? Four pages, three picks each. Be honest.', how: [[['1', '2', '3'], 'pick'], [['↑', '↓', 'Enter'], 'choose'], [['Click'], 'a product']], cta: 'Open the catalogue', onGo: () => { playing = true; draw(); } });
 }

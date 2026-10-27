@@ -29,8 +29,11 @@ fs.mkdirSync(outDir, { recursive: true });
 await build({
   entryPoints: [path.join(here, 'src/main.js')], bundle: true, minify: true, format: 'iife', target: 'es2020', legalComments: 'none',
   outfile: path.join(outDir, 'game.js'), logLevel: 'warning',
+  // World runs sealed (no localStorage of its own): every storage use goes through boot.js's store
+  define: { localStorage: 'globalThis.__ggStore', 'window.localStorage': 'globalThis.__ggStore', sessionStorage: 'globalThis.__ggSession', 'window.sessionStorage': 'globalThis.__ggSession' },
   loader: { '.png': 'dataurl', '.jpg': 'dataurl', '.webp': 'dataurl', '.svg': 'dataurl', '.glb': 'binary', '.woff2': 'dataurl', '.ttf': 'dataurl', '.mp3': 'dataurl', '.ogg': 'dataurl' },
 });
+await build({ entryPoints: [path.join(here, 'src/boot.js')], bundle: false, minify: true, format: 'iife', target: 'es2020', legalComments: 'none', outfile: path.join(outDir, 'boot.js'), logLevel: 'warning' });
 fs.copyFileSync(path.join(here, 'index.html'), path.join(outDir, 'index.html'));
 fs.writeFileSync(stampFile, stamp);
 console.log(`gg-world: built gg-app/public/world/game.js ${(fs.statSync(path.join(outDir, 'game.js')).size / 1024).toFixed(0)} KB`);

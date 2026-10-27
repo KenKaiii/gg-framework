@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { worldSaveDelete, worldSaveGet, worldSavePut } from "./agent";
-import { WORLD_CONSENT_KEY } from "./world-save";
+import {
+  worldAccountDelete,
+  worldLive,
+  worldSaveDelete,
+  worldSaveGet,
+  worldSavePut,
+} from "./agent";
+import { WORLD_CONSENT_KEY, WORLD_LIVE_CONSENT_KEY } from "./world-save";
 import { WorldScreen, type WorldPlayer } from "./WorldScreen";
 
 vi.mock("./agent", () => ({
@@ -10,6 +16,8 @@ vi.mock("./agent", () => ({
   worldSaveGet: vi.fn(),
   worldSavePut: vi.fn(),
   worldSaveDelete: vi.fn(),
+  worldAccountDelete: vi.fn(),
+  worldLive: vi.fn(async () => ({ status: 403, body: null })),
 }));
 
 const saved = (ver: number, name: string | null = null, owned: string[] = []) => ({
@@ -26,6 +34,7 @@ beforeEach(() => {
   vi.mocked(worldSaveGet).mockResolvedValue(saved(0));
   vi.mocked(worldSavePut).mockResolvedValue(saved(1));
   vi.mocked(worldSaveDelete).mockResolvedValue({ status: 200, body: { deleted: true } });
+  vi.mocked(worldAccountDelete).mockResolvedValue({ status: 200, body: { deleted: true } });
 });
 afterEach(() => {
   cleanup();
@@ -53,7 +62,7 @@ function open(p: WorldPlayer = player(100)) {
         new MessageEvent("message", {
           data: { gg: "world", ...data },
           source: win,
-          origin: window.location.origin,
+          origin: "null", // World runs sealed: its messages carry an opaque origin
         }),
       );
     });
@@ -65,6 +74,7 @@ function open(p: WorldPlayer = player(100)) {
 
 const agreeOnline = () => {
   localStorage.setItem(WORLD_CONSENT_KEY, JSON.stringify({ v: 1, on: true }));
+  localStorage.setItem(WORLD_LIVE_CONSENT_KEY, JSON.stringify({ v: 1, on: false }));
 };
 const profile = { name: "Ken", look: { hat: 2 }, owned: ["cap"], spent: 9 };
 
@@ -141,6 +151,8 @@ describe("World online save", () => {
 
   it("retries without a refused name and tells the player why", async () => {
     agreeOnline();
+    // an existing row: no immediate first save
+    vi.mocked(worldSaveGet).mockResolvedValue(saved(1));
     vi.mocked(worldSavePut)
       .mockResolvedValueOnce({ status: 400, body: { error: "That name is taken." } })
       .mockResolvedValueOnce(saved(1));
@@ -159,6 +171,8 @@ describe("World online save", () => {
 
   it("deletes the online save from the cloud key, then turns it off", async () => {
     agreeOnline();
+    // an existing row: no immediate first save
+    vi.mocked(worldSaveGet).mockResolvedValue(saved(1));
     const { send, sent } = open();
     send({ t: "ready" });
     await waitFor(() => expect(worldSaveGet).toHaveBeenCalledOnce());
@@ -171,6 +185,50 @@ describe("World online save", () => {
     expect(JSON.parse(localStorage.getItem(WORLD_CONSENT_KEY) ?? "")).toEqual({ v: 1, on: false });
     send({ t: "save", profile });
     expect(worldSavePut).not.toHaveBeenCalled();
+  });
+});
+
+describe("World online save when the server can't be reached", () => {
+  it("retries a dropped read by itself before saying so, then loads the save", async () => {
+    agreeOnline();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.mocked(worldSaveGet)
+        .mockResolvedValueOnce({ status: 0, body: null })
+        .mockResolvedValueOnce(saved(3, "Ken"));
+      const { send, sent } = open();
+      send({ t: "ready" });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1600);
+      });
+      await waitFor(() => expect(sent("profile")).toHaveLength(1));
+      expect(worldSaveGet).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps trying while World is open, and Try again now works", async () => {
+    agreeOnline();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.mocked(worldSaveGet).mockResolvedValue({ status: 0, body: null });
+      const { send, sent } = open();
+      send({ t: "ready" });
+      // 3 tries (first + 2 retries), then it shows as failing
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6000);
+      });
+      expect(worldSaveGet).toHaveBeenCalledTimes(3);
+      fireEvent.click(screen.getByRole("button", { name: "Online save" }));
+      expect(screen.getByText("Can't reach the server right now. Trying again")).toBeTruthy();
+      // back online: "Try again now" loads it
+      vi.mocked(worldSaveGet).mockResolvedValue(saved(2, "Ken"));
+      fireEvent.click(screen.getByRole("button", { name: "Try again now" }));
+      await waitFor(() => expect(sent("profile")).toHaveLength(1));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -197,5 +255,74 @@ describe("World XP pop-ups", () => {
       />,
     );
     expect(sent("xp")[1]).toEqual({ gg: "world", t: "xp", amount: 30, why: "commit" });
+  });
+
+  it("saves right after agreeing when there's no online save yet (the live world needs the row)", async () => {
+    agreeOnline();
+    const { send } = open();
+    send({ t: "ready" });
+    await waitFor(() => expect(worldSavePut).toHaveBeenCalledOnce());
+    expect(vi.mocked(worldSavePut).mock.calls[0]?.[1]).toMatchObject({ level: 3 });
+  });
+});
+
+describe("World account and live consent", () => {
+  it("deletes the account after a confirm step, then turns online save off", async () => {
+    agreeOnline();
+    vi.mocked(worldSaveGet).mockResolvedValue(saved(1));
+    const { send, sent } = open();
+    send({ t: "ready" });
+    await waitFor(() => expect(worldSaveGet).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "Online save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete my account" }));
+    expect(worldAccountDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Yes, delete my account" }));
+    await waitFor(() => expect(worldAccountDelete).toHaveBeenCalledOnce());
+    await waitFor(() => expect(sent("note").map((m) => m.text)).toContain("Account deleted"));
+    expect(JSON.parse(localStorage.getItem(WORLD_CONSENT_KEY) ?? "")).toEqual({ v: 1, on: false });
+  });
+
+  it("stores the live tick with the first consent and only then opens the live world", async () => {
+    vi.mocked(worldSaveGet).mockResolvedValue(saved(2));
+    const { send } = open();
+    send({ t: "ready" });
+    fireEvent.click(await screen.findByLabelText("I'm 18 or over"));
+    fireEvent.click(
+      screen.getByLabelText("Join the live world: meet real players and chat in public"),
+    );
+    expect(screen.getByRole("link", { name: "Community rules" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save online" }));
+    expect(JSON.parse(localStorage.getItem(WORLD_LIVE_CONSENT_KEY) ?? "")).toEqual({
+      v: 1,
+      on: true,
+    });
+    await waitFor(() => expect(worldLive).toHaveBeenCalled());
+  });
+
+  it("without the live tick, online save works but the live world stays closed", async () => {
+    agreeOnline();
+    vi.mocked(worldSaveGet).mockResolvedValue(saved(2));
+    const { send } = open();
+    send({ t: "ready" });
+    await waitFor(() => expect(worldSaveGet).toHaveBeenCalledOnce());
+    await act(async () => {});
+    expect(worldLive).not.toHaveBeenCalled();
+  });
+
+  it("asks existing online-save players once for the live tick", async () => {
+    localStorage.setItem(WORLD_CONSENT_KEY, JSON.stringify({ v: 1, on: true }));
+    vi.mocked(worldSaveGet).mockResolvedValue(saved(2));
+    const { send } = open();
+    send({ t: "ready" });
+    await screen.findByRole("dialog", { name: "Join the live world?" });
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    expect(JSON.parse(localStorage.getItem(WORLD_LIVE_CONSENT_KEY) ?? "")).toEqual({
+      v: 1,
+      on: false,
+    });
+    cleanup();
+    open().send({ t: "ready" });
+    await act(async () => {});
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

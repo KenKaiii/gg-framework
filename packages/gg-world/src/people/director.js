@@ -32,7 +32,7 @@ export function makeDirector(S) {
 
   /** say a line out loud: bubble + chat log + thread */
   const say = (s, raw, t, o = {}) => { if (!raw) return null; const txt = (s.P && !o.ai ? styled : x => x)(fill(raw, { ...ctxBase(), me: s.name, room: s.room.meta?.name || s.room.id, other: o.other || '', ver: o.ver || 'v1' }), s.P?.style);
-    if (!txt) return null; S.ui?.bubble(s.agent, txt, Math.min(6.5, 2.6 + txt.length * 0.06), o.cls || ''); S.ui?.chatLine?.(s.name, txt);
+    if (!txt) return null; S.ui?.bubble(s.agent, txt, Math.min(6.5, 2.6 + txt.length * 0.06), o.cls || ''); /* the chat log is for REAL players only (owner): simulated members and NPCs speak in bubbles; real players' chat arrives through net.js */
     lastSaid.set(s.key, t); lastSpeaker = s.key; const th = thread(s.room); th.push({ name: s.name, text: txt, t, key: s.key }); if (th.length > 10) th.shift(); return txt; };
   const faceEach = (a, b) => { if (!a?.agent || !b?.agent || a.agent.sitting) return; a.agent.face = Math.atan2(b.agent.pos.x - a.agent.pos.x, b.agent.pos.z - a.agent.pos.z); };
 

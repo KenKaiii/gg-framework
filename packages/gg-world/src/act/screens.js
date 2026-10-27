@@ -6,11 +6,11 @@ import { worldOf } from './view.js';
 import { startBoard } from './screens-board.js';
 
 export default [
-  { id: 'screens-chart', label: () => 'Check the chart', match: (it, R) => R.id === 'studio' && it.id === 'tv',
+  { id: 'screens-chart', label: () => 'Check the chart', match: (it, R) => R.id === 'studio' && it.id === 'tv-app', /* via the TV's change channel */
     start(ctx) { closeup(ctx, { style: 'tv', brand: 'VIBESONIC 4K(ish)', title: 'The Chart', sub: 'studio TV',
       help: '<kbd>↑↓</kbd> asset <kbd>space</kbd> line/candles <kbd>click</kbd> pick <kbd>esc</kbd> leave',
       view: { target: worldOf(ctx.R, -6.0, 1.3, 2.5), dir: { x: 1, y: 0.25, z: 0.15 }, zoom: 1.2 }, app: ov => tradingApp(ctx.S, ov) }); } },
-  { id: 'screens-deploy', label: () => 'Watch the deploy feed', match: (it, R) => R.id === 'bar' && it.id === 'tv',
+  { id: 'screens-deploy', label: () => 'Watch the deploy feed', match: (it, R) => R.id === 'bar' && it.id === 'tv-app', /* via the TV's change channel */
     start(ctx) { closeup(ctx, { style: 'crt', brand: 'DNN-1999', title: 'Deploy News', sub: 'bar TV, live from prod',
       help: '<kbd>↑↓</kbd> crew <kbd>←→</kbd> next story <kbd>space</kbd> roll back <kbd>esc</kbd> leave',
       view: { target: worldOf(ctx.R, -8.3, 2.55, -5.3), dir: { x: 0.64, y: 0.1, z: 0.76 }, zoom: 1.0 }, app: ov => deployApp(ctx.S, ov) }); } },

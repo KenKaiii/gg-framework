@@ -1,10 +1,20 @@
 // @ts-check
 // The three mini-apps shown on close-up screens: trading terminal (studio), deploy news (bar), server dashboard (basement).
-import { PAL, panel, title, glow, button } from './art.js';
-import { text, rng } from './util.js';
+import { rng } from './util.js';
+import { GX } from './gx.js';
+
+// Sora text/plates for the screen apps (logical screen units; the frame scales the canvas to screen x DPR).
+const PAL = { red: GX.error, cream: GX.text, green: GX.success };
+const font = (size, w) => `${w} ${size * 0.6}px Sora, system-ui, sans-serif`;
+/** @param {CanvasRenderingContext2D} x */
+function text(x, s, px, py, o = {}) { x.save(); x.font = font(o.size || 16, o.weight || 500); x.textAlign = o.align || 'left'; x.fillStyle = o.color || GX.text2; x.fillText(s, px, py); x.restore(); }
+function title(x, s, px, py, o = {}) { x.save(); if (o.glow) { x.shadowColor = o.glow; x.shadowBlur = 10; } text(x, s, px, py, { ...o, weight: o.body ? 600 : 800, align: o.align || 'center' }); x.restore(); }
+function panel(x, px, py, w, h) { x.save(); x.fillStyle = 'rgba(24,26,30,.94)'; x.strokeStyle = 'rgba(255,255,255,.12)'; x.beginPath(); x.roundRect(px, py, w, h, 8); x.fill(); x.stroke(); x.restore(); }
+function glow(x, px, py, r, c, a) { x.save(); x.globalAlpha = a; const g = x.createRadialGradient(px, py, 0, px, py, r); g.addColorStop(0, c); g.addColorStop(1, 'transparent'); x.fillStyle = g; x.fillRect(px - r, py - r, r * 2, r * 2); x.restore(); }
+function button(x, px, py, w, h, s, o = {}) { x.save(); x.fillStyle = o.hot ? GX.primaryHi : GX.primary; x.beginPath(); x.roundRect(px, py, w, h, 5); x.fill(); x.restore(); text(x, s, px + w / 2, py + h * 0.7, { align: 'center', weight: 700, size: 13, color: GX.onPrimary }); }
 import { market } from './screens-market.js';
 
-const G = '#6ee7a0', G2 = '#3ddc84', AM = '#e0a458', AM2 = '#ffb36b', RED = '#ff5a5a', MAG = '#ff4fd8', DIM = '#5a6a5e';
+const G = '#7fdc95', G2 = '#3ddc84', AM = '#e0a458', AM2 = '#ffb36b', RED = '#ff5a5a', MAG = '#ff4fd8', DIM = '#5a6a5e';
 const fmt = v => v >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 0 }) : v >= 1 ? v.toFixed(2) : v.toFixed(v < 0.01 ? 5 : 4);
 const pct = v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
 
@@ -56,7 +66,7 @@ export function tradingApp(S, ov) {
       text(x, 'H ' + fmt(hi), cx + 6, cy + ch - 4, { color: DIM }); text(x, 'L ' + fmt(lo), cx + 80, cy + ch - 4, { color: DIM });
       // tape
       x.fillStyle = '#2a2440'; x.fillRect(0, h - 18, w, 18); const str = ROASTS.join('   ///   ') + '   ///   ';
-      x.save(); x.font = '16px m5x7'; const tw = x.measureText(str).width || 2000; x.restore(); const off = tape % tw;
+      x.save(); x.font = font(16, 500); const tw = x.measureText(str).width || 2000; x.restore(); const off = tape % tw;
       text(x, str, -off, h - 5, { color: AM2 }); text(x, str, -off + tw, h - 5, { color: AM2 });
     },
   };

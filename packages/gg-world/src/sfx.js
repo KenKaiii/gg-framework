@@ -191,6 +191,8 @@ export const SFX = {
   setVolume(v) { ST.vol = Math.max(0, Math.min(1, v)); if (bus) bus.gain.value = ST.muted ? 0 : ST.vol * 0.55; try { localStorage.setItem(KEY, JSON.stringify(ST)); } catch { /* ignore */ } },
   /** where the player is + which way is screen-right (call once per frame) */
   listen(x, z, rx, rz) { listener.x = x; listener.z = z; listener.rx = rx; listener.rz = rz; },
+  /** dip the world's sounds (a TV is playing) @param {boolean} on */
+  duck(on) { ST.duck = !!on; if (bus) bus.gain.value = ST.muted ? 0 : ST.vol * 0.55 * (on ? 0.2 : 1); },
   suspend() { ctx?.suspend(); }, resume() { if (ctx && ctx.state === 'suspended') ctx.resume(); },
   has(name) { return !!LIB[name]; },
   /** add a room/activity-specific sound from your own file: SFX.define('my.sound', (out, t, p, K) => K.tone(out, t, {...}))

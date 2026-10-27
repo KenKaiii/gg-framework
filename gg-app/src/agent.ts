@@ -596,56 +596,6 @@ export async function getTrophies(): Promise<TrophySnapshot> {
   return invoke<TrophySnapshot>("agent_trophies");
 }
 
-export interface RoyaleStatus {
-  linked: boolean;
-  serverUrl: string;
-}
-
-/** GG Royale link state (app-wide, daemon-level). */
-export async function royaleStatus(): Promise<RoyaleStatus> {
-  await waitForReady();
-  const r = await invoke<{ linked?: unknown; serverUrl?: unknown }>("agent_royale_status");
-  return {
-    linked: r.linked === true,
-    serverUrl: typeof r.serverUrl === "string" ? r.serverUrl : "",
-  };
-}
-
-export interface RoyaleSummary {
-  claimable: number;
-  streak: number;
-  playing: number;
-}
-
-/** GG Royale badge counts; null when unlinked or the server is unreachable. */
-export async function royaleSummary(): Promise<RoyaleSummary | null> {
-  await waitForReady();
-  const r = await invoke<unknown>("agent_royale_summary");
-  if (typeof r !== "object" || r === null) return null;
-  const o = r as Record<string, unknown>;
-  const n = (v: unknown): number =>
-    typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : 0;
-  return { claimable: n(o.claimable), streak: n(o.streak), playing: n(o.playing) };
-}
-
-/**
- * Link if needed (opening GG Royale IS the opt-in) and get a fresh one-time
- * sign-in URL for the game page, which the app embeds full-window.
- */
-export async function openRoyale(): Promise<string> {
-  await waitForReady();
-  const url = await invoke<unknown>("agent_royale_open");
-  if (typeof url !== "string" || !/^https?:\/\//.test(url))
-    throw new Error("GG Royale sent no page URL");
-  return url;
-}
-
-/** Forget this device's GG Royale link. */
-export async function unlinkRoyale(): Promise<void> {
-  await waitForReady();
-  await invoke("agent_royale_unlink");
-}
-
 /**
  * A GG World online-save reply, as the World server sent it: `status` is its
  * HTTP status (409 stale ver, 400 with `body.error`), or 0 when it couldn't be
@@ -684,6 +634,16 @@ export function worldSavePut(
   patch: Record<string, unknown>,
 ): Promise<WorldSaveResult> {
   return worldSaveCall("agent_world_put", { ver, patch });
+}
+
+/** A one-time GG World live ticket: body `{ world, ticket, url }` on 200 (403 = consent off / banned). */
+export function worldLive(): Promise<WorldSaveResult> {
+  return worldSaveCall("agent_world_live");
+}
+
+/** Delete the whole GG World account; the sidecar forgets this device's link on success. */
+export function worldAccountDelete(): Promise<WorldSaveResult> {
+  return worldSaveCall("agent_world_account_delete");
 }
 
 /** Delete the GG World online save. */

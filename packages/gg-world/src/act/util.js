@@ -6,7 +6,7 @@ import { wallet } from '../creator.js';
 
 /** Draw crisp pixel text. align: 'left'|'center'|'right'. size multiple of 16 for m5x7 (16, 32, 48). */
 export function text(x, s, px, py, o = {}) {
-  x.save(); x.font = o.title ? CFONT.title(o.size || 16) : CFONT.body(o.size || 16); x.textAlign = o.align || 'left'; x.textBaseline = 'alphabetic';
+  x.save(); x.font = CFONT.body(o.size || 16); x.textAlign = o.align || 'left'; x.textBaseline = 'alphabetic';
   if (o.shadow) { x.fillStyle = o.shadow; x.fillText(s, Math.round(px), Math.round(py) + 2); }
   x.fillStyle = o.color || '#d8dccf'; x.fillText(s, Math.round(px), Math.round(py)); x.restore();
 }

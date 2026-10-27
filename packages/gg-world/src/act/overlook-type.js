@@ -1,43 +1,9 @@
 // @ts-check
 // Jack's typewriter close-up: a page filling live with the same line, slightly off-kilter, typos and all.
 // Hold Space (or mash any key) to type faster; a full page slides out onto the stack.
-import { loop, text, rng, keys } from './util.js';
+import { loop, rng, keys } from './util.js';
 import { SFX } from '../sfx.js';
-import { PAL, panel, badge, button, title, glow, noise, particles, shaker, clamp } from './art.js';
-
-/** Cached desk: dark wood grain under a lamp pool, Overlook carpet hexes at the edges. */
-function desk(W, H) {
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'));
-  const g = x.createRadialGradient(W * 0.35, 30, 10, W / 2, H / 2, W * 0.7); g.addColorStop(0, '#5a3824'); g.addColorStop(1, '#0c0808'); x.fillStyle = g; x.fillRect(0, 0, W, H);
-  for (let y = 0; y < H; y += 5) { x.fillStyle = `rgba(0,0,0,${0.08 + (y * 37 % 11) / 100})`; x.fillRect(0, y, W, 1); }
-  for (let i = 0; i < 40; i++) { x.fillStyle = 'rgba(255,200,140,0.05)'; x.fillRect((i * 97) % W, (i * 53) % H, 30 + i % 20, 1); }
-  noise(x, 0, 0, W, H, 0.04, 21);
-  const v = x.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, W * 0.7); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.6)'); x.fillStyle = v; x.fillRect(0, 0, W, H);
-  return cv;
-}
-/** Cached sheet of paper: aged edges, faint ruled margin, drop shadow. */
-function paper() {
-  const cv = document.createElement('canvas'); cv.width = 308; cv.height = 240; const x = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'));
-  x.fillStyle = 'rgba(0,0,0,0.45)'; x.fillRect(6, 8, 300, 230);
-  const g = x.createLinearGradient(0, 0, 0, 232); g.addColorStop(0, '#f2e8d0'); g.addColorStop(1, '#d8caa8'); x.fillStyle = g; x.fillRect(2, 2, 300, 230);
-  x.fillStyle = 'rgba(200,60,60,0.25)'; x.fillRect(20, 2, 1, 230); x.fillStyle = 'rgba(120,90,50,0.15)'; x.fillRect(2, 2, 6, 230); x.fillRect(296, 2, 6, 230);
-  noise(x, 2, 2, 300, 230, 0.05, 4); return cv;
-}
-/** Cached typewriter: black enamel body with gold pinstripe, chrome carriage, two rows of round keys. */
-function typewriter(W) {
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = 280; const x = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'));
-  x.fillStyle = 'rgba(0,0,0,0.5)'; x.fillRect(36, 210, W - 72, 70);
-  let g = x.createLinearGradient(0, 214, 0, 280); g.addColorStop(0, '#2a2630'); g.addColorStop(1, '#0a080c'); x.fillStyle = g; x.fillRect(40, 214, W - 80, 66);
-  x.fillStyle = 'rgba(255,255,255,0.15)'; x.fillRect(42, 215, W - 84, 1); x.fillStyle = PAL.goldD; x.fillRect(50, 224, W - 100, 1);
-  g = x.createLinearGradient(0, 204, 0, 220); g.addColorStop(0, '#e8ecf2'); g.addColorStop(0.5, '#6a707a'); g.addColorStop(1, '#2a2e36'); x.fillStyle = g; x.fillRect(30, 204, W - 60, 14); // platen
-  for (let i = 0; i < W - 60; i += 4) { x.fillStyle = 'rgba(0,0,0,0.15)'; x.fillRect(30 + i, 204, 1, 14); }
-  for (const kx of [20, W - 34]) { g = x.createRadialGradient(kx + 7, 209, 1, kx + 7, 211, 9); g.addColorStop(0, PAL.goldHi); g.addColorStop(1, PAL.goldD); x.fillStyle = g; x.beginPath(); x.arc(kx + 7, 211, 8, 0, 7); x.fill(); }
-  title(x, 'ROYAL', W / 2, 238, { size: 16, color: PAL.gold });
-  for (let row = 0; row < 2; row++) for (let i = 0; i < 14 - row; i++) { const kx = 84 + i * 24 + row * 12, ky = 254 + row * 16 - 8;
-    x.fillStyle = '#0a080c'; x.beginPath(); x.arc(kx, ky + 2, 8, 0, 7); x.fill(); x.fillStyle = '#c8ccd4'; x.beginPath(); x.arc(kx, ky, 8, 0, 7); x.fill();
-    x.fillStyle = '#f0ead8'; x.beginPath(); x.arc(kx, ky, 6, 0, 7); x.fill(); x.fillStyle = '#2a2420'; x.font = '8px monospace'; x.fillRect(kx - 1, ky - 1, 2, 2); }
-  return cv;
-}
+import { gx, svg as S, GX } from './gx.js';
 
 const LINE = 'All work and no play makes Jack a dull boy.';
 const VARIANTS = [LINE, LINE, LINE, 'All work and no play makes Jack a dull boy', 'ALL WORK AND NO PLAY MAKES JACK A DULL BOY.',
@@ -45,54 +11,85 @@ const VARIANTS = [LINE, LINE, LINE, 'All work and no play makes Jack a dull boy'
 
 /** @param {any} ctx */
 export function startTypewriter(ctx) {
-  const ov = ctx.overlay({ title: 'The Typewriter', sub: 'Overlook Hall · page 1', help: '<kbd>hold space</kbd> type faster <kbd>hold click</kbd> type faster <kbd>esc</kbd> leave' });
-  const W = 480, H = 270; const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const ov = ctx.overlay({ title: 'The Typewriter', sub: 'Overlook Hall · page 1', help: '<kbd>hold space</kbd> type faster <kbd>hold click</kbd> type faster' });
+  const G = gx(ov), reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const hud = G.hud([{ id: 'page', label: 'Page', value: 1, tone: 'gold' }, { id: 'keys', label: 'Keystrokes' }], [{ id: 'speed', label: 'Speed', value: 'Slow' }]);
+  const scene = G.scene({ aspect: 4 / 3, maxW: 900 }); scene.style.cursor = 'pointer';
+  if (!document.getElementById('ovt-style')) { const s = document.createElement('style'); s.id = 'ovt-style'; s.textContent = `
+.ovt-paper{position:absolute;left:21%;width:58%;top:0;height:66%;overflow:hidden;background:linear-gradient(#f4ecd6,#e3d5b4);box-shadow:0 18px 30px -12px rgba(0,0,0,.7),inset 0 0 40px rgba(140,100,50,.18);transform:rotate(-.7deg);transform-origin:50% 100%}
+.ovt-paper::before{content:"";position:absolute;inset:0 auto 0 8%;width:1px;background:rgba(200,60,60,.3)}
+.ovt-lines{position:absolute;left:11%;right:5%;top:7%;font:400 2.4cqh/1.6 "Courier Prime","Courier New",Courier,monospace;color:#1a1410;white-space:pre}
+.ovt-lines div{transition:none}
+.ovt-pg{position:absolute;bottom:3%;left:0;right:0;text-align:center;font:500 1.8cqh "Courier New",monospace;color:#6a5a44}
+.ovt-paper.out{transition:translate .62s cubic-bezier(.5,0,.75,0),opacity .62s;translate:0 -120%;opacity:0}
+.ovt-wendy{position:absolute;left:3%;top:30%;font:600 2.4cqh Sora;color:${GX.lampDeep};opacity:0;transition:opacity 2s}
+.ovt-ding{position:absolute;right:6%;top:52%;font:700 2.6cqh Sora;color:${GX.warning};opacity:0}
+.ovt-ding.on{animation:ovt-d .7s ease-out}@keyframes ovt-d{0%{opacity:1;translate:0 0}100%{opacity:0;translate:0 -2cqh}}
+@media (prefers-reduced-motion:reduce){.ovt-paper.out{transition:none}.ovt-ding.on{animation:none}}`; document.head.appendChild(s); }
+  const paperEl = document.createElement('div'); paperEl.className = 'ovt-paper'; paperEl.innerHTML = '<div class="ovt-lines"></div><div class="ovt-pg"></div>';
+  const linesEl = /** @type {HTMLElement} */ (paperEl.querySelector('.ovt-lines')), pgEl = /** @type {HTMLElement} */ (paperEl.querySelector('.ovt-pg'));
+  scene.appendChild(paperEl);
+  // the machine: a black enamel Royal with chrome carriage, gold pinstripes and four rows of glass-topped keys
+  const m = S('svg', { viewBox: '0 0 1000 420', width: '100%', role: 'img', 'aria-label': 'Typewriter' }, scene);
+  Object.assign(m.style, { position: 'absolute', left: '0', bottom: '0', overflow: 'visible' });
+  m.innerHTML = `<defs>
+  <linearGradient id="ovt-body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34303a"/><stop offset=".25" stop-color="#1c1a20"/><stop offset="1" stop-color="#08070a"/></linearGradient>
+  <linearGradient id="ovt-chrome" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f6fa"/><stop offset=".45" stop-color="#8a9099"/><stop offset=".55" stop-color="#4a4f57"/><stop offset="1" stop-color="#c8ccd2"/></linearGradient>
+  <linearGradient id="ovt-platen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a3a3e"/><stop offset=".4" stop-color="#121214"/><stop offset="1" stop-color="#050506"/></linearGradient>
+  <radialGradient id="ovt-knob" cx=".35" cy=".3"><stop offset="0" stop-color="#ffe6a8"/><stop offset=".6" stop-color="#b8862e"/><stop offset="1" stop-color="#5a3c10"/></radialGradient>
+  <radialGradient id="ovt-key" cx=".4" cy=".3"><stop offset="0" stop-color="#fffaf0"/><stop offset=".7" stop-color="#e8dfc8"/><stop offset="1" stop-color="#b8ad94"/></radialGradient>
+  <radialGradient id="ovt-lamp" cx=".35" cy="0" r=".9"><stop offset="0" stop-color="#ffd29a" stop-opacity=".22"/><stop offset="1" stop-color="#ffd29a" stop-opacity="0"/></radialGradient>
+  <filter id="ovt-sh" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="16"/></filter></defs>
+  <ellipse cx="500" cy="405" rx="470" ry="22" fill="#000" opacity=".6" filter="url(#ovt-sh)"/>
+  <path d="M110 130 L890 130 L960 390 Q960 408 940 408 L60 408 Q40 408 40 390 Z" fill="url(#ovt-body)"/>
+  <path d="M118 140 L882 140 L948 384 L52 384 Z" fill="none" stroke="#b8862e" stroke-opacity=".55" stroke-width="2"/>
+  <path d="M110 130 L890 130 L960 390 Q960 408 940 408 L60 408 Q40 408 40 390 Z" fill="url(#ovt-lamp)"/>
+  <text x="500" y="190" text-anchor="middle" font-family="Sora" font-weight="800" font-size="30" letter-spacing="14" fill="#d8aa52">ROYAL</text>
+  <g class="ovt-keys"></g>
+  <g class="ovt-car"><rect x="20" y="58" width="960" height="18" rx="9" fill="url(#ovt-chrome)"/><rect x="60" y="76" width="880" height="54" rx="27" fill="url(#ovt-platen)"/>
+   <rect x="60" y="82" width="880" height="6" rx="3" fill="#fff" opacity=".08"/><circle cx="34" cy="103" r="34" fill="url(#ovt-knob)"/><circle cx="966" cy="103" r="34" fill="url(#ovt-knob)"/>
+   <path d="M940 60 L1000 20 L1010 32 L956 72 Z" fill="url(#ovt-chrome)"/></g>`;
+  const keysG = /** @type {Element} */ (m.querySelector('.ovt-keys')), car = /** @type {Element} */ (m.querySelector('.ovt-car'));
+  /** @type {Element[]} */ const keyEls = [];
+  [[11, 236], [11, 278], [10, 320], [9, 360]].forEach(([n, y], row) => { for (let i = 0; i < n; i++) { const x = 500 + (i - (n - 1) / 2) * 66 + row * 6;
+    const g = S('g', { transform: `translate(${x} ${y})` }, keysG); S('ellipse', { cy: 6, rx: 24, ry: 12, fill: '#000', opacity: 0.6 }, g);
+    const top = S('g', {}, g); S('circle', { r: 23, fill: 'url(#ovt-chrome)' }, top); S('circle', { r: 18, fill: 'url(#ovt-key)' }, top);
+    S('text', { y: 6, 'text-anchor': 'middle', 'font-family': 'Sora', 'font-weight': 700, 'font-size': 15, fill: '#2a2420' }, top).textContent = 'QWERTYUIOPASDFGHJKLZXCVBNM.,;:?!-'[(row * 11 + i) % 33];
+    keyEls.push(top); } });
+  const space = S('rect', { x: 330, y: 386, width: 340, height: 14, rx: 7, fill: 'url(#ovt-chrome)' }, keysG);
+  const wendy = document.createElement('div'); wendy.className = 'ovt-wendy'; wendy.textContent = 'Wendy? ...darling?';
+  const ding = document.createElement('div'); ding.className = 'ovt-ding'; ding.textContent = 'ding!'; scene.append(wendy, ding);
+  const fitM = () => { const h = scene.clientWidth * 0.42; m.style.height = h + 'px'; paperEl.style.height = (scene.clientHeight - h * 0.72) + 'px'; };
+  fitM(); addEventListener('resize', fitM); ov.onClose(() => removeEventListener('resize', fitM));
+
   const K = keys(ov); let mash = 0; const onKey = e => { if (e.code !== 'Escape') mash = 0.4; }; addEventListener('keydown', onKey); ov.onClose(() => removeEventListener('keydown', onKey));
-  let held = false; c.addEventListener('pointerdown', e => { if (e.button === 0) { held = true; c.setPointerCapture?.(e.pointerId); } }); const up = () => { held = false; }; c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
+  let held = false; scene.addEventListener('pointerdown', e => { if (e.button === 0) { held = true; scene.setPointerCapture?.(e.pointerId); } }); const up = () => { held = false; }; scene.addEventListener('pointerup', up); scene.addEventListener('pointercancel', up);
   const r = rng(237);
   const mkLine = () => ({ s: VARIANTS[Math.floor(r() * VARIANTS.length)], dx: Math.round((r() - 0.5) * 14), dy: Math.round((r() - 0.5) * 2), ink: 0.75 + r() * 0.25 });
-  const st = { burst: 0, t: 0, lines: [mkLine()], n: 0, acc: 0, page: 1, ding: 0, slide: 0, jolt: 0 };
-  const PER = 12, LH = 16, fx = particles(), shake = shaker(), back = desk(W, H), sheet = paper(), machine = typewriter(W); let typed = 0, hov = false;
-  c.addEventListener('pointermove', e => { const q = c.getBoundingClientRect(), px = (e.clientX - q.left) / q.width * W, py = (e.clientY - q.top) / q.height * H; hov = px > W - 74 && py > 46 && py < 70; }); c.style.cursor = 'pointer';
+  const st = { t: 0, lines: [mkLine()], n: 0, acc: 0, page: 1, slide: 0, playing: false, fast: false, lastKey: -1 };
+  const PER = 12; let typed = 0, curEl = /** @type {HTMLElement | null} */ (null);
+  const newLineEl = l => { const d = document.createElement('div'); d.style.cssText = `opacity:${l.ink};translate:${l.dx * 0.12}cqh ${l.dy * 0.1}cqh`; linesEl.appendChild(d); curEl = d; };
+  const newPage = () => { linesEl.replaceChildren(); st.lines = [mkLine()]; st.n = 0; newLineEl(st.lines[0]); pgEl.textContent = '- ' + st.page + ' -'; };
+  newPage();
   loop(ov, dt => {
+    if (!st.playing) return;
     st.t += dt; mash = Math.max(0, mash - dt);
     const fast = K.has('Space') || held || mash > 0; const cps = fast ? 55 : 16;
-    if (st.slide > 0) { st.slide -= dt * 1.6; if (st.slide <= 0) { st.slide = 0; SFX.play('paper'); if (st.page === 2) SFX.play('eerie', { vol: 0.5, delay: 0.3 }); st.lines = [mkLine()]; st.n = 0; st.page++; ov.setSub('Overlook Hall · page ' + st.page); } }
-    else {
-      st.acc += dt * cps;
-      while (st.acc >= 1) { st.acc--; const cur = st.lines[st.lines.length - 1]; st.n++; st.jolt = 1; if (cur.s[st.n - 1] !== ' ') SFX.play('typewriter', { vol: 0.6, jitter: 0.08 });
-        if (st.n > cur.s.length) { st.ding = 1; SFX.play('typewriter.ding', { vol: 0.7 }); if (st.lines.length >= PER) { st.slide = 1; break; } st.lines.push(mkLine()); st.n = 0; } }
-    }
-    st.ding = Math.max(0, st.ding - dt * 2); st.jolt = Math.max(0, st.jolt - dt * 12);
-    if (st.slide > 0 && !st.burst) { st.burst = 1; fx.burst(W / 2, 40, { n: 18, colors: [PAL.paper, PAL.cream, '#c8b890'], speed: 60, up: 60 }); shake.kick(2); }
-    if (st.slide === 0) st.burst = 0;
-    typed += dt * cps * (st.slide ? 0 : 1);
-    x.drawImage(back, 0, 0); glow(x, 120, 20, 160, '#ffcf8a', 0.16 + 0.03 * Math.sin(st.t * 1.3));
-    x.save(); shake.apply(x, dt);
-    // paper (slides up and out when full)
-    const off = st.slide > 0 ? (1 - st.slide) * -260 : 0;
-    x.save(); x.translate(W / 2, 12 + off); x.rotate(-0.012);
-    x.drawImage(sheet, -152, -2);
-    st.lines.forEach((l, i) => { const last = i === st.lines.length - 1 && st.slide === 0; const s = last ? l.s.slice(0, st.n) : l.s;
-      x.globalAlpha = l.ink; text(x, s, -138 + l.dx, 20 + i * LH + l.dy, { color: '#1a1410' }); x.globalAlpha = 1; });
-    text(x, '- ' + st.page + ' -', 0, 222, { color: '#6a5a44', align: 'center' });
-    x.restore();
-    // typewriter: drawn machine (cached), the carriage jolts on each key
-    const jy = st.jolt > 0.5 ? 1 : 0; x.drawImage(machine, 0, jy);
-    const cur = st.lines[st.lines.length - 1], carX = 40 + (cur ? st.n / cur.s.length : 0) * 22;
-    x.fillStyle = '#c8ccd4'; x.fillRect(Math.round(carX), 200 + jy, 18, 3); x.fillStyle = '#fff'; x.fillRect(Math.round(carX), 200 + jy, 18, 1);
-    const hk = Math.floor(st.t * cps) % 14; if (fast || st.jolt > 0) { x.fillStyle = 'rgba(255,207,138,0.5)'; x.beginPath(); x.arc(84 + hk * 24, 247, 7, 0, 7); x.fill(); }
-    if (st.ding > 0) title(x, 'ding!', W - 60, 194 - (1 - st.ding) * 12, { size: 16, color: PAL.goldHi, glow: PAL.gold });
-    fx.draw(x, dt); x.restore();
-    // HUD: pages + keystrokes + typing speed, the hold-to-type button
-    badge(x, 8, 8, 'page', st.page, { style: 'wood', color: PAL.goldHi, w: 58 });
-    badge(x, 8, 46, 'keys', Math.floor(typed), { style: 'wood', color: PAL.cream, w: 58 });
-    badge(x, W - 74, 8, 'speed', fast ? 'FAST' : 'slow', { style: 'wood', color: fast ? PAL.red : PAL.dim, w: 66 });
-    button(x, W - 74, 46, 66, 24, 'TYPE', { primary: true, hot: hov || held, down: held });
-    if (st.page > 2) title(x, 'Wendy? ...darling?', 76, 100, { size: 16, body: true, align: 'left', color: `rgba(224,164,88,${0.6 + 0.3 * Math.sin(st.t * 2)})` });
-    // start card: how to play, fades after a few seconds or on the first key
-    const ca = clamp(3.2 - st.t, 0, 1) * (typed > 30 ? 0 : 1);
-    if (ca > 0) { x.globalAlpha = ca; const p = panel(x, W / 2 - 120, 92, 240, 66, { style: 'paper' }); title(x, 'THE TYPEWRITER', W / 2, p.y + 24, { size: 16, color: '#7a1a14', ink: 'rgba(255,246,224,0.7)' });
-      title(x, 'hold SPACE or hold click: type faster', W / 2, p.y + 42, { size: 16, body: true, color: PAL.paperInk, ink: 'rgba(255,246,224,0.6)' }); title(x, 'ESC: leave', W / 2, p.y + 57, { size: 16, body: true, color: '#7a5a48', ink: 'rgba(255,246,224,0.6)' }); x.globalAlpha = 1; }
+    if (fast !== st.fast) { st.fast = fast; hud.set('speed', fast ? 'Fast' : 'Slow', { tone: fast ? 'bad' : GX.text }); }
+    if (st.slide > 0) { st.slide -= dt * 1.6; if (st.slide <= 0) { st.slide = 0; SFX.play('paper'); if (st.page === 2) { SFX.play('eerie', { vol: 0.5, delay: 0.3 }); G.swell(); } st.page++; hud.set('page', st.page); ov.setSub('Overlook Hall · page ' + st.page);
+      paperEl.classList.remove('out'); newPage(); if (st.page > 2) wendy.style.opacity = '1'; } return; }
+    st.acc += dt * cps;
+    while (st.acc >= 1) { st.acc--; const cur = st.lines[st.lines.length - 1]; st.n++; typed++;
+      const ch = cur.s[st.n - 1]; if (ch && ch !== ' ') SFX.play('typewriter', { vol: 0.6, jitter: 0.08 });
+      if (curEl) curEl.textContent = cur.s.slice(0, st.n);
+      const k = ch === ' ' ? -2 : Math.floor(r() * keyEls.length);
+      if (st.lastKey >= 0) keyEls[st.lastKey].setAttribute('transform', ''); space.setAttribute('transform', '');
+      if (k >= 0) { keyEls[k].setAttribute('transform', 'translate(0 5) scale(.94)'); st.lastKey = k; } else space.setAttribute('transform', 'translate(0 4)');
+      if (st.n > cur.s.length) { SFX.play('typewriter.ding', { vol: 0.7 }); ding.classList.remove('on'); void ding.offsetWidth; ding.classList.add('on');
+        if (st.lines.length >= PER) { st.slide = 1; if (!reduce) paperEl.classList.add('out'); break; } const l = mkLine(); st.lines.push(l); st.n = 0; newLineEl(l); } }
+    const cur = st.lines[st.lines.length - 1], f = cur ? Math.min(1, st.n / cur.s.length) : 0;
+    car.setAttribute('transform', `translate(${(0.5 - f) * 120} 0)`); paperEl.style.translate = `${(0.5 - f) * 12}% 0`;
+    hud.set('keys', Math.floor(typed));
   });
+  G.card({ title: 'The Typewriter', text: 'All work and no play. Keep the pages coming.', how: [[['Hold Space'], 'type faster'], [['Hold click'], 'type faster']], cta: 'Sit down', onGo: () => { st.playing = true; } });
 }

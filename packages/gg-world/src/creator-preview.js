@@ -21,6 +21,8 @@ export function makePreview(A, look, host) {
   const up = () => { drag = null; spin = 1; }; cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
   const frame = now => {
     if (!host.isConnected) { dispose(); return; }
+    // World paused (the app switched away) or the tab hidden: stop drawing, check again shortly (no busy loop)
+    if (/** @type {any} */ (window).__game?.paused || document.hidden) { last = now; raf = /** @type {any} */ (setTimeout(() => { raf = requestAnimationFrame(frame); }, 400)); return; }
     raf = requestAnimationFrame(frame); const dt = Math.min(0.05, (now - last) / 1000); last = now;
     const cw = host.clientWidth, ch = host.clientHeight; if (cw !== w || ch !== h) { w = cw; h = ch; R.setPixelRatio(Math.min(2, devicePixelRatio || 1)); R.setSize(w, h, false); cv.style.width = '100%'; cv.style.height = '100%'; cam.aspect = w / Math.max(1, h); cam.updateProjectionMatrix(); }
     if (spin && drag === null) yaw += dt * 0.45;
@@ -31,6 +33,6 @@ export function makePreview(A, look, host) {
     R.render(sc, cam);
   };
   raf = requestAnimationFrame(frame);
-  function dispose() { cancelAnimationFrame(raf); av.dispose(); disc.geometry.dispose(); disc.material.dispose(); cv.remove(); }
+  function dispose() { cancelAnimationFrame(raf); clearTimeout(raf); av.dispose(); disc.geometry.dispose(); disc.material.dispose(); cv.remove(); }
   return { set: l => av.setLook(l), wave: () => { av.fx.wave = 1.4; }, dispose };
 }

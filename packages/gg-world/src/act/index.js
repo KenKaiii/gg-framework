@@ -3,6 +3,8 @@
 import pool from './pool.js';
 import screens from './screens.js';
 import tv from './tv.js';
+import rickroll from './rickroll.js';
+import ggCoder from './gg-coder.js';
 import pinball from './pinball.js';
 import arcade from './arcade.js';
 import barmenu from './barmenu.js';
@@ -26,4 +28,4 @@ import sample from './_sample.js';
 import engineActs from './engine.js';
 
 /** @type {any[]} */
-export const ACTIVITIES = [...engineActs, ...radio, ...pool, ...screens, ...tv, ...pinball, ...arcade, ...barmenu, ...filmsA, ...filmsB, ...screeningActs, ...dinerActs, ...libraryActs, ...garageActs, ...overlookActs, ...hawkinsActs, ...biolabActs, ...hackersActs, ...computerActs, ...fightclubActs, ...inceptionActs, ...tavernActs, ...roofScope, sample].filter(Boolean);
+export const ACTIVITIES = [...engineActs, ...radio, ...pool, ...screens, ...rickroll, ...ggCoder, ...tv, ...pinball, ...arcade, ...barmenu, ...filmsA, ...filmsB, ...screeningActs, ...dinerActs, ...libraryActs, ...garageActs, ...overlookActs, ...hawkinsActs, ...biolabActs, ...hackersActs, ...computerActs, ...fightclubActs, ...inceptionActs, ...tavernActs, ...roofScope, sample].filter(Boolean);

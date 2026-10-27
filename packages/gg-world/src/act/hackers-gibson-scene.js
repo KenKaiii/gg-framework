@@ -40,6 +40,8 @@ export function gibsonScene(tow, GW, GH, fi, fj) {
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 30, 6, 1, true), beamM); beam.position.set(fi + 0.5, 15, fj + 0.5); scene.add(beam);
   return {
     canvas: renderer.domElement, cam, fileAt: file.position,
+    /** match the on-screen size (sharp, not a stretched 480x270), capped at ~2.1 MP so it stays cheap @param {number} cssW */
+    fit(cssW) { const dpr = Math.min(2, devicePixelRatio || 1); let w = Math.round(cssW * dpr); w = Math.max(W, Math.min(w, 1920)); const h = Math.round(w * H / W); if (renderer.domElement.width !== w) renderer.setSize(w, h, false); },
     /** @param {number} far */ fog(far) { /** @type {THREE.Fog} */ (scene.fog).far = far; },
     /** @param {number} t @param {number} near 0..1 how hot the scanner is */
     render(t, near) { tex.offset.y = -t * 0.25; file.rotation.y = t * 2; file.position.y = 0.6 + Math.sin(t * 3) * 0.08; beamM.opacity = 0.1 + near * 0.5; m.opacity = 0.7 + 0.1 * Math.sin(t * 2); renderer.render(scene, cam); },

@@ -58,6 +58,10 @@ export const CSS = `
 .lvk .t{display:flex;justify-content:space-between}.lvk .mu{color:#a1a8b1}.lvk .c{color:#f0c75e}
 .xpbar{display:block;height:6px;border-radius:3px;background:#0e1013;overflow:hidden;box-shadow:inset 0 1px 0 rgba(0,0,0,.6)}.xpbar i{display:block;height:100%;background:#8fa3ff}
 .dot{display:inline-block;width:8px;height:8px;background:#7fdc95;flex:none}
+.onk.off .dot{background:#7a8088}.onk.off .mu{color:#8a9099}.onk.wait .dot{background:#f0b44c;animation:nrblink 1s steps(2) infinite}.onk.wait .mu{color:#f0c75e}.onk.on .dot{background:#3ddc84}
+@keyframes nrblink{50%{opacity:.35}}
+.livebar{position:absolute;left:50%;top:110px;transform:translateX(-50%);z-index:30;pointer-events:auto;display:flex;align-items:center;gap:12px;padding:8px 10px 8px 14px;font:20px/22px ${B};color:#e8ebef;background:#2a1d1d;box-shadow:0 0 0 2px #ff9a8f}.livebar[hidden]{display:none}
+.livebar .btn{padding:2px 10px 4px;border:1px solid #3a3f46;border-radius:6px;background:#1f2226;color:#e6e9e2;cursor:pointer}
 .who{all:unset;box-sizing:border-box;pointer-events:auto;cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 12px 8px;font:16px/16px ${B};-webkit-font-smoothing:none;transition:background-color .15s}
 .who .mu{color:#a1a8b1}.who:hover{background:#33383e}.who:focus-visible{outline:2px solid #8fa3ff;outline-offset:2px}
 .embedded .where{top:162px}
@@ -93,10 +97,24 @@ kbd{font:16px/16px ${B};background:#161b17;border:1px solid #263228;border-radiu
 .prompt.in{animation:prIn .16s ease-out}@keyframes prIn{from{opacity:0;margin-top:4px}to{opacity:1;margin-top:0}}
 @media (prefers-reduced-motion: reduce){.prompt.in{animation:none}}
 .creator input{width:100%;border:0;outline:0;background:#0e1013;border-radius:4px;padding:6px 10px 8px;font:16px/18px ${B};color:#e8ebef;box-shadow:inset 0 1px 0 rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.05)}
+.creator .cnhint{min-height:18px;margin-top:-2px;font:16px/18px ${B};color:#a1a8b1}.creator .cnhint.bad{color:#ff9a8f}.creator .cnhint.ok{color:#7fdc95}
 .creator input:focus-visible{box-shadow:inset 0 1px 0 rgba(0,0,0,.6),0 0 0 2px #8fa3ff}
 .modal{position:absolute;pointer-events:auto;display:none;z-index:20}
 .hud-top,.where,.rooms,.toast,.editbar{z-index:10}
 .profile{left:50%;top:50%;transform:translate(-50%,-50%);width:380px;padding:16px}
+/* multiplayer: the real-player marker (a small green live dot, nameplate + chat + card) and the card's Block / Report */
+.lvm{display:inline-block;box-sizing:border-box;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle,#3ddc84 0 3px,transparent 3.5px);border:2px solid #3ddc84;box-shadow:0 0 0 1px rgba(0,0,0,.75),inset 0 0 0 1px rgba(0,0,0,.75);vertical-align:middle;margin-left:5px;flex:none}
+.sr{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+#ui .np{left:0;top:0;will-change:transform}
+.chatp .cm u .lvm{margin:0 0 0 4px;vertical-align:2px}
+.np .adm,.profile .adm{margin-left:4px;padding:0 4px;border-radius:4px;background:#f0c75e;color:#2a1a05;font:12px/14px ${B};font-weight:normal;vertical-align:middle}
+.lvadm{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)}.lvadm span{font:16px/20px ${B};color:#f0c75e;margin-right:4px}.lvadm .danger{color:#ff9a8f}
+.lvact{display:flex;gap:8px;margin-top:12px}.profile .lvrep{margin-top:10px}.profile .lvrep[hidden],.profile .lvdone[hidden],.profile .lvsure[hidden],.profile .btn[hidden]{display:none}
+.profile .lvrep h3{margin:0 0 6px;font:18px/20px ${B};font-weight:normal;color:#e8ebef}.profile .lvrep .opts{display:flex;flex-wrap:wrap;gap:6px}.profile .lvrow{display:flex;gap:6px;margin-top:8px}
+.profile .opt[aria-checked=true]{background:#34347e;border-color:#8fa3ff;color:#fff}.profile .btn:disabled{opacity:.45;cursor:default}.profile .btn:focus-visible{outline:2px solid #8fa3ff;outline-offset:1px}
+.profile .lvdone{margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.profile .lvdone p{margin:0;color:#6ee7a0}
+.profile .lvsure{display:flex;align-items:center;gap:6px;margin-top:8px;padding:6px 8px;border-radius:6px;background:#2a1d1d}.profile .lvsure span{flex:1;color:#ffcfc9}.profile .lvdone .btn,.profile .lvrow .btn,.profile .lvsure .btn{padding:6px 10px;border-radius:6px;border:1px solid #3a3f46;background:#1f2226;color:#e6e9e2;font:inherit;cursor:pointer}.profile .lvsure .danger{color:#ff9a8f}
+.profile .lvact .btn,.profile .lvrep .btn{flex:1 1 auto;padding:6px 10px;border-radius:6px;border:1px solid #3a3f46;background:#1f2226;color:#e6e9e2;font:inherit;cursor:pointer}.profile .lvact .btn:hover,.profile .lvrep .btn:hover{background:#2a2f35}
 .profile .head{display:flex;gap:12px;align-items:center}
 .portrait{width:92px;height:92px;border-radius:6px;background:radial-gradient(circle at 50% 35%,#2e3238,#15171a 75%);overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 0 0 1px #0b0c0e}
 .portrait img{width:100%;height:100%;display:block}
@@ -165,6 +183,7 @@ kbd{font:16px/16px ${B};background:#161b17;border:1px solid #263228;border-radiu
 .chatp .cin{display:flex;align-items:center;gap:8px;padding:6px 8px 8px;background:#e8eefc;box-shadow:inset 0 2px 0 #a9b8e4;cursor:text}
 #ui .chatp input{flex:1;min-width:0;border:0;outline:0;background:transparent;padding:0;font:24px/26px ${B};color:#1e0c1f;-webkit-font-smoothing:none}
 #ui .chatp input::placeholder{color:#6a74a8}
+.chatp .mutel{padding:4px 8px 0;font:18px/20px ${B};color:#7a1e2a}.chatp .mutel[hidden]{display:none}
 .chatp kbd{font:24px/24px ${B};padding:0 5px 2px;border:0;border-radius:3px;background:#1e0c1f;color:#cedbf9}
 .chatp.typing{box-shadow:inset 0 -4px 0 #a9b8e4,0 0 0 2px #1e0c1f,0 6px 0 0 #1e0c1f,0 0 0 4px #8fa3ff}
 .chatp.typing kbd{background:#34347e}
@@ -175,6 +194,7 @@ kbd{font:16px/16px ${B};background:#161b17;border:1px solid #263228;border-radiu
 .creator .cpv{display:block;cursor:grab;touch-action:none}.creator .cpv:active{cursor:grabbing}
 .creator .cr{flex:1;min-width:0;display:flex;flex-direction:column}
 .creator .chd{display:flex;align-items:baseline;justify-content:space-between;padding-right:4px}
+.creator .cfirst{margin:-4px 0 8px;font:16px/20px ${B};color:#c2c7ce}
 .creator h3{margin:0 0 8px;font:32px/26px ${B};color:#e8ebef;font-weight:normal}.creator .coins{color:#a1a8b1;line-height:20px}.creator .coins b{color:#f0c75e;font-weight:normal}
 .creator .ctabs{display:flex;gap:4px;margin-bottom:8px}
 .creator .ctab{flex:1;border:0;border-radius:6px;padding:6px 4px 8px;font:16px/16px ${B};background:#2c3035;color:#a1a8b1;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 2px 0 #0b0c0e}.creator .ctab:hover{background:#33383e;color:#fff}

@@ -1,90 +1,107 @@
 // @ts-check
 // Payphone phreaking: crack today's 4-tone code (from the date) in 6 tries, Mastermind-style feedback per tone.
-// Pays coins once per day via coins(S). Drawn with the art kit: a chrome payphone, an LCD, a CRT tone log.
+// Pays coins once per day via coins(S). GX rebuild (concept: showcase/minigames/concepts/payphone.html): a brushed
+// chrome payphone in SVG, rim-lit by the club's pink and teal neon, a seven-segment LCD, chrome keys that depress,
+// and "the line" board of tries with lamps.
 import { SFX } from '../sfx.js';
-import { loop, rng, coins, mouse } from './util.js';
-import { PAL, panel, title, glow, banner, particles, shaker, rr, shade, badge } from './art.js';
-import { scan, load, save, today, neonBg, btns } from './hackers-util.js';
+import { rng, coins } from './util.js';
+import { gx } from './gx.js';
+import { load, save, today } from './hackers-util.js';
 
 // DTMF-ish soft beep per digit (two sines, short)
 SFX.define('cyb.dtmf', (o, t, p, K) => { K.tone(o, t, { type: 'sine', f: 697 * p, v: 0.08, a: 0.005, d: 0.12 }); K.tone(o, t, { type: 'sine', f: 1209 * p, v: 0.06, a: 0.005, d: 0.12 }); });
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
-const TRIES = 6, PAY = 5, KX = 22, KY = 62, KS = 26;
-const FC = ['#4a4458', '#ffb347', '#6eff7a'];
+const TRIES = 6, PAY = 5;
+const BODY = " <defs> <linearGradient id=\"pp-chrome\" x1=\"0\" x2=\"1\"> <stop offset=\"0\" stop-color=\"#5b616b\"/><stop offset=\".08\" stop-color=\"#d9dee5\"/><stop offset=\".22\" stop-color=\"#9097a2\"/> <stop offset=\".45\" stop-color=\"#eef1f5\"/><stop offset=\".62\" stop-color=\"#a8afb9\"/><stop offset=\".85\" stop-color=\"#dfe3e9\"/><stop offset=\"1\" stop-color=\"#4c525b\"/> </linearGradient> <linearGradient id=\"pp-chromeV\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"> <stop offset=\"0\" stop-color=\"#f1f4f8\"/><stop offset=\".5\" stop-color=\"#8d949f\"/><stop offset=\"1\" stop-color=\"#4a5059\"/> </linearGradient> <linearGradient id=\"pp-rimL\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#ff5fd2\" stop-opacity=\".75\"/><stop offset=\".22\" stop-color=\"#ff5fd2\" stop-opacity=\"0\"/></linearGradient> <linearGradient id=\"pp-rimR\" x1=\"1\" x2=\"0\"><stop offset=\"0\" stop-color=\"#44e3cf\" stop-opacity=\".6\"/><stop offset=\".2\" stop-color=\"#44e3cf\" stop-opacity=\"0\"/></linearGradient> <linearGradient id=\"pp-lampTop\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffd29a\" stop-opacity=\".35\"/><stop offset=\".35\" stop-color=\"#ffd29a\" stop-opacity=\"0\"/></linearGradient> <linearGradient id=\"pp-sheen\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\".3\" stop-color=\"#fff\" stop-opacity=\"0\"/><stop offset=\".42\" stop-color=\"#fff\" stop-opacity=\".35\"/><stop offset=\".5\" stop-color=\"#fff\" stop-opacity=\"0\"/></linearGradient> <radialGradient id=\"pp-screw\" cx=\".35\" cy=\".3\" r=\".8\"><stop offset=\"0\" stop-color=\"#fff\"/><stop offset=\".5\" stop-color=\"#a3aab4\"/><stop offset=\"1\" stop-color=\"#3b4048\"/></radialGradient> <linearGradient id=\"pp-black\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#2a2d33\"/><stop offset=\".35\" stop-color=\"#4a4f58\"/><stop offset=\".55\" stop-color=\"#1c1e22\"/><stop offset=\"1\" stop-color=\"#0d0e10\"/></linearGradient> <filter id=\"pp-brush\" x=\"0\" y=\"0\" width=\"100%\" height=\"100%\"> <feTurbulence type=\"fractalNoise\" baseFrequency=\"0.003 0.8\" numOctaves=\"2\" seed=\"4\"/> <feColorMatrix values=\"0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .22 0\"/> <feComposite in2=\"SourceGraphic\" operator=\"in\"/> </filter> <filter id=\"pp-soft\"><feGaussianBlur stdDeviation=\"10\"/></filter> <clipPath id=\"pp-bodyClip\"><rect x=\"70\" y=\"60\" width=\"330\" height=\"560\" rx=\"22\"/></clipPath> </defs> <ellipse cx=\"240\" cy=\"632\" rx=\"190\" ry=\"14\" fill=\"#000\" opacity=\".55\" filter=\"url(#pp-soft)\"/> <!-- hood with lit sign --> <rect x=\"60\" y=\"6\" width=\"350\" height=\"64\" rx=\"14\" fill=\"url(#pp-chromeV)\"/> <rect x=\"76\" y=\"16\" width=\"318\" height=\"40\" rx=\"8\" fill=\"#14121c\"/> <text x=\"235\" y=\"43\" text-anchor=\"middle\" font-family=\"Sora\" font-weight=\"700\" font-size=\"17\" letter-spacing=\"7\" fill=\"#ffd9f3\" style=\"filter:drop-shadow(0 0 6px #ff5fd2) drop-shadow(0 0 14px #ff5fd2)\">TELEPHONE</text> <!-- body --> <rect x=\"70\" y=\"60\" width=\"330\" height=\"560\" rx=\"22\" fill=\"url(#pp-chrome)\"/> <g clip-path=\"url(#pp-bodyClip)\"> <rect x=\"70\" y=\"60\" width=\"330\" height=\"560\" fill=\"#fff\" filter=\"url(#pp-brush)\"/> <rect x=\"70\" y=\"60\" width=\"330\" height=\"560\" fill=\"url(#pp-rimL)\"/> <rect x=\"70\" y=\"60\" width=\"330\" height=\"560\" fill=\"url(#pp-rimR)\"/> <rect x=\"70\" y=\"60\" width=\"330\" height=\"560\" fill=\"url(#pp-lampTop)\"/> <rect x=\"70\" y=\"60\" width=\"330\" height=\"560\" fill=\"url(#pp-sheen)\"/> </g> <rect x=\"70.5\" y=\"60.5\" width=\"329\" height=\"559\" rx=\"22\" fill=\"none\" stroke=\"rgba(0,0,0,.45)\"/> <!-- recessed faceplate --> <rect x=\"124\" y=\"92\" width=\"252\" height=\"414\" rx=\"14\" fill=\"none\" stroke=\"rgba(0,0,0,.35)\" stroke-width=\"2\"/> <rect x=\"125\" y=\"94\" width=\"250\" height=\"412\" rx=\"13\" fill=\"none\" stroke=\"rgba(255,255,255,.45)\"/> <!-- coin slot --> <rect x=\"366\" y=\"226\" width=\"28\" height=\"82\" rx=\"8\" fill=\"url(#pp-chromeV)\" stroke=\"rgba(0,0,0,.35)\"/> <rect x=\"377\" y=\"238\" width=\"6\" height=\"58\" rx=\"3\" fill=\"#0b0c0f\"/> <text x=\"380\" y=\"325\" text-anchor=\"middle\" font-family=\"Sora\" font-weight=\"700\" font-size=\"7\" letter-spacing=\"1.5\" fill=\"#3b4048\">25\u00a2</text> <!-- coin return --> <rect x=\"190\" y=\"530\" width=\"120\" height=\"62\" rx=\"10\" fill=\"url(#pp-chromeV)\" stroke=\"rgba(0,0,0,.4)\"/> <rect x=\"206\" y=\"546\" width=\"88\" height=\"30\" rx=\"6\" fill=\"#0d0e11\"/> <rect x=\"206\" y=\"546\" width=\"88\" height=\"8\" rx=\"4\" fill=\"rgba(255,255,255,.08)\"/> <!-- screws --> <g fill=\"url(#pp-screw)\" stroke=\"rgba(0,0,0,.4)\" stroke-width=\".6\"> <circle cx=\"92\" cy=\"82\" r=\"6\"/><circle cx=\"378\" cy=\"82\" r=\"6\"/><circle cx=\"92\" cy=\"598\" r=\"6\"/><circle cx=\"378\" cy=\"598\" r=\"6\"/> </g> <g stroke=\"#3b4048\" stroke-width=\"1.4\" stroke-linecap=\"round\"> <path d=\"M88 82h8\"/><path d=\"M375 79l6 6\"/><path d=\"M92 594v8\"/><path d=\"M374 598h8\"/> </g> <!-- hook cradle --> <rect x=\"34\" y=\"128\" width=\"52\" height=\"30\" rx=\"8\" fill=\"url(#pp-chromeV)\" stroke=\"rgba(0,0,0,.4)\"/> <!-- coiled cord: from handset bottom down and into the body --> <path d=\"M56 540 C 40 548.0 40 553.0 56 551.0 C 72 549.0 72 555.0 56 553.5 C 40 553.5 40 558.5 56 556.5 C 72 554.5 72 560.5 56 559.0 C 40 559.0 40 564.0 56 562.0 C 72 560.0 72 566.0 56 564.5 C 40 564.5 40 569.5 56 567.5 C 72 565.5 72 571.5 56 570.0 C 40 570.0 40 575.0 56 573.0 C 72 571.0 72 577.0 56 575.5 C 40 575.5 40 580.5 56 578.5 C 72 576.5 72 582.5 56 581.0 C 40 581.0 40 586.0 56 584.0 C 72 582.0 72 588.0 56 586.5 C 40 586.5 40 591.5 56 589.5 C 72 587.5 72 593.5 56 592.0 C 40 592.0 40 597.0 56 595.0 C 72 593.0 72 599.0 56 597.5 C 40 597.5 40 602.5 56 600.5 C 72 598.5 72 604.5 56 603.0 C 40 603.0 40 608.0 56 606.0 C 72 604.0 72 610.0 56 608.5 C 40 608.5 40 613.5 56 611.5 C 72 609.5 72 615.5 56 614.0 C 40 614.0 40 619.0 56 617.0 C 72 615.0 72 621.0 56 619.5 C 40 619.5 40 624.5 56 622.5 C 72 620.5 72 626.5 56 625.0 Q 56 640 100 612\" fill=\"none\" stroke=\"#141518\" stroke-width=\"5\" stroke-linecap=\"round\"/> <path d=\"M56 540 C 40 548.0 40 553.0 56 551.0 C 72 549.0 72 555.0 56 553.5 C 40 553.5 40 558.5 56 556.5 C 72 554.5 72 560.5 56 559.0 C 40 559.0 40 564.0 56 562.0 C 72 560.0 72 566.0 56 564.5 C 40 564.5 40 569.5 56 567.5 C 72 565.5 72 571.5 56 570.0 C 40 570.0 40 575.0 56 573.0 C 72 571.0 72 577.0 56 575.5 C 40 575.5 40 580.5 56 578.5 C 72 576.5 72 582.5 56 581.0 C 40 581.0 40 586.0 56 584.0 C 72 582.0 72 588.0 56 586.5 C 40 586.5 40 591.5 56 589.5 C 72 587.5 72 593.5 56 592.0 C 40 592.0 40 597.0 56 595.0 C 72 593.0 72 599.0 56 597.5 C 40 597.5 40 602.5 56 600.5 C 72 598.5 72 604.5 56 603.0 C 40 603.0 40 608.0 56 606.0 C 72 604.0 72 610.0 56 608.5 C 40 608.5 40 613.5 56 611.5 C 72 609.5 72 615.5 56 614.0 C 40 614.0 40 619.0 56 617.0 C 72 615.0 72 621.0 56 619.5 C 40 619.5 40 624.5 56 622.5 C 72 620.5 72 626.5 56 625.0 Q 56 640 100 612\" fill=\"none\" stroke=\"rgba(255,255,255,.18)\" stroke-width=\"1.4\"/> <!-- handset --> <g> <path d=\"M28 118 q30 -14 60 0 l-6 38 q-6 10 -14 12 l0 250 q8 2 14 12 l6 38 q-30 14 -60 0 l-4 -40 q4 -8 12 -10 l0 -250 q-8 -2 -12 -10z\" fill=\"url(#pp-black)\" stroke=\"#000\" stroke-opacity=\".6\"/> <path d=\"M34 124 q24 -9 48 0\" fill=\"none\" stroke=\"rgba(255,95,210,.7)\" stroke-width=\"2\" stroke-linecap=\"round\"/> <path d=\"M44 175 v240\" stroke=\"rgba(255,95,210,.45)\" stroke-width=\"2\" stroke-linecap=\"round\"/> <path d=\"M34 500 q24 9 48 0\" fill=\"none\" stroke=\"rgba(255,255,255,.2)\" stroke-width=\"1.5\"/> </g> ";
+const CSS = ".pp-phone { position: relative; width: 420px; height: 640px; flex: none; } .pp-phone svg.body { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; } .pp-lcd { position: absolute; left: 140px; top: 104px; width: 220px; height: 74px; border-radius: 6px; background: linear-gradient(180deg, #0f2a26, #0a1e1b 60%, #0c2421); box-shadow: inset 0 2px 6px rgba(0,0,0,.8), inset 0 0 0 1px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.35); display: flex; align-items: center; justify-content: center; gap: 10px; overflow: hidden; } .pp-lcd::after { content: \"\"; position: absolute; inset: 0; background: linear-gradient(160deg, rgba(255,255,255,.14), transparent 40%); pointer-events: none; } .pp-lcd svg { width: 34px; height: 56px; } .pp-seg { fill: #7dffe8; filter: drop-shadow(0 0 3px rgba(68,227,207,.8)); transition: fill .08s; } .pp-seg.off { fill: rgba(125,255,232,.07); filter: none; } .pp-lcd.bad .pp-seg:not(.off) { fill: #ff8fdf; filter: drop-shadow(0 0 3px rgba(255,95,210,.8)); } .pp-lcd.cursor svg.pp-cur .pp-seg.g { animation: blink 1.6s steps(1) infinite; } @keyframes blink { 50% { fill: #7dffe8; filter: drop-shadow(0 0 3px rgba(68,227,207,.8)); } } .pp-tag { position: absolute; left: 140px; width: 220px; top: 186px; text-align: center; font: 700 9.5px/1 'Sora',sans-serif; letter-spacing: .22em; color: #3b4048; text-shadow: 0 1px 0 rgba(255,255,255,.6); } .pp-pad { position: absolute; left: 154px; top: 214px; display: grid; grid-template-columns: repeat(3, 56px); gap: 14px 16px; } .pp-k { position: relative; width: 56px; height: 48px; border: 0; border-radius: 9px; cursor: pointer; padding: 0; background: linear-gradient(180deg, #f4f6f9 0%, #c3c9d1 45%, #9aa2ad 100%); box-shadow: 0 6px 0 #5c636d, 0 7px 0 #2c3036, 0 10px 14px -4px rgba(0,0,0,.7), inset 0 1px 0 #fff, inset 0 -2px 3px rgba(0,0,0,.18), 0 0 14px -2px rgba(68,227,207,.45); color: #1d2127; font: 700 19px/1 'Sora',sans-serif; transition: translate .07s, box-shadow .07s; } .pp-k small { display: block; margin-top: 3px; font-size: 7.5px; font-weight: 600; letter-spacing: .2em; color: #5a616b; } .pp-k.down, .pp-k:active { translate: 0 5px; box-shadow: 0 1px 0 #5c636d, 0 2px 0 #2c3036, 0 3px 5px -2px rgba(0,0,0,.7), inset 0 1px 0 #fff, inset 0 -1px 2px rgba(0,0,0,.2), 0 0 22px 0 rgba(68,227,207,.7); } .pp-k:focus-visible { outline: 2px solid #8fa3ff; outline-offset: 3px; } .pp-board { width: 384px; padding: 20px 22px 18px; border-radius: 18px; flex: none; background: linear-gradient(180deg, rgba(31,34,38,.86), rgba(21,23,26,.86)); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 0 0 1px rgba(255,255,255,.07), 0 16px 44px -12px rgba(0,0,0,.7), -18px 0 50px -30px rgba(255,95,210,.5); } .pp-board h3 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; display: flex; justify-content: space-between; align-items: baseline; } .pp-board h3 span { font-size: 12px; font-weight: 600; color: #a1a8b1; } .pp-rows { margin-top: 14px; display: grid; gap: 8px; } .pp-row { display: grid; grid-template-columns: 22px repeat(4, 1fr); gap: 8px; align-items: center; padding: 6px 8px; border-radius: 12px; background: rgba(255,255,255,.025); transition: background .3s; } .pp-row.now { background: rgba(143,163,255,.1); box-shadow: inset 0 0 0 1px rgba(143,163,255,.35); } .pp-row i { font: 600 11px/1 'Sora',sans-serif; font-style: normal; color: #a1a8b1; } .pp-slot { position: relative; height: 44px; border-radius: 10px; background: #2a2e33; box-shadow: inset 0 1px 3px rgba(0,0,0,.5); display: flex; align-items: center; justify-content: space-between; padding: 0 10px 0 12px; font: 700 18px/1 'Sora',sans-serif; font-variant-numeric: tabular-nums; } .pp-lamp { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a5058, #262a2f); box-shadow: inset 0 0 0 1px rgba(0,0,0,.5); transition: background .25s, box-shadow .25s; } .pp-lamp.spot { background: radial-gradient(circle at 35% 30%, #d9ffe2, #7fdc95 45%, #2f8a49); box-shadow: 0 0 10px 1px rgba(127,220,149,.75); } .pp-lamp.moved { background: radial-gradient(circle at 35% 30%, #fff3cc, #f0c75e 45%, #a3771c); box-shadow: 0 0 10px 1px rgba(240,199,94,.7); } .pp-lamp.nope { background: radial-gradient(circle at 35% 30%, #5a6068, #33383e); } .pp-lamp.on { animation: lamp-in .35s cubic-bezier(.3,1.6,.6,1) both; } @keyframes lamp-in { from { scale: .3; opacity: 0; } } .pp-legend { display: flex; gap: 16px; margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.07); font-size: 12px; color: #c2c7ce; } .pp-legend span { display: inline-flex; align-items: center; gap: 7px; } .pp-legend .pp-lamp { width: 11px; height: 11px; } .pp-shake { animation: shake .32s; } @keyframes shake { 25% { translate: -4px 0; } 75% { translate: 4px 0; } } " + `.pp-wrap{position:absolute;left:0;top:0;width:860px;height:640px;transform-origin:0 0;display:flex;align-items:center;gap:56px}
+.pp-board h3 b{font-weight:700}.pp-board .msg{margin-top:12px;font-size:12px;line-height:1.4;color:#c2c7ce}.pp-board .msg.win{color:#7fdc95}.pp-board .msg.bad{color:#ff7d70}`;
+const SEG = { a: '5,2 29,2 25,6 9,6', b: '30,3 30,26 27,28 26,7', c: '30,30 30,53 26,49 27,32', d: '5,54 29,54 25,50 9,50', e: '4,30 4,53 8,49 7,32', f: '4,3 4,26 7,28 8,7', g: '6,28 9,26 25,26 28,28 25,30 9,30' };
+const ON = { 0: 'abcdef', 1: 'bc', 2: 'abged', 3: 'abgcd', 4: 'fgbc', 5: 'afgcd', 6: 'afgedc', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg', '-': 'g', ' ': '' };
+const digitSVG = (ch, cur) => `<svg viewBox="0 0 34 56" class="${cur ? 'pp-cur' : ''}" style="transform:skewX(-6deg)">` + Object.entries(SEG).map(([k, p]) => `<polygon class="pp-seg ${k} ${ON[ch].includes(k) ? '' : 'off'}" points="${p}"/>`).join('') + '</svg>';
+const KEYS = [['1', ''], ['2', 'ABC'], ['3', 'DEF'], ['4', 'GHI'], ['5', 'JKL'], ['6', 'MNO'], ['7', 'PQRS'], ['8', 'TUV'], ['9', 'WXYZ'], ['*', 'UNDO'], ['0', 'OPER'], ['#', 'SEND']];
+const CLS = { 2: 'spot', 1: 'moved', 0: 'nope' };
 
 /** @param {any} ctx */
 export function startPhone(ctx) {
   const { S } = ctx; ctx.R.hackers?.fire('phone');
-  const ov = ctx.overlay({ title: 'Payphone', sub: 'free calls for the elite', help: '<kbd>0-9</kbd> dial <kbd>⌫</kbd> undo <kbd>enter</kbd> send / redial <kbd>click</kbd> keypad (* undo, # send) <kbd>esc</kbd> hang up' });
-  const W = 320, H = 180; const { c, x } = ov.canvas(W, H); x.imageSmoothingEnabled = false;
+  const ov = ctx.overlay({ title: 'Payphone', sub: 'free calls for the elite', help: '<kbd>0-9</kbd> dial <kbd>⌫</kbd> / <kbd>*</kbd> undo <kbd>enter</kbd> / <kbd>#</kbd> send <kbd>click</kbd> keypad' });
+  const K = gx(ov), reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const day = today(), r = rng(day * 31 + 7), code = Array.from({ length: 4 }, () => String(Math.floor(r() * 10)));
-  const paid = load('cyb-phone-paid', 0) === day;
-  const st = { cur: '', rows: /** @type {{g:string, f:number[], t:number}[]} */ ([]), won: false, lost: false, press: '', pt: 0, shake: 0, endT: 0, msg: paid ? 'already phreaked today. still fun.' : `crack it for ${PAY} coins` };
+  const paidToday = () => load('cyb-phone-paid', 0) === day;
+  const hud = K.hud([{ id: 'coins', label: 'Payout', value: paidToday() ? 'paid today' : `${PAY} coins`, tone: 'gold' }, { id: 'left', label: 'Tries left', value: TRIES }], [{ id: 'cracked', label: 'Cracked today', value: paidToday() ? 'yes' : 'no' }]);
+  const scene = K.scene({ aspect: 860 / 640, maxW: 1100 });
+  const style = document.createElement('style'); style.textContent = CSS; scene.appendChild(style);
+  const wrap = document.createElement('div'); wrap.className = 'pp-wrap'; scene.appendChild(wrap);
+  wrap.innerHTML = `<div class="pp-phone"><svg class="body" viewBox="0 0 420 640" aria-hidden="true">${BODY}</svg><div class="pp-lcd cursor" aria-live="polite"></div><div class="pp-tag">ENTER 4 DIGITS</div><div class="pp-pad"></div></div>
+<section class="pp-board" aria-label="Tries"><h3>The line <span class="st"></span></h3><div class="pp-rows"></div><div class="pp-legend"><span><b class="pp-lamp spot"></b>Spot on</span><span><b class="pp-lamp moved"></b>Moved</span><span><b class="pp-lamp nope"></b>Nope</span></div><div class="msg"></div></section>`;
+  const fit = () => { wrap.style.transform = `scale(${scene.clientWidth / 860})`; };
+  const ro = new ResizeObserver(fit); ro.observe(scene); ov.onClose(() => ro.disconnect()); fit();
+  const $ = s => /** @type {HTMLElement} */ (wrap.querySelector(s));
+  const lcd = $('.pp-lcd'), tag = $('.pp-tag'), pad = $('.pp-pad'), rowsEl = $('.pp-rows'), stEl = $('.st'), msgEl = $('.msg');
+  /** @type {Record<string, HTMLButtonElement>} */ const btn = {};
+  KEYS.forEach(([k, sub]) => {
+    const b = document.createElement('button'); b.className = 'pp-k'; b.type = 'button'; b.tabIndex = -1;
+    b.innerHTML = `${k === '*' ? '✱' : k}<small>${sub || '&nbsp;'}</small>`;
+    b.setAttribute('aria-label', k === '*' ? 'Undo' : k === '#' ? 'Send' : 'Dial ' + k);
+    b.addEventListener('pointerdown', () => press(k, false)); pad.appendChild(b); btn[k] = b;
+  });
+  const st = { cur: '', rows: /** @type {{g:string,f:number[]}[]} */ ([]), playing: false };
   ctx.R.hackersDbg = { ...(ctx.R.hackersDbg || {}), phone: () => st }; ov.onClose(() => { if (ctx.R.hackersDbg) delete ctx.R.hackersDbg.phone; });
-  const bg = neonBg(W, H, '#ffb347', 0.6), fx = particles(), sh = shaker(), B2 = btns(c, W, H);
-  const send = () => {
-    if (st.cur.length < 4 || st.won || st.lost) return;
+  const setMsg = (t, c = '') => { msgEl.textContent = t; msgEl.className = 'msg ' + c; };
+  const buildRows = () => { rowsEl.innerHTML = ''; for (let i = 0; i < TRIES; i++) { const row = document.createElement('div'); row.className = 'pp-row'; row.innerHTML = `<i>${i + 1}</i>` + '<div class="pp-slot"><span></span><b class="pp-lamp"></b></div>'.repeat(4); rowsEl.appendChild(row); } };
+  const render = () => {
+    const s = st.cur.padEnd(4, ' ');
+    lcd.innerHTML = [...s].map((c, i) => digitSVG(c === ' ' && i === st.cur.length && st.playing ? '-' : c, i === st.cur.length)).join('');
+    hud.set('left', TRIES - st.rows.length);
+    stEl.textContent = st.playing ? `Try ${st.rows.length + 1} of ${TRIES}` : `${st.rows.length} of ${TRIES} used`;
+    [...rowsEl.children].forEach((row, i) => { row.classList.toggle('now', st.playing && i === st.rows.length); if (i === st.rows.length) row.querySelectorAll('.pp-slot span').forEach((sp, j) => { sp.textContent = st.cur[j] || ''; }); });
+  };
+  const shake = el => { if (reduce) return; el.classList.remove('pp-shake'); void el.offsetWidth; el.classList.add('pp-shake'); };
+  function press(k, visual) {
+    if (!st.playing) return;
+    const b = btn[k]; if (visual && b) { b.classList.add('down'); setTimeout(() => b.classList.remove('down'), 110); }
+    lcd.classList.remove('bad');
+    if (k === '*') { st.cur = st.cur.slice(0, -1); SFX.play('ui.back'); }
+    else if (k === '#') return send();
+    else if (st.cur.length < 4) { st.cur += k; SFX.play('cyb.dtmf', { pitch: 0.8 + (+k) * 0.04, jitter: 0 }); }
+    render();
+  }
+  function send() {
+    if (st.cur.length < 4) { lcd.classList.add('bad'); shake(lcd); tag.textContent = 'NEEDS 4 DIGITS'; SFX.play('ui.deny'); return; }
     const g = st.cur.split(''), f = [0, 0, 0, 0], left = code.slice();
     g.forEach((d, i) => { if (d === code[i]) { f[i] = 2; left[i] = '_'; } });
     g.forEach((d, i) => { if (f[i]) return; const k = left.indexOf(d); if (k >= 0) { f[i] = 1; left[k] = '_'; } });
-    st.rows.push({ g: st.cur, f, t: 0 }); st.cur = ''; SFX.play('ui.send'); f.forEach((v, i) => SFX.play(v === 2 ? 'ping' : v === 1 ? 'blip' : 'beep', { delay: 0.15 + i * 0.12, vol: 0.6 }));
-    if (f.every(v => v === 2)) { st.won = true; st.endT = -0.6; SFX.play('success', { delay: 0.7 }); setTimeout(() => { fx.burst(226, 80, { n: 40, colors: ['#6eff7a', '#ffe8a0', '#3ff0ff'] }); fx.confetti(W); }, 600);
-      if (!paid && load('cyb-phone-paid', 0) !== day) { coins(S).spend(-PAY); save('cyb-phone-paid', day); st.msg = `line open! +${PAY} coins`; ctx.api.toast(`Free call. +${PAY} coins`); } else st.msg = 'line open! (paid out today)'; }
-    else if (st.rows.length >= TRIES) { st.lost = true; st.endT = -0.6; st.shake = 0.5; setTimeout(() => sh.kick(6), 600); SFX.play('fail', { delay: 0.7 }); SFX.play('static', { delay: 0.7, vol: 0.5 }); st.msg = `traced! code was ${code.join('')}`; }
-  };
-  const dial = d => { if (st.cur.length >= 4 || st.won || st.lost) return false; st.cur += d; st.press = d; st.pt = 0.2; SFX.play('cyb.dtmf', { pitch: 0.8 + (+d) * 0.04, jitter: 0 }); return true; };
-  const undo = () => { st.cur = st.cur.slice(0, -1); st.press = '*'; st.pt = 0.2; SFX.play('ui.back'); };
-  const enter = () => { if (st.won || st.lost) { SFX.play('dial'); st.rows = []; st.cur = ''; st.won = st.lost = false; st.msg = load('cyb-phone-paid', 0) === day ? 'already phreaked today. still fun.' : `crack it for ${PAY} coins`; } else send(); };
+    const row = rowsEl.children[st.rows.length];
+    st.rows.push({ g: st.cur, f }); st.cur = ''; SFX.play('ui.send');
+    row.querySelectorAll('.pp-lamp').forEach((l, i) => setTimeout(() => { l.classList.add(CLS[f[i]], 'on'); SFX.play(f[i] === 2 ? 'ping' : f[i] === 1 ? 'blip' : 'beep', { vol: 0.6 }); }, reduce ? 0 : 150 + i * 120));
+    const won = f.every(v => v === 2), lost = !won && st.rows.length >= TRIES;
+    tag.textContent = won ? 'LINE OPEN' : `${TRIES - st.rows.length} TRIES LEFT`;
+    if (won || lost) { st.playing = false; render(); setTimeout(() => end(won), reduce ? 300 : 900); } else render();
+  }
+  function end(won) {
+    if (!ov.el.isConnected) return;
+    let pay = 0;
+    if (won) {
+      K.swell(); SFX.play('success');
+      if (!paidToday()) { coins(S).spend(-PAY); save('cyb-phone-paid', day); pay = PAY; ctx.api.toast(`Free call. +${PAY} coins`); setMsg(`Line open! +${PAY} coins`, 'win'); }
+      else setMsg('Line open! (paid out today)', 'win');
+      const rc = lcd.getBoundingClientRect(); K.pop(rc.left + rc.width / 2, rc.top, pay ? `+${pay} coins` : 'Line open', pay ? 'gold' : 'up');
+      hud.set('coins', 'paid today'); hud.set('cracked', 'yes');
+    } else { SFX.play('fail'); SFX.play('static', { vol: 0.5 }); setMsg(`Traced! Code was ${code.join('')}`, 'bad'); shake(wrap.querySelector('.pp-phone')); }
+    const res = K.result({ title: won ? 'Line cracked' : 'Traced', big: code.join(''), line: won ? 'You cracked the code.' : 'The code was', stats: [[`${st.rows.length} / ${TRIES}`, 'Tries used'], [pay ? `+${pay}` : won ? 'paid today' : '0', 'Coins']], again: 'Redial', onAgain: start });
+    const big = /** @type {HTMLElement | null} */ (res.el.querySelector('.big')); if (big) { big.style.letterSpacing = '.12em'; big.style.color = won ? '#7fdc95' : ''; }
+  }
+  function start() {
+    SFX.play('dial'); st.rows = []; st.cur = ''; st.playing = true; tag.textContent = 'ENTER 4 DIGITS'; lcd.classList.remove('bad');
+    setMsg(paidToday() ? 'Already phreaked today. Still fun.' : `Crack it for ${PAY} coins.`); buildRows(); render();
+  }
   const onKey = e => {
-    if (/^Digit\d$|^Numpad\d$/.test(e.code)) { if (!dial(e.code.slice(-1))) return; }
-    else if (e.code === 'Backspace') undo();
-    else if (e.code === 'Enter') enter();
+    if (!st.playing) return;
+    if (/^Digit\d$|^Numpad\d$/.test(e.code) && !e.shiftKey) press(e.code.slice(-1), true);
+    else if (e.code === 'Backspace' || e.key === '*' || e.code === 'NumpadMultiply') press('*', true);
+    else if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.key === '#') press('#', true);
     else return; e.preventDefault();
   };
-  const m = mouse(ov, c, W, H);
-  const press = k => { if (k === '*') undo(); else if (k === '#') { st.press = '#'; st.pt = 0.2; enter(); } else dial(k); };
-  const RB = { x: W / 2 - 104, y: 136, w: 96, h: 20 }, LB = { x: W / 2 + 8, y: 136, w: 96, h: 20 };
   addEventListener('keydown', onKey); ov.onClose(() => removeEventListener('keydown', onKey));
-  loop(ov, (dt, t) => {
-    st.pt = Math.max(0, st.pt - dt); st.shake = Math.max(0, st.shake - dt); for (const rw of st.rows) rw.t += dt;
-    const ended = (st.won || st.lost) && (st.endT += dt) > 0.8;
-    m.rows(i => ({ x: KX + (i % 3) * KS, y: KY + Math.floor(i / 3) * 24, w: 22, h: 20 }), KEYS.length, { pick: i => press(KEYS[i]) });
-    if (ended) { m.set([]); m.add({ ...RB, pick: enter }); m.add({ ...LB, pick: () => ov.close() }); }
-    x.save(); sh.apply(x, dt); if (st.shake) x.translate(Math.round(Math.sin(t * 80) * 3), 0);
-    bg.draw(x, t);
-    // the payphone: brushed chrome body, coin slot, LCD, chrome keys
-    panel(x, 12, 8, 100, 164, { style: 'metal', r: 6 });
-    x.fillStyle = '#1a1e26'; rr(x, 20, 14, 84, 8, 2); x.fill(); title(x, 'BELL', 62, 22, { size: 16, body: true, color: '#ffb347' });
-    const lcd = panel(x, 20, 28, 84, 26, { style: 'crt', r: 2 });
-    for (let i = 0; i < 4; i++) { const ch = st.cur[i]; title(x, ch || '-', lcd.x + 14 + i * 19, lcd.y + 19, { size: 16, color: ch ? '#b8ff6a' : '#2a5a2a', ink: '#020a04', glow: ch ? 'rgba(157,255,61,0.6)' : undefined, glowR: 6 }); }
-    KEYS.forEach((k, i) => { const kx = KX + (i % 3) * KS, on = st.pt > 0 && st.press === k, hot = !ended && B2.hot(kx, KY + Math.floor(i / 3) * 24, 22, 20), ky = KY + Math.floor(i / 3) * 24 + (on ? 2 : 0);
-      x.fillStyle = 'rgba(0,0,0,0.5)'; rr(x, kx, KY + Math.floor(i / 3) * 24 + 3, 22, 20, 4); x.fill();
-      const base = on ? '#9dff3d' : hot ? '#e8ecf4' : '#b8bec8', g = x.createLinearGradient(0, ky, 0, ky + 20); g.addColorStop(0, shade(base, 0.35)); g.addColorStop(1, shade(base, -0.3));
-      x.fillStyle = g; rr(x, kx, ky, 22, 20, 4); x.fill(); x.strokeStyle = '#2a2e36'; x.lineWidth = 1; rr(x, kx + 0.5, ky + 0.5, 21, 19, 4); x.stroke(); x.fillStyle = 'rgba(255,255,255,0.7)'; x.fillRect(kx + 3, ky + 2, 16, 1);
-      if (hot || on) glow(x, kx + 11, ky + 10, 18, on ? '#9dff3d' : '#ffffff', 0.25);
-      title(x, k, kx + 11, ky + 15, { size: 16, body: true, color: '#1a1c22', ink: 'rgba(255,255,255,0.4)' }); });
-    // tone log on a CRT
-    const L = panel(x, 122, 8, 190, 120, { style: 'crt' });
-    x.save(); x.strokeStyle = '#3ff0ff'; x.globalAlpha = 0.8; x.beginPath(); for (let i = 0; i < 100; i++) { const a = st.pt > 0 ? 7 : 1.2; x.lineTo(L.x + 8 + i, 22 + Math.sin(i * 0.4 + t * 30) * a * Math.sin(i * 0.07)); } x.stroke(); x.restore();
-    title(x, `TONES ${st.rows.length}/${TRIES}`, L.x + L.w - 8, 26, { size: 16, body: true, align: 'right', color: '#ffb347', ink: '#020a04' });
-    for (let j = 0; j < TRIES; j++) { const row = st.rows[j], by = 34 + j * 15;
-      title(x, String(j + 1), L.x + 10, by + 11, { size: 16, body: true, color: '#2a6a3a', ink: '#020a04' });
-      for (let i = 0; i < 4; i++) { const bx = L.x + 22 + i * 22, rev = row && row.t > 0.15 + i * 0.12, f = rev ? row.f[i] : 0;
-        x.fillStyle = row ? (rev ? FC[f] : '#2a2638') : '#0a140e'; rr(x, bx, by, 18, 13, 3); x.fill(); x.strokeStyle = row ? 'rgba(255,255,255,0.25)' : '#1a3a24'; rr(x, bx + 0.5, by + 0.5, 17, 12, 3); x.stroke();
-        if (rev && f) glow(x, bx + 9, by + 6, 14, FC[f], 0.35);
-        if (row) title(x, row.g[i], bx + 9, by + 11, { size: 16, body: true, color: rev && f ? '#0b0a16' : PAL.cream, ink: rev && f ? 'rgba(255,255,255,0.35)' : '#000' }); } }
-    // legend
-    [['spot on', 2], ['moved', 1], ['nope', 0]].forEach(([s, f], i) => { const ly = 46 + i * 16; x.fillStyle = FC[+f]; rr(x, L.x + 118, ly - 8, 9, 9, 2); x.fill(); if (f) glow(x, L.x + 122, ly - 4, 9, FC[+f], 0.4);
-      title(x, String(s), L.x + 132, ly, { size: 16, body: true, align: 'left', color: FC[+f] === FC[0] ? PAL.dim : FC[+f], ink: '#020a04' }); });
-    badge(x, L.x + 116, 92, 'coins', paid ? 'paid' : String(PAY), { w: 66, h: 30, color: paid ? PAL.dim : PAL.gold });
-    // message strip
-    const mp = panel(x, 122, 134, 190, 24, { style: 'glass' });
-    title(x, st.msg, mp.x + mp.w / 2, mp.y + 16, { size: 16, body: true, color: st.won ? '#9dff3d' : st.lost ? PAL.red : PAL.cream });
-    title(x, 'type 0-9  enter send  ⌫ undo', 217, 174, { size: 16, body: true, color: PAL.dim });
-    fx.draw(x, dt);
-    x.restore();
-    if ((st.won || st.lost) && st.endT > 0) { banner(x, W, H, st.won ? 'SPOOFED' : 'TRACED', st.msg, st.endT, { color: st.won ? '#9dff3d' : PAL.red });
-      if (ended) { B2.draw(x, RB.x, RB.y, RB.w, RB.h, 'REDIAL', { primary: true }); B2.draw(x, LB.x, LB.y, LB.w, LB.h, 'HANG UP'); } }
-    scan(x, W, H);
-  });
+  buildRows(); render(); setMsg(paidToday() ? 'Already phreaked today. Still fun.' : `Crack it for ${PAY} coins.`);
+  K.card({ title: 'Payphone', text: `Somebody left a 4-digit code on this line. Crack it in ${TRIES} tries and the phone pays out ${PAY} coins (once a day). Green: spot on. Amber: in the code, wrong place.`, how: [[['0', '9'], 'dial'], [['Backspace'], 'undo'], [['Enter'], 'send']], cta: 'Pick up', onGo: start });
 }
