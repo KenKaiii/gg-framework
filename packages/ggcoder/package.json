@@ -99,7 +99,8 @@
     "check": "tsc --noEmit",
     "test": "vitest run",
     "bench:edit": "tsx src/core/hashline-edit-benchmark.ts",
-    "bench:search": "tsx src/core/semantic-search-benchmark.ts"
+    "bench:search": "tsx src/core/semantic-search-benchmark.ts",
+    "bench:context": "tsx src/core/context-policy-benchmark.ts"
   },
   "dependencies": {
     "@anthropic-ai/sandbox-runtime": "0.0.78",

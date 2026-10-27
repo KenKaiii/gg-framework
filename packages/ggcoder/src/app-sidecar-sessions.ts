@@ -32,6 +32,8 @@ export async function listSidecarSessions(
   requestedAgent: string | null,
   coderSessionsDir: string,
   homeDir?: string,
+  /** The project's GG-made worktrees: their conversations are listed with it. */
+  worktreeCwds: readonly string[] = [],
 ): Promise<SidecarSession[]> {
   if (requestedAgent === MOTION_SESSIONS_QUERY) {
     return listRecentSessions(cwd, MOTION_SESSION_LIMIT, motionSessionsDir(coderSessionsDir));
@@ -46,7 +48,7 @@ export async function listSidecarSessions(
         sessionsDirForChatAgent(coderSessionsDir, requestedAgent),
       );
     }
-    return listCodingSessions(cwd, coderSessionsDir, homeDir);
+    return listCodingSessions(cwd, coderSessionsDir, homeDir, worktreeCwds);
   }
 
   const groups = await Promise.all(
@@ -89,9 +91,10 @@ async function listCodingSessions(
   cwd: string,
   coderSessionsDir: string,
   homeDir?: string,
+  worktreeCwds: readonly string[] = [],
 ): Promise<SidecarSession[]> {
   const [native, foreign] = await Promise.all([
-    listRecentSessions(cwd, CODING_SESSION_LIMIT, coderSessionsDir),
+    listRecentSessions(cwd, CODING_SESSION_LIMIT, coderSessionsDir, worktreeCwds),
     listForeignSessions(cwd, FOREIGN_SESSION_LIMIT, homeDir).catch(() => []),
   ]);
   // Native first: a session already resumable here beats one that needs an

@@ -49,6 +49,7 @@ export interface SessionRouteContext {
     projectHealth: ProjectHealth | null;
     tasks: BackgroundProcess[];
     additionalRoots: string[];
+    worktreeOf: string | null;
   };
   readonly progress: ProgressManager;
   readonly trophies: TrophyManager;

@@ -88,6 +88,35 @@ interface ToolArgCandidate {
   freedTokens: number;
 }
 
+/**
+ * The newest user/tool message that no later prune can change, or undefined
+ * when nothing has been pruned for size yet. A prune pass stops scanning at the
+ * newest old-output stub (see `PRUNE_OVERFLOW_MARKER`), and stubs, superseded
+ * reads and capped tool arguments are only ever applied to messages it scanned,
+ * so every later pass edits strictly newer messages than that stub. Hosts pin the
+ * provider's long-lived cache breakpoint here (`Message.cacheAnchor`) so the
+ * next prune re-sends only what follows it instead of the whole run.
+ */
+export function stablePrefixEnd(messages: Message[]): Message | undefined {
+  let stub = messages.length;
+  while (--stub >= 0) {
+    const msg = messages[stub];
+    if (
+      msg?.role === "tool" &&
+      msg.content.some(
+        (r) => typeof r.content === "string" && r.content.startsWith(PRUNE_OVERFLOW_MARKER),
+      )
+    ) {
+      break;
+    }
+  }
+  for (let i = stub - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg?.role === "user" || msg?.role === "tool") return msg;
+  }
+  return undefined;
+}
+
 /** Mutates `messages` in place; message/array identity is preserved so usage
  *  anchors and React refs stay valid. Returns what was freed. */
 export function pruneStaleToolResults(messages: Message[], opts: PruneOptions = {}): PruneResult {

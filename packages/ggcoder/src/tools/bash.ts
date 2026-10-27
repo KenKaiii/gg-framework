@@ -15,6 +15,7 @@ import { backgroundWatchWarnings } from "./background-watch-lint.js";
 import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
 import { isCatastrophicCommand } from "../core/workspace-guard.js";
 import { checkDestructiveGit } from "../core/destructive-git-guard.js";
+import { checkSharedCheckoutSwitch } from "../core/shared-checkout-guard.js";
 import { shellThreatBlockMessage } from "../core/shell-threats.js";
 import { checkPackageInstall, packageBlockMessage } from "../core/package-threats.js";
 import {
@@ -167,6 +168,8 @@ export function createBashTool(
   defaultTimeoutMs: number = DEFAULT_TIMEOUT,
   /** Package release-age cooldown in days; 0 disables. Default 2. */
   getPackageCooldownDays: () => number = () => 2,
+  /** Who else works in the git checkout rooted at a path (other windows, a parent agent). */
+  getCheckoutSharers?: (root: string) => Promise<string | null>,
 ): AgentTool<typeof BashParams> {
   // Lazily created on the first persist:true call; one session per tool
   // instance (i.e. per agent session), killed when the process exits.
@@ -255,15 +258,23 @@ export function createBashTool(
       // clean -f / stash drop / branch -D / force push when work would be lost.
       // A persist:true call runs wherever the session shell last cd'd to.
       const liveShell = persist && process.platform !== "win32" ? sessionShell : null;
-      const gitBlocked = await checkDestructiveGit(command, {
-        cwd,
-        resolveCwd:
-          liveShell && !liveShell.isBusy
-            ? async () => (await liveShell.run("pwd", 2_000, context.signal)).output.trim() || null
-            : undefined,
-      });
+      const resolveCwd =
+        liveShell && !liveShell.isBusy
+          ? async () => (await liveShell.run("pwd", 2_000, context.signal)).output.trim() || null
+          : undefined;
+      const gitBlocked = await checkDestructiveGit(command, { cwd, resolveCwd });
       if (gitBlocked) {
         return `Error: ${gitBlocked}`;
+      }
+      // A branch switch in a checkout another open window also uses moves that
+      // window onto the new branch too (core/shared-checkout-guard.ts).
+      if (getCheckoutSharers) {
+        const sharedBlocked = await checkSharedCheckoutSwitch(command, {
+          cwd,
+          resolveCwd,
+          sharedWith: getCheckoutSharers,
+        });
+        if (sharedBlocked) return `Error: ${sharedBlocked}`;
       }
       // Shell-threat guard — pipe-to-shell, reverse shells, secret exfiltration,
       // lookalike hosts and terminal-escape tricks (core/shell-threats.ts).

@@ -226,6 +226,8 @@ export function handleHistoryRoutes(
               text: "",
               security: { rule: d.rule, target: typeof d.target === "string" ? d.target : "" },
             });
+          } else if (marker.kind === "checkout" && typeof d.text === "string") {
+            history.push({ role: "assistant", text: "", checkoutNotice: d.text });
           } else if (marker.kind === "error" && typeof d.headline === "string") {
             const error = restoreAppErrorPayload(d);
             if (error) history.push({ role: "assistant", text: "", error });

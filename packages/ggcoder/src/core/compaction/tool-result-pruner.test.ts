@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ContentPart, Message, ToolCall, ToolResult } from "@kenkaiiii/gg-ai";
-import { pruneStaleToolResults, shouldPruneToolResults } from "./tool-result-pruner.js";
+import {
+  pruneStaleToolResults,
+  shouldPruneToolResults,
+  stablePrefixEnd,
+} from "./tool-result-pruner.js";
 
 function toolTurn(
   id: string,
@@ -388,6 +392,56 @@ describe("pruneStaleToolResults", () => {
 
     expect(messages[3]).toBe(anchor);
     expect(messages[2]).toBe(toolMsg);
+  });
+});
+
+describe("stablePrefixEnd", () => {
+  const opts = { protectTokens: 40_000, minimumTokens: 20_000, protectToolBatches: 2 };
+
+  it("is undefined until something was pruned for size", () => {
+    const messages: Message[] = [
+      { role: "user", content: "go" },
+      ...toolTurn("a", "read", { file_path: "a.ts" }, "x".repeat(1_000)),
+    ];
+    pruneStaleToolResults(messages, opts);
+    expect(stablePrefixEnd(messages)).toBeUndefined();
+  });
+
+  it("points before the newest size stub, and later prunes never change anything up to it", () => {
+    const messages: Message[] = [{ role: "user", content: "long run" }];
+    let checked = 0;
+    for (let batch = 1; batch <= 30; batch++) {
+      // re-reads (superseded stubs) and large write arguments (capped args) included
+      const turn =
+        batch % 5 === 0
+          ? toolTurn(
+              `w${batch}`,
+              "write",
+              { file_path: "out.ts", content: "y".repeat(40_000) },
+              "ok",
+            )
+          : toolTurn(`r${batch}`, "read", { file_path: `f${batch % 4}.ts` }, "z".repeat(60_000));
+      messages.push(...turn);
+      const end = stablePrefixEnd(messages);
+      const frozen = end && JSON.stringify(messages.slice(0, messages.indexOf(end) + 1));
+      pruneStaleToolResults(messages, opts);
+      if (end && frozen) {
+        checked++;
+        expect(JSON.stringify(messages.slice(0, messages.indexOf(end) + 1))).toBe(frozen);
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+    const end = stablePrefixEnd(messages);
+    const stub = messages.findIndex(
+      (m, i) =>
+        i > messages.indexOf(end!) &&
+        m.role === "tool" &&
+        String(m.content[0]?.content).startsWith("[Pruned: old tool output"),
+    );
+    // the anchor is the user/tool message just before the newest size stub
+    expect(
+      messages.slice(messages.indexOf(end!) + 1, stub).every((m) => m.role === "assistant"),
+    ).toBe(true);
   });
 });
 

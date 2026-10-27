@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { statSync } from "node:fs";
+import { realpath, statSync } from "node:fs";
 import path from "node:path";
 
 // ── Hardened runner for GG's own (background) git calls ─────────────────────
@@ -393,4 +393,16 @@ export async function isGitRepo(cwd: string, options: GitReadOptions = {}): Prom
     }
     throw error;
   }
+}
+
+/**
+ * A path's canonical form for comparing checkouts: symlinks resolved and, on
+ * Windows, 8.3 short names expanded (`RUNNER~1` → `runneradmin`), so a path git
+ * prints and one Node built compare equal. `fs.promises.realpath` keeps short
+ * names; only the native realpath expands them.
+ */
+export function realpathNative(target: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    realpath.native(target, (error, resolved) => (error ? reject(error) : resolve(resolved)));
+  });
 }

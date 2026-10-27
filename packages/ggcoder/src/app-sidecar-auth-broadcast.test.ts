@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -6,6 +7,7 @@ import { execFileSync, spawn, type ChildProcessByStdio } from "node:child_proces
 import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { realpathNative } from "./utils/git.js";
 
 /**
  * Boots the REAL app sidecar daemon and drives it over HTTP, because the bug
@@ -288,6 +290,238 @@ describe("a goal window reconnecting", () => {
     expect(state.json.isGitRepo).toBe(true);
     expect(state.json.gitDirtyFileCount).toBe(2);
   });
+});
+
+describe("two windows on one checkout", () => {
+  it("both follow a branch switch made outside the app", async () => {
+    // Live bug: windows on the same folder share one checkout, and a switch in
+    // one left the other showing (and its agent assuming) the old branch until
+    // its own next run ended.
+    const repo = path.join(tmpHome, "shared");
+    await fs.mkdir(repo, { recursive: true });
+    const g = (...args: string[]) =>
+      execFileSync(
+        "git",
+        [
+          "-c",
+          "user.name=T",
+          "-c",
+          "user.email=t@example.com",
+          "-c",
+          "commit.gpgsign=false",
+          ...args,
+        ],
+        { cwd: repo, stdio: "ignore" },
+      );
+    g("init", "-q", "-b", "main");
+    await fs.writeFile(path.join(repo, "a.txt"), "a\n");
+    g("add", "-A");
+    g("commit", "-q", "-m", "init");
+    const a = await request("POST", "/session", { body: { mode: "code", cwd: repo } });
+    const b = await request("POST", "/session", { body: { mode: "code", cwd: repo } });
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    const branchOf = async (session: string) =>
+      (await request("GET", "/state", { session })).json.gitBranch as string | null;
+    const waitFor = async (session: string, branch: string) => {
+      for (let i = 0; i < 60; i++) {
+        if ((await branchOf(session)) === branch) return branch;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      return branchOf(session);
+    };
+    expect(await waitFor(b.json.sessionId as string, "main")).toBe("main");
+
+    g("switch", "-q", "-c", "feature");
+
+    expect(await waitFor(a.json.sessionId as string, "feature")).toBe("feature");
+    expect(await waitFor(b.json.sessionId as string, "feature")).toBe("feature");
+  }, 30_000);
+
+  it("reopens a conversation on the branch it picked, even after the folder moved on", async () => {
+    const running = daemon;
+    daemon = undefined;
+    await new Promise<void>((resolve) => {
+      running?.once("close", () => resolve());
+      running?.kill("SIGKILL");
+    });
+    await fs.writeFile(
+      path.join(tmpHome, ".gg", "auth.json"),
+      JSON.stringify({
+        anthropic: {
+          accessToken: "fake",
+          refreshToken: "fake",
+          expiresAt: Date.now() + 86_400_000,
+        },
+      }),
+    );
+    await startDaemon();
+    const repo = path.join(tmpHome, "keep");
+    await fs.mkdir(repo, { recursive: true });
+    const g = (...args: string[]) =>
+      execFileSync(
+        "git",
+        [
+          "-c",
+          "user.name=T",
+          "-c",
+          "user.email=t@example.com",
+          "-c",
+          "commit.gpgsign=false",
+          ...args,
+        ],
+        { cwd: repo, encoding: "utf8" },
+      );
+    g("init", "-q", "-b", "develop");
+    await fs.writeFile(path.join(repo, "a.txt"), "a\n");
+    g("add", "-A");
+    g("commit", "-q", "-m", "init");
+
+    // One window, alone on the folder: the pick switches it in place.
+    const a = await request("POST", "/session", { body: { mode: "code", cwd: repo } });
+    const conversation = a.json.sessionPath;
+    expect(typeof conversation).toBe("string");
+    const picked = await request("POST", "/git/branch", {
+      session: a.json.sessionId as string,
+      body: { branch: "feature/y", create: true },
+    });
+    expect(picked.json).toMatchObject({ kind: "switched", branch: "feature/y" });
+    await request("DELETE", `/session/${a.json.sessionId as string}`);
+
+    // Later the folder is back on develop (a terminal, another project window).
+    g("switch", "-q", "develop");
+
+    const resumed = await request("POST", "/session", {
+      body: { mode: "code", cwd: repo, sessionPath: conversation },
+    });
+    expect(resumed.json.error ?? null).toBeNull();
+    const state = await request("GET", "/state", { session: resumed.json.sessionId as string });
+    expect(state.json.gitBranch).toBe("feature/y");
+    expect(resumed.json.cwd).not.toBe(repo);
+    expect(g("branch", "--show-current").trim()).toBe("develop");
+    // The chat shows why it opened there, and keeps showing it on restore.
+    const history = await request("GET", "/history", { session: resumed.json.sessionId as string });
+    expect(JSON.stringify(history.json)).toContain(
+      "Opened on branch feature/y in its own worktree, because the project folder is on develop now.",
+    );
+
+    // Reopening again lands in the same place, not a second worktree.
+    await request("DELETE", `/session/${resumed.json.sessionId as string}`);
+    const again = await request("POST", "/session", {
+      body: { mode: "code", cwd: repo, sessionPath: conversation },
+    });
+    expect(again.json.cwd).toBe(resumed.json.cwd);
+  }, 40_000);
+
+  it("moves only the picking window onto a new branch, in its own worktree", async () => {
+    // A branch picked in one window must not move the others on the same folder.
+    // Resuming a conversation needs a login, as it does for every real user.
+    const running = daemon;
+    daemon = undefined;
+    await new Promise<void>((resolve) => {
+      running?.once("close", () => resolve());
+      running?.kill("SIGKILL");
+    });
+    await fs.writeFile(
+      path.join(tmpHome, ".gg", "auth.json"),
+      JSON.stringify({
+        anthropic: {
+          accessToken: "fake",
+          refreshToken: "fake",
+          expiresAt: Date.now() + 86_400_000,
+        },
+      }),
+    );
+    await startDaemon();
+    const repo = path.join(tmpHome, "picker");
+    await fs.mkdir(repo, { recursive: true });
+    const g = (...args: string[]) =>
+      execFileSync(
+        "git",
+        [
+          "-c",
+          "user.name=T",
+          "-c",
+          "user.email=t@example.com",
+          "-c",
+          "commit.gpgsign=false",
+          ...args,
+        ],
+        { cwd: repo, encoding: "utf8" },
+      );
+    g("init", "-q", "-b", "develop");
+    await fs.writeFile(path.join(repo, ".gitignore"), ".env\n");
+    await fs.writeFile(path.join(repo, ".env"), "TOKEN=x\n");
+    await fs.writeFile(path.join(repo, "a.txt"), "a\n");
+    g("add", "-A");
+    g("commit", "-q", "-m", "init");
+    const a = await request("POST", "/session", { body: { mode: "code", cwd: repo } });
+    const b = await request("POST", "/session", { body: { mode: "code", cwd: repo } });
+    const sessionA = a.json.sessionId as string;
+
+    const listed = await request("GET", "/git/branches", { session: sessionA });
+    expect(listed.status).toBe(200);
+    expect(listed.json.current).toBe("develop");
+    expect(listed.json.sharedWith).toBe("1 other open GG Coder window");
+
+    const picked = await request("POST", "/git/branch", {
+      session: sessionA,
+      body: { branch: "feature/x", create: true },
+    });
+    expect(picked.status).toBe(200);
+    expect(picked.json.kind).toBe("moved");
+    const tree = picked.json.path as string;
+    expect(tree.startsWith(await realpathNative(path.join(tmpHome, ".gg", "worktrees")))).toBe(
+      true,
+    );
+    // The shared folder (and window B on it) stays on its branch.
+    expect(g("branch", "--show-current").trim()).toBe("develop");
+    expect(
+      (await request("GET", "/state", { session: b.json.sessionId as string })).json.gitBranch,
+    ).toBe("develop");
+    expect(await fs.readFile(path.join(tree, ".env"), "utf8")).toBe("TOKEN=x\n");
+
+    // Home lists the worktree under the project; its folder is a GG one.
+    const trees = await request("GET", `/git/worktrees?cwd=${encodeURIComponent(repo)}`, {
+      session: sessionA,
+    });
+    expect(trees.json.worktrees).toEqual([
+      expect.objectContaining({ path: tree, branch: "feature/x", managed: true, dirty: 0 }),
+    ]);
+
+    // Window A re-opens in the worktree, on the new branch.
+    const moved = await request("POST", "/session", {
+      body: { mode: "code", cwd: tree, sessionPath: picked.json.sessionPath ?? undefined },
+    });
+    expect(moved.json.error ?? null).toBeNull();
+    const state = await request("GET", "/state", { session: moved.json.sessionId as string });
+    expect(state.json.gitBranch).toBe("feature/x");
+    // Home opens on the project, not the worktree folder.
+    expect(state.json.worktreeOf).toBe(await realpathNative(repo));
+
+    // It can't be removed while a window is open in it; after closing, it can.
+    const blocked = await request("POST", "/git/worktrees/remove", {
+      session: b.json.sessionId as string,
+      body: { cwd: repo, path: tree },
+    });
+    expect(blocked.status).toBe(409);
+    await request("DELETE", `/session/${moved.json.sessionId as string}`);
+    const removed = await request("POST", "/git/worktrees/remove", {
+      session: b.json.sessionId as string,
+      body: { cwd: repo, path: tree },
+    });
+    expect(removed.json).toEqual({ ok: true });
+    expect(existsSync(tree)).toBe(false);
+    expect(g("branch", "--list", "feature/x").trim()).toBe("feature/x");
+
+    // "Switch here" moves the shared folder for everyone, on request only.
+    const here = await request("POST", "/git/branch", {
+      session: b.json.sessionId as string,
+      body: { branch: "feature/x", create: false, placement: "here" },
+    });
+    expect(here.json).toMatchObject({ kind: "switched", branch: "feature/x" });
+    expect(g("branch", "--show-current").trim()).toBe("feature/x");
+  }, 40_000);
 });
 
 describe("a window whose saved conversation is gone", () => {

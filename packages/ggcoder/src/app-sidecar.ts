@@ -83,7 +83,14 @@ import {
   registerRuntimeModels,
 } from "./core/model-registry.js";
 import { resolveStartOrFallback } from "./core/resolve-start.js";
-import { getGitBranch, getGitDirtyFileCount, isGitRepo } from "./utils/git.js";
+import { getGitBranch, getGitDirtyFileCount, isGitRepo, realpathNative } from "./utils/git.js";
+import {
+  anyOtherWindowBusyOnCheckout,
+  branchChangeNote,
+  countOtherWindowsOnCheckout,
+  checkoutRoot,
+  describeOtherWindows,
+} from "./core/shared-checkout-guard.js";
 import type { GitHubCI } from "./utils/github-ci.js";
 import type { ProjectHealthScan } from "./core/project-health-scan.js";
 import { scoreProjectHealth, type ProjectHealth } from "./core/project-health-score.js";
@@ -147,6 +154,10 @@ import { handleWorkspaceRoutes } from "./app-sidecar/workspace-routes.js";
 import { handleHistoryRoutes } from "./app-sidecar/history-routes.js";
 import { handlePromptRoutes } from "./app-sidecar/prompt-routes.js";
 import { handleTaskRoutes } from "./app-sidecar/task-routes.js";
+import { handleBranchRoutes, type BranchRouteContext } from "./app-sidecar/branch-routes.js";
+import { resolveResumeCheckout } from "./app-sidecar/git-branches.js";
+import { mainCheckoutOf, resolveSetupCommand, setupNote } from "./app-sidecar/worktrees.js";
+import { readCheckoutRecord } from "./core/checkout-record.js";
 import { handleRunControlRoutes } from "./app-sidecar/run-control-routes.js";
 import { handleAuthRoutes } from "./app-sidecar/auth-routes.js";
 import { handleIntegrationRoutes } from "./app-sidecar/integration-routes.js";
@@ -262,6 +273,13 @@ async function main(): Promise<void> {
   // request to its window's session via the `x-gg-session` header (and the
   // `?session=` query for the SSE /events stream).
   const sessions = new Map<string, SessionContext>();
+  // A window that moved into a worktree resumes its conversation in a new
+  // session there; this note (keyed by that conversation file) tells its agent.
+  const pendingMoveNotes = new Map<string, string>();
+  // New worktrees (real paths) whose setup runs once a window opens in them.
+  const pendingSetups = new Set<string>();
+  // Chat rows for conversations that reopened somewhere new for their branch.
+  const pendingCheckoutNotices = new Map<string, string>();
 
   /**
    * Fan one frame out to every window.
@@ -281,6 +299,24 @@ async function main(): Promise<void> {
       .map((ctx) => ctx.id)
       .sort();
   };
+  /** How many live windows other than `selfId` use the git checkout rooted at `root`. */
+  const otherWindowsOnCheckout = (root: string, selfId: string): Promise<number> =>
+    countOtherWindowsOnCheckout(
+      [...sessions.values()].map((ctx) => ({ id: ctx.id, gitDir: ctx.gitDir?.() ?? null })),
+      selfId,
+      root,
+    );
+  /** Whether a live window other than `selfId` on the checkout rooted at `root` is working. */
+  const otherWindowBusyOnCheckout = (root: string, selfId: string): Promise<boolean> =>
+    anyOtherWindowBusyOnCheckout(
+      [...sessions.values()].map((ctx) => ({
+        id: ctx.id,
+        gitDir: ctx.gitDir?.() ?? null,
+        isBusy: ctx.isBusy,
+      })),
+      selfId,
+      root,
+    );
   /** Whether any live window session in `cwd` is working right now. */
   const busyAt = (cwd: string): boolean => {
     const target = path.resolve(cwd);
@@ -397,7 +433,7 @@ async function main(): Promise<void> {
         }
         const mode = parseWorkspaceMode(body.mode);
         const chatAgent = parseChatAgentId(body.chatAgent);
-        const sessionCwd =
+        const requestedCwd =
           typeof body.cwd === "string" && body.cwd
             ? body.cwd
             : (process.env.GG_APP_CWD ?? process.cwd());
@@ -405,6 +441,38 @@ async function main(): Promise<void> {
           typeof body.sessionPath === "string" && body.sessionPath ? body.sessionPath : undefined;
         const id = randomUUID();
         try {
+          // A resumed conversation comes back on the branch it was last on,
+          // even if the project's folder has moved to another branch since.
+          let sessionCwd = requestedCwd;
+          if (
+            mode === "code" &&
+            sessionPath &&
+            !isGoalDir(goalsRoot(paths.agentDir), requestedCwd)
+          ) {
+            const record = await readCheckoutRecord(sessionPath);
+            if (record) {
+              const resumed = await resolveResumeCheckout(
+                requestedCwd,
+                record,
+                path.join(paths.agentDir, "worktrees"),
+              ).catch((error: unknown) => {
+                log("WARN", "app-sidecar", "resume checkout failed", { error: String(error) });
+                return { cwd: requestedCwd, note: null, notice: null, created: false };
+              });
+              sessionCwd = resumed.cwd;
+              if (resumed.note) pendingMoveNotes.set(sessionPath, resumed.note);
+              if (resumed.notice) pendingCheckoutNotices.set(sessionPath, resumed.notice);
+              if (resumed.created) {
+                pendingSetups.add(await realpathNative(resumed.cwd).catch(() => resumed.cwd));
+              }
+              if (sessionCwd !== requestedCwd) {
+                log("INFO", "app-sidecar", "resuming on its recorded branch", {
+                  branch: record.branch,
+                  cwd: sessionCwd,
+                });
+              }
+            }
+          }
           const ctx = await createSession(
             {
               auth,
@@ -418,6 +486,11 @@ async function main(): Promise<void> {
               repoPolls,
               sessionIdsAt,
               busyAt,
+              otherWindowsOnCheckout,
+              otherWindowBusyOnCheckout,
+              pendingMoveNotes,
+              pendingSetups,
+              pendingCheckoutNotices,
             },
             { id, mode, chatAgent, cwd: sessionCwd, sessionPath },
           );
@@ -434,6 +507,7 @@ async function main(): Promise<void> {
           daemonJson(res, 200, {
             sessionId: id,
             sessionPath: ctx.session.getState().sessionPath ?? null,
+            cwd: sessionCwd,
           });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -660,6 +734,16 @@ async function createSession(
     sessionIdsAt: (cwd: string) => string[];
     /** Whether any live window session in `cwd` is working right now. */
     busyAt: (cwd: string) => boolean;
+    /** How many live windows other than `selfId` use the git checkout rooted at `root`. */
+    otherWindowsOnCheckout: (root: string, selfId: string) => Promise<number>;
+    /** Whether another live window on the checkout rooted at `root` is working. */
+    otherWindowBusyOnCheckout: (root: string, selfId: string) => Promise<boolean>;
+    /** Notes for windows that moved into a worktree, keyed by conversation file. */
+    pendingMoveNotes: Map<string, string>;
+    /** New worktrees whose setup runs when a window opens in them. */
+    pendingSetups: Set<string>;
+    /** Chat rows for conversations that reopened somewhere new for their branch. */
+    pendingCheckoutNotices: Map<string, string>;
   },
   opts: {
     id: string;
@@ -680,6 +764,11 @@ async function createSession(
     repoPolls,
     sessionIdsAt,
     busyAt,
+    otherWindowsOnCheckout,
+    otherWindowBusyOnCheckout,
+    pendingMoveNotes,
+    pendingSetups,
+    pendingCheckoutNotices,
   } = deps;
   const paths = deps.paths;
   const mode = opts.mode;
@@ -952,6 +1041,9 @@ async function createSession(
     // window (project picker, session list) — whenever a resumed session was
     // over the context threshold. First prompt compacts instead, with UI events.
     deferLoadCompaction: true,
+    // Refuse a branch switch in a checkout another window also uses.
+    getCheckoutSharers: async (root: string) =>
+      describeOtherWindows(await otherWindowsOnCheckout(root, opts.id)),
   };
   let session!: AgentSession;
   if (mode === "chat") {
@@ -1022,6 +1114,21 @@ async function createSession(
     });
   }
   await session.initialize();
+  // This window just moved into a worktree (Git panel branch picker): tell the
+  // agent where it now works before its next turn.
+  const moveNote = resumeSessionPath ? pendingMoveNotes.get(resumeSessionPath) : undefined;
+  if (resumeSessionPath && moveNote) {
+    pendingMoveNotes.delete(resumeSessionPath);
+    session.notify("worktree-move", moveNote);
+  }
+  // Reopened somewhere new for its branch: the user sees why, in the chat.
+  const checkoutNotice = resumeSessionPath
+    ? pendingCheckoutNotices.get(resumeSessionPath)
+    : undefined;
+  if (resumeSessionPath && checkoutNotice) {
+    pendingCheckoutNotices.delete(resumeSessionPath);
+    session.noteCheckout(checkoutNotice);
+  }
   // A goal's attached folders join its workspace so the coordinator can read
   // them. A resumed session may already carry them; `addDirectory` skips those.
   if (goal) {
@@ -1180,7 +1287,15 @@ async function createSession(
   const initialTarget = await resolveGitCwd(cwd, goal?.record ?? null);
   let gitCwd = initialTarget.dir;
   const initialGit = await readGitState(gitCwd);
+  // Which repository this checkout belongs to when it is a linked worktree,
+  // so Home opens on the project rather than the worktree folder.
+  const worktreeOf: string | null = initialGit.isRepo
+    ? await Promise.all([mainCheckoutOf(gitCwd), checkoutRoot(gitCwd)]).then(([main, own]) =>
+        main && own && main !== own ? main : null,
+      )
+    : null;
   let gitBranch: string | null = initialGit.branch;
+  /** The repository's main folder when this window works in a linked worktree. */
   let gitIsRepo: boolean = initialGit.isRepo;
   let gitDirtyFileCount = initialGit.dirtyFileCount;
   // Open issue/PR counts for the origin repo's GitHub slug, via the `gh` CLI's
@@ -1227,6 +1342,7 @@ async function createSession(
     projectHealth: ProjectHealth | null;
     tasks: ReturnType<typeof session.listBackgroundProcesses>;
     additionalRoots: string[];
+    worktreeOf: string | null;
   } {
     return {
       contextWindow: currentContextWindow(),
@@ -1241,6 +1357,7 @@ async function createSession(
       tasks: session.listBackgroundProcesses(),
       // Roots added with /add-dir — the header shows a badge when non-empty.
       additionalRoots: session.getAdditionalRoots(),
+      worktreeOf,
     };
   }
 
@@ -1430,6 +1547,7 @@ async function createSession(
   session.eventBus.on("diagnostics", (d) => broadcast("diagnostics", d));
   session.eventBus.on("security_notice", (d) => broadcast("security_notice", d));
   session.eventBus.on("security_block", (d) => broadcast("security_block", d));
+  session.eventBus.on("checkout_notice", (d) => broadcast("checkout_notice", d));
   // Fires BEFORE the candidate final answer streams. The webview holds assistant
   // text back while armed, so an injected follow-up supersedes a draft that was never
   // painted instead of deleting one the user already started reading.
@@ -2316,6 +2434,20 @@ async function createSession(
   // every other window on the same repo; each window broadcasts only changes.
   function watchRepo(dir: string) {
     const repoKey = path.resolve(dir);
+    // Every window on a shared checkout follows its branch live, and its agent
+    // is told: it would otherwise keep editing and committing on a branch
+    // another window (or the user) switched to underneath it.
+    const branch = repoPolls.branch.subscribe(repoKey, (next) => {
+      if (next === null || next === gitBranch) return;
+      const previous = gitBranch;
+      gitBranch = next;
+      broadcast("extras", footerExtras());
+      if (previous) session.notify("git-branch", branchChangeNote(previous, next));
+      // The conversation is on this branch now; resuming it should come back here.
+      void checkoutRoot(gitCwd)
+        .then((root) => (root ? session.recordCheckout({ branch: next, cwd: root }) : undefined))
+        .catch(() => {});
+    });
     const dirtyFiles = repoPolls.dirtyFiles.subscribe(repoKey, (next) => {
       if (next === gitDirtyFileCount) return;
       gitDirtyFileCount = next;
@@ -2350,6 +2482,7 @@ async function createSession(
       ci,
       health,
       unsubscribe(): void {
+        branch.unsubscribe();
         dirtyFiles.unsubscribe();
         gitHubCounts?.unsubscribe();
         ci.unsubscribe();
@@ -2627,6 +2760,66 @@ async function createSession(
     },
   };
 
+  const isBusy = (): boolean =>
+    running ||
+    runClaim.active ||
+    autopilotActive ||
+    session.listSubAgents().some((w) => w.state === "running" || w.state === "starting");
+  const branchCtx: BranchRouteContext = {
+    gitDir: () => gitCwd,
+    isBusy,
+    canMove: () => mode === "code" && goal === null,
+    sessionPath: () => session.getState().sessionPath ?? null,
+    sharedWith: async (root) => describeOtherWindows(await otherWindowsOnCheckout(root, opts.id)),
+    worktreesRoot: path.join(paths.agentDir, "worktrees"),
+    onSwitched: (branch, previous) => {
+      gitBranch = branch;
+      broadcast("extras", footerExtras());
+      session.notify(
+        "git-branch",
+        previous
+          ? `${branchChangeNote(previous, branch)} The user switched it from the Git panel.`
+          : `The user switched this checkout to branch \`${branch}\` from the Git panel.`,
+      );
+    },
+    queueMoveNote: (sessionPath, note) => pendingMoveNotes.set(sessionPath, note),
+    recordCheckout: (record) => session.recordCheckout(record),
+    queueSetup: async (worktreePath) => {
+      pendingSetups.add(await realpathNative(worktreePath).catch(() => worktreePath));
+    },
+    windowsIn: (root) => otherWindowsOnCheckout(root, ""),
+    othersBusyIn: (root) => otherWindowBusyOnCheckout(root, opts.id),
+  };
+
+  // A brand-new worktree runs its setup (install) once, as a background task
+  // the user and the agent can both see, the first time a window opens in it.
+  async function startPendingWorktreeSetup(): Promise<void> {
+    const real = await realpathNative(gitCwd).catch(() => gitCwd);
+    if (!pendingSetups.delete(real)) return;
+    const setup = await resolveSetupCommand(real).catch(() => null);
+    const started = setup
+      ? await session.startBackgroundProcess(setup.command, real).catch((error: unknown) => {
+          log("WARN", "app-sidecar", "worktree setup failed to start", { error: String(error) });
+          return null;
+        })
+      : null;
+    if (started) {
+      log("INFO", "app-sidecar", "worktree setup started", { command: setup?.command ?? "" });
+    }
+    session.notify("worktree-setup", setupNote(setup, started?.id ?? null));
+    broadcast("extras", footerExtras());
+  }
+  void startPendingWorktreeSetup();
+  // Remember the branch this conversation starts on, so reopening it later
+  // (from Home, or after a restart) comes back to it.
+  if (mode === "code" && goal === null) {
+    void checkoutRoot(gitCwd)
+      .then((root) =>
+        root && gitBranch ? session.recordCheckout({ branch: gitBranch, cwd: root }) : undefined,
+      )
+      .catch(() => {});
+  }
+
   // OPTIONS/CORS preflight is handled at the daemon level before delegation.
   function handle(
     req: http.IncomingMessage,
@@ -2640,6 +2833,7 @@ async function createSession(
     if (handleHistoryRoutes(routeCtx, req, res, url, method)) return;
     if (handlePromptRoutes(routeCtx, req, res, url, method)) return;
     if (handleTaskRoutes(routeCtx, req, res, url, method)) return;
+    if (handleBranchRoutes(branchCtx, req, res, url, method)) return;
     if (handleRunControlRoutes(routeCtx, req, res, url, method)) return;
     if (handleAuthRoutes(routeCtx, req, res, url, method)) return;
     if (handleIntegrationRoutes(routeCtx, req, res, url, method)) return;
@@ -2696,11 +2890,8 @@ async function createSession(
     handle,
     dispose,
     stopBackgroundProcesses,
-    isBusy: () =>
-      running ||
-      runClaim.active ||
-      autopilotActive ||
-      session.listSubAgents().some((w) => w.state === "running" || w.state === "starting"),
+    isBusy,
+    gitDir: () => gitCwd,
   };
 }
 

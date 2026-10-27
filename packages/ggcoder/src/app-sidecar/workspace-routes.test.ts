@@ -53,7 +53,7 @@ describe("GET /projects", () => {
     // Built with the platform's separators (backslashes on Windows).
     expect(discoverProjects.mock.calls[0]?.[0]).toMatchObject({
       projectsRoot: "/home/u/gg-projects",
-      excludeRoots: [path.join("/home/u/.gg", "goals")],
+      excludeRoots: [path.join("/home/u/.gg", "goals"), path.join("/home/u/.gg", "worktrees")],
     });
   });
 });
