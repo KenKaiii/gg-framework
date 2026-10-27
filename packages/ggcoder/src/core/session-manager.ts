@@ -227,7 +227,9 @@ export interface AppMarkerPayload extends RecordedPosition {
      *  can review what the run's tools already changed; never auto-resumed. */
     | "interrupted_run"
     /** A safety block (or infected installed package); `data` carries { rule, target }. */
-    | "security";
+    | "security"
+    /** The conversation opened somewhere new for its branch; `data` carries { text }. */
+    | "checkout";
   afterMessageCount: number;
   /** Kind-specific display fields (reason/title/headline/kenSent/counts/…). */
   data: Record<string, unknown>;

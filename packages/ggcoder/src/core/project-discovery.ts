@@ -766,9 +766,11 @@ export async function listRecentSessions(
   cwd: string,
   limit = 5,
   sessionsDir = getAppPaths().sessionsDir,
+  /** More folders whose conversations belong to this project (its worktrees). */
+  extraCwds: readonly string[] = [],
 ): Promise<RecentSession[]> {
-  const dir = path.join(sessionsDir, encodeCwd(cwd));
-  const files = await collectGgcoderSessionFiles(dir, 1);
+  const dirs = [cwd, ...extraCwds].map((dir) => path.join(sessionsDir, encodeCwd(dir)));
+  const files = (await Promise.all(dirs.map((dir) => collectGgcoderSessionFiles(dir, 1)))).flat();
   if (files.length === 0) return [];
   files.sort((a, b) => b.mtime - a.mtime);
 

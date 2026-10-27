@@ -536,19 +536,23 @@ export function walkShell(
 // ── git classification ─────────────────────────────────────
 
 /** True for a short-option cluster (`-fdx`) containing `letter`. */
-function hasShort(tokens: readonly string[], letter: string): boolean {
+export function hasShort(tokens: readonly string[], letter: string): boolean {
   return tokens.some((t) => /^-[A-Za-z]+$/.test(t) && t.slice(1).includes(letter));
 }
 
 /** Exact long option, or an unambiguous abbreviation of at least `minLength`. */
-function hasLong(tokens: readonly string[], option: string, minLength = option.length): boolean {
+export function hasLong(
+  tokens: readonly string[],
+  option: string,
+  minLength = option.length,
+): boolean {
   return tokens.some((t) => {
     const name = t.split("=", 1)[0] ?? t;
     return name.startsWith("--") && name.length >= minLength && option.startsWith(name);
   });
 }
 
-function splitAtDoubleDash(tokens: readonly string[]): {
+export function splitAtDoubleDash(tokens: readonly string[]): {
   before: string[];
   after: string[] | null;
 } {
@@ -559,7 +563,7 @@ function splitAtDoubleDash(tokens: readonly string[]): {
 }
 
 /** Non-option operands, skipping the values of options in `withValue`. */
-function operands(tokens: readonly string[], withValue: ReadonlySet<string>): string[] {
+export function operands(tokens: readonly string[], withValue: ReadonlySet<string>): string[] {
   const result: string[] = [];
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i] ?? "";
@@ -572,7 +576,7 @@ function operands(tokens: readonly string[], withValue: ReadonlySet<string>): st
   return result;
 }
 
-function isPathspecShaped(operand: string): boolean {
+export function isPathspecShaped(operand: string): boolean {
   return (
     operand === "." ||
     operand === ".." ||
@@ -608,7 +612,19 @@ const PUSH_VALUE_OPTS: ReadonlySet<string> = new Set([
   "--exec",
 ]);
 
-function analyzeGit(args: readonly string[], cwd: string): DestructiveGitMatch | null {
+/** A git invocation split into its global options and its subcommand. */
+export interface GitInvocation {
+  /** Directory git would run in (after `-C`). */
+  dir: string;
+  /** `--git-dir=`/`--work-tree=` globals, resolved, to forward to inspection commands. */
+  gitArgs: string[];
+  subcommand: string | undefined;
+  /** Everything after the subcommand. */
+  rest: readonly string[];
+}
+
+/** Parse git's global options (`-C`, `--git-dir`, `-c k=v`, …) off the front of `args`. */
+export function parseGitInvocation(args: readonly string[], cwd: string): GitInvocation {
   let dir = cwd;
   const gitArgs: string[] = [];
   let i = 0;
@@ -645,9 +661,12 @@ function analyzeGit(args: readonly string[], cwd: string): DestructiveGitMatch |
     }
     break;
   }
-  const subcommand = args[i];
+  return { dir, gitArgs, subcommand: args[i], rest: args.slice(i + 1) };
+}
+
+function analyzeGit(args: readonly string[], cwd: string): DestructiveGitMatch | null {
+  const { dir, gitArgs, subcommand, rest } = parseGitInvocation(args, cwd);
   if (subcommand === undefined) return null;
-  const rest = args.slice(i + 1);
   const base = {
     display: truncate(["git", subcommand, ...rest].join(" ")),
     dir,

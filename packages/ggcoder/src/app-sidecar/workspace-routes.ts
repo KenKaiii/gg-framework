@@ -7,6 +7,7 @@ import {
   removePlugin,
 } from "../core/extensions/plugin-bundles.js";
 import { discoverProjects } from "../core/project-discovery.js";
+import { listWorktrees } from "./worktrees.js";
 import { goalsRoot } from "../core/goals-store.js";
 import { listSidecarSessions } from "../app-sidecar-sessions.js";
 import { log } from "../core/logger.js";
@@ -106,7 +107,8 @@ export function handleWorkspaceRoutes(
           extraRoots: projectRoots,
           hiddenPaths: hiddenProjects,
           // Goal workspaces have their own list; they are not coding projects.
-          excludeRoots: [goalsRoot(ctx.paths.agentDir)],
+          // GG-made worktrees are listed under their project, not as projects.
+          excludeRoots: [goalsRoot(ctx.paths.agentDir), path.join(ctx.paths.agentDir, "worktrees")],
         }),
       )
       .then((projects) => json(res, 200, { projects }))
@@ -129,7 +131,17 @@ export function handleWorkspaceRoutes(
     // An omitted chatAgent means coding history; chat callers identify one
     // agent or request the combined, recency-sorted "all" listing; the
     // reserved value "motion" lists Motion sessions.
-    void listSidecarSessions(target, requestedAgent, ctx.paths.sessionsDir)
+    // A project's GG-made worktrees are not projects of their own: their
+    // conversations (moved there from the branch picker) are listed here.
+    const worktrees = requestedAgent
+      ? Promise.resolve([])
+      : listWorktrees(target, path.join(ctx.paths.agentDir, "worktrees"))
+          .then((list) => (list?.worktrees ?? []).filter((w) => w.managed).map((w) => w.path))
+          .catch(() => []);
+    void worktrees
+      .then((cwds) =>
+        listSidecarSessions(target, requestedAgent, ctx.paths.sessionsDir, undefined, cwds),
+      )
       .then((sessions) => json(res, 200, { sessions }))
       .catch(() => json(res, 200, { sessions: [] }));
     return true;

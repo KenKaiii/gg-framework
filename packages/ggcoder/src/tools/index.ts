@@ -141,6 +141,8 @@ export interface CreateToolsOptions {
    * When omitted, no network restriction is applied.
    */
   getNetworkPolicy?: GetNetworkPolicy;
+  /** Who else works in the git checkout rooted at a path (other windows, a parent agent). */
+  getCheckoutSharers?: (root: string) => Promise<string | null>;
   /** Lazily read the OS command-sandbox mode and allowed network domains. */
   getSandboxPolicy?: () => SandboxPolicy;
   /** Package release-age cooldown in days (settings `packageCooldownDays`). */
@@ -287,6 +289,7 @@ export async function createTools(
       ops === localOperations ? opts?.getSandboxPolicy : undefined,
       undefined,
       opts?.getPackageCooldownDays,
+      opts?.getCheckoutSharers,
     ),
     createFindTool(cwd),
     createGrepTool(cwd, ops, { useExternalScanner: opts?.getUseExternalGrep }),

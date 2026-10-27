@@ -37,6 +37,11 @@ export interface SessionContext {
   stopBackgroundProcesses: () => void;
   /** Working right now: a run in progress, or a worker still on a task. */
   isBusy: () => boolean;
+  /**
+   * The folder this window reads git state from (a Goal window: its project
+   * folder, not the goal folder). Absent for contexts without git state.
+   */
+  gitDir?: () => string;
 }
 
 export interface HfPullState {

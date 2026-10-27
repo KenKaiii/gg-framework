@@ -649,6 +649,47 @@ pub(crate) async fn agent_git_overview(
     sidecar_json(res).await
 }
 
+/// Proxy: the Git panel's branch picker list (local branches, the current one,
+/// and whether other windows share this checkout).
+#[tauri::command]
+pub(crate) async fn agent_git_branches(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = session_for(&webview).ok_or("session not ready")?;
+    let res = client
+        .get(format!("{}/git/branches", sidecar_base(port)))
+        .header("x-gg-session", &gg_sid)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    sidecar_json(res).await
+}
+
+/// Proxy: put this window on a branch. Switches in place, or (when other
+/// windows share the checkout) answers with the worktree this window should
+/// re-open in; the webview then re-points itself there.
+#[tauri::command]
+pub(crate) async fn agent_git_switch_branch(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+    branch: String,
+    create: bool,
+    placement: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = session_for(&webview).ok_or("session not ready")?;
+    let res = client
+        .post(format!("{}/git/branch", sidecar_base(port)))
+        .header("x-gg-session", &gg_sid)
+        .json(&serde_json::json!({ "branch": branch, "create": create, "placement": placement }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    sidecar_json(res).await
+}
+
 /// Proxy: the project health checklist (`.gg-checklist.json` joined with the
 /// built-in items and their current status). A corrupt record surfaces as Err.
 #[tauri::command]

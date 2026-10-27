@@ -192,6 +192,8 @@ export interface AgentState {
   contextWindow?: number;
   /** Current git branch of the project cwd, or null when not a repo. */
   gitBranch?: string | null;
+  /** The repository's main folder when this window works in one of its worktrees. */
+  worktreeOf?: string | null;
   /** True when the project cwd is inside a git work tree. */
   isGitRepo?: boolean;
   /** Tracked, staged, and untracked files not yet committed. */
@@ -1052,6 +1054,8 @@ export interface HistoryEntry {
   infoKind?: "video_warning";
   /** Safety-block chat row. */
   security?: { rule: string; target: string };
+  /** Where the conversation reopened for its branch. */
+  checkoutNotice?: string;
   /** Tool-produced images rendered inline (same as live `images` items),
    *  reconstructed from ImageContent blocks in persisted tool results. */
   toolImages?: Array<{ src: string; path?: string }>;
@@ -1436,6 +1440,88 @@ export interface GitOverview {
 export async function getGitOverview(): Promise<GitOverview> {
   await waitForReady();
   return invoke<GitOverview>("agent_git_overview");
+}
+
+export interface GitBranchRow {
+  name: string;
+  current: boolean;
+  /** Another worktree that has this branch checked out, or null. */
+  worktree: string | null;
+  /** Last commit time, Unix seconds. */
+  updatedAt: number;
+}
+
+export interface GitBranches {
+  current: string | null;
+  branches: GitBranchRow[];
+  /** Other windows on this checkout ("2 other open GG Coder windows"), or null. */
+  sharedWith: string | null;
+  /** Why switching is unavailable right now, or null. */
+  locked: string | null;
+  /** The command a new worktree runs first (an install), or null. */
+  setup: string | null;
+}
+
+/** Where a picked branch opens when other windows share this folder. */
+export type BranchPlacement = "worktree" | "here";
+
+/** Local branches for the Git panel's branch picker. */
+export async function getGitBranches(): Promise<GitBranches> {
+  await waitForReady();
+  return invoke<GitBranches>("agent_git_branches");
+}
+
+export type GitBranchSwitch =
+  | { kind: "switched" | "unchanged"; branch: string }
+  /** This window should re-open in `path` (its own worktree) and resume `sessionPath`. */
+  | { kind: "moved"; branch: string; path: string; sessionPath: string | null };
+
+/**
+ * Put this window on `branch` (creating it from the current commit when
+ * `create`). Rejects with git's reason when the switch can't happen.
+ */
+export async function switchGitBranch(
+  branch: string,
+  create: boolean,
+  placement: BranchPlacement = "worktree",
+): Promise<GitBranchSwitch> {
+  await waitForReady();
+  return invoke<GitBranchSwitch>("agent_git_switch_branch", { branch, create, placement });
+}
+
+export interface GitWorktree {
+  path: string;
+  /** Checked-out branch, or null when detached. */
+  branch: string | null;
+  /** Made by GG Coder: removable from Home. */
+  managed: boolean;
+  /** The folder was deleted outside git. */
+  missing: boolean;
+  /** Uncommitted changes. */
+  dirty: number;
+  /** Commits the main folder's branch doesn't have. */
+  ahead: number;
+}
+
+export interface GitWorktrees {
+  mainPath: string | null;
+  mainBranch: string | null;
+  worktrees: GitWorktree[];
+}
+
+/** A project's git worktrees with their status, for Home. */
+export async function listGitWorktrees(cwd: string): Promise<GitWorktrees> {
+  await waitForReady();
+  return invoke<GitWorktrees>("agent_git_worktrees", { cwd });
+}
+
+/**
+ * Remove a GG-made worktree's folder; its branch stays. Rejects with the reason
+ * (uncommitted changes without `force`, a window open in it).
+ */
+export async function removeGitWorktree(cwd: string, path: string, force: boolean): Promise<void> {
+  await waitForReady();
+  await invoke("agent_git_remove_worktree", { cwd, path, force });
 }
 
 /** List workflow (prompt-template) slash commands the agent can run. */

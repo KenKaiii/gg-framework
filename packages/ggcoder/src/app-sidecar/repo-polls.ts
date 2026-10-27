@@ -1,5 +1,5 @@
 import { createProjectHealthScanner, type ProjectHealthScan } from "../core/project-health-scan.js";
-import { getGitDirtyFileCount } from "../utils/git.js";
+import { getGitBranch, getGitDirtyFileCount } from "../utils/git.js";
 import { getGitHubOpenCounts, type GitHubOpenCounts } from "../utils/github.js";
 import { startGitHubCIPoll, type GitHubCI } from "../utils/github-ci.js";
 import { createSharedPolls, startIntervalPoll, type SharedPolls } from "../utils/shared-poll.js";
@@ -7,11 +7,13 @@ import { createSharedPolls, startIntervalPoll, type SharedPolls } from "../utils
 /**
  * Daemon-wide repo pollers, shared by every window on the same repo so
  * opening a project twice doesn't double the git/`gh` processes.
- * Keys: `dirtyFiles`, `gitHubCI` and `projectHealth` by resolved cwd (a
+ * Keys: `branch`, `dirtyFiles`, `gitHubCI` and `projectHealth` by resolved cwd (a
  * worktree has its own files and HEAD); `gitHubCounts` by `owner/repo`
  * (counts are repo-wide).
  */
 export interface RepoPolls {
+  /** Checked-out branch; null (not a repo, git failed) publishes nothing. */
+  readonly branch: SharedPolls<string | null>;
   readonly dirtyFiles: SharedPolls<number>;
   readonly gitHubCounts: SharedPolls<GitHubOpenCounts>;
   readonly gitHubCI: SharedPolls<GitHubCI | null>;
@@ -20,6 +22,16 @@ export interface RepoPolls {
 
 export function createRepoPolls(): RepoPolls {
   return {
+    // Another window's agent or the user's terminal can switch the branch of a
+    // checkout this window shares; every window on it should see that at once.
+    branch: createSharedPolls((cwd, publish) =>
+      startIntervalPoll({
+        fetch: () => getGitBranch(cwd),
+        publish,
+        firstDelayMs: 5000,
+        intervalMs: 5000,
+      }),
+    ),
     // Files change outside the agent (editor saves, terminal commits).
     dirtyFiles: createSharedPolls((cwd, publish) =>
       startIntervalPoll({

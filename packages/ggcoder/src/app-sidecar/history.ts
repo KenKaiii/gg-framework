@@ -43,6 +43,8 @@ export interface HistoryEntryForWire {
   infoKind?: "video_warning";
   /** Safety-block chat row (persisted `security` app marker). */
   security?: { rule: string; target: string };
+  /** Where the conversation reopened for its branch (persisted `checkout` marker). */
+  checkoutNotice?: string;
   toolImages?: Array<{ src: string; path?: string }>;
   subagentGroup?: Array<{
     agentName?: string;

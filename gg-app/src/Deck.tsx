@@ -15,6 +15,7 @@ import {
 } from "./agent";
 import type { ActiveSchedule } from "./RunningSchedulesButton";
 import { RunningSchedulesButton } from "./RunningSchedulesButton";
+import { BranchPicker } from "./BranchPicker";
 import { CIIndicator } from "./CIIndicator";
 import { PanelHead } from "./DeckPanelHead";
 import { useDeckEscape } from "./deck-escape";
@@ -102,6 +103,11 @@ export interface DeckProps {
   trophies: TrophySnapshot | null;
   /** Notes, Tasks and Brain: undefined where the workspace has no such tool. */
   tools: Partial<Record<DeckToolId, DeckTool>>;
+  /**
+   * Re-open this window in `path` (its own worktree, from the branch picker),
+   * resuming its conversation. Undefined where a window can't move (Goals).
+   */
+  onMoveToWorktree?: (path: string, sessionPath: string | null) => Promise<void>;
 }
 
 /**
@@ -366,7 +372,14 @@ function PanelBody(
         />
       );
     case "git":
-      return <GitPanel state={props.state} onClose={close} />;
+      return (
+        <GitPanel
+          state={props.state}
+          running={props.running}
+          onMoveToWorktree={props.onMoveToWorktree}
+          onClose={close}
+        />
+      );
     case "usage":
       return (
         <UsagePanel
@@ -452,7 +465,7 @@ function ToolPanel({ tool, onClose }: { tool: DeckTool; onClose: () => void }): 
   );
 }
 
-type GitTab = "changes" | "pulls" | "issues";
+type GitTab = "changes" | "branches" | "pulls" | "issues";
 
 /**
  * The Git panel (the branch key): the working tree's changed files with line
@@ -462,9 +475,13 @@ type GitTab = "changes" | "pulls" | "issues";
  */
 function GitPanel({
   state,
+  running,
+  onMoveToWorktree,
   onClose,
 }: {
   state: AgentState | null;
+  running: boolean;
+  onMoveToWorktree?: (path: string, sessionPath: string | null) => Promise<void>;
   onClose: () => void;
 }): React.ReactElement {
   const branch = state?.gitBranch ?? null;
@@ -491,16 +508,21 @@ function GitPanel({
 
   const counts: Record<GitTab, number | null> = {
     changes: data ? data.changes.length : dirty,
+    branches: null,
     pulls: data?.pulls?.length ?? state?.gitHubPRs ?? null,
     issues: data?.issues?.length ?? state?.gitHubIssues ?? null,
   };
   const tabs: ReadonlyArray<{ id: GitTab; label: string }> = repo
     ? [
         { id: "changes", label: "Changes" },
+        { id: "branches", label: "Branches" },
         { id: "pulls", label: "Pull requests" },
         { id: "issues", label: "Issues" },
       ]
-    : [{ id: "changes", label: "Changes" }];
+    : [
+        { id: "changes", label: "Changes" },
+        { id: "branches", label: "Branches" },
+      ];
 
   return (
     <div className="deck-panel tool-panel git-panel">
@@ -535,7 +557,9 @@ function GitPanel({
         )}
       </div>
       <div className="tool-body git-body" role="tabpanel" tabIndex={-1}>
-        {failed ? (
+        {tab === "branches" ? (
+          <BranchPicker running={running} onMoveToWorktree={onMoveToWorktree} />
+        ) : failed ? (
           <p className="deck-note">Couldn&apos;t read this project&apos;s git status.</p>
         ) : !data ? (
           <p className="deck-note">Loading&hellip;</p>

@@ -685,6 +685,49 @@ pub(crate) async fn agent_goal_resume(
     json_or_error(res, "failed to resume the goal").await
 }
 
+/// Proxy: a project's git worktrees with their status, for Home.
+#[tauri::command]
+pub(crate) async fn agent_git_worktrees(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+    cwd: String,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = session_for(&webview).ok_or("session not ready")?;
+    let res = client
+        .get(format!(
+            "{}/git/worktrees?cwd={}",
+            sidecar_base(port),
+            urlencoding(&cwd)
+        ))
+        .header("x-gg-session", &gg_sid)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    sidecar_json(res).await
+}
+
+/// Proxy: remove a GG-made worktree's folder (its branch stays).
+#[tauri::command]
+pub(crate) async fn agent_git_remove_worktree(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+    cwd: String,
+    path: String,
+    force: bool,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = session_for(&webview).ok_or("session not ready")?;
+    let res = client
+        .post(format!("{}/git/worktrees/remove", sidecar_base(port)))
+        .header("x-gg-session", &gg_sid)
+        .json(&serde_json::json!({ "cwd": cwd, "path": path, "force": force }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    sidecar_json(res).await
+}
+
 /// Proxy: list recent sessions for a project cwd.
 #[tauri::command]
 pub(crate) async fn agent_sessions(

@@ -182,6 +182,11 @@ import {
 } from "./steering.js";
 import { AgentNotificationQueue } from "./agent-notifications.js";
 import { VerificationGate, VERIFICATION_STATE_KIND } from "./verification-gate.js";
+import {
+  CHECKOUT_RECORD_KIND,
+  latestCheckoutRecord,
+  type CheckoutRecord,
+} from "./checkout-record.js";
 import type { VerificationEvidence } from "./verification-evidence.js";
 
 import { findUserSessionPrompt, getUserSessionPrompt } from "./session-preview.js";
@@ -288,6 +293,12 @@ export interface AgentSessionOptions {
   model: string;
   cwd: string;
   baseUrl?: string;
+  /**
+   * Who else works in the git checkout rooted at a path: other app windows, or
+   * a worker's parent agent. Lets the bash tool refuse a branch switch that
+   * would move them too (core/shared-checkout-guard.ts). Unset in a lone CLI.
+   */
+  getCheckoutSharers?: (root: string) => Promise<string | null>;
   /** Replaces the whole system prompt — nothing else is rendered. */
   systemPrompt?: string;
   /**
@@ -748,6 +759,8 @@ export class AgentSession {
    *  transport-specific windows (e.g. OpenAI Codex OAuth's smaller window)
    *  without re-resolving credentials on every poll. */
   private lastAccountId?: string;
+  /** The branch and checkout this conversation is on (core/checkout-record.ts). */
+  private checkoutRecord: CheckoutRecord | null = null;
   /** Where the last prune made history stable; becomes the cache anchor on the next step. */
   private pendingCacheAnchor: Message | null = null;
   /** The message currently carrying `cacheAnchor` (see applyPendingCacheAnchor). */
@@ -961,6 +974,7 @@ export class AgentSession {
         additionalRoots: this.additionalRoots,
       }),
       getPackageCooldownDays: () => this.settingsManager.get("packageCooldownDays"),
+      getCheckoutSharers: this.opts.getCheckoutSharers,
       getNetworkPolicy: () => ({
         mode: this.settingsManager.get("networkMode"),
         allow: this.settingsManager.get("networkAllow"),
@@ -2918,6 +2932,7 @@ export class AgentSession {
     this.currentLeafId = loaded.header.leafId;
     this.setSessionPath(loaded.path);
     this.markers.restore(loaded.entries, loaded.header.leafId);
+    this.checkoutRecord = latestCheckoutRecord(loaded.entries) ?? this.checkoutRecord;
     this.lastPersistedIndex = this.messages.length;
     this.providerContext = null;
     await this.subAgentManager?.rebindParentSession(this.sessionId);
@@ -2968,6 +2983,8 @@ export class AgentSession {
     this.lastPersistedIndex = this.messages.length;
     await this.markers.rePersistAll();
     await this.persistVerificationState();
+    // A compaction checkpoint is a new file: the conversation's branch must follow it.
+    await this.persistCheckoutRecord();
     await this.persistAppMarker("compaction", {
       originalCount: result.originalCount,
       newCount: result.newCount,
@@ -3808,6 +3825,16 @@ export class AgentSession {
     return this.processManager?.list() ?? [];
   }
 
+  /**
+   * Start a background process on the host's behalf (a new worktree's setup),
+   * listed with the agent's own background tasks. Null without a process manager.
+   */
+  async startBackgroundProcess(command: string, cwd = this.cwd): Promise<{ id: string } | null> {
+    if (!this.processManager) return null;
+    const started = await this.processManager.start(command, cwd);
+    return { id: started.id };
+  }
+
   /** Stop a background process by id. Returns a human-readable status string. */
   async killBackgroundProcess(id: string): Promise<string> {
     if (!this.processManager) return `No background process with id "${id}"`;
@@ -4290,6 +4317,44 @@ export class AgentSession {
       timestamp: new Date().toISOString(),
       data: this.opts.completionReview.snapshot(),
     });
+  }
+
+  /**
+   * A chat row saying where this conversation now works ("Opened on branch x in
+   * its own worktree"), live and on every later restore of the transcript.
+   */
+  noteCheckout(text: string): void {
+    this.eventBus.emit("checkout_notice", { text });
+    void this.persistAppMarker("checkout", { text }).catch(() => {});
+  }
+
+  /** The branch and checkout this conversation last recorded, or null. */
+  getCheckoutRecord(): CheckoutRecord | null {
+    return this.checkoutRecord;
+  }
+
+  /**
+   * Remember the branch this conversation is on, so resuming it later opens
+   * that branch (see core/checkout-record.ts). Unchanged records write nothing.
+   */
+  async recordCheckout(record: CheckoutRecord): Promise<void> {
+    const previous = this.checkoutRecord;
+    if (previous?.branch === record.branch && previous.cwd === record.cwd) return;
+    this.checkoutRecord = { ...record };
+    await this.persistCheckoutRecord();
+  }
+
+  private async persistCheckoutRecord(): Promise<void> {
+    if (!this.sessionPath || !this.checkoutRecord) return;
+    const entry: CustomEntry = {
+      type: "custom",
+      kind: CHECKOUT_RECORD_KIND,
+      id: crypto.randomUUID(),
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      data: { ...this.checkoutRecord },
+    };
+    await this.sessionManager.appendEntry(this.sessionPath, entry);
   }
 
   private async persistVerificationState(): Promise<void> {
@@ -4778,6 +4843,7 @@ export class AgentSession {
       savedCompletionReview?.type === "custom" ? savedCompletionReview.data : null,
     );
     this.verificationTracker.clearBackground();
+    this.checkoutRecord = latestCheckoutRecord(loaded.entries);
     const savedVerification = [...loaded.entries]
       .reverse()
       .find((entry) => entry.type === "custom" && entry.kind === VERIFICATION_STATE_KIND);

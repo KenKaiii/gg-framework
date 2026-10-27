@@ -4454,6 +4454,21 @@ select {
   text-align: left;
   font-family: var(--mono);
 }
+/* A project's worktrees, below its conversations: same rows, one quiet heading. */
+.picker-worktrees {
+  margin-top: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.picker-section-title {
+  margin: 0 0 var(--space-2);
+  padding: 0 var(--space-6);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1.3;
+}
 .picker-error {
   flex: 0 0 auto;
   margin-bottom: var(--space-4);

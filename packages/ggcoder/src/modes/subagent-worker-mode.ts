@@ -2,6 +2,7 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import { AgentSession } from "../core/agent-session.js";
+import { parentCheckoutSharers } from "../core/shared-checkout-guard.js";
 import { log } from "../core/logger.js";
 import { isModelUnavailableError } from "../core/model-unavailable.js";
 import {
@@ -297,6 +298,9 @@ export async function runSubagentWorkerMode(): Promise<void> {
     } = options;
     const next = new AgentSession({
       ...sessionOptions,
+      // A worker must never switch the branch of the checkout it shares with
+      // its parent: that would move the parent, its siblings and every window.
+      getCheckoutSharers: parentCheckoutSharers([options.cwd, ...additionalRoots]),
       maxTurns: 50,
       maxTurnExtensions: SUB_AGENT_MAX_TURN_EXTENSIONS,
       transient: false,
