@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.97.0",
+    date: "2026-10-28",
+    items: [
+      "Say hello to `GG World`, the brand-new hangout that replaces GG Royale. Walk around a living 3D world with up to `50` real players, chat, emote, grab a drink and code at an in-game PC that opens your own GG Coder. Every mini-game was rebuilt from scratch, it runs a buttery `60 fps`, and an optional online save keeps your progress, wardrobe and level wherever you play.",
+      "Your agent got leaner and smarter about when to slow down. I benchmarked every built-in skill on and off and kept only the ones that actually change results: `durable` for anything that could lose data and `compliance-guard` for privacy, consent and tracking. The rest just made runs slower, so they're gone. GPT models also stopped loading skills they don't need, cutting wasted steps on everyday tasks.",
+    ],
+  },
+  {
     version: "0.96.3",
     date: "2026-10-25",
     items: [
