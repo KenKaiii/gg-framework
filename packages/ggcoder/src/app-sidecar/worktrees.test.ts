@@ -28,7 +28,7 @@ let mine: string;
 let own: string;
 
 beforeEach(() => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gg-worktrees-")));
+  root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "gg-worktrees-")));
   repo = path.join(root, "app");
   managed = path.join(root, "gg-worktrees");
   fs.mkdirSync(repo);

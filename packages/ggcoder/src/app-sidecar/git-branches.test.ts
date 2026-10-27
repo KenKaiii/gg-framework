@@ -26,7 +26,7 @@ let repo: string;
 let trees: string;
 
 beforeEach(() => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gg-branches-")));
+  root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "gg-branches-")));
   repo = path.join(root, "app");
   trees = path.join(root, "worktrees");
   fs.mkdirSync(repo);
@@ -62,7 +62,7 @@ describe("listBranches", () => {
     const elsewhere = path.join(root, "app-login");
     git(repo, "worktree", "add", "-q", elsewhere, "feature/login");
     const login = (await listBranches(repo)).branches.find((b) => b.name === "feature/login");
-    expect(login?.worktree).toBe(fs.realpathSync(elsewhere));
+    expect(login?.worktree).toBe(fs.realpathSync.native(elsewhere));
     const fromThere = await listBranches(elsewhere);
     expect(fromThere.current).toBe("feature/login");
     expect(fromThere.branches.find((b) => b.name === "trunk")?.worktree).toBe(repo);
@@ -97,7 +97,7 @@ describe("switchBranch", () => {
     expect(current()).toBe("trunk");
     if (outcome.kind !== "moved") throw new Error(`expected a move, got ${outcome.kind}`);
     expect(outcome.created).toBe(true);
-    expect(outcome.path.startsWith(fs.realpathSync(root))).toBe(true);
+    expect(outcome.path.startsWith(fs.realpathSync.native(root))).toBe(true);
     expect(path.basename(outcome.path)).toBe("feature-login");
     expect(git(outcome.path, "branch", "--show-current").trim()).toBe("feature/login");
     // Ignored local config follows; other ignored files do not.
@@ -119,7 +119,7 @@ describe("switchBranch", () => {
     expect(await switchBranch(req({ branch: "feature/login" }))).toEqual({
       kind: "moved",
       branch: "feature/login",
-      path: fs.realpathSync(elsewhere),
+      path: fs.realpathSync.native(elsewhere),
       created: false,
       copied: [],
     });
@@ -235,7 +235,7 @@ describe("resolveResumeCheckout (a resumed conversation keeps its branch)", () =
       { branch: "feature/login", cwd: path.join(root, "gone") },
       trees,
     );
-    expect(resumed.cwd).toBe(fs.realpathSync(elsewhere));
+    expect(resumed.cwd).toBe(fs.realpathSync.native(elsewhere));
   });
 
   it("reopens in the folder, and says so, when the branch was deleted", async () => {

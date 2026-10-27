@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { CheckoutRecord } from "../core/checkout-record.js";
-import { runBackgroundGit } from "../utils/git.js";
+import { realpathNative, runBackgroundGit } from "../utils/git.js";
 
 /**
  * The Git panel's branch picker: list local branches, and switch this window
@@ -50,7 +50,7 @@ async function realRoot(dir: string): Promise<string> {
     cwd: dir,
     timeoutMs: READ_TIMEOUT_MS,
   });
-  return fs.realpath(stdout.trim());
+  return realpathNative(stdout.trim());
 }
 
 async function currentBranch(dir: string): Promise<string | null> {
@@ -87,7 +87,7 @@ export async function listBranches(
     if (!line) continue;
     const [name = "", time = "0", tree = ""] = line.split("\0");
     if (!name) continue;
-    const elsewhere = tree ? await fs.realpath(tree).catch(() => tree) : "";
+    const elsewhere = tree ? await realpathNative(tree).catch(() => path.resolve(tree)) : "";
     branches.push({
       name,
       current: name === current,
@@ -231,7 +231,7 @@ export async function switchBranch(req: SwitchRequest): Promise<SwitchOutcome> {
       : ["worktree", "add", target, branch],
     root,
   );
-  const real = await fs.realpath(target);
+  const real = await realpathNative(target);
   const copied = await copyLocalFiles(root, real).catch(() => []);
   return { kind: "moved", branch, path: real, created: true, copied };
 }
@@ -242,7 +242,7 @@ async function commonGitDir(dir: string): Promise<string | null> {
       ["rev-parse", "--path-format=absolute", "--git-common-dir"],
       { cwd: dir, timeoutMs: READ_TIMEOUT_MS },
     );
-    return await fs.realpath(stdout.trim());
+    return await realpathNative(stdout.trim());
   } catch {
     return null;
   }

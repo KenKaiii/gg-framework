@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
-import fs from "node:fs/promises";
 import path from "node:path";
-import { runBackgroundGit } from "../utils/git.js";
+import { realpathNative, runBackgroundGit } from "../utils/git.js";
 import {
   hasLong,
   hasShort,
@@ -124,7 +123,7 @@ export async function checkoutRoot(
       timeoutMs: GIT_TIMEOUT_MS,
     });
     const top = stdout.trim();
-    return top ? await fs.realpath(top) : null;
+    return top ? await realpathNative(top) : null;
   } catch {
     return null;
   }
