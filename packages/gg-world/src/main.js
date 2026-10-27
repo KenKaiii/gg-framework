@@ -10,7 +10,7 @@ import { SFX, SURFACE } from './sfx.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { loadAssets } from './assets.js';
 import { buildRooms } from './roomset.js';
-import { tickTipsy, leanBody, makeTipsyScreen } from './tipsy.js';
+import { tickTipsy, leanBody, makeTipsyScreen, LEVELS } from './tipsy.js';
 import { Agent } from './agent.js';
 import { DEFAULT_LOOK } from './avatar.js';
 import { initWorld } from './play.js';
@@ -35,6 +35,13 @@ const scene = new THREE.Scene(); scene.background = new THREE.Color('#0b0a12');
 const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 200);
 const G = { paused: false, hidden: false, ready: false };
 let loopFn = () => {};
+/** Where you were (room + spot + facing), kept in World's own storage so reopening World puts you back there. */
+const SPOT_KEY = 'nr.spot';
+/** @param {any} S */
+function saveSpot(S) {
+  const me = S?.me, R = S?.room; if (!me || !R?.id || S.fade) return;
+  try { localStorage.setItem(SPOT_KEY, JSON.stringify({ room: R.id, x: +me.pos.x.toFixed(2), z: +me.pos.z.toFixed(2), face: +me.root.rotation.y.toFixed(2) })); } catch { /* storage off */ }
+}
 const sync = () => renderer.setAnimationLoop(G.paused || G.hidden || !G.ready ? null : loopFn);
 // @ts-ignore
 window.__game = { pause() { G.paused = true; sync(); SFX.suspend(); }, resume() { G.paused = false; sync(); SFX.resume(); }, get paused() { return G.paused; } };
@@ -48,7 +55,7 @@ window.__game = { pause() { G.paused = true; sync(); SFX.suspend(); }, resume() 
 // Standalone (opened directly, no parent app) it keeps its demo player.
 addEventListener('message', e => {
   if (!fromApp(e)) return; const d = e.data; if (!d || d.gg !== 'world') return;
-  if (d.t === 'pause') { if (window.__S) flushSave(window.__S); /** @type {any} */ (globalThis).__ggFlushStore?.(); window.__game.pause(); } else if (d.t === 'resume') window.__game.resume();
+  if (d.t === 'pause') { if (window.__S) { saveSpot(window.__S); flushSave(window.__S); } /** @type {any} */ (globalThis).__ggFlushStore?.(); window.__game.pause(); } else if (d.t === 'resume') window.__game.resume();
   else if (d.t === 'player' && window.__S?.player) { const P = window.__S.player; const lv = Math.max(1, Math.min(999, Math.floor(Number(d.level) || 1)));
     P.level = lv; P.xp = Math.max(0, Math.min(1, (Number(d.percent) || 0) / 100)); window.__S.ui?.refreshHud?.(); if (typeof d.name === 'string' && d.name.trim()) P.appName = d.name.trim().replace(/[^A-Za-z0-9 ]/g, '').slice(0, 14); }
   else if (d.t === 'profile' && window.__S) applyProfile(window.__S, d.profile);
@@ -58,7 +65,7 @@ addEventListener('message', e => {
   else if (d.t === 'note' && window.__S?.ui && typeof d.text === 'string') window.__S.ui.toast?.(d.text.slice(0, 90));
   else if (d.t === 'xp' && window.__S?.ui) { const n = Math.max(0, Math.floor(Number(d.amount) || 0)); if (n) window.__S.ui.toast?.(`+${n} XP${d.why ? ' · ' + String(d.why).slice(0, 30) : ''}`); }
 });
-addEventListener('pagehide', () => { if (window.__S) flushSave(window.__S); }); // Back unmounts the frame: send a pending save first
+addEventListener('pagehide', () => { if (window.__S) { saveSpot(window.__S); flushSave(window.__S); } /** @type {any} */ (globalThis).__ggFlushStore?.(); }); // Back unmounts the frame: send a pending save first
 document.addEventListener('visibilitychange', () => { G.hidden = document.hidden; sync(); if (document.hidden) SFX.suspend(); else if (!G.paused) SFX.resume(); });
 
 export const LOOK_KEY = 'night-rooms-look';
@@ -106,7 +113,13 @@ async function start() {
   await new Promise(r => setTimeout(r, 0)); // the city outside (outside.js); ?outside=0 turns it off
   try { initCrew(S, W); } catch (e) { console.warn('crew', e); }
   mark('outside+crew');
-  W.enter('bar', null);
+  // back where you left off (owner): the room + spot saved when you last left World, if it's still somewhere you can
+  // stand; else the bar as before
+  { let back = null; try { back = JSON.parse(localStorage.getItem(SPOT_KEY) || 'null'); } catch { back = null; }
+    const R = back && typeof back.room === 'string' ? S.rooms[back.room] : null;
+    const ok = R && Number.isFinite(back.x) && Number.isFinite(back.z) && R.grid.free(back.x, back.z);
+    W.enter(ok ? back.room : 'bar', null);
+    if (ok) { S.me.pos.set(back.x, 0, back.z); S.me.root.rotation.y = Number.isFinite(back.face) ? back.face : 0; S.target.set(back.x + R.root.position.x, 0.6, back.z + R.root.position.z); } }
   mark('enter'); progress(0.92, 'Turning the lights on');
   addEventListener('keydown', e => {
     const el = /** @type {HTMLElement} */ (document.activeElement); if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
@@ -146,6 +159,10 @@ async function start() {
     clock.update(); const dt = S.freezeT ? 0 : Math.min(clock.getDelta(), 0.05); /* freezeT: debug (tools/flicker-scan.mjs) */ S.t += dt; const t = S.t; const R = S.room;
     S.rotSmooth += (S.rot - S.rotSmooth) * Math.min(1, dt * 8);
     const TP = tickTipsy(S, dt); // drinking: 5 levels of tipsy (tipsy.js)
+    if ((S.spotT = (S.spotT ?? 4) - dt) <= 0) { S.spotT = 4; saveSpot(S); } // where you are, every few seconds (for an app that closes without warning)
+    // a short note when the level changes, so the player knows what's happening
+    if (TP.level !== (S.tipsyShown ?? 0)) { const up = TP.level > (S.tipsyShown ?? 0); S.tipsyShown = TP.level;
+      S.ui?.toast?.(TP.level === 0 ? 'Sober again' : up ? `${LEVELS[TP.level]}${TP.level >= 4 ? '. Maybe some water?' : ''}` : `Sobering up: ${LEVELS[TP.level].toLowerCase()}`); }
     const a = Math.PI / 4 + S.rotSmooth * Math.PI / 2;
     // follow camera: fixed zoom (the v3 floor framing), target eases toward the player, nudged to the back walls so the HUD stays clear
     const rp = R.root.position, px = me.pos.x + rp.x, pz = me.pos.z + rp.z, back = 0.6;

@@ -3,7 +3,7 @@ import { BackButton } from "./BackButton";
 import { useWorldRadio } from "./world-radio";
 import { useWorldLive } from "./world-live";
 import { useWorldSave, type WorldProfile } from "./world-save";
-import { WorldCloudKey, WorldConsent, WorldLiveConsent } from "./WorldSaveUi";
+import { WorldCloudKey, WorldConsent, WorldLiveConsent, type CloudAnchor } from "./WorldSaveUi";
 import { readWorldStore, writeWorldStore } from "./world-store";
 import { WorldTv, useWorldTv } from "./WorldTv";
 import { WorldLoading, type WorldBoot } from "./WorldLoading";
@@ -72,6 +72,9 @@ export function WorldScreen({
   const [shown, setShown] = useState(false);
   const [ready, setReady] = useState(false);
   const [slow, setSlow] = useState(false);
+  // the online-save menu's anchor (the game's cloud button), null = closed
+  const [cloudAt, setCloudAt] = useState<CloudAnchor | null>(null);
+  const closeCloud = useCallback((): void => setCloudAt(null), []);
   // the loading screen: World's own progress, and whether it's still on screen (it fades out once World is drawn)
   const [boot, setBoot] = useState<WorldBoot | null>(null);
   const [loaderOn, setLoaderOn] = useState(true);
@@ -98,6 +101,10 @@ export function WorldScreen({
   const tv = useWorldTv(post, () => frame.current?.focus());
   const { state: tvState, frame: tvFrame } = tv;
   const save = useWorldSave({ ready, shown, level: player?.level, post });
+  // keep the game's cloud button in step: filled when online save is on, a dot when it can't reach the server
+  useEffect(() => {
+    if (ready) post({ t: "cloud", on: save.on, status: save.status });
+  }, [ready, save.on, save.status, post]);
   const radio = useWorldRadio(post);
   // World is paused while the app is switched away (hidden); the live world closes after a minute of that.
   const [hidden, setHidden] = useState(() => document.hidden);
@@ -151,6 +158,16 @@ export function WorldScreen({
       if (data.t === "computer") {
         // The game only ASKS: the app opens its own GG Coder (never the game's), for this window's own projects.
         onComputerRef.current?.(data.open === true);
+      } else if (data.t === "cloud-menu") {
+        // the game's cloud button (bottom-right icon bar): open the online-save menu just above it (toggle)
+        const r = (data as { rect?: unknown }).rect as Record<string, unknown> | undefined;
+        const n = (v: unknown, hi: number): number =>
+          typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.min(hi, v)) : 0;
+        const W = window.innerWidth;
+        const H = window.innerHeight;
+        setCloudAt((cur) =>
+          cur ? null : { x: n(r?.x, W), y: n(r?.y, H), w: n(r?.w, 80), h: n(r?.h, 80) },
+        );
       } else if (data.t === "progress") {
         const d = data as { p?: unknown; label?: unknown };
         const p =
@@ -255,17 +272,20 @@ export function WorldScreen({
     >
       <div className="picker-head world-head" data-tauri-drag-region>
         <BackButton label="Back" onClick={onClose} />
-        <WorldCloudKey
-          on={save.on}
-          status={save.status}
-          savedAt={save.savedAt}
-          onTurnOn={save.turnOn}
-          onTurnOff={save.turnOff}
-          onDelete={save.deleteSave}
-          onDeleteAccount={save.deleteAccount}
-          onRetry={save.retryNow}
-        />
       </div>
+      {/* the online-save menu, opened from the cloud button in the game's bottom-right icon bar */}
+      <WorldCloudKey
+        anchor={cloudAt}
+        onDismiss={closeCloud}
+        on={save.on}
+        status={save.status}
+        savedAt={save.savedAt}
+        onTurnOn={save.turnOn}
+        onTurnOff={save.turnOff}
+        onDelete={save.deleteSave}
+        onDeleteAccount={save.deleteAccount}
+        onRetry={save.retryNow}
+      />
       <div className="world-stage">
         {!failed && (
           <iframe

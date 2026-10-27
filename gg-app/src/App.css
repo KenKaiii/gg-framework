@@ -2578,19 +2578,11 @@ select {
   pointer-events: none;
 }
 /* Online save: the cloud key beside Back, and its small panel. */
-.picker-head.world-head > .world-cloud {
-  position: absolute;
-  left: calc(var(--page-pad) + 36px);
-  top: 50%;
-  translate: 0 -50%;
-}
-.platform-macos .picker-head.world-head > .world-cloud {
-  left: 120px;
-}
+/* The online-save menu: opened from the cloud button in the game's bottom-right icon bar, placed just above it
+   (right and bottom are set inline from the button's position). */
 .world-cloud-panel {
-  position: absolute;
-  top: calc(100% + var(--space-4));
-  left: 0;
+  position: fixed;
+  z-index: calc(var(--z-overlay) + 3);
   display: flex;
   flex-direction: column;
   align-items: stretch;

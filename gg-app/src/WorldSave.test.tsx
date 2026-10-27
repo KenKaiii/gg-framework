@@ -176,7 +176,7 @@ describe("World online save", () => {
     const { send, sent } = open();
     send({ t: "ready" });
     await waitFor(() => expect(worldSaveGet).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole("button", { name: "Online save" }));
+    send({ t: "cloud-menu", rect: { x: 900, y: 700, w: 40, h: 40 } }); // the game's cloud button
     fireEvent.click(screen.getByRole("button", { name: "Delete my online save" }));
     expect(worldSaveDelete).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Yes, delete it" }));
@@ -220,7 +220,7 @@ describe("World online save when the server can't be reached", () => {
         await vi.advanceTimersByTimeAsync(6000);
       });
       expect(worldSaveGet).toHaveBeenCalledTimes(3);
-      fireEvent.click(screen.getByRole("button", { name: "Online save" }));
+      send({ t: "cloud-menu", rect: { x: 900, y: 700, w: 40, h: 40 } }); // the game's cloud button
       expect(screen.getByText("Can't reach the server right now. Trying again")).toBeTruthy();
       // back online: "Try again now" loads it
       vi.mocked(worldSaveGet).mockResolvedValue(saved(2, "Ken"));
@@ -273,7 +273,7 @@ describe("World account and live consent", () => {
     const { send, sent } = open();
     send({ t: "ready" });
     await waitFor(() => expect(worldSaveGet).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole("button", { name: "Online save" }));
+    send({ t: "cloud-menu", rect: { x: 900, y: 700, w: 40, h: 40 } }); // the game's cloud button
     fireEvent.click(screen.getByRole("button", { name: "Delete my account" }));
     expect(worldAccountDelete).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Yes, delete my account" }));
@@ -324,5 +324,31 @@ describe("World account and live consent", () => {
     open().send({ t: "ready" });
     await act(async () => {});
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("World online-save menu (opened from the game's cloud button)", () => {
+  it("opens above the button, tells the game the save state, and closes on Escape or a second press", async () => {
+    agreeOnline();
+    vi.mocked(worldSaveGet).mockResolvedValue(saved(1));
+    const { send, sent } = open();
+    send({ t: "ready" });
+    await waitFor(() => expect(worldSaveGet).toHaveBeenCalledOnce());
+    // the game's cloud icon is kept in step with the save
+    await waitFor(() => expect(sent("cloud").slice(-1)[0]).toMatchObject({ on: true }));
+
+    expect(screen.queryByRole("group", { name: "Online save" })).toBeNull();
+    send({ t: "cloud-menu", rect: { x: 900, y: 700, w: 40, h: 40 } });
+    const menu = screen.getByRole("group", { name: "Online save" });
+    expect(menu.style.right).toBe(`${window.innerWidth - 940}px`);
+    expect(menu.style.bottom).toBe(`${window.innerHeight - 700 + 8}px`);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("group", { name: "Online save" })).toBeNull();
+    send({ t: "cloud-menu", rect: { x: 900, y: 700, w: 40, h: 40 } });
+    expect(screen.getByRole("group", { name: "Online save" })).toBeTruthy();
+    send({ t: "cloud-menu", rect: { x: 900, y: 700, w: 40, h: 40 } });
+    expect(screen.queryByRole("group", { name: "Online save" })).toBeNull();
+    // no header cloud button any more
+    expect(screen.queryByRole("button", { name: "Online save" })).toBeNull();
   });
 });

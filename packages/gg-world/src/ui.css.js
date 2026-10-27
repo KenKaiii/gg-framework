@@ -13,6 +13,8 @@ const px = rows => { let r = ''; rows.forEach((row, y) => [...row].forEach((k, x
   return `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${rows[0].length} ${rows.length}' shape-rendering='crispEdges'>${r}</svg>`; };
 // HUD icons (16 x 16 pixel art) as CSS masks
 export const ICONS = {
+  cloud: ['................', '................', '.......1111.....', '.....11111111...', '....1111111111..', '..111111111111..', '.11111111111111.', '1111111111111111', '1111111111111111', '1111111111111111', '.11111111111111.', '..111111111111..', '................', '................', '................', '................'],
+  cloudOff: ['................', '................', '.......1111.....', '.....11....11...', '....1........1..', '..111........1..', '.1............1.', '1..............1', '1..............1', '1..............1', '.1............1.', '..111111111111..', '................', '................', '................', '................'],
   map: ['................','.1111..1111..111','.1..1111..1111.1','.1...1...1....1.','.1...1...1....1.','.1...1...1....1.','.1...1...1....1.','.1...1...1....1.','.1...1...1....1.','.1...1...1....1.','.1...1...1....1.','.1...1...1....1.','.1111..1111..111','...........11111','................','................'],
   chat: ['................','.11111111111111.','1..............1','1..............1','1..11111111....1','1..............1','1..111111......1','1..............1','.11111..1111111.','.....1.1........','.....11.........','......1.........','................','................','................','................'],
   shirt: ['................','....11....11....','..111111111111..','.11111.11.11111.','111111....111111','111111111111111.','.11..111111..11.','.....111111.....','.....111111.....','.....111111.....','.....111111.....','.....111111.....','.....111111.....','.....111111.....','................','................'],
@@ -43,7 +45,7 @@ export const CSS = `
 /* chat + DMs scale on their own, never below 0.95 (owner: chat was barely visible in small windows) */
 .chatp,.dlg{zoom:var(--ui-chat,1)}
 .modal.profile,.modal.mapp,.modal.creator{zoom:var(--ui-chat,1)} /* readable in small windows, like the chat */
-#ui{position:fixed;inset:0;pointer-events:none;font:16px/16px ${B};color:#c9d1c4;user-select:none;-webkit-font-smoothing:none;-moz-osx-font-smoothing:grayscale;font-smooth:never;text-rendering:optimizeSpeed}
+#ui{position:fixed;inset:0;z-index:2;pointer-events:none;font:16px/16px ${B};color:#c9d1c4;user-select:none;-webkit-font-smoothing:none;-moz-osx-font-smoothing:grayscale;font-smooth:never;text-rendering:optimizeSpeed}
 #ui *{box-sizing:border-box}
 #ui b,#ui strong,#ui h1,#ui h2,#ui h3,#ui h4{font-weight:normal}
 #ui input,#ui button,#ui select{font:inherit;-webkit-font-smoothing:none}
@@ -161,7 +163,7 @@ kbd{font:16px/16px ${B};background:#161b17;border:1px solid #263228;border-radiu
 /* icon keys bottom right */
 .ibar{position:absolute;right:16px;bottom:16px;display:flex;gap:8px;pointer-events:auto;z-index:10}
 .ib{all:unset;box-sizing:border-box;width:40px;height:40px;display:grid;place-items:center;cursor:pointer;color:#a1a8b1;transition:color .15s,background-color .15s;background:#2c3035;border-radius:6px;box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 2px 0 #0b0c0e,0 6px 14px rgba(0,0,0,.45)}
-.ib:hover{color:#e8ebef;background:#33383e}.ib:active{box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 1px 0 #0b0c0e;transform:translateY(1px)}.ib:focus-visible{outline:2px solid #8fa3ff;outline-offset:2px}
+.ib:hover{color:#e8ebef;background:#33383e}.ib.cloud{position:relative}.ib.cloud.on{color:#c2c7ce}.ib.cloud .dot{position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:#f0c75e;box-shadow:0 0 0 2px #2c3035;display:none}.ib.cloud.err .dot{display:block}.ib:active{box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 1px 0 #0b0c0e;transform:translateY(1px)}.ib:focus-visible{outline:2px solid #8fa3ff;outline-offset:2px}
 .pxi{display:block;width:16px;height:16px;background:currentColor;-webkit-mask:var(--m) center/100% 100% no-repeat;mask:var(--m) center/100% 100% no-repeat}
 .ib svg{display:block}
 /* chat: critter paper, bottom left: the log is always there (last lines), Enter focuses the input */

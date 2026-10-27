@@ -22,6 +22,7 @@ import { ICONS, pxMask } from './ui.css.js';
 import { sitPlayer } from './act/sit.js';
 import { createGuard, GUARD_KEY } from './chat-guard.js';
 import { slur, blurt, tipsyLevel } from './tipsy.js';
+import { EMBED, tellApp, fromApp } from './bridge.js';
 
 const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 /** the real-player marker: a ringed dot (shape, not only colour) + hidden text for screen readers */
@@ -264,12 +265,26 @@ export function initUI(S, W) {
   snd.addEventListener('click', () => { SFX.setMuted(!SFX.muted); sndIcon(); if (!SFX.muted) SFX.play('ui.toast'); snd.blur(); }); sndIcon();
   const ibar = h('div', 'ibar'); root.appendChild(ibar);
   const ib = (title, rows, fn) => { const b = /** @type {HTMLButtonElement} */ (h('button', 'key ib')); b.type = 'button'; b.title = title; b.setAttribute('aria-label', title); b.innerHTML = '<i class="pxi"></i>'; /** @type {HTMLElement} */ (b.firstChild).style.setProperty('--m', pxMask(rows)); b.addEventListener('click', () => { b.blur(); if (!U.blocking) fn(); }); ibar.appendChild(b); return b; };
+  // online save (owner: with the other icon buttons). The menu itself is the app's (it holds the save); this button asks
+  // the app to open it just above the button, and the app tells us whether online save is on / failing ({t:'cloud'}).
+  if (EMBED) {
+    const cloud = ib('Online save', ICONS.cloudOff, () => { const r = cloud.getBoundingClientRect(); tellApp({ t: 'cloud-menu', rect: { x: r.left, y: r.top, w: r.width, h: r.height } }); });
+    cloud.classList.add('cloud'); cloud.setAttribute('aria-haspopup', 'menu'); cloud.insertAdjacentHTML('beforeend', '<b class="dot" aria-hidden="true"></b>');
+    U.setCloud = (/** @type {boolean} */ on, /** @type {string} */ status) => {
+      cloud.classList.toggle('on', on); cloud.classList.toggle('err', on && status === 'error');
+      /** @type {HTMLElement} */ (cloud.firstChild).style.setProperty('--m', pxMask(on ? ICONS.cloud : ICONS.cloudOff));
+      const t = !on ? 'Online save (off)' : status === 'error' ? "Online save (can't reach the server)" : 'Online save (on)'; cloud.title = t; cloud.setAttribute('aria-label', t);
+    };
+  }
+  // the app keeps the cloud button in step with the online save ({ gg:'world', t:'cloud', on, status })
+  addEventListener('message', e => { if (!fromApp(e) || e.data?.gg !== 'world' || e.data.t !== 'cloud') return; U.setCloud?.(e.data.on === true, typeof e.data.status === 'string' ? e.data.status : ''); });
   ib('Map (M)', ICONS.map, () => openMap());
   ib('Wardrobe (C)', ICONS.shirt, () => { if (creatorEl) return; U.blocking = true; creatorEl = openCreator(S, root, () => { creatorEl?.remove(); creatorEl = null; U.blocking = false; }); });
   snd.className = 'key ib snd'; ibar.appendChild(snd);
   const MK = makeMarker(S); U.marker = MK;
   const PTR = initPointer(S, U, W, { targets, people: peopleT, interactWith, showProfile: m => showProfile(m), standUp, inReach });
   // emotes, keys 1-5 (owner): each a different funny thing. [emote, what the bubble says]
+  let emoteAt = -1e9, emoteSaidAt = -1e9; // emote cooldowns (see the key handler)
   const EMO = { Digit1: ['wave', 'heyyy!'], Digit2: ['dance', '*hits the floss*'], Digit3: ['kiss', 'mwah'], Digit4: ['sleep', 'zzz... five more minutes'], Digit5: ['worm', '*does the worm*'] };
   const edit = initEdit(S, U, root);
   // room name: fades in at the top middle when you walk into a room (and on stairs / travel), then fades out
@@ -286,7 +301,13 @@ export function initUI(S, W) {
     if (e.code === 'KeyM') openMap();
     if (e.code === 'KeyC' && !creatorEl && !U.firstSetup) { U.blocking = true; creatorEl = openCreator(S, root, () => { creatorEl?.remove(); creatorEl = null; U.blocking = false; }); }
     if (e.code === 'KeyB') edit.toggle();
-    const em = EMO[e.code]; if (em && !S.seated) { SFX.play('pop'); S.me.path = null; S.me.av.endEmote?.(); S.me.av.startEmote(em[0]); S.me.lockAnim = S.me.av.emT; U.bubble(S.me, em[1], 2.5); }
+    // emotes (owner: no spamming 1-5): a new one only once the current one has had 1.5 s, and the line over your head at
+    // most every 6 s; holding the key down does nothing extra. The emote you see is what others see (net.js sends it).
+    const em = EMO[e.code];
+    if (em && !S.seated && !e.repeat) { const now = performance.now();
+      if (now - emoteAt < 1500) return;
+      emoteAt = now; SFX.play('pop'); S.me.path = null; S.me.av.endEmote?.(); S.me.av.startEmote(em[0]); S.me.lockAnim = S.me.av.emT;
+      if (now - emoteSaidAt > 6000) { emoteSaidAt = now; U.bubble(S.me, em[1], 2.5); } }
   });
   // click-to-walk
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();

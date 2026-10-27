@@ -29,3 +29,23 @@ test('it climbs with drinks and wears off over time', () => {
   for (let i = 0; i < 20 * 60 * 10; i++) { S.t += 0.1; tickTipsy(S, 0.1); }
   assert.equal(tipsyLevel(S), 0, 'sober again after 20 minutes');
 });
+
+test('every alcoholic drink shows: one lager is Tipsy straight away (roof cooler or bar), soft drinks never', () => {
+  const mk = () => ({ t: 0, me: { av: { fx: {} } } });
+  const drink = (S, id) => { startDrink(S, id, 'beer', () => {}); while (S.tipsy.drink) { S.t += 0.05; tickTipsy(S, 0.05); } };
+  for (const id of ['lager', 'ipa2', 'ipa', 'red', 'blue', 'round']) { const S = mk(); drink(S, id); assert.equal(tipsyLevel(S), 1, id); }
+  for (const id of ['dude', 'martini', 'negroni', 'hotfix', 'mystery', 'gargle']) { const S = mk(); drink(S, id); assert.ok(tipsyLevel(S) >= 2, id); }
+  for (const id of ['soda', 'nuka', 'nuka2', 'butter', 'fries', 'pizza', 'royale', 'soylent']) { const S = mk(); drink(S, id); assert.equal(tipsyLevel(S), 0, id); }
+  const S = mk(); drink(S, 'lager'); drink(S, 'ipa2'); assert.equal(tipsyLevel(S), 2, 'two beers: buzzed');
+  let t = 0; const L = mk(); drink(L, 'lager'); while (tipsyLevel(L) > 0) { L.t += 1; t += 1; tickTipsy(L, 1); }
+  assert.ok(t > 90 && t < 180, `a lager lasts about 2 minutes (${t} s)`);
+});
+
+test('the HUD stays above the tilted (tipsy) game canvas', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('../src/ui.css.js', import.meta.url), 'utf8');
+  const src = fs.readFileSync(new URL('../src/tipsy.js', import.meta.url), 'utf8');
+  // a CSS transform on the canvas makes a new layer that paints over an un-stacked #ui: #ui needs its own z-index
+  assert.match(css, /#ui\{position:fixed;inset:0;z-index:2;/);
+  assert.match(src, /canvas\.style\.zIndex = '0'/);
+});

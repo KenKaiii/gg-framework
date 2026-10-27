@@ -15,16 +15,16 @@ export const STRENGTH = /** @type {Record<string, number>} */ ({
 });
 export const LEVELS = ['Sober', 'Tipsy', 'Buzzed', 'Drunk', 'Wasted', 'Absolutely gone'];
 const MAX = 5;
-const PER_LEVEL = 1.6;      // strength units per level (so ~2 lagers a level, ~1 gargle blaster for two)
-const WEAR_OFF = 1 / 75;    // strength units per second: a level wears off in ~2 minutes
+const PER_LEVEL = 1;        // strength units per level: every drink shows (a lager = 1 level, a cocktail 1.5, a gargle blaster 3)
+const WEAR_OFF = 1 / 150;   // strength units per second: a level wears off in ~2.5 minutes
 const SIP_EVERY = 3.2;      // seconds between sips while holding a drink
 
-/** @typedef {{ amount: number, drink: null | { id: string, prop: string, sips: number, strength: number, t: number }, sway: number, swayV: number, stumbleT: number }} TipsyState */
+/** @typedef {{ amount: number, drink: null | { id: string, prop: string, sips: number, total: number, strength: number, t: number }, sway: number, swayV: number, stumbleT: number }} TipsyState */
 
 /** @param {any} S */
 export function tipsyOf(S) { return S.tipsy || (S.tipsy = /** @type {TipsyState} */ ({ amount: 0, drink: null, sway: 0, swayV: 0, stumbleT: 4 })); }
 /** 0 (sober) .. 5 (gone). @param {any} S */
-export function tipsyLevel(S) { const st = tipsyOf(S); return Math.min(MAX, Math.floor(st.amount / PER_LEVEL + 1e-6)); }
+export function tipsyLevel(S) { const st = tipsyOf(S); return st.amount < 0.25 ? 0 : Math.min(MAX, Math.ceil(st.amount / PER_LEVEL - 1e-6)); } // a whole lager = level 1 straight away; each level holds until its whole unit has worn off
 
 /**
  * A drink was handed over: hold it and sip it 2-3 times. @param {any} S @param {string} id @param {string} prop
@@ -32,7 +32,8 @@ export function tipsyLevel(S) { const st = tipsyOf(S); return Math.min(MAX, Math
  */
 export function startDrink(S, id, prop, hold) {
   const st = tipsyOf(S), strength = STRENGTH[id] || 0;
-  st.drink = { id, prop, sips: 2 + (Math.random() < 0.5 ? 1 : 0), strength, t: 1.2 };
+  const sips = 2 + (Math.random() < 0.5 ? 1 : 0);
+  st.drink = { id, prop, sips, total: sips, strength, t: 1.2 };
   /** @type {any} */ (st).hold = hold;
 }
 
@@ -70,11 +71,12 @@ export function tickTipsy(S, dt) {
     if (st.drink.t <= 0) {
       st.drink.sips--; st.drink.t = SIP_EVERY;
       if (av?.fx) av.fx.sip = 1.1;
-      st.amount = Math.min(MAX * PER_LEVEL + 1, st.amount + st.drink.strength / 2.5);
+      // the drink's strength arrives over its sips, so a whole lager adds exactly one level
+      st.amount = Math.min(MAX * PER_LEVEL + 1, st.amount + st.drink.strength / st.drink.total);
       if (st.drink.sips <= 0) { const h = /** @type {any} */ (st).hold; st.drink = null; setTimeout(() => h?.(null), 900); }
     }
   }
-  st.amount = Math.max(0, st.amount - WEAR_OFF * dt * (st.drink ? 0.3 : 1));
+  if (!st.drink) st.amount = Math.max(0, st.amount - WEAR_OFF * dt); // nothing wears off while you've still got a drink on the go
   const level = tipsyLevel(S), k = Math.min(1, st.amount / (MAX * PER_LEVEL));
   // a slow, springy sway (no fast flicker): drives the body lean, the walking drift and the screen roll
   const target = Math.sin(S.t * (0.55 + k * 0.4)) * 0.6 + Math.sin(S.t * 0.27 + 1.3) * 0.4;
@@ -96,6 +98,8 @@ export function leanBody(av, swayZ) {
  */
 export function makeTipsyScreen(canvas) {
   const veil = document.createElement('div');
+  // the canvas tilts (a CSS transform lifts it into its own layer), so the veil and the HUD (#ui, z 2) sit above it
+  canvas.style.position = canvas.style.position || 'relative'; canvas.style.zIndex = '0';
   veil.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:1;opacity:0;transition:opacity 1.2s;'
     + '-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);'
     + '-webkit-mask-image:radial-gradient(ellipse 62% 58% at 50% 50%,transparent 45%,#000 100%);mask-image:radial-gradient(ellipse 62% 58% at 50% 50%,transparent 45%,#000 100%);'

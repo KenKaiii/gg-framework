@@ -1,5 +1,4 @@
-import { useId, useState } from "react";
-import { CloudIcon } from "@phosphor-icons/react";
+import { useEffect, useId, useRef, useState } from "react";
 import { openUrl } from "./agent";
 import { Modal } from "./Modal";
 import type { WorldSaveStatus } from "./world-save";
@@ -146,7 +145,17 @@ function statusText(status: WorldSaveStatus, savedAt: number | null): string {
 }
 
 /** The cloud key beside Back, and its small panel. */
+/** Where the game's cloud button is (window px), so the menu opens just above it. */
+export type CloudAnchor = { x: number; y: number; w: number; h: number };
+
+/**
+ * The online-save menu. Opened from the cloud button in the game's bottom-right icon bar (night-ui.js asks with
+ * { t:'cloud-menu', rect }); it sits just above that button, right-aligned with it. Closes on Escape, a click outside,
+ * or picking an action. The menu lives in the app because the save does (World is sealed off from it).
+ */
 export function WorldCloudKey({
+  anchor,
+  onDismiss,
   on,
   status,
   savedAt,
@@ -166,30 +175,59 @@ export function WorldCloudKey({
   onDeleteAccount: () => Promise<boolean>;
   /** Try the save again now (shown while it's failing). */
   onRetry?: () => void;
-}): React.ReactElement {
-  const [open, setOpen] = useState(false);
+  /** Null = closed. */
+  anchor: CloudAnchor | null;
+  onDismiss: () => void;
+}): React.ReactElement | null {
   const [confirming, setConfirming] = useState(false);
   const [confirmingAccount, setConfirmingAccount] = useState(false);
   const panelId = useId();
+  const panel = useRef<HTMLDivElement | null>(null);
+  const open = anchor !== null;
+  const setOpen = (o: boolean): void => {
+    if (!o) onDismiss();
+  };
+  // fresh each time it opens: no half-finished "Yes, delete" left armed; focus moves into the menu
+  useEffect(() => {
+    if (!open) return;
+    setConfirming(false);
+    setConfirmingAccount(false);
+    panel.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onDismiss();
+      }
+    };
+    const onDown = (e: PointerEvent): void => {
+      if (panel.current && !panel.current.contains(e.target as Node)) onDismiss();
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("pointerdown", onDown, true);
+    // clicks inside the game (an iframe) don't reach this window: the app closes the menu on the game's next click
+    window.addEventListener("blur", onDismiss);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("blur", onDismiss);
+    };
+  }, [open, onDismiss]);
+  if (!anchor) return null;
+  // just above the button, right edges aligned, kept inside the window
+  const right = Math.max(8, window.innerWidth - (anchor.x + anchor.w));
+  const bottom = Math.max(8, window.innerHeight - anchor.y + 8);
   return (
     <div className="world-cloud">
-      <button
-        type="button"
-        className="btn-icon world-cloud-key"
-        aria-label="Online save"
-        title="Online save"
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => {
-          setOpen((o) => !o);
-          setConfirming(false);
-          setConfirmingAccount(false);
-        }}
-      >
-        <CloudIcon size={16} weight={on ? "fill" : "regular"} aria-hidden="true" />
-      </button>
       {open && (
-        <div id={panelId} className="world-cloud-panel" role="group" aria-label="Online save">
+        <div
+          ref={panel}
+          id={panelId}
+          className="world-cloud-panel"
+          role="group"
+          aria-label="Online save"
+          style={{ right, bottom }}
+        >
           <span className="world-cloud-status">{statusText(status, savedAt)}</span>
           {status === "error" && on && onRetry && (
             <button type="button" className="btn btn-sm btn-ghost" onClick={onRetry}>
