@@ -235,7 +235,9 @@ export interface AppMarkerPayload extends RecordedPosition {
     | "security"
     /** A command the user ran themselves (`!cmd`); `data` carries
      *  { runId, command, cwd, exitCode, durationMs, cancelled, output, truncated }. */
-    | "shell";
+    | "shell"
+    /** The conversation opened somewhere new for its branch; `data` carries { text }. */
+    | "checkout";
   afterMessageCount: number;
   /** Kind-specific display fields (reason/title/headline/kenSent/counts/…). */
   data: Record<string, unknown>;

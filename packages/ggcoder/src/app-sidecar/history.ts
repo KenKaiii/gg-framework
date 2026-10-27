@@ -57,6 +57,8 @@ export interface HistoryEntryForWire {
     truncated: boolean;
     error?: string;
   };
+  /** Where the conversation reopened for its branch (persisted `checkout` marker). */
+  checkoutNotice?: string;
   toolImages?: Array<{ src: string; path?: string }>;
   subagentGroup?: Array<{
     agentName?: string;

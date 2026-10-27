@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { XIcon } from "@phosphor-icons/react";
 import { theme } from "./theme";
+import { ProjectWorktrees } from "./ProjectWorktrees";
 import {
   waitForReady,
   listProjects,
@@ -422,6 +423,11 @@ export function ProjectPicker({
               ))}
             </div>
           )}
+          <ProjectWorktrees
+            projectPath={selected.path}
+            busy={busy}
+            onOpen={(worktreePath) => choose(worktreePath)}
+          />
         </div>
       )}
 

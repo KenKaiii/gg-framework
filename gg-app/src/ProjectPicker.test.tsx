@@ -28,6 +28,7 @@ vi.mock("./agent", () => ({
 vi.mock("./RadioButton", () => ({ RadioButton: () => <button>Radio</button> }));
 vi.mock("./WindowLayoutButton", () => ({ WindowLayoutButton: () => <button>Windows</button> }));
 vi.mock("./NewProjectModal", () => ({ NewProjectModal: () => null }));
+vi.mock("./ProjectWorktrees", () => ({ ProjectWorktrees: () => null }));
 
 const getSettingsMock = vi.mocked(getSettings);
 const importTranscriptMock = vi.mocked(importTranscript);
