@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.97.3",
+    date: "2026-10-28",
+    items: [
+      "Roaming `GG World` is smooth from your very first step. That little stutter as you explored new rooms is gone: I now get every floor ready while the loading screen is up, so walking from the bar to the roof to the basement just flows.",
+    ],
+  },
+  {
     version: "0.97.2",
     date: "2026-10-28",
     items: [
