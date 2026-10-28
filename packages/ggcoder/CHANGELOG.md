@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.87.1
+
+### Patch Changes
+
+- Retire the seeded find-skills skill and the /setup-skills command (untouched seeded copies are cleaned from ~/.gg/skills), add a light-comments rule to the system prompt, and sharpen the bulletproof, compliance-guard, durable and lean skill descriptions so they load only for the work they cover.
+  - @kenkaiiii/gg-ai@5.87.1
+  - @kenkaiiii/gg-agent@5.87.1
+  - @kenkaiiii/gg-core@5.87.1
+
 ## 5.87.0
 
 ### Minor Changes
