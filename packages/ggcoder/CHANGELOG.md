@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.87.2
+
+### Patch Changes
+
+- Fix the stall watchdog killing long silent Anthropic thinking: SSE pings now count as stream activity, and the streaming thinking cap is raised to 30 minutes
+  - @kenkaiiii/gg-ai@5.87.2
+  - @kenkaiiii/gg-agent@5.87.2
+  - @kenkaiiii/gg-core@5.87.2
+
 ## 5.87.1
 
 ### Patch Changes
