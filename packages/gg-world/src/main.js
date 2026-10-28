@@ -21,6 +21,7 @@ import { makePerf, makeBlobs } from './perf.js';
 import { Avatar } from './avatar.js';
 import { makeCuller } from './cull.js';
 import { initNet } from './net.js';
+import { warmUp } from './warm.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(devicePixelRatio || 1); /* perf.js sets the real ratio (whole screen px per canvas px) */ renderer.setSize(innerWidth, innerHeight);
@@ -235,6 +236,13 @@ async function start() {
   mark('pre-ui');
   try { const { initUI } = await import('./night-ui.js'); S.ui = initUI(S, W); } catch (e) { console.warn('ui', e); }
   try { S.net = initNet(S, W); } catch (e) { console.warn('net', e); } // multiplayer (net.js): idle until the app says 'online'
+  // draw every floor once now, so roaming never stops to compile shaders or upload textures (warm.js). After the UI:
+  // it adds the hover light, and the shaders must be compiled for the light count they'll really draw with. ?warm=0 skips it.
+  if (new URLSearchParams(location.search).get('warm') !== '0') {
+    await new Promise(r => setTimeout(r, 0));
+    try { await warmUp(S, (i, n) => progress(0.92 + 0.06 * (i / n), 'Turning the lights on')); } catch (e) { console.warn('warm-up', e); }
+  }
+  mark('warm');
   // first visit: the wardrobe opens once the world is on screen. Inside the app, give the online save a moment to bring
   // an existing name first (the app sends 'profile' within a second or two when it has one); standalone: straight away.
   setTimeout(() => { try { S.ui?.maybeFirstSetup?.(); } catch (e) { console.warn('setup', e); } }, EMBED ? 2600 : 900);
