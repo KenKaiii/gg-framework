@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.97.2",
+    date: "2026-10-28",
+    items: [
+      "`GG World` really opens now. I tracked the black screen down to a security rule that quietly stopped the game from starting inside the app, and fixed it at the root. Your character, the rooms and your saved progress all load straight up, and I watched it happen in a real build before shipping.",
+    ],
+  },
+  {
     version: "0.97.1",
     date: "2026-10-28",
     items: [
