@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.97.5",
+    date: "2026-10-28",
+    items: [
+      "Big, ambitious tasks no longer get stuck on `retrying`. When Claude needs a long, deep think before building something huge, I now let it finish instead of cutting it off and starting over, so your agent keeps working for up to `30 minutes` on a single answer and you get the result instead of a spinner.",
+    ],
+  },
+  {
     version: "0.97.4",
     date: "2026-10-28",
     items: [
