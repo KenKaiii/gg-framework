@@ -5,6 +5,9 @@
 //! `connect-src` allows one remote origin, `wss://gg-world.buzzbeamaustralia.workers.dev`:
 //! the GG World live socket, opened by the main frame with a one-time ticket
 //! from `agent_world_live` (never by the sealed game frame).
+//! Tauri sends this same CSP with World's own page (`world/index.html`), so it
+//! also needs `frame-ancestors 'self'` (to be framed by the app), `connect-src
+//! blob:` (glTF textures) and `'wasm-unsafe-eval'` (the meshopt decoder).
 
 use crate::commands::agent::sidecar_json;
 use crate::*;

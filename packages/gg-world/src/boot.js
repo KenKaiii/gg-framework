@@ -9,6 +9,8 @@
 // Standalone (preview, tests, no parent app) the game uses the browser's localStorage directly.
 (function () {
   var G = /** @type {any} */ (globalThis);
+  // the page style, set here rather than in an inline <style> (index.html says why)
+  [document.documentElement, document.body].forEach(function (el) { el.style.cssText = 'margin:0;height:100%;overflow:hidden;background:#0a0b0e'; });
   var embedded = window.parent !== window;
   /** the app's origin, for postMessage (a sealed frame's own origin is "null") */
   var appOrigin = (location.ancestorOrigins && location.ancestorOrigins[0]) || '*';
