@@ -1230,6 +1230,55 @@ describe("agentLoop", () => {
     expect(events.some((event) => event.type === "agent_done")).toBe(true);
   });
 
+  it.each([
+    { name: "past the idle budget", pauseMs: 720_000 },
+    { name: "past the old 15min hard cap", pauseMs: 1_200_000 },
+  ])("keeps silent thinking alive $name while transport pings arrive", async ({ pauseMs }) => {
+    // help-me session: Opus thought silently >10 min; Anthropic only sent SSE pings
+    // (every 30s), which the SDK swallows, so the watchdog killed healthy requests.
+    vi.useFakeTimers();
+    mockStream.mockImplementation((opts: StreamOptions) => {
+      return {
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: "thinking_delta" as const, text: "" };
+          await new Promise<void>((resolve, reject) => {
+            const ping = setInterval(() => opts.onTransportActivity?.(), 30_000);
+            const timer = setTimeout(() => {
+              clearInterval(ping);
+              resolve();
+            }, pauseMs);
+            opts.signal?.addEventListener(
+              "abort",
+              () => {
+                clearInterval(ping);
+                clearTimeout(timer);
+                reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+              },
+              { once: true },
+            );
+          });
+          yield { type: "text_delta" as const, text: "Done." };
+        },
+        response: Promise.resolve(makeResponse("Done.")),
+      } as unknown as ReturnType<typeof stream>;
+    });
+
+    const loopPromise = collectLoop(
+      [
+        { role: "system", content: "sys" },
+        { role: "user", content: "go" },
+      ],
+      { provider: "anthropic", model: "test", thinking: "high" },
+    );
+    await vi.advanceTimersByTimeAsync(pauseMs + 1_000);
+    const { events } = await loopPromise;
+    vi.useRealTimers();
+
+    expect(mockStream).toHaveBeenCalledTimes(1);
+    expect(events.some((event) => event.type === "retry")).toBe(false);
+    expect(events.some((event) => event.type === "agent_done")).toBe(true);
+  });
+
   it("still retries a stall after output when no tool call is open", async () => {
     vi.useFakeTimers();
     let call = 0;

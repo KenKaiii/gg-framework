@@ -7,7 +7,7 @@ import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
  * request after 300s without response headers (`UND_ERR_HEADERS_TIMEOUT`,
  * surfaced by the SDKs as "Request timed out.") and after 300s of silence
  * mid-body (`UND_ERR_BODY_TIMEOUT`, surfaced as "terminated"). Those caps sit
- * *below* the agent loop's own watchdogs (10min silent-thinking idle, 15min
+ * *below* the agent loop's own watchdogs (10min silent-thinking idle, 30min
  * thinking hard cap, 15min non-streaming thinking fallback), so they silently
  * become the real limit: a non-streaming reply that takes >5min to generate,
  * or a reasoning stream that stays quiet >5min, dies at exactly 300s on every
@@ -15,9 +15,9 @@ import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
  *
  * Timeout policy belongs to the caller's AbortSignal (the agent loop's
  * watchdogs). This value is only a backstop for callers that pass no signal,
- * so it must stay above the longest agent-loop cap (15min).
+ * so it must stay above the longest agent-loop cap (30min).
  */
-export const PROVIDER_TRANSPORT_TIMEOUT_MS = 30 * 60_000;
+export const PROVIDER_TRANSPORT_TIMEOUT_MS = 45 * 60_000;
 
 /**
  * Whether Node routes its own fetch through HTTP_PROXY / HTTPS_PROXY / NO_PROXY.
@@ -98,6 +98,34 @@ export function createProviderFetch(
   // global FormData through the built-in fetch above, so the global Response
   // class is the accurate answer; without it, Moonshot video uploads throw.
   return Object.assign(providerFetch, { Response: globalThis.Response });
+}
+
+/**
+ * Wrap a fetch so `onActivity` fires for every body chunk of an SSE response.
+ * Anthropic's SDK drops `ping` events before they reach us, so without this a
+ * long silent-thinking stream (pings only, every 30s) looks dead to the watchdog.
+ */
+export function withBodyActivity(
+  fetchImpl: typeof globalThis.fetch,
+  onActivity: () => void,
+): typeof globalThis.fetch {
+  return async (input, init) => {
+    const response = await fetchImpl(input, init);
+    if (!response.body || !response.headers.get("content-type")?.includes("text/event-stream")) {
+      return response;
+    }
+    const tap = new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        onActivity();
+        controller.enqueue(chunk);
+      },
+    });
+    return new Response(response.body.pipeThrough(tap), {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  };
 }
 
 /** Default fetch for provider transports when the caller supplies none. */

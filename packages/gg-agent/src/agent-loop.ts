@@ -757,7 +757,9 @@ export async function* agentLoop(
   // planning turns were observed thinking silently for 3.5-4min and past 5min,
   // so 5min here aborted real work and replayed it from zero.
   const STREAM_THINKING_IDLE_TIMEOUT_MS = 600_000; // 10min idle after thinking
-  const STREAM_THINKING_HARD_TIMEOUT_MS = 900_000; // 15min hard cap with thinking
+  // A live stream (deltas or SSE pings) is never idle, so this cap alone ends it.
+  // A long think plus a big file write passes 15min; Claude Code's longest wait is 30min.
+  const STREAM_THINKING_HARD_TIMEOUT_MS = 1_800_000; // 30min hard cap with thinking
   // Non-streaming mode has no per-event idle -- the entire response arrives in
   // one HTTP round-trip. Use a single generous hard cap instead. This matches
   // Claude Code's v2.1.110/111 behaviour: cap non-streaming retries so API
@@ -765,9 +767,13 @@ export async function* agentLoop(
   // that slow-but-healthy backends get killed.
   const NON_STREAMING_HARD_TIMEOUT_MS = 300_000; // 5min for full non-streaming response
   // A thinking turn replayed non-streaming must still fit silent thinking plus
-  // the full visible output in one round-trip, so it gets the thinking cap.
+  // the full visible output in one round-trip. Nothing arrives until it's done,
+  // so a hung request can't be told apart from a slow one: keep this at 15min.
+  const NON_STREAMING_THINKING_HARD_TIMEOUT_MS = 900_000;
   const nonStreamingHardTimeoutMs =
-    options.thinking != null ? STREAM_THINKING_HARD_TIMEOUT_MS : NON_STREAMING_HARD_TIMEOUT_MS;
+    options.thinking != null
+      ? NON_STREAMING_THINKING_HARD_TIMEOUT_MS
+      : NON_STREAMING_HARD_TIMEOUT_MS;
   // A stall retry is announced when the failed attempt already kept the user
   // waiting this long; quick transient blips stay silent.
   const VISIBLE_STALL_AFTER_MS = 60_000;
@@ -801,7 +807,7 @@ export async function* agentLoop(
       : STREAM_FIRST_EVENT_TIMEOUT_MS; // 45s
   const baseHardTimeoutMs =
     localBackend || usesSilentReasoningBudget
-      ? STREAM_THINKING_HARD_TIMEOUT_MS // 10min absolute cap before output
+      ? STREAM_THINKING_HARD_TIMEOUT_MS // 30min absolute cap before output
       : STREAM_HARD_TIMEOUT_MS; // 90s
   // Runaway tool-call circuit breaker. When a model glitches mid-tool-call it
   // can emit tens of thousands of toolcall_delta events without ever closing.
@@ -1127,6 +1133,11 @@ export async function* agentLoop(
               defaultHeaders: options.defaultHeaders,
               providerOptions: options.providerOptions,
               fetch: options.fetch,
+              // Raw bytes (incl. SSE pings) prove the connection is alive during
+              // silent thinking; only re-arm an armed timer, never mid-yield.
+              onTransportActivity: () => {
+                if (idleTimer && !streamController.signal.aborted) resetIdleTimer();
+              },
               // Flip to non-streaming fallback after repeated stream stalls.
               ...(useNonStreamingFallback ? { streaming: false } : {}),
             }),

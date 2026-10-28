@@ -190,6 +190,39 @@ describe("createProviderFetch", () => {
   });
 
   it("outlasts the agent loop's longest watchdog (15min thinking hard cap)", () => {
-    expect(PROVIDER_TRANSPORT_TIMEOUT_MS).toBeGreaterThan(15 * 60_000);
+    expect(PROVIDER_TRANSPORT_TIMEOUT_MS).toBeGreaterThan(30 * 60_000);
+  });
+});
+
+describe("withBodyActivity", () => {
+  it("reports every SSE body chunk (pings included) and passes bytes through", async () => {
+    const { withBodyActivity } = await import("./provider-fetch.js");
+    const sse = 'event: ping\ndata: {"type":"ping"}\n\n';
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        const enc = new TextEncoder();
+        c.enqueue(enc.encode(sse));
+        c.enqueue(enc.encode(sse));
+        c.close();
+      },
+    });
+    const fake = (async () =>
+      new Response(body, { headers: { "content-type": "text/event-stream" } })) as typeof fetch;
+    let hits = 0;
+    const res = await withBodyActivity(fake, () => hits++)("https://x.test");
+    expect(await res.text()).toBe(sse + sse);
+    expect(hits).toBe(2);
+  });
+
+  it("leaves non-SSE responses untouched", async () => {
+    const { withBodyActivity } = await import("./provider-fetch.js");
+    const original = new Response("{}", { headers: { "content-type": "application/json" } });
+    let hits = 0;
+    const res = await withBodyActivity(
+      (async () => original) as typeof fetch,
+      () => hits++,
+    )("https://x.test");
+    expect(res).toBe(original);
+    expect(hits).toBe(0);
   });
 });

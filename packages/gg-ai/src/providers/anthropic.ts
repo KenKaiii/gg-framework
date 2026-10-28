@@ -31,7 +31,11 @@ import {
   isAdaptiveThinkingModel,
 } from "./transform.js";
 import { isJsonObject } from "../utils/json.js";
-import { PROVIDER_TRANSPORT_TIMEOUT_MS, providerFetch } from "../utils/provider-fetch.js";
+import {
+  PROVIDER_TRANSPORT_TIMEOUT_MS,
+  providerFetch,
+  withBodyActivity,
+} from "../utils/provider-fetch.js";
 import {
   FAST_MODE_REJECTION_HEADER,
   describeFastModeRejection,
@@ -554,8 +558,12 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     // request before our async iterator attaches listeners, its iterator can miss
     // the already-emitted error/end event and wait forever. That surfaced as the
     // CLI sitting on "Working..." when an OAuth account ran out of usage.
+    const onActivity = options.onTransportActivity;
+    const streamClient = onActivity
+      ? client.withOptions({ fetch: withBodyActivity(options.fetch ?? providerFetch, onActivity) })
+      : client;
     const stream = (await send((p, o) =>
-      client.messages.create(p as Anthropic.MessageCreateParamsStreaming, o),
+      streamClient.messages.create(p as Anthropic.MessageCreateParamsStreaming, o),
     )) as AsyncIterable<Anthropic.MessageStreamEvent>;
 
     for await (const event of stream) {

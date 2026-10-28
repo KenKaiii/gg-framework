@@ -378,6 +378,10 @@ export interface StreamOptions {
    *  stalls — broken SSE connections (transient CDN / proxy issues) often
    *  recover when the same request is issued over a plain HTTP request/response. */
   streaming?: boolean;
+  /** Called whenever response body bytes arrive, including SSE pings the SDK
+   *  swallows. Lets the agent loop's watchdog see a live connection while the
+   *  model thinks silently (Anthropic sends only a ping every 30s then). */
+  onTransportActivity?: () => void;
   /** Cache prewarm (Anthropic only; other providers ignore it). Sends the exact
    *  same request prefix (system, tools, messages, thinking, betas) with
    *  `max_tokens: 1` over a non-streaming request so the prompt cache is written
