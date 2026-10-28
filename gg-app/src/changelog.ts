@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.97.1",
+    date: "2026-10-28",
+    items: [
+      "`GG World` now opens straight into the action. I fixed the black screen some of you hit on launch, so the whole 3D world, your character and every room load up right away. Grab a drink, it's all there.",
+    ],
+  },
+  {
     version: "0.97.0",
     date: "2026-10-28",
     items: [
