@@ -8,6 +8,10 @@
 //! Tauri sends this same CSP with World's own page (`world/index.html`), so it
 //! also needs `frame-ancestors 'self'` (to be framed by the app), `connect-src
 //! blob:` (glTF textures) and `'wasm-unsafe-eval'` (the meshopt decoder).
+//! `script-src` names the app's origins (`tauri://localhost` on macOS,
+//! `http://tauri.localhost` on Windows) as well as `'self'`: in the sealed
+//! frame's opaque origin WebKit matches `'self'` to nothing, so World's own
+//! scripts never ran and the screen stayed black.
 
 use crate::commands::agent::sidecar_json;
 use crate::*;

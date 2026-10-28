@@ -23,6 +23,12 @@ describe.each([
     expect(directive(csp, "frame-src")).toContain("'self'");
   });
 
+  it("names the app's origins for World's scripts ('self' matches nothing in a sealed frame)", () => {
+    expect(directive(csp, "script-src")).toEqual(
+      expect.arrayContaining(["tauri://localhost", "http://tauri.localhost"]),
+    );
+  });
+
   it("lets World load its glTF textures and meshopt decoder", () => {
     expect(directive(csp, "connect-src")).toContain("blob:");
     expect(directive(csp, "script-src")).toContain("'wasm-unsafe-eval'");
