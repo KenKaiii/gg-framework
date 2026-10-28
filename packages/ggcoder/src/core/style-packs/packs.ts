@@ -18,7 +18,7 @@ export const PACKS: Readonly<Record<LanguageId, string>> = {
 
   javascript: `### JavaScript
 
-- ESM; \`const\`, \`===\`, no \`var\`; JSDoc + \`// @ts-check\`.
+- ESM; \`const\`, \`===\`, no \`var\`.
 - Validate external input (with the project's schema lib if it has one); no floating promises.
 - Avoid default exports, prototype mutation, implicit globals.`,
 

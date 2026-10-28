@@ -131,7 +131,6 @@ Plus built-in workflows that ship with the binary:
 /init          # Generate or update AGENTS.md / CLAUDE.md for your project
 /setup-commit  # Generate a /commit command with quality checks
 /setup-ci      # Set up or harden CI for any stack
-/setup-skills  # Audit and recommend reusable skills
 /compare       # Compare your code against real-world code
 /steroids      # Index real repos like this project
 ```

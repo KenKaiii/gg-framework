@@ -247,6 +247,11 @@ describe("skill routing prompts", () => {
       expect(complianceSkill?.content).toContain("# Compliance Guard");
       // The skill must never present itself as legal advice or certification.
       expect(complianceSkill?.content).toContain("Never certify");
+      // The description says what the skill is for (legal review), not a topic
+      // list: "privacy, AI features, user content" made a "where are the data
+      // leaks" trace in a client app load it (omarx, Oct 2026).
+      expect(complianceSkill?.description).toContain("legal side of shipping");
+      expect(complianceSkill?.description).not.toContain("AI features");
 
       // A beginner will half-answer or ignore the intake questions, so the
       // defaults ARE the analysis. Promising defaults without stating them

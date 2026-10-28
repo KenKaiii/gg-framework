@@ -1,6 +1,6 @@
 ---
 name: compliance-guard
-description: Use when shipping to real users risks legal exposure — privacy, consent, cookies/tracking, marketing emails, payments, minors, AI features, user content, terms. Do NOT use for local-only work or pure security hardening.
+description: "Use for the legal side of shipping to real users: which laws apply, what cannot lawfully ship, and the consent, notices and policies the product owes. Do NOT use for bugs, data leaks or security hardening."
 license: Apache-2.0. Content is engineering guidance, not legal advice. See references/provenance.md.
 compatibility: Static review works offline from the bundled references. Legal status changes constantly; date-sensitive claims must be re-verified with web access before being stated as current. Never certifies compliance.
 ---

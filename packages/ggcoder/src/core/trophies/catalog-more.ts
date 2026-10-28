@@ -191,10 +191,10 @@ export const MORE_TROPHIES: readonly TrophyDef[] = [
     tier: "gold",
     category: "flow",
     description:
-      "Every built-in workflow: /init, /commit, /expand, /compare, /setup-commit, /setup-ci, /setup-skills and /steroids.",
-    hint: "Run all 8 built-in slash commands at least once.",
+      "Every built-in workflow: /init, /commit, /expand, /compare, /setup-commit, /setup-ci and /steroids.",
+    hint: "Run all 7 built-in slash commands at least once.",
     stat: distinct("slashCommandNames"),
-    goal: 8,
+    goal: 7,
   },
   {
     id: "plan-100",

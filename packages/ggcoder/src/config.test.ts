@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   loadSavedSettings,
   projectScopeAllowed,
+  removeRetiredSeededSkills,
+  RETIRED_SEEDED_SKILL_HASHES,
   seedDefaultAgents,
   SHADOWING_SEEDED_AGENT_HASHES,
 } from "./config.js";
@@ -205,5 +207,50 @@ describe("projectScopeAllowed", () => {
   it("resolves relative paths before checking trustedProjects", () => {
     const abs = path.resolve("relative/dir");
     expect(projectScopeAllowed(false, [abs], "relative/dir")).toBe(true);
+  });
+});
+
+// find-skills was seeded into ~/.gg/skills and has since been retired; the
+// untouched seeded copy must go, an edited one must stay.
+describe("removeRetiredSeededSkills", () => {
+  const fixtures = ["seeded-find-skills-original.md", "seeded-find-skills-trimmed.md"];
+
+  function tempSkillsDir(): string {
+    return fs.mkdtempSync(path.join(os.tmpdir(), "ggcoder-skills-"));
+  }
+
+  it("the recorded hashes match the real seed files", () => {
+    for (const fixture of fixtures) {
+      const content = fs.readFileSync(path.join(fixturesDir, fixture), "utf-8");
+      const hash = createHash("sha256").update(content, "utf-8").digest("hex");
+      expect(RETIRED_SEEDED_SKILL_HASHES["find-skills.md"], fixture).toContain(hash);
+    }
+  });
+
+  it("deletes every untouched seeded find-skills copy", async () => {
+    for (const fixture of fixtures) {
+      const dir = tempSkillsDir();
+      try {
+        const file = path.join(dir, "find-skills.md");
+        fs.copyFileSync(path.join(fixturesDir, fixture), file);
+        await removeRetiredSeededSkills(dir);
+        expect(fs.existsSync(file), fixture).toBe(false);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("keeps a find-skills copy the user edited", async () => {
+    const dir = tempSkillsDir();
+    try {
+      const file = path.join(dir, "find-skills.md");
+      const seeded = fs.readFileSync(path.join(fixturesDir, fixtures[0] ?? ""), "utf-8");
+      fs.writeFileSync(file, `${seeded}\nMy own note.\n`);
+      await removeRetiredSeededSkills(dir);
+      expect(fs.existsSync(file)).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

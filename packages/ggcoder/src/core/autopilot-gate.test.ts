@@ -267,7 +267,7 @@ describe("isMechanicalOnlyTurn", () => {
       { name: "source_path", args: { package: "zod" } },
       { name: "task_output", args: { id: "abc" } },
       { name: "screenshot", args: { url: "http://localhost:3000" } },
-      { name: "skill", args: { skill: "find-skills" } },
+      { name: "skill", args: { skill: "example-skill" } },
     ];
     expect(isMechanicalOnlyTurn(calls)).toBe(true);
   });

@@ -1,6 +1,6 @@
 ---
 name: durable
-description: "Use when data could be lost, or asked whether data is safe: migrations, destructive ops, real databases, backups. Do NOT use for query speed."
+description: "Use to keep stored data from being lost: before running or writing anything that could delete, overwrite or reshape it, and when asked whether data is backed up and recoverable. Do NOT use for read-only queries or query speed."
 license: Data-durability engineering guidance, not a DBA certification. Sources and snapshot date are recorded at the foot of each reference file.
 compatibility: Snapshot dated 3 October 2026; Prisma 7/8 status and agent safeguards, PostgreSQL 19 status and the Neon, RDS and D1 retention rows re-verified 22 October 2026. Re-verify version behaviours and provider defaults before asserting them as current.
 ---
