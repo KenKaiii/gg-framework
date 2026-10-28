@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.97.4",
+    date: "2026-10-28",
+    items: [
+      "Your agent now writes cleaner code. It keeps comments to a single short line, only where the why is not obvious, so files stay readable and every answer comes back leaner: about `60%` fewer comment lines and `5.5%` less output, which means a little less waiting and a little less spend.",
+      "Built-in skills now show up only for the job they are made for. I sharpened how `Compliance Guard`, `Durable` and friends describe themselves, so a hunt for a data leak stays a security hunt instead of turning into a legal review. I also retired the old `/setup-skills` workflow to keep your command list tight.",
+    ],
+  },
+  {
     version: "0.97.3",
     date: "2026-10-28",
     items: [
