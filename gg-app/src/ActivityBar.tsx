@@ -104,7 +104,7 @@ interface Props {
 // Chevron toggle for the live tool panel — mirrors the nav-toggle chevron up
 // top. Down chevron = panel shown (click to hide), up chevron = panel hidden
 // (click to show). Rendered in the activity bar so it's always reachable.
-function ToolsToggle({
+export function ToolsToggle({
   hidden,
   onToggle,
 }: {

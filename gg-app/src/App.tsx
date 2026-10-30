@@ -252,15 +252,11 @@ function App(): React.ReactElement {
   // Ken Kai (mentor agent): own running flag, token/thinking metrics, streaming
   // bubble, and `ken_*` SSE handling. Lives in its own hook; App just consumes
   // the state for rendering and delegates ken events to `handleKenEvent`.
-  const {
-    kenRunning,
-    kenTokens,
-    kenRunStartTs,
-    kenIsThinking,
-    kenThinkingStartTs,
-    kenThinkingAccumMs,
-    handleKenEvent,
-  } = useKenMentor({ setItems, nextId, liveText });
+  const { kenRunning, kenTokens, kenRunStartTs, handleKenEvent } = useKenMentor({
+    setItems,
+    nextId,
+    liveText,
+  });
   // Ken's face talks on the reply he is streaming right now: the last row,
   // while his run is live. Only that row's props change, so memo holds.
   const currentErrorId = useMemo(() => activeChatErrorId(items), [items]);
@@ -3136,10 +3132,9 @@ function App(): React.ReactElement {
                   <KenActivityBar
                     runStartTs={kenRunStartTs}
                     tokens={kenTokens}
-                    isThinking={kenIsThinking}
-                    thinkingStartTs={kenThinkingStartTs}
-                    thinkingAccumMs={kenThinkingAccumMs}
                     onCancel={() => void cancelKen()}
+                    toolsHidden={toolsHidden}
+                    onToggleTools={toggleTools}
                   />
                 ) : (
                   <ActivityBar

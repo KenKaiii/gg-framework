@@ -1248,6 +1248,11 @@
   padding: 0 var(--space-2);
   text-align: left;
 }
+/* The notes dialog's 900px width would overflow the panel, so long lines ran
+   off sideways instead of wrapping. */
+.tool-body > .notes-modal {
+  width: auto;
+}
 .tool-body .notes-input {
   flex: 1 1 auto;
   height: auto;

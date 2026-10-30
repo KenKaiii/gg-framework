@@ -1,131 +1,97 @@
 import { useEffect, useId, useState } from "react";
 import { ThinkingOrb } from "thinking-orbs";
 import { theme } from "./theme";
-import { formatTokenCount } from "./ActivityBar";
+import { formatElapsed, formatTokenCount, ToolsToggle } from "./ActivityBar";
 import { ShimmerText } from "./ShimmerText";
 import { useMotionLevel } from "./window-motion";
-
-function formatElapsed(ms: number): string {
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return r > 0 ? `${m}m ${r}s` : `${m}m`;
-}
 
 interface Props {
   /** Timestamp (ms) Ken's run began, or null when not running. */
   runStartTs: number | null;
   /** Accumulated output tokens for Ken's current run. */
   tokens: number;
-  /** True while Ken is actively emitting reasoning/thinking. */
-  isThinking: boolean;
-  /** Timestamp (ms) Ken's current thinking span began, or null. */
-  thinkingStartTs: number | null;
-  /** Completed thinking time (ms) from earlier spans in this run. */
-  thinkingAccumMs: number;
   onCancel: () => void;
+  /** The tool panel's show/hide chevron, beside Stop as on the main bar. */
+  toolsHidden?: boolean;
+  onToggleTools?: () => void;
 }
 
 /**
- * Ken Kai's activity bar. A 1:1 mirror of the GG Coder ActivityBar's running row
- * — same listening orb, same `(elapsed · ↓ N tokens · thinking for Xs)` meta,
- * same statusrow layout + esc-to-cancel — just tinted to Ken and labelled "Ken
- * is thinking…". Stacks above the main bar while Ken runs concurrently, so its
- * own top border is dropped (the main bar keeps the divider).
+ * Ken Kai's activity bar: the GG Coder ActivityBar's running row exactly (the
+ * listening orb, label, `elapsed · N tok` meta and the Stop key), with the orb
+ * and label tinted Ken's colour and reading "Ken is thinking…".
  */
 export function KenActivityBar({
   runStartTs,
   tokens,
-  isThinking,
-  thinkingStartTs,
-  thinkingAccumMs,
   onCancel,
+  toolsHidden = false,
+  onToggleTools,
 }: Props): React.ReactElement {
   const orbTintId = useId();
-  // `now` is bumped every 250ms; the elapsed + thinking timers are derived from
-  // it + the start timestamps, mirroring the ActivityBar's live-tick approach
-  // without reading a ref during render.
   const [now, setNow] = useState(() => Date.now());
   const motion = useMotionLevel();
 
-  // Hidden windows skip the ticks and catch up the moment they're shown.
+  // Same clock as ActivityBar: ticks in a visible window, catches up when shown.
   useEffect(() => {
     if (motion === "off") return;
     setNow(Date.now());
-    const tick = setInterval(() => setNow(Date.now()), 250);
-    return () => {
-      clearInterval(tick);
-    };
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
   }, [motion]);
 
-  const elapsed = runStartTs ? now - runStartTs : 0;
-  const liveThinkingDelta = isThinking && thinkingStartTs ? now - thinkingStartTs : 0;
-  const thinkingMs = thinkingAccumMs + liveThinkingDelta;
-  const thinkingLabel = isThinking
-    ? thinkingMs >= 1000
-      ? `thinking for ${formatElapsed(thinkingMs)}`
-      : "thinking"
-    : thinkingMs >= 1000
-      ? `thought for ${formatElapsed(thinkingMs)}`
-      : "";
-
-  const meta: { text: string; thinking?: boolean }[] = [{ text: formatElapsed(elapsed) }];
-  if (tokens > 0) meta.push({ text: `\u2193 ${formatTokenCount(tokens)} tokens` });
-  if (thinkingLabel) meta.push({ text: thinkingLabel, thinking: true });
+  const elapsed = runStartTs ? Math.max(0, now - runStartTs) : 0;
 
   return (
-    <div className="statusrow running ken-statusrow dissolve-in" style={{ color: theme.textMuted }}>
-      <span className="statusrow-left">
-        {/* Tint the canvas alpha with Ken's existing color; the package has no color prop. */}
-        <svg width="0" height="0" aria-hidden="true" style={{ position: "absolute" }}>
-          <defs>
-            <filter id={orbTintId} colorInterpolationFilters="sRGB">
-              {/* In `style`, not the attribute: presentation attributes don't resolve var(). */}
-              <feFlood style={{ floodColor: theme.ken }} />
-              <feComposite in2="SourceAlpha" operator="in" />
-            </filter>
-          </defs>
-        </svg>
-        <ThinkingOrb
-          state="listening"
-          size={20}
-          theme="auto"
-          paused={motion !== "full"}
-          aria-hidden="true"
-          style={{ flexShrink: 0, filter: `url(#${orbTintId})` }}
-        />
-        <span style={{ color: theme.ken }}>
-          <ShimmerText base={theme.ken} bright={theme.text}>
-            {"Ken is thinking…"}
-          </ShimmerText>
-        </span>
-        <span style={{ color: theme.textMuted }}>
-          {"("}
-          {meta.map((part, i) => (
-            <span key={i}>
-              {i > 0 ? " \u2022 " : ""}
-              <span
-                style={{
-                  color: part.thinking
-                    ? isThinking
-                      ? theme.ken
-                      : theme.textMuted
-                    : theme.textMuted,
-                }}
-              >
-                {part.text}
-              </span>
+    <div className="task-activity" data-phase="working">
+      <div className="statusrow running ken-statusrow">
+        <div className="activity-summary">
+          <span className="statusrow-left" role="status" aria-live="polite" aria-atomic="true">
+            {/* Tint the canvas alpha with Ken's colour; the package has no color prop. */}
+            <svg width="0" height="0" aria-hidden="true" style={{ position: "absolute" }}>
+              <defs>
+                <filter id={orbTintId} colorInterpolationFilters="sRGB">
+                  {/* In `style`, not the attribute: presentation attributes don't resolve var(). */}
+                  <feFlood style={{ floodColor: theme.ken }} />
+                  <feComposite in2="SourceAlpha" operator="in" />
+                </filter>
+              </defs>
+            </svg>
+            <ThinkingOrb
+              state="listening"
+              size={20}
+              theme="auto"
+              paused={motion !== "full"}
+              aria-hidden="true"
+              style={{ flexShrink: 0, filter: `url(#${orbTintId})` }}
+            />
+            <span className="activity-label-reveal" title="Ken is thinking…">
+              <ShimmerText base={theme.ken} bright={theme.text}>
+                {"Ken is thinking…"}
+              </ShimmerText>
             </span>
-          ))}
-          {")"}
+          </span>
+          <span className="activity-meta dissolve-in">
+            {formatElapsed(elapsed)}
+            {tokens > 0 && (
+              <span className="activity-token-count" title="Output tokens">
+                {` · ${formatTokenCount(tokens)} tok`}
+              </span>
+            )}
+          </span>
+        </div>
+        <span className="statusrow-right">
+          {onToggleTools && <ToolsToggle hidden={toolsHidden} onToggle={onToggleTools} />}
+          <button
+            className="cancel dissolve-in"
+            style={{ color: theme.error }}
+            onClick={onCancel}
+            aria-label="Cancel Ken's reply"
+          >
+            Stop
+          </button>
         </span>
-      </span>
-      <span className="statusrow-right">
-        <button className="cancel" style={{ color: theme.error }} onClick={onCancel}>
-          esc to cancel
-        </button>
-      </span>
+      </div>
     </div>
   );
 }

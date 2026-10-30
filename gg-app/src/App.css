@@ -1684,18 +1684,21 @@ select {
    The ways in (Code, Goals, Chat, Motion, GG Royale) as GG Royale plates under
    the title, and Settings as a gear pinned to the top-right corner. */
 .home-actions {
+  /* The plates follow Home's size step, except 0.8× in the narrowest windows
+     so all five still fit on one row at the 480px minimum width. */
+  --plate-step: var(--home-step);
   display: flex;
-  /* Five modes: wrap onto a second centred row in narrow windows. The row gap
-     leaves room for the New tag that sits on the Royale plate's top edge. */
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
-  gap: var(--space-8) var(--space-4);
-  max-width: calc(100vw - 2 * var(--space-10));
+  gap: calc(var(--space-4) * var(--plate-step));
 }
-@media (max-width: 679px), (max-height: 560px) {
-  .home-actions .plate-button {
-    --plate-scale: 1;
+@media (max-width: 599px) {
+  .home-actions {
+    --plate-step: 0.8;
   }
+}
+.home-actions .plate-button {
+  --plate-scale: var(--plate-step);
 }
 /* A plate with a tag pinned to the middle of its top edge (Royale's "New").
    The tag is out of flow, so the plates stay level and the home column keeps
@@ -1705,10 +1708,9 @@ select {
   display: flex;
 }
 /* The tag: a little GG Royale label, m5x7 on the game's red with an ink
-   outline and a shaded foot, drawn in --tag-px art pixels (2px, 1px in small
-   windows, matching the plates). */
+   outline and a shaded foot, drawn in --tag-px art pixels (Home's step). */
 .home-actions {
-  --tag-px: 2px;
+  --tag-px: var(--home-px);
 }
 .home-loading-dots {
   display: inline-flex;
@@ -1764,11 +1766,6 @@ select {
   -webkit-font-smoothing: none;
   white-space: nowrap;
   pointer-events: none;
-}
-@media (max-width: 679px), (max-height: 560px) {
-  .home-actions {
-    --tag-px: 1px;
-  }
 }
 /* The padding is hit area: the gear itself sits 16px down, 20px in. */
 .home-settings {
@@ -10139,15 +10136,23 @@ select {
     --home-px: 1px;
   }
 }
-/* GG Royale's pixel type on Home: m5x7 / Alagard at a whole multiple of
-   their 16px grid (--home-px screen pixels per art pixel), fixed art colours
-   that read on the night scene in both themes. */
+/* GG Royale's pixel type on Home: m5x7 / Alagard on their 16px grid at
+   --home-px screen pixels per art pixel, fixed art colours that read on the
+   night scene in both themes. --home-step sizes the tagline, plates and tag
+   together and only grows once the window is roomy: 1×, then 1.5× (3 device
+   px per art px on Retina), then 2× in big windows. */
 .home {
-  --home-px: 2px;
+  --home-step: 1;
+  --home-px: calc(var(--home-step) * 1px);
 }
-@media (max-width: 679px), (max-height: 560px) {
+@media (min-width: 900px) and (min-height: 600px) {
   .home {
-    --home-px: 1px;
+    --home-step: 1.5;
+  }
+}
+@media (min-width: 1600px) and (min-height: 1000px) {
+  .home {
+    --home-step: 2;
   }
 }
 /* The version is a label, not a control: m5x7 in the game's muted cream. */
