@@ -27,6 +27,12 @@ export interface LocalEndpointInput {
   label?: string;
   baseUrl: string;
   apiKey?: string;
+  /**
+   * Optional user-pinned context window (positive integer). When omitted on a
+   * re-add, any previously stored value for the same host is kept — so a pin
+   * set by hand in `gg-app.json` survives a "fix my mistyped key" re-add.
+   */
+  contextLength?: number;
 }
 
 export class LocalEndpointError extends Error {}
@@ -130,7 +136,7 @@ function parseStored(value: unknown): LocalEndpoint[] {
   const endpoints: LocalEndpoint[] = [];
   for (const entry of value) {
     if (!entry || typeof entry !== "object") continue;
-    const { id, label, baseUrl, apiKey } = entry as Record<string, unknown>;
+    const { id, label, baseUrl, apiKey, contextLength } = entry as Record<string, unknown>;
     if (typeof id !== "string" || typeof baseUrl !== "string") continue;
     endpoints.push({
       id,
@@ -139,6 +145,11 @@ function parseStored(value: unknown): LocalEndpoint[] {
       kind: "custom",
       custom: true,
       ...(typeof apiKey === "string" && apiKey ? { apiKey } : {}),
+      ...(typeof contextLength === "number" &&
+      Number.isSafeInteger(contextLength) &&
+      contextLength > 0
+        ? { contextLength }
+        : {}),
     });
   }
   return endpoints;
@@ -182,6 +193,16 @@ export async function addCustomEndpoint(
     throw new LocalEndpointError(`At most ${MAX_CUSTOM_ENDPOINTS} custom endpoints.`);
   }
 
+  const prior = existing.find((e) => e.id === id);
+  // A valid new pin replaces the old one; a junk one falls back to the pin
+  // already stored instead of silently unpinning on a typo.
+  const supplied = input.contextLength;
+  const pinned =
+    (typeof supplied === "number" && Number.isSafeInteger(supplied) && supplied > 0
+      ? supplied
+      : undefined) ?? prior?.contextLength;
+  const pinnedContextLength =
+    typeof pinned === "number" && Number.isSafeInteger(pinned) && pinned > 0 ? pinned : undefined;
   const endpoint: LocalEndpoint = {
     id,
     label: labelFor(baseUrl, input.label),
@@ -189,17 +210,19 @@ export async function addCustomEndpoint(
     kind: "custom",
     custom: true,
     ...(input.apiKey?.trim() ? { apiKey: input.apiKey.trim() } : {}),
+    ...(pinnedContextLength ? { contextLength: pinnedContextLength } : {}),
   };
   const next = existing.some((e) => e.id === id)
     ? existing.map((e) => (e.id === id ? endpoint : e))
     : [...existing, endpoint];
 
   await writeLocalEndpoints(
-    next.map(({ id: eid, label, baseUrl: url, apiKey }) => ({
+    next.map(({ id: eid, label, baseUrl: url, apiKey, contextLength }) => ({
       id: eid,
       label,
       baseUrl: url,
       ...(apiKey ? { apiKey } : {}),
+      ...(contextLength ? { contextLength } : {}),
     })),
     options.settingsFile,
   );
@@ -228,11 +251,12 @@ export async function removeCustomEndpoint(
   await writeLocalEndpoints(
     existing
       .filter((e) => e.id !== id)
-      .map(({ id: eid, label, baseUrl, apiKey }) => ({
+      .map(({ id: eid, label, baseUrl, apiKey, contextLength }) => ({
         id: eid,
         label,
         baseUrl,
         ...(apiKey ? { apiKey } : {}),
+        ...(contextLength ? { contextLength } : {}),
       })),
     options.settingsFile,
   );

@@ -305,6 +305,57 @@ describe("probeEndpoint — generic / vLLM", () => {
       supportsTools: true,
     });
   });
+
+  it("reads the window from llama.cpp-style spellings on the model object", async () => {
+    const endpoint = await endpointFor("custom", {
+      "/v1/models": {
+        data: [
+          { id: "maya-style", context_length: 262144 },
+          { id: "llamacpp-style", meta: { n_ctx: 131072 } },
+        ],
+      },
+    });
+
+    const probe = await probeEndpoint(endpoint, { timeoutMs: 2000 });
+
+    expect(probe.models[0]).toMatchObject({ contextWindow: 262144, contextWindowKnown: true });
+    expect(probe.models[1]).toMatchObject({ contextWindow: 131072, contextWindowKnown: true });
+  });
+
+  it("prefers an endpoint-pinned contextLength over what the server reports", async () => {
+    const { baseUrl, close } = await startServer({
+      "/v1/models": { data: [{ id: "model", max_model_len: 524288 }] },
+    });
+    cleanups.push(close);
+
+    const probe = await probeEndpoint(
+      {
+        id: "custom",
+        label: "custom",
+        baseUrl,
+        kind: "custom",
+        contextLength: 262144,
+      },
+      { timeoutMs: 2000 },
+    );
+
+    expect(probe.models[0]).toMatchObject({ contextWindow: 262144, contextWindowKnown: true });
+  });
+
+  it("ignores junk context fields instead of guessing from them", async () => {
+    const endpoint = await endpointFor("custom", {
+      "/v1/models": {
+        data: [{ id: "model", context_length: -1, max_model_len: 0, meta: { n_ctx: "big" } }],
+      },
+    });
+
+    const probe = await probeEndpoint(endpoint, { timeoutMs: 2000 });
+
+    expect(probe.models[0]).toMatchObject({
+      contextWindow: FALLBACK_CONTEXT_WINDOW,
+      contextWindowKnown: false,
+    });
+  });
 });
 
 describe("probeEndpoint — unreachable", () => {

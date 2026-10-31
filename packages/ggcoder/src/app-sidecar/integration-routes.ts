@@ -47,7 +47,7 @@ export function handleIntegrationRoutes(
   if (method === "POST" && url === "/local/endpoints") {
     void readBody(req, res).then(async (raw) => {
       if (raw === null) return;
-      let body: { label?: string; baseUrl?: string; apiKey?: string };
+      let body: { label?: string; baseUrl?: string; apiKey?: string; contextLength?: number };
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
@@ -59,6 +59,11 @@ export function handleIntegrationRoutes(
           baseUrl: body.baseUrl ?? "",
           ...(body.label ? { label: body.label } : {}),
           ...(body.apiKey ? { apiKey: body.apiKey } : {}),
+          ...(typeof body.contextLength === "number" &&
+          Number.isSafeInteger(body.contextLength) &&
+          body.contextLength > 0
+            ? { contextLength: body.contextLength }
+            : {}),
         });
         await ctx.scanLocalModels(true);
         ctx.broadcast("models_change", { local: ctx.localStatePayload() });

@@ -9,7 +9,9 @@
  *   - Ollama    → `/api/show` + `/api/ps` → capabilities + running context
  *   - LM Studio → `/api/v1/models` (v0 fallback) → capabilities + loaded context
  *   - llama.cpp → `GET /props`          → `default_generation_settings.n_ctx`
- *   - vLLM/other → nothing; `max_model_len` sometimes rides the model object.
+ *   - vLLM      → `max_model_len` on the model object; llama.cpp-derived
+ *                 servers instead report `context_length` or `meta.n_ctx`
+ *                 on the same object, and a custom endpoint may pin one by hand.
  *
  * Probing never throws: an unreachable server is a normal state (the user just
  * doesn't have it running), not an error to surface.
@@ -33,6 +35,14 @@ export interface LocalEndpoint {
   apiKey?: string;
   /** True for endpoints the user added by hand (removable). */
   custom?: boolean;
+  /**
+   * User-pinned context window for this endpoint. Wins over anything the
+   * server reports — for servers that report nothing at all, and for capping
+   * a server whose reported window is more than you want the app to use.
+   * Set it on a custom endpoint's entry under `localEndpoints` in
+   * `~/.gg/gg-app.json`; it survives re-adding the same host.
+   */
+  contextLength?: number;
 }
 
 /** One model as reported (and enriched) by a local server. */
@@ -193,8 +203,12 @@ function unreachableReason(endpoint: LocalEndpoint, err: unknown): string {
 
 interface OpenAIModelListEntry {
   id?: string;
-  /** vLLM sometimes reports the real window here. */
+  /** vLLM reports the real window here. */
   max_model_len?: number;
+  /** llama.cpp-derived servers (llama-server forks, GGUF frontends) use this. */
+  context_length?: number;
+  /** llama.cpp rides the loaded allocation in `meta.n_ctx` on the same object. */
+  meta?: { n_ctx?: number };
 }
 interface OpenAIModelList {
   data?: OpenAIModelListEntry[];
@@ -289,7 +303,14 @@ function genericModel(
   endpoint: LocalEndpoint,
   entry: OpenAIModelListEntry & { id: string },
 ): LocalModel {
-  const declared = contextLength(entry.max_model_len);
+  // A user pin wins (cap a 512k server to what you want the app to use, or
+  // supply a window a server never reported); otherwise trust whichever
+  // spelling of "this is my window" the server speaks.
+  const declared =
+    contextLength(endpoint.contextLength) ??
+    contextLength(entry.max_model_len) ??
+    contextLength(entry.context_length) ??
+    contextLength(entry.meta?.n_ctx);
   return {
     rawId: entry.id,
     endpointId: endpoint.id,
