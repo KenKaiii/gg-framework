@@ -1,12 +1,18 @@
 import type http from "node:http";
 import { isValidHfRepoId } from "../hf-pull.js";
-import { parseLocalModelId } from "@kenkaiiii/gg-core";
+import {
+  AUTH_PROVIDERS,
+  GATEWAY_SYNC_PROVIDERS,
+  fetchGatewayCatalog,
+  parseLocalModelId,
+  writeGatewayCacheEntry,
+} from "@kenkaiiii/gg-core";
 import {
   LocalEndpointError,
   addCustomEndpoint,
   removeCustomEndpoint,
 } from "../core/local-endpoint-store.js";
-import { clearRuntimeModels } from "../core/model-registry.js";
+import { clearRuntimeModels, registerRuntimeModels } from "../core/model-registry.js";
 import { log } from "../core/logger.js";
 import { startServeMode } from "../modes/serve-mode.js";
 import { installSteroids, probeSteroids } from "../core/steroids.js";
@@ -41,6 +47,65 @@ export function handleIntegrationRoutes(
         ctx.broadcastError("error", "local model scan failed", err);
         json(res, 500, { error: "Local model scan failed — see the sidecar log." });
       });
+    return true;
+  }
+
+  // ── Gateway model sync (OpenRouter, or any endpoint it's pointed at) ──
+  // Replaces the provider's static catalog with the models its own endpoint
+  // serves, so context window, output cap, thinking levels and price come from
+  // the thing actually answering requests.
+  if (method === "POST" && url === "/models/sync") {
+    void readBody(req, res).then(async (raw) => {
+      if (raw === null) return;
+      let provider = "";
+      try {
+        provider = (JSON.parse(raw) as { provider?: string }).provider ?? "";
+      } catch {
+        json(res, 400, { error: "invalid JSON body" });
+        return;
+      }
+      if (!GATEWAY_SYNC_PROVIDERS.includes(provider)) {
+        json(res, 400, { error: `${provider || "that provider"} has no syncable model catalog.` });
+        return;
+      }
+      const meta = AUTH_PROVIDERS.find((p) => p.value === provider);
+      const baseUrl = (await ctx.auth.getStoredBaseUrl(provider)) ?? meta?.apiKeyBaseUrl;
+      if (!baseUrl) {
+        json(res, 400, { error: `No base URL configured for ${provider}.` });
+        return;
+      }
+      const creds = await ctx.auth.resolveCredentials(provider).catch(() => undefined);
+      try {
+        const catalog = await fetchGatewayCatalog({
+          provider,
+          baseUrl,
+          apiKey: creds?.accessToken,
+        });
+        clearRuntimeModels((m) => m.provider === provider);
+        registerRuntimeModels(catalog.models);
+        await writeGatewayCacheEntry(provider, {
+          baseUrl: catalog.baseUrl,
+          syncedAt: Date.now(),
+          models: catalog.models,
+        });
+        log("INFO", "models", "gateway catalog synced", {
+          provider,
+          baseUrl: catalog.baseUrl,
+          count: String(catalog.models.length),
+        });
+        // The picker is shared by every window, so this is a global change.
+        ctx.broadcastAll("models_change", {});
+        json(res, 200, {
+          ok: true,
+          provider,
+          baseUrl: catalog.baseUrl,
+          count: catalog.models.length,
+          skippedNoTools: catalog.skippedNoTools,
+        });
+      } catch (err) {
+        json(res, 502, { error: err instanceof Error ? err.message : String(err) });
+      }
+    });
     return true;
   }
 

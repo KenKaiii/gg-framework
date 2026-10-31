@@ -499,6 +499,28 @@ pub(crate) fn app_auth_status() -> serde_json::Value {
             if CUSTOM_BASE_URL_PROVIDERS.contains(&p.value) {
                 obj["allowCustomBaseUrl"] = serde_json::json!(true);
             }
+            // The URL currently in effect, so the form can prefill it and the
+            // user can edit it later without re-pasting the key.
+            if !p.api_key_variants.is_empty() {
+                for variant in p.api_key_variants {
+                    if let Some(url) = creds
+                        .as_ref()
+                        .and_then(|v| v.get(variant.key))
+                        .and_then(|c| c.get("baseUrl"))
+                        .and_then(|u| u.as_str())
+                    {
+                        obj["currentBaseUrl"] = serde_json::json!(url);
+                        break;
+                    }
+                }
+            } else if let Some(url) = creds
+                .as_ref()
+                .and_then(|v| v.get(p.value))
+                .and_then(|c| c.get("baseUrl"))
+                .and_then(|u| u.as_str())
+            {
+                obj["currentBaseUrl"] = serde_json::json!(url);
+            }
             if !p.api_key_variants.is_empty() {
                 let variants: Vec<serde_json::Value> = p
                     .api_key_variants
@@ -697,6 +719,51 @@ pub(crate) fn app_auth_apikey(
     )?;
     write_auth_file(&next)?;
     Ok(serde_json::json!({ "ok": true }))
+}
+
+/// Pure: set (or clear) the `baseUrl` on an EXISTING provider credential,
+/// returning the new auth.json text. Errors when the provider has no
+/// credential: a base URL with no key is meaningless, and quietly creating a
+/// keyless entry would make the provider look connected.
+pub(crate) fn apply_baseurl(
+    existing: Option<&str>,
+    provider: &str,
+    base_url: Option<&str>,
+) -> Result<String, String> {
+    let mut root = parse_auth_object(existing)?;
+    let map = root
+        .as_object_mut()
+        .ok_or_else(|| "auth.json is not an object".to_string())?;
+    let entry = map
+        .get_mut(provider)
+        .ok_or_else(|| "Connect an API key for this provider first.".to_string())?;
+    let obj = entry
+        .as_object_mut()
+        .ok_or_else(|| "Stored credential is not an object.".to_string())?;
+    match base_url {
+        Some(url) => {
+            obj.insert("baseUrl".to_string(), serde_json::json!(url));
+        }
+        None => {
+            obj.remove("baseUrl");
+        }
+    }
+    serde_json::to_string_pretty(&root).map_err(|e| e.to_string())
+}
+
+/// Native: change just the base URL of a connected provider, without asking for
+/// the key again. Empty input clears it back to the provider default. Never
+/// touches the sidecar — auth.json is the same file the daemon reads.
+#[tauri::command]
+pub(crate) fn app_auth_baseurl(
+    provider: String,
+    base_url: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let normalized = normalize_base_url(base_url.as_deref())?;
+    let existing = std::fs::read_to_string(auth_file_path()).ok();
+    let next = apply_baseurl(existing.as_deref(), &provider, normalized.as_deref())?;
+    write_auth_file(&next)?;
+    Ok(serde_json::json!({ "ok": true, "baseUrl": normalized }))
 }
 
 /// Native: disconnect a provider (remove its credential from ~/.gg/auth.json).
@@ -946,6 +1013,31 @@ mod tests {
         let (key, base) = resolve_apikey_target("openrouter", None).unwrap();
         assert_eq!(key, "openrouter");
         assert_eq!(base, Some("https://openrouter.ai/api/v1"));
+    }
+
+    #[test]
+    fn apply_baseurl_sets_and_clears_without_touching_the_key() {
+        let existing = r#"{ "openrouter": { "accessToken": "secret", "refreshToken": "", "expiresAt": 1 } }"#;
+        let with = apply_baseurl(Some(existing), "openrouter", Some("https://gw.example.com/v1"))
+            .expect("set");
+        let v: serde_json::Value = serde_json::from_str(&with).unwrap();
+        assert_eq!(v["openrouter"]["baseUrl"], "https://gw.example.com/v1");
+        assert_eq!(v["openrouter"]["accessToken"], "secret");
+
+        // Clearing restores the provider default and keeps the credential.
+        let cleared = apply_baseurl(Some(&with), "openrouter", None).expect("clear");
+        let v2: serde_json::Value = serde_json::from_str(&cleared).unwrap();
+        assert!(v2["openrouter"].get("baseUrl").is_none());
+        assert_eq!(v2["openrouter"]["accessToken"], "secret");
+    }
+
+    #[test]
+    fn apply_baseurl_requires_an_existing_credential() {
+        let existing = r#"{ "glm": { "accessToken": "k", "refreshToken": "", "expiresAt": 1 } }"#;
+        // No key stored → refuse, rather than creating a keyless entry that
+        // would make the provider look connected.
+        assert!(apply_baseurl(Some(existing), "openrouter", Some("https://gw.example.com/v1")).is_err());
+        assert!(apply_baseurl(None, "openrouter", Some("https://gw.example.com/v1")).is_err());
     }
 
     #[test]

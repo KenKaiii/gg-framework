@@ -6,6 +6,8 @@ import { Badge } from "./Badge";
 import {
   openUrl,
   authApiKey,
+  authSetBaseUrl,
+  syncProviderModels,
   authOAuthStart,
   authOAuthCode,
   authLogout,
@@ -50,7 +52,11 @@ export function ProviderLoginModal({
   const single = provider.methods.length === 1 ? provider.methods[0] : null;
   const [method, setMethod] = useState<AuthMethod | null>(single);
   const [apiKey, setApiKey] = useState("");
-  const [baseUrlOverride, setBaseUrlOverride] = useState("");
+  const [baseUrlOverride, setBaseUrlOverride] = useState(
+    () => provider.currentBaseUrl ?? "",
+  );
+  const [syncing, setSyncing] = useState(false);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
   const [variantKey, setVariantKey] = useState<string | undefined>(() =>
     defaultVariantKey(provider),
   );
@@ -114,6 +120,46 @@ export function ProviderLoginModal({
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
+    }
+  }
+
+  /** Change the endpoint of an already-connected provider, keeping its key. */
+  async function saveBaseUrl(): Promise<void> {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setSyncNote(null);
+    try {
+      const res = await authSetBaseUrl(
+        provider.value,
+        baseUrlOverride.trim() ? baseUrlOverride.trim() : undefined,
+      );
+      setSyncNote(`Base URL saved: ${res.baseUrl ?? "provider default"}`);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Pull the model list + metadata from whichever endpoint is in effect. */
+  async function syncModels(): Promise<void> {
+    if (syncing) return;
+    setSyncing(true);
+    setError(null);
+    setSyncNote(null);
+    try {
+      const res = await syncProviderModels(provider.value);
+      const skipped = res.skippedNoTools
+        ? `, ${res.skippedNoTools} skipped (no tool calling)`
+        : "";
+      setSyncNote(`Synced ${res.count} model(s) from ${res.baseUrl}${skipped}.`);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -289,6 +335,32 @@ export function ProviderLoginModal({
                 Leave empty for the standard {provider.label} endpoint. Set it to route through a
                 compatible gateway or proxy — it's stored with this key in `~/.gg/auth.json`.
               </div>
+              {provider.connected && (
+                <div className="login-method-row" style={{ marginTop: 6 }}>
+                  <button
+                    className="modal-btn"
+                    disabled={busy}
+                    onClick={() => void saveBaseUrl()}
+                    title="Change the endpoint without re-entering the key"
+                  >
+                    Save base URL
+                  </button>
+                  <button
+                    className="modal-btn"
+                    disabled={syncing || busy}
+                    onClick={() => void syncModels()}
+                    title="Pull this endpoint's model list and its metadata"
+                  >
+                    {syncing ? "Syncing…" : "Sync models"}
+                  </button>
+                </div>
+              )}
+              {provider.connected && (
+                <div className="login-method-note" style={{ color: theme.textMuted }}>
+                  In use: {provider.currentBaseUrl ?? provider.apiKeyBaseUrl ?? "default"} — Sync
+                  replaces this provider's model list with the endpoint's own.
+                </div>
+              )}
             </>
           )}
         </>
@@ -331,6 +403,11 @@ export function ProviderLoginModal({
       {error && (
         <div className="login-status" style={{ color: theme.error }}>
           {error}
+        </div>
+      )}
+      {syncNote && (
+        <div className="login-status" style={{ color: theme.success }}>
+          {syncNote}
         </div>
       )}
 

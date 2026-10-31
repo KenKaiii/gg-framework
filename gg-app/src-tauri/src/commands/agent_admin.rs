@@ -55,6 +55,28 @@ pub(crate) async fn agent_local_scan(
     sidecar_json(res).await
 }
 
+/// Proxy: re-sync a gateway provider's model catalog from its endpoint (the
+/// "Sync models" button). The sidecar fetches `<baseUrl>/models`, registers the
+/// rows at runtime and caches them, so the picker shows the endpoint's real
+/// context window, output cap, thinking levels and price.
+#[tauri::command]
+pub(crate) async fn agent_models_sync(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+    provider: String,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = session_for(&webview).ok_or("session not ready")?;
+    let res = client
+        .post(format!("{}/models/sync", sidecar_base(port)))
+        .header("x-gg-session", &gg_sid)
+        .json(&serde_json::json!({ "provider": provider }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    sidecar_json(res).await
+}
+
 /// Proxy: add a custom local endpoint (URL + optional API key).
 #[tauri::command]
 pub(crate) async fn agent_local_endpoint_add(

@@ -2,6 +2,7 @@
 export * from "./model-registry.js";
 export * from "./thinking-level.js";
 export * from "./local-models.js";
+export * from "./gateway-models.js";
 export * from "./paths.js";
 export * from "./logger.js";
 export * from "./file-lock.js";
