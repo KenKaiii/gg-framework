@@ -333,6 +333,8 @@ export interface AgentOptions {
   maxTokens?: number;
   temperature?: number;
   thinking?: StreamOptions["thinking"];
+  /** The endpoint's declared effort ladder, forwarded to the transport. */
+  thinkingLevels?: StreamOptions["thinkingLevels"];
   apiKey?: string;
   /**
    * Re-resolve the credential at the start of every turn. A run can span many

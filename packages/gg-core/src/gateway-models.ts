@@ -113,13 +113,19 @@ function firstNumber(entry: Json, paths: readonly string[][]): number | undefine
 }
 
 function thinkingLevelFrom(efforts: readonly string[]): ThinkingLevel | undefined {
-  let best: ThinkingLevel | undefined;
+  const ladder = thinkingLadder(efforts);
+  return ladder && ladder.length > 0 ? ladder[ladder.length - 1] : undefined;
+}
+
+/** The declared efforts, normalized to known rungs and ordered low → high. */
+function thinkingLadder(efforts: readonly string[]): ThinkingLevel[] | undefined {
+  const set = new Set<ThinkingLevel>();
   for (const raw of efforts) {
     const effort = raw.toLowerCase() as ThinkingLevel;
-    if (!THINKING_LADDER.includes(effort)) continue;
-    if (!best || THINKING_LADDER.indexOf(effort) > THINKING_LADDER.indexOf(best)) best = effort;
+    if (THINKING_LADDER.includes(effort)) set.add(effort);
   }
-  return best;
+  if (set.size === 0) return undefined;
+  return THINKING_LADDER.filter((level) => set.has(level));
 }
 
 /**
@@ -187,6 +193,9 @@ export function gatewayModelInfo(
     // Only meaningful when the model reasons; the ladder caps at "max" because
     // "ultra" is a Codex orchestration preset, not an endpoint effort.
     maxThinkingLevel: thinkingLevelFrom(efforts) ?? "high",
+    // The endpoint's own ladder, when it published one: the picker offers
+    // exactly these rungs and the wire sends the chosen one verbatim.
+    ...(thinkingLadder(efforts) ? { thinkingLevels: thinkingLadder(efforts)! } : {}),
     authStorageKeys: [provider],
   };
   return { model, hasTools: supportsTools(row) };

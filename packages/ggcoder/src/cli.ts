@@ -102,6 +102,7 @@ import {
   isPaidModel,
 } from "./core/model-registry.js";
 import { MCPClientManager, getAllMcpServers } from "./core/mcp/index.js";
+import { ensureGatewayCatalogLoaded } from "./core/gateway-catalog.js";
 import { runLogin, runLogout, runDoctor } from "./cli/auth.js";
 import { runMcp } from "./cli/mcp.js";
 import {
@@ -462,6 +463,11 @@ async function runInkTUI(opts: {
   // haven't authenticated against.
   const paths = await ensureAppDirs();
   const savedSettings = loadSavedSettings(paths.settingsFile);
+
+  // Synced gateway catalogs (OpenRouter, or a custom base URL it's pointed at)
+  // are cached by the app daemon; loading the same file here keeps
+  // `--model openrouter/<rawId>` resolvable in the CLI.
+  await ensureGatewayCatalogLoaded();
 
   // Wire stream stall diagnostics into the debug log
   setStreamDiagnostic((phase, data) => {

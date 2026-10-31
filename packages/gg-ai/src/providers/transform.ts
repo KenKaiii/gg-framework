@@ -1489,6 +1489,27 @@ export function toOpenAIReasoningEffort(
   return effort;
 }
 
+/**
+ * The effort value to put on the wire.
+ *
+ * An endpoint that published its own ladder (`/v1/models`
+ * `reasoning_parameters.efforts`) is authoritative: the chosen rung goes out
+ * verbatim, so a gateway that lists `max` receives `"max"` instead of being
+ * silently clamped to `xhigh` — the exact "the picker has levels but the wire
+ * never sees them" failure this exists to prevent. Everything else keeps the
+ * central clamp above.
+ */
+export function effortForRequest(
+  level: ThinkingLevel,
+  model: string,
+  declared?: readonly ThinkingLevel[],
+): "low" | "medium" | "high" | "xhigh" | "max" {
+  // "ultra" is a Codex orchestration preset, never an endpoint rung, so it can
+  // never be echoed back verbatim even if something listed it.
+  if (level !== "ultra" && declared?.includes(level)) return level;
+  return toOpenAIReasoningEffort(level, model);
+}
+
 // ── Response Normalization ─────────────────────────────────
 
 export function normalizeAnthropicStopReason(reason: string | null): StopReason {

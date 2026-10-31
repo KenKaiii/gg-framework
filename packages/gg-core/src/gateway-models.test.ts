@@ -54,6 +54,9 @@ describe("parseGatewayCatalog", () => {
     expect(flash!.maxOutputTokens).toBe(65536);
     expect(flash!.supportsThinking).toBe(true);
     expect(flash!.maxThinkingLevel).toBe("max");
+    // The endpoint's own ladder is kept, so the picker offers these rungs and
+    // the wire can send the chosen one verbatim ("max" instead of "xhigh").
+    expect(flash!.thinkingLevels).toEqual(["low", "high", "xhigh", "max"]);
     expect(flash!.supportsImages).toBe(true);
     expect(flash!.supportsVideo).toBe(false);
     expect(flash!.costTier).toBe("low");
