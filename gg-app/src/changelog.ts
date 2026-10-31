@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.98.1",
+    date: "2026-10-31",
+    items: [
+      "No more getting bounced back with `Set a workspace folder first` on a fresh install. Settings now tells you when the default folder isn't saved yet, and one press of `Enter` locks it in so Code, Chat and Motion open right up.",
+    ],
+  },
+  {
     version: "0.98.0",
     date: "2026-10-31",
     items: [

@@ -1,6 +1,6 @@
 [package]
 name = "gg-app"
-version = "0.98.0"
+version = "0.98.1"
 # Shown as the Linux deb/rpm package description and maintainer.
 description = "GG Coder desktop workspace for code, chat and motion agents"
 authors = ["KenKai"]
