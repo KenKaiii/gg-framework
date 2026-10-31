@@ -88,14 +88,25 @@ jobs:
         include:
           - platform: macos-14 # Apple Silicon (arm64)
             args: "--target aarch64-apple-darwin"
+            rust_targets: "aarch64-apple-darwin"
           # NOTE: Intel macOS (x86_64) is intentionally omitted. GitHub's free
           # Intel mac runners are effectively unavailable (jobs queue for hours),
           # and a universal binary isn't viable here because the bundled Node
           # runtime + native .node addons are single-arch. Re-add a
           # `macos-13 / --target x86_64-apple-darwin` leg if a paid/Intel runner
           # becomes available. Apple Silicon covers all Macs sold since 2020.
-          - platform: windows-latest
+          - platform: windows-latest # x64
             args: ""
+            rust_targets: ""
+          # Windows on ARM (Copilot+ / Snapdragon X). The x64 installer does run
+          # there, but under emulation — every model token round-trips through a
+          # translated Node runtime and the sidecar's native addons. Nothing here
+          # is arm-specific beyond the Rust target: `stage:node` downloads the
+          # official win-arm64 Node build and `bundle:sidecar` copies the
+          # win32-arm64 sharp/onnxruntime variants on their own.
+          - platform: windows-11-arm
+            args: "--target aarch64-pc-windows-msvc"
+            rust_targets: "aarch64-pc-windows-msvc"
           # Linux x86_64: deb + rpm only — AppImage's linuxdeploy hangs on CI
           # for Node-bundling apps. Built on the OLDEST supported Ubuntu
           # because the binary links the runner's glibc: a 24.04 build would
@@ -103,6 +114,7 @@ jobs:
           # updates in place (pkexec prompt) via `linux-x86_64-{deb,rpm}` keys.
           - platform: ubuntu-22.04
             args: "--bundles deb,rpm"
+            rust_targets: ""
     runs-on: ${{ matrix.platform }}
     # Signing + notarization + per-OS installer builds; observed ~15-20 min,
     # headroom for notarization stalls and cold caches.
@@ -165,7 +177,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ startsWith(matrix.platform, 'macos') && 'aarch64-apple-darwin' || '' }}
+          targets: ${{ matrix.rust_targets }}
 
       # Same cache as the ci.yml app job: the Tauri dependency tree is large
       # and identical across runs; without this every tag rebuilds it from
@@ -182,6 +194,35 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      # `opensrc` (backs source_path / Agent Steroids) publishes prebuilt
+      # binaries for win32-x64, darwin and linux — but NOT win32-arm64, and its
+      # postinstall has no arm64 asset to fetch, so the installed package ends up
+      # with no binary and the smoke gate below fails on this leg. Build the
+      # pinned version from its own Rust source instead of weakening the gate.
+      - name: Build opensrc native binary (Windows ARM64)
+        if: matrix.platform == 'windows-11-arm'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg_dir="$(node -e "console.log(require('path').dirname(require.resolve('opensrc/package.json',{paths:['packages/ggcoder']})))")"
+          version="$(node -p "require('${pkg_dir}/package.json').version")"
+          src="$RUNNER_TEMP/opensrc-src"
+          git clone --depth 1 --branch "v${version}" https://github.com/vercel-labs/opensrc "$src"
+          # Layout differs between opensrc releases: monorepo (packages/opensrc/cli)
+          # vs. a root cli/. Fall back to locating the crate by its package name.
+          if [[ -f "$src/packages/opensrc/cli/Cargo.toml" ]]; then
+            manifest="$src/packages/opensrc/cli/Cargo.toml"
+          elif [[ -f "$src/cli/Cargo.toml" ]]; then
+            manifest="$src/cli/Cargo.toml"
+          else
+            manifest="$(grep -rl --include=Cargo.toml 'name = "opensrc"' "$src" | grep -v /target/ | head -1)"
+          fi
+          [[ -n "${manifest:-}" ]] || { echo "opensrc Cargo.toml not found in v${version}" >&2; exit 1; }
+          cargo build --release --target aarch64-pc-windows-msvc --manifest-path "$manifest"
+          cp "$(dirname "$manifest")/target/aarch64-pc-windows-msvc/release/opensrc.exe" \
+             "$pkg_dir/bin/opensrc-win32-arm64.exe"
+          "$pkg_dir/bin/opensrc-win32-arm64.exe" --help | grep -q 'Fetch source code for packages'
 
       # shell: bash is load-bearing on the windows-latest leg. The default shell
       # there is PowerShell, which does NOT abort a multi-line script when an

@@ -1,5 +1,5 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -251,6 +251,182 @@ let currentFfmpegInput: Writable | null = null;
 let ipcSequence = 0;
 let currentVolume = 70;
 
+/**
+ * Live player PIDs, written to the temp dir.
+ *
+ * The module singletons only see players spawned by THIS process. When a daemon
+ * is killed hard (taskkill /F, a crash, an OS shutdown) no exit handler runs,
+ * so its ffplay/mpv survives and keeps streaming — and the next daemon, whose
+ * `currentChild` is null, happily spawns a second one on top of it. The record
+ * is what lets a fresh daemon find and kill those strays, and it survives
+ * across processes because the file does.
+ */
+const PLAYER_RECORD_PATH = path.join(os.tmpdir(), "gg-radio-players.json");
+
+interface PlayerRecord {
+  pid: number;
+  station: string;
+  bin: string;
+}
+
+function readPlayerRecords(): PlayerRecord[] {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(PLAYER_RECORD_PATH, "utf8"));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (r): r is PlayerRecord =>
+        typeof r === "object" &&
+        r !== null &&
+        typeof (r as PlayerRecord).pid === "number" &&
+        typeof (r as PlayerRecord).station === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writePlayerRecords(records: PlayerRecord[]): void {
+  try {
+    if (records.length === 0) rmSync(PLAYER_RECORD_PATH, { force: true });
+    else writeFileSync(PLAYER_RECORD_PATH, JSON.stringify(records), "utf8");
+  } catch {
+    // Best effort: an unwritable temp dir must never break playback.
+  }
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Kill a player and anything it spawned. Never throws. */
+function forceKill(pid: number): void {
+  try {
+    if (process.platform === "win32") {
+      // /T takes the whole tree, /F cannot be ignored by the player.
+      execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        stdio: "ignore",
+        timeout: 5_000,
+      });
+    } else {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        process.kill(pid, "SIGKILL");
+      }
+    }
+  } catch {
+    // Already gone (or not ours) — nothing to do.
+  }
+}
+
+function rememberPlayer(pid: number, stationId: string, bin: string): void {
+  const records = readPlayerRecords().filter((r) => r.pid !== pid && isAlive(r.pid));
+  records.push({ pid, station: stationId, bin });
+  writePlayerRecords(records);
+}
+
+function forgetPlayer(pid: number | undefined): void {
+  if (!pid) return;
+  writePlayerRecords(readPlayerRecords().filter((r) => r.pid !== pid));
+}
+
+/**
+ * PIDs of streaming players pointed at one of OUR stations, found by scanning
+ * process command lines. This is the safety net for strays with no PID record
+ * (an older build, a hand-killed daemon, a record file that was cleared).
+ * Players are matched on the station URL, so a user's own mpv playing
+ * something else is never touched.
+ */
+function strayPlayerPids(): number[] {
+  const urls = RADIO_STATIONS.map((s) => s.url);
+  const names = PLAYERS.map((p) => p.cmd);
+  let raw = "";
+  try {
+    if (process.platform === "win32") {
+      const filter = names.map((n) => `Name='${n}.exe'`).join(" OR ");
+      raw = execFileSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `Get-CimInstance Win32_Process -Filter "${filter}" | ForEach-Object { "$($_.ProcessId)|$($_.CommandLine)" }`,
+        ],
+        { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "ignore"] },
+      );
+    } else {
+      raw = execFileSync("ps", ["-Ao", "pid=,args="], {
+        encoding: "utf8",
+        timeout: 10_000,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    }
+  } catch {
+    return [];
+  }
+  const pids: number[] = [];
+  for (const line of raw.split("\n")) {
+    const text = line.trim();
+    if (!text) continue;
+    if (!urls.some((url) => text.includes(url))) continue;
+    const pid = Number.parseInt(text.split("|")[0].split(/\s+/)[0] ?? "", 10);
+    if (Number.isFinite(pid) && pid > 0) pids.push(pid);
+  }
+  return pids;
+}
+
+/**
+ * Kill every radio player that this process doesn't own. Called at boot and
+ * before each new stream, so "play one station, another keeps playing" cannot
+ * happen. Returns the PIDs it killed.
+ */
+export function reapStrayRadioPlayers(): number[] {
+  const keep = currentChild?.pid;
+  const targets = new Set<number>();
+  for (const record of readPlayerRecords()) {
+    if (record.pid === keep || record.pid === process.pid) continue;
+    if (isAlive(record.pid)) targets.add(record.pid);
+  }
+  // The command-line scan only runs when this process owns no player. A
+  // launcher shim (chocolatey's `bin\ffplay.exe`, a macOS wrapper) spawns the
+  // real player as a CHILD, so "our" player has a different PID than the one we
+  // spawned — scanning while we play would flag it as a stray and kill our own
+  // stream. With nothing playing, anything matching a station URL is a leftover.
+  const ownsPlayer = keep !== undefined && isAlive(keep);
+  if (!ownsPlayer) {
+    for (const pid of strayPlayerPids()) {
+      if (pid === process.pid) continue;
+      targets.add(pid);
+    }
+  }
+  if (targets.size === 0) {
+    writePlayerRecords(readPlayerRecords().filter((r) => isAlive(r.pid)));
+    return [];
+  }
+  for (const pid of targets) forceKill(pid);
+  writePlayerRecords(readPlayerRecords().filter((r) => !targets.has(r.pid) && isAlive(r.pid)));
+  log("WARN", "radio", "reaped stray radio players", { pids: [...targets] });
+  return [...targets];
+}
+
+// Boot-time reap: a daemon that starts after a hard kill adopts the leftovers.
+// Deferred so it never delays the HTTP listener coming up.
+if (!process.env.VITEST) {
+  const bootReap = setTimeout(() => {
+    try {
+      reapStrayRadioPlayers();
+    } catch {
+      // Cleanup must never break startup.
+    }
+  }, 1_500);
+  bootReap.unref();
+}
+
 export function getCurrentStation(): string | null {
   return currentStationId;
 }
@@ -276,9 +452,14 @@ export function stopRadio(): void {
 function terminateChild(child: ChildProcess | null): void {
   if (!child) return;
   try {
-    // Detached children may own a process group on POSIX. Fall back to the
-    // direct child when they share the sidecar's process group.
-    if (process.platform !== "win32" && child.pid) {
+    if (process.platform === "win32") {
+      // child.kill() signals only the direct child and can leave its tree
+      // behind; the forceful tree-kill cannot be ignored by the player.
+      if (child.pid) forceKill(child.pid);
+      else child.kill();
+    } else if (child.pid) {
+      // Detached children may own a process group on POSIX. Fall back to the
+      // direct child when they share the sidecar's process group.
       try {
         process.kill(-child.pid, "SIGTERM");
       } catch {
@@ -290,6 +471,7 @@ function terminateChild(child: ChildProcess | null): void {
   } catch {
     // Already exited — nothing to do.
   }
+  forgetPlayer(child.pid);
 }
 
 export interface PlayResult {
@@ -430,8 +612,11 @@ export function playRadio(stationId: string): PlayResult {
   const station = RADIO_STATIONS.find((s) => s.id === stationId);
   if (!station) return { ok: false, error: `Unknown station: ${stationId}` };
 
-  // Always stop the previous stream before starting a new one.
+  // Always stop the previous stream before starting a new one, and clear out
+  // any player a previous (hard-killed) daemon left running — otherwise this
+  // window's "play" adds a second stream instead of replacing the first.
   stopRadio();
+  reapStrayRadioPlayers();
 
   if (isWsl()) {
     const child = tryPlayOnWindowsHost(station);
@@ -443,6 +628,9 @@ export function playRadio(stationId: string): PlayResult {
       if (child.pid && !errored) {
         currentChild = child;
         currentStationId = stationId;
+        const pid = child.pid;
+        rememberPlayer(pid, stationId, "powershell.exe");
+        child.once("exit", () => forgetPlayer(pid));
         log("INFO", "radio", "playing", {
           station: station.id,
           player: "powershell.exe (wsl→host)",
@@ -481,6 +669,9 @@ export function playRadio(stationId: string): PlayResult {
         currentStationId = stationId;
         currentMpvIpcPath = mpvIpcPath;
         currentFfmpegInput = nativeFfmpeg?.stdin ?? null;
+        const pid = child.pid;
+        rememberPlayer(pid, stationId, bin);
+        child.once("exit", () => forgetPlayer(pid));
         log("INFO", "radio", "playing", {
           station: station.id,
           player: nativeFfmpeg ? "ffmpeg (AudioToolbox live gain)" : player.cmd,

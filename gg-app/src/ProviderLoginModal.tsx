@@ -50,6 +50,7 @@ export function ProviderLoginModal({
   const single = provider.methods.length === 1 ? provider.methods[0] : null;
   const [method, setMethod] = useState<AuthMethod | null>(single);
   const [apiKey, setApiKey] = useState("");
+  const [baseUrlOverride, setBaseUrlOverride] = useState("");
   const [variantKey, setVariantKey] = useState<string | undefined>(() =>
     defaultVariantKey(provider),
   );
@@ -102,7 +103,12 @@ export function ProviderLoginModal({
     setBusy(true);
     setError(null);
     try {
-      await authApiKey(provider.value, apiKey.trim(), variantKey);
+      await authApiKey(
+        provider.value,
+        apiKey.trim(),
+        variantKey,
+        provider.allowCustomBaseUrl && baseUrlOverride.trim() ? baseUrlOverride.trim() : undefined,
+      );
       onChanged();
       onClose();
     } catch (e) {
@@ -262,6 +268,29 @@ export function ProviderLoginModal({
               if (e.key === "Enter") void submitApiKey();
             }}
           />
+          {provider.allowCustomBaseUrl && (
+            <>
+              <div className="modal-label" style={{ color: theme.textMuted }}>
+                API base URL <span style={{ opacity: 0.7 }}>(optional)</span>
+              </div>
+              <input
+                className="modal-input"
+                style={{ color: theme.text, background: theme.inputBackground }}
+                value={baseUrlOverride}
+                placeholder={provider.apiKeyBaseUrl ?? "Default endpoint"}
+                spellCheck={false}
+                autoComplete="off"
+                onChange={(e) => setBaseUrlOverride(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void submitApiKey();
+                }}
+              />
+              <div className="login-method-note" style={{ color: theme.textMuted }}>
+                Leave empty for the standard {provider.label} endpoint. Set it to route through a
+                compatible gateway or proxy — it's stored with this key in `~/.gg/auth.json`.
+              </div>
+            </>
+          )}
         </>
       )}
 

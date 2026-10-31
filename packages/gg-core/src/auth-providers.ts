@@ -43,6 +43,13 @@ export interface AuthProviderMeta {
   /** Fixed base URL stored alongside an API key (e.g. Xiaomi's token plan). */
   apiKeyBaseUrl?: string;
   /**
+   * When true, the API-key form offers an optional base-URL override so the
+   * provider can be pointed at a compatible gateway/proxy instead of the
+   * vendor's own endpoint. Leaving it empty keeps `apiKeyBaseUrl` (or the
+   * transport default in gg-ai); the override is stored only when typed.
+   */
+  allowCustomBaseUrl?: boolean;
+  /**
    * When a provider's API-key auth splits across multiple endpoints, the
    * choices to present (in order). The first variant is the default. Absent
    * for every provider with a single API-key credential.
@@ -218,6 +225,8 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
     description: "Qwen3.8 Max · multi-provider gateway",
     methods: ["apikey"],
     apiKeyLabel: "OpenRouter",
+    apiKeyBaseUrl: "https://openrouter.ai/api/v1",
+    allowCustomBaseUrl: true,
   },
   {
     value: "huggingface",

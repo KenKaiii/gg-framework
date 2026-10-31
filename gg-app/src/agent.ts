@@ -1137,6 +1137,11 @@ export interface AuthProvider {
   methods: AuthMethod[];
   apiKeyLabel?: string;
   apiKeyBaseUrl?: string;
+  /**
+   * When true, the API-key form offers an optional base-URL override so the
+   * provider can point at a compatible gateway instead of the vendor endpoint.
+   */
+  allowCustomBaseUrl?: boolean;
   /** When set, the API-key flow must ask which variant before submitting. */
   apiKeyVariants?: ApiKeyVariant[];
   /** Live connection status from ~/.gg/auth.json. */
@@ -1184,8 +1189,13 @@ export async function authStatus(): Promise<AuthProvider[]> {
  * user's sidecar may not have booted yet, and a sidecar round-trip would hang.
  * Throws with a user-facing message on error.
  */
-export async function authApiKey(provider: string, key: string, variant?: string): Promise<void> {
-  await invoke("app_auth_apikey", { provider, key, variant });
+export async function authApiKey(
+  provider: string,
+  key: string,
+  variant?: string,
+  baseUrl?: string,
+): Promise<void> {
+  await invoke("app_auth_apikey", { provider, key, variant, baseUrl });
 }
 
 /**
