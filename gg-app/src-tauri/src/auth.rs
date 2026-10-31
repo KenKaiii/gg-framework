@@ -372,7 +372,7 @@ pub(crate) fn app_auth_status() -> serde_json::Value {
     let connected = |p: &ProviderMeta| -> bool { has_oauth(p) || has_api_key(p) };
 
     let now_ms = current_unix_millis();
-    let list: Vec<serde_json::Value> = AUTH_PROVIDERS
+    let mut list: Vec<serde_json::Value> = AUTH_PROVIDERS
         .iter()
         .filter(|p| !HIDDEN_PROVIDERS.contains(&p.value))
         .map(|p| {
@@ -484,7 +484,66 @@ pub(crate) fn app_auth_status() -> serde_json::Value {
         })
         .collect();
 
+    // Local endpoints (Ollama / llama.cpp / LM Studio / custom OpenAI-compatible
+    // servers) are providers too: the agent runs on them like any cloud model.
+    // They live in gg-app.json's `localEndpoints`, and their credentials in
+    // auth.json under a `local:<endpointId>` key the catalog above never walks —
+    // so without this, a machine whose ONLY models are local shows "0 connected"
+    // and the home screen refuses to open a workspace ("Connect an AI provider
+    // first.").
+    if let Some(settings) = std::fs::read_to_string(crate::settings::app_settings_path())
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+    {
+        list.extend(local_endpoint_providers(&settings));
+    }
+
     serde_json::json!({ "providers": list })
+}
+
+/// One synthetic `AuthProvider`-shaped entry per local endpoint in the parsed
+/// gg-app.json settings. Tagged `"local": true` so the frontend can route them
+/// to the local-endpoint UI instead of the cloud sign-in flows.
+fn local_endpoint_providers(settings: &serde_json::Value) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    let Some(endpoints) = settings.get("localEndpoints").and_then(|v| v.as_array()) else {
+        return out;
+    };
+    for endpoint in endpoints {
+        let id = endpoint.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        if id.is_empty() {
+            continue;
+        }
+        let label = endpoint
+            .get("label")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .unwrap_or("Local endpoint");
+        let base_url = endpoint
+            .get("baseUrl")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim();
+        // A no-key server (vanilla Ollama) is usable as-is, so an entry with a
+        // base URL counts as connected — reachability is checked live at model
+        // selection ("Project Maya isn't running at …"), not here.
+        let connected = !base_url.is_empty();
+        let mut entry = serde_json::json!({
+            "value": format!("local:{id}"),
+            "label": label,
+            "description": format!("Local endpoint — models served at {base_url}"),
+            "methods": ["apikey"],
+            "connected": connected,
+            "connectedMethods": if connected { vec!["apikey"] } else { Vec::<&str>::new() },
+            "local": true,
+        });
+        if connected {
+            entry["activeMethod"] = serde_json::json!("apikey");
+        }
+        out.push(entry);
+    }
+    out
 }
 
 // ── Native API-key auth writes (~/.gg/auth.json) ──────────────────────────
@@ -862,6 +921,50 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert!(v.get("moonshot").is_none());
         assert!(v.get("moonshot-oauth").is_none());
+    }
+
+    #[test]
+    fn local_endpoints_become_connected_providers() {
+        let settings = serde_json::json!({
+            "localEndpoints": [
+                {
+                    "id": "custom-192-168-1-189-8080",
+                    "label": "Project Maya",
+                    "baseUrl": "http://192.168.1.189:8080/v1",
+                },
+                { "id": "default-ollama", "baseUrl": "http://127.0.0.1:11434/v1" },
+            ],
+        });
+        let entries = local_endpoint_providers(&settings);
+        assert_eq!(entries.len(), 2);
+
+        let maya = &entries[0];
+        assert_eq!(maya["value"], "local:custom-192-168-1-189-8080");
+        assert_eq!(maya["label"], "Project Maya");
+        assert_eq!(maya["connected"], serde_json::json!(true));
+        assert_eq!(maya["connectedMethods"], serde_json::json!(["apikey"]));
+        assert_eq!(maya["activeMethod"], "apikey");
+        assert_eq!(maya["local"], serde_json::json!(true));
+
+        // No-key servers (vanilla Ollama) are usable too: the label falls back
+        // and the entry still counts, or a local-only machine stays gated out.
+        let nokey = &entries[1];
+        assert_eq!(nokey["label"], "Local endpoint");
+        assert_eq!(nokey["connected"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn local_endpoint_providers_skip_blank_entries_and_missing_section() {
+        assert!(local_endpoint_providers(&serde_json::json!({})).is_empty());
+        let blank = local_endpoint_providers(&serde_json::json!({
+            "localEndpoints": [
+                { "label": "no id" },
+                { "id": "", "baseUrl": "http://x" },
+                { "id": "ok", "baseUrl": "http://ok/v1" },
+            ],
+        }));
+        assert_eq!(blank.len(), 1);
+        assert_eq!(blank[0]["value"], "local:ok");
     }
 
     #[test]
