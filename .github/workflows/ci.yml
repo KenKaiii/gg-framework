@@ -177,8 +177,8 @@ jobs:
   app:
     name: app · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    # 30 not 15: the Windows leg compiles the Tauri tree and builds/launches
-    # an MSI (~12 min warm; the Rust compile is much slower cold-cache).
+    # 30 not 15: the Windows and Linux legs compile the Tauri tree and
+    # build/launch an MSI or .deb (~12 min warm; much slower cold-cache).
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -278,9 +278,20 @@ jobs:
       # throwaway user profile, and requires a visible window plus a packaged
       # ggnode child running the packaged bundle.
       #
-      # Only the Windows matrix leg pays the release-build cost; the macOS and
-      # Linux legs run in parallel and stay fast.
+      # The macOS leg skips the release build; it runs in parallel and stays fast.
       - name: Packaged app smoke (MSI build + launch)
         if: runner.os == 'Windows'
         working-directory: gg-app
         run: pnpm smoke:packaged
+
+      # Linux twin of the step above: builds a .deb, unpacks it with
+      # `dpkg-deb -x` (installs nothing), launches it on a virtual X display
+      # with a throwaway profile, and requires a visible window plus the
+      # packaged ggnode child running the packaged bundle.
+      - name: Packaged app smoke (deb build + launch, Linux)
+        if: runner.os == 'Linux'
+        working-directory: gg-app
+        shell: bash
+        run: |
+          sudo apt-get install -y --no-install-recommends xvfb xdotool dbus
+          xvfb-run -a dbus-run-session -- pnpm smoke:packaged:linux

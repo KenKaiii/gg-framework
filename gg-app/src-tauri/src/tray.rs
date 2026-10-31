@@ -15,8 +15,8 @@ use crate::*;
 //             taskbar; the tile carries its own background and reads on both.
 // (Same split, same reasoning, as openclaw's Tauri tray.)
 //
-// Linux is excluded: it needs libayatana-appindicator and we don't ship Linux
-// (see the release workflow's matrix).
+// Linux ships without a tray for now: it needs libayatana-appindicator at
+// runtime, and stock GNOME hides tray icons unless an extension is installed.
 //
 // The menu has no per-item visibility API in muda, so "Update now" is added and
 // removed by REBUILDING the menu whenever the webview reports a change

@@ -1,8 +1,9 @@
 [package]
 name = "gg-app"
 version = "0.97.5"
-description = "A Tauri App"
-authors = ["you"]
+# Shown as the Linux deb/rpm package description and maintainer.
+description = "GG Coder desktop workspace for code, chat and motion agents"
+authors = ["KenKai"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

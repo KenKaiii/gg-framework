@@ -96,10 +96,13 @@ jobs:
           # becomes available. Apple Silicon covers all Macs sold since 2020.
           - platform: windows-latest
             args: ""
-          # NOTE: Linux is intentionally omitted for now. We ship macOS +
-          # Windows only. Re-add an `ubuntu-latest` leg (with
-          # `args: --bundles deb,rpm` — AppImage's linuxdeploy hangs on CI for
-          # Node-bundling apps) when Linux support is prioritized.
+          # Linux x86_64: deb + rpm only — AppImage's linuxdeploy hangs on CI
+          # for Node-bundling apps. Built on the OLDEST supported Ubuntu
+          # because the binary links the runner's glibc: a 24.04 build would
+          # refuse to start on 22.04/Debian 12. The updater installs deb/rpm
+          # updates in place (pkexec prompt) via `linux-x86_64-{deb,rpm}` keys.
+          - platform: ubuntu-22.04
+            args: "--bundles deb,rpm"
     runs-on: ${{ matrix.platform }}
     # Signing + notarization + per-OS installer builds; observed ~15-20 min,
     # headroom for notarization stalls and cold caches.
@@ -166,7 +169,7 @@ jobs:
 
       # Same cache as the ci.yml app job: the Tauri dependency tree is large
       # and identical across runs; without this every tag rebuilds it from
-      # scratch on both matrix legs.
+      # scratch on every matrix leg.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: gg-app/src-tauri

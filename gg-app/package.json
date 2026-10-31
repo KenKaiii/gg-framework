@@ -20,6 +20,7 @@
     "bump": "node scripts/bump-version.mjs",
     "test": "vitest run",
     "smoke:packaged": "node scripts/smoke-packaged-windows.mjs",
+    "smoke:packaged:linux": "node scripts/smoke-packaged-linux.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

@@ -21,6 +21,8 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "category": "DeveloperTool",
+    "homepage": "https://github.com/KenKaiii/gg-framework",
     "externalBin": ["binaries/ggnode"],
     "resources": ["sidecar/"],
     "macOS": {
