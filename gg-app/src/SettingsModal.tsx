@@ -31,6 +31,9 @@ export function SettingsModal({ onClose, onSaved }: Props): React.ReactElement {
   // What's on disk, so the page saves only a real change and can put the
   // field back after an empty entry or a failed save.
   const [savedRoot, setSavedRoot] = useState("");
+  // False while the field only shows the default: nothing is on disk yet, so
+  // Home still asks for a folder until this one is saved (issue #125).
+  const [configured, setConfigured] = useState(true);
   const [busy, setBusy] = useState(false);
   const [permissions, setPermissions] = useState<PermissionsStatus | null>(null);
   const [settingsRead, setSettingsRead] = useState(false);
@@ -45,6 +48,7 @@ export function SettingsModal({ onClose, onSaved }: Props): React.ReactElement {
         if (!s) return;
         setProjectsRoot(s.projectsRoot);
         setSavedRoot(s.projectsRoot);
+        setConfigured(s.configured);
       })
       .catch(() => {})
       .finally(() => setSettingsRead(true));
@@ -79,11 +83,12 @@ export function SettingsModal({ onClose, onSaved }: Props): React.ReactElement {
       setProjectsRoot(savedRoot);
       return;
     }
-    if (root === savedRoot || busy) return;
+    if ((configured && root === savedRoot) || busy) return;
     setBusy(true);
     try {
       await saveSettings(root);
       setSavedRoot(root);
+      setConfigured(true);
       setProjectsRoot(root);
       onSaved?.(root);
     } catch (e) {
@@ -162,7 +167,11 @@ export function SettingsModal({ onClose, onSaved }: Props): React.ReactElement {
         <div className="settings-col">
           <SettingsSection
             title="Project folder"
-            description="Where new projects are created."
+            description={
+              configured
+                ? "Where new projects are created."
+                : "Not saved yet. Press Enter to use this folder, or Browse for another."
+            }
             dialogHint={
               <div className="modal-hint" style={{ color: theme.textDim }}>
                 New projects are created inside this folder.
