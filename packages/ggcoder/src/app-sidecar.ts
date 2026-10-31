@@ -430,7 +430,50 @@ async function main(): Promise<void> {
             sessionPath: ctx.session.getState().sessionPath ?? null,
           });
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          let message = err instanceof Error ? err.message : String(err);
+          // A restored session can reference a LOCAL model before this daemon
+          // has scanned: runtime models (which carry the endpoint's
+          // authStorageKeys) don't exist yet, so credential resolution falls
+          // back to the bare provider id and fails as "not logged in" even
+          // though the endpoint is configured. Scan once and retry before
+          // giving up — the user's last session should survive a restart.
+          if (message.includes("Not logged in") && (await listAllEndpoints()).length > 0) {
+            // Register the local models now — the boot scan may not have run
+            // before this restore, and runtime models carry the endpoint's
+            // authStorageKeys, which is what credential resolution needs.
+            const { models } = await discoverLocalModels(await listAllEndpoints(), {
+              force: true,
+            });
+            registerRuntimeModels(models);
+            const ctx = await createSession(
+              {
+                auth,
+                paths,
+                progress,
+                trophies,
+                memoryStore,
+                jiwaStore,
+                broadcastAll,
+                oauthInFlightProviders,
+                repoPolls,
+                sessionIdsAt,
+                busyAt,
+              },
+              { id, mode, chatAgent, cwd: sessionCwd, sessionPath },
+            );
+            sessions.set(id, ctx);
+            log("INFO", "app-sidecar", "session created after local model scan", {
+              id,
+              mode,
+              chatAgent,
+              cwd: sessionCwd,
+            });
+            daemonJson(res, 200, {
+              sessionId: id,
+              sessionPath: ctx.session.getState().sessionPath ?? null,
+            });
+            return;
+          }
           log("ERROR", "app-sidecar", "session create failed", { message });
           daemonJson(res, 500, { error: message });
         }

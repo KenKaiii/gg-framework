@@ -1156,6 +1156,13 @@ export interface AuthProvider {
   oauthExhaustedUntil?: number;
   /** How the two methods interact — only set when a provider has both. */
   priorityNote?: string;
+  /**
+   * Synthetic entry for a local endpoint (Ollama / llama.cpp / LM Studio /
+   * custom server from the Ollama modal). Counted by the gates and the
+   * "N connected" badge, but rendered by the Ollama surface, not as a cloud
+   * tile with sign-in flows.
+   */
+  local?: boolean;
   /** Per-method guidance — only set when a provider offers a real choice. */
   methodGuidance?: AuthMethodGuidance[];
 }

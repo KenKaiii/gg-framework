@@ -79,6 +79,10 @@ export function LoginScreen({ onClose }: Props): React.ReactElement {
   }, [refresh]);
 
   const connectedCount = providers.filter((p) => p.connected).length;
+  // Local endpoints (from the Ollama modal) arrive in this list too so the
+  // gates and this badge count them, but they aren't cloud tiles: their home
+  // is the Ollama tile below, which opens the endpoint manager.
+  const cloudProviders = providers.filter((p) => !p.local);
   // The provider list is static in Rust, so an empty list after loading means
   // the read failed (authStatus reports failure as []). Say so, with a retry,
   // rather than showing a blank grid.
@@ -106,7 +110,7 @@ export function LoginScreen({ onClose }: Props): React.ReactElement {
           </button>
         </div>
       )}
-      {providers.map((p) => {
+      {cloudProviders.map((p) => {
         const logo = providerLogo(p.value);
         return (
           <button key={p.value} className="login-tile" onClick={() => setActive(p)}>

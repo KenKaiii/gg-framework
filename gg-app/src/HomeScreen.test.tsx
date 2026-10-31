@@ -88,6 +88,42 @@ describe("HomeScreen", () => {
     expect(onMotion).toHaveBeenCalledOnce();
   });
 
+  it("opens the workspaces with only a local endpoint connected (no cloud provider)", async () => {
+    // A local-only machine (Ollama / llama.cpp / a custom server) has no cloud
+    // credentials: the gate must count the endpoint's synthetic entry.
+    vi.mocked(getSettings).mockResolvedValue({ projectsRoot: "/workspaces", configured: true });
+    vi.mocked(authStatus).mockResolvedValue([
+      {
+        value: "local:custom-192-168-1-189-8080",
+        label: "Project Maya",
+        description: "Local endpoint — models served at http://192.168.1.189:8080/v1",
+        methods: ["apikey"],
+        connected: true,
+        connectedMethods: ["apikey"],
+        local: true,
+      },
+    ]);
+    const onProjects = vi.fn();
+
+    render(
+      <HomeScreen
+        onProjects={onProjects}
+        onGoals={vi.fn()}
+        onChat={vi.fn()}
+        onMotion={vi.fn()}
+        onWorld={vi.fn()}
+        onSettings={vi.fn()}
+      />,
+    );
+
+    const code = screen.getByRole("button", { name: "Code" });
+    await waitFor(() => expect(code.getAttribute("aria-disabled")).toBeNull());
+
+    fireEvent.click(code);
+
+    expect(onProjects).toHaveBeenCalledOnce();
+  });
+
   it("orders the workspaces Code, Goals, Chat, Motion and opens Goals", async () => {
     vi.mocked(getSettings).mockResolvedValue({ projectsRoot: "/workspaces", configured: true });
     vi.mocked(authStatus).mockResolvedValue([
