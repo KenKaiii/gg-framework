@@ -194,7 +194,13 @@ export async function addCustomEndpoint(
   }
 
   const prior = existing.find((e) => e.id === id);
-  const pinned = input.contextLength ?? prior?.contextLength;
+  // A valid new pin replaces the old one; a junk one falls back to the pin
+  // already stored instead of silently unpinning on a typo.
+  const supplied = input.contextLength;
+  const pinned =
+    (typeof supplied === "number" && Number.isSafeInteger(supplied) && supplied > 0
+      ? supplied
+      : undefined) ?? prior?.contextLength;
   const pinnedContextLength =
     typeof pinned === "number" && Number.isSafeInteger(pinned) && pinned > 0 ? pinned : undefined;
   const endpoint: LocalEndpoint = {
