@@ -107,6 +107,39 @@ describe("custom endpoints", () => {
     });
   });
 
+  it("pins a contextLength, survives a re-add that omits it, and stays per-endpoint", async () => {
+    await addCustomEndpoint({ baseUrl: "http://localhost:9999", contextLength: 262144 }, opts);
+    await addCustomEndpoint({ baseUrl: "http://localhost:7777" }, opts);
+
+    let stored = await listCustomEndpoints(opts);
+    expect(stored.find((e) => e.id === "custom-localhost-9999")).toMatchObject({
+      contextLength: 262144,
+    });
+    expect(stored.find((e) => e.id === "custom-localhost-7777")).not.toHaveProperty("contextLength");
+
+    // Re-adding the same host to fix a key keeps the pin unless replaced.
+    await addCustomEndpoint({ baseUrl: "http://localhost:9999", apiKey: "right" }, opts);
+    stored = await listCustomEndpoints(opts);
+    expect(stored).toHaveLength(2);
+    expect(stored.find((e) => e.id === "custom-localhost-9999")).toMatchObject({
+      apiKey: "right",
+      contextLength: 262144,
+    });
+
+    // An explicit new pin replaces it; a junk pin is dropped, never stored.
+    await addCustomEndpoint({ baseUrl: "http://localhost:9999", contextLength: 131072 }, opts);
+    expect((await listCustomEndpoints(opts)).find((e) => e.id === "custom-localhost-9999"))
+      .toMatchObject({ contextLength: 131072 });
+    await addCustomEndpoint({ baseUrl: "http://localhost:9999", contextLength: -1 }, opts);
+    expect((await listCustomEndpoints(opts)).find((e) => e.id === "custom-localhost-9999"))
+      .toMatchObject({ contextLength: 131072 });
+
+    // Removing that endpoint leaves the other endpoint's pin untouched.
+    await removeCustomEndpoint("custom-localhost-9999", opts);
+    expect((await listCustomEndpoints(opts)).find((e) => e.id === "custom-localhost-7777"))
+      .not.toHaveProperty("contextLength");
+  });
+
   it("refuses a URL already covered by a built-in endpoint", async () => {
     await expect(addCustomEndpoint({ baseUrl: "http://127.0.0.1:11434/v1" }, opts)).rejects.toThrow(
       /already probed automatically as Ollama/,
