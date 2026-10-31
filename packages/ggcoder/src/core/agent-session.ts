@@ -2361,6 +2361,9 @@ export class AgentSession {
           this.planModeRef.current || options.capThinking
             ? clampThinkingForPlanMode(this.thinkingLevel)
             : this.thinkingLevel,
+        // The endpoint's own effort ladder (gateway `/v1/models`), so the
+        // transport can send the chosen rung verbatim instead of clamping it.
+        ...(modelInfo?.thinkingLevels ? { thinkingLevels: modelInfo.thinkingLevels } : {}),
         apiKey,
         // Per-turn credential resolution. A run can span many minutes; if any
         // process sharing auth.json refreshes this grant meanwhile, the token

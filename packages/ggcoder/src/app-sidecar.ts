@@ -58,6 +58,7 @@ import {
   formatLocalModelId,
   parseLocalModelId,
   probeEndpoint,
+  readGatewayCache,
   toModelInfo as localModelInfo,
   type LocalEndpoint,
   type LocalEndpointProbe,
@@ -570,6 +571,26 @@ async function main(): Promise<void> {
     process.stdout.write(`GG_APP_LISTENING ${addr.port} ${authToken}\n`);
     log("INFO", "app-sidecar", "daemon listening", { port: String(addr.port), host });
   });
+
+  // A synced gateway catalog outlives the process that synced it; register it
+  // before any window asks for a model list, or the picker looks empty until
+  // the user hits Sync again. Cheap: reads one JSON file, no network.
+  void (async () => {
+    try {
+      const cache = await readGatewayCache();
+      for (const [provider, entry] of Object.entries(cache.providers)) {
+        clearRuntimeModels((m) => m.provider === provider);
+        registerRuntimeModels(entry.models);
+        log("INFO", "models", "synced catalog loaded", {
+          provider,
+          count: String(entry.models.length),
+          baseUrl: entry.baseUrl,
+        });
+      }
+    } catch {
+      // A corrupt cache must never keep the daemon from booting.
+    }
+  })();
 
   const shellPid = process.ppid;
   // Session teardown awaits MCP servers, LSP servers and third-party extension

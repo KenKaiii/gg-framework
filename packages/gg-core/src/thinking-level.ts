@@ -113,6 +113,12 @@ export function getSupportedThinkingLevels(
       : LOCAL_THINKING_LEVELS.slice(0, maxIndex + 1);
   }
   const maxLevel = getMaxThinkingLevel(model);
+  // A gateway that published its effort ladder is authoritative: offer exactly
+  // those rungs. Without this, a non-OpenAI model falls through to the
+  // single-rung [maxLevel] branch below and the picker shows one choice even
+  // though the endpoint declared four.
+  const declared = getModel(model)?.thinkingLevels;
+  if (declared && declared.length > 0) return declared;
   if (isAnthropicAdaptiveModel(provider, model)) {
     const levels = isAnthropicXhighModel(provider, model)
       ? ANTHROPIC_XHIGH_THINKING_LEVELS

@@ -1137,6 +1137,13 @@ export interface AuthProvider {
   methods: AuthMethod[];
   apiKeyLabel?: string;
   apiKeyBaseUrl?: string;
+  /**
+   * When true, the API-key form offers an optional base-URL override so the
+   * provider can point at a compatible gateway instead of the vendor endpoint.
+   */
+  allowCustomBaseUrl?: boolean;
+  /** The base URL currently in effect for this provider, when one is stored. */
+  currentBaseUrl?: string;
   /** When set, the API-key flow must ask which variant before submitting. */
   apiKeyVariants?: ApiKeyVariant[];
   /** Live connection status from ~/.gg/auth.json. */
@@ -1184,8 +1191,44 @@ export async function authStatus(): Promise<AuthProvider[]> {
  * user's sidecar may not have booted yet, and a sidecar round-trip would hang.
  * Throws with a user-facing message on error.
  */
-export async function authApiKey(provider: string, key: string, variant?: string): Promise<void> {
-  await invoke("app_auth_apikey", { provider, key, variant });
+export async function authApiKey(
+  provider: string,
+  key: string,
+  variant?: string,
+  baseUrl?: string,
+): Promise<void> {
+  await invoke("app_auth_apikey", { provider, key, variant, baseUrl });
+}
+
+/**
+ * Change only the base URL of an already-connected provider (no key required).
+ * Passing an empty/omitted value clears it back to the provider default.
+ * Handled natively in Rust, like {@link authApiKey}.
+ */
+export async function authSetBaseUrl(
+  provider: string,
+  baseUrl?: string,
+): Promise<{ baseUrl?: string }> {
+  return await invoke<{ baseUrl?: string }>("app_auth_baseurl", { provider, baseUrl });
+}
+
+export interface GatewaySyncResult {
+  ok: boolean;
+  provider: string;
+  baseUrl: string;
+  count: number;
+  skippedNoTools: number;
+}
+
+/**
+ * Re-sync a gateway provider's model catalog from its endpoint (OpenRouter, or
+ * the custom base URL it's pointed at). The sidecar fetches `<baseUrl>/models`,
+ * registers the rows at runtime and caches them, so the picker shows the
+ * endpoint's own context window, output cap, thinking levels and price.
+ */
+export async function syncProviderModels(provider: string): Promise<GatewaySyncResult> {
+  await waitForReady();
+  return await invoke<GatewaySyncResult>("agent_models_sync", { provider });
 }
 
 /**

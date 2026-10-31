@@ -21,6 +21,7 @@ import { mergeProviderOptions } from "../utils/provider-options.js";
 import {
   downgradeUnsupportedImages,
   downgradeUnsupportedVideos,
+  effortForRequest,
   normalizeOpenAIStopReason,
   toOpenAIMessages,
   toGlmReasoningEffort,
@@ -220,7 +221,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     ...(options.topP != null && !hasFixedKimiSampling ? { top_p: options.topP } : {}),
     ...(options.stop ? { stop: options.stop } : {}),
     ...(options.thinking && !usesThinkingParam && !isKimiK3 && !isKimiK27 && !isLocal
-      ? { reasoning_effort: toOpenAIReasoningEffort(options.thinking, options.model) }
+      ? { reasoning_effort: effortForRequest(options.thinking, options.model, options.thinkingLevels) }
       : {}),
     ...(options.tools?.length
       ? {

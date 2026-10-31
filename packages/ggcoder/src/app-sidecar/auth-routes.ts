@@ -12,6 +12,22 @@ import type { AskUserResult } from "../core/ask-user.js";
 import { readBody, json } from "./http.js";
 import type { SessionRouteContext } from "./route-context.js";
 
+/**
+ * Normalize an optional base-URL override from an API-key submission. Empty or
+ * whitespace means "use the provider default" and yields `undefined`; anything
+ * else must be a usable http(s) URL, so a pasted garbage string can't land in
+ * auth.json and silently break every request for that provider. Trailing
+ * slashes are stripped so `…/v1/` and `…/v1` behave identically.
+ */
+function normalizeBaseUrlOverride(raw: string | undefined): string | undefined {
+  const value = (raw ?? "").trim();
+  if (!value) return undefined;
+  if (value.length > 2048 || !/^https?:\/\//i.test(value)) {
+    throw new Error("Base URL must start with http:// or https://");
+  }
+  return value.replace(/\/+$/, "");
+}
+
 export function handleAuthRoutes(
   ctx: SessionRouteContext,
   req: http.IncomingMessage,
@@ -31,11 +47,18 @@ export function handleAuthRoutes(
       let provider = "";
       let key: string;
       let variant: string | undefined;
+      let baseUrlOverride: string | undefined;
       try {
-        const body = JSON.parse(raw) as { provider?: string; key?: string; variant?: string };
+        const body = JSON.parse(raw) as {
+          provider?: string;
+          key?: string;
+          variant?: string;
+          baseUrl?: string;
+        };
         provider = body.provider ?? "";
         key = (body.key ?? "").trim();
         variant = body.variant;
+        baseUrlOverride = body.baseUrl;
       } catch {
         json(res, 400, { error: "invalid JSON body" });
         return;
@@ -49,6 +72,15 @@ export function handleAuthRoutes(
         json(res, 400, { error: "API key is required" });
         return;
       }
+      // Optional user-supplied endpoint (OpenRouter, or anything else flagged
+      // `allowCustomBaseUrl`). Empty/absent means "use the provider default".
+      let overrideBaseUrl: string | undefined;
+      try {
+        overrideBaseUrl = normalizeBaseUrlOverride(baseUrlOverride);
+      } catch (err) {
+        json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        return;
+      }
       // Providers with multiple API-key variants (currently only Xiaomi: Token
       // Plan vs. API Credits) store under the chosen variant's key/baseUrl,
       // defaulting to the first variant. Single-variant providers fall back to
@@ -56,7 +88,7 @@ export function handleAuthRoutes(
       const chosenVariant =
         meta.apiKeyVariants?.find((v) => v.key === variant) ?? meta.apiKeyVariants?.[0];
       const storageKey = chosenVariant?.key ?? provider;
-      const baseUrl = chosenVariant?.baseUrl ?? meta.apiKeyBaseUrl;
+      const baseUrl = overrideBaseUrl ?? chosenVariant?.baseUrl ?? meta.apiKeyBaseUrl;
       const creds: OAuthCredentials = {
         accessToken: key,
         refreshToken: "",

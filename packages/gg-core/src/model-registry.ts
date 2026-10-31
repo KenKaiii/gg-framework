@@ -58,6 +58,14 @@ export interface ModelInfo {
    */
   maxThinkingLevel: ThinkingLevel;
   /**
+   * The full effort ladder the endpoint itself declared (gateway `/v1/models`
+   * `reasoning_parameters.efforts`), when it declares one. Authoritative for
+   * both the picker and the wire: a gateway listing low/high/xhigh/max really
+   * does accept "max", so the level must not be clamped to a built-in ladder.
+   * Absent for every statically-registered model.
+   */
+  thinkingLevels?: ThinkingLevel[];
+  /**
    * Ordered preference of auth-storage keys this model resolves credentials
    * from, for providers that split auth across multiple distinct
    * endpoints/keys (currently only Xiaomi: the Token Plan endpoint vs. the

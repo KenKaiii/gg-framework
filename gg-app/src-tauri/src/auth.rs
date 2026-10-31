@@ -85,6 +85,13 @@ pub(crate) struct ProviderMeta {
 /// in sync. Gemini: Google no longer serves personal accounts over sign-in.
 pub(crate) const HIDDEN_PROVIDERS: &[&str] = &["gemini"];
 
+/// Providers whose API-key form offers an optional base-URL override. The
+/// webview reads this as `allowCustomBaseUrl`; without it the login modal has
+/// no field to type into, which is exactly how the OpenRouter override shipped
+/// invisible. Mirrors gg-core's `AuthProviderMeta.allowCustomBaseUrl` — keep in
+/// sync.
+pub(crate) const CUSTOM_BASE_URL_PROVIDERS: &[&str] = &["openrouter"];
+
 pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     ProviderMeta {
         value: "anthropic",
@@ -281,10 +288,32 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
         oauth_label: None,
         method_details: &[],
         api_key_label: Some("OpenRouter"),
-        api_key_base_url: None,
+        // Mirrors gg-ai's OPENROUTER_BASE_URL. Stored with the key so the app's
+        // optional base-URL override has a default to fall back to, and the
+        // login form has a placeholder to show.
+        api_key_base_url: Some("https://openrouter.ai/api/v1"),
         api_key_variants: &[],
     },
 ];
+
+/// Pure: normalize a user-supplied base-URL override. Empty/whitespace input
+/// means "use the provider default" and yields `None`. Anything else must be a
+/// usable http(s) URL: the refusal keeps a pasted garbage string out of
+/// auth.json, where it would silently break every request for that provider.
+/// Trailing slashes are stripped so `…/v1/` and `…/v1` behave identically.
+pub(crate) fn normalize_base_url(raw: Option<&str>) -> Result<Option<String>, String> {
+    let Some(value) = raw.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    if value.len() > 2048 {
+        return Err("Base URL is too long".to_string());
+    }
+    let lower = value.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Err("Base URL must start with http:// or https://".to_string());
+    }
+    Ok(Some(value.trim_end_matches('/').to_string()))
+}
 
 /// Pure: resolve `(storage_key, base_url)` for an API-key submission to
 /// `provider`, given an optional variant key. Providers with multiple
@@ -466,6 +495,32 @@ pub(crate) fn app_auth_status() -> serde_json::Value {
             if let Some(u) = p.api_key_base_url {
                 obj["apiKeyBaseUrl"] = serde_json::json!(u);
             }
+            // Gates the login modal's "API base URL (optional)" input.
+            if CUSTOM_BASE_URL_PROVIDERS.contains(&p.value) {
+                obj["allowCustomBaseUrl"] = serde_json::json!(true);
+            }
+            // The URL currently in effect, so the form can prefill it and the
+            // user can edit it later without re-pasting the key.
+            if !p.api_key_variants.is_empty() {
+                for variant in p.api_key_variants {
+                    if let Some(url) = creds
+                        .as_ref()
+                        .and_then(|v| v.get(variant.key))
+                        .and_then(|c| c.get("baseUrl"))
+                        .and_then(|u| u.as_str())
+                    {
+                        obj["currentBaseUrl"] = serde_json::json!(url);
+                        break;
+                    }
+                }
+            } else if let Some(url) = creds
+                .as_ref()
+                .and_then(|v| v.get(p.value))
+                .and_then(|c| c.get("baseUrl"))
+                .and_then(|u| u.as_str())
+            {
+                obj["currentBaseUrl"] = serde_json::json!(url);
+            }
             if !p.api_key_variants.is_empty() {
                 let variants: Vec<serde_json::Value> = p
                     .api_key_variants
@@ -634,24 +689,81 @@ pub(crate) fn write_auth_file(contents: &str) -> Result<(), String> {
 /// that the provider exists and supports API-key auth, and that the key is
 /// non-empty. `variant` selects which storage key/base URL to use for
 /// providers with multiple API-key options (currently only Xiaomi); omitted or
-/// unknown defaults to the first/primary variant. Returns `{ ok: true }`.
+/// unknown defaults to the first/primary variant. `base_url` is an optional
+/// override (OpenRouter and anything else flagged `allowCustomBaseUrl`) so the
+/// provider can point at a compatible gateway; empty means "use the default".
+/// Returns `{ ok: true }`.
 #[tauri::command]
 pub(crate) fn app_auth_apikey(
     provider: String,
     key: String,
     variant: Option<String>,
+    base_url: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let key = key.trim();
     if key.is_empty() {
         return Err("API key is required".to_string());
     }
-    let (storage_key, base_url) = resolve_apikey_target(&provider, variant.as_deref())
+    let (storage_key, default_base_url) = resolve_apikey_target(&provider, variant.as_deref())
         .ok_or_else(|| "provider does not support API key auth".to_string())?;
+    let override_base_url = normalize_base_url(base_url.as_deref())?;
+    let effective_base_url = override_base_url.as_deref().or(default_base_url);
     let existing = std::fs::read_to_string(auth_file_path()).ok();
     let now_ms = current_unix_millis();
-    let next = apply_apikey(existing.as_deref(), &storage_key, base_url, now_ms, key)?;
+    let next = apply_apikey(
+        existing.as_deref(),
+        &storage_key,
+        effective_base_url,
+        now_ms,
+        key,
+    )?;
     write_auth_file(&next)?;
     Ok(serde_json::json!({ "ok": true }))
+}
+
+/// Pure: set (or clear) the `baseUrl` on an EXISTING provider credential,
+/// returning the new auth.json text. Errors when the provider has no
+/// credential: a base URL with no key is meaningless, and quietly creating a
+/// keyless entry would make the provider look connected.
+pub(crate) fn apply_baseurl(
+    existing: Option<&str>,
+    provider: &str,
+    base_url: Option<&str>,
+) -> Result<String, String> {
+    let mut root = parse_auth_object(existing)?;
+    let map = root
+        .as_object_mut()
+        .ok_or_else(|| "auth.json is not an object".to_string())?;
+    let entry = map
+        .get_mut(provider)
+        .ok_or_else(|| "Connect an API key for this provider first.".to_string())?;
+    let obj = entry
+        .as_object_mut()
+        .ok_or_else(|| "Stored credential is not an object.".to_string())?;
+    match base_url {
+        Some(url) => {
+            obj.insert("baseUrl".to_string(), serde_json::json!(url));
+        }
+        None => {
+            obj.remove("baseUrl");
+        }
+    }
+    serde_json::to_string_pretty(&root).map_err(|e| e.to_string())
+}
+
+/// Native: change just the base URL of a connected provider, without asking for
+/// the key again. Empty input clears it back to the provider default. Never
+/// touches the sidecar — auth.json is the same file the daemon reads.
+#[tauri::command]
+pub(crate) fn app_auth_baseurl(
+    provider: String,
+    base_url: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let normalized = normalize_base_url(base_url.as_deref())?;
+    let existing = std::fs::read_to_string(auth_file_path()).ok();
+    let next = apply_baseurl(existing.as_deref(), &provider, normalized.as_deref())?;
+    write_auth_file(&next)?;
+    Ok(serde_json::json!({ "ok": true, "baseUrl": normalized }))
 }
 
 /// Native: disconnect a provider (remove its credential from ~/.gg/auth.json).
@@ -732,6 +844,30 @@ mod tests {
         for hidden in HIDDEN_PROVIDERS {
             assert!(!values.contains(hidden), "{hidden} is still listed");
         }
+    }
+
+    #[test]
+    fn auth_status_offers_the_base_url_override_only_where_allowed() {
+        let status = app_auth_status();
+        let providers = status["providers"].as_array().expect("providers array");
+        let find = |value: &str| {
+            providers
+                .iter()
+                .find(|p| p["value"].as_str() == Some(value))
+                .unwrap_or_else(|| panic!("{value} not listed"))
+        };
+
+        // The webview only renders the override input when this flag is present.
+        let openrouter = find("openrouter");
+        assert_eq!(openrouter["allowCustomBaseUrl"], serde_json::json!(true));
+        assert_eq!(
+            openrouter["apiKeyBaseUrl"],
+            serde_json::json!("https://openrouter.ai/api/v1"),
+            "the form needs a default to show as its placeholder"
+        );
+
+        // A provider with no override stays without the field.
+        assert!(find("sakana").get("allowCustomBaseUrl").is_none());
     }
 
     #[test]
@@ -844,6 +980,64 @@ mod tests {
     fn apply_apikey_rejects_malformed_file() {
         assert!(apply_apikey(Some("not json"), "glm", None, 0, "k").is_err());
         assert!(apply_apikey(Some("[1,2,3]"), "glm", None, 0, "k").is_err());
+    }
+
+    #[test]
+    fn normalize_base_url_treats_empty_as_default() {
+        assert_eq!(normalize_base_url(None).unwrap(), None);
+        assert_eq!(normalize_base_url(Some("")).unwrap(), None);
+        assert_eq!(normalize_base_url(Some("   ")).unwrap(), None);
+    }
+
+    #[test]
+    fn normalize_base_url_strips_trailing_slashes() {
+        assert_eq!(
+            normalize_base_url(Some(" https://gw.example.com/v1/ ")).unwrap(),
+            Some("https://gw.example.com/v1".to_string())
+        );
+        assert_eq!(
+            normalize_base_url(Some("http://127.0.0.1:8080/v1///")).unwrap(),
+            Some("http://127.0.0.1:8080/v1".to_string())
+        );
+    }
+
+    #[test]
+    fn normalize_base_url_rejects_non_http_schemes() {
+        assert!(normalize_base_url(Some("ftp://gw.example.com")).is_err());
+        assert!(normalize_base_url(Some("gw.example.com/v1")).is_err());
+        assert!(normalize_base_url(Some("javascript:alert(1)")).is_err());
+    }
+
+    #[test]
+    fn openrouter_has_a_default_base_url() {
+        let (key, base) = resolve_apikey_target("openrouter", None).unwrap();
+        assert_eq!(key, "openrouter");
+        assert_eq!(base, Some("https://openrouter.ai/api/v1"));
+    }
+
+    #[test]
+    fn apply_baseurl_sets_and_clears_without_touching_the_key() {
+        let existing = r#"{ "openrouter": { "accessToken": "secret", "refreshToken": "", "expiresAt": 1 } }"#;
+        let with = apply_baseurl(Some(existing), "openrouter", Some("https://gw.example.com/v1"))
+            .expect("set");
+        let v: serde_json::Value = serde_json::from_str(&with).unwrap();
+        assert_eq!(v["openrouter"]["baseUrl"], "https://gw.example.com/v1");
+        assert_eq!(v["openrouter"]["accessToken"], "secret");
+
+        // Clearing restores the provider default and keeps the credential.
+        let cleared = apply_baseurl(Some(&with), "openrouter", None).expect("clear");
+        let v2: serde_json::Value = serde_json::from_str(&cleared).unwrap();
+        assert!(v2["openrouter"].get("baseUrl").is_none());
+        assert_eq!(v2["openrouter"]["accessToken"], "secret");
+    }
+
+    #[test]
+    fn apply_baseurl_requires_an_existing_credential() {
+        let existing = r#"{ "glm": { "accessToken": "k", "refreshToken": "", "expiresAt": 1 } }"#;
+        // No key stored → refuse, rather than creating a keyless entry that
+        // would make the provider look connected.
+        assert!(apply_baseurl(Some(existing), "openrouter", Some("https://gw.example.com/v1")).is_err());
+        assert!(apply_baseurl(None, "openrouter", Some("https://gw.example.com/v1")).is_err());
     }
 
     #[test]

@@ -318,6 +318,14 @@ export interface StreamOptions {
   topP?: number;
   stop?: string[];
   thinking?: ThinkingLevel;
+  /**
+   * The effort ladder the ENDPOINT declared for this model, when it declared
+   * one (gateway `/v1/models` `reasoning_parameters.efforts`). When the chosen
+   * level is on this ladder it goes out verbatim — a gateway serving deepseek
+   * that lists `max` really does accept `"max"`, so the built-in clamp
+   * (`max` → `xhigh`) must not apply to it.
+   */
+  thinkingLevels?: readonly ThinkingLevel[];
   apiKey?: string;
   baseUrl?: string;
   signal?: AbortSignal;

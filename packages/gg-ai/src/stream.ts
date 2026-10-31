@@ -37,6 +37,19 @@ const LOCAL_EMBED_BATCH_SIZE = 64;
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
+/**
+ * A gateway-synced model is registered under a namespaced id
+ * (`openrouter/<rawId>`) so it can never shadow another provider's static id.
+ * The endpoint only knows the raw id, so the namespace comes off here — the one
+ * place a model id crosses into an HTTP request.
+ */
+function openrouterWireModelId(model: string): string {
+  const prefix = "openrouter/";
+  return model.startsWith(prefix) && model.length > prefix.length
+    ? model.slice(prefix.length)
+    : model;
+}
+
 /** Z.AI coding API endpoint — the primary endpoint for all GLM models. */
 const GLM_CODING_BASE_URL = "https://api.z.ai/api/coding/paas/v4";
 
@@ -140,11 +153,13 @@ providerRegistry.register("openrouter", {
     streamOpenAI({
       ...options,
       baseUrl: options.baseUrl ?? OPENROUTER_BASE_URL,
+      model: openrouterWireModelId(options.model),
     }),
   embed: (request) =>
     embedOpenAICompatible(request, {
       provider: "openrouter",
       baseUrl: request.baseUrl ?? OPENROUTER_BASE_URL,
+      wireModel: openrouterWireModelId(request.model),
       inputTypeFields: (inputType) => ({
         input_type: inputType === "query" ? "search_query" : "search_document",
       }),
@@ -154,6 +169,7 @@ providerRegistry.register("openrouter", {
     rerankCohereCompatible(request, {
       provider: "openrouter",
       baseUrl: request.baseUrl ?? OPENROUTER_BASE_URL,
+      wireModel: openrouterWireModelId(request.model),
     }),
 });
 

@@ -3,6 +3,7 @@ import { AgentSession } from "../core/agent-session.js";
 import { isAbortError } from "@kenkaiiii/gg-agent";
 import { formatUserError } from "../utils/error-handler.js";
 import { closeLogger } from "../core/logger.js";
+import { ensureGatewayCatalogLoaded } from "../core/gateway-catalog.js";
 import { promptSubAgent, SUB_AGENT_MAX_TURN_EXTENSIONS } from "../tools/subagent-shared.js";
 
 export interface JsonModeOptions {
@@ -94,6 +95,11 @@ export async function runJsonMode(options: JsonModeOptions): Promise<void> {
   const ac = new AbortController();
   const onSigint = () => ac.abort();
   process.on("SIGINT", onSigint);
+
+  // This path returns before the CLI's main init block, so a synced gateway
+  // model (`openrouter/<rawId>`) would look unknown here — losing the
+  // endpoint's declared effort ladder.
+  await ensureGatewayCatalogLoaded();
 
   const sessionOpts = {
     provider: options.provider,
