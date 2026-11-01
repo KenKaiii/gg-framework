@@ -26,6 +26,7 @@ GG Coder is a desktop coding agent that gets more out of the AI subscription you
 - **More work per plan.** Fastest and leanest of 20 agents I raced on the same model. About 2.5x the coding Claude Code gets from the same allowance.
 - **Real code, not guesses.** Agent Steroids searches real, current open-source code on your machine. No rate-limited MCP server, no limits.
 - **Done means checked.** Ken Autopilot keeps the work going until it's actually verified.
+- **Ship it properly, even as a beginner.** Coding is only part of it. One-click checks for security, compliance, data safety, accessibility, tests and more, plus a Project health score, so you don't need to know what to ask for.
 - **Your subscriptions.** Claude, ChatGPT, Gemini, Grok, Kimi, API keys or local models.
 
 | Agent              | Time for the full suite | Usage per suite | GG Coder compared          |
