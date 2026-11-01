@@ -60,7 +60,6 @@ On a subscription, less usage means more work out of your plan. The same allowan
 - **GG Goals:** hand over a whole goal; a team of workers sees it through.
 - **Chat:** conversations that remember context.
 - **GG Motion:** turns your ideas into videos.
-- **MCP and Telegram:** plug in your servers, drive GG from your phone.
 
 ## Get started
 
