@@ -54,6 +54,7 @@ import type { RunOutcome } from "./core/session-manager.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { cleanupToolOutputs } from "./tools/overflow.js";
 import { pruneDiagnosticsRecords } from "./core/internal-diagnostics.js";
+import { pruneCheckpointSessions } from "./core/checkpoint-store.js";
 import {
   dualAuthProvider,
   discoverLocalModels,
@@ -264,6 +265,14 @@ async function main(): Promise<void> {
           removed: String(removed),
           freedBytes: String(freedBytes),
         });
+      }
+    })
+    .catch(() => {});
+  // ~/.gg/checkpoints/<session> folders untouched for 30 days (best-effort, non-blocking).
+  void pruneCheckpointSessions()
+    .then(({ removed }) => {
+      if (removed > 0) {
+        log("INFO", "checkpoints", "Pruned old checkpoint folders", { removed: String(removed) });
       }
     })
     .catch(() => {});

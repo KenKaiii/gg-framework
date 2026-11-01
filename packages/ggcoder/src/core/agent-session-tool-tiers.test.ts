@@ -328,6 +328,59 @@ describe("AgentSession built-in tool tiering", () => {
     }
   }, 20_000);
 
+  it("keeps native web search on when the restored history already used it", async () => {
+    // Regression: a resumed/compacted session whose history holds native
+    // web_search blocks, but whose live tool list was rebuilt without the
+    // promoted tool, was rejected by Anthropic (400 "server_tool_use block
+    // references web_search, but web_search is not defined in tools").
+    const session = await createSession();
+    try {
+      const s = session as unknown as { nativeWebSearchOn(): boolean; messages: unknown[] };
+      expect(s.nativeWebSearchOn()).toBe(false);
+      s.messages.push(
+        { role: "user", content: "Does Outlook need IT approval?" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "server_tool_call",
+              id: "srvtoolu_1",
+              name: "web_search",
+              input: { query: "entra admin consent" },
+            },
+            {
+              type: "server_tool_result",
+              toolUseId: "srvtoolu_1",
+              resultType: "web_search_tool_result",
+              data: { type: "web_search_tool_result", tool_use_id: "srvtoolu_1", content: [] },
+            },
+            { type: "text", text: "Personal accounts never need IT." },
+          ],
+        },
+      );
+      expect(s.nativeWebSearchOn()).toBe(true);
+    } finally {
+      await session.dispose();
+    }
+  }, 20_000);
+
+  it("detects native web search in raw server_tool_use history blocks", async () => {
+    const { historyUsesNativeWebSearch } = await import("./agent-session.js");
+    expect(
+      historyUsesNativeWebSearch([
+        { role: "assistant", content: [{ type: "text", text: "no search" }] },
+      ] as never),
+    ).toBe(false);
+    expect(
+      historyUsesNativeWebSearch([
+        {
+          role: "assistant",
+          content: [{ type: "raw", data: { type: "server_tool_use", name: "web_search" } }],
+        },
+      ] as never),
+    ).toBe(true);
+  });
+
   it("attaches native web search up front when the human prompt asks for the web", async () => {
     const session = await createSession();
     try {

@@ -426,8 +426,13 @@ describe("SubAgentManager", () => {
     const instance = manager({ notifications });
 
     const child = await instance.spawn("notify-child", "fast", "fake");
-    // Event-driven, but NOT a collection: the parent never calls wait().
-    await instance.wait([child.agent_id], "all", 1_000);
+    // Event-driven, NOT a collection: poll the state instead of wait().
+    const isDone = () =>
+      instance.list().some((a) => a.agent_id === child.agent_id && a.state === "completed");
+    for (let i = 0; i < 200 && !isDone(); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(isDone()).toBe(true);
 
     const drained = notifications.drain();
     expect(drained).toHaveLength(1);
@@ -436,6 +441,16 @@ describe("SubAgentManager", () => {
     expect(drained[0]!.text).toContain("completed");
     expect(drained[0]!.text).toContain("wait_agent");
     expect(drained[0]!.text.length).toBeLessThanOrEqual(512);
+  });
+
+  it("drops the queued completion notice once wait() collects the output", async () => {
+    const notifications = new AgentNotificationQueue();
+    const instance = manager({ notifications });
+    const child = await instance.spawn("collected-child", "fast", "fake");
+    const waited = await instance.wait([child.agent_id], "all", 1_000);
+    expect(waited.agents[0]!.state).toBe("completed");
+    // The parent already has the output: no duplicate "is completed" turn.
+    expect(notifications.drain().filter((n) => n.id === child.agent_id)).toHaveLength(0);
   });
 
   it("sends acceptance checks with the turn and surfaces the verdict", async () => {
@@ -447,9 +462,15 @@ describe("SubAgentManager", () => {
     ];
 
     const child = await instance.spawn("checked", "fast", "fake", { checks });
+    // Read the completion notice before wait() collects (and clears) it.
+    const isDone = () =>
+      instance.list().some((a) => a.agent_id === child.agent_id && a.state === "completed");
+    for (let i = 0; i < 200 && !isDone(); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(notifications.drain()[0]!.text).toContain("Acceptance checks: 0/2 passed.");
     const agent = (await instance.wait([child.agent_id], "all", 1_000)).agents[0]!;
     expect(agent.acceptance).toBe("0/2 passed");
-    expect(notifications.drain()[0]!.text).toContain("Acceptance checks: 0/2 passed.");
 
     // A follow-up without checks clears the previous turn's verdict.
     await instance.followup(child.agent_id, "fast");

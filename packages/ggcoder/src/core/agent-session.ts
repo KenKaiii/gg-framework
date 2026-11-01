@@ -539,6 +539,21 @@ export interface AgentSessionState {
 // ── Agent Session ──────────────────────────────────────────
 
 /** A prompt that asks for the live web (see AgentSession.attachWebSearchIfAsked). */
+/** True when the transcript holds a native (server-side) `web_search` call. */
+export function historyUsesNativeWebSearch(messages: readonly Message[]): boolean {
+  for (const message of messages) {
+    if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
+    for (const part of message.content) {
+      if (part.type === "server_tool_call" && part.name === "web_search") return true;
+      if (part.type === "raw") {
+        const data = part.data as { type?: unknown; name?: unknown } | undefined;
+        if (data?.type === "server_tool_use" && data.name === "web_search") return true;
+      }
+    }
+  }
+  return false;
+}
+
 const WEB_INTENT =
   /\b(?:web|internet|online|google|googling|website|look (?:it |this |that )?up|(?:latest|newest|current) (?:version|release|news|docs?|documentation)|release notes|news)\b/i;
 
@@ -1405,7 +1420,13 @@ export class AgentSession {
   private nativeWebSearchOn(): boolean {
     if (this.provider !== "anthropic") return true;
     if (!this.deferredBuiltinToolNames.includes("web_search")) return true;
-    return this.tools.some((t) => t.name === "web_search");
+    if (this.tools.some((t) => t.name === "web_search")) return true;
+    // A restored, branched or compacted conversation can already hold native
+    // `web_search` blocks from when the tool was attached. Anthropic rejects
+    // any request whose history references a server tool that is not declared
+    // (400 "`server_tool_use` block references `web_search`…"), so the history
+    // itself keeps native search on.
+    return historyUsesNativeWebSearch(this.messages);
   }
 
   /**

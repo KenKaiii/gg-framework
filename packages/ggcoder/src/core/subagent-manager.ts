@@ -757,6 +757,9 @@ export class SubAgentManager {
   }
 
   private markCollected(agentId: string): void {
+    // The parent has the output now; a still-queued "is completed … collect it
+    // with wait_agent" notice would only repeat it on the next turn.
+    this.options.notifications?.clear("subagent", agentId);
     const worker = this.workers.get(agentId);
     if (worker) {
       worker.collected = true;
