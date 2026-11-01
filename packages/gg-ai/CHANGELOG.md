@@ -1,5 +1,11 @@
 # @kenkaiiii/gg-ai
 
+## 5.87.3
+
+### Patch Changes
+
+- Anthropic OAuth requests that don't pass `userAgent` now send the live Claude Code version instead of `claude-cli/2.1.75`, which Anthropic rejects for Opus 5.5. The offline fallback is now 2.1.316, and older cached versions are raised to it.
+
 ## 5.87.2
 
 ## 5.87.1
