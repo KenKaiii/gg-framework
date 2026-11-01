@@ -10,7 +10,9 @@
                                                                                ███    ███
 </pre>
 
-https://github.com/user-attachments/assets/8f264af5-c757-4dcc-b622-b9e0edf36f89
+<p align="center">
+  <img src="docs/art/home.png" alt="GG Coder desktop home screen">
+</p>
 
 <p align="center">
   <strong>Cause the other agents piss me off.</strong>
