@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.99.1",
+    date: "2026-11-01",
+    items: [
+      "Picking up an old chat just works again. If GG Coder had searched the web earlier in a conversation, reopening it after the last update could bounce back with an `HTTP 400` error. I fixed it, so every saved chat continues right where you left off.",
+      "Helpers report back once, cleanly. After you collect a helper's result, you no longer get a second \"it's done\" ping, and the app now clears out checkpoint folders older than `30 days` on startup, freeing up to `51 MB` on a busy machine.",
+    ],
+  },
+  {
     version: "0.99.0",
     date: "2026-11-01",
     items: [
