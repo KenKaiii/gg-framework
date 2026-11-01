@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.98.2",
+    date: "2026-11-01",
+    items: [
+      "Signing in with your Claude account just got sturdier. GG Coder now always speaks to Anthropic as a current Claude Code, even on a first launch with no internet, so `Opus 5.5` never gets turned away for an outdated version.",
+    ],
+  },
+  {
     version: "0.98.1",
     date: "2026-10-31",
     items: [
