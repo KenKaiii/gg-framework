@@ -16,14 +16,14 @@ const INSTALL_HINT =
   "Then retry the screenshot.";
 
 const ActionInput = z.object({
-  type: z.enum(["click", "type", "wait"]).describe("Action to perform on the page"),
+  type: z.enum(["click", "type", "wait"]).describe("Action"),
   selector: z.string().optional().describe("CSS selector for click/type actions"),
   text: z.string().optional().describe("Text to type for the type action"),
   ms: z.number().int().min(0).optional().describe("Milliseconds to wait for the wait action"),
 });
 
 const ScreenshotParams = z.object({
-  url: z.string().describe("URL or local dev-server address to open (e.g. http://localhost:3000)"),
+  url: z.string().describe("URL to open, e.g. http://localhost:3000"),
   out_path: z
     .string()
     .optional()
@@ -34,10 +34,7 @@ const ScreenshotParams = z.object({
     .optional()
     .describe("Viewport size in pixels (default 1280×800)"),
   full_page: z.boolean().optional().describe("Capture the full scrollable page (default false)"),
-  actions: z
-    .array(ActionInput)
-    .optional()
-    .describe("Optional interactions (click/type/wait) to run before capturing"),
+  actions: z.array(ActionInput).optional().describe("Interactions run before capture"),
 });
 
 type ScreenshotArgs = z.infer<typeof ScreenshotParams>;
@@ -121,10 +118,9 @@ export function createScreenshotTool(cwd: string): AgentTool<typeof ScreenshotPa
   return {
     name: "screenshot",
     description:
-      "Open a URL or local dev server in a headless browser and capture a PNG so you can " +
-      "visually verify rendered output. Optionally wait for a selector, run click/type/wait " +
-      "actions, set the viewport, or capture the full page. Returns the image so you can see it. " +
-      "Requires the optional 'playwright' dependency and 'npx playwright install chromium'.",
+      "Capture a PNG of a URL or dev server in headless Chromium to verify rendered output " +
+      "(optional selector wait, click/type/wait actions, viewport, full page); returns the image. " +
+      "Needs the optional 'playwright' dependency and 'npx playwright install chromium'.",
     parameters: ScreenshotParams,
     executionMode: "sequential",
     async execute(

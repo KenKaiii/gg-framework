@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
@@ -9,6 +11,9 @@ export default defineConfig({
     env: {
       CI: "false",
       CONTINUOUS_INTEGRATION: "false",
+      // Edit-regression telemetry from fake test edits must never land in the
+      // user's real ~/.gg/edit-quality.jsonl.
+      GG_EDIT_TELEMETRY_PATH: path.join(os.tmpdir(), "gg-vitest-edit-quality.jsonl"),
     },
     // The session/compaction suites persist real sessions and checkpoints to a
     // temp project on disk. Those filesystem round-trips are several times

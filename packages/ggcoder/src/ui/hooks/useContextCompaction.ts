@@ -247,6 +247,7 @@ export function useContextCompaction({
         model: currentModel,
         contextWindow,
         threshold,
+        compactAtTokens: settings?.get("compactAtTokens"),
         accountId: contextWindowOptions.accountId,
         approvedPlanPath: approvedPlanPathRef.current,
       });

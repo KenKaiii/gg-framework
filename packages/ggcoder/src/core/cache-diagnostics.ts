@@ -65,6 +65,10 @@ export interface CacheContextReport {
   pruneFreedTokensEstimate: number;
   sincePreviousRequestMs: number | null;
   requestedTtlExceeded: boolean;
+  /** Gap exceeded the 5-min TTL that the growing tool-loop tail is written at
+   *  (even under "long" retention, until the run counts as long), so the tail
+   *  past the last 1-h breakpoint was possibly re-written. */
+  tailTtlExceeded: boolean;
   /** Possible signed-thinking prefix mismatch; not a server-confirmed rejection. */
   thinkingPrefixRiskBlocks: number;
   /** Existing Anthropic encoding removes these signed blocks from settled turns. */
@@ -218,6 +222,10 @@ export class CacheDiagnostics {
         input.cacheRetention !== "none" &&
         sincePreviousRequestMs !== null &&
         sincePreviousRequestMs > (input.cacheRetention === "long" ? 3_600_000 : 300_000),
+      tailTtlExceeded:
+        input.cacheRetention !== "none" &&
+        sincePreviousRequestMs !== null &&
+        sincePreviousRequestMs > 300_000,
       thinkingPrefixRiskBlocks,
       settledThinkingBlocks,
       fingerprintMs: Math.round((performance.now() - started) * 100) / 100,

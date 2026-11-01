@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -238,4 +239,72 @@ export class CheckpointStore {
       await fs.rm(path.join(this.checkpointsDir, entry), { force: true });
     }
   }
+}
+
+// ── Retention ──────────────────────────────────────────────
+
+/** Per-session checkpoint folders untouched for this long are pruned. */
+export const CHECKPOINT_RETENTION_DAYS = 30;
+
+/** Newest mtime of any regular file under `dir` (lstat; symlinks never followed). */
+async function newestFileMtime(dir: string): Promise<number> {
+  let newest = 0;
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return Number.POSITIVE_INFINITY; // unreadable: treat as recent, never delete
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) {
+      newest = Math.max(newest, await newestFileMtime(full));
+    } else if (entry.isFile()) {
+      try {
+        newest = Math.max(newest, (await fs.lstat(full)).mtimeMs);
+      } catch {
+        return Number.POSITIVE_INFINITY;
+      }
+    }
+  }
+  return newest;
+}
+
+/**
+ * Delete whole per-session checkpoint folders (`~/.gg/checkpoints/<sessionId>/`)
+ * whose newest file is older than `maxAgeDays`. Per-session pruning only caps
+ * manifests; folders of finished sessions (and their blobs) were never removed.
+ * Guarded: only real directories directly inside the root (symlinks skipped,
+ * paths must resolve inside it); a folder with ANY recent file survives; errors
+ * (Windows EBUSY/EPERM, races) are skipped and retried on a later launch.
+ */
+export async function pruneCheckpointSessions(
+  options: { baseDir?: string; maxAgeDays?: number; now?: number } = {},
+): Promise<{ removed: number }> {
+  const result = { removed: 0 };
+  const maxAgeDays = options.maxAgeDays ?? CHECKPOINT_RETENTION_DAYS;
+  if (maxAgeDays <= 0) return result;
+  const root = path.resolve(options.baseDir ?? path.join(os.homedir(), ".gg", "checkpoints"));
+  const cutoff = (options.now ?? Date.now()) - maxAgeDays * 86_400_000;
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return result;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+    const target = path.resolve(root, entry.name);
+    const rel = path.relative(root, target);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel) || rel.includes(path.sep)) continue;
+    try {
+      if ((await newestFileMtime(target)) >= cutoff) continue;
+      await fs.rm(target, { recursive: true, force: true });
+      result.removed++;
+    } catch {
+      // In use or raced away — retry on a later launch.
+    }
+  }
+  return result;
 }

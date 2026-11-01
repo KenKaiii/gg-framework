@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  cleanTerminalOutput,
+  compactProgressRuns,
   compactGitLog,
   compactGitStatus,
   compactLsLong,
@@ -216,5 +218,39 @@ describe("compactRoutineOutput", () => {
     for (const raw of ["", "ok", "tests failed", "src/a.ts:1:export function x() {}"]) {
       expect(compactRoutineOutput(raw)).toBe(raw);
     }
+  });
+});
+
+describe("cleanTerminalOutput", () => {
+  it("strips colour codes and keeps only the last frame of a \\r redraw", () => {
+    expect(cleanTerminalOutput("\u001b[32m✓\u001b[0m ok\r\n")).toBe("✓ ok\n");
+    expect(cleanTerminalOutput("10%\r50%\r100% done\nnext")).toBe("100% done\nnext");
+  });
+
+  it("never lets a redraw hide an error frame", () => {
+    expect(cleanTerminalOutput("Error: disk full\rretrying 3/3")).toBe(
+      "Error: disk full\nretrying 3/3",
+    );
+    expect(cleanTerminalOutput("trailing\r")).toBe("trailing");
+  });
+});
+
+describe("compactProgressRuns", () => {
+  it("collapses cargo Compiling runs but keeps warnings and errors", () => {
+    const crates = Array.from({ length: 40 }, (_, i) => `   Compiling crate${i} v0.${i}.0`);
+    const text = [...crates, "warning: unused variable `x`", "error[E0308]: mismatched types"].join(
+      "\n",
+    );
+    const out = compactProgressRuns(text);
+    expect(out).toContain("Compiling crate0 v0.0.0");
+    expect(out).toContain("Compiling crate39 v0.39.0");
+    expect(out).toContain("[… 38 similar progress lines collapsed …]");
+    expect(out).toContain("warning: unused variable `x`");
+    expect(out).toContain("error[E0308]: mismatched types");
+  });
+
+  it("leaves short runs and ordinary output alone", () => {
+    const text = Array.from({ length: 30 }, (_, i) => `src/file${i}.ts`).join("\n");
+    expect(compactProgressRuns(text)).toBe(text);
   });
 });

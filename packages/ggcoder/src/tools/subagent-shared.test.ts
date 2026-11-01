@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { AgentDefinition } from "../core/agents.js";
 import { getSupportedThinkingLevels } from "../core/thinking-level.js";
 import {
+  boundSubAgentOutput,
   renderAgentRoster,
+  SUB_AGENT_BLOCKING_OUTPUT_CHARS,
   resolveAgentDefinition,
   selectSubAgent,
   spawnedTasks,
@@ -215,5 +217,38 @@ describe("subAgentCacheKey", () => {
 
   it("stays unset when the parent has no stable cache identity", () => {
     expect(subAgentCacheKey(undefined, "gpt-6-luna", "owl")).toBeUndefined();
+    expect(subAgentCacheKey("parent", "gpt-6-luna", "owl", "w1")).toBe(
+      "parent:subagent:gpt-6-luna:owl:w1",
+    );
+  });
+});
+
+describe("boundSubAgentOutput", () => {
+  const report = [
+    "ANSWER: the bug is in parse()",
+    ...Array.from({ length: 900 }, (_, i) => `detail ${i}`),
+  ].join("\n");
+
+  it("keeps the head of a long report so the answer survives", () => {
+    const out = boundSubAgentOutput(report);
+    expect(out.startsWith("ANSWER: the bug is in parse()")).toBe(true);
+    expect(out).not.toContain("detail 899");
+    expect(out).toContain("showing first 500");
+  });
+
+  it("caps the blocking path at the wait_agent budget and names the full output", () => {
+    const huge = `ANSWER first\n${"x".repeat(200)}\n`.repeat(400);
+    const out = boundSubAgentOutput(huge, {
+      maxChars: SUB_AGENT_BLOCKING_OUTPUT_CHARS,
+      fullOutputPath: "/tmp/full.txt",
+    });
+    expect(out.length).toBeLessThan(SUB_AGENT_BLOCKING_OUTPUT_CHARS + 200);
+    expect(out.startsWith("ANSWER first")).toBe(true);
+    expect(out).toContain("full output: /tmp/full.txt");
+  });
+
+  it("leaves short output untouched", () => {
+    expect(boundSubAgentOutput("done")).toBe("done");
+    expect(boundSubAgentOutput("")).toBe("(no output)");
   });
 });

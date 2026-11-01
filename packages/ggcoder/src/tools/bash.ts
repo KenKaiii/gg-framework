@@ -4,7 +4,11 @@ import type { ProcessManager } from "../core/process-manager.js";
 import { killProcessTree } from "../utils/process.js";
 import { truncateTail, MAX_BYTES, describeCompressed } from "./truncate.js";
 import { compressToolOutput } from "./compress.js";
-import { compactRoutineOutput } from "./routine-output.js";
+import {
+  cleanTerminalOutput,
+  compactProgressRuns,
+  compactRoutineOutput,
+} from "./routine-output.js";
 import { writeOverflow } from "./overflow.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 import { getSafeToolEnv } from "./safe-env.js";
@@ -121,19 +125,24 @@ const GUESSED_WAIT_SECONDS = 10;
  * paired trials, 2026-10-18).
  */
 export async function renderBashOutput(rawOutput: string): Promise<string> {
-  const result = truncateTail(rawOutput);
+  // ANSI codes and \r redraws never mean anything in a tool result; runs of
+  // installer/build progress lines collapse to first + count + last. Error
+  // lines are never touched (routine-output.ts).
+  const cleaned = cleanTerminalOutput(rawOutput);
+  const shown = compactProgressRuns(cleaned);
+  const result = truncateTail(shown);
   // Under the limit: drop routine boilerplate (git log/status labels, ls
   // owner columns, green per-file test lines) — see routine-output.ts.
   if (!result.truncated) return compactRoutineOutput(result.content);
   const overflowPath =
-    Buffer.byteLength(rawOutput, "utf-8") > MAX_BYTES
-      ? await writeOverflow(rawOutput, "bash").catch(() => null)
+    Buffer.byteLength(shown, "utf-8") > MAX_BYTES
+      ? await writeOverflow(cleaned, "bash").catch(() => null)
       : null;
   const overflowNotice = overflowPath
     ? ` Full output saved to ${overflowPath} — read it with offset/limit if needed.`
     : "";
-  const c = compressToolOutput(rawOutput);
-  const what = describeCompressed(rawOutput, c.content);
+  const c = compressToolOutput(shown);
+  const what = describeCompressed(shown, c.content);
   return `[${c.notice}${what ? ` ${what}` : ""}${overflowNotice}]\n${c.content}`;
 }
 

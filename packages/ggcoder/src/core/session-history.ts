@@ -5,7 +5,7 @@ import type {
   AppMarkerPayload,
   KenTurnPayload,
 } from "./session-manager.js";
-import { STEERING_PREFIX, NOTIFICATION_PREFIX } from "./steering.js";
+import { STEERING_PREFIX, isNotificationText } from "./steering.js";
 import { matchPromptCommand } from "./prompt-command-expansion.js";
 import { AUTOPILOT_INJECTION_PREAMBLE } from "./autopilot-cycle.js";
 
@@ -362,7 +362,7 @@ function stripSteering(text: string): string {
 /** Whether a persisted user message is a pushed background-status update.
  *  `buildNotificationSteeringText` adds this prefix and nothing else does. */
 function isNotification(text: string): boolean {
-  return text.startsWith(NOTIFICATION_PREFIX);
+  return isNotificationText(text);
 }
 
 /** Strip the autopilot situational-awareness preamble that the sidecar prepends

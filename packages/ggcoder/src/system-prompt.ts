@@ -112,7 +112,7 @@ ${
 - Precedence: user > nearest project instructions > skills > this prompt. Style packs apply only where the code has no convention of its own. Project conventions and skills grant no extra authorization.`;
 }
 
-function renderPlanModeSection(): string {
+export function renderPlanModeSection(): string {
   return (
     `## Plan Mode (ACTIVE)\n\n` +
     `- Research with read/search tools and read-only bash; no code edits outside \`.gg/plans/\`, no mutating bash, no subagents. Repository indexing needs user approval even in plan mode.\n` +
@@ -121,7 +121,7 @@ function renderPlanModeSection(): string {
   );
 }
 
-async function renderApprovedPlanSection(
+export async function renderApprovedPlanSection(
   approvedPlanPath: string | undefined,
 ): Promise<string | null> {
   if (!approvedPlanPath) return null;

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ContentPart, Message, ToolCall, ToolResult } from "@kenkaiiii/gg-ai";
-import { pruneStaleToolResults, shouldPruneToolResults } from "./tool-result-pruner.js";
+import {
+  PRUNE_MINIMUM_TOKENS,
+  pruneMinimumTokens,
+  pruneStaleToolResults,
+  shouldPruneToolResults,
+} from "./tool-result-pruner.js";
 
 function toolTurn(
   id: string,
@@ -397,5 +402,13 @@ describe("shouldPruneToolResults", () => {
     expect(shouldPruneToolResults(117_000, 850_000)).toBe(false);
     expect(shouldPruneToolResults(425_000, 850_000)).toBe(true);
     expect(shouldPruneToolResults(160_000, 170_000)).toBe(true);
+  });
+});
+
+describe("pruneMinimumTokens", () => {
+  it("requires a meaningful share of a warm context, the flat floor when cold", () => {
+    expect(pruneMinimumTokens(430_000, false)).toBe(86_000);
+    expect(pruneMinimumTokens(50_000, false)).toBe(PRUNE_MINIMUM_TOKENS);
+    expect(pruneMinimumTokens(430_000, true)).toBe(PRUNE_MINIMUM_TOKENS);
   });
 });

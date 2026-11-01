@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { mkdirSync, writeFileSync } from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { getAppPaths } from "../config.js";
@@ -24,6 +25,16 @@ export async function writeOverflow(content: string, prefix: string): Promise<st
   await fs.mkdir(dir, { recursive: true });
   const filePath = path.join(dir, `${prefix}-${crypto.randomBytes(6).toString("hex")}.txt`);
   await fs.writeFile(filePath, content, { encoding: "utf-8", mode: 0o600 });
+  return filePath;
+}
+
+/** Synchronous {@link writeOverflow} for callers inside sync event handlers. */
+export function writeOverflowSync(content: string, prefix: string): string {
+  const day = new Date().toISOString().slice(0, 10);
+  const dir = path.join(getToolOutputRoot(), day);
+  mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, `${prefix}-${crypto.randomBytes(6).toString("hex")}.txt`);
+  writeFileSync(filePath, content, { encoding: "utf-8", mode: 0o600 });
   return filePath;
 }
 

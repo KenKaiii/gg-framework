@@ -47,10 +47,10 @@ const PROVIDER_WINDOW_CAPS: Partial<Record<Provider, number | "uncapped">> = {
   // (platform.kimi.ai pricing, via CodeWhale pricing.rs). Kimi For Coding
   // (K2.8 Preview) serves up to 1M (kimi.com/code/docs).
   moonshot: "uncapped",
-  // Measured: mimo-v2.6-pro ~1,600 turns, TTFT 4–7s, 95–100% of input read
-  // from cache up to 250K (session logs). Cache hit $0.0036 vs miss $0.435
-  // (~1/120), and V2.6 has a single price tier (Xiaomi rate card).
-  xiaomi: "uncapped",
+  // Measured slow past 200K: mimo-v2.6-pro TTFT p50 4.1s at 50–100K, 7.3s at
+  // 150–200K, 12.5s at 200–250K (2,377 turns, session logs 2026-10/11), even
+  // with 95–100% cache reads. Trigger 170K keeps turns under the cliff.
+  xiaomi: 200_000,
   // MiniMax-M3 doubles its price once input passes 512K (0.30 → 0.60 in, cache
   // 0.06 → 0.12: CodeWhale pricing.rs MINIMAX_M3_LONG_CONTEXT_THRESHOLD, from
   // MiniMax's pay-as-you-go page), and 512K is the guaranteed window; "1M" is
@@ -91,6 +91,19 @@ const MODEL_WINDOW_CAPS: Readonly<Record<string, number>> = {
  *  Only bites windows above ~470K; 200–272K windows are unaffected. */
 const DEFAULT_LATENCY_WINDOW_CAP = 400_000;
 
+/**
+ * Default absolute trigger for every provider and model (settings
+ * `compactAtTokens` overrides it; set it higher to compact later). Measured on
+ * claude-opus-5-5, 122K turns with ~100% cache reads: TTFT p50 1.1s <50K,
+ * 1.9s at 200K, 2.8s at 400K, then 4.0–4.4s from 500K. gpt-6-astra (3.6s →
+ * 6.6s by 200K) and mimo-v2.6-pro rise the same way, so the curve is not
+ * Anthropic-specific. Replaying 11,766 real Anthropic turns: trigger 850K →
+ * 400K cuts TTFT p50 2.74s → 1.99s for ~2 extra summaries per 1,000 turns.
+ * Providers whose own cap is lower (OpenAI, GLM, xAI, Gemini, Xiaomi, …) are
+ * unaffected — min() keeps the smaller trigger.
+ */
+export const DEFAULT_COMPACT_AT_TOKENS = 400_000;
+
 /** The effective trigger window cap for a provider (and model), if one applies. */
 export function resolveLatencyWindowCap(provider: Provider, model?: string): number | undefined {
   const modelCap = model === undefined ? undefined : MODEL_WINDOW_CAPS[model];
@@ -112,6 +125,12 @@ export function resolveCompactionPolicy(options: {
   model: string;
   contextWindow: number;
   threshold?: number;
+  /** Absolute trigger ceiling (settings `compactAtTokens`; unset =
+   *  {@link DEFAULT_COMPACT_AT_TOKENS}). The trigger is
+   *  min(threshold × window, compactAtTokens). Compaction collapses history to a summary plus
+   *  a small recent tail, so the context lands far below this target and the
+   *  trigger does not re-fire on the next turn. */
+  compactAtTokens?: number;
   accountId?: string;
   approvedPlanPath?: string;
 }): CompactionPolicy {
@@ -125,7 +144,14 @@ export function resolveCompactionPolicy(options: {
   const effectiveWindow = latencyCap
     ? Math.min(options.contextWindow, latencyCap)
     : options.contextWindow;
-  const targetTokens = Math.max(1, Math.ceil(effectiveWindow * threshold));
+  const windowTarget = Math.max(1, Math.ceil(effectiveWindow * threshold));
+  const absoluteTarget =
+    options.compactAtTokens !== undefined &&
+    Number.isFinite(options.compactAtTokens) &&
+    options.compactAtTokens > 0
+      ? Math.ceil(options.compactAtTokens)
+      : DEFAULT_COMPACT_AT_TOKENS;
+  const targetTokens = Math.min(windowTarget, absoluteTarget);
   const transport =
     options.provider === "openai" && options.accountId ? "codex_oauth" : "public_api";
   return {
@@ -138,6 +164,7 @@ export function resolveCompactionPolicy(options: {
       contextWindow: effectiveWindow,
       threshold,
       approvedPlanPath: options.approvedPlanPath ?? null,
+      ...(absoluteTarget < windowTarget ? { compactAtTokens: absoluteTarget } : {}),
     }),
   };
 }

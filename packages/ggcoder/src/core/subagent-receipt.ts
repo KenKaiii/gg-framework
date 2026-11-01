@@ -12,7 +12,7 @@ import { editTargetPaths } from "../tools/edit-targets.js";
  */
 
 /** Hard cap on the "Receipt (…)" line. */
-export const RECEIPT_MAX_CHARS = 600;
+export const RECEIPT_MAX_CHARS = 400;
 /** Unbacked paths listed before "+N more". */
 export const UNBACKED_MAX_PATHS = 5;
 const TARGET_MAX_CHARS = 60;

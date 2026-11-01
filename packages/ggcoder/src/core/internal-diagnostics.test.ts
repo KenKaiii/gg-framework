@@ -251,3 +251,38 @@ describe("diagnosticsSessionsDir", () => {
     expect(diagnosticsSessionsDir()).toBe(tmpDir);
   });
 });
+
+describe("pruneDiagnosticsRecords", () => {
+  it("removes only old regular records inside the dir and never follows symlinks", async () => {
+    const { pruneDiagnosticsRecords } = await import("./internal-diagnostics.js");
+    const nodeFs = await import("node:fs/promises");
+    const os = await import("node:os");
+    const p = await import("node:path");
+    const dir = await nodeFs.mkdtemp(p.join(os.tmpdir(), "gg-diag-prune-"));
+    const outside = await nodeFs.mkdtemp(p.join(os.tmpdir(), "gg-diag-outside-"));
+    const past = new Date(Date.now() - 45 * 86_400_000);
+    const oldFile = p.join(dir, "old.json");
+    const recentFile = p.join(dir, "recent.json");
+    await nodeFs.writeFile(oldFile, "{}");
+    await nodeFs.utimes(oldFile, past, past);
+    await nodeFs.writeFile(recentFile, "{}");
+    const victim = p.join(outside, "victim.json");
+    await nodeFs.writeFile(victim, "keep");
+    await nodeFs.utimes(victim, past, past);
+    const link = p.join(dir, "link.json");
+    if (process.platform !== "win32") {
+      await nodeFs.symlink(victim, link);
+      await nodeFs.lutimes(link, past, past);
+    }
+    try {
+      const res = await pruneDiagnosticsRecords({ dir, maxAgeDays: 30 });
+      expect(res.removed).toBe(1);
+      expect(await nodeFs.readdir(dir)).not.toContain("old.json");
+      expect(await nodeFs.readdir(dir)).toContain("recent.json");
+      expect(await nodeFs.readFile(victim, "utf8")).toBe("keep");
+    } finally {
+      await nodeFs.rm(dir, { recursive: true, force: true });
+      await nodeFs.rm(outside, { recursive: true, force: true });
+    }
+  });
+});

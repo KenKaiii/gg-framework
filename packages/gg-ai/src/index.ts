@@ -29,6 +29,12 @@ export type {
 
 // Provider registry
 export { providerRegistry } from "./provider-registry.js";
+export {
+  preconnectProvider,
+  preconnectOrigin,
+  PRECONNECT_INTERVAL_MS,
+  type PreconnectOptions,
+} from "./utils/preconnect.js";
 export type { ProviderStreamFn, ProviderEntry, ProviderCapability } from "./provider-registry.js";
 
 // Types

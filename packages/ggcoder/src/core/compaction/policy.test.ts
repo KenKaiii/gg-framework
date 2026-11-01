@@ -5,6 +5,7 @@ import {
   resolveCompactionPolicy,
   resolveLatencyWindowCap,
 } from "./policy.js";
+import { shouldCompact } from "./compactor.js";
 
 describe("resolveCompactionPolicy", () => {
   it("uses the shared 0.85 default and exact whole-token trigger", () => {
@@ -80,7 +81,7 @@ describe("resolveCompactionPolicy", () => {
   });
 
   it("leaves providers with evidence of healthy caching on the advertised window", () => {
-    for (const provider of ["anthropic", "deepseek", "moonshot", "xiaomi", "openrouter"] as const) {
+    for (const provider of ["anthropic", "deepseek", "moonshot", "openrouter"] as const) {
       expect(resolveLatencyWindowCap(provider), provider).toBeUndefined();
     }
     const policy = resolveCompactionPolicy({
@@ -112,7 +113,7 @@ describe("resolveCompactionPolicy", () => {
         model: "MiniMax-M3",
         contextWindow: 1_000_000,
       }).targetTokens,
-    ).toBe(435_200);
+    ).toBe(400_000); // price-line cap 435.2K, then the 400K default trigger
     // Gemini CLI compresses at 50% of 1,048,576 on the same Code Assist route.
     expect(
       resolveCompactionPolicy({
@@ -120,7 +121,7 @@ describe("resolveCompactionPolicy", () => {
         model: "gemini-3.8-flash",
         contextWindow: 1_048_576,
       }).targetTokens,
-    ).toBe(523_600);
+    ).toBe(400_000); // Gemini CLI line 523.6K, then the 400K default trigger
     // Price lines that reprice the whole request: Grok at 200K, GPT-6 at 272K.
     expect(
       resolveCompactionPolicy({ provider: "xai", model: "grok-4.7", contextWindow: 500_000 })
@@ -141,14 +142,14 @@ describe("resolveCompactionPolicy", () => {
         contextWindow: 1_048_576,
       }).targetTokens,
     ).toBe(170_000);
-    // MiMo: measured healthy caching — the 1M window is used, not 34% of it.
+    // MiMo: measured TTFT cliff past 200K (12.5s vs 7.3s at 150–200K).
     expect(
       resolveCompactionPolicy({
         provider: "xiaomi",
         model: "mimo-v2.6-pro",
         contextWindow: 1_000_000,
       }).targetTokens,
-    ).toBe(850_000);
+    ).toBe(170_000);
   });
 
   it("never raises a trigger the provider's real window keeps lower", () => {
@@ -182,6 +183,57 @@ describe("resolveCompactionPolicy", () => {
           `${model.provider} has a sourced rule`,
         ).not.toBe(400_000);
       }
+    }
+  });
+});
+
+describe("compactAtTokens", () => {
+  const base = { provider: "anthropic" as const, model: "claude-x", contextWindow: 1_000_000 };
+
+  it("unset uses the 400K default trigger", () => {
+    const a = resolveCompactionPolicy(base);
+    const b = resolveCompactionPolicy({ ...base, compactAtTokens: undefined });
+    expect(a.targetTokens).toBe(400_000);
+    expect(b).toEqual(a);
+  });
+
+  it("caps the trigger and fires exactly at the absolute target", () => {
+    const policy = resolveCompactionPolicy({ ...base, compactAtTokens: 400_000 });
+    expect(policy.targetTokens).toBe(400_000);
+    expect(policy.policyKey).toContain("compactAtTokens");
+    const msgs = [{ role: "user" as const, content: "x" }];
+    expect(shouldCompact(msgs, 1_000_000, policy.threshold, 399_999, policy.targetTokens)).toBe(
+      false,
+    );
+    expect(shouldCompact(msgs, 1_000_000, policy.threshold, 400_000, policy.targetTokens)).toBe(
+      true,
+    );
+  });
+
+  it("never raises a smaller window or provider-cap trigger", () => {
+    expect(
+      resolveCompactionPolicy({ ...base, contextWindow: 200_000, compactAtTokens: 400_000 })
+        .targetTokens,
+    ).toBe(170_000);
+    expect(
+      resolveCompactionPolicy({
+        provider: "openai",
+        model: "gpt-x",
+        contextWindow: 1_050_000,
+        compactAtTokens: 500_000,
+      }).targetTokens,
+    ).toBe(231_200);
+  });
+
+  it("a higher setting restores the window-relative trigger", () => {
+    expect(resolveCompactionPolicy({ ...base, compactAtTokens: 2_000_000 }).targetTokens).toBe(
+      850_000,
+    );
+  });
+
+  it("ignores non-positive or non-finite values", () => {
+    for (const v of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(resolveCompactionPolicy({ ...base, compactAtTokens: v }).targetTokens).toBe(400_000);
     }
   });
 });

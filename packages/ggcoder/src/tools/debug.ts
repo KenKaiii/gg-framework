@@ -32,7 +32,7 @@ const DebugParams = z.object({
       "output",
       "stop",
     ])
-    .describe("What to do. Every action that runs code returns where the program stopped."),
+    .describe("What to do"),
   program: z.string().optional().describe("launch: script to run (.js/.mjs/.cjs/.ts)"),
   args: z.array(z.string()).optional().describe("launch: arguments passed to the script"),
   node_args: z
@@ -136,14 +136,11 @@ export function createDebugTool(
   return {
     name: "debug",
     description:
-      "Debug a Node.js program (JS, or TS run by Node's type stripping) with real breakpoints. " +
-      "Use it when a bug depends on runtime state: launch with breakpoints, read variables at the " +
-      "stop, step, and evaluate expressions in the paused frame — instead of adding prints and re-running. " +
-      "launch, continue, step_* and pause return where it stopped, the source around it and the " +
-      "local variables. It pauses on uncaught exceptions by default. One session at a time; " +
-      "launching again stops the previous program. To debug a node:test file, launch it with " +
-      'node_args ["--test", "--test-isolation=none"]. Test runners that run tests in worker ' +
-      "processes (vitest, jest) do not reach breakpoints this way.",
+      "Debug a Node.js program (JS, or TS via type stripping) with real breakpoints when a bug " +
+      "depends on runtime state, instead of adding prints. launch/continue/step_*/pause return the " +
+      "stop location, surrounding source and locals; pauses on uncaught exceptions by default. One " +
+      'session at a time (launch stops the previous). node:test files: node_args ["--test", ' +
+      '"--test-isolation=none"]. Worker-process runners (vitest, jest) never reach breakpoints.',
     parameters: DebugParams,
     async execute(args: DebugArgs, context) {
       const waitMs = args.timeout_ms ?? DEFAULT_WAIT_MS;

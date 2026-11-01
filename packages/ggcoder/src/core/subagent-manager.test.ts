@@ -5,7 +5,11 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import type { AgentDefinition } from "./agents.js";
-import { buildSubAgentCompletionFollowUp, SubAgentManager } from "./subagent-manager.js";
+import {
+  buildSubAgentCompletionFollowUp,
+  NESTED_DEFAULT_MAX_PER_MODEL,
+  SubAgentManager,
+} from "./subagent-manager.js";
 import { SubAgentStore, type PersistedSubAgentRecord } from "./subagent-store.js";
 import { readTurnRecord, writeTurnRecord } from "./subagent-turn-record.js";
 import { AgentNotificationQueue } from "./agent-notifications.js";
@@ -42,6 +46,7 @@ function manager(
     cwd?: string;
     sessionRootDir?: string;
     maxPerModel?: number;
+    subAgentDepth?: number;
     notifications?: AgentNotificationQueue;
     adoptionPollMs?: number;
     provider?: Provider;
@@ -66,6 +71,7 @@ function manager(
     getThinkingLevel: options.getThinkingLevel,
     getCacheKey: () => "parent-cache",
     getMaxPerModel: () => options.maxPerModel,
+    subAgentDepth: options.subAgentDepth ?? 0,
     workerEntry,
     idleTimeoutMs: options.idleTimeoutMs,
     store: options.store,
@@ -234,7 +240,7 @@ describe("SubAgentManager", () => {
       options: {
         model: "gpt-6.1-sol",
         allowedTools: ["read", "grep", "find", "ls"],
-        promptCacheKey: "parent-cache:subagent:gpt-6.1-sol:default",
+        promptCacheKey: expect.stringMatching(/^parent-cache:subagent:gpt-6\.1-sol:default:.+$/),
         turnTimeoutMs: 120_000,
       },
     });
@@ -255,7 +261,7 @@ describe("SubAgentManager", () => {
     expect(initializeCall?.[2]).toMatchObject({
       options: {
         model: "gpt-6.1-sol",
-        promptCacheKey: "parent-cache:subagent:gpt-6.1-sol:fake",
+        promptCacheKey: expect.stringMatching(/^parent-cache:subagent:gpt-6\.1-sol:fake:.+$/),
       },
     });
   });
@@ -339,6 +345,23 @@ describe("SubAgentManager", () => {
     expect(initializeCall?.[2]).toMatchObject({
       options: { model: "claude-retired-model", thinkingLevel: overrideLowest },
     });
+  });
+
+  it("caps a nested manager per model by default, but not the top level", async () => {
+    const nested = manager({ subAgentDepth: 1 });
+    const held = await Promise.all([1, 2].map((n) => nested.spawn(`n-${n}`, "hold", "fake")));
+    await expect(nested.spawn("n-3", "hold", "fake")).rejects.toThrow(
+      `At most ${NESTED_DEFAULT_MAX_PER_MODEL} agents may run at once on model`,
+    );
+    // An explicit setting wins over the nested default.
+    const configured = manager({ subAgentDepth: 1, maxPerModel: 3 });
+    const three = await Promise.all(
+      [1, 2, 3].map((n) => configured.spawn(`c-${n}`, "hold", "fake")),
+    );
+    for (const child of [...held, ...three]) {
+      const owner = held.includes(child) ? nested : configured;
+      expect(await owner.sendMessage(child.agent_id, "release")).toBe(1);
+    }
   });
 
   it("returns after launch and overlaps eight child turns", async () => {

@@ -97,7 +97,13 @@ export function createToolSearchTool(
           ? `\n\nRefused (schema byte budget):\n${oversized.map((t) => `- ${t.name} (${Math.round(t.bytes / 1024)}KB schema)`).join("\n")}\nRaise the contextLimits.mcpToolSchemaBytes setting if a refused tool is trusted.`
           : "";
       const unreachable = failures.length > 0 ? `\n\nUnreachable:\n${failures.join("\n")}` : "";
-      return `${body}${refused}${unreachable}`;
+      // `loadedTools` lets transports with transcript tool loading (Anthropic
+      // tool_reference, OpenAI tool_search_output) load these here instead of
+      // growing the cached tools block.
+      return {
+        content: `${body}${refused}${unreachable}`,
+        loadedTools: available.map((t) => t.name),
+      };
     },
   };
 }

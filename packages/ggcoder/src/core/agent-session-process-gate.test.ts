@@ -100,24 +100,31 @@ describe("AgentSession background-process completion gate", () => {
     expect(internal.processGateInjected).toBe(2);
   });
 
-  it("yields to the child-agent gate first", async () => {
+  it("sends the child-agent and process gates in one follow-up: one forced turn, not two", async () => {
     const { internal } = makeSession();
     const manager = trackedManager();
     internal.processManager = manager;
     internal.runStartedAt = Date.now();
+    let childPending = true;
     internal.subAgentManager = {
-      completionGateMessage: () => "Collect child agent recovered-child before finishing.",
+      completionGateMessage: () =>
+        childPending ? "Collect child agent recovered-child before finishing." : undefined,
     };
 
-    await manager.start("sleep 30", process.cwd());
+    const started = await manager.start("echo both-probe; sleep 30", process.cwd());
 
-    expect(await internal.getHookFollowUpMessages()).toEqual([
-      {
-        role: "user",
-        content: "Collect child agent recovered-child before finishing.",
-        provenance: { source: "runtime", kind: "completion_gate", visibility: "hidden" },
-      },
-    ]);
-    expect(internal.processGateInjected).toBe(0);
+    // Simulated model: each forced turn does everything the follow-up asks.
+    let forcedTurns = 0;
+    for (let stop = 0; stop < 5; stop++) {
+      const messages = await internal.getHookFollowUpMessages();
+      if (!messages) break;
+      forcedTurns += 1;
+      const text = messages.map((m) => String(m.content)).join("\n");
+      if (text.includes("recovered-child")) childPending = false;
+      if (text.includes(started.id)) await waitForOutput(manager, started.id);
+    }
+
+    expect(forcedTurns).toBe(1);
+    expect(internal.processGateInjected).toBe(1);
   });
 });

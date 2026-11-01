@@ -1009,7 +1009,7 @@ describe("streamAnthropic prewarm", () => {
     provider: "anthropic" as const,
     model: "claude-opus-5-5",
     messages: [
-      { role: "system" as const, content: "system prompt" },
+      { role: "system" as const, content: "system prompt ".repeat(400) },
       { role: "user" as const, content: "hello" },
     ],
     tools: [
@@ -1057,5 +1057,18 @@ describe("streamAnthropic prewarm", () => {
     }).response;
     expect(createMock).not.toHaveBeenCalled();
     expect(response.usage).toEqual({ inputTokens: 0, outputTokens: 0 });
+  });
+
+  it("skips the request when the prefix is below the model's cacheable minimum", async () => {
+    await setupMock();
+    createMock.mockClear();
+    // ~1.4k tokens: under Haiku 4.5's 4,096 minimum, over Opus 5.5's 512.
+    const small = { ...base, thinking: undefined, prewarm: true };
+    const skipped = await streamAnthropic({ ...small, model: "claude-haiku-4-5-20251001" })
+      .response;
+    expect(createMock).not.toHaveBeenCalled();
+    expect(skipped.usage).toEqual({ inputTokens: 0, outputTokens: 0 });
+    await streamAnthropic({ ...small, model: "claude-opus-5-5" }).response;
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 });

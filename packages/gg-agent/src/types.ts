@@ -21,6 +21,10 @@ export interface StructuredToolResult {
    * calls in the same batch from running (e.g. a pending plan-review handoff).
    * Host control metadata only: never serialized into provider tool results. */
   endRun?: boolean;
+  /** Deferred tools this call made callable (e.g. a tool_search promotion).
+   * Copied onto the provider ToolResult so transports with transcript tool
+   * loading keep the cached tools block unchanged. */
+  loadedTools?: string[];
 }
 
 export type ToolExecuteResult = string | StructuredToolResult;
@@ -321,6 +325,8 @@ export interface AgentOptions {
   priorMessages?: Message[];
   tools?: AgentTool[];
   serverTools?: ServerToolDefinition[];
+  /** Stable on-demand tool catalog (see gg-ai `StreamOptions.deferredTools`). */
+  deferredTools?: StreamOptions["deferredTools"];
   /** Control whether tools may/must be called, or select a named tool when supported. */
   toolChoice?: StreamOptions["toolChoice"];
   maxTurns?: number;

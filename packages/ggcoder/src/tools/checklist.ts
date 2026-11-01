@@ -108,17 +108,12 @@ export function createChecklistTool(
   return {
     name: "checklist",
     description:
-      "Read or record the project health checklist (stored in " +
-      `${CHECKLIST_FILE}). \`status\` lists every item with its status and last ` +
-      `check; items older than ${CHECKLIST_STALE_DAYS} days are due. \`record\` saves ` +
-      "the result of checking one item: the date and Git commit are filled in " +
-      "automatically. `issues` needs at least one finding; `pass` takes none; " +
-      "`evidence` lists what you actually ran or read, including scope and exclusions. " +
-      "Record completed checklist reviews or checks requested in normal chat; never start extra audits unasked. " +
-      "After fixing an item's recorded findings, re-check them and record that item again " +
-      "(`pass`, or `issues` with what remains) so the checklist doesn't keep showing fixed findings. " +
-      "Findings the user explicitly chose to leave go in `accepted` with the reason, not `findings`, " +
-      "so the item can pass once everything else is fixed.",
+      `Project health checklist (${CHECKLIST_FILE}). \`status\`: every item; ` +
+      `older than ${CHECKLIST_STALE_DAYS} days = due. \`record\`: save one item's check ` +
+      "(date and commit auto-filled); `issues` needs findings, `pass` none; `evidence` = what " +
+      "you ran or read, incl. scope. Record completed reviews or requested checks; never start " +
+      "audits unasked. After fixing findings, re-check and record the item again. Findings the " +
+      "user chose to leave go in `accepted` with the reason, so the item can still pass.",
     parameters: ChecklistParams,
     executionMode: "sequential",
     execute(args, { signal }) {

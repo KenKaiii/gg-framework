@@ -462,13 +462,13 @@ describe("buildSystemPrompt", () => {
     const prompt = await buildSystemPrompt(cwd, undefined, false, undefined, ["steroids"]);
     expect(prompt).not.toContain("## Tools");
     const description = createSteroidsTool("unused").description;
-    expect(description).toContain("Search literal tokens, then show matching code");
-    expect(description).toContain("regex across every repo (fixed=true for literal)");
-    expect(description).toContain("define: where a symbol is defined");
+    expect(description).toContain("Search literal tokens, then show matches");
+    expect(description).toContain("regex across all repos (fixed=true literal)");
+    expect(description).toContain("define: symbol definition corpus-wide");
     expect(description).toContain("Topic not covered = corpus gap");
-    expect(description).toContain("Do not retry variants");
+    expect(description).toContain("don't retry variants");
     expect(description).toContain("add once the user agrees");
-    expect(description).toContain("add=true indexes everything found (ask the user first)");
+    expect(description).toContain("add=true indexes all found (ask the user first)");
     expect(description.length).toBeLessThan(1_800);
   });
 
@@ -492,7 +492,7 @@ describe("buildSystemPrompt", () => {
     }
     const description = createSteroidsTool("unused").description;
     expect(description).toContain(
-      "when local evidence leaves an API, design choice, or risk unresolved",
+      "when local evidence leaves an API, design choice or risk unresolved",
     );
     expect(description).not.toContain("REQUIRED before the first edit/write");
   });

@@ -102,6 +102,7 @@ jobs:
           # one is reported in the `app` job, which bundles it).
           node .github/ci/size-gate.mjs --only dist:ggcoder
           node .github/ci/startup-gate.mjs
+          node .github/ci/sidecar-startup-gate.mjs
 
       # Lint and formatting are OS-independent, so one leg is enough.
       - name: Lint + format check

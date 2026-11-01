@@ -2610,6 +2610,33 @@ describe("agentLoop resolveTool", () => {
     expect(end).toMatchObject({ isError: false, result: "late result" });
     expect(resolveTool).toHaveBeenCalledWith("late_tool");
     expect(tools.map((t) => t.name)).toEqual(["late_tool"]);
+    // The resolved tool loads at this result (transcript tool loading).
+    const secondCall = mockStream.mock.calls[1]?.[0] as { messages: Message[] };
+    const toolMsg = secondCall.messages.find((m) => m.role === "tool");
+    expect(toolMsg?.role === "tool" && toolMsg.content[0]?.loadedTools).toEqual(["late_tool"]);
+  });
+
+  it("copies a structured result's loadedTools onto the provider tool result", async () => {
+    const usage: Usage = { inputTokens: 1, outputTokens: 1 };
+    mockStream
+      .mockReturnValueOnce(
+        mockToolCallResult("loader", usage) as unknown as ReturnType<typeof stream>,
+      )
+      .mockReturnValueOnce(mockOkResult("done") as unknown as ReturnType<typeof stream>);
+    const loader: AgentTool = {
+      name: "loader",
+      description: "loads",
+      parameters: emptyParams,
+      execute: () => ({ content: "ok", loadedTools: ["b", "a"] }),
+    };
+    await collectLoop([{ role: "user", content: "go" }], {
+      provider: "anthropic",
+      model: "test",
+      tools: [loader],
+    });
+    const secondCall = mockStream.mock.calls[1]?.[0] as { messages: Message[] };
+    const toolMsg = secondCall.messages.find((m) => m.role === "tool");
+    expect(toolMsg?.role === "tool" && toolMsg.content[0]?.loadedTools).toEqual(["a", "b"]);
   });
 });
 

@@ -120,6 +120,10 @@ export function createClient(options: StreamOptions): OpenAI {
     ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
     // Default transport lifts undici's 300s header/body caps (see provider-fetch.ts).
     fetch: options.fetch ?? providerFetch,
+    // The agent loop owns retries (classified backoff, Retry-After, UI retry
+    // events). The SDK default of 2 silent retries stacked under it: one 5xx
+    // cost up to 3 hidden requests plus SDK sleeps before the loop even saw it.
+    maxRetries: 0,
     ...(options.defaultHeaders ? { defaultHeaders: options.defaultHeaders } : {}),
   });
 

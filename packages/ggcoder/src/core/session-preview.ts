@@ -1,5 +1,5 @@
 import type { Message, MessageProvenance } from "@kenkaiiii/gg-ai";
-import { NOTIFICATION_PREFIX } from "./steering.js";
+import { isNotificationText } from "./steering.js";
 
 const COMPACTION_SUMMARY_PREFIX = "[Previous conversation summary]";
 const AUTOPILOT_PROMPT_PREFIX =
@@ -38,7 +38,7 @@ export function getUserSessionPrompt(
     !provenance &&
     (text.startsWith(COMPACTION_SUMMARY_PREFIX) ||
       text.startsWith(AUTOPILOT_PROMPT_PREFIX) ||
-      text.startsWith(NOTIFICATION_PREFIX))
+      isNotificationText(text))
   ) {
     return null;
   }

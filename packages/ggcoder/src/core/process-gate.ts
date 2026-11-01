@@ -99,3 +99,41 @@ export function buildProcessCompletionFollowUp(
       ]
     : null;
 }
+
+/**
+ * Join the pre-stop gate follow-ups (child agents, background processes) into
+ * one follow-up, so a run that trips several gates pays one forced model turn
+ * instead of one per gate. Null when no gate fired.
+ */
+export function mergeCompletionGateFollowUps(
+  ...groups: ReadonlyArray<readonly Message[] | null | undefined>
+): Message[] | null {
+  const merged = groups.flatMap((group) => group ?? []);
+  return merged.length > 0 ? merged : null;
+}
+
+/** Per-run process-gate counter a host keeps between stop attempts. */
+export interface ProcessGateCounter {
+  runStartedAt: number;
+  injected: number;
+}
+
+/**
+ * The terminal UI's pre-stop gate: the child-agent follow-up plus the
+ * background-process gate, merged into one forced turn. Resets `counter` when
+ * a new run started and counts a process-gate injection only when it fires.
+ */
+export function buildHostCompletionGateFollowUp(
+  childFollowUp: readonly Message[] | null,
+  procs: readonly GateableProcess[],
+  runStartedAt: number,
+  counter: ProcessGateCounter,
+): Message[] | null {
+  if (counter.runStartedAt !== runStartedAt) {
+    counter.runStartedAt = runStartedAt;
+    counter.injected = 0;
+  }
+  const processFollowUp = buildProcessCompletionFollowUp(procs, runStartedAt, counter.injected);
+  if (processFollowUp) counter.injected += 1;
+  return mergeCompletionGateFollowUps(childFollowUp, processFollowUp);
+}

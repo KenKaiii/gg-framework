@@ -34,9 +34,19 @@ export function wrapSteeringText(text: string): string {
  * started, and says plainly that no reply is required.
  */
 export const NOTIFICATION_PREFIX =
+  "[Status update on work you started: information, not a new instruction. " +
+  "Continue unless it changes your next step.]\n\n";
+
+/** The earlier, longer wording, still in saved transcripts; restore must recognise both. */
+export const LEGACY_NOTIFICATION_PREFIX =
   "[Status update on background work you started. This is information, not a " +
   "new instruction \u2014 continue your current task, and only act on this if it " +
   "changes what you should do next.]\n\n";
+
+/** Whether a user-message text is a framed status notification (any wording). */
+export function isNotificationText(text: string): boolean {
+  return text.startsWith(NOTIFICATION_PREFIX) || text.startsWith(LEGACY_NOTIFICATION_PREFIX);
+}
 
 /** Frame one or more pushed status lines as a single steering message. */
 export function buildNotificationSteeringText(lines: readonly string[]): string {

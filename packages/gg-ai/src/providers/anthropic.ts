@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { anthropicMinCacheableTokens, estimatePrefixTokens } from "./cache-minimums.js";
 import type {
   ContentPart,
   ServerToolCall,
@@ -33,6 +34,8 @@ import {
   toAnthropicThinking,
   toAnthropicToolChoice,
   toAnthropicTools,
+  planDeferredTools,
+  supportsAnthropicDeferredTools,
   isAdaptiveThinkingModel,
 } from "./transform.js";
 import { isJsonObject } from "../utils/json.js";
@@ -283,6 +286,9 @@ export async function prewarmAnthropicCache(options: {
           enableFineGrainedToolStreaming: fineGrainedToolStreamingEnabled(),
         })
       : undefined;
+    if (estimatePrefixTokens(fullSystem, tools) < anthropicMinCacheableTokens(options.model)) {
+      return;
+    }
     await client.messages.create(
       {
         model: options.model,
@@ -343,8 +349,21 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     options.provider !== "minimax" &&
     isDirectAnthropicApi(options.baseUrl) &&
     !anthropicServerFallback.disabled.has(fallbackKey);
+  // Deferred tool loading (tool search): the whole on-demand catalog rides in
+  // `tools` with defer_loading from the first request, and a promotion loads
+  // its tool through a tool_reference in the transcript, so the cached tools
+  // block never changes. Without it, each promotion grew `tools` and rewrote
+  // the entire cached prefix (measured: cache read 0 after every tool_search).
+  const deferredPlan =
+    options.provider === "anthropic" &&
+    isDirectAnthropicApi(options.baseUrl) &&
+    supportsAnthropicDeferredTools(options.model)
+      ? planDeferredTools(options.tools, options.deferredTools, downgradedMessages)
+      : undefined;
+  const toolReferences = deferredPlan?.loaded;
   const { system: rawSystem, messages } = toAnthropicMessages(downgradedMessages, cacheControl, {
     fallbackBlocks: useServerFallback,
+    toolReferences,
   });
   // Fast mode (`speed: "fast"` + its beta) is a first-party-API feature; never
   // send it to Anthropic-compatible endpoints (MiniMax, gateways).
@@ -404,7 +423,9 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     ...(options.temperature != null && !thinking ? { temperature: options.temperature } : {}),
     ...(options.topP != null ? { top_p: options.topP } : {}),
     ...(options.stop ? { stop_sequences: options.stop } : {}),
-    ...(options.tools?.length || options.serverTools?.length || options.webSearch
+    ...((deferredPlan?.live ?? options.tools)?.length ||
+    options.serverTools?.length ||
+    options.webSearch
       ? (() => {
           // Build the tools array with server-side tools taking precedence over
           // client tools that share their name. Anthropic rejects duplicate tool
@@ -417,16 +438,16 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
             const name = (t as { name?: string }).name;
             if (name) reservedServerNames.add(name);
           }
-          const clientTools = options.tools?.length
-            ? toAnthropicTools(
-                options.tools.filter((t) => !reservedServerNames.has(t.name)),
-                {
-                  ...(supportsFirstPartyToolExtras && cacheControl ? { cacheControl } : {}),
-                  ...(supportsFirstPartyToolExtras && fineGrainedToolStreamingEnabled()
-                    ? { enableFineGrainedToolStreaming: true }
-                    : {}),
-                },
-              )
+          const notReserved = (t: { name: string }) => !reservedServerNames.has(t.name);
+          const liveTools = deferredPlan?.live ?? options.tools ?? [];
+          const clientTools = liveTools.length
+            ? toAnthropicTools(liveTools.filter(notReserved), {
+                ...(supportsFirstPartyToolExtras && cacheControl ? { cacheControl } : {}),
+                ...(supportsFirstPartyToolExtras && fineGrainedToolStreamingEnabled()
+                  ? { enableFineGrainedToolStreaming: true }
+                  : {}),
+                ...(deferredPlan ? { deferred: deferredPlan.deferred.filter(notReserved) } : {}),
+              })
             : [];
           return {
             tools: [
@@ -451,6 +472,19 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     ...(useFastMode ? { speed: "fast" } : {}),
     stream: useStreaming,
   } as Anthropic.MessageCreateParams;
+  // A prefix below the model's minimum cacheable size is never cached: the
+  // prewarm would write nothing, so skip it.
+  if (
+    options.prewarm &&
+    estimatePrefixTokens(baseParams.system, baseParams.tools) <
+      anthropicMinCacheableTokens(options.model)
+  ) {
+    return {
+      message: { role: "assistant", content: [] },
+      stopReason: "end_turn",
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+  }
   // Caller-supplied provider-specific body fields; they only fill unset fields.
   const params = mergeProviderOptions(baseParams, options.providerOptions);
 
@@ -506,8 +540,10 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
       };
       const retryParams = {
         ...rest,
-        messages: toAnthropicMessages(downgradedMessages, cacheControl, { fallbackBlocks: false })
-          .messages,
+        messages: toAnthropicMessages(downgradedMessages, cacheControl, {
+          fallbackBlocks: false,
+          toolReferences,
+        }).messages,
       } as Anthropic.MessageCreateParams;
       return create(
         retryParams,

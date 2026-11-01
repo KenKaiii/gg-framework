@@ -35,7 +35,11 @@ export function createFindTool(cwd: string): AgentTool<typeof FindParams> {
         cwd: dir,
         dot: false,
         onlyFiles: true,
-        ignore: ["**/node_modules/**", "**/.git/**"],
+        // Ignored directories are pruned from the walk itself rather than only
+        // filtered afterwards: a build tree (`target/`, `dist/`) can hold far
+        // more files than the source. The `ig` filter below stays the source
+        // of truth; pruning only skips work whose results it would drop.
+        ignore: ["**/node_modules/**", "**/.git/**", ...gitignoreDirGlobs(ignorePatterns)],
         suppressErrors: true,
         followSymbolicLinks: false,
       });
@@ -69,4 +73,32 @@ async function loadGitignore(dir: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * fast-glob ignore globs for the directories a root .gitignore excludes.
+ * Git never re-includes anything under an excluded directory, so pruning
+ * these is result-neutral. Only simple lines convert; escapes and odd forms
+ * are left to the post-filter, and any negation disables pruning (it could
+ * re-include a directory). A dir-only line (`dist/`) prunes only below the
+ * directory, so a FILE of that name is still listed.
+ */
+export function gitignoreDirGlobs(lines: readonly string[]): string[] {
+  if (lines.some((line) => line.startsWith("!"))) return [];
+  const globs: string[] = [];
+  for (const line of lines) {
+    if (line.includes("\\") || /\s/.test(line)) continue;
+    const dirOnly = line.endsWith("/");
+    const body = line.replace(/\/+$/, "");
+    if (!body || body === "/" || /^\*+$/.test(body.replace(/^\//, ""))) continue;
+    const anchored = body.startsWith("/") || body.slice(0, -1).includes("/");
+    const rel = body.replace(/^\//, "");
+    if (!rel || rel.startsWith("..")) continue;
+    const glob = anchored ? rel : `**/${rel}`;
+    // `x/**` also matches a file named x; `x/*/**` + `x/.*/**` still prune
+    // every subdirectory but leave such a file alone.
+    if (dirOnly) globs.push(`${glob}/*/**`, `${glob}/.*/**`);
+    else globs.push(`${glob}/**`);
+  }
+  return globs;
 }

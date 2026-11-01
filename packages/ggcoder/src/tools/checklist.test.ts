@@ -62,18 +62,16 @@ const passArgs = {
 describe("checklist tool", () => {
   it("allows completed checks from normal chat without initiating extra audits", () => {
     const { tool } = harness();
-    expect(tool.description).toContain("checks requested in normal chat");
-    expect(tool.description).toContain("never start extra audits unasked");
+    expect(tool.description).toContain("requested checks");
+    expect(tool.description).toContain("never start audits unasked");
     expect(tool.description).not.toContain("Only use during checklist runs");
   });
 
   it("tells the agent to re-record an item after fixing its findings", () => {
     const { tool } = harness();
-    expect(tool.description).toContain("After fixing an item's recorded findings");
-    expect(tool.description).toContain("record that item again");
-    expect(tool.description).toContain(
-      "Findings the user explicitly chose to leave go in `accepted`",
-    );
+    expect(tool.description).toContain("After fixing findings");
+    expect(tool.description).toContain("record the item again");
+    expect(tool.description).toContain("Findings the user chose to leave go in `accepted`");
   });
 
   it("stamps the date from the clock and the commit from HEAD", async () => {

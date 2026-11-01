@@ -82,6 +82,13 @@ const DEFAULT_FIRST_BUDGET_MS = 8000;
  */
 const DEFAULT_SETTLE_MS = 1500;
 const DEFAULT_SNAPSHOT_LIMIT = 100;
+/**
+ * How long a synchronous caller (Ink TUI / interactive edit tools) holds an
+ * edit result for diagnostics. A warm server usually answers well inside this;
+ * a slower answer is not lost — it is drained into the next write's result.
+ * The old behaviour held each edit for up to 3s warm / 8s cold + 1.5s settle.
+ */
+export const DEFAULT_INLINE_BUDGET_MS = 800;
 
 interface QueuedDiagnostics {
   next?: { content: string; source?: EditSource; before: number | null };
@@ -195,6 +202,35 @@ export class LspManager {
       });
     }
     return "\nDiagnostics queued; results will arrive before completion. This is not verification.";
+  }
+
+  /**
+   * Bounded synchronous diagnostics: queue the full check, wait at most
+   * `budgetMs` for it, and return every completed result — this write's when it
+   * finished in time, plus any earlier write's that finished late. Late errors
+   * therefore reach the model on its next write instead of blocking this one.
+   * Degraded outcomes stay silent, exactly like {@link diagnosticsAfterWrite}.
+   */
+  async diagnosticsWithinBudget(
+    filePath: string,
+    content: string,
+    source?: EditSource,
+    budgetMs = DEFAULT_INLINE_BUDGET_MS,
+  ): Promise<string> {
+    const note = this.queueDiagnosticsAfterWrite(filePath, content, source);
+    const job = this.queuedDiagnostics.get(path.resolve(this.cwd, filePath));
+    if (!job) return note.includes("queue full") ? note : "";
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      job.work,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, Math.max(0, budgetMs));
+        timer.unref?.();
+      }),
+    ]);
+    clearTimeout(timer);
+    const drained = this.drainDiagnostics(false);
+    return drained ? `\n${drained}` : "";
   }
 
   /** Includes completed evidence not yet delivered to the agent. */

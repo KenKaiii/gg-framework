@@ -153,8 +153,8 @@ describe("createSubAgentTool model and thinking routing", () => {
     // The pinned model caps Ultra, but fallback restores the parent selection.
     expect(spawnedFlag("--thinking")).toEqual(["max", "ultra"]);
     expect(spawnedCacheKeys()).toEqual([
-      "parent-cache:subagent:gpt-6-luna:pinned",
-      "parent-cache:subagent:gpt-6-luna:pinned",
+      "parent-cache:subagent:gpt-6-luna:pinned:test-call",
+      "parent-cache:subagent:gpt-6-luna:pinned:test-call",
     ]);
   });
 

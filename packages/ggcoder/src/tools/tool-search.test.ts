@@ -17,7 +17,8 @@ function stub(name: string, description: string, result = "ok"): AgentTool {
 }
 
 async function search(tool: ReturnType<typeof createToolSearchTool>, query: string) {
-  return String(await tool.execute({ query }, CONTEXT));
+  const result = await tool.execute({ query }, CONTEXT);
+  return typeof result === "string" ? result : String(result.content);
 }
 
 describe("tool_search", () => {
@@ -179,5 +180,22 @@ describe("tool_search", () => {
     expect(catalog.search("task list").map((t) => t.name)).toEqual(["tasks"]);
     expect(catalog.search("debugger").map((t) => t.name)).toEqual(["debug"]);
     expect(catalog.search("nothing relevant here")).toEqual([]);
+  });
+});
+
+describe("tool_search loadedTools", () => {
+  it("names the promoted tools so transports can load them in the transcript", async () => {
+    const catalog = new DeferredToolCatalog();
+    catalog.add([
+      {
+        name: "steroids",
+        description: "Search real open-source code",
+        parameters: z.object({}),
+        execute: async () => "",
+      },
+    ]);
+    const tool = createToolSearchTool(catalog, () => {});
+    const result = await tool.execute({ query: "open-source code" }, CONTEXT);
+    expect(typeof result === "object" && result.loadedTools).toEqual(["steroids"]);
   });
 });

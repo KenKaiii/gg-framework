@@ -3,7 +3,17 @@
 // line and the EventBus bridge (`attachToEventBus`), which needs the gg-agent
 // `EventBus` type and therefore must stay out of the UI-free core.
 import { openLog, log, registerLogCleanup } from "@kenkaiiii/gg-core";
+import { createHash } from "node:crypto";
 import type { EventBus } from "./event-bus.js";
+
+/**
+ * Describe a user prompt for the debug log without storing its text: length
+ * plus a short hash, enough to correlate repeats without leaking content.
+ */
+export function describeUserInput(content: string): string {
+  const hash = createHash("sha256").update(content).digest("hex").slice(0, 8);
+  return `${content.length} chars sha256=${hash}`;
+}
 
 export { log, getSessionId, closeLogger } from "@kenkaiiii/gg-core";
 
@@ -109,8 +119,7 @@ export function attachToEventBus(bus: EventBus): void {
 
   registerLogCleanup(
     bus.on("user_input", ({ content }) => {
-      const truncated = content.length > 100 ? content.slice(0, 100) + "..." : content;
-      log("INFO", "input", `User input: ${truncated}`);
+      log("INFO", "input", `User input: ${describeUserInput(content)}`);
     }),
   );
 

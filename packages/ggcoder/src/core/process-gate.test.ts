@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
+import type { Message } from "@kenkaiiii/gg-ai";
 import {
+  buildHostCompletionGateFollowUp,
   buildProcessCompletionFollowUp,
   buildProcessCompletionGateMessage,
   isUnresolvedProcess,
+  mergeCompletionGateFollowUps,
   MAX_PROCESS_GATE_INJECTIONS,
   selectUnresolvedProcesses,
   type GateableProcess,
@@ -123,5 +126,50 @@ describe("buildProcessCompletionFollowUp", () => {
 
   test("returns null when no process blocks completion", () => {
     expect(buildProcessCompletionFollowUp([], RUN_START, 0)).toBeNull();
+  });
+});
+
+describe("terminal UI completion gates (buildHostCompletionGateFollowUp)", () => {
+  const child: Message[] = [{ role: "user", content: "Collect child agent c1 before finishing." }];
+
+  test("child-agent and process gates arrive in one follow-up: one forced turn, not two", () => {
+    const counter = { runStartedAt: 0, injected: 0 };
+    let childPending = true;
+    const p = proc();
+    let forcedTurns = 0;
+    for (let stop = 0; stop < 5; stop++) {
+      const followUp = buildHostCompletionGateFollowUp(
+        childPending ? child : null,
+        [p],
+        RUN_START,
+        counter,
+      );
+      if (!followUp) break;
+      forcedTurns += 1;
+      const text = followUp.map((m) => String(m.content)).join("\n");
+      // Simulated model does everything the follow-up asks in that one turn.
+      if (text.includes("c1")) childPending = false;
+      if (text.includes(p.id)) p.lastReadOffset = 1;
+    }
+    expect(forcedTurns).toBe(1);
+    expect(counter.injected).toBe(1);
+  });
+
+  test("resets the per-run cap when a new run starts and keeps the cap within a run", () => {
+    const counter = { runStartedAt: 0, injected: 0 };
+    const procs = [proc()];
+    for (let i = 0; i < MAX_PROCESS_GATE_INJECTIONS; i++) {
+      expect(buildHostCompletionGateFollowUp(null, procs, RUN_START, counter)).not.toBeNull();
+    }
+    expect(buildHostCompletionGateFollowUp(null, procs, RUN_START, counter)).toBeNull();
+    // The child gate still fires after the process cap is spent.
+    expect(buildHostCompletionGateFollowUp(child, procs, RUN_START, counter)).toEqual(child);
+    const next = [proc({ startedAt: RUN_START + 5_000 })];
+    expect(buildHostCompletionGateFollowUp(null, next, RUN_START + 4_000, counter)).not.toBeNull();
+    expect(counter).toEqual({ runStartedAt: RUN_START + 4_000, injected: 1 });
+  });
+
+  test("mergeCompletionGateFollowUps is null when no gate fired", () => {
+    expect(mergeCompletionGateFollowUps(null, [], undefined)).toBeNull();
   });
 });

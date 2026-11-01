@@ -100,3 +100,45 @@ describe("resolveShell", () => {
     expect(r.isCmdFallback).toBe(true);
   });
 });
+
+describe("resolveShell bashPath setting", () => {
+  const env = {};
+  const all = () => true;
+  it("auto / unset keeps PATH bash", () => {
+    expect(resolveShell("x", { platform: "darwin", env, exists: all }).file).toBe("bash");
+    expect(resolveShell("x", { platform: "darwin", env, exists: all, bashPath: "auto" }).file).toBe(
+      "bash",
+    );
+  });
+  it("system picks /bin/bash on macOS only", () => {
+    expect(
+      resolveShell("x", { platform: "darwin", env, exists: all, bashPath: "system" }).file,
+    ).toBe("/bin/bash");
+    expect(
+      resolveShell("x", { platform: "linux", env, exists: all, bashPath: "system" }).file,
+    ).toBe("bash");
+  });
+  it("explicit path is used when it exists, else falls back", () => {
+    expect(
+      resolveShell("x", { platform: "linux", env, exists: all, bashPath: "/opt/b/bash" }).file,
+    ).toBe("/opt/b/bash");
+    expect(
+      resolveShell("x", { platform: "linux", env, exists: () => false, bashPath: "/opt/b/bash" })
+        .file,
+    ).toBe("bash");
+  });
+  it("Windows ignores it", () => {
+    const r = resolveShell("x", {
+      platform: "win32",
+      env: {},
+      exists: () => false,
+      bashPath: "system",
+    });
+    expect(r.isCmdFallback).toBe(true);
+  });
+  it("GG_BASH still wins", () => {
+    expect(
+      resolveShell("x", { platform: "darwin", env: { GG_BASH: "/x" }, bashPath: "system" }).file,
+    ).toBe("/x");
+  });
+});

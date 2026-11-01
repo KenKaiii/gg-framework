@@ -131,3 +131,36 @@ describe("CheckpointStore", () => {
     expect(list.map((c) => c.turnIndex)).toEqual([4, 5, 6]);
   });
 });
+
+describe("pruneCheckpointSessions", () => {
+  it("removes only folders whose every file is old, never follows symlinks", async () => {
+    const { pruneCheckpointSessions } = await import("./checkpoint-store.js");
+    const fsp = await import("node:fs/promises");
+    const nodePath = await import("node:path");
+    const nodeOs = await import("node:os");
+    const base = await fsp.mkdtemp(nodePath.join(nodeOs.tmpdir(), "ckpt-prune-"));
+    const outside = await fsp.mkdtemp(nodePath.join(nodeOs.tmpdir(), "ckpt-outside-"));
+    const old = new Date(Date.now() - 40 * 86_400_000);
+    const mk = async (dir: string, name: string, when?: Date) => {
+      await fsp.mkdir(nodePath.join(base, dir, "checkpoints"), { recursive: true });
+      const f = nodePath.join(base, dir, "checkpoints", name);
+      await fsp.writeFile(f, "x");
+      if (when) await fsp.utimes(f, when, when);
+    };
+    await mk("old-session", "a.json", old);
+    await mk("mixed-session", "a.json", old);
+    await mk("mixed-session", "b.json"); // recent file keeps the folder
+    await mk("new-session", "a.json");
+    const outsideFile = nodePath.join(outside, "keep.txt");
+    await fsp.writeFile(outsideFile, "keep");
+    await fsp.utimes(outsideFile, old, old);
+    await fsp.symlink(outside, nodePath.join(base, "link-session"));
+    const res = await pruneCheckpointSessions({ baseDir: base, maxAgeDays: 30 });
+    expect(res.removed).toBe(1);
+    const left = (await fsp.readdir(base)).sort();
+    expect(left).toEqual(["link-session", "mixed-session", "new-session"]);
+    expect(await fsp.readFile(outsideFile, "utf-8")).toBe("keep");
+    await fsp.rm(base, { recursive: true, force: true });
+    await fsp.rm(outside, { recursive: true, force: true });
+  });
+});

@@ -604,3 +604,47 @@ export function createDiagnoseCommand(): SlashCommand {
     },
   };
 }
+
+// ── Retention ──────────────────────────────────────────────
+
+/** Session diagnostics records older than this (by mtime) are pruned. */
+export const DIAGNOSTICS_RETENTION_DAYS = 30;
+
+/**
+ * Delete diagnostics records older than `maxAgeDays` by mtime. Guarded:
+ * only regular `.json` files directly inside `dir` (lstat — symlinks are never
+ * followed or removed), resolved paths must stay inside `dir`, and a file a
+ * live session rewrites every turn is always recent, so it survives. Errors
+ * per file (EBUSY/EPERM on Windows, races) are tolerated and skipped.
+ */
+export async function pruneDiagnosticsRecords(
+  options: { dir?: string; maxAgeDays?: number; now?: number } = {},
+): Promise<{ removed: number; freedBytes: number }> {
+  const result = { removed: 0, freedBytes: 0 };
+  const maxAgeDays = options.maxAgeDays ?? DIAGNOSTICS_RETENTION_DAYS;
+  if (maxAgeDays <= 0) return result;
+  const root = path.resolve(options.dir ?? diagnosticsSessionsDir());
+  const cutoff = (options.now ?? Date.now()) - maxAgeDays * 86_400_000;
+  let names: string[];
+  try {
+    names = await fs.promises.readdir(root);
+  } catch {
+    return result;
+  }
+  for (const name of names.sort()) {
+    if (!name.endsWith(".json")) continue;
+    const target = path.resolve(root, name);
+    const rel = path.relative(root, target);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel) || rel.includes(path.sep)) continue;
+    try {
+      const st = await fs.promises.lstat(target);
+      if (!st.isFile() || st.mtimeMs >= cutoff) continue;
+      await fs.promises.unlink(target);
+      result.removed++;
+      result.freedBytes += st.size;
+    } catch {
+      // In use (Windows EBUSY/EPERM) or raced away — retry on a later launch.
+    }
+  }
+  return result;
+}

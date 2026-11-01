@@ -87,6 +87,13 @@ export interface ToolResult {
     /** Which budget triggered the trim. */
     scope: "per-result" | "per-turn";
   };
+  /**
+   * Deferred tools (names from `StreamOptions.deferredTools`) that became
+   * callable while this tool ran. Providers with transcript-anchored tool
+   * loading (Anthropic `tool_reference`, OpenAI client `tool_search_output`)
+   * load them here instead of growing the cached `tools` block.
+   */
+  loadedTools?: string[];
 }
 
 export interface ServerToolCall {
@@ -311,6 +318,14 @@ export interface StreamOptions {
   model: string;
   messages: Message[];
   tools?: Tool[];
+  /**
+   * Stable, ordered catalog of on-demand tools (a superset of any of them that
+   * are live in `tools`). Providers that support deferred tool loading send
+   * the whole catalog from the first request and load a tool through the
+   * transcript (see `ToolResult.loadedTools`), so the cached tools block never
+   * changes. Others ignore it and send `tools` only.
+   */
+  deferredTools?: Tool[];
   toolChoice?: ToolChoice;
   serverTools?: ServerToolDefinition[];
   maxTokens?: number;

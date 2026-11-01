@@ -25,6 +25,8 @@ import {
   downgradeUnsupportedImages,
   downgradeUnsupportedVideos,
   toCodexReasoningEffort,
+  planDeferredTools,
+  supportsResponsesToolSearch,
 } from "./transform.js";
 import { readSseStream } from "../utils/sse.js";
 import { providerFetch } from "../utils/provider-fetch.js";
@@ -145,8 +147,26 @@ async function* runStream(
   const downgradedImages = downgradeUnsupportedImages(options.messages, options.supportsImages);
   // Codex (GPT OAuth) has no video support — always strip video to a placeholder.
   const downgraded = downgradeUnsupportedVideos(downgradedImages, options.supportsVideo);
+  // Client tool search (GPT-5.4+): a promoted tool is loaded by a
+  // tool_search_output in the transcript instead of growing `tools`, which
+  // would miss the whole cached prefix (live: cached 0 → 5,248 of 5,413).
+  const deferredPlan = supportsResponsesToolSearch(options.model)
+    ? planDeferredTools(options.tools, options.deferredTools, downgraded)
+    : undefined;
+  const strictTools = options.strictTools ?? true;
+  const toolSearchLoads = deferredPlan
+    ? new Map(
+        [...deferredPlan.loaded].map((name) => {
+          const tool = deferredPlan.byName.get(name);
+          const [wire] = tool ? toCodexTools([tool], strictTools) : [];
+          return [name, { ...(wire as Record<string, unknown>), defer_loading: true }] as const;
+        }),
+      )
+    : undefined;
+  const liveTools = deferredPlan?.live ?? options.tools;
   const { system, input } = toResponsesInput(downgraded, {
     supportsImages: options.supportsImages,
+    toolSearchLoads,
     mapId: remapCodexId,
     // Stamped reasoning belongs to another transport (e.g. Grok's) and would
     // be rejected here; Codex's own items are never stamped.
@@ -164,13 +184,13 @@ async function* runStream(
     stream: true,
     instructions: system,
     input,
-    tool_choice: toCodexToolChoice(options.toolChoice, options.tools),
+    tool_choice: toCodexToolChoice(options.toolChoice, liveTools),
     parallel_tool_calls: !liteShape,
     include: ["reasoning.encrypted_content"],
   };
 
-  if (options.tools?.length) {
-    body.tools = toCodexTools(options.tools, options.strictTools ?? true);
+  if (liveTools?.length) {
+    body.tools = toCodexTools(liveTools, strictTools);
   }
   // Always set a prompt_cache_key. OpenAI uses this key to route requests
   // with the same prefix to the same cache shard — without it, the codex

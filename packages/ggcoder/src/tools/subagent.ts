@@ -6,6 +6,7 @@ import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import { mcpServersForAgent, type AgentDefinition } from "../core/agents.js";
 import { log } from "../core/logger.js";
 import { isModelUnavailableError } from "../core/model-unavailable.js";
+import { writeOverflowSync } from "./overflow.js";
 import { ReceiptRecorder } from "../core/subagent-receipt.js";
 import {
   AcceptanceChecksParam,
@@ -24,6 +25,7 @@ import {
   subAgentCacheKey,
   subAgentThinkingLevel,
   type SubAgentTokenUsage,
+  SUB_AGENT_BLOCKING_OUTPUT_CHARS,
   SUB_AGENT_MAX_OUTPUT_CHARS,
   SUB_AGENT_MAX_STDERR_CHARS,
   SUB_AGENT_MAX_TURNS,
@@ -121,7 +123,12 @@ export function createSubAgentTool(
       }
       const useModel = selection.model;
       const parentCacheKey = getParentCacheKey?.();
-      const childCacheKey = subAgentCacheKey(parentCacheKey, useModel, agentDef?.name ?? "default");
+      const childCacheKey = subAgentCacheKey(
+        parentCacheKey,
+        useModel,
+        agentDef?.name ?? "default",
+        context.toolCallId,
+      );
       const subCacheKey = childCacheKey ?? "(unset)";
 
       const buildCliArgs = (model: string): string[] => {
@@ -356,7 +363,14 @@ export function createSubAgentTool(
               model,
             });
 
-            const body = boundSubAgentOutput(textOutput);
+            const fullOutputPath =
+              textOutput.length > SUB_AGENT_BLOCKING_OUTPUT_CHARS
+                ? tryWriteOverflow(textOutput)
+                : undefined;
+            const body = boundSubAgentOutput(textOutput, {
+              maxChars: SUB_AGENT_BLOCKING_OUTPUT_CHARS,
+              fullOutputPath,
+            });
             const checksBlock = formatCheckResults(
               verifyAcceptanceChecks(args.checks ?? [], receipt.snapshot(), cwd),
             );
@@ -470,6 +484,15 @@ function shortenPath(filePath: string): string {
   const parts = filePath.split("/");
   if (parts.length <= 3) return filePath;
   return "…/" + parts.slice(-2).join("/");
+}
+
+/** Best-effort offload of a long report; a full disk never fails the tool. */
+function tryWriteOverflow(content: string): string | undefined {
+  try {
+    return writeOverflowSync(content, "subagent");
+  } catch {
+    return undefined;
+  }
 }
 
 function truncateStr(s: string, max: number): string {

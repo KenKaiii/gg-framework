@@ -4,7 +4,6 @@ import { z } from "zod";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import { resolvePath, rejectSymlink } from "./path-utils.js";
 import { truncateHead, describeOmitted } from "./truncate.js";
-import { writeOverflow } from "./overflow.js";
 import {
   FileTooLargeError,
   NotRegularFileError,
@@ -313,8 +312,9 @@ export function createReadTool(
 
       if (result.truncated) {
         const nextOffset = (offset ?? 1) + result.keptLines;
-        const overflowPath = await writeOverflow(content, "read").catch(() => null);
-        const overflowNotice = overflowPath ? ` Full output saved to ${overflowPath}.` : "";
+        // No overflow copy: the file itself is on disk and `offset` pages it.
+        // Copying it cost a full write of the file (MBs) on every truncated read.
+        const overflowNotice = "";
         const what = describeOmitted(lines.slice(result.keptLines), result.content);
         return (
           `${numbered}\n` +

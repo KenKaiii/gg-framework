@@ -19,6 +19,7 @@ import {
 } from "./providers/transform.js";
 import { sanitizeMessagesForWire } from "./utils/well-formed.js";
 import { observePreparedContext } from "./utils/context-observation.js";
+import { planDeferredTools, usesDeferredToolLoading } from "./providers/transform.js";
 import { markContinuesTurn } from "./utils/turn-continuation.js";
 import { resolveFastModeModel } from "./fast-mode.js";
 
@@ -348,7 +349,7 @@ export function stream(requested: StreamOptions): StreamResult {
         observePreparedContext(
           replayable === sanitized ? wireMessages : replayable,
           messages,
-          options.tools ?? [],
+          observedTools(options, messages),
         ),
       );
     } catch {
@@ -356,6 +357,17 @@ export function stream(requested: StreamOptions): StreamResult {
     }
   }
   return entry.stream(messages === options.messages ? options : { ...options, messages });
+}
+
+/**
+ * The tools block as the wire sees it. With transcript tool loading a promoted
+ * tool does not change the block (live + whole deferred catalog), so
+ * diagnostics must not report a request_settings change for it.
+ */
+function observedTools(options: StreamOptions, messages: Message[]): StreamOptions["tools"] & {} {
+  if (!usesDeferredToolLoading(options)) return options.tools ?? [];
+  const plan = planDeferredTools(options.tools, options.deferredTools, messages);
+  return plan ? [...plan.live, ...plan.deferred] : (options.tools ?? []);
 }
 
 /** Clone provenance-bearing messages and remove internal metadata at the provider boundary. */

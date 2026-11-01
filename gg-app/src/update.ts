@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { error as logError, info as logInfo } from "@tauri-apps/plugin-log";
 import { playSound } from "./sounds";
 import { announceUpdate } from "./update-announce";
+import { claimUpdateCheck, recordUpdateCheck, versionFromStorageEvent } from "./update-schedule";
 
 /**
  * App self-update, driven by the Tauri updater plugin (GitHub releases of this
@@ -27,6 +28,8 @@ export interface UpdateInfo {
 }
 
 const POLL_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+/** In-window signal: one hook's check found an update the others should load. */
+const UPDATE_FOUND_EVENT = "gg-update-found";
 
 /**
  * DEV ONLY — fake a pending update so the banner + home button + install flow
@@ -59,17 +62,29 @@ export function useAppUpdate(): UpdateInfo {
   const [progress, setProgress] = useState<number | null>(null);
   const [fakeVersion, setFakeVersion] = useState<string | null>(null);
 
-  const runCheck = useCallback(async (): Promise<void> => {
+  const hasUpdateRef = useRef(false);
+
+  const runCheck = useCallback(async (force = false): Promise<void> => {
     if (devFakeEnabled) {
       setFakeVersion(FAKE_VERSION);
       setPhase((p) => (p === "installing" ? p : "available"));
       announce(FAKE_VERSION);
       return;
     }
+    // One check per lease across all windows/hooks (update-schedule.ts).
+    const storage = storageOrNull();
+    const decision = force ? { kind: "check" as const } : claimUpdateCheck(storage, Date.now());
+    if (decision.kind === "skip") return;
     // Don't interrupt an in-flight install with a re-check.
     setPhase((p) => (p === "installing" ? p : "checking"));
     try {
       const found = await check();
+      hasUpdateRef.current = Boolean(found?.available);
+      if (decision.kind === "check") {
+        recordUpdateCheck(storage, Date.now(), found?.available ? found.version : null);
+        // storage events skip the writing window; tell this window's other hook.
+        if (found?.available) window.dispatchEvent(new Event(UPDATE_FOUND_EVENT));
+      }
       if (found?.available) {
         setUpdate(found);
         setPhase((p) => (p === "installing" ? p : "available"));
@@ -89,7 +104,20 @@ export function useAppUpdate(): UpdateInfo {
   useEffect(() => {
     void runCheck();
     const id = setInterval(() => void runCheck(), POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    // Another window's check found an update: fetch this window's own handle.
+    const onStorage = (e: StorageEvent): void => {
+      if (!hasUpdateRef.current && versionFromStorageEvent(e.key, e.newValue)) void runCheck(true);
+    };
+    const onFound = (): void => {
+      if (!hasUpdateRef.current) void runCheck(true);
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(UPDATE_FOUND_EVENT, onFound);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(UPDATE_FOUND_EVENT, onFound);
+    };
   }, [runCheck]);
 
   const install = useCallback(async (): Promise<void> => {

@@ -85,7 +85,7 @@ describe("session export", () => {
     expect(markdown).toContain("also add dark mode");
     // The machine framing and its payload do not — an export must match the
     // conversation the user actually had.
-    expect(markdown).not.toContain("Status update on background work");
+    expect(markdown).not.toContain("Status update on");
     expect(markdown).not.toContain("c1c45a8d");
     expect(markdown).not.toContain("still running after");
   });

@@ -31,6 +31,8 @@ export interface SavedSettings {
   model?: string;
   autoCompact: boolean;
   compactThreshold: number;
+  /** Absolute auto-compaction trigger (settings `compactAtTokens`). */
+  compactAtTokens?: number;
   thinkingEnabled: boolean;
   thinkingLevel?: ThinkingLevel;
   theme: "auto" | ThemeName;
@@ -112,6 +114,13 @@ export function loadSavedSettings(settingsFilePath?: string): SavedSettings {
       raw.compactThreshold <= 1
     ) {
       result.compactThreshold = raw.compactThreshold;
+    }
+    if (
+      typeof raw.compactAtTokens === "number" &&
+      Number.isInteger(raw.compactAtTokens) &&
+      raw.compactAtTokens >= 20_000
+    ) {
+      result.compactAtTokens = raw.compactAtTokens;
     }
     if (raw.thinkingEnabled === true) result.thinkingEnabled = true;
     if (isValidThinkingLevel(raw.thinkingLevel)) result.thinkingLevel = raw.thinkingLevel;

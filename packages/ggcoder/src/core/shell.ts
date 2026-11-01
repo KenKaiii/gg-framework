@@ -43,6 +43,24 @@ export interface ResolveShellOpts {
   env?: NodeJS.ProcessEnv;
   /** Injected for testability; defaults to fs.existsSync. */
   exists?: (p: string) => boolean;
+  /** Settings `bashPath`: `auto` (default, `bash` from PATH), `system`
+   *  (/bin/bash on macOS — ~2ms spawn vs ~11ms for Homebrew bash 5), or an
+   *  explicit path. Ignored on Windows; a missing path falls back to auto. */
+  bashPath?: string;
+}
+
+/** The bash executable for a non-Windows platform under a `bashPath` setting. */
+function posixBash(
+  platform: NodeJS.Platform,
+  bashPath: string | undefined,
+  exists: (p: string) => boolean,
+): string {
+  const choice = bashPath?.trim();
+  if (!choice || choice === "auto") return "bash";
+  if (choice === "system") {
+    return platform === "darwin" && exists("/bin/bash") ? "/bin/bash" : "bash";
+  }
+  return exists(choice) ? choice : "bash";
 }
 
 /**
@@ -116,7 +134,11 @@ export function resolveShell(command: string, opts: ResolveShellOpts = {}): Shel
     // pipefail: a pipeline exits with the failing stage's status, never the
     // limiter's. Without it `tests | tail -20` reports tail's 0 and a red
     // suite reads green — both to the agent and to the verification gate.
-    return { file: "bash", args: ["-o", "pipefail", "-c", command], isCmdFallback: false };
+    return {
+      file: posixBash(platform, opts.bashPath, exists),
+      args: ["-o", "pipefail", "-c", command],
+      isCmdFallback: false,
+    };
   }
 
   const gitBash = findGitBash(env, exists);

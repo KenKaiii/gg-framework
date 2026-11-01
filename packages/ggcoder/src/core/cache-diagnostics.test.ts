@@ -195,6 +195,10 @@ describe("session cache diagnostics", () => {
       tracker.prepare(context([user("same")]), request({ at: 360_000, cacheRetention: "long" }))
         .requestedTtlExceeded,
     ).toBe(false);
+    expect(
+      tracker.prepare(context([user("same")]), request({ at: 360_000, cacheRetention: "long" }))
+        .tailTtlExceeded,
+    ).toBe(true);
   });
 
   it("flags image edits before signed thinking on a resumed history without discarding it", () => {

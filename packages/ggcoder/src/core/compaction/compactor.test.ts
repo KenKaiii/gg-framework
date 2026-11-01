@@ -25,6 +25,7 @@ import {
   MIN_SUMMARY_OUTPUT_TOKENS,
   MAX_SUMMARY_OUTPUT_TOKENS,
   SUMMARY_ATTEMPT_TIMEOUT_MS,
+  parsePromptTooLong,
 } from "./compactor.js";
 import { remapAnchorForCompaction } from "../session-history.js";
 import { estimateConversationTokens } from "./token-estimator.js";
@@ -1722,5 +1723,138 @@ describe("buildFailingTestsSection", () => {
     }
     expect(section.match(/earlier failing tests omitted/gu)).toHaveLength(1);
     expect(section).toContain("[... 8 earlier failing tests omitted]");
+  });
+});
+
+// ── prompt-too-long recovery & fallback through the real path ──
+
+describe("parsePromptTooLong", () => {
+  it("parses actual/limit from Anthropic, OpenAI, xAI and Gemini wording", () => {
+    expect(
+      parsePromptTooLong(new Error("prompt is too long: 1240000 tokens > 1000000 maximum")),
+    ).toEqual({ actual: 1_240_000, limit: 1_000_000 });
+    expect(
+      parsePromptTooLong(
+        new Error(
+          "This model's maximum context length is 128000 tokens. However, your messages resulted in 130000 tokens.",
+        ),
+      ),
+    ).toEqual({ actual: 130_000, limit: 128_000 });
+    expect(
+      parsePromptTooLong(
+        new Error(
+          "This model's maximum prompt length is 131072 but the request contains 537812 tokens.",
+        ),
+      ),
+    ).toEqual({ actual: 537_812, limit: 131_072 });
+    expect(
+      parsePromptTooLong(
+        new Error(
+          "The input token count (1196265) exceeds the maximum number of tokens allowed (1048576).",
+        ),
+      ),
+    ).toEqual({ actual: 1_196_265, limit: 1_048_576 });
+  });
+
+  it("recognises count-less overflow errors (Codex, error codes) and ignores others", () => {
+    expect(
+      parsePromptTooLong(new Error("Your input exceeds the context window of this model")),
+    ).toEqual({});
+    const coded = Object.assign(new Error("bad request"), { code: "context_length_exceeded" });
+    expect(parsePromptTooLong(coded)).toEqual({});
+    expect(parsePromptTooLong(new Error("503 service unavailable"))).toBeNull();
+  });
+});
+
+describe("compact overflow recovery and fallback", () => {
+  function okStream(text: string) {
+    return {
+      response: Promise.resolve({
+        message: { role: "assistant", content: text },
+        stopReason: "end_turn",
+        usage: { inputTokens: 100, outputTokens: 10 },
+      }),
+      events: {
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.resolve({ done: true as const, value: undefined }),
+        }),
+      },
+    };
+  }
+  function dense(seed: number, chars: number): string {
+    let out = "";
+    let i = seed;
+    while (out.length < chars) {
+      i = (i * 1103515245 + 12345) % 2147483648;
+      out += `w${(i % 9973).toString(36)} `;
+    }
+    return out.slice(0, chars);
+  }
+
+  it("shrinks and retries when the provider rejects the summary prompt as too long", async () => {
+    const msgs: Message[] = [makeMessage("system", "sys")];
+    for (let i = 0; i < 300; i++) {
+      msgs.push(makeMessage("user", `step ${i} ${dense(i, 6000)}`));
+      msgs.push(makeMessage("assistant", `ok ${i}`));
+    }
+    msgs.push(makeMessage("user", "latest"));
+    const mockStream = vi.mocked(stream);
+    let rejected = 0;
+    mockStream.mockImplementation((request) => {
+      const limit = getContextWindow(request.model, { provider: "anthropic" });
+      // Real tokenizer counts dense text well above the chars/token estimate.
+      const actual = Math.ceil(estimateConversationTokens(request.messages) * 2);
+      if (actual > limit) {
+        rejected++;
+        throw new Error(`prompt is too long: ${actual} tokens > ${limit} maximum`);
+      }
+      return okStream("LLM summary after shrink") as never;
+    });
+    try {
+      const out = await compact(msgs, {
+        provider: "anthropic",
+        model: "claude-sonnet-5",
+        apiKey: "k",
+        contextWindow: 200_000,
+      });
+      expect(rejected).toBeGreaterThan(0);
+      expect(out.messages[1]?.content as string).toContain("LLM summary after shrink");
+      expect(out.messages[1]?.content as string).not.toContain("messages exchanged");
+    } finally {
+      mockStream.mockReset();
+    }
+  });
+
+  it("fallback summary counts tool calls and picks the human goal through compact()", async () => {
+    const msgs: Message[] = [
+      makeMessage("system", "sys"),
+      {
+        role: "user",
+        content: "Fix the login bug",
+        provenance: { source: "human", kind: "prompt", visibility: "transcript" },
+      },
+    ];
+    for (let i = 0; i < 12; i++) {
+      msgs.push(makeToolCallMessage("read", { file_path: `src/a${i}.ts` }, `c${i}`));
+      msgs.push(makeToolResultMessage(`c${i}`, dense(i, 8000)));
+    }
+    msgs.push(makeMessage("user", "latest"));
+    const mockStream = vi.mocked(stream);
+    mockStream.mockImplementation(() => {
+      throw new Error("503 service unavailable");
+    });
+    try {
+      const out = await compact(msgs, {
+        provider: "anthropic",
+        model: "claude-sonnet-5",
+        apiKey: "k",
+        contextWindow: 200_000,
+      });
+      const text = out.messages[1]?.content as string;
+      expect(text).toContain("## Goal\nFix the login bug");
+      expect(text).toContain(`${msgs.length - 1} messages exchanged, 12 tool calls executed.`);
+    } finally {
+      mockStream.mockReset();
+    }
   });
 });

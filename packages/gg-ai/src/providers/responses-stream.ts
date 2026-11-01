@@ -449,6 +449,23 @@ export async function* consumeResponsesEvents(
   // first tool call leads the message so it precedes the function_call it
   // reasoned about when round-tripped into input; visible answer text sits
   // between leading reasoning and the tool calls.
+  // Parallel calls can finish out of order; replay them in the order the
+  // server emitted them (output_item.added). Completion order rewrote the
+  // input after the reasoning item, so the next request missed the cache from
+  // there on (the measured misses after parallel read,read turns).
+  const addedOrder = [...toolCalls.keys()];
+  const toolSlots = orderedItems.flatMap((e, i) => (e.kind === "tool" ? [i] : []));
+  const sortedTools = toolSlots
+    .map((i) => orderedItems[i])
+    .sort((a, b) =>
+      a?.kind === "tool" && b?.kind === "tool"
+        ? addedOrder.indexOf(a.id) - addedOrder.indexOf(b.id)
+        : 0,
+    );
+  toolSlots.forEach((slot, k) => {
+    const entry = sortedTools[k];
+    if (entry) orderedItems[slot] = entry;
+  });
   const seenTool = new Set<string>();
   let textInserted = false;
   for (const entry of orderedItems) {
@@ -556,6 +573,13 @@ export function toResponsesInput(
      * output-item shape, or of foreign ids like `toolu_*`, isn't guaranteed.
      */
     minimalAssistantItems?: boolean;
+    /**
+     * Wire definitions (with `defer_loading: true`) of deferred tools loaded
+     * through the transcript. A tool result naming one in `loadedTools` is
+     * followed by a client `tool_search_call`/`tool_search_output` pair, so the
+     * tool becomes callable without changing the top-level `tools` array.
+     */
+    toolSearchLoads?: ReadonlyMap<string, unknown>;
   },
 ): { system: string | undefined; input: unknown[] } {
   const mapId = options.mapId ?? ((id: string) => id);
@@ -571,6 +595,8 @@ export function toResponsesInput(
   let system: string | undefined;
   const input: unknown[] = [];
   const idMap = new Map<string, string>();
+  const loadedTools = new Set<string>();
+  let toolLoads = 0;
 
   for (const msg of messages) {
     if (msg.role === "system") {
@@ -642,6 +668,31 @@ export function toResponsesInput(
           call_id: mapId(callId, idMap),
           output: text.length > 0 ? text : "(see attached image)",
         });
+        const loads = options.toolSearchLoads;
+        const names = loads
+          ? (result.loadedTools ?? []).filter((name) => loads.has(name) && !loadedTools.has(name))
+          : [];
+        if (loads && names.length > 0) {
+          for (const name of names) loadedTools.add(name);
+          // Ordinal ids: history only appends, so every request rebuilds them.
+          const loadId = `gg_tool_load_${++toolLoads}`;
+          input.push(
+            {
+              type: "tool_search_call",
+              call_id: loadId,
+              execution: "client",
+              status: "completed",
+              arguments: { query: names.join(" "), limit: names.length },
+            },
+            {
+              type: "tool_search_output",
+              call_id: loadId,
+              execution: "client",
+              status: "completed",
+              tools: names.map((name) => loads.get(name)),
+            },
+          );
+        }
         if (options.supportsImages !== false && Array.isArray(result.content)) {
           for (const block of result.content) {
             if (block.type === "image") toolImages.push(block);

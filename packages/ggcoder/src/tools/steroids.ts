@@ -22,22 +22,12 @@ const SteroidsParams = z.object({
   pattern: z.string().optional().describe("search: regex (or literal with fixed=true)"),
   fixed: z.boolean().optional().describe("search: match pattern literally"),
   symbol: z.string().optional().describe("define: function/class/constant name"),
-  query: z
-    .string()
-    .optional()
-    .describe(
-      "discover: GitHub repo search. Keep it short: 'topic:X language:Y' or 2-3 keywords. A sentence finds nothing.",
-    ),
+  query: z.string().optional().describe("discover: 'topic:X language:Y' or 2-3 keywords"),
   repo: z
     .string()
     .optional()
-    .describe(
-      "Repository, e.g. owner/name (filters search/recent; required for show/files; not supported by define)",
-    ),
-  path: z
-    .string()
-    .optional()
-    .describe("show: file path; search: path glob or bare prefix ('src' = 'src/**')"),
+    .describe("owner/name (search/recent filter; required for show/files)"),
+  path: z.string().optional().describe("show: file path; search: glob or prefix"),
   language: z.string().optional().describe("search/define/discover: language name or alias"),
   tag: z.string().optional().describe("Only repos carrying this label"),
   limit: z.number().int().positive().optional(),
@@ -53,10 +43,7 @@ const SteroidsParams = z.object({
   to: z.number().int().positive().optional().describe("show: last line"),
   hours: z.number().int().positive().optional().describe("recent: look-back window (default 72)"),
   add: z.boolean().optional().describe("discover: index everything found (ask the user first)"),
-  repos: z
-    .array(z.string())
-    .optional()
-    .describe("add: repositories to index, owner/name each (only after the user agrees)"),
+  repos: z.array(z.string()).optional().describe("add: owner/name list (after the user agrees)"),
   maxTokens: z.number().int().positive().optional().describe("Output budget (default 6000)"),
 });
 type Params = z.infer<typeof SteroidsParams>;
@@ -146,19 +133,15 @@ export function buildSteroidsArgs(a: Params): string[] {
   return args;
 }
 
-const DESCRIPTION = `Read real, current open-source code from a local corpus when local evidence leaves an API, design choice, or risk unresolved. Search literal tokens, then show matching code; reuse examples already read. Offline, no limits.
-Actions:
-- search: regex across every repo (fixed=true for literal). Filter by repo/language/path/tag; perRepo=1 for breadth.
-- define: where a symbol is defined, corpus-wide (no repo filter; ts/js/py/go/rust/java only). For one repo or other languages use search with repo + a definition pattern.
-- show: read a file (from/to for a region; search results carry line numbers).
-- files: files indexed for one repo. repos: indexed repos, one line each (tag/limit to narrow).
-- discover: find good GitHub repos; query is 'topic:X language:Y' or 2-3 keywords, never a sentence (4+ words returns nothing). found=0: retry ONCE with 2 words or a topic: form before giving up. add=true indexes everything found (ask the user first).
-- add: index specific repos (owner/name list); the way to take a chosen subset of discover results. On an already-indexed repo, add re-fetches its latest commit.
-Freshness: \`repos\` marks rows indexed over 7 days ago as STALE. Before relying on a stale repo for an answer, refresh it with add (no need to ask — it is already in the corpus). Only indexing NEW repos needs the user's agreement.
+const DESCRIPTION = `Read real open-source code from a local corpus when local evidence leaves an API, design choice or risk unresolved. Search literal tokens, then show matches; reuse examples already read. Offline, no limits.
+- search: regex across all repos (fixed=true literal); filter repo/language/path/tag; perRepo=1 for breadth.
+- define: symbol definition corpus-wide (no repo filter; ts/js/py/go/rust/java). Otherwise search with repo + a definition pattern.
+- show: read a file (from/to; search gives line numbers). files: one repo's files. repos: indexed repos (tag/limit).
+- discover: find GitHub repos; query 'topic:X language:Y' or 2-3 keywords (4+ words finds nothing). found=0: retry once with 2 words or topic:. add=true indexes all found (ask the user first).
+- add: index chosen repos (owner/name); on an indexed repo, re-fetches latest. Rows marked STALE (>7 days): refresh with add before relying on them, no need to ask; only NEW repos need the user's agreement.
 - recent: upstream changes in the last N hours.
-repo/language are case-insensitive; a path without globs is a prefix ('src' = 'src/**').
-\`omitted\` = cut by maxTokens (default 6000); \`more_available\` = narrow the query.
-Topic not covered = corpus gap, NOT a bad query. Do not retry variants: run discover, propose repos, add once the user agrees.`;
+repo/language are case-insensitive; a path without globs is a prefix. \`omitted\` = cut by maxTokens; \`more_available\` = narrow the query.
+Topic not covered = corpus gap, not a bad query: don't retry variants; discover, propose repos, add once the user agrees.`;
 
 interface RepoRow {
   repo: string;

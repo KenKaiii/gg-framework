@@ -87,6 +87,15 @@ describe("loadSavedSettings", () => {
     expect(settings.compactThreshold).toBe(0.72);
   });
 
+  it("loads compactAtTokens and ignores invalid values", () => {
+    const ok = tempSettingsPath();
+    fs.writeFileSync(ok, JSON.stringify({ compactAtTokens: 400_000 }), "utf-8");
+    expect(loadSavedSettings(ok).compactAtTokens).toBe(400_000);
+    const bad = tempSettingsPath();
+    fs.writeFileSync(bad, JSON.stringify({ compactAtTokens: 5 }), "utf-8");
+    expect(loadSavedSettings(bad).compactAtTokens).toBeUndefined();
+  });
+
   it("accepts xai as a saved provider", () => {
     const settingsPath = tempSettingsPath();
     fs.writeFileSync(

@@ -32,7 +32,9 @@ export function setEditTelemetryPathForTests(filePath: string | undefined): void
 }
 
 function resolveLogPath(): string {
-  logPath ??= path.join(getAppPaths().agentDir, "edit-quality.jsonl");
+  // GG_EDIT_TELEMETRY_PATH lets the test runner keep rows out of the real ~/.gg.
+  logPath ??=
+    process.env.GG_EDIT_TELEMETRY_PATH || path.join(getAppPaths().agentDir, "edit-quality.jsonl");
   return logPath;
 }
 

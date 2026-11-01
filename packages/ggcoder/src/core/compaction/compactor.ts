@@ -24,6 +24,93 @@ const TOOL_RESULT_MAX_CHARS = 2000;
 const ASSISTANT_TEXT_MAX_CHARS = 4000;
 const USER_MSG_MAX_CHARS = 8000;
 
+/**
+ * Share of the summary model's window the selected history may fill. The
+ * chars-per-token estimator undercounts dense content (a real session estimated
+ * at 857k was 1.24M actual against a 1M window), so leave headroom.
+ */
+export const SUMMARY_INPUT_WINDOW_RATIO = 0.7;
+
+/** Max shrink-and-retry passes after a provider "prompt too long" rejection. */
+export const MAX_SUMMARY_OVERFLOW_RETRIES = 3;
+
+const PROMPT_TOO_LONG_PATTERNS: RegExp[] = [
+  /context_length_exceeded/i,
+  /context length exceeded/i,
+  /context window/i,
+  /maximum context length/i,
+  /prompt is too long/i,
+  /request_too_large/i,
+  /input is too long/i,
+  /input token count.*exceeds the maximum/i,
+  /maximum prompt length/i,
+  /reduce the length of the messages/i,
+  /too large for model/i,
+];
+
+function errorText(err: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = err;
+  for (let depth = 0; depth < 4 && current; depth++) {
+    if (current instanceof Error) {
+      parts.push(current.message);
+      const code = (current as { code?: unknown }).code;
+      if (typeof code === "string") parts.push(code);
+      current = current.cause;
+    } else {
+      parts.push(String(current));
+      break;
+    }
+  }
+  return parts.join(" | ");
+}
+
+function toInt(raw: string | undefined): number | undefined {
+  if (!raw) return undefined;
+  const n = Number(raw.replace(/[,_]/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * Recognise a provider "prompt too long" rejection (Anthropic, OpenAI/Codex,
+ * OpenAI-compatible, Gemini, xAI wording) and pull the actual/limit token
+ * counts when the message carries them. Null when the error is not an overflow.
+ */
+export function parsePromptTooLong(err: unknown): { actual?: number; limit?: number } | null {
+  const text = errorText(err);
+  if (!PROMPT_TOO_LONG_PATTERNS.some((p) => p.test(text))) return null;
+  const n = "(\\d[\\d,_]*)";
+  const shapes: Array<{ re: RegExp; actual: number; limit: number }> = [
+    // Anthropic: "prompt is too long: 213462 tokens > 200000 maximum"
+    { re: new RegExp(`${n}\\s*tokens\\s*>\\s*${n}`, "i"), actual: 1, limit: 2 },
+    // OpenAI / OpenRouter: "maximum context length is 128000 tokens. However, your messages resulted in 130000 tokens"
+    {
+      re: new RegExp(
+        `maximum context length is ${n}[^\\d]+?(?:resulted in|requested|contains) ${n}`,
+        "i",
+      ),
+      actual: 2,
+      limit: 1,
+    },
+    // xAI: "maximum prompt length is 131072 but the request contains 537812 tokens"
+    {
+      re: new RegExp(`maximum prompt length is ${n}[^\\d]+?contains ${n}`, "i"),
+      actual: 2,
+      limit: 1,
+    },
+    // Gemini: "The input token count (1196265) exceeds the maximum number of tokens allowed (1048576)"
+    { re: new RegExp(`input token count \\(?${n}\\)?[^\\d]+?\\(?${n}`, "i"), actual: 1, limit: 2 },
+  ];
+  for (const shape of shapes) {
+    const match = shape.re.exec(text);
+    if (!match) continue;
+    const actual = toInt(match[shape.actual]);
+    const limit = toInt(match[shape.limit]);
+    if (actual && limit && actual > limit) return { actual, limit };
+  }
+  return {};
+}
+
 /** Max retries for empty LLM responses during summarization. */
 export const MAX_SUMMARY_RETRIES = 2;
 
@@ -1010,8 +1097,13 @@ export function buildFallbackSummary(
   middleMessages: Message[],
   fileOps: { read: Set<string>; modified: Set<string> },
 ): string {
-  const userMessages = middleMessages.filter((m) => m.role === "user");
-  const toolCalls = middleMessages.filter((m) => m.role === "tool");
+  // The goal is the first real human request — never a runtime note or a
+  // prior compaction summary.
+  const userMessages = middleMessages.filter(isHumanRequest);
+  const toolCallCount = middleMessages.reduce(
+    (count, m) => count + (m.role === "tool" ? m.content.length : 0),
+    0,
+  );
 
   const lines: string[] = [];
   lines.push("## Goal");
@@ -1025,9 +1117,7 @@ export function buildFallbackSummary(
 
   lines.push("");
   lines.push("## Progress");
-  lines.push(
-    `${middleMessages.length} messages exchanged, ${toolCalls.length} tool calls executed.`,
-  );
+  lines.push(`${middleMessages.length} messages exchanged, ${toolCallCount} tool calls executed.`);
 
   if (fileOps.read.size > 0) {
     lines.push("");
@@ -1233,7 +1323,7 @@ export async function compact(
    * Size and assemble the summary request for one model. Re-run when the
    * request moves to the active model, whose context window may be smaller.
    */
-  const prepareSummaryRequest = (modelId: string) => {
+  const prepareSummaryRequest = (modelId: string, budgetOverride?: number) => {
     const contextWindow = getContextWindow(modelId, {
       provider: options.provider,
       accountId: options.accountId,
@@ -1243,7 +1333,17 @@ export async function compact(
       resolveSummaryOutputTokens(contextWindow),
     );
     // Budget: summary model context - output tokens - system/user prompt overhead (~1K).
-    const tokenBudget = contextWindow - outputTokens - promptOverhead;
+    // Capped at a share of the window: the estimator undercounts dense content.
+    const tokenBudget = Math.max(
+      0,
+      Math.floor(
+        budgetOverride ??
+          Math.min(
+            contextWindow - outputTokens - promptOverhead,
+            contextWindow * SUMMARY_INPUT_WINDOW_RATIO,
+          ),
+      ),
+    );
     const contextSelection = selectQueryAwareContext(
       classifiedMessages,
       query,
@@ -1288,12 +1388,20 @@ export async function compact(
       messageCount: String(summaryMessages.length),
       hasApiKey: String(!!options.apiKey),
     });
-    return { modelId, outputTokens, contextSelection, selectedMessages, summaryMessages };
+    return {
+      modelId,
+      outputTokens,
+      tokenBudget,
+      contextSelection,
+      selectedMessages,
+      summaryMessages,
+    };
   };
 
   let request = prepareSummaryRequest(summaryModel.id);
   // Only a DIFFERENT model can rescue a rejected one.
   let canFallBackToActiveModel = summaryModel.id !== options.model;
+  let overflowRetries = 0;
 
   // Retry empty successful responses only. Transport failures and timeouts use
   // the deterministic fallback immediately; replaying the same large request
@@ -1380,6 +1488,25 @@ export async function compact(
         attempt--; // A rejected model is not one of the empty-response retries.
         continue;
       }
+      const overflow = parsePromptTooLong(err);
+      if (overflow && overflowRetries < MAX_SUMMARY_OVERFLOW_RETRIES) {
+        // The estimator undercounted: shrink the selection by the provider's
+        // own actual/limit ratio (or a flat cut when it gave none) and retry.
+        overflowRetries++;
+        const ratio =
+          overflow.actual && overflow.limit ? (overflow.limit / overflow.actual) * 0.9 : 0.6;
+        const nextBudget = Math.floor(request.tokenBudget * ratio);
+        log("WARN", "compaction", `Summary prompt too long — shrinking selection and retrying`, {
+          previousBudget: String(request.tokenBudget),
+          nextBudget: String(nextBudget),
+          actualTokens: String(overflow.actual ?? "unknown"),
+          limitTokens: String(overflow.limit ?? "unknown"),
+          retry: String(overflowRetries),
+        });
+        request = prepareSummaryRequest(request.modelId, nextBudget);
+        attempt--; // An overflow shrink is not one of the empty-response retries.
+        continue;
+      }
       log(
         "WARN",
         "compaction",
@@ -1402,10 +1529,10 @@ export async function compact(
   // Fallback: preserve prior compacted memory and append a fresh extractive update.
   if (summaryText.length === 0) {
     log("WARN", "compaction", `All summary attempts failed — using fallback extractive summary`);
-    const fallbackUpdate = buildFallbackSummary(
-      classifyMessagesForSummary(summarizationSource),
-      fileOps,
-    );
+    // Raw history, not the summarizer-prepared copy: preparation turns tool
+    // results into user messages and adds provenance prefixes, which made the
+    // fallback report 0 tool calls and pick a runtime note as the Goal.
+    const fallbackUpdate = buildFallbackSummary(summarizationSource, fileOps);
     summaryText = previousSummary
       ? `${carriedSummary.text}\n\n## Update since the previous summary\n${fallbackUpdate}`
       : fallbackUpdate;

@@ -8,6 +8,15 @@ import { getAppPaths } from "../config.js";
 const SettingsSchema = z.object({
   autoCompact: z.boolean().default(true),
   compactThreshold: z.number().min(0.1).max(1.0).default(0.85),
+  /** Absolute auto-compaction trigger in tokens. The trigger is
+   *  min(compactThreshold × window, compactAtTokens). Unset = 400,000
+   *  (DEFAULT_COMPACT_AT_TOKENS: keeps time-to-first-token down on 1M-window
+   *  models); set higher to compact later. */
+  compactAtTokens: z.number().int().min(20_000).optional(),
+  /** Bash binary for the shell tool. `auto` = first bash on PATH (current
+   *  behaviour); `system` = /bin/bash on macOS (faster spawn), same as auto
+   *  elsewhere; anything else = an explicit path. */
+  bashPath: z.string().min(1).default("auto"),
   defaultProvider: z
     .enum([
       "anthropic",
@@ -160,6 +169,7 @@ export type Settings = z.infer<typeof SettingsSchema>;
 export const DEFAULT_SETTINGS: Settings = {
   autoCompact: true,
   compactThreshold: 0.85,
+  bashPath: "auto",
   defaultProvider: "anthropic",
   maxTokens: 16384,
   thinkingEnabled: false,

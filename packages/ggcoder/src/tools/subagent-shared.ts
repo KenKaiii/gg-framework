@@ -5,7 +5,7 @@ import type { AgentDefinition } from "../core/agents.js";
 import type { AgentSession } from "../core/agent-session.js";
 import { getLowestThinkingLevel, getSupportedThinkingLevels } from "../core/thinking-level.js";
 import { withoutPaidTier } from "../core/model-registry.js";
-import { truncateTail } from "./truncate.js";
+import { truncateHead } from "./truncate.js";
 
 export const SUB_AGENT_MAX_TURNS = 50;
 /**
@@ -15,6 +15,12 @@ export const SUB_AGENT_MAX_TURNS = 50;
  */
 export const SUB_AGENT_MAX_TURN_EXTENSIONS = 1;
 export const SUB_AGENT_MAX_OUTPUT_CHARS = 100_000;
+/**
+ * What the blocking `subagent` tool pastes into the parent's context — the
+ * same per-agent budget as `wait_agent` (SubAgentManager), well under the
+ * 50 KB tool cap. The full report is offloaded to `~/.gg/tool-output/`.
+ */
+export const SUB_AGENT_BLOCKING_OUTPUT_CHARS = 30_000;
 export const SUB_AGENT_MAX_OUTPUT_LINES = 500;
 export const SUB_AGENT_MAX_STDERR_CHARS = 10_000;
 export const SUB_AGENT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -156,8 +162,13 @@ export function subAgentCacheKey(
   parentCacheKey: string | undefined,
   model: string,
   agentName = "default",
+  /** Per-child suffix: siblings sharing one key overflow OpenAI's per-key
+   *  cache routing (~15 req/min per key+prefix) during parallel bursts. */
+  childId?: string,
 ): string | undefined {
-  return parentCacheKey ? `${parentCacheKey}:subagent:${model}:${agentName}` : undefined;
+  if (!parentCacheKey) return undefined;
+  const base = `${parentCacheKey}:subagent:${model}:${agentName}`;
+  return childId ? `${base}:${childId}` : base;
 }
 
 export function currentSubAgentDepth(env: NodeJS.ProcessEnv = process.env): number {
@@ -170,8 +181,14 @@ export function childSubAgentEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.P
 }
 
 export function resolveSubAgentCliEntry(): string {
-  const cliPath = fileURLToPath(new URL("../cli.js", import.meta.url));
-  return existsSync(cliPath) ? cliPath : process.argv[1];
+  // The slim child entry skips the CLI's Ink/React/subcommand graph (~210 ms
+  // per child). The desktop bundle ships neither file and falls back to
+  // itself, which dispatches --subagent-worker / --json first.
+  for (const rel of ["../subagent-entry.js", "../cli.js"]) {
+    const entry = fileURLToPath(new URL(rel, import.meta.url));
+    if (existsSync(entry)) return entry;
+  }
+  return process.argv[1];
 }
 
 /**
@@ -202,13 +219,21 @@ export async function promptSubAgent(
   return stoppedOn;
 }
 
-export function boundSubAgentOutput(raw: string): string {
-  const result = truncateTail(
+/**
+ * Bound a child's report for the parent's context. Keeps the HEAD, like
+ * SubAgentManager.wait(): a child's report leads with its answer, so a tail
+ * slice of a long report dropped exactly the part the parent asked for.
+ */
+export function boundSubAgentOutput(
+  raw: string,
+  opts: { maxChars?: number; fullOutputPath?: string } = {},
+): string {
+  const result = truncateHead(
     raw || "(no output)",
     SUB_AGENT_MAX_OUTPUT_LINES,
-    SUB_AGENT_MAX_OUTPUT_CHARS,
+    opts.maxChars ?? SUB_AGENT_MAX_OUTPUT_CHARS,
   );
-  return result.truncated
-    ? `[Sub-agent output truncated: ${result.totalLines} total lines, showing last ${result.keptLines}]\n\n${result.content}`
-    : result.content;
+  if (!result.truncated) return result.content;
+  const where = opts.fullOutputPath ? `; full output: ${opts.fullOutputPath}` : "";
+  return `${result.content}\n\n[Sub-agent output truncated: ${result.totalLines} total lines, showing first ${result.keptLines}${where}]`;
 }

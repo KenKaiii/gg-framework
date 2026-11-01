@@ -319,6 +319,25 @@ describe("Anthropic transform", () => {
       expect(marks(messages, long)).toEqual([long, undefined, undefined, undefined, short]);
     });
 
+    it("advances the 1-h anchor onto the tail after a blocking tool", () => {
+      const messages: Message[] = [
+        { role: "user", content: "fix it" },
+        {
+          role: "assistant",
+          content: [{ type: "tool_call", id: "w", name: "wait_agent", args: {} }],
+        },
+        result("w"),
+      ];
+      expect(marks(messages, long)).toEqual([long, undefined, long]);
+    });
+
+    it("advances the 1-h anchor onto the tail once a run is long", () => {
+      const messages: Message[] = [{ role: "user", content: "fix it" }];
+      for (let i = 0; i < 6; i++) messages.push(call(`c${i}`), result(`c${i}`));
+      expect(marks(messages, long).at(-1)).toEqual(long);
+      expect(marks(messages.slice(0, -2), long).at(-1)).toEqual(short);
+    });
+
     it("treats a runtime notice as part of the tool loop, not a new turn", () => {
       const messages: Message[] = [
         { role: "user", content: "fix it" },

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { temporarySiblingPath } from "./session-storage.js";
-import type { SessionSummary } from "./session-manager.js";
+import type { SessionInfo, SessionSummary } from "./session-manager.js";
 
 /**
  * Per-directory cache of session summaries, persisted next to the sessions.
@@ -20,7 +20,11 @@ import type { SessionSummary } from "./session-manager.js";
 
 export type IndexedSessionSummary = SessionSummary & { conversationId: string; generation: number };
 
+/** Full-parse {@link SessionInfo} (exact message count / last message time) for `list()`. */
+export type IndexedSessionInfo = SessionInfo & { conversationId: string; generation: number };
+
 export const SESSION_SUMMARY_INDEX_FILE = ".session-index.json";
+export const SESSION_INFO_INDEX_FILE = ".session-info-index.json";
 const INDEX_VERSION = 1;
 /** Bounded so a cold scan never holds thousands of open read streams at once. */
 const SCAN_CONCURRENCY = 32;
@@ -30,10 +34,10 @@ interface Fingerprint {
   mtimeMs: number;
 }
 
-interface IndexEntry extends Fingerprint {
+interface IndexEntry<T> extends Fingerprint {
   /** Fingerprint of the redirect target when the candidate is a redirect stub. */
   target?: Fingerprint;
-  summary: IndexedSessionSummary;
+  summary: T;
 }
 
 async function fingerprint(filePath: string): Promise<Fingerprint | null> {
@@ -55,9 +59,7 @@ function isFingerprint(value: unknown): value is Fingerprint {
   return typeof v.size === "number" && typeof v.mtimeMs === "number";
 }
 
-function isIndexedSummary(value: unknown, directory: string): value is IndexedSessionSummary {
-  if (typeof value !== "object" || value === null) return false;
-  const v = value as Record<string, unknown>;
+function hasBaseFields(v: Record<string, unknown>, directory: string): boolean {
   return (
     typeof v.id === "string" &&
     typeof v.conversationId === "string" &&
@@ -68,9 +70,20 @@ function isIndexedSummary(value: unknown, directory: string): value is IndexedSe
     typeof v.timestamp === "string" &&
     typeof v.lastActivity === "string" &&
     typeof v.cwd === "string" &&
-    typeof v.hasMessages === "boolean" &&
     (v.preview === undefined || typeof v.preview === "string")
   );
+}
+
+function isIndexedSummary(value: unknown, directory: string): value is IndexedSessionSummary {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return hasBaseFields(v, directory) && typeof v.hasMessages === "boolean";
+}
+
+function isIndexedInfo(value: unknown, directory: string): value is IndexedSessionInfo {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return hasBaseFields(v, directory) && typeof v.messageCount === "number";
 }
 
 /** Bounded-parallel map that keeps input order. */
@@ -91,16 +104,31 @@ async function mapLimited<T, R>(
   return results;
 }
 
-export class SessionSummaryIndex {
+export class SessionSummaryIndex<T extends { path: string } = IndexedSessionSummary> {
   private readonly directory: string;
   private readonly indexPath: string;
-  private entries = new Map<string, IndexEntry>();
+  private readonly validate: (value: unknown, directory: string) => value is T;
+  private entries = new Map<string, IndexEntry<T>>();
   private loading: Promise<void> | null = null;
   private saving: Promise<void> = Promise.resolve();
 
-  constructor(directory: string) {
+  constructor(
+    directory: string,
+    options?: { file: string; validate: (value: unknown, directory: string) => value is T },
+  ) {
     this.directory = path.resolve(directory);
-    this.indexPath = path.join(this.directory, SESSION_SUMMARY_INDEX_FILE);
+    this.indexPath = path.join(this.directory, options?.file ?? SESSION_SUMMARY_INDEX_FILE);
+    this.validate =
+      options?.validate ??
+      (isIndexedSummary as unknown as (value: unknown, directory: string) => value is T);
+  }
+
+  /** Index of full-parse {@link SessionInfo} results, used by `list()`/`getMostRecent()`. */
+  static forInfo(directory: string): SessionSummaryIndex<IndexedSessionInfo> {
+    return new SessionSummaryIndex<IndexedSessionInfo>(directory, {
+      file: SESSION_INFO_INDEX_FILE,
+      validate: isIndexedInfo,
+    });
   }
 
   /**
@@ -110,8 +138,8 @@ export class SessionSummaryIndex {
    */
   async summaries(
     candidates: readonly string[],
-    read: (candidate: string) => Promise<IndexedSessionSummary | null>,
-  ): Promise<Array<IndexedSessionSummary | null>> {
+    read: (candidate: string) => Promise<T | null>,
+  ): Promise<Array<T | null>> {
     this.loading ??= this.load();
     await this.loading;
 
@@ -136,7 +164,7 @@ export class SessionSummaryIndex {
         }
         return summary;
       }
-      const entry: IndexEntry = { ...current, summary };
+      const entry: IndexEntry<T> = { ...current, summary };
       if (path.resolve(summary.path) !== path.resolve(candidate)) {
         const target = await fingerprint(summary.path);
         if (target) entry.target = target;
@@ -174,7 +202,7 @@ export class SessionSummaryIndex {
           name !== path.basename(name) ||
           !isFingerprint(entry) ||
           (entry.target !== undefined && !isFingerprint(entry.target)) ||
-          !isIndexedSummary(entry.summary, this.directory)
+          !this.validate(entry.summary, this.directory)
         ) {
           continue;
         }

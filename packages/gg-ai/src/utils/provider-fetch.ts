@@ -20,6 +20,16 @@ import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 export const PROVIDER_TRANSPORT_TIMEOUT_MS = 45 * 60_000;
 
 /**
+ * How long an idle pooled provider connection stays open when the server sends
+ * no Keep-Alive hint (the usual case over HTTPS). undici's default is 4s, so a
+ * tool call or a human pause longer than that dropped the socket and the next
+ * request paid DNS+TCP+TLS again (measured: ~130 ms to api.openai.com, ~120 ms
+ * to chatgpt.com). 30s stays below common load-balancer idle limits (60s+), so
+ * a pooled socket is not reused after the server has already closed it.
+ */
+export const PROVIDER_KEEP_ALIVE_TIMEOUT_MS = 30_000;
+
+/**
  * Whether Node routes its own fetch through HTTP_PROXY / HTTPS_PROXY / NO_PROXY.
  * Node turns that on for `--use-env-proxy` (command line or NODE_OPTIONS) or
  * `NODE_USE_ENV_PROXY=1`. A Node that doesn't know the flag refuses to start,
@@ -67,7 +77,11 @@ export function createProviderFetch(
   timeoutMs: number,
   { useEnvProxy = nodeUsesEnvProxy() }: ProviderFetchOptions = {},
 ): typeof globalThis.fetch {
-  const timeouts = { headersTimeout: timeoutMs, bodyTimeout: timeoutMs };
+  const timeouts = {
+    headersTimeout: timeoutMs,
+    bodyTimeout: timeoutMs,
+    keepAliveTimeout: PROVIDER_KEEP_ALIVE_TIMEOUT_MS,
+  };
   const dispatcher = useEnvProxy ? new EnvHttpProxyAgent(timeouts) : new Agent(timeouts);
   const builtinFetch = globalThis.fetch;
   const providerFetch: typeof globalThis.fetch = async (input, init) => {

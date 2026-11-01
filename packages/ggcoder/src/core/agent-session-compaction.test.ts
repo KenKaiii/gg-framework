@@ -1764,3 +1764,66 @@ describe("load-time auto-compaction deferral (deferLoadCompaction)", () => {
     await resumed.dispose();
   });
 });
+
+describe("AgentSession plan state and dispose", () => {
+  it("keeps the cached system prompt byte-identical across plan toggles mid-conversation", async () => {
+    shouldCompactMock.mockReturnValue(false);
+    agentLoopMock.mockImplementation(async function* () {
+      yield { type: "agent_done" };
+    });
+    const planPath = path.join(tmpProject, "plan.md");
+    await fs.writeFile(planPath, "# Plan\n\n## Steps\n1. Do it\n", "utf-8");
+    const { AgentSession } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      transient: true,
+    });
+    await session.initialize();
+    const internals = session as unknown as { messages: Message[] };
+    await session.prompt("hello");
+    const before = internals.messages[0]?.content;
+
+    await session.setPlanMode(true);
+    expect(session.getPlanMode()).toBe(true); // tool restrictions read this ref
+    expect(internals.messages[0]?.content).toBe(before);
+    await session.prompt("plan it");
+    await session.setPlanMode(false);
+    await session.setApprovedPlan(planPath);
+    await session.prompt("go");
+    const history = [...internals.messages];
+    await session.dispose();
+
+    expect(history[0]?.content).toBe(before);
+    const notices = history
+      .map((m) => (typeof m.content === "string" ? m.content : ""))
+      .filter((c) => c.startsWith("Plan state update"));
+    expect(notices).toHaveLength(2);
+    expect(notices[0]).toContain("## Plan Mode (ACTIVE)");
+    expect(notices[1]).toContain("## Plan Mode (OFF)");
+    expect(notices[1]).toContain("<approved_plan>");
+  });
+
+  it("caps dispose's wait for a hanging post-turn compaction and aborts it", async () => {
+    const { AgentSession, DISPOSE_COMPACTION_WAIT_MS } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      transient: true,
+    });
+    await session.initialize();
+    const abort = new AbortController();
+    const internals = session as unknown as {
+      postTurnCompaction?: Promise<void>;
+      postTurnCompactionAbort?: AbortController;
+    };
+    internals.postTurnCompactionAbort = abort;
+    internals.postTurnCompaction = new Promise<void>(() => {}); // never settles
+    const started = Date.now();
+    await session.dispose();
+    expect(abort.signal.aborted).toBe(true);
+    expect(Date.now() - started).toBeLessThan(DISPOSE_COMPACTION_WAIT_MS + 2_000);
+  });
+});
