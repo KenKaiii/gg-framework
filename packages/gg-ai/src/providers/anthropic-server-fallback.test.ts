@@ -9,6 +9,11 @@ import {
 } from "./anthropic.js";
 import { applyServerFallbackReplay, toAnthropicMessages, toOpenAIMessages } from "./transform.js";
 
+vi.mock("../claude-code-version.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getClaudeCliUserAgent: vi.fn(async () => "claude-cli/2.1.999 (external, cli)"),
+}));
+
 interface Captured {
   url: string;
   headers: Record<string, string>;
@@ -541,5 +546,21 @@ describe("fallback replay rules", () => {
     const out = toOpenAIMessages(HISTORY_WITH_FALLBACK);
     expect(JSON.stringify(out)).not.toContain('"fallback"');
     expect(JSON.stringify(out)).toContain("answer.");
+  });
+});
+
+describe("OAuth user agent", () => {
+  it("defaults to the live Claude Code version, not a stale constant (issue #126)", async () => {
+    const rec = recorder(() => sse(SIMPLE_EVENTS));
+    await streamAnthropic(baseOptions({ apiKey: "sk-ant-oat-x", fetch: rec.fetch }));
+    expect(rec.calls[0]!.headers["user-agent"]).toBe("claude-cli/2.1.999 (external, cli)");
+  });
+
+  it("keeps a caller-supplied user agent", async () => {
+    const rec = recorder(() => sse(SIMPLE_EVENTS));
+    await streamAnthropic(
+      baseOptions({ apiKey: "sk-ant-oat-x", userAgent: "claude-cli/3.0.0 (x)", fetch: rec.fetch }),
+    );
+    expect(rec.calls[0]!.headers["user-agent"]).toBe("claude-cli/3.0.0 (x)");
   });
 });

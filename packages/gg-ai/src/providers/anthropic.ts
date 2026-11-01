@@ -18,6 +18,11 @@ import {
   providerHtmlErrorMessage,
 } from "../errors.js";
 import { StreamResult } from "../utils/event-stream.js";
+import {
+  CLAUDE_CODE_FALLBACK_VERSION,
+  claudeCliUserAgent,
+  getClaudeCliUserAgent,
+} from "../claude-code-version.js";
 import { mergeProviderOptions } from "../utils/provider-options.js";
 import {
   downgradeUnsupportedImages,
@@ -172,9 +177,19 @@ export function sumUsageIterations(usage: unknown): IterationTotals | null {
   return totals;
 }
 
+/** OAuth callers that don't pass `userAgent` get the live Claude Code version. */
+async function withClaudeUserAgent<T extends { apiKey?: string; userAgent?: string }>(
+  options: T,
+): Promise<T> {
+  if (options.userAgent || !options.apiKey?.startsWith("sk-ant-oat")) return options;
+  return { ...options, userAgent: await getClaudeCliUserAgent() };
+}
+
 function createClient(options: StreamOptions): Anthropic {
   const isOAuth = options.apiKey?.startsWith("sk-ant-oat");
-  const userAgent = isOAuth ? (options.userAgent ?? "claude-cli/2.1.75 (external, cli)") : "";
+  const userAgent = isOAuth
+    ? (options.userAgent ?? claudeCliUserAgent(CLAUDE_CODE_FALLBACK_VERSION))
+    : "";
   const cacheKey = `${options.apiKey ?? ""}|${options.baseUrl ?? ""}|${userAgent}`;
 
   // Skip cache when a custom fetch is provided (tests, React Native, etc.) —
@@ -235,11 +250,13 @@ export async function prewarmAnthropicCache(options: {
   signal?: AbortSignal;
 }): Promise<void> {
   try {
-    const client = createClient({
-      apiKey: options.apiKey,
-      baseUrl: options.baseUrl,
-      userAgent: options.userAgent,
-    } as StreamOptions);
+    const client = createClient(
+      await withClaudeUserAgent({
+        apiKey: options.apiKey,
+        baseUrl: options.baseUrl,
+        userAgent: options.userAgent,
+      } as StreamOptions),
+    );
     const cacheControl = toAnthropicCacheControl(options.cacheRetention ?? "long", options.baseUrl);
     const { system, messages } = toAnthropicMessages(
       [
@@ -306,7 +323,7 @@ export function streamAnthropic(options: StreamOptions): StreamResult {
 }
 
 async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, StreamResponse> {
-  const client = createClient(options);
+  const client = createClient(await withClaudeUserAgent(options));
   const isOAuth = options.apiKey?.startsWith("sk-ant-oat");
   // Prewarm uses a single non-streaming request: the stream flag is not part of
   // the prompt-cache key, and a 1-token response needs no incremental events.

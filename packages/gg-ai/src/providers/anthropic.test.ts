@@ -9,6 +9,12 @@ const createMock = vi.fn();
 const streamMock = vi.fn();
 const withOptionsMock = vi.fn();
 
+// OAuth cases must not reach npm or the real ~/.gg version cache.
+vi.mock("../claude-code-version.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getClaudeCliUserAgent: vi.fn(async () => "claude-cli/2.1.999 (external, cli)"),
+}));
+
 vi.mock("@anthropic-ai/sdk", () => {
   class APIError extends Error {
     status: number | undefined;
