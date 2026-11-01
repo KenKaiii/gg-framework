@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.88.1
+
+### Patch Changes
+
+- Fix restored Anthropic sessions whose history used native web search failing with HTTP 400 ("server_tool_use block references web_search"), drop the duplicate sub-agent completion notice after wait_agent collects a result, and prune old checkpoint folders at desktop app startup.
+  - @kenkaiiii/gg-ai@5.88.1
+  - @kenkaiiii/gg-agent@5.88.1
+  - @kenkaiiii/gg-core@5.88.1
+
 ## 5.88.0
 
 ### Minor Changes
