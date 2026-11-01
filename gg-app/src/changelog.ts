@@ -22,6 +22,16 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.99.0",
+    date: "2026-11-01",
+    items: [
+      "Long sessions just got a lot snappier. I now tidy conversations up at `400k` tokens instead of letting them balloon toward a million, and pulling in a new tool mid-chat no longer throws away the prompt cache, so replies start sooner and cost less.",
+      "Really long sessions keep their memory now. When a giant conversation gets summarized, I shrink and retry instead of falling back to a thin file list, so GG Coder still knows your goal and everything it already did.",
+      "Everyday tools are faster. `find` runs up to `49x` quicker in big repos, helpers spin up sooner, and their reports land with the answer on top instead of cut off at the end.",
+      "GG Coder now cleans up after itself. Old checkpoints, diagnostics and helper leftovers clear out after `30 days`, logs are about a third smaller, and your prompts never get written into debug logs.",
+    ],
+  },
+  {
     version: "0.98.2",
     date: "2026-11-01",
     items: [
