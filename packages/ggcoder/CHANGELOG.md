@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.89.0
+
+### Minor Changes
+
+- Add the app sidecar's `!` command runner: user-confirmed shell commands in the project folder with streamed output, Stop, per-project trust, run history and project suggestions, with the output handed to the agent on the user's next message.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.89.0
+- @kenkaiiii/gg-agent@5.89.0
+- @kenkaiiii/gg-core@5.89.0
+
 ## 5.88.1
 
 ### Patch Changes
