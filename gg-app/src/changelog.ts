@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.100.0",
+    date: "2026-11-02",
+    items: [
+      "I put a terminal right inside the chat. Start your message with `!`, like `!git status`, and it runs in your project with live output, a Stop button and the exit code, while errors show up in their own colour. A picker lists the commands you use most and the ones that fit your project, GG Coder sees the output with your next message, and nothing ever runs without your OK unless you pick `Always allow` for that project.",
+      "Images in replies actually show up now. I fixed it so when GG Coder points at a screenshot or picture on your computer, you see the real image right in the chat instead of a broken question mark, and one click opens it full size.",
+    ],
+  },
+  {
     version: "0.99.1",
     date: "2026-11-01",
     items: [
