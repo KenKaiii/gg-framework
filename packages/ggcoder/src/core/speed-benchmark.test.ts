@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, onTestFinished, vi } from "vitest";
 import {
   runFullBenchmark,
   runBenchmark,
@@ -125,5 +125,36 @@ describe("Speed Benchmark", () => {
     provider.reset();
     expect(provider.stats.cacheWrites).toBe(0);
     expect(provider.getCacheSize()).toBe(0);
+  });
+
+  it("paces output to its schedule without dropping tokens or changing stats", async () => {
+    const config: MockTimingConfig = {
+      ...REALISTIC_TIMING,
+      coldPrefillMsPerToken: 0,
+      networkOverheadMs: 0,
+      outputMsPerToken: 1.2,
+    };
+    const provider = new MockBenchmarkProvider(config);
+    const timers = vi.spyOn(globalThis, "setTimeout");
+    onTestFinished(() => timers.mockRestore());
+
+    const started = performance.now();
+    const result = provider.stream({
+      provider: "benchmark-mock" as never,
+      model: "mock-model",
+      messages: [{ role: "user", content: "Stream the default reply." }],
+    });
+    let textDeltas = 0;
+    for await (const event of result) if (event.type === "text_delta") textDeltas++;
+    const elapsedMs = performance.now() - started;
+
+    const scheduledMs = config.defaultOutputTokens * config.outputMsPerToken;
+    expect(textDeltas).toBe(config.defaultOutputTokens);
+    expect((await result.response).usage.outputTokens).toBe(config.defaultOutputTokens);
+    expect(provider.stats.totalOutputMs).toBeCloseTo(scheduledMs);
+    // Only sleeps shorter than 16 ms are skipped, so the stream can't finish earlier.
+    expect(elapsedMs).toBeGreaterThan(scheduledMs - 20);
+    // A timer per token cost ~10 ms each on Windows; this schedule needs about a dozen.
+    expect(timers.mock.calls.length).toBeLessThan(config.defaultOutputTokens / 5);
   });
 });

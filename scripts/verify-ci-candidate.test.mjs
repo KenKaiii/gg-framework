@@ -44,10 +44,14 @@ function workflowInvariants(source) {
   const jobs = code.slice(code.indexOf("\njobs:\n") + 7);
   assert.deepEqual(
     [...jobs.matchAll(/^ {2}([\w-]+):$/gm)].map((match) => match[1]),
-    ["test", "app"],
-    "six-existing-executions-only",
+    ["test", "verify", "app"],
+    "nine-blocking-executions-only",
   );
-  const sections = [jobs.slice(0, jobs.indexOf("\n  app:")), jobs.slice(jobs.indexOf("\n  app:"))];
+  const sections = [
+    jobs.slice(0, jobs.indexOf("\n  verify:")),
+    jobs.slice(jobs.indexOf("\n  verify:"), jobs.indexOf("\n  app:")),
+    jobs.slice(jobs.indexOf("\n  app:")),
+  ];
   const trustedTests =
     'node --test "$KLEIO_CONTROL_ROOT/scripts/upstream-sync.test.mjs" "$KLEIO_CONTROL_ROOT/scripts/identity-audit.test.mjs" "$KLEIO_CONTROL_ROOT/scripts/consumer-contract.test.mjs" "$KLEIO_CONTROL_ROOT/scripts/verify-ci-candidate.test.mjs"';
   // Both apt-get steps share this wrapper, so a slow mirror can't hold a job.
@@ -67,15 +71,14 @@ function workflowInvariants(source) {
     "return 1",
     "}",
   ];
+  const setup = [
+    "node scripts/verify-ci-candidate.mjs materialize",
+    "pnpm install --frozen-lockfile",
+    "pnpm verify:versions\npnpm -r build",
+  ];
   const runs = [
     [
-      "node scripts/verify-ci-candidate.mjs materialize",
-      "pnpm install --frozen-lockfile",
-      "pnpm verify:versions\npnpm -r build",
-      trustedTests,
-      'node "$KLEIO_CONTROL_ROOT/scripts/consumer-contract.mjs" --sha "$KLEIO_CI_SHA" --root . --registry-read',
-      "node bench/size-gate.mjs --only dist:ggcoder\nnode bench/startup-gate.mjs",
-      "pnpm -r check",
+      ...setup,
       [
         ...aptGet,
         'if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then',
@@ -94,6 +97,13 @@ function workflowInvariants(source) {
       ].join("\n"),
       "pnpm -r test",
       "node packages/ggcoder/dist/cli.js --help\nnode packages/ggcoder/dist/cli.js --version\nnode packages/gg-boss/dist/cli.js --help\nnode packages/gg-boss/dist/cli.js --version",
+    ],
+    [
+      ...setup,
+      trustedTests,
+      'node "$KLEIO_CONTROL_ROOT/scripts/consumer-contract.mjs" --sha "$KLEIO_CI_SHA" --root . --registry-read',
+      "node bench/size-gate.mjs --only dist:ggcoder\nnode bench/startup-gate.mjs",
+      "pnpm -r check",
       "pnpm audit:identity\npnpm audit:identity:packed\npnpm lint\npnpm format:check",
     ],
     [
@@ -118,10 +128,12 @@ function workflowInvariants(source) {
     ],
   ];
   sections.forEach((section, index) => {
-    // The test jobs budget 30 minutes: the Windows leg spends ~9 min in the two
-    // verification gates before a ~6 min vitest run. The app jobs budget 45: the
-    // Windows leg builds an MSI, and a cold Rust cache took it past 30.
-    assert.ok(section.includes(`timeout-minutes: ${index === 0 ? 30 : 45}`), "existing-budget");
+    const isApp = index === 2;
+    // The test and verify jobs budget 30 minutes: on a slow Windows runner test
+    // takes ~15 min and verify ~18 min (as one job they reached ~29.5). The app
+    // jobs budget 45: the Windows leg builds an MSI, and a cold Rust cache took
+    // it past 30.
+    assert.ok(section.includes(`timeout-minutes: ${[30, 30, 45][index]}`), "existing-budget");
     assert.match(section, /runs-on: \$\{\{ matrix.os \}\}/);
     assert.match(section, /fail-fast: false/);
     assert.match(section, /os: \[ubuntu-latest, macos-latest, windows-latest\]/);
@@ -155,20 +167,20 @@ function workflowInvariants(source) {
     );
     assert.deepEqual(
       [...section.matchAll(/working-directory: (.+)/g)].map((m) => m[1]),
-      index === 0
-        ? ["subject", "control"]
-        : [
+      isApp
+        ? [
             "subject",
             "control",
             "subject/packages/kleio-link",
             "subject/gg-app/src-tauri",
             "subject/gg-app",
-          ],
+          ]
+        : ["subject", "control"],
       "subject-working-directories",
     );
     assert.deepEqual(
       [...section.matchAll(/^ {8}if: (.+)/gm)].map((m) => m[1]),
-      index === 0 ? [] : ["runner.os == 'Linux'", "runner.os == 'Windows'"],
+      isApp ? ["runner.os == 'Linux'", "runner.os == 'Windows'"] : [],
       "no-skipped-checks",
     );
     const actual = [...section.matchAll(/^ {8}run: (.+)(?:\n((?: {10}.*(?:\n|$))*))?/gm)].map(
@@ -188,23 +200,24 @@ function workflowInvariants(source) {
       "verify-before-install",
     );
     assert.ok(
-      index === 0
-        ? section.includes("node: [22.x]") && section.includes("node-version: ${{ matrix.node }}")
-        : section.includes("node-version: 22.x"),
+      isApp
+        ? section.includes("node-version: 22.x")
+        : section.includes("node: [22.x]") && section.includes("node-version: ${{ matrix.node }}"),
       "node-22",
     );
   });
   assert.ok(sections[0].includes("name: ${{ matrix.os }} · node ${{ matrix.node }}"));
-  assert.ok(sections[1].includes("name: app · ${{ matrix.os }}"));
+  assert.ok(sections[1].includes("name: verify · ${{ matrix.os }} · node ${{ matrix.node }}"));
+  assert.ok(sections[2].includes("name: app · ${{ matrix.os }}"));
   assert.ok(
-    sections[1].includes(
+    sections[2].includes(
       "workspaces: |\n            subject/gg-app/src-tauri\n            subject/packages/kleio-link\n          save-if: ${{ steps.candidate.outputs.mode == 'ordinary' }}",
     ),
     "candidate-rust-restore-only",
   );
 }
 
-test("CI keeps all six blocking executions, trusted inputs, budgets and isolated caches", () =>
+test("CI keeps all nine blocking executions, trusted inputs, budgets and isolated caches", () =>
   workflowInvariants(WORKFLOW));
 test("focused CI regression checks reject meaningful workflow mutations", () => {
   const consumerStep =
@@ -229,8 +242,10 @@ test("focused CI regression checks reject meaningful workflow mutations", () => 
     ["run: pnpm smoke:packaged", "continue-on-error: true\n        run: pnpm smoke:packaged"],
     ["  app:\n", "  app:\n    if: false\n"],
     ["  test:\n", "  test:\n    if: false\n"],
+    ["  verify:\n", "  verify:\n    if: false\n"],
     ["ubuntu-latest, macos-latest, windows-latest", "ubuntu-latest, macos-latest"],
     ["pnpm -r check", "echo removed"],
+    ["pnpm -r check", "pnpm -r check || true"],
     ["pnpm -r test", "pnpm -r test || true"],
     ["timeout-minutes: 30", "timeout-minutes: 60"],
     ["timeout-minutes: 45", "timeout-minutes: 60"],
@@ -260,6 +275,14 @@ test("focused CI regression checks reject meaningful workflow mutations", () => 
   );
   assert.notEqual(noAppWindows, WORKFLOW);
   assert.throws(() => workflowInvariants(noAppWindows));
+  // Moving a gate back into `test` must fail too: the split keeps each job in budget.
+  const consumerInTest = WORKFLOW.replace(consumerStep, "").replace(
+    "      - name: Test framework packages\n",
+    consumerStep + "\n      - name: Test framework packages\n",
+  );
+  assert.equal(consumerInTest.split(consumerStep).length, 2);
+  assert.ok(consumerInTest.indexOf(consumerStep) < consumerInTest.indexOf("\n  verify:\n"));
+  assert.throws(() => workflowInvariants(consumerInTest));
 });
 function callerInvariants(source) {
   const code = source

@@ -195,9 +195,13 @@ export class MockBenchmarkProvider {
     const outputMs = outputTokens * cfg.outputMsPerToken;
     this.stats.totalOutputMs += outputMs;
 
+    // Token i is due at start + i × outputMsPerToken, so timer overshoot never accumulates.
+    const start = performance.now();
     let textAccum = "";
-    for (let i = 0; i < outputTokens; i++) {
-      await sleep(cfg.outputMsPerToken);
+    for (let i = 1; i <= outputTokens; i++) {
+      const owedMs = start + i * cfg.outputMsPerToken - performance.now();
+      // The first token always waits, so TTFT is unchanged.
+      if (i === 1 || owedMs >= MIN_PACED_SLEEP_MS) await sleep(owedMs);
       const chunk = "x";
       textAccum += chunk;
       yield { type: "text_delta" as const, text: chunk };
@@ -526,6 +530,9 @@ export function createDefaultWorkload(): Workload {
 }
 
 // ── Helpers ─────────────────────────────────────────────────
+
+// Windows rounds short timers up toward its ~15.6 ms tick (a 1.2 ms wait took ~9.5 ms).
+const MIN_PACED_SLEEP_MS = 16;
 
 function sleep(ms: number): Promise<void> {
   if (ms <= 0) return Promise.resolve();

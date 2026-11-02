@@ -43,9 +43,10 @@ jobs:
   test:
     name: ${{ matrix.os }} · node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
-    # 30 not 15: on Windows the two verification gates (local regressions
-    # ~3 min, packed consumer contracts ~6 min) plus the vitest suite (~6 min)
-    # add up to ~21 min of wall time; Linux/macOS finish in about half that.
+    # 30 not 15: most Windows runners are the slow kind, where the vitest
+    # suite takes ~10.5 min and this job ~15 min (a fast runner needs ~9 min).
+    # The verification gates run in the parallel `verify` job. Linux and macOS
+    # take 8-10 min.
     timeout-minutes: 30
     defaults:
       run:
@@ -103,23 +104,6 @@ jobs:
           pnpm verify:versions
           pnpm -r build
 
-      - name: Trusted local verification regressions
-        run: |
-          node --test "$KLEIO_CONTROL_ROOT/scripts/upstream-sync.test.mjs" "$KLEIO_CONTROL_ROOT/scripts/identity-audit.test.mjs" "$KLEIO_CONTROL_ROOT/scripts/consumer-contract.test.mjs" "$KLEIO_CONTROL_ROOT/scripts/verify-ci-candidate.test.mjs"
-
-      - name: Packed public consumer contracts
-        run: node "$KLEIO_CONTROL_ROOT/scripts/consumer-contract.mjs" --sha "$KLEIO_CI_SHA" --root . --registry-read
-
-      # Preserve upstream performance baselines; intentional growth needs review.
-      - name: Size + startup gates
-        run: |
-          node bench/size-gate.mjs --only dist:ggcoder
-          node bench/startup-gate.mjs
-
-      - name: Typecheck
-        run: |
-          pnpm -r check
-
       # Motion's media regressions decode real clips on every OS (upstream
       # 7e7cf885). CI-only provisioning is intentional; never skip these tests
       # when a tool is absent.
@@ -166,6 +150,78 @@ jobs:
           node packages/ggcoder/dist/cli.js --version
           node packages/gg-boss/dist/cli.js --help
           node packages/gg-boss/dist/cli.js --version
+
+  verify:
+    name: verify · ${{ matrix.os }} · node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    # 30 not 15: on a slow Windows runner the local regressions (~3 min),
+    # packed consumer contracts (~6 min, up to ~7) and identity, lint and
+    # format (~3.5 min) make this job ~18 min. These gates used to share one
+    # job with vitest, which reached ~29.5 min against the same 30-min limit.
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: node "${{ github.workspace }}/control/scripts/verify-ci-candidate.mjs" shell bash {0}
+        working-directory: subject
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22.x]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+          path: control
+
+      - name: Verify and materialize exact checkout
+        id: candidate
+        shell: bash
+        working-directory: control
+        env:
+          CANDIDATE_INPUTS: ${{ toJSON(inputs) }}
+        run: node scripts/verify-ci-candidate.mjs materialize
+
+      # pnpm version comes from the candidate package.json's packageManager field.
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: subject/package.json
+          cache: false
+          cache_dependency_path: subject/pnpm-lock.yaml
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: ${{ steps.candidate.outputs.mode == 'ordinary' && 'pnpm' || '' }}
+          package-manager-cache: ${{ steps.candidate.outputs.mode == 'ordinary' }}
+          cache-dependency-path: subject/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build framework packages
+        run: |
+          pnpm verify:versions
+          pnpm -r build
+
+      - name: Trusted local verification regressions
+        run: |
+          node --test "$KLEIO_CONTROL_ROOT/scripts/upstream-sync.test.mjs" "$KLEIO_CONTROL_ROOT/scripts/identity-audit.test.mjs" "$KLEIO_CONTROL_ROOT/scripts/consumer-contract.test.mjs" "$KLEIO_CONTROL_ROOT/scripts/verify-ci-candidate.test.mjs"
+
+      - name: Packed public consumer contracts
+        run: node "$KLEIO_CONTROL_ROOT/scripts/consumer-contract.mjs" --sha "$KLEIO_CI_SHA" --root . --registry-read
+
+      # Preserve upstream performance baselines; intentional growth needs review.
+      - name: Size + startup gates
+        run: |
+          node bench/size-gate.mjs --only dist:ggcoder
+          node bench/startup-gate.mjs
+
+      - name: Typecheck
+        run: |
+          pnpm -r check
 
       - name: Fork identity and workspace quality gates
         run: |
