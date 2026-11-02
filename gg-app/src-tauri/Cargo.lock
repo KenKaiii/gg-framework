@@ -1350,6 +1350,7 @@ dependencies = [
  "futures-util",
  "libc",
  "log",
+ "objc2",
  "open",
  "reqwest",
  "rustls",

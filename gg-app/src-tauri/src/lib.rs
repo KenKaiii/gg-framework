@@ -51,6 +51,8 @@ mod auth;
 mod commands;
 mod daemon;
 mod events;
+#[cfg(target_os = "macos")]
+mod macos_event_guard;
 mod paths;
 mod process;
 mod settings;
@@ -85,9 +87,23 @@ fn install_rustls_provider() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
+/// Record panics in gg-app.log: a GUI app's stderr goes nowhere, and a panic
+/// on the AppKit main thread aborts with a crash report that omits the message.
+fn install_panic_log_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        log::error!("[panic] {info}\n{backtrace}");
+        default_hook(info);
+    }));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     install_rustls_provider();
+    install_panic_log_hook();
+    #[cfg(target_os = "macos")]
+    macos_event_guard::install();
 
     // Per-launch daemon auth token (see `Daemon::token`). The shared reqwest
     // client attaches it as a default header so all ~60 proxy call sites are
