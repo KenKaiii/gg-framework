@@ -58,6 +58,8 @@ export interface AppSettings {
   projectRoots?: string[];
   /** Project paths dismissed from the picker, as normalized cwds. */
   hiddenProjects?: string[];
+  /** Projects (normalized cwds) where the user's own `!` commands run without asking. */
+  shellTrusted?: string[];
 }
 
 export function stringArray(value: unknown): string[] | undefined {
@@ -103,6 +105,7 @@ export async function loadAppSettings(): Promise<AppSettings> {
       kenModels: raw.kenModels && typeof raw.kenModels === "object" ? raw.kenModels : undefined,
       projectRoots: stringArray(raw.projectRoots),
       hiddenProjects: stringArray(raw.hiddenProjects),
+      shellTrusted: stringArray(raw.shellTrusted),
     };
   } catch {
     return { projectsRoot: defaultProjectsRoot() };
@@ -181,6 +184,20 @@ export async function saveAutopilot(cwd: string, enabled: boolean): Promise<void
   const key = projectModelKey(cwd);
   await updateAppSettings((s) => {
     s.autopilot = { ...(s.autopilot ?? {}), [key]: enabled };
+  });
+}
+
+/** Whether the user's own `!` commands in this project run without asking. */
+export async function loadShellTrusted(cwd: string): Promise<boolean> {
+  const s = await loadAppSettings();
+  return s.shellTrusted?.includes(projectModelKey(cwd)) ?? false;
+}
+
+export async function saveShellTrusted(cwd: string, trusted: boolean): Promise<void> {
+  const key = projectModelKey(cwd);
+  await updateAppSettings((s) => {
+    const rest = (s.shellTrusted ?? []).filter((p) => p !== key);
+    s.shellTrusted = trusted ? [...rest, key] : rest.length > 0 ? rest : undefined;
   });
 }
 

@@ -229,6 +229,22 @@ export function handleHistoryRoutes(
           } else if (marker.kind === "error" && typeof d.headline === "string") {
             const error = restoreAppErrorPayload(d);
             if (error) history.push({ role: "assistant", text: "", error });
+          } else if (marker.kind === "shell" && typeof d.command === "string") {
+            history.push({
+              role: "assistant",
+              text: "",
+              shell: {
+                runId: typeof d.runId === "string" ? d.runId : "",
+                command: d.command,
+                cwd: typeof d.cwd === "string" ? d.cwd : "",
+                exitCode: typeof d.exitCode === "number" ? d.exitCode : null,
+                durationMs: typeof d.durationMs === "number" ? d.durationMs : 0,
+                cancelled: d.cancelled === true,
+                output: typeof d.output === "string" ? d.output : "",
+                truncated: d.truncated === true,
+                ...(typeof d.error === "string" ? { error: d.error } : {}),
+              },
+            });
           } else if (marker.kind === "interrupted_run") {
             // Rendered as an error row: the run's tools already changed the
             // repo, so the user needs to see it and decide what to do. We

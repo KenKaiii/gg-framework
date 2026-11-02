@@ -228,6 +228,8 @@ export interface AgentState {
   goal?: GoalStateInfo | null;
   /** Questions still waiting on the user (validate with `parseOpenAskPrompts`). */
   openAskPrompts?: unknown;
+  /** The user's `!` commands whose output hasn't reached the agent yet. */
+  pendingShellRuns?: string[];
   /** Cold-prompt-cache status (sidecar /state + `cache_expiry` event). Null when
    *  the route has no known cache TTL or the chat is empty; absent on older sidecars. */
   cacheExpiry?: CacheExpiryStatus | null;
@@ -786,6 +788,115 @@ export async function openProjectPath(path: string): Promise<void> {
   }
 }
 
+// ── The user's own commands (`!cmd`) ──────────────────────
+
+export type ShellStart = { ok: true } | { ok: false; error: string };
+
+/**
+ * Run a command the user typed as `!cmd` in this window's project. Pass
+ * `confirmed` only after the user approved this exact command; otherwise the
+ * sidecar refuses with `confirmation_required` unless the project is trusted.
+ * Output arrives as `shell_output` / `shell_end` events.
+ */
+export async function runShellCommand(
+  id: string,
+  command: string,
+  confirmed: boolean,
+): Promise<ShellStart> {
+  try {
+    await waitForReady();
+    await invoke("agent_shell_run", { id, command, confirmed });
+    return { ok: true };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    if (error !== "confirmation_required") await logError(`agent_shell_run failed: ${error}`);
+    return { ok: false, error };
+  }
+}
+
+/** Stop a running `!cmd` and everything it started. */
+export async function cancelShellCommand(id: string): Promise<void> {
+  try {
+    await invoke("agent_shell_cancel", { id });
+  } catch (e) {
+    await logError(`agent_shell_cancel failed: ${String(e)}`);
+  }
+}
+
+/** A `!` picker entry: a command the user ran here, or one that fits the project. */
+export interface ShellSuggestion {
+  command: string;
+  /** Times the user ran it in this project; 0 for a project suggestion. */
+  count: number;
+  /** Where a never-run suggestion comes from, e.g. "package.json". */
+  source?: string;
+}
+
+/** The `!` picker's commands for this project, most used first. */
+export async function listShellSuggestions(): Promise<ShellSuggestion[]> {
+  try {
+    await waitForReady();
+    const res = await invoke<{ suggestions?: unknown }>("agent_shell_suggestions");
+    if (!Array.isArray(res.suggestions)) return [];
+    return res.suggestions.flatMap((s): ShellSuggestion[] => {
+      if (typeof s !== "object" || s === null) return [];
+      const { command, count, source } = s as Record<string, unknown>;
+      if (typeof command !== "string" || !command) return [];
+      return [
+        {
+          command,
+          count: typeof count === "number" ? count : 0,
+          ...(typeof source === "string" ? { source } : {}),
+        },
+      ];
+    });
+  } catch (e) {
+    await logError(`agent_shell_suggestions failed: ${String(e)}`);
+    return [];
+  }
+}
+
+/** Whether this project runs the user's `!` commands without asking. */
+export async function getShellTrust(): Promise<boolean> {
+  try {
+    await waitForReady();
+    const res = await invoke<{ trusted?: unknown }>("agent_shell_trust", { trusted: null });
+    return res.trusted === true;
+  } catch (e) {
+    await logError(`agent_shell_trust failed: ${String(e)}`);
+    return false;
+  }
+}
+
+/** Save whether this project runs the user's `!` commands without asking. */
+export async function setShellTrust(trusted: boolean): Promise<boolean> {
+  await waitForReady();
+  const res = await invoke<{ trusted?: unknown }>("agent_shell_trust", { trusted });
+  return res.trusted === true;
+}
+
+/**
+ * Load a local image a reply points at (`![](/tmp/shot.png)`) as a data URL;
+ * the webview can't read disk paths itself. Null when it can't be shown.
+ */
+export async function readChatImage(path: string): Promise<string | null> {
+  let decoded = path;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    // Keep the original string if the model emitted a malformed `%` escape.
+  }
+  try {
+    const res = await invoke<{ mediaType: string; data: string }>("read_chat_image", {
+      path: decoded,
+    });
+    return `data:${res.mediaType};base64,${res.data}`;
+  } catch (e) {
+    await logError(`read_chat_image failed for ${decoded}: ${String(e)}`);
+    return null;
+  }
+}
+
 /**
  * Open an in-memory chat image (a `data:<type>;base64,...` URL from a paste or
  * attachment) in the default image viewer. It has no file of its own, so the
@@ -1057,6 +1168,18 @@ export interface HistoryEntry {
   infoKind?: "video_warning";
   /** Safety-block chat row. */
   security?: { rule: string; target: string };
+  /** A command the user ran themselves (`!cmd`), with the saved end of its output. */
+  shell?: {
+    runId: string;
+    command: string;
+    cwd: string;
+    exitCode: number | null;
+    durationMs: number;
+    cancelled: boolean;
+    output: string;
+    truncated: boolean;
+    error?: string;
+  };
   /** Tool-produced images rendered inline (same as live `images` items),
    *  reconstructed from ImageContent blocks in persisted tool results. */
   toolImages?: Array<{ src: string; path?: string }>;

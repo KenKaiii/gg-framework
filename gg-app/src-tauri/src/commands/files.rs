@@ -100,6 +100,13 @@ pub(crate) fn strip_file_location_suffix(path: &str) -> &str {
 #[tauri::command]
 pub(crate) fn open_project_path(webview: WebviewWindow, path: String) -> Result<(), String> {
     let cwd = cwd_for(&webview).ok_or("sidecar not ready")?;
+    let canonical = resolve_chat_path(&cwd, &path)?;
+    open_with_default(&canonical.to_string_lossy())
+}
+
+/// Resolve a file path written in the chat (`src/a.ts:12`, `/abs/x.png`,
+/// `file://…#L3`) to a canonical, existing path. Relative paths join `cwd`.
+pub(crate) fn resolve_chat_path(cwd: &Path, path: &str) -> Result<PathBuf, String> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return Err("empty path".into());
@@ -124,13 +131,55 @@ pub(crate) fn open_project_path(webview: WebviewWindow, path: String) -> Result<
     } else {
         cwd.join(candidate)
     };
-    let canonical = strip_extended_prefix(
+    Ok(strip_extended_prefix(
         resolved
             .canonicalize()
             .map_err(|_| format!("file not found: {}", cleaned))?,
-    );
+    ))
+}
 
-    open_with_default(&canonical.to_string_lossy())
+/// Cap for an image shown inline in a reply; it travels to the webview as base64.
+pub(crate) const MAX_CHAT_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
+
+/// Media type from the file's leading bytes. Only raster formats the webview
+/// can show in an `<img>`; SVG is left out (it is a document, not pixels).
+pub(crate) fn sniff_image_type(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else if bytes.starts_with(b"BM") {
+        Some("image/bmp")
+    } else {
+        None
+    }
+}
+
+/// Read a local image referenced by a reply (`![](/tmp/shot.png)`) so the chat
+/// can show it: the webview can't load disk paths itself. Only real image
+/// files (checked by content, not just name) under the size cap are returned.
+#[tauri::command]
+pub(crate) fn read_chat_image(
+    webview: WebviewWindow,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    let cwd = cwd_for(&webview).ok_or("sidecar not ready")?;
+    let file = resolve_chat_path(&cwd, &path)?;
+    let metadata = std::fs::metadata(&file).map_err(|e| e.to_string())?;
+    if !metadata.is_file() {
+        return Err(format!("not a file: {path}"));
+    }
+    if metadata.len() > MAX_CHAT_IMAGE_BYTES {
+        return Err(format!("image too large to show: {path}"));
+    }
+    let bytes = std::fs::read(&file).map_err(|e| e.to_string())?;
+    let media_type = sniff_image_type(&bytes).ok_or_else(|| format!("not an image: {path}"))?;
+    let data = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Ok(serde_json::json!({ "mediaType": media_type, "data": data }))
 }
 
 /// Image types `open_image_data` will write, mapped to the extension it uses.
@@ -208,6 +257,48 @@ mod tests {
         assert_eq!(image_extension_for("image/jpeg"), Some("jpg"));
         assert_eq!(image_extension_for("application/x-sh"), None);
         assert_eq!(image_extension_for("image/svg+xml"), None);
+    }
+
+    #[test]
+    fn chat_images_are_recognised_by_content_not_name() {
+        assert_eq!(
+            sniff_image_type(b"\x89PNG\r\n\x1a\nrest"),
+            Some("image/png")
+        );
+        assert_eq!(
+            sniff_image_type(&[0xFF, 0xD8, 0xFF, 0xE0]),
+            Some("image/jpeg")
+        );
+        assert_eq!(sniff_image_type(b"GIF89a.."), Some("image/gif"));
+        assert_eq!(
+            sniff_image_type(b"RIFF\0\0\0\0WEBPVP8 "),
+            Some("image/webp")
+        );
+        assert_eq!(
+            sniff_image_type(b"-----BEGIN OPENSSH PRIVATE KEY-----"),
+            None
+        );
+        assert_eq!(
+            sniff_image_type(b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>"),
+            None
+        );
+        assert_eq!(sniff_image_type(b""), None);
+    }
+
+    #[test]
+    fn chat_paths_resolve_relative_and_decorated_forms() {
+        let dir = std::env::temp_dir().join(format!("gg-chat-path-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("shot.png");
+        std::fs::write(&file, b"x").unwrap();
+        let want = strip_extended_prefix(file.canonicalize().unwrap());
+        assert_eq!(resolve_chat_path(&dir, "shot.png").unwrap(), want);
+        assert_eq!(resolve_chat_path(&dir, "shot.png:12").unwrap(), want);
+        let url = format!("file://{}#L3", file.to_string_lossy());
+        assert_eq!(resolve_chat_path(Path::new("/"), &url).unwrap(), want);
+        assert!(resolve_chat_path(&dir, "https://example.com/a.png").is_err());
+        assert!(resolve_chat_path(&dir, "missing.png").is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

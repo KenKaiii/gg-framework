@@ -58,6 +58,9 @@ export function handleSessionRoutes(
       // Questions still waiting on the user, for a window rebuilding its
       // transcript (history has the tool call, not the open card).
       openAskPrompts: ctx.asks.openPrompts(),
+      // The user's own commands still waiting to reach the agent with their
+      // next message (a reopened window shows them as pending).
+      pendingShellRuns: ctx.session.getPendingUserShellRunIds(),
       running: ctx.running,
       runState: ctx.runLifecycle.state,
       ready: true,
@@ -161,6 +164,9 @@ export function handleSessionRoutes(
           // And the questions themselves: a reloaded window lost its cards
           // while the agent still waits on one.
           openAskPrompts: ctx.asks.openPrompts(),
+          // The user's own commands still waiting to reach the agent with their
+          // next message (a reopened window shows them as pending).
+          pendingShellRuns: ctx.session.getPendingUserShellRunIds(),
           running: ctx.running,
           reviewPending: ctx.autopilotActive,
           // A reconnecting window (reload/reopen) re-opens the review box for

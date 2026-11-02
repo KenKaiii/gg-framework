@@ -152,6 +152,8 @@ import { handleRunControlRoutes } from "./app-sidecar/run-control-routes.js";
 import { handleAuthRoutes } from "./app-sidecar/auth-routes.js";
 import { handleIntegrationRoutes } from "./app-sidecar/integration-routes.js";
 import { handleMcpRoutes } from "./app-sidecar/mcp-routes.js";
+import { finishShellRun, handleShellRoutes } from "./app-sidecar/shell-routes.js";
+import { ShellRunner } from "./app-sidecar/shell-runs.js";
 import type { SessionRouteContext } from "./app-sidecar/route-context.js";
 import { createHfPullManager } from "./app-sidecar/hf-pull-manager.js";
 import { keepAwake } from "./app-sidecar/keep-awake.js";
@@ -2427,7 +2429,12 @@ async function createSession(
     });
   }
 
+  const shell = new ShellRunner({
+    emit: (type, data) => broadcast(type, data),
+    onEnd: (run) => finishShellRun(routeCtx, run),
+  });
   const routeCtx: SessionRouteContext = {
+    shell,
     get session() {
       return session;
     },
@@ -2665,6 +2672,7 @@ async function createSession(
     if (handleAuthRoutes(routeCtx, req, res, url, method)) return;
     if (handleIntegrationRoutes(routeCtx, req, res, url, method)) return;
     if (handleMcpRoutes(routeCtx, req, res, url, method)) return;
+    if (handleShellRoutes(routeCtx, req, res, url, method)) return;
 
     json(res, 404, { error: "not found" });
   }
@@ -2675,6 +2683,7 @@ async function createSession(
     // started. Otherwise they keep streaming tokens and running tools on a
     // session that is being torn down.
     abortOwnedWork();
+    shell.stopAll();
     idleWake?.dispose();
     cancelHfPull();
     releaseRunAwake?.();
@@ -2698,6 +2707,7 @@ async function createSession(
   }
 
   function stopBackgroundProcesses(): void {
+    shell.stopAll();
     session.stopBackgroundProcesses();
     kenSession?.stopBackgroundProcesses();
     kenAutoSession?.stopBackgroundProcesses();

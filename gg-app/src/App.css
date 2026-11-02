@@ -9754,6 +9754,28 @@ select {
   text-overflow: ellipsis;
 }
 
+/* Images inside a reply reuse the tool image card; wider, since a reply
+   image is usually the point of the message rather than a side preview. */
+.markdown .md-img {
+  display: inline-block;
+  vertical-align: top;
+  max-width: min(100%, 720px);
+  margin: var(--space-3) 0;
+}
+.markdown .md-img .img-thumb {
+  max-height: 480px;
+}
+.markdown .md-img .img-cap {
+  display: block;
+  line-height: 1.3;
+}
+.markdown .md-img-loading,
+.markdown .md-img-missing,
+.markdown .md-img-alt {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
 /* ── Image generation placeholder (shimmering square while tool runs) ── */
 .img-gen-placeholder {
   display: flex;
@@ -12620,4 +12642,207 @@ select {
   .pixel-tip {
     --tip-px: 1px;
   }
+}
+
+/* ── The user's own commands (`!cmd`) ──
+   A command and its output, run with no agent turn. Built from the code-block
+   vocabulary (code background, mono, neutral keyline): it is terminal output,
+   not a reply, so it carries no assistant dot and no bubble. */
+.shell-run {
+  margin: var(--space-4) 0 var(--space-3);
+  background: var(--code-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+.shell-run-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-6);
+  background: var(--user-bg);
+  color: var(--text);
+}
+.shell-run-cmd {
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-md);
+  line-height: 1.35;
+  font-weight: 600;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.shell-run-prompt {
+  margin-inline-end: var(--space-3);
+  color: var(--primary);
+}
+.shell-run-cwd {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+.shell-run-out {
+  margin: 0;
+  padding: var(--space-5) var(--space-6);
+  max-height: 60vh;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--code-bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Folded: the newest lines show; fade the first so it reads as "there is more above". */
+.shell-run-out.folded {
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.35) 0, #000 3em);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.35) 0, #000 3em);
+}
+.shell-run-more {
+  display: block;
+  margin: 0 var(--space-6) var(--space-4);
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+  color: var(--primary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.shell-run-more:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.shell-run-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-6);
+  padding: var(--space-3) var(--space-6);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+.shell-run-status {
+  font-weight: 600;
+}
+.shell-run-status.is-ok {
+  color: var(--success);
+}
+.shell-run-status.is-bad {
+  color: var(--warning);
+}
+.shell-run-share {
+  margin-inline-start: auto;
+}
+.shell-run-copy {
+  display: inline-flex;
+  align-items: center;
+}
+.shell-declined {
+  margin: var(--space-3) 0;
+  font-size: var(--fs-base);
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+.shell-declined code,
+.shell-confirm-where code {
+  font-family: var(--mono);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.shell-confirm-cmd {
+  margin: 0;
+  padding: var(--space-4) var(--space-6);
+  font-family: var(--mono);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.shell-confirm-where {
+  margin: var(--space-4) 0 0;
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.shell-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+.shell-confirm-keys {
+  margin-inline-start: auto;
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+/* Composer in command mode: mono text, a quiet primary keyline and one line
+   saying where the command runs and whether it asks first. */
+.inputwrap.shell-mode,
+.inputwrap.shell-mode:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+}
+.input.input-shell {
+  font-family: var(--mono);
+}
+/* The `!` picker reuses the @ picker's chrome; commands read as code. */
+.shell-menu-command {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shell-menu-note {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.shell-menu-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-1);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+}
+.shell-menu-revoke {
+  padding: 0;
+  font: inherit;
+  color: var(--primary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* Error output (stderr): the warning ink plus italics, so it never relies on
+   colour alone; it stays inline, in the order it arrived. */
+.shell-run-err {
+  color: var(--warning);
+  font-style: italic;
 }

@@ -174,6 +174,7 @@ import {
   withJudgeTimeout,
 } from "./semantic-loop-check.js";
 import { buildEnvDeltaMessage, buildLanguageUpdateMessage } from "./env-delta.js";
+import { buildUserShellContextText } from "./user-shell-context.js";
 import { buildPlanStateMessage, samePlanState, type PlanPromptState } from "./plan-delta.js";
 import { listProjectFiles, type ProjectFileList } from "./project-files.js";
 import {
@@ -868,6 +869,9 @@ export class AgentSession {
    * dropped as out-of-range. Anchoring to the persisted prefix keeps resume
    * placement 1:1 with where the row appeared live.
    */
+  /** Commands the user ran themselves, held until their next message. */
+  private pendingUserShell: Array<{ runId: string; text: string }> = [];
+
   private persistedTranscriptCount(): number {
     return this.messages.slice(0, this.lastPersistedIndex).filter((m) => m.role !== "system")
       .length;
@@ -1571,6 +1575,7 @@ export class AgentSession {
       // Prompt templates remain human-originated: the user invoked the command.
       const userMessage: Message = { role: "user", content: slash.fullPrompt, provenance };
       await this.announceNewLanguages();
+      if (provenance.source === "human") await this.deliverUserShellContext();
       this.messages.push(userMessage);
       await this.persistMessage(userMessage);
       this.lastPersistedIndex = this.messages.length;
@@ -1589,6 +1594,7 @@ export class AgentSession {
     // Push user message
     const userMessage: Message = { role: "user", content, provenance };
     await this.announceNewLanguages();
+    if (provenance.source === "human") await this.deliverUserShellContext();
     this.messages.push(userMessage);
     await this.persistMessage(userMessage);
     this.lastPersistedIndex = this.messages.length;
@@ -1618,6 +1624,7 @@ export class AgentSession {
       provenance: { source: "human", kind: "prompt", visibility: "transcript" },
     };
     await this.announceNewLanguages();
+    await this.deliverUserShellContext();
     this.messages.push(userMessage);
     await this.persistMessage(userMessage);
     this.lastPersistedIndex = this.messages.length;
@@ -1935,9 +1942,11 @@ export class AgentSession {
         ];
         return { role: "user", content: parts, provenance };
       });
+      const userShell = this.takeUserShellContext();
       return [
         ...(environmentDelta ? [environmentDelta] : []),
         ...(planNotice ? [planNotice] : []),
+        ...(userShell ? [userShell] : []),
         ...steeringMessages,
         ...(notificationMessage ? [notificationMessage] : []),
       ];
@@ -3807,6 +3816,38 @@ export class AgentSession {
     // Instant interrupt: preempt running tools so the steer lands right away.
     for (const listener of [...this.steeringListeners]) listener();
     return this.userQueue.length;
+  }
+
+  /**
+   * Hold the output of a command the user ran themselves (`!cmd` in the app)
+   * so it reaches the agent with their next message: a prompt, or a message
+   * queued as steering. Never on its own, and never mid-run without one.
+   */
+  addUserShellContext(runId: string, text: string): void {
+    if (text.trim()) this.pendingUserShell.push({ runId, text });
+  }
+
+  /** Run ids of user commands still waiting for the next message. */
+  getPendingUserShellRunIds(): string[] {
+    return this.pendingUserShell.map((entry) => entry.runId);
+  }
+
+  private takeUserShellContext(): Message | null {
+    if (this.pendingUserShell.length === 0) return null;
+    const blocks = this.pendingUserShell.splice(0).map((entry) => entry.text);
+    return {
+      role: "user",
+      content: buildUserShellContextText(blocks),
+      provenance: { source: "runtime", kind: "notification", visibility: "hidden" },
+    };
+  }
+
+  /** Persist pending user command output just ahead of the human message. */
+  private async deliverUserShellContext(): Promise<void> {
+    const message = this.takeUserShellContext();
+    if (!message) return;
+    this.messages.push(message);
+    await this.persistMessage(message);
   }
 
   /** Pending queued messages (id + text), oldest first, for client display. */

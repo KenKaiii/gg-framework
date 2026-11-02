@@ -81,6 +81,9 @@ export type Item =
       /** Soft deadline passed: the agent went on; an answer is still delivered late. */
       deferred?: boolean;
     }
+  // A command the user ran themselves (`!cmd`). Its output streams through the
+  // live-text store while it runs; `output` holds it once finished.
+  | ShellItem
   // A task kicked off from the Tasks modal (shown at the top of its session).
   | { kind: "task"; id: number; title: string }
   // Sub-agents delegated in a turn — a live, in-chat feed of each one's tools.
@@ -120,3 +123,25 @@ let idSeq = 0;
 export const nextId = (): number => ++idSeq;
 /** The most recently issued transcript item id. */
 export const lastIssuedId = (): number => idSeq;
+
+export type ShellItem = {
+  kind: "shell";
+  id: number;
+  runId: string;
+  command: string;
+  cwd: string;
+  /** confirm: waiting for Run/Cancel. declined: the user said no. failed: never started. */
+  status: "confirm" | "declined" | "running" | "done" | "failed";
+  output: string;
+  startedAt?: number;
+  exitCode?: number | null;
+  durationMs?: number;
+  cancelled?: boolean;
+  /** Live: output stopped showing past the cap. Restored: only the last lines were saved. */
+  truncated?: boolean;
+  /** Rebuilt from the saved session rather than run in this window. */
+  restored?: boolean;
+  error?: string;
+  /** The output went to the agent with a message the user sent. */
+  shared?: boolean;
+};

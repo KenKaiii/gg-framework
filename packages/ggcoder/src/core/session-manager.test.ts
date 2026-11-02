@@ -661,6 +661,23 @@ describe("SessionManager.getAppMarkers", () => {
     ]);
   });
 
+  it("keeps the user's own command rows (`!cmd`) for the resumed transcript", () => {
+    const markers = manager.getAppMarkers([
+      autopilotEntry(
+        "s1",
+        {
+          version: 1,
+          kind: "shell",
+          afterMessageCount: 2,
+          data: { runId: "r1", command: "ls", exitCode: 0, output: "a.ts" },
+        },
+        APP_MARKER_CUSTOM_KIND,
+      ),
+    ]);
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({ kind: "shell", data: { command: "ls", output: "a.ts" } });
+  });
+
   it("accepts the compaction kind (persisted N → M counts for the resumed notice)", () => {
     const markers = manager.getAppMarkers([
       autopilotEntry(

@@ -13,6 +13,8 @@ import { PlanModeLogo } from "./PlanModeLogo";
 import { PlanDecisionNotice } from "./PlanDecisionNotice";
 import { SecurityNotice } from "./SecurityNotice";
 import { AskBand } from "./AskBand";
+import { ShellBlock } from "./ShellBlock";
+import type { ShellActions } from "./useShellRuns";
 import { Markdown } from "./Markdown";
 import { Skeleton } from "./Skeleton";
 import { segmentDoneMarkers, hasDoneMarker } from "./plan-steps";
@@ -146,6 +148,7 @@ export const TranscriptRow = memo(function TranscriptRow({
   onContentGrow,
   onAskAnswer,
   onAskType,
+  shellActions,
 }: {
   item: Item;
   view: { readonly visible: boolean };
@@ -163,6 +166,7 @@ export const TranscriptRow = memo(function TranscriptRow({
     delta: Record<string, string | string[]>,
   ) => void;
   onAskType?: (itemId: number, promptId: string, questionId: string, seed?: string) => void;
+  shellActions?: ShellActions;
 }): React.ReactElement | null {
   const entranceRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -187,6 +191,7 @@ export const TranscriptRow = memo(function TranscriptRow({
       onContentGrow={onContentGrow}
       onAskAnswer={onAskAnswer}
       onAskType={onAskType}
+      shellActions={shellActions}
     />
   );
   if (!animateIn) return row;
@@ -206,6 +211,7 @@ function TranscriptRowBody({
   onContentGrow,
   onAskAnswer,
   onAskType,
+  shellActions,
 }: {
   item: Item;
   /** This is the Ken reply currently streaming in, so his face talks. */
@@ -221,6 +227,8 @@ function TranscriptRowBody({
   ) => void;
   /** Answer this question by typing in the composer instead of clicking. */
   onAskType?: (itemId: number, promptId: string, questionId: string, seed?: string) => void;
+  /** Run, cancel or stop the user's own `!` commands. */
+  shellActions?: ShellActions;
 }): React.ReactElement | null {
   switch (item.kind) {
     case "user":
@@ -432,6 +440,8 @@ function TranscriptRowBody({
       );
     case "subagent_group":
       return <SubAgentFeed agents={item.agents} aborted={item.aborted} />;
+    case "shell":
+      return <ShellBlock item={item} actions={shellActions} onGrow={onContentGrow} />;
     case "security":
       return (
         <SecurityNotice
