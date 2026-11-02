@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.100.1",
+    date: "2026-11-03",
+    items: [
+      "No more surprise crashes on `macOS 27`. A new macOS hiccup, often set off by the Siri button over selected text, could close GG Coder out of nowhere. I fixed it so the app shrugs it off and keeps running, and if anything ever does go wrong, the real reason now lands in the log so I can squash it fast.",
+    ],
+  },
+  {
     version: "0.100.0",
     date: "2026-11-02",
     items: [
