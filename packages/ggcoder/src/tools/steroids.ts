@@ -17,8 +17,8 @@ const MAX_STDOUT = 1024 * 1024;
 
 // Highest output budget a call may ask for. A search above it is mostly
 // matches the model never reads, so it is capped low; a read the model chose
-// (a range, full, symbols) may run to steroids' own 16,000-character ceiling,
-// because cutting it short only sends the model back for the rest.
+// (symbols) may run to steroids' own 16,000-character ceiling, because cutting
+// it short only sends the model back for the rest; ranges stop at 6,000.
 const MAX_TOKENS = { search: 1500, read: 4000 };
 
 const SteroidsParams = z.object({
@@ -39,7 +39,7 @@ const SteroidsParams = z.object({
     .boolean()
     .optional()
     .describe(
-      "show: a long file's code instead of its outline (up to 16,000 chars); changes: the whole entry",
+      "show: from the top instead of the outline, 6,000 chars at a time (outline then symbols reads less); changes: the whole entry",
     ),
   query: z.string().optional().describe("discover: 'topic:X language:Y' or 2-3 keywords"),
   repo: z
@@ -197,14 +197,14 @@ export function buildSteroidsArgs(a: Params): string[] {
   return args;
 }
 
-const DESCRIPTION = `Read real open-source code from a local corpus when local evidence leaves an API, design choice or risk unresolved. Search literal tokens, then read only what you need; reuse examples already read. Offline; no rate limits.
-- search: regex across all repos (fixed=true literal); filter repo/language/path/tag; perRepo=1 for breadth. 10+ matches come back one line each; narrow, or set context to see code.
+const DESCRIPTION = `Current open-source code. Use it when local evidence leaves an API, design choice or risk unresolved and the answer may be newer than your training, or you don't know which projects do this; not a default research step. Search literal tokens, then read only what you need. Offline; no rate limits.
+- search: regex across all repos (fixed=true literal); filter repo/language/path/tag; perRepo=1 for breadth. 10+ matches: one line each.
 - define: where symbols are defined (symbol='a,b,c'). With repo or path: each whole body, no file needed.
-- show: after an outline, read bodies with symbols=[names]; from/to only for code that isn't a definition. A long file gives its outline (full=true reads it); path=a folder, every file's outline. Partial reads end with "uses": the same-repo helpers that code calls, so don't look those up again. Put every read you need in one reply.
+- show: a long file gives its outline; then read bodies with symbols=[names], from/to only for code that isn't a definition (6,000 chars a read). path=a folder, every file's outline. Partial reads end with "uses": the same-repo helpers that code calls, so don't look those up again. Put every read you need in one reply.
 - changes: a release's contents from the repo's changelog (version, default latest); pattern='form|param' returns those items whole.
-- files: one repo's files by folder; a big repo gives its folders, then ask with path. repos: repo='axios' finds indexed repos with version; without it, a summary.
+- files: one repo's files by folder. repos: repo='axios' finds indexed repos with version.
 - discover: find GitHub repos; query 'topic:X language:Y' or 2-3 keywords (4+ words finds nothing). found=0: retry once with 2 words or topic:. add=true indexes all found (ask the user first).
-- add: index chosen repos (owner/name); on an indexed repo, re-fetches latest. Rows marked STALE (>7 days): refresh with add before relying on them, no need to ask; only NEW repos need the user's agreement.
+- add: index chosen repos (owner/name); on an indexed one, re-fetches latest (seconds to a minute). Results say when their code is from; refresh only if the task needs later changes. Only NEW repos need the user's agreement.
 - recent: upstream changes in the last N hours.
 repo/language are case-insensitive; a path without globs is a prefix.
 Topic not covered = corpus gap, not a bad query: don't retry variants; discover, propose repos, add once the user agrees.`;
@@ -219,8 +219,6 @@ interface RepoRow {
   indexed_at?: string;
   tags?: string[];
 }
-
-const STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * `repos --json` is ~370 bytes per repo (commit, byte counts, url, ...); a
@@ -262,25 +260,22 @@ export function compactRepos(
   }
   const rows = parsed.repositories ?? [];
   if (!filtered && rows.length > REPO_LIST_MAX) return summarizeRepos(rows);
-  let stale = 0;
+  // Age only, no STALE flag or refresh advice: that sent agents into a
+  // blocking `add` mid-task; reads say when their code is from instead.
   const lines = rows.map((r) => {
     const tags = r.tags?.length ? ` [${r.tags.join(",")}]` : "";
     const indexed = r.indexed_at ? Date.parse(r.indexed_at) : NaN;
     let age = "";
     if (Number.isFinite(indexed)) {
       const days = Math.max(0, Math.floor((now - indexed) / 86_400_000));
-      const isStale = now - indexed > STALE_AFTER_MS;
-      if (isStale) stale++;
-      age = `  indexed ${days}d ago${isStale ? " STALE" : ""}`;
+      age = `  indexed ${days}d ago`;
     }
     const snapshot = r.version ? `  v${r.version}` : "";
     return `${r.repo}${snapshot}  ${r.language ?? "?"}  ${r.files ?? "?"} files  ${r.last_commit ?? ""}${age}${tags}`;
   });
-  const staleNote = stale > 0 ? `, ${stale} STALE (refresh with add before relying on them)` : "";
-  return [
-    `${parsed.count ?? rows.length} repos indexed, ${rows.length} shown${staleNote}`,
-    ...lines,
-  ].join("\n");
+  return [`${parsed.count ?? rows.length} repos indexed, ${rows.length} shown`, ...lines].join(
+    "\n",
+  );
 }
 
 // Indexing (`add`, `discover --add`) is deliberately NOT gated on plan mode:

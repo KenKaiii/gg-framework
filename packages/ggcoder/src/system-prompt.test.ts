@@ -472,6 +472,10 @@ describe("buildSystemPrompt", () => {
     expect(description).toContain("don't retry variants");
     expect(description).toContain("add once the user agrees");
     expect(description).toContain("add=true indexes all found (ask the user first)");
+    expect(description).toContain("may be newer than your training");
+    expect(description).toContain("not a default research step");
+    expect(description).not.toContain("full=true");
+    expect(description).not.toContain("STALE");
     expect(description.length).toBeLessThan(1_800);
   });
 

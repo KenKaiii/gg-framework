@@ -39,7 +39,7 @@ export const TOOL_PROMPT_HINTS: Record<string, string> = {
   skill: "Load a named skill's instructions.",
   tool_search: "Load on-demand and integration tools by capability.",
   generate_image: "Images; only if asked.",
-  steroids: "Real-repo examples.",
+  steroids: "Current open-source code, when it may be newer than your training.",
 };
 
 /**
