@@ -42,9 +42,6 @@ import { kimiCodingHeaders, isKimiCodingEndpoint } from "./oauth/kimi.js";
 import { isGrokCliEndpoint } from "./oauth/xai.js";
 import {
   SessionManager,
-  KEN_TURN_CUSTOM_KIND,
-  AUTOPILOT_MARKER_CUSTOM_KIND,
-  APP_MARKER_CUSTOM_KIND,
   type MessageEntry,
   type BranchInfo,
   type CustomEntry,
@@ -64,19 +61,9 @@ import {
   type CompactionContextSelection,
   type CompactionResult,
 } from "./compaction/compactor.js";
-import {
-  getHistoryMessageVisibility,
-  remapAnchorForCompaction,
-  stripRecordedPosition,
-} from "./session-history.js";
+import { getHistoryMessageVisibility } from "./session-history.js";
 import { sourceFingerprint as computeSourceFingerprint } from "./session-compaction.js";
-import {
-  getAuthStorageKeys,
-  getContextWindow,
-  getModel,
-  getToolResultCharLimit,
-  MODELS,
-} from "./model-registry.js";
+import { getAuthStorageKeys, getContextWindow, getModel, MODELS } from "./model-registry.js";
 import { discoverSkills, type Skill } from "./skills.js";
 import { ensureAppDirs } from "../config.js";
 import {
@@ -99,23 +86,19 @@ import {
   type SubAgentState,
 } from "./subagent-manager.js";
 import { applyAsyncSubagentPolicy } from "./subagent-policy.js";
-import { z } from "zod";
-import { MCPClientManager, getAllMcpServers } from "./mcp/index.js";
+import { getAllMcpServers } from "./mcp/index.js";
 import type { MCPElicitHandler } from "./mcp/index.js";
 import type { MCPServerConfig } from "./mcp/types.js";
-import { clampMcpToolDescription, DeferredToolCatalog } from "./mcp/deferred-catalog.js";
 import {
   CONTEXT_LIMITS,
   resolveSessionContextLimits,
   type ContextLimits,
 } from "./context-limits.js";
-import { McpCatalogCache, type CachedTool } from "./mcp/catalog-cache.js";
 import {
   describeDropped,
   importForeignSession,
   type ImportForeignTranscriptResult,
 } from "./foreign-session-import.js";
-import { createToolSearchTool } from "../tools/tool-search.js";
 import { createSessionStatsTool } from "../tools/session-stats.js";
 import {
   createDiagnoseCommand,
@@ -133,7 +116,6 @@ import { enhancePrompt, type EnhanceResult } from "../utils/prompt-enhancer.js";
 import { detectLanguages, detectProjectStack, type LanguageId } from "./language-detector.js";
 import {
   type IdealReviewDecision,
-  type IdealReviewStats,
   evaluateIdealReview,
   buildIdealReviewMessage,
   buildReviewCoverageEscalationMessage,
@@ -143,25 +125,14 @@ import {
   detectTestDrift,
   ReviewCoverageTracker,
 } from "./ideal-review.js";
-import {
-  evaluateLoopBreak,
-  buildLoopBreakMessage,
-  CycleDetector,
-  ToolCallProgressTracker,
-  detectTextRepetition,
-  type CycleDetection,
-} from "./loop-breaker.js";
+import { buildLoopBreakMessage } from "./loop-breaker.js";
 import { buildRegroundingMessage, requestTextForRegrounding } from "./regrounding.js";
 import {
   buildSemanticLoopJudgePrompt,
   buildSemanticLoopMessage,
-  MAX_SEMANTIC_LOOP_CALLS,
   parseSemanticLoopVerdict,
-  shouldRunSemanticLoopCheck,
   SEMANTIC_LOOP_JUDGE_TIMEOUT_MS,
   withJudgeTimeout,
-  type SemanticCallDigest,
-  type SemanticLoopVerdict,
 } from "./semantic-loop-check.js";
 import {
   buildIndependentReviewMessage,
@@ -175,16 +146,8 @@ import {
 import { buildEnvDeltaMessage } from "./env-delta.js";
 import { wrapSteeringText, buildNotificationSteeringText, STEERING_PREFIX } from "./steering.js";
 import { AgentNotificationQueue } from "./agent-notifications.js";
-import {
-  VerificationGate,
-  extractAddedLines,
-  isCheckOwnFile,
-  isCodeFilePath,
-  VERIFICATION_STATE_KIND,
-  isVerificationCommand,
-} from "./verification-gate.js";
-import { classifyVerificationCommand, type VerificationEvidence } from "./verification-evidence.js";
-import { captureVerificationSnapshot } from "./verification-snapshot.js";
+import { VerificationGate, VERIFICATION_STATE_KIND } from "./verification-gate.js";
+import type { VerificationEvidence } from "./verification-evidence.js";
 
 import { findUserSessionPrompt, getUserSessionPrompt } from "./session-preview.js";
 import { normalizeMessageImages } from "./message-images.js";
@@ -193,12 +156,16 @@ import fs from "node:fs/promises";
 import type { Stats } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-
-/**
- * A run whose tool calls fail more often than this is thrashing, not
- * progressing — refuse to extend its turn budget.
- */
-const TURN_EXTENSION_MAX_FAILURE_RATIO = 0.5;
+import {
+  resolveSessionToolResultCharLimit,
+  resolveSessionTurnToolResultCharLimit,
+  hasUnresolvedToolCalls,
+  resolveHomePath,
+} from "./agent-session/helpers.js";
+import { RunLoopMonitor } from "./agent-session/run-loop-monitor.js";
+import { VerificationTracker } from "./agent-session/verification-tracker.js";
+import { McpToolRegistry } from "./agent-session/mcp-tools.js";
+import { TranscriptMarkers } from "./agent-session/transcript-markers.js";
 
 // ── Options ────────────────────────────────────────────────
 
@@ -406,47 +373,10 @@ export interface AgentSessionOptions {
   completionReview?: CompletionReview;
 }
 
-// ── Tool-result policy ─────────────────────────────────────
-
-/** Resolve the per-result cap passed to the agent loop for the active transport. */
-export function resolveSessionToolResultCharLimit(
-  model: string,
-  provider: Provider,
-  accountId?: string,
-): number {
-  return (
-    getToolResultCharLimit(model, { provider, accountId }) ??
-    Math.floor(getContextWindow(model, { provider, accountId }) * 3.5 * 0.3)
-  );
-}
-
-/**
- * Aggregate budget for ALL tool results produced in one assistant turn.
- * Individual results are already capped, but wide parallel fan-outs (GPT-5.6's
- * signature behavior) were observed injecting 100k+ uncached tokens in a single
- * turn. ~15% of the context window in chars (1 token ≈ 3.5 chars), floored at
- * 100KB so small windows still fit two full-size reads, ceilinged at 240KB so
- * 1M-context models don't waive the budget entirely.
- */
-export function resolveSessionTurnToolResultCharLimit(
-  model: string,
-  provider: Provider,
-  accountId?: string,
-): number {
-  const contextChars = getContextWindow(model, { provider, accountId }) * 3.5;
-  return Math.max(100_000, Math.min(Math.floor(contextChars * 0.15), 240_000));
-}
-
-/** Marker the compactor prepends to the summary message it injects. */
-/**
- * True when an assistant message ends a turn with tool calls still awaiting
- * their results. Inserting a user message there would orphan the tool_use
- * blocks and the provider rejects the next request.
- */
-function hasUnresolvedToolCalls(message: Message): boolean {
-  if (typeof message.content === "string" || !Array.isArray(message.content)) return false;
-  return message.content.some((part) => part.type === "tool_call");
-}
+export {
+  resolveSessionToolResultCharLimit,
+  resolveSessionTurnToolResultCharLimit,
+} from "./agent-session/helpers.js";
 
 // ── State ──────────────────────────────────────────────────
 
@@ -476,24 +406,14 @@ export class AgentSession {
   private extensionLoader = new ExtensionLoader();
 
   private messages: Message[] = [];
-  // Ken Kai (mentor agent) turns recorded against this build session. Advisory
+  // Display-only transcript history (Ken Kai turns, autopilot verdicts, app
+  // markers, turn metrics) recorded against this build session. Advisory
   // only — NEVER part of `messages` (GG Coder must not see them), but persisted
-  // alongside the session and reloaded on resume so they reappear in the
-  // transcript. Each carries the non-system message count at record time so the
-  // webview can interleave them chronologically.
-  private kenTurns: KenTurnPayload[] = [];
-  // Autopilot Ken (auto-reviewer) markers recorded against this build session:
-  // the review verdict shown in the transcript (prompted / done / human /
-  // capped). Same not-on-the-DAG treatment as kenTurns — advisory only,
-  // persisted + reloaded so a resumed session shows the identical Ken bubble
-  // the live run showed instead of dropping it or replaying a raw verdict.
-  private autopilotMarkers: AutopilotMarkerPayload[] = [];
-  // Generic app transcript markers (plan-mode banner, task header, error rows,
-  // user-bubble display hints). Same not-on-the-DAG treatment as kenTurns —
-  // display only, persisted + reloaded so a resumed session shows the same
-  // transcript rows the live run showed.
-  private appMarkers: AppMarkerPayload[] = [];
-  private turnMetrics: TurnMetricPayload[] = [];
+  // alongside the session and reloaded on resume.
+  private readonly markers = new TranscriptMarkers(
+    () => this.sessionManager,
+    () => this.sessionPath,
+  );
   /** Internal-only (GG_INTERNAL): live per-session cost/reliability recorder.
    * Absent entirely in public builds — see core/internal-diagnostics.ts. */
   private diagnosticsRecorder?: SessionDiagnosticsRecorder;
@@ -510,35 +430,7 @@ export class AgentSession {
   // ── Self-correction hook state (mirrors the TUI's useAgentLoop refs) ──
   // Reset at the start of every run; observed from the event stream; read by
   // the loop-break (mid-loop) and ideal-review (pre-stop) callbacks.
-  private hookStats: IdealReviewStats = {
-    changedLines: 0,
-    toolCalls: 0,
-    toolFailures: 0,
-    turns: 0,
-    writeCalls: 0,
-    editCalls: 0,
-    bashCalls: 0,
-  };
-  private hookText = "";
-  private hookConsecutiveFailures = 0;
-  private hookRepeatedNoProgressCalls = 0;
-  private hookProgressTracker = new ToolCallProgressTracker();
-  private hookCycleDetector = new CycleDetector();
-  private hookCyclicPattern: CycleDetection | null = null;
-  private hookFileEditCounts = new Map<string, number>();
-  private hookToolCalls = new Map<
-    string,
-    {
-      name: string;
-      args: Record<string, unknown>;
-      revision: number;
-      sourceSnapshot?: string | null;
-    }
-  >();
-  private backgroundVerification = new Map<
-    string,
-    { revision: number; command: string; sourceSnapshot?: string | null }
-  >();
+  private readonly loopMonitor = new RunLoopMonitor();
   private idealReviewPhase: "idle" | "reviewing" | "complete" = "idle";
   /** Runtime-only suppression while Ken owns verification in autopilot mode. */
   private idealReviewSuppressed = false;
@@ -553,21 +445,7 @@ export class AgentSession {
   private readonly reviewCoverage: ReviewCoverageTracker;
   /** Coverage follow-ups spent this run, capped by MAX_REVIEW_COVERAGE_INJECTIONS. */
   private reviewCoverageInjected = 0;
-  /** 0 = none; 1 = first nudge sent; 2 = final stop-and-report injected. */
-  private loopBreakInjected: 0 | 1 | 2 = 0;
   private regroundingInjected = false;
-  /** Recent tool-call digests for the semantic loop judge — bounded ring. */
-  private hookRecentCalls: SemanticCallDigest[] = [];
-  /** LLM-judged loop detection state. `verdict` holds a LOOP verdict awaiting
-   *  injection at the next steering poll; judge failures fail open (no
-   *  injection) and still consume budget + cooldown. */
-  private semanticLoop: {
-    checksUsed: number;
-    lastCheckTurn: number;
-    pending: boolean;
-    verdict: SemanticLoopVerdict | null;
-    injected: boolean;
-  } = { checksUsed: 0, lastCheckTurn: 0, pending: false, verdict: null, injected: false };
   /** Independent Ideal reviewer spawned once per run (score-gated). */
   private independentReviewStarted = false;
   /**
@@ -582,6 +460,8 @@ export class AgentSession {
   private processGateInjected = 0;
   /** Verification gate: code edited this run, nothing proved it since. */
   private readonly verificationGate = new VerificationGate();
+  /** Host-observed evidence (edited files, in-flight and background checks) feeding the gate. */
+  private readonly verificationTracker: VerificationTracker;
   /** Mirror of the last verification `hook_armed` value, so the event fires
    *  only on a real edge. */
   private verificationArmed = false;
@@ -628,9 +508,11 @@ export class AgentSession {
     this.lspManager?.clearPendingDiagnostics();
     void this.subAgentManager?.interruptAll();
   };
-  private mcpManager?: MCPClientManager;
-  /** Deferred MCP tools awaiting discovery via tool_search. */
-  private mcpCatalog?: DeferredToolCatalog;
+  /** MCP client, deferred tool_search catalog and cached-stub reconcile state. */
+  private readonly mcp = new McpToolRegistry(
+    () => this.tools,
+    () => this.contextLimits,
+  );
   /** Resolved prompt-injection byte budgets (contextLimits setting). */
   private contextLimits: ContextLimits = CONTEXT_LIMITS;
   /**
@@ -639,11 +521,6 @@ export class AgentSession {
    * can discover and promote them; a promoted name drops out of this list.
    */
   private deferredBuiltinToolNames: string[] = [];
-  /** Live (connected) MCP tools by name — the reconcile target for cached stubs. */
-  private liveMcpTools = new Map<string, AgentTool>();
-  /** Server name for each cached-only tool, so a stub knows what to wait on. */
-  private cachedMcpToolServers = new Map<string, string>();
-  private readonly mcpCatalogCache = new McpCatalogCache();
   private provider: Provider;
   private model: string;
   private cwd: string;
@@ -720,6 +597,11 @@ export class AgentSession {
 
   constructor(options: AgentSessionOptions) {
     this.opts = options;
+    this.verificationTracker = new VerificationTracker(
+      this.verificationGate,
+      options.cwd,
+      () => this.processManager?.list() ?? [],
+    );
     this.provider = options.provider;
     this.model = options.model;
     this.cwd = options.cwd;
@@ -839,7 +721,7 @@ export class AgentSession {
       onFileRead: (filePath) => this.reviewCoverage.recordRead(filePath),
       onFileMutated: (filePath) => {
         const relative = path.relative(this.cwd, filePath) || path.basename(filePath);
-        this.hookFileEditCounts.set(relative, (this.hookFileEditCounts.get(relative) ?? 0) + 1);
+        this.verificationTracker.recordFileMutated(relative);
         this.reviewCoverage.recordChanged(filePath);
       },
       // Lazy — sessionId/model/provider can change after createTools() runs, so
@@ -889,9 +771,7 @@ export class AgentSession {
         // sits inside the cached prefix stays byte-stable across turns.
         this.tools = core;
         this.deferredBuiltinToolNames = deferred.map((t) => t.name);
-        this.mcpCatalog ??= new DeferredToolCatalog(this.contextLimits);
-        this.mcpCatalog.add(deferred);
-        this.ensureToolSearchTool();
+        this.mcp.addDeferred(deferred);
       }
     }
     this.rebuildReadTool = rebuildReadTool;
@@ -908,8 +788,7 @@ export class AgentSession {
     // its listening handshake until this resolves), `backgroundMcpConnect`
     // moves the connect off the critical path so the session becomes usable
     // immediately and tools are appended whenever the servers come up.
-    this.mcpManager = new MCPClientManager({
-      catalogCache: this.mcpCatalogCache,
+    this.mcp.createManager({
       modernProtocol: this.settingsManager.get("mcpModernProtocol"),
       onElicit: this.opts.onMcpElicit,
     });
@@ -1066,7 +945,8 @@ export class AgentSession {
    * turn, so background-connected servers become available on the next prompt.
    */
   private async connectMcpServers(): Promise<void> {
-    if (!this.mcpManager) return;
+    const mcpManager = this.mcp.manager;
+    if (!mcpManager) return;
     // Allow-listed (read-only advisory) sessions enforce a fixed tool set by
     // name. An MCP server is only connected when its name is explicitly
     // whitelisted via `allowedMcpServers`. With no whitelist, skip
@@ -1100,7 +980,7 @@ export class AgentSession {
       // capabilities that genuinely exist — a wrong answer, not a slow one.
       await this.seedMcpCatalogFromCache(servers);
 
-      const connected = await this.mcpManager.connectAll(servers);
+      const connected = await mcpManager.connectAll(servers);
       // Defense-in-depth: even from a whitelisted server, only push tools that
       // pass the allow-list (no-op when there's no allow-list).
       const mcpTools = this.opts.allowedTools
@@ -1144,153 +1024,20 @@ export class AgentSession {
    * pushed eagerly when the user opted out.
    * Allow-listed sessions (Ken) always get the eager path — their fixed tool
    * expectations predate the catalog, and tool_search isn't allow-listed.
-   * Promotion pushes onto the live `this.tools` array the running agent loop
-   * re-reads every turn, so promoted tools are callable on the next step.
    */
   private addMcpTools(mcpTools: AgentTool[]): void {
-    if (mcpTools.length === 0) return;
-    for (const tool of mcpTools) {
-      this.liveMcpTools.set(tool.name, tool);
-      this.cachedMcpToolServers.delete(tool.name);
-    }
     const defer = !this.opts.allowedTools && this.settingsManager.get("deferredMcpTools");
-    if (!defer) {
-      // Eager path bypasses the catalog, so budget descriptions here too.
-      this.replaceOrPushTools(
-        mcpTools.map((tool) => clampMcpToolDescription(tool, this.contextLimits)),
-      );
-      return;
-    }
-    this.mcpCatalog ??= new DeferredToolCatalog(this.contextLimits);
-    // `add` is name-keyed, so live definitions replace cached stubs in place.
-    this.mcpCatalog.add(mcpTools);
-    // A stub the model already promoted lives in `this.tools`; swap it for the
-    // live tool so later calls dispatch directly instead of through the stub.
-    this.replaceLivePromotedTools(mcpTools);
-    this.ensureToolSearchTool();
-  }
-
-  /**
-   * Register `tool_search` once. Promotion of a cached-only entry waits for its
-   * server so the model is told immediately when that capability turns out to
-   * be unreachable, instead of promoting a tool that fails on first call.
-   *
-   * The catalog is created on demand rather than required up front: deferred
-   * built-in tools populate it with zero MCP servers connected, so gating
-   * registration on an existing catalog would leave those tools unreachable.
-   */
-  private ensureToolSearchTool(): void {
-    this.mcpCatalog ??= new DeferredToolCatalog(this.contextLimits);
-    if (this.tools.some((t) => t.name === "tool_search")) return;
-    this.tools.push(
-      createToolSearchTool(
-        this.mcpCatalog,
-        (promoted) => {
-          this.tools.push(...promoted);
-        },
-        async (toolName) => {
-          if (this.liveMcpTools.has(toolName)) return undefined;
-          const serverName = this.cachedMcpToolServers.get(toolName);
-          if (!serverName) return undefined;
-          const outcome = (await this.mcpManager?.whenConnected(serverName)) ?? {
-            ok: false as const,
-            error: "MCP is disabled for this session",
-          };
-          return outcome.ok
-            ? { serverName, ok: true }
-            : { serverName, ok: false, error: outcome.error };
-        },
-        this.contextLimits,
-      ),
-    );
-  }
-
-  /** Append tools, replacing any same-named entry (cached stub → live tool). */
-  private replaceOrPushTools(tools: AgentTool[]): void {
-    for (const tool of tools) {
-      const index = this.tools.findIndex((t) => t.name === tool.name);
-      if (index >= 0) this.tools[index] = tool;
-      else this.tools.push(tool);
-    }
-  }
-
-  /** Swap already-promoted cached stubs for their live equivalents, in place. */
-  private replaceLivePromotedTools(tools: AgentTool[]): void {
-    for (const tool of tools) {
-      const index = this.tools.findIndex((t) => t.name === tool.name);
-      if (index >= 0) this.tools[index] = tool;
-    }
+    this.mcp.addMcpTools(mcpTools, defer);
   }
 
   /**
    * Publish cached tool definitions into the deferred catalog so `tool_search`
-   * answers correctly on turn 1. A cached stub carries the real name, one-line
-   * description and input schema; calling it waits for the live connection and
-   * then dispatches against the real client, or returns a clear error when that
-   * server ultimately failed. Live tools replace stubs on connect.
+   * answers correctly on turn 1 (see {@link McpToolRegistry.seedFromCache}).
    */
   private async seedMcpCatalogFromCache(servers: MCPServerConfig[]): Promise<void> {
     if (!this.opts.backgroundMcpConnect) return;
     if (this.opts.allowedTools || !this.settingsManager.get("deferredMcpTools")) return;
-    let entries: Awaited<ReturnType<McpCatalogCache["entriesFor"]>>;
-    try {
-      entries = await this.mcpCatalogCache.entriesFor(servers);
-    } catch {
-      return;
-    }
-    const stubs: AgentTool[] = [];
-    for (const [serverName, entry] of entries) {
-      for (const cached of entry.tools) {
-        if (this.liveMcpTools.has(cached.name)) continue;
-        this.cachedMcpToolServers.set(cached.name, serverName);
-        stubs.push(this.buildCachedMcpTool(serverName, cached));
-      }
-    }
-    if (stubs.length === 0) return;
-    log("INFO", "mcp", "Seeded deferred tool catalog from cache", {
-      tools: String(stubs.length),
-      servers: String(entries.size),
-    });
-    this.addCachedMcpTools(stubs);
-  }
-
-  /** Catalog-only registration for cached stubs — never marks them live. */
-  private addCachedMcpTools(stubs: AgentTool[]): void {
-    this.mcpCatalog ??= new DeferredToolCatalog(this.contextLimits);
-    this.mcpCatalog.add(stubs);
-    this.ensureToolSearchTool();
-  }
-
-  private buildCachedMcpTool(serverName: string, cached: CachedTool): AgentTool {
-    return {
-      name: cached.name,
-      description: cached.description,
-      parameters: z.record(z.string(), z.unknown()),
-      rawInputSchema: cached.rawInputSchema,
-      execute: async (args, context) => {
-        const live = this.liveMcpTools.get(cached.name);
-        if (live) return live.execute(args, context);
-        const outcome = (await this.mcpManager?.whenConnected(serverName)) ?? {
-          ok: false as const,
-          error: "MCP is disabled for this session",
-        };
-        if (!outcome.ok) {
-          return (
-            `MCP tool ${cached.name} is unavailable: server "${serverName}" did not connect ` +
-            `(${outcome.error}). This tool was offered from a cached catalog. ` +
-            `Use a different approach or ask the user to check their MCP configuration.`
-          );
-        }
-        const connected = this.liveMcpTools.get(cached.name);
-        if (!connected) {
-          return (
-            `MCP tool ${cached.name} no longer exists: server "${serverName}" connected but ` +
-            `does not expose it. The cached catalog entry was stale.`
-          );
-        }
-        return connected.execute(args, context);
-      },
-    };
+    await this.mcp.seedFromCache(servers);
   }
 
   /**
@@ -1488,23 +1235,8 @@ export class AgentSession {
   private resetHookState(originalRequest: string): void {
     this.opts.completionReview?.begin(originalRequest);
     this.lspManager?.clearPendingDiagnostics();
-    this.hookStats = {
-      changedLines: 0,
-      toolCalls: 0,
-      toolFailures: 0,
-      turns: 0,
-      writeCalls: 0,
-      editCalls: 0,
-      bashCalls: 0,
-    };
-    this.hookText = "";
-    this.hookConsecutiveFailures = 0;
-    this.hookRepeatedNoProgressCalls = 0;
-    this.hookProgressTracker.reset();
-    this.hookCycleDetector.reset();
-    this.hookCyclicPattern = null;
-    this.hookFileEditCounts.clear();
-    this.hookToolCalls.clear();
+    this.loopMonitor.reset();
+    this.verificationTracker.resetRun();
     this.reviewCoverage.reset();
     this.reviewCoverageInjected = 0;
     this.idealReviewPhase = "idle";
@@ -1512,24 +1244,13 @@ export class AgentSession {
     this.idealReviewArmed = false;
     this.verificationArmed = false;
     this.idealDriftProbe = null;
-    this.loopBreakInjected = 0;
     this.regroundingInjected = false;
-    this.hookRecentCalls = [];
-    this.semanticLoop = {
-      checksUsed: 0,
-      lastCheckTurn: 0,
-      pending: false,
-      verdict: null,
-      injected: false,
-    };
     this.independentReviewStarted = false;
     this.runStartedAt = Date.now();
     this.processGateInjected = 0;
     this.verificationGate.beginRun();
     const processes = new Set(this.processManager?.list().map((p) => p.id) ?? []);
-    for (const id of this.backgroundVerification.keys()) {
-      if (!processes.has(id)) this.backgroundVerification.delete(id);
-    }
+    this.verificationTracker.pruneBackground(processes);
     this.compactionOccurred = false;
     // Post-turn compaction may have landed between runs — adopt its armed
     // signal so the re-grounding hook fires for this run exactly as it would
@@ -1553,163 +1274,26 @@ export class AgentSession {
     }
     switch (event.type) {
       case "text_delta":
-        this.hookText += event.text;
+        this.loopMonitor.recordText(event.text);
         break;
       case "tool_call_start": {
-        this.hookToolCalls.set(event.toolCallId, {
-          name: event.name,
-          args: event.args ?? {},
-          revision: this.verificationGate.revision,
-        });
-        const startClassification =
-          event.name === "bash" && typeof event.args?.command === "string"
-            ? classifyVerificationCommand(event.args.command)
-            : null;
-        if (
-          startClassification &&
-          typeof event.args?.command === "string" &&
-          (isVerificationCommand(event.args.command) ||
-            startClassification.accepted ||
-            // Must match the tool_call_end predicate: a snapshot-eligible
-            // command that never captured a "before" snapshot is misread at
-            // the end as an uncomparable workspace and re-arms the gate.
-            startClassification.snapshotEligible === true)
-        ) {
-          // A check that can rewrite files (--fix, build scripts, emitters)
-          // invalidates earlier in-flight evidence AND marks the run as
-          // touched. A check that is merely UNRECOGNIZED (`make test`, `deno
-          // test`) rewrites nothing we can point to: bumping the revision for
-          // it poisoned the gate on green output and re-armed the hook into
-          // every later question turn.
-          this.verificationGate.recordVerificationAttempt();
-          const classification = startClassification;
-          if (classification.snapshotEligible && event.args.persist !== true) {
-            const call = this.hookToolCalls.get(event.toolCallId)!;
-            call.sourceSnapshot = await captureVerificationSnapshot(this.opts.cwd, [
-              ...this.hookFileEditCounts.keys(),
-            ]);
-            if (call.sourceSnapshot === null)
-              this.verificationGate.requireFreshVerification(true, event.args.command);
-          } else {
-            this.verificationGate.requireFreshVerification(
-              !classification.accepted && classification.mayMutate,
-              event.args.command,
-            );
-          }
+        if (await this.verificationTracker.recordToolCallStart(event)) {
           await this.persistVerificationState();
         }
         break;
       }
       case "tool_call_end": {
-        const call = this.hookToolCalls.get(event.toolCallId);
+        const call = this.verificationTracker.getToolCall(event.toolCallId);
         const name = call?.name ?? "";
         const args = call?.args;
-        this.hookStats.toolCalls += 1;
-        if (event.isError) this.hookStats.toolFailures += 1;
-        if (name === "write") this.hookStats.writeCalls += 1;
-        if (name === "edit") this.hookStats.editCalls += 1;
-        if (name === "bash") this.hookStats.bashCalls += 1;
-        this.hookConsecutiveFailures = event.isError ? this.hookConsecutiveFailures + 1 : 0;
-        this.hookRepeatedNoProgressCalls = this.hookProgressTracker.record(
-          name,
-          args,
-          event.result,
-          event.isError,
-        );
-        this.hookCyclicPattern = this.hookCycleDetector.record(
-          name,
-          args,
-          event.result,
-          event.isError,
-        );
-        // Semantic-loop judge input: a bounded digest of WHAT was attempted and
-        // HOW it came out. Args/results are sliced AT RECORD TIME — a write with
-        // a 50 KiB payload or a bash dump must never inflate the ring, and the
-        // judge needs shapes, not payloads.
-        this.hookRecentCalls.push({
-          tool: name,
-          args: args === undefined ? "" : JSON.stringify(args).slice(0, 300),
-          ok: !event.isError,
-          result: event.result.slice(0, 400),
-        });
-        if (this.hookRecentCalls.length > MAX_SEMANTIC_LOOP_CALLS) {
-          this.hookRecentCalls.splice(0, this.hookRecentCalls.length - MAX_SEMANTIC_LOOP_CALLS);
-        }
+        this.loopMonitor.recordToolEnd(name, args, event.result, event.isError);
         if (name === "edit" && !event.isError) {
           const diff = (event.details as { diff?: string } | undefined)?.diff ?? event.result;
           const added = (diff.match(/^\+[^+]/gm) ?? []).length;
           const removed = (diff.match(/^-[^-]/gm) ?? []).length;
-          this.hookStats.changedLines += added + removed;
+          this.loopMonitor.stats.changedLines += added + removed;
         }
-        // Only host-observed successful mutations and trustworthy check results
-        // affect approval. The model's text is never evidence.
-        let verificationChanged = false;
-        if (!event.isError && args) {
-          if (name === "edit" || name === "write") {
-            const filePath = String((args as { file_path?: unknown }).file_path ?? "");
-            // Check-owning files (tsconfig.json, pytest.ini, vitest.config.ts …)
-            // are tracked even when they are not source code: editing one is how
-            // a red suite is turned green without fixing anything.
-            if (filePath && (isCodeFilePath(filePath) || isCheckOwnFile(filePath))) {
-              const addedText =
-                name === "write"
-                  ? String((args as { content?: unknown }).content ?? "")
-                  : extractAddedLines(
-                      (event.details as { diff?: string } | undefined)?.diff ?? event.result,
-                    );
-              this.verificationGate.recordMutation(filePath, addedText);
-              verificationChanged = true;
-            }
-          }
-        }
-        if (args && call && name === "bash") {
-          const command = typeof args.command === "string" ? args.command : "";
-          const classification = classifyVerificationCommand(command);
-          if (classification.accepted || classification.snapshotEligible) {
-            if (args.run_in_background === true && !event.isError && args.persist !== true) {
-              const id = /^ID:\s*(\S+)/m.exec(event.result)?.[1];
-              // No parseable ID means the check cannot be tracked to a real exit
-              // code — no evidence either way. Recording a FAILURE here made
-              // every later green run of a different spelling look owed.
-              if (id)
-                this.backgroundVerification.set(id, {
-                  revision: call.revision,
-                  command,
-                  ...(classification.snapshotEligible
-                    ? { sourceSnapshot: call.sourceSnapshot ?? null }
-                    : {}),
-                });
-              else if (classification.snapshotEligible)
-                this.verificationGate.requireFreshVerification(true, command);
-            } else if (args.persist === true) {
-              // Persistent-shell checks are not bounded evidence (steering can
-              // interleave): neither a pass nor a failure. A recorded failure
-              // here blocked approval for sessions that prefer the shell.
-            } else if (classification.snapshotEligible) {
-              await this.finishSnapshotVerification(
-                { command, revision: call.revision, sourceSnapshot: call.sourceSnapshot ?? null },
-                !event.isError && /^Exit code:\s*0(?:\s|$)/i.test(event.result.trim()),
-              );
-              verificationChanged = true;
-            } else {
-              if (!event.isError && /^Exit code:\s*0(?:\s|$)/i.test(event.result.trim())) {
-                this.verificationGate.recordVerification(call.revision, command);
-              } else {
-                this.verificationGate.recordFailedVerification(command, call.revision);
-              }
-              verificationChanged = true;
-            }
-            delete call.sourceSnapshot;
-          } else if (classification.candidate) {
-            // Green but untrusted: remember WHY so the demand can tell the
-            // agent which command shape actually clears the gate.
-            this.verificationGate.recordRejectedCheck(command, classification.reason);
-          }
-        }
-        if (!event.isError && args && name === "task_output" && typeof args.id === "string") {
-          verificationChanged =
-            (await this.recordFinishedBackgroundVerification(args.id)) || verificationChanged;
-        }
+        const verificationChanged = await this.verificationTracker.recordToolCallEnd(event, call);
         if (verificationChanged) await this.persistVerificationState();
         // Tool results are what push the run over the review gate, and they all
         // land before the model writes its candidate final answer — so this is
@@ -1718,7 +1302,7 @@ export class AgentSession {
         break;
       }
       case "turn_end":
-        this.hookStats.turns = event.turn;
+        this.loopMonitor.recordTurn(event.turn);
         this.refreshHookArming();
         for (let index = this.messages.length - 1; index >= 0; index--) {
           const anchor = this.messages[index];
@@ -1875,51 +1459,26 @@ export class AgentSession {
     // Deterministic stuck verdict, computed once and shared: the semantic
     // judge must not spend tokens on a burst the deterministic breaker is
     // about to correct itself.
-    const deterministicDecision = evaluateLoopBreak({
-      consecutiveFailures: this.hookConsecutiveFailures,
-      repeatedNoProgressCalls: this.hookRepeatedNoProgressCalls,
-      textRepetitionDetected: detectTextRepetition(this.hookText),
-      ...(this.hookCyclicPattern ? { cyclicPattern: this.hookCyclicPattern } : {}),
-    });
+    const deterministicDecision = this.loopMonitor.evaluateLoopBreak();
     this.maybeStartSemanticLoopCheck(deterministicDecision.shouldBreak);
     // Two-stage loop-breaker: stage 1 nudges; a FRESH detection after that
     // injects the harsher final stop-and-report prompt. Signals reset after
     // each injection so stage 2 only fires on new evidence.
-    if (this.loopBreakInjected < 2) {
-      const decision = deterministicDecision;
-      if (decision.shouldBreak) {
-        const stage = this.loopBreakInjected === 0 ? (1 as const) : (2 as const);
-        this.loopBreakInjected = stage;
-        this.hookProgressTracker.reset();
-        this.hookCycleDetector.reset();
-        this.hookCyclicPattern = null;
-        this.hookConsecutiveFailures = 0;
-        this.hookRepeatedNoProgressCalls = 0;
-        // The deterministic breaker owns this burst — a semantic verdict from
-        // the same burst must not double-correct on the next poll.
-        this.semanticLoop.verdict = null;
-        // Clear the text buffer too — otherwise a stage-1 text-repetition
-        // trigger still sees the same repeated tail on the next check and
-        // escalates to stage 2 on stale evidence.
-        this.hookText = "";
-        log("INFO", "loop-break", "Injecting loop-break nudge", {
-          stage: String(stage),
-          reasons: decision.reasons.join(", "),
-        });
-        this.eventBus.emit("hook", { kind: "loop_break" });
-        return [buildLoopBreakMessage(decision.reasons, stage === 2)];
-      }
+    const stage = this.loopMonitor.takeLoopBreakStage(deterministicDecision);
+    if (stage !== null) {
+      log("INFO", "loop-break", "Injecting loop-break nudge", {
+        stage: String(stage),
+        reasons: deterministicDecision.reasons.join(", "),
+      });
+      this.eventBus.emit("hook", { kind: "loop_break" });
+      return [buildLoopBreakMessage(deterministicDecision.reasons, stage === 2)];
     }
     // Semantic loop-break: an LLM verdict (started by maybeStartSemanticLoopCheck
     // on a suspicious-but-syntactically-quiet burst) is consumed here, exactly
     // once, with the deterministic breaker getting priority above. Fail-open:
     // no verdict or no-loop verdict injects nothing.
-    if (this.semanticLoop.verdict && !this.semanticLoop.injected) {
-      const verdict = this.semanticLoop.verdict;
-      this.semanticLoop.injected = true;
-      this.semanticLoop.verdict = null;
-      // The judged burst has been addressed; a fresh burst must re-accumulate.
-      this.hookConsecutiveFailures = 0;
+    const verdict = this.loopMonitor.takeSemanticVerdict();
+    if (verdict) {
       log("INFO", "loop-break", "Injecting semantic loop-break steering", {
         reason: verdict.reason,
       });
@@ -1940,35 +1499,25 @@ export class AgentSession {
    *  Fire-and-forget: the call runs while the next turn streams, and a finished
    *  verdict is consumed by the NEXT steering poll — never blocking a turn. */
   private maybeStartSemanticLoopCheck(deterministicBreak: boolean): void {
-    if (
-      !shouldRunSemanticLoopCheck({
-        consecutiveFailures: this.hookConsecutiveFailures,
-        totalFailures: this.hookStats.toolFailures,
-        turns: this.hookStats.turns,
-        lastCheckTurn: this.semanticLoop.lastCheckTurn,
-        checksUsed: this.semanticLoop.checksUsed,
-        checkPending: this.semanticLoop.pending,
-        deterministicBreak,
-      })
-    ) {
+    const monitor = this.loopMonitor;
+    if (!monitor.shouldRunSemanticCheck(deterministicBreak)) {
       return;
     }
-    // resetHookState replaces this object on every prompt. A late judge must
+    // resetHookState replaces the run state on every prompt. A late judge must
     // not publish a verdict or consume the next run's budget/cooldown.
-    const runState = this.semanticLoop;
-    runState.pending = true;
+    const runState = monitor.beginSemanticCheck();
     log("INFO", "loop-break", "Starting semantic loop judge", {
-      turn: String(this.hookStats.turns),
-      consecutiveFailures: String(this.hookConsecutiveFailures),
-      recentCalls: String(this.hookRecentCalls.length),
+      turn: String(monitor.stats.turns),
+      consecutiveFailures: String(monitor.consecutiveFailures),
+      recentCalls: String(monitor.recentCalls.length),
     });
     void (async () => {
       try {
-        const prompt = buildSemanticLoopJudgePrompt(this.hookRecentCalls, this.originalRequest);
+        const prompt = buildSemanticLoopJudgePrompt(monitor.recentCalls, this.originalRequest);
         const raw = await (this.opts.semanticLoopJudge?.(prompt) ??
           this.callSemanticLoopJudge(prompt));
         const verdict = parseSemanticLoopVerdict(raw);
-        if (this.semanticLoop === runState && verdict?.loop) runState.verdict = verdict;
+        if (verdict?.loop) monitor.publishSemanticVerdict(runState, verdict);
       } catch (error) {
         // Fail open: judge errors never stop a run. Budget and cooldown are
         // still consumed in `finally` so a flaky judge cannot retry-loop.
@@ -1976,11 +1525,7 @@ export class AgentSession {
           error: error instanceof Error ? error.message : String(error),
         });
       } finally {
-        if (this.semanticLoop === runState) {
-          runState.pending = false;
-          runState.checksUsed += 1;
-          runState.lastCheckTurn = this.hookStats.turns;
-        }
+        monitor.settleSemanticCheck(runState);
       }
     })();
   }
@@ -2096,8 +1641,8 @@ export class AgentSession {
     try {
       const task = buildReviewerTask({
         originalRequest: this.originalRequest,
-        changedFiles: [...this.hookFileEditCounts.keys()],
-        stats: this.hookStats,
+        changedFiles: [...this.verificationTracker.fileEditCounts.keys()],
+        stats: this.loopMonitor.stats,
         triggerReasons: decision.reasons,
       });
       // Active model forced at spawn time — never routed to a fast/review model.
@@ -2158,24 +1703,7 @@ export class AgentSession {
     maxTurns: number;
     extension: number;
   }): boolean {
-    const refusals: string[] = [];
-
-    const stuck = evaluateLoopBreak({
-      consecutiveFailures: this.hookConsecutiveFailures,
-      repeatedNoProgressCalls: this.hookRepeatedNoProgressCalls,
-      textRepetitionDetected: detectTextRepetition(this.hookText),
-      ...(this.hookCyclicPattern ? { cyclicPattern: this.hookCyclicPattern } : {}),
-    });
-    if (stuck.shouldBreak) refusals.push(...stuck.reasons);
-
-    // Stage 2 means the loop-breaker already detected spinning twice and told
-    // the agent to stop and report. Do not overrule that with more turns.
-    if (this.loopBreakInjected >= 2) refusals.push("loop-breaker already escalated");
-
-    const { toolCalls, toolFailures } = this.hookStats;
-    if (toolCalls > 0 && toolFailures / toolCalls > TURN_EXTENSION_MAX_FAILURE_RATIO) {
-      refusals.push(`${toolFailures}/${toolCalls} tool calls failed`);
-    }
+    const refusals = this.loopMonitor.turnExtensionRefusals();
 
     const granted = refusals.length === 0;
     log(
@@ -2197,7 +1725,7 @@ export class AgentSession {
    * as the pre-stop gate below, evaluated early so clients know a candidate
    * final answer is a review draft BEFORE it streams.
    *
-   * The turn count is looked ahead by one on purpose. `hookStats.turns` only
+   * The turn count is looked ahead by one on purpose. `loopMonitor.stats.turns` only
    * advances at `turn_end`, so while the model is writing the draft the counter
    * still reads the PREVIOUS turn; the real gate sees one more. Without the
    * lookahead a run sitting on score 3 crosses to 4 on the draft's own
@@ -2219,15 +1747,19 @@ export class AgentSession {
     }
     if (this.idealReviewPhase !== "idle") return false;
     if (!this.settingsManager.get("idealReviewEnabled")) return false;
-    if (evaluateIdealReview({ ...this.hookStats, turns: this.hookStats.turns + 1 }).shouldReview) {
+    if (
+      evaluateIdealReview({ ...this.loopMonitor.stats, turns: this.loopMonitor.stats.turns + 1 })
+        .shouldReview
+    ) {
       return true;
     }
-    const files = this.hookFileEditCounts.size;
+    const files = this.verificationTracker.fileEditCounts.size;
     if (files === 0) return false;
     if (this.idealDriftProbe?.files !== files) {
       this.idealDriftProbe = {
         files,
-        drifted: detectTestDrift(this.hookFileEditCounts.keys(), this.cwd).length > 0,
+        drifted:
+          detectTestDrift(this.verificationTracker.fileEditCounts.keys(), this.cwd).length > 0,
       };
     }
     return this.idealDriftProbe.drifted;
@@ -2280,11 +1812,7 @@ export class AgentSession {
   private async getHookFollowUpMessages(): Promise<Message[] | null> {
     // Exit notifications and task_output refer to the same host process record.
     // Do not force an extra polling tool/turn merely to acknowledge a known exit.
-    let backgroundChanged = false;
-    for (const id of this.backgroundVerification.keys()) {
-      backgroundChanged =
-        (await this.recordFinishedBackgroundVerification(id)) || backgroundChanged;
-    }
+    const backgroundChanged = await this.verificationTracker.settleFinishedBackground();
     if (backgroundChanged) await this.persistVerificationState();
     // Edits return immediately; only the completion boundary waits for remaining
     // checks. Queued timeouts stay explicitly unverified, never a false all-clear.
@@ -2422,16 +1950,19 @@ export class AgentSession {
     if (this.idealReviewPhase === "complete") return null;
     if (!this.settingsManager.get("idealReviewEnabled")) return null;
 
-    const decision = evaluateIdealReview(this.hookStats);
+    const decision = evaluateIdealReview(this.loopMonitor.stats);
     // Test drift fires the review even on a small change the score would skip:
     // a green-but-stale test is exactly what the volume gate sleeps through.
-    const driftedFiles = detectTestDrift(this.hookFileEditCounts.keys(), this.cwd).slice(0, 5);
+    const driftedFiles = detectTestDrift(
+      this.verificationTracker.fileEditCounts.keys(),
+      this.cwd,
+    ).slice(0, 5);
     if (!decision.shouldReview && driftedFiles.length === 0) return null;
 
     // Independent reviewer first (async, bounded): its findings ride in the
     // SAME follow-up batch as the in-thread review + coverage requirements, so
     // addressing everything still costs one extra turn.
-    this.reviewCoverage.start(this.hookFileEditCounts.keys());
+    this.reviewCoverage.start(this.verificationTracker.fileEditCounts.keys());
     this.idealReviewPhase = "reviewing";
     const coverage = this.reviewCoverage.evidence();
     const lspEvidence = this.reviewLspEvidence(coverage.expected);
@@ -3056,12 +2587,13 @@ export class AgentSession {
       // there avoids tearing down a live stdio child and
       // gambling on a `npx` re-spawn that could fail and drop the tools.
       const glmInvolved = this.provider === "glm" || prevProvider === "glm";
-      if (this.mcpManager && glmInvolved) {
+      const mcpManager = this.mcp.manager;
+      if (mcpManager && glmInvolved) {
         // Remove old MCP tools
         this.tools = this.tools.filter((t) => !t.name.startsWith("mcp__"));
 
         // Disconnect old MCP servers
-        await this.mcpManager.dispose();
+        await mcpManager.dispose();
 
         // Connect new MCP servers for the new provider
         try {
@@ -3078,13 +2610,11 @@ export class AgentSession {
           const servers = await getAllMcpServers(this.provider, apiKey, this.cwd, {
             allowProjectScope: this.settingsManager.isProjectTrusted(this.cwd),
           });
-          const mcpTools = await this.mcpManager.connectAll(servers);
+          const mcpTools = await mcpManager.connectAll(servers);
           // Drop stale MCP tools from both the live set and deferred catalog before
           // re-adding. Some tools may already have been promoted out of the catalog.
           this.tools = this.tools.filter((t) => !t.name.startsWith("mcp__"));
-          this.mcpCatalog?.removeWhere((name) => name.startsWith("mcp__"));
-          this.liveMcpTools.clear();
-          this.cachedMcpToolServers.clear();
+          this.mcp.clearMcpTools();
           this.addMcpTools(mcpTools);
         } catch (err) {
           log(
@@ -3132,13 +2662,7 @@ export class AgentSession {
     this.checkpointGeneration = loaded.header.generation ?? 0;
     this.currentLeafId = loaded.header.leafId;
     this.setSessionPath(loaded.path);
-    this.kenTurns = this.sessionManager.getKenTurns(loaded.entries, loaded.header.leafId);
-    this.autopilotMarkers = this.sessionManager.getAutopilotMarkers(
-      loaded.entries,
-      loaded.header.leafId,
-    );
-    this.appMarkers = this.sessionManager.getAppMarkers(loaded.entries, loaded.header.leafId);
-    this.turnMetrics = this.sessionManager.getTurnMetrics(loaded.entries);
+    this.markers.restore(loaded.entries, loaded.header.leafId);
     this.lastPersistedIndex = this.messages.length;
     this.providerContext = null;
     await this.subAgentManager?.rebindParentSession(this.sessionId);
@@ -3185,10 +2709,7 @@ export class AgentSession {
       if (message.role !== "system") await this.persistMessage(message);
     }
     this.lastPersistedIndex = this.messages.length;
-    await this.rePersistTurnMetrics();
-    await this.rePersistKenTurns();
-    await this.rePersistAutopilotMarkers();
-    await this.rePersistAppMarkers();
+    await this.markers.rePersistAll();
     await this.persistVerificationState();
     await this.persistAppMarker("compaction", {
       originalCount: result.originalCount,
@@ -3477,7 +2998,7 @@ export class AgentSession {
     // explicit new sessions reset the conversation identity.
     if (!preserveConversation) {
       this.verificationGate.reset();
-      this.backgroundVerification.clear();
+      this.verificationTracker.clearBackground();
       this.conversationId = "";
       this.checkpointGeneration = 0;
       this.sessionPreview = "";
@@ -3489,10 +3010,7 @@ export class AgentSession {
     // turns / autopilot verdicts / app markers linger in memory, show up in the
     // new session's /history, and get re-persisted into the new file by the
     // next compaction — the cross-session duplicate-marker propagation bug.
-    this.kenTurns = [];
-    this.autopilotMarkers = [];
-    this.appMarkers = [];
-    this.turnMetrics = [];
+    this.markers.clear();
     const basePrompt = await this.buildBasePrompt(false, undefined);
     this.baseSystemPrompt = basePrompt;
     this.messages = [{ role: "system", content: this.withSystemPromptTail(basePrompt) }];
@@ -3622,10 +3140,7 @@ export class AgentSession {
       used = calculateActiveContextTokens(this.messages);
     }
 
-    const costUsd =
-      this.turnMetrics.length > 0 && this.turnMetrics.every((m) => m.cost.status === "known")
-        ? this.turnMetrics.reduce((sum, m) => sum + (m.cost.status === "known" ? m.cost.usd : 0), 0)
-        : undefined;
+    const costUsd = this.markers.knownCostUsd();
 
     return costUsd === undefined ? { used, size } : { used, size, costUsd };
   }
@@ -4001,12 +3516,7 @@ export class AgentSession {
   }
 
   getTurnMetrics(): TurnMetricPayload[] {
-    return this.turnMetrics.map((metric) => ({
-      ...metric,
-      usage: { ...metric.usage },
-      timing: { ...metric.timing },
-      cost: { ...metric.cost },
-    }));
+    return this.markers.getTurnMetrics();
   }
 
   private async persistTurnMetric(event: AgentTurnEndEvent): Promise<void> {
@@ -4023,32 +3533,25 @@ export class AgentSession {
         reason: "No authoritative effective-dated provider pricing is available",
       },
     };
-    this.turnMetrics.push(payload);
+    this.markers.addTurnMetric(payload);
     // Internal diagnostics piggyback on the authoritative per-turn metric —
     // one source of truth, and the record flushes to disk every turn.
     this.diagnosticsRecorder?.recordTurnMetric(payload);
-    if (this.sessionPath) await this.sessionManager.appendTurnMetric(this.sessionPath, payload);
-  }
-
-  private async rePersistTurnMetrics(): Promise<void> {
-    if (!this.sessionPath) return;
-    for (const metric of this.turnMetrics) {
-      await this.sessionManager.appendTurnMetric(this.sessionPath, metric);
-    }
+    await this.markers.persistTurnMetric(payload);
   }
 
   /** Ken Kai (mentor) turns recorded against this session, in record order. Used
    *  by the host to interleave Ken's advisory exchanges back into the transcript
    *  on resume. Never part of the LLM message history. */
   getKenTurns(): KenTurnPayload[] {
-    return this.kenTurns;
+    return this.markers.getKenTurns();
   }
 
   /** Autopilot verdict markers recorded against this session, in record order.
    *  Used by the host to interleave the auto-review loop's markers back into
    *  the transcript on resume, mirroring `getKenTurns`. */
   getAutopilotMarkers(): AutopilotMarkerPayload[] {
-    return this.autopilotMarkers;
+    return this.markers.getAutopilotMarkers();
   }
 
   /** Non-system messages that are actually on disk. Transcript markers anchor
@@ -4065,14 +3568,7 @@ export class AgentSession {
    * file, so the new file carries positions that match its own transcript.
    */
   private remapMarkerAnchors(remap: CompactionAnchorRemap | undefined): void {
-    if (!remap) return;
-    const move = <T extends { afterMessageCount: number }>(payload: T): T => ({
-      ...payload,
-      afterMessageCount: remapAnchorForCompaction(payload.afterMessageCount, remap),
-    });
-    this.kenTurns = this.kenTurns.map(move);
-    this.autopilotMarkers = this.autopilotMarkers.map(move);
-    this.appMarkers = this.appMarkers.map(move);
+    this.markers.remapAnchors(remap);
   }
 
   /**
@@ -4086,38 +3582,7 @@ export class AgentSession {
    * appendEntry's own handling.
    */
   async persistKenTurn(question: string, reply: string): Promise<void> {
-    const afterMessageCount = this.persistedTranscriptCount();
-    const payload: KenTurnPayload = { version: 1, question, reply, afterMessageCount };
-    this.kenTurns.push(payload);
-    if (!this.sessionPath) return;
-    const entry: CustomEntry = {
-      type: "custom",
-      kind: KEN_TURN_CUSTOM_KIND,
-      id: crypto.randomUUID(),
-      parentId: null,
-      timestamp: new Date().toISOString(),
-      data: payload,
-    };
-    await this.sessionManager.appendEntry(this.sessionPath, entry);
-  }
-
-  /** Re-append the in-memory Ken turns to the current session file. Called after
-   *  a continuation/compaction file is created so Ken's advisory history isn't
-   *  lost when the session is rewritten (those rewrites only re-persist
-   *  messages). Each turn keeps its original `afterMessageCount` anchor. */
-  private async rePersistKenTurns(): Promise<void> {
-    if (!this.sessionPath) return;
-    for (const payload of this.kenTurns) {
-      const entry: CustomEntry = {
-        type: "custom",
-        kind: KEN_TURN_CUSTOM_KIND,
-        id: crypto.randomUUID(),
-        parentId: null,
-        timestamp: new Date().toISOString(),
-        data: stripRecordedPosition(payload),
-      };
-      await this.sessionManager.appendEntry(this.sessionPath, entry);
-    }
+    await this.markers.recordKenTurn(question, reply, this.persistedTranscriptCount());
   }
 
   /**
@@ -4128,21 +3593,6 @@ export class AgentSession {
    * instead of dropping the marker or falling back to a raw verdict string.
    * No-op persistence for transient sessions (kept in memory only).
    */
-  private async recordFinishedBackgroundVerification(id: string): Promise<boolean> {
-    const started = this.backgroundVerification.get(id);
-    const proc = this.processManager?.list().find((entry) => entry.id === id);
-    if (!started || !proc || proc.exitCode === null) return false;
-    if (started.sourceSnapshot !== undefined) {
-      await this.finishSnapshotVerification(started, proc.exitCode === 0);
-    } else if (proc.exitCode === 0) {
-      this.verificationGate.recordVerification(started.revision, started.command);
-    } else {
-      this.verificationGate.recordFailedVerification(started.command, started.revision);
-    }
-    this.backgroundVerification.delete(id);
-    return true;
-  }
-
   getVerificationEvidence(): VerificationEvidence[] {
     return this.verificationGate.evidence();
   }
@@ -4160,44 +3610,8 @@ export class AgentSession {
     };
   }
 
-  private async finishSnapshotVerification(
-    check: { command: string; revision: number; sourceSnapshot?: string | null },
-    passed: boolean,
-  ): Promise<void> {
-    const after = check.sourceSnapshot
-      ? await captureVerificationSnapshot(this.opts.cwd, [...this.hookFileEditCounts.keys()])
-      : null;
-    if (after === null || after !== check.sourceSnapshot) {
-      this.verificationGate.requireFreshVerification(true, check.command);
-      this.verificationGate.recordRejectedCheck(
-        check.command,
-        after === null
-          ? "Workspace inputs could not be compared; run a read-only check after the command"
-          : "Command changed workspace inputs; run checks against the changed source",
-      );
-      if (!passed) this.verificationGate.recordFailedVerification(check.command);
-    } else if (passed) {
-      const classification = classifyVerificationCommand(check.command);
-      if (classification.snapshotPreserveOnly) {
-        this.verificationGate.recordRejectedCheck(check.command, classification.reason);
-      } else {
-        this.verificationGate.recordVerification(check.revision, check.command);
-      }
-    } else {
-      this.verificationGate.recordFailedVerification(check.command, check.revision);
-    }
-  }
-
   getVerificationProblem(): string | null {
-    if ([...this.hookToolCalls.values()].some((call) => call.sourceSnapshot !== undefined)) {
-      return "Unverified: a build is still running or its workspace comparison is pending.";
-    }
-    return (
-      this.verificationGate.verificationProblem() ??
-      (this.backgroundVerification.size > 0
-        ? "Unverified: a background check is still running or its result has not been confirmed."
-        : null)
-    );
+    return this.verificationTracker.verificationProblem();
   }
 
   private async persistCompletionReviewState(): Promise<void> {
@@ -4233,50 +3647,14 @@ export class AgentSession {
     phase: AutopilotMarkerPayload["phase"],
     extra?: { reason?: string; body?: string },
   ): Promise<void> {
-    const afterMessageCount = this.persistedTranscriptCount();
-    const payload: AutopilotMarkerPayload = {
-      version: 1,
-      phase,
-      afterMessageCount,
-      ...(extra?.reason !== undefined ? { reason: extra.reason } : {}),
-      ...(extra?.body !== undefined ? { body: extra.body } : {}),
-    };
-    this.autopilotMarkers.push(payload);
-    if (!this.sessionPath) return;
-    const entry: CustomEntry = {
-      type: "custom",
-      kind: AUTOPILOT_MARKER_CUSTOM_KIND,
-      id: crypto.randomUUID(),
-      parentId: null,
-      timestamp: new Date().toISOString(),
-      data: payload,
-    };
-    await this.sessionManager.appendEntry(this.sessionPath, entry);
-  }
-
-  /** Re-append the in-memory autopilot markers to the current session file.
-   *  Mirrors `rePersistKenTurns` — called after a continuation/compaction file
-   *  is created so the auto-review history survives the rewrite. */
-  private async rePersistAutopilotMarkers(): Promise<void> {
-    if (!this.sessionPath) return;
-    for (const payload of this.autopilotMarkers) {
-      const entry: CustomEntry = {
-        type: "custom",
-        kind: AUTOPILOT_MARKER_CUSTOM_KIND,
-        id: crypto.randomUUID(),
-        parentId: null,
-        timestamp: new Date().toISOString(),
-        data: stripRecordedPosition(payload),
-      };
-      await this.sessionManager.appendEntry(this.sessionPath, entry);
-    }
+    await this.markers.recordAutopilotMarker(phase, extra, this.persistedTranscriptCount());
   }
 
   /** App transcript markers recorded against this session, in record order.
    *  Used by the host to interleave display-only rows (plan banner, task
    *  header, errors, user-bubble hints) back into the transcript on resume. */
   getAppMarkers(): AppMarkerPayload[] {
-    return this.appMarkers;
+    return this.markers.getAppMarkers();
   }
 
   /**
@@ -4293,19 +3671,7 @@ export class AgentSession {
     data: Record<string, unknown>,
     anchorOffset = 0,
   ): Promise<void> {
-    const afterMessageCount = this.persistedTranscriptCount() + anchorOffset;
-    const payload: AppMarkerPayload = { version: 1, kind, afterMessageCount, data };
-    this.appMarkers.push(payload);
-    if (!this.sessionPath) return;
-    const entry: CustomEntry = {
-      type: "custom",
-      kind: APP_MARKER_CUSTOM_KIND,
-      id: crypto.randomUUID(),
-      parentId: null,
-      timestamp: new Date().toISOString(),
-      data: payload,
-    };
-    await this.sessionManager.appendEntry(this.sessionPath, entry);
+    await this.markers.recordAppMarker(kind, data, this.persistedTranscriptCount() + anchorOffset);
   }
 
   /**
@@ -4333,24 +3699,6 @@ export class AgentSession {
       generation,
       outcome,
     });
-  }
-
-  /** Re-append the in-memory app markers to the current session file. Mirrors
-   *  `rePersistKenTurns` — called after a continuation/compaction file is
-   *  created so display-only rows survive the rewrite. */
-  private async rePersistAppMarkers(): Promise<void> {
-    if (!this.sessionPath) return;
-    for (const payload of this.appMarkers) {
-      const entry: CustomEntry = {
-        type: "custom",
-        kind: APP_MARKER_CUSTOM_KIND,
-        id: crypto.randomUUID(),
-        parentId: null,
-        timestamp: new Date().toISOString(),
-        data: stripRecordedPosition(payload),
-      };
-      await this.sessionManager.appendEntry(this.sessionPath, entry);
-    }
   }
 
   /**
@@ -4462,7 +3810,7 @@ export class AgentSession {
     // Again, in case a turn racing teardown started one while we awaited.
     this.stopBackgroundProcesses();
     this.lspManager?.shutdownAll();
-    await Promise.all([this.subAgentManager?.shutdownAll(), this.mcpManager?.dispose()]);
+    await Promise.all([this.subAgentManager?.shutdownAll(), this.mcp.manager?.dispose()]);
     await this.extensionLoader.deactivateAll();
     this.setSessionPath("");
     this.eventBus.removeAllListeners();
@@ -4509,7 +3857,7 @@ export class AgentSession {
     this.opts.completionReview?.restore(
       savedCompletionReview?.type === "custom" ? savedCompletionReview.data : null,
     );
-    this.backgroundVerification.clear();
+    this.verificationTracker.clearBackground();
     const savedVerification = [...loaded.entries]
       .reverse()
       .find((entry) => entry.type === "custom" && entry.kind === VERIFICATION_STATE_KIND);
@@ -4548,15 +3896,8 @@ export class AgentSession {
     // The leaf is passed so each marker also carries its FILE-order position,
     // the fallback used when a legacy anchor is out of range (see
     // RecordedPosition).
-    this.kenTurns = this.sessionManager.getKenTurns(loaded.entries, loaded.header.leafId);
-    // Restore autopilot verdict markers the same way (not on the message DAG).
-    this.autopilotMarkers = this.sessionManager.getAutopilotMarkers(
-      loaded.entries,
-      loaded.header.leafId,
-    );
-    // Restore app transcript markers (plan banner / task header / errors / hints).
-    this.appMarkers = this.sessionManager.getAppMarkers(loaded.entries, loaded.header.leafId);
-    this.turnMetrics = this.sessionManager.getTurnMetrics(loaded.entries);
+    // Autopilot verdicts, app markers and turn metrics are restored the same way.
+    this.markers.restore(loaded.entries, loaded.header.leafId);
     // A run that opened the journal and never closed it died mid-flight. Read
     // it here, before anything rewrites the file, and report it once the
     // transcript is in place.
@@ -4783,13 +4124,4 @@ export class AgentSession {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
-}
-
-/** Expand a leading `~` so `/import ~/.codex/...` works from any shell. */
-function resolveHomePath(filePath: string): string {
-  if (filePath === "~") return os.homedir();
-  if (filePath.startsWith("~/") || filePath.startsWith("~\\")) {
-    return path.join(os.homedir(), filePath.slice(2));
-  }
-  return filePath;
 }

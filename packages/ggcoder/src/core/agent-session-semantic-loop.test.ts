@@ -7,16 +7,18 @@ import { AgentSession } from "./agent-session.js";
 
 interface SemanticInternals {
   settingsManager: { get(key: string): boolean };
-  hookStats: { toolFailures: number; turns: number; toolCalls: number };
-  hookConsecutiveFailures: number;
-  hookRepeatedNoProgressCalls: number;
-  hookRecentCalls: { tool: string; args: string; ok: boolean; result: string }[];
-  semanticLoop: {
-    checksUsed: number;
-    lastCheckTurn: number;
-    pending: boolean;
-    verdict: { loop: boolean; reason: string; advice: string } | null;
-    injected: boolean;
+  loopMonitor: {
+    stats: { toolFailures: number; turns: number; toolCalls: number };
+    consecutiveFailures: number;
+    repeatedNoProgressCalls: number;
+    recentCalls: { tool: string; args: string; ok: boolean; result: string }[];
+    semanticLoop: {
+      checksUsed: number;
+      lastCheckTurn: number;
+      pending: boolean;
+      verdict: { loop: boolean; reason: string; advice: string } | null;
+      injected: boolean;
+    };
   };
   resetHookState(originalRequest: string): void;
   getHookSteeringMessages(): Message[] | null;
@@ -50,9 +52,9 @@ function makeSession(judge: (prompt: string) => Promise<string>) {
 
 /** Suspicious but syntactically quiet: consecutive failures, no repeat/cycle signal. */
 function primeSuspicion(internal: SemanticInternals): void {
-  internal.hookStats = { toolFailures: 3, turns: 10, toolCalls: 8 };
-  internal.hookConsecutiveFailures = 2;
-  internal.hookRecentCalls = [
+  internal.loopMonitor.stats = { toolFailures: 3, turns: 10, toolCalls: 8 };
+  internal.loopMonitor.consecutiveFailures = 2;
+  internal.loopMonitor.recentCalls = [
     { tool: "bash", args: '{"command":"npm test"}', ok: false, result: "Exit code: 1" },
     { tool: "edit", args: '{"file_path":"src/a.ts"}', ok: true, result: "ok" },
     { tool: "bash", args: '{"command":"npm test --filter x"}', ok: false, result: "Exit code: 1" },
@@ -71,18 +73,18 @@ describe("AgentSession semantic loop check", () => {
     // First poll fires the judge in the background; no message yet.
     expect(internal.getHookSteeringMessages()).toBeNull();
     expect(judge).toHaveBeenCalledTimes(1);
-    expect(internal.semanticLoop.pending).toBe(true);
-    await vi.waitFor(() => expect(internal.semanticLoop.pending).toBe(false));
+    expect(internal.loopMonitor.semanticLoop.pending).toBe(true);
+    await vi.waitFor(() => expect(internal.loopMonitor.semanticLoop.pending).toBe(false));
 
     const messages = internal.getHookSteeringMessages();
     expect(messages?.[0]?.content).toContain("unproductive pattern");
     expect(messages?.[0]?.content).toContain("same failure, varying retries");
-    expect(internal.semanticLoop.injected).toBe(true);
+    expect(internal.loopMonitor.semanticLoop.injected).toBe(true);
     // Addressed: the failure burst resets so a fresh burst must re-accumulate.
-    expect(internal.hookConsecutiveFailures).toBe(0);
+    expect(internal.loopMonitor.consecutiveFailures).toBe(0);
 
     // Once per run even if a second check later returns another loop verdict.
-    internal.semanticLoop.verdict = { loop: true, reason: "again", advice: "" };
+    internal.loopMonitor.semanticLoop.verdict = { loop: true, reason: "again", advice: "" };
     expect(internal.getHookSteeringMessages()).toBeNull();
   });
 
@@ -98,10 +100,10 @@ describe("AgentSession semantic loop check", () => {
       const internal = makeSession(() => pending);
       primeSuspicion(internal);
       internal.getHookSteeringMessages();
-      expect(internal.semanticLoop.pending).toBe(true);
+      expect(internal.loopMonitor.semanticLoop.pending).toBe(true);
 
       internal.resetHookState("Explain the previous change without editing anything");
-      const freshState = { ...internal.semanticLoop };
+      const freshState = { ...internal.loopMonitor.semanticLoop };
       if (outcome === "resolve") {
         resolve('{"loop": true, "reason": "old failure", "advice": "retry"}');
       } else {
@@ -109,7 +111,7 @@ describe("AgentSession semantic loop check", () => {
       }
       await new Promise<void>((done) => setImmediate(done));
 
-      expect(internal.semanticLoop).toEqual(freshState);
+      expect(internal.loopMonitor.semanticLoop).toEqual(freshState);
       expect(internal.getHookSteeringMessages()).toBeNull();
     },
   );
@@ -131,17 +133,17 @@ describe("AgentSession semantic loop check", () => {
     internal.resetHookState("Fix a different problem");
     primeSuspicion(internal);
     internal.getHookSteeringMessages();
-    const freshState = { ...internal.semanticLoop };
+    const freshState = { ...internal.loopMonitor.semanticLoop };
     finishOld('{"loop": true, "reason": "old failure", "advice": "retry"}');
     await new Promise<void>((done) => setImmediate(done));
 
-    expect(internal.semanticLoop).toEqual(freshState);
+    expect(internal.loopMonitor.semanticLoop).toEqual(freshState);
     expect(internal.getHookSteeringMessages()).toBeNull();
     expect(judge).toHaveBeenCalledTimes(2);
     finishCurrent('{"loop": true, "reason": "current failure", "advice": "inspect"}');
     await new Promise<void>((done) => setImmediate(done));
-    expect(internal.semanticLoop.pending).toBe(false);
-    expect(internal.semanticLoop.checksUsed).toBe(1);
+    expect(internal.loopMonitor.semanticLoop.pending).toBe(false);
+    expect(internal.loopMonitor.semanticLoop.checksUsed).toBe(1);
     expect(internal.getHookSteeringMessages()?.[0]?.content).toContain("current failure");
   });
 
@@ -149,13 +151,13 @@ describe("AgentSession semantic loop check", () => {
     const internal = makeSession(async () => '{"loop": false, "reason": "", "advice": ""}');
     primeSuspicion(internal);
     expect(internal.getHookSteeringMessages()).toBeNull();
-    await vi.waitFor(() => expect(internal.semanticLoop.checksUsed).toBe(1));
+    await vi.waitFor(() => expect(internal.loopMonitor.semanticLoop.checksUsed).toBe(1));
     expect(internal.getHookSteeringMessages()).toBeNull();
 
     const broken = makeSession(async () => "the model could not answer");
     primeSuspicion(broken);
     broken.getHookSteeringMessages();
-    await vi.waitFor(() => expect(broken.semanticLoop.checksUsed).toBe(1));
+    await vi.waitFor(() => expect(broken.loopMonitor.semanticLoop.checksUsed).toBe(1));
     expect(broken.getHookSteeringMessages()).toBeNull();
   });
 
@@ -165,7 +167,7 @@ describe("AgentSession semantic loop check", () => {
     });
     primeSuspicion(internal);
     expect(internal.getHookSteeringMessages()).toBeNull();
-    await vi.waitFor(() => expect(internal.semanticLoop.checksUsed).toBe(1));
+    await vi.waitFor(() => expect(internal.loopMonitor.semanticLoop.checksUsed).toBe(1));
     expect(internal.getHookSteeringMessages()).toBeNull();
   });
 
@@ -173,12 +175,12 @@ describe("AgentSession semantic loop check", () => {
     const judge = vi.fn(async () => '{"loop": true}');
     const internal = makeSession(judge);
     // Three identical no-progress calls trip the deterministic breaker.
-    internal.hookStats = { toolFailures: 5, turns: 10, toolCalls: 6 };
-    internal.hookConsecutiveFailures = 3;
-    internal.hookRepeatedNoProgressCalls = 3;
+    internal.loopMonitor.stats = { toolFailures: 5, turns: 10, toolCalls: 6 };
+    internal.loopMonitor.consecutiveFailures = 3;
+    internal.loopMonitor.repeatedNoProgressCalls = 3;
     const messages = internal.getHookSteeringMessages();
     expect(judge).not.toHaveBeenCalled();
-    expect(internal.semanticLoop.checksUsed).toBe(0);
+    expect(internal.loopMonitor.semanticLoop.checksUsed).toBe(0);
     expect(String(messages?.[0]?.content)).toContain("Stuck?");
   });
 
@@ -187,17 +189,17 @@ describe("AgentSession semantic loop check", () => {
     const internal = makeSession(judge);
     primeSuspicion(internal);
     internal.getHookSteeringMessages();
-    await vi.waitFor(() => expect(internal.semanticLoop.checksUsed).toBe(1));
+    await vi.waitFor(() => expect(internal.loopMonitor.semanticLoop.checksUsed).toBe(1));
 
     // A fresh burst past the cooldown: second and final check.
-    internal.hookStats.turns = 20;
-    internal.hookConsecutiveFailures = 2;
+    internal.loopMonitor.stats.turns = 20;
+    internal.loopMonitor.consecutiveFailures = 2;
     internal.getHookSteeringMessages();
-    await vi.waitFor(() => expect(internal.semanticLoop.checksUsed).toBe(2));
+    await vi.waitFor(() => expect(internal.loopMonitor.semanticLoop.checksUsed).toBe(2));
 
     // Third burst: budget spent, judge never consulted again.
-    internal.hookStats.turns = 40;
-    internal.hookConsecutiveFailures = 2;
+    internal.loopMonitor.stats.turns = 40;
+    internal.loopMonitor.consecutiveFailures = 2;
     expect(internal.getHookSteeringMessages()).toBeNull();
     expect(judge).toHaveBeenCalledTimes(2);
   });
@@ -205,13 +207,13 @@ describe("AgentSession semantic loop check", () => {
   it("discards a pending semantic verdict when the deterministic breaker fires first", () => {
     const internal = makeSession(async () => '{"loop": true, "reason": "r", "advice": "a"}');
     primeSuspicion(internal);
-    internal.semanticLoop.verdict = { loop: true, reason: "stale burst", advice: "" };
+    internal.loopMonitor.semanticLoop.verdict = { loop: true, reason: "stale burst", advice: "" };
     // Deterministic signals now fire for the same burst.
-    internal.hookRepeatedNoProgressCalls = 3;
+    internal.loopMonitor.repeatedNoProgressCalls = 3;
     const messages = internal.getHookSteeringMessages();
     expect(String(messages?.[0]?.content)).toContain("Stuck?");
     // The semantic verdict for the SAME burst is gone — no double correction.
-    expect(internal.semanticLoop.verdict).toBeNull();
+    expect(internal.loopMonitor.semanticLoop.verdict).toBeNull();
     expect(internal.getHookSteeringMessages()).toBeNull();
   });
 
@@ -231,8 +233,8 @@ describe("AgentSession semantic loop check", () => {
       result: huge,
       durationMs: 5,
     });
-    expect(internal.hookRecentCalls.length).toBe(1);
-    expect(internal.hookRecentCalls[0]?.args.length).toBeLessThanOrEqual(300);
-    expect(internal.hookRecentCalls[0]?.result.length).toBeLessThanOrEqual(400);
+    expect(internal.loopMonitor.recentCalls.length).toBe(1);
+    expect(internal.loopMonitor.recentCalls[0]?.args.length).toBeLessThanOrEqual(300);
+    expect(internal.loopMonitor.recentCalls[0]?.result.length).toBeLessThanOrEqual(400);
   });
 });

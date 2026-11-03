@@ -15,8 +15,8 @@ import { MAX_WAIT_MS } from "./subagent-manager.js";
 
 interface ReviewInternals {
   settingsManager: { get(key: string): boolean };
-  hookStats: IdealReviewStats;
-  hookFileEditCounts: Map<string, number>;
+  loopMonitor: { stats: IdealReviewStats };
+  verificationTracker: { fileEditCounts: Map<string, number> };
   model: string;
   allowedTools?: string[];
   opts: { allowedTools?: string[] };
@@ -78,8 +78,8 @@ function makeSession(stats: IdealReviewStats, fakeManager: unknown): ReviewInter
   });
   const internal = session as unknown as ReviewInternals;
   internal.settingsManager = { get: () => true };
-  internal.hookStats = stats;
-  internal.hookFileEditCounts.set("src/a.ts", 2);
+  internal.loopMonitor.stats = stats;
+  internal.verificationTracker.fileEditCounts.set("src/a.ts", 2);
   if (fakeManager) internal.subAgentManager = fakeManager;
   return internal;
 }
@@ -225,7 +225,7 @@ describe("AgentSession independent Ideal reviewer", () => {
     const internal = makeSession(highStakesStats, manager);
     await internal.getHookFollowUpMessages();
     // Simulate the review loop re-arming (coverage re-read) and stopping again.
-    internal.hookFileEditCounts.set("src/a.ts", 3);
+    internal.verificationTracker.fileEditCounts.set("src/a.ts", 3);
     await internal.getHookFollowUpMessages();
     expect(manager.spawn).toHaveBeenCalledTimes(1);
   });

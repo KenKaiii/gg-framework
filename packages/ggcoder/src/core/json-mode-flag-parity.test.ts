@@ -51,7 +51,10 @@ function extractJsonModeOptionKeys(source: string, anchor: string): string[] {
 describe("cli.ts / app-sidecar.ts JSON-mode flag parity", () => {
   it("app-sidecar's runJsonModeIfRequested accepts every flag cli.ts's JSON mode does", () => {
     const cliSource = fs.readFileSync(path.join(__dirname, "../cli.ts"), "utf-8");
-    const sidecarSource = fs.readFileSync(path.join(__dirname, "../app-sidecar.ts"), "utf-8");
+    const sidecarSource = fs.readFileSync(
+      path.join(__dirname, "../app-sidecar/json-mode.ts"),
+      "utf-8",
+    );
 
     const cliKeys = extractJsonModeOptionKeys(
       cliSource,

@@ -22,7 +22,10 @@ import { createAskUserTool } from "./tools/ask-user.js";
  * is exercised for real against a real parked tool call, and the route's source
  * is checked for where that release sits relative to the queue.
  */
-const APP_SIDECAR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "app-sidecar.ts");
+const APP_SIDECAR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "app-sidecar/prompt-routes.ts",
+);
 
 /** The brace-balanced body of a route handler, keyed by its `url ===` guard. */
 function routeBlock(source: string, marker: string): string {

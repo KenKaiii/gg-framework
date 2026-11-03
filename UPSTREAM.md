@@ -183,6 +183,78 @@ and version commits) is not imported. The imported fixes shipped in `5.66.2-klei
 published on 2026-10-30. Their changesets for `@kleio/ai`, `agent`, `core` and `coder`
 were moved by hand into those packages' `5.66.2-kleio.1` CHANGELOG entries.
 
+## Module split from upstream 4f763ed2 (open)
+
+- Upstream tip reviewed: `0e7a6382da002e8a4473f0247a7e60050cc3e9ee` (engine **5.88.1**,
+  desktop **0.99.1**), 265 commits after `3f2bb6bc`. None of the 20 commits after
+  `988f920e` is taken here.
+- Branch: `sync/upstream-split-4f763ed2`, based on `main` at `75e3ba68`
+- PR: [#74](https://github.com/fmckie/gg-framework/pull/74), opened as a draft on
+  2026-11-02
+- PR 1 of the 4 in `.gg/plans/upstream-selective-import-phased.md`. PRs 2–4 port
+  upstream fixes, tools and Goals against the new paths.
+- `upstream.lastImportedCommit` stays `3f2bb6bc`, for the reason given in the previous
+  section. Each port commit carries
+  `Ported from upstream 4f763ed27d80097f2867e55d67f17d61236ae2d9`, and
+  `fork-provenance.json` `selectiveImports` holds the full hashes. No commit is picked.
+
+Upstream's split can't be cherry-picked: the fork's four largest files carry fork code
+and lack upstream's edits from `3f2bb6bc..4f763ed2`. So the fork's own code moves into
+upstream's module layout. Each item goes to the module where upstream put the item of
+the same name, and fork-only items go with their main caller. Bodies move unchanged;
+only imports, exports, visibility and the command registration change. Behaviour does
+not change.
+
+| Upstream   | Downstream | Split                                                                                                                                                                                                                               | Not created                                                                                                                     |
+| ---------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `4f763ed2` | `dc11fe9b` | `gg-app/src-tauri/src/lib.rs` into `auth`, `commands/{mod,agent,agent_admin,files}`, `daemon`, `events`, `paths`, `process`, `settings`, `state`, `tray` and `windows`. `lib.rs` keeps `run()`, the plugins and `generate_handler!` | —                                                                                                                               |
+| `4f763ed2` | `f42b09e1` | `app-sidecar.ts` in `@kleio/coder`, still the entry, into 23 upstream-named `app-sidecar/` modules on upstream's route context, plus 12 fork-named ones for the fork's own routes                                                   | `keep-awake.ts`: the fork keeps the machine awake from Rust                                                                     |
+| `4f763ed2` | `14a78f71` | `core/agent-session.ts` in `@kleio/coder`, which keeps `AgentSession` and its exports, into `core/agent-session/{helpers,mcp-tools,run-loop-monitor,transcript-markers,verification-tracker}`                                       | Members only later upstream commits use: `McpToolRegistry.promote()`, cache diagnostics, the debug manager, plan-mode promotion |
+| `4f763ed2` | `2a23a7b1` | `gg-app/src/App.tsx`, which keeps `<KleioHome`, into `transcript-item.ts`, `TranscriptRow`, `AppFooter`, `Composer`, `WorkspaceHeaderActions` and 10 hooks                                                                          | `useChecklist`: the checklist arrives with `4b63cdd2`                                                                           |
+
+Not taken from `4f763ed2`:
+
+- The What's New redesign (`WhatsNew.css`, the `WhatsNewCampfire.tsx` pixel art,
+  `WhatsNewParts.tsx`, `whatsnew-content.ts`, the `WhatsNewCritter` changes) and the
+  `HomeScreen.tsx` and `App.css` edits: desktop UI the plan leaves out.
+- Package and CI hygiene: package.json `files` and `exports`, tsup, tsconfig, eslint,
+  `pnpm-workspace.yaml`, `.gitignore`, the CI workflow, READMEs, `SECURITY.md`,
+  `CONTEXT.md`, `docs/adr` and changesets.
+- Behaviour hunks: gg-ai `openai-codex.ts` and `stream.ts`; gg-core `model-registry.ts`
+  and thinking levels; `@kleio/coder`'s `auth-providers.ts`, `checklist-*`, `cli.ts`,
+  the compactor test and the tool-catalog snapshot. A later PR that needs one of them
+  ports it and records it.
+
+### Verification record
+
+Local macOS checks, each compared with `main`:
+
+- The same behaviour surface: the 132 Tauri commands in `generate_handler!`, the 92
+  sidecar routes and their 126 path literals, the 302 `cargo test` names (83 of the 84
+  `lib.rs` tests now sit in their module's `tests`, so only their module path changes),
+  the 9 exports and 53 public members of `AgentSession`, and `App`'s 199 hook calls with
+  its 46 effects in the same order.
+- Moved state is declared exactly once: 243 sidecar declarations (52 of them `let`), 22
+  `AgentSession` fields and `idSeq`.
+- Test totals equal `main`: `cargo test` 299 passed (3 ignored); `@kleio/coder` 317
+  files and 3814 tests (17 skipped); `@kleio/manager` 31 files and 332 tests; gg-app
+  152 files and 1801 tests. Seven tests that read private state or source text now
+  point at the file that holds it; nothing else in a test changes.
+- Identity audit, tracked and packed: 0 unclassified hits and 0 count mismatches. The
+  `lib.rs`, `app-sidecar.ts` and `App.tsx` allowlist entries are re-keyed per
+  destination file with exact counts that add up to the originals; alternatives that
+  matched nothing on `main` are dropped. Emitted `.d.ts` files that now carry reviewed
+  comments get entries from the same alternatives, and the seam counts rise by the
+  tokens in the new paths. The packed `@kleio/manager` source-path count rises from 662
+  to 675: the bundle and its source map name the five new `core/agent-session/`
+  modules, and a bundle built from `main` has 662.
+- The build, typecheck, lint, format check, bundled sidecar smoke and startup gate pass.
+- Size baselines: the `@kleio/coder` build output 7098613 → 7242459 bytes and the
+  app's initial JavaScript 1015645 → 1041680 bytes. `main` already sat close to both
+  limits (71 bytes under for the frontend). The split adds 70.8 KiB of per-file
+  overhead to the build output (import headers, source maps, declarations) and 5793
+  bytes to the initial JavaScript.
+
 ## Original imported baseline
 
 - Upstream repository: `https://github.com/KenKaiii/gg-framework`

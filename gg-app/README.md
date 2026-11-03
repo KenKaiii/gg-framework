@@ -19,6 +19,7 @@ pnpm --filter gg-app tauri dev
 
 Webview edits hot-reload through Vite. **Restart the app** after Rust or sidecar changes,
 and rebuild `@kleio/coder` any time you touch `packages/ggcoder/src/app-sidecar.ts`.
+Its route modules in `app-sidecar/` need the same rebuild.
 
 ```bash
 pnpm --filter gg-app check    # tsc --noEmit
@@ -38,13 +39,15 @@ React webview ──invoke()──▶ Rust commands ──HTTP──▶ Node sid
      └────── emit_to(window) ◀──┴──── SSE /events ◀────────┘
 ```
 
-- **`src-tauri/src/lib.rs`** is the Rust shell. It owns a sidecar registry keyed by window
-  label, every command resolves the calling window's port, and SSE frames go out through
-  `emit_to` so windows never see each other's events.
+- **`src-tauri/src/`** is the Rust shell. `lib.rs` starts the app and registers the
+  commands in `commands/`. It owns a sidecar registry keyed by window label (`state.rs`,
+  `daemon.rs`), every command resolves the calling window's port, and SSE frames go out
+  through `emit_to` (`events.rs`) so windows never see each other's events.
 - **`src/agent.ts`** is the only bridge to Rust. All IPC wrappers live here. The webview
   never `fetch`es the sidecar directly, since mixed content is blocked on the `tauri://`
   origin.
 - **`packages/ggcoder/src/app-sidecar.ts`** is the HTTP + SSE seam over `AgentSession`.
+  Its routes live in `app-sidecar/`.
 
 New IPC means a Rust `#[tauri::command]` proxying the sidecar, registered in
 `invoke_handler!`, plus a typed wrapper in `agent.ts`.

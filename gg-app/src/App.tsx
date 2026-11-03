@@ -5,16 +5,12 @@ import {
   useLayoutEffect,
   useCallback,
   useMemo,
-  memo,
   lazy,
   Suspense,
 } from "react";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import { theme } from "./theme";
-import { WorkingBeam } from "./WorkingBeam";
 import { MetalButton } from "./MetalButton";
-import { ActionMetal } from "./ActionMetal";
 import { withViewTransition } from "./view-transition";
 import {
   waitForReady,
@@ -22,10 +18,8 @@ import {
   sendPrompt,
   sendKenPrompt,
   cancelKen,
-  setAutopilot,
   cancel,
   newSession,
-  cycleThinking,
   listModels,
   switchModel,
   isSwitchModelError,
@@ -34,8 +28,6 @@ import {
   cancelQueued,
   type QueuedMessage,
   listHistory,
-  exportTranscriptName,
-  saveTranscript,
   listTasks,
   runTask,
   runAllTasks,
@@ -43,22 +35,12 @@ import {
   newWindow,
   focusWindowByOffset,
   arrangeAllWindows,
-  onWindowOrder,
   restoreTarget,
-  onTrayIntent,
-  takeTrayIntent,
-  setUpdateAvailable,
-  setRemoteActive as setRemoteActiveIPC,
-  startServe,
-  stopServe,
-  getServeStatus,
-  type TrayIntent,
   acceptPlan as acceptPlanIPC,
   subscribe,
   isSecondaryWindow,
   windowLabel,
   setWindowTitle,
-  openProjectPath,
   workspaceProductName,
   type AgentState,
   type WorkspaceMode,
@@ -68,12 +50,7 @@ import {
   type ProjectTask,
   type FileHit,
   searchFiles,
-  enhancePrompt,
-  getDroppedPathInfo,
-  readDroppedFileAttachment,
-  type Attachment,
   type PromptSegment,
-  type AskUserPrompt,
   answerAskUser,
   notifyAskUser,
   selectWorkspace,
@@ -89,33 +66,16 @@ import {
 import { glowPlacement, glowStateFor, glowVars } from "./window-glow";
 import { ActivityBar } from "./ActivityBar";
 import { autosizeComposer } from "./composer-autosize";
-import {
-  followsOutput,
-  pinAfterScroll,
-  pinAfterTouchScroll,
-  pinAfterWheel,
-  showJumpToLatest,
-  TOUCH_SETTLE_MS,
-} from "./transcript-pin";
 import { isPhone, supportsDictation } from "./platform";
-import { focusesComposerOnOpen, refocusesComposer } from "./composer-refocus";
 import { needsRehydrate, type RehydrateMemory } from "./phone-lifecycle";
-import { returnSends } from "./phone-viewport";
 import { useNotificationTaps, type TapDestination } from "./notification-tap";
 import { KenActivityBar } from "./KenActivityBar";
 import { useTaskActivity } from "./useTaskActivity";
 import { useKenMentor } from "./useKenMentor";
 import { useAutopilot } from "./useAutopilot";
-import { useAgentEvents, HOOK_PRESENTATION, type HookKind } from "./useAgentEvents";
-import { useSmoothText } from "./useSmoothText";
+import { useAgentEvents } from "./useAgentEvents";
 import { LiveToolPanel, type LiveToolEntry } from "./LiveToolPanel";
-import { SubAgentFeed, type SubAgentLine } from "./SubAgentFeed";
-import { CompactionNotice } from "./CompactionNotice";
-import { ModelSelect, loadModelsInto } from "./ModelSelect";
-import { SlashMenu } from "./SlashMenu";
-import { QueuedBar } from "./QueuedBar";
-import { ScheduleHint } from "./ScheduleHint";
-import { RunningSchedulesButton } from "./RunningSchedulesButton";
+import { loadModelsInto } from "./ModelSelect";
 import {
   describeSchedule,
   isScheduleDraft,
@@ -123,35 +83,26 @@ import {
   withInterval,
 } from "./scheduleCommand";
 import { useRoutines } from "./useRoutines";
-import { FileMentionMenu } from "./FileMentionMenu";
-import { ReferencedFiles, appendReferencedFiles, parseReferencedFiles } from "./ReferencedFiles";
-import { ContextMeter } from "./ContextMeter";
-import { BackgroundTasksButton } from "./BackgroundTasksButton";
+import { appendReferencedFiles, parseReferencedFiles } from "./ReferencedFiles";
 import { TasksModal } from "./TasksModal";
 import { NotesModal } from "./NotesModal";
 import { MemoryModal } from "./LazyMemoryModal";
-import { ShimmerText } from "./ShimmerText";
 import { WakeScreen } from "./WakeScreen";
 import { MotionStarters } from "./MotionStarters";
 import { ConfirmModal } from "./ConfirmModal";
 import { InitGitModal } from "./InitGitModal";
 import { HostFoldersModal } from "./HostFoldersModal";
 import { NO_FOLDERS_TO_REMOVE, RemoveDirModal } from "./RemoveDirModal";
-import { PlanModeLogo } from "./PlanModeLogo";
 import { KenPowerBanner } from "./KenPowerBanner";
 import { ExportChatButton } from "./ExportChatButton";
 import { PlanReviewModal } from "./PlanReviewModal";
 import { McpElicitModal } from "./McpElicitModal";
-import { AskBand } from "./AskBand";
-import { WindowLayoutButton } from "./WindowLayoutButton";
 import { windowShortcut } from "./window-shortcuts";
 // Experimental gaze focus — disabled for now (see main.tsx).
 // import { GazeButton } from "./GazeButton";
-import { RadioButton } from "./RadioButton";
 import { ProjectPicker } from "./ProjectPicker";
 import { ChatPicker } from "./ChatPicker";
 import { BackButton } from "./BackButton";
-import { AutopilotToggle } from "./AutopilotToggle";
 import { SettingsModal } from "./LazySettingsModal";
 import {
   initialEntryView,
@@ -174,7 +125,6 @@ import {
 } from "./helper-mention";
 import { Toaster } from "./Toaster";
 import { Confetti } from "./Confetti";
-import { RankBadge } from "./RankBadge";
 import { ScorecardModal } from "./ScorecardModal";
 import { RemoteHostModal } from "./kleio/LazyRemoteHostModal"; // kleio: registration 1/3
 import { KleioScreen } from "./kleio/LazyKleioScreen";
@@ -184,12 +134,8 @@ import { KleioBadge } from "./kleio/KleioBadge";
 import { useKleioRemote } from "./kleio/useKleioRemote";
 import { NewPairingNotice } from "./kleio/LazyNewPairingNotice";
 import { talkToKleio } from "./kleio/VoiceMode";
-import {
-  useOpenFromHost,
-  WorkspaceFileCards,
-  WorkspaceFilesProvider,
-} from "./kleio/WorkspaceFiles";
-import { HistoryImage, HistoryImagesProvider } from "./historyImages";
+import { WorkspaceFilesProvider } from "./kleio/WorkspaceFiles";
+import { HistoryImagesProvider } from "./historyImages";
 import { TitleUsageMeter } from "./TitleUsageMeter";
 import { useWindowFocused } from "./useWindowFocused";
 import { WorkspaceHeader } from "./WorkspaceHeader";
@@ -197,51 +143,37 @@ import { formatWorkspaceTitle } from "./workspace-title";
 import { useProgress } from "./useProgress";
 import { SettingsScreen } from "./LazySettingsScreen";
 import type { SettingsTabId } from "./SettingsScreen";
-import { Markdown, PromptSendProvider } from "./Markdown";
-import { FooterSkeleton, TranscriptSkeleton, Skeleton } from "./Skeleton";
-import { useAppUpdate } from "./update";
+import { PromptSendProvider } from "./Markdown";
+import { TranscriptSkeleton } from "./Skeleton";
 import { UpdateBanner } from "./UpdateBanner";
 import { recoverPromptLabel } from "./prompt-labels";
 import { INTRODUCE_LABEL, INTRODUCE_PROMPT } from "./kleio/introduce";
 import { playSound } from "./sounds";
-import { segmentDoneMarkers, hasDoneMarker, countPlanSteps } from "./plan-steps";
-import {
-  PaperclipIcon,
-  AtIcon,
-  ArrowDownIcon,
-  ArrowUpIcon,
-  SquareIcon,
-  PlusIcon,
-  QuestionIcon,
-} from "@phosphor-icons/react";
+import { countPlanSteps } from "./plan-steps";
+import { ArrowDownIcon, PlusIcon, QuestionIcon } from "@phosphor-icons/react";
 import type { UseDictation } from "./useDictation";
-import { AttachmentBar } from "./AttachmentBar";
-import { EnhancedSegments } from "./PromptEnhancement";
-import { EnhanceDissolve } from "./EnhanceDissolve";
 import { toast } from "./toast";
-import {
-  fileToPending,
-  toWire,
-  attachmentToPending,
-  oversizedAttachmentsMessage,
-  type PendingAttachment,
-} from "./attachments";
-import { basename } from "./tool-format";
+import { toWire, oversizedAttachmentsMessage } from "./attachments";
 import "./App.css";
 // Liquid glass trial layer (from veditor-app). Delete this line to revert.
 import "./glass.css";
+import { type Item, nextId, idSeq } from "./transcript-item";
+import { TranscriptRow } from "./TranscriptRow";
+import { AppFooter } from "./AppFooter";
+import { Composer } from "./Composer";
+import { WorkspaceHeaderActions } from "./WorkspaceHeaderActions";
+import { useAttachments } from "./useAttachments";
+import { useChromeToggles } from "./useChromeToggles";
+import { useDragOverlay, useWindowFileDrop } from "./useFileDrop";
+import { useProjectNotes } from "./useProjectNotes";
+import { usePromptEnhance } from "./usePromptEnhance";
+import { usePromptHistory } from "./usePromptHistory";
+import { useTranscriptExport } from "./useTranscriptExport";
+import { useTranscriptScroll } from "./useTranscriptScroll";
+import { useTrayIntents } from "./useTrayIntents";
+import { useWindowOrder } from "./useWindowOrder";
 
-// Dictation in the Chat and Code composer: the recorder, the mic button and
-// the status pill load on the iPhone and the Mac only (see DictationSession.tsx).
-const DictationSession = lazy(() =>
-  import("./DictationSession").then((m) => ({ default: m.DictationSession })),
-);
-const DictateButton = lazy(() =>
-  import("./DictateButton").then((m) => ({ default: m.DictateButton })),
-);
-const DictationStatus = lazy(() =>
-  import("./DictateButton").then((m) => ({ default: m.DictationStatus })),
-);
+export type { Item, TranscriptImage } from "./transcript-item";
 // The session screen's guide, behind the header's Help button.
 const SessionHelp = lazy(() => import("./SessionHelp").then((m) => ({ default: m.SessionHelp })));
 
@@ -266,11 +198,6 @@ const INPUT_PLACEHOLDER_INTERVAL_MS = 12_000;
 const PLACEHOLDER_SHUFFLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const PLACEHOLDER_SHUFFLE_FRAMES = 18;
 const PLACEHOLDER_SHUFFLE_FRAME_MS = 24;
-// A drag that stops delivering events for this long is over: the platform
-// swallowed the terminal leave/drop (see the drag-overlay watchdog below).
-const STALE_DRAG_OVERLAY_MS = 2_500;
-// iPhone: a drag on the transcript this long puts the keyboard away.
-const KEYBOARD_DISMISS_DRAG_PX = 10;
 
 // Autopilot Ken's "all clear" line, rotated so the auto-review loop doesn't
 // repeat the exact same sentence every time GG Coder's work checks out.
@@ -279,35 +206,6 @@ const KEYBOARD_DISMISS_DRAG_PX = 10;
 // resumed transcript matches the live one exactly.
 const VIDEO_CAPABILITY_WARNING =
   "This model can't watch video directly. The agent can still extract frames or audio with ffmpeg if needed — switch to a video-capable model (Gemini, Kimi, MiniMax) for native video analysis.";
-
-const ALL_CLEAR_VARIATIONS = [
-  "All clear. Looks good to me.",
-  "Checks out. Nothing left to flag.",
-  "Nice, this holds up. Nothing more from me.",
-  "Solid work. I've got no notes.",
-  "Yep, that covers it. All good.",
-  "Looks right to me — ship it.",
-  "Clean pass. Nothing to add here.",
-  "That does the job. No complaints.",
-  "Good to go, no issues found.",
-  "This holds together. All clear.",
-] as const;
-
-function stableIndex(seed: string, modulo: number): number {
-  let hash = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    hash ^= seed.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) % modulo;
-}
-
-function allClearCopy(seed: string | undefined, fallbackId: number): string {
-  const index = seed
-    ? stableIndex(seed, ALL_CLEAR_VARIATIONS.length)
-    : fallbackId % ALL_CLEAR_VARIATIONS.length;
-  return ALL_CLEAR_VARIATIONS[index];
-}
 
 function shufflePlaceholderFrame(target: string, frame: number): string {
   const revealCount = Math.ceil((target.length * frame) / PLACEHOLDER_SHUFFLE_FRAMES);
@@ -318,138 +216,6 @@ function shufflePlaceholderFrame(target: string, frame: number): string {
   }).join("");
 }
 
-// ── Transcript model ───────────────────────────────────────
-// Tool activity lives in the pinned LiveToolPanel, never in the transcript.
-// Exported (type-only) so the Ken mentor hook can produce/typecheck ken + error
-// transcript items without a runtime import cycle.
-export type Item =
-  // `command` marks a workflow slash command — rendered as just the short
-  // `/name` with a highlight + shimmer, never the expanded prompt body.
-  // `label` overrides what's shown with a friendly shimmer phrase (e.g.
-  // "Initializing Git…") while the full prompt still goes to the agent.
-  | {
-      kind: "user";
-      id: number;
-      text: string;
-      command?: boolean;
-      label?: string;
-      images?: string[];
-      files?: string[];
-      // Corrected-term segments from the prompt enhancer, when this message was
-      // sent unedited straight after an enhance. Drives the highlighted bubble.
-      enhancements?: PromptSegment[];
-      // True while this message is still waiting in the mid-run steering queue.
-      // Rendered dimmed; cleared once the agent has consumed it.
-      queued?: boolean;
-      // Set for one animation beat as `queued` clears, so the bubble can morph
-      // into a normal one (dim → solid, "queued" pill collapsing away) instead of
-      // snapping. Cleared by a timer in useAgentEvents once the motion is done.
-      promoted?: boolean;
-      // True when this prompt was addressed to Ken (`@Ken …`). Renders the bubble
-      // in Ken's color so the transcript shows it went to the mentor, not GG Coder.
-      ken?: boolean;
-      // True when this bubble came from clicking a "Send to GG Coder" button on
-      // one of Ken's recommended prompts. Renders as a shimmering "Sent to GG
-      // Coder" label in Ken's color (like a slash command shows `/name`), instead
-      // of the full prompt body that was actually sent to GG Coder.
-      kenSent?: boolean;
-    }
-  | { kind: "assistant"; id: number; text: string }
-  // Ken Kai (mentor agent) reply — magenta-tinted bubble + "Ken Kai" badge,
-  // streamed from the ken_* SSE events. Never mistaken for GG Coder.
-  | { kind: "ken"; id: number; text: string }
-  | { kind: "info"; id: number; text: string }
-  // Structured error (see gg-ai's formatError): headline always answers "is this
-  // me or them", message is the raw detail (omitted when redundant with the
-  // headline), guidance is the action line (retry / switch model / log in /
-  // wait until a reset time). `text` is a legacy fallback for older items.
-  | {
-      kind: "error";
-      id: number;
-      text?: string;
-      headline?: string;
-      message?: string;
-      guidance?: string;
-    }
-  // Agent self-correction hook notice (ideal review / loop-break / re-grounding),
-  // rendered like the TUI: a shimmering tone-colored one-liner.
-  | { kind: "hook"; id: number; hook: HookKind; verificationReason?: "recheck" | "check_review" }
-  // Images produced by a tool (screenshot / read of an image file).
-  | { kind: "images"; id: number; images: TranscriptImage[]; caption?: string }
-  // Image generation in progress — a shimmering square placeholder that gets
-  // replaced by the final image when the tool result arrives.
-  | { kind: "generating_image"; id: number; prompt: string }
-  // Plan-mode entry banner (ASCII logo + optional reason).
-  | { kind: "plan"; id: number; reason: string }
-  // A question from the `ask_user` tool — clickable options rendered in the
-  // thread. The turn is blocked until the answers are sent, or until the run
-  // ends without them (`cancelled`, which closes the band).
-  | {
-      kind: "ask";
-      id: number;
-      prompt: AskUserPrompt;
-      /** Answers so far. Partial until every question in the band has one. */
-      answers?: Record<string, string | string[]>;
-      /** The complete set reached the blocked tool call. */
-      sent?: boolean;
-      cancelled?: boolean;
-    }
-  // A task kicked off from the Tasks modal (shown at the top of its session).
-  | { kind: "task"; id: number; title: string }
-  // Sub-agents delegated in a turn — a live, in-chat feed of each one's tools.
-  | { kind: "subagent_group"; id: number; agents: SubAgentLine[]; aborted?: boolean }
-  // Context compaction — shimmering "compacting…" while running, then a quiet
-  // "compacted · N → M messages" summary when done.
-  | {
-      kind: "compaction";
-      id: number;
-      status: "running" | "done";
-      originalCount?: number;
-      newCount?: number;
-    }
-  // Autopilot Ken verdict — emitted by the auto-review loop and rendered like a
-  // normal @Ken reply bubble (Ken dot + text), not a separate marker style.
-  // `phase` selects the message: he prompted GG Coder (with the `body` he sent),
-  // gave the all-clear, needs a human (with `reason`), or hit the round cap.
-  | {
-      kind: "autopilot";
-      id: number;
-      phase: "prompted" | "done" | "human" | "capped" | "plan_approved";
-      reason?: string;
-      body?: string;
-      /** Stable seed from persisted marker data so resumed all-clear copy doesn't flicker. */
-      copySeed?: string;
-    };
-
-export interface TranscriptImage {
-  /** data: URL (base64) ready to drop into <img src>. Absent for a resumed
-   *  chat's image listed by `ref`, which loads as it's scrolled to. */
-  src?: string;
-  /** The image's ref, to load its preview by (historyImages.tsx). */
-  ref?: string;
-  /** Its preview's size, so its box holds its place until it loads. */
-  width?: number;
-  height?: number;
-  /** Source file path, shown as a caption + used as a stable key. */
-  path?: string;
-}
-
-let idSeq = 0;
-const nextId = (): number => ++idSeq;
-
-// Vertical divider between footer segments (mirrors the TUI's ` \u2502 ` in
-// border color). Rendered between adjacent groups, never leading/trailing.
-function FooterSep(): React.ReactElement {
-  return (
-    <span className="footer-sep" style={{ color: theme.border }}>
-      {"\u2502"}
-    </span>
-  );
-}
-
-// BLACK_CIRCLE — ⏺ on mac (matches the TUI figure).
-const DOT = "\u23FA";
-
 // `/schedule` lives in the webview, not the sidecar's command registry: it
 // registers a recurring timer instead of prompting the agent. Declared here so
 // the palette can still discover it alongside the real slash commands.
@@ -459,45 +225,6 @@ const SCHEDULE_COMMAND: SlashCommand = {
   description: "Run a prompt on a repeating schedule — <prompt> | 15m | [times]",
   source: "built-in",
 };
-
-// Thinking-tier color, mirroring the ggcoder TUI footer's getThinkingColor:
-// warmer/more saturated as the tier rises; xhigh/max are "max power" hot pink.
-const MAX_POWER_COLOR = "#db2777";
-const MAX_POWER_SHIMMER = "#f472b6";
-function thinkingColor(level: string | null | undefined): string {
-  if (!level) return theme.textDim;
-  if (level === "low") return theme.textMuted;
-  if (level === "medium") return theme.accent;
-  if (level === "high") return theme.warning;
-  return MAX_POWER_COLOR; // xhigh / max
-}
-
-function hasDraggedFiles(dataTransfer: DataTransfer | null): boolean {
-  return Array.from(dataTransfer?.types ?? []).includes("Files");
-}
-
-type WebkitEntry = { isDirectory?: boolean };
-type DirectoryAwareDataTransferItem = DataTransferItem & {
-  webkitGetAsEntry?: () => WebkitEntry | null;
-};
-
-function isDirectoryDragItem(item: DataTransferItem): boolean {
-  const entry = (item as DirectoryAwareDataTransferItem).webkitGetAsEntry?.();
-  return entry?.isDirectory === true;
-}
-
-function filesForAttachment(dataTransfer: DataTransfer): File[] {
-  const items = Array.from(dataTransfer.items ?? []);
-  if (items.length === 0) return Array.from(dataTransfer.files);
-  return items
-    .filter((item) => item.kind === "file" && !isDirectoryDragItem(item))
-    .map((item) => item.getAsFile())
-    .filter((file): file is File => file !== null);
-}
-
-function canHandleWindowFileDrop(): boolean {
-  return !document.querySelector(".modal-backdrop");
-}
 
 /** kleio (iPhone): the agent or group a tapped notification opens. `key`
  *  remounts the Kleio screen so each tap lands on its own item. */
@@ -551,10 +278,15 @@ function App(): React.ReactElement {
   const promptHistoryRef = useRef<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const historyDraftRef = useRef("");
-  // Staged attachments (paste / attach button / whole-window drag-drop) shown above the input.
-  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
-  const [isFileDragOver, setIsFileDragOver] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const {
+    attachments,
+    setAttachments,
+    isFileDragOver,
+    setIsFileDragOver,
+    fileInputRef,
+    addFiles,
+    removeAttachment,
+  } = useAttachments();
   // The most recent prompt-enhancement result. `plain` is the text now in the
   // textarea; `segments` drive the inline highlight overlay + the sent bubble.
   // It's dropped the moment the textarea diverges from `plain` so highlights
@@ -686,7 +418,6 @@ function App(): React.ReactElement {
   const [showNotes, setShowNotes] = useState(false);
   const [showMemories, setShowMemories] = useState(false);
   const [showSessionHelp, setShowSessionHelp] = useState(false);
-  const [notes, setNotes] = useState("");
   // Every window chooses a code or chat workspace before connecting. Mode stays
   // separate from picker visibility so restore and reopened pickers are explicit.
   const [needsProject, setNeedsProject] = useState(true);
@@ -707,218 +438,23 @@ function App(): React.ReactElement {
   const { activity, handleActivityEvent } = useTaskActivity(hydrateNonce);
   // New-session confirmation modal + in-flight guard.
   const [confirmNewSession, setConfirmNewSession] = useState(false);
-  // Hide/show the nav button row (the bar + centered title always stay).
-  // Persisted across reloads.
-  const [navHidden, setNavHidden] = useState(() => {
-    try {
-      return localStorage.getItem("gg-nav-hidden") === "1";
-    } catch {
-      return false;
-    }
-  });
-  const setNavHiddenPersisted = useCallback((hidden: boolean) => {
-    try {
-      localStorage.setItem("gg-nav-hidden", hidden ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-    setNavHidden(hidden);
-  }, []);
-  const toggleNav = useCallback(
-    () => setNavHiddenPersisted(!navHidden),
-    [navHidden, setNavHiddenPersisted],
-  );
-  // Hide/show the live tool panel (the rolling feed above the activity bar).
-  // Mirrors navHidden: persisted across reloads, and auto-enabled when windows
-  // are tiled (tight space) so freshly opened windows boot with it collapsed.
-  const [toolsHidden, setToolsHidden] = useState(() => {
-    try {
-      return localStorage.getItem("gg-tools-hidden") === "1";
-    } catch {
-      return false;
-    }
-  });
-  const setToolsHiddenPersisted = useCallback((hidden: boolean) => {
-    try {
-      localStorage.setItem("gg-tools-hidden", hidden ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-    setToolsHidden(hidden);
-  }, []);
-  const toggleTools = useCallback(
-    () => setToolsHiddenPersisted(!toolsHidden),
-    [toolsHidden, setToolsHiddenPersisted],
-  );
+  const {
+    navHidden,
+    setNavHiddenPersisted,
+    toggleNav,
+    toolsHidden,
+    setToolsHiddenPersisted,
+    toggleTools,
+  } = useChromeToggles();
   const [newSessionBusy, setNewSessionBusy] = useState(false);
-  // Transcript export (the download button in the activity bar). The chosen
-  // folder is remembered so the second export lands where the first one did —
-  // stored per-machine, not per-project, because that's how people organise
-  // exports (one "agent transcripts" folder, many projects).
-  const [exporting, setExporting] = useState(false);
-  // The export pill only exists while the pointer is over the chat area. Kept
-  // true while a save is in flight so the button doesn't vanish mid-click when
-  // the native dialog steals the pointer and fires mouseleave.
-  const [chatHovered, setChatHovered] = useState(false);
-  const exportTranscript = useCallback(async () => {
-    setExporting(true);
-    try {
-      const filename = (await exportTranscriptName()) ?? "your-chat.md";
-      let lastDir: string | null = null;
-      try {
-        lastDir = localStorage.getItem("gg-export-dir");
-      } catch {
-        /* ignore */
-      }
-      const target = await save({
-        title: "Save transcript",
-        defaultPath: lastDir ? `${lastDir}/${filename}` : filename,
-        filters: [{ name: "Markdown", extensions: ["md"] }],
-      });
-      if (!target) return; // user cancelled — not an error, say nothing
-      await saveTranscript(target);
-      const dir = target.replace(/[/\\][^/\\]*$/, "");
-      try {
-        if (dir) localStorage.setItem("gg-export-dir", dir);
-      } catch {
-        /* ignore */
-      }
-      toast(`Saved ${target.split(/[/\\]/).pop() ?? "transcript"}`, "success");
-    } catch (e) {
-      toast(`Could not save transcript: ${String(e)}`, "error");
-    } finally {
-      setExporting(false);
-    }
-  }, []);
-  // App self-update (GitHub releases). Drives the footer update banner.
-  const appUpdate = useAppUpdate();
-
-  // ── macOS menu-bar tray ───────────────────────────────────────────────────
-  // Settings opened from the tray. Owned HERE, not by HomeScreen, because the
-  // tray targets a WINDOW and that window may be showing Home, a picker, or a
-  // live workspace — only App renders in all three.
-  const [showTraySettings, setShowTraySettings] = useState(false);
-  // Bumped to ask HomeScreen to re-read serve/auth state after the tray changed
-  // it. A counter, not a boolean, so repeat tray clicks always re-fire.
-  const [homeRefreshSignal, setHomeRefreshSignal] = useState(0);
-
-  const closeTraySettings = useCallback((): void => {
-    setShowTraySettings(false);
-    // Home gates Code/Chat on the projects folder + a provider; re-read them in
-    // case this modal is where they were just set.
-    setHomeRefreshSignal((n) => n + 1);
-  }, []);
-
-  // Rust owns the tray menu but not the updater — the webview polls GitHub. Push
-  // availability down so "Update now" shows only while an update is pending.
-  const updateVersion = appUpdate.phase === "available" ? appUpdate.version : null;
-  useEffect(() => {
-    void setUpdateAvailable(updateVersion);
-  }, [updateVersion]);
-
-  // Remote (the Telegram serve loop) lives in the sidecar, so the tray can't
-  // know its state — poll it and push it down, which keeps the menu item's label
-  // honest even when Remote is toggled from Home or another window. Nothing in
-  // React renders it, so this returns the value instead of holding state; Rust
-  // is the one that needs it, and it already de-dupes unchanged pushes.
-  const syncRemote = useCallback(async (): Promise<boolean> => {
-    try {
-      await waitForReady();
-      const { running } = await getServeStatus();
-      void setRemoteActiveIPC(running);
-      return running;
-    } catch {
-      return false;
-    }
-  }, []);
-
-  useEffect(() => {
-    void syncRemote();
-    const id = setInterval(() => void syncRemote(), 30_000);
-    return () => clearInterval(id);
-  }, [syncRemote]);
-
-  const applyTrayIntent = useCallback(
-    (intent: TrayIntent): void => {
-      switch (intent) {
-        case "update":
-          void appUpdate.install();
-          break;
-        // Talk to Kleio (or hear the briefing) over whatever this window shows.
-        case "brief":
-          void talkToKleio();
-          break;
-        // Route to the session picker for the requested mode. On Home that's the
-        // entry view; over an open workspace it's the picker overlay, which keeps
-        // the running session intact until a different one is chosen.
-        case "new-chat":
-        case "new-code": {
-          const mode = intent === "new-chat" ? "chat" : "code";
-          setWorkspaceMode(mode);
-          if (needsProject) setEntryView(mode === "chat" ? "chats" : "projects");
-          else setShowPicker(true);
-          break;
-        }
-        // A toggle, matching the menu item's label. Re-read the live status
-        // first rather than trusting the poll, so a stale cache can't start a
-        // second serve loop or stop one the user just started elsewhere.
-        case "remote":
-          void syncRemote()
-            .then(async (running) => {
-              if (running) {
-                await stopServe();
-                toast("Remote is off.", "success");
-              } else {
-                await startServe();
-                toast("Remote is on.", "success");
-              }
-            })
-            .catch((e: unknown) => toast(`Remote failed: ${String(e)}`, "error"))
-            .finally(() => {
-              void syncRemote();
-              setHomeRefreshSignal((n) => n + 1);
-            });
-          break;
-        case "settings":
-          setShowTraySettings(true);
-          break;
-      }
-    },
-    [appUpdate, needsProject, syncRemote],
-  );
-
-  // The handler is re-created on most renders (it closes over `appUpdate`, a
-  // fresh object each render). Holding it in a ref keeps the Tauri listener
-  // registered exactly ONCE for the window's lifetime — re-subscribing per
-  // render raced listen/unlisten and threw inside the event plugin.
-  const trayIntentRef = useRef(applyTrayIntent);
-  useEffect(() => {
-    trayIntentRef.current = applyTrayIntent;
-  }, [applyTrayIntent]);
-
-  // Two delivery paths, because a window built BY the tray isn't listening yet
-  // when the menu is clicked: an existing window gets the event, a new one
-  // claims the parked intent on mount.
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    let disposed = false;
-    void onTrayIntent((intent) => trayIntentRef.current(intent)).then((un) => {
-      if (disposed) un();
-      else unlisten = un;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
-
-  useEffect(() => {
-    void takeTrayIntent().then((intent) => {
-      if (intent) applyTrayIntent(intent);
-    });
-    // Mount-only: the parked intent is consumed once, by the window it opened.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const { exporting, chatHovered, setChatHovered, exportTranscript } = useTranscriptExport();
+  const {
+    appUpdate,
+    showTraySettings,
+    homeRefreshSignal,
+    setHomeRefreshSignal,
+    closeTraySettings,
+  } = useTrayIntents({ needsProject, setWorkspaceMode, setEntryView, setShowPicker });
   // Initialize-git modal (shown via the top-right button when not yet a repo).
   const [showInitGit, setShowInitGit] = useState(false);
   // kleio: the folder list /add-dir (paired with a Kleio host) or /remove-dir opened.
@@ -946,163 +482,20 @@ function App(): React.ReactElement {
   const stateRef = useRef<AgentState | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  // NOTE: the build-session event machine's private refs (streaming bubble id,
-  // rAF buffer, per-run accumulators, sub-agent / compaction group ids) now live
-  // inside the useAgentEvents hook. Only the cross-cutting refs that App's render
-  // + other handlers also touch (stateRef above, the plan refs + stickToBottom
-  // below) stay here and are passed into the hook.
+  const {
+    stickToBottomRef,
+    lastScrollTopRef,
+    jumpToLatestShown,
+    maybeScrollToBottom,
+    onTranscriptTouchStart,
+    onTranscriptTouchMove,
+    onTranscriptTouchEnd,
+    jumpToLatest,
+    onTranscriptScroll,
+    onTranscriptWheel,
+  } = useTranscriptScroll({ scrollRef });
 
-  // Whether the transcript is "pinned" to the bottom. Auto-scroll only runs
-  // while pinned. The user scrolling up un-pins it — so they can read freely
-  // even while the agent keeps streaming — and scrolling back down to the
-  // bottom re-pins (rules in transcript-pin.ts). Default true so a fresh
-  // transcript follows the newest output.
-  const stickToBottomRef = useRef(true);
-  // The transcript's offset as last seen by a scroll event or left by our own
-  // scrollToBottom — the baseline that tells an up-scroll from a down-scroll.
-  const lastScrollTopRef = useRef(0);
-
-  // Pin to the bottom. Images (screenshots / attachments) load asynchronously
-  // and grow the content after this fires, so it's also called from each image's
-  // onLoad to keep the newest content visible.
-  const scrollToBottom = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight });
-    // A reader's scroll landing in this same frame shares one scroll event with
-    // this jump; measuring it from the pre-jump offset would read up as down.
-    lastScrollTopRef.current = el.scrollTop;
-  }, []);
-
-  // iPhone: a finger on the transcript, or the fling it left behind, "holds"
-  // it — new output must not scroll the page out from under the reader. The
-  // hold ends once scrolling has been quiet for TOUCH_SETTLE_MS after the
-  // finger lifts (see transcript-pin.ts `followsOutput`).
-  const transcriptHeldRef = useRef(false);
-  const transcriptTouchingRef = useRef(false);
-  const transcriptTouchYRef = useRef(0);
-  const transcriptSettleRef = useRef<number | null>(null);
-  // iPhone: the round "jump to latest" button, shown once the reader is well
-  // away from the newest line. Mirrored in a ref so scroll events only
-  // re-render when it actually flips.
-  const [jumpToLatestShown, setJumpToLatestShown] = useState(false);
-  const jumpToLatestRef = useRef(false);
-  const syncJumpToLatest = useCallback(() => {
-    const el = scrollRef.current;
-    const next = el !== null && isPhone() && showJumpToLatest(stickToBottomRef.current, el);
-    if (next === jumpToLatestRef.current) return;
-    jumpToLatestRef.current = next;
-    setJumpToLatestShown(next);
-  }, []);
-
-  // Same as scrollToBottom, but a no-op while the user has scrolled up to read
-  // (or, on the iPhone, while their finger is on the transcript).
-  const maybeScrollToBottom = useCallback(() => {
-    if (followsOutput(stickToBottomRef.current, transcriptHeldRef.current)) scrollToBottom();
-    syncJumpToLatest();
-  }, [scrollToBottom, syncJumpToLatest]);
-
-  const releaseTranscript = useCallback(() => {
-    transcriptSettleRef.current = null;
-    transcriptHeldRef.current = false;
-    maybeScrollToBottom();
-  }, [maybeScrollToBottom]);
-  const settleTranscript = useCallback(() => {
-    if (transcriptSettleRef.current !== null) window.clearTimeout(transcriptSettleRef.current);
-    transcriptSettleRef.current = window.setTimeout(releaseTranscript, TOUCH_SETTLE_MS);
-  }, [releaseTranscript]);
-  useEffect(
-    () => () => {
-      if (transcriptSettleRef.current !== null) window.clearTimeout(transcriptSettleRef.current);
-    },
-    [],
-  );
-  const onTranscriptTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    transcriptHeldRef.current = true;
-    transcriptTouchingRef.current = true;
-    transcriptTouchYRef.current = e.touches[0]?.clientY ?? 0;
-    if (transcriptSettleRef.current !== null) {
-      window.clearTimeout(transcriptSettleRef.current);
-      transcriptSettleRef.current = null;
-    }
-  }, []);
-  const onTranscriptTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    // Put the keyboard away the moment the transcript is dragged, the way
-    // Messages does — not on a tap, which may be a link or a copy.
-    const y = e.touches[0]?.clientY ?? transcriptTouchYRef.current;
-    if (Math.abs(y - transcriptTouchYRef.current) < KEYBOARD_DISMISS_DRAG_PX) return;
-    const active = document.activeElement;
-    if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) {
-      active.blur();
-    }
-  }, []);
-  const onTranscriptTouchEnd = useCallback(() => {
-    transcriptTouchingRef.current = false;
-    settleTranscript();
-  }, [settleTranscript]);
-
-  // The "jump to latest" button: follow again, and glide down to the end.
-  const jumpToLatest = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    stickToBottomRef.current = true;
-    syncJumpToLatest();
-    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    el.scrollTo({ top: el.scrollHeight, behavior: reduce ? "auto" : "smooth" });
-  }, [syncJumpToLatest]);
-
-  // Track the user's scroll intent by direction, not distance: while a reply
-  // streams, every commit re-pins, so any "near the bottom" allowance snapped a
-  // small scroll up straight back down. The wheel handler runs before the
-  // scroll it causes, so a commit landing in between can't erase the move.
-  const onTranscriptScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    // iPhone: only a finger (or its fling) can scroll the transcript, so
-    // only a finger can stop the follow (transcript-pin.ts).
-    stickToBottomRef.current = isPhone()
-      ? pinAfterTouchScroll(
-          stickToBottomRef.current,
-          lastScrollTopRef.current,
-          el,
-          transcriptHeldRef.current,
-        )
-      : pinAfterScroll(stickToBottomRef.current, lastScrollTopRef.current, el);
-    lastScrollTopRef.current = el.scrollTop;
-    // A fling still running after the finger lifted keeps the hold on.
-    if (transcriptHeldRef.current && !transcriptTouchingRef.current) settleTranscript();
-    syncJumpToLatest();
-  }, [settleTranscript, syncJumpToLatest]);
-  const onTranscriptWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    const el = scrollRef.current;
-    if (el) stickToBottomRef.current = pinAfterWheel(stickToBottomRef.current, e, el);
-  }, []);
-
-  // The "Drop files to attach" overlay must never outlive the drag. macOS keeps
-  // Tauri's native drag-drop handler (so folder drops carry a real path), and
-  // that handler can swallow the terminal `leave`/`drop` event — a drag that is
-  // cancelled, or released where the webview refuses the drop, then pinned the
-  // overlay to the screen forever. So: every drag event re-arms a watchdog, and
-  // any real pointer/key input clears a stale overlay (no pointer or key events
-  // are delivered while a drag session is actually in flight).
-  const dragWatchdogRef = useRef<number | null>(null);
-  const setDragOverActive = useCallback((active: boolean): void => {
-    setIsFileDragOver(active);
-    if (dragWatchdogRef.current !== null) window.clearTimeout(dragWatchdogRef.current);
-    dragWatchdogRef.current = active
-      ? window.setTimeout(() => setIsFileDragOver(false), STALE_DRAG_OVERLAY_MS)
-      : null;
-  }, []);
-
-  useEffect(() => {
-    if (!isFileDragOver) return;
-    const clear = (): void => setDragOverActive(false);
-    const events = ["pointermove", "pointerdown", "keydown", "blur"] as const;
-    for (const name of events) window.addEventListener(name, clear);
-    return () => {
-      for (const name of events) window.removeEventListener(name, clear);
-    };
-  }, [isFileDragOver, setDragOverActive]);
+  const { setDragOverActive } = useDragOverlay({ isFileDragOver, setIsFileDragOver });
 
   const insertDroppedFolderPaths = useCallback((paths: string[]): void => {
     if (paths.length === 0) return;
@@ -1200,7 +593,7 @@ function App(): React.ReactElement {
       ro.observe(el);
       transcriptRoRef.current = ro;
     },
-    [maybeScrollToBottom],
+    [maybeScrollToBottom, lastScrollTopRef],
   );
 
   // Settle the scroll position after a session hydrates. The single layout-effect
@@ -1271,56 +664,8 @@ function App(): React.ReactElement {
     return () => window.clearInterval(id);
   }, [animatePlaceholder, inputPlaceholder, setAnimatedPlaceholder]);
 
-  // Stop the browser from navigating to / opening a file dropped anywhere
-  // (which would replace the whole UI with the raw file). The active chat view
-  // handles files as attachments; native Tauri drop events add folder paths to
-  // the draft because browser File objects cannot represent directories well.
-  useEffect(() => {
-    const prevent = (e: DragEvent): void => {
-      // Only files — don't interfere with text selection drags.
-      if (hasDraggedFiles(e.dataTransfer)) e.preventDefault();
-    };
-    window.addEventListener("dragover", prevent);
-    window.addEventListener("drop", prevent);
-    return () => {
-      window.removeEventListener("dragover", prevent);
-      window.removeEventListener("drop", prevent);
-    };
-  }, []);
-
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void getCurrentWebview()
-      .onDragDropEvent((event) => {
-        if (disposed) return;
-        const payload = event.payload;
-        if (payload.type === "enter" || payload.type === "over") {
-          if (canHandleWindowFileDrop()) setDragOverActive(true);
-          return;
-        }
-        if (payload.type === "leave") {
-          setDragOverActive(false);
-          return;
-        }
-        setDragOverActive(false);
-        if (!canHandleWindowFileDrop() || payload.paths.length === 0) return;
-        void getDroppedPathInfo(payload.paths).then((infos) => {
-          if (disposed) return;
-          insertDroppedFolderPaths(infos.filter((info) => info.isDir).map((info) => info.path));
-          const filePaths = infos.filter((info) => !info.isDir).map((info) => info.path);
-          if (filePaths.length > 0) void addNativeDroppedFiles(filePaths);
-        });
-      })
-      .then((off) => {
-        if (disposed) off();
-        else unlisten = off;
-      });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [insertDroppedFolderPaths, setDragOverActive]);
+  const { handleWindowDragEnter, handleWindowDragOver, handleWindowDragLeave, handleWindowDrop } =
+    useWindowFileDrop({ setAttachments, setDragOverActive, insertDroppedFolderPaths, addFiles });
 
   // Keep the native window title aligned with the visible title-bar context.
   useEffect(() => {
@@ -1353,7 +698,7 @@ function App(): React.ReactElement {
   // halves matter).
   const autosizeInput = useCallback(() => {
     autosizeComposer(inputRef.current, scrollRef.current, stickToBottomRef.current);
-  }, []);
+  }, [stickToBottomRef]);
 
   // useLayoutEffect (not useEffect) so the height is recomputed BEFORE the
   // browser paints. This matters most when the enhance animation tears down and
@@ -1458,65 +803,7 @@ function App(): React.ReactElement {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Position in the multi-window reading order (e.g. window 2 of 4), plus
-  // whether this window is the focused one. Driven by the Rust `window-order`
-  // broadcast so the label updates automatically when windows move/close.
-  const [windowIndex, setWindowIndex] = useState<number | null>(null);
-  const [windowTotal, setWindowTotal] = useState(1);
-  const [isThisFocused, setIsThisFocused] = useState(true);
-
-  // Focus the chat input whenever this window gains focus (or clicked anywhere),
-  // so switching between project windows lands the cursor in the input without
-  // a second click. Skips when the user is selecting text or focused elsewhere
-  // intentionally (e.g. a menu button), and always on iPhone (composer-refocus.ts).
-  useEffect(() => {
-    const focusInput = (): void => {
-      if (refocusesComposer(document, inputRef.current)) inputRef.current?.focus();
-    };
-    window.addEventListener("focus", focusInput);
-    window.addEventListener("mouseup", focusInput);
-    return () => {
-      window.removeEventListener("focus", focusInput);
-      window.removeEventListener("mouseup", focusInput);
-    };
-  }, []);
-
-  // Subscribe to the reading-order broadcast from Rust so each window knows its
-  // position (e.g. "1/4") and whether it's focused. Updates automatically when
-  // windows are arranged, moved (debounced), created, closed, or focused.
-  useEffect(() => {
-    let un: (() => void) | undefined;
-    void onWindowOrder((e) => {
-      const idx = e.order.indexOf(windowLabel);
-      setWindowIndex(idx >= 0 ? idx + 1 : null);
-      setWindowTotal(e.order.length);
-      setIsThisFocused(e.focused === windowLabel);
-    }).then((fn) => {
-      un = fn;
-    });
-    return () => un?.();
-  }, []);
-
-  // Global UI click sound — plays only when an actual interactive element is
-  // clicked (buttons, links, role=button, options, labels), never bare
-  // background/text. Capture phase so it fires even when a handler stops
-  // propagation; left button only.
-  useEffect(() => {
-    const INTERACTIVE = "button, a, [role='button'], [role='option'], label, summary, select";
-    const onClick = (e: MouseEvent): void => {
-      if (e.button !== 0) return;
-      const target = e.target as Element | null;
-      const el = target?.closest?.(INTERACTIVE);
-      if (!el) return;
-      if (el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true") return;
-      // The autopilot toggle plays its own dedicated sound (only when turning
-      // on) instead of the generic click, so skip it here to avoid a double cue.
-      if (el.closest("[data-suppress-click-sound]")) return;
-      playSound("click");
-    };
-    document.addEventListener("click", onClick, true);
-    return () => document.removeEventListener("click", onClick, true);
-  }, []);
+  const { windowIndex, windowTotal, isThisFocused } = useWindowOrder(inputRef);
 
   // Build-session SSE handling + assistant-streaming helpers live in the
   // useAgentEvents hook (mirrors useKenMentor). It owns the event machine's
@@ -1739,7 +1026,7 @@ function App(): React.ReactElement {
       setLiveFromId(idSeq + 1);
       setHydrated(true);
     }
-  }, [endStreamingText]);
+  }, [endStreamingText, stickToBottomRef]);
 
   useEffect(() => {
     const unsub = subscribe(handleEvent);
@@ -1801,6 +1088,7 @@ function App(): React.ReactElement {
       })
       .finally(() => setRestoreChecked(true));
     // Mount-only: the native target remains stable for this window's lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1836,34 +1124,7 @@ function App(): React.ReactElement {
     void deleteTask(id).then(setProjectTasks);
   }, []);
 
-  // Per-project notes: load from localStorage whenever the active project (cwd)
-  // changes, and write back on every edit. Keyed by cwd so each project keeps
-  // its own notebook; windows pointed at the same project share one.
-  const notesKey = state?.cwd ? `gg-notes:${state.cwd}` : null;
-  useEffect(() => {
-    if (!notesKey) {
-      setNotes("");
-      return;
-    }
-    try {
-      setNotes(localStorage.getItem(notesKey) ?? "");
-    } catch {
-      setNotes("");
-    }
-  }, [notesKey]);
-
-  const handleNotesChange = useCallback(
-    (value: string) => {
-      setNotes(value);
-      if (!notesKey) return;
-      try {
-        localStorage.setItem(notesKey, value);
-      } catch {
-        // Storage full/unavailable — keep the in-memory value for this session.
-      }
-    },
-    [notesKey],
-  );
+  const { notes, handleNotesChange } = useProjectNotes(state);
 
   // Pin Ken to a model (or null → clear the pin, follow GG Coder). The
   // sidecar's ken_model_change broadcast updates state; the .then is just a
@@ -2278,7 +1539,7 @@ function App(): React.ReactElement {
       endStreamingText();
       void sendPrompt(trimmed, [], { kenSent: true }).catch(() => {});
     },
-    [pushItem, endStreamingText, dismissOpenAsks],
+    [pushItem, endStreamingText, dismissOpenAsks, stickToBottomRef],
   );
 
   // Record answers for an `ask_user` band, and settle the parked tool call once
@@ -2315,139 +1576,26 @@ function App(): React.ReactElement {
     [],
   );
 
-  // Record a sent prompt for ↑/↓ recall (skips consecutive duplicates, capped).
-  function recordHistory(text: string): void {
-    const h = promptHistoryRef.current;
-    if (text && h[h.length - 1] !== text) h.push(text);
-    if (h.length > 200) h.shift();
-    setHistoryIndex(null);
-    historyDraftRef.current = "";
-  }
+  const { recordHistory, navigateHistory } = usePromptHistory({
+    setInput,
+    promptHistoryRef,
+    historyIndex,
+    setHistoryIndex,
+    historyDraftRef,
+    inputRef,
+  });
 
-  // Replace the input with a recalled history entry and park the caret at the end.
-  function applyHistory(text: string): void {
-    setInput(text);
-    requestAnimationFrame(() => {
-      const el = inputRef.current;
-      if (el) el.selectionStart = el.selectionEnd = el.value.length;
-    });
-  }
-
-  // Walk prompt history with ↑ (dir -1, older) / ↓ (dir +1, newer). Returns true
-  // when it consumed the key. Only triggers when the caret is on the first line
-  // (↑) or last line (↓) so multi-line editing still moves the cursor normally.
-  function navigateHistory(dir: -1 | 1, el: HTMLTextAreaElement): boolean {
-    const hist = promptHistoryRef.current;
-    if (hist.length === 0) return false;
-    const collapsed = el.selectionStart === el.selectionEnd;
-    const caret = el.selectionStart ?? 0;
-    if (dir === -1) {
-      const onFirstLine = collapsed && !el.value.slice(0, caret).includes("\n");
-      if (!onFirstLine) return false;
-      if (historyIndex === null) {
-        historyDraftRef.current = el.value;
-        const idx = hist.length - 1;
-        setHistoryIndex(idx);
-        applyHistory(hist[idx]);
-      } else if (historyIndex > 0) {
-        const idx = historyIndex - 1;
-        setHistoryIndex(idx);
-        applyHistory(hist[idx]);
-      }
-      return true; // consume even at the oldest entry
-    }
-    if (historyIndex === null) return false; // not navigating — let ↓ move the caret
-    const onLastLine = collapsed && !el.value.slice(caret).includes("\n");
-    if (!onLastLine) return false;
-    if (historyIndex < hist.length - 1) {
-      const idx = historyIndex + 1;
-      setHistoryIndex(idx);
-      applyHistory(hist[idx]);
-    } else {
-      setHistoryIndex(null);
-      applyHistory(historyDraftRef.current);
-    }
-    return true;
-  }
-
-  // Apply a finished enhancement to the input: fill the textarea with the plain
-  // text, stash the highlighted segments (drives the inline highlight overlay +
-  // sent bubble), and park the caret at the end.
-  function applyEnhanceResult(r: { enhanced: string; segments: PromptSegment[] }): void {
-    setInput(r.enhanced);
-    setEnhancement({ plain: r.enhanced, segments: r.segments });
-    requestAnimationFrame(() => {
-      const el = inputRef.current;
-      if (el) {
-        el.focus();
-        el.selectionStart = el.selectionEnd = el.value.length;
-      }
-    });
-  }
-
-  // Run the prompt enhancer: rewrite the current draft via the active model into
-  // a tighter, terminology-correct prompt. The result plays in over the input as
-  // a Matrix dissolve→decode animation (unless reduced-motion), then fills it.
-  async function runEnhance(): Promise<void> {
-    const draft = input.trim();
-    if (!draft || enhancing) return;
-    setEnhanceHintVisible(false);
-    setEnhancing(true);
-
-    const reduced =
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    if (reduced) {
-      try {
-        applyEnhanceResult(await enhancePrompt(draft));
-      } catch (err) {
-        toast(err instanceof Error ? err.message : String(err), "error");
-      } finally {
-        setEnhancing(false);
-      }
-      return;
-    }
-
-    // Start the dissolve immediately (newText null), then flip to decode when the
-    // enhancer returns. applyEnhanceResult + cleanup run in the animation's
-    // onDone so the text never pops in before the decode settles.
-    setEnhanceAnim({ oldText: draft, newText: null });
-    try {
-      const r = await enhancePrompt(draft);
-      pendingEnhanceRef.current = r;
-      setEnhanceAnim((a) => (a ? { ...a, newText: r.enhanced } : null));
-    } catch (err) {
-      toast(err instanceof Error ? err.message : String(err), "error");
-      setEnhanceAnim(null);
-      setEnhancing(false);
-    }
-  }
-
-  // The dissolve→decode animation finished: hand off to the real input WITHOUT a
-  // flash. The decoded text lives in the .enh-diss overlay (on top); the textarea
-  // sits hidden beneath it (.input-anim). If we removed the overlay and filled
-  // the textarea in the same commit, you'd see the overlay text vanish and the
-  // textarea text reflow/resize a frame later. So: fill the textarea FIRST (still
-  // hidden under the overlay) and let useLayoutEffect size it, THEN drop the
-  // overlay on the next frame — the sized text is already in place underneath.
-  function onEnhanceAnimDone(): void {
-    const r = pendingEnhanceRef.current;
-    pendingEnhanceRef.current = null;
-    if (r) {
-      setInput(r.enhanced);
-      setEnhancement({ plain: r.enhanced, segments: r.segments });
-    }
-    requestAnimationFrame(() => {
-      setEnhanceAnim(null);
-      setEnhancing(false);
-      const el = inputRef.current;
-      if (el) {
-        el.focus();
-        el.selectionStart = el.selectionEnd = el.value.length;
-      }
-    });
-  }
+  const { runEnhance, onEnhanceAnimDone } = usePromptEnhance({
+    input,
+    setInput,
+    setEnhancement,
+    enhancing,
+    setEnhancing,
+    setEnhanceHintVisible,
+    setEnhanceAnim,
+    pendingEnhanceRef,
+    inputRef,
+  });
 
   // Dictation on the iPhone and the Mac (useDictation.ts): Whisper on the Mac
   // turns the clip into text, which joins the end of the draft for review.
@@ -2651,61 +1799,6 @@ function App(): React.ReactElement {
       wire,
       sentEnhancements ? { enhancements: sentEnhancements } : undefined,
     ).catch(reportUnsent);
-  }
-
-  // ── Attachment intake (paste / attach button / whole-window drag-drop) ──
-  async function addFiles(files: FileList | File[]): Promise<void> {
-    const list = Array.from(files);
-    const pendings = await Promise.all(list.map((f) => fileToPending(f).catch(() => null)));
-    const ok = pendings.filter((p): p is PendingAttachment => p !== null);
-    if (ok.length > 0) setAttachments((prev) => [...prev, ...ok]);
-  }
-
-  // Native Tauri drop events hand us absolute paths, not browser File objects
-  // (macOS/Linux keep the native drag-drop handler enabled so folder drops can
-  // report a path at all — see build_app_window). Non-directory paths are read
-  // here and staged exactly like a picked/pasted file.
-  async function addNativeDroppedFiles(paths: string[]): Promise<void> {
-    if (paths.length === 0) return;
-    const results = await Promise.all(paths.map((p) => readDroppedFileAttachment(p)));
-    const ok = results
-      .filter((a): a is Attachment => a !== null)
-      .map((a) => attachmentToPending(a));
-    if (ok.length > 0) setAttachments((prev) => [...prev, ...ok]);
-  }
-
-  function handleWindowDragEnter(e: React.DragEvent<HTMLDivElement>): void {
-    if (!hasDraggedFiles(e.dataTransfer) || !canHandleWindowFileDrop()) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    setDragOverActive(true);
-  }
-
-  function handleWindowDragOver(e: React.DragEvent<HTMLDivElement>): void {
-    if (!hasDraggedFiles(e.dataTransfer) || !canHandleWindowFileDrop()) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    setDragOverActive(true);
-  }
-
-  function handleWindowDragLeave(e: React.DragEvent<HTMLDivElement>): void {
-    if (!hasDraggedFiles(e.dataTransfer)) return;
-    const nextTarget = e.relatedTarget;
-    if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) return;
-    setDragOverActive(false);
-  }
-
-  function handleWindowDrop(e: React.DragEvent<HTMLDivElement>): void {
-    if (!hasDraggedFiles(e.dataTransfer)) return;
-    e.preventDefault();
-    setDragOverActive(false);
-    if (!canHandleWindowFileDrop()) return;
-    const files = filesForAttachment(e.dataTransfer);
-    if (files.length > 0) void addFiles(files);
-  }
-
-  function removeAttachment(id: number): void {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
   // ── Plan review actions (mirror the ggcoder CLI plan overlay) ──
@@ -3154,96 +2247,33 @@ function App(): React.ReactElement {
         }
       >
         {!phoneHeader && backButton}
-        <div className="rank-badge-wrap">
-          <RankBadge
-            snapshot={progress}
-            celebrateNonce={rankCelebrateNonce}
-            onClick={() => setShowScorecard(true)}
-          />
-          <div className="rank-xp-chip-layer" aria-hidden="true">
-            {xpChips.map((chip) => (
-              <span className="rank-xp-chip" key={chip.id}>
-                {chip.label}
-              </span>
-            ))}
-          </div>
-        </div>
-        {workspaceMode !== "code" ? (
-          <span className="picker-head-actions">
-            {!phoneHeader && newSessionButton}
-            {!phoneHeader && brainButton}
-            <RadioButton />
-            <WindowLayoutButton />
-            {!phoneHeader && helpButton}
-          </span>
-        ) : (
-          <>
-            <span className="picker-head-actions">
-              <AutopilotToggle
-                checked={state?.autopilot ?? false}
-                disabled={running || autopilotReviewing}
-                onChange={(next) => {
-                  setState((s) => (s ? { ...s, autopilot: next } : s));
-                  void setAutopilot(next);
-                  setKenPowerBanner(next ? "on" : "off");
-                }}
-              />
-              {!phoneHeader && newSessionButton}
-              <button
-                className="btn btn-sm btn-ghost"
-                title="Open your notes for this project"
-                onClick={() => setShowNotes(true)}
-              >
-                Notes
-              </button>
-              <button
-                className="btn btn-sm btn-ghost"
-                title="View and run this project's tasks"
-                onClick={openTasks}
-              >
-                {projectTasks.some((t) => t.status !== "done")
-                  ? `Tasks (${projectTasks.filter((t) => t.status !== "done").length})`
-                  : "Tasks"}
-              </button>
-              <RadioButton />
-              {/* <GazeButton /> */}
-              <WindowLayoutButton
-                onArrange={() => {
-                  setNavHiddenPersisted(true);
-                  setToolsHiddenPersisted(true);
-                }}
-              />
-              {needsGitInit ? (
-                <button
-                  className="btn btn-sm btn-ghost"
-                  disabled={running}
-                  title="Initialize git + create a GitHub repository"
-                  onClick={() => setShowInitGit(true)}
-                >
-                  {"Initialize Git"}
-                </button>
-              ) : (
-                commitCommand && (
-                  <MetalButton
-                    windowFocused={windowFocused}
-                    className={`btn btn-sm ${hasCommit ? "btn-success" : "btn-ghost"}`}
-                    disabled={running}
-                    title={hasCommit ? "Run /commit" : "Generate a /commit command"}
-                    onClick={() =>
-                      submitText(
-                        `/${commitCommand}`,
-                        hasCommit ? "Committing\u2026" : "Setting up commits\u2026",
-                      )
-                    }
-                  >
-                    {`/${commitCommand}`}
-                  </MetalButton>
-                )
-              )}
-              {!phoneHeader && helpButton}
-            </span>
-          </>
-        )}
+        <WorkspaceHeaderActions
+          progress={progress}
+          rankCelebrateNonce={rankCelebrateNonce}
+          setShowScorecard={setShowScorecard}
+          xpChips={xpChips}
+          workspaceMode={workspaceMode}
+          phoneHeader={phoneHeader}
+          newSessionButton={newSessionButton}
+          brainButton={brainButton}
+          helpButton={helpButton}
+          state={state}
+          running={running}
+          autopilotReviewing={autopilotReviewing}
+          setState={setState}
+          setKenPowerBanner={setKenPowerBanner}
+          setShowNotes={setShowNotes}
+          openTasks={openTasks}
+          projectTasks={projectTasks}
+          setNavHiddenPersisted={setNavHiddenPersisted}
+          setToolsHiddenPersisted={setToolsHiddenPersisted}
+          needsGitInit={needsGitInit}
+          setShowInitGit={setShowInitGit}
+          commitCommand={commitCommand}
+          windowFocused={windowFocused}
+          hasCommit={hasCommit}
+          submitText={submitText}
+        />
       </WorkspaceHeader>
 
       {/* Non-scrolling frame the same size as the chat viewport. The banner
@@ -3365,393 +2395,86 @@ function App(): React.ReactElement {
         )}
       </div>
 
-      <div
-        className={`inputwrap${isFileDragOver ? " dragover" : ""}${
-          scheduleInvalid ? " schedule-invalid" : ""
-        }`}
-      >
-        <WorkingBeam active={running || kenRunning || autopilotReviewing} />
-        {scheduleDraft ? (
-          <ScheduleHint input={input} caret={caret} onPickInterval={fillScheduleInterval} />
-        ) : (
-          slashOpen && (
-            <SlashMenu
-              commands={slashMatches}
-              activeIndex={clampedSlashIndex}
-              onSelect={pickSlashCommand}
-              onHover={setSlashIndex}
-            />
-          )
-        )}
-        {mentionOpen && (
-          <FileMentionMenu
-            files={fileMatches}
-            activeIndex={clampedFileIndex}
-            isRecent={mention?.query === ""}
-            onSelect={pickMentionFile}
-            onHover={setFileIndex}
-          />
-        )}
-        <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
-        <ReferencedFiles paths={mentionedPaths} onRemove={removeMentionChip} />
-        <QueuedBar messages={visibleQueuedMessages} onCancel={handleCancelQueued} />
-        <div className="inputrow">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="image/*,video/*"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              if (e.target.files) void addFiles(e.target.files);
-              e.target.value = "";
-            }}
-          />
-          <button
-            className="icon-circle"
-            title="Attach files"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <PaperclipIcon size={15} />
-          </button>
-          {phoneComposer && workspaceMode === "code" && (
-            <button
-              type="button"
-              className="icon-circle helper-chip"
-              // Keep the keyboard up: without this the tap blurs the draft first.
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={addressHelper}
-            >
-              {HELPER_MENTION}
-            </button>
-          )}
-          <div className="input-stack">
-            {enhanceAnim && (
-              <EnhanceDissolve
-                oldText={enhanceAnim.oldText}
-                newText={enhanceAnim.newText}
-                onDone={onEnhanceAnimDone}
-              />
-            )}
-            {/* Helper token active: a textarea can't color just one token, so we
-                mirror the input in an aligned overlay where the leading `@helper`
-                (or `@ken`) shimmers in Ken's color. The textarea text below is
-                made transparent (caret stays visible) so only this styled copy
-                shows. Metrics match `.input` 1:1 so wrapping/caret line up (the
-                iPhone's 16px included, see kleio-phone.css). */}
-            {kenActive && kenInputParts && (
-              <div className="ken-input-highlight" aria-hidden="true">
-                {kenInputParts.lead}
-                <ShimmerText base={theme.ken} bright="#ffffff">
-                  {kenInputParts.token}
-                </ShimmerText>
-                {kenInputParts.rest}
-              </div>
-            )}
-            <textarea
-              ref={attachInput}
-              className={`input${enhanceAnim ? " input-anim" : ""}${kenActive ? " input-ken" : ""}`}
-              rows={1}
-              // Lock the input while the dissolve→decode animation plays: the caret
-              // is invisible, so typing would be silently discarded and Enter would
-              // submit the un-enhanced draft mid-animation.
-              readOnly={enhanceAnim !== null}
-              value={input}
-              placeholder={
-                workspaceMode === "chat"
-                  ? "Ask anything\u2026"
-                  : workspaceMode === "motion"
-                    ? "Describe a video, paste a link, or drop a PDF\u2026"
-                    : displayPlaceholder
-              }
-              onPaste={(e) => {
-                const files = Array.from(e.clipboardData.files);
-                if (files.length > 0) {
-                  e.preventDefault();
-                  void addFiles(files);
-                }
-              }}
-              onChange={(e) => {
-                setInput(e.target.value);
-                setSlashIndex(0);
-                setCaret(e.target.selectionStart ?? e.target.value.length);
-                // Typing exits history-recall mode so ↑/↓ start fresh next time.
-                if (historyIndex !== null) setHistoryIndex(null);
-                // Drop the enhancement the instant the text diverges from it, so
-                // the highlighted preview/bubble never misalign with edited text.
-                if (enhancement && e.target.value !== enhancement.plain) setEnhancement(null);
-                updateMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
-              }}
-              onClick={(e) => {
-                const el = e.currentTarget;
-                setCaret(el.selectionStart ?? el.value.length);
-                updateMention(el.value, el.selectionStart ?? el.value.length);
-              }}
-              onKeyUp={(e) => {
-                const el = e.currentTarget;
-                setCaret(el.selectionStart ?? el.value.length);
-                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                  updateMention(el.value, el.selectionStart ?? el.value.length);
-                }
-              }}
-              onKeyDown={(e) => {
-                // While the dissolve→decode animation plays the input is locked;
-                // swallow keys so Enter can't submit the un-enhanced draft.
-                if (enhanceAnim) {
-                  e.preventDefault();
-                  return;
-                }
-                if (mentionOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-                  e.preventDefault();
-                  const delta = e.key === "ArrowDown" ? 1 : -1;
-                  setFileIndex((i) => (i + delta + fileMatches.length) % fileMatches.length);
-                } else if (mentionOpen && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) {
-                  e.preventDefault();
-                  const file = fileMatches[clampedFileIndex];
-                  if (file) pickMentionFile(file);
-                } else if (mentionOpen && e.key === "Escape") {
-                  e.preventDefault();
-                  setMention(null);
-                } else if (slashOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-                  e.preventDefault();
-                  const delta = e.key === "ArrowDown" ? 1 : -1;
-                  setSlashIndex((i) => (i + delta + slashMatches.length) % slashMatches.length);
-                } else if (slashOpen && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) {
-                  e.preventDefault();
-                  const cmd = slashMatches[clampedSlashIndex];
-                  if (cmd) pickSlashCommand(cmd);
-                } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-                  // Menus are closed here (handled above), so arrows recall sent
-                  // prompts shell-style — unless the caret is mid-text in a
-                  // multi-line draft, where navigateHistory declines and the
-                  // cursor moves normally.
-                  if (navigateHistory(e.key === "ArrowUp" ? -1 : 1, e.currentTarget)) {
-                    e.preventDefault();
-                  }
-                } else if (e.key === "Enter" && !e.shiftKey && returnSends(running)) {
-                  // Enter sends; Shift+Enter inserts a newline (textarea default).
-                  // iPhone: the on-screen Return key adds a line, as in Messages,
-                  // except during a run, where it queues the draft like the send
-                  // button (a hardware keyboard's Enter always sends).
-                  e.preventDefault();
-                  submit();
-                } else if (e.key === "Escape") {
-                  // Cancel the build if it's running; otherwise cancel Ken so the
-                  // "esc to cancel" on his bar actually works.
-                  if (slashOpen) setInput("");
-                  else if (running && !cancelling) requestCancel();
-                  else if (kenRunning) void cancelKen();
-                }
-              }}
-              autoFocus={focusesComposerOnOpen(document)}
-            />
-          </div>
-          {/* Send doubles as the stop control mid-run, so the primary action
-              never moves. Mid-run it stays Send for a question to the helper,
-              which runs alongside the build, and on the iPhone for any draft,
-              which queues; with nothing typed it stops. It stays on the text's
-              line while the draft fits one line, and drops below with the field
-              once the text wraps. */}
-          <div className="inputactions-trailing">
-            {showDictation && dictation && (
-              // The enhance animation locks the draft, so no dictating into it.
-              <Suspense fallback={null}>
-                <DictateButton dictation={dictation} disabled={enhanceAnim !== null} />
-              </Suspense>
-            )}
-            <WorkingBeam active={running} size="sm" />
-            <ActionMetal
-              active={!running && !cancelling && !sendDisabled}
-              windowFocused={windowFocused}
-            />
-            <button
-              className="icon-circle icon-circle-primary"
-              title={composerAction === "stop" ? "Stop the run" : "Send"}
-              disabled={
-                composerAction === "stop" ? cancelling : !running && (cancelling || sendDisabled)
-              }
-              onClick={() => {
-                if (composerAction === "stop") requestCancel();
-                else submit();
-              }}
-            >
-              {composerAction === "stop" ? (
-                <SquareIcon size={12} weight="fill" />
-              ) : (
-                <ArrowUpIcon size={16} />
-              )}
-            </button>
-          </div>
-        </div>
-        {!enhanceAnim && (
-          // Pill pinned to the center of the input box (.inputwrap) top border,
-          // overlapping it. Decoupled from text flow, so it never overlaps text,
-          // drifts, or shifts the caret/height; centered (not in a corner) to
-          // stay clear of the status row's "esc to cancel". Always mounted (so it
-          // can transition both ways); the `visible` class fades/slides it in
-          // when there's text and out when there isn't.
-          // Dictation's status pill takes this spot while it is busy.
-          <div className={`enhance-pill-host${enhanceHintVisible && !dictating ? " visible" : ""}`}>
-            <ActionMetal
-              active={enhanceHintVisible && !dictating && !enhancing}
-              windowFocused={windowFocused}
-              variant="button"
-            />
-            <button
-              className={`enhance-pill${enhancing ? " enhancing" : ""}`}
-              title="Enhance prompt — clearer wording + correct terms"
-              disabled={enhancing || dictating || !enhanceHintVisible}
-              aria-hidden={!enhanceHintVisible || dictating}
-              onClick={() => void runEnhance()}
-            >
-              {enhancing ? "Enhancing…" : "Enhance?"}
-            </button>
-          </div>
-        )}
-        {showDictation && (
-          <Suspense fallback={null}>
-            <DictationSession setDraft={setInput} onDictated={onDictated} onChange={setDictation} />
-            {dictation && <DictationStatus dictation={dictation} />}
-          </Suspense>
-        )}
-      </div>
+      <Composer
+        isFileDragOver={isFileDragOver}
+        scheduleInvalid={scheduleInvalid}
+        running={running}
+        kenRunning={kenRunning}
+        autopilotReviewing={autopilotReviewing}
+        scheduleDraft={scheduleDraft}
+        input={input}
+        caret={caret}
+        fillScheduleInterval={fillScheduleInterval}
+        slashOpen={slashOpen}
+        slashMatches={slashMatches}
+        clampedSlashIndex={clampedSlashIndex}
+        pickSlashCommand={pickSlashCommand}
+        setSlashIndex={setSlashIndex}
+        mentionOpen={mentionOpen}
+        fileMatches={fileMatches}
+        clampedFileIndex={clampedFileIndex}
+        mention={mention}
+        pickMentionFile={pickMentionFile}
+        setFileIndex={setFileIndex}
+        attachments={attachments}
+        removeAttachment={removeAttachment}
+        mentionedPaths={mentionedPaths}
+        removeMentionChip={removeMentionChip}
+        visibleQueuedMessages={visibleQueuedMessages}
+        handleCancelQueued={handleCancelQueued}
+        fileInputRef={fileInputRef}
+        addFiles={addFiles}
+        phoneComposer={phoneComposer}
+        workspaceMode={workspaceMode}
+        addressHelper={addressHelper}
+        enhanceAnim={enhanceAnim}
+        onEnhanceAnimDone={onEnhanceAnimDone}
+        kenActive={kenActive}
+        kenInputParts={kenInputParts}
+        attachInput={attachInput}
+        displayPlaceholder={displayPlaceholder}
+        setInput={setInput}
+        setCaret={setCaret}
+        historyIndex={historyIndex}
+        setHistoryIndex={setHistoryIndex}
+        enhancement={enhancement}
+        setEnhancement={setEnhancement}
+        updateMention={updateMention}
+        setMention={setMention}
+        navigateHistory={navigateHistory}
+        submit={submit}
+        cancelling={cancelling}
+        requestCancel={requestCancel}
+        showDictation={showDictation}
+        dictation={dictation}
+        sendDisabled={sendDisabled}
+        windowFocused={windowFocused}
+        composerAction={composerAction}
+        enhanceHintVisible={enhanceHintVisible}
+        dictating={dictating}
+        enhancing={enhancing}
+        runEnhance={runEnhance}
+        onDictated={onDictated}
+        setDictation={setDictation}
+      />
 
-      <div
-        className={`footer${workspaceMode !== "code" ? " footer-chat" : ""}`}
-        style={{ color: theme.footerText }}
-      >
-        {!hydrated ? (
-          <FooterSkeleton />
-        ) : (
-          <>
-            {workspaceMode === "motion" ? (
-              <span className="footer-left footer-reveal" style={{ color: theme.textDim }}>
-                Motion Agent
-              </span>
-            ) : workspaceMode === "chat" ? (
-              // On the iPhone the controls take the whole line, and the agent's
-              // name was clipped to "Gene".
-              !phoneHeader && (
-                <span className="footer-left footer-reveal" style={{ color: theme.textDim }}>
-                  {state?.chatAgent === "therapist"
-                    ? "Therapist Agent"
-                    : state?.chatAgent === "research"
-                      ? "Research Agent"
-                      : "General Agent"}
-                </span>
-              )
-            ) : (
-              <span className="footer-left footer-reveal">
-                {runningTaskCount > 0 && <BackgroundTasksButton tasks={tasks} />}
-                {schedules.length > 0 && (
-                  <>
-                    {runningTaskCount > 0 && <FooterSep />}
-                    <RunningSchedulesButton schedules={schedules} onStop={stopSchedule} />
-                  </>
-                )}
-                {state?.planMode && (
-                  <>
-                    {(runningTaskCount > 0 || schedules.length > 0) && <FooterSep />}
-                    <span className="footer-plan">
-                      <ShimmerText base={theme.secondary} bright="#ddd6fe">
-                        {"\u25C6 plan mode"}
-                      </ShimmerText>
-                    </span>
-                  </>
-                )}
-              </span>
-            )}
-            <span className="footer-right footer-reveal">
-              {contextPct > 0 && (
-                <>
-                  <ContextMeter pct={contextPct} />
-                  <FooterSep />
-                </>
-              )}
-              {(state?.supportedThinkingLevels?.length ?? 0) > 0 &&
-                (() => {
-                  const level = state?.thinkingLevel ?? null;
-                  const label = level ? `Thinking ${level}` : "Thinking off";
-                  const maxPower = level === "xhigh" || level === "max";
-                  // Reasoning level is baked into the request the run is already
-                  // streaming, so a mid-turn cycle changes nothing about it and
-                  // silently disagrees with what the footer shows. Lock it like
-                  // the model pickers, and say why rather than going inert.
-                  const locked = running;
-                  return (
-                    <>
-                      <button
-                        className="thinking-toggle"
-                        style={{
-                          color: locked ? theme.textDim : thinkingColor(level),
-                          fontWeight: level === "high" ? 600 : 400,
-                        }}
-                        title={
-                          locked
-                            ? "Can't change reasoning level while the agent is running — cancel the run or wait for it to finish"
-                            : "Cycle reasoning level"
-                        }
-                        disabled={locked}
-                        onClick={() => void cycleThinking()}
-                      >
-                        {maxPower && !locked ? (
-                          <ShimmerText base={MAX_POWER_COLOR} bright={MAX_POWER_SHIMMER}>
-                            {label}
-                          </ShimmerText>
-                        ) : (
-                          label
-                        )}
-                      </button>
-                      <FooterSep />
-                    </>
-                  );
-                })()}
-              <span className="model-anchor">
-                <span className="model-label" style={{ color: theme.text }}>
-                  Kleio
-                </span>
-                <ModelSelect
-                  models={models}
-                  currentModel={state?.model ?? ""}
-                  onSelect={onSelectModel}
-                  compact={phoneHeader}
-                  disabled={running}
-                  title={`Switch ${workspaceMode === "chat" ? "Kleio" : workspaceProductName(workspaceMode)}'s model`}
-                />
-              </span>
-              {workspaceMode === "code" && (
-                <>
-                  <FooterSep />
-                  <span className="model-anchor">
-                    <span className="model-label" style={{ color: theme.ken }}>
-                      Helper
-                    </span>
-                    <ModelSelect
-                      models={models}
-                      currentModel={state?.kenModel ?? state?.model ?? ""}
-                      onSelect={(id) => onSelectKenModel(id)}
-                      compact={phoneHeader}
-                      color={theme.ken}
-                      // Ken's pin retargets BOTH his sessions (chat + the
-                      // autopilot reviewer), so it has to stay locked while
-                      // either is mid-turn — same rule the GG picker follows,
-                      // and the sidecar now answers 409 to match.
-                      disabled={running || kenRunning || autopilotReviewing}
-                      title={
-                        state?.kenModelOverride
-                          ? "Helper is pinned to its own model. Click to change it"
-                          : "Helper follows Kleio's model. Click to pin one"
-                      }
-                      onSelectFollow={() => onSelectKenModel(null)}
-                      followActive={!state?.kenModelOverride}
-                    />
-                  </span>
-                </>
-              )}
-            </span>
-          </>
-        )}
-      </div>
+      <AppFooter
+        workspaceMode={workspaceMode}
+        hydrated={hydrated}
+        phoneHeader={phoneHeader}
+        state={state}
+        runningTaskCount={runningTaskCount}
+        tasks={tasks}
+        schedules={schedules}
+        stopSchedule={stopSchedule}
+        contextPct={contextPct}
+        running={running}
+        models={models}
+        onSelectModel={onSelectModel}
+        onSelectKenModel={onSelectKenModel}
+        kenRunning={kenRunning}
+        autopilotReviewing={autopilotReviewing}
+      />
 
       <UpdateBanner update={appUpdate} />
       <NewPairingNotice key="new-pairing-notice" active={kleioRemote.status?.active ?? null} />
@@ -3869,376 +2592,6 @@ function App(): React.ReactElement {
       )}
     </div>
   );
-}
-
-/**
- * Assistant prose while it streams: the text is revealed at a steady rate
- * (rather than in whatever bursts the network delivered) and each new word
- * fades in as it lands.
- *
- * `onGrow` re-pins the transcript to the bottom. The reveal adds height
- * BETWEEN item updates, which the transcript's `items`-keyed scroll effect
- * cannot see, so without this the tail of a reply drifts under the fold.
- */
-function StreamingMarkdown({
-  text,
-  onGrow,
-}: {
-  text: string;
-  onGrow?: () => void;
-}): React.ReactElement {
-  const { text: revealed, animating } = useSmoothText(text);
-  useLayoutEffect(() => {
-    onGrow?.();
-  }, [revealed, onGrow]);
-  return <Markdown animate={animating}>{revealed}</Markdown>;
-}
-
-// ── Row renderers ──────────────────────────────────────────
-// Memoized per row: the streaming run rebuilds the `items` array on every
-// `text_delta`, but `appendAssistant` returns the SAME object reference for
-// every non-streaming row, and `onContentGrow` is a stable useCallback. So a
-// default shallow `memo` re-renders ONLY the row whose `item` reference changed
-// (the one actively streaming) — the rest bail out, keeping per-token cost O(1)
-// instead of O(transcript length).
-const TranscriptRow = memo(function TranscriptRow({
-  item,
-  animateIn = false,
-  onContentGrow,
-  onAskAnswer,
-  onAskType,
-}: {
-  item: Item;
-  /** Arrived live (not restored from history): rise into place once. */
-  animateIn?: boolean;
-  onContentGrow?: () => void;
-  onAskAnswer?: (
-    itemId: number,
-    promptId: string,
-    delta: Record<string, string | string[]>,
-  ) => void;
-  onAskType?: (itemId: number, promptId: string, questionId: string, seed?: string) => void;
-}): React.ReactElement | null {
-  const row = (
-    <TranscriptRowBody
-      item={item}
-      onContentGrow={onContentGrow}
-      onAskAnswer={onAskAnswer}
-      onAskType={onAskType}
-    />
-  );
-  if (!animateIn) return row;
-  // One wrapper per live row carries the entrance so none of the ~20 row
-  // shapes below needs to know about it. `data-kind` picks the direction:
-  // your own message rises from the composer, everything else settles in.
-  return (
-    <div className="row-enter" data-kind={item.kind}>
-      {row}
-    </div>
-  );
-});
-
-function TranscriptRowBody({
-  item,
-  onContentGrow,
-  onAskAnswer,
-  onAskType,
-}: {
-  item: Item;
-  onContentGrow?: () => void;
-  /** Record answers for an `ask_user` band (App settles the tool call). */
-  onAskAnswer?: (
-    itemId: number,
-    promptId: string,
-    delta: Record<string, string | string[]>,
-  ) => void;
-  /** Answer this question by typing in the composer instead of clicking. */
-  onAskType?: (itemId: number, promptId: string, questionId: string, seed?: string) => void;
-}): React.ReactElement | null {
-  const openFromHost = useOpenFromHost();
-  switch (item.kind) {
-    case "user":
-      if (item.kenSent) {
-        // Sent from a Ken "Send to GG Coder" button: show a shimmering "Sent to GG
-        // Coder" in Ken's color (like a slash command shows `/name`), not the
-        // full prompt body. The full body still went to GG Coder.
-        return (
-          <div className="user-msg command labelled user-ken-sent">
-            <span className="command-shimmer" style={{ color: theme.ken }}>
-              Sent to GG Coder
-            </span>
-          </div>
-        );
-      }
-      if (item.command) {
-        // Workflow command: show just the short `/name` (or a friendly `label`
-        // phrase) with a highlight + shimmer sweep. The full expanded prompt
-        // was sent to the agent. Labels read as prose, so drop the mono font.
-        return (
-          <div className={`user-msg command${item.label ? " labelled" : ""}`}>
-            <span className="command-shimmer" style={{ color: theme.commandColor }}>
-              {item.label ?? item.text}
-            </span>
-          </div>
-        );
-      }
-      return (
-        <div
-          className={`user-msg${item.queued ? " queued" : ""}${
-            item.promoted ? " promoted" : ""
-          }${item.ken ? " user-ken" : ""}`}
-        >
-          {/* Kept mounted through the promotion beat so it can collapse
-              smoothly; unmounting it outright shrinks the bubble in a single
-              frame and shunts the whole transcript. Hidden from screen readers
-              as soon as the message stops actually being queued, since the
-              remaining frames are decoration. */}
-          {(item.queued || item.promoted) && (
-            <span className="queued-pill" aria-hidden={item.promoted}>
-              queued
-            </span>
-          )}
-          {item.images && item.images.length > 0 && (
-            <div className="user-img-row">
-              {item.images.map((src, i) => (
-                <img
-                  key={i}
-                  className="user-img"
-                  src={src}
-                  alt="attachment"
-                  onLoad={onContentGrow}
-                />
-              ))}
-            </div>
-          )}
-          {item.enhancements && item.enhancements.some((s) => s.kind === "term") ? (
-            <EnhancedSegments segments={item.enhancements} />
-          ) : (
-            item.text
-          )}
-          {item.files && item.files.length > 0 && (
-            <div className="user-files-row">
-              {item.files.map((p) => (
-                <span key={p} className="user-file-chip" title={p}>
-                  <AtIcon size={11} style={{ color: theme.accent }} />
-                  <span style={{ color: theme.code }}>{p}</span>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    case "assistant": {
-      // Split out [DONE:n] plan-step markers so each renders as a "✓ Step n"
-      // completion row instead of leaking the raw marker into the prose.
-      const segments = hasDoneMarker(item.text)
-        ? segmentDoneMarkers(item.text)
-        : [{ kind: "text" as const, text: item.text }];
-      // Output cards (when paired to a Mac mini) sit once under the reply's
-      // last stretch of prose, covering every link in the whole reply.
-      const cardsAt = segments.map((s) => s.kind).lastIndexOf("text");
-      return (
-        <>
-          {segments.map((seg, i) =>
-            seg.kind === "done" ? (
-              <div key={i} className="plan-step-done">
-                <span className="plan-step-check" aria-hidden="true">
-                  {"\u2713"}
-                </span>
-                <span className="plan-step-label">{`Step ${seg.stepNum} completed`}</span>
-              </div>
-            ) : (
-              <div key={i} className="assistant-msg">
-                <span className="assistant-dot" style={{ color: theme.primary }}>
-                  {DOT}
-                </span>
-                <div className="assistant-text">
-                  <StreamingMarkdown text={seg.text} onGrow={onContentGrow} />
-                  {i === cardsAt && <WorkspaceFileCards text={item.text} />}
-                </div>
-              </div>
-            ),
-          )}
-        </>
-      );
-    }
-    case "ken":
-      // Ken Kai's reply: the whole bubble is tinted in Ken's color (dot + all
-      // text), which is the ONLY differentiator from a normal GG Coder reply.
-      // No badge, no byline. The Markdown component special-cases ```prompt
-      // fences into a "Send to GG Coder" button.
-      return (
-        <div className="assistant-msg ken-msg">
-          <span className="assistant-dot" style={{ color: theme.ken }}>
-            {DOT}
-          </span>
-          <div className="assistant-text">
-            <StreamingMarkdown text={item.text} onGrow={onContentGrow} />
-          </div>
-        </div>
-      );
-    case "autopilot": {
-      // Autopilot Ken's verdict, rendered like a normal @Ken reply (Ken-tinted
-      // dot + text) rather than its own marker style. The text is his verdict as
-      // prose: for a PROMPT he shows what he sent GG Coder back to do; the
-      // terminal verdicts read as short Ken one-liners. `done` rotates through
-      // several casual Ken lines (picked deterministically off the item's
-      // stable id, so it never flickers on re-render) instead of always
-      // repeating the exact same sentence turn after turn.
-      const copy: Record<Extract<Item, { kind: "autopilot" }>["phase"], string> = {
-        prompted: item.body?.trim()
-          ? `Sending Kleio back in:\n\n${item.body.trim()}`
-          : "Sending Kleio back in for another pass.",
-        done: [allClearCopy(item.copySeed, item.id), item.reason?.trim()]
-          .filter(Boolean)
-          .join("\n\n"),
-        human: item.reason?.trim() ? item.reason.trim() : "Need you to weigh in on this one.",
-        capped: "Paused autopilot after 3 rounds. Take a look before I keep going.",
-        plan_approved: [
-          "Plan looks solid. Approved it — implementation is underway.",
-          item.reason?.trim(),
-        ]
-          .filter(Boolean)
-          .join("\n\n"),
-      };
-      return (
-        <div className="assistant-msg ken-msg">
-          <span className="assistant-dot" style={{ color: theme.ken }}>
-            {DOT}
-          </span>
-          <div className="assistant-text">
-            <Markdown>{copy[item.phase]}</Markdown>
-          </div>
-        </div>
-      );
-    }
-    case "info":
-      return (
-        <div className="line info" style={{ color: theme.textDim }}>
-          {item.text}
-        </div>
-      );
-    case "error": {
-      // Structured errors (see gg-ai's formatError) always answer "is this me or
-      // them" and, for usage-limit stops, when it resets — mirrors the CLI's
-      // ErrorRow instead of dumping the raw provider string. `text` is the
-      // legacy fallback for items that only ever carried a flat string.
-      const headline = item.headline ?? item.text ?? "";
-      const showMessage = item.message && item.message !== headline;
-      return (
-        <div className="line error">
-          <div style={{ color: theme.error, fontWeight: 600 }}>{headline}</div>
-          {showMessage && <div style={{ color: theme.textDim }}>{item.message}</div>}
-          {item.guidance && <div style={{ color: theme.textDim }}>{item.guidance}</div>}
-        </div>
-      );
-    }
-    case "hook": {
-      // Mirrors the TUI IdealHookMessage: assistant-style dot + a shimmering
-      // tone-colored one-liner so the self-correction is obvious.
-      const { text: defaultText, color } = HOOK_PRESENTATION[item.hook];
-      const text =
-        item.verificationReason === "check_review"
-          ? "Hook engaged. Reviewing changes to tests and checks."
-          : item.verificationReason === "recheck"
-            ? "Hook engaged. Re-checking the changes made after verification."
-            : defaultText;
-      return (
-        <div className="assistant-msg">
-          <span className="assistant-dot" style={{ color }}>
-            {DOT}
-          </span>
-          <div className="assistant-text">
-            <ShimmerText base={color} bright="#ffffff">
-              {text}
-            </ShimmerText>
-          </div>
-        </div>
-      );
-    }
-    case "images":
-      return (
-        <div className="img-grid">
-          {item.images.map((img, i) => {
-            // Connected to a host, the path is on the host: open it from there.
-            const openImage = (): void => {
-              if (!img.path || openFromHost(img.path)) return;
-              void openProjectPath(img.path);
-            };
-            return (
-              <figure
-                key={img.path ?? i}
-                className={`img-card${img.path ? " img-card-clickable" : ""}`}
-                role={img.path ? "button" : undefined}
-                tabIndex={img.path ? 0 : undefined}
-                title={img.path ? `Open ${img.path}` : undefined}
-                onClick={openImage}
-                onKeyDown={(e) => {
-                  if (!img.path || (e.key !== "Enter" && e.key !== " ")) return;
-                  e.preventDefault();
-                  openImage();
-                }}
-              >
-                <HistoryImage image={img} alt={img.path ?? "image"} onLoad={onContentGrow} />
-                {img.path && (
-                  <figcaption className="img-cap" title={img.path}>
-                    {basename(img.path)}
-                  </figcaption>
-                )}
-              </figure>
-            );
-          })}
-        </div>
-      );
-    case "generating_image":
-      return (
-        <div className="img-grid">
-          <div className="img-gen-placeholder">
-            <Skeleton width={200} height={200} radius={12} />
-            <span className="img-gen-label">
-              {item.prompt.length > 60 ? item.prompt.slice(0, 57) + "\u2026" : item.prompt}
-            </span>
-          </div>
-        </div>
-      );
-    case "plan":
-      return <PlanModeLogo reason={item.reason} />;
-    case "ask":
-      return (
-        <AskBand
-          prompt={item.prompt}
-          answers={item.answers}
-          sent={item.sent}
-          cancelled={item.cancelled}
-          onAnswer={(delta) => onAskAnswer?.(item.id, item.prompt.id, delta)}
-          onTypeInstead={(questionId, seed) =>
-            onAskType?.(item.id, item.prompt.id, questionId, seed)
-          }
-        />
-      );
-    case "task":
-      return (
-        <div className="line task-row">
-          <span className="task-row-glyph" style={{ color: theme.primary }}>
-            {"\u25B8 "}
-          </span>
-          <span style={{ color: theme.textMuted }}>{"Task: "}</span>
-          <span style={{ color: theme.text, fontWeight: 600 }}>{item.title}</span>
-        </div>
-      );
-    case "subagent_group":
-      return <SubAgentFeed agents={item.agents} aborted={item.aborted} />;
-    case "compaction":
-      return (
-        <CompactionNotice
-          status={item.status}
-          originalCount={item.originalCount}
-          newCount={item.newCount}
-        />
-      );
-    default:
-      return null;
-  }
 }
 
 export default App;

@@ -323,7 +323,7 @@
         "flags": "giu"
       },
       "expectedOccurrences": {
-        "tracked": 1517,
+        "tracked": 1540,
         "packed": 0
       },
       "bucket": "compatibility",
@@ -503,7 +503,7 @@
         "literal": "ggcoder"
       },
       "expectedOccurrences": {
-        "tracked": 1509,
+        "tracked": 1549,
         "packed": 0
       },
       "bucket": "compatibility",
@@ -2571,7 +2571,7 @@
       },
       "expectedOccurrences": {
         "tracked": 0,
-        "packed": 662
+        "packed": 675
       },
       "bucket": "compatibility",
       "owner": "Manager build owner",
@@ -3376,18 +3376,113 @@
       "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
     },
     {
-      "id": "upstream-20260911-724cc0c1512a",
-      "path": "gg-app/src-tauri/src/lib.rs",
+      "id": "upstream-20260911-98c3c8793bc4",
+      "path": "gg-app/src-tauri/src/auth.rs",
       "scope": "content",
       "targets": [
         "tracked"
       ],
       "match": {
-        "regex": "(?:\"Agent daemon stopped after repeated crashes\\. Restart GG Coder to try again\\.\";|\\.title\\(\"GG Coder\"\\)|\\.tooltip\\(\"GG Coder\"\\)|// This list mirrors packages/ggcoder/src/core/auth-providers\\.ts \\(AUTH_PROVIDERS\\)\\.|/// Command substrings that identify a GG Coder \\*sidecar\\* process itself\\.|/// GG Coder session\\. Returns the importer's typed result \\(`\\{ ok, \\.\\.\\. \\}`\\),|/// Mirrors `AuthMethodMeta` in packages/ggcoder/src/core/auth-providers\\.ts\\.|/// Proxy: cancel Ken's in-flight run \\(leaves GG Coder's run untouched\\)\\.|/// Proxy: discover known projects across ggcoder/Claude Code/Codex stores\\.|/// follows GG Coder's model again\\. `model: None` clears\\. Returns|/// packages/ggcoder/src/core/auth-providers\\.ts \\(AUTH_PROVIDERS\\) — keep in sync\\.|/// packages/ggcoder/src/core/auth-providers\\.ts\\.|11541     1 11541 /Applications/GG Coder\\.app/Contents/MacOS/gg-app\\\\n\\\\|11553 11541 11553 /Applications/GG Coder\\.app/Contents/MacOS/ggnode app-sidecar\\.mjs\";|6000\\|4\\|C:\\\\\\\\Program Files\\\\\\\\GG Coder\\\\\\\\gg-app\\.exe\\\\n\\\\|PathBuf::from\\(env!\\(\"CARGO_MANIFEST_DIR\"\\)\\)\\.join\\(\"\\.\\./\\.\\./packages/ggcoder/dist/app-sidecar\\.js\"\\)|proc\\(100, 1, \"/Applications/GG Coder\\.app/Contents/MacOS/gg-app\"\\),)",
+        "regex": "(?:// This list mirrors packages/ggcoder/src/core/auth-providers\\.ts \\(AUTH_PROVIDERS\\)\\.|/// Mirrors `AuthMethodMeta` in packages/ggcoder/src/core/auth-providers\\.ts\\.|/// packages/ggcoder/src/core/auth-providers\\.ts \\(AUTH_PROVIDERS\\) — keep in sync\\.|/// packages/ggcoder/src/core/auth-providers\\.ts\\.)",
         "flags": "gu"
       },
       "expectedOccurrences": {
-        "tracked": 15
+        "tracked": 4
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-7a483b81a75b",
+      "path": "gg-app/src-tauri/src/commands/agent.rs",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:/// GG Coder session\\. Returns the importer's typed result \\(`\\{ ok, \\.\\.\\. \\}`\\),|/// Proxy: cancel Ken's in-flight run \\(leaves GG Coder's run untouched\\)\\.|/// follows GG Coder's model again\\. `model: None` clears\\. Returns)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 3
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-3e699d9a2459",
+      "path": "gg-app/src-tauri/src/commands/agent_admin.rs",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:/// Proxy: discover known projects across ggcoder/Claude Code/Codex stores\\.)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-30c3656bb95d",
+      "path": "gg-app/src-tauri/src/daemon.rs",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:\"Agent daemon stopped after repeated crashes\\. Restart GG Coder to try again\\.\";)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-b0e01e921d20",
+      "path": "gg-app/src-tauri/src/paths.rs",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:PathBuf::from\\(env!\\(\"CARGO_MANIFEST_DIR\"\\)\\)\\.join\\(\"\\.\\./\\.\\./packages/ggcoder/dist/app-sidecar\\.js\"\\))",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-606a27777585",
+      "path": "gg-app/src-tauri/src/process.rs",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:/// Command substrings that identify a GG Coder \\*sidecar\\* process itself\\.|11541     1 11541 /Applications/GG Coder\\.app/Contents/MacOS/gg-app\\\\n\\\\|11553 11541 11553 /Applications/GG Coder\\.app/Contents/MacOS/ggnode app-sidecar\\.mjs\";|6000\\|4\\|C:\\\\\\\\Program Files\\\\\\\\GG Coder\\\\\\\\gg-app\\.exe\\\\n\\\\|proc\\(100, 1, \"/Applications/GG Coder\\.app/Contents/MacOS/gg-app\"\\),)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 5
       },
       "bucket": "provenance",
       "owner": "Kleio framework maintainers",
@@ -3421,11 +3516,68 @@
         "tracked"
       ],
       "match": {
-        "regex": "(?:// Click handler for the \"Send to GG Coder\" button on Ken's recommended prompts\\.|// Ken \"Send to GG Coder\" prompts: restore the shimmer label, not the|// Pin Ken to a model \\(or null → clear the pin, follow GG Coder\\)\\. The|// Pushes a shimmering \"Sent to GG Coder\" user bubble \\(the full prompt body went|// Sent from a Ken \"Send to GG Coder\" button: show a shimmering \"Sent to GG|// Thinking-tier color, mirroring the ggcoder TUI footer's getThinkingColor:|// True when this bubble came from clicking a \"Send to GG Coder\" button on|// `phase` selects the message: he prompted GG Coder \\(with the `body` he sent\\),|// fences into a \"Send to GG Coder\" button\\.|// full prompt body\\. The full body still went to GG Coder\\.|// in Ken's color so the transcript shows it went to the mentor, not GG Coder\\.|// of the full prompt body that was actually sent to GG Coder\\.|// prose: for a PROMPT he shows what he sent GG Coder back to do; the|// read-only mentor agent — NOT GG Coder\\. Ken runs concurrently with any|// repeat the exact same sentence every time GG Coder's work checks out\\.|// streamed from the ken_\\* SSE events\\. Never mistaken for GG Coder\\.|// text\\), which is the ONLY differentiator from a normal GG Coder reply\\.|// to GG Coder, but the transcript shows the short Ken-colored label, like a|// ── Plan review actions \\(mirror the ggcoder CLI plan overlay\\) ──|: \"Ken follows GG Coder's model — click to pin one\"|: \"Sending GG Coder back in for another pass\\.\",|\\? `Sending GG Coder back in:\\\\n\\\\n\\$\\{item\\.body\\.trim\\(\\)\\}`|Sent to GG Coder|const fallbackTitle = workspaceMode === \"chat\" \\? \"GG Chat\" : \"GG Coder\";|title=\\{workspaceMode === \"chat\" \\? \"Switch GG's model\" : \"Switch GG Coder's model\"\\})",
+        "regex": "(?:// Click handler for the \"Send to GG Coder\" button on Ken's recommended prompts\\.|// Ken \"Send to GG Coder\" prompts: restore the shimmer label, not the|// Pin Ken to a model \\(or null → clear the pin, follow GG Coder\\)\\. The|// Pushes a shimmering \"Sent to GG Coder\" user bubble \\(the full prompt body went|// read-only mentor agent — NOT GG Coder\\. Ken runs concurrently with any|// repeat the exact same sentence every time GG Coder's work checks out\\.|// to GG Coder, but the transcript shows the short Ken-colored label, like a|// ── Plan review actions \\(mirror the ggcoder CLI plan overlay\\) ──)",
         "flags": "gu"
       },
       "expectedOccurrences": {
-        "tracked": 20
+        "tracked": 8
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-07c27fb329ef",
+      "path": "gg-app/src/AppFooter.tsx",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:// Thinking-tier color, mirroring the ggcoder TUI footer's getThinkingColor:)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-612f911eca42",
+      "path": "gg-app/src/TranscriptRow.tsx",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:// Sent from a Ken \"Send to GG Coder\" button: show a shimmering \"Sent to GG|// fences into a \"Send to GG Coder\" button\\.|// full prompt body\\. The full body still went to GG Coder\\.|// prose: for a PROMPT he shows what he sent GG Coder back to do; the|// text\\), which is the ONLY differentiator from a normal GG Coder reply\\.|Sent to GG Coder)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 6
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-fef2f2782edb",
+      "path": "gg-app/src/transcript-item.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:// True when this bubble came from clicking a \"Send to GG Coder\" button on|// `phase` selects the message: he prompted GG Coder \\(with the `body` he sent\\),|// in Ken's color so the transcript shows it went to the mentor, not GG Coder\\.|// of the full prompt body that was actually sent to GG Coder\\.|// streamed from the ken_\\* SSE events\\. Never mistaken for GG Coder\\.)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 5
       },
       "bucket": "provenance",
       "owner": "Kleio framework maintainers",
@@ -4311,11 +4463,220 @@
         "tracked"
       ],
       "match": {
-        "regex": "(?:(?:\"GG Coder stopped mid-run, so this turn is incomplete\\. Any files its tools already changed are still on disk\\.\",|\\*  GG Coder's model \\(the historical behavior\\)\\. Set → Ken \\(chat \\+ autopilot\\)|\\*  uses this model regardless of GG Coder's\\. \\*/|\\* Sub-agents spawn the ggcoder CLI in JSON mode to run a delegated task\\. In the|\\* exactly like `ggcoder --json …`: stream the sub-agent run as NDJSON and exit,|\\* gg-app sidecar — bridges the full ggcoder AgentSession to the Tauri webview|/\\*\\* The model Ken uses next turn: the pin when set, else GG Coder's\\. \\*/|/\\*\\* True when this user prompt came from a Ken \"Send to GG Coder\" button —|// App-specific, separate from the shared ggcoder settings file so the desktop|// Auth: `Run \"ggcoder login\"` / `Run 'ggcoder login'` / `Run `ggcoder login``|// Autopilot review rounds routinely span the injected GG Coder run|// Autopilot-injected run: GG Coder receives the framed prompt \\(no human|// Autopilot-injected run: frame it so GG Coder knows no human is|// Clear the pin → follow GG Coder again, syncing both sessions back\\.|// Ken follows GG Coder's model only while un-pinned; a user-set Ken|// Ken silently reviews each finished GG Coder turn and returns a verdict|// Run \"ggcoder login\"\" string lives in `message`, not `guidance`\\.|// Session stores \\(ggcoder \\+ Claude Code \\+ Codex\\) for projects with|// The plan GG Coder submitted via exit_plan that still awaits a decision|// desktop-app equivalents so the webview never shows \"run ggcoder login\"\\.|// is pinned to his own model and GG Coder switches no longer touch him\\. A|// it drives any follow-up GG Coder runs itself, so the shared runAgent|// persist so Ken remembers what he already asked GG Coder to fix\\.|// prompt body\\), then feed GG Coder bracketed by runAgent so the run|// webview routes them to the Ken bubble, never GG Coder's\\.|// with `@Ken …`; he reads GG Coder's transcript \\(one-way — GG Coder never sees|// \\{ model: null \\} / \"\" to clear \\(Ken resumes following GG Coder\\)\\. Applies|// ── MCP server management \\(mirrors `ggcoder mcp`\\) ──────────────────|// ── MCP server management \\(mirrors `ggcoder mcp`\\) ───────────────────────────|// ── Serve lifecycle \\(mirrors `ggcoder serve`\\) ───────────|// ── Telegram config \\(mirrors `ggcoder telegram`\\) ─────────)|\\.replaceAll\\(/Run \\[\"'`\\]\\?\\(\\?:kleio-coder\\|ggcoder\\) login\\[\"'`\\]\\?/gi, \"Use the Login to AI Providers button\"\\)|\\.replaceAll\\(/\\(\\?:kleio-coder\\|ggcoder\\) login/gi, \"the Login to AI Providers button\"\\))",
+        "regex": "(?:\\* gg-app sidecar — bridges the full ggcoder AgentSession to the Tauri webview|/\\*\\* The model Ken uses next turn: the pin when set, else GG Coder's\\. \\*/|// Auth: `Run \"ggcoder login\"` / `Run 'ggcoder login'` / `Run `ggcoder login``|// Autopilot review rounds routinely span the injected GG Coder run|// Ken silently reviews each finished GG Coder turn and returns a verdict|// Run \"ggcoder login\"\" string lives in `message`, not `guidance`\\.|// The plan GG Coder submitted via exit_plan that still awaits a decision|// desktop-app equivalents so the webview never shows \"run ggcoder login\"\\.|// is pinned to his own model and GG Coder switches no longer touch him\\. A|// webview routes them to the Ken bubble, never GG Coder's\\.|// with `@Ken …`; he reads GG Coder's transcript \\(one-way — GG Coder never sees|\\.replaceAll\\(/\\(\\?:kleio-coder\\|ggcoder\\) login/gi, \"the Login to AI Providers button\"\\))",
         "flags": "gu"
       },
       "expectedOccurrences": {
-        "tracked": 35
+        "tracked": 15
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-1a8cabee0dd7",
+      "path": "packages/ggcoder/src/app-sidecar/app-settings.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:\\*  GG Coder's model \\(the historical behavior\\)\\. Set → Ken \\(chat \\+ autopilot\\)|\\*  uses this model regardless of GG Coder's\\. \\*/|// App-specific, separate from the shared ggcoder settings file so the desktop)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 3
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-b22e56e4b1dc",
+      "path": "packages/ggcoder/src/app-sidecar/autopilot-runner.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:// Autopilot-injected run: GG Coder receives the framed prompt \\(no human|// Autopilot-injected run: frame it so GG Coder knows no human is|// persist so Ken remembers what he already asked GG Coder to fix\\.|// prompt body\\), then feed GG Coder bracketed by runAgent so the run)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 4
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-bcd9312e68cb",
+      "path": "packages/ggcoder/src/app-sidecar/history-routes.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:\"GG Coder stopped mid-run, so this turn is incomplete\\. Any files its tools already changed are still on disk\\.\",)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-c0f808413d81",
+      "path": "packages/ggcoder/src/app-sidecar/history.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:/\\*\\* True when this user prompt came from a Ken \"Send to GG Coder\" button —)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-4c525151219d",
+      "path": "packages/ggcoder/src/app-sidecar/integration-routes.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:// ── Serve lifecycle \\(mirrors `ggcoder serve`\\) ───────────|// ── Telegram config \\(mirrors `ggcoder telegram`\\) ─────────)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 2
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-3ebc71cfbf8e",
+      "path": "packages/ggcoder/src/app-sidecar/json-mode.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:\\* Sub-agents spawn the ggcoder CLI in JSON mode to run a delegated task\\. In the|\\* exactly like `ggcoder --json …`: stream the sub-agent run as NDJSON and exit,)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 2
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-77e3dfa1530b",
+      "path": "packages/ggcoder/src/app-sidecar/mcp-routes.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:// ── MCP server management \\(mirrors `ggcoder mcp`\\) ──────────────────)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-b8d77d48e7dc",
+      "path": "packages/ggcoder/src/app-sidecar/mcp-rows.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:// ── MCP server management \\(mirrors `ggcoder mcp`\\) ──────────────────)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-8a6d1512d9fd",
+      "path": "packages/ggcoder/src/app-sidecar/prompt-routes.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:// it drives any follow-up GG Coder runs itself, so the shared runAgent)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-b4c715ef0be6",
+      "path": "packages/ggcoder/src/app-sidecar/run-control-routes.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:// Clear the pin → follow GG Coder again, syncing both sessions back\\.|// Ken follows GG Coder's model only while un-pinned; a user-set Ken|// \\{ model: null \\} / \"\" to clear \\(Ken resumes following GG Coder\\)\\. Applies)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 3
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
+      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "upstream-20260911-0a061233865e",
+      "path": "packages/ggcoder/src/app-sidecar/workspace-routes.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:// Session stores \\(ggcoder \\+ Claude Code \\+ Codex\\) for projects with)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 1
       },
       "bucket": "provenance",
       "owner": "Kleio framework maintainers",
@@ -5869,11 +6230,220 @@
         "packed"
       ],
       "match": {
-        "regex": "(?:\\* Sub-agents spawn the ggcoder CLI in JSON mode to run a delegated task\\. In the|\\* exactly like `ggcoder --json …`: stream the sub-agent run as NDJSON and exit,|\\* gg-app sidecar — bridges the full ggcoder AgentSession to the Tauri webview|\\.replaceAll\\(/\\(\\?:kleio-coder\\|ggcoder\\) login/gi, \"the Login to AI Providers button\"\\)|\\.replaceAll\\(/Run \\[\"'`\\]\\?\\(\\?:kleio-coder\\|ggcoder\\) login\\[\"'`\\]\\?/gi, \"Use the Login to AI Providers button\"\\)|/\\*\\* The model Ken uses next turn: the pin when set, else GG Coder's\\. \\*/|// Auth: `Run \"ggcoder login\"` / `Run 'ggcoder login'` / `Run `ggcoder login``|// Autopilot review rounds routinely span the injected GG Coder run|// Autopilot-injected run: GG Coder receives the framed prompt \\(no human|// Autopilot-injected run: frame it so GG Coder knows no human is|// Clear the pin → follow GG Coder again, syncing both sessions back\\.|// Ken follows GG Coder's model only while un-pinned; a user-set Ken|// Ken silently reviews each finished GG Coder turn and returns a verdict|// Run \"ggcoder login\"\" string lives in `message`, not `guidance`\\.|// Session stores \\(ggcoder \\+ Claude Code \\+ Codex\\) for projects with|// The plan GG Coder submitted via exit_plan that still awaits a decision|// desktop-app equivalents so the webview never shows \"run ggcoder login\"\\.|// is pinned to his own model and GG Coder switches no longer touch him\\. A|// it drives any follow-up GG Coder runs itself, so the shared runAgent|// persist so Ken remembers what he already asked GG Coder to fix\\.|// prompt body\\), then feed GG Coder bracketed by runAgent so the run|// webview routes them to the Ken bubble, never GG Coder's\\.|// with `@Ken …`; he reads GG Coder's transcript \\(one-way — GG Coder never sees|// \\{ model: null \\} / \"\" to clear \\(Ken resumes following GG Coder\\)\\. Applies|// ── MCP server management \\(mirrors `ggcoder mcp`\\) ──────────────────|// ── Serve lifecycle \\(mirrors `ggcoder serve`\\) ───────────|// ── Telegram config \\(mirrors `ggcoder telegram`\\) ─────────|message: \"GG Coder stopped mid-run, so this turn is incomplete\\. Any files its tools already changed are still on disk\\.\",)",
+        "regex": "(?:\\* gg-app sidecar — bridges the full ggcoder AgentSession to the Tauri webview|\\.replaceAll\\(/\\(\\?:kleio-coder\\|ggcoder\\) login/gi, \"the Login to AI Providers button\"\\)|\\.replaceAll\\(/Run \\[\"'`\\]\\?\\(\\?:kleio-coder\\|ggcoder\\) login\\[\"'`\\]\\?/gi, \"Use the Login to AI Providers button\"\\)|/\\*\\* The model Ken uses next turn: the pin when set, else GG Coder's\\. \\*/|// Auth: `Run \"ggcoder login\"` / `Run 'ggcoder login'` / `Run `ggcoder login``|// Autopilot review rounds routinely span the injected GG Coder run|// Ken silently reviews each finished GG Coder turn and returns a verdict|// Run \"ggcoder login\"\" string lives in `message`, not `guidance`\\.|// The plan GG Coder submitted via exit_plan that still awaits a decision|// desktop-app equivalents so the webview never shows \"run ggcoder login\"\\.|// is pinned to his own model and GG Coder switches no longer touch him\\. A|// webview routes them to the Ken bubble, never GG Coder's\\.|// with `@Ken …`; he reads GG Coder's transcript \\(one-way — GG Coder never sees)",
         "flags": "gu"
       },
       "expectedOccurrences": {
-        "packed": 31
+        "packed": 16
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
+      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
+    },
+    {
+      "id": "packed-20260911-927d409d06ec",
+      "path": "packages/ggcoder/dist/app-sidecar/autopilot-runner.js",
+      "scope": "content",
+      "targets": [
+        "packed"
+      ],
+      "match": {
+        "regex": "(?:// Autopilot-injected run: GG Coder receives the framed prompt \\(no human|// Autopilot-injected run: frame it so GG Coder knows no human is|// persist so Ken remembers what he already asked GG Coder to fix\\.|// prompt body\\), then feed GG Coder bracketed by runAgent so the run)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "packed": 4
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
+      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
+    },
+    {
+      "id": "packed-20260911-ad7f2b4726d3",
+      "path": "packages/ggcoder/dist/app-sidecar/history-routes.js",
+      "scope": "content",
+      "targets": [
+        "packed"
+      ],
+      "match": {
+        "regex": "(?:message: \"GG Coder stopped mid-run, so this turn is incomplete\\. Any files its tools already changed are still on disk\\.\",)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "packed": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
+      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
+    },
+    {
+      "id": "packed-20260911-411d5dd7314d",
+      "path": "packages/ggcoder/dist/app-sidecar/integration-routes.js",
+      "scope": "content",
+      "targets": [
+        "packed"
+      ],
+      "match": {
+        "regex": "(?:// ── Serve lifecycle \\(mirrors `ggcoder serve`\\) ───────────|// ── Telegram config \\(mirrors `ggcoder telegram`\\) ─────────)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "packed": 2
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
+      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
+    },
+    {
+      "id": "packed-20260911-4b642a1f80af",
+      "path": "packages/ggcoder/dist/app-sidecar/json-mode.js",
+      "scope": "content",
+      "targets": [
+        "packed"
+      ],
+      "match": {
+        "regex": "(?:\\* Sub-agents spawn the ggcoder CLI in JSON mode to run a delegated task\\. In the|\\* exactly like `ggcoder --json …`: stream the sub-agent run as NDJSON and exit,)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "packed": 2
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
+      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
+    },
+    {
+      "id": "packed-20260911-7f874eee65d1",
+      "path": "packages/ggcoder/dist/app-sidecar/mcp-routes.js",
+      "scope": "content",
+      "targets": [
+        "packed"
+      ],
+      "match": {
+        "regex": "(?:// ── MCP server management \\(mirrors `ggcoder mcp`\\) ──────────────────)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "packed": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
+      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
+    },
+    {
+      "id": "packed-20260911-ee92765a8b74",
+      "path": "packages/ggcoder/dist/app-sidecar/prompt-routes.js",
+      "scope": "content",
+      "targets": [
+        "packed"
+      ],
+      "match": {
+        "regex": "(?:// it drives any follow-up GG Coder runs itself, so the shared runAgent)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "packed": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
+      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
+    },
+    {
+      "id": "packed-20260911-34d2b352615e",
+      "path": "packages/ggcoder/dist/app-sidecar/run-control-routes.js",
+      "scope": "content",
+      "targets": [
+        "packed"
+      ],
+      "match": {
+        "regex": "(?:// Clear the pin → follow GG Coder again, syncing both sessions back\\.|// Ken follows GG Coder's model only while un-pinned; a user-set Ken|// \\{ model: null \\} / \"\" to clear \\(Ken resumes following GG Coder\\)\\. Applies)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "packed": 3
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
+      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
+    },
+    {
+      "id": "packed-20260911-3cec571f8c71",
+      "path": "packages/ggcoder/dist/app-sidecar/workspace-routes.js",
+      "scope": "content",
+      "targets": [
+        "packed"
+      ],
+      "match": {
+        "regex": "(?:// Session stores \\(ggcoder \\+ Claude Code \\+ Codex\\) for projects with)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "packed": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
+      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
+    },
+    {
+      "id": "packed-20260911-414c44a89240",
+      "path": "packages/ggcoder/dist/app-sidecar/app-settings.d.ts",
+      "scope": "content",
+      "targets": [
+        "packed"
+      ],
+      "match": {
+        "regex": "(?:\\*  GG Coder's model \\(the historical behavior\\)\\. Set → Ken \\(chat \\+ autopilot\\)|\\*  uses this model regardless of GG Coder's\\. \\*/)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "packed": 2
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
+      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
+    },
+    {
+      "id": "packed-20260911-cf8d2836aaa5",
+      "path": "packages/ggcoder/dist/app-sidecar/history.d.ts",
+      "scope": "content",
+      "targets": [
+        "packed"
+      ],
+      "match": {
+        "regex": "(?:/\\*\\* True when this user prompt came from a Ken \"Send to GG Coder\" button —)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "packed": 1
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
+      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
+    },
+    {
+      "id": "packed-20260911-23c1379e720c",
+      "path": "packages/ggcoder/dist/app-sidecar/json-mode.d.ts",
+      "scope": "content",
+      "targets": [
+        "packed"
+      ],
+      "match": {
+        "regex": "(?:\\* Sub-agents spawn the ggcoder CLI in JSON mode to run a delegated task\\. In the|\\* exactly like `ggcoder --json …`: stream the sub-agent run as NDJSON and exit,)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "packed": 2
       },
       "bucket": "provenance",
       "owner": "Kleio framework maintainers",
@@ -7750,11 +8320,30 @@
         "tracked"
       ],
       "match": {
-        "regex": "(?:\\/\\/\\/ that one belongs to GG Coder and the `ggcoder` CLI on the same Mac, and|\\/\\/ to sweep, and GG Coder's on this Mac are not ours to touch\\.)",
+        "regex": "(?:\\/\\/ to sweep, and GG Coder's on this Mac are not ours to touch\\.)",
         "flags": "gu"
       },
       "expectedOccurrences": {
-        "tracked": 3
+        "tracked": 1
+      },
+      "bucket": "compatibility",
+      "owner": "Kleio framework maintainers",
+      "reason": "Kleio Desktop names GG Coder (and its ~/.gg / com.ggcoder.app / ggcoder identifiers) only to keep the two apps apart: separate app id, state dir and labels.",
+      "removeWhen": "Only if GG Coder and Kleio Desktop stop sharing a Mac, or the separation guard moves elsewhere."
+    },
+    {
+      "id": "kleio-separation-gg-app-src-tauri-src-paths-rs",
+      "path": "gg-app/src-tauri/src/paths.rs",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:\\/\\/\\/ that one belongs to GG Coder and the `ggcoder` CLI on the same Mac, and)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 2
       },
       "bucket": "compatibility",
       "owner": "Kleio framework maintainers",

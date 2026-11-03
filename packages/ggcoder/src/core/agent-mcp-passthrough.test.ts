@@ -47,7 +47,7 @@ describe("agent MCP whitelist passthrough", () => {
   });
 
   it("both JSON-mode entry points parse --mcp-servers into allowedMcpServers", () => {
-    for (const file of ["cli.ts", "app-sidecar.ts"]) {
+    for (const file of ["cli.ts", "app-sidecar/json-mode.ts"]) {
       const source = src(file);
       expect(source, file).toContain('"mcp-servers": { type: "string" }');
       expect(source, file).toContain("allowedMcpServers");

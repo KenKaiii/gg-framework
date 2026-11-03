@@ -13,30 +13,18 @@
  */
 import http from "node:http";
 import fs from "node:fs/promises";
-import { watch as fsWatch } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { parseArgs } from "node:util";
-import { spawn, type ChildProcess } from "node:child_process";
-import {
-  environmentSecrets,
-  formatError,
-  redactValue,
-  resolveToolSchema,
-  type ToolResultContent,
-} from "@kleio/ai";
+import { environmentSecrets, formatError, redactValue } from "@kleio/ai";
 import type { AddressInfo } from "node:net";
-import { runJsonMode } from "./modes/json-mode.js";
 import { runSubagentWorkerMode } from "./modes/subagent-worker-mode.js";
-import type { MessageProvenance, Provider, ThinkingLevel } from "@kleio/ai";
+import type { Provider, ThinkingLevel } from "@kleio/ai";
 import { setStreamDiagnostic } from "@kleio/agent";
 import { AgentSession } from "./core/agent-session.js";
 import { RunLifecycle } from "./core/run-lifecycle.js";
 import { RunClaim } from "./core/run-claim.js";
 import {
-  CHAT_AGENT_IDS,
-  chatAgentSessionsDir,
   createChatAgent,
   createPersonaChatAgent,
   isProjectsFolder,
@@ -47,105 +35,27 @@ import {
   type ChatPersona,
 } from "./chat-agents/index.js";
 import { createMotionAgentSession } from "./motion-agent/motion-agent.js";
-import {
-  BRAIN_EDIT_BODY_MAX,
-  type BrainEditResult,
-  brainIdFromPath,
-  editJiwa,
-  editMemory,
-} from "./chat-agents/brain-edit.js";
 import { buildJiwaTools, JiwaStore } from "./chat-agents/jiwa.js";
 import { buildMemoryTools, MemoryStore } from "./chat-agents/memory.js";
 import { buildKenSystemPrompt, buildKenAutopilotSystemPrompt } from "./core/ken-prompt.js";
-import {
-  buildKenDigest,
-  buildKenAutopilotContext,
-  buildKenAutopilotPlanContext,
-} from "./core/ken-context.js";
-import { parseAutopilotVerdict, type AutopilotVerdict } from "./core/autopilot-verdict.js";
-import {
-  isWorkflowCommandText,
-  countAssistantMessages,
-  shouldStartAutopilotCycle,
-  extractTurnToolCalls,
-  isMechanicalOnlyTurn,
-  type WorkflowCommandSpec,
-} from "./core/autopilot-gate.js";
-import { driveAutopilotCycle, frameAutopilotInjection } from "./core/autopilot-cycle.js";
+import { countAssistantMessages, type WorkflowCommandSpec } from "./core/autopilot-gate.js";
 import { describeRunVerification, describeTurnVerification } from "./core/run-status.js";
 import { validateKenModelPref, effectiveKenModel, type KenModelPref } from "./core/ken-model.js";
-import { projectsWithin, resolveAppSettingsPaths } from "./core/app-settings-paths.js";
-import type { KenTurnPayload, AppMarkerPayload, RunOutcome } from "./core/session-manager.js";
-import {
-  normalizeAutopilotMarkersForHistory,
-  normalizeAppMarkersForHistory,
-  normalizeKenTurnsForHistory,
-  getHistoryMessageVisibility,
-  replayMessagesInOrder,
-  restoreUserRow,
-  restoreAssistantTexts,
-  resolveRestoredCommand,
-  autopilotMarkerCopySeed,
-} from "./core/session-history.js";
-import {
-  sessionToMarkdown,
-  defaultExportFilename,
-  type ToolDetail,
-} from "./core/session-export.js";
+import type { RunOutcome } from "./core/session-manager.js";
 import { AuthStorage } from "./core/auth-storage.js";
-import {
-  advancesPhase,
-  explainPullFailure,
-  isGgufShard,
-  isValidHfRepoId,
-  parseOllamaPullLine,
-  pickGgufQuant,
-  SHARDED_MESSAGE,
-  toHfSearchRow,
-  type GgufFile,
-  type HfSearchRow,
-  type PullPhase,
-} from "./hf-pull.js";
 import { cleanupToolOutputs } from "./tools/overflow.js";
-import { readCappedBody, readCappedBodyBuffer } from "./utils/http-body.js";
-import { FILE_TEXT_MAX_BODY_BYTES, fileText, fileTextExtension } from "./tools/file-text.js";
 import {
-  fetchSubscriptionUsage,
-  SubscriptionUsageError,
-  XIAOMI_CREDITS_KEY,
   dualAuthProvider,
-  oauthStorageKey,
   discoverLocalModels,
-  findProbedModel,
   formatLocalModelId,
   parseLocalModelId,
-  probeEndpoint,
   createDictation,
-  decodePcm16,
-  trimToSpeech,
-  DICTATION_MAX_SECONDS,
-  DICTATION_SAMPLE_RATE,
-  DictationUnavailableError,
   type Dictation,
-  toModelInfo as localModelInfo,
   type LocalEndpoint,
   type LocalEndpointProbe,
-  type SubscriptionUsageProvider,
-  type SubscriptionUsageSnapshot,
 } from "@kleio/core";
-import {
-  LocalEndpointError,
-  addCustomEndpoint,
-  listAllEndpoints,
-  removeCustomEndpoint,
-  syncEndpointCredentials,
-} from "./core/local-endpoint-store.js";
-import { loginAnthropic } from "./core/oauth/anthropic.js";
-import { loginOpenAI } from "./core/oauth/openai.js";
-import { loginGemini } from "./core/oauth/gemini.js";
-import { loginKimi } from "./core/oauth/kimi.js";
-import { loginXai } from "./core/oauth/xai.js";
-import type { OAuthCredentials, OAuthLoginCallbacks } from "./core/oauth/types.js";
+import { listAllEndpoints, syncEndpointCredentials } from "./core/local-endpoint-store.js";
+import type { OAuthLoginCallbacks } from "./core/oauth/types.js";
 import {
   AUTH_PROVIDERS,
   authPriorityNote,
@@ -154,853 +64,86 @@ import {
   type AuthMethodMeta,
   type AuthProviderMeta,
 } from "./core/auth-providers.js";
-import { ensureAppDirs, loadSavedSettings, projectScopeAllowed } from "./config.js";
-import { SettingsManager, type Settings } from "./core/settings-manager.js";
-import {
-  installPlugin,
-  listInstalledPlugins,
-  removePlugin,
-} from "./core/extensions/plugin-bundles.js";
+import { ensureAppDirs, loadSavedSettings } from "./config.js";
 import {
   getModel,
   getDefaultThinkingLevel,
   getContextWindow,
-  getAllModels,
   clearRuntimeModels,
   registerRuntimeModels,
 } from "./core/model-registry.js";
 import { resolveStartOrFallback } from "./core/resolve-start.js";
-import {
-  CompletionTimeoutError,
-  completeOnce,
-  parseCompleteRequest,
-} from "./core/one-shot-complete.js";
 import { getGitBranch, getGitDirtyFileCount, isGitRepo } from "./utils/git.js";
 import { getGitHubOpenCounts, getGitHubRepoSlug } from "./utils/github.js";
 import { startGitHubCIPoll, type GitHubCI } from "./utils/github-ci.js";
 import { extractPlanSteps } from "./utils/plan-steps.js";
-import {
-  getNextThinkingLevel,
-  getSupportedThinkingLevels,
-  isThinkingLevelSupported,
-} from "./core/thinking-level.js";
+import { getSupportedThinkingLevels, isThinkingLevelSupported } from "./core/thinking-level.js";
 import { PROMPT_COMMANDS } from "./core/prompt-commands.js";
 import { loadCustomCommands } from "./core/custom-commands.js";
-import { discoverProjects, listProjectFolders } from "./core/project-discovery.js";
-import {
-  deleteChatSession,
-  listSidecarSessions,
-  listStoredSessions,
-  parseStoredSessionKind,
-  readStoredSession,
-} from "./app-sidecar-sessions.js";
 import {
   createRoutineRunner,
   createRoutineStore,
-  validateInput as validateRoutineInput,
   type Routine,
   type RoutineTarget,
 } from "./routines.js";
-import {
-  loadTasksSync,
-  saveTasksSync,
-  pruneDoneTasksSync,
-  getNextPendingTask,
-  markTaskInProgress,
-} from "./core/tasks-store.js";
+import { pruneDoneTasksSync } from "./core/tasks-store.js";
 import { initLogger, log } from "./core/logger.js";
-import { dictationUnavailableReply } from "./core/dictation-reply.js";
 import { installTerminationHandlers } from "./core/shutdown.js";
-import {
-  RADIO_STATIONS,
-  getCurrentStation,
-  getRadioVolume,
-  playRadio,
-  setRadioVolume,
-  stopRadio,
-} from "./core/radio.js";
+import { stopRadio } from "./core/radio.js";
 import { enrichProcessPath } from "./core/shell-path.js";
-import {
-  appToolImageRefs,
-  appToolImages,
-  historyImageRef,
-  screenPreview,
-  shrinkToFit,
-  validateVisionImage,
-  withAppImagePreviews,
-} from "./utils/image.js";
-import { startServeMode, type ServeController } from "./modes/serve-mode.js";
-import { installSteroids, probeSteroids } from "./core/steroids.js";
-import { loadTelegramConfig, saveTelegramConfig, verifyBotToken } from "./core/telegram-config.js";
-import {
-  loadServers,
-  addServer,
-  removeServer,
-  getServer,
-  parseMcpAddCommand,
-  MCPClientManager,
-  McpOAuthStore,
-  createElicitationBridge,
-  type MCPScope,
-  type MCPServerConfig,
-} from "./core/mcp/index.js";
-import type { ElicitResult } from "@modelcontextprotocol/client";
-import { createAskUserBridge, type AskUserResult } from "./core/ask-user.js";
+import { withAppImagePreviews } from "./utils/image.js";
+import type { ServeController } from "./modes/serve-mode.js";
+import { createElicitationBridge } from "./core/mcp/index.js";
+import { createAskUserBridge } from "./core/ask-user.js";
 import { createAskUserTool } from "./tools/ask-user.js";
-import { buildSnapshot, levelForXp, rankForLevel } from "./core/progress/ranks.js";
-import { loadProgress, peekProgress, updateProgress } from "./core/progress/store.js";
-import { awardPrompt, awardCommits } from "./core/progress/engine.js";
-import { detectNewCommits, repoKey } from "./core/progress/git-xp.js";
-import { rebuildFromSessions } from "./core/progress/rebuild.js";
-import type { ProgressFile, ProgressSnapshot } from "./core/progress/types.js";
-
-const AUTOMATION_PROVENANCE: MessageProvenance = {
-  source: "runtime",
-  kind: "automation",
-  visibility: "hidden",
-};
-
-/** How long a new session waits to discover a project's pinned local model. */
-const LOCAL_PIN_DISCOVERY_TIMEOUT_MS = 10_000;
-
-/** Reject after `ms` (the timer never outlives the race). */
-async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** POST /session asked for a model that can't be started; the daemon answers 409. */
-class ModelUnavailableError extends Error {
-  constructor(
-    readonly modelId: string,
-    readonly reason: string,
-  ) {
-    super(`model unavailable: ${modelId}`);
-    this.name = "ModelUnavailableError";
-  }
-}
-
-/**
- * Local models only exist once discovery has registered them, and the
- * per-session scan runs after the model is chosen. For a project pinned to one
- * (e.g. a Tinfoil proxy) or an explicitly requested local model, discover first
- * — bounded, never fatal — so the pin can win.
- */
-async function discoverLocalModelForPin(modelId: string): Promise<void> {
-  try {
-    const { models } = await withTimeout(
-      discoverLocalModels(await listAllEndpoints(), { force: false }),
-      LOCAL_PIN_DISCOVERY_TIMEOUT_MS,
-    );
-    registerRuntimeModels(models);
-  } catch (err) {
-    log("WARN", "app-sidecar", "local model discovery for a pinned project failed", {
-      model: modelId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-}
-
-/**
- * Why local `modelId` can't be selected right now (`problem`), or no problem
- * when it can. Also returns the fresh endpoint probe so a session can keep its
- * cached view honest. Non-local ids have no blocker.
- */
-async function probeLocalModelBlocker(
-  modelId: string,
-): Promise<{ problem?: string; probe?: LocalEndpointProbe }> {
-  const parsed = parseLocalModelId(modelId);
-  if (!parsed) return {};
-  const endpoints = await listAllEndpoints();
-  const endpoint = endpoints.find((e) => e.id === parsed.endpointId);
-  if (!endpoint) {
-    return { problem: `Unknown local endpoint "${parsed.endpointId}" — re-scan for local models.` };
-  }
-  const probe = await probeEndpoint(endpoint);
-  if (!probe.reachable) {
-    return {
-      problem: `${endpoint.label} isn't running at ${endpoint.baseUrl}. Start it and scan again.`,
-      probe,
-    };
-  }
-  const model = probe.models.find((m) => m.rawId === parsed.rawId);
-  if (!model) {
-    return { problem: `${endpoint.label} no longer serves "${parsed.rawId}".`, probe };
-  }
-  if (!model.supportsTools) {
-    return {
-      problem: `${parsed.rawId} has no tool calling, so it can't run the agent. Pick a tool-capable model.`,
-      probe,
-    };
-  }
-  registerRuntimeModels(probe.models.map((m) => localModelInfo(m, endpoint)));
-  return { probe };
-}
-
-/**
- * Resolve an explicitly requested start model, failing closed: an unknown,
- * blocked, or unauthenticated model throws ModelUnavailableError instead of
- * falling back (possibly to a cloud provider — privacy matters here).
- */
-async function requireStartModel(
-  auth: AuthStorage,
-  modelId: string,
-): Promise<{ provider: Provider; id: string }> {
-  if (!getModel(modelId) && parseLocalModelId(modelId)) {
-    await discoverLocalModelForPin(modelId);
-  }
-  const target = getModel(modelId);
-  if (!target) throw new ModelUnavailableError(modelId, "not registered");
-  const { problem, probe } = await probeLocalModelBlocker(target.id);
-  if (problem) throw new ModelUnavailableError(modelId, problem);
-  // A reachable local endpoint's credential carries its baseUrl into the
-  // stream call; write it now (as a scan would) so a cold daemon can use it.
-  if (probe) await syncEndpointCredentials([probe.endpoint], { auth });
-  if (!(await auth.hasProviderAuth(target.provider))) {
-    throw new ModelUnavailableError(modelId, `provider ${target.provider} is not connected`);
-  }
-  return { provider: target.provider, id: target.id };
-}
-
-const ALL_PROVIDERS: Provider[] = [
-  // US
-  "anthropic",
-  "openai",
-  "gemini",
-  "xai",
-  // China
-  "moonshot",
-  "glm",
-  "minimax",
-  "xiaomi",
-  "deepseek",
-  // Open-community gateway, before the provider-agnostic one
-  "huggingface",
-  // Japan, then provider-agnostic gateway last
-  "sakana",
-  "openrouter",
-];
-
-// ── gg-app settings (~/.gg/gg-app.json) ────────────────────
-// App-specific, separate from the shared ggcoder settings file so the desktop
-// app's preferences never collide with the CLI's.
-
-/** Per-project model + thinking preferences. Persisted so each window (one
- *  project cwd) restores its OWN model across app restarts — instead of every
- *  window reading the same single global slot that the last writer clobbered. */
-interface ProjectModelPrefs {
-  provider: Provider;
-  model: string;
-  thinkingEnabled?: boolean;
-  thinkingLevel?: ThinkingLevel;
-}
-
-interface AppSettings {
-  /** Folder new projects are created inside. Defaults to ~/gg-projects. */
-  projectsRoot: string;
-  /** Model + thinking prefs keyed by normalized project cwd. A window restores
-   *  its own entry on boot; absent → global settings.json → provider default. */
-  projectModels?: Record<string, ProjectModelPrefs>;
-  /** Autopilot (auto-review) on/off keyed by normalized project cwd. Per-window
-   *  (one window = one cwd); absent/false → off. Restored on boot. */
-  autopilot?: Record<string, boolean>;
-  /** Ken's model override keyed by normalized project cwd. Absent → Ken follows
-   *  GG Coder's model (the historical behavior). Set → Ken (chat + autopilot)
-   *  uses this model regardless of GG Coder's. */
-  kenModels?: Record<string, KenModelPref>;
-  /** Extra folders scanned for projects alongside `projectsRoot`. */
-  projectRoots?: string[];
-  /** Project paths dismissed from the picker, as normalized cwds. */
-  hiddenProjects?: string[];
-}
-
-function stringArray(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const out = value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
-  return out.length > 0 ? out : undefined;
-}
-
-// An embedder (the Kleio host) may give this sidecar its own settings file and
-// projects folder, apart from the upstream app's — see core/app-settings-paths.ts.
-function appSettingsFile(): string {
-  return resolveAppSettingsPaths(process.env, os.homedir()).settingsFile;
-}
-
-function defaultProjectsRoot(): string {
-  return resolveAppSettingsPaths(process.env, os.homedir()).defaultProjectsRoot;
-}
-
-/** Normalize a project cwd to a stable settings key so trailing slashes /
- *  relative segments collapse — the same project always maps to one entry. */
-function projectModelKey(cwd: string): string {
-  return path.resolve(cwd);
-}
-
-async function loadAppSettings(): Promise<AppSettings> {
-  try {
-    const raw = JSON.parse(await fs.readFile(appSettingsFile(), "utf-8")) as Partial<AppSettings>;
-    return {
-      // Keep every key this function doesn't validate. gg-app.json is shared:
-      // local-endpoint-store keeps custom endpoints (with their API keys) under
-      // `localEndpoints`, and saveAppSettings rewrites the whole file — so
-      // listing only known keys here erased them on every model switch, and
-      // the next local scan then deleted the endpoint's credential.
-      ...raw,
-      projectsRoot:
-        typeof raw.projectsRoot === "string" && raw.projectsRoot.trim()
-          ? raw.projectsRoot
-          : defaultProjectsRoot(),
-      // Preserve the per-project map verbatim (validated + written by the
-      // model/thinking handlers below).
-      projectModels:
-        raw.projectModels && typeof raw.projectModels === "object" ? raw.projectModels : undefined,
-      autopilot: raw.autopilot && typeof raw.autopilot === "object" ? raw.autopilot : undefined,
-      kenModels: raw.kenModels && typeof raw.kenModels === "object" ? raw.kenModels : undefined,
-      projectRoots: stringArray(raw.projectRoots),
-      hiddenProjects: stringArray(raw.hiddenProjects),
-    };
-  } catch {
-    return { projectsRoot: defaultProjectsRoot() };
-  }
-}
-
-async function saveAppSettings(settings: AppSettings): Promise<void> {
-  await fs.mkdir(path.dirname(appSettingsFile()), { recursive: true });
-  await fs.writeFile(appSettingsFile(), JSON.stringify(settings, null, 2), "utf-8");
-}
-
-/** Read this project's persisted model/thinking prefs, if any. */
-async function loadProjectModelPrefs(cwd: string): Promise<ProjectModelPrefs | undefined> {
-  const s = await loadAppSettings();
-  return s.projectModels?.[projectModelKey(cwd)];
-}
-
-/** Persist this project's model/thinking prefs via read-modify-write so the rest
- *  of the settings file (projectsRoot, other projects' entries) is preserved. */
-async function saveProjectModelPrefs(cwd: string, prefs: ProjectModelPrefs): Promise<void> {
-  const s = await loadAppSettings();
-  const key = projectModelKey(cwd);
-  s.projectModels = { ...(s.projectModels ?? {}), [key]: prefs };
-  await saveAppSettings(s);
-}
-
-/** Read this project's persisted Ken model override, if any. */
-async function loadKenModelPref(cwd: string): Promise<KenModelPref | undefined> {
-  const s = await loadAppSettings();
-  return s.kenModels?.[projectModelKey(cwd)];
-}
-
-/** Persist (or with null, clear) this project's Ken model override via
- *  read-modify-write so the rest of the settings file is preserved. */
-async function saveKenModelPref(cwd: string, pref: KenModelPref | null): Promise<void> {
-  const s = await loadAppSettings();
-  const key = projectModelKey(cwd);
-  const next = { ...(s.kenModels ?? {}) };
-  if (pref) next[key] = pref;
-  else delete next[key];
-  s.kenModels = next;
-  await saveAppSettings(s);
-}
-
-/** Read this project's persisted autopilot flag (default off). */
-async function loadAutopilot(cwd: string): Promise<boolean> {
-  const s = await loadAppSettings();
-  return s.autopilot?.[projectModelKey(cwd)] ?? false;
-}
-
-/** Persist this project's autopilot flag via read-modify-write so the rest of
- *  the settings file (projectsRoot, model map, other projects) is preserved. */
-async function saveAutopilot(cwd: string, enabled: boolean): Promise<void> {
-  const s = await loadAppSettings();
-  const key = projectModelKey(cwd);
-  s.autopilot = { ...(s.autopilot ?? {}), [key]: enabled };
-  await saveAppSettings(s);
-}
-
-/**
- * Persist the active model selection to ~/.gg/settings.json so it survives app
- * restarts. Mirrors the CLI's handleModelSelect persistence (App.tsx).
- */
-async function persistModelSelection(
-  settingsFile: string,
-  provider: Provider,
-  model: string,
-): Promise<void> {
-  try {
-    const sm = new SettingsManager(settingsFile);
-    await sm.load();
-    await sm.set("defaultProvider", provider as Settings["defaultProvider"]);
-    await sm.set("defaultModel", model);
-  } catch (err) {
-    log("WARN", "app-sidecar", "failed to persist model selection", { err: String(err) });
-  }
-}
-
-/**
- * Persist the thinking level to ~/.gg/settings.json so it survives app restarts.
- * Mirrors the CLI's handleToggleThinking persistence (App.tsx).
- */
-async function persistThinkingLevel(
-  settingsFile: string,
-  level: ThinkingLevel | undefined,
-): Promise<void> {
-  try {
-    const sm = new SettingsManager(settingsFile);
-    await sm.load();
-    await sm.set("thinkingEnabled", !!level);
-    if (level) await sm.set("thinkingLevel", level);
-  } catch (err) {
-    log("WARN", "app-sidecar", "failed to persist thinking level", { err: String(err) });
-  }
-}
-
-/** Validate a project folder name: lowercase letters, digits, dashes only. */
-function isValidProjectName(name: string): boolean {
-  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name);
-}
-
-// ── History reconstruction types ──────────────────────────
-// Mirrors HistoryEntry in gg-app/src/agent.ts — the wire shape the webview
-// receives from GET /history. Fields beyond role/text carry the transcript
-// item kinds that are reconstructed from persisted session data.
-interface HistoryEntryForWire {
-  role: "user" | "assistant";
-  text: string;
-  images?: string[];
-  hook?: "ideal" | "loop_break" | "regrounding" | null;
-  command?: boolean;
-  compacted?: boolean;
-  /** Persisted counts for a compacted row's "N → M messages" summary. */
-  compactionCounts?: { originalCount: number; newCount: number };
-  /** True when this entry is a Ken Kai (mentor) turn: a `user` row is the `@Ken`
-   *  question, an `assistant` row is Ken's reply. The webview renders these in
-   *  Ken's color (user bubble tinted; assistant as a Ken bubble). */
-  ken?: boolean;
-  /** Present when this entry is a persisted autopilot verdict marker (an
-   *  `assistant` row with empty `text`). The webview renders it exactly like
-   *  the live `autopilot` item — never the raw verdict keyword the model
-   *  actually replied with (e.g. `ALL_CLEAR`). */
-  autopilot?: {
-    phase: "prompted" | "done" | "human" | "capped" | "plan_approved";
-    reason?: string;
-    body?: string;
-    /** Stable seed derived from persisted marker data for deterministic all-clear copy. */
-    copySeed?: string;
-  };
-  /** True when this user prompt came from a Ken "Send to GG Coder" button —
-   *  the webview renders the shimmering label instead of the prompt body. */
-  kenSent?: boolean;
-  /** Enhancer highlight segments for this user prompt (unedited enhanced sends). */
-  enhancements?: unknown[];
-  /** Plan-mode entry banner (ASCII logo + reason), persisted at plan_enter. */
-  plan?: { reason: string };
-  /** Task header row (task title), persisted at task_start. */
-  task?: { title: string };
-  /** Error row (headline/message/guidance), persisted by broadcastError.
-   *  `scope` selects the live prefix (ken_error → "Ken: ", autopilot_error →
-   *  "Autopilot: "). */
-  error?: { scope: string; headline: string; message?: string; guidance?: string };
-  /** Webview-copy info row marker (e.g. the video-capability warning). */
-  infoKind?: "video_warning";
-  // Each image's preview (`src`), or with `?images=refs` its ref and its
-  // preview's size, for the app to load as it's scrolled to.
-  toolImages?: Array<
-    { src: string; path?: string } | { ref: string; width?: number; height?: number; path?: string }
-  >;
-  subagentGroup?: Array<{
-    agentName?: string;
-    status: "done" | "error";
-    toolUseCount: number;
-  }>;
-}
-
-// ── Chat attachments (images / videos / files dropped into the input) ──────
-// The webview sends base64 payloads; we persist each under .gg/uploads/ so the
-// agent's tools can open files, then hand media to the model as native blocks.
-interface AppAttachment {
-  kind: "image" | "video" | "file";
-  name: string;
-  mediaType: string;
-  /** base64 (no data: prefix). */
-  data: string;
-}
-
-interface PreparedAttachment extends AppAttachment {
-  path?: string;
-}
-
-async function prepareAttachments(
-  cwd: string,
-  attachments: AppAttachment[],
-): Promise<PreparedAttachment[]> {
-  const dir = path.join(cwd, ".gg", "uploads");
-  await fs.mkdir(dir, { recursive: true }).catch(() => {});
-  const out: PreparedAttachment[] = [];
-  for (const a of attachments) {
-    // Sanitize the filename and prefix with a short timestamp to avoid clobber.
-    const safe = a.name.replace(/[^\w.-]+/g, "_").slice(-80) || "file";
-    const fileName = `${Date.now().toString(36)}-${safe}`;
-    const filePath = path.join(dir, fileName);
-    const buf = Buffer.from(a.data, "base64");
-    // Validate and cap image attachments before they become native image content
-    // blocks. Anthropic applies a 2000 px per-dimension cap once conversation
-    // history contains more than 20 images, so every attachment must be safe for
-    // later turns too. Keep the original on disk, but send the resized bytes.
-    // Corrupt or unsupported images become plain files so they cannot reject the
-    // entire provider request.
-    let prepared: PreparedAttachment = { ...a };
-    if (a.kind === "image") {
-      try {
-        const resized = await shrinkToFit(buf, a.mediaType);
-        const validatedType = await validateVisionImage(resized.buffer);
-        prepared = validatedType
-          ? {
-              ...a,
-              mediaType: validatedType,
-              data: resized.buffer.toString("base64"),
-            }
-          : { ...a, kind: "file" };
-      } catch {
-        prepared = { ...a, kind: "file" };
-      }
-    }
-    try {
-      await fs.writeFile(filePath, buf);
-      out.push({ ...prepared, path: filePath });
-    } catch {
-      out.push({ ...prepared });
-    }
-  }
-  return out;
-}
-
-// ── @-mention file search (chat-input file picker) ─────────────────────────
-// Lists project files for the webview's `@` picker. Empty query → newest files
-// by mtime; a query → fuzzy-ranked basename/path matches. Honors .gitignore and
-// skips node_modules/.git so the picker mirrors the agent's `find` tool.
-interface FileHit {
-  /** Project-relative POSIX path, e.g. "src/App.tsx". */
-  path: string;
-  /** File name only, e.g. "App.tsx". */
-  name: string;
-}
-
-const FILE_SEARCH_LIMIT = 20;
-// Upper bound on files walked per search (baseline #8 memory cap). Far above the
-// 20-result output limit, so relevance/recency ranking is unaffected in practice.
-const FILE_SEARCH_SCAN_CAP = 50_000;
-
-/** Score a candidate path against a lowercased query. Higher is better; a
- *  negative score means "no match". Basename hits beat path hits; prefix beats
- *  substring; shorter paths break ties. */
-function scoreFile(relPath: string, name: string, query: string): number {
-  const lcPath = relPath.toLowerCase();
-  const lcName = name.toLowerCase();
-  let score = -1;
-  if (lcName === query) score = 1000;
-  else if (lcName.startsWith(query)) score = 800;
-  else if (lcName.includes(query)) score = 600;
-  else if (lcPath.startsWith(query)) score = 400;
-  else if (lcPath.includes(query)) score = 200;
-  else if (subsequenceMatch(lcPath, query)) score = 100;
-  if (score < 0) return -1;
-  // Prefer shorter paths (closer to root, less nesting) on equal match class.
-  return score - relPath.length * 0.1;
-}
-
-/** True when every char of `needle` appears in `haystack` in order (fuzzy). */
-function subsequenceMatch(haystack: string, needle: string): boolean {
-  let i = 0;
-  for (const ch of haystack) {
-    if (ch === needle[i]) i++;
-    if (i === needle.length) return true;
-  }
-  return needle.length === 0;
-}
-
-async function searchProjectFiles(cwd: string, rawQuery: string): Promise<FileHit[]> {
-  const fg = await import("fast-glob");
-  const ignore = await import("ignore");
-  const query = rawQuery.trim().toLowerCase();
-
-  let gitignore: string[] = [];
-  try {
-    const content = await fs.readFile(path.join(cwd, ".gitignore"), "utf-8");
-    gitignore = content
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith("#"));
-  } catch {
-    // No .gitignore — nothing extra to ignore.
-  }
-  const ig = ignore.default().add(gitignore);
-
-  // `stats: true` gives mtime without a second stat pass, so the empty-query
-  // "recent files" path is a single walk. Stream + hard scan cap (baseline #8):
-  // collecting the full result array retained ~0.9 MB per 1k files (18.5 MB at
-  // 20k), unbounded. Bail after FILE_SEARCH_SCAN_CAP entries so a giant repo
-  // can't balloon RSS; the newest/most-relevant matches still surface because
-  // the cap is far above the 20-result output limit.
-  const entries: { path: string; stats?: { mtimeMs: number } }[] = [];
-  const scanStream = fg.default.stream("**/*", {
-    cwd,
-    dot: false,
-    onlyFiles: true,
-    ignore: ["**/node_modules/**", "**/.git/**", "**/.gg/**"],
-    suppressErrors: true,
-    followSymbolicLinks: false,
-    stats: true,
-  });
-  for await (const entry of scanStream) {
-    entries.push(entry as unknown as { path: string; stats?: { mtimeMs: number } });
-    if (entries.length >= FILE_SEARCH_SCAN_CAP) {
-      (scanStream as unknown as { destroy: () => void }).destroy();
-      log("DEBUG", "app-sidecar", "file search scan cap hit", {
-        cap: String(FILE_SEARCH_SCAN_CAP),
-        cwd,
-      });
-      break;
-    }
-  }
-  const files = entries.filter((e) => !ig.ignores(e.path));
-
-  if (!query) {
-    return files
-      .sort((a, b) => (b.stats?.mtimeMs ?? 0) - (a.stats?.mtimeMs ?? 0))
-      .slice(0, FILE_SEARCH_LIMIT)
-      .map((e) => ({ path: e.path, name: path.posix.basename(e.path) }));
-  }
-
-  const scored: { hit: FileHit; score: number }[] = [];
-  for (const e of files) {
-    const name = path.posix.basename(e.path);
-    const score = scoreFile(e.path, name, query);
-    if (score >= 0) scored.push({ hit: { path: e.path, name }, score });
-  }
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, FILE_SEARCH_LIMIT).map((s) => s.hit);
-}
-
-/**
- * Detect whether a restored user message is actually an injected self-correction
- * hook prompt, by its distinctive opening phrase. Returns the hook kind so the
- * webview can render the short notice line instead of the full prompt body.
- */
-/** `?tools=` on /export. Anything unrecognised (including absent) falls back to
- *  the human-facing `summary` default rather than dumping every payload. */
-function parseToolDetail(value: string | null): ToolDetail {
-  return value === "none" || value === "full" ? value : "summary";
-}
-
-function detectHookKind(text: string): "ideal" | "loop_break" | "regrounding" | null {
-  const t = text.trimStart();
-  if (t.startsWith("Ideal? Review the actual work")) return "ideal";
-  if (t.startsWith("Stuck? You've repeated essentially")) return "loop_break";
-  if (t.startsWith("Re-ground. The conversation was just compacted")) return "regrounding";
-  return null;
-}
-
-// ── MCP server management (mirrors `ggcoder mcp`) ───────────────────────────
-// The webview's MCP modal lists configured servers with live connection status,
-// adds them via the same paste-a-`claude mcp add …` grammar, and removes them.
-// All persistence + connection logic lives in core/mcp (single source of truth);
-// these helpers only shape it for the wire.
-
-/** One wire row for the MCP list: a server config joined with its live status. */
-interface McpWireRow {
-  name: string;
-  scope: MCPScope;
-  ok: boolean;
-  toolCount: number;
-  error?: string;
-  kind: "stdio" | "http";
-  summary: string;
-  /** True when the server needs an interactive OAuth login before it connects. */
-  requiresAuth?: boolean;
-}
-
-/** A short transport summary for display (URL for http/sse, command+args for stdio). */
-function mcpRowSummary(config: MCPServerConfig): string {
-  if (config.url) return config.url;
-  return [config.command, ...(config.args ?? [])].filter(Boolean).join(" ");
-}
-
-/** Load + connect every server, returning one wire row per server. Mirrors the
- *  CLI dashboard's buildRows (connectAllDetailed, then dispose). Empty list
- *  short-circuits before spawning any stdio process / opening any HTTP conn.
- *  Project-scope servers run repo-controlled commands, so unless the user
- *  trusts them (trustProjectMcpServers) they are reported blocked WITHOUT
- *  being connected — even a status probe would spawn the process. */
-async function buildMcpRows(cwd: string, settingsFile: string): Promise<McpWireRow[]> {
-  const scoped = await loadServers(cwd);
-  if (scoped.length === 0) return [];
-
-  const settings = loadSavedSettings(settingsFile);
-  const allowProject = projectScopeAllowed(
-    settings.trustProjectMcpServers,
-    settings.trustedProjects,
-    cwd,
-  );
-  const connectable = scoped.filter((s) => allowProject || s.scope !== "project");
-  const blocked = scoped.filter((s) => !allowProject && s.scope === "project");
-
-  const manager = new MCPClientManager();
-  try {
-    const results =
-      connectable.length > 0
-        ? await manager.connectAllDetailed(connectable.map((s) => s.config))
-        : [];
-    return [
-      ...connectable.map((s): McpWireRow => {
-        const result = results.find((r) => r.name === s.config.name);
-        return {
-          name: s.config.name,
-          scope: s.scope,
-          ok: result?.ok ?? false,
-          toolCount: result?.toolCount ?? 0,
-          error: result?.error,
-          kind: s.config.url ? "http" : "stdio",
-          summary: mcpRowSummary(s.config),
-          requiresAuth: result?.requiresAuth,
-        };
-      }),
-      ...blocked.map((s): McpWireRow => ({
-        name: s.config.name,
-        scope: s.scope,
-        ok: false,
-        toolCount: 0,
-        error:
-          "Project-scope server not connected — this repo's .gg/mcp.json runs " +
-          "repo-controlled commands. Add or re-add a server in this project via " +
-          "the MCP modal to trust it.",
-        kind: (s.config.url ? "http" : "stdio") as "http" | "stdio",
-        summary: mcpRowSummary(s.config),
-      })),
-    ];
-  } finally {
-    await manager.dispose();
-  }
-}
-
-/** Probe a single server's connection before persisting it. Never throws — a
- *  failed probe returns ok:false with a human-readable error so the config can
- *  still be saved. Mirrors the CLI's probeServer. */
-async function probeMcp(
-  config: MCPServerConfig,
-): Promise<{ ok: boolean; toolCount: number; error?: string; requiresAuth?: boolean }> {
-  const manager = new MCPClientManager();
-  try {
-    const result = await manager.probe(config);
-    return {
-      ok: result.ok,
-      toolCount: result.toolCount,
-      error: result.error,
-      requiresAuth: result.requiresAuth,
-    };
-  } finally {
-    await manager.dispose();
-  }
-}
-
-interface SseClient {
-  id: number;
-  res: http.ServerResponse;
-}
-
-/**
- * Sub-agents spawn the ggcoder CLI in JSON mode to run a delegated task. In the
- * packaged desktop app the only runnable entry is THIS bundle (there's no
- * sibling `cli.js`), so the subagent tool ends up spawning the sidecar itself.
- * Without this guard that would boot a second HTTP server, emit no NDJSON, and
- * hang until the 10-minute hard timeout. So when invoked with `--json`, behave
- * exactly like `ggcoder --json …`: stream the sub-agent run as NDJSON and exit,
- * never starting the HTTP/SSE server. Mirrors the `values.json` branch in cli.ts.
- */
-async function runJsonModeIfRequested(): Promise<boolean> {
-  if (!process.argv.includes("--json")) return false;
-  const { values, positionals } = parseArgs({
-    args: process.argv.slice(2),
-    options: {
-      json: { type: "boolean" },
-      provider: { type: "string" },
-      model: { type: "string" },
-      "max-turns": { type: "string" },
-      "system-prompt": { type: "string" },
-      "agent-prompt": { type: "string" },
-      "agent-context": { type: "string" },
-      tools: { type: "string" },
-      "mcp-servers": { type: "string" },
-      "prompt-cache-key": { type: "string" },
-    },
-    allowPositionals: true,
-    strict: true,
-  });
-  const maxTurnsRaw = values["max-turns"];
-  // Optional tool allow-list forwarded by the subagent spawner from an agent
-  // definition's `tools:` frontmatter. Mirrors the identical parsing in
-  // cli.ts's `values.json` branch — keep both in sync (see subagent.ts).
-  const parsedTools = values.tools
-    ? values.tools
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean)
-    : [];
-  const allowedTools = parsedTools.length > 0 ? parsedTools : undefined;
-  // MCP servers the agent definition asked for. Without forwarding these, an
-  // allow-listed child connects no MCP at all and loses live code search.
-  const parsedMcpServers = values["mcp-servers"]
-    ? values["mcp-servers"]
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [];
-  const allowedMcpServers = parsedMcpServers.length > 0 ? parsedMcpServers : undefined;
-  await runJsonMode({
-    message: positionals[0] ?? "",
-    provider: (values.provider ?? "anthropic") as Provider,
-    model: values.model ?? "claude-opus-5-5",
-    cwd: process.cwd(),
-    systemPrompt: values["system-prompt"],
-    agentPrompt: values["agent-prompt"],
-    agentContext: values["agent-context"] === "none" ? "none" : undefined,
-    maxTurns: maxTurnsRaw ? parseInt(maxTurnsRaw, 10) : undefined,
-    allowedTools,
-    allowedMcpServers,
-    promptCacheKey: values["prompt-cache-key"],
-  }).catch(async (err: unknown) => {
-    process.stderr.write((err instanceof Error ? err.message : String(err)) + "\n");
-    process.exit(1);
-  });
-  return true;
-}
-
-// ── Daemon-level HTTP helpers (shared by the session-management routes) ─────
-// The per-session route table has its own local copies; these serve the
-// daemon's own POST /session / DELETE /session routes.
-function daemonReadBody(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-): Promise<string | null> {
-  return readCappedBody(req, res);
-}
-
-function daemonJson(res: http.ServerResponse, status: number, body: unknown): void {
-  // No CORS headers: only the Rust proxy (no Origin) should call this daemon.
-  // Granting origins would let any web page read responses from loopback.
-  res.writeHead(status, {
-    "content-type": "application/json",
-  });
-  res.end(JSON.stringify(body));
-}
+import { runJsonModeIfRequested } from "./app-sidecar/json-mode.js";
+import {
+  type SessionContext,
+  parseWorkspaceMode,
+  type WorkspaceMode,
+  type SseClient,
+} from "./app-sidecar/session-types.js";
+import { createProgressManager, type ProgressManager } from "./app-sidecar/progress-manager.js";
+import { daemonJson, daemonReadBody, json } from "./app-sidecar/http.js";
+import {
+  ModelUnavailableError,
+  requireStartModel,
+  discoverLocalModelForPin,
+  probeLocalModelBlocker,
+} from "./app-sidecar/start-model.js";
+import {
+  loadProjectModelPrefs,
+  ALL_PROVIDERS,
+  loadAppSettings,
+  saveProjectModelPrefs,
+  loadAutopilot,
+  loadKenModelPref,
+} from "./app-sidecar/app-settings.js";
+import { KEN_ALLOWED_TOOLS } from "./app-sidecar/ken-context.js";
+import { createUsageService } from "./app-sidecar/usage.js";
+import { createHfPullManager } from "./app-sidecar/hf-pull-manager.js";
+import { createAutopilotRunner } from "./app-sidecar/autopilot-runner.js";
+import { handleImagePreviewRoutes } from "./app-sidecar/image-preview-routes.js";
+import { handleHistoryImageRoutes } from "./app-sidecar/history-image-routes.js";
+import { handleCompleteRoutes } from "./app-sidecar/complete-routes.js";
+import { handleStoredSessionRoutes } from "./app-sidecar/stored-session-routes.js";
+import { handleFileTextRoutes } from "./app-sidecar/file-text-routes.js";
+import { handleBrainRoutes } from "./app-sidecar/brain-routes.js";
+import { handleDictationRoutes } from "./app-sidecar/dictation-routes.js";
+import { handleRoutineRoutes } from "./app-sidecar/routine-routes.js";
+import { handleBrainEditRoutes } from "./app-sidecar/brain-edit-routes.js";
+import { handleSessionRoutes } from "./app-sidecar/session-routes.js";
+import { handleWorkspaceRoutes } from "./app-sidecar/workspace-routes.js";
+import { handleProjectFolderRoutes } from "./app-sidecar/project-folder-routes.js";
+import { handleHistoryRoutes } from "./app-sidecar/history-routes.js";
+import { handlePromptRoutes } from "./app-sidecar/prompt-routes.js";
+import { handleTranscribeRoutes } from "./app-sidecar/transcribe-routes.js";
+import { handleTaskRoutes } from "./app-sidecar/task-routes.js";
+import { handleRunControlRoutes } from "./app-sidecar/run-control-routes.js";
+import { handleAuthRoutes } from "./app-sidecar/auth-routes.js";
+import { handleIntegrationRoutes } from "./app-sidecar/integration-routes.js";
+import { handleMcpRoutes } from "./app-sidecar/mcp-routes.js";
+import type { SessionRouteContext, DaemonRouteContext } from "./app-sidecar/route-context.js";
 
 async function main(): Promise<void> {
   // Hidden persistent-worker dispatch must win before strict JSON/server parsing.
@@ -1216,171 +359,7 @@ async function main(): Promise<void> {
       ctx.broadcast("progress", { ...snapshot, origin: ctx.id === originId });
   });
 
-  type UsageResult =
-    | (SubscriptionUsageSnapshot & { connected: true; error?: never; stale?: boolean })
-    | {
-        provider: SubscriptionUsageProvider;
-        displayName: string;
-        connected: boolean;
-        windows: [];
-        fetchedAt: number;
-        error?: string;
-        stale?: boolean;
-      };
-  const usageCache = new Map<
-    SubscriptionUsageProvider,
-    { expiresAt: number; result: UsageResult }
-  >();
-  const usageRequests = new Map<SubscriptionUsageProvider, Promise<UsageResult>>();
-  // Last snapshot that actually carried windows, per provider. Replayed while a
-  // fetch is failing so the title meter never blinks out of existence. Bounded
-  // by USAGE_LAST_GOOD_MAX_AGE_MS — a provider that never recovers must stop
-  // reporting rather than freeze a percentage (and a long-past reset time) on
-  // screen forever. The 429 backoff alone runs to 24h, far past any usefulness.
-  const usageLastGood = new Map<SubscriptionUsageProvider, UsageResult>();
-  const USAGE_LAST_GOOD_MAX_AGE_MS = 30 * 60_000;
-  // 429 backoff: quota endpoints are auxiliary UI data. Honor Retry-After when
-  // provided; otherwise retain the unavailable snapshot for 30 minutes. Clamp
-  // the provider value so a malformed header can neither hammer the endpoint
-  // nor suppress usage data forever.
-  const usageRateLimitedUntil = new Map<SubscriptionUsageProvider, number>();
-  // Providers currently in a logged rate-limit episode (cleared on success).
-  const usageRateLimitLogged = new Set<SubscriptionUsageProvider>();
-  const USAGE_RATE_LIMIT_FALLBACK_BACKOFF_MS = 30 * 60_000;
-  const USAGE_RATE_LIMIT_MIN_BACKOFF_MS = 60_000;
-  const USAGE_RATE_LIMIT_MAX_BACKOFF_MS = 24 * 60 * 60_000;
-
-  function clearUsageRateLimit(provider: SubscriptionUsageProvider): void {
-    usageRateLimitedUntil.delete(provider);
-    if (usageRateLimitLogged.delete(provider)) {
-      log("INFO", "app-sidecar", "subscription usage recovered", { provider });
-    }
-  }
-
-  async function fetchUsageProvider(provider: SubscriptionUsageProvider): Promise<UsageResult> {
-    const displayName =
-      provider === "anthropic" ? "Anthropic" : provider === "openai" ? "Codex" : "Kimi";
-    // Kimi plan usage is tracked on the OAuth credential specifically — the
-    // Moonshot platform API key is metered per-token, not per plan window.
-    const authKey = oauthStorageKey(provider) ?? provider;
-    if (!(await auth.hasProviderAuth(authKey))) {
-      // Logged out: drop the replay cache so a later login on a DIFFERENT
-      // account can never inherit the previous one's numbers.
-      usageLastGood.delete(provider);
-      return { provider, displayName, connected: false, windows: [], fetchedAt: Date.now() };
-    }
-    try {
-      let credentials = await auth.resolveCredentials(authKey);
-      try {
-        const snapshot = {
-          ...(await fetchSubscriptionUsage(provider, credentials)),
-          connected: true as const,
-        };
-        clearUsageRateLimit(provider);
-        return snapshot;
-      } catch (error) {
-        // A provider can revoke an access token before its stored expiry. Refresh
-        // once on 401, matching inference auth recovery, then retry the usage call.
-        if (error instanceof SubscriptionUsageError && error.status === 401) {
-          // Name the rejected token. This poller runs on a timer alongside live
-          // agent runs, so an unconditional refresh here would invalidate the
-          // token those runs are holding and fail them mid-turn — a background
-          // status check must never be able to log out the foreground.
-          credentials = await auth.resolveCredentials(authKey, {
-            forceRefresh: true,
-            rejectedToken: credentials.accessToken,
-          });
-          const snapshot = {
-            ...(await fetchSubscriptionUsage(provider, credentials)),
-            connected: true as const,
-          };
-          clearUsageRateLimit(provider);
-          return snapshot;
-        }
-        throw error;
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (error instanceof SubscriptionUsageError && error.status === 429) {
-        const backoffMs = Math.min(
-          USAGE_RATE_LIMIT_MAX_BACKOFF_MS,
-          Math.max(
-            USAGE_RATE_LIMIT_MIN_BACKOFF_MS,
-            error.retryAfterMs ?? USAGE_RATE_LIMIT_FALLBACK_BACKOFF_MS,
-          ),
-        );
-        usageRateLimitedUntil.set(provider, Date.now() + backoffMs);
-        // Rate limits on this auxiliary endpoint are expected (every GG process
-        // on the machine polls it) and already handled by the backoff plus the
-        // last-good replay. Log the transition, not every retry.
-        if (!usageRateLimitLogged.has(provider)) {
-          usageRateLimitLogged.add(provider);
-          log("INFO", "app-sidecar", "subscription usage rate-limited; backing off", {
-            provider,
-            backoffMs: String(backoffMs),
-          });
-        }
-      } else {
-        log("WARN", "app-sidecar", "subscription usage fetch failed", { provider, message });
-      }
-
-      const connected = await auth.hasProviderAuth(authKey);
-      // Transient failures (notably the 429s these auxiliary quota endpoints
-      // hand out) must not blank the meter. Keep serving the last good
-      // snapshot, flagged `stale`, so the bar stays put instead of flickering
-      // out for the whole backoff window and back in on the next success.
-      // Past the max age it's dropped — no data beats confidently wrong data.
-      const lastGood = usageLastGood.get(provider);
-      if (lastGood && Date.now() - lastGood.fetchedAt >= USAGE_LAST_GOOD_MAX_AGE_MS) {
-        usageLastGood.delete(provider);
-      } else if (connected && lastGood) {
-        return { ...lastGood, stale: true };
-      }
-      return {
-        provider,
-        displayName,
-        connected,
-        windows: [],
-        fetchedAt: Date.now(),
-        error: connected ? "Usage is temporarily unavailable." : undefined,
-      };
-    }
-  }
-
-  async function subscriptionUsage(provider: SubscriptionUsageProvider): Promise<UsageResult> {
-    const cached = usageCache.get(provider);
-    if (cached && cached.expiresAt > Date.now()) return cached.result;
-    const inFlight = usageRequests.get(provider);
-    if (inFlight) return inFlight;
-    const request = fetchUsageProvider(provider);
-    usageRequests.set(provider, request);
-    try {
-      const result = await request;
-      // Never re-store a replay — it would keep its original `fetchedAt`, but
-      // writing it back muddies the "last GOOD" contract for no gain.
-      if (result.connected && !result.error && !result.stale && result.windows.length > 0) {
-        usageLastGood.set(provider, result);
-      }
-      // Anthropic can return utilization before it assigns reset timestamps
-      // (notably before the account's first active request). Retry that partial
-      // snapshot quickly; complete snapshots keep the normal one-minute cache.
-      const missingReset =
-        result.connected &&
-        result.windows.length > 0 &&
-        result.windows.some((window) => window.resetsAt === undefined);
-      const rateLimitedUntil = usageRateLimitedUntil.get(provider) ?? 0;
-      usageCache.set(provider, {
-        result,
-        expiresAt:
-          rateLimitedUntil > Date.now()
-            ? rateLimitedUntil
-            : Date.now() + (missingReset ? 10_000 : 60_000),
-      });
-      return result;
-    } finally {
-      if (usageRequests.get(provider) === request) usageRequests.delete(provider);
-    }
-  }
+  const { subscriptionUsage } = createUsageService(auth);
 
   /** Resolve the target session id: the `x-gg-session` header, else a
    *  `?session=` query param (used by the SSE /events connection). */
@@ -1393,6 +372,21 @@ async function main(): Promise<void> {
       return null;
     }
   }
+
+  const daemonCtx: DaemonRouteContext = {
+    auth,
+    sessions,
+    paths,
+    host,
+    memoryStore,
+    jiwaStore,
+    brainTools,
+    dictation,
+    routinesPayload,
+    routineRunner,
+    routineStore,
+    broadcastAll,
+  };
 
   const server = http.createServer((req: http.IncomingMessage, res: http.ServerResponse) => {
     const url = req.url ?? "/";
@@ -1515,77 +509,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    // One-shot completion (no tools, thinking off, not session-scoped):
-    // { model, system?, prompt, maxTokens?, timeoutMs? } → { text, model }.
-    // The model resolves exactly like POST /session's `model`, failing closed
-    // (409). Logs model and duration only — never the prompt.
-    if (method === "POST" && url === "/complete") {
-      void daemonReadBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let body: unknown;
-        try {
-          body = JSON.parse(raw);
-        } catch {
-          daemonJson(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        const input = parseCompleteRequest(body);
-        if ("error" in input) {
-          daemonJson(res, 400, { error: input.error });
-          return;
-        }
-        // Stop paying for tokens nobody will read once the caller hangs up.
-        const clientGone = new AbortController();
-        res.on("close", () => {
-          if (!res.writableEnded) clientGone.abort();
-        });
-        const started = Date.now();
-        let model = input.model;
-        try {
-          const target = await requireStartModel(auth, input.model);
-          model = target.id;
-          const text = await completeOnce({
-            auth,
-            provider: target.provider,
-            model: target.id,
-            system: input.system,
-            prompt: input.prompt,
-            maxTokens: input.maxTokens,
-            timeoutMs: input.timeoutMs,
-            signal: clientGone.signal,
-          });
-          log("INFO", "app-sidecar", "complete done", {
-            model,
-            ms: String(Date.now() - started),
-          });
-          daemonJson(res, 200, { text, model });
-        } catch (err) {
-          if (err instanceof ModelUnavailableError) {
-            log("WARN", "app-sidecar", "complete refused: model unavailable", {
-              model: err.modelId,
-              reason: err.reason,
-            });
-            daemonJson(res, 409, { error: err.message });
-            return;
-          }
-          const { status, statusCode } = (err ?? {}) as { status?: unknown; statusCode?: unknown };
-          const httpStatus = status ?? statusCode;
-          // Provider errors can echo request content, so log only the class.
-          log("WARN", "app-sidecar", "complete failed", {
-            model,
-            ms: String(Date.now() - started),
-            error: err instanceof Error ? err.name : "unknown",
-            ...(typeof httpStatus === "number" ? { status: String(httpStatus) } : {}),
-          });
-          const message =
-            err instanceof CompletionTimeoutError
-              ? err.message
-              : `completion failed: ${err instanceof Error ? err.message : String(err)}`;
-          daemonJson(res, 502, { error: message });
-        }
-      });
-      return;
-    }
+    if (handleCompleteRoutes(daemonCtx, req, res, url, method)) return;
 
     // Dispose a session: DELETE /session/:id.
     if (method === "DELETE" && url.startsWith("/session/")) {
@@ -1600,188 +524,11 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Permanently delete a saved chat (every generation): POST /sessions/delete
-    // { path }. Daemon-level so it can refuse while any window has it open.
-    if (method === "POST" && url === "/sessions/delete") {
-      void daemonReadBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        const started = Date.now();
-        let body: { path?: unknown } = {};
-        try {
-          const parsed: unknown = raw ? JSON.parse(raw) : null;
-          // `null`, arrays and primitives are valid JSON but not a body.
-          if (typeof parsed === "object" && parsed !== null) body = parsed as typeof body;
-        } catch {
-          /* invalid body → rejected as an invalid path below */
-        }
-        const name = typeof body.path === "string" ? path.basename(body.path) : "";
-        try {
-          const openPaths = [...sessions.values()]
-            .map((ctx) => ctx.session.getState().sessionPath || ctx.sessionPath || "")
-            .filter(Boolean);
-          const result = await deleteChatSession({
-            path: body.path,
-            coderSessionsDir: paths.sessionsDir,
-            openPaths,
-          });
-          if (result.status === "ok") {
-            log("INFO", "app-sidecar", "chat deleted", {
-              file: name,
-              removed: String(result.removed),
-              ms: String(Date.now() - started),
-            });
-            daemonJson(res, 200, { ok: true, removed: result.removed });
-          } else {
-            log("WARN", "app-sidecar", "chat delete refused", {
-              file: name,
-              reason: result.status,
-              ms: String(Date.now() - started),
-            });
-            daemonJson(res, result.status === "busy" ? 409 : 400, { error: result.message });
-          }
-        } catch (err) {
-          log("ERROR", "app-sidecar", "chat delete failed", {
-            file: name,
-            error: err instanceof Error ? err.name : "unknown",
-            ms: String(Date.now() - started),
-          });
-          daemonJson(res, 500, { error: "The chat could not be deleted." });
-        }
-      });
-      return;
-    }
+    if (handleStoredSessionRoutes(daemonCtx, req, res, url, method)) return;
 
-    // Saved chats and coding sessions, read-only, for Kleio's voice (through
-    // kleio-host): GET /stored-sessions?kind=chat|code lists the newest, and
-    // GET /stored-sessions/<id>?kind=… reads one's latest messages. The id is
-    // looked up in that same listing, never used as a path.
-    if (
-      method === "GET" &&
-      (url.startsWith("/stored-sessions?") || url.startsWith("/stored-sessions/"))
-    ) {
-      const started = Date.now();
-      const query = new URL(url, `http://${host}`);
-      const kind = parseStoredSessionKind(query.searchParams.get("kind"));
-      const id = query.pathname.startsWith("/stored-sessions/")
-        ? query.pathname.slice("/stored-sessions/".length)
-        : null;
-      const asked = Number(query.searchParams.get("limit"));
-      const limit = Number.isInteger(asked) && asked > 0 ? asked : undefined;
-      if (!kind || id === "" || (id !== null && id.includes("/"))) {
-        daemonJson(res, 400, { error: "bad request" });
-        return;
-      }
-      const work =
-        id === null
-          ? listStoredSessions({ kind, coderSessionsDir: paths.sessionsDir, limit }).then(
-              (sessions) => {
-                log("INFO", "app-sidecar", "stored sessions listed", {
-                  kind,
-                  count: String(sessions.length),
-                  ms: String(Date.now() - started),
-                });
-                daemonJson(res, 200, { sessions });
-              },
-            )
-          : readStoredSession({
-              kind,
-              id,
-              coderSessionsDir: paths.sessionsDir,
-              limit,
-              files: query.searchParams.get("files") === "1",
-            }).then((read) => {
-              log("INFO", "app-sidecar", "stored session read", {
-                kind,
-                found: String(read !== null),
-                messages: String(read?.messages.length ?? 0),
-                files: String(read?.files?.length ?? "-"),
-                ms: String(Date.now() - started),
-              });
-              if (read) daemonJson(res, 200, read);
-              else daemonJson(res, 404, { error: "no such session" });
-            });
-      void work.catch((err: unknown) => {
-        log("ERROR", "app-sidecar", "stored sessions failed", {
-          kind,
-          error: err instanceof Error ? err.name : "unknown",
-          ms: String(Date.now() - started),
-        });
-        daemonJson(res, 500, { error: "The sessions could not be read." });
-      });
-      return;
-    }
+    if (handleFileTextRoutes(daemonCtx, req, res, url, method)) return;
 
-    // A file's readable text for Kleio's voice (through kleio-host): body = the
-    // file's raw bytes, ?name= only picks the parser. A pure transform: no
-    // path is ever opened. Never log the name or any text.
-    if (method === "POST" && (url === "/file-text" || url.startsWith("/file-text?"))) {
-      const started = Date.now();
-      const name = new URL(url, `http://${host}`).searchParams.get("name");
-      const ext = fileTextExtension(name);
-      void readCappedBodyBuffer(req, res, FILE_TEXT_MAX_BODY_BYTES, { error: "too_large" }).then(
-        async (bytes) => {
-          if (bytes === null) {
-            log("INFO", "app-sidecar", "file text", {
-              ext: ext ?? "-",
-              outcome: "too_large",
-              ms: String(Date.now() - started),
-            });
-            return;
-          }
-          const out = await fileText(name, bytes);
-          const fields = {
-            ext: ext ?? "-",
-            bytes: String(bytes.length),
-            chars: String(out.ok ? out.text.length : 0),
-            pages: String(out.ok ? (out.pages ?? "-") : "-"),
-            outcome: out.ok ? "ok" : out.error,
-            ms: String(Date.now() - started),
-          };
-          if (out.ok) {
-            log("INFO", "app-sidecar", "file text", fields);
-            daemonJson(res, 200, {
-              text: out.text,
-              ...(out.pages !== undefined ? { pages: out.pages } : {}),
-            });
-          } else {
-            log(out.error === "unreadable" ? "ERROR" : "INFO", "app-sidecar", "file text", fields);
-            const status =
-              out.error === "unsupported" ? 415 : out.error === "unreadable" ? 422 : 400;
-            daemonJson(res, status, { error: out.error });
-          }
-        },
-      );
-      return;
-    }
-
-    // An image the phone opens full size, made screen-sized (kleio-host's
-    // voice show): a WebP of at most 2048 px, or 204 when the original is as
-    // small already or can't be read, and goes as it is.
-    if (method === "POST" && url === "/image-preview") {
-      const started = Date.now();
-      void readCappedBodyBuffer(req, res, IMAGE_PREVIEW_MAX_BODY_BYTES, {
-        error: "too_large",
-      }).then(async (bytes) => {
-        if (bytes === null) return;
-        const preview = await screenPreview(bytes);
-        log("INFO", "app-sidecar", "image preview", {
-          bytes: String(bytes.length),
-          out: preview ? String(preview.length) : "-",
-          ms: String(Date.now() - started),
-        });
-        if (!preview) {
-          res.writeHead(204);
-          res.end();
-          return;
-        }
-        res.writeHead(200, {
-          "content-type": "image/webp",
-          "content-length": String(preview.length),
-        });
-        res.end(preview);
-      });
-      return;
-    }
+    if (handleImagePreviewRoutes(daemonCtx, req, res, url, method)) return;
 
     // Progress is daemon-level so the Home screen can paint before a project
     // session exists; per-session callers still work through the same endpoint.
@@ -1810,148 +557,11 @@ async function main(): Promise<void> {
       return;
     }
 
-    // ── The Brain, for voice Kleio (daemon-level: a call has no window) ──
-    // GET: the block text chat's system prompt gets, and the tools' JSON
-    // schemas. POST /brain/tool { name, args }: runs one of those tools; its
-    // own failure (a limit, a bad id) comes back as { error } for the model.
-    if (method === "GET" && url === "/brain") {
-      daemonJson(res, 200, {
-        prompt: `${memoryStore.renderForPrompt()}\n\n${jiwaStore.renderForPrompt()}`,
-        tools: brainTools.map((t) => ({
-          name: t.name,
-          description: t.description,
-          parameters: resolveToolSchema(t),
-        })),
-      });
-      return;
-    }
-    if (method === "POST" && url === "/brain/tool") {
-      void daemonReadBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let name: unknown;
-        let args: unknown;
-        try {
-          ({ name, args } = JSON.parse(raw) as { name?: unknown; args?: unknown });
-        } catch {
-          daemonJson(res, 400, { error: "Invalid JSON" });
-          return;
-        }
-        const tool = brainTools.find((t) => t.name === name);
-        if (!tool) {
-          daemonJson(res, 404, { error: "No such Brain tool" });
-          return;
-        }
-        try {
-          const out = await tool.execute(tool.parameters.parse(args ?? {}), {
-            signal: AbortSignal.timeout(10_000),
-            toolCallId: `voice-${Date.now()}`,
-          });
-          daemonJson(res, 200, {
-            result: typeof out === "string" ? out : JSON.stringify(out),
-          });
-        } catch (error) {
-          // A limit, a bad id, bad arguments: plain words the model can act on.
-          daemonJson(res, 422, {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      });
-      return;
-    }
+    if (handleBrainRoutes(daemonCtx, req, res, url, method)) return;
 
-    // ── Dictation's speech model (daemon-level: one Whisper for every client) ──
-    // GET: where the model is. POST /dictation/prepare: start getting it ready
-    // (download, then load) or join the run under way, answering at once with
-    // the status. Both carry reason codes only; the details are in this log.
-    if (method === "GET" && url === "/dictation") {
-      void dictation.status().then(
-        (status) => daemonJson(res, 200, status),
-        (error: unknown) => {
-          log("ERROR", "app-sidecar", "dictation status failed", {
-            message: error instanceof Error ? error.message : String(error),
-          });
-          daemonJson(res, 500, { error: "Couldn't check dictation." });
-        },
-      );
-      return;
-    }
-    if (method === "POST" && url === "/dictation/prepare") {
-      void daemonReadBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        dictation.prepare();
-        try {
-          const status = await dictation.status();
-          log("INFO", "app-sidecar", "dictation prepare", { state: status.state });
-          daemonJson(res, 200, status);
-        } catch (error) {
-          log("ERROR", "app-sidecar", "dictation status failed", {
-            message: error instanceof Error ? error.message : String(error),
-          });
-          daemonJson(res, 500, { error: "Couldn't check dictation." });
-        }
-      });
-      return;
-    }
+    if (handleDictationRoutes(daemonCtx, req, res, url, method)) return;
 
-    // ── Routines (daemon-level; a routine outlives any window) ──────────
-    if (method === "GET" && url === "/routines") {
-      // `sessions` includes finished routines' sessions on purpose: a Kleio
-      // host mirrors these into its replay ring, and a one-shot routine is
-      // gone from `routines` the instant it fires.
-      daemonJson(res, 200, { ...routinesPayload(), sessions: routineRunner.sessions() });
-      return;
-    }
-    if (method === "POST" && url === "/routines") {
-      void daemonReadBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let body: unknown;
-        try {
-          body = JSON.parse(raw);
-        } catch {
-          daemonJson(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        const v = validateRoutineInput(body);
-        if (!v.ok) {
-          daemonJson(res, 400, { error: v.error.message });
-          return;
-        }
-        try {
-          if (!(await fs.stat(v.value.cwd)).isDirectory()) throw new Error("not a directory");
-        } catch {
-          daemonJson(res, 400, { error: `cwd is not a directory on this host: ${v.value.cwd}` });
-          return;
-        }
-        const r = await routineStore.add(v.value);
-        if (!r.ok) {
-          daemonJson(res, r.error.kind === "limit" ? 409 : 500, { error: r.error.message });
-          return;
-        }
-        log("INFO", "app-sidecar", "routine added", {
-          id: r.value.id,
-          intervalMs: String(r.value.intervalMs),
-          runCount: String(r.value.runCount),
-        });
-        broadcastAll("routines", routinesPayload());
-        daemonJson(res, 200, { routine: r.value });
-      });
-      return;
-    }
-    if (method === "DELETE" && url.startsWith("/routines/")) {
-      const rid = decodeURIComponent(url.slice("/routines/".length));
-      void (async () => {
-        const r = await routineStore.remove(rid);
-        if (!r.ok) {
-          daemonJson(res, r.error.kind === "not_found" ? 404 : 500, { error: r.error.message });
-          return;
-        }
-        await routineRunner.release(rid);
-        log("INFO", "app-sidecar", "routine removed", { id: rid });
-        broadcastAll("routines", routinesPayload());
-        daemonJson(res, 200, { ok: true });
-      })();
-      return;
-    }
+    if (handleRoutineRoutes(daemonCtx, req, res, url, method)) return;
 
     // ── Per-session delegation ───────────────────────────────────────────
     const id = sessionIdFromReq(req, url);
@@ -2027,248 +637,6 @@ async function main(): Promise<void> {
     if (!parentAlive) shutdown();
   }, 1_000);
   parentWatch.unref?.();
-}
-
-/** Ken's read-only tool allow-list. Excludes every mutating tool (write/edit/
- *  bash/tasks/subagent/generate_image/enter_plan/exit_plan/task_*) so the mentor
- *  agent can research + see, but never change the repo. */
-const KEN_ALLOWED_TOOLS = [
-  "read",
-  "grep",
-  "find",
-  "ls",
-  "source_path",
-  "web_fetch",
-  "web_search",
-  "screenshot",
-  // Local corpus of real repos: lets Ken verify against code that ships
-  // instead of assuming — core to how he's meant to work. Read-only.
-  "steroids",
-];
-
-/** Extract the plain text of the most recent assistant message (Ken's reply).
- *  Strips tool-call / image blocks, returning just the prose Ken streamed. */
-function lastAssistantText(messages: ReturnType<AgentSession["getMessages"]>): string {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m.role !== "assistant") continue;
-    if (typeof m.content === "string") return m.content;
-    return m.content
-      .map((c) => (c.type === "text" && "text" in c && typeof c.text === "string" ? c.text : ""))
-      .join("");
-  }
-  return "";
-}
-
-/**
- * Assemble Ken's context digest for one `@Ken` question: git/env + the build
- * session's compaction summary + recent activity. Prepended to the user's
- * question as Ken's prompt body each turn. Project docs (CLAUDE.md/AGENTS.md)
- * are NOT here — they're folded into Ken's cached system prompt once per
- * session instead (see ken-prompt.ts), so they hit the provider prompt cache
- * instead of being re-sent uncached on every question. Workflow commands +
- * autopilot-injected prompts are passed through so the digest labels them as
- * what they are instead of user-authored asks.
- */
-function buildKenContext(
-  buildSession: AgentSession,
-  cwd: string,
-  gitBranch: string | null,
-  question: string,
-  workflowCommands: readonly WorkflowCommandSpec[],
-  injectedPrompts: readonly string[],
-): string {
-  return buildKenDigest({
-    question,
-    cwd,
-    gitBranch,
-    messages: buildSession.getMessages(),
-    verificationEvidence: buildSession.getVerificationEvidence(),
-    verificationProblem: buildSession.getVerificationProblem(),
-    workflowCommands,
-    injectedPrompts,
-  });
-}
-
-// ── Progress ("Ranks") ──────────────────────────────────────────────────
-// Daemon-level XP/rank manager: one durable file (~/.gg/progress.json), awards
-// applied under a file lock, snapshots broadcast to EVERY session's SSE clients,
-// and an fs.watch on ~/.gg so writes from OTHER daemon processes (dev + packaged
-// app side by side) re-broadcast here too — deduped by the lastEvent nonce.
-// XP failures are debug-log-only; progress must never break a run.
-
-interface ProgressManager {
-  /** Current snapshot for GET /progress + the SSE ready path. */
-  snapshot: () => ProgressSnapshot;
-  /** Award XP for one successfully completed run (prompt + any new commits). */
-  awardRun: (cwd: string, runStartedAt: number, originId?: string) => Promise<void>;
-  /** Close the ~/.gg fs.watch + clear any pending debounce (leak-free shutdown). */
-  dispose: () => void;
-}
-
-async function createProgressManager(
-  agentDir: string,
-  broadcastAll: (snapshot: ProgressSnapshot, originId?: string) => void,
-): Promise<ProgressManager> {
-  // Boot: recovery chain main → backup → coding + chat session rebuild → empty.
-  const coderSessionsDir = path.join(agentDir, "sessions");
-  let file: ProgressFile = await loadProgress({
-    rebuild: () =>
-      rebuildFromSessions([
-        coderSessionsDir,
-        ...CHAT_AGENT_IDS.map((agentId) => chatAgentSessionsDir(coderSessionsDir, agentId)),
-      ]),
-  });
-  // Don't re-celebrate an old levelUp event on boot.
-  let lastSeenNonce: string | null = file.lastEvent?.nonce ?? null;
-  log("INFO", "app-sidecar", "progress loaded", {
-    xp: String(file.xp),
-    level: String(levelForXp(file.xp)),
-  });
-
-  function snapshot(): ProgressSnapshot {
-    return buildSnapshot(file);
-  }
-
-  async function awardRun(cwd: string, runStartedAt: number, originId?: string): Promise<void> {
-    try {
-      const now = Date.now();
-      const updated = await updateProgress(async (f) => {
-        const levelBefore = levelForXp(f.xp);
-        awardPrompt(f, now, cwd);
-
-        // Commit XP: probe repo root + HEAD, then score lastHead..HEAD bounded
-        // by the run window. First sight of a repo records HEAD, scores nothing.
-        const probe = await detectNewCommits(cwd, undefined, runStartedAt);
-        if (probe) {
-          const key = repoKey(probe.repoRoot);
-          const lastHead = f.repos[key]?.lastHead;
-          if (lastHead && lastHead !== probe.head) {
-            const detected = await detectNewCommits(cwd, lastHead, runStartedAt);
-            if (detected && detected.commits.length > 0) {
-              awardCommits(f, detected.commits, now, cwd);
-            }
-          }
-          f.repos[key] = { lastHead: probe.head };
-        }
-
-        // One combined lastEvent per run so other windows celebrate exactly once.
-        const levelAfter = levelForXp(f.xp);
-        const levelUp =
-          levelAfter > levelBefore
-            ? { from: levelBefore, to: levelAfter, rankName: rankForLevel(levelAfter).name }
-            : null;
-        f.lastEvent = { nonce: randomUUID(), levelUp };
-        return { file: f, levelledUp: levelUp !== null };
-      });
-      file = updated;
-      lastSeenNonce = updated.lastEvent?.nonce ?? null;
-      broadcastAll(buildSnapshot(updated), originId);
-    } catch (err) {
-      log("DEBUG", "app-sidecar", "progress award failed", {
-        message: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  // Watch ~/.gg (dir watch survives the atomic tmp+rename) for progress.json
-  // writes from other daemon processes; debounce, reload read-only, dedupe by nonce.
-  let watchDebounce: NodeJS.Timeout | null = null;
-  let progressWatcher: ReturnType<typeof fsWatch> | null = null;
-  try {
-    const watcher = fsWatch(agentDir, (_event, filename) => {
-      if (filename !== "progress.json") return;
-      if (watchDebounce) clearTimeout(watchDebounce);
-      watchDebounce = setTimeout(() => {
-        void (async () => {
-          const reloaded = await peekProgress();
-          if (!reloaded) return;
-          const nonce = reloaded.lastEvent?.nonce ?? null;
-          if (nonce === lastSeenNonce) return;
-          file = reloaded;
-          lastSeenNonce = nonce;
-          broadcastAll(buildSnapshot(reloaded));
-        })();
-      }, 150);
-    });
-    watcher.unref();
-    progressWatcher = watcher;
-  } catch (err) {
-    log("DEBUG", "app-sidecar", "progress watch unavailable", {
-      message: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  // Dispose closes the fs.watch handle (baseline #8: it was previously never
-  // closed — a per-daemon leak) and clears any pending debounce timer.
-  function dispose(): void {
-    if (watchDebounce) {
-      clearTimeout(watchDebounce);
-      watchDebounce = null;
-    }
-    try {
-      progressWatcher?.close();
-    } catch {
-      // Already closed / never opened — nothing to do.
-    }
-    progressWatcher = null;
-  }
-
-  return { snapshot, awardRun, dispose };
-}
-
-type WorkspaceMode = "code" | "chat" | "motion";
-
-/** Unknown or missing modes fall back to the coding agent. */
-function parseWorkspaceMode(value: unknown): WorkspaceMode {
-  return value === "chat" || value === "motion" ? value : "code";
-}
-
-/** The largest image `POST /image-preview` takes: 64 MiB. */
-const IMAGE_PREVIEW_MAX_BODY_BYTES = 64 * 1024 * 1024;
-
-/** The most image refs one `GET /history-images` asks for. */
-const HISTORY_IMAGES_MAX = 8;
-
-/** An image ref (historyImageRef): 64 lowercase hex characters. */
-const HISTORY_IMAGE_REF = /^[0-9a-f]{64}$/;
-
-/** Every tool image in `messages`, by ref. */
-function historyImagesOf(
-  messages: ReturnType<AgentSession["getMessages"]>,
-): Map<string, { data: string; mediaType: string }> {
-  const images = new Map<string, { data: string; mediaType: string }>();
-  for (const msg of messages) {
-    if (msg.role !== "tool") continue;
-    for (const result of msg.content) {
-      if (typeof result.content === "string") continue;
-      for (const block of result.content) {
-        if (block.type === "image") images.set(historyImageRef(block.data), block);
-      }
-    }
-  }
-  return images;
-}
-
-interface SessionContext {
-  id: string;
-  mode: WorkspaceMode;
-  chatAgent: ChatAgentId;
-  cwd: string;
-  sessionPath?: string;
-  session: AgentSession;
-  clients: Set<SseClient>;
-  broadcast: (type: string, data: unknown) => void;
-  /** Handle one HTTP request for this session. Owns its own 404 fallthrough. */
-  handle: (
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    url: string,
-    method: string,
-  ) => void;
-  dispose: () => Promise<void>;
-  /** Synchronously stop this context's background commands (all its sessions). */
-  stopBackgroundProcesses: () => void;
 }
 
 /**
@@ -2720,225 +1088,15 @@ async function createSession(
   // here (not in the webview) so a closed modal or app restart mid-pull keeps
   // streaming; the terminal state is kept until the next pull so reopening the
   // modal shows how the last one ended.
-  interface HfPullState {
-    repo: string;
-    model: string;
-    tag: string | null;
-    file: string;
-    sizeBytes: number;
-    phase: PullPhase;
-    percent: number;
-    detail?: string;
-    error?: string;
-    child: ChildProcess | null;
-  }
-  let hfPull: HfPullState | null = null;
 
-  const hfPullPayload = (s: HfPullState): Record<string, unknown> => ({
-    repo: s.repo,
-    model: s.model,
-    tag: s.tag,
-    file: s.file,
-    sizeBytes: s.sizeBytes,
-    phase: s.phase,
-    percent: s.percent,
-    ...(s.detail ? { detail: s.detail } : {}),
-    ...(s.error ? { error: s.error } : {}),
+  const hf = createHfPullManager({
+    paths,
+    broadcast,
+    scanLocalModels,
+    broadcastAll,
+    localStatePayload,
   });
-
-  /** Stored HF token, if the user connected the huggingface provider. */
-  async function hfToken(): Promise<string | undefined> {
-    try {
-      const auth = new AuthStorage(paths.authFile);
-      const creds = await auth.resolveCredentials("huggingface");
-      return creds.accessToken || undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  async function hfHubJson(pathname: string): Promise<unknown> {
-    const token = await hfToken();
-    const res = await fetch(`https://huggingface.co${pathname}`, {
-      headers: token ? { authorization: `Bearer ${token}` } : {},
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) throw new Error(`Hugging Face responded ${res.status}`);
-    return res.json();
-  }
-
-  /** Search the Hub for GGUF repos (what Ollama can pull). */
-  async function hfSearch(query: string): Promise<HfSearchRow[]> {
-    // `filter=gguf` (the tag the Hub applies to repos that actually contain
-    // GGUF files) — `library=gguf` also matches safetensors-only base repos,
-    // which then fail at pull time. `expand[]=gguf` confirms per row.
-    const params = new URLSearchParams({
-      search: query,
-      filter: "gguf",
-      sort: "downloads",
-      direction: "-1",
-      limit: "12",
-    });
-    for (const field of ["gguf", "downloads", "likes", "lastModified"]) {
-      params.append("expand[]", field);
-    }
-    const data = (await hfHubJson(`/api/models?${params.toString()}`)) as {
-      id?: unknown;
-      downloads?: unknown;
-      likes?: unknown;
-      lastModified?: unknown;
-      gguf?: unknown;
-    }[];
-    return (Array.isArray(data) ? data : [])
-      .map(toHfSearchRow)
-      .filter((r): r is HfSearchRow => r !== null);
-  }
-
-  /**
-   * Start `ollama pull hf.co/<repo>[:quant]`. Resolves once the child is
-   * spawned; progress streams as `hf_pull` events. The chosen quant comes from
-   * the repo's real file list — the client only ever sends a repo id, so there
-   * is no injection surface into argv.
-   */
-  async function startHfPull(repo: string): Promise<Record<string, unknown>> {
-    if (hfPull?.child) {
-      throw Object.assign(new Error("A download is already running."), { status: 409 });
-    }
-    // `recursive=true`: many repos (unsloth, mradermacher) keep quants in
-    // per-quant subfolders, and a flat listing reports them as GGUF-less.
-    const tree = (await hfHubJson(`/api/models/${repo}/tree/main?recursive=true`)) as unknown[];
-    const files: GgufFile[] = (Array.isArray(tree) ? tree : []).flatMap((entry) => {
-      const e = entry as {
-        path?: unknown;
-        type?: unknown;
-        size?: unknown;
-        lfs?: { size?: unknown };
-      };
-      // `type` guards a directory entry (size 0) from beating real files in the
-      // size fallback; the Hub marks folders as "directory".
-      if (e.type !== undefined && e.type !== "file") return [];
-      if (typeof e.path !== "string" || !e.path.toLowerCase().endsWith(".gguf")) return [];
-      const size = Number(e.lfs?.size ?? e.size ?? 0);
-      return [{ path: e.path, sizeBytes: Number.isFinite(size) ? size : 0 }];
-    });
-    const choice = pickGgufQuant(files);
-    if (!choice) {
-      const sharded = files.some((f) => isGgufShard(f.path));
-      throw Object.assign(
-        new Error(sharded ? SHARDED_MESSAGE : "That repo has no GGUF file for Ollama to pull."),
-        { status: 400 },
-      );
-    }
-    const model = `hf.co/${repo}${choice.tag ? `:${choice.tag}` : ""}`;
-    const token = await hfToken();
-    const state: HfPullState = {
-      repo,
-      model,
-      tag: choice.tag,
-      file: choice.file.path,
-      sizeBytes: choice.file.sizeBytes,
-      phase: "preparing",
-      percent: 0,
-      child: null,
-    };
-    hfPull = state;
-    broadcast("hf_pull", hfPullPayload(state));
-
-    // ollama prints progress to stderr (stdout on some builds); parse both.
-    let stderrTail = "";
-    let lastBroadcast = "";
-    const feed = (chunk: string): void => {
-      // Once the pull is terminal (success, failure, or user cancel) stop
-      // parsing: a killed ollama dumps a burst of stderr that would otherwise
-      // spam the modal with garbage frames after the outcome is already shown.
-      if (state.phase === "success" || state.phase === "error") return;
-      for (const line of chunk.split(/\r\n|\r|\n/)) {
-        const parsed = parseOllamaPullLine(line);
-        if (!parsed) continue;
-        // A redrawn frame repeats `pulling manifest` next to live progress; it
-        // must not drag the modal back to "Contacting Ollama…".
-        if (!advancesPhase(state.phase, parsed.phase)) continue;
-        if (parsed.phase !== "error") {
-          state.phase = parsed.phase;
-          if (parsed.percent !== undefined) state.percent = parsed.percent;
-          state.detail = parsed.detail;
-        }
-        // ollama redraws its TUI frame several times a second, mostly with
-        // identical numbers. Broadcasting each one re-rendered the modal for no
-        // visible change; only a frame that actually reads differently ships.
-        const next = JSON.stringify(hfPullPayload(state));
-        if (next === lastBroadcast) continue;
-        lastBroadcast = next;
-        broadcast("hf_pull", hfPullPayload(state));
-      }
-    };
-
-    try {
-      const child = spawn("ollama", ["pull", model], {
-        env: { ...process.env, ...(token ? { HF_TOKEN: token } : {}) },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      state.child = child;
-      child.stdout?.setEncoding("utf8");
-      child.stderr?.setEncoding("utf8");
-      child.stdout?.on("data", feed);
-      child.stderr?.on("data", (d: string) => {
-        stderrTail = (stderrTail + d).slice(-2000);
-        feed(d);
-      });
-      child.on("error", (err: NodeJS.ErrnoException) => {
-        state.child = null;
-        state.phase = "error";
-        state.error =
-          err.code === "ENOENT"
-            ? "Ollama isn't installed (or isn't on PATH). Install it from ollama.com, then retry."
-            : `Could not start Ollama: ${err.message}`;
-        broadcast("hf_pull", hfPullPayload(state));
-      });
-      child.on("close", (code: number | null) => {
-        state.child = null;
-        if (state.phase === "success" || state.phase === "error") return; // cancelled
-        if (code === 0) {
-          state.phase = "success";
-          state.percent = 100;
-          state.detail = undefined;
-          broadcast("hf_pull", hfPullPayload(state));
-          // The new model only exists to the app once Ollama lists it. Ollama's
-          // library is machine-wide, like the shared auth file, so every window
-          // gets the refresh — not just the one that ran the download.
-          void scanLocalModels(true)
-            .then(() => broadcastAll("models_change", { local: localStatePayload() }))
-            .catch(() => undefined);
-        } else {
-          state.phase = "error";
-          state.error = state.error ?? explainPullFailure(stderrTail);
-          broadcast("hf_pull", hfPullPayload(state));
-        }
-      });
-    } catch (err) {
-      state.child = null;
-      state.phase = "error";
-      state.error = `Could not start Ollama: ${err instanceof Error ? err.message : String(err)}`;
-      broadcast("hf_pull", hfPullPayload(state));
-    }
-    return hfPullPayload(state);
-  }
-
-  function cancelHfPull(): boolean {
-    const child = hfPull?.child;
-    if (!child) return false;
-    // Terminal state FIRST, then the kill: the child's death rattle must not
-    // overwrite the clean "cancelled" outcome with raw stderr.
-    if (hfPull) {
-      hfPull.phase = "error";
-      hfPull.error = "Download cancelled.";
-      hfPull.detail = undefined;
-      hfPull.child = null;
-      broadcast("hf_pull", hfPullPayload(hfPull));
-    }
-    child.kill("SIGTERM");
-    return true;
-  }
+  const { hfPullPayload, hfSearch, startHfPull, cancelHfPull } = hf;
 
   /**
    * Why `modelId` can't be selected right now, or `undefined` when it can.
@@ -3654,233 +1812,12 @@ async function createSession(
     }
   }
 
-  // ── Autopilot orchestration ─────────────────────────────────
-  // One review = prompt the kenAuto session with the review digest, read its
-  // final assistant text, parse a verdict. Returns null on failure (surfaced as
-  // an autopilot_error frame) so the cycle stops rather than looping blind.
-  // `originalRequest` is the user prompt that started the turn under review —
-  // pinned in the digest so it can't scroll out during multi-round cycles.
-  async function runAutopilotReview(originalRequest: string): Promise<AutopilotVerdict | null> {
-    autopilotReviewing = true;
-    broadcast("autopilot_review_start", {});
-    try {
-      const ken = await ensureKenAutoSession();
-      const digest = buildKenAutopilotContext({
-        cwd,
-        gitBranch,
-        messages: session.getMessages(),
-        verificationEvidence: session.getVerificationEvidence(),
-        verificationProblem: session.getVerificationProblem(),
-        originalRequest,
-        injectedPrompts: [...injectedAutopilotPrompts],
-        workflowCommands: await loadWorkflowCommandSpecs(),
-      });
-      await ken.prompt(digest);
-      return parseAutopilotVerdict(lastAssistantText(ken.getMessages()));
-    } catch (err) {
-      if (!autopilotCancelled) broadcastError("autopilot_error", "autopilot review failed", err);
-      return null;
-    } finally {
-      autopilotReviewing = false;
-      // Apply any model switch that landed mid-review.
-      const pending = pendingKenAutoModel;
-      pendingKenAutoModel = null;
-      if (pending) await syncKenAutoModel(pending.provider, pending.model);
-    }
-  }
-
-  // One PLAN review: like runAutopilotReview but the digest carries the
-  // submitted plan's markdown (`## Plan under review`) and the plan-review
-  // instruction — Ken judges the plan itself, not finished work. Returns null
-  // on failure; a failure caused by the user's own action racing the review
-  // (cancel or a manual Accept/Reject that bumped planGeneration) stays
-  // SILENT — no autopilot_error — because the user's decision already won.
-  async function runAutopilotPlanReview(originalRequest: string): Promise<AutopilotVerdict | null> {
-    const planPath = pendingPlanPath;
-    if (planPath === null) return null;
-    const genAtStart = planGeneration;
-    autopilotReviewing = true;
-    broadcast("autopilot_review_start", {});
-    try {
-      const ken = await ensureKenAutoSession();
-      // Re-read the plan file (the run may have revised it in place); fall
-      // back to the content captured at exit_plan time.
-      const planContent = await fs.readFile(planPath, "utf-8").catch(() => pendingPlanContent);
-      const digest = buildKenAutopilotPlanContext({
-        cwd,
-        gitBranch,
-        messages: session.getMessages(),
-        verificationEvidence: session.getVerificationEvidence(),
-        verificationProblem: session.getVerificationProblem(),
-        originalRequest,
-        injectedPrompts: [...injectedAutopilotPrompts],
-        workflowCommands: await loadWorkflowCommandSpecs(),
-        planContent,
-      });
-      await ken.prompt(digest);
-      if (autopilotCancelled || planGeneration !== genAtStart) return null;
-      return parseAutopilotVerdict(lastAssistantText(ken.getMessages()));
-    } catch (err) {
-      // User action mid-review (manual Accept aborts the kenAuto run): drop
-      // the review silently — the user's decision supersedes Ken's.
-      if (autopilotCancelled || planGeneration !== genAtStart) return null;
-      broadcastError("autopilot_error", "autopilot plan review failed", err);
-      return null;
-    } finally {
-      autopilotReviewing = false;
-      // Apply any model switch that landed mid-review.
-      const pending = pendingKenAutoModel;
-      pendingKenAutoModel = null;
-      if (pending) await syncKenAutoModel(pending.provider, pending.model);
-    }
-  }
-
   // The prompt fed to the fresh session after a plan is accepted — the SAME
   // string the webview sends on a manual Accept (see PlanReviewModal's accept
   // handler in gg-app/src/App.tsx). Keep the two in lockstep so auto- and
   // manual approval produce identical implementation turns.
   const IMPLEMENT_PLAN_PROMPT =
     "The plan has been approved. Implement it now, following each step in order.";
-
-  // Drive the review→prompt→review loop for one finished user turn. Only ever
-  // called after shouldStartAutopilotCycle approves the turn (POST /prompt or
-  // the stranded-queue drain) — never from the task runner, resume, /ken, or
-  // error paths, so there's no recursion and no guard tangle. The loop's
-  // control flow lives in driveAutopilotCycle (core/autopilot-cycle.ts) so
-  // every exit path is unit-tested; this only wires the real dependencies.
-  async function runAutopilotCycle(originalRequest: string): Promise<void> {
-    if (!autopilot || autopilotCancelled || session.getVerificationProblem()) return;
-    const generation = runLifecycle.begin(abortOwnedWork).generation;
-    pendingCancelDrain = null;
-    autopilotActive = true;
-    session.setIdealReviewSuppressed(true);
-    // Generation captured by the last plan review; acceptPlan re-checks it so
-    // a user Accept/Reject landing mid-review always wins.
-    let planGenAtReview = -1;
-    try {
-      await driveAutopilotCycle({
-        // A plan-pending cycle needs extra rounds: approve+implement and the
-        // post-implement work review each consume one, so +2 keeps a real fix
-        // round available.
-        maxRounds: pendingPlanPath !== null ? MAX_AUTOPILOT_ROUNDS + 2 : MAX_AUTOPILOT_ROUNDS,
-        isCancelled: () => autopilotCancelled,
-        verificationProblem: () => session.getVerificationProblem(),
-        // An injected run entering plan mode WITHOUT submitting (enter_plan,
-        // no exit_plan) halts the cycle — Ken never prompts into a read-only
-        // plan-mode session. A submitted plan takes the planPending branch.
-        isPlanMode: () => session.getPlanMode(),
-        planPending: () => pendingPlanPath !== null,
-        reviewPlan: async () => {
-          planGenAtReview = planGeneration;
-          return runAutopilotPlanReview(originalRequest);
-        },
-        // Auto-accept: the inlined POST /plan/accept body. Returns false when
-        // the plan generation moved since the review (user acted) — the cycle
-        // exits silently and the user's action stands.
-        acceptPlan: async (reason) => {
-          if (pendingPlanPath === null || planGeneration !== planGenAtReview) return false;
-          const planPath = pendingPlanPath;
-          let planTotal: number;
-          try {
-            await session.newSession(true);
-            injectedAutopilotPrompts = [];
-            planTotal = await activateApprovedPlan(planPath);
-          } catch (err) {
-            broadcastError("autopilot_error", "autopilot plan accept failed", err);
-            return false;
-          }
-          clearPendingPlan();
-          // Keep the approval marker ahead of the reset, then seed the reset
-          // with the sidecar's canonical count from the actual plan file.
-          broadcast("autopilot_plan_accepted", reason ? { reason } : {});
-          broadcast("session_reset", { planTotal });
-          broadcast("plan_progress", planProgressPayload());
-          // Persisted into the NEW session so a resume shows the marker.
-          void session.persistAutopilotMarker("plan_approved", { reason });
-          return true;
-        },
-        runImplement: () => {
-          // Autopilot-injected run: frame it so GG Coder knows no human is
-          // watching the implementation. Record the framed string so Ken's
-          // digest labels it as injected, not as the user's ask. The run_start
-          // label stays the clean prompt.
-          const framed = frameAutopilotInjection(IMPLEMENT_PLAN_PROMPT);
-          injectedAutopilotPrompts.push(framed);
-          return runAgent(IMPLEMENT_PLAN_PROMPT, () =>
-            session.prompt(framed, AUTOMATION_PROVENANCE),
-          );
-        },
-        // Lean context per user turn: wipe prior review history so each new
-        // turn starts cheap, while within this cycle the few review messages
-        // persist so Ken remembers what he already asked GG Coder to fix.
-        resetReviewer: async () => {
-          await kenAutoSession?.newSession().catch(() => {});
-        },
-        review: () => runAutopilotReview(originalRequest),
-        // prompt → record the injected body (so later digests label it as
-        // Ken's, not the user's), show a compact Ken-tinted marker (not the
-        // prompt body), then feed GG Coder bracketed by runAgent so the run
-        // streams normally; the shared finally never re-triggers autopilot,
-        // so this can't recurse.
-        onInjected: (body, round) => {
-          // A revision injection supersedes the pending plan — if the run
-          // resubmits via exit_plan, onExitPlan re-sets it (no-op for work-
-          // branch injections, where nothing is pending).
-          clearPendingPlan();
-          // Record the FRAMED string (what actually lands in the build session,
-          // see runPrompt) so Ken's digest matches and labels it as injected.
-          // The webview marker + persisted body stay the CLEAN prompt so the UI
-          // shows Ken's actual instruction, not the autopilot preamble.
-          injectedAutopilotPrompts.push(frameAutopilotInjection(body));
-          broadcast("autopilot_prompted", { round, body });
-          void session.persistAutopilotMarker("prompted", { body });
-        },
-        // Autopilot-injected run: GG Coder receives the framed prompt (no human
-        // is watching this turn) while run_start keeps the clean label.
-        runPrompt: (body) =>
-          runAgent(body, () =>
-            session.prompt(frameAutopilotInjection(body), AUTOMATION_PROVENANCE),
-          ),
-        emit: (event) => {
-          // Persist the terminal verdict marker so a resumed session renders the
-          // same Ken bubble the live run showed instead of dropping it or
-          // falling back to the raw verdict text (e.g. ALL_CLEAR).
-          if (event.type === "autopilot_done") {
-            // Broadcast the SAME copySeed the persisted marker will produce on
-            // resume, so the live all-clear wording matches the resumed one.
-            // Must use the PERSISTED count — that's what persistAutopilotMarker
-            // anchors against, and it trails the in-memory list after a run
-            // whose messages never made it to disk.
-            const seed = autopilotMarkerCopySeed({
-              version: 1,
-              phase: "done",
-              afterMessageCount: session.getPersistedTranscriptCount(),
-              ...event.data,
-            });
-            broadcast(event.type, { ...event.data, copySeed: seed });
-            void session.persistAutopilotMarker("done", event.data);
-            return;
-          }
-          broadcast(event.type, event.data);
-          if (event.type === "autopilot_human") {
-            void session.persistAutopilotMarker("human", { reason: event.data.reason });
-          } else if (event.type === "autopilot_capped") {
-            void session.persistAutopilotMarker("capped");
-          }
-          // autopilot_ignored renders nothing live, so nothing is persisted either.
-        },
-      });
-    } finally {
-      autopilotActive = false;
-      session.setIdealReviewSuppressed(autopilot);
-      finishOwnedGeneration(
-        generation,
-        true,
-        session.getVerificationProblem() ? "unverified" : "completed",
-      );
-      queueMicrotask(() => void runStrandedQueue());
-    }
-  }
 
   // ── Stranded-queue drain ───────────────────────────────
   // A prompt POSTed while an autopilot cycle is between injected runs (build
@@ -3892,71 +1829,6 @@ async function createSession(
   // gated review). Also covers the non-autopilot tail window: a message queued
   // after the run's last steering drain but before run_end.
   let drainingStrandedQueue = false;
-  async function runStrandedQueue(): Promise<void> {
-    if (drainingStrandedQueue) return;
-    drainingStrandedQueue = true;
-    try {
-      for (;;) {
-        if (running || autopilotActive) return;
-        const next = session.takeNextQueuedMessage();
-        if (!next) return;
-        broadcast("queued", {
-          count: session.getQueuedCount(),
-          messages: session.listQueuedMessages(),
-        });
-        if (!next.text.trim() && next.attachments.length === 0) continue;
-        // A queued message draining as a fresh turn supersedes any pending
-        // plan, exactly like a direct POST /prompt turn.
-        clearPendingPlan();
-        const workflowCommand =
-          next.attachments.length === 0 &&
-          isWorkflowCommandText(next.text, await loadWorkflowCommandSpecs());
-        const assistantsBefore = countAssistantMessages(session.getMessages());
-        const messagesBefore = session.getMessages().length;
-        await runAgent(
-          next.text,
-          async () => {
-            if (next.attachments.length > 0) {
-              await session.promptWithAttachments(next.text, next.attachments);
-            } else {
-              await session.prompt(next.text);
-            }
-          },
-          () => autopilot,
-        );
-        const decision = shouldStartAutopilotCycle({
-          enabled: autopilot,
-          cancelled: autopilotCancelled,
-          planMode: session.getPlanMode(),
-          // A submitted plan (exit_plan fired) routes into the PLAN review
-          // branch — the cycle reviews the plan itself instead of skipping.
-          planPending: pendingPlanPath !== null,
-          workflowCommand,
-          assistantMessagesAdded: countAssistantMessages(session.getMessages()) - assistantsBefore,
-          // Skip the review API call outright for turns that only started a
-          // background process (dev server/watcher), ran a read-only lookup, or
-          // committed/pushed — Ken's autopilot contract already IGNOREs these,
-          // so there's no reason to pay for that verdict.
-          mechanicalOnly: isMechanicalOnlyTurn(
-            extractTurnToolCalls(session.getMessages(), messagesBefore),
-          ),
-        });
-        if (decision.start) {
-          log("INFO", "app-sidecar", "autopilot cycle starting (queued turn)", {
-            kind: decision.kind,
-          });
-          await runAutopilotCycle(next.text);
-        } else {
-          broadcast("autopilot_ignored", { reason: decision.reason });
-          log("INFO", "app-sidecar", "autopilot skipped (queued turn)", {
-            reason: decision.reason,
-          });
-        }
-      }
-    } finally {
-      drainingStrandedQueue = false;
-    }
-  }
 
   // ── Task runner (project task list → sessions) ──────────────
   // Mirrors the CLI's task flow: each task runs in its OWN fresh session, with a
@@ -3964,47 +1836,120 @@ async function createSession(
   // tool. Run-all advances to the next pending task after each run finishes.
   let taskRunAll = false;
 
-  async function runTaskById(taskId: string): Promise<boolean> {
-    const task = loadTasksSync(cwd).find((t) => t.id === taskId || t.id.startsWith(taskId));
-    if (!task) return false;
-    // Fresh session per task so one task's context never bleeds into the next.
-    await session.newSession();
-    deactivateApprovedPlan();
-    injectedAutopilotPrompts = [];
-    clearPendingPlan();
-    broadcast("session_reset", {});
-    markTaskInProgress(cwd, task.id);
-    broadcast("tasks_list", { tasks: loadTasksSync(cwd) });
-    broadcast("task_start", { id: task.id, title: task.title });
-    // Persist the task header so a resumed task session shows what ran.
-    void session.persistAppMarker("task", { title: task.title }).catch(() => {});
-    const shortId = task.id.slice(0, 8);
-    const completionHint =
-      `\n\n---\nWhen you have fully completed this task, call the tasks tool to mark it done:\n` +
-      `tasks({ action: "done", id: "${shortId}" })`;
-    await runAgent(task.title, () =>
-      session.prompt(task.prompt + completionHint, AUTOMATION_PROVENANCE),
-    );
-    // The agent typically marks the task done via the tasks tool during the run;
-    // prune completed tasks and push the refreshed list so the modal drops them.
-    broadcast("tasks_list", { tasks: pruneDoneTasksSync(cwd) });
-    return true;
-  }
-
-  async function runTasks(startId: string | null, all: boolean): Promise<void> {
-    taskRunAll = all;
-    let currentId: string | null = startId ?? getNextPendingTask(cwd)?.id ?? null;
-    while (currentId) {
-      const ran = await runTaskById(currentId);
-      if (!ran || !taskRunAll) break;
-      const next = getNextPendingTask(cwd);
-      currentId = next ? next.id : null;
-      // Brief pause between tasks (mirrors the CLI cadence).
-      if (currentId) await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-    taskRunAll = false;
-    broadcast("tasks_run_done", {});
-  }
+  const { runAutopilotCycle, runStrandedQueue, runTasks } = createAutopilotRunner({
+    get autopilotReviewing() {
+      return autopilotReviewing;
+    },
+    set autopilotReviewing(v) {
+      autopilotReviewing = v;
+    },
+    broadcast,
+    ensureKenAutoSession,
+    cwd,
+    get gitBranch() {
+      return gitBranch;
+    },
+    set gitBranch(v) {
+      gitBranch = v;
+    },
+    get session() {
+      return session;
+    },
+    set session(v) {
+      session = v;
+    },
+    get injectedAutopilotPrompts() {
+      return injectedAutopilotPrompts;
+    },
+    set injectedAutopilotPrompts(v) {
+      injectedAutopilotPrompts = v;
+    },
+    loadWorkflowCommandSpecs,
+    get autopilotCancelled() {
+      return autopilotCancelled;
+    },
+    set autopilotCancelled(v) {
+      autopilotCancelled = v;
+    },
+    broadcastError,
+    get pendingKenAutoModel() {
+      return pendingKenAutoModel;
+    },
+    set pendingKenAutoModel(v) {
+      pendingKenAutoModel = v;
+    },
+    syncKenAutoModel,
+    get pendingPlanPath() {
+      return pendingPlanPath;
+    },
+    set pendingPlanPath(v) {
+      pendingPlanPath = v;
+    },
+    get planGeneration() {
+      return planGeneration;
+    },
+    set planGeneration(v) {
+      planGeneration = v;
+    },
+    get pendingPlanContent() {
+      return pendingPlanContent;
+    },
+    set pendingPlanContent(v) {
+      pendingPlanContent = v;
+    },
+    get autopilot() {
+      return autopilot;
+    },
+    set autopilot(v) {
+      autopilot = v;
+    },
+    runLifecycle,
+    abortOwnedWork,
+    get pendingCancelDrain() {
+      return pendingCancelDrain;
+    },
+    set pendingCancelDrain(v) {
+      pendingCancelDrain = v;
+    },
+    get autopilotActive() {
+      return autopilotActive;
+    },
+    set autopilotActive(v) {
+      autopilotActive = v;
+    },
+    MAX_AUTOPILOT_ROUNDS,
+    activateApprovedPlan,
+    clearPendingPlan,
+    planProgressPayload,
+    IMPLEMENT_PLAN_PROMPT,
+    runAgent,
+    get kenAutoSession() {
+      return kenAutoSession;
+    },
+    set kenAutoSession(v) {
+      kenAutoSession = v;
+    },
+    finishOwnedGeneration,
+    get drainingStrandedQueue() {
+      return drainingStrandedQueue;
+    },
+    set drainingStrandedQueue(v) {
+      drainingStrandedQueue = v;
+    },
+    get running() {
+      return running;
+    },
+    set running(v) {
+      running = v;
+    },
+    deactivateApprovedPlan,
+    get taskRunAll() {
+      return taskRunAll;
+    },
+    set taskRunAll(v) {
+      taskRunAll = v;
+    },
+  });
 
   // ── Provider auth (login) bridge ───────────────────────────
   // OAuth login functions are interactive (open a URL, sometimes prompt for a
@@ -4156,41 +2101,6 @@ async function createSession(
     broadcast("extras", footerExtras());
   });
 
-  function readBody(req: http.IncomingMessage, res: http.ServerResponse): Promise<string | null> {
-    return readCappedBody(req, res);
-  }
-
-  /**
-   * Add or edit a Brain entry from the Brain window: read a small body (an
-   * oversized one gets a 413 here), save it with `save`, and answer with its
-   * status. The store's onChange then tells every window, as after a delete.
-   */
-  function saveBrainEntry<T>(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    save: (raw: string) => Promise<BrainEditResult<T>>,
-  ): void {
-    void readCappedBody(req, res, BRAIN_EDIT_BODY_MAX)
-      .then(async (raw) => {
-        if (raw === null) return;
-        const result = await save(raw);
-        json(res, result.status, result.body);
-      })
-      .catch((error: unknown) => {
-        if (res.headersSent) return;
-        const reason = error instanceof Error ? error.message : String(error);
-        json(res, 500, { error: `Couldn't save to Brain: ${reason}` });
-      });
-  }
-
-  function json(res: http.ServerResponse, status: number, body: unknown): void {
-    const payload = JSON.stringify(redactValue(body, { secrets: environmentSecrets(process.env) }));
-    res.writeHead(status, {
-      "content-type": "application/json",
-    });
-    res.end(payload);
-  }
-
   // OPTIONS/CORS preflight is handled at the daemon level before delegation.
   // This chat's tool images by ref (historyImageRef), as the last
   // `GET /history?images=refs` listed them, for `GET /history-images`. Each is
@@ -4198,2500 +2108,226 @@ async function createSession(
   // one it hasn't listed.
   let historyImages = new Map<string, { data: string; mediaType: string }>();
 
+  const routeCtx: SessionRouteContext = {
+    get session() {
+      return session;
+    },
+    set session(v) {
+      session = v;
+    },
+    mode,
+    get chatAgent() {
+      return chatAgent;
+    },
+    set chatAgent(v) {
+      chatAgent = v;
+    },
+    get running() {
+      return running;
+    },
+    set running(v) {
+      running = v;
+    },
+    runLifecycle,
+    get autopilot() {
+      return autopilot;
+    },
+    set autopilot(v) {
+      autopilot = v;
+    },
+    asks,
+    kenStatePayload,
+    footerExtras,
+    progress,
+    memoryStore,
+    jiwaStore,
+    get clientSeq() {
+      return clientSeq;
+    },
+    set clientSeq(v) {
+      clientSeq = v;
+    },
+    clients,
+    get autopilotActive() {
+      return autopilotActive;
+    },
+    set autopilotActive(v) {
+      autopilotActive = v;
+    },
+    paths,
+    host,
+    cwd,
+    get historyImages() {
+      return historyImages;
+    },
+    set historyImages(v) {
+      historyImages = v;
+    },
+    runClaim,
+    broadcast,
+    loadWorkflowCommandSpecs,
+    get autopilotCancelled() {
+      return autopilotCancelled;
+    },
+    set autopilotCancelled(v) {
+      autopilotCancelled = v;
+    },
+    clearPendingPlan,
+    runAgent,
+    get pendingPlanPath() {
+      return pendingPlanPath;
+    },
+    set pendingPlanPath(v) {
+      pendingPlanPath = v;
+    },
+    runAutopilotCycle,
+    runStrandedQueue,
+    get kenRunning() {
+      return kenRunning;
+    },
+    set kenRunning(v) {
+      kenRunning = v;
+    },
+    ensureKenSession,
+    get gitBranch() {
+      return gitBranch;
+    },
+    set gitBranch(v) {
+      gitBranch = v;
+    },
+    get injectedAutopilotPrompts() {
+      return injectedAutopilotPrompts;
+    },
+    set injectedAutopilotPrompts(v) {
+      injectedAutopilotPrompts = v;
+    },
+    broadcastError,
+    get pendingKenModel() {
+      return pendingKenModel;
+    },
+    set pendingKenModel(v) {
+      pendingKenModel = v;
+    },
+    syncKenModel,
+    get kenAbort() {
+      return kenAbort;
+    },
+    set kenAbort(v) {
+      kenAbort = v;
+    },
+    get kenSession() {
+      return kenSession;
+    },
+    set kenSession(v) {
+      kenSession = v;
+    },
+    dictation,
+    runTasks,
+    auth,
+    get localProbes() {
+      return localProbes;
+    },
+    set localProbes(v) {
+      localProbes = v;
+    },
+    localModelBlocker,
+    get kenModelOverride() {
+      return kenModelOverride;
+    },
+    set kenModelOverride(v) {
+      kenModelOverride = v;
+    },
+    syncKenAutoModel,
+    get autopilotReviewing() {
+      return autopilotReviewing;
+    },
+    set autopilotReviewing(v) {
+      autopilotReviewing = v;
+    },
+    get taskRunAll() {
+      return taskRunAll;
+    },
+    set taskRunAll(v) {
+      taskRunAll = v;
+    },
+    get kenAutoAbort() {
+      return kenAutoAbort;
+    },
+    set kenAutoAbort(v) {
+      kenAutoAbort = v;
+    },
+    get kenAutoSession() {
+      return kenAutoSession;
+    },
+    set kenAutoSession(v) {
+      kenAutoSession = v;
+    },
+    get pendingCancelDrain() {
+      return pendingCancelDrain;
+    },
+    set pendingCancelDrain(v) {
+      pendingCancelDrain = v;
+    },
+    CANCEL_TIMEOUT_MS,
+    deactivateApprovedPlan,
+    activateApprovedPlan,
+    planProgressPayload,
+    authStatusPayload,
+    broadcastAll,
+    get oauthInFlight() {
+      return oauthInFlight;
+    },
+    set oauthInFlight(v) {
+      oauthInFlight = v;
+    },
+    oauthInFlightProviders,
+    authCallbacks,
+    get pendingCode() {
+      return pendingCode;
+    },
+    set pendingCode(v) {
+      pendingCode = v;
+    },
+    elicitations,
+    localStatePayload,
+    scanLocalModels,
+    get hfPull() {
+      return hf.hfPull;
+    },
+    set hfPull(v) {
+      hf.hfPull = v;
+    },
+    hfPullPayload,
+    hfSearch,
+    startHfPull,
+    cancelHfPull,
+    get serveController() {
+      return serveController;
+    },
+    set serveController(v) {
+      serveController = v;
+    },
+  };
+
   function handle(
     req: http.IncomingMessage,
     res: http.ServerResponse,
     url: string,
     method: string,
   ): void {
-    if (method === "GET" && url === "/state") {
-      const st = session.getState();
-      json(res, 200, {
-        ...st,
-        mode,
-        chatAgent,
-        running,
-        runState: runLifecycle.state,
-        ready: true,
-        thinkingLevel: session.getThinkingLevel() ?? null,
-        supportedThinkingLevels: getSupportedThinkingLevels(st.provider, st.model),
-        supportsVideo: getModel(st.model)?.supportsVideo ?? false,
-        autopilot,
-        // `GET /history?images=refs` and `GET /history-images` are here: an
-        // app may load a chat's images as they're scrolled to.
-        historyImageRefs: true,
-        // Questions still parked on the user, so a client that attaches late
-        // (a phone opening a push) can re-show the band.
-        pendingAsks: asks.pending(),
-        ...kenStatePayload(),
-        ...footerExtras(),
-      });
-      return;
-    }
-
-    if (method === "GET" && url === "/progress") {
-      json(res, 200, progress.snapshot());
-      return;
-    }
-
-    if (method === "GET" && url === "/memories") {
-      void memoryStore
-        .snapshot()
-        .then((snapshot) => json(res, 200, snapshot))
-        .catch((error) => {
-          json(res, 500, { error: error instanceof Error ? error.message : String(error) });
-        });
-      return;
-    }
-
-    if (method === "DELETE" && url.startsWith("/memories/")) {
-      const id = decodeURIComponent(url.slice("/memories/".length));
-      if (!id) {
-        json(res, 400, { error: "memory id is required" });
-        return;
-      }
-      void memoryStore
-        .forget(id)
-        .then(() => memoryStore.snapshot())
-        .then((snapshot) => json(res, 200, snapshot))
-        .catch((error) => {
-          json(res, 500, { error: error instanceof Error ? error.message : String(error) });
-        });
-      return;
-    }
-
-    // Add and edit from the Brain window, through the same store methods,
-    // limits and lock as the remember tool (chat-agents/brain-edit.ts).
-    if (method === "POST" && url === "/memories") {
-      saveBrainEntry(req, res, (raw) => editMemory(memoryStore, null, raw));
-      return;
-    }
-
-    if (method === "PATCH" && url.startsWith("/memories/")) {
-      const id = brainIdFromPath(url, "/memories/");
-      if (id === null) {
-        json(res, 400, { error: "That isn't a valid memory id." });
-        return;
-      }
-      saveBrainEntry(req, res, (raw) => editMemory(memoryStore, id, raw));
-      return;
-    }
-
-    if (method === "GET" && url === "/jiwa") {
-      void jiwaStore
-        .snapshot()
-        .then((snapshot) => json(res, 200, snapshot))
-        .catch((error) => {
-          json(res, 500, { error: error instanceof Error ? error.message : String(error) });
-        });
-      return;
-    }
-
-    if (method === "DELETE" && url.startsWith("/jiwa/")) {
-      const id = decodeURIComponent(url.slice("/jiwa/".length));
-      if (!id) {
-        json(res, 400, { error: "Jiwa entry id is required" });
-        return;
-      }
-      void jiwaStore
-        .forget(id)
-        .then(() => jiwaStore.snapshot())
-        .then((snapshot) => json(res, 200, snapshot))
-        .catch((error) => {
-          json(res, 500, { error: error instanceof Error ? error.message : String(error) });
-        });
-      return;
-    }
-
-    // Add and edit a Jiwa instruction, as set_jiwa does.
-    if (method === "POST" && url === "/jiwa") {
-      saveBrainEntry(req, res, (raw) => editJiwa(jiwaStore, null, raw));
-      return;
-    }
-
-    if (method === "PATCH" && url.startsWith("/jiwa/")) {
-      const id = brainIdFromPath(url, "/jiwa/");
-      if (id === null) {
-        json(res, 400, { error: "That isn't a valid Jiwa instruction id." });
-        return;
-      }
-      saveBrainEntry(req, res, (raw) => editJiwa(jiwaStore, id, raw));
-      return;
-    }
-    if (method === "GET" && (url === "/events" || url.startsWith("/events?"))) {
-      res.writeHead(200, {
-        "content-type": "text/event-stream",
-        "cache-control": "no-cache",
-        connection: "keep-alive",
-      });
-      res.write(`retry: 1000\n\n`);
-      const client: SseClient = { id: ++clientSeq, res };
-      clients.add(client);
-      const st = session.getState();
-      res.write(
-        `data: ${JSON.stringify({
-          type: "ready",
-          data: {
-            ...st,
-            mode,
-            chatAgent,
-            running,
-            reviewPending: autopilotActive,
-            runState: runLifecycle.state,
-            thinkingLevel: session.getThinkingLevel() ?? null,
-            supportedThinkingLevels: getSupportedThinkingLevels(st.provider, st.model),
-            supportsVideo: getModel(st.model)?.supportsVideo ?? false,
-            autopilot,
-            ...kenStatePayload(),
-            ...footerExtras(),
-          },
-        })}\n\n`,
-      );
-      const keepAlive = setInterval(() => res.write(`: ping\n\n`), 15000);
-      req.on("close", () => {
-        clearInterval(keepAlive);
-        clients.delete(client);
-      });
-      return;
-    }
-
-    if (method === "GET" && url === "/plugins") {
-      void listInstalledPlugins(paths.extensionsDir)
-        .then((plugins) => json(res, 200, { plugins }))
-        .catch((error) => {
-          json(res, 500, { error: error instanceof Error ? error.message : String(error) });
-        });
-      return;
-    }
-
-    if (method === "POST" && url === "/plugins/install") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        try {
-          const bundlePath = (JSON.parse(raw) as { bundlePath?: unknown }).bundlePath;
-          if (typeof bundlePath !== "string" || !path.isAbsolute(bundlePath)) {
-            json(res, 400, { error: "bundlePath must be an absolute path" });
-            return;
-          }
-          const plugin = await installPlugin(bundlePath, paths.extensionsDir);
-          json(res, 200, { plugin, restartRequired: true });
-        } catch (error) {
-          json(res, 400, { error: error instanceof Error ? error.message : String(error) });
-        }
-      });
-      return;
-    }
-
-    if (method === "DELETE" && url.startsWith("/plugins/")) {
-      const pluginId = decodeURIComponent(url.slice("/plugins/".length));
-      void removePlugin(pluginId, paths.extensionsDir)
-        .then(() => json(res, 200, { removed: pluginId, restartRequired: true }))
-        .catch((error) => {
-          json(res, 400, { error: error instanceof Error ? error.message : String(error) });
-        });
-      return;
-    }
-
-    if (method === "GET" && url === "/settings") {
-      // `configured` is true only when the user explicitly saved a projects root
-      // (the gg-app.json file exists with a value) — not when we fall back to the
-      // default. The home screen gates "Your Projects" on this.
-      void (async () => {
-        const s = await loadAppSettings();
-        let configured: boolean;
-        try {
-          const raw = JSON.parse(await fs.readFile(appSettingsFile(), "utf-8")) as {
-            projectsRoot?: string;
-          };
-          configured = typeof raw.projectsRoot === "string" && raw.projectsRoot.trim().length > 0;
-        } catch {
-          configured = false;
-        }
-        // A folder the embedder chose is a choice too: nothing to set up first.
-        configured ||= resolveAppSettingsPaths(process.env, os.homedir()).projectsRootFromEnv;
-        // Only projectsRoot + configured flag are webview-facing; the
-        // per-project model map is internal persistence, never shipped out.
-        json(res, 200, { projectsRoot: s.projectsRoot, configured });
-      })();
-      return;
-    }
-
-    if (method === "POST" && url === "/settings") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let projectsRoot: string;
-        try {
-          projectsRoot = (JSON.parse(raw) as { projectsRoot?: string }).projectsRoot ?? "";
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (!projectsRoot.trim()) {
-          json(res, 400, { error: "projectsRoot is required" });
-          return;
-        }
-        // Read-modify-write so the per-project model map survives a projectsRoot
-        // change (a naive overwrite would drop every window's saved model).
-        const s = await loadAppSettings();
-        s.projectsRoot = projectsRoot;
-        await saveAppSettings(s);
-        json(res, 200, { projectsRoot });
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/create-project") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let name: string;
-        try {
-          name = (JSON.parse(raw) as { name?: string }).name ?? "";
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        name = name.trim();
-        if (!isValidProjectName(name)) {
-          json(res, 400, {
-            error: "Project name must be lowercase letters, digits, and dashes (e.g. my-project).",
-          });
-          return;
-        }
-        const { projectsRoot } = await loadAppSettings();
-        const dir = path.join(projectsRoot, name);
-        try {
-          // Refuse to clobber an existing directory.
-          const exists = await fs
-            .stat(dir)
-            .then(() => true)
-            .catch(() => false);
-          if (exists) {
-            json(res, 409, { error: `A folder named "${name}" already exists.` });
-            return;
-          }
-          await fs.mkdir(dir, { recursive: true });
-          json(res, 200, { path: dir });
-        } catch (err) {
-          json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-        }
-      });
-      return;
-    }
-
-    // Dismiss a project from the picker (or restore it with hidden:false). The
-    // path is kept rather than the row: sessions in scratch dirs keep
-    // re-surfacing, so the user's decision has to outlive any one scan.
-    if (method === "POST" && url === "/projects/hidden") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let body: { path?: string; hidden?: boolean };
-        try {
-          body = JSON.parse(raw) as { path?: string; hidden?: boolean };
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        const target = body.path?.trim();
-        if (!target) {
-          json(res, 400, { error: "path is required" });
-          return;
-        }
-        const key = path.resolve(target);
-        try {
-          const settings = await loadAppSettings();
-          const current = new Set((settings.hiddenProjects ?? []).map((p) => path.resolve(p)));
-          if (body.hidden === false) current.delete(key);
-          else current.add(key);
-          settings.hiddenProjects = current.size > 0 ? Array.from(current) : undefined;
-          await saveAppSettings(settings);
-          json(res, 200, { hidden: Array.from(current) });
-        } catch (err) {
-          json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-        }
-      });
-      return;
-    }
-
-    if (method === "GET" && url === "/projects") {
-      // Session stores (ggcoder + Claude Code + Codex) for projects with
-      // history, plus a filesystem scan of the configured projects folder so
-      // projects you have not opened yet are still listed.
-      // An embedder can ask for its own projects only (the Kleio host), so the
-      // list never mixes in folders other tools opened on the same machine.
-      void loadAppSettings()
-        .then(async ({ projectsRoot, projectRoots, hiddenProjects }) => {
-          const projects = await discoverProjects({
-            projectsRoot,
-            extraRoots: projectRoots,
-            hiddenPaths: hiddenProjects,
-          });
-          return resolveAppSettingsPaths(process.env, os.homedir()).ownProjectsOnly
-            ? projectsWithin(projects, [projectsRoot, ...(projectRoots ?? [])])
-            : projects;
-        })
-        .then((projects) => json(res, 200, { projects }))
-        .catch((err) => {
-          log("ERROR", "app-sidecar", "discoverProjects failed", {
-            message: err instanceof Error ? err.message : String(err),
-          });
-          json(res, 200, { projects: [] });
-        });
-      return;
-    }
-
-    if (method === "GET" && url === "/projects/folders") {
-      // Every folder in the app's project folders, hidden ones included and
-      // marked: "Open existing" on a paired device, which can't browse this
-      // disk. Hiding tidies the list above; it must never lose a folder.
-      void loadAppSettings()
-        .then(async ({ projectsRoot, projectRoots, hiddenProjects }) => {
-          const hidden = new Set((hiddenProjects ?? []).map((p) => path.resolve(p)));
-          const folders = await listProjectFolders([projectsRoot, ...(projectRoots ?? [])]);
-          return folders.map((f) => ({ ...f, hidden: hidden.has(path.resolve(f.path)) }));
-        })
-        .then((folders) => json(res, 200, { folders }))
-        .catch((err) => {
-          log("ERROR", "app-sidecar", "listProjectFolders failed", {
-            message: err instanceof Error ? err.message : String(err),
-          });
-          json(res, 500, { error: "Couldn't list the project folders." });
-        });
-      return;
-    }
-
-    if (method === "GET" && url.startsWith("/sessions")) {
-      const target = new URL(url, `http://${host}`).searchParams.get("cwd");
-      if (!target) {
-        json(res, 400, { error: "missing cwd query param" });
-        return;
-      }
-      const requestedAgent = new URL(url, `http://${host}`).searchParams.get("chatAgent");
-      // An omitted chatAgent means coding history; chat callers identify one
-      // agent or request the combined, recency-sorted "all" listing; the
-      // reserved value "motion" lists Motion sessions.
-      void listSidecarSessions(target, requestedAgent, paths.sessionsDir)
-        .then((sessions) => json(res, 200, { sessions }))
-        .catch(() => json(res, 200, { sessions: [] }));
-      return;
-    }
-
-    if (method === "GET" && url.startsWith("/files")) {
-      const q = new URL(url, `http://${host}`).searchParams.get("q") ?? "";
-      void searchProjectFiles(cwd, q)
-        .then((files) => json(res, 200, { files }))
-        .catch((err) => {
-          log("ERROR", "app-sidecar", "searchProjectFiles failed", {
-            message: err instanceof Error ? err.message : String(err),
-          });
-          json(res, 200, { files: [] });
-        });
-      return;
-    }
-
-    // Markdown transcript export for the app's download button. Serialized
-    // here rather than in the webview because the webview's transcript model
-    // deliberately keeps tool activity in the LiveToolPanel — exporting from
-    // there would hand the user a coding session with the coding missing.
-    // `?name=1` asks for the suggested filename only (the save dialog needs it
-    // before there is a path), so the markdown never crosses IPC twice.
-    if (method === "GET" && (url === "/export" || url.startsWith("/export?"))) {
-      const query = new URLSearchParams(url.slice(url.indexOf("?") + 1));
-      const st = session.getState();
-      const filename = defaultExportFilename(mode);
-      if (query.get("name") === "1") {
-        json(res, 200, { filename });
-        return;
-      }
-      const markdown = sessionToMarkdown(
-        {
-          mode,
-          cwd,
-          provider: st.provider,
-          model: st.model,
-          ...(st.sessionId ? { sessionId: st.sessionId } : {}),
-        },
-        session.getMessages(),
-        { toolDetail: parseToolDetail(query.get("tools")) },
-      );
-      json(res, 200, { filename, markdown });
-      return;
-    }
-
-    // Some of this chat's tool images, as an app scrolls to them: the previews
-    // of up to HISTORY_IMAGES_MAX refs from `GET /history?images=refs`. A ref
-    // not in this chat is left out.
-    if (method === "GET" && url.startsWith("/history-images?")) {
-      const refs = (
-        new URLSearchParams(url.slice("/history-images?".length)).get("refs") ?? ""
-      ).split(",");
-      if (refs.length > HISTORY_IMAGES_MAX || !refs.every((ref) => HISTORY_IMAGE_REF.test(ref))) {
-        json(res, 400, { error: `refs: 1 to ${HISTORY_IMAGES_MAX} image refs` });
-        return;
-      }
-      void (async () => {
-        if (refs.some((ref) => !historyImages.has(ref))) {
-          historyImages = historyImagesOf(session.getMessages());
-        }
-        const images: Record<string, string> = {};
-        for (const ref of refs) {
-          const block = historyImages.get(ref);
-          const [image] = block ? await appToolImages([block], undefined) : [];
-          if (image) images[ref] = image.src;
-        }
-        json(res, 200, { images });
-      })().catch((error: unknown) => {
-        json(res, 500, { error: error instanceof Error ? error.message : String(error) });
-      });
-      return;
-    }
-
-    if (method === "GET" && (url === "/history" || url.startsWith("/history?"))) {
-      // `?images=refs`: tool images as refs, for an app that loads each as it's
-      // scrolled to (`GET /history-images`), not as previews in this answer.
-      const imagesByRef =
-        new URLSearchParams(url.slice("/history".length)).get("images") === "refs";
-      const listedImages = new Map<string, { data: string; mediaType: string }>();
-      // Reconstruct the transcript from persisted messages so resume is 1:1 with
-      // the live SSE stream. Walks ALL message types (not just user/assistant):
-      // tool result messages carry ImageContent blocks (screenshots,
-      // generate_image) that must re-render inline, and assistant tool_call
-      // blocks carry sub-agent delegations that must re-appear as group items.
-      //
-      // The `details` object (imagePreviews with path + downscaled preview) is
-      // event-only and never persisted — we reconstruct from the raw
-      // ImageContent in the tool result, making the app's preview on the
-      // sidecar side and extracting the path from the text block
-      // ("Generated image → /path").
-      void (async () => {
-        const commandCandidates = [...PROMPT_COMMANDS, ...(await loadCustomCommands(cwd))];
-        const messages = session.getMessages();
-
-        // An Ideal hook is injected immediately after the assistant's candidate
-        // no-tool response. That response is review scratch, not a user-visible
-        // final answer. Live SSE drops it when the hook event arrives; mark the
-        // same assistant message here so resumed history stays identical.
-        const hiddenIdealDrafts = new Set<(typeof messages)[number]>();
-        for (let i = 0; i < messages.length - 1; i++) {
-          const draft = messages[i];
-          const hookPrompt = messages[i + 1];
-          if (draft?.role !== "assistant" || hookPrompt?.role !== "user") continue;
-          const restored = restoreUserRow(hookPrompt.content);
-          if (detectHookKind(restored.text) === "ideal") hiddenIdealDrafts.add(draft);
-        }
-
-        // Pre-index tool results by toolCallId so we can pair tool calls with
-        // their results (for sub-agent status + image extraction).
-        const toolResultMap = new Map<string, { content: ToolResultContent; isError: boolean }>();
-        for (const msg of messages) {
-          if (msg.role !== "tool") continue;
-          for (const tr of msg.content) {
-            toolResultMap.set(tr.toolCallId, {
-              content: tr.content,
-              isError: tr.isError ?? false,
-            });
-          }
-        }
-
-        const history: HistoryEntryForWire[] = [];
-
-        // Ken (mentor) turns to interleave: group by the non-system message count
-        // they were recorded after, so each lands right after that message. A
-        // turn becomes two wire rows: the `@Ken` question (user) + Ken's reply
-        // (assistant), both flagged `ken` so the webview tints them.
-        // Deduped; stale anchors are clamped to the last message (Ken turns
-        // carry real conversation, so they render at the end instead of
-        // vanishing).
-        const kenByCount = new Map<number, KenTurnPayload[]>();
-        for (const turn of normalizeKenTurnsForHistory(
-          session.getKenTurns(),
-          messages.filter((m) => m.role !== "system").length,
-        )) {
-          const list = kenByCount.get(turn.afterMessageCount) ?? [];
-          list.push(turn);
-          kenByCount.set(turn.afterMessageCount, list);
-        }
-        const flushKen = (count: number): void => {
-          const turns = kenByCount.get(count);
-          if (!turns) return;
-          kenByCount.delete(count);
-          for (const turn of turns) {
-            history.push({ role: "user", text: `@Ken ${turn.question}`, ken: true });
-            history.push({ role: "assistant", text: turn.reply, ken: true });
-          }
-        };
-
-        // Autopilot verdict markers to interleave, same anchor scheme as Ken
-        // turns — each becomes a single assistant row the webview renders
-        // exactly like the live `autopilot` item (never a raw verdict string).
-        // Normalization pulls anchors left over from an unrebased compaction
-        // back to where the marker was actually written, so stale all-clear
-        // bubbles no longer bunch at the bottom of a reopened session.
-        const restoredMessageCount = messages.filter((m) => m.role !== "system").length;
-        const autopilotByCount = new Map<
-          number,
-          ReturnType<typeof normalizeAutopilotMarkersForHistory>
-        >();
-        for (const marker of normalizeAutopilotMarkersForHistory(
-          session.getAutopilotMarkers(),
-          restoredMessageCount,
-        )) {
-          const list = autopilotByCount.get(marker.afterMessageCount) ?? [];
-          list.push(marker);
-          autopilotByCount.set(marker.afterMessageCount, list);
-        }
-        const flushAutopilot = (count: number): void => {
-          const markers = autopilotByCount.get(count);
-          if (!markers) return;
-          autopilotByCount.delete(count);
-          for (const marker of markers) {
-            history.push({
-              role: "assistant",
-              text: "",
-              autopilot: {
-                phase: marker.phase,
-                ...(marker.reason !== undefined ? { reason: marker.reason } : {}),
-                ...(marker.body !== undefined ? { body: marker.body } : {}),
-                copySeed: marker.copySeed,
-              },
-            });
-          }
-        };
-
-        // App transcript markers (plan banner / task header / error rows /
-        // user-bubble hints), same anchor scheme. user_hint markers don't
-        // become rows — they decorate the user row at their anchor instead.
-        const appMarkersByCount = new Map<number, AppMarkerPayload[]>();
-        const userHintByCount = new Map<number, Record<string, unknown>>();
-        // Compaction-count markers pair with compacted summary rows in file
-        // order (FIFO), not by anchor — the summary user message is what
-        // positions the notice.
-        const compactionCounts: Array<{ originalCount: number; newCount: number }> = [];
-        for (const marker of normalizeAppMarkersForHistory(
-          session.getAppMarkers(),
-          restoredMessageCount,
-        )) {
-          if (marker.kind === "user_hint") {
-            userHintByCount.set(marker.afterMessageCount, marker.data);
-            continue;
-          }
-          if (marker.kind === "compaction") {
-            const d = marker.data;
-            if (typeof d.originalCount === "number" && typeof d.newCount === "number") {
-              compactionCounts.push({ originalCount: d.originalCount, newCount: d.newCount });
-            }
-            continue;
-          }
-          const list = appMarkersByCount.get(marker.afterMessageCount) ?? [];
-          list.push(marker);
-          appMarkersByCount.set(marker.afterMessageCount, list);
-        }
-        const flushAppMarkers = (count: number): void => {
-          const markers = appMarkersByCount.get(count);
-          if (!markers) return;
-          appMarkersByCount.delete(count);
-          for (const marker of markers) {
-            const d = marker.data;
-            if (marker.kind === "plan") {
-              history.push({
-                role: "assistant",
-                text: "",
-                plan: { reason: typeof d.reason === "string" ? d.reason : "" },
-              });
-            } else if (marker.kind === "task") {
-              history.push({
-                role: "assistant",
-                text: "",
-                task: { title: typeof d.title === "string" ? d.title : "" },
-              });
-            } else if (marker.kind === "error" && typeof d.headline === "string") {
-              history.push({
-                role: "assistant",
-                text: "",
-                error: {
-                  scope: typeof d.scope === "string" ? d.scope : "error",
-                  headline: d.headline,
-                  ...(typeof d.message === "string" ? { message: d.message } : {}),
-                  ...(typeof d.guidance === "string" ? { guidance: d.guidance } : {}),
-                },
-              });
-            } else if (marker.kind === "interrupted_run") {
-              // Rendered as an error row: the run's tools already changed the
-              // repo, so the user needs to see it and decide what to do. We
-              // never replay it — that would duplicate those changes.
-              history.push({
-                role: "assistant",
-                text: "",
-                error: {
-                  scope: "interrupted_run",
-                  headline: "A run was interrupted",
-                  message:
-                    "GG Coder stopped mid-run, so this turn is incomplete. Any files its tools already changed are still on disk.",
-                  guidance:
-                    "Review the working tree, then re-send the request if you still want it.",
-                },
-              });
-            }
-          }
-        };
-        let nonSystemCount = 0;
-        // Turns/markers recorded before any build message (anchor 0) render at
-        // the top.
-        flushKen(0);
-        flushAutopilot(0);
-        flushAppMarkers(0);
-
-        await replayMessagesInOrder(
-          messages,
-          async (msg, count) => {
-            nonSystemCount = count;
-            const visibility = getHistoryMessageVisibility(msg);
-            if (visibility === "hidden") return;
-
-            if (msg.role === "tool") {
-              // Tool result messages: check for ImageContent blocks (screenshots,
-              // generated images) and emit a toolImages entry.
-              for (const tr of msg.content) {
-                if (typeof tr.content === "string") continue;
-                const imageBlocks = tr.content.filter((c) => c.type === "image");
-                if (imageBlocks.length === 0) continue;
-                // Extract the path from the text block (e.g. "Generated image → /path").
-                const textBlock = tr.content.find(
-                  (c) => c.type === "text" && "text" in c && typeof c.text === "string",
-                );
-                const textContent = textBlock && textBlock.type === "text" ? textBlock.text : "";
-                const pathMatch = textContent.match(/→\s*(\S+)/);
-                const imgPath = pathMatch?.[1];
-
-                // The app's preview of each image (WebP, 480 px wide), as the
-                // live tool_call_end event carries it, or its ref.
-                const blocks = imageBlocks.flatMap((block) =>
-                  block.type === "image" ? [block] : [],
-                );
-                const toolImages = imagesByRef
-                  ? await appToolImageRefs(blocks, imgPath, listedImages)
-                  : await appToolImages(blocks, imgPath);
-                if (toolImages.length > 0) {
-                  history.push({
-                    role: "assistant",
-                    text: "",
-                    toolImages,
-                  });
-                }
-              }
-              return;
-            }
-
-            // User or assistant message — text/hook/command/compacted extraction,
-            // plus sub-agent group detection for assistant tool_calls.
-            if (msg.role === "user") {
-              // Rebuild the live bubble: strip the steering wrapper, drop
-              // attachment/file notes the model saw but the bubble never showed.
-              const restored = restoreUserRow(msg.content, msg.provenance);
-              const text = restored.text;
-              const hook = msg.provenance ? null : detectHookKind(text);
-              const compacted =
-                visibility === "summary" ||
-                (!msg.provenance && !hook && text.startsWith("[Previous conversation summary]"));
-              const hint = userHintByCount.get(nonSystemCount);
-              // The typed invocation persisted alongside the prompt is
-              // authoritative. Reversing the expanded body only works while the
-              // template is byte-identical, and templates drift (edited
-              // `.gg/commands/*.md`, reworded built-ins, app-vs-CLI phrasing) —
-              // after which the resumed session dumped the raw multi-KB body
-              // instead of the `/name` chip. Older sessions have no hint, so the
-              // body match stays as the fallback.
-              const command =
-                !hook && !compacted
-                  ? resolveRestoredCommand(
-                      typeof hint?.command === "string" ? hint.command : null,
-                      text,
-                      commandCandidates,
-                    )
-                  : null;
-              // Autopilot injected this turn — live showed only the Ken-tinted
-              // marker for it, never a user bubble. Emitting one here would print
-              // the injected instruction a second time, unstyled.
-              //
-              // Pushed background-status updates are skipped for the same reason:
-              // the live run rendered no bubble for them, so showing them here
-              // would fill a reopened session with machine-facing status lines
-              // the user never saw while working.
-              if (
-                (!msg.provenance || (!restored.autopilotInjected && !restored.notification)) &&
-                (text.trim() || restored.images.length > 0)
-              ) {
-                history.push({
-                  role: "user",
-                  text: command ?? text,
-                  images: restored.images,
-                  hook,
-                  command: command !== null,
-                  compacted,
-                  // Markers accumulate across continuation files (each rewrite
-                  // re-persists prior ones) but only the LATEST summary row
-                  // survives compaction — so consume from the newest end.
-                  ...(compacted && compactionCounts.length > 0
-                    ? { compactionCounts: compactionCounts.pop() }
-                    : {}),
-                  ...(hint?.kenSent === true ? { kenSent: true } : {}),
-                  ...(Array.isArray(hint?.enhancements) ? { enhancements: hint.enhancements } : {}),
-                });
-                // Live showed the video-capability warning right after the bubble.
-                if (restored.videoWarning) {
-                  history.push({ role: "assistant", text: "", infoKind: "video_warning" });
-                }
-              }
-            } else if (!hiddenIdealDrafts.has(msg)) {
-              // Assistant: one wire row per persisted text block — live streaming
-              // splits bubbles at server_tool_call boundaries, and the persisted
-              // content keeps those blocks separate. Ideal-review candidate drafts
-              // are intentionally omitted to match the live pre-final hook flow.
-              for (const blockText of restoreAssistantTexts(msg.content)) {
-                history.push({
-                  role: "assistant",
-                  text: blockText,
-                  images: [],
-                  hook: null,
-                  command: false,
-                  compacted: false,
-                });
-              }
-            }
-
-            // Assistant tool_call blocks: detect sub-agent delegations.
-            if (msg.role === "assistant" && typeof msg.content !== "string") {
-              const subagentCalls = msg.content.filter(
-                (
-                  c,
-                ): c is typeof c & {
-                  type: "tool_call";
-                  id: string;
-                  name: string;
-                  args: Record<string, unknown>;
-                } => c.type === "tool_call" && (c.name === "subagent" || c.name === "spawn_agent"),
-              );
-              if (subagentCalls.length > 0) {
-                const agents = subagentCalls.map((c) => {
-                  const result = toolResultMap.get(c.id);
-                  return {
-                    agentName:
-                      c.name === "spawn_agent" && typeof c.args?.task_name === "string"
-                        ? c.args.task_name
-                        : typeof c.args?.agent === "string"
-                          ? c.args.agent
-                          : undefined,
-                    // Async workers are intentionally non-resumable; restored rows are historical.
-                    status: result?.isError ? ("error" as const) : ("done" as const),
-                    toolUseCount: 0,
-                  };
-                });
-                history.push({
-                  role: "assistant",
-                  text: "",
-                  subagentGroup: agents,
-                });
-              }
-            }
-          },
-          (count) => {
-            // Markers flush after every physical message, including tools and
-            // provenance-hidden runtime context.
-            flushKen(count);
-            flushAutopilot(count);
-            flushAppMarkers(count);
-          },
-        );
-
-        // Flush remaining Ken turns whose anchor is at/after the message count so
-        // none are dropped. Autopilot/app markers beyond the restored message
-        // count were already filtered above; any remaining marker here is valid.
-        for (const count of [...kenByCount.keys()].sort((a, b) => a - b)) flushKen(count);
-        for (const count of [...autopilotByCount.keys()].sort((a, b) => a - b))
-          flushAutopilot(count);
-        for (const count of [...appMarkersByCount.keys()].sort((a, b) => a - b))
-          flushAppMarkers(count);
-
-        if (imagesByRef) historyImages = listedImages;
-        json(res, 200, { history });
-      })();
-      return;
-    }
-
-    if (method === "GET" && url === "/commands") {
-      if (mode !== "code") {
-        json(res, 200, { commands: [] });
-        return;
-      }
-      // Workflow commands with agent functionality: built-in prompt templates +
-      // the user's own `.gg/commands/*.md`.
-      void (async () => {
-        const builtins = PROMPT_COMMANDS.map((c) => ({
-          name: c.name,
-          aliases: c.aliases,
-          description: c.description,
-          source: "built-in" as const,
-        }));
-        // Desktop-safe registry actions belong in the same picker as workflows.
-        // Most registry commands have dedicated app controls or TUI-only flows;
-        // multi-root management has no other affordance, so expose only these.
-        const workspaceActions = [
-          {
-            name: "add-dir",
-            aliases: ["adddir"],
-            description: "Add another project folder to this workspace",
-            source: "built-in" as const,
-          },
-          {
-            name: "remove-dir",
-            aliases: ["removedir"],
-            description: "Remove an added project folder from this workspace",
-            source: "built-in" as const,
-          },
-        ];
-        const custom = (await loadCustomCommands(cwd))
-          // A custom command can't shadow a built-in name or app action.
-          .filter(
-            (c) =>
-              !PROMPT_COMMANDS.some((b) => b.name === c.name) &&
-              !workspaceActions.some((action) => action.name === c.name),
-          )
-          .map((c) => ({
-            name: c.name,
-            aliases: [] as string[],
-            description: c.description,
-            source: "custom" as const,
-          }));
-        json(res, 200, { commands: [...workspaceActions, ...builtins, ...custom] });
-      })();
-      return;
-    }
-
-    if (method === "POST" && url === "/prompt") {
-      // Per-request: only the prompt that actually claimed the start may release
-      // it. A bare release would let an early-returning request (bad JSON, or a
-      // prompt that queued) clear a claim another request is still holding.
-      let claimedStart = false;
-      void readBody(req, res)
-        .then(async (raw) => {
-          if (raw === null) return;
-          let text: string;
-          let attachments: AppAttachment[];
-          let meta: { kenSent?: boolean; enhancements?: unknown[] } | undefined;
-          try {
-            const body = JSON.parse(raw) as {
-              text?: string;
-              attachments?: AppAttachment[];
-              meta?: { kenSent?: boolean; enhancements?: unknown[] };
-            };
-            text = body.text ?? "";
-            attachments = Array.isArray(body.attachments) ? body.attachments : [];
-            meta = typeof body.meta === "object" && body.meta !== null ? body.meta : undefined;
-          } catch {
-            json(res, 400, { error: "invalid JSON body" });
-            return;
-          }
-          if (!text.trim() && attachments.length === 0) {
-            json(res, 400, { error: "empty prompt" });
-            return;
-          }
-          // A typed prompt supersedes any question parked on the user: they
-          // answered with a message of their own. Release the blocked tool call
-          // NOW — otherwise it waits out its ten-minute timeout while this very
-          // message sits behind it as steering that only drains once the tool
-          // returns, so the turn looks frozen. The webview closes the band on
-          // send; a racing /ask POST just 409s.
-          asks.cancelAll({ action: "cancel", superseded: true });
-          if (
-            runLifecycle.running &&
-            runLifecycle.isCancellationRequested(runLifecycle.generation)
-          ) {
-            json(res, 409, {
-              error: runLifecycle.state === "cancelling" ? "run_cancelling" : "cancel_failed",
-              runState: runLifecycle.state,
-            });
-            return;
-          }
-          // `runClaim` covers the gap before `runAgent` flips `running`: a
-          // prompt arriving in that window must queue, not start a second run.
-          if (running || runClaim.active || autopilotActive) {
-            // Queue prompts as mid-run steering (mirrors the CLI). Also queue while
-            // an autopilot cycle is active but between injected runs (build idle,
-            // Ken reviewing) so the message never starts a run that collides with
-            // an injected one on the same session. Attachments are persisted to
-            // .gg/uploads first so the queued media rides the same native-block
-            // path as a non-queued attachment prompt when it drains.
-            const prepared =
-              attachments.length > 0 ? await prepareAttachments(cwd, attachments) : [];
-            const count = session.queueMessage(text, prepared);
-            broadcast("queued", { count, messages: session.listQueuedMessages() });
-            json(res, 202, { queued: true, count });
-            return;
-          }
-          // Claim the run NOW, synchronously. Everything below this line may
-          // yield, and `running` does not flip until runAgent begins.
-          claimedStart = runClaim.claim();
-          json(res, 202, { accepted: true });
-          // Gate inputs captured around the run: whether this turn is a workflow
-          // slash command (attachment prompts skip slash expansion entirely), and
-          // how many assistant messages the run actually adds. Computed even when
-          // autopilot is currently off — the toggle can flip ON mid-run, and the
-          // gate reads the post-run value.
-          const workflowCommand =
-            attachments.length === 0 &&
-            isWorkflowCommandText(text, await loadWorkflowCommandSpecs());
-          // Does this input actually expand into a persisted user message? Asked
-          // of the session itself, because only it knows whether the command
-          // resolves here (name/alias casing, custom `.gg/commands`, non-coder
-          // agents that don't expand at all). A looser guess would anchor the
-          // hint at +1 with no message to land on — decorating an unrelated
-          // later bubble with the wrong `/name`.
-          const expandsToTemplate =
-            attachments.length === 0 && (await session.willExpandPromptTemplate(text));
-          // Webview display hint for this prompt's user bubble (kenSent shimmer
-          // label / enhancer highlight segments / the `/name` a command was typed
-          // as). Anchored +1 so it attaches to the user message the prompt below
-          // is about to push. Queued prompts skip this (their position in the run
-          // is unpredictable).
-          //
-          // Recording the invocation matters because the agent persists the
-          // EXPANDED template as the user message. Resume used to recover
-          // `/name` by matching that body against the current templates, which
-          // silently fails the moment a template is edited or reworded — the
-          // reopened session then rendered the raw multi-KB prompt instead of
-          // the command chip.
-          if (
-            expandsToTemplate ||
-            (meta && (meta.kenSent === true || Array.isArray(meta.enhancements)))
-          ) {
-            void session
-              .persistAppMarker(
-                "user_hint",
-                {
-                  ...(expandsToTemplate ? { command: text.trim() } : {}),
-                  ...(meta?.kenSent === true ? { kenSent: true } : {}),
-                  ...(Array.isArray(meta?.enhancements) ? { enhancements: meta.enhancements } : {}),
-                },
-                1,
-              )
-              .catch(() => {});
-          }
-          // Fresh user turn: clear any cancel flag left from a prior cycle so this
-          // turn's autopilot review can run.
-          autopilotCancelled = false;
-          // A typed message while a plan modal/review is pending (reject,
-          // feedback, anything) supersedes the pending plan — the bump also
-          // invalidates any in-flight Ken plan review.
-          clearPendingPlan();
-          const assistantsBefore = countAssistantMessages(session.getMessages());
-          const messagesBefore = session.getMessages().length;
-          await runAgent(
-            text,
-            async () => {
-              if (attachments.length > 0) {
-                // Persist each attachment under .gg/uploads so files are inspectable
-                // by the agent's tools, then prompt with the media as native blocks.
-                const prepared = await prepareAttachments(cwd, attachments);
-                await session.promptWithAttachments(text, prepared);
-              } else {
-                // Pass the raw text straight through. AgentSession.prompt() is the
-                // single source of truth for slash-command expansion (built-in +
-                // `.gg/commands/*.md` custom), so the agent gets the right body
-                // while the webview keeps showing the short `/name`.
-                await session.prompt(text);
-              }
-            },
-            () => autopilot,
-          );
-          // After the user's run settles, kick off Ken's auto-review loop — but
-          // only when the turn is actually reviewable (shouldStartAutopilotCycle):
-          // workflow commands (/compare, /expand, …) end with reports or
-          // A/B/C choices reserved for the USER; registry commands (/help) and
-          // failed runs add no assistant work to judge; a turn that ended in plan
-          // mode has a pending Accept/Reject modal Ken must not preempt. This is
-          // the ONLY entry point into the cycle besides the stranded-queue drain —
-          // it drives any follow-up GG Coder runs itself, so the shared runAgent
-          // finally never recurses.
-          const decision = shouldStartAutopilotCycle({
-            enabled: autopilot,
-            cancelled: autopilotCancelled,
-            planMode: session.getPlanMode(),
-            // A submitted plan (exit_plan fired) routes into the PLAN review
-            // branch — the cycle reviews the plan itself instead of skipping.
-            planPending: pendingPlanPath !== null,
-            workflowCommand,
-            assistantMessagesAdded:
-              countAssistantMessages(session.getMessages()) - assistantsBefore,
-            // Skip the review API call outright for turns that only started a
-            // background process (dev server/watcher), ran a read-only lookup, or
-            // committed/pushed — Ken's autopilot contract already IGNOREs these,
-            // so there's no reason to pay for that verdict.
-            mechanicalOnly: isMechanicalOnlyTurn(
-              extractTurnToolCalls(session.getMessages(), messagesBefore),
-            ),
-          });
-          if (decision.start) {
-            log("INFO", "app-sidecar", "autopilot cycle starting", { kind: decision.kind });
-            await runAutopilotCycle(text);
-          } else {
-            broadcast("autopilot_ignored", { reason: decision.reason });
-            log("INFO", "app-sidecar", "autopilot skipped", { reason: decision.reason });
-          }
-          // A prompt sent while Ken was reviewing (build idle) queued but had no
-          // run to steer into — run it now as a fresh turn so it never strands.
-          await runStrandedQueue();
-        })
-        .finally(() => {
-          if (claimedStart) runClaim.release();
-        });
-      return;
-    }
-
-    // Ken Kai (mentor): an independent read-only advisory run on the kenSession.
-    // Runs concurrently with a build run — its events are ken_-prefixed so the
-    // webview keeps the bubbles separate. The context digest is assembled fresh
-    // from the BUILD session's transcript each turn (one-way mirror).
-    if (method === "POST" && url === "/ken/prompt") {
-      if (mode !== "code") {
-        json(res, 404, {
-          error: `Ken is not available in GG ${mode === "chat" ? "Chat" : "Motion"}.`,
-        });
-        return;
-      }
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let text: string;
-        try {
-          text = (JSON.parse(raw) as { text?: string }).text ?? "";
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (!text.trim()) {
-          json(res, 400, { error: "empty prompt" });
-          return;
-        }
-        if (kenRunning) {
-          json(res, 409, { error: "Ken is already thinking — wait for his reply." });
-          return;
-        }
-        json(res, 202, { accepted: true });
-        kenRunning = true;
-        broadcast("ken_run_start", { text });
-        try {
-          const ken = await ensureKenSession();
-          const digest = await buildKenContext(
-            session,
-            cwd,
-            gitBranch,
-            text,
-            await loadWorkflowCommandSpecs(),
-            injectedAutopilotPrompts,
-          );
-          await ken.prompt(digest);
-          // Record the turn against the BUILD session so it persists + survives
-          // resume (advisory custom entry, never an LLM message). Reply is Ken's
-          // last assistant message; skip persistence if he produced nothing.
-          const reply = lastAssistantText(ken.getMessages());
-          if (reply.trim()) await session.persistKenTurn(text, reply);
-        } catch (err) {
-          broadcastError("ken_error", "ken run failed", err);
-        } finally {
-          kenRunning = false;
-          broadcast("ken_run_end", {});
-          const pending = pendingKenModel;
-          pendingKenModel = null;
-          if (pending) await syncKenModel(pending.provider, pending.model);
-        }
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/ken/cancel") {
-      kenAbort.abort();
-      kenAbort = new AbortController();
-      kenSession?.setSignal(kenAbort.signal);
-      kenRunning = false;
-      broadcast("ken_run_end", { cancelled: true });
-      json(res, 200, { cancelled: true });
-      return;
-    }
-
-    if (method === "POST" && url === "/autopilot") {
-      if (mode !== "code") {
-        json(res, 404, {
-          error: `Autopilot is not available in GG ${mode === "chat" ? "Chat" : "Motion"}.`,
-        });
-        return;
-      }
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let enabled: boolean;
-        try {
-          enabled = Boolean((JSON.parse(raw) as { enabled?: boolean }).enabled);
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        autopilot = enabled;
-        // A toggle-off during an active cycle takes effect after Ken finishes;
-        // until then, injected build runs must not re-enable Ideal self-review.
-        session.setIdealReviewSuppressed(enabled || autopilotActive);
-        await saveAutopilot(cwd, enabled);
-        log("INFO", "app-sidecar", "autopilot toggled", { enabled: String(enabled) });
-        broadcast("autopilot", { autopilot: enabled });
-        json(res, 200, { autopilot: enabled });
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/enhance") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let text: string;
-        try {
-          text = (JSON.parse(raw) as { text?: string }).text ?? "";
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (!text.trim()) {
-          json(res, 400, { error: "empty prompt" });
-          return;
-        }
-        // An independent read-only LLM call — touches no session state, so it's
-        // allowed even while a run is in flight.
-        try {
-          const result = await session.enhancePrompt(text);
-          json(res, 200, result);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          log("ERROR", "app-sidecar", "enhance failed", { message });
-          json(res, 500, { error: message });
-        }
-      });
-      return;
-    }
-
-    // Dictation (iPhone and Mac apps): `{ audio }` is base64 16 kHz mono 16-bit
-    // PCM, answered with `{ text }` ("" when nothing was said). Like /enhance it
-    // touches no session state, so it is allowed mid-run. The text is never
-    // logged. When the speech model can't be got ready, 503 (502 when Hugging
-    // Face erred) with plain words for the reason.
-    if (method === "POST" && url === "/transcribe") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let audio: unknown;
-        try {
-          audio = (JSON.parse(raw) as { audio?: unknown }).audio;
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (typeof audio !== "string") {
-          json(res, 400, { error: "missing audio" });
-          return;
-        }
-        const decoded = decodePcm16(audio);
-        if (!decoded.ok) {
-          if (decoded.error === "too_long") {
-            json(res, 413, {
-              error: `Recordings can be up to ${DICTATION_MAX_SECONDS / 60} minutes long.`,
-            });
-          } else {
-            json(res, 400, { error: "The recording could not be read." });
-          }
-          return;
-        }
-        const speech = trimToSpeech(decoded.value);
-        if (!speech) {
-          json(res, 200, { text: "" });
-          return;
-        }
-        // The phone gave up (timeout, app closed): skip a queued clip.
-        const gone = new AbortController();
-        res.on("close", () => {
-          if (!res.writableEnded) gone.abort();
-        });
-        const started = Date.now();
-        try {
-          const text = await dictation.transcribe(speech, gone.signal);
-          log("INFO", "app-sidecar", "dictation transcribed", {
-            audioSeconds: (speech.length / DICTATION_SAMPLE_RATE).toFixed(1),
-            elapsedMs: String(Date.now() - started),
-            chars: String(text.length),
-          });
-          json(res, 200, { text });
-        } catch (err) {
-          if (gone.signal.aborted) return;
-          if (err instanceof DictationUnavailableError) {
-            // Why is already in the log (gg-core's dictation lines); the
-            // device gets plain words for the reason.
-            log("WARN", "app-sidecar", "dictation unavailable", {
-              reason: err.reason,
-              elapsedMs: String(Date.now() - started),
-            });
-            const reply = dictationUnavailableReply(err.reason);
-            json(res, reply.status, { error: reply.error });
-            return;
-          }
-          log("ERROR", "app-sidecar", "dictation failed", {
-            message: err instanceof Error ? err.message : String(err),
-            elapsedMs: String(Date.now() - started),
-          });
-          json(res, 500, { error: "Couldn't transcribe that recording. Try again." });
-        }
-      });
-      return;
-    }
-
-    if (method === "GET" && url === "/tasks") {
-      json(res, 200, { tasks: pruneDoneTasksSync(cwd) });
-      return;
-    }
-
-    // ── Radio (app-wide) ──────────────────────────────────────
-    // Radio is now APP-WIDE: all windows share one daemon process, and the
-    // player lives in `core/radio.ts` module-level singletons (one stream for
-    // the whole app). Any window's /radio reads/controls that single stream —
-    // starting a station in one window replaces whatever was playing, and every
-    // window's footer reflects the same `current`. This intentionally prevents
-    // duplicate audio across windows (the original per-window goal), now for
-    // free. (To restore per-window radio, key playback by sessionId.)
-    if (method === "GET" && url === "/radio") {
-      json(res, 200, {
-        stations: RADIO_STATIONS,
-        current: getCurrentStation(),
-        volume: getRadioVolume(),
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/radio/volume") {
-      void readBody(req, res).then((raw) => {
-        if (raw === null) return;
-        let volume: number;
-        try {
-          volume = Number((JSON.parse(raw) as { volume?: number }).volume);
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (!Number.isFinite(volume)) {
-          json(res, 400, { error: "volume must be a number" });
-          return;
-        }
-        const result = setRadioVolume(volume);
-        if (!result.ok) {
-          json(res, 400, { error: result.error ?? "Radio volume failed to update." });
-          return;
-        }
-        json(res, 200, { current: getCurrentStation(), volume: getRadioVolume() });
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/radio") {
-      void readBody(req, res).then((raw) => {
-        if (raw === null) return;
-        let station: string;
-        try {
-          station = (JSON.parse(raw) as { station?: string }).station ?? "";
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (!station || station === "off") {
-          stopRadio();
-          json(res, 200, { current: null });
-          return;
-        }
-        const result = playRadio(station);
-        if (!result.ok) {
-          json(res, 400, { error: result.error ?? "Radio failed to start." });
-          return;
-        }
-        json(res, 200, { current: getCurrentStation() });
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/tasks/run") {
-      void readBody(req, res).then((raw) => {
-        if (raw === null) return;
-        let id: string | null;
-        let all: boolean;
-        try {
-          const body = JSON.parse(raw) as { id?: string | null; all?: boolean };
-          id = body.id ?? null;
-          all = Boolean(body.all);
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (running) {
-          json(res, 409, { error: "cannot run a task while the agent is running" });
-          return;
-        }
-        json(res, 202, { accepted: true });
-        void runTasks(id, all);
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/tasks/delete") {
-      void readBody(req, res).then((raw) => {
-        if (raw === null) return;
-        let id: string;
-        try {
-          id = (JSON.parse(raw) as { id?: string }).id ?? "";
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (!id.trim()) {
-          json(res, 400, { error: "missing task id" });
-          return;
-        }
-        const remaining = loadTasksSync(cwd).filter((t) => t.id !== id && !t.id.startsWith(id));
-        saveTasksSync(cwd, remaining);
-        json(res, 200, { tasks: remaining });
-      });
-      return;
-    }
-
-    if (method === "GET" && url === "/models") {
-      void (async () => {
-        const loggedIn: Provider[] = [];
-        for (const p of ALL_PROVIDERS) {
-          if (await auth.hasProviderAuth(p)) loggedIn.push(p);
-        }
-        // Just the names, grouped by provider in registry order — the UI shows
-        // a clean multi-column list of model ids. Local models come from the
-        // runtime registry (populated by the background scan) and are always
-        // listed: their "login" is the endpoint answering a probe.
-        const models = getAllModels()
-          .filter((m) => m.provider === "local" || loggedIn.includes(m.provider))
-          .map((m) => {
-            if (m.provider !== "local") {
-              return { id: m.id, name: m.name, provider: m.provider };
-            }
-            const probed = findProbedModel(localProbes, m.id);
-            return {
-              id: m.id,
-              name: m.name,
-              provider: m.provider,
-              local: true,
-              endpoint: probed?.endpoint.label ?? parseLocalModelId(m.id)?.endpointId,
-              // A local model that can't call tools can't run the agent — the UI
-              // renders it disabled rather than hiding it, so the user learns why.
-              supportsTools: probed?.model.supportsTools ?? true,
-              contextWindow: m.contextWindow,
-              contextWindowKnown: probed?.model.contextWindowKnown ?? false,
-              supportsThinking: m.supportsThinking,
-            };
-          });
-        json(res, 200, { models });
-      })();
-      return;
-    }
-
-    if (method === "POST" && url === "/model") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let modelId: string;
-        try {
-          modelId = (JSON.parse(raw) as { model?: string }).model ?? "";
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        const target = getModel(modelId);
-        if (!target) {
-          json(res, 404, { error: `unknown model: ${modelId}` });
-          return;
-        }
-        if (running) {
-          json(res, 409, { error: "cannot switch model while running" });
-          return;
-        }
-        if (target.provider === "local") {
-          const problem = await localModelBlocker(target.id);
-          if (problem) {
-            json(res, 409, { error: problem });
-            return;
-          }
-        }
-        await session.switchModel(target.provider, target.id);
-        // Ken follows GG Coder's model only while un-pinned; a user-set Ken
-        // override survives GG model switches untouched.
-        if (!kenModelOverride) {
-          await syncKenModel(target.provider, target.id);
-          await syncKenAutoModel(target.provider, target.id);
-        }
-        // Clamp the reasoning level to what the new model supports (mirrors the
-        // CLI): keep thinking on at the first supported tier if it was on but
-        // the prior level is unsupported here; leave it off if it was off.
-        const prevLevel = session.getThinkingLevel();
-        if (prevLevel && !isThinkingLevelSupported(target.provider, target.id, prevLevel)) {
-          session.setThinkingLevel(getNextThinkingLevel(target.provider, target.id, undefined));
-        }
-        // Persist per-project so THIS window/project restores its own model on
-        // restart (not the single global slot every window shares). Keep the
-        // global write too as a "last used" fallback for never-opened projects
-        // and so the CLI stays in sync.
-        await saveProjectModelPrefs(cwd, {
-          provider: target.provider,
-          model: target.id,
-          thinkingEnabled: !!session.getThinkingLevel(),
-          thinkingLevel: session.getThinkingLevel() ?? undefined,
-        });
-        await persistModelSelection(paths.settingsFile, target.provider, target.id);
-        await persistThinkingLevel(paths.settingsFile, session.getThinkingLevel());
-        const payload = {
-          thinkingLevel: session.getThinkingLevel() ?? null,
-          supportedThinkingLevels: getSupportedThinkingLevels(target.provider, target.id),
-        };
-        // model_change is emitted by switchModel; follow with thinking_change so
-        // the footer toggle reflects the new model's supported levels.
-        broadcast("thinking_change", payload);
-        // Un-pinned Ken just followed the switch — update his footer chip too.
-        // When Ken is pinned, his effective model did not change, so skip the
-        // no-op event (keeps footer/event tests from treating a GG switch as a
-        // Ken switch).
-        if (!kenModelOverride) broadcast("ken_model_change", kenStatePayload());
-        // The new model usually has a different context window — push extras so
-        // the footer's context meter rescales immediately.
-        broadcast("extras", footerExtras());
-        json(res, 200, { provider: target.provider, model: target.id, ...payload });
-      });
-      return;
-    }
-
-    // Set or clear Ken's model pin. Body: { model: "<id>" } to pin, or
-    // { model: null } / "" to clear (Ken resumes following GG Coder). Applies
-    // to BOTH Ken sessions (chat + autopilot reviewer); a switch landing while
-    // either is mid-run defers via the pending-model mechanics.
-    if (method === "POST" && url === "/ken/model") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let modelId: string | null;
-        try {
-          const parsed = (JSON.parse(raw) as { model?: string | null }).model;
-          modelId = typeof parsed === "string" && parsed.trim() ? parsed.trim() : null;
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        // Same lock as POST /model, for the same reason: this retargets Ken's
-        // chat session AND the autopilot reviewer, and `switchModel` on a
-        // session mid-turn races the stream it is already consuming. The
-        // footer picker is disabled to match; this is the enforcement.
-        if (running || kenRunning || autopilotReviewing) {
-          json(res, 409, { error: "cannot switch Ken's model while running" });
-          return;
-        }
-        if (modelId === null) {
-          // Clear the pin → follow GG Coder again, syncing both sessions back.
-          kenModelOverride = null;
-          await saveKenModelPref(cwd, null);
-          const st = session.getState();
-          await syncKenModel(st.provider, st.model);
-          await syncKenAutoModel(st.provider, st.model);
-          log("INFO", "app-sidecar", "ken model pin cleared — following GG", {
-            provider: st.provider,
-            model: st.model,
-          });
-        } else {
-          const target = getModel(modelId);
-          if (!target) {
-            json(res, 404, { error: `unknown model: ${modelId}` });
-            return;
-          }
-          kenModelOverride = { provider: target.provider, model: target.id };
-          await saveKenModelPref(cwd, kenModelOverride);
-          await syncKenModel(target.provider, target.id);
-          await syncKenAutoModel(target.provider, target.id);
-          log("INFO", "app-sidecar", "ken model pinned", {
-            provider: target.provider,
-            model: target.id,
-          });
-        }
-        const payload = kenStatePayload();
-        broadcast("ken_model_change", payload);
-        json(res, 200, payload);
-      });
-      return;
-    }
-
-    // Pending queued steering, for the composer's cancel affordance.
-    if (method === "GET" && url === "/queued") {
-      json(res, 200, { queued: session.listQueuedMessages() });
-      return;
-    }
-
-    // Cancel one pending queued message by id.
-    if (method === "POST" && url === "/queued/cancel") {
-      void readBody(req, res).then((raw) => {
-        if (raw === null) return;
-        let id: string;
-        try {
-          id = (JSON.parse(raw) as { id?: string }).id ?? "";
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (!id.trim()) {
-          json(res, 400, { error: "missing queued message id" });
-          return;
-        }
-        // `false` means it already drained into the run between render and
-        // click. That is a race, not an error, so report it as a normal result
-        // and let the client reconcile through the ordered event stream.
-        const cancelled = session.cancelQueuedMessage(id);
-        const queued = session.listQueuedMessages();
-        broadcast("queued", {
-          count: queued.length,
-          messages: queued,
-          ...(cancelled ? { cancelledId: id } : {}),
-        });
-        json(res, 200, { cancelled, queued });
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/kill") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let id: string;
-        try {
-          id = (JSON.parse(raw) as { id?: string }).id ?? "";
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (!id.trim()) {
-          json(res, 400, { error: "missing task id" });
-          return;
-        }
-        const message = await session.killBackgroundProcess(id);
-        // Push the updated task list right away rather than waiting for the poll.
-        broadcast("tasks", { tasks: session.listBackgroundProcesses() });
-        json(res, 200, { message });
-      });
-      return;
-    }
-
-    // Import a Claude Code / Codex / Cursor transcript into a resumable GG
-    // Coder session. The importer never throws — it returns a typed failure so
-    // the app can show the reason verbatim.
-    if (method === "POST" && url === "/import-transcript") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let body: { path?: string; cwd?: string };
-        try {
-          body = JSON.parse(raw) as { path?: string; cwd?: string };
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        const filePath = body.path?.trim();
-        if (!filePath) {
-          json(res, 400, { error: "missing transcript path" });
-          return;
-        }
-        const result = await session.importForeignTranscript(filePath, {
-          ...(body.cwd ? { cwd: body.cwd } : {}),
-        });
-        json(res, result.ok ? 200 : 400, result);
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/thinking") {
-      // The in-flight request already carries its reasoning config, so a
-      // mid-run cycle cannot affect the turn the user is watching — it just
-      // persists a level the footer then reports for a run that never used it.
-      // Locked like POST /model; the footer button is disabled to match.
-      if (running) {
-        json(res, 409, { error: "cannot change reasoning level while running" });
-        return;
-      }
-      const st = session.getState();
-      const next = getNextThinkingLevel(st.provider, st.model, session.getThinkingLevel());
-      session.setThinkingLevel(next);
-      // Persist per-project so THIS window restores its thinking state on
-      // restart; keep the global write as a fallback (mirrors the CLI).
-      void saveProjectModelPrefs(cwd, {
-        provider: st.provider,
-        model: st.model,
-        thinkingEnabled: !!next,
-        thinkingLevel: next ?? undefined,
-      }).then(() => persistThinkingLevel(paths.settingsFile, next));
-      const payload = {
-        thinkingLevel: next ?? null,
-        supportedThinkingLevels: getSupportedThinkingLevels(st.provider, st.model),
-      };
-      broadcast("thinking_change", payload);
-      json(res, 200, payload);
-      return;
-    }
-
-    if (method === "POST" && url === "/cancel") {
-      void (async () => {
-        // Even between task runs, cancellation stops the sweep. Active provider
-        // ownership invokes the full abort hook exactly once through lifecycle.
-        taskRunAll = false;
-        autopilotCancelled = true;
-        if (!runLifecycle.running) {
-          kenAutoAbort.abort();
-          kenAutoAbort = new AbortController();
-          kenAutoSession?.setSignal(kenAutoAbort.signal);
-        }
-
-        const generation = runLifecycle.generation;
-        if (!pendingCancelDrain || pendingCancelDrain.generation !== generation) {
-          pendingCancelDrain = { generation, text: session.drainQueue() };
-          broadcast("queued", { count: 0, messages: [] });
-        }
-        const result = await runLifecycle.cancel(CANCEL_TIMEOUT_MS);
-        const drained = pendingCancelDrain.text;
-        if (result.status === "failed") {
-          broadcast("cancel_failed", {
-            error: "cancel_failed",
-            reason: result.reason,
-            runState: runLifecycle.state,
-          });
-          json(res, 504, {
-            error: "cancel_failed",
-            reason: result.reason,
-            runState: runLifecycle.state,
-            drained,
-          });
-          return;
-        }
-        json(res, 200, {
-          cancelled: result.status === "cancelled",
-          runState: runLifecycle.state,
-          drained,
-        });
-      })().catch((error) => {
-        broadcast("cancel_failed", { error: "cancel_failed", runState: runLifecycle.state });
-        json(res, 500, {
-          error: "cancel_failed",
-          message: error instanceof Error ? error.message : String(error),
-          runState: runLifecycle.state,
-        });
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/new-session") {
-      if (running) {
-        json(res, 409, { error: "cannot start a new session while running" });
-        return;
-      }
-      void session
-        .newSession()
-        .then(async () => {
-          if (mode === "chat") {
-            await session.persistAppMarker("agent_handoff", { chatAgent });
-          }
-          deactivateApprovedPlan();
-          injectedAutopilotPrompts = [];
-          clearPendingPlan();
-          broadcast("session_reset", {});
-          json(res, 200, { ok: true });
-        })
-        .catch((err) => {
-          json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-        });
-      return;
-    }
-
-    // Accept an approved plan and begin implementation in a FRESH session
-    // (mirrors the CLI's handleApprovePlan). The plan-mode conversation — all the
-    // research, file reads, and exploration done while drafting — must NOT bleed
-    // into the build, or it bloats the context and distracts the model. So:
-    //   1. newSession() wipes history + starts a new session file.
-    //   2. setApprovedPlan() bakes the plan into the fresh system prompt so the
-    //      model emits `[DONE:n]` markers the plan-progress widget reads.
-    //   3. session_reset tells the webview to clear its transcript; it then runs
-    //      the "implement it now" prompt in the clean session.
-    if (method === "POST" && url === "/plan/accept") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let planPath: string | undefined;
-        try {
-          planPath = (JSON.parse(raw) as { planPath?: string }).planPath || undefined;
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (running) {
-          json(res, 409, { error: "cannot accept a plan while the agent is running" });
-          return;
-        }
-        // Manual accept, possibly racing Ken's autopilot plan review: the user
-        // always wins. Bump the plan generation (invalidates any in-flight
-        // review's verdict), stop the cycle, abort a mid-prompt review on the
-        // kenAuto session, and clear the spinner — autopilot_ignored renders
-        // nothing, so no stale "approve or reject" bubble ever lands. The
-        // webview's follow-up "implement" /prompt arrives as a fresh turn
-        // (resetting autopilotCancelled), so the implementation still gets its
-        // normal post-run review; if it lands while the cycle is winding down
-        // it queues and runStrandedQueue drains it as a fresh turn.
-        clearPendingPlan();
-        autopilotCancelled = true;
-        kenAutoAbort.abort();
-        kenAutoAbort = new AbortController();
-        kenAutoSession?.setSignal(kenAutoAbort.signal);
-        if (autopilotReviewing) {
-          autopilotReviewing = false;
-          broadcast("autopilot_ignored", {});
-        }
-        try {
-          await session.newSession(true);
-          injectedAutopilotPrompts = [];
-          const planTotal = await activateApprovedPlan(planPath);
-          broadcast("session_reset", { planTotal });
-          broadcast("plan_progress", planProgressPayload());
-          json(res, 200, { ok: true, planTotal });
-        } catch (err) {
-          json(res, 500, { error: err instanceof Error ? err.message : String(err) });
-        }
-      });
-      return;
-    }
-
-    // ── Provider auth (login) ───────────────────────────────
-    if (method === "GET" && url === "/auth/status") {
-      void authStatusPayload().then((payload) => json(res, 200, payload));
-      return;
-    }
-
-    if (method === "POST" && url === "/auth/apikey") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let provider = "";
-        let key: string;
-        let variant: string | undefined;
-        try {
-          const body = JSON.parse(raw) as { provider?: string; key?: string; variant?: string };
-          provider = body.provider ?? "";
-          key = (body.key ?? "").trim();
-          variant = body.variant;
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        const meta = AUTH_PROVIDERS.find((p) => p.value === provider);
-        if (!meta || !meta.methods.includes("apikey")) {
-          json(res, 400, { error: "provider does not support API key auth" });
-          return;
-        }
-        if (!key) {
-          json(res, 400, { error: "API key is required" });
-          return;
-        }
-        // Providers with multiple API-key variants (currently only Xiaomi: Token
-        // Plan vs. API Credits) store under the chosen variant's key/baseUrl,
-        // defaulting to the first variant. Single-variant providers fall back to
-        // the legacy provider-id storage key + flat apiKeyBaseUrl.
-        const chosenVariant =
-          meta.apiKeyVariants?.find((v) => v.key === variant) ?? meta.apiKeyVariants?.[0];
-        const storageKey = chosenVariant?.key ?? provider;
-        const baseUrl = chosenVariant?.baseUrl ?? meta.apiKeyBaseUrl;
-        const creds: OAuthCredentials = {
-          accessToken: key,
-          refreshToken: "",
-          expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000 * 100, // ~100y
-          ...(baseUrl ? { baseUrl } : {}),
-        };
-        await auth.setCredentials(storageKey, creds);
-        // auth.json is shared by every window, so this is a global change:
-        // close their login modals and refresh their provider lists too.
-        broadcastAll("auth_done", { provider });
-        // `auth_done` means "a login succeeded" (modals close on it).
-        // `auth_change` means "auth.json changed" — which a DISCONNECT also is,
-        // so connection state has one signal that covers both directions.
-        broadcastAll("auth_change", { provider });
-        // A newly connected provider unlocks its models. `/models` filters on
-        // who is logged in, so every window's picker is now stale — without
-        // this the new models don't appear until the session is reopened.
-        broadcastAll("models_change", {});
-        json(res, 200, { ok: true });
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/auth/oauth/start") {
-      void readBody(req, res).then((raw) => {
-        if (raw === null) return;
-        let provider = "";
-        try {
-          provider = (JSON.parse(raw) as { provider?: string }).provider ?? "";
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        const meta = AUTH_PROVIDERS.find((p) => p.value === provider);
-        if (!meta || !meta.methods.includes("oauth")) {
-          json(res, 400, { error: "provider does not support OAuth" });
-          return;
-        }
-        if (oauthInFlight) {
-          json(res, 409, { error: "a login is already in progress" });
-          return;
-        }
-        // A login writes the shared ~/.gg/auth.json, so two windows racing the
-        // same provider means two browser tabs and two token exchanges whose
-        // writes clobber each other. The per-session flag above cannot see
-        // that — guard the provider daemon-wide as well.
-        if (oauthInFlightProviders.has(provider)) {
-          json(res, 409, {
-            error: `a ${meta.label} login is already in progress in another window`,
-          });
-          return;
-        }
-        oauthInFlight = true;
-        oauthInFlightProviders.add(provider);
-        json(res, 202, { accepted: true });
-        void (async () => {
-          const cb = authCallbacks();
-          try {
-            let creds: OAuthCredentials;
-            let storageKey = provider;
-            if (provider === "anthropic") creds = await loginAnthropic(cb);
-            else if (provider === "openai") creds = await loginOpenAI(cb);
-            else if (provider === "gemini") creds = await loginGemini(cb);
-            else if (provider === "moonshot" || provider === "xai") {
-              // Subscription OAuth (Kimi plan / SuperGrok-X Premium) stores under
-              // a distinct key so it can coexist with the provider's API key.
-              creds = provider === "moonshot" ? await loginKimi(cb) : await loginXai(cb);
-              storageKey = dualAuthProvider(provider)!.oauthKey;
-            } else {
-              throw new Error(`OAuth not implemented for ${provider}`);
-            }
-            await auth.setCredentials(storageKey, creds);
-            // Terminal outcome of a GLOBAL change: every window's login modal
-            // should close and its provider list refresh, not just the one
-            // that started the flow.
-            broadcastAll("auth_done", { provider });
-            broadcastAll("auth_change", { provider });
-            // The OAuth provider's models just became selectable everywhere.
-            broadcastAll("models_change", {});
-          } catch (err) {
-            // Deliberately session-scoped: this is the outcome of ONE window's
-            // attempt. Another window that never pressed Connect has nothing to
-            // show an error about, and its modal correctly still offers login.
-            broadcast("auth_error", {
-              provider,
-              message: err instanceof Error ? err.message : String(err),
-            });
-          } finally {
-            oauthInFlight = false;
-            oauthInFlightProviders.delete(provider);
-            pendingCode = null;
-          }
-        })();
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/auth/oauth/code") {
-      void readBody(req, res).then((raw) => {
-        if (raw === null) return;
-        let code: string;
-        try {
-          code = (JSON.parse(raw) as { code?: string }).code ?? "";
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (!pendingCode) {
-          json(res, 409, { error: "no login is awaiting a code" });
-          return;
-        }
-        pendingCode(code.trim());
-        pendingCode = null;
-        json(res, 200, { ok: true });
-      });
-      return;
-    }
-
-    if (method === "POST" && url.startsWith("/mcp/elicit/")) {
-      const id = decodeURIComponent(url.slice("/mcp/elicit/".length));
-      void readBody(req, res).then((raw) => {
-        if (raw === null) return;
-        let result: ElicitResult;
-        try {
-          const parsed = JSON.parse(raw) as {
-            action?: string;
-            content?: Record<string, unknown>;
-          };
-          if (
-            parsed.action !== "accept" &&
-            parsed.action !== "decline" &&
-            parsed.action !== "cancel"
-          ) {
-            json(res, 400, { error: "action must be accept, decline, or cancel" });
-            return;
-          }
-          result =
-            parsed.action === "accept"
-              ? ({ action: "accept", content: parsed.content ?? {} } as ElicitResult)
-              : { action: parsed.action };
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        // Unknown id means it already timed out or was cancelled by an abort —
-        // the tool call has moved on, so the answer has nowhere to go.
-        if (!elicitations.settle(id, result)) {
-          json(res, 409, { error: "no elicitation is awaiting a response" });
-          return;
-        }
-        json(res, 200, { ok: true });
-      });
-      return;
-    }
-
-    // Answer (or dismiss) an `ask_user` question band. The turn is blocked on
-    // this, so both paths must land: "answer" carries the picked values,
-    // "cancel" releases the tool call with no answer.
-    if (method === "POST" && url.startsWith("/ask/")) {
-      const id = decodeURIComponent(url.slice("/ask/".length));
-      void readBody(req, res).then((raw) => {
-        if (raw === null) return;
-        let result: AskUserResult;
-        try {
-          const parsed = JSON.parse(raw) as {
-            action?: string;
-            answers?: Record<string, unknown>;
-          };
-          if (parsed.action !== "answer" && parsed.action !== "cancel") {
-            json(res, 400, { error: "action must be answer or cancel" });
-            return;
-          }
-          if (parsed.action === "cancel") {
-            result = { action: "cancel" };
-          } else {
-            // Only strings and string arrays are answers; anything else is a
-            // malformed client, not a value to hand the model.
-            const answers: Record<string, string | string[]> = {};
-            for (const [key, value] of Object.entries(parsed.answers ?? {})) {
-              if (typeof value === "string") answers[key] = value;
-              else if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
-                answers[key] = value as string[];
-              }
-            }
-            result = { action: "answer", answers };
-          }
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (!asks.settle(id, result)) {
-          json(res, 409, { error: "no question is awaiting an answer" });
-          return;
-        }
-        json(res, 200, { ok: true });
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/auth/logout") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let provider: string;
-        let logoutMethod: AuthMethod | undefined;
-        try {
-          const body = JSON.parse(raw) as { provider?: string; method?: string };
-          provider = body.provider ?? "";
-          logoutMethod =
-            body.method === "oauth" || body.method === "apikey" ? body.method : undefined;
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        const dual = dualAuthProvider(provider);
-        // A dual-auth provider can be disconnected one method at a time: dropping
-        // a spent API key should not sign the user out of their subscription, and
-        // vice versa. Omitting `method` still clears everything (the plain
-        // "Disconnect" action).
-        if (logoutMethod !== "apikey") {
-          await auth.clearCredentials(dual ? dual.oauthKey : provider);
-        }
-        if (logoutMethod !== "oauth") {
-          // Non-dual providers store their only credential under the provider id,
-          // so this covers both them and a dual provider's API key.
-          await auth.clearCredentials(provider);
-          // Xiaomi's API Credits credential lives under a distinct key — clear it
-          // too so "disconnect" fully removes both the Token Plan and Credits keys.
-          if (provider === "xiaomi") await auth.clearCredentials(XIAOMI_CREDITS_KEY);
-        }
-        broadcast("auth_done", { provider });
-        json(res, 200, { ok: true });
-      });
-      return;
-    }
-
-    // ── Telegram config (mirrors `ggcoder telegram`) ─────────
-    // ── Local models ──────────────────────────────────────
-    // GET returns the last scan (cheap, no probing) so opening the modal is
-    // instant; POST /local/scan is the explicit refresh.
-    if (method === "GET" && url === "/local") {
-      json(res, 200, localStatePayload());
-      return;
-    }
-
-    if (method === "POST" && url === "/local/scan") {
-      void scanLocalModels(true)
-        .then(() => {
-          broadcast("models_change", { local: localStatePayload() });
-          json(res, 200, localStatePayload());
-        })
-        .catch((err: unknown) => {
-          broadcastError("error", "local model scan failed", err);
-          json(res, 500, { error: "Local model scan failed — see the sidecar log." });
-        });
-      return;
-    }
-
-    if (method === "POST" && url === "/local/endpoints") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let body: { label?: string; baseUrl?: string; apiKey?: string };
-        try {
-          body = JSON.parse(raw) as typeof body;
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        try {
-          const endpoint = await addCustomEndpoint({
-            baseUrl: body.baseUrl ?? "",
-            ...(body.label ? { label: body.label } : {}),
-            ...(body.apiKey ? { apiKey: body.apiKey } : {}),
-          });
-          await scanLocalModels(true);
-          broadcast("models_change", { local: localStatePayload() });
-          json(res, 200, {
-            endpoint: { id: endpoint.id, label: endpoint.label },
-            ...localStatePayload(),
-          });
-        } catch (err) {
-          // Validation errors are the user's typo, not a system fault — 400 with
-          // the exact reason, and nothing in the transcript.
-          if (err instanceof LocalEndpointError) {
-            json(res, 400, { error: err.message });
-            return;
-          }
-          broadcastError("error", "add local endpoint failed", err);
-          json(res, 500, { error: "Could not save the endpoint — see the sidecar log." });
-        }
-      });
-      return;
-    }
-
-    if (method === "DELETE" && url.startsWith("/local/endpoints/")) {
-      const id = decodeURIComponent(url.slice("/local/endpoints/".length));
-      void (async () => {
-        try {
-          await removeCustomEndpoint(id);
-          clearRuntimeModels(
-            (m) => m.provider === "local" && parseLocalModelId(m.id)?.endpointId === id,
-          );
-          await scanLocalModels(true);
-          broadcast("models_change", { local: localStatePayload() });
-          json(res, 200, localStatePayload());
-        } catch (err) {
-          if (err instanceof LocalEndpointError) {
-            json(res, 400, { error: err.message });
-            return;
-          }
-          broadcastError("error", "remove local endpoint failed", err);
-          json(res, 500, { error: "Could not remove the endpoint — see the sidecar log." });
-        }
-      })();
-      return;
-    }
-
-    // ── Hugging Face search & pull (the "Add from Hugging Face" modal) ──
-    if (method === "GET" && url === "/hf/pull") {
-      json(res, 200, hfPull ? { active: hfPullPayload(hfPull) } : { active: null });
-      return;
-    }
-
-    if (method === "POST" && url === "/hf/search") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let body: { query?: unknown };
-        try {
-          body = JSON.parse(raw) as typeof body;
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        // Strip control characters and cap length — this goes into a URL query.
-        const query = String(body.query ?? "")
-          // eslint-disable-next-line no-control-regex -- stripping control characters is the point
-          .replace(/[\u0000-\u001f]/g, "")
-          .trim()
-          .slice(0, 100);
-        if (!query) {
-          json(res, 400, { error: "Type something to search for." });
-          return;
-        }
-        try {
-          json(res, 200, { models: await hfSearch(query) });
-        } catch (err) {
-          broadcastError("error", "hugging face search failed", err);
-          json(res, 502, {
-            error: `Hugging Face search failed — ${err instanceof Error ? err.message : "network error"}.`,
-          });
-        }
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/hf/pull") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let body: { repo?: unknown };
-        try {
-          body = JSON.parse(raw) as typeof body;
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        const repo = String(body.repo ?? "").trim();
-        if (!isValidHfRepoId(repo)) {
-          json(res, 400, { error: 'Expected a Hugging Face repo like "org/model".' });
-          return;
-        }
-        try {
-          json(res, 200, await startHfPull(repo));
-        } catch (err) {
-          const status =
-            err instanceof Error && "status" in err && typeof err.status === "number"
-              ? err.status
-              : 502;
-          if (status >= 500) broadcastError("error", "hugging face pull failed", err);
-          json(res, status, { error: err instanceof Error ? err.message : "Pull failed." });
-        }
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/hf/pull/cancel") {
-      json(res, 200, { ok: cancelHfPull() });
-      return;
-    }
-
-    if (method === "GET" && url === "/telegram") {
-      void loadTelegramConfig().then((cfg) => {
-        if (!cfg) {
-          json(res, 200, { configured: false });
-          return;
-        }
-        // Never return the raw token to the webview — a short masked preview is
-        // enough to show "already set".
-        const t = cfg.botToken;
-        const tokenPreview = t.length > 14 ? `${t.slice(0, 10)}\u2026${t.slice(-4)}` : "set";
-        json(res, 200, { configured: true, userId: cfg.userId, tokenPreview });
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/telegram") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let botTokenInput: string;
-        let userIdInput: string;
-        try {
-          const body = JSON.parse(raw) as { botToken?: string; userId?: string | number };
-          botTokenInput = (body.botToken ?? "").trim();
-          userIdInput = String(body.userId ?? "").trim();
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        // Keep the existing token when the field is left blank (the webview shows
-        // a masked preview, not the real token).
-        const existing = await loadTelegramConfig();
-        const botToken = botTokenInput || existing?.botToken || "";
-        if (!botToken) {
-          json(res, 400, { error: "Bot token is required." });
-          return;
-        }
-        const userId = userIdInput ? parseInt(userIdInput, 10) : existing?.userId;
-        if (!userId || Number.isNaN(userId)) {
-          json(res, 400, { error: "A numeric Telegram user ID is required." });
-          return;
-        }
-        const verified = await verifyBotToken(botToken);
-        if (!verified.ok) {
-          json(res, 400, { error: "Invalid bot token — Telegram rejected it." });
-          return;
-        }
-        await saveTelegramConfig({ botToken, userId });
-        json(res, 200, { ok: true, userId, username: verified.username ?? null });
-      });
-      return;
-    }
-
-    // ── Serve lifecycle (mirrors `ggcoder serve`) ───────────
-    if (method === "GET" && url === "/serve") {
-      void loadTelegramConfig().then((cfg) =>
-        json(res, 200, { running: serveController !== null, configured: cfg !== null }),
-      );
-      return;
-    }
-
-    if (method === "POST" && url === "/serve/start") {
-      void (async () => {
-        if (serveController) {
-          json(res, 200, { running: true });
-          return;
-        }
-        const cfg = await loadTelegramConfig();
-        if (!cfg) {
-          json(res, 400, { error: "Telegram isn't set up yet. Open Serve settings first." });
-          return;
-        }
-        const st = session.getState();
-        try {
-          serveController = await startServeMode({
-            provider: st.provider,
-            model: st.model,
-            cwd,
-            version: "app",
-            thinkingLevel: session.getThinkingLevel() ?? undefined,
-            telegram: { botToken: cfg.botToken, userId: cfg.userId },
-            embedded: true,
-          });
-          broadcast("serve_change", { running: true });
-          log("INFO", "app-sidecar", "serve started", { userId: cfg.userId });
-          json(res, 200, { running: true });
-        } catch (err) {
-          serveController = null;
-          json(res, 400, { error: err instanceof Error ? err.message : String(err) });
-        }
-      })();
-      return;
-    }
-
-    if (method === "POST" && url === "/serve/stop") {
-      void (async () => {
-        if (serveController) {
-          await serveController.stop().catch(() => {});
-          serveController = null;
-          broadcast("serve_change", { running: false });
-          log("INFO", "app-sidecar", "serve stopped");
-        }
-        json(res, 200, { running: false });
-      })();
-      return;
-    }
-
-    // ── Agent Steroids (local code corpus) ───────────────────────────────
-    if (method === "GET" && url === "/steroids") {
-      void probeSteroids().then((status) => json(res, 200, status));
-      return;
-    }
-
-    if (method === "POST" && url === "/steroids/install") {
-      void installSteroids()
-        .then((status) => {
-          broadcast("steroids_change", status);
-          log("INFO", "app-sidecar", "steroids installed", { version: status.version });
-          json(res, 200, status);
-        })
-        .catch((err: unknown) => {
-          json(res, 400, { error: err instanceof Error ? err.message : String(err) });
-        });
-      return;
-    }
-
-    // ── MCP server management (mirrors `ggcoder mcp`) ──────────────────
-    // `targetCwd` (project scope) overrides the window cwd so a server can be
-    // added/removed for ANY discovered project, not just this window's. Global
-    // scope ignores it (always ~/.gg/mcp.json).
-    if (method === "GET" && (url === "/mcp" || url.startsWith("/mcp?"))) {
-      const targetCwd = new URL(url, `http://${host}`).searchParams.get("cwd") ?? cwd;
-      void buildMcpRows(targetCwd, paths.settingsFile)
-        .then((servers) => json(res, 200, { servers }))
-        .catch((err) => {
-          log("ERROR", "app-sidecar", "buildMcpRows failed", {
-            message: err instanceof Error ? err.message : String(err),
-          });
-          json(res, 200, { servers: [] });
-        });
-      return;
-    }
-
-    if (method === "POST" && url === "/mcp/add") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let line: string;
-        let scopeValue: string;
-        let bodyCwd: string | undefined;
-        try {
-          const body = JSON.parse(raw) as {
-            line?: string;
-            scope?: string;
-            cwd?: string;
-          };
-          line = body.line ?? "";
-          scopeValue = body.scope ?? "global";
-          bodyCwd = body.cwd;
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        const scope: MCPScope = scopeValue === "project" ? "project" : "global";
-        if (scope === "project" && !bodyCwd) {
-          json(res, 400, { error: "project scope requires a project (cwd)." });
-          return;
-        }
-        const targetCwd = bodyCwd ?? cwd;
-        const parsed = parseMcpAddCommand(line);
-        if (!parsed.ok) {
-          json(res, 400, { error: parsed.error });
-          return;
-        }
-        const config = parsed.value.config;
-        try {
-          // Best-effort probe — never blocks the save. A failed connect is
-          // surfaced to the UI but the config is still persisted (mirrors the
-          // CLI). probeMcp swallows connect errors; the try/catch guards the
-          // persist step so a write failure returns a 500 instead of becoming
-          // an unhandled rejection that would crash the sidecar.
-          const probe = await probeMcp(config);
-          const saved = await addServer(config, scope, targetCwd, true);
-          if (!saved.ok) {
-            json(res, 400, { error: saved.error });
-            return;
-          }
-          // Adding a project-scope server is an explicit trust signal — the
-          // user chose to put a server in this repo's .gg/mcp.json. Auto-trust
-          // the project so all project-scope servers connect on next load.
-          if (scope === "project") {
-            await session.trustProject(targetCwd);
-          }
-          json(res, 200, {
-            ok: true,
-            name: config.name,
-            connected: probe.ok,
-            toolCount: probe.toolCount,
-            error: probe.error,
-            requiresAuth: probe.requiresAuth,
-          });
-        } catch (err) {
-          json(res, 500, {
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      });
-      return;
-    }
-
-    if (method === "POST" && url === "/mcp/remove") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let name: string;
-        let scopeValue: string;
-        let bodyCwd: string | undefined;
-        try {
-          const body = JSON.parse(raw) as {
-            name?: string;
-            scope?: string;
-            cwd?: string;
-          };
-          name = body.name ?? "";
-          scopeValue = body.scope ?? "global";
-          bodyCwd = body.cwd;
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (!name.trim()) {
-          json(res, 400, { error: "missing server name" });
-          return;
-        }
-        const scope: MCPScope = scopeValue === "project" ? "project" : "global";
-        if (scope === "project" && !bodyCwd) {
-          json(res, 400, { error: "project scope requires a project (cwd)." });
-          return;
-        }
-        const targetCwd = bodyCwd ?? cwd;
-        const removed = await removeServer(name, scope, targetCwd);
-        // Drop any saved OAuth tokens for this server so a re-add starts clean.
-        await new McpOAuthStore().clear(name).catch(() => {});
-        json(res, 200, { removed });
-      });
-      return;
-    }
-
-    // Interactive OAuth login for a remote (HTTP) MCP server. The browser is
-    // opened by the webview in response to the broadcast `mcp_auth_url` event;
-    // progress + outcome stream via `mcp_auth_status` / `mcp_auth_done` /
-    // `mcp_auth_error`. Responds 202 immediately and runs the flow in the
-    // background (the browser round-trip can take a while).
-    if (method === "POST" && url === "/mcp/login") {
-      void readBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        let name: string;
-        let scopeValue: string;
-        let bodyCwd: string | undefined;
-        try {
-          const body = JSON.parse(raw) as { name?: string; scope?: string; cwd?: string };
-          name = body.name ?? "";
-          scopeValue = body.scope ?? "global";
-          bodyCwd = body.cwd;
-        } catch {
-          json(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        if (!name.trim()) {
-          json(res, 400, { error: "missing server name" });
-          return;
-        }
-        const scope: MCPScope = scopeValue === "project" ? "project" : "global";
-        const targetCwd = bodyCwd ?? cwd;
-        const scoped = await getServer(name, targetCwd);
-        if (!scoped || scoped.scope !== scope) {
-          json(res, 404, { error: `No "${name}" server found.` });
-          return;
-        }
-        if (!scoped.config.url) {
-          json(res, 400, { error: "Login is only supported for HTTP MCP servers." });
-          return;
-        }
-        json(res, 202, { accepted: true });
-        broadcast("mcp_auth_status", { name, message: "Starting login\u2026" });
-        const manager = new MCPClientManager();
-        try {
-          const result = await manager.login(scoped.config, (authUrl) => {
-            broadcast("mcp_auth_url", { name, url: authUrl });
-          });
-          if (result.ok) {
-            broadcast("mcp_auth_done", { name, toolCount: result.toolCount });
-          } else {
-            broadcast("mcp_auth_error", { name, message: result.error ?? "Login failed." });
-          }
-        } catch (err) {
-          broadcast("mcp_auth_error", {
-            name,
-            message: err instanceof Error ? err.message : String(err),
-          });
-        } finally {
-          await manager.dispose().catch(() => {});
-        }
-      });
-      return;
-    }
+    if (handleSessionRoutes(routeCtx, req, res, url, method)) return;
+    if (handleBrainEditRoutes(routeCtx, req, res, url, method)) return;
+    if (handleWorkspaceRoutes(routeCtx, req, res, url, method)) return;
+    if (handleProjectFolderRoutes(routeCtx, req, res, url, method)) return;
+    if (handleHistoryImageRoutes(routeCtx, req, res, url, method)) return;
+    if (handleHistoryRoutes(routeCtx, req, res, url, method)) return;
+    if (handlePromptRoutes(routeCtx, req, res, url, method)) return;
+    if (handleTranscribeRoutes(routeCtx, req, res, url, method)) return;
+    if (handleTaskRoutes(routeCtx, req, res, url, method)) return;
+    if (handleRunControlRoutes(routeCtx, req, res, url, method)) return;
+    if (handleAuthRoutes(routeCtx, req, res, url, method)) return;
+    if (handleIntegrationRoutes(routeCtx, req, res, url, method)) return;
+    if (handleMcpRoutes(routeCtx, req, res, url, method)) return;
 
     json(res, 404, { error: "not found" });
   }

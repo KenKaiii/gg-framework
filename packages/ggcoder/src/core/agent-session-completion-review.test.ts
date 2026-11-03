@@ -15,7 +15,7 @@ vi.mock("@kleio/ai", async (original) => ({
   stream: transport,
 }));
 interface Internals {
-  hookText: string;
+  loopMonitor: { text: string };
   settingsManager: { get(key: string): boolean };
   authStorage: {
     resolveCredentials(): Promise<{
@@ -43,7 +43,7 @@ describe("optional completion-review seam", () => {
     });
     const internal = session as unknown as Internals;
     const pending = internal.trackHookEvent({ type: "text_delta", text: "unchanged coder timing" });
-    expect(internal.hookText).toBe("unchanged coder timing");
+    expect(internal.loopMonitor.text).toBe("unchanged coder timing");
     await pending;
   });
   it("arms before final text and announces review before disarming even with Coder hooks disabled", async () => {

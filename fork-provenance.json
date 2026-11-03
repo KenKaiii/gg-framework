@@ -132,6 +132,26 @@
         {"upstream": "a359de2f864b3833427f9ff50322eae357d6b119", "reason": "fixes gg-app/src/WakeScreen.test.tsx, which only exists after upstream 3ec4e666"},
         {"upstream": "c38df90ee1a352f9a8b9092e4b5e1868c7ba67cc", "reason": "the fork's catastrophic-command guard predates 3ec4e666 and already reads backslash paths literally"}
       ]
+    },
+    {
+      "branch": "sync/upstream-split-4f763ed2",
+      "baseCommit": "75e3ba68a5eb9de7f22045686a0a3e2359d0f61e",
+      "upstreamTip": "0e7a6382da002e8a4473f0247a7e60050cc3e9ee",
+      "upstreamTipVersion": "5.88.1",
+      "upstreamTipDesktopVersion": "0.99.1",
+      "reviewedCommits": 265,
+      "importedAt": "2026-11-02",
+      "status": "open",
+      "pullRequest": "https://github.com/fmckie/gg-framework/pull/74",
+      "rule": "upstream.lastImportedCommit stays 3f2bb6bc because the fork does not contain everything up to any later upstream commit; a later full sync must treat these commits as already applied",
+      "picked": [],
+      "ported": [
+        {"upstream": "4f763ed27d80097f2867e55d67f17d61236ae2d9", "downstream": "dc11fe9b64bcd11e3911110436c3c4f83e32386c", "scope": "module layout only, the fork's own code (gg-app/src-tauri/src/lib.rs into 13 Rust modules); What's New, package/CI hygiene, checklist, codex/stream and model hunks not taken"},
+        {"upstream": "4f763ed27d80097f2867e55d67f17d61236ae2d9", "downstream": "f42b09e1dee338d504e86d602332744714ab7dee", "scope": "module layout only, the fork's own code (@kleio/coder src/app-sidecar.ts into src/app-sidecar/, without keep-awake.ts); What's New, package/CI hygiene, checklist, codex/stream and model hunks not taken"},
+        {"upstream": "4f763ed27d80097f2867e55d67f17d61236ae2d9", "downstream": "14a78f71bb1e3269185129f8c6593465f78154c3", "scope": "module layout only, the fork's own code (@kleio/coder src/core/agent-session.ts into src/core/agent-session/, without McpToolRegistry.promote()); What's New, package/CI hygiene, checklist, codex/stream and model hunks not taken"},
+        {"upstream": "4f763ed27d80097f2867e55d67f17d61236ae2d9", "downstream": "2a23a7b1399453e676f2dcd9d20862589992b479", "scope": "module layout only, the fork's own code (gg-app/src/App.tsx into 15 component, hook and transcript-item files, without useChecklist); What's New, package/CI hygiene, checklist, codex/stream and model hunks not taken"}
+      ],
+      "skipped": []
     }
   ],
   "directRenameBaseline": {

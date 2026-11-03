@@ -9,8 +9,8 @@ import type { VerificationGate } from "./verification-gate.js";
 
 interface ReviewInternals {
   settingsManager: { get(key: string): boolean };
-  hookStats: IdealReviewStats;
-  hookFileEditCounts: Map<string, number>;
+  loopMonitor: { stats: IdealReviewStats };
+  verificationTracker: { fileEditCounts: Map<string, number> };
   reviewCoverage: ReviewCoverageTracker;
   verificationGate: VerificationGate;
   subAgentManager?: { completionGateMessage(): string | undefined };
@@ -48,7 +48,7 @@ function makeReviewSession(cwd: string, changedFiles: readonly string[]): Review
   });
   const internal = session as unknown as ReviewInternals;
   internal.settingsManager = { get: () => true };
-  internal.hookStats = {
+  internal.loopMonitor.stats = {
     changedLines: 130,
     toolCalls: 9,
     toolFailures: 0,
@@ -57,7 +57,7 @@ function makeReviewSession(cwd: string, changedFiles: readonly string[]): Review
     editCalls: 3,
     bashCalls: 1,
   };
-  for (const file of changedFiles) internal.hookFileEditCounts.set(file, 1);
+  for (const file of changedFiles) internal.verificationTracker.fileEditCounts.set(file, 1);
   return internal;
 }
 
@@ -232,7 +232,7 @@ describe("AgentSession Ideal review coverage gate", () => {
     });
     const internal = session as unknown as ReviewInternals;
     internal.settingsManager = { get: () => true };
-    internal.hookStats = {
+    internal.loopMonitor.stats = {
       changedLines: 130,
       toolCalls: 9,
       toolFailures: 0,
@@ -241,7 +241,7 @@ describe("AgentSession Ideal review coverage gate", () => {
       editCalls: 3,
       bashCalls: 1,
     };
-    internal.hookFileEditCounts.set("src/a.ts", 1);
+    internal.verificationTracker.fileEditCounts.set("src/a.ts", 1);
 
     session.setIdealReviewSuppressed(true);
     expect(await internal.getHookFollowUpMessages()).toBeNull();
@@ -318,7 +318,7 @@ describe("AgentSession Ideal review coverage gate", () => {
     // calls) until the turn point lands, so arming must predict the crossing.
     const cwd = makeWorkspace(["src/a.ts"]);
     const internal = makeReviewSession(cwd, []);
-    internal.hookStats = {
+    internal.loopMonitor.stats = {
       changedLines: 60,
       toolCalls: 8,
       toolFailures: 0,
@@ -334,7 +334,7 @@ describe("AgentSession Ideal review coverage gate", () => {
     expect(armed).toEqual([true]);
 
     // And the real gate does fire once that turn is counted.
-    internal.hookStats.turns = 6;
+    internal.loopMonitor.stats.turns = 6;
     expect((await internal.getHookFollowUpMessages())?.[0]?.content).toContain("Ideal?");
   });
 
