@@ -24,6 +24,7 @@ export function modelMatches(model: ModelOption, query: string): boolean {
 }
 
 export interface ModelGroup {
+  key: string;
   provider: string;
   label: string;
   models: ModelOption[];
@@ -45,6 +46,7 @@ export function searchModels(models: readonly ModelOption[], query: string): Mod
     .map(({ model }) => model);
   return [
     {
+      key: "matches",
       provider: "matches",
       label: `${hits.length} ${hits.length === 1 ? "match" : "matches"}`,
       models: hits,

@@ -161,12 +161,12 @@ export function LoginScreen({ onClose }: Props): React.ReactElement {
         <button
           className="login-tile"
           onClick={() => setLocalOpen(true)}
-          title="Ollama: models running on this machine"
+          title="Local models: Ollama, LM Studio, llama.cpp, vLLM or any OpenAI-compatible endpoint"
         >
           <span className="login-tile-logo">
             <img className="login-logo" src={providerLogo("ollama")} alt="" />
           </span>
-          <span className="login-tile-name">Ollama</span>
+          <span className="login-tile-name">Local models</span>
           <span className="login-tile-methods">
             <Badge>No key needed</Badge>
           </span>

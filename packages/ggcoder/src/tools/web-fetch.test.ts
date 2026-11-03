@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildLlmsCandidates, createWebFetchTool, htmlToCleanText } from "./web-fetch.js";
+import {
+  buildLlmsCandidates,
+  createWebFetchTool,
+  htmlToCleanText,
+  MAX_FETCH_LENGTH,
+} from "./web-fetch.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -63,13 +68,19 @@ describe("htmlToCleanText", () => {
 });
 
 describe("buildLlmsCandidates", () => {
-  it("includes origin, docs subpath, and page markdown candidates", () => {
-    const candidates = buildLlmsCandidates("https://example.com/docs/guide/page.html?x=1", 10000);
-    const urls = candidates.map((candidate) => candidate.url);
+  it("offers a docs root the site's llms.txt files", () => {
+    const urls = buildLlmsCandidates("https://example.com/docs/en", 10000).map((c) => c.url);
 
     expect(urls).toContain("https://example.com/llms.txt");
     expect(urls).toContain("https://example.com/docs/llms.txt");
-    expect(urls).toContain("https://example.com/docs/guide/page.html.md?x=1");
+  });
+
+  it("offers a specific page only its own markdown, never the site index", () => {
+    const urls = buildLlmsCandidates("https://example.com/docs/guide/page.html?x=1", 20000).map(
+      (c) => c.url,
+    );
+
+    expect(urls).toEqual(["https://example.com/docs/guide/page.html.md?x=1"]);
   });
 });
 
@@ -436,7 +447,7 @@ describe("createWebFetchTool", () => {
     expect(result).not.toContain("response too large");
   });
 
-  it("prefers a site's llms.txt for doc-ish pages and skips scraping the page", async () => {
+  it("prefers a site's llms.txt for a docs root and skips scraping the page", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/llms.txt")) {
@@ -453,14 +464,14 @@ describe("createWebFetchTool", () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     const result = await createWebFetchTool().execute(
-      { url: "https://docs.example.com/reference/api" },
+      { url: "https://docs.example.com/" },
       context(),
     );
 
     expect(result).toContain("[llms.txt for docs.example.com]");
     expect(result).toContain("curated llms.txt content");
     expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain(
-      "https://docs.example.com/reference/api",
+      "https://docs.example.com/",
     );
   });
 
@@ -484,7 +495,7 @@ describe("createWebFetchTool", () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     const result = await createWebFetchTool().execute(
-      { url: "https://docs.example.com/reference/api" },
+      { url: "https://docs.example.com/" },
       context(),
     );
 
@@ -510,7 +521,7 @@ describe("createWebFetchTool", () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     const result = await createWebFetchTool().execute(
-      { url: "https://example.com/docs/guide/intro" },
+      { url: "https://example.com/docs/" },
       context(),
     );
 
@@ -529,7 +540,7 @@ describe("createWebFetchTool", () => {
     ) as typeof fetch;
 
     const result = await createWebFetchTool().execute(
-      { url: "https://docs.example.com/api" },
+      { url: "https://docs.example.com/" },
       context(),
     );
 
@@ -608,13 +619,13 @@ describe("createWebFetchTool", () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     const result = await createWebFetchTool().execute(
-      { urls: ["https://docs.a.com/api", "https://docs.b.com/guide"] },
+      { urls: ["https://docs.a.com/", "https://docs.b.com/docs"] },
       context(),
     );
 
-    expect(result).toContain("## https://docs.a.com/api");
+    expect(result).toContain("## https://docs.a.com/");
     expect(result).toContain("A llms content");
-    expect(result).toContain("## https://docs.b.com/guide");
+    expect(result).toContain("## https://docs.b.com/docs");
     expect(result).toContain("B llms content");
   });
 
@@ -632,16 +643,13 @@ describe("createWebFetchTool", () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     const result = await createWebFetchTool().execute(
-      { url: "https://docs.example.com/guide/intro", format: "text" },
+      { url: "https://docs.example.com/docs", format: "text" },
       context(),
     );
 
     expect(result).toContain("Real Docs");
     expect(fetchMock).toHaveBeenCalledWith("https://docs.example.com/llms.txt", expect.anything());
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://docs.example.com/guide/intro",
-      expect.anything(),
-    );
+    expect(fetchMock).toHaveBeenCalledWith("https://docs.example.com/docs", expect.anything());
   });
 
   it("skips the llms.txt probe when prefer_llms_txt is false", async () => {
@@ -678,7 +686,7 @@ describe("createWebFetchTool", () => {
 
     expect(result).toContain("<html>");
     expect(result).toContain("Keep raw nav");
-    expect(result).toContain("[Content truncated]");
+    expect(result).toContain("[Content truncated: chars 0–60 of");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const headers = fetchMock.mock.calls[0][1]?.headers as Record<string, string>;
     expect(headers.Accept).toContain("text/html");
@@ -905,6 +913,39 @@ describe("web_fetch outline format", () => {
     expect(outline.length).toBeLessThanOrEqual(2000 + 200);
   });
 
+  // Regression: the model passed max_length 30k–100k per fetch and pulled whole
+  // source files into context (agent-race, 2026-11-04).
+  it("caps max_length at MAX_FETCH_LENGTH and tells the model to narrow the fetch", async () => {
+    const body = "line of source code\n".repeat(10_000);
+    globalThis.fetch = vi.fn(
+      async () => new Response(body, { status: 200, headers: { "content-type": "text/plain" } }),
+    ) as typeof fetch;
+
+    const capped = (await createWebFetchTool().execute(
+      { url: "https://raw.example.com/lib/utils.js", format: "text", max_length: 80_000 },
+      context(),
+    )) as string;
+    expect(capped.length).toBeLessThan(MAX_FETCH_LENGTH + 300);
+    expect(capped).toContain(`max_length is capped at ${MAX_FETCH_LENGTH}`);
+
+    const multi = (await createWebFetchTool().execute(
+      {
+        urls: ["https://raw.example.com/a.js", "https://raw.example.com/b.js"],
+        format: "text",
+        max_length: 100_000,
+      },
+      context(),
+    )) as string;
+    expect(multi.length).toBeLessThan(MAX_FETCH_LENGTH + 500);
+    expect(multi).toContain("max_length is capped");
+
+    const withinCap = (await createWebFetchTool().execute(
+      { url: "https://raw.example.com/small.js", format: "text", max_length: 5_000 },
+      context(),
+    )) as string;
+    expect(withinCap).not.toContain("max_length is capped");
+  });
+
   it("caps the link index at 100 and says so", async () => {
     const links = Array.from(
       { length: 120 },
@@ -1106,5 +1147,121 @@ describe("web_fetch network allowlist", () => {
     expect(result).toContain("evil.example");
     // The first hop happened; the redirect target was never requested.
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("web_fetch page windows", () => {
+  const md = (body: string) =>
+    vi.fn(
+      async () => new Response(body, { status: 200, headers: { "content-type": "text/markdown" } }),
+    );
+
+  it("returns a docs page itself, not the site's llms.txt (agent-race regression)", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/llms.txt")) {
+        return new Response("# Site index\n\n" + "- [Page](https://x)\n".repeat(20), {
+          status: 200,
+          headers: { "content-type": "text/plain" },
+        });
+      }
+      if (url === "https://platform.example.com/docs/en/guide/tool-changes.md") {
+        return new Response("# Tool changes\n\n" + "The real page body. ".repeat(10), {
+          status: 200,
+          headers: { "content-type": "text/markdown" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const result = await createWebFetchTool().execute(
+      { url: "https://platform.example.com/docs/en/guide/tool-changes.md" },
+      context(),
+    );
+
+    expect(result).toContain("The real page body.");
+    expect(result).not.toContain("Site index");
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain(
+      "https://platform.example.com/llms.txt",
+    );
+  });
+
+  it("starts at the heading named by the URL fragment", async () => {
+    globalThis.fetch = md(
+      "# Guide\n\nIntro text.\n\n## Define tools in a message (beta)\n\nInline definitions here.\n\n## Limits\n\nLast.",
+    ) as typeof fetch;
+
+    const result = await createWebFetchTool().execute(
+      {
+        url: "https://example.com/guide.md#define-tools-in-a-message-beta",
+        prefer_llms_txt: false,
+      },
+      context(),
+    );
+
+    expect(result).toMatch(/^## Define tools in a message \(beta\)/);
+    expect(result).not.toContain("Intro text.");
+    expect(result).toContain("## Limits");
+  });
+
+  it("says so when no heading matches the fragment", async () => {
+    globalThis.fetch = md("# Guide\n\nIntro text.") as typeof fetch;
+
+    const result = await createWebFetchTool().execute(
+      { url: "https://example.com/guide.md#missing", prefer_llms_txt: false },
+      context(),
+    );
+
+    expect(result).toContain("[No heading matches #missing; showing the page from the top]");
+    expect(result).toContain("Intro text.");
+  });
+
+  it("continues a truncated page from the offset it reports", async () => {
+    const page = "A".repeat(1500) + "B".repeat(1500);
+    globalThis.fetch = md(page) as typeof fetch;
+    const tool = createWebFetchTool();
+
+    const first = await tool.execute(
+      { url: "https://example.com/long.md", max_length: 1500, prefer_llms_txt: false },
+      context(),
+    );
+    expect(first).toContain(
+      "[Content truncated: chars 0–1500 of 3000. Continue with offset: 1500]",
+    );
+    expect(first).not.toContain("B");
+
+    const second = await tool.execute(
+      {
+        url: "https://example.com/long.md",
+        max_length: 1500,
+        offset: 1500,
+        prefer_llms_txt: false,
+      },
+      context(),
+    );
+    expect(second).toContain("[chars 1500–3000 of 3000]");
+    expect(second).toContain("B".repeat(1500));
+    expect(second).not.toContain("A");
+  });
+
+  it("reports an offset past the end of the page", async () => {
+    globalThis.fetch = md("short page body") as typeof fetch;
+
+    const result = await createWebFetchTool().execute(
+      { url: "https://example.com/short.md", offset: 500, prefer_llms_txt: false },
+      context(),
+    );
+
+    expect(result).toContain("[offset 500 is past the end of the page (15 chars)]");
+  });
+
+  it("rejects offset with several urls", async () => {
+    const result = await createWebFetchTool().execute(
+      { urls: ["https://example.com/a", "https://example.com/b"], offset: 10 },
+      context(),
+    );
+
+    expect(result).toContain("`offset` continues one page");
   });
 });

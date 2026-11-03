@@ -151,6 +151,13 @@ export function formatChatError(error: unknown): FormattedChatError {
       "Check your connection before trying again.",
     );
   }
+  if (base.provider === "local" && (base.source === "auth" || base.statusCode === 401)) {
+    return present(
+      "auth",
+      "The local server rejected its key",
+      "Check the endpoint's key under Local models in AI Providers settings.",
+    );
+  }
   if (base.source === "auth" || base.statusCode === 401) {
     return present(
       "auth",

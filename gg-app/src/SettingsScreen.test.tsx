@@ -24,7 +24,7 @@ vi.mock("./LoginScreen", async () => {
 });
 vi.mock("./agent", () => ({
   waitForReady: () => Promise.resolve(),
-  authStatus: () => Promise.resolve([]),
+  hasModelSource: () => Promise.resolve(false),
   getServeStatus: vi.fn(() => Promise.resolve({ running: false, configured: false })),
   startServe: vi.fn(),
   stopServe: vi.fn(),

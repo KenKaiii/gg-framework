@@ -80,9 +80,9 @@ export function buildEnvDeltaMessage(
 }
 
 /**
- * Style packs for languages that appeared after the system prompt was cached
- * (e.g. the previous task scaffolded a TypeScript project). Same append-only
- * idea as the environment update: re-rendering the prompt to add a pack would
+ * Verify commands for languages that appeared after the system prompt was
+ * cached (e.g. the previous task scaffolded a TypeScript project). Same
+ * append-only idea as the environment update: re-rendering the prompt would
  * invalidate every cached byte after it. `null` when nothing renders.
  */
 export function buildLanguageUpdateMessage(
@@ -95,8 +95,7 @@ export function buildLanguageUpdateMessage(
     role: "user",
     provenance: { source: "runtime", kind: "notification", visibility: "hidden" },
     content:
-      "Project update: new languages are now in use. Apply these defaults to code you write " +
-      "from here on, the same way as any style guidance in your instructions.\n\n" +
+      "Project update: new languages are now in use, with these checks.\n\n" +
       sections.join("\n\n") +
       "\n\nDo not restate this note; just proceed.",
   };

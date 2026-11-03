@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import type { ProcessManager } from "../core/process-manager.js";
 import { killProcessTree } from "../utils/process.js";
-import { truncateTail, MAX_BYTES, describeCompressed } from "./truncate.js";
+import { truncateTail, MAX_LINES, describeCompressed } from "./truncate.js";
 import { compressToolOutput } from "./compress.js";
 import {
   cleanTerminalOutput,
@@ -101,6 +101,14 @@ function killLeftoverGroup(pid: number): boolean {
     return false;
   }
 }
+/**
+ * Bash output over this many bytes is offloaded and shown compressed — Claude
+ * Code's inline limit (BASH_MAX_OUTPUT_LENGTH default 30,000). At the old 50KB,
+ * `cat` of whole source files came back verbatim and stayed in every later
+ * request (agent-race, 2026-11-04).
+ */
+export const BASH_INLINE_MAX_BYTES = 30_000;
+
 /** A sleep at least this long is a guess at when something finishes, not a
  *  settle pause before poking a service that is already up. */
 const GUESSED_WAIT_SECONDS = 10;
@@ -130,12 +138,12 @@ export async function renderBashOutput(rawOutput: string): Promise<string> {
   // lines are never touched (routine-output.ts).
   const cleaned = cleanTerminalOutput(rawOutput);
   const shown = compactProgressRuns(cleaned);
-  const result = truncateTail(shown);
+  const result = truncateTail(shown, MAX_LINES, BASH_INLINE_MAX_BYTES);
   // Under the limit: drop routine boilerplate (git log/status labels, ls
   // owner columns, green per-file test lines) — see routine-output.ts.
   if (!result.truncated) return compactRoutineOutput(result.content);
   const overflowPath =
-    Buffer.byteLength(shown, "utf-8") > MAX_BYTES
+    Buffer.byteLength(shown, "utf-8") > BASH_INLINE_MAX_BYTES
       ? await writeOverflow(cleaned, "bash").catch(() => null)
       : null;
   const overflowNotice = overflowPath

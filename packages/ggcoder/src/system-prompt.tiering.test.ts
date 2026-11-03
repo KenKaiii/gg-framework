@@ -203,6 +203,22 @@ describe("tool tiering in the system prompt", () => {
   });
 });
 
+describe("parallel tool-call steering", () => {
+  it("tells a bash-equipped agent that non-shell calls in one reply run in parallel", () => {
+    const steering = buildToolSteering(["bash", "read", "grep", "steroids"]);
+    expect(steering).toContain(
+      "Calls in one reply run in parallel, except shell commands and edits",
+    );
+    expect(steering).not.toContain("reads/searches");
+  });
+
+  it("keeps the read/search batching line for agents without bash", () => {
+    const steering = buildToolSteering(["read", "grep"]);
+    expect(steering).toContain("Batch independent reads/searches in one turn");
+    expect(steering).not.toContain("Calls in one reply run in parallel");
+  });
+});
+
 describe("one-command change steering", () => {
   let previousGgBash: string | undefined;
   beforeEach(() => {

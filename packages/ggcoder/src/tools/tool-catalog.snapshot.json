@@ -761,7 +761,7 @@
             "exclusiveMinimum": 0
           },
           "max_length": {
-            "description": "Default 10000 (2000 for outline)",
+            "description": "Default 10000, max 20000 (2000 for outline)",
             "type": "number"
           },
           "format": {
@@ -773,12 +773,17 @@
               "outline"
             ]
           },
+          "offset": {
+            "description": "Continue a truncated page from this character (single url)",
+            "type": "integer",
+            "minimum": 0
+          },
           "prefer_llms_txt": {
             "type": "boolean"
           }
         }
       },
-      "hash": "523ccaa4ac316bcabf0055c7d35dfdb3cc314b60a8a19b1d719c69c3ad502311"
+      "hash": "28a840e270717ecad54c273639f8fabebd106077fe489b6dc214b47a14c79b8a"
     },
     {
       "name": "write",

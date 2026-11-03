@@ -2,9 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * Supported language identifiers for style packs.
- * Adding a new language: add the id here, add a marker entry to MARKERS,
- * and add the pack content in `style-packs/packs.ts`.
+ * Supported language identifiers, used to pick verify commands.
+ * Adding a new language: add the id here and a marker entry to MARKERS.
  */
 export type LanguageId =
   | "typescript"
@@ -39,8 +38,8 @@ export type LanguageId =
  *   - a file extension that appears in any of a few top-level source dirs
  *
  * Detection runs cheap filesystem stats only — no recursive walks. The goal is
- * to surface obvious project types; missed detection just means the relevant
- * style pack isn't injected, which is a no-op degradation.
+ * to surface obvious project types; missed detection just means its verify
+ * commands aren't listed, which is a no-op degradation.
  */
 interface Marker {
   /** Manifest/config files whose presence definitively implies the language. */

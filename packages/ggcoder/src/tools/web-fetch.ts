@@ -373,6 +373,9 @@ const MAX_PDF_BYTES = 25 * 1024 * 1024;
 const MAX_URLS = 10;
 const MAX_CONCURRENCY = 5;
 const PER_URL_MIN_BUDGET = 1000;
+// Unbounded, the model raised max_length to 30k–100k on every fetch and pulled
+// whole source files into context (agent-race, 2026-11-04).
+export const MAX_FETCH_LENGTH = 20_000;
 const REQUEST_TIMEOUT_MS = 30_000;
 const PROBE_TIMEOUT_MS = 3_000;
 const PROBE_CONCURRENCY = 3;
@@ -399,6 +402,10 @@ interface LlmsCandidate {
 interface FetchOptions {
   maxLength: number;
   format: FetchFormat;
+  /** Character offset into the rendered page (continues a truncated fetch). */
+  offset: number;
+  /** URL fragment: the rendered page starts at the matching heading. */
+  section: string | null;
   preferLlmsTxt: boolean;
   /** Network allowlist policy, read lazily (undefined = unrestricted). */
   getNetworkPolicy?: GetNetworkPolicy;
@@ -559,6 +566,63 @@ export async function readBoundedBody(
   return body;
 }
 
+/** Lowercased, punctuation-free heading slug, as docs sites build `#anchors`. */
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\{#[^}]*\}\s*$/, "")
+    .replace(/[`*_[\]()]/g, "")
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
+function findSection(content: string, section: string): number | null {
+  const wanted = slugify(section);
+  if (!wanted) return null;
+  for (const match of content.matchAll(/^#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/gm)) {
+    const heading = match[1] ?? "";
+    const explicit = /\{#([^}]+)\}\s*$/.exec(heading)?.[1];
+    if (slugify(heading) === wanted || (explicit !== undefined && slugify(explicit) === wanted)) {
+      return match.index ?? null;
+    }
+  }
+  return null;
+}
+
+/**
+ * The part of a rendered page the model sees: from the URL's `#section`
+ * heading (if any), then from `offset`, capped at `maxLength`. Truncation
+ * says where to continue, so a long page is read once, in order, instead of
+ * being refetched from the top.
+ */
+function windowContent(
+  content: string,
+  opts: Pick<FetchOptions, "maxLength" | "offset" | "section">,
+): string {
+  let text = content;
+  let note = "";
+  if (opts.section) {
+    const at = findSection(text, opts.section);
+    if (at === null)
+      note = `[No heading matches #${opts.section}; showing the page from the top]\n\n`;
+    else text = text.slice(at);
+  }
+  const total = text.length;
+  let start = Math.min(Math.max(0, opts.offset), total);
+  if (start > 0 && start < total && /[\uDC00-\uDFFF]/.test(text.charAt(start))) start++;
+  if (opts.offset > 0 && start >= total) {
+    return `${note}[offset ${opts.offset} is past the end of the page (${total} chars)]`;
+  }
+  const rest = text.slice(start);
+  if (rest.length <= opts.maxLength) {
+    return start > 0 ? `${note}[chars ${start}–${total} of ${total}]\n\n${rest}` : note + rest;
+  }
+  const head = sliceHead(rest, opts.maxLength);
+  const end = start + head.length;
+  return `${note}${head}\n\n[Content truncated: chars ${start}–${end} of ${total}. Continue with offset: ${end}]`;
+}
+
 function truncate(content: string, maxLength: number): string {
   if (content.length <= maxLength) return content;
   // Surrogate-safe: a mid-emoji cut strands a lone surrogate that makes the
@@ -586,7 +650,7 @@ function looksLikePdf(contentType: string, url: string, head: Uint8Array): boole
 }
 
 /** Process a fetched PDF body into extracted text or an explanatory error. */
-async function processPdf(response: RawResponse, maxLength: number): Promise<string> {
+async function processPdf(response: RawResponse, opts: FetchOptions): Promise<string> {
   if (response.contentLength !== null && response.contentLength > MAX_PDF_BYTES) {
     return `Error: PDF too large (${response.contentLength} bytes; limit ${MAX_PDF_BYTES}).`;
   }
@@ -596,7 +660,7 @@ async function processPdf(response: RawResponse, maxLength: number): Promise<str
   }
   try {
     const { text, pages } = await extractPdfText(new Uint8Array(buffer));
-    return `[PDF · ${pages} page${pages === 1 ? "" : "s"}]\n\n${truncate(text.trim(), maxLength)}`;
+    return `[PDF · ${pages} page${pages === 1 ? "" : "s"}]\n\n${windowContent(text.trim(), opts)}`;
   } catch (err) {
     if (err instanceof PdfExtractorUnavailable) {
       return "PDF detected but the optional 'unpdf' dependency is not installed. Add it: pnpm add -w unpdf";
@@ -624,27 +688,27 @@ async function processHtmlOrText(
     return await renderOutline(text, isHtml, response.finalUrl, opts);
   }
   if (opts.format === "html") {
-    return truncate(text, opts.maxLength);
+    return windowContent(text, opts);
   }
   if (!isHtml) {
-    return truncate(text, opts.maxLength);
+    return windowContent(text, opts);
   }
 
   if (opts.format === "text") {
-    return truncate(htmlToCleanText(text), opts.maxLength);
+    return windowContent(htmlToCleanText(text), opts);
   }
 
   try {
     const extracted = await extractToMarkdown(text, response.finalUrl);
     if (extracted) {
       const heading = extracted.title ? `# ${extracted.title}\n\n` : "";
-      return truncate(heading + extracted.markdown, opts.maxLength);
+      return windowContent(heading + extracted.markdown, opts);
     }
   } catch {
     // Extractor unavailable or failed — fall through to the plain-text path.
   }
 
-  return truncate(htmlToCleanText(text), opts.maxLength);
+  return windowContent(htmlToCleanText(text), opts);
 }
 
 /**
@@ -687,7 +751,7 @@ async function fetchAndProcess(
             body: new Response(bytes.slice().buffer),
             contentLength: bytes.byteLength,
           };
-          return await processPdf(pdfResponse, opts.maxLength);
+          return await processPdf(pdfResponse, opts);
         }
 
         const text = new TextDecoder().decode(bytes);
@@ -748,16 +812,35 @@ function addLlmsFileCandidates(
   }
 }
 
+const LOCALE_SEGMENT = /^[a-z]{2}(?:-[a-z]{2})?$/i;
+
+/**
+ * A site or docs root (`/`, `/docs`, `/docs/en`), where the site's llms.txt
+ * index is a good answer. Any deeper URL names one page, and an index of the
+ * whole site in its place cost an agent 20k useless characters per fetch.
+ */
+export function isDocsRoot(url: string): boolean {
+  const segments = new URL(url).pathname.split("/").filter(Boolean);
+  if (segments.length === 0) return true;
+  const docRootIndex = segments.findIndex((segment) =>
+    DOC_ROOT_SEGMENTS.has(segment.toLowerCase()),
+  );
+  if (docRootIndex !== 0) return false;
+  const rest = segments.slice(1);
+  return rest.length === 0 || (rest.length === 1 && LOCALE_SEGMENT.test(rest[0] ?? ""));
+}
+
 export function buildLlmsCandidates(url: string, maxLength: number): LlmsCandidate[] {
   const parsed = new URL(url);
   const candidates: LlmsCandidate[] = [];
-  addLlmsFileCandidates(candidates, parsed.origin, parsed.host, maxLength, 10);
+  const root = isDocsRoot(url);
+  if (root) addLlmsFileCandidates(candidates, parsed.origin, parsed.host, maxLength, 10);
 
   const pathSegments = parsed.pathname.split("/").filter(Boolean);
   const docRootIndex = pathSegments.findIndex((segment) =>
     DOC_ROOT_SEGMENTS.has(segment.toLowerCase()),
   );
-  if (docRootIndex >= 0) {
+  if (root && docRootIndex >= 0) {
     const rootPath = pathSegments
       .slice(0, docRootIndex + 1)
       .map(encodeURIComponent)
@@ -852,7 +935,7 @@ async function tryLlmsResource(
           const bytes = await readBoundedBody(response.body);
           const text = new TextDecoder().decode(bytes);
           if (!looksLikeMarkdownDocument(text, response.contentType, candidate)) return null;
-          return `[${candidate.label}]\nSource: ${response.finalUrl}\n\n${truncate(text.trim(), opts.maxLength)}`;
+          return `[${candidate.label}]\nSource: ${response.finalUrl}\n\n${windowContent(text.trim(), opts)}`;
         },
       );
     } catch {
@@ -909,6 +992,15 @@ function sanitizeFetched(url: string, content: string): string {
  * returns through here, so {@link sanitizeFetched} applies once and covers all
  * of them.
  */
+function sectionOf(url: string): string | null {
+  try {
+    const hash = new URL(url).hash.slice(1);
+    return hash ? decodeURIComponent(hash) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchPage(
   url: string,
   opts: FetchOptions,
@@ -916,7 +1008,10 @@ async function fetchPage(
   cache: Map<string, CachedPage>,
 ): Promise<string> {
   if (opts.format !== "outline") {
-    return sanitizeFetched(url, await fetchWithPreferredDocs(url, opts, signal));
+    return sanitizeFetched(
+      url,
+      await fetchWithPreferredDocs(url, { ...opts, section: sectionOf(url) }, signal),
+    );
   }
 
   if (isBlockedUrl(url)) return BLOCKED_URL_MESSAGE;
@@ -962,8 +1057,13 @@ export function createWebFetchTool(
     parameters,
     async execute(args, context: ToolContext) {
       const format: FetchFormat = args.format ?? "markdown";
-      const maxLength =
+      const requested =
         args.max_length ?? (format === "outline" ? OUTLINE_DEFAULT_MAX_LENGTH : 10000);
+      const maxLength = Math.min(requested, MAX_FETCH_LENGTH);
+      const capNote =
+        requested > MAX_FETCH_LENGTH
+          ? `\n\n[max_length is capped at ${MAX_FETCH_LENGTH}; fetch fewer URLs or a narrower page instead of raising it]`
+          : "";
       const preferLlmsTxt = args.prefer_llms_txt !== false;
       const numbers = format === "outline" ? new LinkNumbers() : undefined;
 
@@ -994,11 +1094,15 @@ export function createWebFetchTool(
 
       // Multi-URL path: bounded-concurrency pool, per-URL budget, ordered output.
       if (!followUrl && args.urls && args.urls.length > 0) {
+        if (args.offset)
+          return "Error: `offset` continues one page; use it with `url`, not `urls`.";
         const urls = args.urls;
         const perUrlBudget = Math.max(PER_URL_MIN_BUDGET, Math.floor(maxLength / urls.length));
         const opts: FetchOptions = {
           maxLength: perUrlBudget,
           format,
+          offset: 0,
+          section: null,
           preferLlmsTxt,
           getNetworkPolicy,
           numbers,
@@ -1006,7 +1110,7 @@ export function createWebFetchTool(
         const sections = await runPool(urls, MAX_CONCURRENCY, (u) =>
           fetchPage(u, opts, context.signal, pageCache),
         );
-        return remember(urls.map((u, i) => `## ${u}\n${sections[i]}`).join("\n\n"));
+        return remember(urls.map((u, i) => `## ${u}\n${sections[i]}`).join("\n\n")) + capNote;
       }
 
       const url = followUrl ?? args.url;
@@ -1014,8 +1118,16 @@ export function createWebFetchTool(
         return "Error: provide either `url`, `urls`, or `follow`.";
       }
 
-      const opts: FetchOptions = { maxLength, format, preferLlmsTxt, getNetworkPolicy, numbers };
-      return remember(await fetchPage(url, opts, context.signal, pageCache));
+      const opts: FetchOptions = {
+        maxLength,
+        format,
+        offset: args.offset ?? 0,
+        section: null,
+        preferLlmsTxt,
+        getNetworkPolicy,
+        numbers,
+      };
+      return remember(await fetchPage(url, opts, context.signal, pageCache)) + capNote;
     },
   };
 }
@@ -1052,8 +1164,16 @@ const parameters = z
     max_length: z
       .number()
       .optional()
-      .describe(`Default 10000 (${OUTLINE_DEFAULT_MAX_LENGTH} for outline)`),
+      .describe(
+        `Default 10000, max ${MAX_FETCH_LENGTH} (${OUTLINE_DEFAULT_MAX_LENGTH} for outline)`,
+      ),
     format: z.enum(["markdown", "text", "html", "outline"]).optional(),
+    offset: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe("Continue a truncated page from this character (single url)"),
     prefer_llms_txt: z.boolean().optional(),
   })
   .refine(

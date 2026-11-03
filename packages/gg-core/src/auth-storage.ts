@@ -11,6 +11,7 @@ import { refreshXaiToken } from "./oauth/xai.js";
 import { withFileLock } from "./file-lock.js";
 import { log } from "./logger.js";
 import { isHiddenProvider } from "./hidden-providers.js";
+import { LOCAL_NO_API_KEY } from "@kenkaiiii/gg-ai";
 
 type AuthData = Record<string, OAuthCredentials>;
 
@@ -312,7 +313,7 @@ export class AuthStorage {
    */
   async setLocalEndpoint(endpointId: string, baseUrl: string, apiKey?: string): Promise<void> {
     await this.setCredentials(`${LOCAL_AUTH_KEY_PREFIX}${endpointId}`, {
-      accessToken: apiKey && apiKey.length > 0 ? apiKey : "local",
+      accessToken: apiKey && apiKey.length > 0 ? apiKey : LOCAL_NO_API_KEY,
       refreshToken: "",
       expiresAt: Date.now() + LOCAL_CREDENTIAL_LIFETIME_MS,
       baseUrl,
@@ -474,6 +475,13 @@ export class AuthStorage {
     await this.mutateLatest((latest) => {
       latest[provider] = creds;
     });
+  }
+
+  // Keeps local-endpoint keys: they're the user's own config, and a 401 there is often a busy gateway.
+  async clearRejectedApiKey(storageKey: string): Promise<boolean> {
+    if (storageKey.startsWith(LOCAL_AUTH_KEY_PREFIX)) return false;
+    await this.clearCredentials(storageKey);
+    return true;
   }
 
   async clearCredentials(provider: string): Promise<void> {

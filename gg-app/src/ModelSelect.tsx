@@ -274,7 +274,7 @@ export function ModelSelect({
           )}
           {!known && currentModel !== "" && <option value={currentModel}>{currentModel}</option>}
           {groups.map((group) => (
-            <optgroup key={group.provider} label={group.label}>
+            <optgroup key={group.key} label={group.label}>
               {group.models.map((model) => (
                 <option
                   key={`${model.provider}:${model.id}`}
@@ -337,7 +337,7 @@ export function ModelSelect({
                 </button>
               )}
               {groups.map((group) => (
-                <div key={group.provider} className="model-menu-section">
+                <div key={group.key} className="model-menu-section">
                   <div
                     className="model-menu-subtitle"
                     style={{ color: theme.textMuted }}

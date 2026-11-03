@@ -58,9 +58,9 @@ import {
 } from "../core/auto-update.js";
 import { SettingsManager, type Settings } from "../core/settings-manager.js";
 import { PROMPT_COMMANDS } from "../core/prompt-commands.js";
-import { getAnnouncedLanguages, markLanguagesAnnounced } from "../core/setup-history.js";
 import { loadCustomCommands, type CustomCommand } from "../core/custom-commands.js";
 import { detectLanguages, type LanguageId } from "../core/language-detector.js";
+import { planLanguagePackUpdate } from "./language-pack-update.js";
 import { detectVerifyCommands } from "../core/verify-commands.js";
 import type { Skill } from "../core/skills.js";
 import type { CheckpointInfo, CheckpointStore, RestoreMode } from "../core/checkpoint-store.js";
@@ -532,7 +532,7 @@ export function App(props: AppProps) {
   );
   const idealReviewEnabledRef = useRef(idealReviewEnabled);
   /**
-   * Languages whose style packs are currently injected into the system prompt.
+   * Languages whose verify commands are currently in the system prompt.
    * Grown by `maybeInjectLanguagePacks` after `write`/`bash` tool results when
    * the language detector sees new marker files.
    * Only grows within a session; we never strip packs once injected (cheaper
@@ -761,43 +761,43 @@ export function App(props: AppProps) {
       if (!injectedLanguagesRef.current.has(id)) added.push(id);
     }
     if (added.length === 0) {
-      // No new packs to inject. The with-packs path below is gated via
-      // getAnnouncedLanguages / markLanguagesAnnounced: badge fires once per
-      // (cwd, language) and stays silent on subsequent sessions / /clear.
       if (source === "initial" && injectedLanguagesRef.current.size === 0) {
-        log("INFO", "language", `No style packs detected for ${cwd}`, { source });
+        log("INFO", "language", `No languages detected for ${cwd}`, { source });
       }
       return;
     }
+    // Rewriting the system prompt after the first reply discards the whole
+    // prompt cache; append the update as a message between turns instead.
+    const plan = planLanguagePackUpdate({
+      added: new Set(added),
+      cwd,
+      hasReply: messagesRef.current.some((m) => m.role === "assistant"),
+      betweenTurns: source === "input" && !agentLoopRef.current?.isRunning,
+    });
+    if (plan.kind === "defer" || plan.kind === "none") return;
     injectedLanguagesRef.current = detected;
     try {
-      await replaceSystemPrompt({ cwd, activeLanguages: detected });
+      if (plan.kind === "append") {
+        messagesRef.current.push(plan.message);
+      } else {
+        await replaceSystemPrompt({ cwd, activeLanguages: detected });
+      }
       const verifyCmds = detectVerifyCommands(cwd, detected);
-      const tag = source === "initial" ? "Initial style packs" : "Style pack(s) loaded";
+      const tag = source === "initial" ? "Initial languages" : "Language(s) detected";
       log("INFO", "language", `${tag}: ${added.join(", ")}`, {
         source,
         active: [...detected].join(","),
         verify_count: String(verifyCmds.length),
         verify: verifyCmds.map((c) => `${c.language}:${c.label}=${c.command}`).join(" | "),
       });
-      // The badge is purely user-facing notification ("hey, this pack just
-      // turned on"). The system prompt is already updated above — that's the
-      // load-bearing part. We persist the announced set per-cwd so /clear,
-      // restart, and new sessions stay quiet for packs the user has seen.
-      const alreadyAnnounced = new Set(getAnnouncedLanguages(cwd));
-      const toAnnounce = added.filter((id) => !alreadyAnnounced.has(id));
-      if (toAnnounce.length > 0) {
-        markLanguagesAnnounced(cwd, toAnnounce);
-        setLiveItems((prev) => [...prev, { kind: "style_pack", added: toAnnounce, id: getId() }]);
-      }
     } catch (err) {
       log("WARN", "language", `Detection apply failed (${source}): ${(err as Error).message}`);
     }
   };
 
   // Initial language detection — runs once on mount so existing projects with
-  // marker files (package.json, Cargo.toml, etc.) get their style packs from
-  // turn 1, with a visible badge.
+  // marker files (package.json, Cargo.toml, etc.) get their verify commands
+  // from turn 1.
   useEffect(() => {
     void applyLanguageDetectionRef.current("initial");
   }, []);

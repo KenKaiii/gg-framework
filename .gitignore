@@ -80,3 +80,6 @@ packages/*/.bench-*.mjs
 # `git add -A` cannot sweep 216KB of scratch into a release.
 /gg-app/mockups/
 /gg-app/dev/
+
+# agent-race: local race harness (Claude Code vs GG Coder), see agent-race/README.md
+/agent-race/

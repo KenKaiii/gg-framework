@@ -73,4 +73,20 @@ describe("groupByProvider", () => {
       ]).map((g) => g.provider),
     ).toEqual(["anthropic", "alpha-labs", "zeta-labs", "local"]);
   });
+
+  it("gives each local endpoint its own group, after the providers", () => {
+    const groups = groupByProvider([
+      { id: "local/kilo/minimax/minimax-m2:free", provider: "local", endpoint: "Kilo AI Gateway" },
+      { id: "local/lmstudio/qwen3", provider: "local", endpoint: "LM Studio" },
+      { id: "claude-sonnet-5", provider: "anthropic" },
+      { id: "local/kilo/x-ai/grok-code-fast-1", provider: "local", endpoint: "Kilo AI Gateway" },
+    ]);
+    expect(groups.map((g) => g.label)).toEqual([
+      "Anthropic",
+      "Local · Kilo AI Gateway",
+      "Local · LM Studio",
+    ]);
+    expect(new Set(groups.map((g) => g.key)).size).toBe(groups.length);
+    expect(groups[1]?.models).toHaveLength(2);
+  });
 });

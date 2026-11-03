@@ -15,7 +15,7 @@ const MODELS: ModelOption[] = [
   { id: "grok-4.5", name: "Grok 4.5", provider: "xai" },
   {
     id: "local/ollama/gemma4:e2b",
-    name: "gemma4:e2b (Ollama)",
+    name: "gemma4:e2b",
     provider: "local",
     local: true,
     endpoint: "Ollama",
@@ -24,7 +24,7 @@ const MODELS: ModelOption[] = [
   },
   {
     id: "local/ollama/tiny",
-    name: "tiny (Ollama)",
+    name: "tiny",
     provider: "local",
     local: true,
     endpoint: "Ollama",
@@ -126,7 +126,7 @@ describe("ModelSelect — native popup", () => {
     );
 
     const groups = Array.from(document.querySelectorAll("optgroup")).map((g) => g.label);
-    expect(groups).toEqual(["Anthropic", "OpenAI", "xAI (Grok)", "Local"]);
+    expect(groups).toEqual(["Anthropic", "OpenAI", "xAI (Grok)", "Local · Ollama"]);
   });
 
   it("disables a tool-less local option and says why in its label", () => {
@@ -140,7 +140,7 @@ describe("ModelSelect — native popup", () => {
       />,
     );
 
-    const option = screen.getByRole("option", { name: /tiny \(Ollama\) — no tool calling/ });
+    const option = screen.getByRole("option", { name: /^tiny — no tool calling/ });
     expect(option.hasAttribute("disabled")).toBe(true);
   });
 
@@ -327,9 +327,9 @@ describe("ModelSelect — in-webview menu", () => {
     const headings = Array.from(document.querySelectorAll(".model-menu-subtitle")).map(
       (el) => el.textContent,
     );
-    expect(headings).toEqual(["Anthropic", "OpenAI", "xAI (Grok)", "Local"]);
+    expect(headings).toEqual(["Anthropic", "OpenAI", "xAI (Grok)", "Local · Ollama"]);
     // Each section's grid is labelled for screen readers.
-    expect(screen.getByRole("group", { name: "Local" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Local · Ollama" })).toBeTruthy();
   });
 
   it("selects a model from its provider group", () => {
@@ -343,7 +343,7 @@ describe("ModelSelect — in-webview menu", () => {
   it("refuses to select a tool-less local model", () => {
     const onSelect = openMenu();
 
-    const item = screen.getByRole("menuitemradio", { name: "tiny (Ollama)" });
+    const item = screen.getByRole("menuitemradio", { name: "tiny" });
     expect(item.hasAttribute("disabled")).toBe(true);
     expect(item.getAttribute("title")).toContain("has no tool calling");
 
@@ -355,9 +355,7 @@ describe("ModelSelect — in-webview menu", () => {
     openMenu("local/ollama/gemma4:e2b");
 
     expect(
-      screen
-        .getByRole("menuitemradio", { name: "gemma4:e2b (Ollama)" })
-        .getAttribute("aria-checked"),
+      screen.getByRole("menuitemradio", { name: "gemma4:e2b" }).getAttribute("aria-checked"),
     ).toBe("true");
   });
 });

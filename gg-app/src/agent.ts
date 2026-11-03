@@ -1291,14 +1291,28 @@ export interface AuthProvider {
  * to show a blank list, the same failure mode as the project-folder bug. The
  * login ACTIONS (OAuth, key save, logout) still go through the sidecar.
  */
-export async function authStatus(): Promise<AuthProvider[]> {
+async function readAuthStatus(): Promise<{
+  providers?: AuthProvider[];
+  localConnected?: boolean;
+}> {
   try {
-    const res = await invoke<{ providers: AuthProvider[] }>("app_auth_status");
-    return res.providers ?? [];
+    return await invoke<{ providers?: AuthProvider[]; localConnected?: boolean }>(
+      "app_auth_status",
+    );
   } catch (e) {
     await logError(`app_auth_status failed: ${String(e)}`);
-    return [];
+    return {};
   }
+}
+
+export async function authStatus(): Promise<AuthProvider[]> {
+  return (await readAuthStatus()).providers ?? [];
+}
+
+/** True when the agent has something to run on: a connected provider or a local endpoint. */
+export async function hasModelSource(): Promise<boolean> {
+  const status = await readAuthStatus();
+  return status.localConnected === true || (status.providers ?? []).some((p) => p.connected);
 }
 
 /**

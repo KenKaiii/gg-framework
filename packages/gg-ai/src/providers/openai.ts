@@ -41,6 +41,7 @@ import {
 import { parseToolArguments } from "../utils/json.js";
 import { getEnvironment } from "../utils/env.js";
 import { PROVIDER_TRANSPORT_TIMEOUT_MS, providerFetch } from "../utils/provider-fetch.js";
+import { localBearerKey } from "../local-api-key.js";
 
 // Kimi K3's declared effort rungs (server-validated; anything else 400s).
 // Official alias mapping from Moonshot's K3 third-party-tools docs:
@@ -115,6 +116,11 @@ export function createClient(options: StreamOptions): OpenAI {
     if (cached) return cached;
   }
 
+  // A keyless local endpoint gets no Authorization header (null drops the SDK's bearer).
+  const omitAuth = options.provider === "local" && localBearerKey(options.apiKey) === undefined;
+  const defaultHeaders = omitAuth
+    ? { ...options.defaultHeaders, Authorization: null }
+    : options.defaultHeaders;
   const client = new OpenAI({
     apiKey: options.apiKey,
     ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
@@ -124,7 +130,7 @@ export function createClient(options: StreamOptions): OpenAI {
     // events). The SDK default of 2 silent retries stacked under it: one 5xx
     // cost up to 3 hidden requests plus SDK sleeps before the loop even saw it.
     maxRetries: 0,
-    ...(options.defaultHeaders ? { defaultHeaders: options.defaultHeaders } : {}),
+    ...(defaultHeaders ? { defaultHeaders } : {}),
   });
 
   if (!options.fetch) {

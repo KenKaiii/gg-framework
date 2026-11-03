@@ -105,15 +105,15 @@ describe("LoginScreen cross-window auth", () => {
     expect(authStatus).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the Ollama tile by name and the Hugging Face download tile", async () => {
+  it("shows the Local models tile, naming the servers it covers, and the Hugging Face tile", async () => {
     vi.mocked(authStatus).mockResolvedValue(providers([]));
     await act(async () => {
       render(<LoginScreen onClose={vi.fn()} />);
     });
     // Not clicking them: the real modals would call agent functions this test's
     // minimal mock doesn't define. The tiles themselves are what need pinning.
-    expect(screen.getByText("Ollama")).toBeTruthy();
-    expect(screen.queryByText("Local models")).toBeNull();
+    expect(screen.getByText("Local models")).toBeTruthy();
+    expect(screen.getByTitle(/LM Studio.*OpenAI-compatible endpoint/)).toBeTruthy();
     expect(screen.getByTitle("Hugging Face: download models to Ollama")).toBeTruthy();
   });
 });

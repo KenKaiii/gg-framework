@@ -56,6 +56,12 @@ import { SettingsManager } from "./settings-manager.js";
 import { AuthStorage } from "./auth-storage.js";
 import { dualAuthProvider } from "@kenkaiiii/gg-core";
 import { getClaudeCliUserAgent } from "./claude-code-version.js";
+import {
+  runSideWebSearch,
+  SIDE_SEARCH_MODEL,
+  type SideSearchRequest,
+  type SideSearchResult,
+} from "../tools/side-web-search.js";
 import { kimiCodingHeaders, isKimiCodingEndpoint } from "./oauth/kimi.js";
 import { isGrokCliEndpoint } from "./oauth/xai.js";
 import {
@@ -818,9 +824,9 @@ export class AgentSession {
   /** Latest plan notice appended — re-announced if compaction drops it. */
   private lastPlanNotice: Message | null = null;
   /**
-   * Project languages whose style packs and verify commands are in the
-   * standard prompt. Only ever grows within a session (same policy as the
-   * terminal UI): a pack disappearing mid-task would rewrite the cached prefix
+   * Project languages whose verify commands are in the standard prompt.
+   * Only ever grows within a session (same policy as the terminal UI): a
+   * section disappearing mid-task would rewrite the cached prefix
    * for no benefit.
    */
   private activeLanguages = new Set<LanguageId>();
@@ -1046,6 +1052,7 @@ export class AgentSession {
         allowUnixSockets: this.settingsManager.get("sandboxAllowUnixSockets"),
       }),
       getUseExternalGrep: () => this.settingsManager.get("grepUseRipgrep"),
+      sideWebSearch: (request) => this.runSideWebSearch(request),
       authStorage: this.authStorage,
       onFileMutated: (filePath) => {
         const relative = path.relative(this.cwd, filePath) || path.basename(filePath);
@@ -1423,9 +1430,9 @@ export class AgentSession {
    */
   private nativeWebSearchOn(): boolean {
     if (this.provider !== "anthropic") return true;
-    if (!this.deferredBuiltinToolNames.includes("web_search")) return true;
-    if (this.tools.some((t) => t.name === "web_search")) return true;
-    // A restored, branched or compacted conversation can already hold native
+    // Anthropic search runs inside the client web_search tool as a side
+    // request (runSideWebSearch): its result pages cost 11–20k cache-write
+    // tokens each in the main context. A restored, branched or compacted conversation can already hold native
     // `web_search` blocks from when the tool was attached. Anthropic rejects
     // any request whose history references a server tool that is not declared
     // (400 "`server_tool_use` block references `web_search`…"), so the history
@@ -1442,7 +1449,7 @@ export class AgentSession {
    * one discovery turn, a false hit only the ~2.5k-token schema.
    */
   private attachWebSearchIfAsked(content: unknown): void {
-    if (this.provider !== "anthropic" || this.nativeWebSearchOn()) return;
+    if (this.provider !== "anthropic" || this.tools.some((t) => t.name === "web_search")) return;
     const text =
       typeof content === "string"
         ? content
@@ -1454,6 +1461,18 @@ export class AgentSession {
               .join(" ")
           : "";
     if (WEB_INTENT.test(text)) this.promoteDeferredBuiltin("web_search");
+  }
+
+  private async runSideWebSearch(request: SideSearchRequest): Promise<SideSearchResult | null> {
+    if (this.provider !== "anthropic") return null;
+    const creds = await this.authStorage.resolveCredentials("anthropic", {
+      storageKeys: getAuthStorageKeys("anthropic", SIDE_SEARCH_MODEL),
+    });
+    return await runSideWebSearch(request, {
+      apiKey: creds.accessToken,
+      baseUrl: this.baseUrl ?? creds.baseUrl,
+      userAgent: await getClaudeCliUserAgent(),
+    });
   }
 
   /** Append a deferred built-in to the live tool list (append-only). */
@@ -2750,12 +2769,13 @@ export class AgentSession {
       const badKey =
         (await this.authStorage.pickStorageKey(this.currentAuthStorageKeys())) ??
         this.currentAuthStorageKeys()[0]!;
+      const cleared = await this.authStorage.clearRejectedApiKey(badKey);
       log(
         "WARN",
         "auth",
-        `Got 401 for ${this.provider} (${badKey}) — API key is invalid or revoked`,
+        `Got 401 for ${this.provider} (${badKey}) — ` +
+          (cleared ? "API key is invalid or revoked" : "key rejected, kept on file"),
       );
-      await this.authStorage.clearCredentials(badKey);
       return true;
     };
 
@@ -2945,24 +2965,19 @@ export class AgentSession {
 
     // Update provider-specific tools when provider changes
     if (provider && provider !== prevProvider) {
-      // Add/remove client-side web_search tool based on provider.
-      // Anthropic has native server-side web search; all other providers need the client tool.
+      // The client web_search tool serves every provider (on Anthropic it
+      // runs the native search as a side request), so a switch only adds it
+      // when an untiered session lacks it.
       const hasWebSearch = this.tools.some((t) => t.name === "web_search");
-      if (this.deferredBuiltinToolNames.includes("web_search")) {
-        // Tiered: the client tool lives in the catalog for every provider and,
-        // once promoted, is swapped for the native server tool by the Anthropic
-        // transport. Nothing to add or remove — doing so would either load the
-        // schema eagerly or take away a capability the model already has.
-      } else if (this.provider === "anthropic" && hasWebSearch) {
-        // Switching TO anthropic — remove client-side web_search (server-side handles it)
-        this.tools = this.tools.filter((t) => t.name !== "web_search");
-      } else if (this.provider !== "anthropic" && !hasWebSearch) {
-        // Switching FROM anthropic — add client-side web_search
+      if (!this.deferredBuiltinToolNames.includes("web_search") && !hasWebSearch) {
         this.tools.push(
-          createWebSearchTool(() => ({
-            mode: this.settingsManager.get("networkMode"),
-            allow: this.settingsManager.get("networkAllow"),
-          })),
+          createWebSearchTool(
+            () => ({
+              mode: this.settingsManager.get("networkMode"),
+              allow: this.settingsManager.get("networkAllow"),
+            }),
+            (request) => this.runSideWebSearch(request),
+          ),
         );
       }
 
@@ -4257,7 +4272,7 @@ export class AgentSession {
   }
 
   /**
-   * Give the model style packs for languages that appeared after its prompt
+   * Give the model verify commands for languages that appeared after its prompt
    * was cached (e.g. the previous task scaffolded a TypeScript project), as a
    * hidden message appended to the history rather than a prompt re-render that
    * would throw away the whole cache. Runs just before a new user message is
@@ -4284,7 +4299,7 @@ export class AgentSession {
     this.messages.push(update);
     await this.persistMessage(update);
     this.lastPersistedIndex = this.messages.length;
-    log("INFO", "language", "Appended style packs for new languages", {
+    log("INFO", "language", "Appended verify commands for new languages", {
       added: [...fresh].join(","),
     });
   }
@@ -4319,7 +4334,7 @@ export class AgentSession {
       return false;
     }
     if (grew) {
-      log("INFO", "language", "Style packs active", {
+      log("INFO", "language", "Languages active", {
         active: [...this.activeLanguages].join(","),
       });
     }

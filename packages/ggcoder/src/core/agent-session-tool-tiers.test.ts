@@ -305,9 +305,9 @@ describe("AgentSession built-in tool tiering", () => {
     }
   }, 20_000);
 
-  it("attaches Anthropic's native web search only once web_search is promoted", async () => {
-    // The server tool is ~2.5k prefix tokens per request; web search is
-    // reached in ~6% of sessions, so it follows the same tiering as the rest.
+  it("promotes web_search as a client tool on Anthropic, never the native server tool", async () => {
+    // Native search put 11–20k tokens of result pages into the main context
+    // per search (agent-race 2026-11-04); the client tool runs it as a side request.
     const session = await createSession();
     try {
       const s = session as unknown as {
@@ -322,7 +322,7 @@ describe("AgentSession built-in tool tiering", () => {
       const before = liveToolNames(session);
       expect(s.promoteDeferredBuiltin("web_search")?.name).toBe("web_search");
       expect(liveToolNames(session)).toEqual([...before, "web_search"]);
-      expect(s.nativeWebSearchOn()).toBe(true);
+      expect(s.nativeWebSearchOn()).toBe(false);
     } finally {
       await session.dispose();
     }
@@ -381,7 +381,7 @@ describe("AgentSession built-in tool tiering", () => {
     ).toBe(true);
   });
 
-  it("attaches native web search up front when the human prompt asks for the web", async () => {
+  it("attaches web_search up front when the human prompt asks for the web", async () => {
     const session = await createSession();
     try {
       const s = session as unknown as {
@@ -389,27 +389,29 @@ describe("AgentSession built-in tool tiering", () => {
         attachWebSearchIfAsked(content: unknown): void;
       };
       s.attachWebSearchIfAsked("Rename circleArea and search for its callers.");
-      expect(s.nativeWebSearchOn()).toBe(false);
+      expect(liveToolNames(session)).not.toContain("web_search");
       s.attachWebSearchIfAsked([
         { type: "text", text: "Search the web for the Node release page" },
       ]);
-      expect(s.nativeWebSearchOn()).toBe(true);
+      s.attachWebSearchIfAsked("Search the web again");
+      expect(s.nativeWebSearchOn()).toBe(false);
       expect(liveToolNames(session).filter((n) => n === "web_search")).toHaveLength(1);
     } finally {
       await session.dispose();
     }
   }, 20_000);
 
-  it("keeps native web search always on for untiered Anthropic sessions", async () => {
+  it("gives untiered Anthropic sessions the client web_search, not the native tool", async () => {
     await writeSettings({ deferredBuiltinTools: false });
     const eager = await createSession();
     const allowed = await createSession({ allowedTools: ["read", "grep"] });
     try {
       for (const session of [eager, allowed]) {
         expect((session as unknown as { nativeWebSearchOn(): boolean }).nativeWebSearchOn()).toBe(
-          true,
+          false,
         );
       }
+      expect(liveToolNames(eager)).toContain("web_search");
     } finally {
       await eager.dispose();
       await allowed.dispose();

@@ -30,6 +30,13 @@ describe("formatChatError", () => {
     );
   });
 
+  it("sends a rejected local key to the local endpoint settings, not account sign-in", () => {
+    const error = formatChatError(new ProviderError("local", "Unauthorized", { statusCode: 401 }));
+    expect(error.reason).toBe("auth");
+    expect(error.headline).toBe("The local server rejected its key");
+    expect(error.guidance).toMatch(/Local models in AI Providers/);
+  });
+
   it.each([
     {
       message: "Fast mode unavailable (out_of_credits): Your Claude usage credits have run out.",

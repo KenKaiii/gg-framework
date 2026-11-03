@@ -323,11 +323,22 @@ pub(crate) fn resolve_apikey_target(
 /// key on file as backup", and the UI needs that to explain itself and to offer
 /// a per-method disconnect.
 #[tauri::command]
-pub(crate) fn app_auth_status() -> serde_json::Value {
-    // Parse the auth file into a JSON object; missing/invalid → empty (no creds).
-    let creds = std::fs::read_to_string(auth_file_path())
+pub(crate) async fn app_auth_status() -> serde_json::Value {
+    let creds = read_auth_file();
+    let mut status = auth_status_snapshot(creds.as_ref());
+    status["localConnected"] = serde_json::json!(local_model_source(creds.as_ref()).await);
+    status
+}
+
+/// Parse the auth file into a JSON object; missing/invalid → None (no creds).
+fn read_auth_file() -> Option<serde_json::Value> {
+    std::fs::read_to_string(auth_file_path())
         .ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+}
+
+/// Provider tiles from the auth file; `localConnected` is added by the command.
+pub(crate) fn auth_status_snapshot(creds: Option<&serde_json::Value>) -> serde_json::Value {
     let has_key = |key: &str| -> bool {
         creds
             .as_ref()
@@ -485,6 +496,70 @@ pub(crate) fn app_auth_status() -> serde_json::Value {
         .collect();
 
     serde_json::json!({ "providers": list })
+}
+
+/// Local endpoints in auth.json, split the way the sidecar's `localConnected`
+/// splits them: user-added ones (`local:custom-<host>`, see `endpointIdFor`)
+/// count as configured; an auto-detected one (Ollama) keeps its credential after
+/// the server stops, so it's returned by base URL to be checked live.
+fn local_endpoints(creds: Option<&serde_json::Value>) -> (bool, Vec<String>) {
+    let mut custom = false;
+    let mut detected = Vec::new();
+    for (key, value) in creds.and_then(|v| v.as_object()).into_iter().flatten() {
+        let Some(id) = key.strip_prefix("local:") else {
+            continue;
+        };
+        if value.is_null() {
+            continue;
+        }
+        if id.starts_with("custom-") {
+            custom = true;
+        } else if let Some(url) = value.get("baseUrl").and_then(|u| u.as_str()) {
+            detected.push(url.to_string());
+        }
+    }
+    (custom, detected)
+}
+
+/// Whether a local endpoint can serve a model right now.
+async fn local_model_source(creds: Option<&serde_json::Value>) -> bool {
+    let (custom, detected) = local_endpoints(creds);
+    if custom {
+        return true;
+    }
+    for base_url in detected {
+        if serves_a_model(&base_url).await {
+            return true;
+        }
+    }
+    false
+}
+
+/// GET `<base>/models` and check it lists something. Its own client: the shared
+/// one carries the daemon token, which must never reach another local server.
+async fn serves_a_model(base_url: &str) -> bool {
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(800))
+        .build()
+    else {
+        return false;
+    };
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let Ok(res) = client.get(&url).send().await else {
+        return false;
+    };
+    if !res.status().is_success() {
+        return false;
+    }
+    res.json::<serde_json::Value>()
+        .await
+        .ok()
+        .and_then(|v| {
+            v.get("data")
+                .and_then(|d| d.as_array())
+                .map(|a| !a.is_empty())
+        })
+        .unwrap_or(false)
 }
 
 // ── Native API-key auth writes (~/.gg/auth.json) ──────────────────────────
@@ -721,7 +796,7 @@ mod tests {
 
     #[test]
     fn auth_status_omits_hidden_providers() {
-        let status = app_auth_status();
+        let status = auth_status_snapshot(None);
         let values: Vec<&str> = status["providers"]
             .as_array()
             .expect("providers array")
@@ -732,6 +807,34 @@ mod tests {
         for hidden in HIDDEN_PROVIDERS {
             assert!(!values.contains(hidden), "{hidden} is still listed");
         }
+    }
+
+    #[test]
+    fn local_endpoints_splits_user_added_from_auto_detected() {
+        let creds = serde_json::json!({
+            "anthropic": { "accessToken": "t" },
+            "local:ollama": { "accessToken": "local", "baseUrl": "http://127.0.0.1:11434/v1" },
+            "local:gone": null,
+        });
+        assert_eq!(
+            local_endpoints(Some(&creds)),
+            (false, vec!["http://127.0.0.1:11434/v1".to_string()])
+        );
+        let custom = serde_json::json!({ "local:custom-gw": { "accessToken": "k" } });
+        assert_eq!(local_endpoints(Some(&custom)), (true, vec![]));
+        assert_eq!(local_endpoints(None), (false, vec![]));
+    }
+
+    #[test]
+    fn a_stopped_ollama_is_not_a_model_source() {
+        // Port 9 (discard) on loopback is closed on CI and dev machines.
+        install_rustls_provider();
+        let creds = serde_json::json!({
+            "local:ollama": { "accessToken": "local", "baseUrl": "http://127.0.0.1:9/v1" },
+        });
+        assert!(!tauri::async_runtime::block_on(local_model_source(Some(
+            &creds
+        ))));
     }
 
     #[test]

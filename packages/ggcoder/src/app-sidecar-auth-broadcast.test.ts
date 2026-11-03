@@ -630,4 +630,82 @@ describe("dual-auth providers (OAuth + API key)", () => {
     const providers = (models.json.models as { provider: string }[]).map((m) => m.provider);
     expect(providers).not.toContain("gemini");
   }, 90_000);
+
+  it("counts a stale Ollama credential only while Ollama serves models", async () => {
+    const session = await createSession();
+    await fs.writeFile(
+      path.join(tmpHome, ".gg", "auth.json"),
+      JSON.stringify({
+        "local:ollama": {
+          accessToken: "local",
+          refreshToken: "",
+          expiresAt: Date.now() + 1_000_000,
+          baseUrl: "http://127.0.0.1:11434/v1",
+        },
+      }),
+    );
+    // Holds whether or not this machine happens to be running Ollama.
+    const local = await request("POST", "/local/scan", { session });
+    const ollama = (
+      local.json.endpoints as { id: string; reachable: boolean; models: unknown[] }[]
+    ).find((e) => e.id === "ollama");
+    const status = await request("GET", "/auth/status", { session });
+    expect(status.json.localConnected).toBe(Boolean(ollama?.reachable && ollama.models.length));
+  }, 90_000);
+
+  it("counts a user-added local endpoint as connected without listing it as a tile", async () => {
+    const session = await createSession();
+    const added = await request("POST", "/local/endpoints", {
+      session,
+      body: { baseUrl: "http://127.0.0.1:9/v1", label: "Offline GW", apiKey: "sk-gateway" },
+    });
+    expect(added.status).toBe(200);
+    const status = await request("GET", "/auth/status", { session });
+    expect(status.status).toBe(200);
+    expect(status.json.localConnected).toBe(true);
+    const providers = status.json.providers as { value: string; connected: boolean }[];
+    expect(providers.map((p) => p.value)).not.toContain("local");
+    expect(providers.some((p) => p.connected)).toBe(false);
+  }, 90_000);
+});
+
+describe("saved local model across restarts", () => {
+  it("restores a local-only user's saved model once discovery finds it", async () => {
+    const gateway = http.createServer((req, res) => {
+      res.writeHead(req.url === "/v1/models" ? 200 : 404, { "content-type": "application/json" });
+      res.end(req.url === "/v1/models" ? JSON.stringify({ data: [{ id: "free-model" }] }) : "{}");
+    });
+    await new Promise<void>((resolve) => gateway.listen(0, "127.0.0.1", resolve));
+    const gatewayPort = (gateway.address() as { port: number }).port;
+    try {
+      let session = await createSession();
+      const added = await request("POST", "/local/endpoints", {
+        session,
+        body: { baseUrl: `http://127.0.0.1:${gatewayPort}/v1`, label: "GW" },
+      });
+      expect(added.status).toBe(200);
+      const saved = `local/${(added.json.endpoint as { id: string }).id}/free-model`;
+      expect((await request("POST", "/model", { session, body: { model: saved } })).status).toBe(
+        200,
+      );
+
+      const running = daemon!;
+      await new Promise<void>((resolve) => {
+        running.once("close", () => resolve());
+        running.kill("SIGKILL");
+      });
+      await startDaemon();
+      session = await createSession();
+
+      // Boot picks a model before discovery; the saved one returns after the scan.
+      let model = "";
+      for (const deadline = Date.now() + 15_000; model !== saved && Date.now() < deadline;) {
+        model = String((await request("GET", "/state", { session })).json.model);
+        if (model !== saved) await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(model).toBe(saved);
+    } finally {
+      await new Promise<void>((resolve) => gateway.close(() => resolve()));
+    }
+  }, 90_000);
 });

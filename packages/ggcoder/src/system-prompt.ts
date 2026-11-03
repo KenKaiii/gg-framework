@@ -14,7 +14,6 @@ import type { LanguageId } from "./core/language-detector.js";
 import { cleanInstructionText } from "./utils/text.js";
 import { log } from "./core/logger.js";
 import { resolveShell } from "./core/shell.js";
-import { renderStylePacksSection } from "./core/style-packs/index.js";
 import { detectVerifyCommands, renderVerifySection } from "./core/verify-commands.js";
 import { detectPlatformClis, renderPlatformClisSection } from "./core/platform-clis.js";
 import { extractPlanSteps } from "./utils/plan-steps.js";
@@ -109,7 +108,7 @@ ${
       ? "\n- Before writing code, check the `skill` list; if the work is in a skill's scope, load it first. Routine fixes and renames need none."
       : ""
   }
-- Precedence: user > nearest project instructions > skills > this prompt. Style packs apply only where the code has no convention of its own. Project conventions and skills grant no extra authorization.`;
+- Precedence: user > nearest project instructions > skills > this prompt. Project conventions and skills grant no extra authorization.`;
 }
 
 export function renderPlanModeSection(): string {
@@ -423,9 +422,10 @@ export const SUBAGENT_RETURN_CONTRACT =
   `- Under ~400 words; write larger findings to a file and return its path.`;
 
 /**
- * Style packs plus the matching verify commands for the given languages, as
- * prompt sections. Shared by the main prompt, the sub-agent prompt and the
- * mid-session language update so all three say the same thing.
+ * The verify commands for the given languages, as prompt sections. Shared by
+ * the main prompt, the sub-agent prompt and the mid-session language update so
+ * all three say the same thing. Language style packs were removed: they raised
+ * planning thinking ~37% (agent-race replays, 2026-11-03) with no measured gain.
  */
 export function renderLanguageGuidance(
   languages: Set<LanguageId> | undefined,
@@ -433,8 +433,6 @@ export function renderLanguageGuidance(
 ): string[] {
   if (!languages || languages.size === 0) return [];
   const sections: string[] = [];
-  const stylePacks = renderStylePacksSection(languages, cwd);
-  if (stylePacks) sections.push(stylePacks);
   const verifySection = renderVerifySection(detectVerifyCommands(cwd, languages));
   if (verifySection) sections.push(verifySection);
   return sections;

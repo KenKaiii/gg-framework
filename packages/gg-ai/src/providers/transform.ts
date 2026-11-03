@@ -1058,10 +1058,28 @@ export function toAnthropicMessages(
             )
           : [];
         if (refs.length === 0) {
+          const content = toAnthropicToolResultContent(result.content);
+          if (
+            result.isError &&
+            typeof content !== "string" &&
+            content.some((part) => part.type !== "text")
+          ) {
+            // An is_error tool_result must be text-only (API 400), so its media
+            // follows the tool_result blocks as ordinary user content.
+            const text = content.filter((part) => part.type === "text" && part.text !== "");
+            trailing.push({ type: "text", text: `Attachments from tool call ${toolUseId}:` });
+            for (const part of content) if (part.type !== "text") trailing.push(part);
+            return {
+              type: "tool_result" as const,
+              tool_use_id: toolUseId,
+              content: text.length > 0 ? text : "Tool call failed; its attachments follow.",
+              is_error: true,
+            };
+          }
           return {
             type: "tool_result" as const,
             tool_use_id: toolUseId,
-            content: toAnthropicToolResultContent(result.content),
+            content,
             is_error: result.isError,
           };
         }
@@ -1081,7 +1099,8 @@ export function toAnthropicMessages(
           type: "tool_result" as const,
           tool_use_id: toolUseId,
           content: refs.map((name) => ({ type: "tool_reference" as const, tool_name: name })),
-          is_error: result.isError,
+          // tool_reference isn't text, so is_error would 400; the error text trails.
+          is_error: undefined,
         };
       });
       out.push({
@@ -1121,14 +1140,13 @@ export function toAnthropicMessages(
           markAnthropicCacheBreakpoint(out, tail, cacheControl);
         } else {
           if (anchor !== undefined) markAnthropicCacheBreakpoint(out, anchor, cacheControl);
-          // Long runs advance the 1-h anchor onto the tail: once the run has
-          // called a blocking/wait tool or gone LONG_RUN_ROUNDS tool rounds
-          // (~4+ min), a later >5-min wait would otherwise expire the 5-min
-          // tail and re-write the whole loop. Only the new tokens of each
-          // request are written, so this costs 2x instead of 1.25x on the
-          // increment, versus a full re-write after any gap.
-          const longRun = isLongToolRun(messages, trajectoryStartIdx);
-          markAnthropicCacheBreakpoint(out, tail, longRun ? cacheControl : { type: "ephemeral" });
+          // A 1-h breakpoint never reads a 5-min entry, so switching the tail's
+          // TTL mid-run re-writes the whole loop (measured live: the read fell
+          // back to the turn anchor). Switch only for a blocking/wait tool,
+          // whose wait would likely expire a 5-min tail anyway; an ordinary
+          // tool loop keeps its 5-min tail however long it runs.
+          const blocking = calledBlockingTool(messages, trajectoryStartIdx);
+          markAnthropicCacheBreakpoint(out, tail, blocking ? cacheControl : { type: "ephemeral" });
         }
       } else {
         markAnthropicCacheBreakpoint(out, tail, cacheControl);
@@ -1171,22 +1189,17 @@ export const BLOCKING_TOOL_NAMES: ReadonlySet<string> = new Set([
   "subagent",
   "ask_user",
 ]);
-/** Tool rounds after which a run counts as long (about 4 minutes of tool work). */
-export const LONG_RUN_ROUNDS = 6;
-
-/** True once the active run called a blocking tool or reached LONG_RUN_ROUNDS rounds. */
-export function isLongToolRun(messages: readonly Message[], trajectoryStartIdx: number): boolean {
-  let rounds = 0;
+/** True once the active run has called a blocking tool. */
+export function calledBlockingTool(
+  messages: readonly Message[],
+  trajectoryStartIdx: number,
+): boolean {
   for (let i = Math.max(0, trajectoryStartIdx + 1); i < messages.length; i++) {
     const m = messages[i];
     if (m?.role !== "assistant" || typeof m.content === "string") continue;
-    let called = false;
     for (const part of m.content) {
-      if (part.type !== "tool_call") continue;
-      called = true;
-      if (BLOCKING_TOOL_NAMES.has(part.name)) return true;
+      if (part.type === "tool_call" && BLOCKING_TOOL_NAMES.has(part.name)) return true;
     }
-    if (called && ++rounds >= LONG_RUN_ROUNDS) return true;
   }
   return false;
 }

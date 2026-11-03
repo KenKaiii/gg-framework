@@ -149,8 +149,8 @@ describe("AgentSession.prewarm", () => {
     }
   }, 30_000);
 
-  it("warms the language-pack system prompt the first real turn will send", async () => {
-    // Default (non-custom) prompt in a TypeScript project: style packs are
+  it("warms the language-aware system prompt the first real turn will send", async () => {
+    // Default (non-custom) prompt in a TypeScript project: verify commands are
     // detected at run start, so a prewarm that skipped detection warmed a
     // shorter system block and the real turn missed the whole cached history.
     const project = await fs.mkdtemp(path.join(os.tmpdir(), "agent-prewarm-ts-"));
@@ -177,7 +177,7 @@ describe("AgentSession.prewarm", () => {
 
       await session.prompt("next question");
       const [realMessages] = agentLoopMock.mock.calls[0] as [Message[]];
-      expect(String(warmSystem?.content)).toContain("### TypeScript");
+      expect(String(warmSystem?.content)).toContain("tsc --noEmit");
       expect(warmSystem).toEqual(realMessages[0]);
     } finally {
       await session.dispose();

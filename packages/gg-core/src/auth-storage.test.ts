@@ -759,3 +759,22 @@ describe("AuthStorage — xAI dual credential (Grok OAuth vs. API key)", () => {
     expect(dualAuthProvider("anthropic")).toBeUndefined();
   });
 });
+
+describe("AuthStorage — clearRejectedApiKey", () => {
+  it("drops a rejected provider key but keeps a local endpoint's key", async () => {
+    const storage = await makeStorage();
+    await storage.setCredentials("glm", {
+      accessToken: "bad-key",
+      refreshToken: "",
+      expiresAt: Date.now() + 60_000,
+    });
+    await storage.setLocalEndpoint("custom-gw", "https://gw.example/v1", "sk-gateway");
+
+    expect(await storage.clearRejectedApiKey("glm")).toBe(true);
+    expect(await storage.clearRejectedApiKey("local:custom-gw")).toBe(false);
+
+    expect(await storage.hasCredentials("glm")).toBe(false);
+    expect((await storage.getCredentials("local:custom-gw"))?.accessToken).toBe("sk-gateway");
+    expect(await storage.hasProviderAuth("local")).toBe(true);
+  });
+});

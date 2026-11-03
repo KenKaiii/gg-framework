@@ -23,6 +23,21 @@ function formatContext(tokens: number): string {
   return String(tokens);
 }
 
+// Ollama's default for most GPUs; the agent's prompt alone fills much of it.
+const SMALL_CONTEXT = 8192;
+
+/** Whether Ollama is serving a usable model at a size too small for real work. */
+function smallOllamaContext(endpoints: readonly LocalEndpointRow[]): boolean {
+  return endpoints.some(
+    (endpoint) =>
+      endpoint.kind === "ollama" &&
+      endpoint.models.some(
+        (model) =>
+          model.supportsTools && model.contextWindowKnown && model.contextWindow <= SMALL_CONTEXT,
+      ),
+  );
+}
+
 /** The one figure worth showing inline. "?" = the server never reported it. */
 function contextLabel(model: LocalModelRow): string {
   return model.contextWindowKnown
@@ -55,9 +70,9 @@ function modelTooltip(model: LocalModelRow, endpointLabel: string): string {
 }
 
 /**
- * Ollama manager — the one local server we auto-discover and what it serves.
- * "Add endpoint" covers a moved Ollama port or a self-hosted box (LM Studio,
- * llama.cpp, vLLM all still work as custom endpoints).
+ * Local models manager. Only Ollama is found automatically; LM Studio,
+ * llama.cpp, vLLM, PolyStrata, a self-hosted box or an OpenAI-compatible
+ * gateway are each one "Add endpoint" away.
  *
  * Read-only by design: models are **chosen in the footer model selector** like
  * every other model, so there's exactly one selection surface in the app. This
@@ -120,7 +135,7 @@ export function LocalModelsModal({ onClose }: Props): React.ReactElement {
       const found = state.endpoints.reduce((total, e) => total + e.models.length, 0);
       toast(
         found === 0
-          ? "No models found. Start Ollama and scan again."
+          ? "No models found. Start your local server and scan again, or add an endpoint."
           : `Found ${found} local model${found === 1 ? "" : "s"}.`,
         found === 0 ? "warning" : "success",
       );
@@ -163,7 +178,7 @@ export function LocalModelsModal({ onClose }: Props): React.ReactElement {
   const totalModels = endpoints.reduce((total, e) => total + e.models.length, 0);
 
   return (
-    <Modal title="Ollama" onClose={onClose}>
+    <Modal title="Local models" onClose={onClose}>
       {/* The "nothing found" line belongs with the instruction that fixes it,
           above the endpoint rows — not stranded at the bottom of a scroll area
           the user has to reach to learn why the list looks empty. */}
@@ -180,7 +195,8 @@ export function LocalModelsModal({ onClose }: Props): React.ReactElement {
           className="mcp-empty"
           style={{ color: theme.textMuted, marginBottom: "var(--space-3)" }}
         >
-          No models yet. Start Ollama and scan, or download one from the Hugging Face tile.
+          No models yet. Start Ollama and scan, add an endpoint for LM Studio or any other server,
+          or download one from the Hugging Face tile.
         </div>
       )}
 
@@ -252,7 +268,7 @@ export function LocalModelsModal({ onClose }: Props): React.ReactElement {
             className="modal-input"
             style={{ color: theme.text, background: theme.inputBackground, width: "100%" }}
             value={url}
-            placeholder="http://127.0.0.1:11434/v1"
+            placeholder="http://127.0.0.1:1234/v1"
             autoFocus
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => {
@@ -288,7 +304,14 @@ export function LocalModelsModal({ onClose }: Props): React.ReactElement {
         </>
       ) : (
         <div className="modal-hint" style={{ color: theme.textDim, marginTop: "var(--space-6)" }}>
-          No tool calling = can’t run the agent. “?” context = server didn’t report one.
+          {smallOllamaContext(endpoints) && (
+            <>
+              Ollama is running these with a small context. Raise Context length in Ollama’s
+              settings, then pick the model again.{" "}
+            </>
+          )}
+          Pick a model from the model menu in a session. No tool calling = can’t run the agent. “?”
+          context = not known until the model loads.
         </div>
       )}
 

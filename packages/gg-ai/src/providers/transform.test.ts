@@ -331,11 +331,14 @@ describe("Anthropic transform", () => {
       expect(marks(messages, long)).toEqual([long, undefined, long]);
     });
 
-    it("advances the 1-h anchor onto the tail once a run is long", () => {
+    // Regression: switching the tail to 1 h after 6 rounds re-wrote the whole
+    // tool loop, because a 1-h breakpoint never reads the 5-min entries.
+    it("keeps the tail at 5 min for a long ordinary tool loop", () => {
       const messages: Message[] = [{ role: "user", content: "fix it" }];
-      for (let i = 0; i < 6; i++) messages.push(call(`c${i}`), result(`c${i}`));
-      expect(marks(messages, long).at(-1)).toEqual(long);
-      expect(marks(messages.slice(0, -2), long).at(-1)).toEqual(short);
+      for (let i = 0; i < 30; i++) {
+        messages.push(call(`c${i}`), result(`c${i}`));
+        expect(marks(messages, long).at(-1)).toEqual(short);
+      }
     });
 
     it("treats a runtime notice as part of the tool loop, not a new turn", () => {
@@ -408,6 +411,42 @@ describe("Anthropic transform", () => {
     const content = out[1]?.content as unknown as Array<Record<string, unknown>>;
     expect(content.map((b) => b.type)).toEqual(["text", "thinking", "tool_use"]);
     expect(content[1]).toEqual({ type: "thinking", thinking: "reasoning", signature: "sig-abc" });
+  });
+
+  it("keeps an error tool_result text-only and moves its image after it", () => {
+    const messages: Message[] = [
+      { role: "user", content: "shot" },
+      {
+        role: "assistant",
+        content: [{ type: "tool_call", id: "toolu_e", name: "screenshot", args: {} }],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool_result",
+            toolCallId: "toolu_e",
+            isError: true,
+            content: [
+              { type: "text", text: "page errored" },
+              { type: "image", mediaType: "image/png", data: "AAAA" },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const { messages: out } = toAnthropicMessages(messages);
+    expect(out.at(-1)?.content).toEqual([
+      {
+        type: "tool_result",
+        tool_use_id: "toolu_e",
+        content: [{ type: "text", text: "page errored" }],
+        is_error: true,
+      },
+      { type: "text", text: "Attachments from tool call toolu_e:" },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
+    ]);
   });
 
   it("keeps empty text before a redacted_thinking (raw) block", () => {

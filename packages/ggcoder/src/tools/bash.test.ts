@@ -3,7 +3,12 @@ import { spawn, execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { autoBackgroundedId, createBashTool, renderBashOutput } from "./bash.js";
+import {
+  autoBackgroundedId,
+  BASH_INLINE_MAX_BYTES,
+  createBashTool,
+  renderBashOutput,
+} from "./bash.js";
 import { clearPackageThreatCache } from "../core/package-threats.js";
 import { getToolOutputRoot } from "./overflow.js";
 import { ProcessManager } from "../core/process-manager.js";
@@ -201,6 +206,26 @@ describe("renderBashOutput", () => {
     expect(rendered).toContain("read it with offset/limit if needed");
     expect(await fs.readFile(saved[0], "utf-8")).toBe(raw);
     expect(rendered.length).toBeLessThan(raw.length);
+  });
+
+  // Regression: at a 50KB limit, `cat lib/utils.js` (36KB) came back whole and
+  // stayed in every later request; Claude Code offloads past 30,000 (agent-race,
+  // 2026-11-04).
+  it("offloads output over Claude Code's 30,000 inline limit and keeps output under it", async () => {
+    const line = (i: number) => `export function helper${i}(value) { return value + ${i}; }`;
+    const big = Array.from({ length: 700 }, (_, i) => line(i)).join("\n");
+    expect(Buffer.byteLength(big, "utf-8")).toBeGreaterThan(BASH_INLINE_MAX_BYTES);
+    expect(Buffer.byteLength(big, "utf-8")).toBeLessThan(50 * 1024);
+
+    const rendered = await renderBashOutput(big);
+    const saved = await listSavedOutputs();
+    expect(saved).toHaveLength(1);
+    expect(rendered).toContain(`Full output saved to ${saved[0]}`);
+    expect(rendered.length).toBeLessThan(big.length / 4);
+
+    const small = Array.from({ length: 400 }, (_, i) => line(i)).join("\n");
+    expect(Buffer.byteLength(small, "utf-8")).toBeLessThan(BASH_INLINE_MAX_BYTES);
+    expect(await renderBashOutput(small)).toBe(small);
   });
 
   it("does not create a pointer file for small output", async () => {

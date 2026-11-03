@@ -58,9 +58,9 @@ function systemPrompt(session: { getMessages: () => { role: string; content: unk
 }
 
 // The desktop app and every non-TUI mode build prompts through AgentSession
-// alone; before this, only the Ink UI injected language packs.
-describe("AgentSession language style packs (shared/app path)", () => {
-  it("adds packs for languages present, including ones created mid-session", async () => {
+// alone. A detected language adds its verify commands, never a style pack.
+describe("AgentSession language verify commands (shared/app path)", () => {
+  it("adds verify commands for languages present, including ones created mid-session", async () => {
     const { AgentSession } = await import("./agent-session.js");
     const session = new AgentSession({
       provider: "anthropic",
@@ -75,20 +75,21 @@ describe("AgentSession language style packs (shared/app path)", () => {
     await session.initialize();
     try {
       await session.prompt("hello");
-      expect(systemPrompt(session)).not.toContain("## Language Style Packs");
+      expect(systemPrompt(session)).not.toContain("## Verification");
 
-      // A project scaffolded during a previous task gets its pack next turn.
+      // A project scaffolded during a previous task gets its checks next turn.
       await fs.writeFile(path.join(tempProject, "tsconfig.json"), "{}");
       await session.prompt("next task");
       const prompt = systemPrompt(session);
-      expect(prompt).toContain("## Language Style Packs");
-      expect(prompt).toContain("TypeScript");
+      expect(prompt).toContain("## Verification");
+      expect(prompt).toContain("tsc --noEmit");
+      expect(prompt).not.toContain("Language Style Packs");
     } finally {
       await session.dispose();
     }
   }, 20_000);
 
-  it("appends packs for a new language once the prompt is cached, without re-rendering it", async () => {
+  it("appends verify commands for a new language once the prompt is cached, without re-rendering it", async () => {
     const { AgentSession } = await import("./agent-session.js");
     const session = new AgentSession({
       provider: "anthropic",
@@ -118,10 +119,11 @@ describe("AgentSession language style packs (shared/app path)", () => {
           (m) =>
             m.role === "user" &&
             typeof m.content === "string" &&
-            m.content.includes("## Language Style Packs"),
+            m.content.includes("## Verification"),
         );
       expect(updates).toHaveLength(1);
-      expect(String(updates[0]?.content)).toContain("TypeScript");
+      expect(String(updates[0]?.content)).toContain("tsc --noEmit");
+      expect(String(updates[0]?.content)).not.toContain("Language Style Packs");
       // It sits just before the user's new request, so the request stays the
       // last thing the model reads.
       const messages = session.getMessages();
@@ -133,16 +135,14 @@ describe("AgentSession language style packs (shared/app path)", () => {
       expect(
         session
           .getMessages()
-          .filter(
-            (m) => typeof m.content === "string" && m.content.includes("## Language Style Packs"),
-          ),
+          .filter((m) => typeof m.content === "string" && m.content.includes("## Verification")),
       ).toHaveLength(1);
     } finally {
       await session.dispose();
     }
   }, 20_000);
 
-  it("gives packs to code-writing sub-agents but not to user-facing specialist agents", async () => {
+  it("gives verify commands to code-writing sub-agents but not to user-facing specialist agents", async () => {
     await fs.writeFile(path.join(tempProject, "tsconfig.json"), "{}");
     const { AgentSession } = await import("./agent-session.js");
     const base = {
@@ -165,8 +165,9 @@ describe("AgentSession language style packs (shared/app path)", () => {
     await child.initialize();
     await specialist.initialize();
     try {
-      expect(systemPrompt(child)).toContain("## Language Style Packs");
-      expect(systemPrompt(specialist)).not.toContain("## Language Style Packs");
+      expect(systemPrompt(child)).toContain("## Verification");
+      expect(systemPrompt(child)).not.toContain("Language Style Packs");
+      expect(systemPrompt(specialist)).not.toContain("## Verification");
     } finally {
       await child.dispose();
       await specialist.dispose();

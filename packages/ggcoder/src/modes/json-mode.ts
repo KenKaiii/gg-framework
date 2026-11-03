@@ -4,6 +4,7 @@ import { isAbortError } from "@kenkaiiii/gg-agent";
 import { formatUserError } from "../utils/error-handler.js";
 import { closeLogger } from "../core/logger.js";
 import { promptSubAgent, SUB_AGENT_MAX_TURN_EXTENSIONS } from "../tools/subagent-shared.js";
+import { cleanupToolOutputs } from "../tools/overflow.js";
 
 export interface JsonModeOptions {
   message: string;
@@ -90,6 +91,11 @@ export function exitAfterFlush(code: number, host: ExitHost = process): void {
 export async function runJsonMode(options: JsonModeOptions): Promise<void> {
   // No logger in JSON mode — subagent events are forwarded to parent via NDJSON stdout.
   // Opening the shared log file here caused corruption from concurrent child process writes.
+
+  // Headless runs (agent-race, benchmarks, sub-agents) never start the TUI or
+  // the app, so they sweep stale offloaded outputs too. Fire-and-forget: a
+  // sub-agent must not wait on it, and failures are swallowed inside.
+  void cleanupToolOutputs().catch(() => {});
 
   const ac = new AbortController();
   const onSigint = () => ac.abort();

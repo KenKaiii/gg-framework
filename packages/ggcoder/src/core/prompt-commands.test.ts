@@ -143,7 +143,7 @@ describe("prompt commands", () => {
     expect(init?.prompt).toContain("mandatory after-every-edit requirements");
     expect(init?.prompt).toContain("After editing ANY file");
     expect(init?.prompt).toContain(
-      "Do not duplicate language style packs, generic verification rules",
+      "Do not add generic language style guides, generic verification rules",
     );
     expect(init?.prompt).toContain("Do NOT embed generated symbol maps");
     expect(init?.prompt).toContain("auto-generated project inventories");

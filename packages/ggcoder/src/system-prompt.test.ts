@@ -160,9 +160,6 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("don't weaken security to finish");
     expect(prompt).not.toContain("## Tools");
     expect(sectionIndex(prompt, "## Project Context")).toBeLessThan(
-      sectionIndex(prompt, "## Language Style Packs"),
-    );
-    expect(sectionIndex(prompt, "## Language Style Packs")).toBeLessThan(
       sectionIndex(prompt, "## Verification"),
     );
     expect(sectionIndex(prompt, "## Verification")).toBeLessThan(
@@ -339,7 +336,7 @@ describe("buildSystemPrompt", () => {
     expect(talk).not.toContain("unless you hit a decision, tradeoff, finding");
   });
 
-  it("states rule precedence exactly once and keeps project context before style packs", async () => {
+  it("states rule precedence exactly once and renders no language style packs", async () => {
     const cwd = await makeProject({
       "AGENTS.md": "Use tabs for this fixture.",
       "tsconfig.json": "{}",
@@ -354,22 +351,23 @@ describe("buildSystemPrompt", () => {
       new Set<LanguageId>(["typescript"]),
     );
 
-    // Precedence lives in Work only — not restated in Project Context or Style Packs.
+    // Precedence lives in Work only — not restated in Project Context.
     expect(prompt).toContain(
       "Precedence: user > nearest project instructions > skills > this prompt.",
     );
-    // Style packs used to outrank the codebase's own conventions (ESM, schema
-    // libs) and contradicted "follow existing conventions" and "never install".
-    expect(prompt).toContain("Style packs apply only where the code has no convention of its own.");
-    expect(prompt).toContain("Defaults for new code where the project has no convention.");
-    expect(prompt).toContain("with the project's schema lib if it has one");
-    expect(prompt).not.toContain("Validate external input with a schema lib");
+    // Regression: style packs raised planning thinking ~37% with no measured
+    // gain (agent-race replays, 2026-11-03), so a detected language adds only
+    // its verify commands.
+    expect(prompt).not.toContain("Language Style Packs");
+    expect(prompt).not.toContain("Style packs");
+    expect(prompt).not.toContain("deterministic output (sorted iteration");
+    expect(prompt).toContain("## Verification");
     expect(prompt.match(/Precedence:/g)).toHaveLength(1);
     expect(prompt).not.toContain("**Highest precedence**");
     expect(prompt).not.toContain("override default guidance");
     expect(prompt).not.toContain("override these defaults");
     expect(sectionIndex(prompt, "## Project Context")).toBeLessThan(
-      sectionIndex(prompt, "## Language Style Packs"),
+      sectionIndex(prompt, "## Verification"),
     );
   });
 
@@ -462,9 +460,14 @@ describe("buildSystemPrompt", () => {
     const prompt = await buildSystemPrompt(cwd, undefined, false, undefined, ["steroids"]);
     expect(prompt).not.toContain("## Tools");
     const description = createSteroidsTool("unused").description;
-    expect(description).toContain("Search literal tokens, then show matches");
+    expect(description).toContain("Search literal tokens, then read only what you need");
     expect(description).toContain("regex across all repos (fixed=true literal)");
-    expect(description).toContain("define: symbol definition corpus-wide");
+    expect(description).toContain("define: where symbols are defined");
+    expect(description).toContain("read bodies with symbols=[names]");
+    expect(description).toContain("so don't look those up again");
+    expect(description).toContain("changes: a release's contents");
+    expect(description).toContain("no rate limits");
+    expect(description).not.toContain("no limits.");
     expect(description).toContain("Topic not covered = corpus gap");
     expect(description).toContain("don't retry variants");
     expect(description).toContain("add once the user agrees");
@@ -617,7 +620,8 @@ describe("buildSystemPrompt", () => {
     // added comment lines −60%, output tokens −5.5%; RESULTS-2026-10-28-haiku55.md).
     expect(measurements.normal.characters).toBeLessThan(3_200);
     expect(measurements.planMode.characters).toBeLessThan(3_600);
-    expect(measurements.typescriptProjectContextToolsSkills.characters).toBeLessThan(4_300);
+    // +~120 for the parallel-calls fact shown with bash (agent-race, 2026-11-03).
+    expect(measurements.typescriptProjectContextToolsSkills.characters).toBeLessThan(4_400);
     expect(measurements.planMode.characters).toBeGreaterThan(measurements.normal.characters);
     expect(measurements.typescriptProjectContextToolsSkills.characters).toBeGreaterThan(
       measurements.normal.characters,
@@ -653,13 +657,12 @@ describe("buildSystemPrompt", () => {
     console.info(`system prompt audit: ${JSON.stringify(audit)}`);
 
     expect(audit.flags).toEqual([]);
-    expect(audit.size.characters).toBeLessThan(4_100); // ~3,650 after the ~70% shrink + restored security rules; +~50 one-command change clause; +~120 light-comments rule
+    expect(audit.size.characters).toBeLessThan(4_200); // ~3,650 after the ~70% shrink + restored security rules; +~50 one-command change clause; +~120 light-comments rule; +~120 parallel-calls fact
     expect(prompt.match(/^## .+$/gm)).toEqual([
       "## Replies",
       "## Work",
       "## Tools",
       "## Project Context",
-      "## Language Style Packs",
       "## Verification",
       "## Environment",
     ]);
