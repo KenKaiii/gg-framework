@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.90.0
+
+### Minor Changes
+
+- Local models: keyless endpoints send no auth header, Ollama's real served context is learned, custom endpoints read their context size, and a saved local model is restored at startup. Web search on Anthropic runs as a side request, web_fetch reads pages in windows (offset, #section) with a length cap, bash inlines less output, and language style packs are removed.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.90.0
+- @kenkaiiii/gg-agent@5.90.0
+- @kenkaiiii/gg-core@5.90.0
+
 ## 5.89.0
 
 ### Minor Changes
