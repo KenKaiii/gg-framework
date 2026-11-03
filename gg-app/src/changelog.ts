@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.101.0",
+    date: "2026-11-04",
+    items: [
+      "Local models just grew up. The tile is now `Local models`, and LM Studio, llama.cpp, vLLM or any OpenAI-compatible gateway is one `Add endpoint` away, with or without a key. I made GG Coder learn the real context size each model runs with, bring your saved local model back after a restart, group the picker by server, and open your workspace even if local models are all you use.",
+      "Long sessions got leaner and cheaper. On Claude, web search now runs off to the side so whole result pages stop piling into your chat, web pages are read in tidy chunks that can jump straight to a `#section`, and giant command output gets trimmed at `30 KB`. I also stopped busy tool loops from rebuilding the cache, so you wait less and spend less.",
+    ],
+  },
+  {
     version: "0.100.1",
     date: "2026-11-03",
     items: [
