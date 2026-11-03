@@ -181,7 +181,7 @@ beforeEach(async () => {
   await startDaemon();
 });
 
-afterEach(async () => {
+afterEach(async ({ task }) => {
   for (const stream of openStreams.splice(0)) stream.destroy();
   const runningDaemon = daemon;
   daemon = undefined;
@@ -195,10 +195,18 @@ afterEach(async () => {
       runningDaemon.kill("SIGKILL");
     });
   }
+  // A daemon-side hang (seen once on Windows CI) leaves no trace in the test output.
+  if (task.result?.state === "fail") await printSidecarLogTail();
   const removeOptions = { recursive: true, force: true, maxRetries: 10, retryDelay: 100 };
   await fs.rm(tmpHome, removeOptions);
   await fs.rm(tmpProject, removeOptions);
 });
+
+async function printSidecarLogTail(): Promise<void> {
+  const logFile = path.join(tmpHome, ".gg", "gg-app-sidecar.log");
+  const text = await fs.readFile(logFile, "utf-8").catch(() => "(no sidecar log)");
+  console.error(`--- ${logFile} (last 200 lines) ---\n${text.split("\n").slice(-200).join("\n")}`);
+}
 
 describe("loopback daemon auth", () => {
   it("rejects requests without the per-launch token", async () => {
