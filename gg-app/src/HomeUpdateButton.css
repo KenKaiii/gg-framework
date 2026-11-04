@@ -83,6 +83,10 @@
   white-space: nowrap;
   color: #c9a08c;
   text-shadow: 0 2px 0 #1e0c1f;
+  /* m5x7's line box centres its glyphs 3px lower than the pixel words, whose
+     descender rows sit below their capitals; lift so the cap tops line up. */
+  position: relative;
+  top: -3px;
 }
 .lvl-versions-to {
   color: #f5bd63;
