@@ -307,6 +307,29 @@ describe("probeEndpoint — generic / vLLM", () => {
       supportsTools: true,
     });
   });
+
+  it("reads llama.cpp's meta.n_ctx from the model object", async () => {
+    const endpoint = await endpointFor("vllm", {
+      "/v1/models": { data: [{ id: "glm-flash", meta: { n_ctx: 131072 } }] },
+    });
+
+    const probe = await probeEndpoint(endpoint, { timeoutMs: 2000 });
+
+    expect(probe.models[0]).toMatchObject({ contextWindow: 131072, contextWindowKnown: true });
+  });
+
+  it("lets a pinned contextLength win over every server-reported window", async () => {
+    const endpoint = await endpointFor("custom", {
+      "/v1/models": { data: [{ id: "big", max_model_len: 524288 }, { id: "unknown" }] },
+      "/props": { default_generation_settings: { n_ctx: 8192 } },
+    });
+
+    const probe = await probeEndpoint({ ...endpoint, contextLength: 262144 }, { timeoutMs: 2000 });
+
+    for (const model of probe.models) {
+      expect(model).toMatchObject({ contextWindow: 262144, contextWindowKnown: true });
+    }
+  });
 });
 
 describe("probeEndpoint — unreachable", () => {

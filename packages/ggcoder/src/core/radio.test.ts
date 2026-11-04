@@ -52,8 +52,14 @@ const mocks = vi.hoisted(() => {
 vi.mock("node:child_process", () => ({ spawn: mocks.spawn }));
 vi.mock("node:fs", () => ({ existsSync: mocks.existsSync }));
 vi.mock("node:net", () => ({ createConnection: mocks.createConnection }));
+vi.mock("./radio-players.js", () => ({
+  recordRadioPlayer: vi.fn(),
+  forgetRadioPlayer: vi.fn(),
+  killRadioPlayerTree: vi.fn(),
+}));
 
 import { RADIO_STATIONS, getRadioVolume, playRadio, setRadioVolume, stopRadio } from "./radio.js";
+import { forgetRadioPlayer, killRadioPlayerTree, recordRadioPlayer } from "./radio-players.js";
 
 afterEach(() => {
   stopRadio();
@@ -95,6 +101,23 @@ describe("radio", () => {
       expect.arrayContaining(["--volume=70", "https://ice5.somafm.com/reggae-128-mp3"]),
       expect.objectContaining({ detached: false, stdio: "ignore" }),
     );
+  });
+
+  it("records the player so a later daemon can stop it after a hard kill", () => {
+    expect(playRadio("somafm-heavyweight-reggae")).toEqual({ ok: true });
+    expect(recordRadioPlayer).toHaveBeenCalledWith(
+      mocks.child.pid,
+      "https://ice5.somafm.com/reggae-128-mp3",
+    );
+
+    stopRadio();
+
+    expect(forgetRadioPlayer).toHaveBeenCalledWith(mocks.child.pid);
+    if (process.platform === "win32") {
+      expect(killRadioPlayerTree).toHaveBeenCalledWith(mocks.child.pid);
+    } else {
+      expect(killRadioPlayerTree).not.toHaveBeenCalled();
+    }
   });
 
   it("changes mpv volume over IPC without restarting the stream", () => {

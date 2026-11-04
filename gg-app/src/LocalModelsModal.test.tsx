@@ -215,6 +215,45 @@ describe("LocalModelsModal", () => {
     expect(await screen.findByText("Endpoint URL must use http or https.")).toBeTruthy();
   });
 
+  it("passes an optional context length with a new endpoint", async () => {
+    addLocalEndpointMock.mockResolvedValue(STATE);
+    render(<LocalModelsModal onClose={vi.fn()} />);
+    await screen.findByText("Ollama");
+
+    fireEvent.click(screen.getByText("Add endpoint"));
+    fireEvent.change(screen.getByPlaceholderText("http://127.0.0.1:1234/v1"), {
+      target: { value: "http://192.168.1.189:8080/v1" },
+    });
+    fireEvent.change(screen.getByLabelText("Context length"), {
+      target: { value: "262,144" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() =>
+      expect(addLocalEndpointMock).toHaveBeenCalledWith(
+        "http://192.168.1.189:8080/v1",
+        undefined,
+        undefined,
+        262144,
+      ),
+    );
+  });
+
+  it("rejects a non-numeric context length before saving", async () => {
+    render(<LocalModelsModal onClose={vi.fn()} />);
+    await screen.findByText("Ollama");
+
+    fireEvent.click(screen.getByText("Add endpoint"));
+    fireEvent.change(screen.getByPlaceholderText("http://127.0.0.1:1234/v1"), {
+      target: { value: "http://192.168.1.189:8080/v1" },
+    });
+    fireEvent.change(screen.getByLabelText("Context length"), { target: { value: "lots" } });
+    fireEvent.click(screen.getByText("Save"));
+
+    expect(await screen.findByText(/whole number of tokens/)).toBeTruthy();
+    expect(addLocalEndpointMock).not.toHaveBeenCalled();
+  });
+
   it("only offers removal for user-added endpoints", async () => {
     removeLocalEndpointMock.mockResolvedValue({ endpoints: [] });
     render(<LocalModelsModal onClose={vi.fn()} />);

@@ -58,6 +58,12 @@ export interface ModelInfo {
    */
   maxThinkingLevel: ThinkingLevel;
   /**
+   * Effort rungs the endpoint itself declared (a synced gateway catalog's
+   * `reasoning.supported_efforts`). When set, the picker offers exactly these
+   * and the transport sends the chosen one unchanged. Absent on static models.
+   */
+  thinkingLevels?: ThinkingLevel[];
+  /**
    * Ordered preference of auth-storage keys this model resolves credentials
    * from, for providers that split auth across multiple distinct
    * endpoints/keys (currently only Xiaomi: the Token Plan endpoint vs. the
@@ -888,13 +894,64 @@ export function clearRuntimeModels(predicate?: (model: ModelInfo) => boolean): v
   }
 }
 
+/**
+ * A provider's model list synced from its own endpoint (OpenRouter today).
+ * While set it REPLACES that provider's static rows in listings; the static
+ * rows still resolve by id so a session saved on one keeps working.
+ */
+const providerCatalogs = new Map<Provider, Map<string, ModelInfo>>();
+
+/**
+ * Replace (or, with undefined, restore) a provider's listed catalog. Rows whose
+ * id is already a static model of ANOTHER provider are dropped: getModel()
+ * resolves by bare id, so a collision would route to the wrong provider.
+ * Returns the rows actually installed.
+ */
+export function setProviderCatalog(
+  provider: Provider,
+  models: readonly ModelInfo[] | undefined,
+): ModelInfo[] {
+  if (!models) {
+    providerCatalogs.delete(provider);
+    return [];
+  }
+  const installed = new Map<string, ModelInfo>();
+  for (const model of models) {
+    if (model.provider !== provider) continue;
+    if (MODELS.some((m) => m.id === model.id && m.provider !== provider)) continue;
+    installed.set(model.id, model);
+  }
+  providerCatalogs.set(provider, installed);
+  return [...installed.values()];
+}
+
+export function getProviderCatalog(provider: Provider): ModelInfo[] | undefined {
+  const catalog = providerCatalogs.get(provider);
+  return catalog ? [...catalog.values()] : undefined;
+}
+
 /** Static table plus everything discovered at runtime. */
 export function getAllModels(): ModelInfo[] {
-  return [...MODELS, ...runtimeModels.values()];
+  const synced = [...providerCatalogs.values()].flatMap((c) => [...c.values()]);
+  return [
+    ...MODELS.filter((m) => !providerCatalogs.has(m.provider)),
+    ...synced,
+    ...runtimeModels.values(),
+  ];
 }
 
 export function getModel(id: string): ModelInfo | undefined {
-  return MODELS.find((m) => m.id === id) ?? runtimeModels.get(id);
+  const fixed = MODELS.find((m) => m.id === id);
+  if (fixed && !providerCatalogs.has(fixed.provider)) return fixed;
+  return findSynced(id) ?? fixed ?? runtimeModels.get(id);
+}
+
+function findSynced(id: string): ModelInfo | undefined {
+  for (const catalog of providerCatalogs.values()) {
+    const hit = catalog.get(id);
+    if (hit) return hit;
+  }
+  return undefined;
 }
 
 export function getModelsForProvider(provider: Provider): ModelInfo[] {

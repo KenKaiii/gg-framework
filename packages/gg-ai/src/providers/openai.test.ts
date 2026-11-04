@@ -167,6 +167,24 @@ describe("streamOpenAI request shaping", () => {
     expect(params.max_completion_tokens).toBe(500);
   });
 
+  it("sends an endpoint-declared max effort unchanged instead of clamping it to xhigh", async () => {
+    createMock.mockResolvedValueOnce(createStreamingResult(""));
+    const result = streamOpenAI({
+      provider: "openrouter",
+      model: "deepseek-flash",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "t" + "est",
+      thinking: "max",
+      thinkingLevels: ["low", "high", "xhigh", "max"],
+    });
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const params = createMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params).toMatchObject({ reasoning_effort: "max" });
+  });
+
   it("uses max reasoning_effort for Kimi K3 and omits K2.x/fixed sampling params", async () => {
     createMock.mockResolvedValueOnce(createStreamingResult(""));
     const result = streamOpenAI({

@@ -1681,6 +1681,29 @@ export function toCodexReasoningEffort(
   return model === "gpt-6-astra" || model === "gpt-6.1-sol" ? "xhigh" : "max";
 }
 
+const DECLARED_EFFORT_ORDER = ["low", "medium", "high", "xhigh", "max"] as const;
+type DeclaredEffort = (typeof DECLARED_EFFORT_ORDER)[number];
+
+/**
+ * The `reasoning_effort` to send. When the endpoint declared its own ladder
+ * (a synced gateway catalog), send the chosen rung as-is (so `max` stays
+ * `max`), or the nearest declared rung at or below it; otherwise clamp as usual.
+ */
+export function effortForRequest(
+  level: ThinkingLevel,
+  model: string,
+  declared?: readonly ThinkingLevel[],
+): DeclaredEffort {
+  const rungs = DECLARED_EFFORT_ORDER.filter((rung) => declared?.includes(rung));
+  if (rungs.length === 0) return toOpenAIReasoningEffort(level, model);
+  const wanted =
+    level === "ultra"
+      ? DECLARED_EFFORT_ORDER.length - 1
+      : DECLARED_EFFORT_ORDER.indexOf(level as DeclaredEffort);
+  const atOrBelow = rungs.filter((rung) => DECLARED_EFFORT_ORDER.indexOf(rung) <= wanted);
+  return atOrBelow[atOrBelow.length - 1] ?? rungs[0]!;
+}
+
 export function toOpenAIReasoningEffort(
   level: ThinkingLevel,
   model: string,

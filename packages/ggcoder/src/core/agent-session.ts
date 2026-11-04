@@ -2493,6 +2493,7 @@ export class AgentSession {
           this.planModeRef.current || options.capThinking
             ? clampThinkingForPlanMode(this.thinkingLevel)
             : this.thinkingLevel,
+        ...(modelInfo?.thinkingLevels ? { thinkingLevels: modelInfo.thinkingLevels } : {}),
         apiKey,
         // Per-turn credential resolution. A run can span many minutes; if any
         // process sharing auth.json refreshes this grant meanwhile, the token
@@ -4803,6 +4804,7 @@ export class AgentSession {
         thinking: this.planModeRef.current
           ? clampThinkingForPlanMode(this.thinkingLevel)
           : this.thinkingLevel,
+        ...(modelInfo?.thinkingLevels ? { thinkingLevels: modelInfo.thinkingLevels } : {}),
         apiKey: creds.accessToken,
         baseUrl: this.baseUrl ?? creds.baseUrl,
         accountId: creds.accountId,

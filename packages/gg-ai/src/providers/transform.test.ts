@@ -12,6 +12,7 @@ import {
   toGlmReasoningEffort,
   toLocalReasoningEffort,
   toOpenAIReasoningEffort,
+  effortForRequest,
   toCodexReasoningEffort,
 } from "./transform.js";
 import { supportsStrictToolSampling } from "../utils/strict-tool-schema.js";
@@ -1011,6 +1012,26 @@ describe("toOpenAIReasoningEffort", () => {
   it("clamps client-only max and ultra levels to OpenAI's xhigh effort", () => {
     expect(toOpenAIReasoningEffort("max", "gpt-5.5")).toBe("xhigh");
     expect(toOpenAIReasoningEffort("ultra", "gpt-6.1-sol")).toBe("xhigh");
+  });
+});
+
+describe("effortForRequest", () => {
+  it("clamps as before when the endpoint declared no ladder", () => {
+    expect(effortForRequest("max", "deepseek-flash")).toBe("xhigh");
+    expect(effortForRequest("high", "deepseek-flash", [])).toBe("high");
+  });
+
+  it("sends a declared rung unchanged, so max stays max", () => {
+    const ladder = ["low", "high", "xhigh", "max"] as const;
+    expect(effortForRequest("max", "deepseek-flash", ladder)).toBe("max");
+    expect(effortForRequest("xhigh", "deepseek-flash", ladder)).toBe("xhigh");
+    expect(effortForRequest("ultra", "deepseek-flash", ladder)).toBe("max");
+  });
+
+  it("falls to the nearest declared rung for one the endpoint doesn't list", () => {
+    // Plan mode caps at medium; this endpoint has no medium.
+    expect(effortForRequest("medium", "m", ["low", "high", "max"])).toBe("low");
+    expect(effortForRequest("low", "m", ["high", "max"])).toBe("high");
   });
 });
 

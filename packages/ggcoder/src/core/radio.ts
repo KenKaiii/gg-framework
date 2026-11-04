@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Writable } from "node:stream";
 import { log } from "./logger.js";
+import { forgetRadioPlayer, killRadioPlayerTree, recordRadioPlayer } from "./radio-players.js";
 
 /**
  * Internet radio — stream a free station while you work. The gg-app windows
@@ -276,9 +277,13 @@ export function stopRadio(): void {
 function terminateChild(child: ChildProcess | null): void {
   if (!child) return;
   try {
-    // Detached children may own a process group on POSIX. Fall back to the
-    // direct child when they share the sidecar's process group.
-    if (process.platform !== "win32" && child.pid) {
+    if (process.platform === "win32" && child.pid) {
+      // child.kill() stops only a launcher shim (e.g. chocolatey's ffplay.exe),
+      // leaving the real player streaming; take the whole tree.
+      killRadioPlayerTree(child.pid);
+    } else if (child.pid) {
+      // Detached children may own a process group on POSIX. Fall back to the
+      // direct child when they share the sidecar's process group.
       try {
         process.kill(-child.pid, "SIGTERM");
       } catch {
@@ -290,6 +295,14 @@ function terminateChild(child: ChildProcess | null): void {
   } catch {
     // Already exited — nothing to do.
   }
+  forgetRadioPlayer(child.pid);
+}
+
+function trackPlayer(child: ChildProcess, url: string): void {
+  const pid = child.pid;
+  if (!pid) return;
+  recordRadioPlayer(pid, url);
+  child.once("exit", () => forgetRadioPlayer(pid));
 }
 
 export interface PlayResult {
@@ -443,6 +456,7 @@ export function playRadio(stationId: string): PlayResult {
       if (child.pid && !errored) {
         currentChild = child;
         currentStationId = stationId;
+        trackPlayer(child, station.url);
         log("INFO", "radio", "playing", {
           station: station.id,
           player: "powershell.exe (wsl→host)",
@@ -481,6 +495,7 @@ export function playRadio(stationId: string): PlayResult {
         currentStationId = stationId;
         currentMpvIpcPath = mpvIpcPath;
         currentFfmpegInput = nativeFfmpeg?.stdin ?? null;
+        trackPlayer(child, station.url);
         log("INFO", "radio", "playing", {
           station: station.id,
           player: nativeFfmpeg ? "ffmpeg (AudioToolbox live gain)" : player.cmd,

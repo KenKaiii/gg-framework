@@ -50,12 +50,14 @@ function contextLabel(model: LocalModelRow): string {
  * length, capabilities, load state, and — for a model that can't run the agent
  * — why it's disabled.
  */
-function modelTooltip(model: LocalModelRow, endpointLabel: string): string {
-  const lines = [`${model.rawId} — ${endpointLabel}`];
+function modelTooltip(model: LocalModelRow, endpoint: LocalEndpointRow): string {
+  const lines = [`${model.rawId} — ${endpoint.label}`];
   lines.push(
-    model.contextWindowKnown
-      ? `Context: ${model.contextWindow.toLocaleString()} tokens`
-      : `Context: unknown — assuming ${model.contextWindow.toLocaleString()} tokens`,
+    endpoint.contextLength
+      ? `Context: ${model.contextWindow.toLocaleString()} tokens (set by you)`
+      : model.contextWindowKnown
+        ? `Context: ${model.contextWindow.toLocaleString()} tokens`
+        : `Context: unknown — assuming ${model.contextWindow.toLocaleString()} tokens`,
   );
   const caps: string[] = [];
   if (model.supportsTools) caps.push("tool calling");
@@ -90,6 +92,7 @@ export function LocalModelsModal({ onClose }: Props): React.ReactElement {
   const [url, setUrl] = useState("");
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [contextLength, setContextLength] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -148,14 +151,26 @@ export function LocalModelsModal({ onClose }: Props): React.ReactElement {
 
   async function add(): Promise<void> {
     if (busy) return;
+    const pinText = contextLength.trim().replace(/[,_\s]/g, "");
+    const pin = pinText ? Number(pinText) : undefined;
+    if (pin !== undefined && !Number.isSafeInteger(pin)) {
+      setAddError("Context length must be a whole number of tokens, like 131072.");
+      return;
+    }
     setBusy(true);
     setAddError(null);
     try {
-      const state = await addLocalEndpoint(url, label.trim() || undefined, apiKey || undefined);
+      const state = await addLocalEndpoint(
+        url,
+        label.trim() || undefined,
+        apiKey || undefined,
+        pin,
+      );
       setEndpoints(state.endpoints);
       setUrl("");
       setLabel("");
       setApiKey("");
+      setContextLength("");
       setShowAdd(false);
       toast("Endpoint added.", "success");
     } catch (e) {
@@ -243,7 +258,7 @@ export function LocalModelsModal({ onClose }: Props): React.ReactElement {
                   key={model.id}
                   className="local-model-row"
                   style={{ color: model.supportsTools ? theme.text : theme.textDim }}
-                  title={modelTooltip(model, endpoint.label)}
+                  title={modelTooltip(model, endpoint)}
                 >
                   <span className="local-model-name">{model.rawId}</span>
                   <span className="local-model-meta" style={{ color: theme.textDim }}>
@@ -295,6 +310,21 @@ export function LocalModelsModal({ onClose }: Props): React.ReactElement {
             type="password"
             placeholder="Only if your server requires one"
             onChange={(e) => setApiKey(e.target.value)}
+          />
+          <div className="modal-label" style={{ color: theme.textMuted }}>
+            Context length (optional)
+          </div>
+          <input
+            className="modal-input"
+            style={{ color: theme.text, background: theme.inputBackground, width: "100%" }}
+            value={contextLength}
+            aria-label="Context length"
+            inputMode="numeric"
+            placeholder="Tokens, e.g. 131072. Leave empty to use what the server reports"
+            onChange={(e) => setContextLength(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void add();
+            }}
           />
           {addError && (
             <div className="login-status" style={{ color: theme.error }}>

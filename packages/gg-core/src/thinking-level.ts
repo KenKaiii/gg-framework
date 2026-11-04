@@ -125,6 +125,8 @@ export function getSupportedThinkingLevels(
       ? LOCAL_THINKING_LEVELS.slice(0, 3)
       : LOCAL_THINKING_LEVELS.slice(0, maxIndex + 1);
   }
+  const declared = getModel(model)?.thinkingLevels;
+  if (declared && declared.length > 0) return declared;
   const maxLevel = getMaxThinkingLevel(model);
   if (isAnthropicAdaptiveModel(provider, model)) {
     const levels = isAnthropicXhighModel(provider, model)
