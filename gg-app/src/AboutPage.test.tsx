@@ -15,7 +15,7 @@ vi.mock("./changelog", () => ({
 
 import { openUrl, openWhatsNewWindow } from "./agent";
 import { AboutKen, AboutPage } from "./AboutPage";
-import { SKOOL_URL, YOUTUBE_URL } from "./about-content";
+import { SKOOL_URL, SOURCE_URL, YOUTUBE_URL } from "./about-content";
 
 afterEach(() => {
   cleanup();
@@ -42,6 +42,16 @@ describe("AboutPage", () => {
     expect(openUrl).toHaveBeenCalledWith(SKOOL_URL);
     fireEvent.click(screen.getByRole("link", { name: /Watch on YouTube/ }));
     expect(openUrl).toHaveBeenCalledWith(YOUTUBE_URL);
+  });
+
+  it("states the AGPL license and opens the source code in the browser", async () => {
+    await renderPage();
+
+    expect(
+      screen.getByText(/free software under the GNU AGPL-3\.0, with no warranty/),
+    ).not.toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "Source code" }));
+    expect(openUrl).toHaveBeenCalledWith(SOURCE_URL);
   });
 
   it("dates GG Coder from the CLI and the calendar from the desktop app", async () => {

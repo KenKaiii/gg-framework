@@ -14,7 +14,7 @@
   <a href="https://github.com/KenKaiii/gg-framework/releases/latest"><img src="https://img.shields.io/github/v/release/KenKaiii/gg-framework?style=for-the-badge&label=Download&color=b0b6ff" alt="GG Coder desktop release"></a>
   <a href="https://github.com/KenKaiii/gg-framework/stargazers"><img src="https://img.shields.io/github/stars/KenKaiii/gg-framework?style=for-the-badge&label=Stars&color=yellow" alt="Star GG Coder on GitHub"></a>
   <a href="https://www.npmjs.com/package/@kenkaiiii/ggcoder"><img src="https://img.shields.io/npm/v/@kenkaiiii/ggcoder?style=for-the-badge&label=CLI&color=blue" alt="ggcoder npm version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=for-the-badge" alt="AGPL-3.0 License"></a>
   <a href="https://youtube.com/@kenkaidoesai"><img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube"></a>
   <a href="https://skool.com/kenkai"><img src="https://img.shields.io/badge/Skool-Community-b0b6ff?style=for-the-badge" alt="Skool"></a>
 </p>
@@ -23,38 +23,36 @@ GG Coder is a desktop coding agent that gets more out of the AI subscription you
 
 ## Why GG Coder
 
-- **More work per plan.** Fastest and leanest of 20 agents I raced on the same model. About 2.5x the coding Claude Code gets from the same allowance.
+- **More work per plan.** Fastest and leanest of 20 agents I raced on the same model. Claude Code used 169% more for the same work.
 - **Real code, not guesses.** Agent Steroids searches real, current open-source code on your machine. No rate-limited MCP server, no limits.
 - **Done means checked.** Ken Autopilot keeps the work going until it's actually verified.
 - **Ship it properly, even as a beginner.** Coding is only part of it. One-click checks for security, compliance, data safety, accessibility, tests and more, plus a Project health score, so you don't need to know what to ask for.
 - **Your subscriptions.** Claude, ChatGPT, Gemini, Grok, Kimi, API keys or local models.
 
-| Agent              | Time for the full suite | Usage per suite | GG Coder compared          |
-| ------------------ | ----------------------- | --------------- | -------------------------- |
-| **GG Coder**       | **99 s**                | **$0.015**      |                            |
-| Codewhale          | 110 s                   | $0.022          | 10% faster, 32% less usage |
-| Kimi Code          | 120 s                   | $0.029          | 18% faster, 47% less usage |
-| GitHub Copilot CLI | 125 s                   | $0.027          | 21% faster, 44% less usage |
-| Goose              | 126 s                   | $0.021          | 22% faster, 27% less usage |
-| ForgeCode          | 138 s                   | $0.042          | 28% faster, 63% less usage |
-| Claude Code        | 141 s                   | $0.039          | 30% faster, 60% less usage |
-| Factory Droid      | 144 s                   | $0.026          | 32% faster, 40% less usage |
-| Crush              | 153 s                   | $0.038          | 36% faster, 59% less usage |
-| Dirac              | 154 s                   | $0.030          | 36% faster, 48% less usage |
-| Mistral Vibe       | 155 s                   | $0.037          | 36% faster, 58% less usage |
-| DeepSeek-Reasonix  | 157 s                   | $0.026          | 37% faster, 40% less usage |
-| Oh My Pi           | 167 s                   | $0.031          | 41% faster, 50% less usage |
-| Xum                | 172 s                   | $0.047          | 43% faster, 68% less usage |
-| Prime Agent        | 176 s                   | $0.031          | 44% faster, 51% less usage |
-| Docker Agent       | 176 s                   | $0.023          | 44% faster, 33% less usage |
-| Deep Agents        | 189 s                   | $0.041          | 48% faster, 62% less usage |
-| Hermes Agent       | 191 s                   | $0.040          | 48% faster, 61% less usage |
-| Qwen Code          | 212 s                   | $0.063          | 54% faster, 76% less usage |
-| jcode              | 236 s                   | $0.058          | 58% faster, 74% less usage |
+| Agent              | Time for the full suite | Usage per suite | Time vs GG Coder | Usage vs GG Coder |
+| ------------------ | ----------------------- | --------------- | ---------------- | ----------------- |
+| **GG Coder**       | **102 s**               | **$0.014**      |                  |                   |
+| Codewhale          | 112 s                   | $0.022          | 10% slower       | 58% more          |
+| Goose              | 132 s                   | $0.020          | 29% slower       | 46% more          |
+| GitHub Copilot CLI | 136 s                   | $0.025          | 33% slower       | 83% more          |
+| Kimi Code          | 138 s                   | $0.024          | 36% slower       | 74% more          |
+| Claude Code        | 142 s                   | $0.037          | 39% slower       | 169% more         |
+| ForgeCode          | 155 s                   | $0.042          | 52% slower       | 204% more         |
+| Dirac              | 160 s                   | $0.029          | 57% slower       | 114% more         |
+| Crush              | 165 s                   | $0.037          | 62% slower       | 173% more         |
+| Factory Droid      | 167 s                   | $0.025          | 64% slower       | 83% more          |
+| Mistral Vibe       | 169 s                   | $0.036          | 66% slower       | 164% more         |
+| DeepSeek-Reasonix  | 170 s                   | $0.027          | 67% slower       | 99% more          |
+| Oh My Pi           | 170 s                   | $0.031          | 67% slower       | 123% more         |
+| Xum                | 172 s                   | $0.041          | 69% slower       | 203% more         |
+| Docker Agent       | 173 s                   | $0.021          | 70% slower       | 51% more          |
+| Qwen Code          | 177 s                   | $0.049          | 74% slower       | 257% more         |
+| Prime Agent        | 190 s                   | $0.029          | 86% slower       | 111% more         |
+| Hermes Agent       | 190 s                   | $0.027          | 87% slower       | 100% more         |
+| Deep Agents        | 201 s                   | $0.041          | 97% slower       | 198% more         |
+| jcode              | 380 s                   | $0.178          | 274% slower      | 1196% more        |
 
-On a subscription, less usage means more work out of your plan. The same allowance covers about **2.5x** the coding it would in Claude Code, and about **2.0x** what it would in Oh My Pi.
-
-<sub>Every agent on Claude Haiku 5.5, across more than 3,000 test runs. The table is one race on 25 October 2026: 7 tasks, 5 runs each, every agent on a current version.</sub>
+<sub>Table: one full race on 4 November 2026. 20 agents, each on a current stable release (GG Coder v0.102.0), 7 tasks, 5 runs each (700 runs), all on Claude Haiku 5.5 with the same thinking setting. Every agent got the same prompts and a fresh copy of the project each run, and ran bare, GG Coder included: its own built-in prompt and tools, with no skills, plugins, MCP servers or custom instructions. The tasks use small test projects plus one question about Vite's codebase (v8.3.5), so no agent works on its own code. A run counts only if hidden tests pass or the answer is correct.</sub>
 
 ## Also included
 
@@ -99,7 +97,7 @@ For your own agent, start here:
 npm install @kenkaiiii/gg-ai @kenkaiiii/gg-agent
 ```
 
-The package links above cover setup and usage. MIT licensed, so you can build on it.
+The package links above cover setup and usage. Licensed under AGPL-3.0: you can build on it, and if you distribute your changes or run them as a network service, you share their source under the same license.
 
 ## Learn with me
 

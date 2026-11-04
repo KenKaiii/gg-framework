@@ -3,7 +3,7 @@
   "version": "5.91.0",
   "type": "module",
   "description": "Unified LLM streaming API for Anthropic, OpenAI, Gemini, xAI, Moonshot, GLM, DeepSeek, OpenRouter, local models and more",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=22"
   },
@@ -23,7 +23,8 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsup",

@@ -3,7 +3,7 @@
   "version": "5.91.0",
   "type": "module",
   "description": "Lean CLI coding agent for 12 LLM providers and local models, with OAuth for Anthropic, OpenAI and Gemini",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=22"
   },
@@ -91,7 +91,8 @@
   },
   "files": [
     "dist",
-    "assets"
+    "assets",
+    "NOTICE"
   ],
   "scripts": {
     "clean": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\"",

@@ -388,6 +388,7 @@ function tryStartNativeFfmpeg(ffplayBin: string, url: string): ChildProcess | nu
   }
 }
 
+// isWsl and tryPlayOnWindowsHost derive from creativeprofit22's MIT-licensed PRs #15/#16; see NOTICE.
 /**
  * On WSL2, native Linux audio binaries can't reach the Windows audio device
  * through WSLg's bridge in any useful way for streaming — detect WSL and route

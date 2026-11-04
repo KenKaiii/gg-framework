@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@kenkaiiii/gg-agent"><img src="https://img.shields.io/npm/v/@kenkaiiii/gg-agent?style=for-the-badge" alt="npm version"></a>
-  <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
+  <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=for-the-badge" alt="AGPL-3.0 License"></a>
 </p>
 
 Give an LLM tools. It calls them. Results go back in. It loops until it's done. That's it.
@@ -51,41 +51,41 @@ Return a string, or a `{ content, details }` object for structured results. If `
 
 ## Events
 
-| Event | Description |
-|---|---|
-| `text_delta` | Incremental text output |
-| `thinking_delta` | Extended thinking output |
-| `tool_call_start` | Tool invocation started (name, args) |
-| `tool_call_update` | Progress update from a running tool |
-| `tool_call_end` | Tool finished (result, duration, isError) |
-| `server_tool_call` | Server-side tool invocation |
-| `server_tool_result` | Server-side tool result |
-| `turn_end` | One LLM call completed (stop reason, usage) |
-| `agent_done` | All turns finished (total turns, total usage) |
-| `error` | Fatal error |
+| Event                | Description                                   |
+| -------------------- | --------------------------------------------- |
+| `text_delta`         | Incremental text output                       |
+| `thinking_delta`     | Extended thinking output                      |
+| `tool_call_start`    | Tool invocation started (name, args)          |
+| `tool_call_update`   | Progress update from a running tool           |
+| `tool_call_end`      | Tool finished (result, duration, isError)     |
+| `server_tool_call`   | Server-side tool invocation                   |
+| `server_tool_result` | Server-side tool result                       |
+| `turn_end`           | One LLM call completed (stop reason, usage)   |
+| `agent_done`         | All turns finished (total turns, total usage) |
+| `error`              | Fatal error                                   |
 
 ---
 
 ## Options
 
-| Option | Type | Description |
-|---|---|---|
-| `provider` | `"anthropic" \| "openai" \| "glm" \| "moonshot"` | Required |
-| `model` | `string` | Required |
-| `system` | `string` | System prompt |
-| `tools` | `AgentTool[]` | Tools with Zod schemas and execute functions |
-| `serverTools` | `ServerToolDefinition[]` | Server-side tool definitions |
-| `maxTurns` | `number` | Max LLM calls (default: 100) |
-| `maxTokens` | `number` | Max output tokens per turn |
-| `temperature` | `number` | Sampling temperature |
-| `thinking` | `"low" \| "medium" \| "high" \| "max"` | Extended thinking |
-| `apiKey` | `string` | Provider API key |
-| `baseUrl` | `string` | Custom endpoint |
-| `signal` | `AbortSignal` | Cancellation |
-| `cacheRetention` | `"none" \| "short" \| "long"` | Prompt cache preference |
-| `compaction` | `boolean` | Server-side compaction (Anthropic only) |
-| `maxContinuations` | `number` | Max pause_turn continuations (default: 5) |
-| `transformContext` | `(messages) => messages` | Transform messages before each LLM call |
+| Option             | Type                                             | Description                                  |
+| ------------------ | ------------------------------------------------ | -------------------------------------------- |
+| `provider`         | `"anthropic" \| "openai" \| "glm" \| "moonshot"` | Required                                     |
+| `model`            | `string`                                         | Required                                     |
+| `system`           | `string`                                         | System prompt                                |
+| `tools`            | `AgentTool[]`                                    | Tools with Zod schemas and execute functions |
+| `serverTools`      | `ServerToolDefinition[]`                         | Server-side tool definitions                 |
+| `maxTurns`         | `number`                                         | Max LLM calls (default: 100)                 |
+| `maxTokens`        | `number`                                         | Max output tokens per turn                   |
+| `temperature`      | `number`                                         | Sampling temperature                         |
+| `thinking`         | `"low" \| "medium" \| "high" \| "max"`           | Extended thinking                            |
+| `apiKey`           | `string`                                         | Provider API key                             |
+| `baseUrl`          | `string`                                         | Custom endpoint                              |
+| `signal`           | `AbortSignal`                                    | Cancellation                                 |
+| `cacheRetention`   | `"none" \| "short" \| "long"`                    | Prompt cache preference                      |
+| `compaction`       | `boolean`                                        | Server-side compaction (Anthropic only)      |
+| `maxContinuations` | `number`                                         | Max pause_turn continuations (default: 5)    |
+| `transformContext` | `(messages) => messages`                         | Transform messages before each LLM call      |
 
 `transformContext` is called before each LLM call. Use it for compaction, truncation, or injecting dynamic context.
 
@@ -93,4 +93,4 @@ Return a string, or a `{ content, details }` object for structured results. If `
 
 ## License
 
-MIT
+AGPL-3.0-only. See [LICENSE](../../LICENSE).

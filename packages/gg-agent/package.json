@@ -3,7 +3,7 @@
   "version": "5.91.0",
   "type": "module",
   "description": "Agentic loop system with tool execution for LLMs",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=22"
   },
@@ -23,7 +23,8 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsup",

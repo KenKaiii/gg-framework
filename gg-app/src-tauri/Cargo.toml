@@ -4,6 +4,7 @@ version = "0.102.0"
 # Shown as the Linux deb/rpm package description and maintainer.
 description = "GG Coder desktop workspace for code, chat and motion agents"
 authors = ["KenKai"]
+license = "AGPL-3.0-only"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

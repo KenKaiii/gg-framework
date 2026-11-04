@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@kenkaiiii/gg-core"><img src="https://img.shields.io/npm/v/@kenkaiiii/gg-core?style=for-the-badge" alt="npm version"></a>
-  <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
+  <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=for-the-badge" alt="AGPL-3.0 License"></a>
 </p>
 
 The shared foundation under GG Coder's app and CLI. It depends only on [`@kenkaiiii/gg-ai`](../gg-ai/README.md), never on React, Ink or the agent loop.
@@ -25,15 +25,15 @@ npm i @kenkaiiii/gg-core
 
 ## What's inside
 
-| Area | Main exports |
-|---|---|
-| Model registry | `getModel`, `getAllModels`, `getModelsForProvider`, `getDefaultModel`, `getContextWindow` |
-| Thinking levels | `getSupportedThinkingLevels`, `getMaxThinkingLevel`, `getDefaultThinkingLevel` |
-| Auth storage | `AuthStorage` (reads and writes `~/.gg/auth.json`, refreshes OAuth tokens) |
-| OAuth | Anthropic, OpenAI, Gemini, Kimi and xAI login flows |
-| Local models | `discoverLocalModels` (Ollama, LM Studio, llama.cpp, vLLM, custom endpoints) |
-| Paths | `getAppPaths` (every file under `~/.gg/`) |
-| Other | Logger, file lock, usage limits, Telegram, voice transcription, auto-update |
+| Area            | Main exports                                                                              |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| Model registry  | `getModel`, `getAllModels`, `getModelsForProvider`, `getDefaultModel`, `getContextWindow` |
+| Thinking levels | `getSupportedThinkingLevels`, `getMaxThinkingLevel`, `getDefaultThinkingLevel`            |
+| Auth storage    | `AuthStorage` (reads and writes `~/.gg/auth.json`, refreshes OAuth tokens)                |
+| OAuth           | Anthropic, OpenAI, Gemini, Kimi and xAI login flows                                       |
+| Local models    | `discoverLocalModels` (Ollama, LM Studio, llama.cpp, vLLM, custom endpoints)              |
+| Paths           | `getAppPaths` (every file under `~/.gg/`)                                                 |
+| Other           | Logger, file lock, usage limits, Telegram, voice transcription, auto-update               |
 
 Two lighter subpath entries skip the rest of the package:
 
@@ -65,4 +65,4 @@ console.log(models.map((m) => m.id));
 
 ## License
 
-MIT
+AGPL-3.0-only. See [LICENSE](../../LICENSE).

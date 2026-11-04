@@ -2,6 +2,7 @@ import type { KenFace } from "./goal-ken-talk";
 import { formatMonthYear, type ShipLog } from "./about-ship-log";
 
 export const SKOOL_URL = "https://skool.com/kenkai";
+export const SOURCE_URL = "https://github.com/KenKaiii/gg-framework";
 export const YOUTUBE_URL = "https://youtube.com/@kenkaidoesai";
 
 /**

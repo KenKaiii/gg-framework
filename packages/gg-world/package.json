@@ -1,6 +1,7 @@
 {
   "name": "gg-world",
   "private": true,
+  "license": "AGPL-3.0-only",
   "version": "0.1.0",
   "description": "GG World: the game mode inside the GG Coder app (isometric social hangout). Built into gg-app/public/world.",
   "type": "module",
