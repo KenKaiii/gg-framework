@@ -1,23 +1,21 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import type { AgentTool } from "@kleio/agent";
+import type { AgentTool, ToolExecuteResult } from "@kleio/agent";
 import { resolvePath } from "./path-utils.js";
 import { extractPlanSteps } from "../utils/plan-steps.js";
 
 const ExitPlanParams = z.object({
-  plan_path: z.string().describe("Path to the plan markdown file; must be under .gg/plans/"),
+  plan_path: z.string().describe("Under .gg/plans/"),
 });
 
 export function createExitPlanTool(
   cwd: string,
-  onExitPlan: (planPath: string) => Promise<string>,
+  onExitPlan: (planPath: string) => Promise<ToolExecuteResult>,
 ): AgentTool<typeof ExitPlanParams> {
   return {
     name: "exit_plan",
-    description:
-      "Submit a .gg/plans/ markdown plan for user review and leave the active research phase. " +
-      "The user can approve it for implementation, reject it with feedback, or dismiss the review.",
+    description: "Submit the plan for the user to approve or reject.",
     parameters: ExitPlanParams,
     executionMode: "sequential",
     async execute({ plan_path }) {
@@ -51,7 +49,13 @@ export function createExitPlanTool(
         );
       }
 
-      return onExitPlan(resolved);
+      const review = await onExitPlan(resolved);
+      // Desktop/TUI callbacks open review UI and return immediately. End this
+      // run instead of asking the model to respond to "wait for approval".
+      // Hosts that approve inline (ACP) explicitly opt into continuation.
+      return typeof review === "string"
+        ? { content: review, endRun: true }
+        : { endRun: true, ...review };
     },
   };
 }

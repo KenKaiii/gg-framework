@@ -195,7 +195,8 @@ export interface RetryInfo {
     | "stream_stall"
     | "overflow_compact"
     | "tool_argument_glitch"
-    | "runaway_toolcall";
+    | "runaway_toolcall"
+    | "stream_rule";
   attempt: number;
   maxAttempts: number;
   delayMs: number;

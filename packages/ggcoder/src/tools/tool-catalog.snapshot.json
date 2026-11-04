@@ -3,58 +3,141 @@
   "tools": [
     {
       "name": "bash",
-      "description": "Execute a bash command. The shell's working directory is already set to the project root — don't cd into it redundantly. Use cd only when you need a different directory. Returns exit code and combined stdout/stderr. Pipelines run with pipefail — a piped command reports the failing stage's exit code, so piping tests through tail/head cannot mask a failure. Commands run in a non-interactive bash shell with TERM=dumb. Long output is truncated (tail kept). Set run_in_background=true for long-running OR interactive processes (dev servers, watchers, REPLs, scaffolders, programs that prompt for input). Use task_output to read output, task_send to type input/answer prompts, and task_stop to stop background processes. Commit, push, amend, or rewrite git history only when the user explicitly asked. Never background a command with a trailing & or nohup — use run_in_background instead. Kill processes by exact PID, never broad patterns like pkill -f node. Set persist=true to run in a session shell where cd/env state survives across persist:true calls. With run_in_background, also set wake (pattern and/or silence_seconds) to be actively notified the moment matching output appears or the task stalls. Never sleep to wait for a background process — task_output with wait_ms returns when it exits or a declared wake fires. For dev servers, set a readiness wake.pattern, use task_output with wait_ms, then check HTTP and finish while leaving the server running. Do not use silence as readiness; healthy servers normally go quiet.",
+      "description": "Run a non-interactive bash command (TERM=dumb, pipefail) in the project root. Servers/watchers/REPLs: run_in_background + wake.pattern, then task_output wait_ms; never `&`, nohup or sleep. Leave servers running. Kill by exact PID, never by name or pattern (pkill, killall, taskkill /IM): you run inside a host process.",
       "schema": {
         "type": "object",
         "properties": {
           "command": {
-            "type": "string",
-            "description": "The bash command to execute"
+            "type": "string"
+          },
+          "review": {
+            "description": "Append git diff after a passing final check",
+            "type": "boolean"
           },
           "timeout": {
-            "description": "Timeout in milliseconds (default: 120000)",
             "type": "integer",
-            "minimum": 1000,
-            "maximum": 9007199254740991
+            "minimum": 1000
           },
           "run_in_background": {
-            "description": "Run the command in the background. Returns a process ID immediately. Use task_output to read output and task_stop to stop it.",
             "type": "boolean"
           },
           "persist": {
-            "description": "Run in the persistent session shell: cd, exported env vars, and shell state survive across persist:true calls. Use for multi-step workflows in another directory or with sourced environments. Default false (fresh shell per call).",
+            "description": "Keep cd/env across calls",
             "type": "boolean"
           },
           "wake": {
-            "description": "Wake conditions for a background task (run_in_background only). You are notified automatically the instant one holds, instead of polling task_output. Each condition fires once; exit always notifies regardless.",
+            "description": "Notify on output match or silence",
             "type": "object",
             "properties": {
               "pattern": {
-                "description": "A regex; the moment NEW output matches it you are actively woken with the matching line — no task_output polling. Use for signals in long builds, dev servers and watchers (e.g. 'compiled with errors', 'listening on').",
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 200
               },
               "silence_seconds": {
-                "description": "Wake me if the task produces no output at all for this many seconds while still running — a stall/hang detector for commands that should be chatty.",
                 "type": "integer",
                 "minimum": 10,
                 "maximum": 3600
               }
-            },
-            "additionalProperties": false
+            }
           }
         },
         "required": [
           "command"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "e5ac4d03026345bb108adbc637c8ef756ba6e3881415c3722b7a408df3219a27"
+      "hash": "fb1336438cf245042ec08c5d854b3926e13b8e91a0e53aefc26f1af426dee718"
+    },
+    {
+      "name": "checklist",
+      "description": "Read or record the project health checklist (stored in .gg-checklist.json). `status` lists every item with its status and last check; items older than 30 days are due. `record` saves the result of checking one item: the date and Git commit are filled in automatically. `issues` needs at least one finding; `pass` takes none; `evidence` lists what you actually ran or read, including scope and exclusions. Record completed checklist reviews or checks requested in normal chat; never start extra audits unasked. After fixing an item's recorded findings, re-check them and record that item again (`pass`, or `issues` with what remains) so the checklist doesn't keep showing fixed findings.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "status: every item with its status and last check. record: save the result of checking one item.",
+            "enum": [
+              "status",
+              "record"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "enum": [
+              "agent-setup",
+              "docs",
+              "naming",
+              "git-github",
+              "secrets",
+              "quality-tools",
+              "tests",
+              "ci",
+              "commit-gate",
+              "code-health",
+              "errors-logging",
+              "dependencies",
+              "design-system",
+              "styling-consistency",
+              "motion-consistency",
+              "accessibility",
+              "ui-states",
+              "security",
+              "data-safety",
+              "compliance",
+              "performance",
+              "build-release",
+              "monitoring"
+            ],
+            "description": "record: the checklist item id"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "issues",
+              "not-applicable"
+            ],
+            "description": "record: pass, issues (needs findings) or not-applicable"
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "record: one-line verdict in plain words"
+          },
+          "findings": {
+            "default": [],
+            "description": "record: each problem with file:line, severity and suggested fix",
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          },
+          "evidence": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "description": "record: what was actually run or read, e.g. 'pnpm lint — 0 errors'"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "hash": "fdd372f3bc77217fe4271f4f04448759ba7559eedc0b86bdc21e9b49cc5a711a"
     },
     {
       "name": "code_nav",
-      "description": "Resolve a symbol with the language server: `definition` (where it is declared), `references` (every use), `symbols` (outline of a file), `hover` (type/signature). Exact and cross-file — prefer it over grep for 'who calls this' and 'where is this defined'. Reports explicitly when no language server can answer.",
+      "description": "Language server: exact definition, references (callers), file outline, type.",
       "schema": {
         "type": "object",
         "properties": {
@@ -66,156 +149,222 @@
               "symbols",
               "hover"
             ],
-            "description": "definition = where a symbol is declared; references = every use of it; symbols = outline of one file; hover = its type/signature"
+            "description": "symbols = file outline; hover = type/signature"
           },
           "file": {
-            "type": "string",
-            "description": "File containing the symbol (relative to cwd or absolute)"
+            "type": "string"
           },
           "line": {
-            "description": "1-based line of the symbol. Optional when `symbol` is given; unused by `symbols`.",
+            "description": "Not needed when `symbol` is given",
             "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
+            "minimum": 1
           },
           "column": {
-            "description": "1-based column of the symbol; inferred from `symbol` when omitted",
             "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
+            "minimum": 1
           },
           "symbol": {
-            "description": "Symbol name. Enough on its own for definition/references/hover — no `line` needed. Filters the `symbols` outline.",
+            "description": "Symbol name",
             "type": "string"
           },
           "max_results": {
-            "description": "Maximum locations to return (default: 60)",
+            "description": "Default 60",
             "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
+            "minimum": 1
           }
         },
         "required": [
           "op",
           "file"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "a6c85e9cf7bf53e155bb95ba35721ed32e1d7a5b0e0c79a4bee0ab4d9f65f5ef"
+      "hash": "4734eceb00cd72a9bbccfa12e306a9b4e7ba6e017ae4f2fffe111c490611b79c"
     },
     {
       "name": "code_search",
-      "description": "Find the most relevant functions/classes/types for a query. Returns whole ranked symbol chunks (not lines) — far fewer tokens than reading whole files. Indexes TypeScript/JavaScript, Python, Go, Rust, Java and C#; use grep for other languages or exact strings.",
+      "description": "Find functions/classes by what they do; returns whole symbols.",
       "schema": {
         "type": "object",
         "properties": {
           "query": {
-            "type": "string",
-            "description": "Natural-language description of the code you're looking for"
+            "type": "string"
           },
           "path": {
-            "description": "Directory to scope the search to (defaults to cwd)",
             "type": "string"
           },
           "max_results": {
-            "description": "Maximum ranked symbol chunks to return (default: 8)",
+            "description": "Default 8",
             "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
+            "minimum": 1
           }
         },
         "required": [
           "query"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "7236d4fc3c52d0733a6eb5af0553e9468c3e09ae557426608b4d71984d28adb6"
+      "hash": "26e7c3d13be1bff57c79530753790d4345a8d0a40de04b8130ed2c9b4fd9a3ed"
+    },
+    {
+      "name": "debug",
+      "description": "Debug a Node.js program (JS, or TS run by Node's type stripping) with real breakpoints. Use it when a bug depends on runtime state: launch with breakpoints, read variables at the stop, step, and evaluate expressions in the paused frame — instead of adding prints and re-running. launch, continue, step_* and pause return where it stopped, the source around it and the local variables. It pauses on uncaught exceptions by default. One session at a time; launching again stops the previous program. To debug a node:test file, launch it with node_args [\"--test\", \"--test-isolation=none\"]. Test runners that run tests in worker processes (vitest, jest) do not reach breakpoints this way.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "launch",
+              "set_breakpoint",
+              "remove_breakpoint",
+              "continue",
+              "step_over",
+              "step_into",
+              "step_out",
+              "pause",
+              "stack",
+              "variables",
+              "evaluate",
+              "output",
+              "stop"
+            ],
+            "description": "What to do. Every action that runs code returns where the program stopped."
+          },
+          "program": {
+            "description": "launch: script to run (.js/.mjs/.cjs/.ts)",
+            "type": "string"
+          },
+          "args": {
+            "description": "launch: arguments passed to the script",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "node_args": {
+            "description": "launch: extra node flags, e.g. [\"--test\", \"--test-isolation=none\"]",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "breakpoints": {
+            "description": "launch: breakpoints armed before the first line runs",
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "condition": {
+                  "description": "JS expression; pause only when it is truthy",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "line"
+              ]
+            }
+          },
+          "stop_on_entry": {
+            "description": "launch: stay paused on the first line",
+            "type": "boolean"
+          },
+          "pause_on_exceptions": {
+            "description": "launch: when to pause on a throw (default uncaught)",
+            "type": "string",
+            "enum": [
+              "none",
+              "uncaught",
+              "all"
+            ]
+          },
+          "file": {
+            "description": "set_breakpoint: file path",
+            "type": "string"
+          },
+          "line": {
+            "description": "set_breakpoint: 1-based line",
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "condition": {
+            "description": "set_breakpoint: JS condition",
+            "type": "string"
+          },
+          "breakpoint_id": {
+            "description": "remove_breakpoint: id such as bp1",
+            "type": "string"
+          },
+          "frame": {
+            "description": "variables/evaluate: stack frame index (0 = innermost)",
+            "type": "integer",
+            "minimum": 0
+          },
+          "expression": {
+            "description": "evaluate: JS expression",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "description": "launch/continue/step/pause: how long to wait for a stop (default 15000)",
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 120000
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "hash": "912efe81b45c6511bd17eebbfb5b57228938b0b16a5a99daff6d04a905d37274"
     },
     {
       "name": "edit",
-      "description": "Replace text in a file. Two edit forms:\n1. TEXT form { old_text, new_text }: copy old_text verbatim from the latest read/diff with enough context to match one location; set replace_all: true only for deliberate global renames. The matcher tolerates safe whitespace/quote/dash drift, but do not paraphrase. For long blocks, a line containing only `...` in BOTH old_text and new_text elides a middle preserved verbatim.\n2. SPAN form { span, lines } (preferred after a read with anchors:true): pin the line range by its line+hash endpoints and supply the full replacement lines — no old_text to retype, and the edit is rejected if the file changed since the read. Span edits apply against the file as read; text edits then run on the result.\nPartial-apply by default: failed edits are listed for retry, successful ones are still written — re-issue ONLY the listed failures, not the whole batch. Returns a unified diff.",
+      "description": "Edit files. `old_text`: verbatim, unique unless replace_all. Or `span` (from read anchors:true) + full replacement `lines`. Re-send only failed edits.",
       "schema": {
         "type": "object",
         "properties": {
           "file_path": {
-            "type": "string",
-            "description": "The file path to edit"
+            "type": "string"
           },
           "edits": {
-            "description": "One or more edits applied in order. Each edit operates on the result of the previous one.",
             "minItems": 1,
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
                 "old_text": {
-                  "description": "The exact text to find and replace (text form)",
                   "type": "string"
                 },
                 "new_text": {
-                  "description": "The replacement text (text form)",
                   "type": "string"
                 },
                 "replace_all": {
-                  "description": "Replace every occurrence of old_text instead of requiring a unique match. Use for renames or repeated tokens. Defaults to false.",
                   "type": "boolean"
                 },
-                "anchor": {
-                  "description": "Optional staleness guard for the text form. When set (using line+hash anchors from a read with anchors:true), the edit is rejected if the file changed since you read it. old_text/new_text still drive the actual replacement.",
-                  "type": "object",
-                  "properties": {
-                    "start_line": {
-                      "type": "integer",
-                      "minimum": 1,
-                      "maximum": 9007199254740991,
-                      "description": "1-based line number of the first edited line"
-                    },
-                    "start_hash": {
-                      "type": "string",
-                      "description": "Content anchor of the first line (from a read with anchors:true)"
-                    },
-                    "end_line": {
-                      "type": "integer",
-                      "minimum": 1,
-                      "maximum": 9007199254740991,
-                      "description": "1-based line number of the last edited line"
-                    },
-                    "end_hash": {
-                      "type": "string",
-                      "description": "Content anchor of the last line"
-                    }
-                  },
-                  "required": [
-                    "start_line",
-                    "start_hash",
-                    "end_line",
-                    "end_hash"
-                  ],
-                  "additionalProperties": false
-                },
                 "span": {
-                  "description": "Span form (preferred when you did a read with anchors:true): replace the inclusive line range pinned by these line+hash endpoints with `lines` — no old_text needed, so you never retype existing code. Rejected if the file changed since the read. Use INSTEAD of old_text/new_text, together with `lines`.",
                   "type": "object",
                   "properties": {
                     "start_line": {
                       "type": "integer",
-                      "minimum": 1,
-                      "maximum": 9007199254740991,
-                      "description": "1-based line number of the first edited line"
+                      "minimum": 1
                     },
                     "start_hash": {
-                      "type": "string",
-                      "description": "Content anchor of the first line (from a read with anchors:true)"
+                      "type": "string"
                     },
                     "end_line": {
                       "type": "integer",
-                      "minimum": 1,
-                      "maximum": 9007199254740991,
-                      "description": "1-based line number of the last edited line"
+                      "minimum": 1
                     },
                     "end_hash": {
-                      "type": "string",
-                      "description": "Content anchor of the last line"
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -223,143 +372,156 @@
                     "start_hash",
                     "end_line",
                     "end_hash"
-                  ],
-                  "additionalProperties": false
+                  ]
                 },
                 "lines": {
-                  "description": "Replacement lines for `span` (full lines with correct indentation, no anchor/line-number prefixes). An empty array deletes the span.",
                   "type": "array",
                   "items": {
                     "type": "string"
                   }
                 }
               },
-              "additionalProperties": false
+              "additionalProperties": {}
+            }
+          },
+          "files": {
+            "description": "Several files: [{file_path, edits}], instead of file_path/edits",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file_path": {
+                  "type": "string"
+                },
+                "edits": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "old_text": {
+                        "type": "string"
+                      },
+                      "new_text": {
+                        "type": "string"
+                      },
+                      "replace_all": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "file_path",
+                "edits"
+              ]
             }
           },
           "atomic": {
-            "description": "If true, fail the whole batch when any edit fails — no changes written. Default false: partial-apply, keep every successful edit and report failures for retry. Use atomic only when later edits depend on earlier ones in a way where a half-applied state would be worse than nothing.",
+            "description": "All-or-nothing per file",
             "type": "boolean"
           }
-        },
-        "required": [
-          "file_path",
-          "edits"
-        ],
-        "additionalProperties": false
+        }
       },
-      "hash": "1f89f8a9025b764d150fd4b50d0afb01bcf0076fee42a88ff9ffafb02ee9ce9a"
+      "hash": "816ee7b2669156d83e4d26995f61090873e3bf900e0d62341b11d2652e60b390"
     },
     {
       "name": "find",
-      "description": "Find files matching a glob pattern. Respects .gitignore. Returns sorted file paths, truncated if more than 100 matches.",
+      "description": "Find files by glob (respects .gitignore, max 100).",
       "schema": {
         "type": "object",
         "properties": {
           "pattern": {
             "type": "string",
-            "description": "Glob pattern to match files (e.g. '**/*.ts', 'src/**/*.tsx')"
+            "description": "Glob, e.g. '**/*.ts'"
           },
           "path": {
-            "description": "Directory to search in (defaults to cwd)",
             "type": "string"
           }
         },
         "required": [
           "pattern"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "aeb5afe8517d6418bf488be23527e3d88da309039248d2a9f2ae112d6f80cf8f"
+      "hash": "6f58f3bd0ce914f5cdb56f2d507e812620ab5e3bdde53e5101dd45a193df5513"
     },
     {
       "name": "grep",
-      "description": "Search file contents using regex. Returns filepath:line_number:content for matches, ordered by path. Skips files matched by the search root's .gitignore (pass an explicit `path` inside an ignored directory to search it anyway), skips binary files, and searches dot-directories. Lookaround and backreferences are supported but scan more slowly.",
+      "description": "Regex search of file contents → path:line:text. Skips .gitignored and binary files.",
       "schema": {
         "type": "object",
         "properties": {
           "pattern": {
             "type": "string",
-            "description": "Search pattern (JavaScript regex; leading (?i) is supported)"
+            "description": "JS regex"
           },
           "path": {
-            "description": "File or directory to search (defaults to cwd)",
             "type": "string"
           },
           "include": {
-            "description": "Glob pattern to filter files, matched at any depth (e.g. '*.ts')",
+            "description": "File glob",
             "type": "string"
           },
           "max_results": {
-            "description": "Maximum matches to return (default: 50)",
             "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
+            "minimum": 1
           },
           "case_insensitive": {
-            "description": "Case-insensitive search",
             "type": "boolean"
           }
         },
         "required": [
           "pattern"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "5c19335962fdaa5d97f0d8f93ceeb97e9bc449ac79e778971e92743f2a26ab0b"
+      "hash": "fca2f3ad82151cecaa09d52c16967cb8d190468497beed8a9079e4c90945b351"
     },
     {
       "name": "ls",
-      "description": "List directory contents with file types and sizes. Directories listed first.",
+      "description": "List a directory with types and sizes.",
       "schema": {
         "type": "object",
         "properties": {
           "path": {
-            "description": "Directory path (defaults to cwd)",
             "type": "string"
           },
           "all": {
-            "description": "Show hidden files (default: false)",
+            "description": "Include hidden files",
             "type": "boolean"
           }
-        },
-        "additionalProperties": false
+        }
       },
-      "hash": "4dc53fc3b7ef09ca0560725d432bd2068be94c78d0585543b53a2972fbfcd788"
+      "hash": "dbcb46be053e47fbc49ff217b01a1ec43526189819d2ba2fc9a3685b07f8ee19"
     },
     {
       "name": "read",
-      "description": "Read a file's contents. Returns numbered lines (cat -n style). Output is truncated to 2000 lines or 50KB (whichever is hit first). If truncated, use offset/limit to read remaining sections. Reads images natively. Other binary files return a notice instead of content.",
+      "description": "Read a file as numbered lines (max 2000 lines/50KB; page with offset/limit). Reads images natively.",
       "schema": {
         "type": "object",
         "properties": {
           "file_path": {
-            "type": "string",
-            "description": "The file path to read"
+            "type": "string"
           },
           "offset": {
-            "description": "Line number to start reading from (1-based)",
             "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
+            "minimum": 1
           },
           "limit": {
-            "description": "Maximum number of lines to read",
             "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
+            "minimum": 1
           },
           "anchors": {
-            "description": "Prefix each line with a stable `hash│` content anchor so a later `edit` can target lines by anchor and reject stale edits. Default false.",
+            "description": "Add line anchors for edit `span`",
             "type": "boolean"
           }
         },
         "required": [
           "file_path"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "32a9a6b93ab42eadf063160f4dccca8408937eb6cee2f156ff4549573e3872c8"
+      "hash": "972ed7fe98bc03c3af8814949c4664418ace9fcff3a14c09576ff9e1f7d7f7f1"
     },
     {
       "name": "screenshot",
@@ -385,20 +547,17 @@
             "properties": {
               "width": {
                 "type": "integer",
-                "minimum": 1,
-                "maximum": 9007199254740991
+                "minimum": 1
               },
               "height": {
                 "type": "integer",
-                "minimum": 1,
-                "maximum": 9007199254740991
+                "minimum": 1
               }
             },
             "required": [
               "width",
               "height"
-            ],
-            "additionalProperties": false
+            ]
           },
           "full_page": {
             "description": "Capture the full scrollable page (default false)",
@@ -430,23 +589,20 @@
                 "ms": {
                   "description": "Milliseconds to wait for the wait action",
                   "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
+                  "minimum": 0
                 }
               },
               "required": [
                 "type"
-              ],
-              "additionalProperties": false
+              ]
             }
           }
         },
         "required": [
           "url"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "4ea2a1bd8c3f454abaaf4d7766d3a5f25e0b9db32501ee0eb4ca9983e665498f"
+      "hash": "06c1f0dce0aea6ce6c27f8c6b8f2699169aff8c6641e2c7252878e440230f6da"
     },
     {
       "name": "source_path",
@@ -466,27 +622,24 @@
         },
         "required": [
           "package"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "87275d0529c562d486c4d3966d01ecd0e549ba31467c6781c84520917e2bb874"
+      "hash": "a7df5562fae663f0d37cbe1ac2303fc45097a84e942dbbb527b479c0a2af4af3"
     },
     {
       "name": "task_output",
-      "description": "Read output from a background process. Returns new output since last read by default. Use from_start=true to read from the beginning. Progress and exit status arrive automatically for background processes — call this when you need the full output, not merely to check whether something finished. Set wait_ms to block until the process exits OR its declared wake condition fires (wait_agent is for child agents). A wake match is not an exit or proof of success: inspect the output. For dev servers, check HTTP readiness, then finish while leaving the server running.",
+      "description": "Read a background process's new output (a wake match is not success).",
       "schema": {
         "type": "object",
         "properties": {
           "id": {
-            "type": "string",
-            "description": "The background process ID"
+            "type": "string"
           },
           "from_start": {
-            "description": "If true, read output from the beginning instead of incrementally",
             "type": "boolean"
           },
           "wait_ms": {
-            "description": "Block until the process exits or a declared wake condition fires, up to this many ms (max 600000), then read. For dev servers, declare a readiness wake.pattern when starting, then check HTTP once it matches. Omit wait_ms to read immediately; never wait for a ready server to exit.",
+            "description": "Block until exit or a wake fires (max 600000)",
             "type": "integer",
             "minimum": 1000,
             "maximum": 600000
@@ -494,58 +647,52 @@
         },
         "required": [
           "id"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "c26846c0b135a195a627489bb52af009bfffeb4ea79d50cc142162a350def5c6"
+      "hash": "ec5e60d8eb2d3f09cff4ef9929a308bd7f2b8f967bdb5f410a27ab7e10aafa11"
     },
     {
       "name": "task_send",
-      "description": "Send input to a running background process (started with run_in_background) to drive it interactively — answer a [Y/n] or password-style prompt, type into a REPL, or feed a scaffolder's questions. By default the input is followed by Enter. After sending, call task_output to read the process's response. Set eof=true to close stdin (Ctrl-D).",
+      "description": "Type into a background process's stdin.",
       "schema": {
         "type": "object",
         "properties": {
           "id": {
-            "type": "string",
-            "description": "The background process ID to send input to"
+            "type": "string"
           },
           "input": {
-            "description": "Text to type into the process's stdin (e.g. an answer to a prompt or a REPL line)",
             "type": "string"
           },
           "enter": {
-            "description": "Append a newline (press Enter) after the input. Default true.",
+            "description": "Default true",
             "type": "boolean"
           },
           "eof": {
-            "description": "Close stdin after sending, signalling end-of-input (Ctrl-D).",
+            "description": "Close stdin (Ctrl-D)",
             "type": "boolean"
           }
         },
         "required": [
           "id"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "aa8ece0ac2309d6c76589186b51df4bf3f12a34a61f42b875da46cb891dd800e"
+      "hash": "f0274f2808759d32c3a0ea94fb4d91aa4f090d3f9bf03ecb3b25a7513dc28dba"
     },
     {
       "name": "task_stop",
-      "description": "Stop a background process by ID. Sends SIGTERM, then SIGKILL after 5 seconds.",
+      "description": "Stop a background process.",
       "schema": {
         "type": "object",
         "properties": {
           "id": {
-            "type": "string",
-            "description": "The background process ID to stop"
+            "type": "string"
           }
         },
         "required": [
           "id"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "8551d276166395bf6fc65ceff2a8f203bb8107c92386fc8509604e47f239e0c2"
+      "hash": "a2345eaaf71f49e6a30af833f224f146d05ec594de2c9a820b60bb1617e87dc8"
     },
     {
       "name": "tasks",
@@ -578,10 +725,9 @@
         },
         "required": [
           "action"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "a8101bcaaff3cb643b11a63a96b5d00833317cacf02a3ee6cb2b708d5b4e41b3"
+      "hash": "20b01745c3b6575559296cc2706856ba1875aedc92942146709794811b73e087"
     },
     {
       "name": "ui_adopt",
@@ -609,10 +755,9 @@
         "required": [
           "action",
           "id"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "5699627cdc94e9aa06704c2b3a832bf5625141e326de4111ceb7902eab4b208a"
+      "hash": "30f45c90bee930f904e324d44190a173a5e63cfff6186197257ab376fd230513"
     },
     {
       "name": "ui_registry",
@@ -646,23 +791,21 @@
         },
         "required": [
           "action"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "f247731b82c5a00abc60065aa277dc3295720fb95d9acc24e304a6e1b8167da3"
+      "hash": "e6a5135f1c194b71165bdac1e15292b34e421789048f643d253b29dc0b695176"
     },
     {
       "name": "web_fetch",
-      "description": "Fetch and read web page content. Accepts a single `url` or a `urls` array (up to 10, fetched concurrently). Returns clean Markdown by default (`format`: markdown|text|html|outline) via main-content extraction. Extracts text from PDFs, follows safe redirects automatically, and prefers a site's curated /llms.txt for docs pages when available.\n`format: \"outline\"` is the cheap mode: main content only, every hyperlink replaced by a number (`anchor text [12]`) with a numbered URL index at the end, and a small default `max_length`. Use it when hunting for the right page; then pass `follow: 12` (instead of `url`) to fetch link 12 from the last outline. Repeat views of a page in the same session are served from cache. Outline mode skips the /llms.txt probe.",
+      "description": "Fetch pages/PDFs as Markdown. format outline numbers links; then `follow: N`.",
       "schema": {
         "type": "object",
         "properties": {
           "url": {
-            "description": "The URL to fetch",
             "type": "string"
           },
           "urls": {
-            "description": "Fetch multiple URLs concurrently (up to 10); returns a sectioned digest",
+            "description": "Fetched concurrently",
             "maxItems": 10,
             "type": "array",
             "items": {
@@ -670,17 +813,15 @@
             }
           },
           "follow": {
-            "description": "Fetch link N from the most recent outline render, instead of `url`. Followed links are SSRF/allowlist-checked exactly like a supplied URL.",
+            "description": "Link number from the last outline",
             "type": "integer",
-            "exclusiveMinimum": 0,
-            "maximum": 9007199254740991
+            "exclusiveMinimum": 0
           },
           "max_length": {
-            "description": "Maximum characters to return (default: 10000; 2000 for outline)",
+            "description": "Default 10000 (2000 for outline)",
             "type": "number"
           },
           "format": {
-            "description": "Output format: markdown (default, main-content extraction), text, html, or outline (compact main content with each link replaced by a number plus a numbered URL index, capped at 100 links — cheapest; follow links with `follow`)",
             "type": "string",
             "enum": [
               "markdown",
@@ -690,36 +831,31 @@
             ]
           },
           "prefer_llms_txt": {
-            "description": "Prefer a site's curated /llms.txt for documentation pages (default: true)",
             "type": "boolean"
           }
-        },
-        "additionalProperties": false
+        }
       },
-      "hash": "622727bec4893750cb75703d2193b8476cfdc49b063865ed2980d46305145286"
+      "hash": "523ccaa4ac316bcabf0055c7d35dfdb3cc314b60a8a19b1d719c69c3ad502311"
     },
     {
       "name": "write",
-      "description": "Write content to a file. Creates parent directories if needed. Existing files must be read first before overwriting. Use for new files or complete rewrites.",
+      "description": "Create or fully overwrite a file (read existing files first). Creates parent dirs.",
       "schema": {
         "type": "object",
         "properties": {
           "file_path": {
-            "type": "string",
-            "description": "The file path to write to"
+            "type": "string"
           },
           "content": {
-            "type": "string",
-            "description": "The content to write"
+            "type": "string"
           }
         },
         "required": [
           "file_path",
           "content"
-        ],
-        "additionalProperties": false
+        ]
       },
-      "hash": "6db479cfa740fb437e73cc85d7fd519408156cfea7a8ce0d7ffbe39dcbffe637"
+      "hash": "8764b0b1597847c90e827683149dca81c7828dbb302971bd1c9196793199fcbd"
     }
   ]
 }

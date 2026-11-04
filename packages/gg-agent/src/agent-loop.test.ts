@@ -470,17 +470,32 @@ describe("agentLoop", () => {
     );
   });
 
-  it("forwards fetch to stream()", async () => {
+  it("forwards providerOptions and fetch to stream()", async () => {
     mockStream.mockReturnValueOnce(mockOkResult("Done") as unknown as ReturnType<typeof stream>);
     const customFetch = vi.fn() as unknown as typeof globalThis.fetch;
+    const providerOptions = { provider: { zdr: true, data_collection: "deny" } };
 
     await collectLoop([{ role: "user", content: "test" }], {
       provider: "openrouter",
       model: "some/model",
+      providerOptions,
       fetch: customFetch,
     });
 
-    expect(mockStream).toHaveBeenCalledWith(expect.objectContaining({ fetch: customFetch }));
+    expect(mockStream).toHaveBeenCalledWith(
+      expect.objectContaining({ providerOptions, fetch: customFetch }),
+    );
+  });
+
+  it("forwards prepared-context observation without retaining provider payloads", async () => {
+    mockStream.mockReturnValueOnce(mockOkResult("Done") as unknown as ReturnType<typeof stream>);
+    const onContextPrepared = vi.fn();
+    await collectLoop([{ role: "user", content: "test" }], {
+      provider: "anthropic",
+      model: "claude-test",
+      onContextPrepared,
+    });
+    expect(mockStream).toHaveBeenCalledWith(expect.objectContaining({ onContextPrepared }));
   });
 
   it("calls transformContext before each LLM call", async () => {
@@ -1993,6 +2008,99 @@ describe("agentLoop", () => {
     expect(calls).toEqual(["mutate:start", "mutate:end", "read_after"]);
   });
 
+  it("ends a handoff before later batch tools, steering, or budget extensions can run", async () => {
+    const later = vi.fn(() => "should not run");
+    const getSteeringMessages = vi
+      .fn<() => Message[] | null>()
+      .mockReturnValueOnce(null)
+      .mockReturnValue([{ role: "user", content: "Queued while submitting" }]);
+    const getFollowUpMessages = vi.fn(() => null);
+    const onTurnBudgetExhausted = vi.fn(() => true);
+    mockStream.mockReturnValueOnce({
+      [Symbol.asyncIterator]: async function* () {
+        yield* [];
+      },
+      response: Promise.resolve({
+        message: {
+          role: "assistant" as const,
+          content: [
+            { type: "tool_call" as const, id: "submit", name: "handoff", args: {} },
+            { type: "tool_call" as const, id: "later", name: "mutate", args: {} },
+          ],
+        },
+        stopReason: "tool_use",
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
+    } as unknown as ReturnType<typeof stream>);
+    const messages: Message[] = [{ role: "user", content: "Submit a plan for review." }];
+
+    const { events } = await collectLoop(messages, {
+      provider: "openai",
+      model: "test",
+      maxTurns: 1,
+      getSteeringMessages,
+      getFollowUpMessages,
+      onTurnBudgetExhausted,
+      tools: [
+        {
+          name: "handoff",
+          description: "Wait for approval",
+          parameters: emptyParams,
+          executionMode: "sequential",
+          execute: () => ({ content: "Awaiting review", endRun: true }),
+        },
+        { name: "mutate", description: "Later mutation", parameters: emptyParams, execute: later },
+      ],
+    });
+
+    expect(later).not.toHaveBeenCalled();
+    // The initial pre-provider poll is allowed; the queued message must stay
+    // queued instead of bypassing the review handoff after the tool finishes.
+    expect(getSteeringMessages).toHaveBeenCalledOnce();
+    expect(messages).not.toContainEqual({ role: "user", content: "Queued while submitting" });
+    expect(getFollowUpMessages).not.toHaveBeenCalled();
+    expect(onTurnBudgetExhausted).not.toHaveBeenCalled();
+    expect(mockStream).toHaveBeenCalledOnce();
+    expect(events.slice(-2)).toEqual([
+      { type: "checkpoint", turn: 1 },
+      { type: "agent_done", totalTurns: 1, totalUsage: { inputTokens: 10, outputTokens: 5 } },
+    ]);
+    expect(messages.at(-1)).toMatchObject({
+      role: "tool",
+      content: [
+        { toolCallId: "submit", content: "Awaiting review" },
+        {
+          toolCallId: "later",
+          content: expect.stringContaining("cancelled before it started"),
+          isError: true,
+        },
+      ],
+    });
+    expect(JSON.stringify(messages)).not.toContain("endRun");
+  });
+
+  it("honors a handoff from a parallel tool after the batch finishes", async () => {
+    mockStream.mockReturnValueOnce(
+      mockToolCallResult("handoff", { inputTokens: 10, outputTokens: 5 }) as unknown as ReturnType<
+        typeof stream
+      >,
+    );
+    const { events } = await collectLoop([{ role: "user", content: "Hand off" }], {
+      provider: "openai",
+      model: "test",
+      tools: [
+        {
+          name: "handoff",
+          description: "Hand off",
+          parameters: emptyParams,
+          execute: () => ({ content: "Review pending", endRun: true }),
+        },
+      ],
+    });
+    expect(mockStream).toHaveBeenCalledOnce();
+    expect(events.at(-1)).toMatchObject({ type: "agent_done", totalTurns: 1 });
+  });
+
   it("tells a dispatched-then-aborted call apart from one that never started", async () => {
     const controller = new AbortController();
     mockStream.mockReturnValueOnce({
@@ -2465,6 +2573,43 @@ describe("agentLoop", () => {
 
     expect(events.some((e) => e.type === "max_turns")).toBe(false);
     expect(events.some((e) => e.type === "agent_done")).toBe(true);
+  });
+});
+
+describe("agentLoop resolveTool", () => {
+  beforeEach(() => mockStream.mockReset());
+
+  it("runs a tool the model named before it was in the toolset", async () => {
+    const usage: Usage = { inputTokens: 1, outputTokens: 1 };
+    mockStream
+      .mockReturnValueOnce(
+        mockToolCallResult("late_tool", usage) as unknown as ReturnType<typeof stream>,
+      )
+      .mockReturnValueOnce(mockOkResult("done") as unknown as ReturnType<typeof stream>);
+    const lateTool: AgentTool = {
+      name: "late_tool",
+      description: "loaded on demand",
+      parameters: emptyParams,
+      execute: () => "late result",
+    };
+    const tools: AgentTool[] = [];
+    const resolveTool = vi.fn((name: string) => {
+      if (name !== "late_tool") return undefined;
+      tools.push(lateTool);
+      return lateTool;
+    });
+
+    const { events } = await collectLoop([{ role: "user", content: "go" }], {
+      provider: "anthropic",
+      model: "test",
+      tools,
+      resolveTool,
+    });
+
+    const end = events.find((e) => e.type === "tool_call_end");
+    expect(end).toMatchObject({ isError: false, result: "late result" });
+    expect(resolveTool).toHaveBeenCalledWith("late_tool");
+    expect(tools.map((t) => t.name)).toEqual(["late_tool"]);
   });
 });
 

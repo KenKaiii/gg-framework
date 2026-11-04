@@ -68,6 +68,27 @@ export function useModeState({
 }: UseModeStateOptions): ModeState {
   const [planMode, setPlanMode] = useState(initialPlanMode);
   const planModeStateRef = useRef(planMode);
+  const provider = providerRef.current;
+  const model = modelRef.current;
+  const thinkingLevel = thinkingLevelRef.current;
+
+  // Changing effort does not need a disk-backed prompt rebuild. Replace just
+  // the policy suffix so toggles, model switches, and restored UI state cannot
+  // leave delegation instructions from the previous mode in the live prompt.
+  useEffect(() => {
+    const system = messagesRef.current[0];
+    if (system?.role !== "system") return;
+    messagesRef.current[0] = {
+      ...system,
+      content: applyAsyncSubagentPolicy(
+        system.content,
+        provider,
+        model,
+        thinkingLevel,
+        currentToolsRef.current.map((tool) => tool.name),
+      ),
+    };
+  }, [provider, model, thinkingLevel, currentToolsRef, messagesRef]);
 
   useEffect(() => {
     planModeStateRef.current = planMode;

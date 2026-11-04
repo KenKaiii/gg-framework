@@ -139,6 +139,34 @@ describe("streamOpenAI request shaping", () => {
     }
   });
 
+  it("merges providerOptions into the chat body without overriding gg-ai fields", async () => {
+    createMock.mockResolvedValueOnce(createStreamingResult(""));
+    const result = streamOpenAI({
+      provider: "openrouter",
+      model: "vendor/model",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "token",
+      providerOptions: {
+        provider: { zdr: true, data_collection: "deny" },
+        model: "attacker/model",
+        messages: [],
+        stream: false,
+        max_completion_tokens: 1,
+      },
+      maxTokens: 500,
+    });
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const params = createMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params.provider).toEqual({ zdr: true, data_collection: "deny" });
+    expect(params.model).toBe("vendor/model");
+    expect(params.messages).toEqual([{ role: "user", content: "hi" }]);
+    expect(params.stream).toBe(true);
+    expect(params.max_completion_tokens).toBe(500);
+  });
+
   it("uses max reasoning_effort for Kimi K3 and omits K2.x/fixed sampling params", async () => {
     createMock.mockResolvedValueOnce(createStreamingResult(""));
     const result = streamOpenAI({
@@ -424,6 +452,33 @@ describe("streamOpenAI request shaping", () => {
         expect(wire.parameters).toHaveProperty("required", ["path"]);
       }
     }
+  });
+
+  it("keeps optional fields optional for openai when strictTools is false", async () => {
+    createMock.mockReset();
+    createMock.mockResolvedValueOnce(createStreamingResult(""));
+    const result = streamOpenAI({
+      provider: "openai",
+      model: "test-model",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "k",
+      strictTools: false,
+      tools: [
+        {
+          name: "read",
+          description: "read",
+          parameters: z.object({ path: z.string(), offset: z.number().optional() }),
+        },
+      ],
+    });
+    for await (const _event of result) {
+      /* consume */
+    }
+    const request = createMock.mock.calls[0]?.[0] as OpenAI.ChatCompletionCreateParamsStreaming;
+    const tool = request.tools?.[0];
+    if (tool?.type !== "function") throw new Error("Expected a function tool");
+    expect(tool.function.strict).toBeUndefined();
+    expect(tool.function.parameters).toHaveProperty("required", ["path"]);
   });
 });
 

@@ -142,3 +142,30 @@ export function isAskUserPrompt(data: unknown): data is AskUserPrompt {
     )
   );
 }
+
+/** An unresolved question band whose prompt id is in `ids`. */
+function isOpenAsk(it: AskItem, ids: ReadonlySet<string>): boolean {
+  if (it.kind !== "ask" || it.sent === true || it.cancelled === true) return false;
+  const prompt = it.prompt;
+  if (typeof prompt !== "object" || prompt === null) return false;
+  const id = (prompt as { id?: unknown }).id;
+  return typeof id === "string" && ids.has(id);
+}
+
+/**
+ * The question's soft deadline passed: the agent continued on its best guess,
+ * but the band stays answerable — a later answer is sent as a message.
+ */
+export function markAskDeferred<T extends AskItem>(items: readonly T[], promptId: string): T[] {
+  const ids = new Set([promptId]);
+  return items.map((it) => (isOpenAsk(it, ids) ? { ...it, deferred: true } : it));
+}
+
+/**
+ * The sidecar closed questions nobody is waiting on any more (a newer question
+ * or a new session superseded them). Their buttons would reach no one.
+ */
+export function closeAsks<T extends AskItem>(items: readonly T[], ids: readonly string[]): T[] {
+  const closed = new Set(ids);
+  return items.map((it) => (isOpenAsk(it, closed) ? { ...it, cancelled: true } : it));
+}

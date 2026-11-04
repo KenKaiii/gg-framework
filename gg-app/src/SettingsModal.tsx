@@ -9,11 +9,13 @@ import {
   saveSettings,
   getPermissionsStatus,
   openPermissionsSettings,
+  waitForReady,
   type PermissionsStatus,
 } from "./agent";
 import { toast } from "./toast";
 import { SoundButton } from "./SoundButton";
 import { HomeBackgroundButton } from "./HomeBackgroundButton";
+import { getKeepAwake, setKeepAwake } from "./kleio/keepAwake";
 import { SettingsSection } from "./settings-section";
 import { SettingsHeaderAction } from "./settings-header";
 import { isPhone } from "./platform";
@@ -29,6 +31,9 @@ export function SettingsModal({ onClose, onSaved }: Props): React.ReactElement {
   const [projectsRoot, setProjectsRoot] = useState("");
   const [busy, setBusy] = useState(false);
   const [permissions, setPermissions] = useState<PermissionsStatus | null>(null);
+  // null until the sidecar answers; the setting defaults to on.
+  const [keepAwake, setKeepAwakeState] = useState<boolean | null>(null);
+  const [keepAwakeBusy, setKeepAwakeBusy] = useState(false);
 
   useEffect(() => {
     // Native (Rust) read — no sidecar wait needed.
@@ -49,6 +54,33 @@ export function SettingsModal({ onClose, onSaved }: Props): React.ReactElement {
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void waitForReady()
+      .then(getKeepAwake)
+      .then((enabled) => {
+        if (!cancelled) setKeepAwakeState(enabled);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Saved by the sidecar and applied live, including to a run in progress.
+  async function toggleKeepAwake(): Promise<void> {
+    if (keepAwake === null || keepAwakeBusy) return;
+    setKeepAwakeBusy(true);
+    try {
+      await waitForReady();
+      setKeepAwakeState(await setKeepAwake(!keepAwake));
+    } catch (e) {
+      toast(`Couldn't save: ${e instanceof Error ? e.message : String(e)}`, "error");
+    } finally {
+      setKeepAwakeBusy(false);
+    }
+  }
 
   async function browse(): Promise<void> {
     const picked = await open({ directory: true, multiple: false, title: "Projects folder" });
@@ -114,6 +146,20 @@ export function SettingsModal({ onClose, onSaved }: Props): React.ReactElement {
               <SoundButton variant="settings" />
               <HomeBackgroundButton />
             </div>
+          </SettingsSection>
+          <SettingsSection
+            title="Power"
+            description="Stop your computer sleeping mid-task. The screen can still turn off."
+          >
+            <label>
+              <input
+                type="checkbox"
+                checked={keepAwake ?? true}
+                disabled={keepAwake === null || keepAwakeBusy}
+                onChange={() => void toggleKeepAwake()}
+              />{" "}
+              Keep computer awake while the agent works
+            </label>
           </SettingsSection>
         </div>
         <div className="settings-col">

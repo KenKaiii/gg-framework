@@ -1,6 +1,6 @@
 ---
 name: durable
-description: Use when user data must not be lost or corrupted — creating the first database/table/schema, writing migrations, backfilling or importing data, any destructive operation (delete, drop, truncate, overwrite), setting up backups or recovery, or moving data between systems; and for "is my data safe", "will I lose my data", "back up my app" checks on existing projects. Any store — SQL (Postgres, MySQL, SQLite), document (Mongo, Firestore), serverless (Supabase, Neon, Turso), files, queues. Do NOT use for query speed or connection-pool sizing (that is lean), access control over data (that is bulletproof), or privacy/legal deletion regimes (that is compliance-guard).
+description: "Use when data could be lost: migrations, destructive ops, real databases. Do NOT use for query speed."
 license: Data-durability engineering guidance, not a DBA certification. Sources and snapshot date are recorded at the foot of each reference file.
 compatibility: Snapshot dated 17 August 2026. Version behaviors (fast-path ALTERs, pooler modes, tool flags) decay — re-verify with web access before asserting them as current.
 ---

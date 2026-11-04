@@ -1,6 +1,6 @@
 ---
 name: lean
-description: Use when speed or resource efficiency matters — slow loading or startup, janky interaction, high CPU, memory leaks or RAM that grows over time, zombie/orphan processes, bundle bloat, dead code and dead styles, Core Web Vitals; while building anything that should stay fast and light, running a performance pass over an existing project, or pre-ship "will this run smoothly" checks. Any stack — web, backend/API/CLI, desktop (Electron, Tauri), mobile, native, game, ML pipeline. Do NOT use for copy/docs-only changes, design-direction or aesthetic work (that is evidence-led-ui; this skill's styling scope is payload and consistency), or when the user explicitly deprioritizes performance.
+description: Use when speed or resource use matters. Do NOT use for correctness bugs.
 license: Performance engineering guidance, not a benchmark certification. Sources and snapshot date are recorded at the foot of each reference file.
 compatibility: Snapshot dated 17 August 2026. Thresholds, tool names, and defaults decay — re-verify with web access before asserting them as current. Claims sourced to that date carry a SNAPSHOT marker.
 ---

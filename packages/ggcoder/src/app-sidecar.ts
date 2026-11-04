@@ -16,14 +16,16 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { environmentSecrets, formatError, redactValue } from "@kleio/ai";
+import { environmentSecrets, formatChatError, redactValue } from "@kleio/ai";
 import type { AddressInfo } from "node:net";
+import { createAppErrorPayload } from "./app-error.js";
 import { runSubagentWorkerMode } from "./modes/subagent-worker-mode.js";
 import type { Provider, ThinkingLevel } from "@kleio/ai";
 import { setStreamDiagnostic } from "@kleio/agent";
 import { AgentSession } from "./core/agent-session.js";
 import { RunLifecycle } from "./core/run-lifecycle.js";
 import { RunClaim } from "./core/run-claim.js";
+import { shouldOfferPendingPlan } from "./core/plan-handoff.js";
 import {
   createChatAgent,
   createPersonaChatAgent,
@@ -89,12 +91,14 @@ import {
 import { pruneDoneTasksSync } from "./core/tasks-store.js";
 import { initLogger, log } from "./core/logger.js";
 import { installTerminationHandlers } from "./core/shutdown.js";
+import { KeepAwake } from "./core/keep-awake.js";
+import { SettingsManager } from "./core/settings-manager.js";
 import { stopRadio } from "./core/radio.js";
 import { enrichProcessPath } from "./core/shell-path.js";
 import { withAppImagePreviews } from "./utils/image.js";
 import type { ServeController } from "./modes/serve-mode.js";
 import { createElicitationBridge } from "./core/mcp/index.js";
-import { createAskUserBridge } from "./core/ask-user.js";
+import { askSoftDeadlineMs, createAskUserBridge, deliverLateAnswer } from "./core/ask-user.js";
 import { createAskUserTool } from "./tools/ask-user.js";
 import { runJsonModeIfRequested } from "./app-sidecar/json-mode.js";
 import {
@@ -131,6 +135,7 @@ import { handleFileTextRoutes } from "./app-sidecar/file-text-routes.js";
 import { handleBrainRoutes } from "./app-sidecar/brain-routes.js";
 import { handleDictationRoutes } from "./app-sidecar/dictation-routes.js";
 import { handleRoutineRoutes } from "./app-sidecar/routine-routes.js";
+import { handleKeepAwakeRoutes } from "./app-sidecar/keep-awake-routes.js";
 import { handleBrainEditRoutes } from "./app-sidecar/brain-edit-routes.js";
 import { handleSessionRoutes } from "./app-sidecar/session-routes.js";
 import { handleWorkspaceRoutes } from "./app-sidecar/workspace-routes.js";
@@ -144,6 +149,10 @@ import { handleAuthRoutes } from "./app-sidecar/auth-routes.js";
 import { handleIntegrationRoutes } from "./app-sidecar/integration-routes.js";
 import { handleMcpRoutes } from "./app-sidecar/mcp-routes.js";
 import type { SessionRouteContext, DaemonRouteContext } from "./app-sidecar/route-context.js";
+
+/** App-wide idle-sleep guard: every window's runs share one OS assertion. The
+ *  `keepAwake` setting is applied at daemon start and live via /keep-awake. */
+const keepAwake = new KeepAwake();
 
 async function main(): Promise<void> {
   // Hidden persistent-worker dispatch must win before strict JSON/server parsing.
@@ -173,6 +182,8 @@ async function main(): Promise<void> {
   // ~/.gg/debug.log (initLogger truncates on each start).
   const sidecarLog = path.join(paths.agentDir, "gg-app-sidecar.log");
   initLogger(sidecarLog);
+  // Apply the saved keepAwake setting before any run can acquire the guard.
+  keepAwake.setEnabled((await new SettingsManager(paths.settingsFile).load()).keepAwake);
 
   // The desktop sidecar previously omitted the stream diagnostic hook used by
   // the CLI, leaving device-specific provider stalls impossible to distinguish from
@@ -316,7 +327,8 @@ async function main(): Promise<void> {
               "x-gg-token": authToken,
               "x-gg-session": id,
             },
-            body: JSON.stringify({ text, attachments: [] }),
+            // `scheduled`: nobody is watching this run, so ask_user gets the short deadline.
+            body: JSON.stringify({ text, attachments: [], meta: { scheduled: true } }),
           });
           const body = (await res.json().catch(() => ({}))) as { queued?: boolean; error?: string };
           if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -386,6 +398,7 @@ async function main(): Promise<void> {
     routineRunner,
     routineStore,
     broadcastAll,
+    keepAwake,
   };
 
   const server = http.createServer((req: http.IncomingMessage, res: http.ServerResponse) => {
@@ -530,6 +543,8 @@ async function main(): Promise<void> {
 
     if (handleImagePreviewRoutes(daemonCtx, req, res, url, method)) return;
 
+    if (handleKeepAwakeRoutes(daemonCtx, req, res, url, method)) return;
+
     // Progress is daemon-level so the Home screen can paint before a project
     // session exists; per-session callers still work through the same endpoint.
     if (method === "GET" && url === "/progress") {
@@ -604,6 +619,8 @@ async function main(): Promise<void> {
       // Radio playback is app-wide (one stream across all windows), so it stops
       // at the daemon level, not per session.
       stopRadio();
+      // Drop the idle-sleep assertion first: session teardown may hang.
+      keepAwake.dispose();
       // A speech model download stops; its `.part` stays, to pick up from.
       dictation.dispose();
       // Close the ~/.gg progress fs.watch handle (baseline #8 leak fix).
@@ -825,7 +842,7 @@ async function createSession(
   }
 
   // Turn any thrown value into the same clear headline/message/guidance shape
-  // the TUI shows (see gg-ai's formatError) instead of a bare `err.message`, log
+  // the TUI shows (see gg-ai's formatChatError) instead of a bare `err.message`, log
   // the full detail, and broadcast it under `type` ("error" or "ken_error").
   // Without this the webview only ever saw a raw provider string like
   // `400 {"code":"400",...}` with no "is this me or them / when does it reset"
@@ -835,35 +852,26 @@ async function createSession(
     logLabel: string,
     err: unknown,
   ): void {
-    const f = formatError(err);
+    const f = formatChatError(err);
     const message = f.message ? desktopGuidance(f.message) : undefined;
     const guidance = localNetworkGuidance(f.source) ?? desktopGuidance(f.guidance);
+    const payload = createAppErrorPayload(
+      { ...f, ...(message ? { message } : {}), guidance },
+      type,
+      Date.now(),
+      environmentSecrets(process.env),
+    );
     log("ERROR", "app-sidecar", logLabel, {
-      headline: f.headline,
+      headline: payload.headline,
       source: f.source,
-      ...(message ? { message } : {}),
-      ...(f.provider ? { provider: f.provider } : {}),
-      ...(f.statusCode != null ? { statusCode: String(f.statusCode) } : {}),
-      ...(f.requestId ? { requestId: f.requestId } : {}),
+      ...(payload.message ? { message: payload.message } : {}),
+      ...(payload.provider ? { provider: payload.provider } : {}),
+      ...(payload.statusCode != null ? { statusCode: String(payload.statusCode) } : {}),
+      ...(payload.requestId ? { requestId: payload.requestId } : {}),
     });
-    broadcast(type, {
-      headline: f.headline,
-      ...(message ? { message } : {}),
-      guidance,
-      ...(f.provider ? { provider: f.provider } : {}),
-      ...(f.statusCode != null ? { statusCode: f.statusCode } : {}),
-      ...(f.resetsAt != null ? { resetsAt: f.resetsAt } : {}),
-    });
-    // Persist the error row (display-only marker) so a resumed session shows
-    // the same headline/message/guidance the live run did. Best-effort.
-    void session
-      .persistAppMarker("error", {
-        scope: type,
-        headline: f.headline,
-        ...(message ? { message } : {}),
-        guidance,
-      })
-      .catch(() => {});
+    broadcast(type, payload);
+    // Same sanitized snapshot for live and restored rows, including reset metadata.
+    void session.persistAppMarker("error", payload).catch(() => {});
   }
 
   // ── MCP elicitation bridge ─────────────────────────────────
@@ -884,11 +892,38 @@ async function createSession(
   // MCP bridge above: broadcast over SSE, resolved when the webview POSTs
   // /ask/:id. Registered ONLY here — a TUI/headless/subagent run has nobody to
   // answer, so the tool is absent there rather than hanging on a dead channel.
+  //
+  // Soft deadline ("async ask"): past it the tool returns "no answer yet —
+  // proceed on your best guess" and the question STAYS OPEN. A later answer
+  // rides the ordinary user queue: steering into a live run, or the next turn
+  // when idle. The deadline is short when nobody is watching (autopilot, task
+  // run-all, a scheduled prompt).
+  let scheduledRunActive = false;
   const asks = createAskUserBridge({
     broadcast: (prompt) => broadcast("ask_user", prompt),
-    onTimeout: (prompt) => log("WARN", "app-sidecar", "ask_user timed out", { id: prompt.id }),
-    // Every settle path (answer, cancel, timeout, cancelAll) tells every
-    // client, so a band answered on one device closes on the others.
+    timeoutMs: () =>
+      askSoftDeadlineMs(autopilot || autopilotActive || taskRunAll || scheduledRunActive),
+    onTimeout: (prompt) => {
+      log("WARN", "app-sidecar", "ask_user deadline passed; agent proceeding", { id: prompt.id });
+      broadcast("ask_user_deferred", { id: prompt.id });
+    },
+    onClosed: (ids) => broadcast("ask_user_closed", { ids }),
+    onLateAnswer: (late) => {
+      log("INFO", "app-sidecar", "ask_user late answer queued", { id: late.prompt.id });
+      deliverLateAnswer(late, {
+        queueMessage: (text) => session.queueMessage(text),
+        isBusy: () => running || runClaim.active || autopilotActive,
+        onQueued: () =>
+          broadcast("queued", {
+            count: session.getQueuedCount(),
+            messages: session.listQueuedMessages(),
+          }),
+        startIdleRun: () => void runStrandedQueue(),
+      });
+    },
+    // Every settle path (answer, late answer, dismiss, cancel, close) tells
+    // every client, so a band answered on one device closes on the others.
+    // The soft deadline is not a settle: the question stays answerable.
     onSettle: (id) => broadcast("ask_user_done", { id }),
   });
   const askUserTool = createAskUserTool(asks.park);
@@ -963,6 +998,8 @@ async function createSession(
     session = new AgentSession({
       ...baseSessionOptions,
       additionalTools: [askUserTool],
+      // A run must not end mid-plan with nothing submitted: nobody could review it.
+      planSubmissionGate: true,
       // Plan mode belongs only to the coding agent.
       onEnterPlan: async (reason) => {
         deactivateApprovedPlan();
@@ -1313,6 +1350,9 @@ async function createSession(
   session.eventBus.on("retry", (d) => {
     if (!d.silent) broadcast("retry", { reason: d.reason, attempt: d.attempt, delayMs: d.delayMs });
   });
+  session.eventBus.on("stream_rule_triggered", (d) =>
+    broadcast("stream_rule_triggered", { rules: d.rules, source: d.source, toolName: d.toolName }),
+  );
   session.eventBus.on("max_turns", (d) => broadcast("max_turns", d));
   // The agent consumed queued steering at a turn boundary. Re-broadcast as the
   // usual `queued` depth update so the webview drops the pending affordance the
@@ -1320,6 +1360,8 @@ async function createSession(
   session.eventBus.on("queue_drained", (d) =>
     broadcast("queued", { count: d.count, messages: session.listQueuedMessages() }),
   );
+  // A fresh/loaded session must not receive late answers to the old one's questions.
+  session.eventBus.on("session_start", () => asks.closeDeferred());
   session.eventBus.on("tool_call_start", (d) => {
     toolCallNames.set(d.toolCallId, d.name);
     broadcast("tool_call_start", d);
@@ -1382,6 +1424,30 @@ async function createSession(
   session.eventBus.on("subagent_state", (d) => broadcast("subagent_state", d));
   session.eventBus.on("compaction_start", (d) => broadcast("compaction_start", d));
   session.eventBus.on("compaction_end", (d) => broadcast("compaction_end", d));
+  // Cold-prompt-cache notice: push the fresh TTL anchor + context size whenever
+  // a run or compaction settles. Expiry itself is time-based, so the webview
+  // also re-reads `cacheExpiry` from /state when the user returns or types.
+  for (const ev of ["agent_done", "compaction_end", "model_change"] as const) {
+    session.eventBus.on(ev, () => broadcast("cache_expiry", session.getCacheExpiryStatus()));
+  }
+
+  // Keep the computer awake while this window's agent works: owned runs and
+  // autopilot cycles (RunLifecycle state), Ken replies, and background
+  // sub-agents that outlive their parent run. Released on settle (completed,
+  // failed or cancelled) and on session dispose.
+  let releaseRunAwake: (() => void) | null = null;
+  let releaseSubagentAwake: (() => void) | null = null;
+  const activeSubagents = new Set<string>();
+  session.eventBus.on("subagent_state", (d) => {
+    if (d.state === "starting" || d.state === "running") activeSubagents.add(d.agent_id);
+    else activeSubagents.delete(d.agent_id);
+    if (activeSubagents.size > 0) {
+      releaseSubagentAwake ??= keepAwake.acquire("subagent");
+    } else {
+      releaseSubagentAwake?.();
+      releaseSubagentAwake = null;
+    }
+  });
 
   let running = false;
   // Closes the window between `/prompt` deciding to start a run and `runAgent`
@@ -1391,6 +1457,12 @@ async function createSession(
   const runLifecycle = new RunLifecycle(
     (runState) => {
       running = runState !== "idle";
+      if (running) {
+        releaseRunAwake ??= keepAwake.acquire("run");
+      } else {
+        releaseRunAwake?.();
+        releaseRunAwake = null;
+      }
       if (runState === "cancelling") broadcast("run_cancelling", { runState });
     },
     // Durable run journal. Fire-and-forget on purpose: an unwritten journal
@@ -1465,6 +1537,51 @@ async function createSession(
     pendingPlanPath = null;
     pendingPlanContent = "";
     planGeneration++;
+  }
+
+  // Plan feedback (Ken's or the user's) is revised back in read-only plan
+  // mode. exit_plan leaves plan mode, so without this a "revise the plan" run
+  // had full write access and could start implementing before any approval.
+  async function reenterPlanModeForRevision(): Promise<void> {
+    if (session.getPlanMode()) return;
+    deactivateApprovedPlan();
+    await session.setPlanMode(true);
+    broadcast("plan_mode", { active: true });
+    log("INFO", "app-sidecar", "plan mode re-entered for revision");
+  }
+
+  // Plan generation last handed to the human review box (-1: none yet).
+  let offeredPlanGeneration = -1;
+
+  // The plan the human review box should show right now, or null. Only once
+  // everything has settled — see shouldOfferPendingPlan.
+  function pendingPlanForHuman(
+    offeredGeneration: number,
+  ): { planPath: string; content: string } | null {
+    const offer = shouldOfferPendingPlan({
+      planPath: pendingPlanPath,
+      generation: planGeneration,
+      offeredGeneration,
+      running,
+      starting: runClaim.active,
+      autopilotActive,
+      queued: session.getQueuedCount(),
+    });
+    return offer && pendingPlanPath !== null
+      ? { planPath: pendingPlanPath, content: pendingPlanContent }
+      : null;
+  }
+
+  // Open the Accept / Feedback / Reject box once nothing else will act on the
+  // submitted plan. Called at every settle point (turn end, queue drain, task
+  // run end). Without it, a plan Ken didn't approve — handed back, review
+  // failed, capped, cancelled, or skipped — sat pending with no way to act.
+  function offerPendingPlan(): void {
+    const plan = pendingPlanForHuman(offeredPlanGeneration);
+    if (!plan) return;
+    offeredPlanGeneration = planGeneration;
+    log("INFO", "app-sidecar", "plan handed to user for review", { planPath: plan.planPath });
+    broadcast("plan_review", plan);
   }
 
   // Workflow (prompt-template) commands: built-in + the project's custom
@@ -1719,7 +1836,12 @@ async function createSession(
       }
     } finally {
       const cancelled = runLifecycle.isCancellationRequested(generation);
-      const verificationProblem = cancelled ? null : session.getVerificationProblem();
+      // A plain reply has no real end (the user keeps building), so checks are
+      // left to the commit and unchecked edits are not "Unverified". Only an
+      // Autopilot cycle, which does end, reports unchecked work. A check that
+      // ran and failed still shows as failed (from the evidence).
+      const verificationProblem =
+        cancelled || !autopilotActive ? null : session.getVerificationProblem();
       if (runSucceeded && verificationProblem && ownsGeneration) {
         // Expected control outcome: run_end and the journal already carry Unverified.
         // Do not format it as a crash or persist a misleading error marker.
@@ -1943,6 +2065,8 @@ async function createSession(
       running = v;
     },
     deactivateApprovedPlan,
+    offerPendingPlan,
+    reenterPlanModeForRevision,
     get taskRunAll() {
       return taskRunAll;
     },
@@ -2250,6 +2374,13 @@ async function createSession(
     set taskRunAll(v) {
       taskRunAll = v;
     },
+    get scheduledRunActive() {
+      return scheduledRunActive;
+    },
+    set scheduledRunActive(v) {
+      scheduledRunActive = v;
+    },
+    keepAwake,
     get kenAutoAbort() {
       return kenAutoAbort;
     },
@@ -2270,6 +2401,9 @@ async function createSession(
     },
     CANCEL_TIMEOUT_MS,
     deactivateApprovedPlan,
+    offerPendingPlan,
+    reenterPlanModeForRevision,
+    pendingPlanForHuman,
     activateApprovedPlan,
     planProgressPayload,
     authStatusPayload,
@@ -2333,6 +2467,10 @@ async function createSession(
   }
 
   async function dispose(): Promise<void> {
+    releaseRunAwake?.();
+    releaseRunAwake = null;
+    releaseSubagentAwake?.();
+    releaseSubagentAwake = null;
     elicitations.cancelAll();
     asks.cancelAll();
     tasksPollStopped = true;

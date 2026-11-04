@@ -61,12 +61,18 @@ afterEach(async () => {
 });
 
 /** Exactly what a provider transform serializes for one tool definition. */
-function serializeTool(tool: { name: string; description: string; parameters: unknown }): string {
+function serializeTool(tool: {
+  name: string;
+  description: string;
+  parameters: unknown;
+  rawInputSchema?: Record<string, unknown>;
+}): string {
   return JSON.stringify(
     {
       name: tool.name,
       description: tool.description,
-      input_schema: z.toJSONSchema(tool.parameters as z.ZodType),
+      // The transform sends a pre-built schema when a tool has one.
+      input_schema: tool.rawInputSchema ?? z.toJSONSchema(tool.parameters as z.ZodType),
     },
     null,
     2,
@@ -257,21 +263,7 @@ describe("cached prompt prefix golden", () => {
     // subagent/spawn_agent and the agent-control tools (need a roster), skill
     // (needs a catalog), enter_plan/exit_plan (need plan callbacks), tool_search
     // (needs a deferred catalog), generate_image.
-    expect(coreNames).toEqual([
-      "read",
-      "write",
-      "edit",
-      "bash",
-      "find",
-      "grep",
-      "code_search",
-      "code_nav",
-      "ls",
-      "web_fetch",
-      "task_output",
-      "task_send",
-      "task_stop",
-    ]);
+    expect(coreNames).toEqual(["read", "write", "edit", "bash", "grep"]);
     // Every core name this config builds must be a declared core tool — a tool
     // silently promoted into the cached tier fails here.
     for (const name of coreNames) {

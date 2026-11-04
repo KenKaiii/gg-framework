@@ -229,7 +229,7 @@ async function syncFile(filePath: string): Promise<void> {
 
 const WINDOWS_REPLACE_RETRY_CODES = new Set(["EACCES", "EBUSY", "EPERM"]);
 
-async function retryWindowsReplace(operation: () => Promise<void>): Promise<void> {
+export async function retryWindowsReplace(operation: () => Promise<void>): Promise<void> {
   const maxAttempts = process.platform === "win32" ? 10 : 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {

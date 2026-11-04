@@ -4,7 +4,7 @@ import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { AskQuestion, AskUserPrompt } from "./ask-user";
 import { AskBand } from "./AskBand";
-import { dropSupersededAsks, mergeAskAnswers } from "./ask-user";
+import { closeAsks, dropSupersededAsks, markAskDeferred, mergeAskAnswers } from "./ask-user";
 
 const prompt = (...questions: AskQuestion[]): AskUserPrompt => ({ id: "ask-1", questions });
 
@@ -598,6 +598,60 @@ describe("AskBand", () => {
     );
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.getByText(/no longer needs an answer/)).toBeTruthy();
+  });
+
+  it("stays answerable after the deadline, with one line saying the agent moved on", () => {
+    const onAnswer = vi.fn();
+    const band = (deferred: boolean): React.ReactElement => (
+      <AskBand
+        prompt={prompt({
+          id: "flag",
+          question: "Flip the flag?",
+          kind: "confirm",
+          options: [{ label: "Yes" }, { label: "No" }],
+        })}
+        deferred={deferred}
+        onAnswer={onAnswer}
+        onTypeInstead={onTypeInstead}
+      />
+    );
+    const { rerender } = render(band(false));
+    expect(screen.queryByText(/best guess/)).toBeNull();
+    rerender(band(true));
+    expect(screen.getByRole("status").textContent).toBe(
+      "Agent continued with its best guess — your answer will still be sent",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Yes/ }));
+    expect(onAnswer).toHaveBeenCalledWith({ flag: "Yes" });
+  });
+});
+
+describe("markAskDeferred / closeAsks", () => {
+  type Row = {
+    kind: string;
+    id: string;
+    prompt?: AskUserPrompt;
+    sent?: boolean;
+    deferred?: boolean;
+    cancelled?: boolean;
+  };
+  const withId = (id: string, extra: { sent?: boolean } = {}): Row => ({
+    kind: "ask",
+    id: `row-${id}`,
+    prompt: { id, questions: [] },
+    ...extra,
+  });
+
+  it("flags only the matching open question as deferred", () => {
+    const items = [withId("a"), withId("b"), withId("a", { sent: true })];
+    const out = markAskDeferred(items, "a");
+    expect(out.map((it) => it.deferred === true)).toEqual([true, false, false]);
+  });
+
+  it("closes the listed open questions and nothing else", () => {
+    const items: Row[] = [withId("a"), withId("b"), { kind: "user", id: "u" }];
+    const out = closeAsks(items, ["a"]);
+    expect(out.map((it) => it.cancelled === true)).toEqual([true, false, false]);
   });
 });
 

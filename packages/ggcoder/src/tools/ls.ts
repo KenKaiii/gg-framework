@@ -5,8 +5,8 @@ import { resolvePath } from "./path-utils.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 
 const LsParams = z.object({
-  path: z.string().optional().describe("Directory path (defaults to cwd)"),
-  all: z.boolean().optional().describe("Show hidden files (default: false)"),
+  path: z.string().optional(),
+  all: z.boolean().optional().describe("Include hidden files"),
 });
 
 export function createLsTool(
@@ -15,7 +15,7 @@ export function createLsTool(
 ): AgentTool<typeof LsParams> {
   return {
     name: "ls",
-    description: "List directory contents with file types and sizes. Directories listed first.",
+    description: "List a directory with types and sizes.",
     parameters: LsParams,
     async execute({ path: dirPath, all }) {
       const resolved = dirPath ? resolvePath(cwd, dirPath) : cwd;

@@ -107,59 +107,46 @@ export async function recordWrite(
 }
 
 /**
- * Verify the file hasn't been modified since it was last read.
- * Throws if unread, or if mtime AND hash differ from the recorded value.
- * mtime alone is not sufficient — some filesystems have low resolution and
- * formatters can rewrite a file with the same mtime; we re-hash on mtime miss.
+ * Lines of the file as it is on disk now that the model has not been shown:
+ * `"all"` when it never read the file or the file changed since its last
+ * read/write (mtime, else content hash), otherwise the gaps between the ranges
+ * it has seen (empty when it has seen every line). A full-file `write` uses
+ * this to report which lines it removed without the model having seen them.
  */
-export async function assertFresh(
+export async function unseenLines(
   tracker: ReadTracker | undefined,
   resolvedPath: string,
   ops: ToolOperations,
-): Promise<void> {
-  if (!tracker) return;
+): Promise<"all" | readonly LineRange[]> {
+  if (!tracker) return [];
+  if (!tracker.has(resolvedPath) || !(await isFresh(tracker, resolvedPath, ops))) return "all";
   const entry = tracker.get(resolvedPath);
-  if (!entry) {
-    throw new Error("File must be read first before editing. Use the read tool first.");
+  if (!entry || entry.seen === "all") return [];
+  const gaps: LineRange[] = [];
+  let next = 1;
+  for (const [start, end] of entry.seen) {
+    if (start > next) gaps.push([next, start - 1]);
+    next = end + 1;
   }
-  const stat = await ops.stat(resolvedPath);
-  if (stat.mtimeMs === entry.mtimeMs) return;
-  const current = await ops.readFile(resolvedPath);
-  if (hashContent(current) === entry.hash) {
-    tracker.set(resolvedPath, { ...entry, mtimeMs: stat.mtimeMs });
-    return;
-  }
-  throw new Error(
-    "File has been modified since it was read (likely by a formatter, linter, or external tool). " +
-      "Re-read the file before editing.",
-  );
+  if (next <= entry.lineCount) gaps.push([next, entry.lineCount]);
+  return gaps;
 }
 
 /**
- * Throw unless the model has been shown every line of the file as it is now.
- * `write` replaces the whole file, so after a read cut short by offset/limit or
- * the read tool's size cap it would silently drop the lines the model never
- * saw. Call after {@link assertFresh}, which guarantees the entry matches disk.
+ * True when the recorded read still matches disk (mtime, else content hash).
+ * A hash match after an mtime-only change refreshes the recorded mtime.
  */
-export function assertFullySeen(tracker: ReadTracker | undefined, resolvedPath: string): void {
-  const entry = tracker?.get(resolvedPath);
-  if (!entry || entry.seen === "all") return;
-  const consequence =
-    "write replaces the whole file, so it would drop the lines you have not seen. " +
-    "Read the whole file first";
-  const first = entry.seen[0];
-  if (!first) {
-    throw new Error(
-      `You have not seen this file's current ${entry.lineCount} lines in full. ` +
-        `${consequence}, or use edit for a targeted change.`,
-    );
-  }
-  const ranges = entry.seen
-    .map(([start, end]) => (start === end ? `${start}` : `${start}-${end}`))
-    .join(", ");
-  const nextUnread = first[0] > 1 ? 1 : first[1] + 1;
-  throw new Error(
-    `You have only seen lines ${ranges} of ${entry.lineCount} in this file. ` +
-      `${consequence} (next unread line: offset=${nextUnread}), or use edit for a targeted change.`,
-  );
+export async function isFresh(
+  tracker: ReadTracker,
+  resolvedPath: string,
+  ops: ToolOperations,
+): Promise<boolean> {
+  const entry = tracker.get(resolvedPath);
+  if (!entry) return false;
+  const stat = await ops.stat(resolvedPath);
+  if (stat.mtimeMs === entry.mtimeMs) return true;
+  const current = await ops.readFile(resolvedPath);
+  if (hashContent(current) !== entry.hash) return false;
+  tracker.set(resolvedPath, { ...entry, mtimeMs: stat.mtimeMs });
+  return true;
 }

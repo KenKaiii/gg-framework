@@ -2,11 +2,35 @@ import { afterEach, describe, expect, it } from "vitest";
 import { clearRuntimeModels, registerRuntimeModels } from "./model-registry.js";
 import {
   clampThinkingForPlanMode,
+  getLowestThinkingLevel,
   getNextThinkingLevel,
   getSupportedThinkingLevels,
   isThinkingLevelSupported,
 } from "./thinking-level.js";
 import type { ThinkingLevel } from "@kleio/ai";
+
+describe("getLowestThinkingLevel", () => {
+  it.each([
+    ["anthropic", "claude-opus-5-5"],
+    ["openai", "gpt-6.1-sol"],
+    ["gemini", "gemini-3.8-flash"],
+    ["glm", "glm-5.3"],
+    ["deepseek", "deepseek-v4-pro"],
+    ["xai", "grok-4.7"],
+    ["moonshot", "kimi-k3"],
+  ] as const)("is the first rung of %s %s's own ladder, never off", (provider, model) => {
+    const lowest = getLowestThinkingLevel(provider, model);
+
+    expect(lowest).toBeDefined();
+    expect(lowest).toBe(getSupportedThinkingLevels(provider, model)[0]);
+  });
+
+  it("is undefined only for a model that cannot reason at all", () => {
+    expect(
+      getLowestThinkingLevel("huggingface", "Qwen/Qwen3-Coder-480B-A35B-Instruct"),
+    ).toBeUndefined();
+  });
+});
 
 describe("thinking-level helpers", () => {
   it("cycles GPT-6 Astra through the full six-rung ladder up to ultra", () => {
@@ -61,6 +85,18 @@ describe("thinking-level helpers", () => {
     expect(getNextThinkingLevel("anthropic", "claude-sonnet-5-5", "max")).toBeUndefined();
     expect(isThinkingLevelSupported("anthropic", "claude-sonnet-5-5", "xhigh")).toBe(true);
     expect(isThinkingLevelSupported("anthropic", "claude-sonnet-5", "xhigh")).toBe(false);
+  });
+
+  it("cycles Haiku 5.5 through the full adaptive ladder, including xhigh", () => {
+    expect(getSupportedThinkingLevels("anthropic", "claude-haiku-5-5")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(getNextThinkingLevel("anthropic", "claude-haiku-5-5", "high")).toBe("xhigh");
+    expect(getNextThinkingLevel("anthropic", "claude-haiku-5-5", "max")).toBeUndefined();
   });
 
   it("cycles Claude Fable 5.1 through the adaptive ladder without xhigh", () => {

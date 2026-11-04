@@ -4,6 +4,7 @@
 //   - invoke("agent_state" | "agent_prompt" | "agent_cancel")
 //   - listen("agent-event")  ← forwarded SSE frames
 import { invoke } from "@tauri-apps/api/core";
+import type { ChatErrorData } from "./chat-error";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { error as logError, info as logInfo } from "@tauri-apps/plugin-log";
 
@@ -198,6 +199,28 @@ export interface AgentState {
   kenModelOverride?: boolean;
   /** Live background tasks (footer indicator). */
   tasks?: BackgroundTask[];
+  /** Cold-prompt-cache status (sidecar /state + `cache_expiry` event). Null when
+   *  the route has no known cache TTL or the chat is empty; absent on older sidecars. */
+  cacheExpiry?: CacheExpiryStatus | null;
+}
+
+/** Mirrors coder `core/cache-expiry.ts` CacheExpiryStatus. */
+export interface CacheExpiryStatus {
+  sessionId?: string;
+  provider: string;
+  ttlMs: number;
+  confidence: "expired" | "may_be_cold";
+  ttlSource: string;
+  lastRequestAt: number | null;
+  expiresAt: number | null;
+  expired: boolean;
+  reason: "idle" | "age_unknown" | "identity_changed" | null;
+  /** Tokens the next request re-reads at full price. */
+  prefixTokens: number;
+  minTokens: number;
+  /** expired AND prefixTokens >= minTokens. */
+  notable: boolean;
+  estimatedExtraCostUsd: number | null;
 }
 
 /** A project task from the ~/.gg-tasks store (the agent's `tasks` tool). */
@@ -238,6 +261,117 @@ export async function deleteTask(id: string): Promise<ProjectTask[]> {
   } catch (e) {
     await logError(`agent_delete_task failed: ${String(e)}`);
     return [];
+  }
+}
+
+/** Mirrors coder `core/checklist-store.ts` ChecklistStatus. */
+export type ChecklistStatus = "not-run" | "not-applicable" | "due" | "passed" | "needs-work";
+
+/** One project health-checklist item joined with its recorded result (ChecklistRow). */
+export interface ChecklistEntry {
+  id: string;
+  group: string;
+  title: string;
+  description: string;
+  check: string;
+  skill: string | null;
+  setupCommand: string | null;
+  status: ChecklistStatus;
+  checkedAt: string | null;
+  commit: string | null;
+  uncommittedChanges: boolean;
+  result: "pass" | "issues" | "not-applicable" | null;
+  summary: string | null;
+  findings: string[];
+  evidence: string[];
+  /** Read-only setup observations, not an audit result. */
+  detection?: { summary: string; facts: string[] } | null;
+  /** The instructions Check sends to the agent (built by the sidecar from the item). */
+  runPrompt: string | null;
+  /** The project's commit or working tree changed after this result was recorded. */
+  changedSinceCheck?: boolean;
+}
+
+export interface ChecklistSnapshot {
+  staleAfterDays: number;
+  items: ChecklistEntry[];
+  detectionWarnings?: string[];
+}
+
+function checklistObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function checklistStrings(value: unknown, maxLength: number): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 10 &&
+    value.every((line) => typeof line === "string" && line.length <= maxLength)
+  );
+}
+function checklistEntry(value: unknown): value is ChecklistEntry {
+  if (!checklistObject(value)) return false;
+  const text = (key: string, max: number): boolean =>
+    typeof value[key] === "string" && value[key].length <= max;
+  const nullable = (key: string, max: number): boolean => value[key] === null || text(key, max);
+  const detection = value.detection;
+  return (
+    text("id", 80) &&
+    /^[a-z0-9-]+$/.test(String(value.id)) &&
+    text("group", 100) &&
+    text("title", 200) &&
+    text("description", 2000) &&
+    text("check", 5000) &&
+    nullable("skill", 100) &&
+    nullable("setupCommand", 100) &&
+    nullable("runPrompt", 16000) &&
+    ["not-run", "not-applicable", "due", "passed", "needs-work"].includes(String(value.status)) &&
+    [null, "pass", "issues", "not-applicable"].includes(value.result as string | null) &&
+    (value.checkedAt === null ||
+      (text("checkedAt", 40) && Number.isFinite(Date.parse(String(value.checkedAt))))) &&
+    (value.commit === null ||
+      (text("commit", 64) && /^[0-9a-f]{4,64}$/i.test(String(value.commit)))) &&
+    typeof value.uncommittedChanges === "boolean" &&
+    (value.changedSinceCheck === undefined || typeof value.changedSinceCheck === "boolean") &&
+    nullable("summary", 300) &&
+    checklistStrings(value.findings, 300) &&
+    checklistStrings(value.evidence, 200) &&
+    (detection === undefined ||
+      detection === null ||
+      (checklistObject(detection) &&
+        typeof detection.summary === "string" &&
+        detection.summary.length <= 300 &&
+        checklistStrings(detection.facts, 300)))
+  );
+}
+
+/** Read the project health checklist. `null` when it can't be read. */
+export async function getChecklist(): Promise<ChecklistSnapshot | null> {
+  try {
+    await waitForReady();
+    const res: unknown = await invoke("agent_checklist");
+    if (
+      !checklistObject(res) ||
+      typeof res.staleAfterDays !== "number" ||
+      !Number.isFinite(res.staleAfterDays) ||
+      res.staleAfterDays < 1 ||
+      !Array.isArray(res.items) ||
+      res.items.length === 0 ||
+      res.items.length > 64 ||
+      !res.items.every(checklistEntry) ||
+      new Set(res.items.map((item) => item.id)).size !== res.items.length ||
+      (res.detectionWarnings !== undefined && !checklistStrings(res.detectionWarnings, 300))
+    ) {
+      await logError("agent_checklist returned an invalid snapshot");
+      return null;
+    }
+    return {
+      staleAfterDays: res.staleAfterDays,
+      items: res.items,
+      detectionWarnings: res.detectionWarnings ?? [],
+    };
+  } catch (e) {
+    await logError(`agent_checklist failed: ${String(e)}`);
+    return null;
   }
 }
 
@@ -608,6 +742,9 @@ export async function readDroppedFileAttachment(path: string): Promise<Attachmen
 export interface PromptMeta {
   kenSent?: boolean;
   enhancements?: PromptSegment[];
+  /** Plan feedback from the review box: the sidecar revises the plan back in
+   *  read-only plan mode instead of with full write access. */
+  planRevision?: boolean;
 }
 
 export async function sendPrompt(
@@ -744,11 +881,15 @@ export async function setAutopilot(enabled: boolean): Promise<boolean> {
  * activity bar's "Plan Steps n/total" widget reads). Call this BEFORE sending
  * the "implement it now" prompt. `planPath` comes from the `plan_exit` event.
  */
+/** Accept the pending plan. Rejects when the sidecar refused it (a run still
+ *  finishing, or the plan couldn't be activated) — the caller must NOT send
+ *  the "implement it now" prompt then. */
 export async function acceptPlan(planPath: string | null): Promise<void> {
   try {
     await invoke("agent_accept_plan", { planPath });
   } catch (e) {
     await logError(`agent_accept_plan failed: ${String(e)}`);
+    throw e;
   }
 }
 
@@ -794,7 +935,7 @@ export interface HistoryEntry {
   task?: { title: string };
   /** Error row persisted by the sidecar's broadcastError. `scope` selects the
    *  live headline prefix (ken_error → "Ken: ", autopilot_error → "Autopilot: "). */
-  error?: { scope: string; headline: string; message?: string; guidance?: string };
+  error?: ChatErrorData & { scope: string; headline: string };
   /** Webview-copy info row marker (e.g. the video-capability warning). */
   infoKind?: "video_warning";
   /** Tool-produced images rendered inline (same as live `images` items),
@@ -1157,6 +1298,16 @@ export async function importTranscript(
   } catch (e) {
     await logError(`agent_import_transcript failed: ${String(e)}`);
     return { ok: false, error: String(e) };
+  }
+}
+
+/** Best-effort Anthropic prompt-cache prewarm before the user's next turn.
+ *  Fire-and-forget; the sidecar gates on provider, history size and cache TTL. */
+export async function prewarmCache(): Promise<void> {
+  try {
+    await invoke("agent_prewarm");
+  } catch (e) {
+    await logError(`agent_prewarm failed: ${String(e)}`);
   }
 }
 

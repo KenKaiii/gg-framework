@@ -36,6 +36,15 @@ const APP_PROMPT_LABELS: readonly AppPromptLabel[] = [
  */
 export function recoverPromptLabel(text: string): string | null {
   const t = text.trimStart();
+  // Checklist labels contain the item's title. Match the generated opening,
+  // not an ordinary user-authored Markdown heading. Recovering from the body
+  // also fixes sessions saved before checklist labels were restored.
+  const checklistTitle = t
+    .match(
+      /^# Checklist: ([^\r\n]{1,200})\r?\n\r?\nCheck this project for one item of its health checklist and report in plain words\./,
+    )?.[1]
+    ?.trim();
+  if (checklistTitle) return `Checking ${checklistTitle}`;
   for (const entry of APP_PROMPT_LABELS) {
     if (t.startsWith(entry.prefix)) return entry.label;
   }

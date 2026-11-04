@@ -107,7 +107,7 @@ describe("parseAgentFile", () => {
         "---",
         "name: scout",
         "description: Recon",
-        "model: claude-haiku-4-5",
+        "model: claude-haiku-5-5",
         "context: sometimes",
         "---",
         "Scout.",
@@ -115,7 +115,7 @@ describe("parseAgentFile", () => {
       "project",
     );
 
-    expect(agent.model).toBe("claude-haiku-4-5");
+    expect(agent.model).toBe("claude-haiku-5-5");
     expect(agent.context).toBeUndefined();
   });
 });
@@ -166,9 +166,11 @@ describe("bundled agents", () => {
     for (const agent of BUNDLED_AGENTS) {
       expect(agent.model, agent.name).toBeDefined();
     }
-    // Only cheap structural recon opts out of the parent's model.
-    const fast = BUNDLED_AGENTS.filter((a) => a.model === "fast").map((a) => a.name);
-    expect(fast).toEqual(["owl"]);
+    // No bundled agent leaves the parent's model — only compaction summaries
+    // use a cheaper model.
+    for (const agent of BUNDLED_AGENTS) {
+      expect(agent.model, agent.name).toBe("inherit");
+    }
   });
 
   it("writes descriptions that route — distinct, and never 'does anything'", () => {
@@ -176,7 +178,8 @@ describe("bundled agents", () => {
     expect(new Set(descriptions).size).toBe(BUNDLED_AGENTS.length);
     for (const description of descriptions) {
       expect(description.toLowerCase()).not.toContain("does anything");
-      expect(description.length).toBeGreaterThan(40);
+      // Descriptions are now short trigger lines (shortest ~26 chars).
+      expect(description.length).toBeGreaterThan(20);
     }
   });
 

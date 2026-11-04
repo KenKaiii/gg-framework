@@ -6,6 +6,10 @@
 //!
 //! Holds are keyed by (window label, hold id) and ref-counted: the OS assertion
 //! exists while at least one hold exists, across all windows.
+//!
+//! Separately, `agent_keep_awake_get`/`agent_keep_awake_set` proxy the setting
+//! for keeping the computer awake while the agent works. The sidecar holds that
+//! assertion itself, because runs (routines included) outlive any window.
 
 use std::collections::BTreeSet;
 use std::sync::Mutex;
@@ -134,6 +138,43 @@ pub fn keep_awake_release(
     hold: String,
 ) -> Result<(), String> {
     state.release(window.label(), &hold)
+}
+
+/// Proxy: the app-wide "keep computer awake while the agent works" setting.
+/// Daemon-level (one OS assertion for every window), so no session header.
+#[tauri::command]
+pub async fn agent_keep_awake_get(
+    webview: tauri::WebviewWindow,
+    client: tauri::State<'_, reqwest::Client>,
+) -> Result<serde_json::Value, String> {
+    let port = crate::port_for(&webview).ok_or("daemon not ready")?;
+    let res = client
+        .get(format!("{}/keep-awake", crate::sidecar_base(port)))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    res.json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Proxy: turn keep-awake on/off; applies live to in-flight runs.
+#[tauri::command]
+pub async fn agent_keep_awake_set(
+    webview: tauri::WebviewWindow,
+    client: tauri::State<'_, reqwest::Client>,
+    enabled: bool,
+) -> Result<serde_json::Value, String> {
+    let port = crate::port_for(&webview).ok_or("daemon not ready")?;
+    let res = client
+        .post(format!("{}/keep-awake", crate::sidecar_base(port)))
+        .json(&serde_json::json!({ "enabled": enabled }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    res.json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 pub use os::OsBackend;

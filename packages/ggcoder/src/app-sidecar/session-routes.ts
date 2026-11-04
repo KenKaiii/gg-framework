@@ -25,6 +25,7 @@ export function handleSessionRoutes(
       supportedThinkingLevels: getSupportedThinkingLevels(st.provider, st.model),
       supportsVideo: getModel(st.model)?.supportsVideo ?? false,
       autopilot: ctx.autopilot,
+      cacheExpiry: ctx.session.getCacheExpiryStatus(),
       // `GET /history?images=refs` and `GET /history-images` are here: an
       // app may load a chat's images as they're scrolled to.
       historyImageRefs: true,
@@ -113,6 +114,9 @@ export function handleSessionRoutes(
           chatAgent: ctx.chatAgent,
           running: ctx.running,
           reviewPending: ctx.autopilotActive,
+          // A reconnecting window (reload/reopen) re-opens the review box for
+          // a plan still waiting on the user, regardless of earlier offers.
+          pendingPlan: ctx.pendingPlanForHuman(-1),
           runState: ctx.runLifecycle.state,
           thinkingLevel: ctx.session.getThinkingLevel() ?? null,
           supportedThinkingLevels: getSupportedThinkingLevels(st.provider, st.model),

@@ -1,6 +1,6 @@
 ---
 name: clarify
-description: Use when requirements or a design are genuinely unsettled — the user asks to interrogate, sharpen, or stress-test a plan before building, or mid-build discovery surfaces a decision that materially changes the result. Do NOT use for routine changes, clear bug reports, or work whose requirements are already settled — bias to action there.
+description: Use when requirements are genuinely unsettled. Do NOT use for routine work.
 ---
 
 # Clarify

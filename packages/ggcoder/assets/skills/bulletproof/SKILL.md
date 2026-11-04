@@ -1,6 +1,6 @@
 ---
 name: bulletproof
-description: Use when code will meet an attacker — auth, sessions, tokens, crypto; any untrusted input (user, network, file, uploaded archive, repo content, model or tool output); secrets and credential storage; multi-tenant or per-user data access; dependency, install-script, CI/CD, release-signing or update work; deserialization, shelling out, or dynamic code loading; LLM/agent/MCP tool surfaces; and pre-ship "can this be hacked" reviews, hardening passes, or suspected compromise. Applies to any target — web, API, CLI, desktop, mobile, embedded/firmware, smart contract, ML pipeline, game, or library. Do NOT use for throwaway local scripts with no untrusted input and no secrets, pure styling/copy/docs changes, or narrow edits already covered by a hardened pattern in the repo.
+description: "Use for attacker-reachable code: auth, tokens, crypto, untrusted input, secrets, tenant data, CI, agent tools. Do NOT use for local scripts without auth or network."
 license: Apache-2.0. Content is defensive engineering guidance, not a security certification or a penetration test. See references/provenance.md.
 compatibility: Works offline from the bundled references, which are a snapshot dated 12 August 2026. Version numbers, CVEs, and incident details decay fast; re-verify date-sensitive claims with web access before stating them as current. Never certifies that software is secure.
 ---

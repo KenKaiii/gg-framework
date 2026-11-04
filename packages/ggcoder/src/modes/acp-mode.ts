@@ -25,7 +25,7 @@ import path from "node:path";
 import { readFileSync, statSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import type { Message, Provider, ThinkingLevel } from "@kleio/ai";
-import { isAbortError } from "@kleio/agent";
+import { isAbortError, type ToolExecuteResult } from "@kleio/agent";
 import { getAllModels, getMaxThinkingLevel, getModel } from "@kleio/core";
 import { AgentSession } from "../core/agent-session.js";
 import type { EventBus } from "../core/event-bus.js";
@@ -140,7 +140,7 @@ export interface AcpAgentSession {
 export interface AcpPlanHooks {
   onEnterPlan: () => Promise<void>;
   /** Returns the instruction handed back to the model after approval. */
-  onExitPlan: (planPath: string) => Promise<string>;
+  onExitPlan: (planPath: string) => Promise<ToolExecuteResult>;
 }
 
 export interface AcpModeOptions {
@@ -1086,7 +1086,11 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
       // The approved plan becomes the client's to-do list, which then advances
       // from the [DONE:n] markers the returned instruction asks for.
       adoptPlan(approvedPath);
-      return "Plan approved. Proceed with implementation, marking each completed step with [DONE:n].";
+      return {
+        content:
+          "Plan approved. Proceed with implementation, marking each completed step with [DONE:n].",
+        endRun: false,
+      };
     },
   };
 

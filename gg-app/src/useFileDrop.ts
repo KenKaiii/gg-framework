@@ -1,6 +1,13 @@
-import { useRef, useCallback, useEffect, type Dispatch, type SetStateAction } from "react";
+import {
+  useRef,
+  useCallback,
+  useEffect,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+} from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { readDroppedFileAttachment, type Attachment, getDroppedPathInfo } from "./agent";
+import { readDroppedFileAttachment, getDroppedPathInfo } from "./agent";
 import { attachmentToPending, type PendingAttachment } from "./attachments";
 
 // A drag that stops delivering events for this long is over: the platform
@@ -74,12 +81,14 @@ export function useDragOverlay({
 }
 
 export function useWindowFileDrop({
-  setAttachments,
+  stageAttachments,
+  attachmentGenerationRef,
   setDragOverActive,
   insertDroppedFolderPaths,
   addFiles,
 }: {
-  setAttachments: Dispatch<SetStateAction<PendingAttachment[]>>;
+  stageAttachments: (read: () => Promise<(PendingAttachment | null)[]>) => Promise<void>;
+  attachmentGenerationRef: RefObject<number>;
   setDragOverActive: (active: boolean) => void;
   insertDroppedFolderPaths: (paths: string[]) => void;
   addFiles: (files: FileList | File[]) => Promise<void>;
@@ -101,19 +110,6 @@ export function useWindowFileDrop({
     };
   }, []);
 
-  // Native Tauri drop events hand us absolute paths, not browser File objects
-  // (macOS/Linux keep the native drag-drop handler enabled so folder drops can
-  // report a path at all — see build_app_window). Non-directory paths are read
-  // here and staged exactly like a picked/pasted file.
-  async function addNativeDroppedFiles(paths: string[]): Promise<void> {
-    if (paths.length === 0) return;
-    const results = await Promise.all(paths.map((p) => readDroppedFileAttachment(p)));
-    const ok = results
-      .filter((a): a is Attachment => a !== null)
-      .map((a) => attachmentToPending(a));
-    if (ok.length > 0) setAttachments((prev) => [...prev, ...ok]);
-  }
-
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
@@ -131,11 +127,22 @@ export function useWindowFileDrop({
         }
         setDragOverActive(false);
         if (!canHandleWindowFileDrop() || payload.paths.length === 0) return;
-        void getDroppedPathInfo(payload.paths).then((infos) => {
-          if (disposed) return;
+        // Native Tauri drop events hand us absolute paths, not browser File objects
+        // (macOS/Linux keep the native drag-drop handler enabled so folder drops can
+        // report a path at all — see build_app_window). Non-directory paths are read
+        // here and staged exactly like a picked/pasted file.
+        const generation = attachmentGenerationRef.current;
+        void stageAttachments(async () => {
+          const infos = await getDroppedPathInfo(payload.paths);
+          if (disposed || generation !== attachmentGenerationRef.current) return [];
           insertDroppedFolderPaths(infos.filter((info) => info.isDir).map((info) => info.path));
           const filePaths = infos.filter((info) => !info.isDir).map((info) => info.path);
-          if (filePaths.length > 0) void addNativeDroppedFiles(filePaths);
+          return Promise.all(
+            filePaths.map(async (path): Promise<PendingAttachment | null> => {
+              const attachment = await readDroppedFileAttachment(path);
+              return attachment ? attachmentToPending(attachment) : null;
+            }),
+          );
         });
       })
       .then((off) => {
@@ -146,9 +153,7 @@ export function useWindowFileDrop({
       disposed = true;
       unlisten?.();
     };
-    // addNativeDroppedFiles only calls the setAttachments state setter: no re-subscribe needed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [insertDroppedFolderPaths, setDragOverActive]);
+  }, [attachmentGenerationRef, insertDroppedFolderPaths, setDragOverActive, stageAttachments]);
 
   function handleWindowDragEnter(e: React.DragEvent<HTMLDivElement>): void {
     if (!hasDraggedFiles(e.dataTransfer) || !canHandleWindowFileDrop()) return;

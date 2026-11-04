@@ -114,8 +114,14 @@ describe("request outcome matrix", () => {
         verifiedChecks: verification === "passed" ? 1 : 0,
         turnVerification: turn(verification, true),
       });
+      // Only a host "incomplete" (an Autopilot cycle's check) is unverified;
+      // unchecked edits in a plain reply wait for the commit.
       expect(state.phase).toBe(
-        verification === "failed" ? "failed" : verification === "passed" ? "done" : "unverified",
+        verification === "failed"
+          ? "failed"
+          : verification === "incomplete"
+            ? "unverified"
+            : "done",
       );
       expect(state.workspaceWarning).toBe("");
     },

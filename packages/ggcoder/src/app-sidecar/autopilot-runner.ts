@@ -75,6 +75,10 @@ export interface AutopilotRunnerContext {
   drainingStrandedQueue: boolean;
   running: boolean;
   readonly deactivateApprovedPlan: () => void;
+  /** Open the human plan review box once everything has settled. */
+  readonly offerPendingPlan: () => void;
+  /** Put the session back in read-only plan mode before a plan revision. */
+  readonly reenterPlanModeForRevision: () => Promise<void>;
   taskRunAll: boolean;
 }
 
@@ -177,7 +181,9 @@ export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRun
   // control flow lives in driveAutopilotCycle (core/autopilot-cycle.ts) so
   // every exit path is unit-tested; this only wires the real dependencies.
   async function runAutopilotCycle(originalRequest: string): Promise<void> {
-    if (!ctx.autopilot || ctx.autopilotCancelled || ctx.session.getVerificationProblem()) return;
+    if (!ctx.autopilot || ctx.autopilotCancelled) return;
+    // Unchecked work enters the cycle too: driveAutopilotCycle asks for the
+    // checks once before Ken reviews, and hands back only if still unchecked.
     const generation = ctx.runLifecycle.begin(ctx.abortOwnedWork).generation;
     ctx.pendingCancelDrain = null;
     ctx.autopilotActive = true;
@@ -266,10 +272,11 @@ export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRun
         },
         // Autopilot-injected run: GG Coder receives the framed prompt (no human
         // is watching this turn) while run_start keeps the clean label.
-        runPrompt: (body) =>
-          ctx.runAgent(body, () =>
-            ctx.session.prompt(frameAutopilotInjection(body), AUTOMATION_PROVENANCE),
-          ),
+        runPrompt: (body, opts) =>
+          ctx.runAgent(body, async () => {
+            if (opts?.planRevision) await ctx.reenterPlanModeForRevision();
+            await ctx.session.prompt(frameAutopilotInjection(body), AUTOMATION_PROVENANCE);
+          }),
         emit: (event) => {
           // Persist the terminal verdict marker so a resumed session renders the
           // same Ken bubble the live run showed instead of dropping it or
@@ -325,8 +332,10 @@ export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRun
         });
         if (!next.text.trim() && next.attachments.length === 0) continue;
         // A queued message draining as a fresh turn supersedes any pending
-        // plan, exactly like a direct POST /prompt turn.
+        // plan and clears a stale Stop, exactly like a direct POST /prompt
+        // turn — otherwise an earlier Stop silently disables Ken for this turn.
         ctx.clearPendingPlan();
+        ctx.autopilotCancelled = false;
         const workflowCommand =
           next.attachments.length === 0 &&
           isWorkflowCommandText(next.text, await ctx.loadWorkflowCommandSpecs());
@@ -375,6 +384,7 @@ export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRun
       }
     } finally {
       ctx.drainingStrandedQueue = false;
+      ctx.offerPendingPlan();
     }
   }
 
@@ -418,6 +428,9 @@ export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRun
     }
     ctx.taskRunAll = false;
     ctx.broadcast("tasks_run_done", {});
+    // Task runs never start an autopilot cycle; a plan a task submitted goes
+    // straight to the user.
+    ctx.offerPendingPlan();
   }
 
   return {

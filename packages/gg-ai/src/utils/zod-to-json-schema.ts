@@ -52,9 +52,30 @@ export function zodToJsonSchema(schema: z.ZodType): JsonSchema {
   if (cached) return cached;
   const jsonSchema = z.toJSONSchema(schema) as JsonSchema;
   const { $schema: _schema, ...rest } = jsonSchema;
-  const normalized = normalizeRootForAnthropic(rest);
+  const normalized = normalizeRootForAnthropic(stripNoOpKeywords(rest) as JsonSchema);
   schemaCache.set(schema, normalized);
   return normalized;
+}
+
+/**
+ * Drop keywords that cost prompt bytes on every request without guiding the
+ * model: `z.number().int()`'s `±Number.MAX_SAFE_INTEGER` bounds and Zod's
+ * blanket `additionalProperties: false` (~30 chars each, dozens per toolset).
+ * Zod still rejects bad args at parse time, and strict-mode providers re-add
+ * `additionalProperties: false` in `makeStrictToolSchema`. Real limits and
+ * schema-valued `additionalProperties` (records) pass through untouched.
+ */
+function stripNoOpKeywords(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(stripNoOpKeywords);
+  if (node === null || typeof node !== "object") return node;
+  const out: JsonSchema = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (key === "maximum" && value === Number.MAX_SAFE_INTEGER) continue;
+    if (key === "minimum" && value === Number.MIN_SAFE_INTEGER) continue;
+    if (key === "additionalProperties" && value === false) continue;
+    out[key] = stripNoOpKeywords(value);
+  }
+  return out;
 }
 
 /**

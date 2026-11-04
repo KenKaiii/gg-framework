@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -61,6 +61,29 @@ describe("code_nav", () => {
       context(),
     );
     expect(String(result)).toBe("widget.fake:1:7 — class Widget {");
+  });
+
+  it("puts partial-coverage warnings before reference results", async () => {
+    const manager = new LspManager(tmpDir, { catalog: [fakeSpec()] });
+    managers.push(manager);
+    vi.spyOn(manager, "references").mockResolvedValue({
+      kind: "ok",
+      filePath: path.join(tmpDir, "widget.fake"),
+      serverId: "fake",
+      value: [],
+      warning: "Reference coverage is partial. Use grep to check additional callers.",
+    });
+    const navigation = createCodeNavTool(tmpDir, manager);
+    // The description no longer pre-warns; the partial-coverage notice rides on the result.
+    expect(navigation.description).toContain("references (callers)");
+    const result = String(
+      await navigation.execute(
+        { op: "references", file: "widget.fake", line: 1, symbol: "Widget" },
+        context(),
+      ),
+    );
+    expect(result.startsWith("Reference coverage is partial")).toBe(true);
+    expect(result).toContain("Use grep to check additional callers");
   });
 
   it("lists references", async () => {

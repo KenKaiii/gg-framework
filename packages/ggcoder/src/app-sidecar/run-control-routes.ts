@@ -302,6 +302,19 @@ export function handleRunControlRoutes(
     return true;
   }
 
+  if (method === "POST" && url === "/prewarm") {
+    // Best-effort Anthropic cache prewarm on the composer's first keystroke.
+    // Fire-and-forget: AgentSession.prewarm() applies its own gating (provider,
+    // setting, history size, TTL, in-flight) and swallows request errors.
+    if (!ctx.running) {
+      void ctx.session.prewarm().catch((err: unknown) => {
+        log("WARN", "app-sidecar", "prewarm failed", { err: String(err) });
+      });
+    }
+    json(res, 202, { accepted: !ctx.running });
+    return true;
+  }
+
   if (method === "POST" && url === "/cancel") {
     void (async () => {
       // Even between task runs, cancellation stops the sweep. Active provider
@@ -393,7 +406,7 @@ export function handleRunControlRoutes(
         json(res, 400, { error: "invalid JSON body" });
         return;
       }
-      if (ctx.running) {
+      if (ctx.running || ctx.runClaim.active) {
         json(res, 409, { error: "cannot accept a plan while the agent is running" });
         return;
       }

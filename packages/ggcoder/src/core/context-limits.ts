@@ -22,7 +22,7 @@ export interface ContextLimits {
 }
 
 export const CONTEXT_LIMITS: ContextLimits = {
-  skillDescriptionBytes: 1024,
+  skillDescriptionBytes: 240,
   skillCatalogBytes: 16 * 1024,
   mcpToolDescriptionBytes: 1024,
   mcpToolSchemaBytes: 64 * 1024,

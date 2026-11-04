@@ -162,8 +162,9 @@
       "upstreamTipDesktopVersion": "0.100.1",
       "reviewedCommits": 270,
       "importedAt": "2026-11-03",
-      "status": "open",
+      "status": "merged",
       "pullRequest": "https://github.com/fmckie/gg-framework/pull/75",
+      "mergeCommit": "9a89e75c6a8ba4f1e372bbdd2b9ca87b1468c1af",
       "rule": "upstream.lastImportedCommit stays 3f2bb6bc because the fork does not contain everything up to any later upstream commit; a later full sync must treat these commits as already applied",
       "picked": [
         {"upstream": "c38df90ee1a352f9a8b9092e4b5e1868c7ba67cc", "downstream": "672a058a789bac2f06feaf06029dd3416f677b0d"},
@@ -180,6 +181,61 @@
         {"upstream": "705af9035f11d9c5c925cf64cb8a90071b035d98", "downstream": "e19afa38f012e030323f939a61bc69c94f013dfa", "scope": "hedged first event only (hedged-stream.ts, agent-loop wiring, countMessageChars); bash.ts wording and the Precedence line wait for 987257de; Royale, every gg-app file, the skills refresh and GG-ROYALE-PRIVACY.md not taken"}
       ],
       "skipped": []
+    },
+    {
+      "branch": "sync/upstream-agent-tools",
+      "baseCommit": "9a89e75c6a8ba4f1e372bbdd2b9ca87b1468c1af",
+      "upstreamTip": "af5b1df4a46a8a308a147afe17bd4a084e958fa7",
+      "upstreamTipVersion": "5.91.1",
+      "upstreamTipDesktopVersion": "0.102.1",
+      "reviewedCommits": 287,
+      "importedAt": "2026-11-04",
+      "status": "open",
+      "pullRequest": "https://github.com/fmckie/gg-framework/pull/76",
+      "rule": "upstream.lastImportedCommit stays 3f2bb6bc because the fork does not contain everything up to any later upstream commit; a later full sync must treat these commits as already applied",
+      "picked": [
+        {"upstream": "0108094070d1103dfe3710c8be07ca31aeea2c2c", "downstream": "6e81833e09c6beff7a6a4c54279cf2cd5c5024ba"},
+        {"upstream": "bacbe7fcf4447812204b490f103dab0c80e468a1", "downstream": "853d9ed79a065a54e96c897350f8511e2bc563ed"},
+        {"upstream": "5798596e8f475618890c2383ded91130d364f6f1", "downstream": "89b69fff3f7745bd7cf2045d228941862340d57c"},
+        {"upstream": "0b1db863b64645cfa2eaf66572eb06f9a03d59b1", "downstream": "203bdb873e755ce2e7c46fc5986e830d7ea48167"},
+        {"upstream": "0509170429f4a6e589c547a3b7cd1c7aab724cbb", "downstream": "23ecd6496510e9982326eda2d511fe95f4c58bc5"}
+      ],
+      "ported": [
+        {"upstream": "f6b906c489c66624bde687dfc88643633a0deab5", "downstream": "be4ff8142dfdf786aa80e559b4028c7f423083d8", "scope": "the rest after #75's destructive-git guard: keep-awake (a plain Settings checkbox), stream rules, ask_user soft deadlines, shell and package-install threat guards, plan-step compaction, the session summary index and Anthropic cache prewarm; the hyperframes patch, its workspace pins and the motion-agent hunks wait for PR 4; KeepAwakeButton.tsx and App.css not taken (the fork owns the desktop design)"},
+        {"upstream": "d83252b9d91e20bc49bb5552be71334b5a8c79a9", "downstream": "177ea66b11b98d96130120e78655f8c475d549e6", "scope": "cache diagnostics, batch image pruning and the cache-expiry notice as placeholder/CacheExpiryNotice; the Motion-check hunks and hyperframes patch lines wait for PR 4; upstream's notice look and styles not taken"},
+        {"upstream": "3ec4e666adf4d2fe6d303267f9dbb85a1a08be5f", "downstream": "177ea66b11b98d96130120e78655f8c475d549e6", "scope": "cache expiry, which #75 deferred until d83252b9 and f6b906c4's prewarm(); landed with d83252b9"},
+        {"upstream": "6325d417565fae2ff004a641ff39dea3ed4805d2", "downstream": "177ea66b11b98d96130120e78655f8c475d549e6", "scope": "the cache-diagnostics noteEdit lines, which #75 deferred until d83252b9; landed with d83252b9; the goal-worker part waits for Goals"},
+        {"upstream": "6c63a63edc4cdbfa914cf24f011580dabcd6e9ae", "downstream": "436ea998189d632e439840fd5cc5fa876100f25e", "scope": "debug tool, acceptance checks, test-impact and repair hints, and the model-unavailable fallback; critter-tool-kind.ts waits for PR 4; the cache-expiry notice's exit motion and App.css not taken"},
+        {"upstream": "dd9eec26e78bf83a026870368cc4e73c3ccf53fd", "downstream": "66d7f317b430d929a5649d8de60c9bc782b6c107", "scope": "Codex request-shape settings, Gemini exclusive bounds and prompt trims; the motion skill files and motion-prompt.ts wait for PR 4"},
+        {"upstream": "223830dc49452b8c4596c33db92adc27ca363558", "downstream": "456a6e7e402aef037ae699c4bdcf46507f482ac8", "scope": "read-evidence slice only (bash-read-evidence.ts and its test, read-tracker.ts, recordBashReads in tools/index.ts and agent-session.ts, and edit.ts needing no prior read), taken ahead of date order for 7ecf304c and ecf0319f; everything else waits for PR 4 (row 14)"},
+        {"upstream": "7ecf304cfdb4389c7a19e03518b71f9ee563fd61", "downstream": "1ab28b2e1bb185ca7e62703c58677c75868bba79", "scope": "multi-file edits and the replay-test prompt changes; the motion-review-session.ts hunk waits for PR 4"},
+        {"upstream": "4b63cdd21b1ac214d939feb3b8f77a68dfda90a3", "downstream": "064577146c07f2a5fb1ca5cfae0dd0e4406014ac", "scope": "project checklist, error recovery and verification review, rendered through placeholder/ChecklistView, ErrorNotice and StatusDot; ChatErrorNotice, ChecklistScreen and ErrorCritter with their CSS and tests, checklist-css.test.mjs, App.css and the App.tsx layout hunks not taken"},
+        {"upstream": "8b0847d45dcb64c16b7bede99d8379591bcf045e", "downstream": "1e399702730e3352f8216c131f639879c18ba11c", "scope": "all"},
+        {"upstream": "c617d8abc84d5efecfa03853359aa38ea0653fdb", "downstream": "67ee4d17cf1d83f4521fc290bc58026e023a9481", "scope": "stale cancelled status and attachment send races; the error-details toggle lives in placeholder/ErrorNotice; ChatErrorNotice.css and the exit animation not taken"},
+        {"upstream": "fad77086c2964621d0c17a18d4fa305f65fa053a", "downstream": "343eb8334a776c59aa565f9730a9b401d44de698", "scope": "all"},
+        {"upstream": "420b1ad3a0e6a2e3eb97cc159458080750e92682", "downstream": "03d232474ba04e4ac2ab1a54649de02d8f50168f", "scope": "part 1: the bash.ts and bash.test.ts hunks that drop the refused-check note, which #75 deferred until fad77086"},
+        {"upstream": "85cd5ce2c3133b4a8b567e5180ac416f3c95edd1", "downstream": "252ef1010461f7e779de5cd102c3ed43af703d77", "scope": "all"},
+        {"upstream": "74f032cd16655ae0d779a387f586cf7888633af3", "downstream": "5f79388fb768e1908fdf2b90c97af1a73e08a70d", "scope": "all but the footer short names in @kleio/manager (which stays unchanged) and the fork-only session-title.ts"},
+        {"upstream": "987257debb004f0066219c5ab3d8704897567b91", "downstream": "73974bbdeb715ea0fc5ad49cebeb3cbaece74e8d", "scope": "prompt diet, deferred tools and stale checklist results; the identity sentence keeps productName(); the ChecklistScreen hunk lands in placeholder/ChecklistView; eb0692b1's two ChecklistScreen tests not taken and a 223830dc skills-routing test waits for PR 4"},
+        {"upstream": "420b1ad3a0e6a2e3eb97cc159458080750e92682", "downstream": "556213ada7055832218e14daadd4c7c31c127b90", "scope": "part 2: the renderWorkSection, Precedence and style-pack wording, which #75 deferred until 987257de"},
+        {"upstream": "705af9035f11d9c5c925cf64cb8a90071b035d98", "downstream": "c955a8fce4a2597459e748aa698d87ce48ae8db6", "scope": "the bash kill-by-PID wording and the Precedence line, which #75 deferred until 987257de; tools/skill.ts waits for the skills refresh in PR 3b"},
+        {"upstream": "60a2495803fe89c6550eb53b61c00a8f6f93a293", "downstream": "0f472e8338a9fab418e46b08fa8301d1688de79e", "scope": "embed(), rerank() and providerOptions; #66 took the fetch passthrough (d2e28a4a)"},
+        {"upstream": "46ca49ce9e6f8ea4e88c8bc746fd265e047cb3be", "downstream": "15f2351ea4960505fcb4cdb0e7d1c633ea471b44", "scope": "classifyStrict and the tracker's posixShell flag; the bash.ts refused-check-note hunks not taken, since 420b1ad3 removed that note"},
+        {"upstream": "ba56ec5c10ffca3debac91cd05a9cb1991d2f11d", "downstream": "76a95c14cf854ac85069c45da4deb777b13137a6", "scope": "all"},
+        {"upstream": "0a5be0d3a957642056dc24fefb7e5a87c6eb9443", "downstream": "c4a8dc077e76112bac8d42b35fe92a83b19f5333", "scope": "built-in /commit, and unchecked replies no longer Unverified; the Work bullet that 420b1ad3 replaced not taken"},
+        {"upstream": "ecf0319f24013997aab437377e0b19e88974acfe", "downstream": "240e6b38b16a2c26a6eff719f487cb7ea8ac3c5d", "scope": "all"}
+      ],
+      "skipped": [
+        {"upstream": "3cca7462707c7c47c8d18531354ff81a4efe9627", "reason": "already in the fork: #66 took its cache half as 2eabe6e7, and 420b1ad3 (556213ad here) replaced its two Work bullets"},
+        {"upstream": "eb0692b198de0dc8cdd48c25cde601a2221a36d5", "reason": "checklist colours and icons only; the fork owns the desktop design"},
+        {"upstream": "85cb0ef7283dca0cc9297edd012f3a2579e46633", "reason": "licence unclear (LAWYER): committed before upstream's relicense but first released in 5.91.1, which ships under the GNU Affero General Public License"},
+        {"upstream": "8020944eb0a6601eba323d812d12d12833ac31f7", "reason": "licence unclear (LAWYER): committed before upstream's relicense but first released in 5.91.1, which ships under the GNU Affero General Public License"},
+        {"upstream": "8627ee6543fd3c3fecb43f53602345e27c9e3b4d", "reason": "licence unclear (LAWYER): committed before upstream's relicense but first released in 5.91.1, which ships under the GNU Affero General Public License"},
+        {"upstream": "0d443e0f03e4decf77f2f8fd8ff2a323999c2955", "reason": "CSS only (the fork owns the desktop design), and first released in 5.91.1 like 85cb0ef7"},
+        {"upstream": "12da5c3a41e23abe0f2cf3f2010202f1fd769d9d", "reason": "upstream's relicense from MIT to the GNU Affero General Public License v3.0 only, with its NOTICE files"},
+        {"upstream": "023752941b4a142ad7aca63ed80fa739e1e6b2ad", "reason": "5.91.1 version commit, after the relicense"},
+        {"upstream": "af5b1df4a46a8a308a147afe17bd4a084e958fa7", "reason": "0.102.1 version commit, after the relicense"}
+      ]
     }
   ],
   "directRenameBaseline": {

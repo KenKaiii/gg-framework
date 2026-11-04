@@ -1,4 +1,5 @@
 import type { ToolDetail } from "../core/session-export.js";
+import type { AppErrorPayload } from "../app-error.js";
 
 // ── History reconstruction types ──────────────────────────
 // Mirrors HistoryEntry in gg-app/src/agent.ts — the wire shape the webview
@@ -40,7 +41,7 @@ export interface HistoryEntryForWire {
   /** Error row (headline/message/guidance), persisted by broadcastError.
    *  `scope` selects the live prefix (ken_error → "Ken: ", autopilot_error →
    *  "Autopilot: "). */
-  error?: { scope: string; headline: string; message?: string; guidance?: string };
+  error?: AppErrorPayload;
   /** Webview-copy info row marker (e.g. the video-capability warning). */
   infoKind?: "video_warning";
   // Each image's preview (`src`), or with `?images=refs` its ref and its

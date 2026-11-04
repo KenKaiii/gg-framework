@@ -7,7 +7,8 @@ const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
 vi.mock("node:child_process", () => ({ spawn: spawnMock }));
 
 import type { AgentDefinition } from "../core/agents.js";
-import { createSubAgentTool, isModelUnavailableError } from "./subagent.js";
+import { getSupportedThinkingLevels } from "../core/thinking-level.js";
+import { createSubAgentTool, subAgentDescription } from "./subagent.js";
 import {
   MAX_BLOCKING_SUBAGENT_DEPTH,
   SUB_AGENT_DEPTH_ENV,
@@ -24,18 +25,33 @@ const owl: AgentDefinition = {
   name: "owl",
   description: "Read-only scout",
   tools: ["read"],
-  // Declares the cheap tier explicitly — the only way an agent opts out of the
-  // parent's model now — which is what arms the fast-model fallback path below.
+  // Legacy `fast` now behaves exactly like `inherit`.
   model: "fast",
   systemPrompt: "Inspect code and report findings.",
   source: "bundled",
 };
 
-function spawnedModels(): string[] {
+// An agent pinned to its own model id is the only way a child leaves the
+// parent's model — which is what arms the unavailable-model fallback below.
+const pinned: AgentDefinition = {
+  name: "pinned",
+  description: "Agent pinned to its own model",
+  tools: ["read"],
+  model: "gpt-6-luna",
+  systemPrompt: "Inspect code and report findings.",
+  source: "project",
+};
+
+function spawnedFlag(flag: string): (string | undefined)[] {
   return spawnMock.mock.calls.map(([, rawArgs]) => {
     const args = rawArgs as string[];
-    return args[args.indexOf("--model") + 1]!;
+    const index = args.indexOf(flag);
+    return index === -1 ? undefined : args[index + 1];
   });
+}
+
+function spawnedModels(): (string | undefined)[] {
+  return spawnedFlag("--model");
 }
 
 function spawnedCacheKeys(): string[] {
@@ -85,40 +101,109 @@ function mockSignalDeath(stdout = ""): MockChildProcess {
 function owlTool() {
   return createSubAgentTool(
     process.cwd(),
-    [owl],
+    [owl, pinned],
     () => "openai",
     () => "gpt-6.1-sol",
     () => "parent-cache",
+    undefined,
+    () => "ultra",
+  );
+}
+
+async function runAgent(agent?: string) {
+  return owlTool().execute(
+    { ...(agent ? { agent } : {}), task: "Inspect the registry." },
+    { signal: new AbortController().signal, toolCallId: "test-call" },
   );
 }
 
 async function runOwl() {
-  return owlTool().execute(
-    { agent: "owl", task: "Inspect the registry." },
-    { signal: new AbortController().signal, toolCallId: "test-call" },
-  );
+  return runAgent("owl");
 }
 
 beforeEach(() => {
   spawnMock.mockReset();
 });
 
-describe("createSubAgentTool fast-model fallback", () => {
-  it("respawns with the parent model when the fast model is unavailable", async () => {
+describe("createSubAgentTool model and thinking routing", () => {
+  it.each(["owl", undefined])(
+    "runs the %s child on the parent model with inherited Ultra",
+    async (agent) => {
+      // Blocking and persistent children must use the same inherited effort.
+      spawnMock.mockImplementationOnce(() => mockExit("", 0, "done"));
+
+      await runAgent(agent);
+
+      expect(spawnedModels()).toEqual(["gpt-6.1-sol"]);
+      expect(spawnedFlag("--thinking")).toEqual(["ultra"]);
+    },
+  );
+
+  it("respawns with the parent model when a pinned model is unavailable", async () => {
     spawnMock
       .mockImplementationOnce(() =>
         mockExit("OpenAI does not recognize the requested model (not).", 1),
       )
       .mockImplementationOnce(() => mockExit("", 0, "fallback succeeded"));
 
-    await expect(runOwl()).resolves.toMatchObject({
+    await expect(runAgent("pinned")).resolves.toMatchObject({
       content: "fallback succeeded\n\nReceipt (0 calls): no tool calls",
     });
     expect(spawnedModels()).toEqual(["gpt-6-luna", "gpt-6.1-sol"]);
+    // The pinned model caps Ultra, but fallback restores the parent selection.
+    expect(spawnedFlag("--thinking")).toEqual(["max", "ultra"]);
     expect(spawnedCacheKeys()).toEqual([
-      "parent-cache:subagent:gpt-6-luna:owl",
-      "parent-cache:subagent:gpt-6-luna:owl",
+      "parent-cache:subagent:gpt-6-luna:pinned",
+      "parent-cache:subagent:gpt-6-luna:pinned",
     ]);
+  });
+
+  it("reads the current OpenAI selection on every blocking call, including off", async () => {
+    let thinking: "high" | undefined = "high";
+    const tool = createSubAgentTool(
+      process.cwd(),
+      [],
+      () => "openai",
+      () => "gpt-6.1-sol",
+      undefined,
+      undefined,
+      () => thinking,
+    );
+    spawnMock.mockImplementation(() => mockExit("", 0, "done"));
+    await tool.execute(
+      { task: "first" },
+      { signal: new AbortController().signal, toolCallId: "first" },
+    );
+    thinking = undefined;
+    await tool.execute(
+      { task: "second" },
+      { signal: new AbortController().signal, toolCallId: "second" },
+    );
+    expect(spawnedFlag("--thinking")).toEqual(["high", undefined]);
+  });
+
+  it("re-resolves the lowest thinking level for the parent model on a retry", async () => {
+    // A retired, unregistered model's ladder bottoms out at "high", Opus's at "low": the retry must
+    // not carry the pinned model's rung over to the parent model.
+    const pinnedLowest = getSupportedThinkingLevels("anthropic", "claude-retired-model")[0];
+    const opusLowest = getSupportedThinkingLevels("anthropic", "claude-opus-5-5")[0];
+    expect(pinnedLowest).not.toBe(opusLowest);
+    spawnMock
+      .mockImplementationOnce(() => mockExit("model not found: claude-retired-model", 1))
+      .mockImplementationOnce(() => mockExit("", 0, "fallback succeeded"));
+
+    await createSubAgentTool(
+      process.cwd(),
+      [{ ...pinned, model: "claude-retired-model" }],
+      () => "anthropic",
+      () => "claude-opus-5-5",
+    ).execute(
+      { agent: "pinned", task: "Inspect the registry." },
+      { signal: new AbortController().signal, toolCallId: "test-call" },
+    );
+
+    expect(spawnedModels()).toEqual(["claude-retired-model", "claude-opus-5-5"]);
+    expect(spawnedFlag("--thinking")).toEqual([pinnedLowest, opusLowest]);
   });
 
   it("returns cache reads and writes with the normalized token totals", async () => {
@@ -142,7 +227,7 @@ describe("createSubAgentTool fast-model fallback", () => {
   it("does not retry unrelated child failures", async () => {
     spawnMock.mockImplementationOnce(() => mockExit("usage limit reached", 1));
 
-    await expect(runOwl()).resolves.toMatchObject({
+    await expect(runAgent("pinned")).resolves.toMatchObject({
       content: "Sub-agent failed (exit 1): usage limit reached",
     });
     expect(spawnedModels()).toEqual(["gpt-6-luna"]);
@@ -167,7 +252,7 @@ describe("createSubAgentTool fast-model fallback", () => {
         "Partial output before failure:\nI'll read both files now.\n\n" +
         "Receipt (0 calls): no tool calls",
     });
-    expect(spawnedModels()).toEqual(["gpt-6-luna"]);
+    expect(spawnedModels()).toEqual(["gpt-6.1-sol"]);
   });
 
   it("names the timeout instead of reporting a signal death as 'unknown error'", async () => {
@@ -292,22 +377,19 @@ describe("createSubAgentTool receipt", () => {
   });
 });
 
-describe("isModelUnavailableError", () => {
-  it("recognizes unavailable-model failures", () => {
-    expect(
-      isModelUnavailableError(
-        "OpenAI does not recognize the requested model (not). It may not exist or your account may not have access.",
-      ),
-    ).toBe(true);
-    expect(isModelUnavailableError("The requested model is not available for this account.")).toBe(
-      true,
-    );
-    expect(isModelUnavailableError("Model gpt-example does not exist.")).toBe(true);
+describe("subAgentDescription", () => {
+  const owl = {
+    name: "owl",
+    description: "Traces call chains",
+  } as AgentDefinition;
+
+  it("carries the roster when it is the only delegation tool", () => {
+    expect(subAgentDescription([owl], false)).toContain("- owl: Traces call chains");
   });
 
-  it("does not retry unrelated provider or process failures", () => {
-    expect(isModelUnavailableError("usage limit reached")).toBe(false);
-    expect(isModelUnavailableError("401 invalid authentication credentials")).toBe(false);
-    expect(isModelUnavailableError("spawn node ENOENT")).toBe(false);
+  it("points at spawn_agent's roster instead of repeating it", () => {
+    const text = subAgentDescription([owl], true);
+    expect(text).not.toContain("Traces call chains");
+    expect(text).toContain("`spawn_agent`");
   });
 });

@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { basename } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import path from "node:path";
+import { z } from "zod";
+import { collectReferenceProjectFiles } from "./reference-project.js";
 import { JsonRpcConnection, JsonRpcRequestError, type WireTracer } from "./jsonrpc.js";
 import { getSafeToolEnv } from "../../tools/safe-env.js";
 import { killProcessTree } from "../../utils/process.js";
@@ -57,7 +59,7 @@ export interface LspSymbolEntry {
  * empty result that reads exactly like "this symbol has no references".
  */
 export type LspRequestOutcome<T> =
-  | { status: "ok"; value: T }
+  | { status: "ok"; value: T; warning?: string }
   | { status: "unsupported" }
   | { status: "timeout" }
   | { status: "failed"; message: string };
@@ -89,6 +91,12 @@ const REQUEST_TIMED_OUT = -32803;
 const PULL_POLL_INTERVAL_MS = 300;
 /** Bounded stderr retained per server for failure diagnostics. */
 const STDERR_TAIL_BYTES = 4000;
+const ProjectInfoReply = z.object({
+  success: z.literal(true),
+  body: z.object({ configFileName: z.string(), languageServiceDisabled: z.boolean().optional() }),
+});
+const PARTIAL_REFERENCE_COVERAGE =
+  "Reference coverage is partial: the configless project exceeded its indexing budget or could not be fully read. Use grep to check additional callers.";
 const SHUTDOWN_TIMEOUT_MS = 2000;
 const KILL_GRACE_MS = 1500;
 
@@ -282,6 +290,7 @@ export class LspClient {
 
   private readonly initializationOptions: unknown;
   private stderrBuffer = "";
+  private referenceProjectFiles: string | undefined;
 
   constructor(
     private readonly spec: LspServerSpec,
@@ -420,7 +429,7 @@ export class LspClient {
       {
         processId: process.pid,
         rootUri,
-        workspaceFolders: [{ uri: rootUri, name: basename(this.rootPath) || "Kleio Coder" }],
+        workspaceFolders: [{ uri: rootUri, name: path.basename(this.rootPath) || "Kleio Coder" }],
         initializationOptions: this.initializationOptions,
         capabilities: {
           textDocument: {
@@ -502,19 +511,95 @@ export class LspClient {
   }
 
   /** Every reference to the symbol at `position`, declaration included. */
-  references(
+  async references(
     uri: string,
     position: LspPosition,
     timeoutMs: number,
     includeDeclaration = true,
   ): Promise<LspRequestOutcome<LspLocation[]>> {
-    return this.navigate(
+    const started = Date.now();
+    const warning =
+      this.spec.id === "typescript"
+        ? await this.prepareReferenceProject(uri, timeoutMs)
+        : undefined;
+    const outcome = await this.navigate(
       "textDocument/references",
       { textDocument: { uri }, position, context: { includeDeclaration } },
-      timeoutMs,
+      Math.max(1, timeoutMs - (Date.now() - started)),
       "referencesProvider",
       parseLocations,
     );
+    return outcome.status === "ok" && warning ? { ...outcome, warning } : outcome;
+  }
+
+  /** Include unopened callers without creating configs or opening stale editor buffers. */
+  private async prepareReferenceProject(
+    uri: string,
+    timeoutMs: number,
+  ): Promise<string | undefined> {
+    const started = Date.now();
+    const remaining = (): number => Math.max(1, timeoutMs - (Date.now() - started));
+    const projectFileName = path.join(this.rootPath, ".gg-lsp-reference-project");
+    try {
+      const reply = await this.conn.request(
+        "workspace/executeCommand",
+        {
+          command: "typescript.tsserverRequest",
+          arguments: [
+            "projectInfo",
+            { file: fileURLToPath(uri), needFileNameList: false },
+            { executionTarget: 0 },
+          ],
+        },
+        remaining(),
+      );
+      const parsed = ProjectInfoReply.safeParse(reply);
+      if (!parsed.success || parsed.data.body.languageServiceDisabled)
+        return PARTIAL_REFERENCE_COVERAGE;
+      const config = parsed.data.body.configFileName;
+      if (
+        !/[\\/]inferredProject\d+\*$/.test(config) &&
+        path.normalize(config) !== path.normalize(projectFileName)
+      )
+        return undefined;
+      const scan = await collectReferenceProjectFiles(
+        this.rootPath,
+        AbortSignal.timeout(Math.min(1000, remaining())),
+      );
+      const files = [...new Set([...scan.files, fileURLToPath(uri)])].sort();
+      const signature = JSON.stringify(files);
+      if (signature !== this.referenceProjectFiles) {
+        const opened = await this.conn.request(
+          "workspace/executeCommand",
+          {
+            command: "typescript.tsserverRequest",
+            arguments: [
+              "openExternalProject",
+              {
+                projectFileName,
+                rootFiles: files.map((fileName) => ({ fileName })),
+                options: { allowJs: true, checkJs: false, noEmit: true },
+              },
+              { executionTarget: 0 },
+            ],
+          },
+          remaining(),
+        );
+        if (!z.object({ success: z.literal(true) }).safeParse(opened).success)
+          return PARTIAL_REFERENCE_COVERAGE;
+        this.referenceProjectFiles = signature;
+        log("DEBUG", "lsp", "Prepared configless reference project", {
+          server: this.spec.id,
+          root: this.rootPath,
+          files: files.length,
+          complete: scan.complete,
+          durationMs: Date.now() - started,
+        });
+      }
+      return scan.complete ? undefined : PARTIAL_REFERENCE_COVERAGE;
+    } catch {
+      return PARTIAL_REFERENCE_COVERAGE;
+    }
   }
 
   /** Flattened symbol outline for a whole document. */

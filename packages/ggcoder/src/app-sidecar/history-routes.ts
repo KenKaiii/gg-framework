@@ -12,6 +12,7 @@ import {
 } from "../core/session-history.js";
 import { spawnedTasks } from "../tools/subagent-shared.js";
 import { detectHookKind, type HistoryEntryForWire } from "./history.js";
+import { restoreAppErrorPayload } from "../app-error.js";
 import type { ToolResultContent } from "@kleio/ai";
 import type { KenTurnPayload, AppMarkerPayload } from "../core/session-manager.js";
 import { appToolImageRefs, appToolImages } from "../utils/image.js";
@@ -184,16 +185,8 @@ export function handleHistoryRoutes(
               task: { title: typeof d.title === "string" ? d.title : "" },
             });
           } else if (marker.kind === "error" && typeof d.headline === "string") {
-            history.push({
-              role: "assistant",
-              text: "",
-              error: {
-                scope: typeof d.scope === "string" ? d.scope : "error",
-                headline: d.headline,
-                ...(typeof d.message === "string" ? { message: d.message } : {}),
-                ...(typeof d.guidance === "string" ? { guidance: d.guidance } : {}),
-              },
-            });
+            const error = restoreAppErrorPayload(d);
+            if (error) history.push({ role: "assistant", text: "", error });
           } else if (marker.kind === "interrupted_run") {
             // Rendered as an error row: the run's tools already changed the
             // repo, so the user needs to see it and decide what to do. We

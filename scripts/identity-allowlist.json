@@ -323,7 +323,7 @@
         "flags": "giu"
       },
       "expectedOccurrences": {
-        "tracked": 1540,
+        "tracked": 1546,
         "packed": 0
       },
       "bucket": "compatibility",
@@ -503,7 +503,7 @@
         "literal": "ggcoder"
       },
       "expectedOccurrences": {
-        "tracked": 1559,
+        "tracked": 1622,
         "packed": 0
       },
       "bucket": "compatibility",
@@ -730,6 +730,26 @@
       "bucket": "compatibility",
       "owner": "Error contract owner",
       "reason": "ErrorSource ggcoder is a serialized machine discriminator, not a display label.",
+      "removeWhen": "All consumers accept a branded discriminator and persisted errors have a dual-reader migration."
+    },
+    {
+      "id": "app-error-source-machine-discriminator",
+      "path": "packages/ggcoder/src/app-error*.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:source[^\\n]*|case\\s+|return\\s+|\\|\\s*)[\"']ggcoder[\"']|[\"']ggcoder[\"'][^\\n]*(?:source|ErrorSource)",
+        "flags": "giu"
+      },
+      "expectedOccurrences": {
+        "tracked": 1,
+        "packed": 0
+      },
+      "bucket": "compatibility",
+      "owner": "Error contract owner",
+      "reason": "App error payloads carry gg-ai's ErrorSource through session history; this fixture uses the ggcoder machine discriminator, not a display label.",
       "removeWhen": "All consumers accept a branded discriminator and persisted errors have a dual-reader migration."
     },
     {
@@ -1417,6 +1437,26 @@
       "bucket": "compatibility",
       "owner": "Framework documentation owner",
       "reason": "These exact links target the retained Coder and Manager repository directories.",
+      "removeWhen": "A coordinated repository path migration updates every source link."
+    },
+    {
+      "id": "context-glossary-repository-paths",
+      "path": "CONTEXT.md",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "packages/(?:ggcoder|gg-boss)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 1,
+        "packed": 0
+      },
+      "bucket": "compatibility",
+      "owner": "Framework documentation owner",
+      "reason": "This exact path names the retained Coder repository directory where the checklist items are defined.",
       "removeWhen": "A coordinated repository path migration updates every source link."
     },
     {
@@ -2571,7 +2611,7 @@
       },
       "expectedOccurrences": {
         "tracked": 0,
-        "packed": 683
+        "packed": 744
       },
       "bucket": "compatibility",
       "owner": "Manager build owner",
@@ -4258,7 +4298,7 @@
         "flags": "gu"
       },
       "expectedOccurrences": {
-        "tracked": 3
+        "tracked": 2
       },
       "bucket": "provenance",
       "owner": "Kleio framework maintainers",
@@ -4904,7 +4944,7 @@
         "flags": "gu"
       },
       "expectedOccurrences": {
-        "tracked": 5
+        "tracked": 4
       },
       "bucket": "provenance",
       "owner": "Kleio framework maintainers",
@@ -5987,7 +6027,7 @@
         "flags": "gu"
       },
       "expectedOccurrences": {
-        "packed": 63
+        "packed": 62
       },
       "bucket": "provenance",
       "owner": "Kleio framework maintainers",
@@ -6633,7 +6673,7 @@
         "flags": "gu"
       },
       "expectedOccurrences": {
-        "packed": 4
+        "packed": 3
       },
       "bucket": "provenance",
       "owner": "Kleio framework maintainers",

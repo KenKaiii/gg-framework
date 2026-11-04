@@ -215,6 +215,35 @@ describe("AgentSession verification gate", () => {
     // and npm's cold start on the Windows runner is measured in seconds.
   }, 60_000);
 
+  it("tracks a check the bash tool moved to the background instead of failing it", async () => {
+    const internal = await makeSession();
+    const manager = new ProcessManager({ bgDir: path.join(tmpHome, "bg-auto") });
+    managers.push(manager);
+    internal.processManager = manager;
+
+    await fs.writeFile(
+      path.join(tmpProject, "verification.test.mjs"),
+      "import assert from 'node:assert/strict'; assert.equal(1 + 1, 2);\n",
+    );
+    await simulateToolCall(internal, "edit", { file_path: "src/a.ts" });
+    const command = "node --test verification.test.mjs";
+    const started = await manager.start(command, tmpProject);
+    // No run_in_background: the default budget ran out and the tool adopted it.
+    await simulateToolCall(
+      internal,
+      "bash",
+      { command },
+      false,
+      `Still running after 120s, so it was moved to the background instead of being stopped. ` +
+        `It keeps its working directory and output.\nID: ${started.id}\nPID: ${started.pid}\n`,
+    );
+    expect(internal.verificationGate.isOwed()).toBe(true); // still running ≠ verified
+
+    expect(await waitForExit(manager, started.id)).toBe(0);
+    await simulateToolCall(internal, "task_output", { id: started.id });
+    expect(internal.verificationGate.isOwed()).toBe(false); // its real exit counts
+  }, 60_000);
+
   it("is disabled by the verificationGateEnabled setting", async () => {
     const internal = await makeSession();
     await internal.settingsManager.set("verificationGateEnabled", false);

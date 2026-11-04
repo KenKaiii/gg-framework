@@ -150,10 +150,12 @@ export class ProviderError extends GGAIError {
       hint?: string;
       cause?: unknown;
       resetsAt?: number;
+      /** `"auth"` for credential rejections (HTTP 401/403). Default `"provider"`. */
+      source?: "provider" | "auth";
     },
   ) {
     super(message, {
-      source: "provider",
+      source: options?.source ?? "provider",
       requestId: options?.requestId,
       hint: options?.hint,
       cause: options?.cause,

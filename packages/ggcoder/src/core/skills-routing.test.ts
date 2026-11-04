@@ -5,6 +5,7 @@ import path from "node:path";
 import { discoverSkills, formatSkillsForPrompt, type Skill } from "./skills.js";
 import { createSkillTool } from "../tools/skill.js";
 import { resolveContextLimits } from "./context-limits.js";
+import { buildSystemPrompt } from "../system-prompt.js";
 
 const skill: Skill = {
   name: "evidence-led-ui",
@@ -19,18 +20,45 @@ describe("skill routing prompts", () => {
     const prompt = formatSkillsForPrompt([skill]);
 
     expect(prompt).toContain("compare the user's request with every skill description");
-    expect(prompt).toContain("before making decisions or edits");
-    expect(prompt).toContain("Respect explicit exclusions");
-    expect(prompt).toContain("do not override project or file/module rules");
+    expect(prompt).toContain("load it with the **skill** tool first");
+    expect(prompt).toContain("respect exclusions");
+    // Precedence (project rules above skills) now lives once in the Work section:
+    // "Precedence: user > nearest project instructions > skills > …".
     expect(prompt).toContain("evidence-led-ui");
   });
 
   it("places the same routing rule in the skill tool description", () => {
     const tool = createSkillTool([skill]);
 
-    expect(tool.description).toContain("Before acting");
-    expect(tool.description).toContain("matches its scope");
-    expect(tool.description).toContain("respect explicit exclusions");
+    expect(tool.description).toContain(
+      "When the work is in a skill's scope below, load it before writing code",
+    );
+    expect(tool.description).toContain("Respect exclusions");
+  });
+
+  it("fails loudly when asked for a skill that does not exist, pointing at a same-named tool", async () => {
+    const tool = createSkillTool([skill]);
+    const context = { signal: new AbortController().signal, toolCallId: "unknown-skill" };
+
+    await expect(tool.execute({ skill: "enter_plan" }, context)).rejects.toThrow(
+      /Skill "enter_plan" not found; nothing was loaded\..*call that tool directly/s,
+    );
+  });
+
+  it("tells the main agent to check skills before coding only when the skill tool exists", async () => {
+    // The tool description alone was not enough on Sonnet 5.5: 0 skill loads
+    // in 132 bench runs (bench/prompt-diet), security work included.
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skill-work-rule-"));
+    try {
+      const withTool = await buildSystemPrompt(cwd, [skill], false, undefined, ["read", "skill"]);
+      expect(withTool).toContain("Before writing code, check the `skill` list");
+      expect(withTool).toContain("Routine fixes and renames need none.");
+
+      const withoutTool = await buildSystemPrompt(cwd, [skill], false, undefined, ["read"]);
+      expect(withoutTool).not.toContain("check the `skill` list");
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
   });
 
   it("counterbalances invocation pressure in both routing surfaces", () => {
@@ -40,14 +68,39 @@ describe("skill routing prompts", () => {
     // covers third-party skills written to maximize their own invocation.
     const prompt = formatSkillsForPrompt([skill]);
     expect(prompt).toContain("Match the work, not the topic");
-    expect(prompt).toContain("Skip the skill when the task is routine");
-    expect(prompt).toContain("Invoke at most one skill");
-    expect(prompt).toContain("do not re-invoke a skill");
+    expect(prompt).toContain("skip skills for routine work");
+    expect(prompt).toContain("never reload one");
+    // A "ready to launch?" ask matches several skills at once; without a fixed
+    // order the model picks one and silently skips the rest.
+    expect(prompt).toContain("durable, bulletproof, compliance-guard, lean, evidence-led-ui");
+    expect(prompt).toContain('a failed child is "not checked", never clean');
 
     const tool = createSkillTool([skill]);
-    expect(tool.description).toContain("Match the work rather than the topic");
-    expect(tool.description).toContain("skip it for routine or narrow changes");
-    expect(tool.description).toContain("do not re-invoke a skill already loaded");
+    expect(tool.description).toContain("Match the work, not the topic");
+    // Not "Before acting, invoke…": that opener cost a skill-only turn on a
+    // plain rename 6/6 times in replay (Codex head-to-head).
+    expect(tool.description).toContain("routine fixes and renames need none");
+    expect(tool.description).not.toContain("Before acting");
+    expect(tool.description).toContain("never reload one");
+  });
+
+  it("routes requested API behavior changes away from the pure-refactor workflow", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bundled-skill-contract-"));
+    try {
+      const skills = await discoverSkills({ globalSkillsDir: path.join(root, "global") });
+      const refactoring = skills.find((candidate) => candidate.name === "refactoring");
+      expect(refactoring?.description).toContain("behind an unchanged contract");
+      expect(refactoring?.description).toContain("Do NOT use for renames, bug fixes");
+      expect(refactoring?.content).toContain('not the word "refactor"');
+      expect(refactoring?.content).toContain("Do not manufacture a separate pure-rename stage");
+      expect(refactoring?.content).toContain(
+        "Existing authorization and safety controls still apply",
+      );
+      expect(refactoring?.content).toContain("The baseline is a gate");
+      expect(refactoring?.content).toContain("Red means revert");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   it("gives every bundled skill an explicit exclusion clause", async () => {
@@ -328,21 +381,21 @@ describe("skill catalog byte budgets", () => {
   });
 
   it("drops overflow skills and names them in the section", () => {
-    const many: Skill[] = Array.from({ length: 60 }, (_, i) => ({
+    const many: Skill[] = Array.from({ length: 100 }, (_, i) => ({
       ...skill,
       name: `skill-${i}`,
-      description: "x".repeat(500), // 60 × ~520B > 16KB catalog budget
+      description: "x".repeat(500), // capped to 240B: 100 × ~260B > 16KB catalog budget
     }));
     const prompt = formatSkillsForPrompt(many);
     expect(prompt).toContain("Skills omitted (catalog byte budget)");
-    expect(prompt).toContain("skill-59");
+    expect(prompt).toContain("skill-99");
     // Kept prefix skills still listed.
     expect(prompt).toContain("skill-0");
     expect(Buffer.byteLength(prompt, "utf8")).toBeLessThan(20 * 1024);
   });
 
   it("applies the same budget to the skill tool description", () => {
-    const many: Skill[] = Array.from({ length: 60 }, (_, i) => ({
+    const many: Skill[] = Array.from({ length: 100 }, (_, i) => ({
       ...skill,
       name: `skill-${i}`,
       description: "x".repeat(500),

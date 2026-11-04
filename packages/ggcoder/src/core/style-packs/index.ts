@@ -43,7 +43,7 @@ export function renderStylePacksSection(active: Set<LanguageId>, cwd: string): s
   if (parts.length === 0) return "";
   return (
     `## Language Style Packs\n\n` +
-    `Conventions for new code in active languages; library names are illustrative.\n\n` +
+    `Defaults for new code where the project has no convention.\n\n` +
     `${AGENT_WRITTEN_CODE_PREAMBLE}\n\n` +
     parts.join("\n\n")
   );
@@ -58,13 +58,4 @@ export function renderStylePacksSection(active: Set<LanguageId>, cwd: string): s
  * Lives in the system prompt above the per-language packs so the model reads
  * universal rules first, then specializes per language.
  */
-const AGENT_WRITTEN_CODE_PREAMBLE = `### Agent-Written Code (cross-cutting)
-
-Universal rules for agent-written code:
-
-- **Observe boundaries.** Use structured logging at external I/O; include inputs, outcome, and elapsed time. Do not commit debug prints.
-- **Deterministic output.** Sort observable map/set iteration; use stable IDs; inject clocks; canonicalize serialized data used for hashes, persistence, comparisons, or diffs.
-- **Explicit state.** Avoid module-level mutables, global state containers, and implicit DI. Pass dependencies through signatures or constructors.
-- **Locally verifiable.** Prefer small pure functions and shallow composition over deep indirection.
-- **Behavioral tests.** Arrange-Act-Assert, no shared mutable fixtures, table-driven where natural, independent test order.
-- **Validate at boundaries.** Validate untrusted input as it enters; inside, rely on validated types and use local error values for expected failures.`;
+const AGENT_WRITTEN_CODE_PREAMBLE = `All code: deterministic output (sorted iteration, injected clocks); no module-level mutable state; no shared mutable test fixtures.`;

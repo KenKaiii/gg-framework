@@ -70,6 +70,8 @@ describe("isReadOnlyCommand", () => {
     ["date set clock", "date -s '12:00:00'"],
     ["find delete", "find . -name '*.ts' -delete"],
     ["find exec", "find . -type f -exec rm {} +"],
+    ["rg preprocessor", "rg --pre ./x.sh TODO"],
+    ["rg preprocessor =", "rg --pre=./x.sh TODO"],
     ["find fprint", "find . -fprintf /tmp/x '%p'"],
     ["sort output file", "sort -o out.txt in.txt"],
     ["tree output file", "tree -o tree.txt"],

@@ -6,11 +6,16 @@ import { describe, expect, it } from "vitest";
 describe("desktop verification settlement", () => {
   it("reports an unresolved gate as Unverified, not an unexpected error", async () => {
     const source = await fs.readFile(new URL("./app-sidecar.ts", import.meta.url), "utf8");
-    const start = source.indexOf("const verificationProblem = cancelled ? null");
+    const start = source.indexOf("const verificationProblem =");
     const end = source.indexOf("// Autopilot's review loop", start);
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const settlement = source.slice(start, end);
+    // Checks belong to the commit: only an Autopilot cycle, which has a real
+    // end, reports unchecked work as Unverified. A plain reply never does.
+    expect(settlement).toMatch(
+      /const verificationProblem =\s*cancelled \|\| !autopilotActive \? null : session\.getVerificationProblem\(\);/,
+    );
     expect(settlement).not.toContain("broadcastError(");
     expect(settlement).toContain('log("WARN", "app-sidecar", "verification incomplete"');
     expect(settlement).toContain('verificationProblem ? "unverified"');
@@ -18,5 +23,27 @@ describe("desktop verification settlement", () => {
     expect(settlement).toMatch(
       /reviewPending:\s*!cancelled\s*&&\s*runSucceeded\s*&&\s*!verificationProblem/,
     );
+  });
+});
+
+// Plan hand-off end to end: app-sidecar-plan-handoff.test.ts (real daemon).
+// Task-list runs and the queued-message Stop reset have no scripted
+// end-to-end path there, so their wiring is pinned here. The fork keeps
+// runTasks and runStrandedQueue in app-sidecar/autopilot-runner.ts, where
+// daemon state is reached through `ctx`.
+const AUTOPILOT_RUNNER = new URL("./app-sidecar/autopilot-runner.ts", import.meta.url);
+
+describe("desktop plan hand-off", () => {
+  it("offers a plan submitted by a task-list run when the run finishes", async () => {
+    const source = await fs.readFile(AUTOPILOT_RUNNER, "utf8");
+    expect(source).toMatch(
+      /broadcast\("tasks_run_done", \{\}\);[\s\S]{0,200}offerPendingPlan\(\);/,
+    );
+  });
+
+  it("clears a stale Stop when a queued message drains as a fresh turn", async () => {
+    const source = await fs.readFile(AUTOPILOT_RUNNER, "utf8");
+    const drain = source.slice(source.indexOf("async function runStrandedQueue"));
+    expect(drain).toMatch(/ctx\.clearPendingPlan\(\);\s*ctx\.autopilotCancelled = false;/);
   });
 });

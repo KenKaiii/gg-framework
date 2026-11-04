@@ -1,5 +1,7 @@
 import { json, readBody } from "./http.js";
 import { pruneDoneTasksSync, loadTasksSync, saveTasksSync } from "../core/tasks-store.js";
+import { readChecklistSnapshot } from "../core/checklist-snapshot.js";
+import { log } from "../core/logger.js";
 import {
   RADIO_STATIONS,
   getCurrentStation,
@@ -20,6 +22,27 @@ export function handleTaskRoutes(
 ): boolean {
   if (method === "GET" && url === "/tasks") {
     json(res, 200, { tasks: pruneDoneTasksSync(ctx.cwd) });
+    return true;
+  }
+
+  if (method === "GET" && url === "/checklist") {
+    const controller = new AbortController();
+    res.once("close", () => controller.abort());
+    void (async () => {
+      try {
+        const result = await readChecklistSnapshot(ctx.cwd, new Date(), controller.signal);
+        if (res.destroyed) return;
+        if (!result.ok) {
+          log("WARN", "app-sidecar", "checklist read failed", { error: result.error });
+          json(res, 500, { error: result.error });
+          return;
+        }
+        json(res, 200, result.value);
+      } catch (error) {
+        log("WARN", "app-sidecar", "checklist snapshot failed", { error: String(error) });
+        if (!res.destroyed) json(res, 500, { error: "Could not read the project checklist" });
+      }
+    })();
     return true;
   }
 

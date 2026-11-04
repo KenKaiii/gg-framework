@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { createWriteTool } from "./write.js";
 import { recordRead, type ReadTracker } from "./read-tracker.js";
+import { useFakeHome } from "../test-support/fake-home.js";
 
 async function markRead(tracker: ReadTracker, filePath: string): Promise<void> {
   const stat = await fs.stat(filePath);
@@ -88,22 +89,6 @@ describe("createWriteTool", () => {
     expect(written).toBe("test\n");
   });
 
-  it("blocks overwriting existing files that haven't been read", async () => {
-    const readFiles: ReadTracker = new Map();
-    const tool = createWriteTool(tmpDir, readFiles);
-
-    // Create an existing file
-    const filePath = path.join(tmpDir, "existing.txt");
-    await fs.writeFile(filePath, "original");
-
-    await expect(
-      tool.execute(
-        { file_path: "existing.txt", content: "new content" },
-        { signal: new AbortController().signal, toolCallId: "test-4" },
-      ),
-    ).rejects.toThrow("File must be read first");
-  });
-
   it("allows overwriting files that have been read", async () => {
     const readFiles: ReadTracker = new Map();
     const filePath = path.join(tmpDir, "existing.txt");
@@ -121,26 +106,6 @@ describe("createWriteTool", () => {
     expect(result).toContain("Wrote");
     const written = await fs.readFile(filePath, "utf-8");
     expect(written).toBe("new content");
-  });
-
-  it("rejects overwriting when the file changed since it was read", async () => {
-    const readFiles: ReadTracker = new Map();
-    const filePath = path.join(tmpDir, "stale.txt");
-    await fs.writeFile(filePath, "original");
-    await markRead(readFiles, filePath);
-
-    // External rewrite + bumped mtime
-    await fs.writeFile(filePath, "external");
-    const future = new Date(Date.now() + 5_000);
-    await fs.utimes(filePath, future, future);
-
-    const tool = createWriteTool(tmpDir, readFiles);
-    await expect(
-      tool.execute(
-        { file_path: "stale.txt", content: "from agent" },
-        { signal: new AbortController().signal, toolCallId: "test-stale" },
-      ),
-    ).rejects.toThrow(/modified since/);
   });
 
   it("allows writing new files without reading", async () => {
@@ -182,22 +147,151 @@ describe("createWriteTool", () => {
   });
 
   it("does not call mutation callback when write validation fails", async () => {
-    const readFiles: ReadTracker = new Map();
     const mutated: string[] = [];
-    const filePath = path.join(tmpDir, "existing.txt");
-    await fs.writeFile(filePath, "original");
-    const tool = createWriteTool(tmpDir, readFiles, undefined, undefined, (mutatedPath) => {
+    const tool = createWriteTool(tmpDir, new Map(), undefined, { current: true }, (mutatedPath) => {
       mutated.push(mutatedPath);
     });
 
-    await expect(
-      tool.execute(
-        { file_path: "existing.txt", content: "new" },
-        { signal: new AbortController().signal, toolCallId: "test-mutated-fail" },
-      ),
-    ).rejects.toThrow("File must be read first");
+    const result = await tool.execute(
+      { file_path: "existing.txt", content: "new" },
+      { signal: new AbortController().signal, toolCallId: "test-mutated-fail" },
+    );
 
+    expect(resultToString(result)).toContain("restricted in plan mode");
     expect(mutated).toEqual([]);
+  });
+
+  // Refusing an overwrite threw away the model's generated content and forced a
+  // full regeneration. The write now always lands; lines it removed that the
+  // model never saw are listed and the previous file is backed up.
+  describe("unseen lines removed by an overwrite", () => {
+    let restoreHome: () => void;
+
+    // Backups go to ~/.gg/tool-output; keep them out of the real home.
+    beforeEach(() => {
+      restoreHome = useFakeHome(path.join(tmpDir, "home"));
+    });
+
+    afterEach(() => {
+      restoreHome();
+    });
+
+    it("overwrites an unread file, listing the unseen lines it removed and backing them up", async () => {
+      const readFiles: ReadTracker = new Map();
+      const tool = createWriteTool(tmpDir, readFiles);
+      const filePath = path.join(tmpDir, "existing.txt");
+      await fs.writeFile(filePath, "keep\nold one\nold two\n");
+
+      const result = resultToString(
+        await tool.execute(
+          { file_path: "existing.txt", content: "keep\nnew\n" },
+          { signal: new AbortController().signal, toolCallId: "test-4" },
+        ),
+      );
+
+      expect(await fs.readFile(filePath, "utf-8")).toBe("keep\nnew\n");
+      expect(result).toContain("removed 2 lines you had not seen");
+      expect(result).toContain("2|-old one\n3|-old two");
+      expect(result).not.toContain("|-keep");
+      const backup = /saved at (\S+)\./.exec(result)?.[1];
+      expect(backup && (await fs.readFile(backup, "utf-8"))).toBe("keep\nold one\nold two\n");
+    });
+
+    it("reports lines another process added after the read when the overwrite drops them", async () => {
+      const readFiles: ReadTracker = new Map();
+      const filePath = path.join(tmpDir, "stale.txt");
+      await fs.writeFile(filePath, "original");
+      await markRead(readFiles, filePath);
+
+      // External rewrite + bumped mtime
+      await fs.writeFile(filePath, "original\nadded by teammate\n");
+      const future = new Date(Date.now() + 5_000);
+      await fs.utimes(filePath, future, future);
+
+      const tool = createWriteTool(tmpDir, readFiles);
+      const result = resultToString(
+        await tool.execute(
+          { file_path: "stale.txt", content: "from agent\n" },
+          { signal: new AbortController().signal, toolCallId: "test-stale" },
+        ),
+      );
+      expect(await fs.readFile(filePath, "utf-8")).toBe("from agent\n");
+      expect(result).toContain("2|-added by teammate");
+    });
+
+    it("adds no note when the overwrite only adds lines to an unread file", async () => {
+      const filePath = path.join(tmpDir, "grow.ts");
+      await fs.writeFile(filePath, "one\ntwo\n");
+      const tool = createWriteTool(tmpDir, new Map());
+
+      const result = resultToString(
+        await tool.execute(
+          { file_path: "grow.ts", content: "zero\none\ntwo\nthree\n" },
+          { signal: new AbortController().signal, toolCallId: "grow" },
+        ),
+      );
+      expect(result).toBe(`Wrote 5 lines to ${filePath}`);
+    });
+
+    it("ignores CRLF-to-LF line endings when listing removed lines", async () => {
+      const filePath = path.join(tmpDir, "crlf.ts");
+      await fs.writeFile(filePath, "same\r\nold\r\nsame too\r\n");
+      const tool = createWriteTool(tmpDir, new Map());
+
+      const result = resultToString(
+        await tool.execute(
+          { file_path: "crlf.ts", content: "same\nnew\nsame too\n" },
+          { signal: new AbortController().signal, toolCallId: "crlf" },
+        ),
+      );
+      expect(result).toContain("removed 1 line you had not seen");
+      expect(result).toContain("2|-old");
+      expect(result).not.toContain("|-same");
+    });
+
+    it("summarizes the removed line numbers when there are too many to list", async () => {
+      const filePath = path.join(tmpDir, "huge.ts");
+      const original = Array.from({ length: 3000 }, (_, i) => `original line ${i + 1}`).join("\n");
+      await fs.writeFile(filePath, original);
+      const tool = createWriteTool(tmpDir, new Map());
+
+      const result = resultToString(
+        await tool.execute(
+          { file_path: "huge.ts", content: "original line 1\nshort\n" },
+          { signal: new AbortController().signal, toolCallId: "huge" },
+        ),
+      );
+      expect(result).toContain(
+        "removed 2999 lines you had not seen in their current form (old lines 2-3000)",
+      );
+      expect(result).not.toContain("|-original line 2");
+    });
+
+    // Regression: an unbounded line diff of a large rewrite took ~190s for 30k
+    // lines and blocked the shared daemon. Past the cap it falls back to a count.
+    it("reports a large, wholly different rewrite of an unread file without stalling", async () => {
+      const filePath = path.join(tmpDir, "rewrite.ts");
+      const lines = 20_000;
+      await fs.writeFile(
+        filePath,
+        Array.from({ length: lines }, (_, i) => `const a${i} = ${i};`).join("\n"),
+      );
+      const kept = "const a7 = 7;";
+      const next = [kept, ...Array.from({ length: lines }, (_, i) => `let b${i} = "${i}";`)];
+      const tool = createWriteTool(tmpDir, new Map());
+
+      const result = resultToString(
+        await tool.execute(
+          { file_path: "rewrite.ts", content: next.join("\n") },
+          { signal: new AbortController().signal, toolCallId: "rewrite" },
+        ),
+      );
+      expect(await fs.readFile(filePath, "utf-8")).toBe(next.join("\n"));
+      // Line 8 survives (moved to the top); every other old line is reported.
+      expect(result).toContain(
+        `removed ${lines - 1} lines you had not seen in their current form (old lines 1-7, 9-${lines})`,
+      );
+    });
   });
 
   describe("LSP diagnostics", () => {

@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { SidecarEvent } from "./agent";
 import type { Item } from "./App";
+import { readChatError } from "./chat-error";
 
 /**
  * Ken Kai (mentor agent) client state + event handling, extracted from App.tsx.
@@ -163,20 +164,9 @@ export function useKenMentor(opts: {
           endKenStreaming();
           setKenIsThinking(false);
           setKenRunStartTs(null);
-          // Structured payload from the sidecar's broadcastError; "Ken: " prefix on
-          // the headline keeps it distinguishable from a GG Coder build error.
-          const headline = typeof d.headline === "string" ? d.headline : undefined;
           setItems((prev) => [
             ...prev,
-            headline
-              ? {
-                  kind: "error",
-                  id: nextId(),
-                  headline: `Helper: ${headline}`,
-                  message: typeof d.message === "string" ? d.message : undefined,
-                  guidance: typeof d.guidance === "string" ? d.guidance : undefined,
-                }
-              : { kind: "error", id: nextId(), text: `Helper: ${String(d.message ?? "unknown")}` },
+            { kind: "error", id: nextId(), ...readChatError(d, "ken_error") },
           ]);
           return true;
         }

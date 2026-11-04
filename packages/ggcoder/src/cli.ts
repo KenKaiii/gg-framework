@@ -128,18 +128,10 @@ import { resolveCoderTelegramEnvironment } from "./cli/environment.js";
 import { checkAndAutoUpdate } from "./core/auto-update.js";
 
 import { routeCliCommandInput, type CliSubcommandName } from "./cli/command-routing.js";
+import { parseThinkingLevel } from "./cli/thinking-arg.js";
 
 const CODER_DISPLAY_NAME = KLEIO_PRODUCT_PROFILE.coder.displayName;
 const CODER_COMMAND = KLEIO_PRODUCT_PROFILE.coder.preferredCommand;
-const THINKING_LEVELS = new Set<ThinkingLevel>(["low", "medium", "high", "xhigh", "max", "ultra"]);
-
-export function parseThinkingLevel(value: string | undefined): ThinkingLevel | undefined {
-  if (value === undefined) return undefined;
-  if (THINKING_LEVELS.has(value as ThinkingLevel)) return value as ThinkingLevel;
-  throw new Error(
-    `Invalid --thinking value "${value}". Expected low, medium, high, xhigh, max, or ultra.`,
-  );
-}
 
 function printHelp(): void {
   // Clear the visible viewport for a clean look without erasing scrollback.
@@ -650,7 +642,7 @@ async function runInkTUI(opts: {
     checkpointRef.current?.recordPreMutation(filePath) ?? Promise.resolve();
   let activeProvider = provider;
   let activeModel = model;
-  let activeThinking = opts.thinkingLevel;
+  let activeThinkingLevel = opts.thinkingLevel;
 
   const toolOptions: CreateToolsOptions = {
     agents,
@@ -671,7 +663,7 @@ async function runInkTUI(opts: {
       planToolCallbacks.onExitPlan?.(planPath) ?? Promise.resolve("Plan review is unavailable."),
     getProvider: () => activeProvider,
     getModel: () => activeModel,
-    getThinkingLevel: () => activeThinking,
+    getThinkingLevel: () => activeThinkingLevel,
     getMaxPerModel: () => opts.subagentMaxPerModel,
   };
   const initialToolSet = await createTools(cwd, toolOptions);
@@ -764,6 +756,7 @@ async function runInkTUI(opts: {
       runtime?.subAgentManager?.shutdownAllNow();
       runtime?.processManager?.shutdownAll();
       runtime?.lspManager?.shutdownAll();
+      runtime?.debugManager?.shutdown();
       runtime?.mcpManager?.dispose().catch(() => {});
     }
   });
@@ -1058,7 +1051,7 @@ async function runInkTUI(opts: {
     onRuntimeStateChange: (updates) => {
       if (updates.provider) activeProvider = updates.provider;
       if (updates.model) activeModel = updates.model;
-      if ("thinking" in updates) activeThinking = updates.thinking;
+      if ("thinking" in updates) activeThinkingLevel = updates.thinking;
     },
   });
 

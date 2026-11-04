@@ -968,16 +968,7 @@ export function createWebFetchTool(
 
   return {
     name: "web_fetch",
-    description:
-      "Fetch and read web page content. Accepts a single `url` or a `urls` array (up to 10, " +
-      "fetched concurrently). Returns clean Markdown by default (`format`: markdown|text|html|outline) " +
-      "via main-content extraction. Extracts text from PDFs, follows safe redirects automatically, and " +
-      "prefers a site's curated /llms.txt for docs pages when available.\n" +
-      '`format: "outline"` is the cheap mode: main content only, every hyperlink replaced by a ' +
-      "number (`anchor text [12]`) with a numbered URL index at the end, and a small default " +
-      "`max_length`. Use it when hunting for the right page; then pass `follow: 12` " +
-      "(instead of `url`) to fetch link 12 from the last outline. Repeat views of a page in the " +
-      "same session are served from cache. Outline mode skips the /llms.txt probe.",
+    description: "Fetch pages/PDFs as Markdown. format outline numbers links; then `follow: N`.",
     parameters,
     async execute(args, context: ToolContext) {
       const format: FetchFormat = args.format ?? "markdown";
@@ -1065,39 +1056,15 @@ async function runPool<T, R>(
 
 const parameters = z
   .object({
-    url: z.string().optional().describe("The URL to fetch"),
-    urls: z
-      .array(z.string())
-      .max(MAX_URLS)
-      .optional()
-      .describe(`Fetch multiple URLs concurrently (up to ${MAX_URLS}); returns a sectioned digest`),
-    follow: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .describe(
-        "Fetch link N from the most recent outline render, instead of `url`. " +
-          "Followed links are SSRF/allowlist-checked exactly like a supplied URL.",
-      ),
+    url: z.string().optional(),
+    urls: z.array(z.string()).max(MAX_URLS).optional().describe("Fetched concurrently"),
+    follow: z.number().int().positive().optional().describe("Link number from the last outline"),
     max_length: z
       .number()
       .optional()
-      .describe(
-        `Maximum characters to return (default: 10000; ${OUTLINE_DEFAULT_MAX_LENGTH} for outline)`,
-      ),
-    format: z
-      .enum(["markdown", "text", "html", "outline"])
-      .optional()
-      .describe(
-        "Output format: markdown (default, main-content extraction), text, html, or outline " +
-          `(compact main content with each link replaced by a number plus a numbered URL index, ` +
-          `capped at ${MAX_OUTLINE_LINKS} links — cheapest; follow links with \`follow\`)`,
-      ),
-    prefer_llms_txt: z
-      .boolean()
-      .optional()
-      .describe("Prefer a site's curated /llms.txt for documentation pages (default: true)"),
+      .describe(`Default 10000 (${OUTLINE_DEFAULT_MAX_LENGTH} for outline)`),
+    format: z.enum(["markdown", "text", "html", "outline"]).optional(),
+    prefer_llms_txt: z.boolean().optional(),
   })
   .refine(
     (v) =>

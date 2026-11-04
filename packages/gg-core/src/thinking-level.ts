@@ -22,7 +22,7 @@ const DEEPSEEK_THINKING_LEVELS: readonly ThinkingLevel[] = ["low", "high", "max"
 // rung (docs: low/medium/high default/xhigh); each model slices this ladder
 // by its registry maxThinkingLevel.
 const XAI_THINKING_LEVELS: readonly ThinkingLevel[] = ["low", "medium", "high", "xhigh"];
-// Opus 5.x / 4.7 and Sonnet 5.5 expose the full ladder including xhigh.
+// Opus 5.x / 4.7, Sonnet 5.5 and Haiku 5.5 expose the full ladder including xhigh.
 // Other adaptive Anthropic models omit xhigh and would 400.
 const ANTHROPIC_XHIGH_THINKING_LEVELS: readonly ThinkingLevel[] = [
   "low",
@@ -81,13 +81,15 @@ function isGlmModel(provider: Provider): boolean {
 }
 
 function isAnthropicXhighModel(provider: Provider, model: string): boolean {
-  return provider === "anthropic" && /opus-5|opus-4-8|opus-4-7|sonnet-5[-.]5/.test(model);
+  return (
+    provider === "anthropic" && /opus-5|opus-4-8|opus-4-7|sonnet-5[-.]5|haiku-5[-.]5/.test(model)
+  );
 }
 
 function isAnthropicAdaptiveModel(provider: Provider, model: string): boolean {
   return (
     provider === "anthropic" &&
-    /opus-5|opus-4-8|opus-4-7|opus-4-6|sonnet-5|fable-5|mythos-5/.test(model)
+    /opus-5|opus-4-8|opus-4-7|opus-4-6|sonnet-5|haiku-5|fable-5|mythos-5/.test(model)
   );
 }
 
@@ -150,6 +152,21 @@ export function getSupportedThinkingLevels(
   const maxIndex = levels.indexOf(maxLevel);
   if (maxIndex === -1) return ["medium"];
   return levels.slice(0, maxIndex + 1);
+}
+
+/**
+ * The lowest effort `model` accepts — the first rung of its ladder, never
+ * "off". Used for background work (compaction summaries, `model: fast`
+ * agents) that runs on the active model but doesn't need deep reasoning.
+ * Undefined only when the model cannot reason at all, since sending it any
+ * effort would be rejected.
+ */
+export function getLowestThinkingLevel(
+  provider: Provider,
+  model: string,
+): ThinkingLevel | undefined {
+  if (getModel(model)?.supportsThinking === false) return undefined;
+  return getSupportedThinkingLevels(provider, model)[0];
 }
 
 export function isThinkingLevelSupported(

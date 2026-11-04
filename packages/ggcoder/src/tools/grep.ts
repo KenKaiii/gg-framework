@@ -9,19 +9,11 @@ import { BINARY_EXTENSIONS } from "./read.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 
 const GrepParams = z.object({
-  pattern: z.string().describe("Search pattern (JavaScript regex; leading (?i) is supported)"),
-  path: z.string().optional().describe("File or directory to search (defaults to cwd)"),
-  include: z
-    .string()
-    .optional()
-    .describe("Glob pattern to filter files, matched at any depth (e.g. '*.ts')"),
-  max_results: z
-    .number()
-    .int()
-    .min(1)
-    .optional()
-    .describe("Maximum matches to return (default: 50)"),
-  case_insensitive: z.boolean().optional().describe("Case-insensitive search"),
+  pattern: z.string().describe("JS regex"),
+  path: z.string().optional(),
+  include: z.string().optional().describe("File glob"),
+  max_results: z.number().int().min(1).optional(),
+  case_insensitive: z.boolean().optional(),
 });
 
 const DEFAULT_MAX_RESULTS = 50;
@@ -167,11 +159,7 @@ export function createGrepTool(
   return {
     name: "grep",
     description:
-      "Search file contents using regex. Returns filepath:line_number:content for matches, " +
-      "ordered by path. Skips files matched by the search root's .gitignore (pass an explicit " +
-      "`path` inside an ignored directory to search it anyway), skips binary files, and searches " +
-      "dot-directories. " +
-      "Lookaround and backreferences are supported but scan more slowly.",
+      "Regex search of file contents → path:line:text. Skips .gitignored and binary files.",
     parameters: GrepParams,
     async execute({ pattern, path: searchPath, include, max_results, case_insensitive }) {
       const dir = searchPath ? resolvePath(cwd, searchPath) : cwd;

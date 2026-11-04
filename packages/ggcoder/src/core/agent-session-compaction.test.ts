@@ -537,6 +537,58 @@ describe("AgentSession post-turn compaction", () => {
     await session.dispose();
   });
 
+  it("newSession() waits for a background compaction so it can't restore the old history", async () => {
+    // Accepting a plan resets into a fresh session. A post-turn compaction
+    // still running at that moment used to land afterwards and swap the whole
+    // planning conversation back in, dropping the approved plan.
+    let overThreshold = false;
+    let releaseCompaction: (() => void) | undefined;
+    let compactFinished = false;
+    shouldCompactMock.mockImplementation(() => overThreshold);
+    compactMock.mockImplementation(async () => {
+      await new Promise<void>((resolve) => {
+        releaseCompaction = resolve;
+      });
+      overThreshold = false;
+      compactFinished = true;
+      return compactionResult([
+        { role: "system", content: "system prompt" },
+        { role: "user", content: "[compacted planning history]" },
+      ] as Message[]);
+    });
+    agentLoopMock.mockImplementation(async function* (messages: Message[]) {
+      messages.push({ role: "assistant", content: "plan submitted" });
+      overThreshold = true;
+      yield { type: "agent_done" };
+    });
+
+    const { AgentSession } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      systemPrompt: "system prompt",
+      transient: true,
+    });
+    await session.initialize();
+    await session.prompt("plan the thing");
+    await vi.waitFor(() => expect(releaseCompaction).toBeDefined());
+
+    const reset = session.newSession(true);
+    // Let the reset get going while the compaction is still parked, then
+    // release it and let both settle.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    releaseCompaction?.();
+    await reset;
+    await vi.waitFor(() => expect(compactFinished).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const texts = session.getMessages().map((message) => JSON.stringify(message.content));
+    expect(texts.some((text) => text.includes("compacted planning history"))).toBe(false);
+    expect(session.getMessages().filter((message) => message.role !== "system")).toHaveLength(0);
+    await session.dispose();
+  });
+
   it("skips post-turn compaction when a compaction already ran this turn or input is queued", async () => {
     let overThreshold = true;
     shouldCompactMock.mockImplementation(() => overThreshold);

@@ -1,9 +1,11 @@
 import { stream, type Message, type Provider, type ContentPart, type ToolResult } from "@kleio/ai";
 import { estimateConversationTokens, estimateMessageTokens } from "./token-estimator.js";
 import { findLatestHumanQuery, selectQueryAwareContext } from "./query-aware-selector.js";
-import { getSummaryModel, getContextWindow } from "../model-registry.js";
+import { getSummaryModel, getContextWindow, getModel } from "../model-registry.js";
+import { isModelUnavailableFailure } from "../model-unavailable.js";
 import { kimiCodingHeaders, isKimiCodingEndpoint } from "../oauth/kimi.js";
 import { log } from "../logger.js";
+import { editTargetPaths } from "../../tools/edit-targets.js";
 
 /**
  * Per-message-part char caps when preparing messages for the summarizer.
@@ -430,6 +432,10 @@ export function extractFileOperations(messages: Message[]): {
         name: string;
         args: Record<string, unknown>;
       };
+      if (tc.name === "edit") {
+        for (const target of editTargetPaths(tc.args)) modified.add(target);
+        continue;
+      }
       const filePath = tc.args.file_path ?? tc.args.path ?? tc.args.file;
       if (typeof filePath !== "string") continue;
 
@@ -1149,16 +1155,10 @@ export async function compact(
   const summarizationSource = messages.slice(1);
   const fileOps = extractFileOperations(summarizationSource);
 
-  // Pick the appropriate model for summarization
+  // The cheaper summary model goes first (see getSummaryModel). The ACTIVE
+  // model is the fallback when the provider rejects it — retired upstream, or
+  // not on the user's plan — which the registry cannot know in advance.
   const summaryModel = getSummaryModel(options.provider, options.model);
-  const summaryContextWindow = getContextWindow(summaryModel.id, {
-    provider: options.provider,
-    accountId: options.accountId,
-  });
-  const summaryOutputTokens = Math.min(
-    summaryModel.maxOutputTokens,
-    resolveSummaryOutputTokens(summaryContextWindow),
-  );
 
   const previousSummary = findLatestPreviousSummary(summarizationSource);
   // Carry the prior tracked edits forward as DATA, not as prose the summarizer
@@ -1186,10 +1186,8 @@ export async function compact(
   );
   const classifiedMessages = classifyMessagesForSummary(summarizationSource);
 
-  // Budget: summary model context - output tokens - system/user prompt overhead (~1K).
   // Prior compacted memory is pinned separately, never presented as a fresh human turn.
   const promptOverhead = 1000;
-  const tokenBudget = summaryContextWindow - summaryOutputTokens - promptOverhead;
   const previousSummaryMessage: Message | undefined = previousSummary
     ? {
         role: "user",
@@ -1200,33 +1198,6 @@ export async function compact(
     ? estimateMessageTokens(previousSummaryMessage)
     : 0;
   const query = findLatestHumanQuery(summarizationSource);
-  const contextSelection = selectQueryAwareContext(
-    classifiedMessages,
-    query,
-    Math.max(0, tokenBudget - previousSummaryTokens),
-    { fallback: selectMessagesInBudget },
-  );
-  const selectedMessages = contextSelection.messages;
-
-  log("INFO", "compaction", `Summarizing ${middleMessages.length} messages`, {
-    summaryModel: summaryModel.id,
-    summaryContextWindow: String(summaryContextWindow),
-    tokenBudget: String(tokenBudget),
-    preparedMessages: String(classifiedMessages.length),
-    selectedMessages: String(selectedMessages.length + (previousSummaryMessage ? 1 : 0)),
-    droppedMessages: String(contextSelection.droppedMessages),
-    selectedTokens: String(contextSelection.selectedTokens),
-    selectionStrategy: contextSelection.strategy,
-    queryTerms: String(contextSelection.queryTerms),
-    ...(contextSelection.fallbackReason
-      ? { selectionFallback: contextSelection.fallbackReason }
-      : {}),
-    previousSummary: String(!!previousSummaryMessage),
-    summaryOutputTokens: String(summaryOutputTokens),
-    filesModified: String(fileOps.modified.size),
-    filesModifiedCarried: String(carriedSummary.files.length),
-    recentKept: String(recentMessages.length),
-  });
 
   // Add plan preservation and summary-update instructions when applicable.
   const planPreservation = options.approvedPlanPath
@@ -1252,22 +1223,71 @@ export async function compact(
       "the previous summary' section, and never restate a fact in both old and new wording."
     : "";
 
-  const summaryMessages: Message[] = [
-    {
-      role: "system",
-      content: COMPACTION_SYSTEM_PROMPT + planPreservation + focusDirective + updateInstruction,
-    },
-    ...(previousSummaryMessage ? [previousSummaryMessage] : []),
-    ...selectedMessages,
-    { role: "user", content: COMPACTION_USER_PROMPT },
-  ];
+  /**
+   * Size and assemble the summary request for one model. Re-run when the
+   * request moves to the active model, whose context window may be smaller.
+   */
+  const prepareSummaryRequest = (modelId: string) => {
+    const contextWindow = getContextWindow(modelId, {
+      provider: options.provider,
+      accountId: options.accountId,
+    });
+    const outputTokens = Math.min(
+      getModel(modelId)?.maxOutputTokens ?? Number.POSITIVE_INFINITY,
+      resolveSummaryOutputTokens(contextWindow),
+    );
+    // Budget: summary model context - output tokens - system/user prompt overhead (~1K).
+    const tokenBudget = contextWindow - outputTokens - promptOverhead;
+    const contextSelection = selectQueryAwareContext(
+      classifiedMessages,
+      query,
+      Math.max(0, tokenBudget - previousSummaryTokens),
+      { fallback: selectMessagesInBudget },
+    );
+    const selectedMessages = contextSelection.messages;
 
-  log("INFO", "compaction", `Calling summary LLM`, {
-    provider: options.provider,
-    model: summaryModel.id,
-    messageCount: String(summaryMessages.length),
-    hasApiKey: String(!!options.apiKey),
-  });
+    log("INFO", "compaction", `Summarizing ${middleMessages.length} messages`, {
+      summaryModel: modelId,
+      summaryContextWindow: String(contextWindow),
+      tokenBudget: String(tokenBudget),
+      preparedMessages: String(classifiedMessages.length),
+      selectedMessages: String(selectedMessages.length + (previousSummaryMessage ? 1 : 0)),
+      droppedMessages: String(contextSelection.droppedMessages),
+      selectedTokens: String(contextSelection.selectedTokens),
+      selectionStrategy: contextSelection.strategy,
+      queryTerms: String(contextSelection.queryTerms),
+      ...(contextSelection.fallbackReason
+        ? { selectionFallback: contextSelection.fallbackReason }
+        : {}),
+      previousSummary: String(!!previousSummaryMessage),
+      summaryOutputTokens: String(outputTokens),
+      filesModified: String(fileOps.modified.size),
+      filesModifiedCarried: String(carriedSummary.files.length),
+      recentKept: String(recentMessages.length),
+    });
+
+    const summaryMessages: Message[] = [
+      {
+        role: "system",
+        content: COMPACTION_SYSTEM_PROMPT + planPreservation + focusDirective + updateInstruction,
+      },
+      ...(previousSummaryMessage ? [previousSummaryMessage] : []),
+      ...selectedMessages,
+      { role: "user", content: COMPACTION_USER_PROMPT },
+    ];
+
+    log("INFO", "compaction", `Calling summary LLM`, {
+      provider: options.provider,
+      model: modelId,
+      messageCount: String(summaryMessages.length),
+      hasApiKey: String(!!options.apiKey),
+    });
+    return { modelId, outputTokens, contextSelection, selectedMessages, summaryMessages };
+  };
+
+  let request = prepareSummaryRequest(summaryModel.id);
+  // Only a DIFFERENT model can rescue a rejected one.
+  let canFallBackToActiveModel = summaryModel.id !== options.model;
 
   // Retry empty successful responses only. Transport failures and timeouts use
   // the deterministic fallback immediately; replaying the same large request
@@ -1282,9 +1302,9 @@ export async function compact(
     try {
       const result = stream({
         provider: options.provider,
-        model: summaryModel.id,
-        messages: summaryMessages,
-        maxTokens: summaryOutputTokens,
+        model: request.modelId,
+        messages: request.summaryMessages,
+        maxTokens: request.outputTokens,
         apiKey: options.apiKey,
         accountId: options.accountId,
         projectId: options.projectId,
@@ -1340,6 +1360,20 @@ export async function compact(
       if (options.signal?.aborted || (err instanceof Error && err.name === "AbortError")) {
         throw err;
       }
+      if (canFallBackToActiveModel && isModelUnavailableFailure(err)) {
+        // The cheaper model was rejected outright: summarize on the model the
+        // session is already using, instead of dropping to the much weaker
+        // extractive fallback.
+        canFallBackToActiveModel = false;
+        log("WARN", "compaction", `Summary model unavailable — retrying on the active model`, {
+          summaryModel: request.modelId,
+          activeModel: options.model,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        request = prepareSummaryRequest(options.model);
+        attempt--; // A rejected model is not one of the empty-response retries.
+        continue;
+      }
       log(
         "WARN",
         "compaction",
@@ -1354,6 +1388,10 @@ export async function compact(
       attemptController.abort();
     }
   }
+
+  // Report the selection of the request that actually ran (the active model's
+  // after a fallback).
+  const { contextSelection, selectedMessages } = request;
 
   // Fallback: preserve prior compacted memory and append a fresh extractive update.
   if (summaryText.length === 0) {

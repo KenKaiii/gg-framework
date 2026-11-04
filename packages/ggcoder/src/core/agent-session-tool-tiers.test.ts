@@ -91,7 +91,7 @@ describe("AgentSession built-in tool tiering", () => {
       const prompt = String(session.getMessages()[0]?.content ?? "");
 
       expect(live).toContain("tool_search");
-      expect(prompt).toContain("Available on demand (call `tool_search` to load):");
+      expect(prompt).toContain("On demand (call by name;");
 
       const deferredHere = DEFERRED_TOOL_NAMES.filter((name) => prompt.includes(`- **${name}**:`));
       expect(deferredHere.length).toBeGreaterThan(0);
@@ -99,7 +99,7 @@ describe("AgentSession built-in tool tiering", () => {
         expect(live, `${name} should not carry a schema`).not.toContain(name);
       }
       // Core tools are unaffected.
-      for (const name of ["read", "edit", "bash", "grep", "code_nav"]) {
+      for (const name of ["read", "edit", "bash", "grep"]) {
         expect(live).toContain(name);
       }
     } finally {
@@ -142,7 +142,14 @@ describe("AgentSession built-in tool tiering", () => {
     try {
       const tools = (session as unknown as { tools: AgentTool[] }).tools;
       expect(liveToolNames(session)).not.toContain("wait_agent");
-      const spawn = tools.find((tool) => tool.name === "spawn_agent")!;
+      // spawn_agent is deferred too; the agent loop loads it on first call.
+      expect(liveToolNames(session)).not.toContain("spawn_agent");
+      const resolve = (
+        session as unknown as { promoteDeferredBuiltin(name: string): AgentTool | undefined }
+      ).promoteDeferredBuiltin.bind(session);
+      const spawn = resolve("spawn_agent")!;
+      expect(liveToolNames(session).at(-1)).toBe("spawn_agent");
+      expect(tools.at(-1)).toBe(spawn);
       const context = { signal: new AbortController().signal, toolCallId: "spawn-promote-test" };
       const subAgents = (
         session as unknown as { subAgentManager: { spawn: (...a: unknown[]) => Promise<unknown> } }
@@ -171,6 +178,37 @@ describe("AgentSession built-in tool tiering", () => {
         session as unknown as { deferredToolNamesForPrompt(live: string[]): string[] }
       ).deferredToolNamesForPrompt(after);
       expect(index).not.toContain("wait_agent");
+    } finally {
+      await session.dispose();
+    }
+  }, 20_000);
+
+  it("loads a deferred built-in called by name, and the task tools once bash backgrounds", async () => {
+    const session = await createSession();
+    try {
+      const resolve = (
+        session as unknown as { promoteDeferredBuiltin(name: string): AgentTool | undefined }
+      ).promoteDeferredBuiltin.bind(session);
+      const before = liveToolNames(session);
+      expect(before).not.toContain("find");
+      expect(before).not.toContain("task_output");
+
+      expect(resolve("find")?.name).toBe("find");
+      expect(resolve("not_a_tool")).toBeUndefined();
+      expect(liveToolNames(session)).toEqual([...before, "find"]);
+
+      const tools = (session as unknown as { tools: AgentTool[] }).tools;
+      const bash = tools.find((tool) => tool.name === "bash");
+      const context = { signal: new AbortController().signal, toolCallId: "bg-promote-test" };
+      await bash?.execute({ command: "true" }, context);
+      expect(liveToolNames(session)).not.toContain("task_output");
+      const bg = await bash?.execute({ command: "true", run_in_background: true }, context);
+      const id = /id="([^"]+)"/.exec(String(bg))?.[1];
+      expect(liveToolNames(session).slice(-3)).toEqual(["task_output", "task_send", "task_stop"]);
+      if (id) {
+        const output = tools.find((tool) => tool.name === "task_output");
+        await output?.execute({ id, wait_ms: 5_000 }, context);
+      }
     } finally {
       await session.dispose();
     }

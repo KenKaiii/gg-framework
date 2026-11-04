@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { holdAwake } from "./keepAwake";
+import { getKeepAwake, holdAwake, setKeepAwake } from "./keepAwake";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 const invokeMock = vi.mocked(invoke);
@@ -73,5 +73,27 @@ describe("holdAwake", () => {
     expect(() => h.release()).not.toThrow();
     await flush();
     expect(warn).toHaveBeenCalled();
+  });
+});
+
+describe("agent keep-awake setting", () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+  });
+
+  it("reads and writes the sidecar setting", async () => {
+    invokeMock.mockResolvedValueOnce({ enabled: true });
+    await expect(getKeepAwake()).resolves.toBe(true);
+    expect(invokeMock).toHaveBeenLastCalledWith("agent_keep_awake_get");
+    invokeMock.mockResolvedValueOnce({ enabled: false });
+    await expect(setKeepAwake(false)).resolves.toBe(false);
+    expect(invokeMock).toHaveBeenLastCalledWith("agent_keep_awake_set", { enabled: false });
+  });
+
+  it("surfaces a sidecar error body instead of a value", async () => {
+    invokeMock.mockResolvedValueOnce({ error: "enabled must be a boolean" });
+    await expect(setKeepAwake(true)).rejects.toThrow("enabled must be a boolean");
+    invokeMock.mockResolvedValueOnce({});
+    await expect(getKeepAwake()).rejects.toThrow("keep-awake request failed");
   });
 });

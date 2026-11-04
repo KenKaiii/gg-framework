@@ -599,18 +599,18 @@ describe("ACP mode over stdio", () => {
       params: {
         sessionId: "acp-fixture-session",
         configId: "model",
-        value: "claude-haiku-4-5-20251001",
+        value: "gemini-3.1-flash-lite",
       },
     });
     const afterModel = (await client.until(4)).at(-1)!.result!.configOptions as ConfigOption[];
     expect(afterModel.find((option) => option.id === "model")!.currentValue).toBe(
-      "claude-haiku-4-5-20251001",
+      "gemini-3.1-flash-lite",
     );
-    // Haiku's ceiling is `high`, so the ladder must shrink with the model rather
-    // than keep offering a level it would silently ignore.
-    const haikuLevels = afterModel.find((option) => option.id === "thinking")!.options;
-    expect(haikuLevels.some((option) => option.value === "max")).toBe(false);
-    expect(haikuLevels.at(-1)).toMatchObject({ value: "high" });
+    // Flash Lite's ceiling is `high`, so the ladder must shrink with the model
+    // rather than keep offering a level it would silently ignore.
+    const flashLiteLevels = afterModel.find((option) => option.id === "thinking")!.options;
+    expect(flashLiteLevels.some((option) => option.value === "max")).toBe(false);
+    expect(flashLiteLevels.at(-1)).toMatchObject({ value: "high" });
     // The level set before the switch is still legal here, so it must survive.
     expect(afterModel.find((option) => option.id === "thinking")!.currentValue).toBe("high");
   });
@@ -634,11 +634,11 @@ describe("ACP mode over stdio", () => {
       params: {
         sessionId: "acp-fixture-session",
         configId: "model",
-        value: "claude-haiku-4-5-20251001",
+        value: "gemini-3.1-flash-lite",
       },
     });
     const options = (await client.until(4)).at(-1)!.result!.configOptions as ConfigOption[];
-    // Reporting `max` here would be a control that lies: Haiku has no such tier,
+    // Reporting `max` here would be a control that lies: Flash Lite has no such tier,
     // so the session's real effort is `high` and the client must be told that.
     expect(options.find((option) => option.id === "thinking")!.currentValue).toBe("high");
   });
@@ -674,8 +674,8 @@ describe("ACP mode over stdio", () => {
     const commandsDir = path.join(tmpProject, ".gg", "commands");
     await fs.mkdir(commandsDir, { recursive: true });
     await fs.writeFile(
-      path.join(commandsDir, "commit.md"),
-      "---\nname: commit\ndescription: Check, review, commit and push\n---\n\nRun the checks.\n",
+      path.join(commandsDir, "deploy.md"),
+      "---\nname: deploy\ndescription: Build and ship to staging\n---\n\nShip it.\n",
     );
     await fs.writeFile(
       path.join(commandsDir, "init.md"),
@@ -718,7 +718,7 @@ describe("ACP mode over stdio", () => {
       input: { hint: expect.any(String) },
     });
     // A project file, carried with its own frontmatter description.
-    expect(byName.get("commit")!.description).toBe("Check, review, commit and push");
+    expect(byName.get("deploy")!.description).toBe("Build and ship to staging");
     // Collisions resolve the way the session itself resolves them: a built-in
     // template beats a project file, and it is listed once.
     expect(commands.filter((command) => command.name === "init")).toHaveLength(1);

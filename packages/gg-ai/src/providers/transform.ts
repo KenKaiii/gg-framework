@@ -298,11 +298,29 @@ function countContextImages(messages: Message[]): number {
   return count;
 }
 
+/** Largest batch of oldest images dropped together once a conversation is over budget. */
+const IMAGE_DROP_BATCH = 30;
+
+/**
+ * Images to drop: the overflow rounded up to a whole batch. Dropping one image per new image
+ * rewrote the start of the conversation on every request and broke the prompt cache: a
+ * 125-image Motion session re-sent ~270k tokens on 7 of 16 turns. Rounded, the cut holds
+ * still until a batch of new images arrives. Batches stay under a third of the budget.
+ */
+export function providerImageDropCount(imageCount: number, budget: number): number {
+  const overflow = imageCount - budget;
+  if (overflow <= 0) return 0;
+  const batch = Math.max(1, Math.min(IMAGE_DROP_BATCH, Math.floor(budget / 3)));
+  return Math.min(imageCount, Math.ceil(overflow / batch) * batch);
+}
+
 /**
  * Cap historical images before provider dispatch, removing the oldest first:
- * first to the provider's image count, then to {@link PROVIDER_IMAGE_BYTE_BUDGET}
- * of image data. The persisted/live conversation is never mutated; only
- * modified messages and tool results are cloned for the outgoing request.
+ * first to the provider's image count, in batches so the cached conversation
+ * prefix stays byte-identical between requests, then to
+ * {@link PROVIDER_IMAGE_BYTE_BUDGET} of image data. The persisted/live
+ * conversation is never mutated; only modified messages and tool results are
+ * cloned for the outgoing request.
  */
 export function clampProviderContextImages(
   messages: Message[],
@@ -398,7 +416,7 @@ function clampContextImageBytes(messages: Message[]): Message[] {
 /** Caps the conversation at the provider's image count, removing the oldest first. */
 function clampContextImageCount(messages: Message[], provider: Provider): Message[] {
   const budget = PROVIDER_IMAGE_BUDGETS[provider] ?? 5;
-  let remainingToRemove = countContextImages(messages) - budget;
+  let remainingToRemove = providerImageDropCount(countContextImages(messages), budget);
   if (remainingToRemove <= 0) return messages;
 
   return messages.map((message): Message => {
@@ -1109,14 +1127,14 @@ export function toAnthropicToolChoice(choice: ToolChoice): Anthropic.ToolChoice 
 
 /**
  * Anthropic models with built-in adaptive thinking (Fable 5.x, Mythos 5.x,
- * Opus 5.5/5, Opus 4.8/4.7/4.6, Sonnet 5.5/5). Matches both dashed (`opus-4-8`) and
+ * Opus 5.5/5, Opus 4.8/4.7/4.6, Sonnet 5.5/5, Haiku 5.5). Matches both dashed (`opus-4-8`) and
  * dotted (`opus-4.8`) forms so callers don't have to enumerate variants. These
  * models don't need the `interleaved-thinking` beta header — it's built in.
  * (`opus-5` can't false-match `claude-opus-4-5-…` — the `4-` breaks the literal;
- * it also covers `opus-5-5`.)
+ * it also covers `opus-5-5`; likewise `haiku-5` never matches `haiku-4-5`.)
  */
 export function isAdaptiveThinkingModel(model: string): boolean {
-  return /opus-5|opus-4[-.]8|opus-4[-.]7|opus-4[-.]6|sonnet-5|fable-5|mythos-5/.test(model);
+  return /opus-5|opus-4[-.]8|opus-4[-.]7|opus-4[-.]6|sonnet-5|haiku-5|fable-5|mythos-5/.test(model);
 }
 
 export function toAnthropicThinking(
@@ -1132,13 +1150,18 @@ export function toAnthropicThinking(
     // Adaptive thinking — model decides when/how much to think.
     // budget_tokens is deprecated on Opus 5.x / 4.8 / 4.7 / 4.6 and Sonnet 5.
     // Anthropic's output_config.effort accepts low, medium, high, xhigh, and max.
-    // xhigh is supported by Opus 5.x / 4.8 / 4.7 and Sonnet 5.5; all support max.
+    // xhigh is supported by Opus 5.x / 4.8 / 4.7, Sonnet 5.5 and Haiku 5.5;
+    // all support max.
     let effort: string = level;
-    if (effort === "xhigh" && !/opus-5|opus-4-8|opus-4-7|sonnet-5[-.]5/.test(model)) {
+    if (effort === "xhigh" && !/opus-5|opus-4-8|opus-4-7|sonnet-5[-.]5|haiku-5[-.]5/.test(model)) {
       effort = "high";
     }
     return {
-      thinking: { type: "adaptive" } as unknown as Anthropic.ThinkingConfigParam,
+      // `display` defaults to "omitted" on Fable/Mythos 5.x, Opus 5.x/4.8/4.7,
+      // Sonnet 5.x and Haiku 5.5: the model still thinks (and bills for it) but
+      // streams empty thinking blocks, so the app shows no reasoning at all.
+      // "summarized" opts back in; on Opus/Sonnet 4.6 it is already the default.
+      thinking: { type: "adaptive", display: "summarized" },
       maxTokens,
       outputConfig: { effort },
     };
@@ -1149,7 +1172,7 @@ export function toAnthropicThinking(
   // thinking `max_tokens` is the TOTAL response envelope (thinking + visible
   // output), so it must stay ≤ the ceiling and `budget_tokens` must be strictly
   // less than it. The previous code returned `maxTokens + budget`, which blew
-  // past the ceiling (e.g. Haiku 4.5: 64K + 64K = 128K) and could trip the
+  // past the ceiling (e.g. a 64K model: 64K + 64K = 128K) and could trip the
   // provider's `max_tokens > maximum allowed` rejection. Now the ceiling is the
   // envelope and the budget is a fraction of it with a reserved visible floor.
   const VISIBLE_FLOOR = 1024;
@@ -1468,6 +1491,20 @@ export function toGlmReasoningEffort(
   level: ThinkingLevel,
 ): "low" | "medium" | "high" | "xhigh" | "max" {
   return level === "ultra" ? "max" : level;
+}
+
+/**
+ * Codex Ultra is a local delegation preset. Astra/Sol declare xhigh as their
+ * multi_agent_reasoning_effort; older catalogs without that override use max.
+ * Source: openai/codex 4c9f42f4, models-manager/models.json and
+ * protocol/src/openai_models/reasoning_effort.rs.
+ */
+export function toCodexReasoningEffort(
+  level: ThinkingLevel,
+  model: string,
+): Exclude<ThinkingLevel, "ultra"> {
+  if (level !== "ultra") return level;
+  return model === "gpt-6-astra" || model === "gpt-6.1-sol" ? "xhigh" : "max";
 }
 
 export function toOpenAIReasoningEffort(

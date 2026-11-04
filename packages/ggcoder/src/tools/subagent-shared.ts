@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { Provider, ThinkingLevel } from "@kleio/ai";
 import type { AgentDefinition } from "../core/agents.js";
 import type { AgentSession } from "../core/agent-session.js";
-import { getFastModel } from "../core/model-registry.js";
+import { getLowestThinkingLevel, getSupportedThinkingLevels } from "../core/thinking-level.js";
 import { truncateTail } from "./truncate.js";
 
 export const SUB_AGENT_MAX_TURNS = 50;
@@ -39,6 +39,8 @@ export interface SubAgentSelection {
   provider: Provider;
   parentModel: string;
   model: string;
+  /** Thinking level the child runs at — see {@link subAgentThinkingLevel}. */
+  thinkingLevel: ThinkingLevel | undefined;
 }
 
 export function resolveAgentDefinition(
@@ -54,35 +56,53 @@ export function selectSubAgent(
   requestedName: string | undefined,
   provider: Provider,
   parentModel: string,
+  parentThinkingLevel?: ThinkingLevel,
 ): SubAgentSelection {
   const agentDef = resolveAgentDefinition(agents, requestedName);
+  const model = resolveAgentModel(agentDef, parentModel);
   return {
     agentDef,
     provider,
     parentModel,
-    model: resolveAgentModel(agentDef, provider, parentModel),
+    model,
+    thinkingLevel: subAgentThinkingLevel(provider, model, parentThinkingLevel),
   };
 }
 
 /**
  * Resolve which model a named agent runs on.
  *
- * The choice is declared in the agent's `model:` frontmatter, never inferred.
- * This used to guess: any agent without bash/write/edit was treated as
- * "read-only" and silently routed to the provider's cheapest tier — so every
- * research, recon and audit agent always ran on a Haiku-class model, invisibly
- * and with no way to override it. Defaulting to the parent's model instead
- * makes a downgrade opt-in and one line of frontmatter away.
+ * Sub-agents never get a weaker model of their own: no `model:` frontmatter,
+ * `inherit`, and the legacy `fast` all run on the parent's model. An explicit
+ * model id is honoured as written, since that is a choice the user made in
+ * their own agent definition.
  */
 export function resolveAgentModel(
   agentDef: AgentDefinition | undefined,
-  provider: Provider,
   parentModel: string,
 ): string {
   const preference = agentDef?.model?.trim();
-  if (!preference || preference === "inherit") return parentModel;
-  if (preference === "fast") return getFastModel(provider, parentModel).id;
+  if (!preference || preference === "inherit" || preference === "fast") return parentModel;
   return preference;
+}
+
+/**
+ * OpenAI children inherit the parent's selection, including Ultra (resolved
+ * by the transport), as in Codex. A pinned model with a lower ceiling is
+ * capped to its supported ladder. Other providers keep their lowest-rung
+ * policy. Resolve again from the original parent selection on fallback.
+ */
+export function subAgentThinkingLevel(
+  provider: Provider,
+  model: string,
+  parentThinkingLevel?: ThinkingLevel,
+): ThinkingLevel | undefined {
+  if (provider !== "openai") return getLowestThinkingLevel(provider, model);
+  if (!parentThinkingLevel) return undefined;
+  const levels = getSupportedThinkingLevels(provider, model);
+  if (levels.includes(parentThinkingLevel)) return parentThinkingLevel;
+  // Older OpenAI models start at medium; never turn inherited low into xhigh.
+  return parentThinkingLevel === "low" ? levels[0] : levels.at(-1);
 }
 
 /**
@@ -127,10 +147,6 @@ export function spawnedTasks(args: unknown): SpawnedTaskArgs[] {
       return out;
     });
   return tasks.length > 0 ? tasks : [{}];
-}
-
-export function childThinkingLevel(level: ThinkingLevel | undefined): ThinkingLevel | undefined {
-  return level === "ultra" ? "max" : level;
 }
 
 export function subAgentCacheKey(

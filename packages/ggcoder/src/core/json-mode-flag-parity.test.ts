@@ -15,7 +15,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * These two schemas drifted once already (the `tools` flag was added to
  * cli.ts + subagent.ts's spawn args but not to app-sidecar.ts), which broke
  * every subagent call for any named agent with a `tools:` allow-list in the
- * desktop app with "GG_APP_FATAL Unknown option '--tools'". This test reads
+ * desktop app with "GG_APP_FATAL Unknown option '--tools'". `--thinking` then
+ * drifted the same way while this test exempted it, failing every subagent
+ * call in the desktop app. This test reads
  * both option lists back out of source and asserts every flag the JSON-mode
  * branch of cli.ts accepts is also accepted by app-sidecar.ts's JSON-mode
  * parser, so a future flag addition can't silently drift again.
@@ -68,7 +70,7 @@ describe("cli.ts / app-sidecar.ts JSON-mode flag parity", () => {
     // Flags that are meaningless in JSON/sub-agent mode (interactive-only or
     // top-level CLI concerns) are intentionally absent from app-sidecar.ts's
     // narrower schema — exclude them rather than widening the sidecar.
-    const notApplicableToJsonMode = new Set(["help", "version", "rpc", "thinking", "resume"]);
+    const notApplicableToJsonMode = new Set(["help", "version", "rpc", "resume"]);
     const requiredInSidecar = cliKeys.filter((k) => !notApplicableToJsonMode.has(k));
 
     const missing = requiredInSidecar.filter((k) => !sidecarKeys.includes(k));

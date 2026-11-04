@@ -80,7 +80,7 @@ export const BINARY_EXTENSIONS = new Set([
 // whole run. Name the fix. A schema-level `error` also covers `.int()`/`.min()`,
 // so each message must hold for every way the field can be wrong.
 const ReadParams = z.object({
-  file_path: z.string().describe("The file path to read"),
+  file_path: z.string(),
   offset: z
     .number({
       error:
@@ -89,21 +89,13 @@ const ReadParams = z.object({
     })
     .int()
     .min(1)
-    .optional()
-    .describe("Line number to start reading from (1-based)"),
+    .optional(),
   limit: z
     .number({ error: "limit must be ONE line count (an integer >= 1), not a range or string." })
     .int()
     .min(1)
-    .optional()
-    .describe("Maximum number of lines to read"),
-  anchors: z
-    .boolean()
-    .optional()
-    .describe(
-      "Prefix each line with a stable `hash│` content anchor so a later `edit` can target lines " +
-        "by anchor and reject stale edits. Default false.",
-    ),
+    .optional(),
+  anchors: z.boolean().optional().describe("Add line anchors for edit `span`"),
 });
 
 /**
@@ -144,17 +136,11 @@ export function createReadTool(
   return {
     name: "read",
     description:
-      "Read a file's contents. Returns numbered lines (cat -n style). " +
-      "Output is truncated to 2000 lines or 50KB (whichever is hit first). " +
-      "If truncated, use offset/limit to read remaining sections. " +
-      "Reads images natively. " +
+      "Read a file as numbered lines (max 2000 lines/50KB; page with offset/limit). Reads images" +
       (returnVideoNatively
-        ? "Reads video files natively too — you CAN watch and analyze a video by " +
-          "calling read on its path (.mp4/.mov/.webm/.mkv/.avi); large clips are " +
-          "auto-compressed for you. When a user attaches a video, read it; never " +
-          "claim you cannot watch video. "
-        : "") +
-      "Other binary files return a notice instead of content.",
+        ? " and video (.mp4/.mov/.webm/.mkv/.avi) natively — you can watch videos"
+        : " natively") +
+      ".",
     parameters: ReadParams,
     async execute({ file_path, offset, limit, anchors }, context) {
       const resolved = resolvePath(cwd, file_path);
@@ -302,8 +288,8 @@ export function createReadTool(
             : "Use bash";
         return `[Line ${lineNo} is too long to show (${bytes} bytes). ${next} (e.g. cut -c1-2000) to inspect it.]`;
       }
-      // Record exactly which lines the model is shown: a full-file write is only
-      // allowed once it has seen every line (see assertFullySeen).
+      // Record exactly which lines the model is shown: a full-file write reports
+      // any lines it removes that the model has not seen (see unseenLines).
       recordRead(readFiles, resolved, raw, stat.mtimeMs, [
         startLine + 1,
         startLine + result.keptLines,

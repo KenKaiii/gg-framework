@@ -4,12 +4,8 @@ import type { LspClient, LspDiagnostic, LspPosition, LspRequestOutcome } from ".
 import { formatDiagnostics } from "./format.js";
 import { recordEditRegression, type EditSource } from "./edit-telemetry.js";
 import { lspClientPool, type LspClientPool } from "./pool.js";
-import {
-  LSP_SERVER_CATALOG,
-  findProjectRoot,
-  serverForFile,
-  type LspServerSpec,
-} from "./servers.js";
+import { LSP_SERVER_CATALOG, serverForFile, type LspServerSpec } from "./servers.js";
+import { findServerProjectRoot } from "./project-root.js";
 
 export interface LspManagerOptions {
   /** Server catalog override — tests inject a fake-server spec here. */
@@ -60,7 +56,7 @@ export type LspDiagnosticOutcome =
  * the same, legible way.
  */
 export type LspNavigationOutcome<T> =
-  | { kind: "ok"; filePath: string; serverId: string; value: T }
+  | { kind: "ok"; filePath: string; serverId: string; value: T; warning?: string }
   | {
       kind: "timeout" | "unsupported" | "unavailable" | "server_failed";
       filePath: string;
@@ -367,7 +363,8 @@ export class LspManager {
     try {
       const spec = serverForFile(normalizedFilePath, this.catalog);
       if (!spec) return record(this.outcome("unsupported", normalizedFilePath));
-      const root = findProjectRoot(normalizedFilePath, spec.rootMarkers, this.cwd);
+      const root = await findServerProjectRoot(normalizedFilePath, spec, this.cwd);
+      if (this.shutDown) return this.outcome("unavailable", normalizedFilePath);
       const key = `${spec.id}\u0000${root}`;
       const budgetMs = this.isWarm(key, spec, root) ? this.warmBudgetMs : this.firstBudgetMs;
       const work = this.collect(key, spec, root, normalizedFilePath, content, budgetMs);
@@ -608,7 +605,8 @@ export class LspManager {
     try {
       const spec = serverForFile(normalizedFilePath, this.catalog);
       if (!spec) return { kind: "unsupported", filePath: normalizedFilePath };
-      const root = findProjectRoot(normalizedFilePath, spec.rootMarkers, this.cwd);
+      const root = await findServerProjectRoot(normalizedFilePath, spec, this.cwd);
+      if (this.shutDown) return { kind: "unavailable", filePath: normalizedFilePath };
       const key = `${spec.id}\u0000${root}`;
       const budgetMs = this.isWarm(key, spec, root) ? this.warmBudgetMs : this.firstBudgetMs;
 
@@ -637,6 +635,7 @@ export class LspManager {
             filePath: normalizedFilePath,
             serverId: spec.id,
             value: outcome.value,
+            ...(outcome.warning ? { warning: outcome.warning } : {}),
           };
         }
         if (outcome.status === "unsupported") {

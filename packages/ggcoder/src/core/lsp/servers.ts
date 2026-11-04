@@ -216,6 +216,7 @@ export const LSP_SERVER_CATALOG: readonly LspServerSpec[] = [
     rootMarkers: [
       "tsconfig.json",
       "jsconfig.json",
+      "package.json",
       "pnpm-lock.yaml",
       "package-lock.json",
       "yarn.lock",

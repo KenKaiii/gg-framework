@@ -17,6 +17,7 @@ import {
   providerHtmlErrorMessage,
 } from "../errors.js";
 import { StreamResult } from "../utils/event-stream.js";
+import { mergeProviderOptions } from "../utils/provider-options.js";
 import {
   downgradeUnsupportedImages,
   downgradeUnsupportedVideos,
@@ -224,7 +225,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     ...(options.tools?.length
       ? {
           tools: toOpenAITools(options.tools, {
-            strict: supportsStrictToolSampling(options.provider),
+            strict: supportsStrictToolSampling(options.provider) && (options.strictTools ?? true),
           }),
         }
       : {}),
@@ -335,15 +336,19 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     }
   }
 
+  // Caller-supplied provider-specific body fields (e.g. OpenRouter's `provider`
+  // routing object). Merged last so they can only fill fields gg-ai left unset.
+  const requestParams = mergeProviderOptions(params, options.providerOptions);
+
   // Dump request body for stall diagnosis when GGAI_DUMP_REQUEST is set
   if (getEnvironment()?.GGAI_DUMP_REQUEST) {
     const fs = await import("fs");
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     const dumpPath = `/tmp/ggai-request-${ts}.json`;
-    fs.writeFileSync(dumpPath, JSON.stringify(params, null, 2));
+    fs.writeFileSync(dumpPath, JSON.stringify(requestParams, null, 2));
     fs.appendFileSync(
       "/tmp/ggai-requests.log",
-      `[${ts}] ${dumpPath} messages=${params.messages.length}\n`,
+      `[${ts}] ${dumpPath} messages=${requestParams.messages.length}\n`,
     );
   }
 
@@ -368,7 +373,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   // request/response often recovers from broken SSE connections.
   if (!useStreaming) {
     try {
-      const completion = (await client.chat.completions.create(params, {
+      const completion = (await client.chat.completions.create(requestParams, {
         signal: options.signal ?? undefined,
         ...requestHeaders,
         // The whole reply arrives in one response, so the SDK's 10min default
@@ -384,7 +389,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
 
   let stream: AsyncIterable<OpenAI.ChatCompletionChunk>;
   try {
-    stream = (await client.chat.completions.create(params, {
+    stream = (await client.chat.completions.create(requestParams, {
       signal: options.signal ?? undefined,
       ...requestHeaders,
     })) as AsyncIterable<OpenAI.ChatCompletionChunk>;
@@ -799,8 +804,8 @@ function toError(err: unknown, provider: string = "openai"): ProviderError {
     let hint: string | undefined;
     if (modelName === "codex-mini-latest" || cleanMessage.includes("codex-mini-latest")) {
       hint =
-        "codex-mini-latest requires an OpenAI Pro or Max subscription. " +
-        "Your account currently has access to GPT-5.4 and GPT-5.4 Mini.";
+        "This request could not use codex-mini-latest. " +
+        "Check your account access or choose another available model.";
     }
 
     const requestId =

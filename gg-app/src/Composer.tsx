@@ -7,6 +7,7 @@ import {
   type SlashCommand,
   type FileHit,
   type QueuedMessage,
+  type CacheExpiryStatus,
   type WorkspaceMode,
   type PromptSegment,
 } from "./agent";
@@ -14,6 +15,7 @@ import { focusesComposerOnOpen } from "./composer-refocus";
 import { returnSends } from "./phone-viewport";
 import { SlashMenu } from "./SlashMenu";
 import { QueuedBar } from "./QueuedBar";
+import { CacheExpiryNotice } from "./placeholder/CacheExpiryNotice";
 import { ScheduleHint } from "./ScheduleHint";
 import { FileMentionMenu } from "./FileMentionMenu";
 import { ReferencedFiles } from "./ReferencedFiles";
@@ -66,6 +68,8 @@ export function Composer({
   removeMentionChip,
   visibleQueuedMessages,
   handleCancelQueued,
+  cacheExpiry,
+  onCompactFirst,
   fileInputRef,
   addFiles,
   phoneComposer,
@@ -78,6 +82,7 @@ export function Composer({
   attachInput,
   displayPlaceholder,
   setInput,
+  onKeystroke,
   setCaret,
   historyIndex,
   setHistoryIndex,
@@ -92,6 +97,7 @@ export function Composer({
   showDictation,
   dictation,
   sendDisabled,
+  attachmentsLoading,
   windowFocused,
   composerAction,
   enhanceHintVisible,
@@ -127,6 +133,10 @@ export function Composer({
   removeMentionChip: (p: string) => void;
   visibleQueuedMessages: readonly QueuedMessage[];
   handleCancelQueued: (id: string) => void;
+  /** Cold-prompt-cache status for this chat (sidecar /state + `cache_expiry`). */
+  cacheExpiry: CacheExpiryStatus | null | undefined;
+  /** "Compact first" on the cold-cache notice. */
+  onCompactFirst: () => void;
   fileInputRef: RefObject<HTMLInputElement | null>;
   addFiles: (files: FileList | File[]) => Promise<void>;
   phoneComposer: boolean;
@@ -139,6 +149,8 @@ export function Composer({
   attachInput: (el: HTMLTextAreaElement | null) => void;
   displayPlaceholder: string;
   setInput: Dispatch<SetStateAction<string>>;
+  /** A typed change to the draft (not a programmatic one): prewarms the prompt cache. */
+  onKeystroke?: () => void;
   setCaret: Dispatch<SetStateAction<number>>;
   historyIndex: number | null;
   setHistoryIndex: Dispatch<SetStateAction<number | null>>;
@@ -153,6 +165,7 @@ export function Composer({
   showDictation: boolean;
   dictation: UseDictation | null;
   sendDisabled: boolean;
+  attachmentsLoading: boolean;
   windowFocused: boolean;
   composerAction: ComposerButtonAction;
   enhanceHintVisible: boolean;
@@ -192,6 +205,7 @@ export function Composer({
       )}
       <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
       <ReferencedFiles paths={mentionedPaths} onRemove={removeMentionChip} />
+      <CacheExpiryNotice expiry={cacheExpiry} running={running} onCompact={onCompactFirst} />
       <QueuedBar messages={visibleQueuedMessages} onCancel={handleCancelQueued} />
       <div className="inputrow">
         <input
@@ -270,6 +284,7 @@ export function Composer({
               }
             }}
             onChange={(e) => {
+              onKeystroke?.();
               setInput(e.target.value);
               setSlashIndex(0);
               setCaret(e.target.selectionStart ?? e.target.value.length);
@@ -364,7 +379,13 @@ export function Composer({
           />
           <button
             className="icon-circle icon-circle-primary"
-            title={composerAction === "stop" ? "Stop the run" : "Send"}
+            title={
+              composerAction === "stop"
+                ? "Stop the run"
+                : attachmentsLoading
+                  ? "Loading attachments…"
+                  : "Send"
+            }
             disabled={
               composerAction === "stop" ? cancelling : !running && (cancelling || sendDisabled)
             }

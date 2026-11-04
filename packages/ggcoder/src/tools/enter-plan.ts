@@ -2,10 +2,7 @@ import { z } from "zod";
 import type { AgentTool } from "@kleio/agent";
 
 const EnterPlanParams = z.object({
-  reason: z
-    .string()
-    .optional()
-    .describe("Why you are entering plan mode, e.g. a complex multi-file task"),
+  reason: z.string().optional(),
 });
 
 export function createEnterPlanTool(
@@ -14,9 +11,7 @@ export function createEnterPlanTool(
   return {
     name: "enter_plan",
     description:
-      "Enter plan mode for safe, read-only exploration before making changes. " +
-      "Use this when a complex or risky task benefits from research and an explicit plan. " +
-      "In plan mode, bash, edit, subagent, and normal writes are restricted; write is only allowed under .gg/plans/.",
+      "Enter read-only plan mode for complex or risky work (writes only under .gg/plans/).",
     parameters: EnterPlanParams,
     executionMode: "sequential",
     async execute({ reason }) {

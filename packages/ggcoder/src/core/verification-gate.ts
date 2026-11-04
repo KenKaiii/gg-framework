@@ -732,6 +732,11 @@ export class VerificationGate {
     return this.pendingReason() !== null;
   }
 
+  /** Code files mutated since the last verification, sorted — the demand's file list. */
+  pendingFiles(): string[] {
+    return [...this.mutatedFiles].sort();
+  }
+
   pendingReason(): "initial" | "recheck" | "tamper" | null {
     // A run that neither edited code nor started a file-rewriting command
     // cannot owe a NEW demand: inherited debt already had its turns, and

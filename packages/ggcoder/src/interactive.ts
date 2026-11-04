@@ -50,7 +50,7 @@ export async function runInteractive(config: CliConfig): Promise<void> {
     globalSkillsDir: paths.skillsDir,
     projectDir: cwd,
   });
-  const { tools, processManager, lspManager } = await createTools(cwd, {
+  const { tools, processManager, lspManager, debugManager } = await createTools(cwd, {
     skills,
     provider,
     model,
@@ -70,6 +70,7 @@ export async function runInteractive(config: CliConfig): Promise<void> {
   process.on("exit", () => {
     processManager.shutdownAll();
     lspManager?.shutdownAll();
+    debugManager?.shutdown();
   });
 
   // Initialize messages and session

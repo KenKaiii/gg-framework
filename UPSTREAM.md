@@ -257,14 +257,17 @@ Local macOS checks, each compared with `main`:
   overhead to the build output (import headers, source maps, declarations) and 5793
   bytes to the initial JavaScript.
 
-## Engine fixes from upstream (open)
+## Engine fixes from upstream (merged)
 
 - Upstream tip reviewed: `7d74ada78e31873b4e1586bf9c5f7b69d1146c98` (engine **5.89.0**,
   desktop **0.100.1**), 270 commits after `3f2bb6bc`. None of the 25 commits after
   `988f920e` is taken here.
 - Branch: `sync/upstream-engine-fixes`, based on `main` at `c2a1ea88`
-- PR: [#75](https://github.com/fmckie/gg-framework/pull/75), opened as a draft on
-  2026-11-03
+- PR: [#75](https://github.com/fmckie/gg-framework/pull/75), merged at `9a89e75c` on
+  2026-11-04; all nine CI jobs passed on `cc603c10` (run **41672298221**). GitHub
+  squashed the branch, so the downstream SHAs below are on
+  `sync/upstream-engine-fixes`; the squash commit keeps all ten trailers (seven
+  `Ported from upstream`, three `cherry picked from commit`).
 - PR 2 of the 4 in `.gg/plans/upstream-selective-import-phased.md`: engine fixes, ported
   at the paths the module split created.
 - `upstream.lastImportedCommit` stays `3f2bb6bc`, for the reason given in the 988f920e
@@ -375,6 +378,224 @@ Local macOS checks, each compared with `main` at `c2a1ea88`:
   goes over the 7214.2 KB limit at `3ec4e666`'s port, so that commit re-baselines the
   build output at 7318.5 KB. The bundled sidecar (8373.7 KB) and the initial frontend
   JavaScript (1017.0 KB) stay within their budgets.
+
+## Agent tools and prompts from upstream (open)
+
+- Upstream tip reviewed: `af5b1df4a46a8a308a147afe17bd4a084e958fa7` (engine **5.91.1**,
+  desktop **0.102.1**), 287 commits after `3f2bb6bc`.
+- Branch: `sync/upstream-agent-tools`, based on `main` at `9a89e75c`
+- PR: [#76](https://github.com/fmckie/gg-framework/pull/76), opened as a draft on
+  2026-11-04
+- PR 3a of the 4 in `.gg/plans/upstream-selective-import-phased.md`: agent tools and prompts,
+  in upstream date order. PR 3b (models, providers, gg-safe and skills) follows from `main`
+  once this merges.
+- `upstream.lastImportedCommit` stays `3f2bb6bc`, for the reason given in the 988f920e
+  section. Picks carry `cherry picked from commit <sha>`, ports carry
+  `Ported from upstream <sha>`, and `fork-provenance.json` `selectiveImports` holds the
+  full hashes.
+- Every commit taken is an ancestor of `c1aa287b` (desktop v0.102.0), upstream's last
+  release under MIT. See the licence note below.
+
+Picked with `git cherry-pick -x`. Four have the same patch as upstream. `5798596e`'s two
+`app-sidecar.ts` hunks land in the fork's `app-sidecar/json-mode.ts`. `05091704` comes
+last, out of date order, because #76's Windows CI failed without it:
+
+| Upstream   | Downstream | Fix                                                                                 |
+| ---------- | ---------- | ----------------------------------------------------------------------------------- |
+| `01080940` | `6e81833e` | Debug tool breakpoints and paths on Windows when the temp dir uses 8.3 short names  |
+| `bacbe7fc` | `853d9ed7` | Debug breakpoints on Windows also bind by the exact script URL Node reports         |
+| `5798596e` | `89b69fff` | The sidecar JSON mode accepts `--thinking`, which fixes a desktop subagent crash    |
+| `0b1db863` | `203bdb87` | Windows checklist writes no longer fail while a released lock dir is pending delete |
+| `05091704` | `23ecd649` | The cat-read credit test from `223830dc` no longer hits `EBUSY` on Windows          |
+
+Ported by hand:
+
+| Upstream                           | Downstream | Taken                                                                                                                                                                                                                                   |
+| ---------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `f6b906c4`                         | `be4ff814` | Keep-awake (a plain Settings checkbox), stream rules, ask_user soft deadlines, shell and package-install threat guards, plan-step compaction, the session summary index and Anthropic cache prewarm. #75 took the destructive-git guard |
+| `d83252b9`, `3ec4e666`, `6325d417` | `177ea66b` | Cache diagnostics, batch image pruning and cache expiry, with the expiry and `noteEdit` lines #75 deferred                                                                                                                              |
+| `6c63a63e`                         | `436ea998` | `debug` tool, acceptance checks, test-impact and repair hints, and the model-unavailable fallback                                                                                                                                       |
+| `dd9eec26`                         | `66d7f317` | Codex request-shape settings, Gemini exclusive bounds and prompt trims                                                                                                                                                                  |
+| `223830dc`                         | `456a6e7e` | Read-evidence slice only: `cat` output counts as a read, and edits need no prior read. Taken now rather than with the rest of `223830dc` in PR 4, because `7ecf304c` and `ecf0319f` build on it                                         |
+| `7ecf304c`                         | `1ab28b2e` | Multi-file edits, and prompt changes from upstream's replay tests                                                                                                                                                                       |
+| `4b63cdd2`                         | `06457714` | Project checklist, error recovery and verification review                                                                                                                                                                               |
+| `8b0847d4`                         | `1e399702` | OpenAI Ultra reasoning and delegation, as in Codex                                                                                                                                                                                      |
+| `c617d8ab`                         | `67ee4d17` | Stale cancelled status after a new session, and attachment send races                                                                                                                                                                   |
+| `fad77086`                         | `343eb833` | Quieter verification feedback; `steroids` and `subagent` become deferred                                                                                                                                                                |
+| `420b1ad3`                         | `03d23247` | Part 1: the refused-check note leaves `bash` (hunks #75 deferred)                                                                                                                                                                       |
+| `85cd5ce2`                         | `252ef101` | Plans no longer stall awaiting approval                                                                                                                                                                                                 |
+| `74f032cd`                         | `5f79388f` | Claude Haiku 5.5, summarized thinking and Codex reasoning sections                                                                                                                                                                      |
+| `987257de`                         | `73974bbd` | Prompt diet, deferred tools and stale checklist results                                                                                                                                                                                 |
+| `420b1ad3`                         | `556213ad` | Part 2: Work-section, Precedence and style-pack wording (lines #75 deferred)                                                                                                                                                            |
+| `705af903`                         | `c955a8fc` | Kill-by-PID wording in `bash` and the Precedence line (lines #75 deferred)                                                                                                                                                              |
+| `60a24958`                         | `0f472e83` | `embed()`, `rerank()` and `providerOptions`. #66 took the fetch passthrough                                                                                                                                                             |
+| `46ca49ce`                         | `15f2351e` | Checks with read-only commands around them count as verification                                                                                                                                                                        |
+| `ba56ec5c`                         | `76a95c14` | Flat edit schema for Claude, and more malformed edit calls recovered                                                                                                                                                                    |
+| `0a5be0d3`                         | `c4a8dc07` | Built-in `/commit`; unchecked replies are no longer flagged as Unverified                                                                                                                                                               |
+| `ecf0319f`                         | `240e6b38` | `write` overwrites and reports unseen lines; `sed -n` and `head` views count as reads                                                                                                                                                   |
+
+Already in the fork, so no commit here: `3cca7462`. #66 took its cache half as `2eabe6e7`
+(the working directory stays out of the cached system prompt), and `420b1ad3` (part 2
+above) replaced its two Work bullets.
+
+Moved to a later import:
+
+- PR 4, with motion, Goals and the rest of `223830dc`: the hyperframes patch hunks and
+  workspace pins from `f6b906c4` and `d83252b9`, with their motion-agent and Motion-check
+  hunks; `6c63a63e`'s `critter-tool-kind.ts`; `dd9eec26`'s motion skill files and
+  `motion-prompt.ts`; `7ecf304c`'s `motion-review-session.ts` hunk; everything in
+  `223830dc` beyond the read-evidence slice, including the skills-routing test `987257de`
+  carries; and `6325d417`'s goal-worker part.
+- PR 3b: `705af903`'s `tools/skill.ts` lines, with the skills refresh (`21adf945`,
+  `7302fa5a`); plan rows 24–46; and the commits after `7d74ada7` that PR 3b takes
+  (`cf6c9a23`, `a4bb110c`, `0ba57296`, `0a9d083f` and `5d340fa3`'s non-Goals part).
+
+Not taken:
+
+- Desktop design, which the fork owns: see the UI boundary below. `eb0692b1` is checklist
+  colours and icons only.
+- `74f032cd`'s footer short names in `@kleio/manager` (which stays unchanged in every
+  import PR), and the fork-only `session-title.ts`.
+- Hunks a later upstream commit replaced or removed: `0a5be0d3`'s Work bullet, and
+  `46ca49ce`'s `bash.ts` hunks for the refused-check note. `420b1ad3` replaced the first
+  and removed the note.
+- The `scheduled` send flag from `f6b906c4` and `4b63cdd2`, and `4b63cdd2`'s
+  `live-text.ts` import: their upstream commits aren't in the fork, and routines fire from
+  the daemon here.
+- The upstream changesets.
+- The licence-boundary commits: see the licence note below.
+- Waiting for a decision: `c86b56db` (`@anthropic-ai/sdk` 1.x and `openai` 7.50, major
+  bumps, as its own dependency PR after PR 3b), and `a2ca7720`, `c73b1866`, `856bf0eb`,
+  `adea7972` and `9403d456`, as recorded for #75. `ba968f9a`, `c8ac6c45`, `3c7ae0d5` and
+  `c1aa287b` are version commits.
+
+Changesets: `.changeset/upstream-agent-tools-ai.md`, `-agent.md`, `-core.md` and
+`-coder.md` (patch); `@kleio/manager` follows through the fixed group. gg-app is not a
+changesets package, so its changes are recorded only here.
+
+### UI boundary
+
+The fork owns the desktop design, and a redesign is under way on its own branch. From
+upstream's gg-app hunks this import takes behaviour only: state, data flow, `invoke` and
+event wiring, error handling and race fixes. New screens render through minimal components
+in `gg-app/src/placeholder/`, styled only with `kleio-theme.css` variables. The redesign
+branch restyles them after rebasing, using this list.
+
+New files:
+
+| File                                        | Replaces upstream       | Takes                                                                                                           | Mounted in          |
+| ------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `placeholder/placeholder.css`               | —                       | Theme variables only                                                                                            | —                   |
+| `placeholder/StatusDot.tsx`                 | `ErrorCritter.tsx`      | A tone (error, warning or earlier) and a text label                                                             | `ErrorNotice.tsx`   |
+| `placeholder/ChecklistView.tsx` (+test)     | `ChecklistScreen.tsx`   | The checklist snapshot from `agent.ts`, the item being checked, and run and retry callbacks                     | `App.tsx`           |
+| `placeholder/ErrorNotice.tsx` (+test)       | `ChatErrorNotice.tsx`   | A `chat-error.ts` payload, whether it is the latest error, and a model-picker slot. It holds the details toggle | `TranscriptRow.tsx` |
+| `placeholder/CacheExpiryNotice.tsx` (+test) | `CacheExpiryNotice.tsx` | The cache-expiry status, the running flag and a compact action                                                  | `Composer.tsx`      |
+
+New logic and test files, with no rendering of their own: `chat-error.ts`,
+`agent-checklist.test.ts`, `prompt-labels.test.ts`, `App.checklist.test.tsx`,
+`App.attachments.test.tsx` and `App.plan-review.test.tsx`.
+
+Changed existing files, in logic, props and text: `App.tsx`, `AskBand.tsx` (+test),
+`Composer.tsx`, `LazySettingsModal.test.tsx`, `ModelSelect.tsx` (+test),
+`SettingsModal.tsx`, `SettingsTabBar.tsx` (+test), `TranscriptRow.tsx`,
+`WorkspaceHeaderActions.tsx`, `agent.ts`, `ask-user.ts`, `composer-refocus.ts` (+test),
+`kleio/keepAwake.ts` (+test), `prompt-labels.ts`, `task-activity.ts` (+test),
+`task-outcome-matrix.test.ts`, `tool-format.ts`, `transcript-item.ts`,
+`useAgentEvents.ts` (+test), `useAttachments.ts`, `useAutopilot.ts`, `useFileDrop.ts` and
+`useKenMentor.ts` (+test). Rust: `auth.rs`, `commands/agent.rs`, `keep_awake.rs` and
+`lib.rs`. Two markup changes come with the new behaviour:
+
+- `App.tsx` adds a Checklist button with the fork's existing `btn btn-sm btn-ghost`
+  classes. It also wraps the transcript in React's `<Activity>`, so the checklist view can
+  hide the chat and keep its state. The transcript's own classes are unchanged.
+- `TranscriptRow.tsx` replaces its error row, and that row's inline styles, with
+  `ErrorNotice`.
+
+Not taken, because the fork owns the design: upstream's `App.css`, `ChatErrorNotice.css`
+and `ChecklistScreen.css` hunks; `KeepAwakeButton.tsx`, `ChatErrorNotice.tsx`,
+`ChecklistScreen.tsx` and `ErrorCritter.tsx`, with their tests;
+`scripts/checklist-css.test.mjs`; `App.tsx`'s layout hunks (the header, frame and footer
+rearrangement and the moved plan-mode badge); the cache-expiry notice's exit motion; the
+error details' dissolve and exit animation; and `eb0692b1`.
+
+### Licence note
+
+This is engineering guidance, not legal advice.
+
+Upstream relicensed from MIT to the GNU Affero General Public License, version 3.0 only, in
+`12da5c3a` (2026-11-04). Its new NOTICE files say that releases up to and including
+desktop v0.102.0 and npm 5.91.0 were published under MIT. The fork is MIT, so this import
+takes only commits that are ancestors of `c1aa287b` (desktop v0.102.0; npm 5.91.0 is
+`c8ac6c45`). No `LICENSE` or `NOTICE` file changes.
+
+Not taken:
+
+- Licence unclear, for a lawyer: `85cb0ef7`, `8020944e` and `8627ee65`. They were
+  committed before the relicense but first released in 5.91.1 and v0.102.1, which ship
+  under the new licence. `0d443e0f`, which is CSS only, is in the same position.
+- `12da5c3a` itself (the relicense, the NOTICE files and the About-page source link), and
+  every later upstream commit (so far `02375294` and `af5b1df4`, both version commits),
+  until a decision on how the fork handles upstream code under the new licence.
+
+Backlog for a lawyer, older than this import:
+
+- The npm packages ship no licence file. `npm pack --dry-run` of `@kleio/ai` lists 8 files
+  and no `LICENSE`, and no `packages/*` folder has one. MIT asks for the notice in copies.
+- Upstream's NOTICE credits creativeprofit22 for the WSL-to-Windows-host audio playback in
+  `core/radio.ts` (`isWsl` and `tryPlayOnWindowsHost`, under MIT). The fork has both
+  functions and no matching credit.
+
+### Verification record
+
+Local macOS checks, each compared with `main` at `9a89e75c`:
+
+- Test totals rise by the ported tests, and no test file loses a test: `@kleio/ai` 495 → 590
+  tests (22 → 25 files), `@kleio/agent` 194 → 226 (10 → 12 files), `@kleio/core` 256 → 272
+  (15 files), `@kleio/coder` 4133 → 4699 (323 → 354 files; 17 skipped, as on `main`) and
+  gg-app 1801 → 1876 (152 → 160 files). `@kleio/manager` (31 files, 332 tests) is unchanged,
+  `pnpm test` passes in all 12 packages with tests, and every file in the plan's PR 3a test
+  list runs and passes.
+- `cargo test`: 302 passed and 3 ignored, the names on `main` plus
+  `accept_plan_error_surfaces_sidecar_message_or_status` (`85cd5ce2`).
+  `cargo clippy --all-targets` has no warnings, as on `main`.
+- The golden prompt matches upstream's at `ecf0319f` except #75's Replies rules (lines 5, 6
+  and 8) and the lines this import takes from later upstream commits with #75's deferred
+  hunks: `420b1ad3`'s security, Work and Precedence lines and `705af903`'s Precedence
+  sentence and `bash` wording. Line 1 changes only in `73974bbd` (`987257de`), and
+  `cleanInstructionText` still runs in `collectProjectContext`.
+- The tool catalog matches upstream's at `ecf0319f` except `bash` (`705af903`'s wording) and
+  `checklist`, which has no `accepted` findings field or `senior-review` item. Both come
+  from `c346f81f`, in the desktop UI range the plan leaves out.
+- `verification-evidence.ts` calls `classifyStrict` where upstream does (lines 312, 774, 783
+  and 800).
+- Identity audit, tracked (3205 files) and packed (2254 files): 0 unclassified hits and 0
+  count mismatches. Each count moves in the commit that changes it: the Coder
+  source-directory seam 1559 → 1622 for the new Coder files, Manager's packed Coder paths
+  683 → 744, `autopilot-cycle.ts` 5 → 4 (its packed declarations 4 → 3), a Manager chunk
+  source map 63 → 62, `useKenMentor.ts` 3 → 2 and the allowlist's own control data 1540 →
+  1546, plus two new one-hit entries for `app-error*.ts` and `CONTEXT.md`.
+- The build, typecheck, lint, format check, the tracked script tests (143), the
+  fixed-version check, both CLIs' `--help` and `--version`, the bundled sidecar smoke and
+  the startup gate pass. Its median across three runs is 496–575 ms (498 ms on `main`;
+  the budget is 5000 ms). `gg-app/scripts/kleio-identity.test.mjs` runs in gg-app's suite
+  (5 tests), as #75 notes.
+- Size: the `@kleio/coder` build output grows from 7349.0 KB on `main` to 7887.1 KB, the
+  bundled sidecar from 8373.7 KB to 8507.8 KB and the initial frontend JavaScript from
+  1017.0 KB to 1041.6 KB. Nothing test-related is in the build output, and the 32 new Coder
+  modules, with their maps and declarations, make up 415 KB of its growth. Three ports
+  re-baseline where an artifact first crosses its limit: `be4ff814` (`f6b906c4`) the build
+  output at 7682882 bytes; `436ea998` (`6c63a63e`) the build output at 7877156 and the
+  sidecar at 8678607; and `06457714` (`4b63cdd2`) the build output at 8057866 and the
+  initial JavaScript at 1065082.
+- Licence: every picked or ported upstream commit is an ancestor of `c1aa287b`, no `LICENSE`
+  or `NOTICE` file changes, and no added line names the new licence.
+- UI: no CSS changes outside `gg-app/src/placeholder/`, `placeholder.css` uses theme
+  variables only, the 14 new gg-app files are the ones listed under UI boundary, and only
+  `App.tsx`, `Composer.tsx` and `TranscriptRow.tsx` import from `placeholder/`.
+- `patches/`, `pnpm-workspace.yaml`, the package manifests and the lockfile are unchanged,
+  as are the excluded packages, the `three` lines and `upstream.lastImportedCommit`. The
+  critter-art checks match only upstream's image fixture in `App.attachments.test.tsx`
+  (`c617d8ab`), whose preview data URI holds the ten bytes "screenshot".
 
 ## Original imported baseline
 

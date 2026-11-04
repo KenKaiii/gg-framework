@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Use when the user asks to review written work — a diff, PR, branch, or "review this before commit/merge" — checking both what was asked for and how well it is built. Do NOT use while still mid-build, when the user only wants a diff summary, or for security review — that is the bulletproof skill's lane.
+description: Use when asked to review a diff, PR or finished work. Do NOT use mid-build.
 ---
 
 # Code Review

@@ -20,6 +20,7 @@ import type { Message, ContentPart, ToolResult } from "@kleio/ai";
 import { matchExpandedCommand, type WorkflowCommandSpec } from "./autopilot-gate.js";
 import { AUTOPILOT_INJECTION_PREAMBLE } from "./autopilot-cycle.js";
 import { collectVerificationEvidence, type VerificationEvidence } from "./verification-evidence.js";
+import { editTargetPaths } from "../tools/edit-targets.js";
 
 /** How many of the most recent build-session messages to inline verbatim. */
 export const KEN_RECENT_MESSAGE_LIMIT = 20;
@@ -111,6 +112,7 @@ function isInjected(text: string, opts: RenderMessageOptions): boolean {
 function summarizeToolCall(name: string, args: Record<string, unknown>): string {
   const primary =
     args.file_path ??
+    editTargetPaths(args)[0] ??
     args.path ??
     args.pattern ??
     args.query ??
@@ -215,8 +217,10 @@ function collectChangedFiles(messages: readonly Message[]): string[] {
     if (m.role !== "assistant" || typeof m.content === "string") continue;
     for (const p of m.content as ContentPart[]) {
       if (p.type !== "tool_call" || !FILE_CHANGING_TOOLS.has(p.name) || failed.has(p.id)) continue;
-      const filePath = p.args.file_path;
-      if (typeof filePath === "string" && filePath.trim()) files.add(filePath.trim());
+      const paths = p.name === "edit" ? editTargetPaths(p.args) : [p.args.file_path];
+      for (const filePath of paths) {
+        if (typeof filePath === "string" && filePath.trim()) files.add(filePath.trim());
+      }
     }
   }
   return [...files].sort();

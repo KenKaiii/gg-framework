@@ -9,6 +9,7 @@ import { createTools, type CreateToolsOptions } from "../tools/index.js";
 import type { ProcessManager } from "../core/process-manager.js";
 import { discoverSkills, type Skill } from "../core/skills.js";
 import type { SubAgentManager } from "../core/subagent-manager.js";
+import type { DebugManager } from "../tools/debug.js";
 
 /** Resources that must move together when a retained Pixel fix changes project. */
 export interface ProjectRuntime {
@@ -20,6 +21,7 @@ export interface ProjectRuntime {
   processManager?: ProcessManager;
   subAgentManager?: SubAgentManager;
   lspManager?: LspManager;
+  debugManager?: DebugManager;
   mcpManager?: MCPClientManager;
   checkpointStore?: CheckpointStore;
   reviewCoverageTracker?: ReviewCoverageTracker;
@@ -52,6 +54,7 @@ export async function disposeProjectRuntime(runtime: ProjectRuntime): Promise<vo
     Promise.resolve().then(() => runtime.subAgentManager?.shutdownAll()),
     Promise.resolve().then(() => runtime.processManager?.shutdownAll()),
     Promise.resolve().then(() => runtime.lspManager?.shutdownAll()),
+    Promise.resolve().then(() => runtime.debugManager?.shutdown()),
     Promise.resolve().then(() => runtime.mcpManager?.dispose()),
   ]);
   const failed = results.find((result) => result.status === "rejected");

@@ -24,6 +24,9 @@ interface Props<Id extends string> {
   onSelect: (id: Id) => void;
   /** Id of the panel element the tabs control. */
   panelId: string;
+  /** Accessible name and tab ids when this control is reused outside Settings. */
+  label?: string;
+  tabIdPrefix?: string;
 }
 
 interface Box {
@@ -78,6 +81,8 @@ export function SettingsTabBar<Id extends string>({
   selected,
   onSelect,
   panelId,
+  label = "Settings sections",
+  tabIdPrefix = "settings-tab",
 }: Props<Id>): React.ReactElement {
   const barRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLSpanElement>(null);
@@ -204,7 +209,7 @@ export function SettingsTabBar<Id extends string>({
 
   return (
     <div className="settings-tab-dock">
-      <div className="settings-tabs" ref={barRef} role="tablist" aria-label="Settings sections">
+      <div className="settings-tabs" ref={barRef} role="tablist" aria-label={label}>
         <span className="settings-tabs-pill" ref={pillRef} aria-hidden="true" />
         {tabs.map((tab, index) => {
           const TabIcon = tab.icon;
@@ -216,7 +221,7 @@ export function SettingsTabBar<Id extends string>({
               role="tab"
               className={active ? "settings-tab is-active" : "settings-tab"}
               data-tab-id={tab.id}
-              id={`settings-tab-${tab.id}`}
+              id={`${tabIdPrefix}-${tab.id}`}
               aria-label={tab.label}
               aria-selected={active}
               aria-controls={panelId}

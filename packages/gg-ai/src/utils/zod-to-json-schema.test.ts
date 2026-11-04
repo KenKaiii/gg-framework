@@ -8,6 +8,21 @@ describe("zodToJsonSchema", () => {
     expect(result).toHaveProperty("type", "string");
   });
 
+  it("drops no-op safe-integer bounds and additionalProperties:false, keeps real limits", () => {
+    const result = zodToJsonSchema(
+      z.object({
+        n: z.number().int(),
+        m: z.number().int().min(1).max(10),
+        rec: z.record(z.string(), z.number()),
+      }),
+    );
+    expect(result).not.toHaveProperty("additionalProperties");
+    const props = result.properties as Record<string, Record<string, unknown>>;
+    expect(props.n).toEqual({ type: "integer" });
+    expect(props.m).toEqual({ type: "integer", minimum: 1, maximum: 10 });
+    expect(props.rec).toHaveProperty("additionalProperties", { type: "number" });
+  });
+
   it("converts an object schema with multiple fields", () => {
     const schema = z.object({
       name: z.string(),

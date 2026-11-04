@@ -11,6 +11,7 @@ import { computeWordDiff, type WordSegment } from "../utils/word-diff.js";
 import { DiffFrame } from "./DiffFrame.js";
 import { NoSelect } from "./NoSelect.js";
 import { toolAccentColor, toolNameColor } from "../transcript/tool-presentation.js";
+import { editTargetLabel, editTargetPaths } from "../../tools/edit-targets.js";
 
 const MAX_OUTPUT_LINES = 4; // max lines shown per tool result
 const RESPONSE_LEFT_PADDING = 1;
@@ -492,7 +493,7 @@ function getToolHeaderParts(
       return { label: displayName, detail: `${truncCmd}${multiline ? " …" : ""}` };
     }
     case "edit":
-      return { label: displayName, detail: shortenPath(String(args.file_path ?? "")) };
+      return { label: displayName, detail: editTargetLabel(args, shortenPath) };
     case "write":
       return { label: displayName, detail: shortenPath(String(args.file_path ?? "")) };
     case "read":
@@ -868,7 +869,7 @@ function buildDiffBody(
 
   // Syntax-highlight ALL diff lines (not just context) — added/removed lines
   // get language-aware coloring overlaid with the diff background colors.
-  const filePath = String(args?.file_path ?? "");
+  const filePath = String(args?.file_path ?? editTargetPaths(args)[0] ?? "");
   const lang = langFromPath(filePath);
   const highlighted = focused.map((line) => ({
     ...line,

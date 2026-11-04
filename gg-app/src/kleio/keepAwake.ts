@@ -1,6 +1,10 @@
 // Native keep-awake for Kleio voice conversations. Wraps the Rust
 // `keep_awake_acquire` / `keep_awake_release` commands (macOS IOKit user-idle
 // assertions; a no-op elsewhere). Never throws into the caller.
+//
+// Also the "keep computer awake while the agent works" setting, which the
+// sidecar applies to every run (`agent_keep_awake_get` / `_set`). Those need
+// the sidecar up: callers wait for it (`waitForReady` in agent.ts) first.
 import { invoke } from "@tauri-apps/api/core";
 
 export interface AwakeHold {
@@ -39,4 +43,20 @@ export function holdAwake(): AwakeHold {
         });
     },
   };
+}
+
+/** The proxy forwards sidecar error bodies (`{ error }`) as values; surface them. */
+function keepAwakeEnabled(result: { enabled?: unknown; error?: unknown }): boolean {
+  if (typeof result.enabled === "boolean") return result.enabled;
+  throw new Error(typeof result.error === "string" ? result.error : "keep-awake request failed");
+}
+
+/** Whether the app keeps the computer from idle-sleeping while the agent works. */
+export async function getKeepAwake(): Promise<boolean> {
+  return keepAwakeEnabled(await invoke<{ enabled?: unknown }>("agent_keep_awake_get"));
+}
+
+/** Turn keep-awake on/off. Saved to ~/.gg/settings.json and applied live. */
+export async function setKeepAwake(enabled: boolean): Promise<boolean> {
+  return keepAwakeEnabled(await invoke<{ enabled?: unknown }>("agent_keep_awake_set", { enabled }));
 }

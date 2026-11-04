@@ -50,6 +50,25 @@ describe("Astra/Sol async orchestration policy", () => {
     INIT_TIMEOUT_MS,
   );
 
+  it.each(["gpt-6-astra", "gpt-6.1-sol"])(
+    "refreshes %s delegation policy when Ultra is enabled and disabled",
+    async (model) => {
+      await systemPrompt(model, "high");
+      const session = sessions.at(-1);
+      if (!session) throw new Error("Expected initialized session");
+      session.setThinkingLevel("ultra");
+      const ultra = String(session.getMessages()[0]?.content ?? "");
+      expect(ultra).toContain("Proactively use spawn_agent");
+      expect(ultra).not.toContain("only when the user");
+      session.setThinkingLevel("high");
+      const high = String(session.getMessages()[0]?.content ?? "");
+      expect(high).not.toContain("Proactively use spawn_agent");
+      expect(high).toContain("only when the user");
+      expect(high.match(/## Async subagent orchestration/g)).toHaveLength(1);
+    },
+    INIT_TIMEOUT_MS,
+  );
+
   it(
     "leaves other models unchanged",
     async () => {

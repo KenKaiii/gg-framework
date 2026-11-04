@@ -10,35 +10,12 @@ import { localOperations, type ToolOperations } from "./operations.js";
 const CodeNavParams = z.object({
   op: z
     .enum(["definition", "references", "symbols", "hover"])
-    .describe(
-      "definition = where a symbol is declared; references = every use of it; " +
-        "symbols = outline of one file; hover = its type/signature",
-    ),
-  file: z.string().describe("File containing the symbol (relative to cwd or absolute)"),
-  line: z
-    .number()
-    .int()
-    .min(1)
-    .optional()
-    .describe("1-based line of the symbol. Optional when `symbol` is given; unused by `symbols`."),
-  column: z
-    .number()
-    .int()
-    .min(1)
-    .optional()
-    .describe("1-based column of the symbol; inferred from `symbol` when omitted"),
-  symbol: z
-    .string()
-    .optional()
-    .describe(
-      "Symbol name. Enough on its own for definition/references/hover — no `line` needed. Filters the `symbols` outline.",
-    ),
-  max_results: z
-    .number()
-    .int()
-    .min(1)
-    .optional()
-    .describe("Maximum locations to return (default: 60)"),
+    .describe("symbols = file outline; hover = type/signature"),
+  file: z.string(),
+  line: z.number().int().min(1).optional().describe("Not needed when `symbol` is given"),
+  column: z.number().int().min(1).optional(),
+  symbol: z.string().optional().describe("Symbol name"),
+  max_results: z.number().int().min(1).optional().describe("Default 60"),
 });
 
 const DEFAULT_MAX_RESULTS = 60;
@@ -95,11 +72,7 @@ export function createCodeNavTool(
 ): AgentTool<typeof CodeNavParams> {
   return {
     name: "code_nav",
-    description:
-      "Resolve a symbol with the language server: `definition` (where it is declared), " +
-      "`references` (every use), `symbols` (outline of a file), `hover` (type/signature). " +
-      "Exact and cross-file — prefer it over grep for 'who calls this' and 'where is this " +
-      "defined'. Reports explicitly when no language server can answer.",
+    description: "Language server: exact definition, references (callers), file outline, type.",
     parameters: CodeNavParams,
     async execute({ op, file, line, column, symbol, max_results }) {
       if (!lspManager) {
@@ -142,7 +115,16 @@ export function createCodeNavTool(
           ? await lspManager.definition(absolute, content, position)
           : await lspManager.references(absolute, content, position);
       if (outcome.kind !== "ok") return describeFailure(outcome, cwd, op);
-      return formatLocations(outcome.value, cwd, ops, maxResults, op, absolute, position);
+      const locations = await formatLocations(
+        outcome.value,
+        cwd,
+        ops,
+        maxResults,
+        op,
+        absolute,
+        position,
+      );
+      return outcome.warning ? `${outcome.warning}\n\n${locations}` : locations;
     },
   };
 }

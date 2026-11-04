@@ -42,15 +42,15 @@ describe("plan mode", () => {
       );
 
       expect(prompt).toContain("## Plan Mode (ACTIVE)");
-      expect(prompt).toContain("draft a structured markdown plan at `.gg/plans/<name>.md`");
-      expect(prompt).toContain("then call `exit_plan` with that path for user review");
+      expect(prompt).toContain("Write the plan to `.gg/plans/<name>.md`");
+      expect(prompt).toContain("Then call `exit_plan` with that path and stop.");
       expect(prompt).not.toContain("1. Explore");
       // Live-tool guidance moved out of the prompt, not out of the model's tool catalog.
       expect(tools.find((tool) => tool.name === "enter_plan")?.description).toContain(
-        "Enter plan mode for safe, read-only exploration before making changes.",
+        "Enter read-only plan mode for complex or risky work (writes only under .gg/plans/).",
       );
       expect(tools.find((tool) => tool.name === "exit_plan")?.description).toContain(
-        "Submit a .gg/plans/ markdown plan for user review",
+        "Submit the plan for the user to approve or reject.",
       );
       expect(prompt).not.toContain("**enter_plan**");
       expect(prompt).not.toContain("**exit_plan**");

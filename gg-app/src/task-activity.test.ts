@@ -229,11 +229,16 @@ describe("whole-task activity", () => {
     s = event(s, "text_delta", { text: "All tests passed. Everything is perfect." });
     s = event(s, "run_end", { reviewPending: true });
     s = event(s, "autopilot_done");
-    expect(s.phase).toBe("unverified");
-    expect(s.detail).toContain("No passing automated check");
-    expect(
-      event(edit(start()), "run_end", { verification: "passed", verifiedChecks: 0 }).phase,
-    ).toBe("unverified");
+    // Unchecked edits are saved work (checks run at commit), never "passed".
+    expect(s.label).toBe("Changes saved");
+    expect(s.verification).toBe("not_recorded");
+    expect(s.detail).toContain("No automated checks were recorded");
+    const zeroChecks = event(edit(start()), "run_end", {
+      verification: "passed",
+      verifiedChecks: 0,
+    });
+    expect(zeroChecks.label).toBe("Changes saved");
+    expect(zeroChecks.verification).toBe("not_recorded");
   });
   it("retains cancellation, errors, and limit stops rather than turning ready", () => {
     for (const [type, data, phase] of [

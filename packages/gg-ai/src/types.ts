@@ -287,8 +287,21 @@ export interface Usage {
 
 // ── Stream Options ─────────────────────────────────────────
 
+export interface PreparedContext {
+  /** Read-only observation after generic sanitization/image limiting, before provider encoding.
+   * Do not log or retain these messages: they may contain secrets and image data. */
+  messages: readonly Message[];
+  tools: readonly { name: string; description: string; parameters: Record<string, unknown> }[];
+  imagesBefore: number;
+  imagesAfter: number;
+  /** First message whose images were removed for this request, or null. */
+  firstImageDropMessage: number | null;
+}
+
 export interface StreamOptions {
   provider: Provider;
+  /** Optional, synchronous diagnostics observer. Exceptions cannot fail a model request. */
+  onContextPrepared?: (context: PreparedContext) => void;
   model: string;
   messages: Message[];
   tools?: Tool[];
@@ -308,6 +321,15 @@ export interface StreamOptions {
   promptCacheKey?: string;
   /** OpenAI service tier for latency-sensitive requests. Only sent to first-party OpenAI API calls. */
   serviceTier?: "auto" | "default" | "flex" | "priority";
+  /** Codex endpoint only: send the Responses-Lite request shape (lite header,
+   *  `parallel_tool_calls: false`, all-turns reasoning context). Unset follows
+   *  the model family (on for gpt-5.6/gpt-6 models). Lite allows only one tool
+   *  call per response, so turning it off lets the model batch calls. */
+  responsesLite?: boolean;
+  /** OpenAI only (Codex and API-key routes): send tools with strict
+   *  (grammar-constrained) schemas. Default true. Strict calls carry every
+   *  optional field as null, which costs output tokens and latency per call. */
+  strictTools?: boolean;
   /** OpenAI ChatGPT account ID (from OAuth JWT) for codex endpoint */
   accountId?: string;
   /** Stable conversation identity for Codex transport headers. This is distinct from
@@ -350,6 +372,14 @@ export interface StreamOptions {
    *  swallows. Lets the agent loop's watchdog see a live connection while the
    *  model thinks silently (Anthropic sends only a ping every 30s then). */
   onTransportActivity?: () => void;
+  /** Cache prewarm (Anthropic only; other providers ignore it). Sends the exact
+   *  same request prefix (system, tools, messages, thinking, betas) with
+   *  `max_tokens: 1` over a non-streaming request so the prompt cache is written
+   *  before the user's next real turn. If the configured thinking mode cannot be
+   *  kept identical at `max_tokens: 1` (budget thinking requires
+   *  budget_tokens < max_tokens), no request is sent and the response has
+   *  zero usage with stopReason "end_turn". */
+  prewarm?: boolean;
   /** Override the User-Agent sent with OAuth-authenticated Anthropic requests.
    *  Anthropic's OAuth edge rejects requests whose claude-cli version lags too
    *  far behind the real Claude Code release; callers that track the live
@@ -361,4 +391,62 @@ export interface StreamOptions {
    *  `User-Agent: kimi-code-cli/...` and `X-Msh-*` device headers). Merged
    *  into the underlying SDK's default headers. */
   defaultHeaders?: Record<string, string>;
+  /** Provider-specific request-body fields, merged into the JSON body of every
+   *  model request (e.g. OpenRouter's routing object:
+   *  `{ provider: { zdr: true, data_collection: "deny" } }`). Fields gg-ai
+   *  sets itself — `model`, `messages`, `tools`, `stream`, sampling and
+   *  reasoning parameters, and so on — always win; see `ProviderOptions`. */
+  providerOptions?: ProviderOptions;
+}
+
+// ── Provider-specific request options ──────────────────────
+
+/**
+ * Provider-specific JSON body fields passed through to the provider unchanged
+ * by `stream()`, `embed()` and `rerank()`.
+ *
+ * Merge rules: a field is added only when gg-ai hasn't set it on the request.
+ * Core fields (`model`, `messages`, `input`, `query`, `documents`, `stream`,
+ * `tools`, `system`, `contents`, `requests`, `dimensions`, `encoding_format`,
+ * `top_n`) are never taken from here, even when gg-ai left them unset — use the
+ * dedicated option instead. Keys are applied in sorted order, so the merged body
+ * is deterministic.
+ *
+ * ```ts
+ * providerOptions: {
+ *   provider: { zdr: true, data_collection: "deny" } satisfies OpenRouterProviderPreferences,
+ * }
+ * ```
+ */
+export type ProviderOptions = Readonly<Record<string, unknown>>;
+
+/**
+ * OpenRouter's provider-routing preferences (the `provider` body field on
+ * `/chat/completions`, `/embeddings` and `/rerank`). Pass it through
+ * `providerOptions: { provider: … }`. Only the commonly used fields are typed;
+ * anything else OpenRouter documents is passed through as-is.
+ * See https://openrouter.ai/docs/features/provider-routing.
+ */
+export interface OpenRouterProviderPreferences {
+  /** Allow backup providers when the preferred ones are unavailable (default true). */
+  allow_fallbacks?: boolean;
+  /** Only route to providers that don't retain prompts. */
+  zdr?: boolean;
+  /** `"deny"` restricts routing to providers that don't collect user data. */
+  data_collection?: "allow" | "deny";
+  /** Only route to providers that support every parameter in the request. */
+  require_parameters?: boolean;
+  /** Provider slugs to try, in order. */
+  order?: string[];
+  /** Provider slugs to allow. */
+  only?: string[];
+  /** Provider slugs to skip. */
+  ignore?: string[];
+  /** Quantization levels to allow (e.g. `"fp8"`). */
+  quantizations?: string[];
+  /** Sort strategy (`"price"`, `"throughput"`, `"latency"`) or a sort config object. */
+  sort?: string | Readonly<Record<string, unknown>>;
+  /** Maximum price per million tokens, by usage kind. */
+  max_price?: Readonly<Record<string, number | string>>;
+  [key: string]: unknown;
 }

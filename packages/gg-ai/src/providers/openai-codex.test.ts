@@ -265,13 +265,17 @@ describe("streamOpenAICodex", () => {
   });
 
   it.each([
-    ["medium", "medium"],
-    ["high", "high"],
-    ["xhigh", "xhigh"],
-    ["ultra", "max"],
+    ["gpt-5.5", "medium", "medium"],
+    ["gpt-5.5", "high", "high"],
+    ["gpt-5.5", "xhigh", "xhigh"],
+    ["gpt-6-sol", "ultra", "max"],
+    ["gpt-6-astra", "ultra", "xhigh"],
+    ["gpt-6.1-sol", "ultra", "xhigh"],
+    ["gpt-6-astra", "max", "max"],
+    ["gpt-6.1-sol", "max", "max"],
   ] as const)(
-    "maps %s to %s reasoning effort through Codex transport",
-    async (thinking, effort) => {
+    "maps %s %s to %s reasoning effort through Codex transport",
+    async (model, thinking, effort) => {
       vi.stubGlobal(
         "fetch",
         vi.fn(async () =>
@@ -287,7 +291,7 @@ describe("streamOpenAICodex", () => {
       const fetchMock = vi.mocked(fetch);
       const result = streamOpenAICodex({
         provider: "openai",
-        model: "gpt-5.5",
+        model,
         messages: [{ role: "user", content: "hi" }],
         apiKey: "token",
         accountId: "acct",
@@ -718,6 +722,97 @@ describe("streamOpenAICodex", () => {
     });
   });
 
+  it("sends the plain request shape for a lite model when responsesLite is false", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        createSseResponse([
+          {
+            type: "response.completed",
+            response: { usage: { input_tokens: 1, output_tokens: 1 } },
+          },
+        ]),
+      ),
+    );
+
+    const fetchMock = vi.mocked(fetch);
+    const result = streamOpenAICodex({
+      provider: "openai",
+      model: "gpt-6-astra",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "token",
+      accountId: "acct",
+      thinking: "low",
+      responsesLite: false,
+    });
+
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    const body = JSON.parse(init.body as string) as {
+      parallel_tool_calls: boolean;
+      reasoning: Record<string, unknown>;
+      text: unknown;
+    };
+    // The server rejects parallel_tool_calls under lite, so the header and the
+    // flag must flip together; the Codex identity and verbosity stay.
+    expect(headers).not.toHaveProperty("X-OpenAI-Internal-Codex-Responses-Lite");
+    expect(headers).toMatchObject({ originator: "codex_cli_rs", version: "0.159.1" });
+    expect(body.parallel_tool_calls).toBe(true);
+    expect(body.reasoning).not.toHaveProperty("context");
+    expect(body.text).toEqual({ verbosity: "low" });
+  });
+
+  it("sends tools without strict schemas when strictTools is false", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        createSseResponse([
+          {
+            type: "response.completed",
+            response: { usage: { input_tokens: 1, output_tokens: 1 } },
+          },
+        ]),
+      ),
+    );
+    const tools = [
+      {
+        name: "read",
+        description: "Read a file",
+        parameters: z.object({ file_path: z.string(), limit: z.number().optional() }),
+      },
+    ];
+    const send = async (strictTools: boolean | undefined): Promise<Record<string, unknown>> => {
+      const result = streamOpenAICodex({
+        provider: "openai",
+        model: "gpt-6-astra",
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "token",
+        accountId: "acct",
+        tools,
+        ...(strictTools === undefined ? {} : { strictTools }),
+      });
+      for await (const _event of result) {
+        /* consume */
+      }
+      const [, init] = vi.mocked(fetch).mock.calls.at(-1) as [string, RequestInit];
+      return (JSON.parse(init.body as string) as { tools: Record<string, unknown>[] }).tools[0]!;
+    };
+
+    const strict = await send(undefined);
+    const loose = await send(false);
+
+    expect(strict.strict).toBe(true);
+    expect((strict.parameters as { required: string[] }).required).toEqual(["file_path", "limit"]);
+    // Non-strict keeps optional fields optional, so calls omit them instead of
+    // spelling each one out as null.
+    expect(loose.strict).toBeNull();
+    expect((loose.parameters as { required: string[] }).required).toEqual(["file_path"]);
+  });
+
   it.each([
     [
       "Unsupported value: 'none' is not supported with the 'gpt-6-astra' model. Supported values are: 'low', 'medium', 'high', 'xhigh', and 'max'.",
@@ -726,7 +821,7 @@ describe("streamOpenAICodex", () => {
     [
       "The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account.",
       "This model is not available through your ChatGPT account. " +
-        "Switch to a model listed for OpenAI via the model selector, or check your ChatGPT usage limits.",
+        "Choose another available model using the model selector.",
     ],
   ])(
     "only gives account-access guidance for an actual entitlement error: %s",
@@ -1121,6 +1216,46 @@ describe("streamOpenAICodex", () => {
     expect(events).toContainEqual({ type: "thinking_delta", text: "a" });
     expect(events).toContainEqual({ type: "thinking_delta", text: "b" });
     expect(events).toContainEqual({ type: "thinking_delta", text: "c" });
+  });
+
+  it("separates reasoning summary sections with a blank line", async () => {
+    // Real gpt-6-luna stream shape: one bold headline per summary part, across
+    // two reasoning items. Glued together they render as "**A****B**".
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        createSseResponse([
+          { type: "response.output_item.added", item: { id: "rs_1", type: "reasoning" } },
+          { type: "response.reasoning_summary_part.added", item_id: "rs_1", summary_index: 0 },
+          { type: "response.reasoning_summary_text.delta", delta: "**Comparing plans**" },
+          { type: "response.reasoning_summary_part.added", item_id: "rs_1", summary_index: 1 },
+          { type: "response.reasoning_summary_text.delta", delta: "**Checking costs**" },
+          { type: "response.output_item.added", item: { id: "rs_2", type: "reasoning" } },
+          { type: "response.reasoning_summary_part.added", item_id: "rs_2", summary_index: 0 },
+          { type: "response.reasoning_summary_text.delta", delta: "**Verifying**" },
+          {
+            type: "response.completed",
+            response: { usage: { input_tokens: 10, output_tokens: 5 } },
+          },
+        ]),
+      ),
+    );
+
+    const result = streamOpenAICodex({
+      provider: "openai",
+      model: "gpt-6-luna",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "token",
+      accountId: "acct",
+      thinking: "high",
+    });
+
+    let thinking = "";
+    for await (const event of result) {
+      if (event.type === "thinking_delta") thinking += event.text;
+    }
+
+    expect(thinking).toBe("**Comparing plans**\n\n**Checking costs**\n\n**Verifying**");
   });
 
   it("emits only missing final text from output_text.done", async () => {

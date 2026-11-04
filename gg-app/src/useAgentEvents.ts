@@ -8,12 +8,19 @@ import {
   type SubAgentStatePayload,
   type AgentState,
   type BackgroundTask,
+  type CacheExpiryStatus,
   type ModelOption,
   type ProjectTask,
   type QueuedMessage,
   type SlashCommand,
 } from "./agent";
-import { appendPendingAsks, closeSettledAsk, isAskUserPrompt } from "./ask-user";
+import {
+  appendPendingAsks,
+  closeAsks,
+  closeSettledAsk,
+  isAskUserPrompt,
+  markAskDeferred,
+} from "./ask-user";
 import { formatTokenCount } from "./ActivityBar";
 import { type LiveToolEntry, LIVE_TOOL_PANEL_ROWS } from "./LiveToolPanel";
 import { type SubAgentLine } from "./SubAgentFeed";
@@ -21,6 +28,7 @@ import { playSound } from "./sounds";
 import { findCompletedSteps, countPlanSteps } from "./plan-steps";
 import type { PendingAttachment } from "./attachments";
 import type { Item } from "./App";
+import { readChatError } from "./chat-error";
 
 /**
  * Build-session SSE event handling + assistant-streaming helpers, extracted from
@@ -514,6 +522,21 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
     setIsThinking(false);
   }, [setThinkingAccumMs, setThinkingStartTs, setIsThinking]);
 
+  // Open the human plan-review box from a sidecar `{ planPath, content }`
+  // payload (plan_review, or ready.pendingPlan on reconnect). Anything else
+  // (null/absent) leaves the box as it is.
+  const openPlanReview = useCallback(
+    (value: unknown) => {
+      if (typeof value !== "object" || value === null) return;
+      const plan = value as Record<string, unknown>;
+      if (typeof plan.planPath !== "string" || typeof plan.content !== "string") return;
+      planReviewPathRef.current = plan.planPath;
+      planReviewContentRef.current = plan.content;
+      setPlanReview(plan.content);
+    },
+    [planReviewPathRef, planReviewContentRef, setPlanReview],
+  );
+
   const handleEvent = useCallback(
     (e: SidecarEvent) => {
       handleActivityEvent?.(e);
@@ -529,6 +552,9 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           const readyState = d as unknown as AgentState;
           setState(readyState);
           setRunning(readyState.running);
+          // A reconnecting window picks the review box back up for a plan the
+          // sidecar is still holding for the user.
+          openPlanReview(d.pendingPlan);
           setTasks((d.tasks as BackgroundTask[] | undefined) ?? []);
           setStatus(readyState.runState === "cancelling" ? "cancelling..." : "ready");
           break;
@@ -809,6 +835,19 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           }
           break;
         }
+        case "stream_rule_triggered": {
+          // The aborted attempt is discarded by the loop (its retry is silent, so
+          // nothing else rolls it back here): drop its partial text too.
+          discardStreamingDraft();
+          const names = Array.isArray(d.rules) ? d.rules.map(String) : [];
+          const name = names.join(", ") || "stream rule";
+          pushItem({
+            kind: "info",
+            id: nextId(),
+            text: `Rule "${name}" caught the reply mid-stream — retrying`,
+          });
+          break;
+        }
         case "compaction_start": {
           const id = nextId();
           compactionIdRef.current = id;
@@ -847,21 +886,7 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           setStatus("cancellation failed; agent still running");
           break;
         case "error": {
-          // Structured payload from the sidecar's broadcastError (headline always
-          // present; message/guidance may be omitted for terse capability errors).
-          // Fall back to a flat string for any older-shaped frame.
-          const headline = typeof d.headline === "string" ? d.headline : undefined;
-          pushItem(
-            headline
-              ? {
-                  kind: "error",
-                  id: nextId(),
-                  headline,
-                  message: typeof d.message === "string" ? d.message : undefined,
-                  guidance: typeof d.guidance === "string" ? d.guidance : undefined,
-                }
-              : { kind: "error", id: nextId(), text: `error: ${String(d.message ?? "unknown")}` },
-          );
+          pushItem({ kind: "error", id: nextId(), ...readChatError(d) });
           break;
         }
         case "run_end": {
@@ -980,6 +1005,10 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
               : s,
           );
           break;
+        case "plan_mode":
+          // Back in plan mode to revise a plan (no new "entering plan" banner).
+          setState((s) => (s ? { ...s, planMode: d.active === true } : s));
+          break;
         case "plan_enter":
           setState((s) => (s ? { ...s, planMode: true } : s));
           pushItem({ kind: "plan", id: nextId(), reason: String(d.reason ?? "") });
@@ -1004,6 +1033,21 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           if (typeof d.id === "string") {
             const askId = d.id;
             setItems((prev) => closeSettledAsk(prev, askId));
+          }
+          break;
+        case "ask_user_deferred":
+          // Soft deadline passed: the agent continued on its best guess, but the
+          // band stays answerable — a later answer is sent to it as a message.
+          if (typeof d.id === "string") {
+            const promptId = d.id;
+            setItems((prev) => markAskDeferred(prev, promptId));
+          }
+          break;
+        case "ask_user_closed":
+          // A newer question or a new session superseded deferred questions.
+          if (Array.isArray(d.ids)) {
+            const ids = d.ids.filter((id): id is string => typeof id === "string");
+            setItems((prev) => closeAsks(prev, ids));
           }
           break;
         case "plan_progress": {
@@ -1038,19 +1082,16 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           // seed the plan-progress widget if Ken approves it, and manual accept
           // needs the path when autopilot is off.
           planReviewPathRef.current = typeof d.planPath === "string" ? d.planPath : null;
-          const content = String(d.content ?? "");
-          planReviewContentRef.current = content;
-          // Autopilot owns plan review when enabled. Showing the human overlay
-          // during the few seconds before Ken accepts/rejects is just visual
-          // noise, and users generally cannot act in time anyway. Non-autopilot
-          // stays unchanged: the modal opens for manual Accept/Feedback/Reject.
-          if (stateRef.current?.autopilot) {
-            setPlanReview(null);
-          } else {
-            setPlanReview(content);
-          }
+          planReviewContentRef.current = String(d.content ?? "");
+          // Don't open the box yet: the submitting run is still finishing (an
+          // Accept now is refused) and autopilot Ken may still decide. The
+          // sidecar sends plan_review once the plan is genuinely the user's.
+          setPlanReview(null);
           break;
         }
+        case "plan_review":
+          openPlanReview(d);
+          break;
         case "autopilot_plan_accepted":
           // Keep an approval-time fallback for older sidecars, close the review
           // modal, and render the approved marker. Current sidecars override this
@@ -1237,10 +1278,16 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           heldTextRef.current = "";
           stickToBottomRef.current = true;
           setItems([]);
+          // The empty transcript must show the welcome screen, not the previous
+          // run's status (for example "cancelled").
+          setStatus("ready");
           setLiveToolFeed([]);
           setTokens(0);
           setDoneStatus(null);
           setContextTokens(0);
+          // A fresh session has no history, so nothing to re-read: drop the
+          // previous chat's cold-cache notice instead of carrying it over.
+          setState((s) => (s ? { ...s, cacheExpiry: null } : s));
           setPlanReview(null);
           planReviewContentRef.current = null;
           {
@@ -1263,6 +1310,13 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           endStreamingText();
           subagentGroupIdRef.current = null;
           subagentGroupByAgentRef.current.clear();
+          break;
+        case "cache_expiry":
+          // Live cold-cache status pushed after a run, compaction or model
+          // switch settles. Null (empty chat / no known TTL) hides the notice.
+          setState((s) =>
+            s ? { ...s, cacheExpiry: (e.data as CacheExpiryStatus | null) ?? null } : s,
+          );
           break;
         case "models_change":
           // The set of usable models changed: local-model discovery landed
@@ -1354,6 +1408,7 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
       planReviewPathRef,
       pendingPlanTotalRef,
       stickToBottomRef,
+      openPlanReview,
     ],
   );
 

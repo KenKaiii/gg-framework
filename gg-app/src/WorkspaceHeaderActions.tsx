@@ -22,6 +22,7 @@ export function WorkspaceHeaderActions({
   newSessionButton,
   brainButton,
   helpButton,
+  checklistButton,
   state,
   running,
   autopilotReviewing,
@@ -48,6 +49,8 @@ export function WorkspaceHeaderActions({
   newSessionButton: JSX.Element;
   brainButton: false | JSX.Element;
   helpButton: JSX.Element;
+  /** Opens the project checklist view (code sessions). */
+  checklistButton: JSX.Element;
   state: AgentState | null;
   running: boolean;
   autopilotReviewing: boolean;
@@ -118,6 +121,7 @@ export function WorkspaceHeaderActions({
                 ? `Tasks (${projectTasks.filter((t) => t.status !== "done").length})`
                 : "Tasks"}
             </button>
+            {checklistButton}
             <RadioButton />
             {/* <GazeButton /> */}
             <WindowLayoutButton

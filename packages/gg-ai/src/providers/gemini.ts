@@ -17,6 +17,7 @@ import { isJsonObject } from "../utils/json.js";
 import { readSseStream } from "../utils/sse.js";
 import { providerFetch } from "../utils/provider-fetch.js";
 import { getEnvironment } from "../utils/env.js";
+import { mergeProviderOptions } from "../utils/provider-options.js";
 
 const DEFAULT_CODE_ASSIST_BASE_URL = "https://cloudcode-pa.googleapis.com";
 const CODE_ASSIST_API_VERSION = "v1internal";
@@ -396,6 +397,21 @@ function stripUnsupportedSchemaFields(value: unknown): void {
 
   delete value.$schema;
   delete value.additionalProperties;
+  // Gemini's schema subset has inclusive minimum/maximum only; an exclusive
+  // bound (zod .positive()/.lt()) 400s the whole request. Integers keep the
+  // exact bound (n+1 / n-1); numbers widen to inclusive, and the tool's own
+  // zod schema still rejects the boundary value at execution.
+  for (const [key, target, step] of [
+    ["exclusiveMinimum", "minimum", 1],
+    ["exclusiveMaximum", "maximum", -1],
+  ] as const) {
+    const bound = value[key];
+    if (bound === undefined) continue;
+    delete value[key];
+    if (typeof bound === "number" && value[target] === undefined) {
+      value[target] = value.type === "integer" ? bound + step : bound;
+    }
+  }
 
   for (const item of Object.values(value)) {
     if (isJsonObject(item) || Array.isArray(item)) {
@@ -512,7 +528,9 @@ function buildRequestPlan(options: StreamOptions, method: string): GeminiRequest
   }
 
   const projectId = getGoogleProject(options);
-  const request = buildGenerateRequest(options);
+  // Provider-specific fields go on the generateContent request (inside the
+  // Code Assist envelope) and only fill fields gg-ai left unset.
+  const request = mergeProviderOptions(buildGenerateRequest(options), options.providerOptions);
 
   return {
     url: getCodeAssistEndpoint(method),

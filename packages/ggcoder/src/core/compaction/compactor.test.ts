@@ -671,7 +671,7 @@ vi.mock("@kleio/ai", async (importOriginal) => {
 });
 
 // Must import stream AFTER mock setup
-import { stream, StreamResult } from "@kleio/ai";
+import { ProviderError, stream, StreamResult } from "@kleio/ai";
 
 describe("compact", () => {
   const baseOptions = {
@@ -812,6 +812,140 @@ describe("compact", () => {
     expect(result.result.summarizedCount).toBeGreaterThan(0);
     expect(result.result.retainedCount).toBeGreaterThanOrEqual(0);
     expect(result.result.tokensAfterEstimate).toBeLessThan(result.result.targetTokens);
+  });
+
+  it.each([
+    ["anthropic", "claude-opus-5-5", "claude-sonnet-5-5"],
+    ["openai", "gpt-6.1-sol", "gpt-6-luna"],
+    ["glm", "glm-5.3", "glm-5.3-flash"],
+    ["deepseek", "deepseek-v4-pro", "deepseek-flash"],
+  ] as const)(
+    "summarizes %s %s on the cheaper summary model %s",
+    async (provider, model, summaryModel) => {
+      // Compaction summaries are the ONE place a cheaper model is used.
+      const mockStream = vi.mocked(stream);
+      mockStream.mockClear();
+      mockStream.mockReturnValue(
+        mockStreamResult(
+          Promise.resolve({
+            message: { role: "assistant", content: "Summary." },
+            stopReason: "end_turn",
+            usage: { inputTokens: 100, outputTokens: 10 },
+          }),
+        ) as never,
+      );
+
+      await compact(buildConversation(30), { ...baseOptions, provider, model });
+
+      expect(mockStream).toHaveBeenCalled();
+      for (const [request] of mockStream.mock.calls) {
+        expect(request.model).toBe(summaryModel);
+      }
+    },
+  );
+
+  describe("when the provider rejects the cheaper summary model", () => {
+    const summaryReply = (content: string) =>
+      mockStreamResult(
+        Promise.resolve({
+          message: { role: "assistant", content },
+          stopReason: "end_turn",
+          usage: { inputTokens: 100, outputTokens: 10 },
+        }),
+      ) as never;
+
+    it("summarizes on the active model instead of the extractive fallback", async () => {
+      // Regression: a cheap model that was retired upstream or missing from
+      // the user's plan dropped every compaction to the much weaker
+      // extractive summary, though the active model was right there.
+      const mockStream = vi.mocked(stream);
+      mockStream.mockReset();
+      mockStream
+        .mockReturnValueOnce(
+          mockStreamResult(
+            Promise.reject(
+              new ProviderError("anthropic", "model: claude-sonnet-5-5", { statusCode: 404 }),
+            ),
+          ) as never,
+        )
+        .mockReturnValueOnce(summaryReply("Summary written by the active model."));
+
+      const result = await compact(buildConversation(30), {
+        ...baseOptions,
+        provider: "anthropic",
+        model: "claude-opus-5-5",
+      });
+
+      expect(mockStream.mock.calls.map(([request]) => request.model)).toEqual([
+        "claude-sonnet-5-5",
+        "claude-opus-5-5",
+      ]);
+      expect(result.messages[1]?.content as string).toContain(
+        "Summary written by the active model.",
+      );
+    });
+
+    it("re-sizes the request for the active model's own context window", async () => {
+      // gpt-oss-120b has half Qwen3-Coder's window: a request sized for one
+      // must not be replayed unchanged against the other.
+      const mockStream = vi.mocked(stream);
+      mockStream.mockReset();
+      mockStream
+        .mockReturnValueOnce(
+          mockStreamResult(
+            Promise.reject(new ProviderError("huggingface", "Not Found", { statusCode: 404 })),
+          ) as never,
+        )
+        .mockReturnValueOnce(summaryReply("Summary."));
+
+      await compact(buildConversation(30), {
+        ...baseOptions,
+        provider: "huggingface",
+        model: "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+      });
+
+      const [cheap, active] = mockStream.mock.calls.map(([request]) => request);
+      expect(cheap?.model).toBe("openai/gpt-oss-120b");
+      expect(active?.model).toBe("Qwen/Qwen3-Coder-480B-A35B-Instruct");
+      expect(active?.maxTokens).not.toBe(cheap?.maxTokens);
+    });
+
+    it.each([
+      ["a usage limit", new ProviderError("openai", "usage limit reached", { statusCode: 429 })],
+      ["an overloaded provider", new ProviderError("openai", "Overloaded", { statusCode: 529 })],
+    ])("does not replay the request on the active model for %s", async (_label, error) => {
+      // Only an unusable MODEL is rescued by switching; other failures would
+      // fail the same way again and only add a long stall.
+      const mockStream = vi.mocked(stream);
+      mockStream.mockReset();
+      mockStream.mockReturnValue(mockStreamResult(Promise.reject(error)) as never);
+
+      await compact(buildConversation(30), {
+        ...baseOptions,
+        provider: "openai",
+        model: "gpt-6.1-sol",
+      });
+
+      expect(mockStream.mock.calls.map(([request]) => request.model)).toEqual(["gpt-6-luna"]);
+    });
+
+    it("does not retry when the summary model already is the active model", async () => {
+      const mockStream = vi.mocked(stream);
+      mockStream.mockReset();
+      mockStream.mockReturnValue(
+        mockStreamResult(
+          Promise.reject(new ProviderError("moonshot", "Not Found", { statusCode: 404 })),
+        ) as never,
+      );
+
+      await compact(buildConversation(30), {
+        ...baseOptions,
+        provider: "moonshot",
+        model: "kimi-k3",
+      });
+
+      expect(mockStream.mock.calls.map(([request]) => request.model)).toEqual(["kimi-k3"]);
+    });
   });
 
   it("feeds query-relevant older evidence to the summarizer when its prompt budget is constrained", async () => {

@@ -132,6 +132,93 @@ describe("streamGemini", () => {
     },
   );
 
+  it("merges providerOptions into the generate request without overriding core fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          response: {
+            candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    globalThis.fetch = fetchMock;
+
+    const result = streamGemini({
+      provider: "gemini",
+      model: "gemini-3-flash-preview",
+      projectId: "test-project",
+      apiKey: "access-token",
+      streaming: false,
+      messages: [{ role: "user", content: "hi" }],
+      providerOptions: {
+        safetySettings: [{ category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" }],
+        contents: [],
+      },
+    });
+    await result.response;
+
+    const [, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    const body = JSON.parse(init.body as string) as { request: Record<string, unknown> };
+    expect(body.request.safetySettings).toEqual([
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+    ]);
+    expect(body.request.contents).toEqual([{ role: "user", parts: [{ text: "hi" }] }]);
+  });
+
+  it("rewrites exclusive bounds Gemini rejects into inclusive ones", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          response: {
+            candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    globalThis.fetch = fetchMock;
+
+    const result = streamGemini({
+      provider: "gemini",
+      model: "gemini-3.8-flash",
+      projectId: "test-project",
+      apiKey: "access-token",
+      streaming: false,
+      messages: [{ role: "user", content: "hi" }],
+      tools: [
+        {
+          name: "web_fetch",
+          description: "Fetch",
+          // .positive() → exclusiveMinimum: 0, which Gemini answers with a 400
+          // that fails every request carrying this tool.
+          parameters: z.object({
+            follow: z.number().int().positive().optional(),
+            ratio: z.number().lt(1).optional(),
+          }),
+        },
+      ],
+    });
+    await result.response;
+
+    const [, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    const body = init.body as string;
+    expect(body).not.toContain("exclusiveMinimum");
+    expect(body).not.toContain("exclusiveMaximum");
+    const props = (
+      JSON.parse(body) as {
+        request: {
+          tools: [
+            { functionDeclarations: [{ parameters: { properties: Record<string, object> } }] },
+          ];
+        };
+      }
+    ).request.tools[0].functionDeclarations[0].parameters.properties;
+    expect(props.follow).toMatchObject({ type: "integer", minimum: 1 });
+    expect(props.ratio).toMatchObject({ type: "number", maximum: 1 });
+  });
+
   it("delivers tool-result video as an inlineData part (read on a .mp4)", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

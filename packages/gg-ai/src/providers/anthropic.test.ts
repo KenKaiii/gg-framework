@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { ProviderError } from "../errors.js";
 import {
   ANTHROPIC_OAUTH_FALLBACK_USER_AGENT,
@@ -9,6 +10,7 @@ import {
   fineGrainedToolStreamingEnabled,
 } from "./anthropic.js";
 import type { StreamEvent } from "../types.js";
+import { stream as unifiedStream } from "../stream.js";
 
 const clientOptionsMock = vi.fn();
 const createMock = vi.fn();
@@ -130,6 +132,81 @@ describe("streamAnthropic request shaping", () => {
     ]);
   });
 
+  it.each(["active", "settled"] as const)(
+    "observes image limiting without changing the existing %s-thinking policy",
+    async (trajectory) => {
+      const { default: Anthropic } = await import("@anthropic-ai/sdk");
+      const sdk = Anthropic as unknown as { nextError: Error | null; nextEvents: unknown[] | null };
+      sdk.nextError = null;
+      sdk.nextEvents = [
+        { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } },
+        { type: "message_stop" },
+      ];
+      const observed = vi.fn();
+      const result = unifiedStream({
+        provider: "anthropic",
+        model: "claude-sonnet-4-5",
+        apiKey: "sk-ant-test",
+        thinking: "high",
+        onContextPrepared: observed,
+        messages: [
+          {
+            role: "user",
+            content: Array.from({ length: 91 }, () => ({
+              type: "image" as const,
+              mediaType: "image/png",
+              data: "abc",
+            })),
+          },
+          {
+            role: "assistant",
+            content: [
+              { type: "thinking", text: "retained reasoning", signature: "original-signature" },
+              { type: "text", text: "previous answer" },
+              { type: "tool_call", id: "read_1", name: "read", args: {} },
+            ],
+          },
+          {
+            role: "tool",
+            content: [{ type: "tool_result", toolCallId: "read_1", content: "read result" }],
+          },
+          ...(trajectory === "settled" ? [{ role: "user" as const, content: "continue" }] : []),
+        ],
+      });
+      for await (const _event of result) {
+        /* consume */
+      }
+      expect(observed).toHaveBeenCalledWith(
+        expect.objectContaining({ imagesBefore: 91, imagesAfter: 61, firstImageDropMessage: 0 }),
+      );
+      const params: unknown = createMock.mock.calls.at(-1)?.[0];
+      expect(params).toMatchObject({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "assistant",
+            content: [
+              ...(trajectory === "active"
+                ? [
+                    {
+                      type: "thinking",
+                      thinking: "retained reasoning",
+                      signature: "original-signature",
+                    },
+                  ]
+                : []),
+              { type: "text", text: "previous answer" },
+              expect.objectContaining({ type: "tool_use", id: "read_1", name: "read", input: {} }),
+            ],
+          }),
+        ]),
+      });
+      if (trajectory === "settled")
+        expect(JSON.stringify(params)).not.toContain("original-signature");
+      expect(params).not.toHaveProperty("thinking.block_binding");
+      expect(params).not.toHaveProperty("context_management");
+    },
+  );
+
   it("sends thinking, cache, image, and tool transform params", async () => {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     const AnthropicMock = Anthropic as unknown as {
@@ -187,6 +264,35 @@ describe("streamAnthropic request shaping", () => {
         ],
       },
     ]);
+  });
+
+  it("merges providerOptions into the request without overriding core fields", async () => {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const AnthropicMock = Anthropic as unknown as {
+      nextError: Error | null;
+      nextEvents: unknown[] | null;
+    };
+    AnthropicMock.nextError = null;
+    AnthropicMock.nextEvents = [
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } },
+      { type: "message_stop" },
+    ];
+
+    const result = streamAnthropic({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "sk-ant-test",
+      providerOptions: { metadata: { user_id: "u-1" }, model: "other", stream: false },
+    });
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const params = createMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(params.metadata).toEqual({ user_id: "u-1" });
+    expect(params.model).toBe("claude-sonnet-4-5");
+    expect(params.stream).toBe(true);
   });
 });
 
@@ -791,5 +897,81 @@ describe("streamAnthropic error normalization", () => {
       usage: { outputTokens: 6 },
     });
     expect(text).toBe("Hello");
+  });
+});
+
+describe("streamAnthropic prewarm", () => {
+  async function setupMock(): Promise<void> {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const AnthropicMock = Anthropic as unknown as {
+      nextError: Error | null;
+      nextEvents: unknown[] | null;
+      nextMessage: unknown;
+    };
+    AnthropicMock.nextError = null;
+    AnthropicMock.nextEvents = [
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } },
+      { type: "message_stop" },
+    ];
+    AnthropicMock.nextMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "." }],
+      stop_reason: "max_tokens",
+      usage: { input_tokens: 3, output_tokens: 1, cache_creation_input_tokens: 5000 },
+    };
+  }
+
+  const base = {
+    provider: "anthropic" as const,
+    model: "claude-opus-5-5",
+    messages: [
+      { role: "system" as const, content: "system prompt" },
+      { role: "user" as const, content: "hello" },
+    ],
+    tools: [
+      {
+        name: "read",
+        description: "read a file",
+        parameters: z.object({ path: z.string() }),
+      },
+    ],
+    apiKey: "sk-ant-test",
+    thinking: "high" as const,
+    cacheRetention: "short" as const,
+    webSearch: true,
+  };
+
+  it("sends the same prefix as a normal request with max_tokens 1", async () => {
+    await setupMock();
+    for await (const _event of streamAnthropic(base)) {
+      /* consume */
+    }
+    const real = createMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    const realHeaders = createMock.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+
+    const result = streamAnthropic({ ...base, prewarm: true });
+    const response = await result.response;
+    const warm = createMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    const warmHeaders = createMock.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+
+    expect(warm.max_tokens).toBe(1);
+    expect(warm.stream).toBe(false);
+    for (const key of ["system", "tools", "messages", "thinking", "output_config", "model"]) {
+      expect(warm[key]).toEqual(real[key]);
+    }
+    expect(warmHeaders.headers).toEqual(realHeaders.headers);
+    expect(response.usage.cacheWrite).toBe(5000);
+  });
+
+  it("skips the request when budget thinking can't stay identical at max_tokens 1", async () => {
+    await setupMock();
+    createMock.mockClear();
+    const response = await streamAnthropic({
+      ...base,
+      model: "claude-sonnet-4-5",
+      prewarm: true,
+    }).response;
+    expect(createMock).not.toHaveBeenCalled();
+    expect(response.usage).toEqual({ inputTokens: 0, outputTokens: 0 });
   });
 });

@@ -18,6 +18,34 @@ describe("prompt commands", () => {
     }
   });
 
+  // The commit is where work gets verified; replies leave checks to it.
+  it("builds /commit in for every project: checks with tests, review, commit, push", () => {
+    const cmd = PROMPT_COMMANDS.find((command) => command.name === "commit");
+    expect(cmd?.prompt).toContain("Verification in your instructions, plus the tests");
+    expect(cmd?.prompt).toContain("Run each standalone, unpiped");
+    expect(cmd?.prompt).toContain("Fix every failure");
+    expect(cmd?.prompt).toContain("spawn ONE subagent with the full diff");
+    expect(cmd?.prompt).toContain("never `git add -A`");
+    expect(cmd?.prompt).toContain("never with `--no-verify`");
+    expect(cmd?.prompt).toContain("stop before committing");
+    // Never pushes somewhere unconfigured.
+    expect(cmd?.prompt).toContain("if it has none, say so instead of pushing");
+  });
+
+  it("lets a project's own commit.md, which the built-in name shadows, take over", () => {
+    const cmd = PROMPT_COMMANDS.find((command) => command.name === "commit");
+    expect(cmd?.prompt).toContain(
+      "If `.gg/commands/commit.md` exists, read it and follow it instead of these steps",
+    );
+    expect(cmd?.prompt).toContain("If it runs no tests while the project has some, run them too");
+  });
+
+  it("makes /setup-commit include the project's tests", () => {
+    const cmd = PROMPT_COMMANDS.find((command) => command.name === "setup-commit");
+    expect(cmd?.prompt).toContain("[PROJECT-SPECIFIC LINT/TYPECHECK/TEST COMMANDS]");
+    expect(cmd?.prompt).toContain("tests included");
+  });
+
   it("defines /steroids as profile, discover, ask, then index only what was chosen", () => {
     const cmd = PROMPT_COMMANDS.find((command) => command.name === "steroids");
     expect(cmd?.prompt).toContain("Profile the project");

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createAskUserBridge, type AskUserPrompt } from "../core/ask-user.js";
 import { createAskUserTool } from "./ask-user.js";
+import os from "node:os";
+import { buildSystemPrompt } from "../system-prompt.js";
 
 /** The tool + bridge wired the way the sidecar wires them, minus the HTTP hop. */
 function harness() {
@@ -31,12 +33,16 @@ describe("ask_user", () => {
   // model back into prose and the user lost the clickable card. The opposite
   // failure matters just as much: the description must not read as an
   // obligation to ask something every turn.
-  it("routes soft follow-up offers through the card, not just blocking decisions", () => {
+  it("routes soft follow-up offers through the card, not just blocking decisions", async () => {
     const { description } = createAskUserTool(vi.fn());
-    expect(description).toContain("if a reply would otherwise end by asking them anything");
-    expect(description).toContain('"want me to also…?"');
+    expect(description).toContain("instead of a prose question");
+    // The routing rule now lives in the system prompt (rendered whenever this
+    // tool is registered) rather than repeated in the schema.
+    const prompt = await buildSystemPrompt(os.tmpdir(), undefined, false, undefined, ["ask_user"]);
+    expect(prompt).toContain('Every question — a blocker or an optional "want me to also…?"');
+    expect(prompt).toContain("is an `ask_user` call");
     // …and never manufactures a question when none exists.
-    expect(description).toContain("No question to ask? Then do not call it");
+    expect(prompt).toContain("No question? Just end.");
     // The old blocked-only scoping must be gone, not merely softened.
     expect(description).not.toContain("ask once, at the point you are blocked");
   });
@@ -189,7 +195,7 @@ describe("ask_user", () => {
     expect(broadcast).not.toHaveBeenCalled();
   });
 
-  it("times out rather than blocking the turn forever", async () => {
+  it("stops blocking at the soft deadline rather than holding the turn forever", async () => {
     vi.useFakeTimers();
     try {
       const onTimeout = vi.fn();
@@ -200,7 +206,7 @@ describe("ask_user", () => {
         { signal: new AbortController().signal, toolCallId: "t1", onUpdate: () => {} } as never,
       ) as Promise<string>;
       await vi.advanceTimersByTimeAsync(1001);
-      await expect(result).resolves.toContain("did not answer");
+      await expect(result).resolves.toContain("No answer yet");
       expect(onTimeout).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();

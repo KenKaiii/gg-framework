@@ -515,6 +515,7 @@ export function App(props: AppProps) {
   const currentToolsRef = useRef(projectRuntimeRef.current.tools);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | undefined>(props.thinking);
   const thinkingLevelRef = useRef<ThinkingLevel | undefined>(props.thinking);
+  currentProviderRef.current = currentProvider;
   currentModelRef.current = currentModel;
   thinkingLevelRef.current = thinkingLevel;
   const [renderMarkdown, setRenderMarkdown] = useState(true);

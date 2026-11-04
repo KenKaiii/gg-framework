@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import { runJsonMode } from "../modes/json-mode.js";
 import type { Provider } from "@kleio/ai";
+import { parseThinkingLevel } from "../cli/thinking-arg.js";
 
 /**
  * Sub-agents spawn the ggcoder CLI in JSON mode to run a delegated task. In the
@@ -26,6 +27,7 @@ export async function runJsonModeIfRequested(): Promise<boolean> {
       tools: { type: "string" },
       "mcp-servers": { type: "string" },
       "prompt-cache-key": { type: "string" },
+      thinking: { type: "string" },
     },
     allowPositionals: true,
     strict: true,
@@ -62,6 +64,7 @@ export async function runJsonModeIfRequested(): Promise<boolean> {
     allowedTools,
     allowedMcpServers,
     promptCacheKey: values["prompt-cache-key"],
+    thinkingLevel: parseThinkingLevel(values.thinking),
   }).catch(async (err: unknown) => {
     process.stderr.write((err instanceof Error ? err.message : String(err)) + "\n");
     process.exit(1);

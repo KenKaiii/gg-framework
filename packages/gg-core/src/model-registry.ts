@@ -44,9 +44,9 @@ export interface ModelInfo {
    *   - OpenAI GPT-6 Astra / GPT-6.1 Sol: `ultra` (Codex orchestration preset above `max`)
    *   - OpenAI GPT-6 Luna: `max`
    *   - OpenAI Pro/Codex/old: clamped to what the model accepts
-   *   - Claude Fable 5.1 / Fable 5 / Mythos 5, Opus 5.5 and Sonnet 5.5: `max`
-   *     (the Fable / Mythos line uses always-on adaptive thinking, low→max)
-   *   - Claude Haiku 4.5: `high` (no adaptive `max` tier)
+   *   - Claude Fable 5.1 / Fable 5 / Mythos 5, Opus 5.5, Sonnet 5.5 and
+   *     Haiku 5.5: `max` (the Fable / Mythos line uses always-on adaptive
+   *     thinking, low→max)
    *   - Kimi K3: `max` (always-on reasoning; currently the only API effort)
    *   - xAI Grok 4.6: `xhigh` (new top rung; 4.5 caps at `high`)
    *   - GLM / Kimi K2.x / Xiaomi / MiniMax / Qwen: `high` — binary-thinking
@@ -147,16 +147,24 @@ export const MODELS: ModelInfo[] = [
     maxThinkingLevel: "max",
   },
   {
-    id: "claude-haiku-4-5-20251001",
-    name: "Claude Haiku 4.5",
+    // Released 2026-10-07 — replaces Haiku 4.5 at $0.10/$0.50 MTok (prompts
+    // up to 100K tokens; $0.50/$2.50 above). 1M context, 128K output, image
+    // input. Adaptive thinking with the full effort ladder (low→max, xhigh
+    // included; API default `medium`) — manual budget_tokens, non-default
+    // sampling params and assistant prefill all 400. No server-side refusal
+    // fallback: `fallbacks: "default"` is accepted but a refusal stays a
+    // refusal. Haiku 4.5 is retired here — a session that still has it saved
+    // falls back to the provider default on next start.
+    id: "claude-haiku-5-5",
+    name: "Claude Haiku 5.5",
     provider: "anthropic",
-    contextWindow: 200_000,
-    maxOutputTokens: 64_000,
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
     supportsThinking: true,
     supportsImages: true,
     supportsVideo: false,
     costTier: "low",
-    maxThinkingLevel: "high",
+    maxThinkingLevel: "max",
   },
   // ── OpenAI (Codex) ─────────────────────────────────────
   {
@@ -197,7 +205,7 @@ export const MODELS: ModelInfo[] = [
     // but the ChatGPT backend only serves it from 0.159.0 (see
     // CODEX_CLIENT_VERSION). $2/$10 MTok, cached input $0.10. Ladder low →
     // medium → high → xhigh → max → ultra; ultra is the Codex orchestration
-    // preset (max effort on the wire + proactive local subagent delegation).
+    // preset (xhigh effort on the wire + proactive local subagent delegation).
     id: "gpt-6.1-sol",
     name: "GPT-6.1 Sol",
     provider: "openai",
@@ -347,9 +355,7 @@ export const MODELS: ModelInfo[] = [
     // Sent over our Code Assist (OAuth) transport ahead of gemini-cli — upstream
     // hasn't listed 3.7 yet (google-gemini/gemini-cli#28802, still open) — so
     // free/personal accounts 404 (entitlement-gated) while Code Assist
-    // Standard/Enterprise accounts get it. Kept after the working flash-lite:
-    // getFastModel picks the first low-tier entry, and flash-lite is the one
-    // that works on every account.
+    // Standard/Enterprise accounts get it.
     id: "gemini-3.7-flash",
     name: "Gemini 3.7 Flash",
     provider: "gemini",
@@ -831,42 +837,37 @@ export function getDefaultThinkingLevel(
 }
 
 /**
- * Get the model to use for compaction summarization.
- * - Anthropic: always Sonnet 5.5
- * - OpenAI: cheapest (Codex Mini)
- * - Gemini: use the current model
- * - GLM: GLM-5.3-Flash (the registered low-cost sibling)
- * - Moonshot: use the current model (no cheap alternative registered)
+ * The cost tier each provider's compaction summaries run on. Chosen by TAG,
+ * never by model id, so adding, renaming or removing models needs no change
+ * here: the first registered model of that provider carrying the tag wins.
+ * Providers not listed summarize on the active model.
+ * - Anthropic: "medium" (the Sonnet line) — Haiku's shallower summaries
+ *   cost more in lost memory than they save.
+ * - OpenAI, GLM, DeepSeek, Hugging Face: "low" (Luna, the Flash models,
+ *   gpt-oss).
  */
-export function getSummaryModel(provider: Provider, currentModelId: string): ModelInfo {
-  if (provider === "anthropic") {
-    return MODELS.find((m) => m.id === "claude-sonnet-5-5")!;
-  }
-  if (
-    provider === "openai" ||
-    provider === "glm" ||
-    provider === "deepseek" ||
-    provider === "huggingface"
-  ) {
-    const low = getModelsForProvider(provider).find((m) => m.costTier === "low");
-    if (low) return low;
-  }
-  // Moonshot or fallback: use current model
-  return getModel(currentModelId) ?? getDefaultModel(provider);
-}
+const SUMMARY_COST_TIER: Readonly<Partial<Record<Provider, ModelInfo["costTier"]>>> = {
+  anthropic: "medium",
+  openai: "low",
+  glm: "low",
+  deepseek: "low",
+  huggingface: "low",
+};
 
 /**
- * Fastest/cheapest sibling within the SAME provider, for scout-style read-only
- * sub-agents (recon, research) where a low-latency model is enough and the
- * frontier model is wasted spend + latency.
+ * Get the model to use for compaction summarization — the ONLY place a
+ * cheaper model is used. Everything else (sub-agents, reviewers, judges)
+ * runs on the parent's model.
  *
- * Routes off each model's `costTier` — the single source of truth that already
- * travels with the registry entry — so a model rename/bump needs no change
- * here. Providers with no low-tier sibling (Moonshot, MiniMax, Sakana,
- * OpenRouter) gracefully keep the parent model, so there's never a
- * crash or a cross-provider jump to a login the user may not have.
+ * Picks the provider's first model tagged with its summary tier
+ * ({@link SUMMARY_COST_TIER}). When none is registered — the tier was removed,
+ * or the provider has no cheap sibling — it summarizes on the current model.
+ * Never throws. The caller still retries on the current model when the
+ * provider rejects the chosen one at runtime (retired upstream, or not on the
+ * user's plan), since the registry cannot know that.
  */
-export function getFastModel(provider: Provider, currentModelId: string): ModelInfo {
-  const low = getModelsForProvider(provider).find((m) => m.costTier === "low");
-  return low ?? getModel(currentModelId) ?? getDefaultModel(provider);
+export function getSummaryModel(provider: Provider, currentModelId: string): ModelInfo {
+  const tier = SUMMARY_COST_TIER[provider];
+  const tagged = tier ? getModelsForProvider(provider).find((m) => m.costTier === tier) : undefined;
+  return tagged ?? getModel(currentModelId) ?? getDefaultModel(provider);
 }

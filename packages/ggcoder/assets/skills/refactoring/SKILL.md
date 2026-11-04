@@ -1,10 +1,12 @@
 ---
 name: refactoring
-description: Use when restructuring existing code without changing behavior — "refactor", "clean up this module", "reduce tech debt/duplication", "split this god class/function", "improve code quality", "modernize" or migrate legacy code (strangler fig, framework/dependency upgrades, callback→async), or when planning a refactor before touching code. Two hats, test-guarded steps, revert-on-red. Do NOT use for new feature work, bug fixes with known symptoms (root-cause), styling or copy changes, the refactor step inside a user-requested TDD flow (tdd), or when the user asks to rewrite from scratch.
+description: Use for behaviour-preserving restructuring behind an unchanged contract. Do NOT use for renames, bug fixes or behaviour changes.
 license: Behavior-preservation methodology synthesized from public sources (Fowler's Refactoring catalog, Tidy First?, and community agent skills by bienhoang, wondelai, mattpocock, jeffallan, vasilyu1983), audited 2026-09-12.
 ---
 
 # Refactoring
+
+**Scope gate:** Decide from the requested behavior, not the word "refactor". A requested change to return values, error handling, or an API contract is implementation work, not a behavior-preserving cleanup. Use the normal implementation workflow: inspect the affected callers, make the requested contract and caller changes together, add regression coverage, and run the checks. Do not manufacture a separate pure-rename stage merely to enter this skill. Existing authorization and safety controls still apply. For a genuine behavior-preserving refactor, use the gated loop below unchanged.
 
 Change the structure of code without changing what it does. Every observable behavior that exists before the refactoring — including the bugs — must exist after it. This skill exists because agents drift: without hard gates, "refactoring" silently becomes rewriting, and rewriting untested code is how behavior is lost.
 

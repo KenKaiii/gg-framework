@@ -18,6 +18,7 @@ import {
   providerHtmlErrorMessage,
 } from "../errors.js";
 import { StreamResult } from "../utils/event-stream.js";
+import { mergeProviderOptions } from "../utils/provider-options.js";
 import {
   downgradeUnsupportedImages,
   normalizeAnthropicStopReason,
@@ -309,7 +310,9 @@ export function streamAnthropic(options: StreamOptions): StreamResult {
 async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, StreamResponse> {
   const client = createClient(options);
   const isOAuth = isAnthropicOAuth(options.apiKey);
-  const useStreaming = options.streaming !== false;
+  // Prewarm uses a single non-streaming request: the stream flag is not part of
+  // the prompt-cache key, and a 1-token response needs no incremental events.
+  const useStreaming = options.streaming !== false && !options.prewarm;
 
   const cacheControl = toAnthropicCacheControl(options.cacheRetention, options.baseUrl);
   const supportsFirstPartyToolExtras =
@@ -353,7 +356,22 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     }
   }
 
-  const params: Anthropic.MessageCreateParams = {
+  if (options.prewarm) {
+    // Thinking config is part of the cache key, so it must stay identical. Budget
+    // thinking requires budget_tokens < max_tokens, which can't hold at 1 — skip
+    // the request entirely rather than warm a different prefix.
+    const budget = (thinking as { budget_tokens?: number } | undefined)?.budget_tokens;
+    if (budget != null && budget >= 1) {
+      return {
+        message: { role: "assistant", content: [] },
+        stopReason: "end_turn",
+        usage: { inputTokens: 0, outputTokens: 0 },
+      };
+    }
+    maxTokens = 1;
+  }
+
+  const baseParams: Anthropic.MessageCreateParams = {
     model: options.model,
     max_tokens: maxTokens,
     messages,
@@ -411,8 +429,10 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     ...(useServerFallback ? { fallbacks: "default" } : {}),
     stream: useStreaming,
   } as Anthropic.MessageCreateParams;
+  // Caller-supplied provider-specific body fields; they only fill unset fields.
+  const params = mergeProviderOptions(baseParams, options.providerOptions);
 
-  // Adaptive thinking models (Fable 5.1, Opus 5.5/5, Opus 4.8/4.7/4.6, Sonnet 5)
+  // Adaptive thinking models (Fable 5.1, Opus 5.5/5, Opus 4.8/4.7/4.6, Sonnet 5.5/5, Haiku 5.5)
   // don't need the interleaved-thinking beta — they have it built in.
   const hasAdaptiveThinking = isAdaptiveThinkingModel(options.model);
 

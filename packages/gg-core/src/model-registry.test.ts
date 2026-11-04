@@ -12,7 +12,6 @@ import {
   getContextWindow,
   getDefaultModel,
   getDefaultThinkingLevel,
-  getFastModel,
   getModelsForProvider,
   getSummaryModel,
   getToolResultCharLimit,
@@ -114,6 +113,106 @@ describe("Claude Sonnet 5.5", () => {
   });
 });
 
+describe("Claude Haiku 5.5", () => {
+  it("replaces Haiku 4.5 in the catalog", () => {
+    const model = getModel("claude-haiku-5-5");
+    expect(model).toEqual({
+      id: "claude-haiku-5-5",
+      name: "Claude Haiku 5.5",
+      provider: "anthropic",
+      contextWindow: 1_000_000,
+      maxOutputTokens: 128_000,
+      supportsThinking: true,
+      supportsImages: true,
+      supportsVideo: false,
+      costTier: "low",
+      maxThinkingLevel: "max",
+    });
+    expect(getModelsForProvider("anthropic")).toContain(model);
+    expect(getModel("claude-haiku-4-5-20251001")).toBeUndefined();
+    expect(getModel("claude-haiku-4-5")).toBeUndefined();
+  });
+});
+
+describe("getSummaryModel when the catalog changes", () => {
+  /**
+   * Edit the real catalog for one assertion, then put it back exactly — the
+   * same change a future model update makes to `MODELS`.
+   */
+  function withCatalog(edit: (models: ModelInfo[]) => void, assert: () => void): void {
+    const original = [...MODELS];
+    try {
+      edit(MODELS);
+      assert();
+    } finally {
+      MODELS.splice(0, MODELS.length, ...original);
+    }
+  }
+
+  function withoutModel(id: string, assert: () => void): void {
+    withCatalog((models) => {
+      const index = models.findIndex((m) => m.id === id);
+      expect(index, `${id} is in the catalog`).toBeGreaterThanOrEqual(0);
+      models.splice(index, 1);
+    }, assert);
+  }
+
+  it("summarizes on the current model instead of crashing when Sonnet 5.5 is removed", () => {
+    // Regression: the Anthropic pick was a hardcoded id with a non-null
+    // assertion, so removing Sonnet 5.5 broke every Anthropic compaction.
+    withoutModel("claude-sonnet-5-5", () => {
+      expect(getSummaryModel("anthropic", "claude-opus-5-5").id).toBe("claude-opus-5-5");
+    });
+  });
+
+  it("picks up a newly added model carrying the summary tag, with no code change", () => {
+    const sonnetNext: ModelInfo = {
+      ...(getModel("claude-sonnet-5-5") as ModelInfo),
+      id: "claude-sonnet-6",
+      name: "Claude Sonnet 6",
+    };
+    withCatalog(
+      (models) => {
+        // A new Sonnet replaces 5.5, listed where its predecessor was.
+        const index = models.findIndex((m) => m.id === "claude-sonnet-5-5");
+        models.splice(index, 1, sonnetNext);
+      },
+      () => {
+        expect(getSummaryModel("anthropic", "claude-opus-5-5")).toBe(sonnetNext);
+      },
+    );
+  });
+
+  it.each([
+    ["openai", "gpt-6-luna", "gpt-6.1-sol"],
+    ["glm", "glm-5.3-flash", "glm-5.3"],
+    ["deepseek", "deepseek-flash", "deepseek-v4-pro"],
+    ["huggingface", "openai/gpt-oss-120b", "Qwen/Qwen3-Coder-480B-A35B-Instruct"],
+  ] as const)(
+    "falls back to the current %s model when its cheap %s is removed",
+    (provider, cheapId, currentId) => {
+      expect(getSummaryModel(provider, currentId).id).toBe(cheapId);
+      withoutModel(cheapId, () => {
+        expect(getSummaryModel(provider, currentId).id).toBe(currentId);
+      });
+    },
+  );
+
+  it("keeps a provider without a summary tier on the current model", () => {
+    expect(getSummaryModel("moonshot", "kimi-k3").id).toBe("kimi-k3");
+    expect(getSummaryModel("xai", "grok-4.7").id).toBe("grok-4.7");
+  });
+
+  it("never throws for any provider's default model", () => {
+    for (const provider of PROVIDERS) {
+      const current = getDefaultModel(provider);
+      const summary = getSummaryModel(provider, current.id);
+      // Never crosses providers — the user may only have this one connected.
+      expect(summary.provider).toBe(provider);
+    }
+  });
+});
+
 describe("GPT-6.1 Sol", () => {
   it("replaces GPT-6 Sol in the catalog and OpenAI defaults", () => {
     const model = getModel("gpt-6.1-sol");
@@ -134,29 +233,6 @@ describe("GPT-6.1 Sol", () => {
     expect(getModelsForProvider("openai")).toContain(model);
     expect(getModel("gpt-6-sol")).toBeUndefined();
     expect(getDefaultModel("openai")).toBe(model);
-  });
-});
-
-describe("getFastModel", () => {
-  it("routes to a low-tier sibling within the same provider", () => {
-    for (const provider of PROVIDERS) {
-      const current = getDefaultModel(provider);
-      const fast = getFastModel(provider, current.id);
-      // Never crosses providers — the user may only have this one connected.
-      expect(fast.provider).toBe(provider);
-      const hasLowTier = getModelsForProvider(provider).some((m) => m.costTier === "low");
-      if (hasLowTier) {
-        expect(fast.costTier).toBe("low");
-      } else {
-        // No cheap sibling — gracefully keeps the current model.
-        expect(fast.id).toBe(current.id);
-      }
-    }
-  });
-
-  it("picks Haiku for Anthropic and Luna for OpenAI", () => {
-    expect(getFastModel("anthropic", "claude-opus-5-5").costTier).toBe("low");
-    expect(getFastModel("openai", "gpt-6.1-sol").id).toBe("gpt-6-luna");
   });
 });
 
@@ -298,9 +374,8 @@ describe("model registry context windows", () => {
     for (const retired of ["glm-5.2", "glm-5.1", "glm-4.7", "glm-4.7-flash"]) {
       expect(getModel(retired), `${retired} retired`).toBeUndefined();
     }
-    // Flash is the cheap sibling, so scout/summary routing drops to it instead
-    // of paying 5.3 rates for recon and compaction.
-    expect(getFastModel("glm", "glm-5.3").id).toBe("glm-5.3-flash");
+    // Flash is the cheap sibling, so summary routing drops to it instead of
+    // paying 5.3 rates for compaction.
     expect(getSummaryModel("glm", "glm-5.3").id).toBe("glm-5.3-flash");
   });
 
@@ -367,8 +442,6 @@ describe("model registry context windows", () => {
     for (const retired of ["mimo-v2.5-pro", "mimo-v2.5", "mimo-v2.5-pro-ultraspeed"]) {
       expect(getModel(retired), `${retired} retired`).toBeUndefined();
     }
-    // Flash is the low-cost sibling, so scout routing drops to it.
-    expect(getFastModel("xiaomi", "mimo-v2.6-pro").id).toBe("mimo-v2.6-flash");
   });
 
   it("mimo-v2.6-pro / mimo-v2.6-flash prefer the Token Plan key but fall back to API Credits", () => {
@@ -389,7 +462,7 @@ describe("model registry context windows", () => {
       name: "Gemini 3.1 Flash Lite",
       provider: "gemini",
     });
-    // New public GA releases are opt-in: retain the working OAuth default/fast model.
+    // New public GA releases are opt-in: retain the working OAuth default.
     expect(getModelsForProvider("gemini").map((model) => model.id)).toEqual([
       "gemini-3.1-flash-lite",
       "gemini-3.8-flash",
@@ -398,7 +471,6 @@ describe("model registry context windows", () => {
       "gemini-3-flash",
       "gemini-3.1-pro-preview",
     ]);
-    expect(getFastModel("gemini", "gemini-3.1-flash-lite").id).toBe("gemini-3.1-flash-lite");
     for (const id of ["gemini-3.8-flash", "gemini-3.5-flash-lite"]) {
       expect(getModel(id)).toMatchObject({
         contextWindow: 1_048_576,
@@ -407,7 +479,6 @@ describe("model registry context windows", () => {
         supportsVideo: true,
         maxThinkingLevel: "high",
       });
-      expect(getFastModel("gemini", id).id).toBe("gemini-3.1-flash-lite");
       // Summaries intentionally stay on the selected Gemini model.
       expect(getSummaryModel("gemini", id).id).toBe(id);
     }
@@ -472,7 +543,7 @@ describe("model registry context windows", () => {
     });
   });
 
-  it("registers Hugging Face router models with Hub repo ids and a cheap sibling", () => {
+  it("registers Hugging Face router models with Hub repo ids and a cheap summary sibling", () => {
     expect(getDefaultModel("huggingface")).toMatchObject({
       id: "Qwen/Qwen3-Coder-480B-A35B-Instruct",
       provider: "huggingface",
@@ -483,10 +554,7 @@ describe("model registry context windows", () => {
       supportsThinking: false,
       costTier: "medium",
     });
-    // gpt-oss-120b is the low-tier sibling for summaries and scout sub-agents.
-    expect(getFastModel("huggingface", "Qwen/Qwen3-Coder-480B-A35B-Instruct").id).toBe(
-      "openai/gpt-oss-120b",
-    );
+    // gpt-oss-120b is the low-tier sibling for compaction summaries.
     expect(getSummaryModel("huggingface", "Qwen/Qwen3-Coder-480B-A35B-Instruct").id).toBe(
       "openai/gpt-oss-120b",
     );

@@ -45,6 +45,12 @@ describe("refocusesComposer on the desktop", () => {
       focused: null,
       expected: false,
     },
+    {
+      when: "the checklist hides the chat box",
+      extra: "<section data-hides-composer></section>",
+      focused: null,
+      expected: false,
+    },
   ])("$when → $expected", ({ extra, focused, expected }) => {
     const input = showComposer(extra);
     focus(focused);

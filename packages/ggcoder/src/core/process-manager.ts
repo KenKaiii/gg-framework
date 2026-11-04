@@ -98,6 +98,9 @@ const CHECKPOINT_TAIL_CHARS = 320;
 /** Ceiling on a single blocking `waitForExitOrWake`, so one wedged process cannot
  *  hold the agent loop indefinitely; callers re-wait if they still want to. */
 export const MAX_PROCESS_WAIT_MS = 600_000;
+/** Output a foreground command produced before {@link ProcessManager.adopt} that
+ *  is kept in its log; the rest was already shown to nobody and only costs disk. */
+const ADOPTED_PRIOR_OUTPUT_BYTES = 1024 * 1024;
 /** Chars of the matched log line carried in a pattern-wake notification. */
 const WAKE_LINE_CHARS = 200;
 
@@ -290,7 +293,70 @@ export class ProcessManager {
       lastReadOffset: 0,
       logSize: 0,
     };
+    return this.track(child, proc, wake);
+  }
 
+  /**
+   * Take over a foreground command that is still running, so the caller can
+   * return without killing it. Output captured so far seeds the log (its last
+   * {@link ADOPTED_PRIOR_OUTPUT_BYTES} only); later stdout/stderr is appended
+   * as it arrives. The process keeps its cwd and environment because it is the
+   * same process. Its stdin was never a pipe, so `sendInput` reports it closed.
+   *
+   * Synchronous on purpose: the caller hands over a live child whose 'close'
+   * has not fired yet, and an `await` here could let it fire unobserved.
+   */
+  adopt(child: ChildProcess, command: string, startedAt: number, priorOutput: Buffer): StartResult {
+    fs.mkdirSync(this.bgDir, { recursive: true });
+    void this.pruneOldLogs();
+
+    const id = crypto.randomUUID().slice(0, 8);
+    const logFile = path.join(this.bgDir, `${id}.log`);
+    const prior =
+      priorOutput.length > ADOPTED_PRIOR_OUTPUT_BYTES
+        ? Buffer.concat([
+            Buffer.from(
+              `[earlier output dropped; last ${ADOPTED_PRIOR_OUTPUT_BYTES / 1024 / 1024} MiB kept]\n`,
+            ),
+            priorOutput.subarray(priorOutput.length - ADOPTED_PRIOR_OUTPUT_BYTES),
+          ])
+        : priorOutput;
+    const fd = fs.openSync(logFile, "w");
+    fs.writeSync(fd, prior);
+    // Synchronous appends keep the log ordered and complete by the time
+    // 'close' fires, which the exit bookkeeping and waiters rely on.
+    const append = (data: Buffer): void => {
+      try {
+        fs.writeSync(fd, data);
+      } catch {
+        // Disk full or log removed: drop output rather than crash the host.
+      }
+    };
+    child.stdout?.on("data", append);
+    child.stderr?.on("data", append);
+    child.once("close", () => fs.closeSync(fd));
+    // Never hold the host's event loop open for a process it no longer awaits.
+    child.unref();
+    for (const stream of [child.stdout, child.stderr]) {
+      (stream as { unref?: () => void } | null)?.unref?.();
+    }
+
+    const proc: BackgroundProcess = {
+      id,
+      pid: child.pid ?? 0,
+      command,
+      logFile,
+      startedAt,
+      exitCode: null,
+      lastReadOffset: 0,
+      logSize: prior.length,
+    };
+    return this.track(child, proc);
+  }
+
+  /** Register a running child and arm its exit bookkeeping and watchers. */
+  private track(child: ChildProcess, proc: BackgroundProcess, wake?: WakeRules): StartResult {
+    const { id, pid, logFile } = proc;
     this.processes.set(id, proc);
     this.children.set(id, child);
 

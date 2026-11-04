@@ -16,7 +16,7 @@ export function getToolTone(name: string): ToolTone {
   if (["bash", "task_output", "task_stop"].includes(name)) return "run";
   if (["web_fetch", "web_search"].includes(name)) return "web";
   if (["subagent", "skill"].includes(name)) return "agent";
-  if (["tasks"].includes(name)) return "state";
+  if (["tasks", "checklist"].includes(name)) return "state";
   if (["source_path"].includes(name)) return "source";
   if (name.startsWith("mcp__")) return "web";
   return "default";

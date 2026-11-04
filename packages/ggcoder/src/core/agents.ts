@@ -7,12 +7,13 @@ import { BUILTIN_TOOL_NAMES } from "../tools/prompt-hints.js";
 import { BUNDLED_AGENTS } from "./bundled-agents.js";
 
 /**
- * Which model a sub-agent runs on.
+ * Which model a sub-agent runs on. Every sub-agent runs at the LOWEST thinking
+ * level of that model (never off), whatever the parent uses.
  *
- * - `"inherit"` (default) — the parent's model, so a delegated task is not
- *   silently downgraded.
- * - `"fast"` — the provider's cheap tier (`getFastModel`), for genuinely
- *   mechanical recon.
+ * - `"inherit"` (default) — the parent's model, so a delegated task is never
+ *   moved to a weaker model.
+ * - `"fast"` — legacy alias of `"inherit"`, still accepted so older agent files
+ *   load. It no longer swaps in a cheaper model.
  * - any other string — an explicit model id.
  */
 export type AgentModelPreference = "inherit" | "fast" | (string & {});

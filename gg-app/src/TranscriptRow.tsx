@@ -17,6 +17,7 @@ import { AtIcon } from "@phosphor-icons/react";
 import { EnhancedSegments } from "./PromptEnhancement";
 import { basename } from "./tool-format";
 import type { Item } from "./transcript-item";
+import { ErrorNotice } from "./placeholder/ErrorNotice";
 
 const ALL_CLEAR_VARIATIONS = [
   "All clear. Looks good to me.",
@@ -83,6 +84,8 @@ function StreamingMarkdown({
 export const TranscriptRow = memo(function TranscriptRow({
   item,
   animateIn = false,
+  errorActive = false,
+  errorModelPicker,
   onContentGrow,
   onAskAnswer,
   onAskType,
@@ -90,6 +93,10 @@ export const TranscriptRow = memo(function TranscriptRow({
   item: Item;
   /** Arrived live (not restored from history): rise into place once. */
   animateIn?: boolean;
+  /** This error row is the latest one, not yet retired by a new message. */
+  errorActive?: boolean;
+  /** Model or provider switcher offered by the active error row. */
+  errorModelPicker?: React.ReactNode;
   onContentGrow?: () => void;
   onAskAnswer?: (
     itemId: number,
@@ -101,6 +108,8 @@ export const TranscriptRow = memo(function TranscriptRow({
   const row = (
     <TranscriptRowBody
       item={item}
+      errorActive={errorActive}
+      errorModelPicker={errorModelPicker}
       onContentGrow={onContentGrow}
       onAskAnswer={onAskAnswer}
       onAskType={onAskType}
@@ -119,11 +128,15 @@ export const TranscriptRow = memo(function TranscriptRow({
 
 function TranscriptRowBody({
   item,
+  errorActive = false,
+  errorModelPicker,
   onContentGrow,
   onAskAnswer,
   onAskType,
 }: {
   item: Item;
+  errorActive?: boolean;
+  errorModelPicker?: React.ReactNode;
   onContentGrow?: () => void;
   /** Record answers for an `ask_user` band (App settles the tool call). */
   onAskAnswer?: (
@@ -297,21 +310,15 @@ function TranscriptRowBody({
           {item.text}
         </div>
       );
-    case "error": {
-      // Structured errors (see gg-ai's formatError) always answer "is this me or
-      // them" and, for usage-limit stops, when it resets — mirrors the CLI's
-      // ErrorRow instead of dumping the raw provider string. `text` is the
-      // legacy fallback for items that only ever carried a flat string.
-      const headline = item.headline ?? item.text ?? "";
-      const showMessage = item.message && item.message !== headline;
+    case "error":
       return (
-        <div className="line error">
-          <div style={{ color: theme.error, fontWeight: 600 }}>{headline}</div>
-          {showMessage && <div style={{ color: theme.textDim }}>{item.message}</div>}
-          {item.guidance && <div style={{ color: theme.textDim }}>{item.guidance}</div>}
-        </div>
+        <ErrorNotice
+          error={item}
+          active={errorActive}
+          modelPicker={errorModelPicker}
+          onContentGrow={onContentGrow}
+        />
       );
-    }
     case "hook": {
       // Mirrors the TUI IdealHookMessage: assistant-style dot + a shimmering
       // tone-colored one-liner so the self-correction is obvious.
@@ -389,6 +396,7 @@ function TranscriptRowBody({
           answers={item.answers}
           sent={item.sent}
           cancelled={item.cancelled}
+          deferred={item.deferred}
           onAnswer={(delta) => onAskAnswer?.(item.id, item.prompt.id, delta)}
           onTypeInstead={(questionId, seed) =>
             onAskType?.(item.id, item.prompt.id, questionId, seed)

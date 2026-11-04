@@ -1,9 +1,11 @@
-import type { AgentTool } from "@kleio/agent";
-import type { Provider, ThinkingLevel } from "@kleio/ai";
+import type { AgentTool, ToolExecuteResult } from "@kleio/agent";
+import type { Provider, ThinkingLevel, ToolCall, ToolResult } from "@kleio/ai";
 import type { ContextLimits } from "../core/context-limits.js";
 import { SubAgentManager, type SubAgentSnapshot } from "../core/subagent-manager.js";
 import { ProcessManager } from "../core/process-manager.js";
 import { LspManager } from "../core/lsp/manager.js";
+import { TestImpactIndex } from "../core/test-impact.js";
+import { createDebugTool, DebugManager } from "./debug.js";
 import type { EditSource } from "../core/lsp/edit-telemetry.js";
 import { createReadTool } from "./read.js";
 import { getVideoByteLimit } from "../core/model-registry.js";
@@ -12,8 +14,9 @@ import { UiRegistry } from "../core/ui-registry.js";
 import { adoptionOperations } from "../core/ui-adoption.js";
 import { createUiRegistryTool } from "./ui-registry.js";
 import { createUiAdoptTool } from "./ui-adopt.js";
-import { createEditTool } from "./edit.js";
+import { createEditTool, createFlatEditTool } from "./edit.js";
 import { createBashTool } from "./bash.js";
+import { recordBashReads } from "./bash-read-evidence.js";
 import { createFindTool } from "./find.js";
 import { createGrepTool } from "./grep.js";
 import { createSearchCodeTool } from "./search-code.js";
@@ -28,6 +31,7 @@ import { createTaskOutputTool } from "./task-output.js";
 import { createTaskStopTool } from "./task-stop.js";
 import { createTaskSendTool } from "./task-send.js";
 import { createTasksTool } from "./tasks.js";
+import { createChecklistTool } from "./checklist.js";
 
 import { createSkillTool } from "./skill.js";
 import { createScreenshotTool } from "./screenshot.js";
@@ -64,7 +68,7 @@ export interface CreateToolsOptions {
   /** Callback when the LLM enters plan mode. */
   onEnterPlan?: (reason?: string) => void | Promise<void>;
   /** Callback when the LLM submits a plan for review. */
-  onExitPlan?: (planPath: string) => Promise<string>;
+  onExitPlan?: (planPath: string) => Promise<ToolExecuteResult>;
   /** Callback after read tool successfully reads a text file. */
   onFileRead?: (filePath: string) => void | Promise<void>;
   /** Callback after write/edit tools successfully mutate a file. */
@@ -102,6 +106,12 @@ export interface CreateToolsOptions {
   lspDiagnostics?: boolean;
   /** Only hosts that drain diagnostics during steering and flush before completion may opt in. */
   deferLspDiagnostics?: boolean;
+  /**
+   * After each edit/write of a JS/TS file, name the tests that import it (with
+   * the command running exactly those) and importers left using a removed
+   * export. Local filesystem only. Default: true.
+   */
+  editImpact?: boolean;
   /**
    * Auth storage for conditional tool registration. When provided AND the user
    * has OpenAI connected, the `generate_image` tool is registered — letting the
@@ -161,11 +171,24 @@ export interface CreateToolsResult {
    */
   clearReadTracker: () => void;
   /**
+   * Credit full-file `cat` output from one finished step as reads. Pass the
+   * step's tool calls and results exactly as appended to the transcript, so
+   * only bytes the model actually received count.
+   */
+  recordBashReads: (
+    toolCalls: readonly ToolCall[],
+    toolResults: readonly ToolResult[],
+  ) => Promise<void>;
+  /**
    * Language-server pool backing edit/write diagnostics. Present only when
    * enabled and running against the local filesystem; callers wire
    * `shutdownAll()` into their exit/cleanup paths alongside processManager.
    */
   lspManager?: LspManager;
+  /** Import-graph index behind the edit-impact notes; absent when disabled or remote. */
+  testImpact?: TestImpactIndex;
+  /** Owner of the live `debug` session; callers `shutdown()` it on exit. Local only. */
+  debugManager?: DebugManager;
   subAgentManager?: SubAgentManager;
 }
 
@@ -183,12 +206,34 @@ export async function createTools(
   // don't exist here. Lazy: no server spawns until the first matching edit.
   const lspEnabled = (opts?.lspDiagnostics ?? true) && ops === localOperations;
   const lspManager = lspEnabled ? new LspManager(cwd) : undefined;
-  const getDiagnostics = lspManager
+  const lspDiagnostics = lspManager
     ? async (filePath: string, content: string, source?: EditSource): Promise<string> =>
         opts?.deferLspDiagnostics
           ? lspManager.queueDiagnosticsAfterWrite(filePath, content, source)
           : lspManager.diagnosticsAfterWrite(filePath, content, source)
     : undefined;
+  // Same local-only reasoning as LSP: the index reads the workspace from disk.
+  const testImpact =
+    (opts?.editImpact ?? true) && ops === localOperations ? new TestImpactIndex(cwd) : undefined;
+  const debugManager = ops === localOperations ? new DebugManager() : undefined;
+  const getDiagnostics =
+    lspDiagnostics || testImpact
+      ? async (filePath: string, content: string, source?: EditSource): Promise<string> => {
+          const [lspNote, impactNote] = await Promise.all([
+            lspDiagnostics?.(filePath, content, source) ?? "",
+            testImpact?.noteAfterWrite(filePath, content) ?? "",
+          ]);
+          return lspNote + impactNote;
+        }
+      : undefined;
+  // Snapshot exports before a tool overwrites a file, so a removed export can
+  // be traced to the importers it breaks.
+  const onPreFileMutation = testImpact
+    ? async (filePath: string): Promise<void> => {
+        await testImpact.beforeWrite(filePath);
+        await opts?.onPreFileMutation?.(filePath);
+      }
+    : opts?.onPreFileMutation;
 
   // Enable native video returns from the read tool for any video-capable model
   // (Kimi/Moonshot, Gemini, MiniMax), each with its own per-model byte cap that
@@ -203,17 +248,18 @@ export async function createTools(
       ops,
       planModeRef,
       opts?.onFileMutated,
-      opts?.onPreFileMutation,
+      onPreFileMutation,
       getDiagnostics,
       opts?.getWriteGuardSettings,
     ),
-    createEditTool(
+    // Claude models get the flat edit shape (see createFlatEditTool).
+    (opts?.provider === "anthropic" ? createFlatEditTool : createEditTool)(
       cwd,
       readFiles,
       ops,
       planModeRef,
       opts?.onFileMutated,
-      opts?.onPreFileMutation,
+      onPreFileMutation,
       getDiagnostics,
       opts?.getWriteGuardSettings,
     ),
@@ -237,7 +283,13 @@ export async function createTools(
     createTaskSendTool(processManager, cwd),
     createTaskStopTool(processManager),
     createTasksTool(cwd),
+    createChecklistTool(cwd),
     createScreenshotTool(cwd),
+    // The debugger connects to a loopback inspector port, so the program must
+    // run on this machine: local operations only, like LSP.
+    ...(debugManager
+      ? [createDebugTool(cwd, debugManager, ops, planModeRef, opts?.getSandboxPolicy)]
+      : []),
   ];
 
   // Local corpus of real repos; only when the CLI is actually on this machine.
@@ -265,6 +317,7 @@ export async function createTools(
         () => opts.getModel?.() ?? opts.model!,
         opts.getCacheKey,
         planModeRef,
+        opts.getThinkingLevel,
       ),
     );
     subAgentManager = new SubAgentManager({
@@ -272,7 +325,7 @@ export async function createTools(
       agents: opts.agents,
       getProvider: () => opts.getProvider?.() ?? opts.provider!,
       getModel: () => opts.getModel?.() ?? opts.model!,
-      getThinkingLevel: () => opts.getThinkingLevel?.(),
+      getThinkingLevel: opts.getThinkingLevel,
       getCacheKey: opts.getCacheKey,
       getBaseUrl: opts.getBaseUrl,
       getMaxPerModel: () => opts.getMaxPerModel?.(),
@@ -322,7 +375,7 @@ export async function createTools(
           adoptionOperations(cwd),
           planModeRef,
           opts?.onFileMutated,
-          opts?.onPreFileMutation,
+          onPreFileMutation,
           getDiagnostics,
           opts?.getWriteGuardSettings,
         ),
@@ -335,8 +388,24 @@ export async function createTools(
     createReadTool(cwd, readFiles, ops, opts?.onFileRead, getVideoByteLimit(model));
 
   const clearReadTracker = (): void => readFiles.clear();
+  const recordStepBashReads = async (
+    toolCalls: readonly ToolCall[],
+    toolResults: readonly ToolResult[],
+  ): Promise<void> => {
+    await recordBashReads(readFiles, cwd, ops, toolCalls, toolResults);
+  };
 
-  return { tools, processManager, rebuildReadTool, clearReadTracker, lspManager, subAgentManager };
+  return {
+    tools,
+    processManager,
+    rebuildReadTool,
+    clearReadTracker,
+    recordBashReads: recordStepBashReads,
+    lspManager,
+    ...(testImpact && { testImpact }),
+    ...(debugManager && { debugManager }),
+    subAgentManager,
+  };
 }
 
 export { createReadTool } from "./read.js";
@@ -355,6 +424,7 @@ export { createTaskOutputTool } from "./task-output.js";
 export { createTaskSendTool } from "./task-send.js";
 export { createTaskStopTool } from "./task-stop.js";
 export { createTasksTool } from "./tasks.js";
+export { createChecklistTool } from "./checklist.js";
 export { createSkillTool } from "./skill.js";
 export { createScreenshotTool } from "./screenshot.js";
 export { createGenerateImageTool, type GenerateImageAuth } from "./generate-image.js";

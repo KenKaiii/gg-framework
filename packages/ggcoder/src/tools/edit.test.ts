@@ -3,7 +3,7 @@ import { prettifyError } from "zod";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { createEditTool } from "./edit.js";
+import { createEditTool, createFlatEditTool } from "./edit.js";
 import { lineHash } from "../core/hashline.js";
 import { recordRead, type ReadTracker } from "./read-tracker.js";
 
@@ -55,6 +55,208 @@ describe("createEditTool", () => {
 
     const written = await fs.readFile(filePath, "utf-8");
     expect(written).toBe("goodbye world\n");
+  });
+
+  describe("multi-file `files` form", () => {
+    const ctx = { signal: new AbortController().signal, toolCallId: "multi" };
+    const content = (result: unknown): string =>
+      typeof result === "string" ? result : (result as { content: string }).content;
+
+    it.each([
+      [
+        "the files shape sent under `edits`",
+        { edits: [{ file_path: "a.js", edits: [{ old_text: "a = 1", new_text: "a = 2" }] }] },
+      ],
+      [
+        "a single file's edits wrapped in an extra `edits` level",
+        { file_path: "a.js", edits: [{ edits: [{ old_text: "a = 1", new_text: "a = 2" }] }] },
+      ],
+      [
+        "`files` flattened into `edits`, each item naming its file",
+        { edits: [{ file_path: "a.js", old_text: "a = 1", new_text: "a = 2" }] },
+      ],
+    ])("recovers %s instead of failing the call", async (_label, args) => {
+      await fs.writeFile(path.join(tmpDir, "a.js"), "const a = 1;\n");
+      const tool = createEditTool(tmpDir);
+
+      await tool.execute(tool.parameters.parse(args), ctx);
+
+      expect(await fs.readFile(path.join(tmpDir, "a.js"), "utf-8")).toBe("const a = 2;\n");
+    });
+
+    it("exposes a flat three-field schema to Claude and applies it", async () => {
+      await fs.writeFile(path.join(tmpDir, "a.js"), "const a = 1;\nconst b = 1;\n");
+      const tool = createFlatEditTool(tmpDir);
+
+      await tool.execute(
+        tool.parameters.parse({
+          file_path: "a.js",
+          old_text: " = 1",
+          new_text: " = 2",
+          replace_all: true,
+        }),
+        ctx,
+      );
+
+      expect(await fs.readFile(path.join(tmpDir, "a.js"), "utf-8")).toBe(
+        "const a = 2;\nconst b = 2;\n",
+      );
+      expect(tool.rawInputSchema).toEqual({
+        type: "object",
+        properties: {
+          file_path: { type: "string" },
+          old_text: { type: "string" },
+          new_text: { type: "string" },
+          replace_all: { type: "boolean" },
+        },
+        required: ["file_path", "old_text", "new_text"],
+      });
+
+      // Nested calls (resumed sessions, callers inside Kleio) still work.
+      await tool.execute(
+        tool.parameters.parse({
+          file_path: "a.js",
+          edits: [{ old_text: "a = 2", new_text: "a = 9" }],
+        }),
+        ctx,
+      );
+      expect(await fs.readFile(path.join(tmpDir, "a.js"), "utf-8")).toBe(
+        "const a = 9;\nconst b = 2;\n",
+      );
+    });
+
+    it("applies a single flat edit instead of dropping its fields", async () => {
+      await fs.writeFile(path.join(tmpDir, "a.js"), "const a = 1;\nconst b = 1;\nconst c = 1;\n");
+      const tool = createEditTool(tmpDir);
+
+      await tool.execute(
+        tool.parameters.parse({ file_path: "a.js", old_text: "a = 1", new_text: "a = 2" }),
+        ctx,
+      );
+      await tool.execute(
+        tool.parameters.parse({
+          file_path: "a.js",
+          old_text: " = 1",
+          new_text: " = 3",
+          replace_all: true,
+        }),
+        ctx,
+      );
+
+      expect(await fs.readFile(path.join(tmpDir, "a.js"), "utf-8")).toBe(
+        "const a = 2;\nconst b = 3;\nconst c = 3;\n",
+      );
+    });
+
+    it("does not lift a flat edit that carries other keys", () => {
+      const tool = createEditTool(tmpDir);
+      const parsed = tool.parameters.parse({
+        file_path: "a.js",
+        old_text: "a = 1",
+        new_text: "a = 2",
+        lines: ["x"],
+      });
+
+      expect(parsed).not.toHaveProperty("edits");
+    });
+
+    it("groups flattened per-item file_path edits by file, stringified or not", async () => {
+      await fs.writeFile(path.join(tmpDir, "a.js"), "const a = 1;\nconst c = 1;\n");
+      await fs.writeFile(path.join(tmpDir, "b.js"), "const b = 1;\n");
+      const tool = createEditTool(tmpDir);
+      const flat = [
+        { file_path: "a.js", old_text: "a = 1", new_text: "a = 2" },
+        { file_path: "b.js", old_text: "b = 1", new_text: "b = 2" },
+        { file_path: "a.js", old_text: "c = 1", new_text: "c = 2" },
+      ];
+
+      const result = await tool.execute(
+        tool.parameters.parse({ edits: JSON.stringify(flat) }),
+        ctx,
+      );
+
+      expect(await fs.readFile(path.join(tmpDir, "a.js"), "utf-8")).toBe(
+        "const a = 2;\nconst c = 2;\n",
+      );
+      expect(await fs.readFile(path.join(tmpDir, "b.js"), "utf-8")).toBe("const b = 2;\n");
+      expect(content(result)).toContain("Edited 2 files.");
+    });
+
+    it("keeps rejecting flattened items that carry a non-text form", () => {
+      const tool = createEditTool(tmpDir);
+      const parsed = tool.parameters.parse({
+        edits: [{ file_path: "a.js", old_text: "a = 1", new_text: "a = 2", lines: ["x"] }],
+      });
+
+      expect(parsed).not.toHaveProperty("files");
+    });
+
+    it("edits every listed file in one call and returns each diff", async () => {
+      await fs.writeFile(path.join(tmpDir, "a.js"), "const a = 1;\n");
+      await fs.writeFile(path.join(tmpDir, "b.js"), "const b = 1;\n");
+      const tool = createEditTool(tmpDir);
+
+      const result = await tool.execute(
+        {
+          files: [
+            { file_path: "a.js", edits: [{ old_text: "a = 1", new_text: "a = 2" }] },
+            { file_path: "b.js", edits: [{ old_text: "b = 1", new_text: "b = 2" }] },
+          ],
+        },
+        ctx,
+      );
+
+      expect(await fs.readFile(path.join(tmpDir, "a.js"), "utf-8")).toBe("const a = 2;\n");
+      expect(await fs.readFile(path.join(tmpDir, "b.js"), "utf-8")).toBe("const b = 2;\n");
+      expect(content(result)).toContain("Edited 2 files.");
+      expect(resultToString(result)).toContain("+const a = 2;");
+      expect(resultToString(result)).toContain("+const b = 2;");
+    });
+
+    it("keeps the files that succeeded and names only the failed one", async () => {
+      await fs.writeFile(path.join(tmpDir, "a.js"), "const a = 1;\n");
+      await fs.writeFile(path.join(tmpDir, "b.js"), "const b = 1;\n");
+      const tool = createEditTool(tmpDir);
+
+      const result = await tool.execute(
+        {
+          files: [
+            { file_path: "a.js", edits: [{ old_text: "a = 1", new_text: "a = 2" }] },
+            { file_path: "b.js", edits: [{ old_text: "missing", new_text: "x" }] },
+          ],
+        },
+        ctx,
+      );
+
+      expect(await fs.readFile(path.join(tmpDir, "a.js"), "utf-8")).toBe("const a = 2;\n");
+      expect(await fs.readFile(path.join(tmpDir, "b.js"), "utf-8")).toBe("const b = 1;\n");
+      expect(content(result)).toContain("Edited 1 of 2 files. 1 failed");
+      expect(content(result)).toMatch(/### b\.js\nFAILED — .*old_text not found/);
+    });
+
+    it("throws when every file fails, leaving all files unchanged", async () => {
+      await fs.writeFile(path.join(tmpDir, "a.js"), "const a = 1;\n");
+      const tool = createEditTool(tmpDir);
+
+      await expect(
+        tool.execute(
+          { files: [{ file_path: "a.js", edits: [{ old_text: "missing", new_text: "x" }] }] },
+          ctx,
+        ),
+      ).rejects.toThrow(/old_text not found/);
+      expect(await fs.readFile(path.join(tmpDir, "a.js"), "utf-8")).toBe("const a = 1;\n");
+    });
+
+    it.each([
+      ["both forms", { file_path: "a.js", edits: [{ old_text: "a", new_text: "b" }], files: [] }],
+      ["neither form", {}],
+      ["file_path without edits", { file_path: "a.js" }],
+    ])("rejects %s", async (_label, args) => {
+      const tool = createEditTool(tmpDir);
+      await expect(tool.execute(args as never, ctx)).rejects.toThrow(
+        /file_path and edits|not both/,
+      );
+    });
   });
 
   it.each([
@@ -268,19 +470,73 @@ describe("createEditTool", () => {
     expect(written).toBe("one two three\n");
   });
 
-  it("throws when file hasn't been read with readFiles tracking", async () => {
+  it("edits an unread file when old_text matches the live content", async () => {
     const filePath = path.join(tmpDir, "unread.txt");
     await fs.writeFile(filePath, "content\n");
 
     const readFiles: ReadTracker = new Map();
     const tool = createEditTool(tmpDir, readFiles);
 
+    await tool.execute(
+      { file_path: "unread.txt", edits: [{ old_text: "content", new_text: "new" }] },
+      { signal: new AbortController().signal, toolCallId: "test-3" },
+    );
+
+    expect(await fs.readFile(filePath, "utf-8")).toBe("new\n");
+    // The model never saw the whole file, so a later full overwrite still needs a read.
+    expect(readFiles.get(filePath)?.seen).toEqual([]);
+  });
+
+  it("still refuses an unread-file edit whose old_text is not in the file", async () => {
+    const filePath = path.join(tmpDir, "unread-miss.txt");
+    await fs.writeFile(filePath, "content\n");
+
+    const tool = createEditTool(tmpDir, new Map());
+
     await expect(
       tool.execute(
-        { file_path: "unread.txt", edits: [{ old_text: "content", new_text: "new" }] },
-        { signal: new AbortController().signal, toolCallId: "test-3" },
+        { file_path: "unread-miss.txt", edits: [{ old_text: "guessed", new_text: "new" }] },
+        { signal: new AbortController().signal, toolCallId: "test-3b" },
       ),
-    ).rejects.toThrow("File must be read first");
+    ).rejects.toThrow(/old_text not found/);
+    expect(await fs.readFile(filePath, "utf-8")).toBe("content\n");
+  });
+
+  it("edits a file changed since it was read against live content, then forgets the read", async () => {
+    const filePath = path.join(tmpDir, "stale.txt");
+    await fs.writeFile(filePath, "alpha\n");
+    const readFiles: ReadTracker = new Map();
+    await markRead(readFiles, filePath);
+    // e.g. the model's own bash script rewrote the file after the read
+    await fs.writeFile(filePath, "alpha changed elsewhere\n");
+    await fs.utimes(filePath, new Date(), new Date(Date.now() + 5000));
+
+    const tool = createEditTool(tmpDir, readFiles);
+    await tool.execute(
+      { file_path: "stale.txt", edits: [{ old_text: "changed", new_text: "edited" }] },
+      { signal: new AbortController().signal, toolCallId: "test-3c" },
+    );
+    expect(await fs.readFile(filePath, "utf-8")).toBe("alpha edited elsewhere\n");
+    // The model never saw the rewritten file whole, so a full overwrite still needs a read.
+    expect(readFiles.get(filePath)?.seen).toEqual([]);
+  });
+
+  it("still refuses a stale-file edit whose old_text is no longer there", async () => {
+    const filePath = path.join(tmpDir, "stale-miss.txt");
+    await fs.writeFile(filePath, "alpha\n");
+    const readFiles: ReadTracker = new Map();
+    await markRead(readFiles, filePath);
+    await fs.writeFile(filePath, "omega\n");
+    await fs.utimes(filePath, new Date(), new Date(Date.now() + 5000));
+
+    const tool = createEditTool(tmpDir, readFiles);
+    await expect(
+      tool.execute(
+        { file_path: "stale-miss.txt", edits: [{ old_text: "alpha", new_text: "beta" }] },
+        { signal: new AbortController().signal, toolCallId: "test-3d" },
+      ),
+    ).rejects.toThrow(/old_text not found/);
+    expect(await fs.readFile(filePath, "utf-8")).toBe("omega\n");
   });
 
   it("allows edit when file is in readFiles tracker", async () => {
@@ -304,7 +560,7 @@ describe("createEditTool", () => {
     expect(written).toBe("gamma beta\n");
   });
 
-  it("rejects edit when the file changed since it was read", async () => {
+  it("applies an edit that matches a file changed since it was read, and forgets the read", async () => {
     const filePath = path.join(tmpDir, "stale.txt");
     await fs.writeFile(filePath, "alpha\n");
 
@@ -317,13 +573,16 @@ describe("createEditTool", () => {
     const future = new Date(Date.now() + 5_000);
     await fs.utimes(filePath, future, future);
 
+    // The edit is validated against the live bytes, so text the formatter
+    // produced applies; the stale read is dropped so a later full-file write
+    // still demands a fresh read.
     const tool = createEditTool(tmpDir, readFiles);
-    await expect(
-      tool.execute(
-        { file_path: "stale.txt", edits: [{ old_text: "ALPHA", new_text: "beta" }] },
-        { signal: new AbortController().signal, toolCallId: "test-stale" },
-      ),
-    ).rejects.toThrow(/modified since/);
+    await tool.execute(
+      { file_path: "stale.txt", edits: [{ old_text: "ALPHA", new_text: "beta" }] },
+      { signal: new AbortController().signal, toolCallId: "test-stale" },
+    );
+    expect(await fs.readFile(filePath, "utf-8")).toBe("beta\n");
+    expect(readFiles.get(filePath)?.seen).toEqual([]);
   });
 
   it("allows consecutive edits without re-reading (recordWrite refreshes)", async () => {

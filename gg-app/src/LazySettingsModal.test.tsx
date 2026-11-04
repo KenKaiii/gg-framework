@@ -8,8 +8,14 @@ const native = vi.hoisted(() => ({
   getSettings: vi.fn(async () => ({ projectsRoot: "/synthetic/projects" })),
   saveSettings: vi.fn(async () => {}),
   getPermissionsStatus: vi.fn(async () => ({ applicable: false, granted: false })),
+  waitForReady: vi.fn(async () => {}),
+}));
+const keepAwake = vi.hoisted(() => ({
+  getKeepAwake: vi.fn(async () => true),
+  setKeepAwake: vi.fn(async (enabled: boolean) => enabled),
 }));
 vi.mock("./agent", () => ({ ...native, openPermissionsSettings: vi.fn() }));
+vi.mock("./kleio/keepAwake", () => keepAwake);
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./toast", () => ({ toast: vi.fn() }));
 
@@ -59,5 +65,19 @@ describe("lazy settings", () => {
     expect(document.activeElement).toBe(trigger);
     // Each lazy-chunk wait above allows 5 s on its own, so the test as a whole
     // needs more than vitest's 5 s default (slow Windows runners hit it).
+  }, 20_000);
+
+  it("loads the keep-awake setting and saves a toggle through the sidecar", async () => {
+    render(<SettingsModal onClose={() => {}} />);
+    const dialog = await screen.findByRole("dialog", { name: "Settings" }, { timeout: 5000 });
+    const toggle = within(dialog).getByRole("checkbox", {
+      name: "Keep computer awake while the agent works",
+    });
+    // Disabled until the sidecar answers, so a click can't race the load.
+    await waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false));
+    expect((toggle as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(toggle);
+    await waitFor(() => expect(keepAwake.setKeepAwake).toHaveBeenCalledWith(false));
+    await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(false));
   }, 20_000);
 });

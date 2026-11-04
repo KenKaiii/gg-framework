@@ -3,7 +3,7 @@ import type { AgentTool } from "@kleio/agent";
 import type { ProcessManager } from "../core/process-manager.js";
 
 const TaskStopParams = z.object({
-  id: z.string().describe("The background process ID to stop"),
+  id: z.string(),
 });
 
 export function createTaskStopTool(
@@ -11,7 +11,7 @@ export function createTaskStopTool(
 ): AgentTool<typeof TaskStopParams> {
   return {
     name: "task_stop",
-    description: "Stop a background process by ID. Sends SIGTERM, then SIGKILL after 5 seconds.",
+    description: "Stop a background process.",
     parameters: TaskStopParams,
     async execute({ id }) {
       return processManager.stop(id);

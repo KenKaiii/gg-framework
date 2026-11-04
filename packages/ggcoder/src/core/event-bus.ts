@@ -39,6 +39,7 @@ export interface BusEventMap {
   };
   max_turns: { totalTurns: number; maxTurns: number };
   retry: Omit<Extract<AgentEvent, { type: "retry" }>, "type">;
+  stream_rule_triggered: Omit<Extract<AgentEvent, { type: "stream_rule_triggered" }>, "type">;
   /** Turn budget was exhausted but extended because the run showed progress. */
   turn_budget_extended: { turn: number; grantedTurns: number; extension: number };
   truncated: {
@@ -198,6 +199,11 @@ export class EventBus {
       case "retry": {
         const { type: _type, ...retry } = event;
         this.emit("retry", retry);
+        break;
+      }
+      case "stream_rule_triggered": {
+        const { type: _type, ...triggered } = event;
+        this.emit("stream_rule_triggered", triggered);
         break;
       }
       case "max_turns":

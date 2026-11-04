@@ -81,6 +81,56 @@ afterEach(async () => {
 });
 
 describe("step-boundary persistence", () => {
+  it("credits a full-file cat from the finished step as a read", async () => {
+    // A .txt file starts no language server, so nothing keeps a handle open in
+    // the project folder after dispose (Windows would refuse to delete it).
+    await fs.writeFile(path.join(tmpProject, "a.txt"), "one\ntwo\n");
+    const { AgentSession } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      systemPrompt: "test system prompt",
+    });
+    await session.initialize();
+
+    let writeError: unknown = "not run";
+    agentLoopMock.mockImplementation(async function* (
+      messages: Message[],
+      opts: { tools: Array<{ name: string; execute: (a: unknown, c: unknown) => unknown }> },
+    ) {
+      messages.push({
+        role: "assistant",
+        content: [{ type: "tool_call", id: "b1", name: "bash", args: { command: "cat a.txt" } }],
+      });
+      yield { type: "turn_end", turn: 1, stopReason: "tool_use", usage, timing };
+      messages.push({
+        role: "tool",
+        content: [{ type: "tool_result", toolCallId: "b1", content: "one\ntwo\n" }],
+      });
+      yield { type: "checkpoint", turn: 1 };
+
+      const write = opts.tools.find((t) => t.name === "write");
+      try {
+        await write?.execute(
+          { file_path: "a.txt", content: "replaced\n" },
+          { signal: new AbortController().signal, toolCallId: "w1" },
+        );
+        writeError = null;
+      } catch (err) {
+        writeError = err;
+      }
+      messages.push({ role: "assistant", content: "done" });
+      yield { type: "turn_end", turn: 2, stopReason: "end_turn", usage, timing };
+      yield { type: "agent_done", totalTurns: 2, totalUsage: usage };
+    });
+
+    await session.prompt("rewrite a.txt");
+    expect(writeError).toBeNull();
+    expect(await fs.readFile(path.join(tmpProject, "a.txt"), "utf-8")).toBe("replaced\n");
+    await session.dispose();
+  }, 15_000);
+
   it("writes each step to disk before the loop returns", async () => {
     const { AgentSession } = await import("./agent-session.js");
     const session = new AgentSession({

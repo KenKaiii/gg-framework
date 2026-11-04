@@ -29,12 +29,18 @@ import type {
 } from "./types.js";
 import { firstEventHedgeDelayMs, hedgedStream } from "./hedged-stream.js";
 import { isLocalBackendUrl } from "./local-backend.js";
+import { argumentHints, unknownToolMessage } from "./tool-call-hints.js";
 import {
   clampOutputTokens,
   outputRouteKey,
   parseOutputTokenCeiling,
   rememberOutputCeiling,
 } from "./output-ceiling.js";
+import {
+  StreamRuleMonitor,
+  buildStreamRuleReminder,
+  type StreamRuleMatch,
+} from "./stream-rules.js";
 
 const DEFAULT_MAX_TURNS = 300;
 /** Per-tool cancellation ceiling; a tool may raise it via `timeoutMs`. */
@@ -650,6 +656,12 @@ export async function* agentLoop(
   let runawayToolcallRetries = 0;
   let overflowCompactionAttempts = 0;
   let toolResultTruncationAttempted = false;
+  // Stream rules: per-run state (once-per-rule + global retry cap). Null when
+  // the host configured none, so the hot path costs one null check per delta.
+  const streamRuleMonitor =
+    options.streamRules && options.streamRules.rules.length > 0
+      ? new StreamRuleMonitor(options.streamRules)
+      : null;
   const invalidToolArgumentCounts = new Map<string, number>();
   // A recoverable tool-argument fatal (empty args -- a provider stream
   // glitch, see executeSingleToolCall) gets exactly one bounded auto-continue
@@ -819,16 +831,7 @@ export async function* agentLoop(
       // first-event watchdog with prompt size. The char-counting loop is O(n)
       // over the full message history and runs every turn — cheap (a
       // sub-millisecond scan of a few hundred KB) even uncondensed.
-      let msgChars = 0;
-      for (const m of messages) {
-        if (typeof m.content === "string") msgChars += m.content.length;
-        else if (Array.isArray(m.content)) {
-          for (const p of m.content) {
-            if ("text" in p && typeof p.text === "string") msgChars += p.text.length;
-            if ("content" in p && typeof p.content === "string") msgChars += p.content.length;
-          }
-        }
-      }
+      const msgChars = countMessageChars(messages);
       // Scale the first-event watchdog on the plain remote path: prefill time
       // grows linearly with prompt tokens (~3-5K tok/s observed), so a large
       // prompt legitimately needs longer than 45s to reach its first event.
@@ -923,6 +926,11 @@ export async function* agentLoop(
       // Text streamed this attempt — preserved across transport-failure retries
       // instead of being discarded and re-billed (see the retry branch below).
       let attemptText = "";
+      // Stream-rule hit for this attempt (set right before aborting the stream)
+      // plus thinking volume, which only feeds the aborted attempt's usage estimate.
+      let streamRuleHit: StreamRuleMatch | null = null;
+      let attemptThinkingChars = 0;
+      streamRuleMonitor?.beginAttempt();
       // Track consumer processing time — helps distinguish "API stopped sending"
       // from "our consumer was slow to pull the next event"
       let lastYieldEndTime = Date.now();
@@ -1089,7 +1097,7 @@ export async function* agentLoop(
               });
             }
           },
-          start: (signal) =>
+          start: (signal, arm) =>
             stream({
               provider: options.provider,
               model: options.model,
@@ -1110,14 +1118,19 @@ export async function* agentLoop(
               transportSessionId: options.transportSessionId,
               projectId: liveProjectId,
               cacheRetention: options.cacheRetention,
+              // A hedge duplicates an already-observed request; observe it once.
+              onContextPrepared: arm === "primary" ? options.onContextPrepared : undefined,
               promptCacheKey: options.promptCacheKey,
               serviceTier: options.serviceTier,
+              responsesLite: options.responsesLite,
+              strictTools: options.strictTools,
               supportsImages: options.supportsImages,
               supportsVideo: options.supportsVideo,
               compaction: options.compaction,
               clearToolUses: options.clearToolUses,
               userAgent: options.userAgent,
               defaultHeaders: options.defaultHeaders,
+              providerOptions: options.providerOptions,
               fetch: options.fetch,
               // Raw bytes (incl. SSE pings) prove the connection is alive during
               // silent thinking; only re-arm an armed timer, never mid-yield.
@@ -1232,8 +1245,16 @@ export async function* agentLoop(
           }
           if (event.type === "text_delta") {
             attemptText += event.text;
+            // A matching delta is never yielded: abort through the per-attempt
+            // controller (not the caller's signal) and retry below.
+            streamRuleHit = streamRuleMonitor?.checkText(event.text) ?? null;
+            if (streamRuleHit) {
+              streamController.abort();
+              break;
+            }
             yield { type: "text_delta" as const, text: event.text };
           } else if (event.type === "thinking_delta") {
+            attemptThinkingChars += event.text.length;
             yield { type: "thinking_delta" as const, text: event.text };
           } else if (event.type === "server_toolcall") {
             yield {
@@ -1253,6 +1274,15 @@ export async function* agentLoop(
             const chunkChars = event.argsJson?.length ?? 0;
             toolcallDeltaChars += chunkChars;
             toolcallDeltaCount++;
+            // The tool call is still partial here — it only reaches the
+            // assistant message (and execution) via result.response, which a
+            // rule hit never awaits.
+            streamRuleHit =
+              streamRuleMonitor?.checkToolArgs(event.id, event.name, event.argsJson ?? "") ?? null;
+            if (streamRuleHit) {
+              streamController.abort();
+              break;
+            }
             if (
               !runawayDetected &&
               (toolcallDeltaChars > MAX_TOOLCALL_DELTA_CHARS ||
@@ -1279,6 +1309,71 @@ export async function* agentLoop(
           // Re-arm the idle timer only now that we're done yielding -- the
           // countdown to the next event excludes the render time above.
           resetIdleTimer();
+        }
+
+        if (streamRuleHit && streamRuleMonitor) {
+          const attempt = streamRuleMonitor.recordTrigger(streamRuleHit.rules);
+          const ruleNames = streamRuleHit.rules.map((rule) => rule.name);
+          // Providers report no usage for an aborted stream, but the prompt and
+          // the streamed output were billed. The previous request's reported
+          // prompt (system + tools + history, as the provider counted it) was
+          // re-sent as a cached prefix; only messages added since are new.
+          // Without a prior request, fall back to ~4 chars/token of history.
+          const priorPrompt = latestProviderUsage
+            ? latestProviderUsage.inputTokens +
+              (latestProviderUsage.cacheRead ?? 0) +
+              (latestProviderUsage.cacheWrite ?? 0)
+            : 0;
+          const newChars =
+            priorPrompt > 0 && usageAnchorIndex !== undefined
+              ? countMessageChars(messages.slice(usageAnchorIndex + 1))
+              : msgChars;
+          const abortedUsage: Usage = {
+            inputTokens: Math.ceil(newChars / 4),
+            outputTokens: Math.ceil(
+              (attemptText.length + attemptThinkingChars + toolcallDeltaChars) / 4,
+            ),
+            ...(priorPrompt > 0 ? { cacheRead: priorPrompt } : {}),
+          };
+          totalUsage.inputTokens += abortedUsage.inputTokens;
+          totalUsage.outputTokens += abortedUsage.outputTokens;
+          if (abortedUsage.cacheRead) {
+            totalUsage.cacheRead = (totalUsage.cacheRead ?? 0) + abortedUsage.cacheRead;
+          }
+          diag("stream_rule_triggered", {
+            rules: ruleNames.join(","),
+            source: streamRuleHit.source,
+            toolName: streamRuleHit.toolName,
+            attempt,
+            maxAttempts: streamRuleMonitor.maxRetries,
+            discardedChars: attemptText.length + toolcallDeltaChars,
+            provider: options.provider,
+            model: options.model,
+          });
+          // The partial assistant message is discarded: nothing was pushed to
+          // `messages`, so only the reminder lands before the replay.
+          messages.push(buildStreamRuleReminder(streamRuleHit.rules));
+          yield {
+            type: "stream_rule_triggered" as const,
+            rules: ruleNames,
+            source: streamRuleHit.source,
+            ...(streamRuleHit.toolName !== undefined ? { toolName: streamRuleHit.toolName } : {}),
+            attempt,
+            maxAttempts: streamRuleMonitor.maxRetries,
+            usage: abortedUsage,
+          };
+          // Silent retry: hosts roll back the streamed partial exactly as for
+          // any other replayed attempt.
+          yield {
+            type: "retry" as const,
+            reason: "stream_rule" as const,
+            attempt,
+            maxAttempts: streamRuleMonitor.maxRetries,
+            delayMs: 0,
+            silent: true,
+          };
+          turn--; // The discarded attempt does not consume a turn.
+          continue;
         }
 
         diag("stream_done", {
@@ -1982,6 +2077,7 @@ export async function* agentLoop(
         maxToolResultChars: options.maxToolResultChars,
         maxTurnToolResultChars: options.maxTurnToolResultChars,
         transformToolResult: options.transformToolResult,
+        resolveTool: options.resolveTool,
         toolMap,
         invalidToolArgumentCounts,
         countedInvalidArguments: new Set<string>(),
@@ -2009,6 +2105,9 @@ export async function* agentLoop(
       // the filesystem. Hosts flush here so a crash before the next provider
       // call cannot lose work that already happened.
       yield { type: "checkpoint" as const, turn };
+      // A successful handoff (e.g. a submitted plan) is a clean finish, not an
+      // abort. Persist paired results first, then leave approval to the host.
+      if (executionResult.endRun) break;
       const toolsAborted = executionResult.aborted;
 
       if (fatalToolArgumentError) {
@@ -2167,6 +2266,7 @@ interface ToolExecutionRecord {
   toolCallId: string;
   content: ToolResultContent;
   isError: boolean;
+  endRun?: boolean;
 }
 
 interface ToolBatchExecutionOptions {
@@ -2177,6 +2277,7 @@ interface ToolBatchExecutionOptions {
   maxToolResultChars?: number;
   maxTurnToolResultChars?: number;
   transformToolResult?: AgentOptions["transformToolResult"];
+  resolveTool?: AgentOptions["resolveTool"];
   toolMap: Map<string, AgentTool>;
   invalidToolArgumentCounts: Map<string, number>;
   /**
@@ -2205,6 +2306,8 @@ interface ToolBatchExecutionResult {
   aborted: boolean;
   /** A steering message cut the batch short; the turn continues. */
   preempted: boolean;
+  /** A successful tool handed control back to the host. */
+  endRun: boolean;
 }
 
 interface ToolEventState {
@@ -2249,9 +2352,14 @@ async function executeSingleToolCall(
   let resultContent: ToolResultContent;
   let details: unknown;
   let isError = false;
+  let endRun = false;
   let invalidArgAttempt: number | undefined;
 
-  const tool = options.toolMap.get(toolCall.name);
+  let tool = options.toolMap.get(toolCall.name);
+  if (!tool && options.resolveTool) {
+    tool = options.resolveTool(toolCall.name);
+    if (tool) options.toolMap.set(tool.name, tool);
+  }
   if (tool) {
     // Only deduplicate within this assistant response. Sort object keys so
     // semantically identical provider JSON cannot run a side effect twice.
@@ -2271,7 +2379,7 @@ async function executeSingleToolCall(
     options.seenToolCalls.add(signature);
   }
   if (!tool) {
-    resultContent = `Unknown tool: ${toolCall.name}`;
+    resultContent = unknownToolMessage(toolCall.name, [...options.toolMap.keys()]);
     isError = true;
   } else {
     try {
@@ -2322,6 +2430,7 @@ async function executeSingleToolCall(
       };
       const raw = await tool.execute(parsed, ctx);
       const normalized = normalizeToolResult(raw);
+      endRun = normalized.endRun === true;
       resultContent = redactValue(normalized.content, toolRedactionOptions());
       details = redactValue(normalized.details, toolRedactionOptions());
       if (options.transformToolResult) {
@@ -2351,9 +2460,11 @@ async function executeSingleToolCall(
         options.invalidToolArgumentCounts.set(failureKey, failureCount);
         options.countedInvalidArguments.add(failureKey);
         invalidArgAttempt = failureCount;
+        const hints = argumentHints(tool, toolCall.args);
         resultContent =
           `Invalid arguments for tool \`${toolCall.name}\`:\n` +
           prettyError +
+          (hints ? `\n${hints}` : "") +
           "\nRe-issue the call with each field as the correct type.";
         if (failureCount >= 3) {
           // Empty raw args (no fields at all) is the signature of a provider
@@ -2427,7 +2538,7 @@ async function executeSingleToolCall(
     ...(invalidArgAttempt === undefined ? {} : { invalidArgAttempt }),
   });
 
-  return { toolCallId: toolCall.id, content: resultContent, isError };
+  return { toolCallId: toolCall.id, content: resultContent, isError, endRun: endRun && !isError };
 }
 
 /**
@@ -2445,12 +2556,18 @@ function createPreemptTracker(
   state: ToolEventState,
   resultsById: Map<string, ToolExecutionRecord>,
   dispatchedIds: Set<string>,
-): { run: (toolCall: ToolCall) => Promise<void>; preempted: () => boolean; dispose: () => void } {
+): {
+  run: (toolCall: ToolCall) => Promise<void>;
+  preempted: () => boolean;
+  endRun: () => boolean;
+  dispose: () => void;
+} {
   const running = new Map<
     string,
     { toolCall: ToolCall; interruptible: boolean; startedAt: number }
   >();
   let graceTimer: ReturnType<typeof setTimeout> | undefined;
+  let endRun = false;
   const preemptSignal = options.preemptSignal;
   const abandon = () => {
     graceTimer = undefined;
@@ -2475,7 +2592,7 @@ function createPreemptTracker(
   preemptSignal?.addEventListener("abort", onPreempt, { once: true });
   return {
     async run(toolCall: ToolCall): Promise<void> {
-      if (options.preemptSignal?.aborted) return; // preempted before dispatch
+      if (endRun || options.preemptSignal?.aborted) return; // handed off/preempted before dispatch
       dispatchedIds.add(toolCall.id);
       const interruptible = isInterruptibleTool(options.toolMap.get(toolCall.name), toolCall.name);
       running.set(toolCall.id, { toolCall, interruptible, startedAt: Date.now() });
@@ -2491,17 +2608,18 @@ function createPreemptTracker(
           ? record.content.startsWith(STEER_INTERRUPTED_TEXT)
           : record.content[0]?.type === "text" &&
             record.content[0].text.startsWith(STEER_INTERRUPTED_TEXT);
-      resultsById.set(
-        toolCall.id,
+      const result =
         interruptible && preemptSignal?.aborted && !alreadyMarked
           ? markSteerInterrupted(record)
-          : record,
-      );
+          : record;
+      resultsById.set(toolCall.id, result);
+      if (result.endRun && !result.isError) endRun = true;
       if (preemptSignal?.aborted && graceTimer === undefined && running.size === 0) {
         eventStream.close();
       }
     },
     preempted: () => preemptSignal?.aborted === true,
+    endRun: () => endRun,
     dispose: () => {
       if (graceTimer !== undefined) clearTimeout(graceTimer);
       preemptSignal?.removeEventListener("abort", onPreempt);
@@ -2562,7 +2680,7 @@ async function* executeToolCallsMixed(
   void (async () => {
     try {
       for (const phase of phases) {
-        if (options.signal?.aborted || options.preemptSignal?.aborted) break;
+        if (options.signal?.aborted || options.preemptSignal?.aborted || tracker.endRun()) break;
         if (phase.sequential) {
           // A different sequential call can change state (e.g. edit between
           // reads, or cd between identical bash commands). Do not deduplicate
@@ -2607,7 +2725,12 @@ async function* executeToolCallsMixed(
   const toolResults = buildToolResults(initialToolResults, toolCalls, resultsById, dispatchedIds);
   capToolResults(toolResults, options.maxToolResultChars);
   capTurnToolResults(toolResults, options.maxTurnToolResultChars);
-  return { toolResults, aborted, preempted: !aborted && tracker.preempted() };
+  return {
+    toolResults,
+    aborted,
+    preempted: !aborted && tracker.preempted(),
+    endRun: tracker.endRun(),
+  };
 }
 
 async function* executeToolCallsParallel(
@@ -2653,7 +2776,12 @@ async function* executeToolCallsParallel(
   const toolResults = buildToolResults(initialToolResults, toolCalls, resultsById, dispatchedIds);
   capToolResults(toolResults, options.maxToolResultChars);
   capTurnToolResults(toolResults, options.maxTurnToolResultChars);
-  return { toolResults, aborted, preempted: !aborted && tracker.preempted() };
+  return {
+    toolResults,
+    aborted,
+    preempted: !aborted && tracker.preempted(),
+    endRun: tracker.endRun(),
+  };
 }
 
 /**
@@ -2922,7 +3050,7 @@ function countMessageChars(messages: readonly Message[]): number {
  *
  * Repairs in-place by inserting synthetic tool_result messages where needed.
  */
-function repairToolPairingAdjacent(messages: Message[]): void {
+export function repairToolPairingAdjacent(messages: Message[]): void {
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]!;
     if (msg.role !== "assistant") continue;

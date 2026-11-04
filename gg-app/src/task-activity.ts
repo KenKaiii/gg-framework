@@ -140,10 +140,10 @@ function finish(s: TaskActivity, now: number): TaskActivity {
           : "Agents still running",
     };
   }
-  if (
-    s.verification === "incomplete" ||
-    ((s.codeChanged || (s.changed && !s.scopedVerification)) && s.verification !== "passed")
-  )
+  // Only the host's "incomplete" (an Autopilot cycle's check) is unverified.
+  // A plain reply leaves checks to the commit, so unchecked edits are saved
+  // work, not a warning; a check that ran and failed was handled above.
+  if (s.verification === "incomplete")
     return {
       ...s,
       phase: "unverified",
@@ -180,6 +180,7 @@ function toolPhase(name: string, args: Record<string, unknown>): string {
   if (["web_search", "web_fetch", "steroids"].includes(name)) return "Checking references…";
   if (["subagent", "spawn_agent", "wait_agent"].includes(name)) return "Coordinating agent work…";
   if (name === "screenshot") return "Inspecting the app…";
+  if (name === "debug") return "Stepping through the code…";
   if (name === "bash")
     return typeof args.command === "string" &&
       /^(?:(?:pnpm|npm|yarn|bun)\s+(?:exec\s+|run\s+)?(?:test|check|lint|build|vitest)|(?:pytest|tsc|vitest)\b)/.test(

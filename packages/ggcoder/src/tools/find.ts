@@ -5,8 +5,8 @@ import type { AgentTool } from "@kleio/agent";
 import { resolvePath } from "./path-utils.js";
 
 const FindParams = z.object({
-  pattern: z.string().describe("Glob pattern to match files (e.g. '**/*.ts', 'src/**/*.tsx')"),
-  path: z.string().optional().describe("Directory to search in (defaults to cwd)"),
+  pattern: z.string().describe("Glob, e.g. '**/*.ts'"),
+  path: z.string().optional(),
 });
 
 const MAX_RESULTS = 100;
@@ -14,9 +14,7 @@ const MAX_RESULTS = 100;
 export function createFindTool(cwd: string): AgentTool<typeof FindParams> {
   return {
     name: "find",
-    description:
-      "Find files matching a glob pattern. Respects .gitignore. " +
-      "Returns sorted file paths, truncated if more than 100 matches.",
+    description: "Find files by glob (respects .gitignore, max 100).",
     parameters: FindParams,
     async execute({ pattern, path: searchPath }) {
       const dir = searchPath ? resolvePath(cwd, searchPath) : cwd;

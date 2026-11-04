@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import { KLEIO_PRODUCT_PROFILE } from "@kleio/core";
 import { formatUserError } from "./error-handler.js";
+import { editTargetLabel } from "../tools/edit-targets.js";
 
 /**
  * Format tool call start for display.
@@ -67,9 +68,12 @@ function formatArgs(name: string, args: Record<string, unknown>): string {
       const short = cmd.length > 80 ? cmd.slice(0, 77) + "..." : cmd;
       return ` ${chalk.dim(short)}`;
     }
+    case "edit": {
+      const label = editTargetLabel(args);
+      return label ? ` ${chalk.dim(label)}` : "";
+    }
     case "read":
     case "write":
-    case "edit":
       return args.file_path ? ` ${chalk.dim(String(args.file_path))}` : "";
     case "find":
       return ` ${chalk.dim(String(args.pattern ?? ""))}`;

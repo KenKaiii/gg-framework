@@ -1,6 +1,6 @@
 ---
 name: root-cause
-description: Use when a bug resists the obvious fix, behavior makes no sense, the same symptom keeps coming back, or the user asks why something happens and the answer is not on the surface. Do NOT use for bugs with a clear repro and an obvious cause — reproduce, fix, and re-run directly.
+description: Use when a bug resists the obvious fix or is flaky. Do NOT use when the cause is obvious.
 ---
 
 # Root-Cause

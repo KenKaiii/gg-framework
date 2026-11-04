@@ -55,6 +55,24 @@ describe("SettingsTabBar", () => {
     );
   });
 
+  it("supports a distinct name and tab ids when reused outside Settings", () => {
+    render(
+      <SettingsTabBar
+        tabs={TABS}
+        selected="general"
+        onSelect={vi.fn()}
+        panelId="checklist-panel"
+        label="Checklist views"
+        tabIdPrefix="checklist-tab"
+      />,
+    );
+    expect(screen.getByRole("tablist", { name: "Checklist views" })).toBeTruthy();
+    const tab = screen.getByRole("tab", { name: "General" });
+    expect(tab.id).toBe("checklist-tab-general");
+    expect(tab.getAttribute("aria-controls")).toBe("checklist-panel");
+    expect(document.querySelector("#settings-tab-general")).toBeNull();
+  });
+
   it("moves only on click, not on hover", () => {
     const onSelect = vi.fn();
     render(<Harness onSelect={onSelect} />);

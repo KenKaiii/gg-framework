@@ -121,6 +121,16 @@ describe("async subagent control tools", () => {
     ]);
   });
 
+  it("forwards a task's acceptance checks to the manager", async () => {
+    const manager = fakeManager();
+    const spawn = createSubAgentControlTools(manager).find((tool) => tool.name === "spawn_agent")!;
+    const checks = [{ type: "command_passed" as const, target: "pnpm test" }];
+
+    await spawn.execute({ tasks: [{ task_name: "a", task: "one", checks }] }, context);
+
+    expect(manager.spawn).toHaveBeenCalledWith("a", "one", undefined, { checks });
+  });
+
   it("reports a failed start in place and still starts the others", async () => {
     const manager = fakeManager();
     vi.mocked(manager.spawn).mockImplementation(async (taskName: string) => {

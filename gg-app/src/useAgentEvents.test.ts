@@ -87,7 +87,7 @@ function setup(
     setState,
     setTasks: noop as unknown as AgentEventsDeps["setTasks"],
     setProjectTasks: noop as unknown as AgentEventsDeps["setProjectTasks"],
-    setStatus: noop as unknown as AgentEventsDeps["setStatus"],
+    setStatus: vi.fn<AgentEventsDeps["setStatus"]>(),
     setRunning,
     setLiveToolFeed,
     setTokens,
@@ -459,6 +459,24 @@ describe("useAgentEvents", () => {
     expect(getItems()).toEqual([]);
   });
 
+  it("drops the aborted draft and shows a notice when a stream rule fires", () => {
+    const { hook, getItems } = setup();
+
+    act(() => {
+      hook.result.current.handleEvent(ev("text_delta", { text: "TODO: later" }));
+      hook.result.current.handleEvent(
+        ev("stream_rule_triggered", { rules: ["no-todo"], source: "text" }),
+      );
+    });
+
+    expect(getItems()).toEqual([
+      expect.objectContaining({
+        kind: "info",
+        text: 'Rule "no-todo" caught the reply mid-stream — retrying',
+      }),
+    ]);
+  });
+
   it("completes the notice when messages were compacted", () => {
     const { hook, getItems } = setup();
 
@@ -507,6 +525,64 @@ describe("useAgentEvents", () => {
     act(() => hook.result.current.handleEvent(ev("run_end", { cancelled: true })));
     expect(getState()).toMatchObject({ running: false, runState: "idle" });
     expect(setRunning).toHaveBeenLastCalledWith(false);
+  });
+
+  it("restores the empty-session welcome state after cancelling then starting a new session", () => {
+    const { hook, deps, getItems, pushUserItem } = setup();
+    pushUserItem("Stop this run", false);
+    act(() => {
+      hook.result.current.handleEvent(ev("run_start"));
+      hook.result.current.handleEvent(ev("run_cancelling"));
+      hook.result.current.handleEvent(ev("run_end", { cancelled: true }));
+    });
+    expect(deps.setStatus).toHaveBeenLastCalledWith("cancelled");
+    expect(getItems()).toHaveLength(1);
+
+    act(() => hook.result.current.handleEvent(ev("session_reset")));
+
+    expect(getItems()).toEqual([]);
+    expect(deps.setStatus).toHaveBeenLastCalledWith("ready");
+    expect(deps.setDoneStatus).toHaveBeenLastCalledWith(null);
+  });
+
+  describe("cold-cache notice status", () => {
+    const expired = {
+      sessionId: "old",
+      provider: "anthropic",
+      ttlMs: 300_000,
+      confidence: "expired",
+      ttlSource: "test",
+      lastRequestAt: 1,
+      expiresAt: 300_001,
+      expired: true,
+      reason: "idle",
+      prefixTokens: 358_000,
+      minTokens: 40_000,
+      notable: true,
+      estimatedExtraCostUsd: null,
+    } satisfies NonNullable<AgentState["cacheExpiry"]>;
+
+    it("clears the previous chat's status when a fresh session starts", () => {
+      const { hook, getState } = setup(() => false, { cacheExpiry: expired });
+
+      act(() => hook.result.current.handleEvent(ev("session_reset")));
+
+      expect(getState()?.cacheExpiry).toBeNull();
+    });
+
+    it("applies live cache_expiry pushes, including null", () => {
+      const { hook, getState } = setup();
+
+      act(() =>
+        hook.result.current.handleEvent({ type: "cache_expiry", data: expired } as SidecarEvent),
+      );
+      expect(getState()?.cacheExpiry).toEqual(expired);
+
+      act(() =>
+        hook.result.current.handleEvent({ type: "cache_expiry", data: null } as SidecarEvent),
+      );
+      expect(getState()?.cacheExpiry).toBeNull();
+    });
   });
 
   it("refreshes branch and uncommitted-file count from workspace extras", () => {
@@ -842,6 +918,10 @@ describe("useAgentEvents", () => {
           headline: "Anthropic usage limit reached.",
           message: "Your Anthropic usage is finished. It resets at 12:50 PM.",
           guidance: "Try again once it's back. Your conversation is preserved.",
+          reason: "usage_limit",
+          resetsAt: 1_800_000_000,
+          occurredAt: 1_799_000_000_000,
+          provider: "anthropic",
         }),
       );
     });
@@ -852,6 +932,10 @@ describe("useAgentEvents", () => {
       headline: "Anthropic usage limit reached.",
       message: "Your Anthropic usage is finished. It resets at 12:50 PM.",
       guidance: "Try again once it's back. Your conversation is preserved.",
+      reason: "usage_limit",
+      resetsAt: 1_800_000_000,
+      occurredAt: 1_799_000_000_000,
+      provider: "anthropic",
     });
   });
 
@@ -953,27 +1037,45 @@ describe("useAgentEvents", () => {
     expect(getState()).toMatchObject({ kenModel: "claude-opus-5-5", kenModelOverride: false });
   });
 
-  it("plan_exit opens the human review modal when autopilot is off", () => {
-    const { hook, getPlanReview } = setup(() => false, { autopilot: false });
-    act(() => {
-      hook.result.current.handleEvent(
-        ev("plan_exit", { planPath: "/tmp/p.md", content: "# Plan" }),
-      );
-    });
-    expect(getPlanReview()).toBe("# Plan");
-  });
+  it.each([false, true])(
+    "plan_exit stashes the plan but waits for the sidecar to open the box (autopilot %s)",
+    (autopilot) => {
+      const { hook, getPlanReview, deps } = setup(() => false, { autopilot });
+      act(() => {
+        hook.result.current.handleEvent(
+          ev("plan_exit", { planPath: "/tmp/p.md", content: "# Plan" }),
+        );
+      });
+      // Opening here let Accept land while the submitting run was still
+      // finishing — the sidecar refused it and the plan sat in limbo.
+      expect(getPlanReview()).toBeNull();
+      expect(deps.planReviewPathRef.current).toBe("/tmp/p.md");
+    },
+  );
 
-  it("plan_exit hides the human review modal when autopilot is on", () => {
+  it("plan_review opens the human review box, even with autopilot on", () => {
     const { hook, getPlanReview, deps } = setup(() => false, { autopilot: true });
     act(() => {
       hook.result.current.handleEvent(
-        ev("plan_exit", { planPath: "/tmp/p.md", content: "# Plan" }),
+        ev("plan_review", { planPath: "/tmp/q.md", content: "# Plan Q" }),
       );
     });
-    // The content/path are still stashed for Ken auto-review + auto-accept step
-    // counting, but the human overlay stays hidden while autopilot owns review.
-    expect(getPlanReview()).toBeNull();
-    expect(deps.planReviewPathRef.current).toBe("/tmp/p.md");
+    expect(getPlanReview()).toBe("# Plan Q");
+    expect(deps.planReviewPathRef.current).toBe("/tmp/q.md");
+  });
+
+  it("ready re-opens the review box for a plan still waiting after a reconnect", () => {
+    const { hook, getPlanReview, deps } = setup();
+    act(() => {
+      hook.result.current.handleEvent(
+        ev("ready", {
+          running: false,
+          pendingPlan: { planPath: "/tmp/r.md", content: "# Plan R" },
+        }),
+      );
+    });
+    expect(getPlanReview()).toBe("# Plan R");
+    expect(deps.planReviewPathRef.current).toBe("/tmp/r.md");
   });
 
   it("autopilot_plan_accepted seeds the plan step count and pushes the marker", () => {
@@ -1024,7 +1126,7 @@ describe("useAgentEvents", () => {
     const { hook, getPlanReview } = setup();
     act(() => {
       hook.result.current.handleEvent(
-        ev("plan_exit", { planPath: "/tmp/p.md", content: "# Plan" }),
+        ev("plan_review", { planPath: "/tmp/p.md", content: "# Plan" }),
       );
     });
     expect(getPlanReview()).toBe("# Plan");

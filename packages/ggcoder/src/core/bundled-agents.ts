@@ -200,8 +200,7 @@ Be rigorous. The cost of a false positive is the user's trust in the entire repo
 export const BUNDLED_AGENTS: AgentDefinition[] = [
   {
     name: "bee",
-    description:
-      "Use for a self-contained implementation task on the current branch: write a module, fix a bug, run a migration, make a failing test pass. Edits files and runs commands. Use `worker` instead when the change needs its own git branch and a PR; use `owl` when nothing should be modified.",
+    description: "Implements a self-contained change in place.",
     tools: ["read", "write", "edit", "bash", "find", "grep", "code_search", "ls", "source_path"],
     model: "inherit",
     systemPrompt: BEE_PROMPT,
@@ -209,12 +208,9 @@ export const BUNDLED_AGENTS: AgentDefinition[] = [
   },
   {
     name: "owl",
-    description:
-      'Use for read-only questions about THIS repository: "where is X implemented", "what calls Y", "how does module Z fit together", tracing a data flow or mapping a directory. Never edits and never uses the web.',
+    description: "Read-only questions about this repo.",
     tools: ["read", "grep", "find", "ls", "code_search", "source_path"],
-    // Structural recon is mechanical pattern work; the cheap tier handles it
-    // well and keeps wide fan-out affordable.
-    model: "fast",
+    model: "inherit",
     // Conventions and style rules don't change where a symbol is defined, and
     // skipping them keeps recon fast (matching Claude Code's Explore agent).
     context: "none",
@@ -223,8 +219,7 @@ export const BUNDLED_AGENTS: AgentDefinition[] = [
   },
   {
     name: "researcher",
-    description:
-      "Use when an answer needs sources outside this repo: a dependency's real behavior, an API contract, framework internals, version/changelog differences, or current best practice. Reads installed package source, official docs, and public code. Use `owl` when the repo alone can settle it.",
+    description: "Research needing docs or dependency source outside the repo.",
     tools: [
       "read",
       "grep",
@@ -242,8 +237,7 @@ export const BUNDLED_AGENTS: AgentDefinition[] = [
   },
   {
     name: "worker",
-    description:
-      "Use to land one scoped change in isolation: it creates a `batch/*` git branch, implements, self-reviews, tests and commits there, then returns to the original branch. It pushes and opens a PR only when the task says the user explicitly asked for that. Use for parallel fan-out of independent units of work. Use `bee` for in-place edits with no branch.",
+    description: "Lands one change on its own branch and commits it.",
     tools: ["read", "write", "edit", "bash", "find", "grep", "code_search", "ls"],
     model: "inherit",
     systemPrompt: WORKER_PROMPT,
@@ -251,8 +245,7 @@ export const BUNDLED_AGENTS: AgentDefinition[] = [
   },
   {
     name: "auditor",
-    description:
-      "Use for a defensive security review of code or a diff: traces untrusted input to dangerous sinks and reports exploitable findings with concrete vulnerability scenarios, CWE, and fixes. Read-only.",
+    description: "Read-only security review.",
     tools: ["read", "grep", "find", "ls", "code_search", "bash", "web_fetch", "web_search"],
     model: "inherit",
     systemPrompt: AUDITOR_PROMPT,
@@ -260,8 +253,7 @@ export const BUNDLED_AGENTS: AgentDefinition[] = [
   },
   {
     name: "skeptic",
-    description:
-      "Use to triage security findings before reporting them: re-verifies each claimed source→sink path in the code and returns CONFIRMED / DROP / DOWNGRADE with the reason. Pair it with `auditor` output. Read-only.",
+    description: "Verifies `auditor` findings.",
     tools: [
       "read",
       "grep",

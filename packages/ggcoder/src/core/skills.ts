@@ -189,8 +189,13 @@ export function renderSkillLines(
   const dropped: string[] = [];
   let used = 0;
   for (const skill of skills) {
+    // Every bundled description opens "Use when/for …"; on a one-line-per-
+    // skill list that prefix is pure repetition, so the catalog drops it.
     const description = skill.description
-      ? clampToBytes(skill.description, limits.skillDescriptionBytes).text
+      ? clampToBytes(
+          skill.description.replace(/^Use (?:when|for) (\w)/, (_m, c: string) => c.toUpperCase()),
+          limits.skillDescriptionBytes,
+        ).text
       : "";
     const line = `- **${skill.name}**${description ? `: ${description}` : ""}`;
     const bytes = Buffer.byteLength(line, "utf8") + 1; // + newline
@@ -221,12 +226,9 @@ export function formatSkillsForPrompt(
 
   return (
     `## Skills\n\n` +
-    `Before acting, compare the user's request with every skill description below. ` +
-    `When the request — or the work itself, mid-build — enters a skill's scope, invoke it with the **skill** tool before making decisions or edits; loaded content routes between build-time and review modes. ` +
-    `Respect explicit exclusions in the description. Matching skill instructions specialize this prompt but do not override project or file/module rules.\n\n` +
-    `Match the work, not the topic: a skill's subject matter appearing in the request is not a match when the actual change falls outside its scope. ` +
-    `Skip the skill when the task is routine, narrow, or already covered by existing patterns in the codebase \u2014 an unnecessary invocation costs context and slows the task. ` +
-    `Invoke at most one skill unless the task genuinely spans two, and do not re-invoke a skill whose instructions are already in this conversation.\n\n` +
+    `Before acting, compare the user's request with every skill description below; when the work enters one's scope, load it with the **skill** tool first. ` +
+    `Match the work, not the topic; respect exclusions; skip skills for routine work; never reload one. ` +
+    `Launch-readiness asks: one report-only child per in-scope skill (durable, bulletproof, compliance-guard, lean, evidence-led-ui) in one spawn_agent call; a failed child is "not checked", never clean.\n\n` +
     list +
     overflow
   );

@@ -3,6 +3,7 @@ import type { AgentTool } from "@kleio/agent";
 import type { SubAgentManager } from "../core/subagent-manager.js";
 import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
 import { renderAgentRoster } from "./subagent-shared.js";
+import { AcceptanceChecksParam } from "../core/acceptance-checks.js";
 import { ACTIVE_LIMIT, DEFAULT_WAIT_MS, MAX_WAIT_MS } from "../core/subagent-manager.js";
 
 const AgentId = z.string().min(1).describe("Eight-character agent ID returned by spawn_agent");
@@ -25,29 +26,18 @@ export function createSubAgentControlTools(
   const agentNames = manager.agents.map((agent) => agent.name);
   const agentParam = (
     agentNames.length > 0 ? z.enum(agentNames as [string, ...string[]]) : z.string()
-  )
-    .optional()
-    .describe("Named agent definition to run this task as; omit for a general-purpose child");
+  ).optional();
   const taskParams = z.object({
-    task_name: z.string().min(1).describe("Short unique name for this delegated task"),
-    task: z
-      .string()
-      .min(1)
-      .describe(
-        "Standalone task instruction. The child sees none of this conversation, so state the " +
-          "objective, the paths involved, and what to return.",
-      ),
+    task_name: z.string().min(1),
+    task: z.string().min(1).describe("Standalone brief"),
     agent: agentParam,
+    checks: AcceptanceChecksParam,
   });
   // A list, so one call starts every child: on models that send one tool call
   // per turn (GPT-6.x), a one-child-per-call shape cost a model turn per child
   // (bench 41: 8 children 66.8s → 31.9s, parent tokens −57%).
   const spawnParams = z.object({
-    tasks: z
-      .array(taskParams)
-      .min(1)
-      .max(ACTIVE_LIMIT)
-      .describe("Every independent child to start now, one entry each"),
+    tasks: z.array(taskParams).min(1).max(ACTIVE_LIMIT),
   });
   const spawnTool: AgentTool<typeof spawnParams> = {
     name: "spawn_agent",
@@ -55,10 +45,7 @@ export function createSubAgentControlTools(
     // leave running agents whose ids the model never saw.
     interruptible: false,
     description:
-      "Start isolated persistent child agents and return immediately after launch. " +
-      "Put every independent child in ONE call's `tasks` list, then keep working \u2014 each " +
-      "child announces its own completion to you, so you do not need to wait or poll. " +
-      "Shared files are not isolated." +
+      "Start all child agents in one call; each reports back when done (no polling)." +
       renderAgentRoster(manager.agents),
     parameters: spawnParams,
     executionMode: "parallel",
@@ -69,7 +56,11 @@ export function createSubAgentControlTools(
       // worker before its first await, so starting them together cannot
       // exceed ACTIVE_LIMIT or the per-model cap.
       const settled = await Promise.allSettled(
-        args.tasks.map((t) => manager.spawn(t.task_name, t.task, t.agent)),
+        args.tasks.map((t) =>
+          t.checks
+            ? manager.spawn(t.task_name, t.task, t.agent, { checks: t.checks })
+            : manager.spawn(t.task_name, t.task, t.agent),
+        ),
       );
       const results = settled.map((result, index) =>
         result.status === "fulfilled"
@@ -102,7 +93,11 @@ export function createSubAgentControlTools(
     },
   };
 
-  const followupParams = z.object({ agent_id: AgentId, task: z.string().min(1) });
+  const followupParams = z.object({
+    agent_id: AgentId,
+    task: z.string().min(1),
+    checks: AcceptanceChecksParam,
+  });
   const followupTool: AgentTool<typeof followupParams> = {
     name: "followup_task",
     description: "Start another turn in an idle child while preserving that child's context.",
@@ -110,7 +105,7 @@ export function createSubAgentControlTools(
     async execute(args) {
       const restriction = blocked("followup_task");
       if (restriction) return restriction;
-      return json(await manager.followup(args.agent_id, args.task));
+      return json(await manager.followup(args.agent_id, args.task, args.checks));
     },
   };
 
@@ -131,10 +126,8 @@ export function createSubAgentControlTools(
   const waitTool: AgentTool<typeof waitParams> = {
     name: "wait_agent",
     description:
-      "Block until child agents finish and return their bounded output snapshots. " +
-      "Completions already arrive on their own \u2014 use this only when you need a child's " +
-      "actual output before you can continue, or to collect results before finishing. " +
-      "Child agents only: to wait on a background process, use task_output with wait_ms.",
+      "Wait for child agents only when you need their output to continue (processes: " +
+      "task_output).",
     parameters: waitParams,
     async execute(args) {
       return json(await manager.wait(args.agent_ids, args.condition, args.timeout_ms));

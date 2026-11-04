@@ -1,6 +1,7 @@
 import type { PromptSegment, AskUserPrompt } from "./agent";
 import type { HookKind } from "./useAgentEvents";
 import type { SubAgentLine } from "./SubAgentFeed";
+import type { ChatErrorItem } from "./chat-error";
 
 // ── Transcript model ───────────────────────────────────────
 // Tool activity lives in the pinned LiveToolPanel, never in the transcript.
@@ -43,18 +44,10 @@ export type Item =
   // streamed from the ken_* SSE events. Never mistaken for GG Coder.
   | { kind: "ken"; id: number; text: string }
   | { kind: "info"; id: number; text: string }
-  // Structured error (see gg-ai's formatError): headline always answers "is this
-  // me or them", message is the raw detail (omitted when redundant with the
-  // headline), guidance is the action line (retry / switch model / log in /
-  // wait until a reset time). `text` is a legacy fallback for older items.
-  | {
-      kind: "error";
-      id: number;
-      text?: string;
-      headline?: string;
-      message?: string;
-      guidance?: string;
-    }
+  // Structured error (see gg-ai's formatChatError), validated by readChatError:
+  // headline and guidance lead, the raw report sits behind details. `reason`
+  // picks the recovery; `text` is a legacy fallback for older items.
+  | ChatErrorItem
   // Agent self-correction hook notice (ideal review / loop-break / re-grounding),
   // rendered like the TUI: a shimmering tone-colored one-liner.
   | { kind: "hook"; id: number; hook: HookKind; verificationReason?: "recheck" | "check_review" }
@@ -77,6 +70,8 @@ export type Item =
       /** The complete set reached the blocked tool call. */
       sent?: boolean;
       cancelled?: boolean;
+      /** Soft deadline passed: the agent went on; an answer is still delivered late. */
+      deferred?: boolean;
     }
   // A task kicked off from the Tasks modal (shown at the top of its session).
   | { kind: "task"; id: number; title: string }

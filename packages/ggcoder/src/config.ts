@@ -261,7 +261,7 @@ async function seedDefaultSkills(skillsDir: string): Promise<void> {
 
 const FIND_SKILLS_MD = `---
 name: find-skills
-description: Discover and install agent skills from the open ecosystem into .gg/skills/. Use when the user asks "how do I do X", "find a skill for X", "is there a skill that can…", or wants to extend the agent with capabilities that already exist elsewhere.
+description: Use when the user wants to find or install a skill for some capability. Do NOT use for normal coding.
 ---
 
 # Find Skills

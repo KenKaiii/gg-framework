@@ -1,5 +1,7 @@
 # Shared language
 
+**Ultra (OpenAI)** — A local delegation preset, not an API reasoning level. Following `openai/codex` commit `4c9f42f4`, Astra/Sol send `xhigh` and proactively delegate; explicit Max still sends `max` through Codex. OpenAI children inherit the current parent's reasoning selection in both blocking and persistent paths, capped to a pinned model's supported levels and restored on fallback. Other providers retain their lowest-rung child policy. Thinking/model changes refresh the live delegation instructions as well as the request setting.
+
 **Motion plan** — The short record of a video's concept, motif, palette roles, type roles and beat, written in the video's project record before building. The rendered frames are checked against it.
 
 **Motion language** — The relationships between rhythm, typography, framing, transformation and continuity that give a video its character. It is independent of subject, palette or a universally mandatory effect. GG Motion's shipped guide describes principles, not a fixed house look.
@@ -23,3 +25,5 @@
 **Checked output** — The current export has technical results and rendered samples inspected against its plan and inputs. This is not human approval, full playback, audio listening or a guarantee of quality. Changed output needs new evidence; missing evidence or unresolved failure is draft/unverified.
 
 **Review-ready** — A legacy independent-review status, not a requirement or claim made by the normal Motion workflow.
+
+**Checklist item** — One of Kleio Coder's built-in project health checks (tests, CI, security, design system and so on), defined once in `packages/ggcoder/src/core/checklist-items.ts`. The app's full-page Checklist shows automatically detected setup separately from recorded reviews; detected configuration is not a pass. The Agent setup button runs `/init` to create or update project instructions; it is setup, not an audit. All other checks are report-only: the agent changes no project file, and the `checklist` tool records the verdict, date, commit and evidence in `.gg-checklist.json` at the project root, which is shared through Git. Reviews state their scope and exclusions, and can also be recorded after checks requested in normal chat. A result is due again after 30 days. Not the same as a project task, which is work to do.

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { editTargetPaths } from "../tools/edit-targets.js";
 
 /**
  * Engine-generated receipt for a helper agent's report.
@@ -39,9 +40,10 @@ function str(value: unknown): string | undefined {
 /** The one argument that identifies what a tool call acted on. */
 export function keyTarget(name: string, args: Record<string, unknown> = {}): string {
   switch (name) {
+    case "edit":
+      return editTargetPaths(args).join(",") || (str(args.path) ?? "");
     case "read":
     case "write":
-    case "edit":
       return str(args.file_path) ?? str(args.path) ?? "";
     case "ls":
       return str(args.path) ?? ".";

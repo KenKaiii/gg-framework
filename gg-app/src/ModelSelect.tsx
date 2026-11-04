@@ -12,6 +12,8 @@ interface Props {
   disabled?: boolean;
   /** Tooltip + accessible name (e.g. "Switch GG Coder's model"). */
   title: string;
+  /** Optional compact action copy; the menu still selects the current model. */
+  label?: string;
   /** Accent color for the closed control (GG = text, Ken = ken). */
   color?: string;
   /** When set, adds a "Follow GG Coder" choice (Ken's picker) — selecting it
@@ -89,6 +91,7 @@ export function ModelSelect({
   onSelect,
   disabled,
   title,
+  label: actionLabel,
   color,
   onSelectFollow,
   followActive,
@@ -131,7 +134,7 @@ export function ModelSelect({
   // are mid-range already and keep it.
   const controlColor = unavailable ? theme.textDim : (color ?? theme.textSecondary);
   const currentName = modelDisplayName(models, currentModel);
-  const label = compact ? compactModelName(currentName) : currentName;
+  const label = actionLabel ?? (compact ? compactModelName(currentName) : currentName);
 
   useEffect(() => {
     if (!open) return;

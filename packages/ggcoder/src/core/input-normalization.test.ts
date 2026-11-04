@@ -88,12 +88,11 @@ describe("case-insensitive skill invocation", () => {
   it("still reports unknown skills with the available list", async () => {
     const tool = createSkillTool(skills);
 
-    const result = await tool.execute(
-      { skill: "nope" },
-      { signal: new AbortController().signal, toolCallId: "skill-2" },
-    );
-
-    expect(String(result)).toContain('Skill "nope" not found');
-    expect(String(result)).toContain("Fancy-Skill");
+    await expect(
+      tool.execute(
+        { skill: "nope" },
+        { signal: new AbortController().signal, toolCallId: "skill-2" },
+      ),
+    ).rejects.toThrow(/Skill "nope" not found; nothing was loaded\. Skills: Fancy-Skill/);
   });
 });

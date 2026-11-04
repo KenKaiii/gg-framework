@@ -38,6 +38,25 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+describe("ModelSelect — compact recovery action", () => {
+  it.each([true, false])("keeps selection behavior with an action label (native=%s)", (native) => {
+    supportsNativeMock.mockReturnValue(native);
+    render(
+      <ModelSelect
+        models={MODELS}
+        currentModel="claude-sonnet-5"
+        onSelect={vi.fn()}
+        title="Switch model"
+        label="Choose model"
+      />,
+    );
+    expect(screen.getByText("Choose model")).toBeTruthy();
+    if (native)
+      expect(screen.getByRole("combobox").getAttribute("aria-label")).toBe("Switch model");
+    else expect(screen.getByRole("button", { name: "Choose model" })).toBeTruthy();
+  });
+});
+
 describe("ModelSelect — native popup", () => {
   it("groups every provider under its own label, local last", () => {
     supportsNativeMock.mockReturnValue(true);

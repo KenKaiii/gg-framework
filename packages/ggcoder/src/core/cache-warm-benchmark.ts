@@ -3,7 +3,7 @@
  *
  * The existing api-benchmark grows the conversation each turn and uses a tiny
  * (~250 token) system prompt, which is BELOW Anthropic's minimum cacheable
- * prefix (1024 tok Sonnet/Opus, 2048 Haiku) — so caching never engages and the
+ * prefix (512 tok on current Claude models, up to 4096 on older ones) — so caching never engages and the
  * A/B is dominated by turn-to-turn throughput variance.
  *
  * This test uses a large, FIXED prefix (well above the min) and a tiny variable
@@ -15,7 +15,7 @@
  * regardless of throughput noise.
  *
  * Usage: npx tsx src/core/cache-warm-benchmark.ts
- * Env:   GG_CW_PROVIDER (default anthropic), GG_CW_MODEL (default claude-haiku-4-5-20251001),
+ * Env:   GG_CW_PROVIDER (default anthropic), GG_CW_MODEL (default claude-haiku-5-5),
  *        GG_CW_REPS (default 4)
  */
 
@@ -55,7 +55,8 @@ function bigPrefix(): string {
     toolDoc("task_output", "Read new output from a background process by id."),
   ];
   // Repeat the tool block several times so the prefix clears Anthropic's
-  // minimum cacheable size (1024 tok Sonnet/Opus, 2048 Haiku) with headroom.
+  // minimum cacheable size (512 tok on current Claude models, up to 4096 on
+  // older ones) with headroom.
   const bulkTools: string[] = [];
   for (let r = 0; r < 22; r++)
     bulkTools.push(...tools, `<!-- tool block repetition ${r} for prefix sizing -->`);
@@ -148,7 +149,7 @@ function sleep(ms: number): Promise<void> {
 
 async function main(): Promise<void> {
   const provider = process.env.GG_CW_PROVIDER ?? "anthropic";
-  const model = process.env.GG_CW_MODEL ?? "claude-haiku-4-5-20251001";
+  const model = process.env.GG_CW_MODEL ?? "claude-haiku-5-5";
   const reps = parseInt(process.env.GG_CW_REPS ?? "4", 10);
 
   const auth = new AuthStorage();
