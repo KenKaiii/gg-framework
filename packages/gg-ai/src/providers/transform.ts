@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 import type {
+  AssistantMessage,
   CacheRetention,
   ContentPart,
   ImageContent,
@@ -19,6 +20,7 @@ import { resolveToolSchema, zodToJsonSchema } from "../utils/zod-to-json-schema.
 import { makeStrictToolSchema, UnsupportedStrictSchemaError } from "../utils/strict-tool-schema.js";
 import { DEFAULT_REASONING_FIELD } from "./reasoning-field.js";
 import { ImagesTooLargeError } from "../errors.js";
+import { opensTurn } from "../utils/turn-continuation.js";
 
 // ── Shared helpers ─────────────────────────────────────────
 
@@ -55,6 +57,10 @@ const ANTHROPIC_INPUT_BLOCK_TYPES = new Set<string>([
   "connector_text",
   "container_upload",
   "document",
+  // Server-side refusal fallback marker. Only reaches the wire when the request
+  // carries the server-side-fallback beta; otherwise applyServerFallbackReplay
+  // strips it first (see toAnthropicMessages' `fallbackBlocks` option).
+  "fallback",
   "image",
   "mid_conv_system",
   "redacted_thinking",
@@ -86,6 +92,78 @@ function isAnthropicCompatibleRaw(part: Extract<ContentPart, { type: "raw" }>): 
 function isPositionSensitiveThinking(part: ContentPart): boolean {
   if (part.type === "thinking") return hasValidThinkingSignature(part);
   return isRawThinking(part);
+}
+
+/** True for a round-tripped server-side refusal `fallback` block. */
+export function isServerFallbackBlock(part: ContentPart): boolean {
+  return part.type === "raw" && part.data.type === "fallback";
+}
+
+/**
+ * Apply Anthropic's server-side-fallback replay rules to one assistant turn.
+ *
+ * After a mid-output fallback the turn holds blocks from the declining model,
+ * then a `fallback` marker, then the serving model's output. Per the API's
+ * replay table, blocks BEFORE the final `fallback` block are filtered:
+ * thinking / redacted_thinking / connector_text and client `tool_use` are
+ * dropped; `server_tool_use` is kept only when its result is present; text is
+ * kept. Everything after the final marker is kept, and the markers themselves
+ * stay exactly where they appeared (the API validates thinking blocks by their
+ * position relative to them).
+ *
+ * `keepMarkers: false` is for routes that don't accept fallback blocks
+ * (Bedrock/Vertex/proxies, or once the beta was rejected): the same filtering
+ * still applies, so no thinking block from before the boundary survives, and
+ * the markers are then removed. Ids of dropped client tool calls are added to
+ * `droppedToolCallIds` so their tool_result blocks can be dropped too.
+ *
+ * Returns the input unchanged when the turn contains no fallback block, and an
+ * empty array when nothing but fallback markers would remain.
+ */
+export function applyServerFallbackReplay(
+  content: ContentPart[],
+  keepMarkers: boolean,
+  droppedToolCallIds?: Set<string>,
+): ContentPart[] {
+  let lastFallbackIdx = -1;
+  content.forEach((part, idx) => {
+    if (isServerFallbackBlock(part)) lastFallbackIdx = idx;
+  });
+  if (lastFallbackIdx === -1) return content;
+
+  const resultIds = new Set<string>();
+  for (const part of content) {
+    if (part.type === "server_tool_result") resultIds.add(part.toolUseId);
+    else if (part.type === "raw" && typeof part.data.tool_use_id === "string")
+      resultIds.add(part.data.tool_use_id);
+  }
+
+  const out: ContentPart[] = [];
+  content.forEach((part, idx) => {
+    if (isServerFallbackBlock(part)) {
+      if (keepMarkers) out.push(part);
+      return;
+    }
+    if (idx < lastFallbackIdx) {
+      if (part.type === "thinking" || isRawThinking(part)) return;
+      if (part.type === "raw" && part.data.type === "connector_text") return;
+      if (part.type === "tool_call") {
+        droppedToolCallIds?.add(part.id);
+        return;
+      }
+      if (part.type === "server_tool_call" && !resultIds.has(part.id)) return;
+      if (
+        part.type === "raw" &&
+        part.data.type === "server_tool_use" &&
+        !resultIds.has(String(part.data.id))
+      )
+        return;
+    }
+    out.push(part);
+  });
+  // Markers alone (e.g. every model in the chain declined) carry no output to
+  // anchor; replaying a marker-only assistant turn would be an empty turn.
+  return out.every(isServerFallbackBlock) ? [] : out;
 }
 
 /** Map a single assistant content part to its Anthropic wire block (or null to drop). */
@@ -362,6 +440,243 @@ function clampContextImageCount(messages: Message[], provider: Provider): Messag
   });
 }
 
+// ── Tool-call name sanitization ───────────────────────────
+
+/**
+ * What a provider accepts as a replayed tool-call name. `pattern` already
+ * encodes the length limit where the provider documents one; `maxLength` is
+ * checked separately so the generic rule can cap length without a charset.
+ */
+export interface ToolCallNameRule {
+  /** Short identifier, for diagnostics and tests. */
+  id: "anthropic" | "openai-chat" | "openai-responses" | "gemini" | "generic";
+  maxLength: number;
+  pattern?: RegExp;
+}
+
+/**
+ * Per-transport tool-name rules. A legitimate call always carries the name of a
+ * tool we declared, and tool declarations are validated against these same
+ * rules, so only model-invented names (blank, invocation text stuffed into the
+ * name slot, …) can fail them.
+ */
+export const TOOL_CALL_NAME_RULES: Record<ToolCallNameRule["id"], ToolCallNameRule> = {
+  // Anthropic Messages API: tool / tool_use name `^[a-zA-Z0-9_-]{1,128}$`.
+  anthropic: { id: "anthropic", maxLength: 128, pattern: /^[a-zA-Z0-9_-]{1,128}$/ },
+  // OpenAI Chat Completions: function name a-z A-Z 0-9 _ -, max length 64.
+  "openai-chat": { id: "openai-chat", maxLength: 64, pattern: /^[a-zA-Z0-9_-]{1,64}$/ },
+  // OpenAI Responses (Codex): same charset; replayed `input[N].name` over 128
+  // chars is rejected with `string_above_max_length`.
+  "openai-responses": {
+    id: "openai-responses",
+    maxLength: 128,
+    pattern: /^[a-zA-Z0-9_-]{1,128}$/,
+  },
+  // Gemini FunctionDeclaration name: starts with a letter or underscore, then
+  // a-z A-Z 0-9 _ . : -, max length 128.
+  gemini: { id: "gemini", maxLength: 128, pattern: /^[a-zA-Z_][a-zA-Z0-9_.:-]{0,127}$/ },
+  // OpenAI-compatible third parties (GLM, Kimi, DeepSeek, OpenRouter, xAI,
+  // local servers, MiniMax, …) don't share one documented charset, so only
+  // reject what no declared tool name can contain: blank, >128 chars, or any
+  // whitespace / control character (the signature of invocation text).
+  generic: { id: "generic", maxLength: 128 },
+};
+
+const TOOL_NAME_FORBIDDEN_CHARS = /[\s\p{Cc}]/u;
+
+/** True when `name` is a tool-call name the provider described by `rule` will accept. */
+export function isValidToolCallName(name: unknown, rule: ToolCallNameRule): boolean {
+  if (typeof name !== "string" || name.trim().length === 0) return false;
+  if (name.length > rule.maxLength) return false;
+  if (TOOL_NAME_FORBIDDEN_CHARS.test(name)) return false;
+  return rule.pattern ? rule.pattern.test(name) : true;
+}
+
+function isDefaultOrHost(baseUrl: string | undefined, host: string): boolean {
+  if (!baseUrl) return true;
+  try {
+    return new URL(baseUrl).hostname === host;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Pick the tool-name rule for the transport a request will actually use. Mirrors
+ * the routing in `stream.ts`: `openai` with an `accountId` is the Codex
+ * (Responses) endpoint, MiniMax rides the Anthropic transport but is a third
+ * party, and an `openai` pointed at a custom baseUrl is an unknown compatible
+ * server.
+ */
+export function toolCallNameRuleFor(
+  provider: Provider | string,
+  options?: { accountId?: string; baseUrl?: string },
+): ToolCallNameRule {
+  switch (provider) {
+    case "anthropic":
+      return TOOL_CALL_NAME_RULES.anthropic;
+    case "openai":
+      if (options?.accountId) return TOOL_CALL_NAME_RULES["openai-responses"];
+      return isDefaultOrHost(options?.baseUrl, "api.openai.com")
+        ? TOOL_CALL_NAME_RULES["openai-chat"]
+        : TOOL_CALL_NAME_RULES.generic;
+    case "gemini":
+      return TOOL_CALL_NAME_RULES.gemini;
+    default:
+      return TOOL_CALL_NAME_RULES.generic;
+  }
+}
+
+/** A blank tool-call id can't be paired or sent (Anthropic id pattern is `+`). */
+function isValidToolCallId(id: unknown): boolean {
+  return typeof id === "string" && id.trim().length > 0;
+}
+
+/** Raw OpenAI Responses reasoning item (round-tripped by the Codex provider). */
+function isRawReasoning(part: ContentPart): boolean {
+  return part.type === "raw" && part.data.type === "reasoning";
+}
+
+/**
+ * A Responses reasoning item must be followed by the output item it produced;
+ * replaying one with nothing after it (or straight into another reasoning item)
+ * is rejected. True when the reasoning part at `idx` has no output after it.
+ */
+function isDanglingReasoning(parts: ContentPart[], idx: number): boolean {
+  for (let i = idx + 1; i < parts.length; i++) {
+    const next = parts[i]!;
+    if (isRawReasoning(next)) return true;
+    if (next.type === "text" || next.type === "tool_call") return false;
+  }
+  return true;
+}
+
+/**
+ * Whether an assistant turn still has something a provider will replay.
+ * Thinking / reasoning / fallback markers alone are not a turn: every converter
+ * skips (or the API rejects) an assistant message made only of those.
+ */
+function hasReplayableAssistantContent(parts: ContentPart[]): boolean {
+  return parts.some((part) => {
+    if (part.type === "text") return part.text.length > 0;
+    if (part.type === "thinking") return false;
+    if (part.type === "raw") {
+      const t = part.data.type;
+      return !(
+        t === "thinking" ||
+        t === "redacted_thinking" ||
+        t === "reasoning" ||
+        t === "fallback"
+      );
+    }
+    return true;
+  });
+}
+
+/**
+ * Drop assistant tool calls whose name (or id) the target provider rejects,
+ * together with the tool results that answer them.
+ *
+ * One malformed call — a blank name, a whole invocation string written into the
+ * name slot, a name over the provider's length limit — would otherwise sit in
+ * history and 400 every later request (`tool_use.name: String should match
+ * pattern`, `string_above_max_length`, …), wedging the session.
+ *
+ * Pairing is positional per window: each assistant turn opens a window, and its
+ * results (role `tool`) are matched FIFO per id until the next assistant or user
+ * message, so a reused id never consumes another turn's result. Valid sibling
+ * calls, text and thinking are kept in place. An assistant turn left with
+ * nothing replayable is removed whole, as is a tool message left empty — every
+ * transport accepts the resulting adjacent user turns (the Anthropic API
+ * combines consecutive same-role turns). A Codex reasoning item orphaned by the
+ * drop is removed too. If the drop would leave the request ENDING on that
+ * pruned assistant turn (its only call was the bad one, so no results follow),
+ * the turn is removed as well: a trailing assistant message is an assistant
+ * prefill, which current Claude models reject and other APIs treat as a
+ * continuation rather than a fresh turn.
+ *
+ * Returns the input array untouched when nothing is malformed.
+ */
+export function dropInvalidToolCalls(messages: Message[], rule: ToolCallNameRule): Message[] {
+  const isInvalid = (part: ContentPart): boolean =>
+    part.type === "tool_call" &&
+    (!isValidToolCallName(part.name, rule) || !isValidToolCallId(part.id));
+
+  const hasInvalid = messages.some(
+    (m) => m.role === "assistant" && Array.isArray(m.content) && m.content.some(isInvalid),
+  );
+  if (!hasInvalid) return messages;
+
+  const out: Message[] = [];
+  // id → FIFO of keep(true)/drop(false) for the calls of the current window.
+  let pending = new Map<string, boolean[]>();
+  let prunedAssistant: AssistantMessage | null = null;
+
+  for (const msg of messages) {
+    if (msg.role === "user" || msg.role === "system") {
+      if (msg.role === "user") pending = new Map();
+      out.push(msg);
+      continue;
+    }
+
+    if (msg.role === "assistant") {
+      pending = new Map();
+      if (typeof msg.content === "string") {
+        out.push(msg);
+        continue;
+      }
+      const original = msg.content;
+      let dropped = false;
+      const kept: ContentPart[] = [];
+      for (const part of original) {
+        if (part.type === "tool_call") {
+          const keep = !isInvalid(part);
+          const queue = pending.get(part.id) ?? [];
+          queue.push(keep);
+          pending.set(part.id, queue);
+          if (!keep) {
+            dropped = true;
+            continue;
+          }
+        }
+        kept.push(part);
+      }
+      if (!dropped) {
+        out.push(msg);
+        continue;
+      }
+      // Remove only reasoning items the drop orphaned — never one that was
+      // already dangling in the original (not ours to change).
+      const content = kept.filter(
+        (part, idx) =>
+          !isRawReasoning(part) ||
+          !isDanglingReasoning(kept, idx) ||
+          isDanglingReasoning(original, original.indexOf(part)),
+      );
+      if (hasReplayableAssistantContent(content)) {
+        const pruned: AssistantMessage = { ...msg, content };
+        out.push(pruned);
+        prunedAssistant = pruned;
+      }
+      continue;
+    }
+
+    // role === "tool"
+    let changed = false;
+    const results = msg.content.filter((result) => {
+      const queue = pending.get(result.toolCallId);
+      const keep = queue && queue.length > 0 ? queue.shift()! : true;
+      if (!keep) changed = true;
+      return keep;
+    });
+    if (!changed) out.push(msg);
+    else if (results.length > 0) out.push({ ...msg, content: results });
+  }
+
+  if (prunedAssistant && out[out.length - 1] === prunedAssistant) out.pop();
+  return out;
+}
+
 const NON_VISION_USER_IMAGE_PLACEHOLDER = "(image omitted: model does not support images)";
 const NON_VISION_TOOL_IMAGE_PLACEHOLDER = "(tool image omitted: model does not support images)";
 const NON_VIDEO_USER_PLACEHOLDER = "(video omitted: model does not support video)";
@@ -547,6 +862,12 @@ function remapAnthropicToolCallId(id: string, idMap: Map<string, string>): strin
 export function toAnthropicMessages(
   messages: Message[],
   cacheControl?: { type: "ephemeral"; ttl?: "1h" },
+  options?: {
+    /** Replay server-side refusal `fallback` blocks in place. Only set when the
+     * request carries the server-side-fallback beta; otherwise they are
+     * stripped (after applying the replay rules). Default false. */
+    fallbackBlocks?: boolean;
+  },
 ): {
   system: Anthropic.TextBlockParam[] | undefined;
   messages: Anthropic.MessageParam[];
@@ -556,13 +877,18 @@ export function toAnthropicMessages(
   // `out` indices of real user messages (not tool results), for cache anchors.
   const userTurnIdx: number[] = [];
   const idMap = new Map<string, string>();
+  const keepFallbackBlocks = options?.fallbackBlocks === true;
+  // Client tool calls dropped by the fallback replay rules; their results go too.
+  const droppedToolCallIds = new Set<string>();
 
   // Thinking is preserved across the ACTIVE trajectory: every assistant turn
-  // after the last real user message (tool results are role "tool", not "user",
-  // so this is simply the last role==="user" index). Earlier, settled turns have
-  // thinking stripped to keep history robust against signature invalidation.
+  // after the last real user message (tool results are role "tool", not "user").
+  // Earlier, settled turns have thinking stripped to keep history robust against
+  // signature invalidation. A runtime notice (role "user", marked by stream())
+  // continues the turn: counting it as a boundary stripped the run's reasoning
+  // mid-run and rewrote the whole cached prefix on every worker/background update.
   const trajectoryStartIdx = messages.reduce(
-    (last, m, i) => (m.role === "user" ? i : last),
+    (last, m, i) => (opensTurn(m) ? i : last),
     -1 as number,
   );
 
@@ -584,7 +910,8 @@ export function toAnthropicMessages(
       } else if (!msg.content.some((p) => !(p.type === "text" && p.text === ""))) {
         continue;
       }
-      userTurnIdx.push(out.length);
+      // A notice is not a turn opener for the 1-h cache anchors either.
+      if (opensTurn(msg)) userTurnIdx.push(out.length);
       out.push({
         role: "user",
         content:
@@ -628,7 +955,11 @@ export function toAnthropicMessages(
       const content =
         typeof msg.content === "string"
           ? msg.content
-          : toAnthropicAssistantContent(msg.content, msgIdx > trajectoryStartIdx, idMap);
+          : toAnthropicAssistantContent(
+              applyServerFallbackReplay(msg.content, keepFallbackBlocks, droppedToolCallIds),
+              msgIdx > trajectoryStartIdx,
+              idMap,
+            );
       // Skip assistant messages with no content blocks (can happen when all
       // blocks are filtered — e.g. thinking-only responses from non-Anthropic
       // providers where signature is missing and text is empty)
@@ -637,11 +968,15 @@ export function toAnthropicMessages(
       continue;
     }
     if (msg.role === "tool") {
+      const results = droppedToolCallIds.size
+        ? msg.content.filter((r) => !droppedToolCallIds.has(r.toolCallId))
+        : msg.content;
+      if (results.length === 0) continue;
       out.push({
         role: "user",
         // Cast covers the video block (used by the Anthropic-compatible MiniMax
         // API), which isn't in the first-party Anthropic tool_result types.
-        content: msg.content.map((result) => ({
+        content: results.map((result) => ({
           type: "tool_result" as const,
           tool_use_id: remapAnthropicToolCallId(result.toolCallId, idMap),
           content: toAnthropicToolResultContent(result.content),

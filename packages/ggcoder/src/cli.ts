@@ -86,6 +86,7 @@ import {
   type ProjectRuntime,
 } from "./ui/project-runtime.js";
 import { cleanupToolOutputs } from "./tools/overflow.js";
+import { spawnedTasks, type SpawnedTaskArgs } from "./tools/subagent-shared.js";
 import { CheckpointStore } from "./core/checkpoint-store.js";
 import { ReviewCoverageTracker } from "./core/ideal-review.js";
 import { shouldCompact, compact } from "./core/compaction/compactor.js";
@@ -1701,24 +1702,27 @@ export function messagesToHistoryItems(msgs: Message[]): CompletedItem[] {
             flushText();
             const result = toolResults.get(block.id);
             if (block.name === "subagent" || block.name === "spawn_agent") {
+              // One row per child: a batch spawn_agent call starts several.
+              const spawned: SpawnedTaskArgs[] =
+                block.name === "spawn_agent" ? spawnedTasks(block.args) : [{}];
               items.push({
                 kind: "subagent_group",
-                agents: [
-                  {
-                    toolCallId: block.id,
-                    task: String(
-                      block.name === "spawn_agent"
-                        ? (block.args.task_name ?? block.args.task ?? "Async agent")
-                        : (block.args.task ?? "Sub-agent"),
-                    ),
-                    agentName: String(block.args.agent ?? "default"),
-                    status: result?.isError ? "error" : "done",
-                    toolUseCount: 0,
-                    tokenUsage: { input: 0, output: 0 },
-                    result: result?.content ?? "",
-                    durationMs: 0,
-                  },
-                ],
+                agents: spawned.map((spawn, index) => ({
+                  toolCallId: spawned.length > 1 ? `${block.id}:${index}` : block.id,
+                  task: String(
+                    block.name === "spawn_agent"
+                      ? (spawn.task_name ?? spawn.task ?? "Async agent")
+                      : (block.args.task ?? "Sub-agent"),
+                  ),
+                  agentName: String(
+                    (block.name === "spawn_agent" ? spawn.agent : block.args.agent) ?? "default",
+                  ),
+                  status: result?.isError ? "error" : "done",
+                  toolUseCount: 0,
+                  tokenUsage: { input: 0, output: 0 },
+                  result: result?.content ?? "",
+                  durationMs: 0,
+                })),
                 id: `restore-${id++}`,
               });
             } else {

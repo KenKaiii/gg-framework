@@ -60,9 +60,18 @@ export function zodToJsonSchema(schema: z.ZodType): JsonSchema {
 /**
  * Resolve a tool's JSON Schema for provider tool definitions: prefer the
  * tool's pre-built `rawInputSchema`, otherwise convert its Zod `parameters`.
+ *
+ * A no-argument tool may declare a bare `{ "type": "object" }` root (common
+ * for MCP servers). OpenAI rejects that root with HTTP 400 "object schema
+ * missing properties", failing the whole request, so an object root without
+ * `properties` gets an explicit empty one. JSON Schema meaning is unchanged.
  */
 export function resolveToolSchema(tool: Tool): JsonSchema {
-  return tool.rawInputSchema ?? zodToJsonSchema(tool.parameters);
+  const schema = tool.rawInputSchema ?? zodToJsonSchema(tool.parameters);
+  if (schema.type === "object" && schema.properties === undefined) {
+    return { ...schema, properties: {} };
+  }
+  return schema;
 }
 
 /**

@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { theme } from "./theme";
 import { Modal } from "./Modal";
 import { ModalDismissButton, useModalEmbedState } from "./modal-embed";
 import { SettingsSection } from "./settings-section";
 import { SettingsHeaderAction } from "./settings-header";
-import { waitForReady, getTelegramStatus, saveTelegramConfig } from "./agent";
+import { waitForReady, getTelegramStatus, openUrl, saveTelegramConfig } from "./agent";
 import { toast } from "./toast";
 
 interface Props {

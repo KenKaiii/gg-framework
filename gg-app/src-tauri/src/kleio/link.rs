@@ -2400,6 +2400,10 @@ mod tests {
     /// away, and answered once forwarding has moved to the new listener.
     #[test]
     fn a_listener_ios_took_away_is_replaced_before_anything_sends() {
+        // No child may be mid-spawn while a closed listener is checked.
+        let _no_spawns = crate::process::SPAWN_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let home = tmp_home();
         let path = socket_path_on(&home, false);
         let listener = Forward::listen_private(&path).expect("listens on its socket");

@@ -9,8 +9,26 @@ export interface MCPServerConfig {
   args?: string[];
   /** Stdio server: environment variables */
   env?: Record<string, string>;
+  /**
+   * Milliseconds. Bounds the connect handshake, and — for a tool call — the
+   * time allowed WITHOUT a response or progress notification: a tool that
+   * reports progress has this window restarted on every notification.
+   */
   timeout?: number;
+  /**
+   * Hard cap (ms) on one tool call's total duration, however much progress it
+   * reports. Defaults to `MCP_DEFAULT_MAX_TOTAL_TIMEOUT_MS` (see client.ts).
+   */
+  maxTotalTimeout?: number;
   enabled?: boolean;
+  /**
+   * Opt OUT of idle shutdown. By default a stdio server's process is stopped
+   * after a period with no call in flight and respawned on the next call (its
+   * tools stay listed meanwhile). Set `true` for a server whose process holds
+   * state worth keeping between calls — a logged-in browser session, an open
+   * database handle, a warm index. HTTP servers are never idle-stopped.
+   */
+  keepAlive?: boolean;
   /**
    * Opt OUT of connection sharing. Defaults to true for stdio servers, so one
    * child process serves every session in the daemon rather than one per

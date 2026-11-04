@@ -383,9 +383,119 @@ pub(crate) fn sweep_orphan_sidecars() {
     prune_sidecar_ledger(&ledger, &snapshot);
 }
 
+// ── Opening URLs/paths in the user's default app ────────────────────────────
+//
+// tauri-plugin-opener (via the `open` crate's `that_detached`) double-forks on
+// Unix: the child it spawns exits at once and is never `wait()`ed, so every
+// link the app opened left a `<defunct>` process under the app until quit.
+// Here the launcher (`open` on macOS, `xdg-open` & co. elsewhere) is spawned
+// in its own process group and reaped on a background thread instead.
+// The iPhone keeps the plugin: there `open::commands` builds a `uiopen`
+// command the phone can't run.
+
+/// Spawn `cmd` with no stdio in its own process group and reap it in the
+/// background, so it never lingers as a zombie. Returns the child's pid.
+#[cfg(all(unix, not(target_os = "ios")))]
+pub(crate) fn spawn_reaped(mut cmd: Command) -> std::io::Result<u32> {
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        // Its own group: a Ctrl-C/SIGHUP aimed at the app (dev terminal) must
+        // not take down a browser that `xdg-open` runs in the foreground.
+        .process_group(0);
+    let mut child = cmd.spawn()?;
+    let pid = child.id();
+    std::thread::Builder::new()
+        .name("reap-launcher".into())
+        .spawn(move || {
+            let _ = child.wait();
+        })?;
+    Ok(pid)
+}
+
+/// Schemes `open_url` hands to the OS, matching the opener plugin's default
+/// scope. Anything else (`file:`, `javascript:`, custom app schemes) is refused
+/// so the webview can't turn this into a local-file or app launcher.
+pub(crate) fn is_openable_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    ["https://", "http://", "mailto:", "tel:"]
+        .iter()
+        .any(|scheme| lower.starts_with(scheme))
+}
+
+/// Open a URL or an existing path with the OS default handler.
+#[cfg(not(target_os = "ios"))]
+pub(crate) fn open_with_default(target: &str) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        // The `open` crate's launcher list, tried in order — the same ones
+        // the opener plugin uses, minus its zombie-leaving detach.
+        let mut last_error = None;
+        for cmd in open::commands(target) {
+            match spawn_reaped(cmd) {
+                Ok(_) => return Ok(()),
+                Err(e) => last_error = Some(e),
+            }
+        }
+        Err(last_error
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "no launcher available".into()))
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows opens through ShellExecuteW: no child process, no zombie.
+        tauri_plugin_opener::open_url(target, None::<&str>).map_err(|e| e.to_string())
+    }
+}
+
+// A child mid-spawn holds all our fds (macOS: close-on-exec ones too), so a
+// listener closed meanwhile still takes connections. Tests that spawn and the
+// link test that expects a closed listener refused take turns on this.
+#[cfg(test)]
+pub(crate) static SPAWN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn open_url_accepts_only_web_mail_and_phone_schemes() {
+        assert!(is_openable_url("https://github.com/o/r/pulls"));
+        assert!(is_openable_url("HTTP://example.com"));
+        assert!(is_openable_url("mailto:someone@example.com"));
+        assert!(is_openable_url("tel:+15550100"));
+        assert!(!is_openable_url("file:///etc/passwd"));
+        assert!(!is_openable_url("javascript:alert(1)"));
+        assert!(!is_openable_url("/Applications/Calculator.app"));
+        assert!(!is_openable_url("vscode://file/x"));
+    }
+
+    /// Regression: opening a link must not leave a `<defunct>` child behind.
+    /// Checked through `ps`, which lists a zombie (state `Z`) until it is
+    /// reaped; `kill(pid, 0)` can't tell (macOS answers ESRCH for zombies).
+    #[cfg(all(unix, not(target_os = "ios")))]
+    #[test]
+    fn spawn_reaped_leaves_no_zombie() {
+        let _spawning = SPAWN_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let pid = spawn_reaped(Command::new("true")).expect("spawn `true`");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let out = Command::new("ps")
+                .args(["-o", "stat=", "-p", &pid.to_string()])
+                .output()
+                .expect("run ps");
+            if String::from_utf8_lossy(&out.stdout).trim().is_empty() {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "launcher pid {pid} was never reaped (zombie)"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
 
     // ── orphan_killset classifier tests ──────────────────────────────────────
 

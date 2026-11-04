@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { runBackgroundGit } from "./git.js";
 
 /**
  * Parse an `owner/repo` slug from a GitHub remote URL. Handles the three
@@ -17,16 +18,16 @@ export function parseGitHubSlug(remoteUrl: string): string | null {
 }
 
 /** The `owner/repo` slug of the cwd's `origin` remote, or null when absent/non-GitHub. */
-export function getGitHubRepoSlug(cwd: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    execFile("git", ["remote", "get-url", "origin"], { cwd, timeout: 2000 }, (error, stdout) => {
-      if (error) {
-        resolve(null);
-        return;
-      }
-      resolve(parseGitHubSlug(stdout));
+export async function getGitHubRepoSlug(cwd: string): Promise<string | null> {
+  try {
+    const { stdout } = await runBackgroundGit(["remote", "get-url", "origin"], {
+      cwd,
+      timeoutMs: 2000,
     });
-  });
+    return parseGitHubSlug(stdout);
+  } catch {
+    return null;
+  }
 }
 
 export interface GitHubOpenCounts {

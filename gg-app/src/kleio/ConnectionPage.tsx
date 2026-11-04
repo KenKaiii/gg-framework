@@ -27,7 +27,6 @@
 // Replaces upstream's Telegram "Remote" page: the iPhone app is Kleio's remote.
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ArrowClockwiseIcon,
   ArrowUpIcon,
@@ -45,6 +44,7 @@ import {
   WarningCircleIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
+import { openUrl } from "../agent";
 import { Badge } from "../Badge";
 import { isPhone } from "../platform";
 import { SettingsCard } from "../settings-section";

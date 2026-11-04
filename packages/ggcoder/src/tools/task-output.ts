@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { AgentTool } from "@kleio/agent";
 import { MAX_PROCESS_WAIT_MS, type ProcessManager } from "../core/process-manager.js";
-import { truncateTail } from "./truncate.js";
+import { truncateTail, describeCompressed } from "./truncate.js";
 import { compressToolOutput } from "./compress.js";
 import { writeOverflow } from "./overflow.js";
 
@@ -67,7 +67,8 @@ export function createTaskOutputTool(
           const overflowPath = await writeOverflow(output, "task-output").catch(() => null);
           const overflowNotice = overflowPath ? ` Full output: ${overflowPath}` : "";
           const c = compressToolOutput(output);
-          output = `[${c.notice}${overflowNotice}]\n${c.content}`;
+          const what = describeCompressed(output, c.content);
+          output = `[${c.notice}${what ? ` ${what}` : ""}${overflowNotice}]\n${c.content}`;
         } else {
           output = truncated.content;
         }

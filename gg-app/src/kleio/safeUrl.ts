@@ -3,7 +3,7 @@
 // document she shows) may hand to the system browser. Both come from words a
 // model chose or a file an agent wrote, so only plain web pages pass.
 
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "../agent";
 
 /** The longest web address Kleio shows or opens (the host's limit too). */
 export const URL_MAX = 2_048;

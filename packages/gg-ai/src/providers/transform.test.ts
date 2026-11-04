@@ -16,6 +16,7 @@ import {
 } from "./transform.js";
 import { supportsStrictToolSampling } from "../utils/strict-tool-schema.js";
 import type { Message, Tool } from "../types.js";
+import { markContinuesTurn } from "../utils/turn-continuation.js";
 
 const exampleTools: Tool[] = [
   {
@@ -305,6 +306,17 @@ describe("Anthropic transform", () => {
       ];
 
       expect(marks(messages, long)).toEqual([long, undefined, undefined, undefined, short]);
+    });
+
+    it("treats a runtime notice as part of the tool loop, not a new turn", () => {
+      const messages: Message[] = [
+        { role: "user", content: "fix it" },
+        call("a"),
+        result("a"),
+        markContinuesTurn({ role: "user", content: "a worker finished" }),
+      ];
+
+      expect(marks(messages, long)).toEqual([long, undefined, undefined, short]);
     });
 
     it("keeps the previous turn's opening message pinned when a new turn starts", () => {
@@ -612,6 +624,37 @@ describe("Anthropic transform", () => {
     expect(contents[2]).toEqual([
       { type: "thinking", thinking: "active answer", signature: "sig-new2" },
       { type: "text", text: "done" },
+    ]);
+  });
+
+  it("keeps the run's thinking across a runtime notice so the cached prefix holds", () => {
+    // goals-vs-coder bench: notices ("a worker finished", diagnostics) are
+    // user-role messages. Counting them as a new turn stripped every earlier
+    // thinking block in the run, changing the wire prefix: 7 of 427 calls
+    // re-wrote their cached history, all right after a notice.
+    const turn = (notice: Message): Message[] => [
+      { role: "user", content: "build it" },
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", text: "plan", signature: "sig-1" },
+          { type: "tool_call", id: "call_a", name: "bash", args: { command: "ls" } },
+        ],
+      },
+      { role: "tool", content: [{ type: "tool_result", toolCallId: "call_a", content: "ok" }] },
+      notice,
+    ];
+    const firstAssistant = (messages: Message[]) =>
+      toAnthropicMessages(messages).messages.find((m) => m.role === "assistant")?.content;
+
+    const notice = markContinuesTurn<Message>({ role: "user", content: "worker done" });
+    expect(firstAssistant(turn(notice))).toEqual([
+      { type: "thinking", thinking: "plan", signature: "sig-1" },
+      { type: "tool_use", id: "call_a", name: "bash", input: { command: "ls" } },
+    ]);
+    // A real user message still settles the turn.
+    expect(firstAssistant(turn({ role: "user", content: "now test it" }))).toEqual([
+      { type: "tool_use", id: "call_a", name: "bash", input: { command: "ls" } },
     ]);
   });
 

@@ -19,10 +19,10 @@ import {
   listToolkits,
   setSetupKey,
 } from "./kleioApi";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "../agent";
 import type * as KleioApi from "./kleioApi";
 
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => undefined) }));
+vi.mock("../agent", () => ({ openUrl: vi.fn(async () => undefined) }));
 vi.mock("./kleioApi", async (importOriginal) => {
   const actual = await importOriginal<typeof KleioApi>();
   return {
@@ -132,7 +132,7 @@ describe("AppsPage", () => {
       redirectUrl: "https://connect.example/start",
       connectionId: "c1",
     });
-    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    const { openUrl } = await import("../agent");
     await renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
     await waitFor(() => expect(openUrl).toHaveBeenCalledWith("https://connect.example/start"));
@@ -208,7 +208,7 @@ describe("AppsPage", () => {
         "needs_setup",
       ),
     );
-    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    const { openUrl } = await import("../agent");
     await renderPage();
     expect(screen.getByText("Needs your own keys")).toBeTruthy();
     // Still connectable: once the keys are in Composio, Connect works.

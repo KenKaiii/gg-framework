@@ -214,10 +214,9 @@ pub(crate) fn permissions_status() -> PermissionsStatus {
 pub(crate) fn open_permissions_settings() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
-            .spawn()
-            .map_err(|e| e.to_string())?;
+        let mut cmd = Command::new("open");
+        cmd.arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles");
+        spawn_reaped(cmd).map_err(|e| e.to_string())?;
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]

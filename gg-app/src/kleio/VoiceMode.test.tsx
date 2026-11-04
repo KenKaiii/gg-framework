@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "../agent";
 import { setHomeBackgroundEnabled } from "../home-background";
 import type { Box } from "./flip";
 import type * as KleioApi from "./kleioApi";
@@ -43,8 +43,11 @@ vi.mock("./kleioApi", async (importOriginal) => ({
   createFileShow: api.createFileShow,
 }));
 vi.mock("./BriefPanel", () => ({ briefMe: vi.fn() }));
-vi.mock("../agent", () => ({ openProjectPath: vi.fn(), sendPrompt: vi.fn() }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => {}) }));
+vi.mock("../agent", () => ({
+  openProjectPath: vi.fn(),
+  openUrl: vi.fn(async () => {}),
+  sendPrompt: vi.fn(),
+}));
 
 const { VoiceMode, latestCaption, CAPTION_HOLD_MS } = await import("./VoiceMode");
 const { FileViewerProvider } = await import("./FileViewerProvider");

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 export interface ProcessTreeKillOptions {
@@ -83,4 +84,101 @@ function killSingleProcess(pid: number, kill: typeof process.kill): void {
   } catch {
     // Process already exited.
   }
+}
+
+export interface ProcessTableOptions {
+  platform?: NodeJS.Platform;
+  /** Injected for tests: returns `[pid, ppid]` pairs for every process. */
+  readTable?: () => Array<[number, number]>;
+}
+
+/** `[pid, ppid]` for every live process, from `/proc` (Linux) or `ps`. */
+function readProcessTable(platform: NodeJS.Platform): Array<[number, number]> {
+  if (platform === "linux") {
+    try {
+      const rows: Array<[number, number]> = [];
+      for (const name of readdirSync("/proc")) {
+        if (!/^\d+$/.test(name)) continue;
+        try {
+          // `pid (comm) state ppid …` — comm may contain spaces/parens, so
+          // parse from the LAST `)`.
+          const stat = readFileSync(`/proc/${name}/stat`, "utf-8");
+          const ppid = parseInt(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1] ?? "", 10);
+          if (!Number.isNaN(ppid)) rows.push([Number(name), ppid]);
+        } catch {
+          // Exited mid-scan.
+        }
+      }
+      if (rows.length > 0) return rows;
+    } catch {
+      // No readable /proc — fall through to ps.
+    }
+  }
+  // Absolute path when present: a bare `ps` is resolvable through a PATH we
+  // do not control.
+  const ps = existsSync("/bin/ps") ? "/bin/ps" : "ps";
+  const res = spawnSync(ps, ["-A", "-o", "pid=", "-o", "ppid="], {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 5_000,
+  });
+  if (res.status !== 0 || typeof res.stdout !== "string") return [];
+  const rows: Array<[number, number]> = [];
+  for (const line of res.stdout.split("\n")) {
+    const [pid, ppid] = line.trim().split(/\s+/).map(Number);
+    if (Number.isInteger(pid) && Number.isInteger(ppid)) rows.push([pid!, ppid!]);
+  }
+  return rows;
+}
+
+/**
+ * Every live descendant of `pid` (breadth-first, excluding `pid` itself),
+ * found by parent links — so it also covers children that left the process
+ * group, unlike a group kill. POSIX only; returns `[]` on Windows, where
+ * shell pids (msys) do not map onto the native process table.
+ */
+export function listDescendantPids(pid: number, options: ProcessTableOptions = {}): number[] {
+  const platform = options.platform ?? process.platform;
+  if (platform === "win32") return [];
+  const table = options.readTable ? options.readTable() : readProcessTable(platform);
+  const children = new Map<number, number[]>();
+  for (const [child, parent] of table) {
+    if (child === parent) continue;
+    const list = children.get(parent);
+    if (list) list.push(child);
+    else children.set(parent, [child]);
+  }
+  const seen = new Set<number>();
+  const queue = [pid];
+  while (queue.length > 0) {
+    for (const child of children.get(queue.shift()!) ?? []) {
+      if (child === pid || seen.has(child)) continue;
+      seen.add(child);
+      queue.push(child);
+    }
+  }
+  return [...seen];
+}
+
+/**
+ * Signal every descendant of `pid` without touching `pid` itself — stops a
+ * persistent shell's running command while the shell survives. Returns how
+ * many processes were signalled.
+ */
+export function signalDescendants(
+  pid: number,
+  signal: NodeJS.Signals,
+  options: ProcessTableOptions & { kill?: typeof process.kill } = {},
+): number {
+  const kill = options.kill ?? process.kill;
+  let signalled = 0;
+  for (const child of listDescendantPids(pid, options)) {
+    try {
+      kill(child, signal);
+      signalled++;
+    } catch {
+      // Already gone.
+    }
+  }
+  return signalled;
 }

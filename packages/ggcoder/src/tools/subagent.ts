@@ -5,6 +5,7 @@ import type { AgentTool } from "@kleio/agent";
 import type { Provider } from "@kleio/ai";
 import { mcpServersForAgent, type AgentDefinition } from "../core/agents.js";
 import { log } from "../core/logger.js";
+import { ReceiptRecorder } from "../core/subagent-receipt.js";
 import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
 import {
   boundSubAgentOutput,
@@ -171,6 +172,10 @@ export function createSubAgentTool(
       const abortHandler = () => killActiveChild("aborted");
       context.signal.addEventListener("abort", abortHandler, { once: true });
 
+      // Engine-side record of every tool call the child made; rendered as a
+      // receipt the child's model cannot write or forge.
+      const receipt = new ReceiptRecorder();
+
       return new Promise((resolve) => {
         const finish = (result: { content: string; details?: SubAgentDetails }) => {
           context.signal.removeEventListener("abort", abortHandler);
@@ -218,6 +223,7 @@ export function createSubAgentTool(
                   }
                   break;
                 case "tool_call_start":
+                  receipt.start(event.toolCallId, event.name, event.args);
                   toolUseCount++;
                   currentActivity = formatToolActivity(
                     event.name as string,
@@ -230,6 +236,7 @@ export function createSubAgentTool(
                   });
                   break;
                 case "tool_call_end":
+                  receipt.end(event.toolCallId, event.result, event.isError);
                   break;
                 case "max_turns":
                   hitMaxTurns = true;
@@ -321,6 +328,7 @@ export function createSubAgentTool(
             });
 
             const body = boundSubAgentOutput(textOutput);
+            const receiptBlock = `\n\n${receipt.render(textOutput, cwd)}`;
             if (code !== 0) {
               // A provider/process failure can happen AFTER the model has emitted
               // a progress sentence (for example: "I'll read both files now.").
@@ -347,9 +355,13 @@ export function createSubAgentTool(
                 // "(no output)" for successful empty children. Test the raw
                 // stream here so that placeholder is not mislabeled as partial
                 // model output on failures.
+                // The receipt only rides along when there is something to
+                // check: partial output or tool calls the child made.
                 content: textOutput
-                  ? `Sub-agent failed (exit ${code}): ${error}\n\nPartial output before failure:\n${body}`
-                  : `Sub-agent failed (exit ${code}): ${error}`,
+                  ? `Sub-agent failed (exit ${code}): ${error}\n\nPartial output before failure:\n${body}${receiptBlock}`
+                  : toolUseCount > 0
+                    ? `Sub-agent failed (exit ${code}): ${error}${receiptBlock}`
+                    : `Sub-agent failed (exit ${code}): ${error}`,
                 details,
               });
               return;
@@ -358,7 +370,7 @@ export function createSubAgentTool(
             const content = hitMaxTurns
               ? `[Sub-agent reached its ${maxTurnsLimit}-turn limit — it stopped mid-task and this output may be incomplete.]\n\n${body}`
               : body;
-            finish({ content, details });
+            finish({ content: `${content}${receiptBlock}`, details });
           });
 
           child.on("error", (err) => {

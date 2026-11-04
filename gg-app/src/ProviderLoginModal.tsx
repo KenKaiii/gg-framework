@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { theme } from "./theme";
 import { Modal } from "./Modal";
 import { Badge } from "./Badge";
 import {
+  openUrl,
   authApiKey,
   authOAuthStart,
   authOAuthCode,

@@ -1710,6 +1710,41 @@ describe("edit stringified `edits` handling", () => {
     expect(message).not.toContain("expected array, received string");
   });
 
+  // Verbatim shape from bench/h2h (Haiku 5.5): the `edits` string ends where
+  // old_text should, and new_text lands at the top level.
+  it("recovers old_text cut off into the edits string with new_text at the top level", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "edit-split-"));
+    try {
+      const source =
+        'const q = "x";\nconst totalPages = Math.floor(n / per);\nconst start = page * per;\n';
+      await fs.writeFile(path.join(dir, "p.js"), source);
+      const tool = createEditTool(dir);
+      const args = tool.parameters.parse({
+        file_path: "p.js",
+        edits: '[{"old_text">const totalPages = Math.floor(n / per);\nconst start = page * per;',
+        new_text: "const totalPages = Math.ceil(n / per);\nconst start = (page - 1) * per;",
+      });
+
+      await tool.execute(args, { signal: new AbortController().signal, toolCallId: "split" });
+
+      expect(await fs.readFile(path.join(dir, "p.js"), "utf-8")).toBe(
+        'const q = "x";\nconst totalPages = Math.ceil(n / per);\nconst start = (page - 1) * per;\n',
+      );
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not recover the split shape when extra keys make it ambiguous", () => {
+    const result = createEditTool(os.tmpdir()).parameters.safeParse({
+      file_path: "a.ts",
+      edits: '[{"old_text">a',
+      new_text: "b",
+      old_text: "c",
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("leaves non-string type errors on their default message", () => {
     expect(errorFor(42)).toContain("expected array, received number");
   });

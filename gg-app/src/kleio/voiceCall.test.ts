@@ -23,6 +23,7 @@ import {
   startCall,
 } from "./voiceCall";
 
+vi.mock("../agent", () => ({ openUrl: vi.fn(async () => undefined) }));
 vi.mock("./kleioApi", async (importOriginal) => ({
   ...(await importOriginal<typeof KleioApi>()),
   startVoiceCall: vi.fn(),

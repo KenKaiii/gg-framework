@@ -22,6 +22,8 @@ export function createUiAdoptTool(
 ): AgentTool<typeof params> {
   return {
     name: "ui_adopt",
+    // Apply writes several files; a steering message must not leave it half-done.
+    interruptible: false,
     description:
       "Plan then adopt real public Bklit/Kokonut registry source into an existing React project. Reports dependency closure, relocated imports, missing packages/styles, attribution and conflicts. Apply requires the unchanged plan hash, only creates new component files through normal write controls, and never installs packages or overwrites user files.",
     parameters: params,

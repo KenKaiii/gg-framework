@@ -54,6 +54,11 @@ export class McpToolRegistry {
     this.ensureToolSearchTool();
   }
 
+  /** Pull named entries out of the catalog (empty when no catalog exists). */
+  promote(names: string[]): AgentTool[] {
+    return this.catalog?.promote(names) ?? [];
+  }
+
   /** Forget every MCP tool before a provider-switch reconnect re-adds them. */
   clearMcpTools(): void {
     this.catalog?.removeWhere((name) => name.startsWith("mcp__"));

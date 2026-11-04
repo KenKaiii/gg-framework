@@ -3,7 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { AgentTool } from "@kleio/agent";
 import { resolvePath, rejectSymlink } from "./path-utils.js";
-import { truncateHead } from "./truncate.js";
+import { truncateHead, describeOmitted } from "./truncate.js";
 import { writeOverflow } from "./overflow.js";
 import {
   FileTooLargeError,
@@ -329,9 +329,10 @@ export function createReadTool(
         const nextOffset = (offset ?? 1) + result.keptLines;
         const overflowPath = await writeOverflow(content, "read").catch(() => null);
         const overflowNotice = overflowPath ? ` Full output saved to ${overflowPath}.` : "";
+        const what = describeOmitted(lines.slice(result.keptLines), result.content);
         return (
           `${numbered}\n` +
-          `[Truncated: showing lines ${offset ?? 1}-${(offset ?? 1) + result.keptLines - 1} of ${result.totalLines}.${overflowNotice} ` +
+          `[Truncated: showing lines ${offset ?? 1}-${(offset ?? 1) + result.keptLines - 1} of ${result.totalLines}.${what ? ` ${what}` : ""}${overflowNotice} ` +
           `Use offset=${nextOffset} to read more.]`
         );
       }

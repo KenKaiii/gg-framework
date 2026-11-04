@@ -22,7 +22,6 @@ import type * as KleioApi from "./kleioApi";
 
 // Replies render through Markdown, which reaches the Tauri bridge on import.
 vi.mock("../agent", () => ({ openProjectPath: vi.fn(), sendPrompt: vi.fn() }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 vi.mock("../RadioButton", () => ({ RadioButton: () => <button type="button">Radio</button> }));
 vi.mock("../platform", async (importOriginal) => ({
   ...(await importOriginal<typeof Platform>()),

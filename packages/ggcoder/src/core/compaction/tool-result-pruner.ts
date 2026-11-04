@@ -33,6 +33,20 @@ export const PRUNE_PROTECT_TOKENS = 40_000;
 export const PRUNE_MINIMUM_TOKENS = 20_000;
 export const PRUNE_PROTECT_TOOL_BATCHES = 2;
 
+/**
+ * Pruning starts once the active context reaches this share of the compaction
+ * trigger. Below it the rewrite costs more than it saves: each prune re-sends
+ * the whole history after the first stub uncached (a live goal paid ~70–100k
+ * tokens per prune to free ~20k at 117k of a 1M window), and freed tokens only
+ * matter once compaction is near.
+ */
+export const PRUNE_START_FRACTION = 0.5;
+
+/** Whether stale tool output is worth pruning at this context size. */
+export function shouldPruneToolResults(activeTokens: number, compactionTarget: number): boolean {
+  return activeTokens >= compactionTarget * PRUNE_START_FRACTION;
+}
+
 /** Tools whose output is instruction, not reproducible data — never pruned. */
 export const PRUNE_PROTECTED_TOOLS = new Set(["skill"]);
 

@@ -3,6 +3,7 @@ import type { Message } from "@kleio/ai";
 import {
   classifyVerificationCommand,
   collectVerificationEvidence,
+  extractStandaloneCheck,
 } from "./verification-evidence.js";
 
 describe("classifyVerificationCommand", () => {
@@ -227,6 +228,46 @@ function bashExchange(
     },
   ];
 }
+
+// Shapes Claude Haiku 5.5 wrote in the 2026-10-18 arena runs: the tests passed,
+// but the command's exit status belonged to a later part, so none counted.
+describe("extractStandaloneCheck", () => {
+  it.each([
+    [
+      'cd /w && rg -n "getUserById" . ; npm run test 2>&1 | tail -15; node -e \'\nimport("./src/api.js").then(({handle}) => { console.log(handle("/users/1")); });\'',
+      "cd /w && npm run test",
+    ],
+    [
+      'npm run test 2>&1 | grep -E "^# |^ℹ (tests|pass|fail)"; echo "exit=${PIPESTATUS[0]}"',
+      "npm run test",
+    ],
+    [
+      "cat >> test/cache.test.js <<'EOF'\ntest(\"retries\", async () => { a; b || c; });\nEOF\nnpm test 2>&1 | tail -25",
+      "npm test",
+    ],
+    [
+      'cd /w && echo "refs: $(rg -c old . | wc -l)"; npm test 2>&1 | grep -E "^ℹ"; git show HEAD:src/m.js > /tmp/old.mjs && cat > /tmp/cmp.mjs <<\'EOF\'\nimport { f } from "/tmp/old.mjs"; console.log(f(1) === 1 ? "ok" : "MISMATCH");\nEOF\nnode /tmp/cmp.mjs; rm -f /tmp/cmp.mjs',
+      "cd /w && npm test",
+    ],
+    ["npm test && git stash -q && npm test | grep fail; git stash pop -q", "npm test"],
+  ])("recovers the check from %j", (command, expected) => {
+    expect(extractStandaloneCheck(command)).toBe(expected);
+  });
+
+  it.each([
+    ["a command that already counts", "cd /w && npm test 2>&1 | tail -15"],
+    ["no check", "rg -n old . ; echo done"],
+    ["a check only inside a substitution", 'echo "$(npm test)"; true'],
+    ["a check only inside a subshell", "(cd sub && npm test); true"],
+    ["a later cd", "cd /w && true; cd other; npm test; true"],
+    ["a filter stage", "echo x | npm test; true"],
+    ["an unterminated heredoc", "cat > a <<EOF\nnpm test; true"],
+    ["an unterminated quote", "echo 'x; npm test; true"],
+    ["a check that rewrites files", "npx biome check --write .; true"],
+  ])("returns null for %s", (_label, command) => {
+    expect(extractStandaloneCheck(command)).toBeNull();
+  });
+});
 
 describe("collectVerificationEvidence", () => {
   it("records only successful bounded checks as passed evidence", () => {

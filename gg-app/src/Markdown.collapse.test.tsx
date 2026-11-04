@@ -3,8 +3,11 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { CODE_COLLAPSE_LINE_THRESHOLD } from "./collapse";
 
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
-vi.mock("./agent", () => ({ openProjectPath: vi.fn(), sendPrompt: vi.fn() }));
+vi.mock("./agent", () => ({
+  openProjectPath: vi.fn(),
+  openUrl: vi.fn(),
+  sendPrompt: vi.fn(),
+}));
 
 const { Markdown } = await import("./Markdown");
 

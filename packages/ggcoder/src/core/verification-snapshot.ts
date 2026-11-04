@@ -1,11 +1,9 @@
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
-import { promisify } from "node:util";
+import { runBackgroundGit } from "../utils/git.js";
 
-const exec = promisify(execFile);
 const MAX_FILES = 10_000;
 const MAX_BYTES = 128 * 1024 * 1024;
 const MAX_MS = 5000;
@@ -24,9 +22,9 @@ export async function captureVerificationSnapshot(
   try {
     const git = async (args: string[]) =>
       (
-        await exec("git", args, {
+        await runBackgroundGit(args, {
           cwd,
-          timeout: Math.max(1, deadline - Date.now()),
+          timeoutMs: Math.max(1, deadline - Date.now()),
           maxBuffer: 2 * 1024 * 1024,
         })
       ).stdout;

@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { AgentTool } from "@kleio/agent";
 import type { ProcessManager } from "../core/process-manager.js";
 import { killProcessTree } from "../utils/process.js";
-import { truncateTail, MAX_BYTES } from "./truncate.js";
+import { truncateTail, MAX_BYTES, describeCompressed } from "./truncate.js";
 import { compressToolOutput } from "./compress.js";
 import { writeOverflow } from "./overflow.js";
 import { localOperations, type ToolOperations } from "./operations.js";
@@ -12,6 +12,7 @@ import { PersistentShell } from "../core/persistent-shell.js";
 import { isReadOnlyCommand, sleepOnlySeconds } from "./read-only-bash.js";
 import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
 import { isCatastrophicCommand } from "../core/workspace-guard.js";
+import { checkDestructiveGit } from "../core/destructive-git-guard.js";
 import { checkCommandPolicy, type GetNetworkPolicy } from "../core/network-guard.js";
 import {
   prepareSandboxLaunch,
@@ -84,7 +85,8 @@ export async function renderBashOutput(rawOutput: string): Promise<string> {
     ? ` Full output saved to ${overflowPath} — read it with offset/limit if needed.`
     : "";
   const c = compressToolOutput(rawOutput);
-  return `[${c.notice}${overflowNotice}]\n${c.content}`;
+  const what = describeCompressed(rawOutput, c.content);
+  return `[${c.notice}${what ? ` ${what}` : ""}${overflowNotice}]\n${c.content}`;
 }
 
 const BashParams = z.object({
@@ -252,6 +254,20 @@ export function createBashTool(
       if (catastrophic) {
         return `Error: ${catastrophic}`;
       }
+      // Destructive-git guard — refuses reset --hard / checkout -- / restore /
+      // clean -f / stash drop / branch -D / force push when work would be lost.
+      // A persist:true call runs wherever the session shell last cd'd to.
+      const liveShell = persist && process.platform !== "win32" ? sessionShell : null;
+      const gitBlocked = await checkDestructiveGit(command, {
+        cwd,
+        resolveCwd:
+          liveShell && !liveShell.isBusy
+            ? async () => (await liveShell.run("pwd", 2_000, context.signal)).output.trim() || null
+            : undefined,
+      });
+      if (gitBlocked) {
+        return `Error: ${gitBlocked}`;
+      }
       // Network allowlist — defence in depth only. Recognises the common egress
       // command shapes; an unrecognised command is never blocked (see
       // core/network-guard.ts for why this is not a sandbox).
@@ -304,9 +320,16 @@ export function createBashTool(
         const output = await renderBashOutput(res.output);
         const exitCode =
           res.exitCode === "TIMEOUT"
-            ? `TIMEOUT (${timeoutMs ?? DEFAULT_TIMEOUT}ms) — session shell was reset; cd/env state is gone`
+            ? `TIMEOUT (${timeoutMs ?? DEFAULT_TIMEOUT}ms)` +
+              (res.shellKept
+                ? " — the command was stopped; the session shell kept its cwd/env"
+                : "")
             : String(res.exitCode);
-        return annotateSandboxDenial(`Exit code: ${exitCode}\n${output}`, sessionSandboxed);
+        // The restart note sits right under the exit code so output truncation
+        // can never drop it.
+        const restartNote = sessionShell.takeRestartNote();
+        const note = restartNote ? `${restartNote}\n` : "";
+        return annotateSandboxDenial(`Exit code: ${exitCode}\n${note}${output}`, sessionSandboxed);
       }
       if (run_in_background) {
         let launch: SandboxLaunch;

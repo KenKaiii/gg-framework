@@ -18,7 +18,6 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 // The viewer draws documents through Markdown, which reaches the Tauri bridge on import.
 vi.mock("../agent", () => ({ openProjectPath: vi.fn(), sendPrompt: vi.fn() }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 
 const OWNER = { kind: "blob", blobId: "b_0000aaaa" } as const;
 const PATH = "Morning-AI-Research-2026-10-01.pdf";

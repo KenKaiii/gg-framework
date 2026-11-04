@@ -183,14 +183,16 @@ and version commits) is not imported. The imported fixes shipped in `5.66.2-klei
 published on 2026-10-30. Their changesets for `@kleio/ai`, `agent`, `core` and `coder`
 were moved by hand into those packages' `5.66.2-kleio.1` CHANGELOG entries.
 
-## Module split from upstream 4f763ed2 (open)
+## Module split from upstream 4f763ed2 (merged)
 
 - Upstream tip reviewed: `0e7a6382da002e8a4473f0247a7e60050cc3e9ee` (engine **5.88.1**,
   desktop **0.99.1**), 265 commits after `3f2bb6bc`. None of the 20 commits after
   `988f920e` is taken here.
 - Branch: `sync/upstream-split-4f763ed2`, based on `main` at `75e3ba68`
-- PR: [#74](https://github.com/fmckie/gg-framework/pull/74), opened as a draft on
-  2026-11-02
+- PR: [#74](https://github.com/fmckie/gg-framework/pull/74), merged at `c2a1ea88` on
+  2026-11-03; all nine CI jobs passed on `9a18a555` (run **41488549697**). GitHub
+  squashed the branch, so the downstream SHAs below are on
+  `sync/upstream-split-4f763ed2`; the squash commit keeps all four trailers.
 - PR 1 of the 4 in `.gg/plans/upstream-selective-import-phased.md`. PRs 2–4 port
   upstream fixes, tools and Goals against the new paths.
 - `upstream.lastImportedCommit` stays `3f2bb6bc`, for the reason given in the previous
@@ -254,6 +256,125 @@ Local macOS checks, each compared with `main`:
   limits (71 bytes under for the frontend). The split adds 70.8 KiB of per-file
   overhead to the build output (import headers, source maps, declarations) and 5793
   bytes to the initial JavaScript.
+
+## Engine fixes from upstream (open)
+
+- Upstream tip reviewed: `7d74ada78e31873b4e1586bf9c5f7b69d1146c98` (engine **5.89.0**,
+  desktop **0.100.1**), 270 commits after `3f2bb6bc`. None of the 25 commits after
+  `988f920e` is taken here.
+- Branch: `sync/upstream-engine-fixes`, based on `main` at `c2a1ea88`
+- PR: [#75](https://github.com/fmckie/gg-framework/pull/75), opened as a draft on
+  2026-11-03
+- PR 2 of the 4 in `.gg/plans/upstream-selective-import-phased.md`: engine fixes, ported
+  at the paths the module split created.
+- `upstream.lastImportedCommit` stays `3f2bb6bc`, for the reason given in the 988f920e
+  section. Picks carry `cherry picked from commit <sha>`, ports carry
+  `Ported from upstream <sha>`, and `fork-provenance.json` `selectiveImports` holds the
+  full hashes.
+
+Picked with `git cherry-pick -x`. Each applied cleanly, with the same patch as upstream:
+
+| Upstream   | Downstream | Fix                                                                                                                                                                                                  |
+| ---------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `c38df90e` | `672a058a` | The catastrophic-command guard catches Windows backslash paths such as `C:\Users\me`. #66 skipped it because the fork's guard then predated `3ec4e666`'s shell walker, which this import ports first |
+| `0d966f84` | `ce0a104f` | Flaky MCP `maxTotalTimeout` test                                                                                                                                                                     |
+| `b8627c2d` | `bec28b3f` | Racy descendant check in the persistent-shell timeout test on loaded Linux runners                                                                                                                   |
+
+Ported by hand at the post-split paths:
+
+| Upstream   | Downstream | Taken                                                                                                                                                                                                                                                                                                                                                                        | Left out                                                                                                                        |
+| ---------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `b5833186` | `fea440c4` | Unrecognized read-only checks and persistent-shell checks no longer re-open verified work                                                                                                                                                                                                                                                                                    | Critter floor, presence list and the other gg-app files                                                                         |
+| `f6b906c4` | `0ae3e15b` | Destructive-git guard in `bash` and `task_send`                                                                                                                                                                                                                                                                                                                              | The rest of the commit (see below)                                                                                              |
+| `3ec4e666` | `f6c2718c` | Steering interrupts running tools; `transformToolResult` and injection warnings; shell parsing in the catastrophic-command and destructive-git guards; persistent-shell recovery; git hardening; MCP idle shutdown, progress and `maxTotalTimeout`; sub-agent receipts; `wait_agent` promotion; Anthropic server-side fallback; invalid tool calls dropped; truncation notes | Cache expiry, the truncation-note bench, the `HookNotice.tsx` test hunk, every gg-app, icon and installer file                  |
+| `95a8d41b` | `02f58d4a` | gg-app: links and files the app opens leave no zombie process (`open` 5.3.5, which `tauri-plugin-opener` already builds; the iPhone keeps the plugin), and every link goes through `open_url`. `edit` recovers a split `edits` argument                                                                                                                                      | Repo-poll sharing, window motion, the Anthropic thinking change, critter and CSS files, `open_image_data`                       |
+| `6325d417` | `e4d40659` | Folder changes reach the model through the environment update; runtime notices continue the turn; pruning waits for half the compaction trigger                                                                                                                                                                                                                              | The `cache-diagnostics.ts` `noteEdit` lines, the goal-worker part                                                               |
+| `420b1ad3` | `66bddfb0` | A refused check is re-run once on its own; three reply sentences in the How to Talk section                                                                                                                                                                                                                                                                                  | `renderWorkSection`, `Precedence:` and style-pack wording, the `bash.ts` hunks, `provider-fetch.ts` (#66 took it as `bcec266c`) |
+| `705af903` | `e19afa38` | Hedged first event for agent streams                                                                                                                                                                                                                                                                                                                                         | The `bash.ts` wording and `Precedence:` line, Royale, every gg-app file, the skills refresh                                     |
+
+Moved to a later import, because they edit or need code the fork doesn't have yet:
+
+- The rest of `f6b906c4`: the keep-awake toggle, stream rules, ask_user deadlines, shell
+  and package threat guards, plan-step compaction, `prewarm()`, patches and workspace
+  pins.
+- `3ec4e666`'s cache expiry: it reads `d83252b9`'s `CacheDiagnostics` and records cache
+  touches in `f6b906c4`'s `prewarm()`.
+- `6325d417`'s `noteEdit` lines in `cache-diagnostics.ts`, which `d83252b9` creates, and
+  its goal-worker part (goals-store, subagent-manager and subagent-worker-mode, with their
+  tests), which comes with Goals (`46e534bc`).
+- `420b1ad3`'s `renderWorkSection` lines, `Precedence:` line and style-pack wording, which
+  edit `987257de`'s text, and its `bash.ts` hunks, which remove a check note that
+  `fad77086` adds.
+- `705af903`'s `bash.ts` wording and `Precedence:` line, which edit `987257de`'s text.
+
+Not taken:
+
+- `b5833186`'s critter floor modules, presence list, `App.css`, `AttachmentBar.tsx` and
+  `ReferencedFiles.tsx`: desktop UI and critter art.
+- `3ec4e666`'s gg-app, icon and installer files: the desktop half. Its verification-flow
+  test hunk reads `gg-app/src/HookNotice.tsx`, which that half creates, and
+  `scripts/truncation-note-bench.ts` is a local benchmark.
+- From `95a8d41b`:
+  - Repo-poll sharing (one git, GitHub and CI poller per repo instead of one per window):
+    a desktop-sidecar efficiency change, not a fix.
+  - Window motion and its users, the critter files and the CSS: desktop UI.
+  - The thinking change in gg-ai `transform.ts`: the fork sends no `display`, so adaptive
+    models already get omitted thinking (Opus and Sonnet 4.6 keep their summarized
+    default, which the terminal UI shows).
+  - The `open_image_data` hunk, because the fork has no such command, and upstream tests
+    for files the fork lacks.
+- `705af903` beyond hedged streaming: Royale (the sidecar's `royale*.ts`, the Royale
+  screen, `commands/royale.rs` and its window wiring), the pixel-art home and lounge, the
+  skills refresh (the bundled skills change with `21adf945` and `7302fa5a` instead) and
+  `GG-ROYALE-PRIVACY.md`.
+- The five upstream changesets, from `6325d417` and `420b1ad3`.
+- The 5 commits after `0e7a6382`. `adea7972` (`!` terminal commands and local images in
+  replies) and `9403d456` (a macOS 27 crash guard for AppKit exceptions under tao's
+  `sendEvent:`) touch files this import edits, and wait for a decision, as do
+  `a2ca7720`, `c73b1866` and `856bf0eb` from before `0e7a6382`. `fdf124c8`, `1cd794ff`
+  and `7d74ada7` are version commits.
+
+Changesets: `.changeset/upstream-engine-fixes-ai.md`, `-agent.md` and `-coder.md`
+(patch); `@kleio/core` and `@kleio/manager` follow through the fixed group. gg-app is not
+a changesets package, so its opener fix (`95a8d41b`) is recorded only here.
+
+### Verification record
+
+Local macOS checks, each compared with `main` at `c2a1ea88`:
+
+- Test totals rise by the ported tests alone, and no test file loses a test:
+  `@kleio/ai` 406 → 495 tests (22 files), `@kleio/agent` 172 → 194 (10 files) and
+  `@kleio/coder` 3814 → 4133 (323 files; 17 skipped, as on `main`). gg-app (152 files,
+  1801 tests) and `@kleio/manager` (31 files, 332 tests) are unchanged, and `pnpm test`
+  passes in all 12 packages with tests. Two upstream tests replace older ones, as
+  upstream did: a timeout now keeps the persistent shell (`3ec4e666`), and `/add-dir`
+  mid-conversation reaches the model through the environment update (`6325d417`).
+- `cargo test`: 301 passed and 3 ignored, the 302 names on `main` plus
+  `spawn_reaped_leaves_no_zombie` and `open_url_accepts_only_web_mail_and_phone_schemes`.
+  `cargo clippy --all-targets` has no warnings, as on `main`, and
+  `cargo check --lib --target aarch64-apple-ios` builds the iPhone opener paths.
+- Beyond the hunk maps, three gg-app tests (`ConnectionPage`, `voiceCall`, `voiceTools`)
+  mock `../agent`, which they now reach through `ConnectionPage` and `safeUrl`, and a
+  `kleio/link.rs` test holds the new test-only `SPAWN_LOCK`: on macOS a child mid-spawn
+  holds the parent's descriptors, which kept a closed listener answering.
+- The tool-catalog snapshot is unchanged. The golden prompt changes only lines 9, 13 and
+  19, the three How to Talk sentences.
+- No gg-app file imports `@tauri-apps/plugin-opener`. The excluded packages, the `three`
+  lines and `upstream.lastImportedCommit` are unchanged. The critter-art checks match only
+  the "data URI image" case in `injection-detect.test.ts`.
+- Identity audit, tracked (3108 files) and packed (2152 files): 0 unclassified hits and 0
+  count mismatches. The Coder source-directory seam rises from 1549 to 1559 for the ten
+  new Coder files. Manager's packed Coder paths rise from 675 to 684 with the new modules,
+  then drop to 683 once `95a8d41b`'s `edit.ts` import reorders Manager's bundle and one
+  module comment goes.
+- The build, typecheck, lint, format check, the tracked script tests (143), the
+  fixed-version check, the bundled sidecar smoke and the startup gate (498 ms) pass.
+  `gg-app/scripts/kleio-identity.test.mjs` imports vitest, so it runs in gg-app's suite
+  (5 tests); `node --test` cannot load it, on `main` either.
+- Size: the `@kleio/coder` build output grows from 7092.4 KB on `main` to 7349.0 KB. It
+  goes over the 7214.2 KB limit at `3ec4e666`'s port, so that commit re-baselines the
+  build output at 7318.5 KB. The bundled sidecar (8373.7 KB) and the initial frontend
+  JavaScript (1017.0 KB) stay within their budgets.
 
 ## Original imported baseline
 

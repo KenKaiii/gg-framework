@@ -220,6 +220,73 @@ describe("isCatastrophicCommand", () => {
     expect(isCatastrophicCommand("git push --mirror -f origin", cwd)).not.toBeNull();
   });
 
+  // Bypass shapes from kenryu42/cc-safety-net v2.4.15/v2.5.0, measured in
+  // bench/baseline/38-guard-bypass.mjs — each slipped past the old regex guard.
+  it.each([
+    // flag and command spellings
+    "rm -Rf ~",
+    "rm -r ~",
+    "/bin/rm -rf ~",
+    "\\rm -rf ~",
+    "rm -rf /*",
+    "rm -rf ~/*",
+    'rm -rf "$PWD"',
+    "rm -rf ${HOME}/",
+    "rm -rf -- ~",
+    // control flow
+    "if true; then rm -rf ~; fi",
+    "if false; then :; else rm -rf ~; fi",
+    "for i in 1; do rm -rf ~; done",
+    "while true; do rm -rf ~; break; done",
+    "! rm -rf ~",
+    "{ rm -rf ~; }",
+    "(rm -rf ~)",
+    // wrappers
+    "timeout 5 rm -rf ~",
+    "nohup rm -rf ~",
+    "nice -n 10 rm -rf ~",
+    "exec rm -rf ~",
+    "time rm -rf ~",
+    "stdbuf -o0 rm -rf ~",
+    "setsid rm -rf ~",
+    "env FOO=1 rm -rf ~",
+    "FOO=1 rm -rf ~",
+    "command rm -rf ~",
+    "sudo -u root rm -rf ~",
+    'bash -c "rm -rf ~"',
+    "sh -c 'rm -rf /'",
+    'eval "rm -rf ~"',
+    "echo ~ | xargs rm -rf",
+    // other deleters
+    "find ~ -delete",
+    "find / -exec rm -rf {} +",
+    "find . -delete",
+    // cd tracking
+    "cd ~ && rm -rf ./*",
+    "cd && rm -rf .",
+    'cd "$HOME" && rm -rf .',
+    "cd / && rm -rf *",
+    "cd .. && rm -rf ..",
+    // PowerShell / cmd
+    "Remove-Item -Recurse -Force $home",
+    "Remove-Item -Recurse -Force ${home}",
+    "Remove-Item -Path ~ -Recurse",
+    'pwsh -Command "Remove-Item -Recurse -Force $HOME"',
+    "rd /s /q %USERPROFILE%",
+  ])("blocks bypass shape %s", (command) => {
+    expect(isCatastrophicCommand(command, cwd)).toContain("user confirmation");
+  });
+
+  it("blocks removing the workspace from its parent directory", () => {
+    const name = path.basename(cwd);
+    expect(isCatastrophicCommand(`cd .. && rm -rf ${name}`, cwd)).not.toBeNull();
+    expect(isCatastrophicCommand("rm -rf *", cwd)).not.toBeNull();
+  });
+
+  it("blocks removing a directory that contains home", () => {
+    expect(isCatastrophicCommand(`rm -rf ${path.dirname(os.homedir())}`, cwd)).not.toBeNull();
+  });
+
   it.each([
     "rm -rf node_modules",
     "rm -rf ./dist",
@@ -232,6 +299,24 @@ describe("isCatastrophicCommand", () => {
     "git push --mirror backup", // mirror without force
     "rd /s /q build",
     "ls -la /",
+    "if [ -d dist ]; then rm -rf dist; fi",
+    "timeout 60 npm test",
+    "nohup npm run dev",
+    "find . -name '*.log' -delete",
+    "find . -type d -name node_modules -exec rm -rf {} +",
+    "find ~/.cache/gg -mtime +7 -delete",
+    "find src -delete",
+    "cd dist && rm -rf *",
+    "rm -rf dist/*",
+    "rm -rf *.log",
+    "rm -rf ~/.cache/gg-scratch",
+    "rm -rf $TMPDIR/gg-scratch",
+    "find . -name node_modules | xargs rm -rf",
+    'echo "rm -rf ~"',
+    'git commit -m "rm -rf ~ is blocked now"',
+    "cat <<'EOF' > notes.md\nrm -rf ~\nEOF",
+    "Remove-Item -Recurse build",
+    "rmdir /",
   ])("allows %s", (command) => {
     expect(isCatastrophicCommand(command, cwd)).toBeNull();
   });

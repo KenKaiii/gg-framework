@@ -131,6 +131,51 @@ describe("AgentSession built-in tool tiering", () => {
     }
   }, 20_000);
 
+  it("loads wait_agent as soon as spawn_agent succeeds, skipping the tool_search turn", async () => {
+    // spawn_agent only exists when an agent is defined.
+    await fs.mkdir(path.join(tempHome, ".gg", "agents"), { recursive: true });
+    await fs.writeFile(
+      path.join(tempHome, ".gg", "agents", "owl.md"),
+      "---\nname: owl\ndescription: Read-only helper\ntools: read\n---\nYou read code.\n",
+    );
+    const session = await createSession({ globalSubagents: true });
+    try {
+      const tools = (session as unknown as { tools: AgentTool[] }).tools;
+      expect(liveToolNames(session)).not.toContain("wait_agent");
+      const spawn = tools.find((tool) => tool.name === "spawn_agent")!;
+      const context = { signal: new AbortController().signal, toolCallId: "spawn-promote-test" };
+      const subAgents = (
+        session as unknown as { subAgentManager: { spawn: (...a: unknown[]) => Promise<unknown> } }
+      ).subAgentManager;
+      const spawnSpy = vi.spyOn(subAgents, "spawn");
+
+      // A spawn that starts nothing fails and must not change the tool list.
+      spawnSpy.mockRejectedValueOnce(new Error("At most 8 agents may run at once"));
+      await expect(
+        spawn.execute({ tasks: [{ task_name: "x", task: "y" }] }, context),
+      ).rejects.toThrow(/No agent started/);
+      expect(liveToolNames(session)).not.toContain("wait_agent");
+
+      const before = liveToolNames(session);
+      spawnSpy.mockResolvedValue({ agent_id: "abcd1234", task_name: "scan", state: "running" });
+      await spawn.execute({ tasks: [{ task_name: "scan", task: "look" }] }, context);
+
+      const after = liveToolNames(session);
+      // Appended once, after every existing tool, so the cached prefix holds.
+      expect(after.slice(0, before.length)).toEqual(before);
+      expect(after.filter((name) => name === "wait_agent")).toEqual(["wait_agent"]);
+      await spawn.execute({ tasks: [{ task_name: "scan2", task: "look" }] }, context);
+      expect(liveToolNames(session)).toEqual(after);
+      // The prompt index stops advertising it once it carries its own schema.
+      const index = (
+        session as unknown as { deferredToolNamesForPrompt(live: string[]): string[] }
+      ).deferredToolNamesForPrompt(after);
+      expect(index).not.toContain("wait_agent");
+    } finally {
+      await session.dispose();
+    }
+  }, 20_000);
+
   it("registers tool_search even with no MCP server connected", async () => {
     const session = await createSession();
     try {

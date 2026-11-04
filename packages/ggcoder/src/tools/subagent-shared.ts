@@ -98,6 +98,37 @@ export function renderAgentRoster(agents: readonly AgentDefinition[]): string {
   return `\n\nAvailable named agents:\n${list}`;
 }
 
+/** One child started by a recorded `spawn_agent` call. */
+export interface SpawnedTaskArgs {
+  task_name?: string;
+  task?: string;
+  agent?: string;
+}
+
+/**
+ * The children a recorded `spawn_agent` call started, for rebuilding history:
+ * `{ tasks: [...] }` today, or the single `{ task_name, task, agent }` that
+ * sessions saved before batch launch carry. Untrusted session data, so only
+ * string fields are kept.
+ */
+export function spawnedTasks(args: unknown): SpawnedTaskArgs[] {
+  if (typeof args !== "object" || args === null) return [{}];
+  const record = args as Record<string, unknown>;
+  const entries = Array.isArray(record.tasks) ? record.tasks : [record];
+  const tasks = entries
+    .filter(
+      (entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null,
+    )
+    .map((entry) => {
+      const out: SpawnedTaskArgs = {};
+      if (typeof entry.task_name === "string") out.task_name = entry.task_name;
+      if (typeof entry.task === "string") out.task = entry.task;
+      if (typeof entry.agent === "string") out.agent = entry.agent;
+      return out;
+    });
+  return tasks.length > 0 ? tasks : [{}];
+}
+
 export function childThinkingLevel(level: ThinkingLevel | undefined): ThinkingLevel | undefined {
   return level === "ultra" ? "max" : level;
 }

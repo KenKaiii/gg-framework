@@ -9,8 +9,11 @@ import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ROW_COLLAPSE_CHARS, visibleBlockCount } from "./collapse";
 
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
-vi.mock("./agent", () => ({ openProjectPath: vi.fn(), sendPrompt: vi.fn() }));
+vi.mock("./agent", () => ({
+  openProjectPath: vi.fn(),
+  openUrl: vi.fn(),
+  sendPrompt: vi.fn(),
+}));
 
 const { Markdown } = await import("./Markdown");
 

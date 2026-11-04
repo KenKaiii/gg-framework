@@ -83,6 +83,7 @@ export class Agent {
   private options: AgentOptions;
   private steeringQueue: Message[] = [];
   private followUpQueue: Message[] = [];
+  private steeringListeners = new Set<() => void>();
 
   constructor(options: AgentOptions) {
     this.options = options;
@@ -112,9 +113,14 @@ export class Agent {
     return this._running;
   }
 
-  /** Queue a steering message for injection after current tool execution completes. */
+  /**
+   * Queue a steering message. Instant interrupt: if tools are running, the
+   * interruptible ones are preempted right away and the message is injected
+   * before the next model call (the turn continues — unlike abort/Stop).
+   */
   steer(msg: Message): void {
     this.steeringQueue.push(msg);
+    for (const listener of [...this.steeringListeners]) listener();
   }
 
   /** Queue a follow-up message for injection when the agent would otherwise stop. */
@@ -137,6 +143,14 @@ export class Agent {
         const queued = this.steeringQueue.splice(0);
         const all = [...(callerResult ?? []), ...queued];
         return all.length > 0 ? all : null;
+      },
+      onSteeringAvailable: (listener) => {
+        this.steeringListeners.add(listener);
+        const unsubscribeCaller = this.options.onSteeringAvailable?.(listener);
+        return () => {
+          this.steeringListeners.delete(listener);
+          unsubscribeCaller?.();
+        };
       },
       getFollowUpMessages: async () => {
         const callerResult = (await this.options.getFollowUpMessages?.()) ?? [];

@@ -10,6 +10,7 @@ import {
   SUB_AGENT_TIMEOUT_RECOVERY_MS,
 } from "../tools/subagent-shared.js";
 import { writeTurnRecord } from "../core/subagent-turn-record.js";
+import { ReceiptRecorder } from "../core/subagent-receipt.js";
 
 const TIMEOUT_RECOVERY_PROMPT = `Your execution time limit was reached and the active operation was stopped.
 You have one final 60-second recovery turn. Do not call any tools. Immediately return the best concise answer you can from the evidence already in this conversation, in the format your task asked for. Clearly state what remains incomplete or unverified.`;
@@ -177,6 +178,8 @@ export async function runSubagentWorkerMode(): Promise<void> {
   let recoveryOutput = "";
   let recoveringAfterTimeout = false;
   let producedToolCall = false;
+  // Engine-side record of this turn's tool calls → the turn's receipt.
+  const receipt = new ReceiptRecorder();
   // This worker's LIFETIME totals — one initialize = one agent_id = one
   // worker lifetime, so the durable turn record carries authoritative
   // cumulative numbers an adopting parent can trust.
@@ -211,7 +214,14 @@ export async function runSubagentWorkerMode(): Promise<void> {
     });
     for (const event of forwarded) {
       activeSession.eventBus.on(event, (payload) => {
-        if (event === "tool_call_start") producedToolCall = true;
+        if (event === "tool_call_start") {
+          producedToolCall = true;
+          const start = payload as { toolCallId?: unknown; name?: unknown; args?: unknown };
+          receipt.start(start.toolCallId, start.name, start.args);
+        } else if (event === "tool_call_end") {
+          const end = payload as { toolCallId?: unknown; result?: unknown; isError?: unknown };
+          receipt.end(end.toolCallId, end.result, end.isError);
+        }
         if (event === "turn_end") {
           turnCount++;
           const usage = (payload as { usage?: { inputTokens?: number; outputTokens?: number } })
@@ -253,6 +263,7 @@ export async function runSubagentWorkerMode(): Promise<void> {
     recoveryOutput = "";
     recoveringAfterTimeout = false;
     producedToolCall = false;
+    receipt.reset();
     abortReason = undefined;
     controller = new AbortController();
     session.setSignal(controller.signal);
@@ -350,10 +361,18 @@ export async function runSubagentWorkerMode(): Promise<void> {
    * turn stays running until the record is written, so a shutdown, or stdin
    * closing, waits for it too. writeTurnRecord never rejects: a failed write
    * is logged, and the turn is still announced. */
-  const completeTurn = async (next: WorkerState, frame: Record<string, unknown>): Promise<void> => {
+  const completeTurn = async (next: WorkerState, turn: Record<string, unknown>): Promise<void> => {
+    const frame: Record<string, unknown> = {
+      ...turn,
+      receipt: receipt.render(
+        typeof turn.output === "string" ? turn.output : "",
+        initializeOptions?.cwd ?? process.cwd(),
+      ),
+    };
     await writeTurnRecord(initializeOptions?.childSessionPath, {
       status: (frame.status as "completed" | "interrupted" | "failed") ?? "failed",
       output: typeof frame.output === "string" ? frame.output : undefined,
+      receipt: frame.receipt as string,
       error: typeof frame.error === "string" ? frame.error : undefined,
       model: typeof frame.model === "string" ? frame.model : undefined,
       turn_count: turnCount,

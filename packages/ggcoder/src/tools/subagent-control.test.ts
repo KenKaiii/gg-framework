@@ -60,9 +60,30 @@ describe("async subagent control tools", () => {
       safeParse(value: unknown): { success: boolean };
     };
 
-    expect(params.safeParse({ task_name: "a", task: "b", agent: "owl" }).success).toBe(true);
-    expect(params.safeParse({ task_name: "a", task: "b", agent: "hawk" }).success).toBe(false);
-    expect(params.safeParse({ task_name: "a", task: "b" }).success).toBe(true);
+    expect(params.safeParse({ tasks: [{ task_name: "a", task: "b", agent: "owl" }] }).success).toBe(
+      true,
+    );
+    expect(
+      params.safeParse({ tasks: [{ task_name: "a", task: "b", agent: "hawk" }] }).success,
+    ).toBe(false);
+    expect(params.safeParse({ tasks: [{ task_name: "a", task: "b" }] }).success).toBe(true);
+  });
+
+  it("takes 1 to 8 tasks per call, matching the running-agent limit", () => {
+    const spawn = createSubAgentControlTools(fakeManager()).find(
+      (tool) => tool.name === "spawn_agent",
+    )!;
+    const params = spawn.parameters as unknown as {
+      safeParse(value: unknown): { success: boolean };
+    };
+    const tasks = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ task_name: `t${i}`, task: "x" }));
+
+    expect(params.safeParse({ tasks: tasks(0) }).success).toBe(false);
+    expect(params.safeParse({ tasks: tasks(8) }).success).toBe(true);
+    expect(params.safeParse({ tasks: tasks(9) }).success).toBe(false);
+    // The pre-batch single-task shape is rejected so the model corrects it.
+    expect(params.safeParse({ task_name: "a", task: "b" }).success).toBe(false);
   });
 
   it("accepts any name when no agents are configured", () => {
@@ -73,7 +94,65 @@ describe("async subagent control tools", () => {
       safeParse(value: unknown): { success: boolean };
     };
 
-    expect(params.safeParse({ task_name: "a", task: "b", agent: "hawk" }).success).toBe(true);
+    expect(
+      params.safeParse({ tasks: [{ task_name: "a", task: "b", agent: "hawk" }] }).success,
+    ).toBe(true);
+  });
+
+  it("starts every task in one call and returns one result per task, in order", async () => {
+    const manager = fakeManager();
+    const spawn = createSubAgentControlTools(manager).find((tool) => tool.name === "spawn_agent")!;
+
+    const out = (await spawn.execute(
+      {
+        tasks: [
+          { task_name: "a", task: "one" },
+          { task_name: "b", task: "two", agent: "owl" },
+        ],
+      },
+      context,
+    )) as { content: string };
+
+    expect(manager.spawn).toHaveBeenNthCalledWith(1, "a", "one", undefined);
+    expect(manager.spawn).toHaveBeenNthCalledWith(2, "b", "two", "owl");
+    expect(JSON.parse(out.content).map((r: { task_name: string }) => r.task_name)).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("reports a failed start in place and still starts the others", async () => {
+    const manager = fakeManager();
+    vi.mocked(manager.spawn).mockImplementation(async (taskName: string) => {
+      if (taskName === "bad") throw new Error("At most 8 agents may run at once");
+      return { agent_id: "12345678", task_name: taskName, state: "running" } as never;
+    });
+    const spawn = createSubAgentControlTools(manager).find((tool) => tool.name === "spawn_agent")!;
+
+    const out = (await spawn.execute(
+      {
+        tasks: [
+          { task_name: "ok", task: "x" },
+          { task_name: "bad", task: "y" },
+        ],
+      },
+      context,
+    )) as { content: string };
+
+    expect(JSON.parse(out.content)).toEqual([
+      { agent_id: "12345678", task_name: "ok", state: "running" },
+      { task_name: "bad", error: "At most 8 agents may run at once" },
+    ]);
+  });
+
+  it("fails the call when no task starts, like a single failed spawn", async () => {
+    const manager = fakeManager();
+    vi.mocked(manager.spawn).mockRejectedValue(new Error('Unknown agent: "hawk"'));
+    const spawn = createSubAgentControlTools(manager).find((tool) => tool.name === "spawn_agent")!;
+
+    await expect(
+      spawn.execute({ tasks: [{ task_name: "a", task: "x" }] }, context),
+    ).rejects.toThrow(/No agent started.*Unknown agent/);
   });
 
   it("states wait_agent's real budgets in its schema", () => {
@@ -93,13 +172,14 @@ describe("async subagent control tools", () => {
     const tools = createSubAgentControlTools(manager, planModeRef);
     const spawn = tools.find((tool) => tool.name === "spawn_agent")!;
     await expect(
-      spawn.execute({ task_name: "scan", task: "inspect" }, context),
+      spawn.execute({ tasks: [{ task_name: "scan", task: "inspect" }] }, context),
     ).resolves.toMatchObject({ content: expect.stringContaining("12345678") });
     expect(manager.spawn).toHaveBeenCalledWith("scan", "inspect", undefined);
 
     planModeRef.current = true;
     await expect(
-      spawn.execute({ task_name: "blocked", task: "write" }, context),
+      spawn.execute({ tasks: [{ task_name: "blocked", task: "write" }] }, context),
     ).resolves.toContain("plan mode");
+    expect(manager.spawn).toHaveBeenCalledTimes(1);
   });
 });

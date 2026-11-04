@@ -21,6 +21,8 @@ const MAX_RECORD_BYTES = 1024 * 1024;
 export interface SubagentTurnRecord {
   status: "completed" | "interrupted" | "failed";
   output?: string;
+  /** Engine-built receipt of the turn's tool calls (see subagent-receipt.ts). */
+  receipt?: string;
   error?: string;
   model?: string;
   turn_count: number;

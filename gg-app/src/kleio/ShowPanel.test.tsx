@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { openProjectPath } from "../agent";
+import { openProjectPath, openUrl } from "../agent";
 import type * as KleioApi from "./kleioApi";
 import { KleioApiError, type ShowInfo } from "./kleioApi";
 import type { Shown } from "./voiceTools";
@@ -12,8 +11,11 @@ vi.mock("./kleioApi", async (importOriginal) => ({
   ...(await importOriginal<typeof KleioApi>()),
   getShowPart: api.getShowPart,
 }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => {}) }));
-vi.mock("../agent", () => ({ openProjectPath: vi.fn(), sendPrompt: vi.fn() }));
+vi.mock("../agent", () => ({
+  openProjectPath: vi.fn(),
+  openUrl: vi.fn(async () => {}),
+  sendPrompt: vi.fn(),
+}));
 
 const { ShowPanel, pictureType, showHeadline } = await import("./ShowPanel");
 

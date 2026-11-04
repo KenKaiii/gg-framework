@@ -25,7 +25,6 @@ vi.mock("./kleioFiles", async (importOriginal) => ({
 }));
 // useOpenFile opens a file in its app or a page in the browser from here.
 vi.mock("./fileOpen", () => ({ openFile: files.openFile, openSite: files.openSite }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => {}) }));
 vi.mock("../agent", () => ({ openProjectPath: vi.fn(), sendPrompt: vi.fn() }));
 
 const { FileViewerProvider } = await import("./FileViewerProvider");

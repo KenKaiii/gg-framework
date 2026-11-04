@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "../agent";
 import { openExternal, safeExternalUrl, URL_MAX } from "./safeUrl";
 
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => {}) }));
+vi.mock("../agent", () => ({ openUrl: vi.fn(async () => {}) }));
 
 afterEach(() => vi.clearAllMocks());
 

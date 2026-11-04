@@ -48,6 +48,7 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::JavaScriptChannelId;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
+#[cfg(target_os = "ios")]
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::watch;
 
@@ -1149,10 +1150,8 @@ pub async fn kleio_file_open(
 
 /// Hand a downloaded file to the desktop's default app for it.
 #[cfg(not(target_os = "ios"))]
-async fn open_downloaded(app: &AppHandle, file: PathBuf) -> Result<(), String> {
-    app.opener()
-        .open_path(file.to_string_lossy().to_string(), None::<String>)
-        .map_err(|e| e.to_string())
+async fn open_downloaded(_app: &AppHandle, file: PathBuf) -> Result<(), String> {
+    crate::process::open_with_default(&file.to_string_lossy())
 }
 
 /// The iPhone has no default apps to hand a file to: show it in iOS's viewer.
@@ -1377,9 +1376,17 @@ pub async fn kleio_site_open(app: AppHandle, owner: FileOwner, path: String) -> 
         "kleio: site open ({kind}) → {status} in {} ms",
         started.elapsed().as_millis()
     );
-    app.opener()
-        .open_url(url, None::<String>)
-        .map_err(|e| e.to_string())
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = app;
+        crate::process::open_with_default(&url)
+    }
+    #[cfg(target_os = "ios")]
+    {
+        app.opener()
+            .open_url(url, None::<String>)
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[cfg(test)]

@@ -226,6 +226,52 @@ describe("verification gate flow", () => {
     expect(internal.getVerificationProblem()).not.toBeNull();
   });
 
+  // Regression (arena, 2026-10-18): Haiku 5.5 ran passing tests inside longer
+  // commands in 21/50 trials; none counted, so the app showed "incomplete".
+  describe("re-running a check whose exit status could not count", () => {
+    const compound = 'npm run check 2>&1 | tail -3; node -e "console.log(1)"';
+
+    it("records the re-run's pass when the turn would end", async () => {
+      await prepareBuildProject(artifactBuild);
+      const { internal } = await makeSession();
+      await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+      await runRealCheck(internal, compound);
+      expect(internal.getVerificationProblem()).not.toBeNull();
+      await internal.getHookFollowUpMessages();
+      expect(internal.getVerificationProblem()).toBeNull();
+      expect(internal.getVerificationEvidence()).toContainEqual(
+        expect.objectContaining({ command: "npm run check", status: "passed" }),
+      );
+    });
+
+    it("stays unverified, without a recorded failure, when the re-run fails", async () => {
+      await prepareBuildProject(artifactBuild);
+      await fs.writeFile(path.join(tmpProject, "subject.mjs"), "export const value = 2;\n");
+      const { internal } = await makeSession();
+      await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+      await runRealCheck(internal, compound);
+      await internal.getHookFollowUpMessages();
+      expect(internal.getVerificationProblem()).not.toBeNull();
+      const evidence = internal.getVerificationEvidence();
+      expect(evidence).toContainEqual(
+        expect.objectContaining({ command: "npm run check", status: "rejected" }),
+      );
+      expect(evidence.some((entry) => entry.status === "failed")).toBe(false);
+    });
+
+    it("does not run a check the model skipped after its last edit", async () => {
+      await prepareBuildProject(artifactBuild);
+      const { internal } = await makeSession();
+      await runRealCheck(internal, compound);
+      await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
+      await internal.getHookFollowUpMessages();
+      expect(internal.getVerificationProblem()).not.toBeNull();
+      expect(
+        internal.getVerificationEvidence().some((entry) => entry.command === "npm run check"),
+      ).toBe(false);
+    });
+  });
+
   it("does not turn a mixed check/help chain into fresh verification", async () => {
     await prepareBuildProject(artifactBuild);
     const { internal } = await makeSession();
@@ -651,6 +697,25 @@ describe("verification gate flow", () => {
     (internal as unknown as { verificationGate: { beginRun(): void } }).verificationGate.beginRun();
     expect(await internal.getHookFollowUpMessages()).toBeNull();
     expect(events.length).toBe(before);
+  });
+
+  it.each([
+    ["an unrecognized check", { command: "npx biome ci ." }],
+    ["an unrecognized package check script", { command: "npm run check:local-discovery" }],
+    ["a persistent-shell check", { command: "pnpm test", persist: true }],
+  ])("does not re-open verified work when %s runs after a passing check", async (_label, args) => {
+    // The live incident: edit, `tsc --noEmit` passes, then `biome ci` runs
+    // last. Neither its start nor its end can produce evidence, yet the
+    // start flagged the workspace unknown and nothing ever cleared it — every
+    // later run ended Unverified and autopilot silently refused to review.
+    const { internal } = await makeSession();
+    await simulateToolCall(internal, "edit", { file_path: "src/a.ts" });
+    await simulateToolCall(internal, "bash", { command: "npx tsc --noEmit -p apps/web" });
+    expect(internal.getVerificationProblem()).toBeNull();
+
+    await simulateToolCall(internal, "bash", args);
+
+    expect(internal.getVerificationProblem()).toBeNull();
   });
 
   it("records neither pass nor failure for persistent-shell checks, however they exit", async () => {

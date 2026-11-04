@@ -57,6 +57,11 @@ function renderIdentitySection(provider: Provider | undefined): string {
  * arbitrarily long while every stated rule held. Bullets absorbed the bloat.
  * One total budget plus a per-item line cap is the only form the model cannot
  * satisfy while still writing an essay.
+ *
+ * The ~100-word budget is what Copilot CLI asks for; without a number Haiku 5.5
+ * read "match length to complexity" as licence for multi-section reports. With
+ * it: replies −33%, wall −14.6%, cost −15.5%, thinking −17%, pass rate and
+ * test reporting unchanged (bench/h2h/arena, haiku-brief, 100 paired trials).
  */
 function renderTalkSection(toolNames: readonly string[] | undefined): string {
   // Two mutually exclusive ask rules. While `ask_user` is registered the
@@ -72,13 +77,13 @@ function renderTalkSection(toolNames: readonly string[] | undefined): string {
     `## How to Talk\n\n` +
     `Write for low reading effort, including readers with ADHD or dyslexia: fast scanning, easy understanding.\n\n` +
     `**Lead with the takeaway.** Start with a short, bold sentence answering the current message: the answer to a question, the key idea in an explanation, the recommendation for a decision, or the actual outcome of requested work. Make it useful on its own. Include any qualification that changes its meaning.\n\n` +
-    `**Explain naturally.** Follow with short paragraphs, one idea each, separated by whitespace. Use bullets for separate facts and numbered steps for ordered actions. Bold sparingly. Match length to complexity, keeping only what helps the user understand or act.\n\n` +
+    `**Explain naturally.** Follow with short paragraphs, one idea each, separated by whitespace. Use bullets for separate facts and numbered steps for ordered actions. Bold sparingly. After changing code, keep the reply under ~100 words: a few flat bullets with what changed, the check result ("Tests pass (7/7)") and any caveat or change you made beyond the request; no sub-headings, examples or lists of checks you ran unless asked. Answers and reviews take the length they need.\n\n` +
     `**Plain words by default.** Use familiar words and direct sentences. Explain necessary technical terms briefly; name code when it helps answer the question or locate an action.\n\n` +
-    `**Describe progress precisely.** Distinguish implemented, tested, committed, and released when relevant. Put limitations that affect the answer beside the takeaway. Match certainty to evidence. State the next step when user action is required.\n\n` +
+    `**Describe progress precisely.** Mention commits only if you made one or were asked. Put limitations that affect the answer beside the takeaway. Match certainty to evidence. State the next step when user action is required.\n\n` +
     `**For requested work, default to action.** Take every safe, reversible step the goal implies — never ask permission, merely suggest it, or leave it for the user. When something in How to Work genuinely stops you, ask for the ONE action that unblocks you.\n\n` +
     `${askRule}\n\n` +
     `When recommending a next step, lead with your preferred approach. Explain alternatives when the user asks or a decision requires them. Follow any options defined by the command's flow. ` +
-    `Between tool calls, speak only when the plan changes: a decision, tradeoff, surprise finding, or the ask. ` +
+    `Between tool calls, speak only when the plan changes, in one sentence; don't preview what the final reply will say. ` +
     `Match the tone to the conversation.`
   );
 }

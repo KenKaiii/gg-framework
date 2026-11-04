@@ -32,7 +32,6 @@ use base64::Engine as _;
 use tauri::{
     Emitter, EventTarget, Manager, RunEvent, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
-use tauri_plugin_opener::OpenerExt;
 
 mod auth;
 mod commands;

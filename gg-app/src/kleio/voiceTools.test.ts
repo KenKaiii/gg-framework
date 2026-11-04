@@ -8,6 +8,7 @@ import {
   type VoiceToolsDeps,
 } from "./voiceTools";
 
+vi.mock("../agent", () => ({ openUrl: vi.fn(async () => undefined) }));
 vi.mock("./kleioApi", async (importOriginal) => ({
   KleioApiError: (await importOriginal<typeof api>()).KleioApiError,
   errorText: (await importOriginal<typeof api>()).errorText,

@@ -201,8 +201,10 @@ afterEach(async () => {
         .join("\n") + "\n",
     );
   }
-  await fs.rm(tmpHome, { recursive: true, force: true });
-  await fs.rm(tmpProject, { recursive: true, force: true });
+  // Windows keeps the project folder locked while the killed sidecar's git children finish.
+  const removeOptions = { recursive: true, force: true, maxRetries: 10, retryDelay: 100 };
+  await fs.rm(tmpHome, removeOptions);
+  await fs.rm(tmpProject, removeOptions);
 });
 
 describe("routines over the real daemon", () => {

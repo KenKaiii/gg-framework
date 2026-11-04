@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
+import { runBackgroundGit } from "./git.js";
 import { getGitHubRepoSlug } from "./github.js";
 
 const exec = promisify(execFile);
@@ -99,7 +100,7 @@ export async function getGitHubCI(
 async function context(cwd: string): Promise<{ slug: string; sha: string } | null> {
   const [slug, head] = await Promise.all([
     getGitHubRepoSlug(cwd),
-    exec("git", ["rev-parse", "--verify", "HEAD"], { cwd, timeout: 2000 }).catch(() => null),
+    runBackgroundGit(["rev-parse", "--verify", "HEAD"], { cwd, timeoutMs: 2000 }).catch(() => null),
   ]);
   return slug && head ? { slug, sha: head.stdout.trim() } : null;
 }

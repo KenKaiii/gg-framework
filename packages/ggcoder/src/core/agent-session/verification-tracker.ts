@@ -7,7 +7,7 @@ import {
   isVerificationCommand,
   type VerificationGate,
 } from "../verification-gate.js";
-import { classifyVerificationCommand } from "../verification-evidence.js";
+import { classifyVerificationCommand, extractStandaloneCheck } from "../verification-evidence.js";
 import { captureVerificationSnapshot } from "../verification-snapshot.js";
 
 /** A tool call observed between its start and end events. */
@@ -30,6 +30,14 @@ interface BackgroundCheck {
   sourceSnapshot?: string | null;
 }
 
+/** A check the model ran inside a command whose exit status could not count. */
+export interface RefusedCheck {
+  /** The check alone, in a form that counts on its own (`cd app && npm test`). */
+  command: string;
+  /** Source revision when the model's command finished. */
+  revision: number;
+}
+
 /**
  * Host-observed verification evidence: which files this run mutated, which
  * tool calls are in flight (with their pre-run workspace snapshot), and which
@@ -41,6 +49,7 @@ export class VerificationTracker {
   readonly fileEditCounts = new Map<string, number>();
   private readonly toolCalls = new Map<string, TrackedToolCall>();
   private readonly backgroundVerification = new Map<string, BackgroundCheck>();
+  private refusedCheck: RefusedCheck | null = null;
 
   constructor(
     private readonly gate: VerificationGate,
@@ -56,6 +65,39 @@ export class VerificationTracker {
   resetRun(): void {
     this.fileEditCounts.clear();
     this.toolCalls.clear();
+    this.refusedCheck = null;
+  }
+
+  /**
+   * The check to re-run when a turn would end unverified: the last one the
+   * model ran this run inside a command that could not count (`npm test 2>&1 |
+   * tail; node -e '…'`), provided nothing was edited since and no other
+   * evidence is still in flight. It recovers a check the model already ran;
+   * it never adds one the model skipped. Returned once.
+   */
+  takeRefusedCheck(): RefusedCheck | null {
+    const pending = this.refusedCheck;
+    this.refusedCheck = null;
+    if (!pending || pending.revision !== this.gate.revision) return null;
+    const inFlight =
+      this.backgroundVerification.size > 0 ||
+      [...this.toolCalls.values()].some((call) => call.sourceSnapshot !== undefined);
+    return !inFlight && this.gate.verificationProblem() !== null ? pending : null;
+  }
+
+  /** Fold in the host's re-run of a {@link takeRefusedCheck} result. A pass
+   *  counts like any standalone check at that revision. A failure only stays
+   *  unverified: the re-run lacks the original command's context (variables,
+   *  files it wrote first), so it is no proof the model's run failed. */
+  recordRefusedCheckRerun(check: RefusedCheck, passed: boolean): void {
+    if (passed) {
+      this.gate.recordVerification(check.revision, check.command);
+    } else {
+      this.gate.recordRejectedCheck(
+        check.command,
+        "Kleio re-ran this check on its own and it did not pass",
+      );
+    }
   }
 
   /** Drop background checks whose process no longer exists. */
@@ -110,7 +152,16 @@ export class VerificationTracker {
         ]);
         if (call.sourceSnapshot === null)
           this.gate.requireFreshVerification(true, event.args.command);
-      } else {
+      } else if (
+        (classification.accepted && event.args.persist !== true) ||
+        (!classification.accepted && classification.mayMutate)
+      ) {
+        // Flag the workspace unknown only when tool_call_end can resolve
+        // it: a bounded check records pass/fail, a file-rewriting command
+        // bumps the revision. An unrecognized read-only check (`biome ci`)
+        // or a persistent-shell run records nothing at the end, so
+        // flagging it left verified work Unverified forever — and
+        // autopilot silently refused every later turn.
         this.gate.requireFreshVerification(
           !classification.accepted && classification.mayMutate,
           event.args.command,
@@ -193,6 +244,12 @@ export class VerificationTracker {
         // Green but untrusted: remember WHY so the demand can tell the
         // agent which command shape actually clears the gate.
         this.gate.recordRejectedCheck(command, classification.reason);
+      }
+      if (classification.accepted) {
+        this.refusedCheck = null;
+      } else if (!event.isError && args.persist !== true && args.run_in_background !== true) {
+        const check = extractStandaloneCheck(command);
+        if (check) this.refusedCheck = { command: check, revision: this.gate.revision };
       }
     }
     if (!event.isError && args && name === "task_output" && typeof args.id === "string") {

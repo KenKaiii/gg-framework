@@ -47,6 +47,8 @@ export interface MCPClientManagerOptions {
   onElicit?: MCPElicitHandler;
   sharedPool?: SharedMcpPool;
   onServerClosed?: (name: string) => void;
+  /** Override `MCP_DEFAULT_IDLE_TIMEOUT_MS`; 0 disables idle shutdown. */
+  idleTimeoutMs?: number;
 }
 
 /** Resolve MCP handshake identity without reading global process state. */
@@ -71,6 +73,41 @@ interface ConnectedServer {
   config: MCPServerConfig;
 }
 
+/**
+ * How long a stdio server may sit with no call in flight before its process is
+ * stopped. It is respawned transparently on the next call.
+ *
+ * 15 min, deliberately longer than pi-mcp-adapter's 10 min default: one pooled
+ * child here serves every window in the daemon, so a premature stop is paid as
+ * a cold start (`npx`/node boot + handshake, often seconds) by whichever chat
+ * calls next. 15 min still covers the read/think/edit pauses inside one task
+ * while reclaiming servers a session touched once and moved on from.
+ */
+export const MCP_DEFAULT_IDLE_TIMEOUT_MS = 15 * 60_000;
+
+/**
+ * Default per-call window without a response or progress notification. Equal
+ * to the SDK's own `DEFAULT_REQUEST_TIMEOUT_MSEC`; `config.timeout` overrides.
+ */
+export const MCP_DEFAULT_CALL_TIMEOUT_MS = 60_000;
+
+/**
+ * Default hard cap on one tool call, however much progress it reports — so a
+ * server stuck in a progress loop cannot hold a turn forever. Generous because
+ * the tools that report progress are the long ones (builds, crawls, renders);
+ * `config.maxTotalTimeout` overrides.
+ */
+export const MCP_DEFAULT_MAX_TOTAL_TIMEOUT_MS = 30 * 60_000;
+
+/** Per-server idle-shutdown bookkeeping (stdio servers without `keepAlive`). */
+interface IdleState {
+  /** Tool calls currently in flight. A server is never stopped while > 0. */
+  inFlight: number;
+  timer?: ReturnType<typeof setTimeout>;
+  /** A respawn in progress, shared by every call that arrives meanwhile. */
+  restarting?: Promise<void>;
+}
+
 /** Per-server connection outcome for the dashboard / non-interactive list. */
 export interface MCPConnectResult {
   name: string;
@@ -88,6 +125,26 @@ export interface MCPLoginResult {
   ok: boolean;
   toolCount: number;
   error?: string;
+}
+
+/**
+ * A failed MCP tool call. Thrown (not returned as text) so the agent loop
+ * records the result as an error: the app shows it as failed and receipts,
+ * the loop breaker and verification all see a failure, not a success whose
+ * text happens to say "error". The message is what the model reads.
+ */
+export class McpToolError extends Error {
+  override readonly name = "McpToolError";
+}
+
+/** Text parts of a tool result, joined, for an error message. */
+function resultText(result: ToolExecuteResult): string {
+  if (typeof result === "string") return result;
+  if (typeof result.content === "string") return result.content;
+  return result.content
+    .map((part) => (part.type === "text" ? part.text : ""))
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** Terminal state of one server's connection attempt, awaited by `whenConnected`. */
@@ -167,6 +224,19 @@ export class MCPClientManager {
   /** Set while `dispose` runs, so our own teardown is not reported as a death. */
   private disposing = false;
 
+  /** Idle period before a stdio server is stopped; 0 disables idle shutdown. */
+  private readonly idleTimeoutMs: number;
+
+  /** Idle bookkeeping per server name, for servers eligible for idle shutdown. */
+  private idle = new Map<string, IdleState>();
+
+  /**
+   * Clients we closed ON PURPOSE for idleness. Their `onclose` must not be
+   * reported as a death — that would make the pool evict a connection whose
+   * tools are still published and which will respawn on the next call.
+   */
+  private idleStopped = new WeakSet<Client>();
+
   constructor(opts: MCPClientManagerOptions = {}) {
     this.clientName = resolveMcpClientName(opts.clientName, opts.environment ?? process.env);
     this.catalogCache = opts.catalogCache ?? new McpCatalogCache();
@@ -174,6 +244,93 @@ export class MCPClientManager {
     this.onElicit = opts.onElicit;
     this.pool = opts.sharedPool ?? sharedMcpPool;
     this.onServerClosed = opts.onServerClosed;
+    this.idleTimeoutMs = opts.idleTimeoutMs ?? MCP_DEFAULT_IDLE_TIMEOUT_MS;
+  }
+
+  /**
+   * Does this server get stopped when idle?
+   *
+   * Only stdio servers: idle shutdown exists to reclaim a child PROCESS, and an
+   * HTTP server has none on our side. Closing one would save nothing locally
+   * while throwing away its `Mcp-Session-Id` (server-side state) and forcing a
+   * fresh handshake — possibly an OAuth refresh — on the next call.
+   * `keepAlive: true` opts a stdio server out for state held in its process.
+   */
+  private idleEligible(config: MCPServerConfig): boolean {
+    return this.idleTimeoutMs > 0 && Boolean(config.command) && config.keepAlive !== true;
+  }
+
+  private idleState(name: string): IdleState {
+    let state = this.idle.get(name);
+    if (!state) {
+      state = { inFlight: 0 };
+      this.idle.set(name, state);
+    }
+    return state;
+  }
+
+  /** (Re)start the idle countdown for a server, unless a call is in flight. */
+  private armIdleTimer(config: MCPServerConfig): void {
+    if (this.disposing || !this.idleEligible(config)) return;
+    const state = this.idleState(config.name);
+    if (state.timer) clearTimeout(state.timer);
+    state.timer = undefined;
+    if (state.inFlight > 0) return;
+    state.timer = setTimeout(() => {
+      state.timer = undefined;
+      void this.stopIdleServer(config.name);
+    }, this.idleTimeoutMs);
+    // An idle countdown must never be what keeps the CLI/daemon alive.
+    state.timer.unref?.();
+  }
+
+  /**
+   * Stop an idle server's process, keeping its published tools. The entry is
+   * removed from `this.servers` synchronously, so a call landing during the
+   * close sees "not running" and respawns rather than using a closing client.
+   */
+  private async stopIdleServer(name: string): Promise<void> {
+    const state = this.idle.get(name);
+    if (this.disposing || !state || state.inFlight > 0 || state.restarting) return;
+    const server = this.servers.find((s) => s.name === name);
+    if (!server) return;
+    this.servers = this.servers.filter((s) => s !== server);
+    this.idleStopped.add(server.client);
+    log("INFO", "mcp", `Stopping idle MCP server "${name}" (restarts on next call)`);
+    try {
+      await server.client.close();
+    } catch {
+      // Already gone; nothing to reclaim.
+    }
+  }
+
+  /**
+   * Make sure an idle-stopped server is running again before a call. Concurrent
+   * calls share one respawn. The fresh tool list is persisted to the catalog
+   * cache by `connectServer` but NOT republished: the model keeps the tools it
+   * already has, so a stop/restart cycle never churns the prompt.
+   */
+  private async ensureRunning(config: MCPServerConfig): Promise<void> {
+    if (this.servers.some((s) => s.name === config.name)) return;
+    const state = this.idleState(config.name);
+    if (!state.restarting) {
+      log("INFO", "mcp", `Restarting idle-stopped MCP server "${config.name}"`);
+      state.restarting = this.connectServer(config, { restart: true }).then(
+        () => {
+          state.restarting = undefined;
+        },
+        (err: unknown) => {
+          state.restarting = undefined;
+          throw err;
+        },
+      );
+    }
+    await state.restarting;
+  }
+
+  /** Is this server's connection currently live? Diagnostic/test use. */
+  isServerRunning(name: string): boolean {
+    return this.servers.some((s) => s.name === name);
   }
 
   /**
@@ -261,6 +418,9 @@ export class MCPClientManager {
           sharedPool: this.pool,
           // Let the pool retire this connection if its server exits.
           onServerClosed: opts.onClosed,
+          // Idle shutdown lives in the pooled manager: it sees every session's
+          // calls, so "no call in flight" means none from ANY window.
+          idleTimeoutMs: this.idleTimeoutMs,
         });
         return {
           connect: async (target) => {
@@ -573,7 +733,7 @@ export class MCPClientManager {
 
   private async connectServer(
     config: MCPServerConfig,
-    opts: { probe?: boolean } = {},
+    opts: { probe?: boolean; restart?: boolean } = {},
   ): Promise<AgentTool[]> {
     const timeout = config.timeout ?? 30_000;
     // `command` is what actually selects the stdio path further down.
@@ -669,12 +829,25 @@ export class MCPClientManager {
     // for a POOLED connection, where a corpse would otherwise be handed to every
     // session in the daemon, including ones that connect later.
     client.onclose = () => {
-      if (this.disposing) return;
+      if (this.disposing || this.idleStopped.has(client)) return;
       log("WARN", "mcp", `MCP server "${config.name}" closed unexpectedly`);
       this.onServerClosed?.(config.name);
     };
 
     const { tools } = await client.listTools(undefined, { timeout });
+
+    // Start the idle countdown (a no-op for HTTP / keepAlive / a call in
+    // flight). A probe connection is closed right away, so it never idles.
+    if (!opts.probe) this.armIdleTimer(config);
+
+    if (opts.restart) {
+      // A respawn after idle shutdown only revives the process; the tools the
+      // model already has stay as they are (see `ensureRunning`). A server whose
+      // list changed meanwhile is logged — its new list lands on next session.
+      log("INFO", "mcp", `MCP server "${config.name}" restarted`, {
+        tools: String(tools.length),
+      });
+    }
 
     // Persist the live tool list so the NEXT cold start can answer tool_search
     // before this server has finished connecting. Awaited (a small serialized
@@ -695,63 +868,126 @@ export class MCPClientManager {
       // Cache is an optimization; a connected server is still fully usable.
     }
 
+    // Per-call deadlines (see MCP_DEFAULT_* above). `timeout` is the window
+    // WITHOUT a response or progress; every progress notification restarts it
+    // (`resetTimeoutOnProgress`), up to the hard `maxTotalTimeout` cap. The
+    // SDK checks the cap when progress arrives, so the worst case for a call is
+    // the cap plus one silent window.
+    const callTimeout = config.timeout ?? MCP_DEFAULT_CALL_TIMEOUT_MS;
+    const maxTotalTimeout = Math.max(
+      config.maxTotalTimeout ?? MCP_DEFAULT_MAX_TOTAL_TIMEOUT_MS,
+      callTimeout,
+    );
+
     return tools.map((tool): AgentTool => {
       const toolName = `mcp__${config.name}__${tool.name}`;
+
+      const runCall = async (
+        args: unknown,
+        context: ToolContext | undefined,
+      ): Promise<ToolExecuteResult> => {
+        const server = this.servers.find((s) => s.name === config.name);
+        if (server) {
+          const elapsed = Date.now() - server.lastCallTime;
+          const minGap = 2_000;
+          if (elapsed < minGap) {
+            await new Promise((r) => setTimeout(r, minGap - elapsed));
+          }
+          server.lastCallTime = Date.now();
+        }
+
+        // Resolve the client from `this.servers` on every attempt rather than
+        // closing over the one from connect time: a session rebuild (or an idle
+        // respawn) swaps the entry, and a stale capture would keep calling the
+        // dead client.
+        const liveClient = (): Client =>
+          this.servers.find((s) => s.name === config.name)?.client ?? client;
+
+        // The client the attempt actually ran against, so a failure can be
+        // attributed to "my client was replaced" vs "the server hung up".
+        let attemptClient = liveClient();
+        const callOnce = async (): Promise<ToolExecuteResult> => {
+          attemptClient = liveClient();
+          const result = await attemptClient.callTool(
+            { name: tool.name, arguments: args as Record<string, unknown> },
+            {
+              timeout: callTimeout,
+              maxTotalTimeout,
+              resetTimeoutOnProgress: true,
+              // The SDK only attaches a progressToken (and so only gets progress
+              // at all) when `onprogress` is set. Forward it as a tool update so
+              // the UI can show the call is alive.
+              onprogress: (progress) => {
+                context?.onUpdate?.({ type: "mcp_progress", ...progress });
+              },
+              ...(context?.signal ? { signal: context.signal } : {}),
+            },
+          );
+          if (!("content" in result) || !Array.isArray(result.content)) {
+            return "(empty response)";
+          }
+          const converted = await toToolResult(result.content, toolName);
+          // The server ran the tool and reports it failed (MCP `isError`).
+          if ("isError" in result && result.isError === true) {
+            throw new McpToolError(resultText(converted) || "MCP tool reported an error");
+          }
+          return converted;
+        };
+
+        try {
+          return await callOnce();
+        } catch (err) {
+          if (err instanceof McpToolError) throw err;
+          // An expired HTTP session is recoverable exactly once: rebuild the
+          // connection and replay the call. A second failure is a real error.
+          if (this.canRecoverSession(config, err, attemptClient, context?.signal)) {
+            try {
+              await this.reconnectServer(config);
+              if (!context?.signal?.aborted) return await callOnce();
+            } catch (retryErr) {
+              if (retryErr instanceof McpToolError) throw retryErr;
+              throw new McpToolError(`MCP tool error: ${formatConnectError(retryErr, config.url)}`);
+            }
+          }
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes("Too Many R") || msg.includes("429")) {
+            throw new McpToolError(
+              "Rate limited — too many requests. Wait a moment before searching again.",
+            );
+          }
+          throw new McpToolError(`MCP tool error: ${msg}`);
+        }
+      };
+
       return {
         name: toolName,
         description: tool.description ?? "",
         parameters: z.record(z.string(), z.unknown()),
         rawInputSchema: tool.inputSchema as Record<string, unknown>,
+        // The agent loop's own per-tool deadline (5 min by default) would
+        // otherwise preempt a long tool that is legitimately reporting
+        // progress, so declare the real worst case.
+        timeoutMs: maxTotalTimeout + callTimeout,
         execute: async (args, context) => {
-          const server = this.servers.find((s) => s.name === config.name);
-          if (server) {
-            const elapsed = Date.now() - server.lastCallTime;
-            const minGap = 2_000;
-            if (elapsed < minGap) {
-              await new Promise((r) => setTimeout(r, minGap - elapsed));
-            }
-            server.lastCallTime = Date.now();
+          // Counted synchronously, before any await, so an idle timer that
+          // fires while this call is still starting cannot stop the server.
+          const idle = this.idleEligible(config) ? this.idleState(config.name) : undefined;
+          if (idle) {
+            idle.inFlight += 1;
+            if (idle.timer) clearTimeout(idle.timer);
+            idle.timer = undefined;
           }
-
-          // Resolve the client from `this.servers` on every attempt rather than
-          // closing over the one from connect time: a session rebuild swaps the
-          // entry, and a stale capture would keep calling the dead client.
-          const liveClient = (): Client =>
-            this.servers.find((s) => s.name === config.name)?.client ?? client;
-
-          // The client the attempt actually ran against, so a failure can be
-          // attributed to "my client was replaced" vs "the server hung up".
-          let attemptClient = liveClient();
-          const callOnce = async (): Promise<ToolExecuteResult> => {
-            attemptClient = liveClient();
-            const result = await attemptClient.callTool(
-              { name: tool.name, arguments: args as Record<string, unknown> },
-              { timeout: config.timeout ?? 60_000 },
-            );
-            if (!("content" in result) || !Array.isArray(result.content)) {
-              return "(empty response)";
-            }
-            return toToolResult(result.content, toolName);
-          };
-
           try {
-            return await callOnce();
+            if (idle) await this.ensureRunning(config);
+            return await runCall(args, context);
           } catch (err) {
-            // An expired HTTP session is recoverable exactly once: rebuild the
-            // connection and replay the call. A second failure is a real error.
-            if (this.canRecoverSession(config, err, attemptClient, context?.signal)) {
-              try {
-                await this.reconnectServer(config);
-                if (!context?.signal?.aborted) return await callOnce();
-              } catch (retryErr) {
-                return `MCP tool error: ${formatConnectError(retryErr, config.url)}`;
-              }
+            if (err instanceof McpToolError) throw err;
+            throw new McpToolError(`MCP tool error: ${formatConnectError(err, config.url)}`);
+          } finally {
+            if (idle) {
+              idle.inFlight = Math.max(0, idle.inFlight - 1);
+              if (idle.inFlight === 0) this.armIdleTimer(config);
             }
-            const msg = err instanceof Error ? err.message : String(err);
-            if (msg.includes("Too Many R") || msg.includes("429")) {
-              return "Rate limited — too many requests. Wait a moment before searching again.";
-            }
-            return `MCP tool error: ${msg}`;
           }
         },
       };
@@ -913,6 +1149,17 @@ export class MCPClientManager {
     this.disposing = true;
     this.connections.clear();
     this.reconnecting.clear();
+    // Idle countdowns must not outlive the manager (they are unref'd, but a
+    // late fire would still try to close a client we are about to close).
+    for (const state of this.idle.values()) {
+      if (state.timer) clearTimeout(state.timer);
+      state.timer = undefined;
+    }
+    // A respawn racing teardown would add a child after we closed the rest.
+    await Promise.allSettled(
+      [...this.idle.values()].map((state) => state.restarting).filter(Boolean),
+    );
+    this.idle.clear();
     // Hand back pooled claims first. These are references, not connections —
     // the shared child survives if another session still holds it, and exits
     // when this was the last claim.

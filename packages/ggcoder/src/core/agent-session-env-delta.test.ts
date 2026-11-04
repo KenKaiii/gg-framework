@@ -129,15 +129,33 @@ describe("AgentSession environment drift", () => {
     }
   }, 20_000);
 
-  it("does not fire for /add-dir, which already rebuilds the prompt", async () => {
+  it("does not fire for /add-dir before the conversation, which rebuilds the prompt", async () => {
     const { session, internals } = await makeSession();
     const sibling = await fs.mkdtemp(path.join(os.tmpdir(), "env-delta-sibling-"));
     try {
       expect(await session.addDirectory(sibling)).toMatchObject({ ok: true });
 
-      // The rebuilt prompt already names the root, so a note would be noise.
+      // Nothing is cached after the prompt yet, so it names the root directly.
       expect(String(session.getMessages()[0]?.content ?? "")).toContain("Additional roots:");
       expect(internals.getHookSteeringMessages()).toBeNull();
+    } finally {
+      await session.dispose();
+      await fs.rm(sibling, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("tells the model about /add-dir mid-conversation instead of rewriting the prompt", async () => {
+    const { session, internals } = await makeSession();
+    const sibling = await fs.mkdtemp(path.join(os.tmpdir(), "env-delta-midrun-"));
+    try {
+      session.getMessages().push({ role: "user", content: "earlier turn" });
+      const before = session.getMessages()[0]?.content;
+      expect(await session.addDirectory(sibling)).toMatchObject({ ok: true });
+
+      expect(session.getMessages()[0]?.content).toBe(before);
+      const messages = internals.getHookSteeringMessages();
+      expect(messages).toHaveLength(1);
+      expect(messages?.[0]?.content).toContain(path.resolve(sibling));
     } finally {
       await session.dispose();
       await fs.rm(sibling, { recursive: true, force: true });

@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { CheckCircleIcon, XCircleIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { theme } from "./theme";
 import { Modal } from "./Modal";
 import { ModalDismissButton, useModalEmbedState } from "./modal-embed";
 import { SettingsSection } from "./settings-section";
 import { ListSkeleton } from "./Skeleton";
-import { getSteroidsStatus, installSteroids, onSteroidsChange, type SteroidsStatus } from "./agent";
+import {
+  getSteroidsStatus,
+  installSteroids,
+  onSteroidsChange,
+  openUrl,
+  type SteroidsStatus,
+} from "./agent";
 import { toast } from "./toast";
 
 interface Props {

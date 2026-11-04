@@ -3,7 +3,7 @@ import type { AgentTool } from "@kleio/agent";
 import type { SubAgentManager } from "../core/subagent-manager.js";
 import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
 import { renderAgentRoster } from "./subagent-shared.js";
-import { DEFAULT_WAIT_MS, MAX_WAIT_MS } from "../core/subagent-manager.js";
+import { ACTIVE_LIMIT, DEFAULT_WAIT_MS, MAX_WAIT_MS } from "../core/subagent-manager.js";
 
 const AgentId = z.string().min(1).describe("Eight-character agent ID returned by spawn_agent");
 
@@ -28,7 +28,7 @@ export function createSubAgentControlTools(
   )
     .optional()
     .describe("Named agent definition to run this task as; omit for a general-purpose child");
-  const spawnParams = z.object({
+  const taskParams = z.object({
     task_name: z.string().min(1).describe("Short unique name for this delegated task"),
     task: z
       .string()
@@ -39,19 +39,51 @@ export function createSubAgentControlTools(
       ),
     agent: agentParam,
   });
+  // A list, so one call starts every child: on models that send one tool call
+  // per turn (GPT-6.x), a one-child-per-call shape cost a model turn per child
+  // (bench 41: 8 children 66.8s → 31.9s, parent tokens −57%).
+  const spawnParams = z.object({
+    tasks: z
+      .array(taskParams)
+      .min(1)
+      .max(ACTIVE_LIMIT)
+      .describe("Every independent child to start now, one entry each"),
+  });
   const spawnTool: AgentTool<typeof spawnParams> = {
     name: "spawn_agent",
+    // Starting children is quick but not undoable: an interrupted call would
+    // leave running agents whose ids the model never saw.
+    interruptible: false,
     description:
-      "Start an isolated persistent child agent and return immediately after launch. " +
-      "Start all independent agents, then keep working \u2014 each child announces its own " +
-      "completion to you, so you do not need to wait or poll. Shared files are not isolated." +
+      "Start isolated persistent child agents and return immediately after launch. " +
+      "Put every independent child in ONE call's `tasks` list, then keep working \u2014 each " +
+      "child announces its own completion to you, so you do not need to wait or poll. " +
+      "Shared files are not isolated." +
       renderAgentRoster(manager.agents),
     parameters: spawnParams,
     executionMode: "parallel",
     async execute(args) {
       const restriction = blocked("spawn_agent");
       if (restriction) return restriction;
-      return json(await manager.spawn(args.task_name, args.task, args.agent));
+      // Each spawn runs its limit and duplicate-name checks and registers its
+      // worker before its first await, so starting them together cannot
+      // exceed ACTIVE_LIMIT or the per-model cap.
+      const settled = await Promise.allSettled(
+        args.tasks.map((t) => manager.spawn(t.task_name, t.task, t.agent)),
+      );
+      const results = settled.map((result, index) =>
+        result.status === "fulfilled"
+          ? result.value
+          : {
+              task_name: args.tasks[index]?.task_name,
+              error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+            },
+      );
+      // Nothing started: fail the call, as a single failed spawn always has.
+      if (settled.every((result) => result.status === "rejected")) {
+        throw new Error(`No agent started: ${JSON.stringify(results)}`);
+      }
+      return json(results);
     },
   };
 

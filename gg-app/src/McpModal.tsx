@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { CheckCircleIcon, XCircleIcon, LockIcon, XIcon } from "@phosphor-icons/react";
 import { theme } from "./theme";
 import { Modal } from "./Modal";
@@ -8,6 +7,7 @@ import { ListSkeleton } from "./Skeleton";
 import { SettingsCard, SettingsSection } from "./settings-section";
 import { SettingsHeaderAction } from "./settings-header";
 import {
+  openUrl,
   listMcpServers,
   addMcpServer,
   removeMcpServer,

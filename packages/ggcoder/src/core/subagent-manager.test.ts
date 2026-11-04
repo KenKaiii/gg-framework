@@ -160,6 +160,29 @@ describe("SubAgentManager", () => {
     });
   });
 
+  it("holds the limit and unique names when a batch starts children together", async () => {
+    const instance = manager();
+    // spawn_agent's batch form starts every task at once with allSettled; the
+    // limit and name checks must still see the siblings started in the same tick.
+    const names = ["a", "b", "c", "d", "e", "f", "g", "a", "h", "i"];
+    const settled = await Promise.allSettled(
+      names.map((name) => instance.spawn(name, "hold", "fake")),
+    );
+
+    const started = settled.filter((result) => result.status === "fulfilled");
+    const refused = settled.flatMap((result) =>
+      result.status === "rejected" ? [String(result.reason)] : [],
+    );
+    expect(started).toHaveLength(8);
+    expect(refused).toEqual([
+      expect.stringContaining('An agent named "a" already exists'),
+      expect.stringContaining("At most 8"),
+    ]);
+    for (const result of started) {
+      expect(await instance.sendMessage(result.value.agent_id, "release")).toBe(1);
+    }
+  });
+
   it("pushes a bounded completion notification without waiting", async () => {
     const notifications = new AgentNotificationQueue();
     const instance = manager({ notifications });
@@ -175,6 +198,19 @@ describe("SubAgentManager", () => {
     expect(drained[0]!.text).toContain("completed");
     expect(drained[0]!.text).toContain("wait_agent");
     expect(drained[0]!.text.length).toBeLessThanOrEqual(512);
+  });
+
+  it("carries the child's receipt in wait() payloads, after a truncated output", async () => {
+    const instance = manager();
+    const child = await instance.spawn("receipt-child", "x".repeat(40_000), "fake");
+    const waited = await instance.wait([child.agent_id], "all", 1_000);
+    const agent = waited.agents[0]!;
+    expect(agent.state).toBe("completed");
+    expect(agent.output).toContain("[output truncated at");
+    expect(agent.receipt).toBe("Receipt (1 call): read a.ts");
+    // Rendered after `output` in the wait_agent JSON the parent reads.
+    const keys = Object.keys(agent);
+    expect(keys.indexOf("receipt")).toBe(keys.indexOf("output") + 1);
   });
 
   it("waits for any, times out, steers, interrupts, and reuses context", async () => {
@@ -539,6 +575,7 @@ describe("durable turn-record adoption on hydrate", () => {
     await writeTurnRecord(childPath, {
       status: "completed",
       output: "orphan result",
+      receipt: "Receipt (2 calls): read src/a.ts ×2",
       model: "fast",
       turn_count: 4,
       token_usage: { input: 30, output: 8 },
@@ -557,6 +594,7 @@ describe("durable turn-record adoption on hydrate", () => {
     const snapshot = instance.list().find((s) => s.agent_id === "a1")!;
     expect(snapshot.state).toBe("completed");
     expect(snapshot.output).toBe("orphan result");
+    expect(snapshot.receipt).toBe("Receipt (2 calls): read src/a.ts ×2");
     expect(snapshot.error).toBeUndefined();
     expect(snapshot.turn_count).toBe(4);
     expect(snapshot.token_usage).toMatchObject({ input: 30, output: 8 });

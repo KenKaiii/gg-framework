@@ -263,9 +263,7 @@ describe("MCP HTTP session recovery", () => {
     // rebuilt session is no better than the old one.
     stub.breakToolTraffic(true);
 
-    const result = await runTool(echo, "doomed");
-    expect(result).toContain("MCP tool error");
-    expect(result).toContain("404");
+    await expect(runTool(echo, "doomed")).rejects.toThrow(/MCP tool error.*404/s);
     // Exactly one recovery attempt — a retry loop would keep climbing.
     expect(stub.initializeCount).toBe(2);
   }, 30_000);
@@ -279,8 +277,7 @@ describe("MCP HTTP session recovery", () => {
     controller.abort();
     stub.expireAll();
 
-    const result = await runTool(echo, "cancelled", controller.signal);
-    expect(result).toContain("MCP tool error");
+    await expect(runTool(echo, "cancelled", controller.signal)).rejects.toThrow("MCP tool error");
     // No reconnect: the user cancelled, so replaying the work would be wrong.
     expect(stub.initializeCount).toBe(1);
   }, 30_000);

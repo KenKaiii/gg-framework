@@ -20,6 +20,7 @@ import {
   type VideoContent,
 } from "@kleio/ai";
 import { EventBus } from "./event-bus.js";
+import { flagUntrustedToolResult } from "./injection-detect.js";
 import {
   COMPLETION_REVIEW_STATE_KIND,
   type CompletionReview,
@@ -110,7 +111,7 @@ import { setEstimatorModel, calibrateEstimatorFromUsage } from "./compaction/tok
 import { calculateActiveContextTokens } from "./compaction/active-context.js";
 import { resolveCompactionPolicy } from "./compaction/policy.js";
 import { clampThinkingForPlanMode } from "./thinking-level.js";
-import { pruneStaleToolResults } from "./compaction/tool-result-pruner.js";
+import { pruneStaleToolResults, shouldPruneToolResults } from "./compaction/tool-result-pruner.js";
 import { discoverAgents } from "./agents.js";
 import { enhancePrompt, type EnhanceResult } from "../utils/prompt-enhancer.js";
 import { detectLanguages, detectProjectStack, type LanguageId } from "./language-detector.js";
@@ -494,6 +495,8 @@ export class AgentSession {
   // different message (or past the end) by the time the cancel arrives.
   private userQueue: Array<{ id: string; text: string; attachments: SessionAttachment[] }> = [];
   private queueSeq = 0;
+  /** Instant interrupt: the running loop's preempt listeners, fired on queueMessage. */
+  private steeringListeners = new Set<() => void>();
   private processManager?: ProcessManager;
   private lspManager?: LspManager;
   private subAgentManager?: SubAgentManager;
@@ -772,6 +775,7 @@ export class AgentSession {
         this.tools = core;
         this.deferredBuiltinToolNames = deferred.map((t) => t.name);
         this.mcp.addDeferred(deferred);
+        this.promoteWaitAgentAfterSpawn();
       }
     }
     this.rebuildReadTool = rebuildReadTool;
@@ -1038,6 +1042,29 @@ export class AgentSession {
     if (!this.opts.backgroundMcpConnect) return;
     if (this.opts.allowedTools || !this.settingsManager.get("deferredMcpTools")) return;
     await this.mcp.seedFromCache(servers);
+  }
+
+  /**
+   * `wait_agent` is deferred, yet nearly every `spawn_agent` is followed by it,
+   * so the model spent a whole turn on `tool_search` just to load it (bench 41:
+   * ~6 s per fan-out). Promote it as soon as a spawn succeeds instead: the tool
+   * list grows exactly as it would after that `tool_search`, one turn earlier,
+   * and sessions that never spawn keep the smaller prefix.
+   */
+  private promoteWaitAgentAfterSpawn(): void {
+    const index = this.tools.findIndex((t) => t.name === "spawn_agent");
+    const spawn = index >= 0 ? this.tools[index] : undefined;
+    if (!spawn) return;
+    this.tools[index] = {
+      ...spawn,
+      execute: async (args, context) => {
+        const result = await spawn.execute(args, context);
+        if (!this.tools.some((t) => t.name === "wait_agent")) {
+          this.tools.push(...this.mcp.promote(["wait_agent"]));
+        }
+        return result;
+      },
+    };
   }
 
   /**
@@ -1851,6 +1878,13 @@ export class AgentSession {
       return [...diagnosticMessages, ...processFollowUp];
     }
 
+    // Ahead of the gate, so a check that passes on its own costs no extra turn.
+    if (diagnosticMessages.length === 0) {
+      await this.rerunRefusedCheck();
+      // A pass can clear the gate; release a client holding the draft.
+      this.refreshVerificationArmed();
+    }
+
     // Verification gate: code was edited but nothing verified since the last
     // edit. Above the Ideal review so checks RUN before the read-based review
     // starts; off for allow-listed sessions that cannot run commands at all.
@@ -1996,6 +2030,45 @@ export class AgentSession {
         lspEvidence,
       ),
     ];
+  }
+
+  /**
+   * The model often runs its tests inside a longer command (`npm test 2>&1 |
+   * tail; node -e '…'`) whose exit status belongs to a later part, so the
+   * tests can pass without counting. When the turn would end unverified that
+   * way, run that check once more on its own, through the same bash tool, and
+   * record its real exit status. No model turn and nothing in the transcript:
+   * only the run's verification status changes.
+   */
+  private async rerunRefusedCheck(): Promise<void> {
+    if (this.planModeRef.current || this.opts.signal?.aborted) return;
+    const check = this.verificationTracker.takeRefusedCheck();
+    if (!check) return;
+    const bash = this.tools.find((tool) => tool.name === "bash");
+    // An explicit timeout stops a stuck run instead of moving it to the
+    // background, which would leave a process for the next turn to collect.
+    const params = bash?.parameters.safeParse({ command: check.command, timeout: 120_000 });
+    if (!bash || !params?.success) return;
+    const startedAt = Date.now();
+    let passed = false;
+    try {
+      const result = await bash.execute(params.data, {
+        signal: this.opts.signal ?? new AbortController().signal,
+        toolCallId: `gg-recheck-${startedAt}`,
+      });
+      const text = typeof result === "string" ? result : result.content;
+      passed = typeof text === "string" && /^Exit code:\s*0(?:\s|$)/.test(text.trim());
+    } catch (error) {
+      if (isAbortError(error) || this.opts.signal?.aborted) return;
+      log("WARN", "verification", `Re-running a refused check failed: ${String(error)}`);
+    }
+    if (this.opts.signal?.aborted) return;
+    this.verificationTracker.recordRefusedCheckRerun(check, passed);
+    log("INFO", "verification", "Re-ran a check whose original exit status could not count", {
+      passed: String(passed),
+      durationMs: String(Date.now() - startedAt),
+    });
+    await this.persistVerificationState();
   }
 
   private reviewLspEvidence(files: readonly string[]): {
@@ -2216,9 +2289,15 @@ export class AgentSession {
           this.provider,
           accountId,
         ),
+        // Warn when web/MCP output contains instruction-like text (see injection-detect.ts).
+        transformToolResult: flagUntrustedToolResult,
         // Self-correction hooks (same as the TUI): loop-break + re-grounding are
         // polled mid-loop; the ideal review is polled when the agent would stop.
         getSteeringMessages: () => this.getHookSteeringMessages(),
+        onSteeringAvailable: (listener) => {
+          this.steeringListeners.add(listener);
+          return () => this.steeringListeners.delete(listener);
+        },
         getFollowUpMessages: () => this.getHookFollowUpMessages(),
         onTurnBudgetExhausted: (ctx) => this.shouldExtendTurnBudget(ctx),
         // Check authoritative provider usage before every model/tool step.
@@ -2248,6 +2327,18 @@ export class AgentSession {
           if (!force) {
             if (!this.settingsManager.get("autoCompact")) return messages;
 
+            const contextWindow = getContextWindow(this.model, {
+              provider: this.provider,
+              accountId,
+            });
+            const policy = resolveCompactionPolicy({
+              provider: this.provider,
+              model: this.model,
+              contextWindow,
+              threshold: this.settingsManager.get("compactThreshold"),
+              accountId,
+              approvedPlanPath: this.approvedPlanPath,
+            });
             // Provider usage when there is some, else an estimate of the history.
             let usage = transformOpts.usage;
             let pendingMessages = transformOpts.pendingMessages;
@@ -2266,39 +2357,30 @@ export class AgentSession {
             });
 
             // Cheap stale-tool-output pruning before the expensive LLM
-            // compaction check. In-place mutation preserves anchors; drop the
-            // retained usage afterwards since it counted the pruned content.
-            const pruneResult = pruneStaleToolResults(messages);
-            if (pruneResult.pruned) {
-              this.providerContext = null;
-              log("INFO", "compaction", "Pruned stale tool outputs", {
-                prunedResults: String(pruneResult.prunedResults),
-                compactedToolCalls: String(pruneResult.compactedToolCalls),
-                freedTokens: String(pruneResult.freedTokens),
-              });
-              // The measured size counted the pruned content, so take the
-              // freed tokens off it. Never swap the provider's count for a
-              // whole-history estimate here: that estimate rides a shared
-              // chars-per-token ratio, and it once read a 234K-token MiMo
-              // context (23% of 1M) as ~400K and compacted it against a 340K
-              // trigger.
-              activeTokens = Math.max(0, activeTokens - pruneResult.freedTokens);
+            // compaction check, once the context is big enough for the freed
+            // tokens to be worth a cache rewrite. In-place mutation preserves
+            // anchors; drop the retained usage afterwards since it counted the
+            // pruned content.
+            if (shouldPruneToolResults(activeTokens, policy.targetTokens)) {
+              const pruneResult = pruneStaleToolResults(messages);
+              if (pruneResult.pruned) {
+                this.providerContext = null;
+                log("INFO", "compaction", "Pruned stale tool outputs", {
+                  prunedResults: String(pruneResult.prunedResults),
+                  compactedToolCalls: String(pruneResult.compactedToolCalls),
+                  freedTokens: String(pruneResult.freedTokens),
+                });
+                // The measured size counted the pruned content, so take the
+                // freed tokens off it. Never swap the provider's count for a
+                // whole-history estimate here: that estimate rides a shared
+                // chars-per-token ratio, and it once read a 234K-token MiMo
+                // context (23% of 1M) as ~400K and compacted it against a 340K
+                // trigger.
+                activeTokens = Math.max(0, activeTokens - pruneResult.freedTokens);
+              }
             }
 
             if (Date.now() < this.compactionRetryAfter) return messages;
-
-            const contextWindow = getContextWindow(this.model, {
-              provider: this.provider,
-              accountId,
-            });
-            const policy = resolveCompactionPolicy({
-              provider: this.provider,
-              model: this.model,
-              contextWindow,
-              threshold: this.settingsManager.get("compactThreshold"),
-              accountId,
-              approvedPlanPath: this.approvedPlanPath,
-            });
             log("INFO", "compaction", "In-flight compaction decision", {
               provider: this.provider,
               model: this.model,
@@ -3171,6 +3253,8 @@ export class AgentSession {
   queueMessage(text: string, attachments: SessionAttachment[] = []): number {
     this.queueSeq += 1;
     this.userQueue.push({ id: `q${this.queueSeq}`, text, attachments });
+    // Instant interrupt: preempt running tools so the steer lands right away.
+    for (const listener of [...this.steeringListeners]) listener();
     return this.userQueue.length;
   }
 
@@ -3334,7 +3418,7 @@ export class AgentSession {
       return relative.startsWith("..") || path.isAbsolute(relative);
     });
     this.additionalRoots.push(resolved);
-    await this.rebuildSystemPromptInPlace();
+    await this.refreshPromptForRoots();
     return { ok: true, root: resolved };
   }
 
@@ -3349,8 +3433,19 @@ export class AgentSession {
     }
 
     this.additionalRoots.splice(index, 1);
-    await this.rebuildSystemPromptInPlace();
+    await this.refreshPromptForRoots();
     return { ok: true, root: resolved };
+  }
+
+  /**
+   * Name a root change in the prompt only while there is no conversation yet.
+   * Mid-conversation the env-delta note tells the model instead: the roots sit
+   * in the Environment section, and rewriting it would invalidate every cached
+   * message after it (a goal attaching a folder re-sent ~75k tokens).
+   */
+  private async refreshPromptForRoots(): Promise<void> {
+    if (this.messages.some((message) => message.role !== "system")) return;
+    await this.rebuildSystemPromptInPlace();
   }
 
   /**

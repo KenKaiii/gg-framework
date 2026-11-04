@@ -15,7 +15,6 @@ vi.mock("@tauri-apps/api/core", () => ({
     }
   },
 }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 vi.mock("../agent", () => ({ openProjectPath: vi.fn(), sendPrompt: vi.fn() }));
 vi.mock("../toast", () => ({ toast: vi.fn() }));
 

@@ -9,7 +9,10 @@ import type { Message, Provider, Usage } from "@kleio/ai";
 import type { TransformContextOptions } from "@kleio/agent";
 import { compact, shouldCompact } from "../../core/compaction/compactor.js";
 import { calculateActiveContextTokens } from "../../core/compaction/active-context.js";
-import { pruneStaleToolResults } from "../../core/compaction/tool-result-pruner.js";
+import {
+  pruneStaleToolResults,
+  shouldPruneToolResults,
+} from "../../core/compaction/tool-result-pruner.js";
 import {
   estimateConversationTokens,
   calibrateEstimatorFromUsage,
@@ -238,28 +241,17 @@ export function useContextCompaction({
 
       if (!autoCompact) return messages;
 
-      // Cheap stale-tool-output pruning before the expensive LLM compaction
-      // check. In-place mutation preserves the usage anchor's identity; drop
-      // the retained usage afterwards since it counted the pruned content.
-      const pruneResult = pruneStaleToolResults(messages);
-      if (pruneResult.pruned) {
-        providerContextRef.current = null;
-        log("INFO", "compaction", "Pruned stale tool outputs", {
-          prunedResults: String(pruneResult.prunedResults),
-          freedTokens: String(pruneResult.freedTokens),
-        });
-      }
-
-      // Time-based cooldown: skip if compaction ran within the last 30 seconds.
-      if (Date.now() - lastCompactionTimeRef.current < 30_000) {
-        log("INFO", "compaction", `Skipping compaction — cooldown active`);
-        return messages;
-      }
-
-      // The turn's own usage also counted the pruned content — after a prune,
-      // fall back to estimating the (now smaller) history so the freed tokens
-      // actually defer the LLM compaction.
-      let usage = pruneResult.pruned ? undefined : options.usage;
+      const contextWindow = getContextWindow(currentModel, contextWindowOptions);
+      const policy = resolveCompactionPolicy({
+        provider: currentProvider,
+        model: currentModel,
+        contextWindow,
+        threshold,
+        accountId: contextWindowOptions.accountId,
+        approvedPlanPath: approvedPlanPathRef.current,
+      });
+      // Provider usage when there is some, else an estimate of the history.
+      let usage = options.usage;
       let pendingMessages = options.pendingMessages;
       if (!usage && providerContextRef.current) {
         const anchorIndex = messages.lastIndexOf(providerContextRef.current.anchor);
@@ -270,17 +262,34 @@ export function useContextCompaction({
           providerContextRef.current = null;
         }
       }
+      let activeTokens = calculateActiveContextTokens(messages, { usage, pendingMessages });
 
-      const contextWindow = getContextWindow(currentModel, contextWindowOptions);
-      const policy = resolveCompactionPolicy({
-        provider: currentProvider,
-        model: currentModel,
-        contextWindow,
-        threshold,
-        accountId: contextWindowOptions.accountId,
-        approvedPlanPath: approvedPlanPathRef.current,
-      });
-      const activeTokens = calculateActiveContextTokens(messages, { usage, pendingMessages });
+      // Cheap stale-tool-output pruning before the expensive LLM compaction
+      // check, once the context is big enough for the freed tokens to be worth
+      // a cache rewrite. In-place mutation preserves the usage anchor's
+      // identity; drop the retained usage afterwards since it counted the
+      // pruned content.
+      if (shouldPruneToolResults(activeTokens, policy.targetTokens)) {
+        const pruneResult = pruneStaleToolResults(messages);
+        if (pruneResult.pruned) {
+          providerContextRef.current = null;
+          log("INFO", "compaction", "Pruned stale tool outputs", {
+            prunedResults: String(pruneResult.prunedResults),
+            freedTokens: String(pruneResult.freedTokens),
+          });
+          // The turn's own usage also counted the pruned content — estimate the
+          // (now smaller) history so the freed tokens actually defer compaction.
+          activeTokens = calculateActiveContextTokens(messages, {
+            pendingMessages: options.pendingMessages,
+          });
+        }
+      }
+
+      // Time-based cooldown: skip if compaction ran within the last 30 seconds.
+      if (Date.now() - lastCompactionTimeRef.current < 30_000) {
+        log("INFO", "compaction", `Skipping compaction — cooldown active`);
+        return messages;
+      }
       if (shouldCompact(messages, contextWindow, threshold, activeTokens, policy.targetTokens)) {
         const result = await compactConversation(messages);
         if (result !== messages) {

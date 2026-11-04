@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ContentPart, Message, ToolCall, ToolResult } from "@kleio/ai";
-import { pruneStaleToolResults } from "./tool-result-pruner.js";
+import { pruneStaleToolResults, shouldPruneToolResults } from "./tool-result-pruner.js";
 
 function toolTurn(
   id: string,
@@ -388,5 +388,14 @@ describe("pruneStaleToolResults", () => {
 
     expect(messages[3]).toBe(anchor);
     expect(messages[2]).toBe(toolMsg);
+  });
+});
+
+describe("shouldPruneToolResults", () => {
+  it("prunes only from half of the compaction trigger up", () => {
+    // 117k of an 850k trigger (a live 1M-window goal) is not worth a cache rewrite.
+    expect(shouldPruneToolResults(117_000, 850_000)).toBe(false);
+    expect(shouldPruneToolResults(425_000, 850_000)).toBe(true);
+    expect(shouldPruneToolResults(160_000, 170_000)).toBe(true);
   });
 });

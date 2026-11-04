@@ -23,7 +23,6 @@ vi.mock("./kleioApi", async (importOriginal) => ({
 }));
 vi.mock("./liveActivity", () => ({ startLiveActivity: vi.fn(async () => {}) }));
 vi.mock("../agent", () => ({ openProjectPath: vi.fn(), sendPrompt: vi.fn() }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 vi.mock("../useDictation", () => ({
   useDictation: () => ({ state: "idle", start: vi.fn(), stop: vi.fn() }),
 }));

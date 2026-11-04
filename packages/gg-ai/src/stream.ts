@@ -6,8 +6,13 @@ import { streamOpenAI } from "./providers/openai.js";
 import { streamOpenAICodex } from "./providers/openai-codex.js";
 import { streamGemini } from "./providers/gemini.js";
 import { providerRegistry } from "./provider-registry.js";
-import { clampProviderContextImages } from "./providers/transform.js";
+import {
+  clampProviderContextImages,
+  dropInvalidToolCalls,
+  toolCallNameRuleFor,
+} from "./providers/transform.js";
 import { sanitizeMessagesForWire } from "./utils/well-formed.js";
+import { markContinuesTurn } from "./utils/turn-continuation.js";
 
 /** Z.AI coding API endpoint — the primary endpoint for all GLM models. */
 const GLM_CODING_BASE_URL = "https://api.z.ai/api/coding/paas/v4";
@@ -244,11 +249,19 @@ export function stream(options: StreamOptions): StreamResult {
   // shell bytes) make the JSON body unparseable for every provider — and stay in
   // history, so retries and model switches fail identically. Scrub them here,
   // the one place all providers pass through.
-  const messages = clampProviderContextImages(
-    sanitizeMessagesForWire(wireMessages),
-    options.provider,
-    options.supportsImages,
+  //
+  // Likewise a tool call whose name the target provider rejects (blank,
+  // invocation text in the name slot, over the length limit) would 400 every
+  // later request, so drop it and its results for this request only.
+  const sanitized = sanitizeMessagesForWire(wireMessages);
+  const replayable = dropInvalidToolCalls(
+    sanitized,
+    toolCallNameRuleFor(options.provider, {
+      accountId: options.accountId,
+      baseUrl: options.baseUrl,
+    }),
   );
+  const messages = clampProviderContextImages(replayable, options.provider, options.supportsImages);
   return entry.stream(messages === options.messages ? options : { ...options, messages });
 }
 
@@ -259,8 +272,14 @@ function stripMessageProvenance(messages: Message[]): Message[] {
     const message = messages[index]!;
     if (!message.provenance) continue;
     stripped ??= messages.slice();
-    const { provenance: _provenance, ...wireMessage } = message;
-    stripped[index] = wireMessage as Message;
+    const { provenance, ...wireMessage } = message;
+    // A runtime notice continues the current turn; keep that one fact (as a
+    // wire-safe marker) so the Anthropic encoder doesn't treat it as a new turn
+    // and strip the run's reasoning, which rewrote the whole cached prefix.
+    stripped[index] =
+      provenance.kind === "notification" && message.role === "user"
+        ? markContinuesTurn(wireMessage as Message)
+        : (wireMessage as Message);
   }
   return stripped ?? messages;
 }

@@ -8,7 +8,6 @@
 // app's content security policy allows images from that one origin only.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ArrowSquareOutIcon,
   CheckCircleIcon,
@@ -16,6 +15,7 @@ import {
   PlugsIcon,
   XIcon,
 } from "@phosphor-icons/react";
+import { openUrl } from "../agent";
 import { Badge } from "../Badge";
 import { SettingsCard } from "../settings-section";
 import { SettingsHeaderStatus } from "../settings-header";

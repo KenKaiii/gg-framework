@@ -5,7 +5,6 @@ import { authStatus, getSettings } from "./agent";
 import { HomeScreen } from "./HomeScreen";
 
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: vi.fn(async () => "1.0.0") }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 vi.mock("./AsciiLogo", () => ({ AsciiLogo: () => null }));
 vi.mock("./HomeDither", () => ({ HomeDither: () => null }));
 vi.mock("./RankBadge", () => ({ RankBadge: () => null }));
@@ -13,6 +12,7 @@ vi.mock("./ScorecardModal", () => ({ ScorecardModal: () => null }));
 vi.mock("./update", () => ({ useAppUpdate: () => ({ status: "idle" }) }));
 vi.mock("./toast", () => ({ toast: vi.fn() }));
 vi.mock("./agent", () => ({
+  openUrl: vi.fn(),
   waitForReady: vi.fn(async () => undefined),
   getSettings: vi.fn(),
   authStatus: vi.fn(),

@@ -16,7 +16,8 @@ export type MCPScope = "global" | "project";
 /**
  * On-disk entry shape. Accepts both Claude's `.mcp.json` fields
  * (`type`, `url`, `headers`, `command`, `args`, `env`, `timeout`) and our
- * extra (`enabled`) so configs are portable in both directions.
+ * extras (`enabled`, `keepAlive`, `maxTotalTimeout`) so configs are portable
+ * in both directions.
  */
 const StoredServerEntrySchema = z
   .object({
@@ -27,7 +28,9 @@ const StoredServerEntrySchema = z
     args: z.array(z.string()).optional(),
     env: z.record(z.string(), z.string()).optional(),
     timeout: z.number().optional(),
+    maxTotalTimeout: z.number().optional(),
     enabled: z.boolean().optional(),
+    keepAlive: z.boolean().optional(),
   })
   .passthrough();
 
@@ -97,7 +100,9 @@ export function fromStoredEntry(name: string, entry: StoredServerEntry): MCPServ
     if (entry.env) config.env = entry.env;
   }
   if (typeof entry.timeout === "number") config.timeout = entry.timeout;
+  if (typeof entry.maxTotalTimeout === "number") config.maxTotalTimeout = entry.maxTotalTimeout;
   if (typeof entry.enabled === "boolean") config.enabled = entry.enabled;
+  if (typeof entry.keepAlive === "boolean") config.keepAlive = entry.keepAlive;
   return config;
 }
 
@@ -115,7 +120,9 @@ export function toStoredEntry(config: MCPServerConfig): StoredServerEntry {
     if (config.env) entry.env = config.env;
   }
   if (typeof config.timeout === "number") entry.timeout = config.timeout;
+  if (typeof config.maxTotalTimeout === "number") entry.maxTotalTimeout = config.maxTotalTimeout;
   if (typeof config.enabled === "boolean") entry.enabled = config.enabled;
+  if (typeof config.keepAlive === "boolean") entry.keepAlive = config.keepAlive;
   return entry;
 }
 

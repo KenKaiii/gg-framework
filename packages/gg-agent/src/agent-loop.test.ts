@@ -1664,6 +1664,76 @@ describe("agentLoop", () => {
     expect(texts.some((t) => t === "and the second half.")).toBe(true);
   }, 30_000);
 
+  it("hedges a hung first event on a warm cached prompt instead of stall-retrying", async () => {
+    // 2026-10-22 gg-addict: on a fully cached ~370K-token prompt, Anthropic
+    // sometimes sent nothing for 90-118s until the watchdog fired
+    // ("Retrying…"); the identical retry answered in ~6-14s.
+    vi.useFakeTimers();
+    const diagnostics: string[] = [];
+    setStreamDiagnostic((phase) => diagnostics.push(phase));
+    const signals: AbortSignal[] = [];
+    mockStream.mockImplementation((opts: StreamOptions) => {
+      signals.push(opts.signal as AbortSignal);
+      if (signals.length === 1) {
+        return mockToolCallResult("context_probe", {
+          inputTokens: 200,
+          outputTokens: 20,
+          cacheRead: 370_000,
+        }) as unknown as ReturnType<typeof stream>;
+      }
+      if (signals.length === 2) {
+        const hung = new Promise<never>((_, reject) => {
+          opts.signal?.addEventListener(
+            "abort",
+            () => reject(Object.assign(new Error("Aborted"), { name: "AbortError" })),
+            { once: true },
+          );
+        });
+        hung.catch(() => {});
+        return {
+          [Symbol.asyncIterator]: async function* () {
+            yield* [];
+            await hung;
+          },
+          response: hung,
+        } as unknown as ReturnType<typeof stream>;
+      }
+      return mockOkResult("answered by the hedge") as unknown as ReturnType<typeof stream>;
+    });
+
+    const loopPromise = collectLoop(
+      [
+        { role: "system", content: "sys" },
+        // Large enough that the first-event watchdog (~66s) leaves room to hedge.
+        { role: "user", content: "x".repeat(100_000) },
+      ],
+      {
+        provider: "anthropic",
+        model: "test",
+        tools: [
+          {
+            name: "context_probe",
+            description: "continue the test",
+            parameters: emptyParams,
+            execute: () => "ok",
+          },
+        ],
+      },
+    );
+    await vi.advanceTimersByTimeAsync(40_000);
+    const { events } = await loopPromise;
+    setStreamDiagnostic(null);
+    vi.useRealTimers();
+
+    expect(events.some((e) => e.type === "retry")).toBe(false);
+    expect(signals).toHaveLength(3);
+    expect(signals[1]?.aborted).toBe(true);
+    expect(diagnostics).toContain("hedge_started");
+    expect(diagnostics).toContain("hedge_settled");
+    expect(diagnostics).not.toContain("idle_timeout_fired");
+    expect(events).toContainEqual({ type: "text_delta", text: "answered by the hedge" });
+  }, 30_000);
+
   it("discards a sub-threshold partial on transport-failure retry", async () => {
     vi.useFakeTimers();
 
@@ -3294,5 +3364,66 @@ describe("transformToolDetails", () => {
 
     const end = events.find((e) => e.type === "tool_call_end");
     expect(end).toMatchObject({ details: { imagePreviews: [{ base64: "png" }] }, isError: false });
+  });
+});
+
+describe("transformToolResult", () => {
+  const usage = { inputTokens: 10, outputTokens: 5 };
+  const tool = (name: string, content: string): AgentTool<typeof emptyParams> => ({
+    name,
+    description: name,
+    parameters: emptyParams,
+    async execute() {
+      return content;
+    },
+  });
+
+  it("applies transformToolResult to a tool result before the next request", async () => {
+    mockStream.mockReset();
+    mockStream
+      .mockReturnValueOnce({
+        [Symbol.asyncIterator]: async function* () {
+          yield* [];
+        },
+        response: Promise.resolve({
+          message: {
+            role: "assistant" as const,
+            content: [
+              { type: "tool_call" as const, id: "w1", name: "web_fetch", args: {} },
+              { type: "tool_call" as const, id: "b1", name: "bash", args: {} },
+            ],
+          },
+          stopReason: "tool_use" as const,
+          usage,
+        }),
+      } as unknown as ReturnType<typeof stream>)
+      .mockReturnValueOnce(mockOkResult("done") as unknown as ReturnType<typeof stream>);
+    const consulted: string[] = [];
+
+    await collectLoop([{ role: "user", content: "go" }], {
+      provider: "anthropic",
+      model: "test",
+      tools: [tool("web_fetch", "page text"), tool("bash", "exit 0")],
+      // Flags only web content, the way the coder flags untrusted tool output.
+      transformToolResult: (call, content) => {
+        consulted.push(call.name);
+        return call.name === "web_fetch" && typeof content === "string"
+          ? `${content}\n[warning: instruction-like text]`
+          : content;
+      },
+    });
+
+    expect(consulted.sort()).toEqual(["bash", "web_fetch"]);
+    const next = mockStream.mock.calls[1]?.[0].messages ?? [];
+    const results = next.flatMap((m) =>
+      m.role === "tool" && Array.isArray(m.content) ? m.content : [],
+    );
+    expect(results).toEqual([
+      expect.objectContaining({
+        toolCallId: "w1",
+        content: "page text\n[warning: instruction-like text]",
+      }),
+      expect.objectContaining({ toolCallId: "b1", content: "exit 0" }),
+    ]);
   });
 });

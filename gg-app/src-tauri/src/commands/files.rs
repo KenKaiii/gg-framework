@@ -2,6 +2,9 @@
 
 use crate::*;
 
+#[cfg(target_os = "ios")]
+use tauri_plugin_opener::OpenerExt;
+
 #[tauri::command]
 pub(crate) fn dropped_path_info(paths: Vec<String>) -> Vec<DroppedPathInfo> {
     paths
@@ -130,22 +133,39 @@ pub(crate) fn open_project_path(webview: WebviewWindow, path: String) -> Result<
             .map_err(|_| format!("file not found: {}", cleaned))?,
     );
 
-    webview
-        .opener()
-        .open_path(canonical.to_string_lossy().to_string(), None::<String>)
-        .map_err(|e| e.to_string())
+    #[cfg(not(target_os = "ios"))]
+    {
+        open_with_default(&canonical.to_string_lossy())
+    }
+    // The iPhone can't spawn a launcher: the opener plugin hands it to iOS.
+    #[cfg(target_os = "ios")]
+    {
+        webview
+            .opener()
+            .open_path(canonical.to_string_lossy().to_string(), None::<String>)
+            .map_err(|e| e.to_string())
+    }
 }
 
-/// Open an http(s) URL in the system browser (title-bar GitHub issue/PR links).
-/// Scheme-validated so the webview can't turn this into a local-file opener.
+/// Open a web/mail/phone link in the user's default app (chat links, title-bar
+/// GitHub links, OAuth pages). Scheme-validated so the webview can't turn this
+/// into a local-file opener.
 #[tauri::command]
 pub(crate) fn open_url(webview: WebviewWindow, url: String) -> Result<(), String> {
     let trimmed = url.trim();
-    if !trimmed.starts_with("https://") && !trimmed.starts_with("http://") {
-        return Err("only http(s) URLs can be opened".into());
+    if !is_openable_url(trimmed) {
+        return Err("only http(s), mailto: and tel: links can be opened".into());
     }
-    webview
-        .opener()
-        .open_url(trimmed, None::<String>)
-        .map_err(|e| e.to_string())
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = webview;
+        open_with_default(trimmed)
+    }
+    #[cfg(target_os = "ios")]
+    {
+        webview
+            .opener()
+            .open_url(trimmed, None::<String>)
+            .map_err(|e| e.to_string())
+    }
 }

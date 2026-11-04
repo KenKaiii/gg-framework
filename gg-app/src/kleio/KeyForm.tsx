@@ -4,8 +4,8 @@
 // under the field. Used by Settings → Setup and the Apps page.
 
 import { useId, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { ArrowSquareOutIcon } from "@phosphor-icons/react";
+import { openUrl } from "../agent";
 import {
   errorText,
   KleioApiError,

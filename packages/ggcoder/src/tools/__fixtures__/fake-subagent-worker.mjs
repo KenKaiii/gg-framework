@@ -19,6 +19,8 @@ const complete = (status = "completed", output = `turn-${contextTurns}`) => {
     type: "turn_complete",
     status,
     output,
+    // Stand-in for the engine-built receipt the real worker attaches.
+    receipt: "Receipt (1 call): read a.ts",
     ...(status === "interrupted" ? { error: "Interrupted" } : {}),
   });
 };
@@ -52,7 +54,12 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     emit({
       type: "event",
       event: "tool_call_start",
-      payload: { name: "read", args: { file_path: "a.ts" } },
+      payload: { toolCallId: "fake-read", name: "read", args: { file_path: "a.ts" } },
+    });
+    emit({
+      type: "event",
+      event: "tool_call_end",
+      payload: { toolCallId: "fake-read", result: "x", isError: false, durationMs: 1 },
     });
     emit({
       type: "event",

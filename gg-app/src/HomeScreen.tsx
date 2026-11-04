@@ -7,12 +7,12 @@ import {
   GearSixIcon,
 } from "@phosphor-icons/react";
 import { getVersion } from "@tauri-apps/api/app";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { AsciiLogo } from "./AsciiLogo";
 import { HomeDither } from "./HomeDither";
 import { useHomeBackgroundEnabled } from "./home-background";
 import type { SettingsTabId } from "./SettingsScreen";
 import {
+  openUrl,
   waitForReady,
   getSettings,
   authStatus,

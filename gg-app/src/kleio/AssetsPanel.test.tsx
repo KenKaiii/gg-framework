@@ -8,7 +8,6 @@ import { FileViewerProvider } from "./FileViewerProvider";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 // The panel's chrome (its radio button) and the viewer's Markdown reach the Tauri bridge on import.
 vi.mock("../agent", () => ({ openProjectPath: vi.fn(), sendPrompt: vi.fn() }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 
 const OWNER = { kind: "blob", blobId: "b_1234abcd" } as const;
 const ASSETS: readonly Asset[] = [

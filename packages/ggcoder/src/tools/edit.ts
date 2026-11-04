@@ -20,6 +20,7 @@ import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
 import type { EditSource } from "../core/lsp/edit-telemetry.js";
 import { resolveWriteGuard, type WriteGuardSettings } from "../core/workspace-guard.js";
 import { redactedOldTextHint, redactionLossError } from "./redaction-guard.js";
+import { isRecord } from "../core/foreign-transcript-blocks.js";
 
 type MutationCallback = (filePath: string) => void | Promise<void>;
 
@@ -117,39 +118,67 @@ const STRINGIFIED_EDITS_ERROR =
   "Re-sending the same large payload usually breaks the same way: split the work into " +
   "several `edit` calls carrying one or two smaller edits each.";
 
-const EditParams = z.object({
-  file_path: z.string().describe("The file path to edit"),
-  edits: z
-    .preprocess(
-      coerceStringifiedEdits,
-      z
-        .array(EditItem, {
-          // Narrow to "an array was expected, a string arrived" so a nested
-          // string-typed mistake (`anchor: "x"`, `replace_all: "true"`) keeps
-          // its own accurate message. Any non-matching issue returns undefined
-          // and falls through to Zod's default.
-          error: (issue) =>
-            issue.code === "invalid_type" &&
-            issue.expected === "array" &&
-            typeof issue.input === "string"
-              ? STRINGIFIED_EDITS_ERROR
-              : undefined,
-        })
-        .min(1),
-    )
-    .describe(
-      "One or more edits applied in order. Each edit operates on the result of the previous one.",
-    ),
-  atomic: z
-    .boolean()
-    .optional()
-    .describe(
-      "If true, fail the whole batch when any edit fails — no changes written. " +
-        "Default false: partial-apply, keep every successful edit and report failures " +
-        "for retry. Use atomic only when later edits depend on earlier ones in a way " +
-        "where a half-applied state would be worse than nothing.",
-    ),
-});
+// Haiku 5.5 (bench/h2h: 20 of 76 edit calls across 30 runs, and the cause of
+// a failed run) closes the `edits` string where `old_text` should end, which
+// pushes `new_text` up to the top level:
+//   { file_path, edits: '[{"old_text">OLD', new_text: 'NEW' }
+// OLD is then the raw, complete old text: the model ended it with its own
+// string terminator, and NEW is a separately parsed, complete JSON string.
+// Nothing is guessed, and the matcher still requires OLD to match the file
+// exactly once, so a wrong recovery fails like any other bad `old_text`.
+// Any other shape (no top-level new_text, extra keys) keeps the hard
+// rejection below.
+const SPLIT_OLD_TEXT_PREFIX = '[{"old_text">';
+const SPLIT_OLD_TEXT_KEYS = new Set(["file_path", "edits", "new_text", "atomic"]);
+
+const recoverSplitOldText = (raw: unknown): unknown => {
+  if (!isRecord(raw) || typeof raw.edits !== "string" || typeof raw.new_text !== "string") {
+    return raw;
+  }
+  if (!raw.edits.startsWith(SPLIT_OLD_TEXT_PREFIX)) return raw;
+  if (!Object.keys(raw).every((key) => SPLIT_OLD_TEXT_KEYS.has(key))) return raw;
+  const oldText = raw.edits.slice(SPLIT_OLD_TEXT_PREFIX.length);
+  if (oldText.length === 0) return raw;
+  const { new_text: newText, ...rest } = raw;
+  return { ...rest, edits: [{ old_text: oldText, new_text: newText }] };
+};
+
+const EditParams = z.preprocess(
+  recoverSplitOldText,
+  z.object({
+    file_path: z.string().describe("The file path to edit"),
+    edits: z
+      .preprocess(
+        coerceStringifiedEdits,
+        z
+          .array(EditItem, {
+            // Narrow to "an array was expected, a string arrived" so a nested
+            // string-typed mistake (`anchor: "x"`, `replace_all: "true"`) keeps
+            // its own accurate message. Any non-matching issue returns undefined
+            // and falls through to Zod's default.
+            error: (issue) =>
+              issue.code === "invalid_type" &&
+              issue.expected === "array" &&
+              typeof issue.input === "string"
+                ? STRINGIFIED_EDITS_ERROR
+                : undefined,
+          })
+          .min(1),
+      )
+      .describe(
+        "One or more edits applied in order. Each edit operates on the result of the previous one.",
+      ),
+    atomic: z
+      .boolean()
+      .optional()
+      .describe(
+        "If true, fail the whole batch when any edit fails — no changes written. " +
+          "Default false: partial-apply, keep every successful edit and report failures " +
+          "for retry. Use atomic only when later edits depend on earlier ones in a way " +
+          "where a half-applied state would be worse than nothing.",
+      ),
+  }),
+);
 
 interface MatchSuccess {
   ok: true;

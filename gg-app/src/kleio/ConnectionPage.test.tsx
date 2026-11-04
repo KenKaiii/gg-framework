@@ -44,6 +44,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: vi.fn(async () => undefined) }));
 vi.mock("../toast", () => ({ toast: vi.fn() }));
+vi.mock("../agent", () => ({ openUrl: vi.fn(async () => undefined) }));
 vi.mock("./kleioApi", async (importOriginal) => ({
   ...(await importOriginal<typeof KleioApi>()),
   hostHealth: vi.fn(),

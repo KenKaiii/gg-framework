@@ -4,6 +4,7 @@ import {
   renderAgentRoster,
   resolveAgentDefinition,
   selectSubAgent,
+  spawnedTasks,
   subAgentCacheKey,
 } from "./subagent-shared.js";
 
@@ -16,6 +17,34 @@ function agent(overrides: Partial<AgentDefinition> & { name: string }): AgentDef
     ...overrides,
   };
 }
+
+describe("spawnedTasks", () => {
+  it.each([
+    [
+      "a batch call",
+      {
+        tasks: [
+          { task_name: "a", task: "one" },
+          { task_name: "b", task: "two", agent: "owl" },
+        ],
+      },
+      [
+        { task_name: "a", task: "one" },
+        { task_name: "b", task: "two", agent: "owl" },
+      ],
+    ],
+    [
+      "a call saved before batch launch",
+      { task_name: "scan", task: "inspect", agent: "owl" },
+      [{ task_name: "scan", task: "inspect", agent: "owl" }],
+    ],
+    ["malformed args", null, [{}]],
+    ["an empty task list", { tasks: [] }, [{}]],
+    ["non-string fields", { tasks: [{ task_name: 7, task: "x" }, "junk"] }, [{ task: "x" }]],
+  ])("reads %s", (_label, args, expected) => {
+    expect(spawnedTasks(args)).toEqual(expected);
+  });
+});
 
 describe("selectSubAgent", () => {
   it("keeps shell-capable agents on the parent model", () => {

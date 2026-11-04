@@ -41,6 +41,13 @@ export interface SubAgentSnapshot {
   tool_use_count: number;
   token_usage: SubAgentTokenUsage;
   output?: string;
+  /**
+   * Engine-built receipt of the last turn's tool calls plus any paths the
+   * report names that the child never opened. Kept apart from `output` so
+   * wait()'s head truncation can never cut it and output parsers (the ideal
+   * reviewer) see the child's prose unchanged.
+   */
+  receipt?: string;
   error?: string;
   agent_name?: string;
   provider?: string;
@@ -93,7 +100,8 @@ interface WorkerRecord extends SubAgentSnapshot {
   turnResolvers: Set<() => void>;
 }
 
-const ACTIVE_LIMIT = 8;
+/** Children that may be starting or running at once. */
+export const ACTIVE_LIMIT = 8;
 const RETAINED_WORKER_LIMIT = 8;
 const SNAPSHOT_LIMIT = 20;
 /**
@@ -276,6 +284,7 @@ export class SubAgentManager {
       ...snapshot,
       state: record.status === "completed" ? "completed" : record.status,
       output: record.output,
+      receipt: record.receipt,
       error:
         record.status === "completed"
           ? undefined
@@ -476,6 +485,7 @@ export class SubAgentManager {
     clearTimeout(worker.idleTimer);
     worker.taskOutput = "";
     worker.output = undefined;
+    worker.receipt = undefined;
     worker.error = undefined;
     worker.collected = false;
     await this.request(worker, "followup", { task });
@@ -676,6 +686,7 @@ export class SubAgentManager {
       updated_at: Date.now(),
       current_activity: undefined,
       output: undefined,
+      receipt: undefined,
       error: undefined,
       collected: false,
       recovered: false,
@@ -816,6 +827,7 @@ export class SubAgentManager {
             ? "interrupted"
             : "failed";
       worker.output = boundSubAgentOutput(String(frame.output ?? worker.taskOutput));
+      worker.receipt = typeof frame.receipt === "string" ? frame.receipt : undefined;
       worker.error = frame.error ? String(frame.error) : undefined;
       if (typeof frame.model === "string") worker.model = frame.model;
       worker.current_activity = undefined;
@@ -895,6 +907,7 @@ export class SubAgentManager {
       tool_use_count: worker.tool_use_count,
       token_usage: { ...worker.token_usage },
       output: worker.output,
+      receipt: worker.receipt,
       error: worker.error,
       agent_name: worker.agent_name,
       provider: worker.provider,

@@ -262,6 +262,39 @@ describe("AgentSession compaction persistence", () => {
   }, 15_000);
 });
 
+/** A 150k-char read superseded by a later read of the same file. */
+function supersededReadHistory(): Message[] {
+  return [
+    {
+      role: "assistant",
+      content: [
+        { type: "tool_call", id: "old-read", name: "read", args: { file_path: "src/a.ts" } },
+      ],
+    },
+    {
+      role: "tool",
+      content: [{ type: "tool_result", toolCallId: "old-read", content: "x".repeat(150_000) }],
+    },
+    { role: "user", content: "turn 2" },
+    {
+      role: "assistant",
+      content: [
+        { type: "tool_call", id: "new-read", name: "read", args: { file_path: "src/a.ts" } },
+      ],
+    },
+    { role: "tool", content: [{ type: "tool_result", toolCallId: "new-read", content: "fresh" }] },
+    {
+      role: "assistant",
+      content: [{ type: "tool_call", id: "latest", name: "grep", args: { pattern: "x" } }],
+    },
+    {
+      role: "tool",
+      content: [{ type: "tool_result", toolCallId: "latest", content: "latest evidence" }],
+    },
+    { role: "user", content: "turn 3" },
+  ];
+}
+
 describe("AgentSession stale tool-output pruning", () => {
   it("stubs superseded reads in-place during the pre-step transform", async () => {
     shouldCompactMock.mockReturnValue(false);
@@ -305,7 +338,11 @@ describe("AgentSession stale tool-output pruning", () => {
         },
         { role: "user", content: "turn 3" },
       );
-      capturedMessages = await options.transformContext!(messages, { pendingMessages: [] });
+      // Big enough context for pruning to pay for the cache rewrite.
+      capturedMessages = await options.transformContext!(messages, {
+        usage: { inputTokens: 180_000, outputTokens: 500 },
+        pendingMessages: [],
+      });
       yield { type: "agent_done" };
     });
 
@@ -329,6 +366,45 @@ describe("AgentSession stale tool-output pruning", () => {
     expect(oldRead?.content).toContain("superseded by a newer read");
     expect(newRead?.content).toBe("fresh");
     expect(compactMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves tool output alone while the context is far below the compaction limit", async () => {
+    // Live goal at 117k of a 1M window: each prune freed ~20k tokens but
+    // re-sent 70–100k uncached, so a small context must not be pruned.
+    shouldCompactMock.mockReturnValue(false);
+    let capturedMessages: Message[] = [];
+
+    agentLoopMock.mockImplementation(async function* (
+      messages: Message[],
+      options: {
+        transformContext?: (m: Message[], o: TransformContextOptions) => Promise<Message[]>;
+      },
+    ) {
+      messages.push(...supersededReadHistory());
+      capturedMessages = await options.transformContext!(messages, {
+        usage: { inputTokens: 1_000, outputTokens: 100 },
+        pendingMessages: [],
+      });
+      yield { type: "agent_done" };
+    });
+
+    const { AgentSession } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      systemPrompt: "system prompt",
+      transient: true,
+    });
+    await session.initialize();
+    await session.prompt("small context");
+    await session.dispose();
+
+    const oldRead = capturedMessages
+      .filter((msg) => msg.role === "tool")
+      .flatMap((msg) => (Array.isArray(msg.content) ? msg.content : []))
+      .find((r) => r.type === "tool_result" && r.toolCallId === "old-read");
+    expect(oldRead?.content).toBe("x".repeat(150_000));
   });
 
   it("takes the freed tokens off the provider's count after a prune, never re-estimating the history", async () => {

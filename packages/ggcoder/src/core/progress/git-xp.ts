@@ -1,8 +1,8 @@
 // Detect and score new commits made during an agent run. All failures are silent —
 // progress must never break a run.
 
-import { execFile, type ExecFileOptions } from "node:child_process";
 import crypto from "node:crypto";
+import { runBackgroundGit } from "../../utils/git.js";
 import type { ScoredCommit } from "./types.js";
 
 const GIT_TIMEOUT_MS = 5_000;
@@ -10,18 +10,14 @@ const MAX_COMMITS_PER_DETECT = 50;
 /** Commits authored earlier than runStart - 5min are treated as imports (pull), not work. */
 const AUTHOR_WINDOW_SLACK_MS = 5 * 60 * 1000;
 
-function git(cwd: string, args: string[], input?: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const opts: ExecFileOptions = { cwd, timeout: GIT_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 };
-    const child = execFile("git", args, opts, (err, stdout) => {
-      if (err) reject(err);
-      else resolve(String(stdout));
-    });
-    if (input !== undefined && child.stdin) {
-      child.stdin.write(input);
-      child.stdin.end();
-    }
+async function git(cwd: string, args: string[], input?: string): Promise<string> {
+  const { stdout } = await runBackgroundGit(args, {
+    cwd,
+    timeoutMs: GIT_TIMEOUT_MS,
+    maxBuffer: 10 * 1024 * 1024,
+    input,
   });
+  return stdout;
 }
 
 /** Stable key for a repo root, used in ProgressFile.repos. */

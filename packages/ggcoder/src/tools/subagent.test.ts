@@ -111,7 +111,9 @@ describe("createSubAgentTool fast-model fallback", () => {
       )
       .mockImplementationOnce(() => mockExit("", 0, "fallback succeeded"));
 
-    await expect(runOwl()).resolves.toMatchObject({ content: "fallback succeeded" });
+    await expect(runOwl()).resolves.toMatchObject({
+      content: "fallback succeeded\n\nReceipt (0 calls): no tool calls",
+    });
     expect(spawnedModels()).toEqual(["gpt-6-luna", "gpt-6.1-sol"]);
     expect(spawnedCacheKeys()).toEqual([
       "parent-cache:subagent:gpt-6-luna:owl",
@@ -130,7 +132,7 @@ describe("createSubAgentTool fast-model fallback", () => {
     );
 
     await expect(runOwl()).resolves.toMatchObject({
-      content: "done",
+      content: "done\n\nReceipt (0 calls): no tool calls",
       details: {
         tokenUsage: { input: 10, output: 3, cacheRead: 20, cacheWrite: 5 },
       },
@@ -162,7 +164,8 @@ describe("createSubAgentTool fast-model fallback", () => {
     await expect(runOwl()).resolves.toMatchObject({
       content:
         "Sub-agent failed (exit 1): Rate limited by Anthropic. Wait a moment and try again.\n\n" +
-        "Partial output before failure:\nI'll read both files now.",
+        "Partial output before failure:\nI'll read both files now.\n\n" +
+        "Receipt (0 calls): no tool calls",
     });
     expect(spawnedModels()).toEqual(["gpt-6-luna"]);
   });
@@ -232,6 +235,60 @@ describe("createSubAgentTool fast-model fallback", () => {
       if (previousDepth === undefined) delete process.env[SUB_AGENT_DEPTH_ENV];
       else process.env[SUB_AGENT_DEPTH_ENV] = previousDepth;
     }
+  });
+});
+
+describe("createSubAgentTool receipt", () => {
+  function mockRun(lines: Array<Record<string, unknown>>, code = 0): MockChildProcess {
+    const child = new MockChildProcess();
+    setImmediate(() => {
+      for (const line of lines) child.stdout.write(`${JSON.stringify(line)}\n`);
+      child.stdout.end();
+      child.stderr.end();
+      child.emit("close", code);
+    });
+    return child;
+  }
+  const call = (
+    id: string,
+    name: string,
+    args: Record<string, unknown>,
+    result: string,
+    isError = false,
+  ) => [
+    { type: "tool_call_start", toolCallId: id, name, args },
+    { type: "tool_call_end", toolCallId: id, result, isError, durationMs: 1 },
+  ];
+
+  it("appends an engine-built receipt and flags paths the child never opened", async () => {
+    spawnMock.mockImplementationOnce(() =>
+      mockRun([
+        ...call("1", "read", { file_path: "src/a.ts" }, "x"),
+        ...call("2", "read", { file_path: "src/a.ts" }, "x"),
+        ...call("3", "bash", { command: "npm test" }, "Exit code: 0\nok"),
+        ...call("4", "edit", { file_path: "src/b.ts" }, "ok"),
+        {
+          type: "text_delta",
+          text: "Fixed src/b.ts:3 after reading src/a.ts; src/ghost.ts is fine.",
+        },
+      ]),
+    );
+    const result = (await runOwl()) as { content: string };
+    expect(result.content).toBe(
+      "Fixed src/b.ts:3 after reading src/a.ts; src/ghost.ts is fine.\n\n" +
+        "Receipt (4 calls): bash `npm test` → exit 0 · edit src/b.ts ✓ · read src/a.ts ×2\n" +
+        "Not opened by this helper: src/ghost.ts",
+    );
+  });
+
+  it("carries the receipt on a failed child that made tool calls", async () => {
+    spawnMock.mockImplementationOnce(() =>
+      mockRun([...call("1", "write", { file_path: "out.ts" }, "denied", true)], 1),
+    );
+    const result = (await runOwl()) as { content: string };
+    expect(result.content).toBe(
+      "Sub-agent failed (exit 1): unknown error\n\nReceipt (1 call): write out.ts ✗",
+    );
   });
 });
 

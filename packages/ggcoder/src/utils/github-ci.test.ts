@@ -5,6 +5,10 @@ vi.mock("node:child_process", () => ({
   execFile: Object.assign(vi.fn(), { [Symbol.for("nodejs.util.promisify.custom")]: exec }),
 }));
 vi.mock("./github.js", () => ({ getGitHubRepoSlug: repo }));
+// Background git goes through the hardened runner; route it to the same mock.
+vi.mock("./git.js", () => ({
+  runBackgroundGit: (args: string[], options: unknown) => exec("git", args, options),
+}));
 import { getGitHubCI, startGitHubCIPoll } from "./github-ci.js";
 
 const sha = "a".repeat(40);

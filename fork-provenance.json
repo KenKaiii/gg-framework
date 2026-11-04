@@ -141,8 +141,9 @@
       "upstreamTipDesktopVersion": "0.99.1",
       "reviewedCommits": 265,
       "importedAt": "2026-11-02",
-      "status": "open",
+      "status": "merged",
       "pullRequest": "https://github.com/fmckie/gg-framework/pull/74",
+      "mergeCommit": "c2a1ea881d6b9d15f2ffa0bc5f1e49d9f435b330",
       "rule": "upstream.lastImportedCommit stays 3f2bb6bc because the fork does not contain everything up to any later upstream commit; a later full sync must treat these commits as already applied",
       "picked": [],
       "ported": [
@@ -150,6 +151,33 @@
         {"upstream": "4f763ed27d80097f2867e55d67f17d61236ae2d9", "downstream": "f42b09e1dee338d504e86d602332744714ab7dee", "scope": "module layout only, the fork's own code (@kleio/coder src/app-sidecar.ts into src/app-sidecar/, without keep-awake.ts); What's New, package/CI hygiene, checklist, codex/stream and model hunks not taken"},
         {"upstream": "4f763ed27d80097f2867e55d67f17d61236ae2d9", "downstream": "14a78f71bb1e3269185129f8c6593465f78154c3", "scope": "module layout only, the fork's own code (@kleio/coder src/core/agent-session.ts into src/core/agent-session/, without McpToolRegistry.promote()); What's New, package/CI hygiene, checklist, codex/stream and model hunks not taken"},
         {"upstream": "4f763ed27d80097f2867e55d67f17d61236ae2d9", "downstream": "2a23a7b1399453e676f2dcd9d20862589992b479", "scope": "module layout only, the fork's own code (gg-app/src/App.tsx into 15 component, hook and transcript-item files, without useChecklist); What's New, package/CI hygiene, checklist, codex/stream and model hunks not taken"}
+      ],
+      "skipped": []
+    },
+    {
+      "branch": "sync/upstream-engine-fixes",
+      "baseCommit": "c2a1ea881d6b9d15f2ffa0bc5f1e49d9f435b330",
+      "upstreamTip": "7d74ada78e31873b4e1586bf9c5f7b69d1146c98",
+      "upstreamTipVersion": "5.89.0",
+      "upstreamTipDesktopVersion": "0.100.1",
+      "reviewedCommits": 270,
+      "importedAt": "2026-11-03",
+      "status": "open",
+      "pullRequest": "https://github.com/fmckie/gg-framework/pull/75",
+      "rule": "upstream.lastImportedCommit stays 3f2bb6bc because the fork does not contain everything up to any later upstream commit; a later full sync must treat these commits as already applied",
+      "picked": [
+        {"upstream": "c38df90ee1a352f9a8b9092e4b5e1868c7ba67cc", "downstream": "672a058a789bac2f06feaf06029dd3416f677b0d"},
+        {"upstream": "0d966f84508ff43e9e76c3ce6fa9046c76927208", "downstream": "ce0a104f9039ce4b7d580273e0a2c5ef44c33259"},
+        {"upstream": "b8627c2d0eec7f732605e039f442394d3b914790", "downstream": "bec28b3f0256d450c456635743a654996cb741fb"}
+      ],
+      "ported": [
+        {"upstream": "b5833186dedf610dd2d6ccb53165904ea5a12de7", "downstream": "fea440c44cfbfc10c1d21b8f156bdcf5b574da41", "scope": "engine half (verification tracker); the critter floor, presence list and other gg-app files not taken"},
+        {"upstream": "f6b906c489c66624bde687dfc88643633a0deab5", "downstream": "0ae3e15b40230f6a06b161e414fbc703dbe3120d", "scope": "destructive-git guard only, wired into bash and task_send; keep-awake, stream rules, ask_user deadlines, shell and package threat guards, plan-step compaction, prewarm(), patches and workspace pins left for a later import"},
+        {"upstream": "3ec4e666adf4d2fe6d303267f9dbb85a1a08be5f", "downstream": "f6c2718c37afdc89973b9075f179505bec36e6c7", "scope": "engine half at the post-split paths; cache expiry waits for d83252b9 and f6b906c4's prewarm(); the truncation-note bench, the HookNotice.tsx test hunk and every gg-app, icon and installer file not taken"},
+        {"upstream": "95a8d41b18dc1c03a01c84d7a78c46525f25e921", "downstream": "02f58d4a311a504ff702953f95f150b309b7199b", "scope": "opener reaping (the iPhone keeps the opener plugin), gg-app links through open_url, edit split-argument recovery; repo-poll sharing, window motion, the Anthropic thinking change, critter and CSS files not taken"},
+        {"upstream": "6325d417565fae2ff004a641ff39dea3ed4805d2", "downstream": "e4d406591eac1803c96493984dd622dd743b3142", "scope": "engine part; the cache-diagnostics noteEdit lines wait for d83252b9 and the goal-worker part for Goals (46e534bc)"},
+        {"upstream": "420b1ad3a0e6a2e3eb97cc159458080750e92682", "downstream": "66bddfb06d9ca07822d23815dd82ba43d869ec2c", "scope": "refused-check re-runs and the reply rules, adapted into the fork's How to Talk section; renderWorkSection, Precedence and style-pack wording wait for 987257de, the bash.ts hunks for fad77086; the env-proxy half came earlier as bcec266c"},
+        {"upstream": "705af9035f11d9c5c925cf64cb8a90071b035d98", "downstream": "e19afa38f012e030323f939a61bc69c94f013dfa", "scope": "hedged first event only (hedged-stream.ts, agent-loop wiring, countMessageChars); bash.ts wording and the Precedence line wait for 987257de; Royale, every gg-app file, the skills refresh and GG-ROYALE-PRIVACY.md not taken"}
       ],
       "skipped": []
     }

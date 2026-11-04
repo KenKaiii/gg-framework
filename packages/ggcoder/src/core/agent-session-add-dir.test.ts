@@ -87,6 +87,22 @@ describe("AgentSession.addDirectory", () => {
     }
   }, 20_000);
 
+  it("keeps the cached system prompt byte-identical once a conversation exists", async () => {
+    // A goal attaching a folder mid-run rebuilt the prompt and re-sent ~75k
+    // uncached tokens; the env-delta note tells the model instead.
+    const session = await createSession();
+    try {
+      session.getMessages().push({ role: "user", content: "earlier turn" });
+      const before = session.getMessages()[0]?.content;
+      expect(await session.addDirectory(sibling)).toMatchObject({ ok: true });
+      expect(session.getMessages()[0]?.content).toBe(before);
+      expect(await session.removeDirectory(sibling)).toMatchObject({ ok: true });
+      expect(session.getMessages()[0]?.content).toBe(before);
+    } finally {
+      await session.dispose();
+    }
+  }, 20_000);
+
   it("removes an added root and rejects roots that were never added", async () => {
     const session = await createSession();
     try {

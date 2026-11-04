@@ -335,6 +335,32 @@ describe.skipIf(process.platform === "win32")("createBashTool on a real POSIX sh
     expect(out).not.toContain("run_in_background");
   });
 
+  describe("persist:true session shell survives timeouts and crashes", () => {
+    it("keeps cwd/env across a timeout, and restores them with a note after `exit`", async () => {
+      const dir = await fs.realpath(await fs.mkdtemp(path.join(tmpHome, "work ")));
+      const tool = createBashTool(tmpHome, new ProcessManager());
+      const run = async (command: string, timeout?: number) =>
+        String(await tool.execute({ command, persist: true, timeout }, ctx("persist")));
+
+      await run(`cd ${JSON.stringify(dir)} && export GG_X=1`);
+      const timedOut = await run("echo hit >> count; sleep 30", 1_000);
+      expect(timedOut).toContain(
+        "TIMEOUT (1000ms) — the command was stopped; the session shell kept its cwd/env",
+      );
+      expect(await run('pwd -P; echo "X=$GG_X"')).toContain(`${dir}\nX=1`);
+
+      const crashed = await run("exit 3");
+      expect(crashed).toContain("Exit code: 3");
+      expect(crashed).toContain(
+        `[Shell exited with code 3, so it was restarted; restored working directory ${dir} and exported environment variables.`,
+      );
+      const after = await run('pwd -P; echo "X=$GG_X"');
+      expect(after).toContain(`${dir}\nX=1`);
+      expect(after).not.toContain("[Shell");
+      expect(await fs.readFile(path.join(dir, "count"), "utf-8")).toBe("hit\n");
+    }, 20_000);
+  });
+
   // Stop can land while the command is still being prepared (sandbox setup is
   // async). A listener added to an already-aborted signal never fires, so
   // without a check the command would start and run to the end.

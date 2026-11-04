@@ -10,6 +10,7 @@ import {
   resolveRestoredCommand,
   restoreAssistantTexts,
 } from "../core/session-history.js";
+import { spawnedTasks } from "../tools/subagent-shared.js";
 import { detectHookKind, type HistoryEntryForWire } from "./history.js";
 import type { ToolResultContent } from "@kleio/ai";
 import type { KenTurnPayload, AppMarkerPayload } from "../core/session-manager.js";
@@ -349,19 +350,25 @@ export function handleHistoryRoutes(
               } => c.type === "tool_call" && (c.name === "subagent" || c.name === "spawn_agent"),
             );
             if (subagentCalls.length > 0) {
-              const agents = subagentCalls.map((c) => {
+              const agents = subagentCalls.flatMap((c) => {
                 const result = toolResultMap.get(c.id);
-                return {
-                  agentName:
-                    c.name === "spawn_agent" && typeof c.args?.task_name === "string"
-                      ? c.args.task_name
-                      : typeof c.args?.agent === "string"
-                        ? c.args.agent
-                        : undefined,
-                  // Async workers are intentionally non-resumable; restored rows are historical.
-                  status: result?.isError ? ("error" as const) : ("done" as const),
-                  toolUseCount: 0,
-                };
+                // Async workers are intentionally non-resumable; restored rows are historical.
+                const status = result?.isError ? ("error" as const) : ("done" as const);
+                if (c.name === "spawn_agent") {
+                  // One row per child: a batch call starts several.
+                  return spawnedTasks(c.args).map((spawn) => ({
+                    agentName: spawn.task_name ?? spawn.agent,
+                    status,
+                    toolUseCount: 0,
+                  }));
+                }
+                return [
+                  {
+                    agentName: typeof c.args?.agent === "string" ? c.args.agent : undefined,
+                    status,
+                    toolUseCount: 0,
+                  },
+                ];
               });
               history.push({
                 role: "assistant",

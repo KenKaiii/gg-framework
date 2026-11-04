@@ -221,8 +221,8 @@ describe("buildSystemPrompt", () => {
   });
 
   it.each([
-    [[], "053a56f7fb6ac65dd616a03535395d0bd9d17fc8ac079e9770a42eeb4caeafd5"],
-    [["ask_user"], "0614207ce6921c12ad1ad0a6e4ffaf9d9a280420856e2cacd018c20df3c46f20"],
+    [[], "03a34909cdcf7876b853abe396cd556472c04b98a8eaa3ead8fda81682680181"],
+    [["ask_user"], "9d60af8b217e1f1c41de2b495f7a1148e9926eb4fc8dab0507255e1a5dc742e2"],
   ] as const)(
     "preserves the message-aware takeaway policy with tools %j",
     async (toolNames, hash) => {
@@ -242,8 +242,14 @@ describe("buildSystemPrompt", () => {
         "short paragraphs, one idea each, separated by whitespace",
         "Use bullets for separate facts and numbered steps for ordered actions",
         "Bold sparingly",
-        "Match length to complexity",
-        "Distinguish implemented, tested, committed, and released when relevant",
+        // The limit covers the summary after code changes, where Haiku 5.5
+        // wrote ~170-word reports; answers, reviews and explanations are the
+        // deliverable and keep their length.
+        "After changing code, keep the reply under ~100 words",
+        'the check result ("Tests pass (7/7)") and any caveat or change you made beyond the request',
+        "Answers and reviews take the length they need",
+        "no sub-headings, examples or lists of checks you ran unless asked",
+        "Mention commits only if you made one or were asked",
         "Put limitations that affect the answer beside the takeaway",
         "Match certainty to evidence",
         "State the next step when user action is required",
@@ -267,6 +273,9 @@ describe("buildSystemPrompt", () => {
         "only when the user must act on it",
         "Cut what they can't act on",
         "absurd interjection",
+        // Shape-only rules with no length: Haiku 5.5 wrote ~170-word reports.
+        "Match length to complexity",
+        "Distinguish implemented, tested, committed, and released when relevant",
       ]) {
         expect(talk).not.toContain(obsolete);
       }
@@ -318,9 +327,12 @@ describe("buildSystemPrompt", () => {
     expect(prompt.match(/^\s*`?> /gm) ?? []).toHaveLength(0);
     expect(prompt.match(/`> \*\*/g) ?? []).toHaveLength(1);
 
-    // Response length follows the question, including the fallback ask. A
-    // dangling budget reference would silently restore the rigid reply shape.
-    expect(talk).toContain("Match length to complexity");
+    // One explicit length limit, for post-change replies only (upstream's
+    // haiku-brief arena: −14.6% wall, −15.5% cost at an unchanged pass rate).
+    // Answers keep the length they need, so no wider budget or exemption may
+    // creep back in.
+    expect(talk.match(/~100 words/g) ?? []).toHaveLength(1);
+    expect(talk).not.toContain("Match length to complexity");
     expect(talk).toContain("each with your pick.");
     expect(talk).not.toContain("budget");
     expect(talk).not.toContain("exempt");
@@ -330,7 +342,8 @@ describe("buildSystemPrompt", () => {
 
     // Mid-turn speech and the cut rule must agree: a bare "finding" cannot both
     // trigger a message and be cut for not changing the next move.
-    expect(talk).toContain("speak only when the plan changes");
+    expect(talk).toContain("speak only when the plan changes, in one sentence");
+    expect(talk).toContain("don't preview what the final reply will say");
     expect(talk).not.toContain("unless you hit a decision, tradeoff, finding");
   });
 
@@ -397,7 +410,7 @@ describe("buildSystemPrompt", () => {
       "never ask permission, merely suggest it, or leave it for the user",
       "ONE action that unblocks you",
       "**Describe progress precisely.**",
-      "keeping only what helps the user understand or act",
+      "After changing code, keep the reply under ~100 words",
       // Explanations can name code even when no user action is required.
       "**Plain words by default.**",
       "Explain necessary technical terms briefly",

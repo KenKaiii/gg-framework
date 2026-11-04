@@ -46,6 +46,12 @@ export interface AgentTool<T extends z.ZodType = z.ZodType> extends Tool {
    * message — becomes unreachable.
    */
   timeoutMs?: number;
+  /**
+   * Whether a mid-run steering message may preempt this tool. Defaults to
+   * true, except for atomic file mutators (`edit`, `write`, …) which always
+   * run to completion so they are never left half-applied.
+   */
+  interruptible?: boolean;
   execute: (
     args: z.infer<T>,
     context: ToolContext,
@@ -347,6 +353,14 @@ export interface AgentOptions {
    *  against parallel fan-outs injecting huge uncached context in one turn;
    *  the largest results are trimmed (water-filling) with a re-run notice. */
   maxTurnToolResultChars?: number;
+  /** Optional post-processing of a SUCCESSFUL tool result (after redaction,
+   *  before the tool_call_end event and the provider context). Return the
+   *  content unchanged to leave it alone. A throw is ignored (original kept).
+   *  Used e.g. to append a warning to untrusted-content results. */
+  transformToolResult?: (
+    call: { name: string; args: Record<string, unknown> },
+    content: ToolResultContent,
+  ) => ToolResultContent;
   /** Max consecutive pause_turn continuations before stopping (default: 5).
    *  Prevents infinite loops when server-side tools keep pausing. */
   maxContinuations?: number;
@@ -371,6 +385,15 @@ export interface AgentOptions {
    * on read.
    */
   getSteeringMessages?: () => Promise<Message[] | null> | Message[] | null;
+  /**
+   * Instant interrupt (codex `instant_interrupt`): subscribe to "a steering
+   * message just arrived". While tools are running, the listener preempts
+   * interruptible tools (their AbortSignal fires; unfinished calls get an
+   * "Interrupted" error result) and the loop drains steering and continues.
+   * Distinct from `signal` (the Stop button), which ends the run. Returns an
+   * unsubscribe function.
+   */
+  onSteeringAvailable?: (listener: () => void) => () => void;
   /**
    * Polled when the agent would otherwise stop (no tool calls, no steering).
    * Returns messages to inject and continue the loop. Lower priority than

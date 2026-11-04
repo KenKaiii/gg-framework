@@ -2,8 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useEffect } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { authStatusWithError } from "../agent";
+import { authStatusWithError, openUrl } from "../agent";
 import { useHostReach, useHostReachWords } from "./hostReach";
 import {
   KleioApiError,
@@ -19,13 +18,15 @@ import { SetupPage } from "./SetupPage";
 import { useKleioRemote } from "./useKleioRemote";
 import { VoiceCard } from "./VoiceCard";
 
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => undefined) }));
 vi.mock("./VoiceCard", () => ({ VoiceCard: vi.fn() }));
 // Covered by its own tests; here it only has to be in the right place.
 vi.mock("./BrainCard", () => ({ BrainCard: vi.fn() }));
 vi.mock("./hostReach", () => ({ useHostReach: vi.fn(), useHostReachWords: vi.fn() }));
 vi.mock("./useKleioRemote", () => ({ useKleioRemote: vi.fn() }));
-vi.mock("../agent", () => ({ authStatusWithError: vi.fn() }));
+vi.mock("../agent", () => ({
+  authStatusWithError: vi.fn(),
+  openUrl: vi.fn(async () => undefined),
+}));
 vi.mock("./kleioApi", async (importOriginal) => {
   const actual = await importOriginal<typeof KleioApi>();
   return {
