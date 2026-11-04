@@ -420,8 +420,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     ...(outputConfig
       ? { output_config: outputConfig as unknown as Anthropic.MessageCreateParams["output_config"] }
       : {}),
-    ...(options.temperature != null && !thinking ? { temperature: options.temperature } : {}),
-    ...(options.topP != null ? { top_p: options.topP } : {}),
+    // API version 2026-10-21 (SDK 1.x) rejects temperature/top_p/top_k with a 400.
     ...(options.stop ? { stop_sequences: options.stop } : {}),
     ...((deferredPlan?.live ?? options.tools)?.length ||
     options.serverTools?.length ||

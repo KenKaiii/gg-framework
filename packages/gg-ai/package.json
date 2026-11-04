@@ -31,9 +31,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.124.0",
+    "@anthropic-ai/sdk": "^1.4.0",
     "@bokuweb/zstd-wasm": "^0.0.27",
-    "openai": "^7.13.0",
+    "openai": "^7.50.0",
     "undici": "7.25.0",
     "zod": "^4.4.3"
   },

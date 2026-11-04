@@ -205,6 +205,36 @@ describe("streamAnthropic request shaping", () => {
     ]);
   });
 
+  it("never sends sampling params, which API version 2026-10-21 rejects", async () => {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const AnthropicMock = Anthropic as unknown as {
+      nextError: Error | null;
+      nextEvents: unknown[] | null;
+    };
+    AnthropicMock.nextError = null;
+    AnthropicMock.nextEvents = [
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } },
+      { type: "message_stop" },
+    ];
+
+    const result = streamAnthropic({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "sk-ant-test",
+      temperature: 0.2,
+      topP: 0.9,
+    });
+    for await (const _event of result) {
+      /* consume */
+    }
+
+    const params = createMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(params).not.toHaveProperty("temperature");
+    expect(params).not.toHaveProperty("top_p");
+    expect(params).not.toHaveProperty("top_k");
+  });
+
   it("merges providerOptions into the request without overriding core fields", async () => {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     const AnthropicMock = Anthropic as unknown as {
