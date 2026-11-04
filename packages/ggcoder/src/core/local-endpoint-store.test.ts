@@ -107,6 +107,43 @@ describe("custom endpoints", () => {
     });
   });
 
+  it("pins a context length, keeps it on a re-add, and clears it on null", async () => {
+    await addCustomEndpoint({ baseUrl: "http://localhost:9999", contextLength: 262144 }, opts);
+    await addCustomEndpoint({ baseUrl: "http://localhost:7777" }, opts);
+    expect(await settings()).toMatchObject({
+      localEndpoints: [
+        { id: "custom-localhost-9999", contextLength: 262144 },
+        { id: "custom-localhost-7777" },
+      ],
+    });
+
+    await addCustomEndpoint({ baseUrl: "http://localhost:9999", apiKey: "fixed" }, opts);
+    let stored = await listCustomEndpoints(opts);
+    expect(stored[0]).toMatchObject({ apiKey: "fixed", contextLength: 262144 });
+    expect(stored[1]).not.toHaveProperty("contextLength");
+
+    await removeCustomEndpoint("custom-localhost-7777", opts);
+    expect((await listCustomEndpoints(opts))[0]).toMatchObject({ contextLength: 262144 });
+
+    await addCustomEndpoint({ baseUrl: "http://localhost:9999", contextLength: null }, opts);
+    stored = await listCustomEndpoints(opts);
+    expect(stored[0]).not.toHaveProperty("contextLength");
+  });
+
+  it("rejects a context length that isn't a sane token count", async () => {
+    for (const contextLength of [-1, 0, 100, 1.5, 1e12, Number.NaN]) {
+      await expect(
+        addCustomEndpoint({ baseUrl: "http://localhost:9999", contextLength }, opts),
+      ).rejects.toThrow(LocalEndpointError);
+    }
+    await expect(
+      addCustomEndpoint(
+        { baseUrl: "http://localhost:9999", contextLength: "big" as unknown as number },
+        opts,
+      ),
+    ).rejects.toThrow(/whole number of tokens/);
+  });
+
   it("refuses a URL already covered by a built-in endpoint", async () => {
     await expect(addCustomEndpoint({ baseUrl: "http://127.0.0.1:11434/v1" }, opts)).rejects.toThrow(
       /already probed automatically as Ollama/,

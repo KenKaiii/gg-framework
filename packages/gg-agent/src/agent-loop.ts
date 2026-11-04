@@ -1113,6 +1113,7 @@ export async function* agentLoop(
               maxTokens: clampOutputTokens(ceilingKey, options.maxTokens),
               temperature: options.temperature,
               thinking: options.thinking,
+              thinkingLevels: options.thinkingLevels,
               apiKey: liveApiKey,
               baseUrl: options.baseUrl,
               signal,

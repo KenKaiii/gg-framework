@@ -27,9 +27,35 @@ export interface LocalEndpointInput {
   label?: string;
   baseUrl: string;
   apiKey?: string;
+  /** Pinned context window. Omitted keeps the stored pin; `null` clears it. */
+  contextLength?: number | null;
 }
 
 export class LocalEndpointError extends Error {}
+
+export const MIN_PINNED_CONTEXT = 1024;
+export const MAX_PINNED_CONTEXT = 16_777_216;
+
+function validPin(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= MIN_PINNED_CONTEXT &&
+    value <= MAX_PINNED_CONTEXT
+  );
+}
+
+type StoredEndpoint = Pick<LocalEndpoint, "id" | "label" | "baseUrl" | "apiKey" | "contextLength">;
+
+function toStored({ id, label, baseUrl, apiKey, contextLength }: LocalEndpoint): StoredEndpoint {
+  return {
+    id,
+    label,
+    baseUrl,
+    ...(apiKey ? { apiKey } : {}),
+    ...(contextLength ? { contextLength } : {}),
+  };
+}
 
 /**
  * Where this store reads and writes. Both default to the real user's files;
@@ -130,7 +156,7 @@ function parseStored(value: unknown): LocalEndpoint[] {
   const endpoints: LocalEndpoint[] = [];
   for (const entry of value) {
     if (!entry || typeof entry !== "object") continue;
-    const { id, label, baseUrl, apiKey } = entry as Record<string, unknown>;
+    const { id, label, baseUrl, apiKey, contextLength } = entry as Record<string, unknown>;
     if (typeof id !== "string" || typeof baseUrl !== "string") continue;
     endpoints.push({
       id,
@@ -139,6 +165,7 @@ function parseStored(value: unknown): LocalEndpoint[] {
       kind: "custom",
       custom: true,
       ...(typeof apiKey === "string" && apiKey ? { apiKey } : {}),
+      ...(validPin(contextLength) ? { contextLength } : {}),
     });
   }
   return endpoints;
@@ -182,6 +209,20 @@ export async function addCustomEndpoint(
     throw new LocalEndpointError(`At most ${MAX_CUSTOM_ENDPOINTS} custom endpoints.`);
   }
 
+  if (
+    input.contextLength !== undefined &&
+    input.contextLength !== null &&
+    !validPin(input.contextLength)
+  ) {
+    throw new LocalEndpointError(
+      `Context length must be a whole number of tokens between ${MIN_PINNED_CONTEXT.toLocaleString("en-US")} and ${MAX_PINNED_CONTEXT.toLocaleString("en-US")}.`,
+    );
+  }
+  // Re-adding a host (to fix a key) keeps its pin unless the caller sets or clears it.
+  const pin =
+    input.contextLength === undefined
+      ? existing.find((e) => e.id === id)?.contextLength
+      : (input.contextLength ?? undefined);
   const endpoint: LocalEndpoint = {
     id,
     label: labelFor(baseUrl, input.label),
@@ -189,20 +230,13 @@ export async function addCustomEndpoint(
     kind: "custom",
     custom: true,
     ...(input.apiKey?.trim() ? { apiKey: input.apiKey.trim() } : {}),
+    ...(pin ? { contextLength: pin } : {}),
   };
   const next = existing.some((e) => e.id === id)
     ? existing.map((e) => (e.id === id ? endpoint : e))
     : [...existing, endpoint];
 
-  await writeLocalEndpoints(
-    next.map(({ id: eid, label, baseUrl: url, apiKey }) => ({
-      id: eid,
-      label,
-      baseUrl: url,
-      ...(apiKey ? { apiKey } : {}),
-    })),
-    options.settingsFile,
-  );
+  await writeLocalEndpoints(next.map(toStored), options.settingsFile);
   await auth.setLocalEndpoint(id, baseUrl, endpoint.apiKey);
   clearLocalDiscoveryCache();
   return endpoint;
@@ -226,14 +260,7 @@ export async function removeCustomEndpoint(
     throw new LocalEndpointError(`Unknown local endpoint "${id}".`);
   }
   await writeLocalEndpoints(
-    existing
-      .filter((e) => e.id !== id)
-      .map(({ id: eid, label, baseUrl, apiKey }) => ({
-        id: eid,
-        label,
-        baseUrl,
-        ...(apiKey ? { apiKey } : {}),
-      })),
+    existing.filter((e) => e.id !== id).map(toStored),
     options.settingsFile,
   );
   await auth.removeLocalEndpoint(id);

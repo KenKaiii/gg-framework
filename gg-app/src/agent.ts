@@ -1260,6 +1260,12 @@ export interface AuthProvider {
   methods: AuthMethod[];
   apiKeyLabel?: string;
   apiKeyBaseUrl?: string;
+  /** The key may point at a compatible gateway instead of the vendor endpoint. */
+  allowCustomBaseUrl?: boolean;
+  /** Endpoint used when no custom base URL is stored. */
+  defaultBaseUrl?: string;
+  /** Custom base URL stored with the connected key, if any. */
+  currentBaseUrl?: string;
   /** When set, the API-key flow must ask which variant before submitting. */
   apiKeyVariants?: ApiKeyVariant[];
   /** Live connection status from ~/.gg/auth.json. */
@@ -1321,8 +1327,38 @@ export async function hasModelSource(): Promise<boolean> {
  * user's sidecar may not have booted yet, and a sidecar round-trip would hang.
  * Throws with a user-facing message on error.
  */
-export async function authApiKey(provider: string, key: string, variant?: string): Promise<void> {
-  await invoke("app_auth_apikey", { provider, key, variant });
+export async function authApiKey(
+  provider: string,
+  key: string,
+  variant?: string,
+  baseUrl?: string,
+): Promise<void> {
+  await invoke("app_auth_apikey", { provider, key, variant, baseUrl: baseUrl || undefined });
+}
+
+/** Change a connected key's base URL (empty = provider default). Throws the validation message. */
+export async function authSetBaseUrl(provider: string, baseUrl: string): Promise<void> {
+  await invoke("app_auth_baseurl", { provider, baseUrl: baseUrl.trim() || undefined });
+}
+
+export interface OpenRouterCatalogStatus {
+  synced: boolean;
+  count: number;
+  syncedAt?: number;
+  baseUrl: string;
+  /** Sync only: rows dropped because they can't call tools. */
+  skipped?: number;
+}
+
+/**
+ * The OpenRouter model list: "status", "sync" (re-read the key's endpoint
+ * `/models`; replaces the built-in list) or "reset" (back to the built-in list).
+ */
+export async function openRouterCatalog(
+  action: "status" | "sync" | "reset",
+): Promise<OpenRouterCatalogStatus> {
+  await waitForReady();
+  return await invoke<OpenRouterCatalogStatus>("agent_openrouter_catalog", { action });
 }
 
 /**
@@ -2165,6 +2201,8 @@ export interface LocalEndpointRow {
   kind: "ollama" | "lmstudio" | "llamacpp" | "vllm" | "custom";
   /** User-added endpoints can be removed; built-in ones can't. */
   custom: boolean;
+  /** Context window the user pinned for this endpoint, when set. */
+  contextLength?: number;
   reachable: boolean;
   /** Why it's unreachable, e.g. "Not running at http://127.0.0.1:11434/v1". */
   reason?: string;
@@ -2209,12 +2247,14 @@ export async function addLocalEndpoint(
   baseUrl: string,
   label?: string,
   apiKey?: string,
+  contextLength?: number,
 ): Promise<LocalModelsState> {
   await waitForReady();
   const res = await invoke<LocalModelsState>("agent_local_endpoint_add", {
     baseUrl,
     label: label ?? null,
     apiKey: apiKey ?? null,
+    contextLength: contextLength ?? null,
   });
   return unwrapLocalState(res);
 }

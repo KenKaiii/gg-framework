@@ -47,7 +47,7 @@ export function handleIntegrationRoutes(
   if (method === "POST" && url === "/local/endpoints") {
     void readBody(req, res).then(async (raw) => {
       if (raw === null) return;
-      let body: { label?: string; baseUrl?: string; apiKey?: string };
+      let body: { label?: string; baseUrl?: string; apiKey?: string; contextLength?: unknown };
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
@@ -59,6 +59,10 @@ export function handleIntegrationRoutes(
           baseUrl: body.baseUrl ?? "",
           ...(body.label ? { label: body.label } : {}),
           ...(body.apiKey ? { apiKey: body.apiKey } : {}),
+          // A wrong type reaches the store's validation and comes back as a 400.
+          ...(body.contextLength === undefined
+            ? {}
+            : { contextLength: body.contextLength as number | null }),
         });
         await ctx.scanLocalModels(true);
         ctx.broadcast("models_change", { local: ctx.localStatePayload() });

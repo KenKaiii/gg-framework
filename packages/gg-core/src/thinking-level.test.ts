@@ -286,6 +286,27 @@ describe("local models", () => {
     expect(isThinkingLevelSupported("local", "local/ollama/qwen3", "xhigh")).toBe(false);
   });
 
+  it("offers exactly the ladder a synced gateway model declared", () => {
+    registerRuntimeModels([
+      {
+        ...base,
+        id: "openrouter/deepseek-flash",
+        name: "deepseek-flash",
+        provider: "openrouter",
+        supportsThinking: true,
+        maxThinkingLevel: "max",
+        thinkingLevels: ["low", "high", "xhigh", "max"],
+      },
+    ]);
+
+    expect(getSupportedThinkingLevels("openrouter", "openrouter/deepseek-flash")).toEqual([
+      "low",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+  });
+
   it("offers nothing for an unknown local id (never discovered)", () => {
     expect(getSupportedThinkingLevels("local", "local/ollama/ghost")).toEqual([]);
   });

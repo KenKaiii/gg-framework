@@ -55,6 +55,31 @@ pub(crate) async fn agent_local_scan(
     sidecar_json(res).await
 }
 
+/// Proxy: OpenRouter catalog. `action` is "status" (GET), "sync" (re-read the
+/// key's endpoint `/models`) or "reset" (back to the built-in list).
+#[tauri::command]
+pub(crate) async fn agent_openrouter_catalog(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+    action: String,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = session_for(&webview).ok_or("session not ready")?;
+    let base = sidecar_base(port);
+    let req = match action.as_str() {
+        "status" => client.get(format!("{base}/providers/openrouter/catalog")),
+        "sync" => client.post(format!("{base}/providers/openrouter/sync")),
+        "reset" => client.delete(format!("{base}/providers/openrouter/catalog")),
+        _ => return Err("unknown catalog action".to_string()),
+    };
+    let res = req
+        .header("x-gg-session", &gg_sid)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    sidecar_json(res).await
+}
+
 /// Proxy: add a custom local endpoint (URL + optional API key).
 #[tauri::command]
 pub(crate) async fn agent_local_endpoint_add(
@@ -63,13 +88,19 @@ pub(crate) async fn agent_local_endpoint_add(
     base_url: String,
     label: Option<String>,
     api_key: Option<String>,
+    context_length: Option<u64>,
 ) -> Result<serde_json::Value, String> {
     let port = port_for(&webview).ok_or("daemon not ready")?;
     let gg_sid = session_for(&webview).ok_or("session not ready")?;
+    let mut body = serde_json::json!({ "baseUrl": base_url, "label": label, "apiKey": api_key });
+    // Omitted (not null) keeps an existing pin when the same host is re-added.
+    if let Some(n) = context_length {
+        body["contextLength"] = serde_json::json!(n);
+    }
     let res = client
         .post(format!("{}/local/endpoints", sidecar_base(port)))
         .header("x-gg-session", &gg_sid)
-        .json(&serde_json::json!({ "baseUrl": base_url, "label": label, "apiKey": api_key }))
+        .json(&body)
         .send()
         .await
         .map_err(|e| e.to_string())?;

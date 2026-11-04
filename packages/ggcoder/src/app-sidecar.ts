@@ -73,6 +73,7 @@ import {
   listCustomEndpoints,
   syncEndpointCredentials,
 } from "./core/local-endpoint-store.js";
+import { loadOpenRouterCatalog } from "./core/openrouter-catalog-store.js";
 import type { OAuthLoginCallbacks } from "./core/oauth/types.js";
 import {
   AUTH_PROVIDERS,
@@ -105,6 +106,7 @@ import { pruneDoneTasksSync } from "./core/tasks-store.js";
 import { initLogger, log } from "./core/logger.js";
 import { installTerminationHandlers } from "./core/shutdown.js";
 import { stopRadio } from "./core/radio.js";
+import { reapOrphanedRadioPlayers } from "./core/radio-players.js";
 import { enrichProcessPath } from "./core/shell-path.js";
 import type { ServeController } from "./modes/serve-mode.js";
 import { createElicitationBridge } from "./core/mcp/index.js";
@@ -310,6 +312,17 @@ async function main(): Promise<void> {
   const broadcastAll = (type: string, data: unknown): void => {
     for (const ctx of sessions.values()) ctx.broadcast(type, data);
   };
+
+  // A synced OpenRouter catalog replaces the built-in list; never fatal.
+  void loadOpenRouterCatalog(auth)
+    .then((s) => {
+      if (s.synced) broadcastAll("models_change", {});
+    })
+    .catch((err: unknown) => {
+      log("WARN", "app-sidecar", "openrouter catalog load failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
 
   const sessionIdsAt = (cwd: string): string[] => {
     const target = path.resolve(cwd);
@@ -616,6 +629,10 @@ async function main(): Promise<void> {
     process.stdout.write(`GG_APP_LISTENING ${addr.port} ${authToken}\n`);
     log("INFO", "app-sidecar", "daemon listening", { port: String(addr.port), host });
   });
+
+  // A daemon killed hard never stopped its radio player; stop it now so the
+  // next play doesn't stack a second stream on top.
+  void reapOrphanedRadioPlayers().catch(() => {});
 
   const shellPid = process.ppid;
   // Session teardown awaits MCP servers, LSP servers and third-party extension
@@ -1186,6 +1203,7 @@ async function createSession(
       baseUrl: string;
       kind: LocalEndpoint["kind"];
       custom: boolean;
+      contextLength?: number;
       reachable: boolean;
       reason?: string;
       models: {
@@ -1207,6 +1225,7 @@ async function createSession(
         baseUrl: probe.endpoint.baseUrl,
         kind: probe.endpoint.kind,
         custom: probe.endpoint.custom === true,
+        ...(probe.endpoint.contextLength ? { contextLength: probe.endpoint.contextLength } : {}),
         reachable: probe.reachable,
         ...(probe.reason ? { reason: probe.reason } : {}),
         models: probe.models.map((m) => ({

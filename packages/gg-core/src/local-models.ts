@@ -9,7 +9,10 @@
  *   - Ollama    → `/api/show` + `/api/ps` → capabilities + running context
  *   - LM Studio → `/api/v1/models` (v0 fallback) → capabilities + loaded context
  *   - llama.cpp → `GET /props`          → `default_generation_settings.n_ctx`
- *   - vLLM/other → nothing; `max_model_len` sometimes rides the model object.
+ *   - vLLM/other → nothing; `max_model_len`, `context_length` or `meta.n_ctx`
+ *                  sometimes rides the model object.
+ *
+ * A custom endpoint may pin `contextLength`, which wins over all of the above.
  *
  * Probing never throws: an unreachable server is a normal state (the user just
  * doesn't have it running), not an error to surface.
@@ -34,6 +37,8 @@ export interface LocalEndpoint {
   apiKey?: string;
   /** True for endpoints the user added by hand (removable). */
   custom?: boolean;
+  /** User-pinned context window; wins over whatever the server reports. */
+  contextLength?: number;
 }
 
 /** One model as reported (and enriched) by a local server. */
@@ -207,6 +212,8 @@ interface OpenAIModelListEntry {
   max_model_len?: number;
   /** OpenRouter-style gateways report it here. */
   context_length?: number;
+  /** llama.cpp-derived servers report the loaded allocation here. */
+  meta?: { n_ctx?: number };
 }
 interface OpenAIModelList {
   data?: OpenAIModelListEntry[];
@@ -274,7 +281,12 @@ export async function probeEndpoint(
       typeof entry.id === "string" && entry.id.length > 0 && !NON_CHAT_ID_PATTERN.test(entry.id),
   );
 
-  const models = await enrich(endpoint, entries, { timeoutMs, signal });
+  const enriched = await enrich(endpoint, entries, { timeoutMs, signal });
+  const pinned = contextLength(endpoint.contextLength);
+  const models =
+    pinned === undefined
+      ? enriched
+      : enriched.map((m) => ({ ...m, contextWindow: pinned, contextWindowKnown: true }));
   log("INFO", "local-models", `Probed ${endpoint.label}`, {
     baseUrl: endpoint.baseUrl,
     models: String(models.length),
@@ -326,7 +338,10 @@ function genericModel(
   endpoint: LocalEndpoint,
   entry: OpenAIModelListEntry & { id: string },
 ): LocalModel {
-  const declared = contextLength(entry.max_model_len) ?? contextLength(entry.context_length);
+  const declared =
+    contextLength(entry.max_model_len) ??
+    contextLength(entry.context_length) ??
+    contextLength(entry.meta?.n_ctx);
   return {
     rawId: entry.id,
     endpointId: endpoint.id,
@@ -591,7 +606,7 @@ interface CacheEntry {
 let cache: CacheEntry | undefined;
 
 function cacheKey(endpoints: readonly LocalEndpoint[]): string {
-  return endpoints.map((e) => `${e.id}@${e.baseUrl}`).join("|");
+  return endpoints.map((e) => `${e.id}@${e.baseUrl}#${e.contextLength ?? ""}`).join("|");
 }
 
 export interface DiscoverOptions extends ProbeOptions {
