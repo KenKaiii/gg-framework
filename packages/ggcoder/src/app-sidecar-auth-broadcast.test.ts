@@ -27,6 +27,8 @@ let daemon: Daemon | undefined;
 let port = 0;
 let token = "";
 const openStreams: http.IncomingMessage[] = [];
+// Removed after the daemon exits: Windows refuses to delete a folder it still has open.
+const extraDirs: string[] = [];
 
 /** Start the daemon on an ephemeral port and wait for its listening handshake. */
 async function startDaemon(): Promise<void> {
@@ -200,6 +202,7 @@ afterEach(async ({ task }) => {
   const removeOptions = { recursive: true, force: true, maxRetries: 10, retryDelay: 100 };
   await fs.rm(tmpHome, removeOptions);
   await fs.rm(tmpProject, removeOptions);
+  for (const dir of extraDirs.splice(0)) await fs.rm(dir, removeOptions);
 });
 
 async function printSidecarLogTail(): Promise<void> {
@@ -759,6 +762,7 @@ describe("a new window after picking a local model", () => {
     await new Promise<void>((resolve) => gateway.listen(0, "127.0.0.1", resolve));
     const gatewayPort = (gateway.address() as { port: number }).port;
     const otherFolder = await fs.mkdtemp(path.join(os.tmpdir(), "gg-other-folder-"));
+    extraDirs.push(otherFolder);
     try {
       let session = await createSession();
       const added = await request("POST", "/local/endpoints", {
@@ -791,7 +795,6 @@ describe("a new window after picking a local model", () => {
       expect(model).toBe(saved);
     } finally {
       await new Promise<void>((resolve) => gateway.close(() => resolve()));
-      await fs.rm(otherFolder, { recursive: true, force: true });
     }
   }, 90_000);
 });
