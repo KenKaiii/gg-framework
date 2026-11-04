@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.91.0
+
+### Minor Changes
+
+- Add MiniMax M3.1 Flash (now the MiniMax default) with a real effort ladder, route MiniMax and Xiaomi Token Plan keys to the region that issued them, name the real provider in Anthropic-compatible errors, update the Anthropic SDK to 1.4, and fix goals not starting on local models.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.91.0
+- @kenkaiiii/gg-agent@5.91.0
+- @kenkaiiii/gg-core@5.91.0
+
 ## 5.90.0
 
 ### Minor Changes
