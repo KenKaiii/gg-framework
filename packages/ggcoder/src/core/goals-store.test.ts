@@ -12,6 +12,7 @@ import {
   goalKickoffPrompt,
   goalPhase,
   isGoalStartAnswer,
+  isGoalStartMessage,
   startGoalOnAnswer,
   markGoalStarted,
   setGoalCritterModel,
@@ -188,6 +189,83 @@ describe("goals store", () => {
     expect(started && goalPhase(started)).toBe("active");
     expect(await markGoalStarted(created.value.dir, NOW)).toBeNull();
     expect((await readGoal(created.value.dir))?.startedAt).toBe(NOW.toISOString());
+  });
+
+  it("starts a goal from the start option however a local model words it (#133)", () => {
+    const yes = (answer: string, asked?: Parameters<typeof isGoalStartAnswer>[1]) =>
+      isGoalStartAnswer({ action: "answer", answers: { q: answer } }, asked);
+    expect(yes(`${GOAL_START_OPTION} (recommended)`)).toBe(true);
+    expect(yes(`✅ ${GOAL_START_OPTION}!`)).toBe(true);
+    expect(yes("Yes, start the goal now")).toBe(true);
+    expect(yes("Start goal")).toBe(true);
+    expect(yes("Don't start the goal yet")).toBe(false);
+    expect(yes("Not yet, start the goal later")).toBe(false);
+    expect(yes(GOAL_HOLD_OPTION)).toBe(false);
+    expect(yes("Start with the homepage")).toBe(false);
+
+    const valued = [
+      {
+        id: "q",
+        question: "Ready?",
+        kind: "choice" as const,
+        options: [
+          { label: `🚀 ${GOAL_START_OPTION} (recommended)`, value: "go" },
+          { label: GOAL_HOLD_OPTION, value: "wait" },
+        ],
+      },
+    ];
+    expect(yes("go", valued)).toBe(true);
+    expect(yes("wait", valued)).toBe(false);
+
+    const confirm = [{ id: "q", question: "Start the goal now?", kind: "confirm" as const }];
+    expect(yes("yes", confirm)).toBe(true);
+    expect(yes("no", confirm)).toBe(false);
+    // A yes to some other question never starts the goal.
+    expect(
+      isGoalStartAnswer({ action: "answer", answers: { other: "yes" } }, [
+        ...confirm,
+        { id: "other", question: "Use TypeScript?", kind: "confirm" as const },
+      ]),
+    ).toBe(false);
+  });
+
+  it("takes a typed instruction to start, never a question or a conditional (#133)", () => {
+    for (const text of [
+      "Start the goal now",
+      "Yes, start the goal now.",
+      "ok start goal",
+      "  START THE GOAL ",
+    ]) {
+      expect(isGoalStartMessage(text)).toBe(true);
+    }
+    for (const text of [
+      "Should we start the goal now?",
+      "Don't start the goal yet",
+      "Before you start the goal, use TypeScript",
+      "Start the goal tomorrow",
+      "If it looks fine, start the goal",
+      "Yes",
+      "Start with the homepage",
+      `Start the goal now. ${"Also remember this detail. ".repeat(10)}`,
+    ]) {
+      expect(isGoalStartMessage(text)).toBe(false);
+    }
+  });
+
+  it("keeps every write when two goal updates land at once", async () => {
+    const created = await createGoal(root, { name: "Race", goal: "g" }, NOW);
+    if (!created.ok) throw new Error(created.error);
+    const { dir } = created.value;
+    // Both writes used to share one temp file, so one rename failed.
+    const results = await Promise.allSettled([
+      markGoalStarted(dir, NOW),
+      markGoalKickoff(dir, NOW),
+    ]);
+    expect(results.map((r) => r.status)).toEqual(["fulfilled", "fulfilled"]);
+    // And neither overwrites the other: a lost startedAt sent the goal back to its briefing.
+    const record = await readGoal(dir);
+    expect(record?.startedAt).toBe(NOW.toISOString());
+    expect(record?.kickoffAt).toBe(NOW.toISOString());
   });
 
   it("starts a goal from a start answer that arrives after the question's deadline", async () => {

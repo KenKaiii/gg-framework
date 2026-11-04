@@ -335,6 +335,8 @@ describe("GG Goals agent", () => {
     expect(BRIEFING_ERROR).toContain("read, ls, find");
     // Live run: told "go" in chat, it tried to work instead of asking the start question.
     expect(BRIEFING_ERROR).toMatch(/ask the start question now with ask_user/);
+    // Spelled out, so a model whose start question wasn't recognised can fix it.
+    expect(BRIEFING_ERROR).toContain('"Start the goal now"');
     // From the live stress run: a mid-work question went unanswered until the
     // end, and an uncollected report made it repeat its whole summary.
     expect(GOALS_SYSTEM_PROMPT).toMatch(/answer them first in a short message/);

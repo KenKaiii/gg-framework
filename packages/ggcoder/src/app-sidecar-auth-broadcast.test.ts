@@ -717,3 +717,148 @@ describe("saved local model across restarts", () => {
     }
   }, 90_000);
 });
+
+describe("starting a goal by typing", () => {
+  it("starts a briefing goal when the user types to start it, not when they ask (#133)", async () => {
+    const session = await createSession();
+    const created = await request("POST", "/goals", {
+      session,
+      body: { name: "Typed start", goal: "Write hello.txt", context: [tmpProject] },
+    });
+    expect(created.status).toBe(200);
+    const goalDir = path.join(tmpHome, ".gg", "goals", (created.json.goal as { id: string }).id);
+    const opened = await request("POST", "/session", { body: { mode: "code", cwd: goalDir } });
+    const goalSession = opened.json.sessionId as string;
+    const startedAt = async (): Promise<unknown> =>
+      (
+        JSON.parse(await fs.readFile(path.join(goalDir, "goal.json"), "utf8")) as {
+          startedAt?: unknown;
+        }
+      ).startedAt;
+
+    await request("POST", "/prompt", {
+      session: goalSession,
+      body: { text: "Should we start the goal now?" },
+    });
+    expect(await startedAt()).toBeUndefined();
+
+    await request("POST", "/prompt", {
+      session: goalSession,
+      body: { text: "Start the goal now" },
+    });
+    expect(typeof (await startedAt())).toBe("string");
+  }, 90_000);
+});
+
+describe("a new window after picking a local model", () => {
+  it("opens on the saved local model in a folder it has never seen (#133)", async () => {
+    const gateway = http.createServer((req, res) => {
+      res.writeHead(req.url === "/v1/models" ? 200 : 404, { "content-type": "application/json" });
+      res.end(req.url === "/v1/models" ? JSON.stringify({ data: [{ id: "free-model" }] }) : "{}");
+    });
+    await new Promise<void>((resolve) => gateway.listen(0, "127.0.0.1", resolve));
+    const gatewayPort = (gateway.address() as { port: number }).port;
+    const otherFolder = await fs.mkdtemp(path.join(os.tmpdir(), "gg-other-folder-"));
+    try {
+      let session = await createSession();
+      const added = await request("POST", "/local/endpoints", {
+        session,
+        body: { baseUrl: `http://127.0.0.1:${gatewayPort}/v1`, label: "GW" },
+      });
+      const saved = `local/${(added.json.endpoint as { id: string }).id}/free-model`;
+      expect((await request("POST", "/model", { session, body: { model: saved } })).status).toBe(
+        200,
+      );
+
+      const running = daemon!;
+      await new Promise<void>((resolve) => {
+        running.once("close", () => resolve());
+        running.kill("SIGKILL");
+      });
+      await startDaemon();
+      // A goal window, or any project opened for the first time, has no per-folder pick.
+      const opened = await request("POST", "/session", {
+        body: { mode: "code", cwd: otherFolder },
+      });
+      expect(opened.status).toBe(200);
+      session = opened.json.sessionId as string;
+
+      let model = "";
+      for (const deadline = Date.now() + 15_000; model !== saved && Date.now() < deadline;) {
+        model = String((await request("GET", "/state", { session })).json.model);
+        if (model !== saved) await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(model).toBe(saved);
+    } finally {
+      await new Promise<void>((resolve) => gateway.close(() => resolve()));
+      await fs.rm(otherFolder, { recursive: true, force: true });
+    }
+  }, 90_000);
+});
+
+describe("a run started right at boot", () => {
+  it("waits for the saved local model instead of running on the fallback (#133)", async () => {
+    const chatModels: string[] = [];
+    let slowModels = false;
+    const gateway = http.createServer((req, res) => {
+      if (req.url === "/v1/models") {
+        // Slower than the prompt below, like a goal's kickoff beating the scan.
+        setTimeout(
+          () => {
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ data: [{ id: "free-model" }] }));
+          },
+          slowModels ? 700 : 0,
+        );
+        return;
+      }
+      if (req.url === "/v1/chat/completions") {
+        let body = "";
+        req.on("data", (chunk: Buffer) => (body += chunk.toString()));
+        req.on("end", () => {
+          chatModels.push(String((JSON.parse(body) as { model?: unknown }).model));
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          const chunk = (d: unknown): void => void res.write(`data: ${JSON.stringify(d)}\n\n`);
+          chunk({ id: "x", choices: [{ index: 0, delta: { role: "assistant", content: "ok" } }] });
+          chunk({ id: "x", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
+          res.end("data: [DONE]\n\n");
+        });
+        return;
+      }
+      res.writeHead(404).end("{}");
+    });
+    await new Promise<void>((resolve) => gateway.listen(0, "127.0.0.1", resolve));
+    const gatewayPort = (gateway.address() as { port: number }).port;
+    try {
+      let session = await createSession();
+      const added = await request("POST", "/local/endpoints", {
+        session,
+        body: { baseUrl: `http://127.0.0.1:${gatewayPort}/v1`, label: "GW" },
+      });
+      const saved = `local/${(added.json.endpoint as { id: string }).id}/free-model`;
+      expect((await request("POST", "/model", { session, body: { model: saved } })).status).toBe(
+        200,
+      );
+
+      const running = daemon!;
+      await new Promise<void>((resolve) => {
+        running.once("close", () => resolve());
+        running.kill("SIGKILL");
+      });
+      slowModels = true;
+      await startDaemon();
+      session = await createSession();
+      expect((await request("POST", "/prompt", { session, body: { text: "hi" } })).status).toBe(
+        202,
+      );
+
+      for (const deadline = Date.now() + 15_000; chatModels.length === 0;) {
+        if (Date.now() > deadline) throw new Error("the prompt never reached the local model");
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(chatModels[0]).toBe("free-model");
+    } finally {
+      await new Promise<void>((resolve) => gateway.close(() => resolve()));
+    }
+  }, 90_000);
+});

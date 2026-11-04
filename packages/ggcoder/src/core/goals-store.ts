@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { AskQuestion, AskUserResult } from "./ask-user.js";
 import { encodeCwd } from "./encode-cwd.js";
+import { atomicWrite } from "./session-storage.js";
 
 /**
  * Goals: a long-running objective the user hands to GG Coder ("Bring p95
@@ -135,11 +136,26 @@ export async function readGoal(dir: string): Promise<GoalRecord | null> {
   return result.success ? result.data : null;
 }
 
+// A goal's record is read, changed and written back; two changes at once (the
+// start and a pause, say) would each write a copy missing the other's change.
+// One daemon process serves every window, so a per-goal queue covers it.
+const goalWrites = new Map<string, Promise<unknown>>();
+
+function withGoalLock<T>(dir: string, change: () => Promise<T>): Promise<T> {
+  const next = (goalWrites.get(dir) ?? Promise.resolve()).catch(() => {}).then(change);
+  goalWrites.set(dir, next);
+  void next
+    .catch(() => {})
+    .finally(() => {
+      if (goalWrites.get(dir) === next) goalWrites.delete(dir);
+    });
+  return next;
+}
+
+// A unique temp name per write (two goal writes at once used to share one), and
+// Windows' replace retries: a failed write left the goal stuck in its briefing.
 async function writeGoal(dir: string, record: GoalRecord): Promise<void> {
-  const file = path.join(dir, GOAL_FILE);
-  const tmp = `${file}.${process.pid}.tmp`;
-  await fs.writeFile(tmp, `${JSON.stringify(record, null, 2)}\n`, "utf-8");
-  await fs.rename(tmp, file);
+  await atomicWrite(path.join(dir, GOAL_FILE), `${JSON.stringify(record, null, 2)}\n`);
 }
 
 /**
@@ -259,20 +275,62 @@ export function isGoalStartAnswer(
   questions: ReadonlyArray<AskQuestion> = [],
 ): boolean {
   if (result.action !== "answer") return false;
-  const wanted = GOAL_START_OPTION.toLowerCase();
   const startValues = new Set(
     questions.flatMap((question) =>
       (question.options ?? [])
-        .filter((option) => option.label.trim().toLowerCase() === wanted && option.value)
+        .filter((option) => option.value && isStartLabel(option.label))
         .map((option) => (option.value ?? "").trim().toLowerCase()),
     ),
   );
-  return Object.values(result.answers).some((answer) =>
+  // "Start the goal now?" asked as a yes/no question.
+  const startConfirms = new Set(
+    questions
+      .filter((question) => question.kind === "confirm" && isStartLabel(question.question))
+      .map((question) => question.id),
+  );
+  return Object.entries(result.answers).some(([id, answer]) =>
     (Array.isArray(answer) ? answer : [answer]).some((value) => {
       const picked = value.trim().toLowerCase();
-      return picked === wanted || startValues.has(picked);
+      return (
+        isStartLabel(value) ||
+        startValues.has(picked) ||
+        (startConfirms.has(id) && (picked === "yes" || picked === "y"))
+      );
     }),
   );
+}
+
+/**
+ * Whether an option label means "start the goal". Local models decorate the
+ * label they were told to use exactly ("Start the goal now (recommended)",
+ * "✅ Yes, start the goal now!"), and an exact match left the goal stuck in its
+ * briefing however often the user picked it (#133).
+ */
+function isStartLabel(label: string): boolean {
+  const words = label
+    .toLowerCase()
+    .replace(/\(recommended\)/g, " ")
+    .replace(/[^a-z']+/g, " ")
+    .trim();
+  return (
+    /\bstart (the )?goal\b/.test(words) &&
+    !/\b(not|don't|dont|hang|wait|later|yet|hold)\b/.test(words)
+  );
+}
+
+/**
+ * True when a message the user typed during the briefing tells GG Goals to
+ * start ("Start the goal now", "yes, start the goal"). Small local models
+ * often can't show the start card (live run: qwen3 4B wrote the ask_user call
+ * as text, then retried a refused write while the user typed "start" twice),
+ * so a plain instruction must start the goal too (#133). Questions and
+ * conditional or delayed starts don't count.
+ */
+export function isGoalStartMessage(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.length > 200 || trimmed.endsWith("?")) return false;
+  if (/\b(before|after|until|once|when|if|first|tomorrow|unless)\b/i.test(trimmed)) return false;
+  return isStartLabel(trimmed);
 }
 
 /**
@@ -300,12 +358,14 @@ export async function setGoalCritterModel(
   dir: string,
   pick: { provider: string; model: string } | null,
 ): Promise<GoalRecord | null> {
-  const record = await readGoal(dir);
-  if (!record) return null;
-  const { critterModel: _previous, ...rest } = record;
-  const next: GoalRecord = pick ? { ...rest, critterModel: { ...pick } } : rest;
-  await writeGoal(dir, next);
-  return next;
+  return withGoalLock(dir, async () => {
+    const record = await readGoal(dir);
+    if (!record) return null;
+    const { critterModel: _previous, ...rest } = record;
+    const next: GoalRecord = pick ? { ...rest, critterModel: { ...pick } } : rest;
+    await writeGoal(dir, next);
+    return next;
+  });
 }
 
 /**
@@ -313,11 +373,13 @@ export async function setGoalCritterModel(
  * when it had already started (or the goal is gone), so it is set only once.
  */
 export async function markGoalStarted(dir: string, now: Date): Promise<GoalRecord | null> {
-  const record = await readGoal(dir);
-  if (!record || record.startedAt) return null;
-  const next: GoalRecord = { ...record, startedAt: now.toISOString() };
-  await writeGoal(dir, next);
-  return next;
+  return withGoalLock(dir, async () => {
+    const record = await readGoal(dir);
+    if (!record || record.startedAt) return null;
+    const next: GoalRecord = { ...record, startedAt: now.toISOString() };
+    await writeGoal(dir, next);
+    return next;
+  });
 }
 
 /**
@@ -334,20 +396,22 @@ export async function updateGoal(
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid change" };
   }
-  const record = await readGoal(dir);
-  if (!record) return { ok: false, error: "Goal not found" };
-  let next: GoalRecord = record;
-  if (parsed.data.context) {
-    const resolved = await resolveContext(parsed.data.context);
-    if (!resolved.ok) return resolved;
-    next = { ...next, context: resolved.value };
-  }
-  if (parsed.data.instructions !== undefined) {
-    const { instructions: _old, ...rest } = next;
-    next = parsed.data.instructions ? { ...rest, instructions: parsed.data.instructions } : rest;
-  }
-  await writeGoal(dir, next);
-  return { ok: true, value: next };
+  return withGoalLock(dir, async (): Promise<GoalResult<GoalRecord>> => {
+    const record = await readGoal(dir);
+    if (!record) return { ok: false, error: "Goal not found" };
+    let next: GoalRecord = record;
+    if (parsed.data.context) {
+      const resolved = await resolveContext(parsed.data.context);
+      if (!resolved.ok) return resolved;
+      next = { ...next, context: resolved.value };
+    }
+    if (parsed.data.instructions !== undefined) {
+      const { instructions: _old, ...rest } = next;
+      next = parsed.data.instructions ? { ...rest, instructions: parsed.data.instructions } : rest;
+    }
+    await writeGoal(dir, next);
+    return { ok: true, value: next };
+  });
 }
 
 /** Pause a goal (true) or let it carry on (false). Returns the updated record, or null if missing. */
@@ -356,12 +420,14 @@ export async function setGoalPaused(
   paused: boolean,
   now: Date,
 ): Promise<GoalRecord | null> {
-  const record = await readGoal(dir);
-  if (!record) return null;
-  const { pausedAt: _was, ...rest } = record;
-  const next: GoalRecord = paused ? { ...rest, pausedAt: now.toISOString() } : rest;
-  await writeGoal(dir, next);
-  return next;
+  return withGoalLock(dir, async () => {
+    const record = await readGoal(dir);
+    if (!record) return null;
+    const { pausedAt: _was, ...rest } = record;
+    const next: GoalRecord = paused ? { ...rest, pausedAt: now.toISOString() } : rest;
+    await writeGoal(dir, next);
+    return next;
+  });
 }
 
 /**
@@ -407,11 +473,13 @@ export async function deleteGoal(
  * already had (or the goal is gone), so a second caller never kicks off twice.
  */
 export async function markGoalKickoff(dir: string, now: Date): Promise<GoalRecord | null> {
-  const record = await readGoal(dir);
-  if (!record || record.kickoffAt) return null;
-  const next: GoalRecord = { ...record, kickoffAt: now.toISOString() };
-  await writeGoal(dir, next);
-  return next;
+  return withGoalLock(dir, async () => {
+    const record = await readGoal(dir);
+    if (!record || record.kickoffAt) return null;
+    const next: GoalRecord = { ...record, kickoffAt: now.toISOString() };
+    await writeGoal(dir, next);
+    return next;
+  });
 }
 
 /** The two answers to the coordinator's "ready to start?" question. */

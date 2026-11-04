@@ -59,6 +59,7 @@ import {
   dualAuthProvider,
   discoverLocalModels,
   findProbedModel,
+  isLocalModelId,
   formatLocalModelId,
   parseLocalModelId,
   probeEndpoint,
@@ -142,6 +143,7 @@ import {
   goalPhase,
   goalsRoot,
   isGoalDir,
+  isGoalStartMessage,
   startGoalOnAnswer,
   readGoal,
 } from "./core/goals-store.js";
@@ -731,7 +733,7 @@ async function createSession(
   // parsing); the daemon owns the real listen host.
   const host = "127.0.0.1";
 
-  const saved = loadSavedSettings(paths.settingsFile);
+  const saved = loadSavedSettings(paths.settingsFile, { localModels: true });
   // Native login/logout and other live sessions share auth.json. Refresh the
   // daemon-level snapshot before choosing this session's provider so a project
   // never boots against credentials that were just replaced or disconnected.
@@ -947,9 +949,10 @@ async function createSession(
       new Date(),
       questions,
     ).catch((err: unknown) => {
-      log("WARN", "app-sidecar", "couldn't record goal start", {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      const message = err instanceof Error ? err.message : String(err);
+      log("WARN", "app-sidecar", "couldn't record goal start", { error: message });
+      // Silent, GG Goals just asked the start question again and again.
+      broadcastError("error", "goal start", new Error(`Couldn't start the goal: ${message}`));
       return null;
     });
     if (started) {
@@ -957,6 +960,12 @@ async function createSession(
       broadcast("goal_state", { id: started.id, phase: goalPhase(started) });
       void trophies.count("goalsStarted", opts.id);
     }
+  };
+  // A typed "start the goal now" starts it like the card does: small local
+  // models often never show the card (#133).
+  const startGoalFromMessage = async (text: string): Promise<void> => {
+    if (!goal || goal.record.startedAt || !isGoalStartMessage(text)) return;
+    await startGoalFrom({ action: "answer", answers: { message: text } }, []);
   };
   const askUserTool = createAskUserTool(async (request) => {
     const result = await asks.park(request);
@@ -1362,7 +1371,7 @@ async function createSession(
     log("INFO", "app-sidecar", "restored saved local model", { model: savedModel });
   }
 
-  void scanLocalModels(false)
+  const initialLocalScan = scanLocalModels(false)
     .then(async () => {
       await restoreSavedLocalModel();
       clampLocalThinking();
@@ -1376,6 +1385,18 @@ async function createSession(
         error: err instanceof Error ? err.message : String(err),
       });
     });
+  // A run that starts before the scan would run on the fallback model; a goal's
+  // kickoff fires as its window opens and lost that race (#133). Never rejects.
+  let savedLocalModelPending: Promise<void> | null =
+    preferred === "local" &&
+    savedModel !== undefined &&
+    savedModel !== model &&
+    isLocalModelId(savedModel)
+      ? initialLocalScan
+      : null;
+  void initialLocalScan.finally(() => {
+    savedLocalModelPending = null;
+  });
 
   // tool_call_end carries no tool name (only the id), so remember each call's
   // name from tool_call_start to log a useful line on completion. Mirrors the
@@ -1953,6 +1974,8 @@ async function createSession(
     run: () => Promise<void>,
     reviewPending: () => boolean = () => false,
   ): Promise<void> {
+    // Only at boot: afterwards runAgent stays synchronous up to its first await.
+    if (savedLocalModelPending) await savedLocalModelPending;
     const ownsGeneration = !runLifecycle.running;
     const generation = ownsGeneration
       ? runLifecycle.begin(abortOwnedWork).generation
@@ -2681,6 +2704,7 @@ async function createSession(
     },
     localModelBlocker,
     learnServedContext,
+    startGoalFromMessage,
     get kenModelOverride() {
       return kenModelOverride;
     },

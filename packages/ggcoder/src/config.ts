@@ -78,8 +78,15 @@ function isValidProvider(value: unknown): value is Provider {
   return typeof value === "string" && VALID_PROVIDERS.has(value as Provider);
 }
 
-/** Load saved settings from the settings file. Returns defaults on missing/invalid file. */
-export function loadSavedSettings(settingsFilePath?: string): SavedSettings {
+/**
+ * Load saved settings from the settings file. Returns defaults on missing/invalid file.
+ * `localModels`: accept a saved local model. Only the desktop app discovers
+ * local endpoints; the CLI would boot on a model it can't find.
+ */
+export function loadSavedSettings(
+  settingsFilePath?: string,
+  { localModels = false }: { localModels?: boolean } = {},
+): SavedSettings {
   const filePath = settingsFilePath ?? getAppPaths().settingsFile;
   const result: SavedSettings = {
     autoCompact: true,
@@ -98,8 +105,8 @@ export function loadSavedSettings(settingsFilePath?: string): SavedSettings {
     // Only accept providers the current build actually supports. A stale
     // provider name (e.g. a previously-supported provider that's since been
     // removed) would otherwise poison startup with "Not logged in" errors.
-    if (isValidProvider(raw.defaultProvider)) {
-      result.provider = raw.defaultProvider;
+    if (isValidProvider(raw.defaultProvider) || (localModels && raw.defaultProvider === "local")) {
+      result.provider = raw.defaultProvider as Provider;
       // Only honor the saved model when the provider was also accepted —
       // otherwise a model from the removed provider would leak through.
       // A saved paid tier (Claude fast mode bills usage credits) never boots a

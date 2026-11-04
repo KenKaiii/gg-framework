@@ -162,6 +162,8 @@ export function handlePromptRoutes(
           json(res, 400, { error: "empty prompt" });
           return;
         }
+        // Before the run checks below, so the run claim stays synchronous with them.
+        if (meta?.scheduled !== true) await ctx.startGoalFromMessage(text);
         // A typed prompt supersedes any question parked on the user: they
         // answered with a message of their own. Release the blocked tool call
         // NOW — otherwise it waits out its ten-minute timeout while this very
