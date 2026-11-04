@@ -1305,6 +1305,15 @@ export function toAnthropicThinking(
   maxTokens: number;
   outputConfig?: { effort: string };
 } {
+  if (model.startsWith("MiniMax-M3.1")) {
+    // MiniMax's own wire shape: adaptive thinking (it rejects `disabled`) with
+    // low/medium/high/xhigh/max effort. No `display` — that's Anthropic-only.
+    return {
+      thinking: { type: "adaptive" },
+      maxTokens,
+      outputConfig: { effort: level === "ultra" ? "max" : level },
+    };
+  }
   if (isAdaptiveThinkingModel(model)) {
     // Adaptive thinking — model decides when/how much to think.
     // budget_tokens is deprecated on Opus 5.x / 4.8 / 4.7 / 4.6 and Sonnet 5.

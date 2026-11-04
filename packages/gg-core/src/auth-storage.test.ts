@@ -778,3 +778,90 @@ describe("AuthStorage — clearRejectedApiKey", () => {
     expect(await storage.hasProviderAuth("local")).toBe(true);
   });
 });
+
+describe("AuthStorage — MiniMax key region", () => {
+  async function storageWith(detect: (key: string) => Promise<string | undefined>) {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    return { filePath, storage: new AuthStorage(filePath, { detectMiniMaxBaseUrl: detect }) };
+  }
+  const minimaxKey = (baseUrl?: string) => ({
+    accessToken: "sk-cp-china",
+    refreshToken: "",
+    expiresAt: Date.now() + 60_000,
+    ...(baseUrl ? { baseUrl } : {}),
+  });
+
+  it("saves the detected region on a key stored without one, and checks only once", async () => {
+    const detect = vi.fn(async () => "https://api.minimax.cn/anthropic");
+    const { filePath, storage } = await storageWith(detect);
+    await storage.setCredentials("minimax", minimaxKey());
+
+    expect((await storage.resolveCredentials("minimax")).baseUrl).toBe(
+      "https://api.minimax.cn/anthropic",
+    );
+    expect(readStoredBaseUrlSync(filePath, "minimax")).toBe("https://api.minimax.cn/anthropic");
+
+    await storage.resolveCredentials("minimax");
+    expect(detect).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the key untouched when the region can't be determined", async () => {
+    const { filePath, storage } = await storageWith(async () => undefined);
+    await storage.setCredentials("minimax", minimaxKey());
+
+    expect((await storage.resolveCredentials("minimax")).baseUrl).toBeUndefined();
+    expect(readStoredBaseUrlSync(filePath, "minimax")).toBeUndefined();
+  });
+
+  it("never re-checks a key that already has an endpoint", async () => {
+    const detect = vi.fn(async () => "https://api.minimax.cn/anthropic");
+    const { storage } = await storageWith(detect);
+    await storage.setCredentials("minimax", minimaxKey("https://api.minimax.io/anthropic"));
+
+    expect((await storage.resolveCredentials("minimax")).baseUrl).toBe(
+      "https://api.minimax.io/anthropic",
+    );
+    expect(detect).not.toHaveBeenCalled();
+  });
+});
+
+describe("AuthStorage — Xiaomi Token Plan cluster", () => {
+  const SGP = "https://token-plan-sgp.xiaomimimo.com/v1";
+  const AMS = "https://token-plan-ams.xiaomimimo.com/v1";
+  async function storageWith(detect: (key: string) => Promise<string | undefined>) {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    return {
+      filePath,
+      storage: new AuthStorage(filePath, { detectXiaomiTokenPlanBaseUrl: detect }),
+    };
+  }
+  const tokenPlanKey = { accessToken: "tp-eu", refreshToken: "", expiresAt: 1, baseUrl: SGP };
+
+  it("moves a Europe key rejected by Singapore to its own cluster instead of losing it", async () => {
+    const { filePath, storage } = await storageWith(async () => AMS);
+    await storage.setCredentials("xiaomi", tokenPlanKey);
+
+    expect(await storage.relocateRegionalApiKey(["xiaomi", XIAOMI_CREDITS_KEY])).toBe(AMS);
+    expect(readStoredBaseUrlSync(filePath, "xiaomi")).toBe(AMS);
+    expect((await storage.resolveCredentials("xiaomi")).accessToken).toBe("tp-eu");
+  });
+
+  it("reports nothing to relocate when the key's own cluster rejected it", async () => {
+    const { storage } = await storageWith(async () => SGP);
+    await storage.setCredentials("xiaomi", tokenPlanKey);
+    expect(await storage.relocateRegionalApiKey(["xiaomi"])).toBeUndefined();
+  });
+
+  it("never probes for non-regional keys", async () => {
+    const detect = vi.fn(async () => AMS);
+    const { storage } = await storageWith(detect);
+    await storage.setCredentials(XIAOMI_CREDITS_KEY, { ...tokenPlanKey, accessToken: "sk-x" });
+    await storage.setCredentials("glm", { ...tokenPlanKey, accessToken: "glm-key" });
+
+    expect(await storage.relocateRegionalApiKey([XIAOMI_CREDITS_KEY])).toBeUndefined();
+    expect(await storage.relocateRegionalApiKey(["glm"])).toBeUndefined();
+    expect(detect).not.toHaveBeenCalled();
+  });
+});

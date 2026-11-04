@@ -499,16 +499,20 @@ describe("model registry context windows", () => {
     }
   });
 
-  it("defaults MiniMax to the multimodal M3 with a 1M context window", () => {
+  it("defaults MiniMax to M3.1 Flash, the model plan keys cover, and keeps M3", () => {
     expect(getDefaultModel("minimax")).toMatchObject({
-      id: "MiniMax-M3",
-      name: "MiniMax M3",
+      id: "MiniMax-M3.1-Flash",
+      name: "MiniMax M3.1 Flash",
       provider: "minimax",
       contextWindow: 1_000_000,
       supportsImages: true,
       supportsVideo: true,
+      maxThinkingLevel: "max",
     });
-    expect(getModelsForProvider("minimax").map((model) => model.id)).toEqual(["MiniMax-M3"]);
+    expect(getModelsForProvider("minimax").map((model) => model.id)).toEqual([
+      "MiniMax-M3.1-Flash",
+      "MiniMax-M3",
+    ]);
     expect(getContextWindow("MiniMax-M3", { provider: "minimax" })).toBe(1_000_000);
   });
 

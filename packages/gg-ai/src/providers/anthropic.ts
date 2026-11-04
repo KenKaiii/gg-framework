@@ -572,7 +572,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
       yield* synthesizeEventsFromMessage(message);
       return messageToResponse(message);
     } catch (err) {
-      throw toError(err, { fastMode: useFastMode });
+      throw toError(err, { fastMode: useFastMode, provider: options.provider });
     }
   }
 
@@ -747,7 +747,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
                 const snippet =
                   rawPartial.length > 200 ? `${rawPartial.slice(0, 200)}\u2026` : rawPartial;
                 throw new ProviderError(
-                  "anthropic",
+                  options.provider,
                   `Tool "${accum.toolName}" input JSON was truncated in the stream ` +
                     `(${rawPartial.length} bytes): ${snippet}; ${(parseErr as Error).message}`,
                   { cause: parseErr },
@@ -867,7 +867,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
       }
     }
   } catch (err) {
-    throw toError(err, { fastMode: useFastMode });
+    throw toError(err, { fastMode: useFastMode, provider: options.provider });
   }
 
   // Race-condition safety: if the SDK's stream ended (or error'd) before the
@@ -875,7 +875,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   // Treat that as a transport failure so the agent loop retries instead of
   // presenting a phantom empty reply.
   if (!receivedAnyEvent) {
-    throw new ProviderError("anthropic", "Stream ended without producing any events.", {
+    throw new ProviderError(options.provider, "Stream ended without producing any events.", {
       statusCode: 504,
     });
   }
@@ -889,7 +889,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   // transport failure (same bucket as a mid-stream socket destroy). The partial
   // body is surfaced on `cause` for debugging, never silently returned.
   if (stopReason === null) {
-    throw new ProviderError("anthropic", "Stream ended before completion (no stop_reason).", {
+    throw new ProviderError(options.provider, "Stream ended before completion (no stop_reason).", {
       statusCode: 504,
       cause: { partialContent: contentParts, outputTokens },
     });
@@ -1068,7 +1068,13 @@ function readUnifiedRateLimit(headers: unknown): { rejected: boolean; resetsAt?:
   return { rejected: status === "rejected", ...(resetsAt ? { resetsAt } : {}) };
 }
 
-function toError(err: unknown, context?: { fastMode?: boolean }): ProviderError {
+function toError(
+  err: unknown,
+  context?: { fastMode?: boolean; provider?: StreamOptions["provider"] },
+): ProviderError {
+  // Anthropic-compatible third parties (MiniMax) ride this transport; name them
+  // in errors so a MiniMax problem never reads as "Anthropic usage limit".
+  const provider = context?.provider ?? "anthropic";
   // Already normalized (e.g. the truncated-tool-JSON guard in runStream throws a
   // ProviderError whose cause is the SyntaxError). Pass it through untouched so
   // its statusCode and cause chain survive for agent-loop's retry classifiers
@@ -1159,21 +1165,21 @@ function toError(err: unknown, context?: { fastMode?: boolean }): ProviderError 
       const usageMessage = /usage limit reached/i.test(message)
         ? message
         : `usage limit reached: ${message}`;
-      return new ProviderError("anthropic", usageMessage, {
+      return new ProviderError(provider, usageMessage, {
         statusCode: err.status,
         ...(requestId ? { requestId } : {}),
         cause: err,
       });
     }
 
-    return new ProviderError("anthropic", message, {
+    return new ProviderError(provider, message, {
       statusCode: err.status,
       ...(requestId ? { requestId } : {}),
       cause: err,
     });
   }
   if (err instanceof Error) {
-    return new ProviderError("anthropic", err.message, { cause: err });
+    return new ProviderError(provider, err.message, { cause: err });
   }
-  return new ProviderError("anthropic", String(err));
+  return new ProviderError(provider, String(err));
 }

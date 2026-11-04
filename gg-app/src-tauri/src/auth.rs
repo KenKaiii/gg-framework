@@ -215,7 +215,7 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     ProviderMeta {
         value: "minimax",
         label: "MiniMax",
-        description: "MiniMax M3",
+        description: "MiniMax M3.1 Flash, M3",
         methods: &["apikey"],
         oauth_key: None,
         oauth_label: None,

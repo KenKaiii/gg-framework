@@ -2844,6 +2844,23 @@ export class AgentSession {
           await clearInvalidStaticApiKey(fallbackErr);
           throw fallbackErr;
         }
+      } else if (
+        err instanceof ProviderError &&
+        err.statusCode === 401 &&
+        !this.baseUrl &&
+        (await this.authStorage.relocateRegionalApiKey(this.currentAuthStorageKeys()))
+      ) {
+        // The key was valid all along, just sent to another region's cluster.
+        creds = await this.authStorage.resolveCredentials(this.provider, {
+          storageKeys: this.currentAuthStorageKeys(),
+        });
+        this.lastAccountId = creds.accountId;
+        try {
+          await runAgentLoop(creds.accessToken, creds.accountId, creds.projectId);
+        } catch (retryErr) {
+          await clearInvalidStaticApiKey(retryErr);
+          throw retryErr;
+        }
       } else if (err instanceof ProviderError && err.statusCode === 401) {
         // Static API-key providers (GLM, Moonshot API key, etc.) have no refresh
         // mechanism — retrying with the same key is pointless. Clear the

@@ -300,3 +300,21 @@ describe("local models", () => {
     expect(clampThinkingForPlanMode(undefined)).toBeUndefined();
   });
 });
+
+describe("MiniMax thinking levels", () => {
+  it("offers M3.1 Flash's full low→max effort ladder and cycles through it", () => {
+    expect(getSupportedThinkingLevels("minimax", "MiniMax-M3.1-Flash")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(getNextThinkingLevel("minimax", "MiniMax-M3.1-Flash", "high")).toBe("xhigh");
+    expect(getNextThinkingLevel("minimax", "MiniMax-M3.1-Flash", "max")).toBeUndefined();
+  });
+
+  it("keeps M3 as a plain on/off toggle", () => {
+    expect(getSupportedThinkingLevels("minimax", "MiniMax-M3")).toEqual(["high"]);
+  });
+});

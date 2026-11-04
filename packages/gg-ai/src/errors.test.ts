@@ -332,3 +332,35 @@ describe("readHeader", () => {
     expect(readHeader(null, "x-request-id")).toBeUndefined();
   });
 });
+
+describe("formatError — MiniMax codes", () => {
+  it("explains insufficient balance as plan coverage, not a spent usage window", () => {
+    const f = formatError(
+      new ProviderError(
+        "minimax",
+        "usage limit reached: insufficient_balance_error: insufficient balance (1008)",
+        { statusCode: 402 },
+      ),
+    );
+    expect(f.headline).toBe("MiniMax has no balance for this request.");
+    expect(f.guidance).toContain("plan is active");
+    expect(f.headline).not.toContain("Anthropic");
+  });
+
+  it("points a rejected key at its issuing region", () => {
+    const f = formatError(
+      new ProviderError("minimax", "authentication_error: invalid api key (2049)", {
+        statusCode: 401,
+      }),
+    );
+    expect(f.headline).toBe("MiniMax didn't accept this API key.");
+    expect(f.guidance).toContain("platform.minimaxi.com");
+  });
+
+  it("names the covered model when the plan doesn't include the requested one", () => {
+    const f = formatError(
+      new ProviderError("minimax", "your current token plan not support model (2061)"),
+    );
+    expect(f.headline).toBe("Your MiniMax plan doesn't include this model.");
+  });
+});

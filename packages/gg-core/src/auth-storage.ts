@@ -12,6 +12,8 @@ import { withFileLock } from "./file-lock.js";
 import { log } from "./logger.js";
 import { isHiddenProvider } from "./hidden-providers.js";
 import { LOCAL_NO_API_KEY } from "@kenkaiiii/gg-ai";
+import { detectMiniMaxBaseUrl } from "./minimax-region.js";
+import { detectXiaomiTokenPlanBaseUrl } from "./xiaomi-region.js";
 
 type AuthData = Record<string, OAuthCredentials>;
 
@@ -159,6 +161,19 @@ function activeBaseUrlEntry(data: AuthData, provider: string): OAuthCredentials 
   return data[provider];
 }
 
+// Shared across AuthStorage instances (one per app window). An inconclusive
+// answer (offline) is retried after a while instead of on every request.
+const MINIMAX_REGION_RETRY_MS = 5 * 60 * 1000;
+const miniMaxRegionProbes = new Map<string, { at: number; result: Promise<string | undefined> }>();
+
+function cachedMiniMaxRegion(apiKey: string): Promise<string | undefined> {
+  const cached = miniMaxRegionProbes.get(apiKey);
+  if (cached && Date.now() - cached.at < MINIMAX_REGION_RETRY_MS) return cached.result;
+  const result = detectMiniMaxBaseUrl(apiKey).catch(() => undefined);
+  miniMaxRegionProbes.set(apiKey, { at: Date.now(), result });
+  return result;
+}
+
 /**
  * Synchronous baseUrl read straight from the auth file, for boot paths that
  * need the active endpoint before an AuthStorage instance exists (e.g. the
@@ -238,8 +253,20 @@ export class AuthStorage {
   /** Per-provider lock to serialize concurrent refresh calls. */
   private refreshLocks = new Map<string, Promise<OAuthCredentials>>();
 
-  constructor(filePath?: string) {
+  private readonly detectMiniMaxRegion: (apiKey: string) => Promise<string | undefined>;
+  private readonly detectXiaomiCluster: (apiKey: string) => Promise<string | undefined>;
+
+  constructor(
+    filePath?: string,
+    options?: {
+      detectMiniMaxBaseUrl?: (apiKey: string) => Promise<string | undefined>;
+      detectXiaomiTokenPlanBaseUrl?: (apiKey: string) => Promise<string | undefined>;
+    },
+  ) {
     this.filePath = filePath ?? getAppPaths().authFile;
+    this.detectMiniMaxRegion = options?.detectMiniMaxBaseUrl ?? cachedMiniMaxRegion;
+    this.detectXiaomiCluster =
+      options?.detectXiaomiTokenPlanBaseUrl ?? detectXiaomiTokenPlanBaseUrl;
   }
 
   /** Path to the on-disk auth file. Useful for status output. */
@@ -471,10 +498,50 @@ export class AuthStorage {
     return this.data[provider];
   }
 
+  /**
+   * A MiniMax key saved without an endpoint (every key, until its first use)
+   * gets the endpoint of the region that issued it, saved so the check runs
+   * once. Without this a Mainland China key went to the Global API, got a 401,
+   * and was deleted as invalid.
+   */
+  private async withMiniMaxRegion(creds: OAuthCredentials): Promise<OAuthCredentials> {
+    const baseUrl = await this.detectMiniMaxRegion(creds.accessToken);
+    if (!baseUrl) return creds;
+    log("INFO", "auth", `MiniMax key belongs to ${baseUrl} — saved for future requests`);
+    await this.mutateLatest((latest) => {
+      const current = latest["minimax"];
+      // Only annotate the key that was probed; a key replaced meanwhile is re-checked.
+      if (current?.accessToken === creds.accessToken && !current.baseUrl) {
+        current.baseUrl = baseUrl;
+      }
+    });
+    return { ...creds, baseUrl };
+  }
+
   async setCredentials(provider: string, creds: OAuthCredentials): Promise<void> {
     await this.mutateLatest((latest) => {
       latest[provider] = creds;
     });
+  }
+
+  /**
+   * After a 401, move a regional key to the cluster that issued it instead of
+   * treating it as invalid. Only the Xiaomi Token Plan is regional: every key
+   * used to go to Singapore, so Europe and China keys were rejected and deleted.
+   * Returns the new base URL, or undefined when no other cluster accepts the key.
+   */
+  async relocateRegionalApiKey(storageKeys: string[]): Promise<string | undefined> {
+    const key = await this.pickStorageKey(storageKeys);
+    const creds = key === "xiaomi" ? this.data[key] : undefined;
+    if (!creds) return undefined;
+    const baseUrl = await this.detectXiaomiCluster(creds.accessToken);
+    if (!baseUrl || baseUrl === creds.baseUrl) return undefined;
+    await this.mutateLatest((latest) => {
+      const current = latest["xiaomi"];
+      if (current?.accessToken === creds.accessToken) current.baseUrl = baseUrl;
+    });
+    log("INFO", "auth", `Xiaomi Token Plan key belongs to ${baseUrl} — saved for future requests`);
+    return baseUrl;
   }
 
   // Keeps local-endpoint keys: they're the user's own config, and a 401 there is often a busy gateway.
@@ -675,6 +742,7 @@ export class AuthStorage {
     // keys (`moonshot-oauth`, `xai-oauth`) are intentionally excluded from that
     // set — they refresh below.
     if (STATIC_API_KEY_PROVIDERS.has(provider)) {
+      if (provider === "minimax" && !creds.baseUrl) return await this.withMiniMaxRegion(creds);
       return creds;
     }
 

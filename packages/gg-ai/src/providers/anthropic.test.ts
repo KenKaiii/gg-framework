@@ -700,6 +700,42 @@ describe("streamAnthropic error normalization", () => {
     await expect(result.response).rejects.toThrow(/usage limit reached/i);
   });
 
+  it("labels errors from an Anthropic-compatible provider with that provider", async () => {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const AnthropicMock = Anthropic as unknown as {
+      APIError: new (
+        status: number | undefined,
+        error: unknown,
+        message: string,
+        requestID?: string | null,
+        type?: string | null,
+      ) => Error;
+      nextError: Error | null;
+      nextEvents: unknown[] | null;
+    };
+    AnthropicMock.nextEvents = null;
+    AnthropicMock.nextError = new AnthropicMock.APIError(
+      402,
+      { type: "insufficient_balance_error", message: "insufficient balance (1008)" },
+      "402 Payment Required",
+      "req_minimax_label",
+      "insufficient_balance_error",
+    );
+
+    const result = streamAnthropic({
+      provider: "minimax",
+      model: "MiniMax-M3.1-Flash",
+      baseUrl: "https://api.minimax.io/anthropic",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "sk-cp-test",
+    });
+
+    await expect(result.response).rejects.toMatchObject({
+      provider: "minimax",
+      statusCode: 402,
+    } satisfies Partial<ProviderError>);
+  });
+
   it("preserves tool arguments carried on the streamed content block start", async () => {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     const AnthropicMock = Anthropic as unknown as {

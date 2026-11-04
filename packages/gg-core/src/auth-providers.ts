@@ -173,7 +173,7 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
   {
     value: "minimax",
     label: "MiniMax",
-    description: "MiniMax M3",
+    description: "MiniMax M3.1 Flash, M3",
     methods: ["apikey"],
     apiKeyLabel: "MiniMax",
   },

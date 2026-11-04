@@ -651,6 +651,23 @@ export const MODELS: ModelInfo[] = [
   },
   // ── MiniMax ────────────────────────────────────────────
   {
+    // The only text model M Plan / Token Plan keys cover; MiniMax-M3 on those
+    // keys fails with "insufficient balance (1008)". Pay-as-you-go serves both.
+    // Always thinks (`thinking: disabled` 400s; omitted = on) with a real
+    // low→max effort ladder on output_config.effort, API default max.
+    id: "MiniMax-M3.1-Flash",
+    name: "MiniMax M3.1 Flash",
+    provider: "minimax",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: true,
+    maxVideoBytes: 50 * 1024 * 1024,
+    costTier: "low",
+    maxThinkingLevel: "max",
+  },
+  {
     id: "MiniMax-M3",
     name: "MiniMax M3",
     provider: "minimax",
@@ -960,7 +977,7 @@ const DEFAULT_MODEL_IDS: Partial<Record<Provider, string>> = {
   gemini: "gemini-3.1-flash-lite",
   glm: "glm-5.3",
   moonshot: "kimi-k3",
-  minimax: "MiniMax-M3",
+  minimax: "MiniMax-M3.1-Flash",
   deepseek: "deepseek-v4-pro",
   huggingface: "moonshotai/Kimi-K2.7-Code",
   openrouter: "qwen/qwen3.8-max",

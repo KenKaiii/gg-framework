@@ -898,6 +898,16 @@ describe("OpenAI transform", () => {
 });
 
 describe("toAnthropicThinking", () => {
+  it("sends MiniMax M3.1 Flash adaptive thinking with its effort, never Anthropic's display", () => {
+    for (const level of ["low", "medium", "high", "xhigh", "max"] as const) {
+      expect(toAnthropicThinking(level, MAX_TOKENS, "MiniMax-M3.1-Flash")).toEqual({
+        thinking: { type: "adaptive" },
+        maxTokens: MAX_TOKENS,
+        outputConfig: { effort: level },
+      });
+    }
+  });
+
   // Opus 4.8 is no longer in ggcoder's model picker, but gg-ai is a standalone
   // library and Anthropic still serves that ID — keep the wire format correct.
   it("passes Anthropic adaptive effort levels through for Opus 5.5 / 5 (and legacy 4.8)", () => {
