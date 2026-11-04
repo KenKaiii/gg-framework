@@ -51,9 +51,14 @@ async function acquireLock(lockPath: string): Promise<void> {
           continue;
         }
       } catch {
-        // Corrupt lock file — remove and retry
-        await fs.unlink(lockPath).catch(() => {});
-        continue;
+        // Unreadable: released meanwhile, just created and not yet written (a
+        // live holder — deleting it let two writers in), or truly corrupt.
+        const stat = await fs.stat(lockPath).catch(() => null);
+        if (!stat) continue;
+        if (Date.now() - stat.mtimeMs > STALE_TIMEOUT_MS) {
+          await fs.unlink(lockPath).catch(() => {});
+          continue;
+        }
       }
 
       // Lock is held by a live process — wait and retry
