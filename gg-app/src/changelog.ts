@@ -22,6 +22,16 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.102.1",
+    date: "2026-11-04",
+    items: [
+      "OpenRouter just got way more flexible. Point your key at any compatible gateway with an optional base URL, then hit `Sync models` to swap in exactly what that endpoint serves, complete with real context sizes, image support and effort levels. Pick `max` and you now get `max`, no sneaky downgrades.",
+      "Local models now run at their true size. Pin a `context length` on any custom endpoint in Local models, and llama.cpp servers tell GG Coder their real window by themselves, so long chats stop getting cut short.",
+      "Radio finally knows when to stop. If the app crashes or gets force-quit, the next launch silences the leftover player, and on Windows hitting stop now really stops the music.",
+      "The `Update` key looks sharp again. I lined its version number up perfectly with the label, so it sits neat and tidy right where it belongs.",
+    ],
+  },
+  {
     version: "0.102.0",
     date: "2026-11-04",
     items: [
