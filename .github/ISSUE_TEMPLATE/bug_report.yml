@@ -1,0 +1,65 @@
+name: Bug report
+description: Something in GG Coder isn't working right
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Security problems go through [SECURITY.md](https://github.com/KenKaiii/gg-framework/blob/main/SECURITY.md), not here.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a project
+        2. Ask the agent to ...
+        3. See the error
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where did it happen?
+      options:
+        - Desktop app
+        - CLI (ggcoder)
+        - npm package (gg-ai, gg-agent, gg-core, ggcoder)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Desktop app version (shown on the About page) or npm package version.
+      placeholder: v0.103.1
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and model
+      placeholder: e.g. Claude subscription, Sonnet
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: |
+        Desktop app logs are in `~/.gg/gg-app-sidecar.log`. Remove API keys, tokens and anything private before pasting.
+      render: text

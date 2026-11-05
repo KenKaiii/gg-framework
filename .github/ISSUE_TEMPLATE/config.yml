@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/KenKaiii/gg-framework/security/advisories/new
+    about: Please report security problems privately, not as a public issue.
+  - name: Questions and help
+    url: https://skool.com/kenkai
+    about: Ask questions and get help in the Skool community.
