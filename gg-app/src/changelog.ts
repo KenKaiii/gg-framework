@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.103.0",
+    date: "2026-11-05",
+    items: [
+      "Your agent can now make real animated `GIFs`. Just ask for a frog walking or a rocket blasting off and it draws every frame and stitches them into a looping GIF that plays right in your chat, even after you reopen it. It already knows it can make images and GIFs the moment your `OpenAI` account is connected, so no more hand-coded animations.",
+      "Waiting on an image is actually fun now. A glowing dot board fills in as your picture develops, with a live progress pill, and you can click it to play `Snake` while you wait.",
+      "Every image in your chat now has a little `download` button in its corner. Click it, pick any folder, and the full-size original is yours.",
+    ],
+  },
+  {
     version: "0.102.3",
     date: "2026-11-05",
     items: [
