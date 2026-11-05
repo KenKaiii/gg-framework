@@ -24,8 +24,9 @@ export function daemonJson(res: http.ServerResponse, status: number, body: unkno
 export function readBody(
   req: http.IncomingMessage,
   res: http.ServerResponse,
+  maxBytes?: number,
 ): Promise<string | null> {
-  return readCappedBody(req, res);
+  return readCappedBody(req, res, maxBytes);
 }
 
 export function json(res: http.ServerResponse, status: number, body: unknown): void {

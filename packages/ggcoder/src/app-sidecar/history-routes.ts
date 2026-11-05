@@ -371,12 +371,13 @@ export function handleHistoryRoutes(
             // the user never saw while working.
             if (
               (!msg.provenance || (!restored.autopilotInjected && !restored.notification)) &&
-              (text.trim() || restored.images.length > 0)
+              (text.trim() || restored.images.length > 0 || restored.attachments.length > 0)
             ) {
               history.push({
                 role: "user",
                 text: command ?? text,
                 images: restored.images,
+                ...(restored.attachments.length > 0 ? { attachments: restored.attachments } : {}),
                 hook,
                 command: command !== null,
                 compacted,

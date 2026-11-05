@@ -242,7 +242,6 @@ export function Composer({
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/*,video/*"
           style={{ display: "none" }}
           onChange={(e) => {
             if (e.target.files) void addFiles(e.target.files);

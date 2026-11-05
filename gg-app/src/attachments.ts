@@ -1,4 +1,21 @@
-import type { Attachment } from "./agent";
+import type { Attachment, AttachmentChip } from "./agent";
+
+/** Raw bytes one message may attach. Matches MAX_DROPPED_FILE_BYTES (files.rs)
+ *  and the sidecar's MAX_PROMPT_ATTACHMENT_BYTES, which sizes the /prompt body cap. */
+export const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+
+/** Decoded size of the attachments' base64 payloads. */
+export function attachmentBytes(list: readonly Attachment[]): number {
+  return list.reduce((total, a) => total + Math.floor((a.data.length * 3) / 4), 0);
+}
+
+/** Name chips for the sent bubble: everything but images, which show as thumbnails. */
+export function attachmentChips(list: readonly Attachment[]): AttachmentChip[] | undefined {
+  const chips = list.flatMap((a): AttachmentChip[] =>
+    a.kind === "image" ? [] : [{ kind: a.kind, name: a.name }],
+  );
+  return chips.length > 0 ? chips : undefined;
+}
 
 /** A staged attachment in the input, with a local preview URL for images. */
 export interface PendingAttachment extends Attachment {

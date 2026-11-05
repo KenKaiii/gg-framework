@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { MAX_HTTP_BODY_BYTES, readCappedBody } from "./http-body.js";
+import {
+  MAX_HTTP_BODY_BYTES,
+  MAX_PROMPT_ATTACHMENT_BYTES,
+  MAX_PROMPT_BODY_BYTES,
+  readCappedBody,
+} from "./http-body.js";
 
 // Spin up a real HTTP server whose handler pipes the request through
 // readCappedBody, then POST bodies of various sizes and assert the cap.
@@ -73,5 +78,11 @@ describe("readCappedBody", () => {
 
   it("exposes a 10 MB default cap", () => {
     expect(MAX_HTTP_BODY_BYTES).toBe(10 * 1024 * 1024);
+  });
+
+  it("lets /prompt carry a full attachment allowance as base64", () => {
+    const base64Bytes = Math.ceil(MAX_PROMPT_ATTACHMENT_BYTES / 3) * 4;
+    expect(MAX_PROMPT_ATTACHMENT_BYTES).toBe(100 * 1024 * 1024);
+    expect(MAX_PROMPT_BODY_BYTES).toBeGreaterThan(base64Bytes);
   });
 });

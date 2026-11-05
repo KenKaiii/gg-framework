@@ -11,6 +11,7 @@ import {
 import { PROMPT_COMMANDS } from "../core/prompt-commands.js";
 import { log } from "../core/logger.js";
 import { readBody, json } from "./http.js";
+import { MAX_PROMPT_BODY_BYTES } from "../utils/http-body.js";
 import { type AppAttachment, prepareAttachments } from "./attachments.js";
 import { saveAutopilot } from "./app-settings.js";
 import { lastAssistantText, buildKenContext } from "./ken-context.js";
@@ -127,7 +128,7 @@ export function handlePromptRoutes(
     // it. A bare release would let an early-returning request (bad JSON, or a
     // prompt that queued) clear a claim another request is still holding.
     let claimedStart = false;
-    void readBody(req, res)
+    void readBody(req, res, MAX_PROMPT_BODY_BYTES)
       .then(async (raw) => {
         if (raw === null) return;
         let text: string;
@@ -175,8 +176,12 @@ export function handlePromptRoutes(
           ctx.runLifecycle.running &&
           ctx.runLifecycle.isCancellationRequested(ctx.runLifecycle.generation)
         ) {
+          const cancelling = ctx.runLifecycle.state === "cancelling";
           json(res, 409, {
-            error: ctx.runLifecycle.state === "cancelling" ? "run_cancelling" : "cancel_failed",
+            error: cancelling ? "run_cancelling" : "cancel_failed",
+            message: cancelling
+              ? "The last run is still stopping."
+              : "The last run couldn't be stopped. Stop it again first.",
             runState: ctx.runLifecycle.state,
           });
           return;

@@ -1,4 +1,4 @@
-import type { AskUserPrompt, PromptSegment } from "./agent";
+import type { AskUserPrompt, AttachmentChip, PromptSegment } from "./agent";
 import type { ChatErrorItem } from "./chat-error";
 import type { HookKind, VerificationReason } from "./HookNotice";
 import type { PlanDecision } from "./PlanDecisionNotice";
@@ -20,6 +20,8 @@ export type Item =
       command?: boolean;
       label?: string;
       images?: string[];
+      // Attached files and videos (images show in `images`).
+      attachments?: AttachmentChip[];
       files?: string[];
       // Corrected-term segments from the prompt enhancer, when this message was
       // sent unedited straight after an enhance. Drives the highlighted bubble.

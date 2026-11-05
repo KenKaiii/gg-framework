@@ -14,6 +14,8 @@ import {
 } from "./operations.js";
 import { countLines, recordRead, type ReadTracker } from "./read-tracker.js";
 import { lineHash } from "../core/hashline.js";
+import { DOCUMENT_EXTENSIONS, MAX_DOCUMENT_BYTES, extractDocumentText } from "./document-text.js";
+import { PdfExtractorUnavailable } from "./pdf-extract.js";
 import {
   IMAGE_EXTENSIONS,
   IMAGE_MEDIA_TYPES,
@@ -246,21 +248,34 @@ export function createReadTool(
         }
       }
 
-      if (BINARY_EXTENSIONS.has(ext)) {
+      // PDF/EPUB: page through the extracted text. Not tracked as a read: the
+      // lines shown are not the file's bytes, so edits must stay refused.
+      const isDocument = DOCUMENT_EXTENSIONS.has(ext);
+      const tracker = isDocument ? undefined : readFiles;
+      if (!isDocument && BINARY_EXTENSIONS.has(ext)) {
         const stat = await ops.stat(resolved);
         return `Binary file: ${resolved} (${ext}, ${stat.size} bytes)`;
       }
 
       let raw: string;
       try {
-        raw = await ops.readFile(resolved);
+        raw = isDocument
+          ? await extractDocumentText(ext, await readFileBounded(resolved, MAX_DOCUMENT_BYTES))
+          : await ops.readFile(resolved);
       } catch (err: unknown) {
-        const bounded = describeBoundedReadError(err);
-        if (bounded) return bounded;
         const code = (err as NodeJS.ErrnoException).code;
         if (code === "ENOENT") return `File not found: ${resolved}`;
         if (code === "EACCES") return `Permission denied: ${resolved}`;
         if (code === "EISDIR") return `Is a directory, not a file: ${resolved}`;
+        if (isDocument) {
+          if (err instanceof PdfExtractorUnavailable) {
+            return `Cannot extract text from ${resolved}: the optional 'unpdf' dependency is not installed. Try \`pdftotext\` via bash.`;
+          }
+          const reason = err instanceof Error ? err.message : String(err);
+          return `Could not extract text from ${resolved}: ${reason}`;
+        }
+        const bounded = describeBoundedReadError(err);
+        if (bounded) return bounded;
         throw err;
       }
       const stat = await ops.stat(resolved);
@@ -279,7 +294,7 @@ export function createReadTool(
       if (result.truncated && result.keptLines === 0) {
         const lineNo = startLine + 1;
         const bytes = Buffer.byteLength(lines[0] ?? "", "utf-8");
-        recordRead(readFiles, resolved, raw, stat.mtimeMs, [lineNo, lineNo]);
+        recordRead(tracker, resolved, raw, stat.mtimeMs, [lineNo, lineNo]);
         await onFileRead?.(resolved);
         const next =
           lineNo < countLines(raw)
@@ -289,7 +304,7 @@ export function createReadTool(
       }
       // Record exactly which lines the model is shown: a full-file write reports
       // any lines it removes that the model has not seen (see unseenLines).
-      recordRead(readFiles, resolved, raw, stat.mtimeMs, [
+      recordRead(tracker, resolved, raw, stat.mtimeMs, [
         startLine + 1,
         startLine + result.keptLines,
       ]);

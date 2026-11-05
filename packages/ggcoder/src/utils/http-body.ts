@@ -8,6 +8,14 @@ import type http from "node:http";
  */
 export const MAX_HTTP_BODY_BYTES = 10 * 1024 * 1024;
 
+/** Raw attachment bytes one prompt may carry: the app's drop limit
+ *  (MAX_DROPPED_FILE_BYTES in gg-app's files.rs, MAX_ATTACHMENT_BYTES in attachments.ts). */
+export const MAX_PROMPT_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+
+/** `POST /prompt` carries attachments as base64 (4/3 of raw) plus the text. */
+export const MAX_PROMPT_BODY_BYTES =
+  Math.ceil((MAX_PROMPT_ATTACHMENT_BYTES * 4) / 3) + MAX_HTTP_BODY_BYTES;
+
 /**
  * Read a request body into a string, aborting if it exceeds `maxBytes`.
  *

@@ -6,6 +6,8 @@ export interface HistoryEntryForWire {
   role: "user" | "assistant";
   text: string;
   images?: string[];
+  /** Attached files and videos, by name (images ride `images`). */
+  attachments?: Array<{ kind: "file" | "video"; name: string }>;
   hook?: "ideal" | "loop_break" | "regrounding" | null;
   command?: boolean;
   compacted?: boolean;

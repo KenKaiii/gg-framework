@@ -242,6 +242,31 @@ describe("restoreUserRow", () => {
     ]);
     expect(row.text).toBe("summarize this clip");
     expect(row.videoWarning).toBe(true);
+    expect(row.attachments).toEqual([{ kind: "video", name: "clip.mp4" }]);
+  });
+
+  it("recovers attached file and video chips, including a file-only message", () => {
+    const row = restoreUserRow([
+      {
+        type: "text",
+        text: "Attached files (inspect with your tools):\n- My Book (2nd ed).epub (saved at /p/.gg/uploads/lx1-My_Book_2nd_ed_.epub)\n- spec.pdf (saved at /p/.gg/uploads/lx2-spec.pdf)\nThe read tool opens PDF and EPUB files as text.",
+      },
+      {
+        type: "text",
+        text: "The user attached a video at /p/.gg/uploads/lx3-demo.mov. You CAN watch it: call the read tool on this exact path now.",
+      },
+      {
+        type: "text",
+        text: `[User attached a file "notes.txt" but it could not be saved, so it can't be opened.]`,
+      },
+    ]);
+    expect(row.text).toBe("");
+    expect(row.attachments).toEqual([
+      { kind: "file", name: "My Book (2nd ed).epub" },
+      { kind: "file", name: "spec.pdf" },
+      { kind: "video", name: "demo.mov" },
+      { kind: "file", name: "notes.txt" },
+    ]);
   });
 });
 

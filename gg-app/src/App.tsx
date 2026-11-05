@@ -171,7 +171,13 @@ import { countPlanSteps } from "./plan-steps";
 import { toast } from "./toast";
 import { takeNewBlockedSkillMessages } from "./blocked-skills";
 import { collapseSecurityRows, takeNewSecurityNotices } from "./security-notices";
-import { toWire, type PendingAttachment } from "./attachments";
+import {
+  MAX_ATTACHMENT_BYTES,
+  attachmentBytes,
+  attachmentChips,
+  toWire,
+  type PendingAttachment,
+} from "./attachments";
 import { TranscriptRow } from "./TranscriptRow";
 import { nextId, lastIssuedId, type Item } from "./transcript-item";
 import { useTranscriptScroll } from "./useTranscriptScroll";
@@ -1252,6 +1258,9 @@ function App(): React.ReactElement {
                 command: h.command || label !== null,
                 ...(label !== null ? { label } : {}),
                 images: h.images && h.images.length > 0 ? h.images : undefined,
+                ...(h.attachments && h.attachments.length > 0
+                  ? { attachments: h.attachments }
+                  : {}),
                 ...(parsed && parsed.files.length > 0 ? { files: parsed.files } : {}),
                 ...(h.enhancements && h.enhancements.length > 0
                   ? { enhancements: h.enhancements }
@@ -2367,6 +2376,17 @@ function App(): React.ReactElement {
       return;
     }
 
+    // Over this the sidecar refuses the whole request, so stop here with the draft intact.
+    const totalBytes = attachmentBytes(attachments);
+    if (totalBytes > MAX_ATTACHMENT_BYTES) {
+      const mb = (bytes: number): number => Math.ceil(bytes / (1024 * 1024));
+      toast(
+        `Attachments are too big to send (${mb(totalBytes)} MB). The limit is ${mb(MAX_ATTACHMENT_BYTES)} MB per message.`,
+        "error",
+      );
+      return;
+    }
+
     chatLayout.capture();
     // The strips this send clears (chips, the cold-cache notice) must leave in
     // the bubble's commit, or their fold resizes the transcript mid-move.
@@ -2411,6 +2431,7 @@ function App(): React.ReactElement {
         text: trimmed,
         command: isWorkflowCommand(trimmed),
         images: queuedImgs.length > 0 ? queuedImgs : undefined,
+        attachments: attachmentChips(attachments),
         files: mentionedPaths.length > 0 ? mentionedPaths : undefined,
         enhancements: sentEnhancements,
         queued: showsQueuedBubble("queue", supersedesQuestion) ? true : undefined,
@@ -2436,6 +2457,7 @@ function App(): React.ReactElement {
       text: trimmed,
       command: isWorkflowCommand(trimmed),
       images: imgPreviews.length > 0 ? imgPreviews : undefined,
+      attachments: attachmentChips(attachments),
       files: mentionedPaths.length > 0 ? mentionedPaths : undefined,
       enhancements: sentEnhancements,
     });

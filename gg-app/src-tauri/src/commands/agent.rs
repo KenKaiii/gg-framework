@@ -253,7 +253,7 @@ pub(crate) async fn agent_prompt(
 ) -> Result<(), String> {
     let port = port_for(&webview).ok_or("daemon not ready")?;
     let gg_sid = session_for(&webview).ok_or("session not ready")?;
-    client
+    let res = client
         .post(format!("{}/prompt", sidecar_base(port)))
         .header("x-gg-session", &gg_sid)
         .json(&serde_json::json!({
@@ -264,7 +264,26 @@ pub(crate) async fn agent_prompt(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    Ok(())
+    let status = res.status();
+    let body = if status.is_success() {
+        None
+    } else {
+        res.json::<serde_json::Value>().await.ok()
+    };
+    prompt_result(status, body.as_ref())
+}
+
+/// A refused prompt (too large, empty, run still stopping) must reach the
+/// webview as an error so it restores the draft instead of looking sent.
+pub(crate) fn prompt_result(
+    status: reqwest::StatusCode,
+    body: Option<&serde_json::Value>,
+) -> Result<(), String> {
+    if status.is_success() {
+        Ok(())
+    } else {
+        Err(sidecar_error_message(status, body))
+    }
 }
 
 pub(crate) async fn sidecar_get_json(
@@ -1178,6 +1197,24 @@ pub(crate) async fn agent_remove_plugin(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prompt_result_rejects_refused_prompts() {
+        assert_eq!(prompt_result(reqwest::StatusCode::ACCEPTED, None), Ok(()));
+        let too_large = serde_json::json!({ "error": "request body too large" });
+        assert_eq!(
+            prompt_result(reqwest::StatusCode::PAYLOAD_TOO_LARGE, Some(&too_large)),
+            Err("request body too large".to_string())
+        );
+        let stopping = serde_json::json!({
+            "error": "run_cancelling",
+            "message": "The last run is still stopping.",
+        });
+        assert_eq!(
+            prompt_result(reqwest::StatusCode::CONFLICT, Some(&stopping)),
+            Err("The last run is still stopping.".to_string())
+        );
+    }
 
     #[test]
     fn cancel_response_accepts_acknowledged_success() {

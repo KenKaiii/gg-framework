@@ -141,6 +141,44 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 }
 
 describe("composer attachments", () => {
+  it("sends a pasted PDF and shows it by name in the sent message", async () => {
+    const { input, sends } = await setup();
+    fireEvent.paste(input, {
+      clipboardData: { files: [new File(["%PDF-1.4"], "spec.pdf", { type: "application/pdf" })] },
+    });
+    await screen.findByRole("button", { name: "Remove spec.pdf" });
+    fireEvent.click(screen.getByTitle("Send"));
+    await waitFor(() =>
+      expect(sends).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attachments: [expect.objectContaining({ kind: "file", name: "spec.pdf" })],
+        }),
+      ),
+    );
+    const chip = await waitFor(() => {
+      const found = document.querySelector(".user-msg .user-file-chip");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(chip.textContent).toBe("spec.pdf");
+  });
+
+  it("refuses attachments over the size limit and keeps them staged", async () => {
+    vi.spyOn(attachments, "attachmentBytes").mockReturnValue(attachments.MAX_ATTACHMENT_BYTES + 1);
+    const { input, sends } = await setup();
+    fireEvent.change(input, { target: { value: "Summarize this book" } });
+    paste(input);
+    await screen.findByRole("button", { name: "Remove screenshot.png" });
+    fireEvent.click(screen.getByTitle("Send"));
+    expect(notifications.toast).toHaveBeenCalledWith(
+      "Attachments are too big to send (101 MB). The limit is 100 MB per message.",
+      "error",
+    );
+    expect(sends).not.toHaveBeenCalled();
+    expect(input.value).toBe("Summarize this book");
+    expect(screen.getByRole("button", { name: "Remove screenshot.png" })).toBeTruthy();
+  });
+
   it("reads and sends a pasted screenshot on the first click", async () => {
     const { input, sends } = await setup();
     paste(input);

@@ -120,6 +120,31 @@ describe("AgentSession attachment routing (app/sidecar path)", () => {
     }
   }, 20_000);
 
+  it("tells the model about files, even one that could not be saved", async () => {
+    const session = await createSession("anthropic", "claude-test");
+    try {
+      await session.promptWithAttachments("", [
+        {
+          kind: "file",
+          name: "book.epub",
+          mediaType: "application/epub+zip",
+          data: "",
+          path: "/p/book.epub",
+        },
+        { kind: "file", name: "lost.pdf", mediaType: "application/pdf", data: "" },
+      ]);
+      const texts = lastUserParts(session).map((p) => p.text);
+      expect(texts).toContain(
+        "Attached files (inspect with your tools):\n- book.epub (saved at /p/book.epub)\nThe read tool opens PDF and EPUB files as text.",
+      );
+      expect(texts).toContain(
+        `[User attached a file "lost.pdf" but it could not be saved, so it can't be opened.]`,
+      );
+    } finally {
+      await session.dispose();
+    }
+  }, 20_000);
+
   it("keeps inline image parts for non-GLM providers (untouched behavior)", async () => {
     const session = await createSession("anthropic", "claude-test");
     try {

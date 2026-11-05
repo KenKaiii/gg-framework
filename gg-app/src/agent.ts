@@ -930,6 +930,12 @@ export async function getDroppedPathInfo(paths: string[]): Promise<DroppedPathIn
   }
 }
 
+/** A sent non-image attachment, shown by name in the user bubble. */
+export interface AttachmentChip {
+  kind: "file" | "video";
+  name: string;
+}
+
 /** A chat-input attachment (image / video / other file) sent with a prompt. */
 export interface Attachment {
   kind: "image" | "video" | "file";
@@ -1129,6 +1135,8 @@ export interface HistoryEntry {
   text: string;
   /** Attached image data URLs, reconstructed so they re-render on resume. */
   images?: string[];
+  /** Attached files and videos, by name. */
+  attachments?: AttachmentChip[];
   hook?: "ideal" | "loop_break" | "regrounding" | null;
   /** True when `text` is a recovered `/name [args]` command invocation, so the
    *  webview renders the short command chip instead of the expanded body. */

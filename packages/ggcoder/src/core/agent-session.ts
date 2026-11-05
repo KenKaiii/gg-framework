@@ -1714,12 +1714,27 @@ export class AgentSession {
         }
       } else if (a.path) {
         fileNotes.push(`- ${a.name} (saved at ${a.path})`);
+      } else {
+        // Never drop a file silently: a file-only prompt would otherwise build no
+        // parts and never run.
+        parts.push({
+          type: "text",
+          text: `[User attached a file "${a.name}" but it could not be saved, so it can't be opened.]`,
+        });
       }
     }
     const textParts: string[] = [];
     if (text.trim()) textParts.push(text.trim());
     if (fileNotes.length > 0) {
-      textParts.push(`Attached files (inspect with your tools):\n${fileNotes.join("\n")}`);
+      // Without this the model unzips/greps documents through bash instead.
+      const docHint = attachments.some(
+        (a) => a.kind === "file" && a.path && /\.(pdf|epub)$/i.test(a.path),
+      )
+        ? "\nThe read tool opens PDF and EPUB files as text."
+        : "";
+      textParts.push(
+        `Attached files (inspect with your tools):\n${fileNotes.join("\n")}${docHint}`,
+      );
     }
     if (textParts.length > 0) parts.unshift({ type: "text", text: textParts.join("\n\n") });
     return parts;
