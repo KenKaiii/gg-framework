@@ -915,6 +915,42 @@ export async function openImageDataUrl(src: string): Promise<void> {
   }
 }
 
+/**
+ * Save a chat image where the user picks (native save dialog, opened by Rust).
+ * Pass the image's file when it has one, so the full-size original is saved
+ * rather than the smaller preview. Resolves to the saved path, or null when
+ * the dialog was cancelled; throws with a user-facing message on failure.
+ */
+export async function saveChatImage({
+  path,
+  src,
+  directory,
+}: {
+  path?: string;
+  src?: string;
+  directory?: string | null;
+}): Promise<string | null> {
+  if (path) {
+    // Only a `file://` URL is percent-encoded; a plain path may hold a real `%`.
+    let resolved = path;
+    if (path.startsWith("file://")) {
+      try {
+        resolved = decodeURIComponent(path);
+      } catch {
+        // Keep the original string if the model emitted a malformed `%` escape.
+      }
+    }
+    return invoke<string | null>("save_chat_image", { path: resolved, directory });
+  }
+  const match = src ? /^data:([^;,]+);base64,(.+)$/s.exec(src) : null;
+  if (!match) throw new Error("this image has no file or data to save");
+  return invoke<string | null>("save_chat_image", {
+    mediaType: match[1],
+    data: match[2],
+    directory,
+  });
+}
+
 export interface DroppedPathInfo {
   path: string;
   isDir: boolean;

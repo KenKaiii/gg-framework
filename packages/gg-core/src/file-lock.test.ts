@@ -49,6 +49,7 @@ describe("withFileLock", () => {
   });
 
   it("waits out a Windows pending-delete EPERM on the lock file", async () => {
+    vi.spyOn(process, "platform", "get").mockReturnValue("win32");
     const target = path.join(dir, "data.json");
     const lockPath = `${target}.lock`;
     await fs.writeFile(lockPath, "");
@@ -72,10 +73,21 @@ describe("withFileLock", () => {
   });
 
   it("still fails on a persistent EPERM with no lock file present", async () => {
+    vi.spyOn(process, "platform", "get").mockReturnValue("win32");
     const target = path.join(dir, "data.json");
     vi.spyOn(fs, "writeFile").mockRejectedValue(
       Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" }),
     );
     await expect(withFileLock(target, async () => {})).rejects.toMatchObject({ code: "EPERM" });
+  });
+
+  it("fails at once on EACCES outside Windows, where it is a real permission error", async () => {
+    vi.spyOn(process, "platform", "get").mockReturnValue("linux");
+    const target = path.join(dir, "data.json");
+    const writeFile = vi
+      .spyOn(fs, "writeFile")
+      .mockRejectedValue(Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" }));
+    await expect(withFileLock(target, async () => {})).rejects.toMatchObject({ code: "EACCES" });
+    expect(writeFile).toHaveBeenCalledOnce();
   });
 });

@@ -14,6 +14,7 @@ import rehypeHighlight from "rehype-highlight";
 import { CheckIcon, CopyIcon, ArrowElbowDownLeftIcon } from "@phosphor-icons/react";
 import { openProjectPath, openUrl, readChatImage, sendPrompt } from "./agent";
 import { toast } from "./toast";
+import { ImageCard } from "./ImageCard";
 import { codeLanguage, codeNodeText } from "./markdown-prompt";
 import { collapsedCode, shouldCollapseCode, visibleBlockCount } from "./collapse";
 import { marked } from "marked";
@@ -128,26 +129,18 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }): React.Reac
       </span>
     );
   }
-  const open = (): void => {
-    if (local) void openProjectPath(local);
-  };
   return (
-    <span
-      className={`img-card md-img${local ? " img-card-clickable" : ""}`}
-      role={local ? "button" : undefined}
-      tabIndex={local ? 0 : undefined}
-      aria-label={local ? `Open ${alt || fileName(local)}` : undefined}
+    <ImageCard
+      inline
+      className="md-img"
+      src={url}
+      alt={alt ?? ""}
+      path={local}
+      caption={local ? alt || fileName(local) : undefined}
       title={local}
-      onClick={open}
-      onKeyDown={(e) => {
-        if (!local || (e.key !== "Enter" && e.key !== " ")) return;
-        e.preventDefault();
-        open();
-      }}
-    >
-      <img className="img-thumb" src={url} alt={alt ?? ""} onError={() => setBroken(url)} />
-      {local && <span className="img-cap">{alt || fileName(local)}</span>}
-    </span>
+      onOpen={local ? () => void openProjectPath(local) : undefined}
+      onError={() => setBroken(url)}
+    />
   );
 }
 

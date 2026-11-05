@@ -38,7 +38,8 @@ export const TOOL_PROMPT_HINTS: Record<string, string> = {
   subagent: "Blocking child agent.",
   skill: "Load a named skill's instructions.",
   tool_search: "Load on-demand and integration tools by capability.",
-  generate_image: "Images; only if asked.",
+  generate_image:
+    "Make images and animated GIFs (OpenAI); use it, not code, when asked for a picture or GIF.",
   steroids: "Current open-source code, when it may be newer than your training.",
 };
 

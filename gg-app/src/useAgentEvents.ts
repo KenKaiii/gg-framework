@@ -744,7 +744,14 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           if (name === "generate_image") {
             const prompt = typeof args.prompt === "string" ? args.prompt : "generating image…";
             endStreamingText();
-            pushItem({ kind: "generating_image", id: nextId(), prompt, toolCallId });
+            pushItem({
+              kind: "generating_image",
+              id: nextId(),
+              prompt,
+              toolCallId,
+              gif: typeof args.gif === "object" && args.gif !== null,
+              startedAt: Date.now(),
+            });
           }
           break;
         }

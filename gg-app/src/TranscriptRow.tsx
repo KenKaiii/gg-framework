@@ -16,7 +16,8 @@ import { AskBand } from "./AskBand";
 import { ShellBlock } from "./ShellBlock";
 import type { ShellActions } from "./useShellRuns";
 import { Markdown } from "./Markdown";
-import { Skeleton } from "./Skeleton";
+import { ImageGenCard } from "./image-gen/ImageGenCard";
+import { ImageCard } from "./ImageCard";
 import { segmentDoneMarkers, hasDoneMarker } from "./plan-steps";
 import { hidePartialKenLine, stripKenLine } from "./goal-ken-talk";
 import { EnhancedSegments } from "./PromptEnhancement";
@@ -379,35 +380,18 @@ function TranscriptRowBody({
       return (
         <div className="img-grid">
           {item.images.map((img, i) => {
-            const openImage = (): void => {
-              if (img.path) void openProjectPath(img.path);
-            };
+            const path = img.path;
             return (
-              <figure
-                key={img.path ?? i}
-                className={`img-card${img.path ? " img-card-clickable" : ""}`}
-                role={img.path ? "button" : undefined}
-                tabIndex={img.path ? 0 : undefined}
-                title={img.path ? `Open ${img.path}` : undefined}
-                onClick={openImage}
-                onKeyDown={(e) => {
-                  if (!img.path || (e.key !== "Enter" && e.key !== " ")) return;
-                  e.preventDefault();
-                  openImage();
-                }}
-              >
-                <img
-                  className="img-thumb"
-                  src={img.src}
-                  alt={img.path ?? "image"}
-                  onLoad={onContentGrow}
-                />
-                {img.path && (
-                  <figcaption className="img-cap" title={img.path}>
-                    {basename(img.path)}
-                  </figcaption>
-                )}
-              </figure>
+              <ImageCard
+                key={path ?? i}
+                src={img.src}
+                alt={path ?? "image"}
+                path={path}
+                caption={path ? basename(path) : undefined}
+                title={path ? `Open ${path}` : undefined}
+                onOpen={path ? () => void openProjectPath(path) : undefined}
+                onLoad={onContentGrow}
+              />
             );
           })}
         </div>
@@ -415,12 +399,7 @@ function TranscriptRowBody({
     case "generating_image":
       return (
         <div className="img-grid">
-          <div className="img-gen-placeholder">
-            <Skeleton width={200} height={200} radius={12} />
-            <span className="img-gen-label">
-              {item.prompt.length > 60 ? item.prompt.slice(0, 57) + "\u2026" : item.prompt}
-            </span>
-          </div>
+          <ImageGenCard prompt={item.prompt} gif={item.gif} startedAt={item.startedAt} />
         </div>
       );
     case "plan":

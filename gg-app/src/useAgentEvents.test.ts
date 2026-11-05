@@ -1093,7 +1093,9 @@ describe("useAgentEvents", () => {
       );
       hook.result.current.handleEvent(ev("tool_call_end", { toolCallId: "r1", isError: false }));
     });
-    expect(getItems().filter((it) => it.kind === "generating_image")).toHaveLength(1);
+    const placeholders = getItems().filter((it) => it.kind === "generating_image");
+    expect(placeholders).toHaveLength(1);
+    expect(placeholders[0]).toMatchObject({ prompt: "a cat", gif: false });
 
     act(() => {
       hook.result.current.handleEvent(ev("tool_call_end", { toolCallId: "g1", isError: false }));
@@ -1105,8 +1107,15 @@ describe("useAgentEvents", () => {
     const { hook, getItems } = setup();
     act(() => {
       hook.result.current.handleEvent(
-        ev("tool_call_start", { toolCallId: "g1", name: "generate_image", args: { prompt: "x" } }),
+        ev("tool_call_start", {
+          toolCallId: "g1",
+          name: "generate_image",
+          args: { prompt: "x", gif: {} },
+        }),
       );
+    });
+    expect(getItems().find((it) => it.kind === "generating_image")).toMatchObject({ gif: true });
+    act(() => {
       hook.result.current.handleEvent(
         ev("tool_call_end", {
           toolCallId: "g1",

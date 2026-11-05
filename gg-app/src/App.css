@@ -9634,6 +9634,9 @@ select {
   padding: var(--space-3) 0;
 }
 .img-card {
+  /* The caption row's height, shared with the save button that ends it. */
+  --img-cap-h: 28px;
+  position: relative;
   margin: 0;
   max-width: 320px;
   border: 1px solid var(--border);
@@ -9642,12 +9645,88 @@ select {
   background: var(--surface-1);
 }
 .img-card-clickable {
-  cursor: pointer;
   transition: border-color var(--t-fast);
 }
-.img-card-clickable:hover,
-.img-card-clickable:focus-visible {
+.img-card-clickable:hover {
   border-color: var(--border-strong);
+}
+/* The whole image and its caption open the file. */
+.img-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.img-open:focus {
+  outline: none;
+}
+.img-open:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  border-radius: var(--radius-card);
+}
+/* Save: the end of the caption row, or a frosted chip on the image's corner
+   when there is no caption. */
+.img-save {
+  position: absolute;
+  inset-inline-end: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: var(--img-cap-h);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--t-out),
+    background-color var(--t-out);
+}
+.img-save:hover {
+  color: var(--text);
+  background: rgb(var(--ink-rgb) / 0.06);
+  transition:
+    color var(--t-in),
+    background-color var(--t-in);
+}
+.img-save:active {
+  background: rgb(var(--ink-rgb) / 0.1);
+}
+.img-save:focus {
+  outline: none;
+}
+.img-save:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -3px;
+  border-radius: var(--radius-button);
+}
+.img-save:disabled {
+  cursor: progress;
+  opacity: 0.55;
+}
+.img-card:not(.has-cap) .img-save {
+  inset-inline-end: var(--space-3);
+  bottom: var(--space-3);
+  width: 28px;
+  height: 28px;
+  border: 0.5px solid var(--border-strong);
+  border-radius: var(--radius-button);
+  background: color-mix(in srgb, var(--surface-3) 82%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--text-secondary);
+}
+.img-card:not(.has-cap) .img-save:hover {
+  background: var(--surface-3);
+  color: var(--text);
 }
 .img-thumb {
   display: block;
@@ -9656,7 +9735,13 @@ select {
   object-fit: contain;
 }
 .img-cap {
-  padding: 5px 9px;
+  display: block;
+  box-sizing: border-box;
+  height: var(--img-cap-h);
+  /* One line, centred in the row by its line box (less the top border). */
+  line-height: calc(var(--img-cap-h) - 1px);
+  /* Room for the save button at the end of the row. */
+  padding: 0 34px 0 9px;
   font-family: var(--sans);
   font-size: var(--fs-xs);
   color: var(--text-muted);
@@ -9677,10 +9762,6 @@ select {
 .markdown .md-img .img-thumb {
   max-height: 480px;
 }
-.markdown .md-img .img-cap {
-  display: block;
-  line-height: 1.3;
-}
 .markdown .md-img-loading,
 .markdown .md-img-missing,
 .markdown .md-img-alt {
@@ -9689,18 +9770,124 @@ select {
 }
 
 /* ── Image generation placeholder (shimmering square while tool runs) ── */
-.img-gen-placeholder {
+/* generate_image in flight (image-gen/ImageGenCard.tsx): the same card as the
+   finished image, holding a square stage with a dot board that fills in as the
+   estimate grows, the status phrase above it and the estimate in a pill. */
+.img-gen-card {
+  width: min(100%, 320px);
+}
+.img-gen-stage {
+  position: relative;
+  aspect-ratio: 1 / 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-5);
-  max-width: 240px;
+  padding: 44px var(--space-6) var(--space-6);
+  color: var(--text-secondary);
+  background: var(--surface-1);
 }
-.img-gen-label {
+.img-gen-board {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: var(--radius-button);
+  background: var(--surface-2);
+}
+.img-gen-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.img-gen-play {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.img-gen-play:focus {
+  outline: none;
+}
+.img-gen-play:active {
+  background: rgb(var(--ink-rgb) / 0.03);
+}
+.img-gen-play:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.img-gen-phrase {
+  position: absolute;
+  inset-inline: var(--space-8);
+  top: var(--space-8);
   font-family: var(--sans);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-md);
+  line-height: 1.3;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity var(--dur-dissolve) var(--ease-in-out);
+}
+.img-gen-phrase[data-changing] {
+  opacity: 0;
+}
+.img-gen-score {
+  position: absolute;
+  inset-inline-end: var(--space-8);
+  top: var(--space-8);
+  font-family: var(--sans);
+  font-size: var(--fs-md);
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
   color: var(--text-muted);
+}
+/* The estimate: a frosted pill over the board's corner. */
+.img-gen-progress {
+  position: absolute;
+  inset-inline-end: var(--space-9);
+  bottom: var(--space-9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  height: 24px;
+  padding: 0 var(--space-4);
+  border: 0.5px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface-3) 82%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-md);
+  font-family: var(--sans);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  color: var(--secondary);
+  pointer-events: none;
+}
+.img-gen-over {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  font-family: var(--sans);
+  font-size: var(--fs-base);
+  line-height: 1.3;
   text-align: center;
+  color: var(--text);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .img-gen-phrase {
+    transition: none;
+  }
 }
 
 /* ── Slash command palette (opens upward from the input) ── */

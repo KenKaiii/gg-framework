@@ -235,6 +235,133 @@ pub(crate) fn open_image_data(
     open_with_default(&file.to_string_lossy())
 }
 
+/// The bytes of a chat image and the name it was shown with: a file the chat
+/// links to (`path`), or an in-memory image with no file of its own (`data`).
+pub(crate) fn chat_image_bytes(
+    cwd: Option<&Path>,
+    path: Option<&str>,
+    media_type: Option<&str>,
+    data: Option<&str>,
+) -> Result<(Vec<u8>, Option<String>), String> {
+    let (bytes, name) = if let Some(path) = path {
+        let file = resolve_chat_path(cwd.ok_or("sidecar not ready")?, path)?;
+        let metadata = std::fs::metadata(&file).map_err(|e| e.to_string())?;
+        if !metadata.is_file() || metadata.len() > MAX_DROPPED_FILE_BYTES {
+            return Err(format!("not a file that can be saved: {path}"));
+        }
+        let name = file.file_name().map(|n| n.to_string_lossy().into_owned());
+        (std::fs::read(&file).map_err(|e| e.to_string())?, name)
+    } else {
+        let media_type = media_type.ok_or("no image to save")?;
+        image_extension_for(media_type).ok_or_else(|| format!("not an image: {media_type}"))?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(data.ok_or("no image to save")?.as_bytes())
+            .map_err(|e| format!("invalid image data: {e}"))?;
+        if bytes.len() as u64 > MAX_DROPPED_FILE_BYTES {
+            return Err("image is too large to save".into());
+        }
+        (bytes, None)
+    };
+    // Checked by content, so this only ever writes images.
+    sniff_image_type(&bytes).ok_or("not an image")?;
+    Ok((bytes, name))
+}
+
+/// The name the save dialog suggests: the image's own name when its extension
+/// matches what the bytes are, else `image` with the right extension.
+pub(crate) fn suggested_image_name(name: Option<&str>, extension: &str) -> String {
+    let Some(name) = name.filter(|n| !n.trim().is_empty()) else {
+        return format!("image.{extension}");
+    };
+    let path = Path::new(name);
+    let current = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+    let matches = match current.as_deref() {
+        Some("jpeg") => extension == "jpg",
+        Some(other) => other == extension,
+        None => false,
+    };
+    if matches {
+        return name.to_string();
+    }
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("image");
+    format!("{stem}.{extension}")
+}
+
+/// Extensions the save dialog's filter accepts for an image of this type.
+pub(crate) fn image_filter_extensions(extension: &str) -> &[&str] {
+    match extension {
+        "jpg" => &["jpg", "jpeg"],
+        "png" => &["png"],
+        "gif" => &["gif"],
+        "webp" => &["webp"],
+        "bmp" => &["bmp"],
+        _ => &[],
+    }
+}
+
+/// Some dialogs (GTK, or a name typed without one on Windows) return a path
+/// with no extension; give it the image's own so it opens as a picture.
+pub(crate) fn with_image_extension(path: PathBuf, extension: &str) -> PathBuf {
+    if path.extension().is_some() {
+        path
+    } else {
+        path.with_extension(extension)
+    }
+}
+
+/// Save a chat image wherever the user picks. The native save dialog opens
+/// here rather than in the webview, so only a place the user chose is written.
+/// Returns the saved path, or None when the dialog was cancelled.
+#[tauri::command]
+pub(crate) async fn save_chat_image(
+    webview: WebviewWindow,
+    path: Option<String>,
+    media_type: Option<String>,
+    data: Option<String>,
+    directory: Option<String>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let cwd = cwd_for(&webview);
+    let (bytes, name) = chat_image_bytes(
+        cwd.as_deref(),
+        path.as_deref(),
+        media_type.as_deref(),
+        data.as_deref(),
+    )?;
+    let extension = sniff_image_type(&bytes)
+        .and_then(image_extension_for)
+        .ok_or("not an image")?;
+    let mut dialog = webview
+        .dialog()
+        .file()
+        .set_title("Save image")
+        .set_file_name(suggested_image_name(name.as_deref(), extension))
+        .add_filter("Image", image_filter_extensions(extension))
+        .set_can_create_directories(true)
+        .set_parent(&webview);
+    if let Some(dir) = directory.filter(|d| Path::new(d).is_dir()) {
+        dialog = dialog.set_directory(dir);
+    }
+    // The blocking dialog must not run on the main thread.
+    let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let target = with_image_extension(picked.into_path().map_err(|e| e.to_string())?, extension);
+    // The webview's toast adds "Could not save image:" in front.
+    std::fs::write(&target, &bytes).map_err(|e| e.to_string())?;
+    Ok(Some(target.to_string_lossy().into_owned()))
+}
+
 /// Open a web/mail/phone link in the user's default app (chat links, title-bar
 /// GitHub links, OAuth pages). Scheme-validated so the webview can't turn this
 /// into a local-file opener.
@@ -257,6 +384,51 @@ mod tests {
         assert_eq!(image_extension_for("image/jpeg"), Some("jpg"));
         assert_eq!(image_extension_for("application/x-sh"), None);
         assert_eq!(image_extension_for("image/svg+xml"), None);
+    }
+
+    #[test]
+    fn saved_images_keep_their_name_with_the_right_extension() {
+        assert_eq!(suggested_image_name(Some("loop.gif"), "gif"), "loop.gif");
+        assert_eq!(suggested_image_name(Some("shot.JPEG"), "jpg"), "shot.JPEG");
+        assert_eq!(suggested_image_name(Some("shot.png"), "gif"), "shot.gif");
+        assert_eq!(suggested_image_name(Some("notes"), "png"), "notes.png");
+        assert_eq!(suggested_image_name(None, "webp"), "image.webp");
+    }
+
+    #[test]
+    fn saved_images_always_get_an_extension() {
+        assert_eq!(
+            with_image_extension(PathBuf::from("/tmp/frog"), "gif"),
+            PathBuf::from("/tmp/frog.gif")
+        );
+        assert_eq!(
+            with_image_extension(PathBuf::from("/tmp/frog.GIF"), "gif"),
+            PathBuf::from("/tmp/frog.GIF")
+        );
+        assert_eq!(image_filter_extensions("jpg"), &["jpg", "jpeg"]);
+    }
+
+    #[test]
+    fn only_image_bytes_can_be_saved() {
+        let png = base64::engine::general_purpose::STANDARD.encode(b"\x89PNG\r\n\x1a\nrest");
+        let (bytes, name) =
+            chat_image_bytes(None, None, Some("image/png"), Some(&png)).expect("a png saves");
+        assert!(bytes.starts_with(b"\x89PNG"));
+        assert_eq!(name, None);
+        let script = base64::engine::general_purpose::STANDARD.encode(b"#!/bin/sh\nrm -rf ~");
+        assert!(chat_image_bytes(None, None, Some("image/png"), Some(&script)).is_err());
+        assert!(chat_image_bytes(None, None, Some("application/x-sh"), Some(&script)).is_err());
+
+        let dir = std::env::temp_dir().join(format!("gg-save-image-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("loop.gif"), b"GIF89a....").unwrap();
+        std::fs::write(dir.join("fake.png"), b"not really").unwrap();
+        let (bytes, name) = chat_image_bytes(Some(&dir), Some("loop.gif"), None, None).unwrap();
+        assert!(bytes.starts_with(b"GIF89a"));
+        assert_eq!(name.as_deref(), Some("loop.gif"));
+        assert!(chat_image_bytes(Some(&dir), Some("fake.png"), None, None).is_err());
+        assert!(chat_image_bytes(None, Some("loop.gif"), None, None).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -163,6 +163,7 @@ pub fn run() {
             commands::files::open_project_path,
             commands::files::open_image_data,
             commands::files::read_chat_image,
+            commands::files::save_chat_image,
             commands::files::open_url,
             commands::agent::agent_state,
             commands::agent::agent_memories,

@@ -150,6 +150,33 @@ function isMediaObject(value: Record<string, unknown>): boolean {
   );
 }
 
+/** A whole base64 image data URL, e.g. a restored chat image's `src`. */
+const IMAGE_DATA_URL = /^data:image\/[a-z0-9.+-]+;base64,([A-Za-z0-9+/]*={0,2})$/i;
+/** Base64 openings of PNG, JPEG, GIF, WebP and BMP files. */
+const IMAGE_BASE64_SIGNATURE = /^(?:iVBORw0KGgo|\/9j\/|R0lGOD|UklGR|Qk)/;
+/** Image bytes are exempt from scrubbing only up to this many characters. */
+const MAX_IMAGE_BASE64_CHARS = 16_000_000;
+
+function isImageBase64(value: string): boolean {
+  return value.length <= MAX_IMAGE_BASE64_CHARS && IMAGE_BASE64_SIGNATURE.test(value);
+}
+
+function isImageDataUrl(value: string): boolean {
+  if (!value.startsWith("data:image/") || value.length > MAX_IMAGE_BASE64_CHARS + 64) return false;
+  const match = IMAGE_DATA_URL.exec(value);
+  return match !== null && isImageBase64(match[1]!);
+}
+
+/** A tool's inline image preview (`details.imagePreviews[]`): `{ base64, mediaType }`. */
+function isImagePreview(value: Record<string, unknown>): boolean {
+  return (
+    typeof value.base64 === "string" &&
+    typeof value.mediaType === "string" &&
+    value.mediaType.startsWith("image/") &&
+    isImageBase64(value.base64)
+  );
+}
+
 /**
  * Recursively clone and sanitize transport/persistence payloads.
  * Cycles, excessive depth, and excessive collection sizes become stable markers.
@@ -163,6 +190,7 @@ export function redactValue<T>(value: T, options: RedactionOptions = {}): T {
   const visit = (current: unknown, depth: number, sensitive = false): unknown => {
     if (typeof current === "string") {
       if (sensitive && current.length > 0 && current !== REDACTED) return REDACTED;
+      if (isImageDataUrl(current)) return current;
       return redactText(current, options);
     }
     if (
@@ -217,13 +245,17 @@ export function redactValue<T>(value: T, options: RedactionOptions = {}): T {
 
     const record = current as Record<string, unknown>;
     if (isMediaObject(record)) return { ...record };
+    const preview = isImagePreview(record);
     const clone: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(record)) {
       if (++entries > maxEntries) {
         clone[TRUNCATED] = true;
         break;
       }
-      clone[key] = visit(child, depth + 1, SENSITIVE_NAME.test(key));
+      // Preview bytes are not text: token patterns can match inside base64 and
+      // the length cap would cut an animated GIF, either way breaking the image.
+      clone[key] =
+        key === "base64" && preview ? child : visit(child, depth + 1, SENSITIVE_NAME.test(key));
     }
     return clone;
   };

@@ -71,6 +71,29 @@ describe("tool tiering in the system prompt", () => {
     expect(prompt).toContain("On demand (call by name;");
   });
 
+  it("tells the agent it can make images and GIFs only when OpenAI is connected", async () => {
+    const cwd = await makeProject();
+    const core = ["read", "edit", "bash", "tool_search"];
+    const build = (deferred: string[]) =>
+      buildSystemPrompt(
+        cwd,
+        undefined,
+        false,
+        undefined,
+        core,
+        undefined,
+        "anthropic",
+        undefined,
+        deferred,
+      );
+    // generate_image is only registered (and so deferred) with OpenAI auth.
+    const connected = await build(["web_fetch", "generate_image"]);
+    expect(connected).toMatch(/- \*\*generate_image\*\*: Make images and animated GIFs/);
+    expect(connected).toContain("not code");
+    const disconnected = await build(["web_fetch"]);
+    expect(disconnected).not.toContain("generate_image");
+  });
+
   it("keeps cross-tool steering without repeating live tool descriptions", async () => {
     const cwd = await makeProject();
     const prompt = await buildSystemPrompt(cwd, [], false, undefined, ["edit", "write"]);

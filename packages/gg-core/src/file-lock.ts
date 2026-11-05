@@ -39,7 +39,7 @@ async function acquireLock(lockPath: string): Promise<void> {
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== "EEXIST") {
-        if (!code || !PENDING_DELETE_CODES.has(code)) throw err;
+        if (process.platform !== "win32" || !code || !PENDING_DELETE_CODES.has(code)) throw err;
         // A refusal that persists without a lock file, or past the wait budget, is a real fault.
         const lockPresent = await lockFileExists(lockPath);
         if (!lockPresent && ++refusedWithoutLock > 3) throw err;

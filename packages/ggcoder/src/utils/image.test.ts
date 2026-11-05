@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import sharp from "sharp";
 import {
   boundedSize,
+  animatedPreview,
   downscaleForPreview,
+  MAX_ANIMATED_PREVIEW_BYTES,
   fitsVisualBudget,
   previewsForImageBlocks,
   shrinkToFit,
@@ -198,5 +200,36 @@ describe("downscaleForPreview", () => {
     expect(meta.pages).toBe(2);
     expect(meta.width).toBe(480);
     expect(meta.pageHeight).toBe(160);
+  });
+});
+
+describe("animatedPreview", () => {
+  const frame = (width: number, r: number) =>
+    sharp({ create: { width, height: width / 2, channels: 3, background: { r, g: 0, b: 90 } } })
+      .png()
+      .toBuffer();
+  const gifOf = async (width: number) =>
+    sharp(await Promise.all([frame(width, 255), frame(width, 0)]), { join: { animated: true } })
+      .gif()
+      .toBuffer();
+
+  it("keeps a GIF under the cap animated", async () => {
+    const preview = await animatedPreview(await gifOf(640));
+    expect(preview.mediaType).toBe("image/gif");
+    expect((await sharp(preview.buffer, { animated: true }).metadata()).pages).toBe(2);
+    expect(MAX_ANIMATED_PREVIEW_BYTES).toBeGreaterThan(1024 * 1024);
+  });
+
+  it("shrinks a GIF too big for the chat, then falls back to a still", async () => {
+    const gif = await gifOf(960);
+    const atPreview = (await animatedPreview(gif, Infinity)).buffer.length;
+    const narrower = await animatedPreview(gif, atPreview - 1);
+    expect(narrower.mediaType).toBe("image/gif");
+    const meta = await sharp(narrower.buffer, { animated: true }).metadata();
+    expect([meta.width, meta.pages]).toEqual([320, 2]);
+
+    const still = await animatedPreview(gif, 1);
+    expect(still.mediaType).toBe("image/png");
+    expect((await sharp(still.buffer).metadata()).width).toBe(480);
   });
 });

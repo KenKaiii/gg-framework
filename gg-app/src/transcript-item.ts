@@ -61,7 +61,16 @@ export type Item =
   | { kind: "images"; id: number; images: TranscriptImage[]; caption?: string }
   // Image generation in progress — a shimmering square placeholder that gets
   // replaced by the final image when the tool result arrives.
-  | { kind: "generating_image"; id: number; prompt: string; toolCallId: string }
+  | {
+      kind: "generating_image";
+      id: number;
+      prompt: string;
+      toolCallId: string;
+      /** An animated GIF was asked for. */
+      gif: boolean;
+      /** Date.now() when the call started, for the progress estimate. */
+      startedAt: number;
+    }
   // Plan-mode entry banner (ASCII logo + optional reason).
   | { kind: "plan"; id: number; reason: string }
   // What the user did with a reviewed plan: an amber critter row.

@@ -193,6 +193,40 @@ describe("redactValue", () => {
     expect(result).toEqual({ a: { options: shared }, b: { options: shared } });
   });
 
+  it("keeps an image preview's bytes intact, however long, but redacts its other fields", () => {
+    // Assembled at runtime so no literal token-shaped string sits in the source.
+    const googleKey = ["AI", "za", "SyA1234567890abcdef"].join("");
+    const anthropicKey = ["sk", "-ant-", "abcdefghijklmnop"].join("");
+    // Over the 1M-character string cap, and containing a token-shaped run.
+    const base64 = `R0lGODlh${"A".repeat(600_000)}${googleKey}${"B".repeat(600_000)}`;
+    const result = redactValue({
+      details: {
+        imagePreviews: [{ base64, mediaType: "image/gif", path: `/tmp/${anthropicKey}.gif` }],
+      },
+    });
+    const preview = result.details.imagePreviews[0]!;
+    expect(preview.base64).toBe(base64);
+    expect(preview.path).toBe("/tmp/[REDACTED].gif");
+    // A restored image's data URL is image bytes too.
+    const src = `data:image/gif;base64,${base64}`;
+    expect(redactValue({ toolImages: [{ src }] }).toolImages[0]!.src).toBe(src);
+  });
+
+  it("only exempts values that really start like an image file", () => {
+    const googleKey = ["AI", "za", "SyA1234567890abcdef"].join("");
+    // Not image bytes: a token dressed up as a preview or data URL is still scrubbed.
+    expect(redactValue({ base64: googleKey, mediaType: "image/png" }).base64).toBe("[REDACTED]");
+    expect(redactValue({ base64: `R0lGOD ${googleKey}`, mediaType: "text/plain" }).base64).toBe(
+      "R0lGOD [REDACTED]",
+    );
+    expect(redactValue(`data:image/png;base64,${googleKey}`)).toBe(
+      "data:image/png;base64,[REDACTED]",
+    );
+    // Past the size cap, image bytes go through normal scrubbing (and truncation).
+    const huge = `R0lGOD${"A".repeat(16_000_001)}`;
+    expect(redactValue({ base64: huge, mediaType: "image/gif" }).base64).not.toBe(huge);
+  });
+
   it("preserves binary/media payload data while cloning media containers", () => {
     const bytes = new Uint8Array([1, 2, 3]);
     const media = { type: "image", data: "base64-image-data", mimeType: "image/png" };
