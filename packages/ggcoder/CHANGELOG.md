@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.91.2
+
+### Patch Changes
+
+- Fix chat attachments: `/prompt` accepts up to 100 MB of attachments, refused prompts return a readable error, the `read` tool extracts text from PDF and EPUB files, files that could not be saved are reported to the model, and restored sessions keep file and video attachment names.
+  - @kenkaiiii/gg-ai@5.91.2
+  - @kenkaiiii/gg-agent@5.91.2
+  - @kenkaiiii/gg-core@5.91.2
+
 ## 5.91.1
 
 ### Patch Changes
