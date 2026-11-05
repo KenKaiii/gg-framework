@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.102.3",
+    date: "2026-11-05",
+    items: [
+      "The `AI Providers` page is now a living brain. Every provider sits in its own bank grouped by country, and the moment you connect one a glowing nerve shoots out of its card and plugs straight into a `3D` brain that lights up as you wire in more. It looks great in a tiny window or full screen, and connecting your models has never felt this good.",
+    ],
+  },
+  {
     version: "0.102.2",
     date: "2026-11-05",
     items: [
