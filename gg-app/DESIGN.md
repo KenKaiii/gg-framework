@@ -66,6 +66,17 @@ A started Goal's **Workers** view is a top-down pixel farm (`GoalWorld.tsx`, `go
 - Water moves: the bamboo spout reaches out over open water (`pondSpout`), and the live view draws its water flowing down from the pipe, a splash, and rings spreading where it lands. Rings fade by thinning out, not by transparency, and are lit on the far side and dark on the near side so they read on any water.
 - The whole farmstead is always in view: `farmScale` is the exact scale at which it fills the space below the header, so the farm shrinks and grows smoothly with the window. It is deliberately not a whole number (a whole-number scale jumped from 2× to 1× just below full screen, halving the farm); nearest-neighbour scaling keeps it crisp. Countryside fills any extra space. Speech bubbles use the 3x5 pixel font (`goal-world-font.ts`), never canvas text.
 
+## AI Providers brain bay
+
+`ProvidersBay.tsx` + `ProvidersBay.css`; the three.js side is `src/brain/` and loads on demand (`brain-bay.ts` is its own chunk), so first paint never pays for three.js.
+
+- Job: see at a glance which providers are connected and open one. Cards are the controls; the brain and nerves only show their state. Every card is a real button with a state in its accessible name, and without WebGL the page drops to cards alone (`.is-flat`).
+- Groups follow where the lab is based (`provider-groups.ts`): United States, China, Japan, Gateways, On your machine. A provider the table doesn't know lands in Other.
+- Each connected provider is a nerve from its card's port to its own region of the brain. Connecting grows the nerve in (0.9s), then the region charges outward from the nerve's landing point and a pulse runs through the brain. Disconnecting fades the nerve and drains the region. Where a nerve meets its card, the card's own surface swells out of the edge and tapers into the nerve (`drawJoin`): true fillets, opaque, starting in the card's exact colour, which includes the faint glow a connected card shows inside that edge (`--bay-port-glow`). The brain upgrades with the count (`brainTier`, six steps): denser, brighter, ringed, faster heartbeat. No tier name or meter: the brain shows it.
+- The brain sits on the page's own grey, with no panel behind it. On dark its glow is additive; on light it blends normally with the token colours as-is (`--bay-*` in `ProvidersBay.css`).
+- Layout follows the page's box, not the window (`container: providers`): wide and landscape puts the brain between two banks; tall or narrow stacks the cards under the brain; short windows shrink the stage and tighten the cards. Everything stays clear of the Settings tab capsule (`--bay-foot`).
+- Motion follows the window: `full` animates, `still` and `off` hold a still frame and snap changes, reduced motion never animates. The frame loop only runs while something is moving.
+
 ## Extending an interaction
 
 1. Identify its existing geometry owner before adding animation.

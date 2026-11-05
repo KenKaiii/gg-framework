@@ -1,0 +1,350 @@
+/* ── AI Providers: the brain bay (ProvidersBay.tsx) ──
+   A three.js brain with the providers around it, grouped by country, each
+   connected one a living nerve into its region. Wide windows flank the brain
+   with two banks of cards; tall and small windows stack the cards under it.
+   The layout follows the page's own box (container queries), so it adapts to
+   the window the same way inside Settings and on its own screen. */
+.providers-frame {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  container: providers / size;
+}
+.providers-bay {
+  /* Brain and nerve colours, read by brain-bay.ts. */
+  --bay-lit: var(--primary);
+  --bay-spark: #e4ecff;
+  --bay-dim: #5d6678;
+  --bay-core: var(--success);
+  /* How strongly a connected card glows where its nerve joins (read by brain-bay.ts too). */
+  --bay-port-glow: 16%;
+  /* Bottom clearance for the Settings tab capsule (16px off the edge, 54px tall). */
+  --bay-foot: 86px;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(190px, 46%) minmax(0, 1fr);
+  grid-template-areas: "stage" "banks";
+}
+:root[data-theme="light"] .providers-bay {
+  --bay-port-glow: 10%;
+  --bay-spark: #1b2d9e;
+  --bay-dim: #8a93a1;
+}
+.login-scroll .providers-bay {
+  --bay-foot: var(--space-10);
+}
+
+.bay-stage {
+  grid-area: stage;
+  position: relative;
+  min-height: 0;
+}
+.brain-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+.brain-canvas.is-pickable {
+  cursor: pointer;
+}
+.brain-canvas.is-dragging {
+  cursor: grabbing;
+}
+/* The nerves: under the cards, over the brain. */
+.bay-nerves {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Stacked: one scrolling list under the brain, groups in country order. */
+.bay-banks {
+  grid-area: banks;
+  position: relative;
+  z-index: 2;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  padding: var(--space-8) 0 var(--bay-foot);
+}
+.bay-bank {
+  display: contents;
+}
+.bay-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-8) var(--space-4);
+  align-content: start;
+}
+.bay-group h3 {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-4);
+  margin: 0;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+}
+.bay-group h3 small {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* The card's surface as a variable, so its port tab and the tab's fillets
+   change with it on hover. Registered so the change animates. */
+@property --bay-surface {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+.bay-card {
+  --bay-surface: var(--surface-1);
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-width: 0;
+  padding: var(--space-5) var(--space-6);
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--bay-surface);
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: --bay-surface var(--t-out);
+}
+.bay-card:hover,
+.bay-card.is-hot {
+  --bay-surface: var(--surface-2);
+  transition: --bay-surface var(--t-in);
+}
+.bay-card:active {
+  scale: 0.98;
+}
+.bay-logo {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-button);
+  background: var(--well);
+  box-shadow: inset 0 1px 3px var(--well-shadow);
+}
+.bay-card.is-on .bay-logo,
+.bay-card.is-local .bay-logo {
+  background: var(--key);
+  box-shadow:
+    inset 0 1px 0 var(--key-hi),
+    0 1px 0 var(--key-edge),
+    0 2px 4px -2px var(--key-shadow);
+}
+.bay-logo .login-logo {
+  width: 17px;
+  height: 17px;
+  max-width: none;
+  max-height: none;
+}
+.bay-logo-letter {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text);
+}
+/* Not connected yet: the mark dims and loses its colour until you point at it. */
+.bay-card:not(.is-on, .is-local) .login-logo {
+  opacity: 0.55;
+  transition: opacity var(--t-out);
+}
+.bay-card:not(.is-on, .is-local) .login-logo:not([data-mono]) {
+  /* Dark marks (Sakana's red fish) vanish when greyed on graphite; lift them. */
+  filter: grayscale(1) brightness(1.8);
+}
+:root[data-theme="light"] .bay-card:not(.is-on, .is-local) .login-logo:not([data-mono]) {
+  filter: grayscale(1);
+}
+.bay-card:hover .login-logo,
+.bay-card.is-hot .login-logo {
+  opacity: 1;
+}
+.bay-card:hover .login-logo:not([data-mono]),
+.bay-card.is-hot .login-logo:not([data-mono]) {
+  filter: none;
+}
+.bay-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.bay-name b {
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bay-name small {
+  font-size: var(--fs-xs);
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+/* Where the nerve joins the card: an anchor at the midpoint of the edge that
+   faces the brain (brain-bay.ts draws the join there, as one shape with the
+   card). A connected card glows faintly inside that edge, where the nerve
+   enters; the join is drawn in exactly that colour, so there's no seam. The
+   glow holds flat across the join's width (12px each side), then fades within
+   a short reach, so it reads as light around the join, not a band. */
+.bay-port {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.bay-card {
+  --port-at: 50% 0;
+  --port-glow-size: 36px 26px;
+}
+.bay-card.is-on {
+  background:
+    radial-gradient(
+      var(--port-glow-size) at var(--port-at),
+      color-mix(in srgb, var(--primary) var(--bay-port-glow), transparent) 0 34%,
+      transparent
+    ),
+    var(--bay-surface);
+}
+
+/* Wide: the brain in the middle, a bank of cards either side facing it. */
+@container providers (min-width: 820px) and (min-aspect-ratio: 5/4) {
+  .providers-bay {
+    grid-template-columns: minmax(210px, 250px) minmax(0, 1fr) minmax(210px, 250px);
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "left stage right";
+    gap: var(--space-16);
+  }
+  /* The brain stays clear of the tab capsule; the banks don't (see below). */
+  .bay-stage {
+    margin-bottom: var(--bay-foot);
+  }
+  .bay-banks {
+    display: contents;
+  }
+  .bay-bank {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    justify-content: safe center;
+    gap: var(--space-10);
+    min-height: 0;
+    overflow-y: auto;
+    /* Room for the ports and focus rings, which sit outside the cards. The
+       banks run to the window's bottom edge and scroll under the tab capsule,
+       like every other Settings page; the bottom padding lets the last card
+       scroll clear of it. */
+    margin: 0 calc(-1 * var(--space-6));
+    padding: var(--space-4) var(--space-6) var(--bay-foot);
+  }
+  .bay-bank.is-left {
+    grid-area: left;
+  }
+  .bay-bank.is-right {
+    grid-area: right;
+  }
+  .bay-group {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+  /* The nerve joins on the side that faces the brain. */
+  .bay-bank .bay-port {
+    top: 50%;
+  }
+  .bay-bank.is-left .bay-port {
+    left: 100%;
+  }
+  .bay-bank.is-right .bay-port {
+    left: 0;
+  }
+  .bay-bank.is-left .bay-card {
+    --port-at: 100% 50%;
+    --port-glow-size: 26px 36px;
+  }
+  .bay-bank.is-right .bay-card {
+    --port-at: 0 50%;
+    --port-glow-size: 26px 36px;
+  }
+}
+/* Short and stacked: a shorter stage so the cards keep room. Wide windows keep
+   their single full-height row (this rule must never reach them: its two rows
+   would squeeze the brain and both banks into the top 42%). */
+@container providers (max-height: 620px) and (not ((min-width: 820px) and (min-aspect-ratio: 5/4))) {
+  .providers-bay {
+    grid-template-rows: minmax(150px, 42%) minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+}
+/* Short, any layout: tighter cards. */
+@container providers (max-height: 620px) {
+  .bay-bank {
+    gap: var(--space-8);
+  }
+  .bay-card {
+    padding: var(--space-4) var(--space-5);
+  }
+  .bay-group {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+  .bay-banks {
+    gap: var(--space-8);
+  }
+}
+/* No WebGL: just the cards, filling the page. */
+.providers-bay.is-flat {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "banks";
+  padding-bottom: 0;
+}
+.providers-bay.is-flat .bay-stage {
+  display: none;
+}
+.providers-bay.is-flat .bay-banks {
+  display: flex;
+}
+.providers-bay.is-flat .bay-bank {
+  display: contents;
+}
+.providers-bay.is-flat .bay-group {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+.providers-bay.is-flat .bay-port {
+  display: none;
+}
+.providers-bay.is-flat .bay-card.is-on {
+  background: var(--bay-surface);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bay-card:active {
+    scale: none;
+  }
+}

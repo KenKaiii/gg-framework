@@ -42,7 +42,8 @@
     "rehype-highlight": "^7.0.0",
     "remark-gfm": "^4.0.0",
     "remend": "1.4.0",
-    "thinking-orbs": "0.3.1"
+    "thinking-orbs": "0.3.1",
+    "three": "0.186.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -50,6 +51,7 @@
     "@testing-library/react": "^16.3.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
+    "@types/three": "0.186.0",
     "@vitejs/plugin-react": "5.2.0",
     "esbuild": "0.28.2",
     "eslint": "^10.10.0",

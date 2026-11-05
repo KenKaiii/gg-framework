@@ -6,9 +6,8 @@ import { BackButton } from "./BackButton";
 import { ProviderLoginModal } from "./ProviderLoginModal";
 import { LocalModelsModal } from "./LocalModelsModal";
 import { HfPullModal } from "./HfPullModal";
-import { providerLogo, providerLogoIsMono } from "./provider-logos";
+import { ProvidersBay } from "./ProvidersBay";
 import { SettingsHeaderStatus } from "./settings-header";
-import { SettingsCard } from "./settings-section";
 import { useSettingsPageReady } from "./settings-ready";
 
 interface Props {
@@ -20,9 +19,9 @@ interface Props {
 }
 
 /**
- * Provider login hub. Shows every supported AI provider as a grid of logo
- * tiles with a live connection dot; selecting one opens a modal that adapts
- * to OAuth, API key, or both. Mirrors `ggcoder login` in the desktop app.
+ * Provider login hub: every supported AI provider around the brain they power
+ * (ProvidersBay). Selecting one opens a modal that adapts to OAuth, API key,
+ * or both. Mirrors `ggcoder login` in the desktop app.
  */
 export function LoginScreen({ onClose }: Props): React.ReactElement {
   const [providers, setProviders] = useState<AuthProvider[]>([]);
@@ -69,7 +68,7 @@ export function LoginScreen({ onClose }: Props): React.ReactElement {
   // ~/.gg/auth.json is shared by every window, so connecting or disconnecting
   // anywhere changes what THIS screen should show. `auth_change` covers both
   // directions (unlike `auth_done`, which only means a login succeeded);
-  // without re-reading here the connection dots and the "N connected" badge
+  // without re-reading here the nerves, the brain and the "N connected" badge
   // stay stale until the screen is reopened.
   useEffect(() => {
     const unsub = subscribe((e: SidecarEvent) => {
@@ -91,109 +90,30 @@ export function LoginScreen({ onClose }: Props): React.ReactElement {
       </Badge>
     );
 
-  const tiles = (
-    <>
-      {loading && (
-        <div className="picker-empty" style={{ color: theme.textDim }}>
-          {"checking providers\u2026"}
-        </div>
-      )}
-      {readFailed && (
-        <div className="picker-empty" role="alert">
-          <span style={{ color: theme.textMuted }}>Couldn't read your AI providers.</span>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => void refresh()}>
-            Try again
-          </button>
-        </div>
-      )}
-      {providers.map((p) => {
-        const logo = providerLogo(p.value);
-        return (
-          <button key={p.value} className="login-tile" onClick={() => setActive(p)}>
-            {p.connected && (
-              <span className="login-conn-dot" title="Connected" aria-label="Connected" />
-            )}
-            <span className="login-tile-logo">
-              {logo ? (
-                <img
-                  className="login-logo"
-                  src={logo}
-                  alt=""
-                  data-mono={providerLogoIsMono(p.value) || undefined}
-                />
-              ) : (
-                <span className="login-logo-fallback">{p.label.charAt(0)}</span>
-              )}
-            </span>
-            <span className="login-tile-name">{p.label}</span>
-            <span className="login-tile-methods">
-              {p.methods.map((m) => {
-                // Providers can support two methods and have BOTH connected, so
-                // colour each badge by its own state instead of the tile's one
-                // dot: green = this credential is on file. The dot above still
-                // answers "is this provider usable at all".
-                const isConnected = (p.connectedMethods ?? []).includes(m);
-                const isActive = p.activeMethod === m;
-                const label = m === "oauth" ? "OAuth" : "API key";
-                return (
-                  <Badge
-                    key={m}
-                    color={isConnected ? theme.success : undefined}
-                    title={
-                      isConnected
-                        ? isActive
-                          ? `${label} — connected, in use`
-                          : `${label} — connected, standby`
-                        : `${label} — not connected`
-                    }
-                  >
-                    {label}
-                  </Badge>
-                );
-              })}
-            </span>
-          </button>
-        );
-      })}
-      {/* Ollama's official mark (dark-icon-64 from ollama.com), same 48px
-              logo box as every provider tile. */}
-      {!loading && (
-        <button
-          className="login-tile"
-          onClick={() => setLocalOpen(true)}
-          title="Local models: Ollama, LM Studio, llama.cpp, vLLM or any OpenAI-compatible endpoint"
-        >
-          <span className="login-tile-logo">
-            <img className="login-logo" src={providerLogo("ollama")} alt="" />
-          </span>
-          <span className="login-tile-name">Local models</span>
-          <span className="login-tile-methods">
-            <Badge>No key needed</Badge>
-          </span>
-        </button>
-      )}
-      {/* The local twin: search the Hub and download models straight into
-              Ollama — no token, no account. */}
-      {!loading && (
-        <button
-          className="login-tile"
-          onClick={() => setHfOpen(true)}
-          title="Hugging Face: download models to Ollama"
-        >
-          <span className="login-tile-logo">
-            <img className="login-logo" src={providerLogo("huggingface")} alt="" />
-          </span>
-          <span className="login-tile-name">Hugging Face</span>
-          <span className="login-tile-methods">
-            <Badge>Download models</Badge>
-          </span>
-        </button>
-      )}
-    </>
+  const body = loading ? (
+    <div className="picker-empty" style={{ color: theme.textDim }}>
+      {"checking providers\u2026"}
+    </div>
+  ) : readFailed ? (
+    <div className="picker-empty" role="alert">
+      <span style={{ color: theme.textMuted }}>Couldn't read your AI providers.</span>
+      <button type="button" className="btn btn-sm btn-ghost" onClick={() => void refresh()}>
+        Try again
+      </button>
+    </div>
+  ) : (
+    <div className="providers-frame">
+      <ProvidersBay
+        providers={providers}
+        onOpen={setActive}
+        onOpenLocal={() => setLocalOpen(true)}
+        onOpenHfPull={() => setHfOpen(true)}
+      />
+    </div>
   );
 
   return (
-    <div className={onClose ? "picker" : "settings-panel"}>
+    <div className={onClose ? "picker" : "settings-panel providers-page"}>
       {onClose ? (
         <div className="picker-head" data-tauri-drag-region>
           <BackButton label="Back" onClick={onClose} />
@@ -207,17 +127,7 @@ export function LoginScreen({ onClose }: Props): React.ReactElement {
         </>
       )}
 
-      <div className={onClose ? "login-scroll" : undefined}>
-        {/* In Settings the tiles sit in a card like every other page's
-            sections; on the standalone screen they fill it as before. */}
-        {!onClose ? (
-          <SettingsCard title="Providers" description="Sign in to the models your agent can use.">
-            <div className="login-grid">{tiles}</div>
-          </SettingsCard>
-        ) : (
-          <div className="login-grid">{tiles}</div>
-        )}
-      </div>
+      {onClose ? <div className="login-scroll">{body}</div> : body}
 
       {active && (
         <ProviderLoginModal

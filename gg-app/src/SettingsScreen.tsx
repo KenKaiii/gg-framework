@@ -119,7 +119,12 @@ export function SettingsScreen({ onClose, initialTab = "general" }: Props): Reac
       >
         <SettingsReadyProvider hold={gate.hold}>
           <SettingsHeaderProvider slots={{ status: statusSlot, actions: actionsSlot }}>
-            <div className={`settings-page ${switched ? "is-switching" : "is-entering"}`}>
+            <div
+              className={`settings-page ${switched ? "is-switching" : "is-entering"}${
+                // The providers page fills the window: its brain sits in the middle.
+                tab === "providers" ? " is-fill" : ""
+              }`}
+            >
               {tab === "general" && (
                 <EmbeddedModal>
                   <SettingsModal

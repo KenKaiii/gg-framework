@@ -1834,10 +1834,6 @@ select {
 .settings-card .modal-input {
   width: 100%;
 }
-/* The providers grid brings its own padding for its standalone screen. */
-.settings-card .login-grid {
-  padding: 0;
-}
 /* Shared Settings/Checklist page arrival. A light defocus, no movement, and
    a partially visible first frame avoid the full-page blank/reload flash. */
 @keyframes settings-page-dissolve {
@@ -1849,6 +1845,16 @@ select {
     opacity: 1;
     filter: none;
   }
+}
+/* A page that fills the window instead of scrolling (AI Providers): its own
+   regions scroll, and it keeps clear of the tab capsule itself. */
+.settings-page.is-fill {
+  height: 100%;
+  padding-bottom: 0;
+}
+.settings-panel.providers-page {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .settings-page.is-entering {
   animation: reveal-up var(--dur-row) var(--ease-out) both;
@@ -2048,113 +2054,19 @@ select {
   opacity: 0.55;
 }
 
-/* ── Login screen (provider logo grid + connection dots) ──
-   Tiles reuse the .btn-ghost recipe (glossy neutral gradient + inner top
-   highlight + drop shadow, brightness-on-hover) stretched onto a square card.
-   Responsive: 2 columns below 640px (window min width is 480), 4 above. */
+/* ── Login screen ──
+   The provider brain bay lives in ProvidersBay.css. On its own screen it
+   fills the space under the header; the logos keep this class so the light
+   theme's mono-mark rule (Deck.css) still applies. */
 .login-scroll {
   flex: 1 1 auto;
-  overflow-y: auto;
-}
-.login-grid {
-  /* Full-width with the same 12px padding as .picker-list (session list) so
-     page content edges align across screens. */
-  padding: var(--space-6);
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-5);
-}
-@media (min-width: 640px) {
-  .login-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-.login-tile {
-  position: relative;
-  aspect-ratio: 1 / 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-5);
-  background: var(--gloss-neutral);
-  border: 1px solid rgb(var(--ink-rgb) / 0.12);
-  border-radius: var(--radius-card);
-  box-shadow: var(--gloss-shadow-neutral);
-  font-family: var(--sans);
-  cursor: pointer;
-  transition:
-    filter var(--t-fast),
-    box-shadow var(--t-fast);
-}
-.login-tile:hover {
-  filter: brightness(1.18);
-}
-.login-tile:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-.login-tile-logo {
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  min-height: 0;
+  padding: 0 var(--page-pad);
 }
 .login-logo {
-  max-width: 48px;
-  max-height: 48px;
-  width: auto;
-  height: auto;
   object-fit: contain;
-}
-.login-logo-fallback {
-  font-size: 30px;
-  font-weight: 600;
-  color: var(--text);
-}
-.login-tile-name {
-  font-size: var(--fs-base);
-  font-weight: 600;
-  color: var(--text);
-  letter-spacing: -0.01em;
-}
-.login-tile-methods {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  justify-content: center;
-}
-.login-conn-dot {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--success);
-  box-shadow: 0 0 0 3px rgba(54, 196, 137, 0.18);
-}
-/* Narrow windows (480-640px): tighter padding, slightly smaller logo. */
-@media (max-width: 639px) {
-  .login-grid {
-    padding: var(--space-5);
-    gap: var(--space-4);
-  }
-  .login-tile {
-    gap: var(--space-4);
-  }
-  .login-tile-logo {
-    width: 40px;
-    height: 40px;
-  }
-  .login-logo {
-    max-width: 40px;
-    max-height: 40px;
-  }
-  .login-tile-name {
-    font-size: var(--fs-sm);
-  }
 }
 
 /* ── Provider login modal ── */
