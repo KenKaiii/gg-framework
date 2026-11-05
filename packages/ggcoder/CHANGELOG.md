@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.92.0
+
+### Minor Changes
+
+- `generate_image` makes animated GIFs (native GPT Image 2.6 output, or a sprite sheet stitched locally when a ChatGPT login has native GIF off), with animated, size-capped previews. Image previews are no longer cut off by redaction, the Codex client identity is now 0.166.0, and a Windows file-lock race (pending-delete EPERM) is fixed.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.92.0
+- @kenkaiiii/gg-agent@5.92.0
+- @kenkaiiii/gg-core@5.92.0
+
 ## 5.91.2
 
 ### Patch Changes
