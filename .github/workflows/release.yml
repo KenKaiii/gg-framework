@@ -78,8 +78,46 @@ jobs:
             }
           done
 
-  release:
+  # Create (or find) the GitHub release once, before any build, with retries.
+  # tauri-action creating it per leg also PATCHes an existing release's name and
+  # body, and one GitHub HTTP 500 on that call failed a fully built, notarized
+  # macOS leg (v0.103.0). With `releaseId` the legs only upload, and uploads retry.
+  create-release:
     needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      id: ${{ steps.release.outputs.id }}
+    steps:
+      - name: Create or find the release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -uo pipefail
+          id=""
+          for attempt in 1 2 3 4 5 6; do
+            # GET first: a create that 500s may still have made the release.
+            id=$(gh api "repos/$REPO/releases/tags/$TAG" --jq .id 2>/dev/null) && break
+            id=$(gh api -X POST "repos/$REPO/releases" \
+              -f tag_name="$TAG" \
+              -f name="gg-coder $TAG" \
+              -f body="See the assets to download and install this version." \
+              -F draft=false -F prerelease=false --jq .id) && break
+            id=""
+            echo "Release lookup/create failed (attempt $attempt); retrying" >&2
+            sleep $((attempt * 10))
+          done
+          [[ "$id" =~ ^[0-9]+$ ]] || { echo "Could not create or find release $TAG" >&2; exit 1; }
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: [preflight, create-release]
     permissions:
       contents: write
     strategy:
@@ -260,11 +298,10 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: gg-app
-          tagName: ${{ github.ref_name }}
-          releaseName: "gg-coder ${{ github.ref_name }}"
-          releaseBody: "See the assets to download and install this version."
-          releaseDraft: false
-          prerelease: false
+          # Upload-only into the release created above (no create/update calls).
+          releaseId: ${{ needs.create-release.outputs.id }}
+          # Retries a failed asset or latest.json upload (GitHub 5xx).
+          retryAttempts: 3
           # Generates + uploads `latest.json` for the updater endpoint
           # (default true; kept explicit because the updater depends on it).
           uploadUpdaterJson: true
