@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.102.2",
+    date: "2026-11-05",
+    items: [
+      "Drop in a `PDF` or `EPUB` and GG Coder actually reads it now. I taught the agent to open books, papers and docs as plain text, raised the limit to `100 MB` per message, and if a file is ever too big you get a clear heads-up with your draft still waiting, instead of a message that silently goes nowhere.",
+      "Your attachments finally show up where you sent them. Every file and video now sits right inside your message with its name, stays there when you reopen the chat, and the paperclip button happily picks any file type, not just pictures and videos.",
+    ],
+  },
+  {
     version: "0.102.1",
     date: "2026-11-04",
     items: [
