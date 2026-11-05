@@ -695,8 +695,8 @@ describe("streamOpenAICodex", () => {
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(init.headers).toMatchObject({
       originator: "codex_cli_rs",
-      version: "0.161.0",
-      "User-Agent": "codex_cli_rs/0.161.0",
+      version: "0.166.0",
+      "User-Agent": "codex_cli_rs/0.166.0",
       "X-OpenAI-Internal-Codex-Responses-Lite": "true",
     });
     expect(body).toMatchObject({
@@ -746,7 +746,7 @@ describe("streamOpenAICodex", () => {
     // The server rejects parallel_tool_calls under lite, so the header and the
     // flag must flip together; the Codex identity and verbosity stay.
     expect(headers).not.toHaveProperty("X-OpenAI-Internal-Codex-Responses-Lite");
-    expect(headers).toMatchObject({ originator: "codex_cli_rs", version: "0.161.0" });
+    expect(headers).toMatchObject({ originator: "codex_cli_rs", version: "0.166.0" });
     expect(body.parallel_tool_calls).toBe(true);
     expect(body.reasoning).not.toHaveProperty("context");
     expect(body.text).toEqual({ verbosity: "low" });

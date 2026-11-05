@@ -4,6 +4,8 @@ import { setTimeout } from "node:timers/promises";
 const STALE_TIMEOUT_MS = 10_000; // Lock is stale after 10s
 const RETRY_INTERVAL_MS = 50; // Retry every 50ms
 const MAX_WAIT_MS = 5_000; // Give up after 5s
+// Windows refuses `wx` with one of these, not EEXIST, while a released lock is pending delete.
+const PENDING_DELETE_CODES = new Set(["EACCES", "EBUSY", "EPERM"]);
 
 interface LockInfo {
   pid: number;
@@ -26,6 +28,7 @@ export async function withFileLock<T>(filePath: string, fn: () => Promise<T>): P
 
 async function acquireLock(lockPath: string): Promise<void> {
   const startTime = Date.now();
+  let refusedWithoutLock = 0;
 
   while (true) {
     try {
@@ -34,7 +37,16 @@ async function acquireLock(lockPath: string): Promise<void> {
       await fs.writeFile(lockPath, JSON.stringify(info), { flag: "wx" });
       return; // Lock acquired
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST") {
+        if (!code || !PENDING_DELETE_CODES.has(code)) throw err;
+        // A refusal that persists without a lock file, or past the wait budget, is a real fault.
+        const lockPresent = await lockFileExists(lockPath);
+        if (!lockPresent && ++refusedWithoutLock > 3) throw err;
+        if (Date.now() - startTime > MAX_WAIT_MS) throw err;
+        await setTimeout(RETRY_INTERVAL_MS);
+        continue;
+      }
 
       // Lock file exists — check if it's stale
       try {
@@ -70,6 +82,16 @@ async function acquireLock(lockPath: string): Promise<void> {
 
       await setTimeout(RETRY_INTERVAL_MS);
     }
+  }
+}
+
+async function lockFileExists(lockPath: string): Promise<boolean> {
+  try {
+    await fs.stat(lockPath);
+    return true;
+  } catch (err) {
+    // A refused stat means the file is still there, mid-delete.
+    return (err as NodeJS.ErrnoException).code !== "ENOENT";
   }
 }
 

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { boundedSize, fitsVisualBudget, previewsForImageBlocks, shrinkToFit } from "./image.js";
+import {
+  boundedSize,
+  downscaleForPreview,
+  fitsVisualBudget,
+  previewsForImageBlocks,
+  shrinkToFit,
+} from "./image.js";
 
 const PATCH = 28;
 const MAX_PATCHES = 1568;
@@ -171,5 +177,26 @@ describe("shrinkToFit", () => {
     expect(mediaType).toBe("image/png");
     const meta = await sharp(buffer).metadata();
     expect(meta.hasAlpha).toBe(true);
+  });
+});
+
+describe("downscaleForPreview", () => {
+  it("keeps every frame of a wide animated GIF while shrinking it", async () => {
+    const frames = await Promise.all(
+      [255, 0].map((r) =>
+        sharp({ create: { width: 960, height: 320, channels: 3, background: { r, g: 0, b: 0 } } })
+          .png()
+          .toBuffer(),
+      ),
+    );
+    const gif = await sharp(frames, { join: { animated: true } })
+      .gif({ delay: [200, 200], loop: 0 })
+      .toBuffer();
+    const preview = await downscaleForPreview(gif);
+    const meta = await sharp(preview, { animated: true }).metadata();
+    expect(meta.format).toBe("gif");
+    expect(meta.pages).toBe(2);
+    expect(meta.width).toBe(480);
+    expect(meta.pageHeight).toBe(160);
   });
 });

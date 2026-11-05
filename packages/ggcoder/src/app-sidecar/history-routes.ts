@@ -53,6 +53,23 @@ export function restoredWorkerRows(
   ];
 }
 
+/**
+ * An animated preview for a restored generate_image GIF, read from its file:
+ * the session only persists the first frame as a still, which would freeze it.
+ * Null when the result is not a GIF or the file has gone.
+ */
+export async function restoredGifPreview(
+  toolName: string | undefined,
+  imgPath: string | undefined,
+): Promise<string | null> {
+  if (toolName !== "generate_image" || !imgPath) return null;
+  if (path.extname(imgPath).toLowerCase() !== ".gif") return null;
+  const raw = await readFileBounded(imgPath).catch(() => null);
+  if (!raw || raw.subarray(0, 4).toString("latin1") !== "GIF8") return null;
+  const preview = await downscaleForPreview(raw);
+  return `data:image/gif;base64,${preview.toString("base64")}`;
+}
+
 export function handleHistoryRoutes(
   ctx: SessionRouteContext,
   req: http.IncomingMessage,
@@ -299,6 +316,11 @@ export function handleHistoryRoutes(
               for (const block of imageBlocks) {
                 if (block.type !== "image") continue;
                 const imgPath = imgPaths[blockIndex++];
+                const animated = await restoredGifPreview(toolNameById.get(tr.toolCallId), imgPath);
+                if (animated) {
+                  toolImages.push({ src: animated, path: imgPath });
+                  continue;
+                }
                 const previewBuf = await downscaleForPreview(Buffer.from(block.data, "base64"));
                 toolImages.push({
                   src: `data:${block.mediaType};base64,${previewBuf.toString("base64")}`,

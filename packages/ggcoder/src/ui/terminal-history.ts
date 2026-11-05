@@ -240,7 +240,9 @@ export function createTerminalHistoryPrinter({
           const imageLeftPad = "   ";
           const canLink = supportsHyperlinks();
           for (const preview of previews) {
-            if (protocol !== "none") {
+            // kitty's graphics protocol takes PNG only; a GIF keeps its open link below.
+            const unsupported = protocol === "kitty" && preview.mediaType === "image/gif";
+            if (protocol !== "none" && !unsupported) {
               // Fixed-height block whose newline count equals its visual rows —
               // a raw escape (many rows, zero newlines) desyncs Ink's live-frame
               // erase math and strands orphaned rows around the image.

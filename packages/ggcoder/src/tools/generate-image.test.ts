@@ -108,6 +108,14 @@ describe("generate_image param schema", () => {
     expect(schema.safeParse({ prompt: "x", quality: "ultra" }).success).toBe(false);
     // n out of range.
     expect(schema.safeParse({ prompt: "x", n: 5 }).success).toBe(false);
+    // GIF output, within Codex's GifOptions bounds.
+    expect(schema.safeParse({ prompt: "x", gif: {} }).success).toBe(true);
+    expect(
+      schema.safeParse({ prompt: "x", gif: { frame_count: 16, frame_duration_ms: 20 } }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ prompt: "x", gif: { frame_count: 1 } }).success).toBe(false);
+    expect(schema.safeParse({ prompt: "x", gif: { frame_count: 17 } }).success).toBe(false);
+    expect(schema.safeParse({ prompt: "x", gif: { frame_duration_ms: 2001 } }).success).toBe(false);
   });
 });
 
@@ -696,5 +704,139 @@ describe("generate_image — error handling", () => {
     const result = await tool.execute({ prompt: "a cat" }, ctx(ac.signal));
     expect(typeof result).toBe("string");
     expect(result).toContain("aborted");
+  });
+});
+
+/** A real two-frame animated GIF, wide enough that its preview gets shrunk. */
+async function makeAnimatedGif(): Promise<Buffer> {
+  const sharp = (await import("sharp")).default;
+  const frames = await Promise.all(
+    [255, 0].map((r) =>
+      sharp({ create: { width: 640, height: 320, channels: 3, background: { r, g: 0, b: 0 } } })
+        .png()
+        .toBuffer(),
+    ),
+  );
+  return sharp(frames, { join: { animated: true } })
+    .gif({ delay: [200, 200], loop: 0 })
+    .toBuffer();
+}
+
+describe("generate_image — animated GIF", () => {
+  it("asks for a GIF the way Codex does and saves it untouched, previewing the animation", async () => {
+    const gif = await makeAnimatedGif();
+    const fetchMock = vi.fn().mockResolvedValue(makeImageResponse([gif.toString("base64")]));
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const sharp = (await import("sharp")).default;
+    const { createGenerateImageTool } = await import("./generate-image.js");
+    const tool = createGenerateImageTool(tmpDir, fakeAuth());
+    const result = await tool.execute(
+      { prompt: "a blinking lantern", gif: { frame_count: 2, frame_duration_ms: 200 } },
+      ctx(),
+    );
+
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    expect(body).toMatchObject({ output_format: "gif", frame_count: 2, frame_duration_ms: 200 });
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      "https://chatgpt.com/backend-api/codex/images/generations",
+    );
+
+    expect(isStructured(result)).toBe(true);
+    if (!isStructured(result)) return;
+    const summary = (result.content[0] as { text: string }).text;
+    const savedPath = summary.replace("Generated image → ", "");
+    expect(savedPath.endsWith(".gif")).toBe(true);
+    expect((await readFile(savedPath)).equals(gif)).toBe(true);
+    expect(extractToolImagePaths(summary)).toEqual([savedPath]);
+
+    // The model sees the first frame as a still, like Codex's preview.
+    const blocks = Array.isArray(result.content) ? result.content : [];
+    const modelImage = blocks.find((c) => c.type === "image") as {
+      mediaType: string;
+      data: string;
+    };
+    expect(modelImage.mediaType).toBe("image/png");
+    const stillMeta = await sharp(Buffer.from(modelImage.data, "base64")).metadata();
+    expect([stillMeta.width, stillMeta.height]).toEqual([640, 320]);
+
+    // The chat preview keeps every frame.
+    const preview = (
+      result.details as { imagePreviews: Array<{ base64: string; mediaType: string }> }
+    ).imagePreviews[0]!;
+    expect(preview.mediaType).toBe("image/gif");
+    const previewMeta = await sharp(Buffer.from(preview.base64, "base64"), {
+      animated: true,
+    }).metadata();
+    expect(previewMeta.pages).toBe(2);
+    expect(previewMeta.width).toBe(480);
+
+    // The size report names the frame size, not the stacked frames.
+    expect((result.content[1] as { text: string }).text).toContain("640x320");
+  });
+
+  it("sends gif: {} with no frame controls, leaving OpenAI's defaults", async () => {
+    const gif = await makeAnimatedGif();
+    const fetchMock = vi.fn().mockResolvedValue(makeImageResponse([gif.toString("base64")]));
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const { createGenerateImageTool } = await import("./generate-image.js");
+    const tool = createGenerateImageTool(tmpDir, fakeAuth());
+    await tool.execute({ prompt: "a wave", gif: {} }, ctx());
+
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    expect(body.output_format).toBe("gif");
+    expect("frame_count" in body).toBe(false);
+    expect("frame_duration_ms" in body).toBe(false);
+  });
+
+  it("refuses gif with an output_format before spending any quota", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const { createGenerateImageTool } = await import("./generate-image.js");
+    const tool = createGenerateImageTool(tmpDir, fakeAuth());
+    const result = await tool.execute({ prompt: "x", gif: {}, output_format: "webp" }, ctx());
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result).toContain("leave `output_format` unset");
+  });
+
+  it("explains a GIF the account cannot make, without retrying", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: "GIF output is not enabled for this request." }), {
+        status: 400,
+      }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const { createGenerateImageTool } = await import("./generate-image.js");
+    const tool = createGenerateImageTool(tmpDir, fakeAuth());
+    const result = await tool.execute({ prompt: "x", gif: {} }, ctx());
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(typeof result).toBe("string");
+    expect(result).toContain("GIFs are not enabled for their account yet");
+    expect(result).toContain("offer a still image");
+  });
+
+  it("saves a still returned for a GIF request as .png and says so", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(makeImageResponse([TINY_PNG_B64])) as unknown as typeof globalThis.fetch;
+
+    const { createGenerateImageTool } = await import("./generate-image.js");
+    const tool = createGenerateImageTool(tmpDir, fakeAuth());
+    const result = await tool.execute({ prompt: "x", gif: {}, out_path: "anim.gif" }, ctx());
+
+    expect(isStructured(result)).toBe(true);
+    if (!isStructured(result)) return;
+    expect((result.content[0] as { text: string }).text).toBe(
+      `Generated image → ${path.join(tmpDir, "anim.png")}`,
+    );
+    expect((await readFile(path.join(tmpDir, "anim.png"))).equals(TINY_PNG)).toBe(true);
+    const blocks = Array.isArray(result.content) ? result.content : [];
+    const texts = blocks.flatMap((c) => (c.type === "text" ? [c.text] : []));
+    expect(texts.some((t) => t.includes("still PNG instead of an animated GIF"))).toBe(true);
   });
 });

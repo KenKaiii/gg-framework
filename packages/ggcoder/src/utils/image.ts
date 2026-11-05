@@ -534,7 +534,9 @@ export async function downscaleForPreview(buffer: Buffer): Promise<Buffer> {
     const meta = await sharp(buffer).metadata();
     const width = meta.width ?? 0;
     if (width > 0 && width <= PREVIEW_MAX_WIDTH) return buffer;
-    return await sharp(buffer)
+    // Without `animated`, sharp decodes only the first frame and a GIF preview would freeze.
+    const animated = (meta.pages ?? 1) > 1;
+    return await sharp(buffer, { animated })
       .resize(PREVIEW_MAX_WIDTH, undefined, { fit: "inside", withoutEnlargement: true })
       .toBuffer();
   } catch {

@@ -593,6 +593,45 @@ describe("terminal history", () => {
     }
   });
 
+  it("skips a GIF preview on kitty, whose graphics protocol takes only PNG", () => {
+    const prevKitty = process.env.KITTY_WINDOW_ID;
+    const prevTmux = process.env.TMUX;
+    process.env.KITTY_WINDOW_ID = "1";
+    delete process.env.TMUX;
+    const ttyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+    Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+    try {
+      let output = "";
+      const stream = {
+        write(chunk: string) {
+          output += chunk;
+          return true;
+        },
+      } as NodeJS.WriteStream;
+      const printer = createTerminalHistoryPrinter({ stream });
+      const item: CompletedItem = {
+        kind: "tool_done",
+        id: "tool-gif-1",
+        name: "generate_image",
+        args: { prompt: "loop" },
+        result: "Generated image → /tmp/loop.gif",
+        isError: false,
+        durationMs: 1,
+        imagePreviews: [{ base64: "R0lGODlh", mediaType: "image/gif", path: "/tmp/loop.gif" }],
+      };
+
+      printer.print([item], context);
+
+      expect(output).not.toContain("\u001b_G");
+    } finally {
+      if (prevKitty === undefined) delete process.env.KITTY_WINDOW_ID;
+      else process.env.KITTY_WINDOW_ID = prevKitty;
+      if (prevTmux === undefined) delete process.env.TMUX;
+      else process.env.TMUX = prevTmux;
+      if (ttyDescriptor) Object.defineProperty(process.stdout, "isTTY", ttyDescriptor);
+    }
+  });
+
   it("writes only the text line for image items when no graphics terminal is detected", () => {
     const prevKitty = process.env.KITTY_WINDOW_ID;
     const prevTermProgram = process.env.TERM_PROGRAM;

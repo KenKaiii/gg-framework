@@ -1101,6 +1101,30 @@ describe("useAgentEvents", () => {
     expect(getItems().filter((it) => it.kind === "generating_image")).toHaveLength(0);
   });
 
+  it("shows a generated GIF as an animated image in the transcript", () => {
+    const { hook, getItems } = setup();
+    act(() => {
+      hook.result.current.handleEvent(
+        ev("tool_call_start", { toolCallId: "g1", name: "generate_image", args: { prompt: "x" } }),
+      );
+      hook.result.current.handleEvent(
+        ev("tool_call_end", {
+          toolCallId: "g1",
+          isError: false,
+          details: {
+            imagePreviews: [
+              { base64: "R0lGODlhAQ", mediaType: "image/gif", path: "/p/.gg/generated/a.gif" },
+            ],
+          },
+        }),
+      );
+    });
+    const images = getItems().find((it) => it.kind === "images");
+    expect(images).toMatchObject({
+      images: [{ src: "data:image/gif;base64,R0lGODlhAQ", path: "/p/.gg/generated/a.gif" }],
+    });
+  });
+
   it("turn_end accumulates output tokens across turns", () => {
     const { hook, setTokens } = setup();
     act(() => {

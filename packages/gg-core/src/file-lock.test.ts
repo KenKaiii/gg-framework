@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { withFileLock } from "./file-lock.js";
 
 let dir: string;
@@ -11,6 +11,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await fs.rm(dir, { recursive: true, force: true });
 });
 
@@ -45,5 +46,36 @@ describe("withFileLock", () => {
       ),
     );
     expect(overlapped).toBe(false);
+  });
+
+  it("waits out a Windows pending-delete EPERM on the lock file", async () => {
+    const target = path.join(dir, "data.json");
+    const lockPath = `${target}.lock`;
+    await fs.writeFile(lockPath, "");
+    const realWriteFile = fs.writeFile.bind(fs);
+    let refusals = 0;
+    vi.spyOn(fs, "writeFile").mockImplementation(async (file, data, options) => {
+      if (file === lockPath && refusals < 2) {
+        refusals++;
+        // The released lock disappears once its pending delete finishes.
+        if (refusals === 2) await fs.unlink(lockPath);
+        throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" });
+      }
+      return realWriteFile(file, data, options);
+    });
+    let ran = false;
+    await withFileLock(target, async () => {
+      ran = true;
+    });
+    expect(refusals).toBe(2);
+    expect(ran).toBe(true);
+  });
+
+  it("still fails on a persistent EPERM with no lock file present", async () => {
+    const target = path.join(dir, "data.json");
+    vi.spyOn(fs, "writeFile").mockRejectedValue(
+      Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" }),
+    );
+    await expect(withFileLock(target, async () => {})).rejects.toMatchObject({ code: "EPERM" });
   });
 });
