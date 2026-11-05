@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.103.1",
+    date: "2026-11-05",
+    items: [
+      "A quick follow-up so every platform gets the new `GIF` maker, playing GIF previews and image `download` button at the same time. I also hardened the release pipeline so updates land on Mac, Windows and Linux together.",
+    ],
+  },
+  {
     version: "0.103.0",
     date: "2026-11-05",
     items: [
