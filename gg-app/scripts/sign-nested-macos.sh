@@ -33,9 +33,19 @@ for root in "$@"; do
   [ -e "$root" ] || continue
   while IFS= read -r f; do
     if file "$f" | grep -q "Mach-O"; then
-      codesign --force --timestamp --options runtime \
+      # Apple's timestamp server has brief outages ("The timestamp service is
+      # not available"); retry with backoff rather than failing the release.
+      attempt=1
+      until codesign --force --timestamp --options runtime \
         --entitlements "$ENTITLEMENTS" \
-        --sign "$IDENTITY" "$f"
+        --sign "$IDENTITY" "$f"; do
+        if [ "$attempt" -ge 5 ]; then
+          echo "codesign failed after $attempt attempts: $f" >&2
+          exit 1
+        fi
+        sleep $((attempt * 15))
+        attempt=$((attempt + 1))
+      done
       signed=$((signed + 1))
     else
       skipped=$((skipped + 1))

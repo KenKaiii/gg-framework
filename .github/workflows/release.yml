@@ -104,9 +104,10 @@ jobs:
           - platform: ubuntu-22.04
             args: "--bundles deb,rpm"
     runs-on: ${{ matrix.platform }}
-    # Signing + notarization + per-OS installer builds; observed ~15-20 min,
-    # headroom for notarization stalls and cold caches.
-    timeout-minutes: 60
+    # Signing + notarization + per-OS installer builds; observed ~15-20 min on
+    # macOS/Windows. The Linux leg spends ~50 min in tauri's RPM bundler alone
+    # (the .deb takes ~25 s), so 60 min cancelled it before upload.
+    timeout-minutes: 100
     environment:
       name: desktop-production
       url: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
