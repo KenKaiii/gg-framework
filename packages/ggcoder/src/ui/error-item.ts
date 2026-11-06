@@ -3,7 +3,7 @@ import { log } from "../core/logger.js";
 import type { ErrorItem } from "./app-items.js";
 
 /** Where GG Coder bugs should be reported. Surfaced in the guidance line. */
-const GGCODER_BUG_REPORT_URL = "github.com/kenkaiiii/gg-framework/issues";
+const GGCODER_BUG_REPORT_URL = "github.com/KenKaiii/gg-framework/issues";
 
 /**
  * Build an ErrorItem from any thrown value. Centralises headline / message /

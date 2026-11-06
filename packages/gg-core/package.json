@@ -17,7 +17,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kenkaiiii/gg-framework.git",
+    "url": "git+https://github.com/KenKaiii/gg-framework.git",
     "directory": "packages/gg-core"
   },
   "homepage": "https://github.com/KenKaiii/gg-framework/tree/main/packages/gg-core#readme",
