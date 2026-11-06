@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.93.0
+
+### Minor Changes
+
+- Plan mode is now always available and only used for work that needs research: it names the research tools a session can reach, asks before guessing, and can run read-only helper agents. Removed unused internal modules and the source-map dependency.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.93.0
+- @kenkaiiii/gg-agent@5.93.0
+- @kenkaiiii/gg-core@5.93.0
+
 ## 5.92.0
 
 ### Minor Changes
