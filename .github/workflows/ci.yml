@@ -112,7 +112,7 @@ jobs:
           pnpm lint
           pnpm format:check
           # The on-demand Claude Code download must match the pinned Agent SDK.
-          node scripts/claude-code-manifest.mjs --check
+          node .github/ci/claude-code-manifest.mjs --check
 
       - name: Typecheck
         shell: bash
