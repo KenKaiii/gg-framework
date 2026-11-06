@@ -3,7 +3,12 @@ import { readFileSync } from "node:fs";
 import crypto from "node:crypto";
 import { getAppPaths } from "./paths.js";
 import type { OAuthCredentials } from "./oauth/types.js";
-import { refreshAnthropicToken } from "./oauth/anthropic.js";
+import {
+  CLAUDE_CODE_AUTH_KEY,
+  CLAUDE_CODE_AUTH_MARKER,
+  isClaudeCodeAuthMarker,
+  isLegacyClaudeOAuth,
+} from "./claude-code/runtime.js";
 import { refreshOpenAIToken } from "./oauth/openai.js";
 import { refreshGeminiToken } from "./oauth/gemini.js";
 import { refreshKimiToken } from "./oauth/kimi.js";
@@ -221,6 +226,8 @@ const USAGE_EXHAUSTED_DEFAULT_MS = 15 * 60 * 1000;
 
 /** Providers whose credentials are static API keys (no refresh mechanism). */
 const STATIC_API_KEY_PROVIDERS = new Set([
+  // Anthropic is API-key only; Claude subscriptions run through Claude Code.
+  "anthropic",
   "glm",
   "moonshot",
   "xiaomi",
@@ -318,11 +325,51 @@ export class AuthStorage {
     if (provider === "gemini") {
       return Boolean(this.data["gemini"] || this.data[GEMINI_API_KEY]);
     }
+    if (provider === "anthropic") {
+      return (
+        (Boolean(this.data.anthropic) && !isLegacyClaudeOAuth(this.data.anthropic)) ||
+        isClaudeCodeAuthMarker(this.data[CLAUDE_CODE_AUTH_KEY])
+      );
+    }
     // `local` has no single credential — any configured endpoint counts.
     if (provider === "local") {
       return Object.keys(this.data).some((key) => key.startsWith(LOCAL_AUTH_KEY_PREFIX));
     }
     return Boolean(this.data[provider]);
+  }
+
+  /** True when the user signed in with Claude through Claude Code (marker only, no token). */
+  async hasClaudeCodeLogin(): Promise<boolean> {
+    await this.ensureFresh();
+    return isClaudeCodeAuthMarker(this.data[CLAUDE_CODE_AUTH_KEY]);
+  }
+
+  /** Record a Claude Code sign-in. Claude Code keeps the token; auth.json gets only the marker. */
+  async setClaudeCodeLogin(): Promise<void> {
+    await this.mutateLatest((latest) => {
+      latest[CLAUDE_CODE_AUTH_KEY] = { ...CLAUDE_CODE_AUTH_MARKER } as unknown as OAuthCredentials;
+      if (isLegacyClaudeOAuth(latest.anthropic)) delete latest.anthropic;
+    });
+  }
+
+  /**
+   * Remove an old GG Claude sign-in token (`sk-ant-oat…`), if any. True when one
+   * was removed, so the caller can tell the user once to sign in with Claude again.
+   */
+  async takeLegacyClaudeSignIn(): Promise<boolean> {
+    await this.ensureFresh();
+    if (!isLegacyClaudeOAuth(this.data.anthropic)) return false;
+    let removed = false;
+    await this.mutateLatest((latest) => {
+      if (!isLegacyClaudeOAuth(latest.anthropic)) return;
+      delete latest.anthropic;
+      removed = true;
+    });
+    return removed;
+  }
+
+  async clearClaudeCodeLogin(): Promise<void> {
+    await this.clearCredentials(CLAUDE_CODE_AUTH_KEY);
   }
 
   /** Endpoint ids that currently have a `local:<id>` credential stored. */
@@ -644,7 +691,10 @@ export class AuthStorage {
       opts?.storageKeys && !(opts.storageKeys.length === 1 && opts.storageKeys[0] === provider)
         ? opts.storageKeys
         : providerStorageKeys(provider);
-    if (!directStorageKeys.some((key) => Boolean(this.data[key]))) {
+    if (
+      !directStorageKeys.some((key) => Boolean(this.data[key])) &&
+      !(provider === "anthropic" && this.data[CLAUDE_CODE_AUTH_KEY])
+    ) {
       await this.reloadLatest();
     }
 
@@ -679,6 +729,19 @@ export class AuthStorage {
         return creds;
       }
       throw new NotLoggedInError(provider);
+    }
+
+    // Signed in with Claude through Claude Code: there is no token to hand
+    // out (Claude Code holds it). Callers on that route never use this one.
+    if (
+      provider === "anthropic" &&
+      (!this.data.anthropic || isLegacyClaudeOAuth(this.data.anthropic))
+    ) {
+      if (isClaudeCodeAuthMarker(this.data[CLAUDE_CODE_AUTH_KEY])) {
+        return { accessToken: "", refreshToken: "", expiresAt: Number.MAX_SAFE_INTEGER };
+      }
+      // The old GG Claude sign-in token can't be used or refreshed any more.
+      if (this.data.anthropic) throw new NotLoggedInError(provider);
     }
 
     // Prefer subscription OAuth over the API key for a dual-auth provider
@@ -798,15 +861,13 @@ export class AuthStorage {
       }
 
       const refreshFn =
-        provider === "anthropic"
-          ? refreshAnthropicToken
-          : provider === "gemini"
-            ? refreshGeminiToken
-            : provider === MOONSHOT_OAUTH_KEY
-              ? refreshKimiToken
-              : provider === XAI_OAUTH_KEY
-                ? refreshXaiToken
-                : refreshOpenAIToken;
+        provider === "gemini"
+          ? refreshGeminiToken
+          : provider === MOONSHOT_OAUTH_KEY
+            ? refreshKimiToken
+            : provider === XAI_OAUTH_KEY
+              ? refreshXaiToken
+              : refreshOpenAIToken;
       let refreshed: OAuthCredentials;
       try {
         refreshed = await refreshFn(latestCreds.refreshToken);

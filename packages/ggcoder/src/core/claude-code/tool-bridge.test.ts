@@ -1,0 +1,296 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import type { AgentEvent, AgentTool } from "@kenkaiiii/gg-agent";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
+import { createEditTool } from "../../tools/edit.js";
+import {
+  claudeCodeToolName,
+  createToolBridge,
+  stripClaudeCodeToolPrefix,
+  type ToolBridgeOptions,
+} from "./tool-bridge.js";
+
+interface Rpc {
+  jsonrpc: "2.0";
+  id?: number;
+  method?: string;
+  params?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  error?: { code: number; message: string };
+}
+
+async function connect(opts: Partial<ToolBridgeOptions> & { tools: AgentTool[] }) {
+  const events: AgentEvent[] = [];
+  const bridge = createToolBridge({ onEvent: (e) => events.push(e), ...opts });
+  const pending = new Map<number, (msg: Rpc) => void>();
+  const sent: Rpc[] = [];
+  const transport = {
+    onmessage: undefined as ((m: Rpc) => void) | undefined,
+    onclose: undefined as (() => void) | undefined,
+    async send(msg: Rpc) {
+      sent.push(msg);
+      pending.get(msg.id!)?.(msg);
+    },
+  };
+  await (bridge.config.instance as unknown as { connect(t: unknown): Promise<void> }).connect(
+    transport,
+  );
+  let nextId = 0;
+  const request = (method: string, params: Record<string, unknown> = {}) =>
+    new Promise<Rpc>((resolve) => {
+      const id = ++nextId;
+      pending.set(id, resolve);
+      transport.onmessage!({ jsonrpc: "2.0", id, method, params });
+    });
+  const call = (name: string, args: unknown, toolUseId = `toolu_${nextId + 1}`) =>
+    request("tools/call", {
+      name,
+      arguments: args,
+      _meta: { "claudecode/toolUseId": toolUseId },
+    });
+  return { bridge, events, request, call, transport, sent };
+}
+
+const echoParams = z.object({ text: z.string(), times: z.number().optional() });
+const echo: AgentTool = {
+  name: "echo",
+  description: "Echo text",
+  parameters: echoParams,
+  execute: (args) => {
+    const { text, times } = args as z.infer<typeof echoParams>;
+    return text.repeat(times ?? 1);
+  },
+};
+
+let dir: string;
+beforeEach(() => {
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "gg-bridge-"));
+});
+afterEach(() => {
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+describe("tool names", () => {
+  it("prefixes and strips the gg server prefix", () => {
+    expect(claudeCodeToolName("read")).toBe("mcp__gg__read");
+    expect(stripClaudeCodeToolPrefix("mcp__gg__read")).toBe("read");
+    expect(stripClaudeCodeToolPrefix("Bash")).toBe("Bash");
+  });
+});
+
+describe("createToolBridge", () => {
+  it("answers the MCP handshake and lists our JSON schemas, including the edit pipe schema", async () => {
+    const edit = createEditTool(dir);
+    const { bridge, request } = await connect({ tools: [echo, edit as AgentTool] });
+
+    const init = await request("initialize", { protocolVersion: "2025-11-25" });
+    expect(init.result).toMatchObject({
+      protocolVersion: "2025-11-25",
+      capabilities: { tools: {} },
+    });
+    const list = await request("tools/list");
+    const tools = list.result!.tools as {
+      name: string;
+      inputSchema: Record<string, unknown>;
+      _meta: Record<string, unknown>;
+    }[];
+    expect(tools.map((t) => t.name)).toEqual(["echo", "edit"]);
+    expect(tools[0].inputSchema).toMatchObject({
+      type: "object",
+      properties: { text: { type: "string" } },
+      required: ["text"],
+    });
+    expect(tools[1].inputSchema).toMatchObject({
+      type: "object",
+      properties: { file_path: {}, edits: {}, files: {} },
+    });
+    expect(tools[1]._meta["anthropic/alwaysLoad"]).toBe(true);
+    expect(bridge.allowedTools()).toEqual(["mcp__gg__echo", "mcp__gg__edit"]);
+
+    expect((await request("resources/list")).error?.code).toBe(-32601);
+  });
+
+  it("runs a tool with our full schema (edit's preprocess lifts a flat edit)", async () => {
+    const file = path.join(dir, "a.txt");
+    fs.writeFileSync(file, "hello world\n");
+    const { call, events, bridge } = await connect({ tools: [createEditTool(dir) as AgentTool] });
+
+    const res = await call(
+      "edit",
+      { file_path: file, old_text: "world", new_text: "there" },
+      "toolu_edit",
+    );
+    expect(res.result!.isError).toBeUndefined();
+    expect(fs.readFileSync(file, "utf8")).toBe("hello there\n");
+    expect(events.map((e) => e.type)).toEqual(["tool_call_start", "tool_call_end"]);
+    expect(events[0]).toMatchObject({ toolCallId: "toolu_edit", name: "edit" });
+    expect(bridge.takeResult("toolu_edit")).toMatchObject({
+      type: "tool_result",
+      toolCallId: "toolu_edit",
+      isError: false,
+    });
+    expect(bridge.takeResult("toolu_edit")).toBeUndefined();
+  });
+
+  it("returns readable argument errors with hints, retrying once without nulls", async () => {
+    const { call, events } = await connect({ tools: [echo] });
+
+    const ok = await call("echo", { text: "a", times: null });
+    expect(ok.result).toEqual({ content: [{ type: "text", text: "a" }] });
+
+    const bad = await call("echo", { txt: "a" });
+    expect(bad.result!.isError).toBe(true);
+    const text = (bad.result!.content as { text: string }[])[0].text;
+    expect(text).toContain("Invalid arguments for tool `echo`");
+    expect(text).toContain("did you mean `text`?");
+    expect(events.at(-1)).toMatchObject({ type: "tool_call_end", invalidArgAttempt: 1 });
+
+    const unknown = await call("ehco", {});
+    expect((unknown.result!.content as { text: string }[])[0].text).toContain("`echo`");
+  });
+
+  it("redacts secrets, applies transformToolResult, caps results and converts images", async () => {
+    const tools: AgentTool[] = [
+      {
+        name: "leak",
+        description: "",
+        parameters: z.object({}),
+        execute: () => "key sk-ant-api03-" + "x".repeat(90),
+      },
+      {
+        name: "big",
+        description: "",
+        parameters: z.object({}),
+        execute: () => "y".repeat(5_000),
+      },
+      {
+        name: "pic",
+        description: "",
+        parameters: z.object({}),
+        execute: () => ({
+          content: [
+            { type: "text", text: "shot" },
+            { type: "image", mediaType: "image/png", data: "AAAA" },
+          ],
+        }),
+      },
+    ];
+    const { call, bridge } = await connect({
+      tools,
+      maxToolResultChars: 1_000,
+      transformToolResult: (c, content) =>
+        c.name === "leak" && typeof content === "string" ? content + " [untrusted]" : content,
+    });
+
+    const leak = (await call("leak", {})).result!.content as { text: string }[];
+    expect(leak[0].text).not.toContain("x".repeat(90));
+    expect(leak[0].text).toMatch(/\[untrusted\]$/);
+
+    const big = (await call("big", {}, "toolu_big")).result!.content as { text: string }[];
+    expect(big[0].text.length).toBeLessThan(1_100);
+    expect(bridge.takeResult("toolu_big")?.capped?.scope).toBe("per-result");
+
+    const pic = (await call("pic", {})).result!.content;
+    expect(pic).toEqual([
+      { type: "text", text: "shot" },
+      { type: "image", data: "AAAA", mimeType: "image/png" },
+    ]);
+  });
+
+  it("aborts the tool on MCP cancellation and on the run's signal", async () => {
+    const seen: string[] = [];
+    const slow: AgentTool = {
+      name: "slow",
+      description: "",
+      parameters: z.object({}),
+      execute: (_args, ctx) =>
+        new Promise((resolve) => {
+          ctx.signal.addEventListener("abort", () => {
+            seen.push(ctx.toolCallId);
+            resolve("stopped");
+          });
+        }),
+    };
+    const run = new AbortController();
+    const { call, request, transport } = await connect({ tools: [slow], signal: run.signal });
+
+    const first = call("slow", {}, "toolu_a");
+    transport.onmessage!({
+      jsonrpc: "2.0",
+      method: "notifications/cancelled",
+      params: { requestId: 1 },
+    });
+    expect((await first).result!.content).toEqual([{ type: "text", text: "stopped" }]);
+
+    const second = call("slow", {}, "toolu_b");
+    run.abort();
+    await second;
+    expect(seen).toEqual(["toolu_a", "toolu_b"]);
+    expect((await request("ping")).result).toEqual({});
+  });
+
+  it("resolves deferred tools by name, streams updates and reports endRun", async () => {
+    let ended = 0;
+    const deferred: AgentTool = {
+      name: "later",
+      description: "",
+      parameters: z.object({}),
+      execute: (_a, ctx) => {
+        ctx.onUpdate?.({ step: 1 });
+        return { content: "done", endRun: true };
+      },
+    };
+    const { call, events, bridge } = await connect({
+      tools: [echo],
+      resolveTool: (name) => (name === "later" ? deferred : undefined),
+      onEndRun: () => ended++,
+    });
+    await call("later", {});
+    expect(events.map((e) => e.type)).toEqual([
+      "tool_call_start",
+      "tool_call_update",
+      "tool_call_end",
+    ]);
+    expect(ended).toBe(1);
+    expect(bridge.allowedTools()).toContain("mcp__gg__later");
+  });
+
+  it("tells Claude Code to re-list tools after tool_search promotes one", async () => {
+    const tools: AgentTool[] = [echo];
+    const later: AgentTool = {
+      name: "later",
+      description: "",
+      parameters: z.object({}),
+      execute: () => "ok",
+    };
+    const promote: AgentTool = {
+      name: "tool_search",
+      description: "",
+      parameters: z.object({}),
+      execute: () => {
+        tools.push(later);
+        return "later is now available";
+      },
+    };
+    tools.push(promote);
+    const { request, call, sent } = await connect({ tools });
+    const init = await request("initialize", { protocolVersion: "2025-11-25" });
+    expect(init.result).toMatchObject({ capabilities: { tools: { listChanged: true } } });
+    await request("tools/list");
+
+    const listChanged = () =>
+      sent.filter((m) => m.method === "notifications/tools/list_changed").length;
+    await call("echo", { text: "a" });
+    expect(listChanged()).toBe(0);
+    await call("tool_search", {});
+    expect(listChanged()).toBe(1);
+    await call("echo", { text: "b" });
+    expect(listChanged()).toBe(1);
+
+    const list = await request("tools/list");
+    const names = (list.result!.tools as { name: string }[]).map((t) => t.name);
+    expect(names).toEqual(["echo", "tool_search", "later"]);
+  });
+});

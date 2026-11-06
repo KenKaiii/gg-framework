@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import {
   agentLoop,
   type AgentEvent,
+  type AgentOptions,
   type AgentTool,
   type AgentTurnTiming,
   type TransformContextOptions,
@@ -22,8 +23,18 @@ import {
   type CycleDetection,
   type LoopBreakStats,
 } from "../../core/loop-breaker.js";
-import { getClaudeCliUserAgent } from "../../core/claude-code-version.js";
-import { resolveSessionTurnToolResultCharLimit } from "../../core/agent-session.js";
+import {
+  resolveSessionToolResultCharLimit,
+  resolveSessionTurnToolResultCharLimit,
+} from "../../core/agent-session.js";
+import { claudeCodeLoop } from "../../core/claude-code/loop.js";
+import type { ClaudeCodeProcess } from "../../core/claude-code/complete.js";
+import {
+  CLAUDE_CODE_SEED_CHARS,
+  claudeCodeResumeId,
+  type ClaudeCodeSessionState,
+} from "../../core/claude-code/session-sync.js";
+import { flagUntrustedToolResult } from "../../core/injection-detect.js";
 import { kimiCodingHeaders, isKimiCodingEndpoint } from "../../core/oauth/kimi.js";
 import { log } from "../../core/logger.js";
 import { wrapSteeringContent } from "../../core/steering.js";
@@ -131,6 +142,8 @@ export interface AgentLoopOptions {
     messages: Message[],
     options: TransformContextOptions,
   ) => Message[] | Promise<Message[]>;
+  /** Claude Code settings when this run goes through a Claude subscription, else null. */
+  resolveClaudeCode?: () => Promise<ClaudeCodeProcess | null>;
   /** Polled mid-loop when the agent appears stuck (repeated failures / calls /
    *  edits, or degenerate output). Return a user message to break the loop. */
   getLoopBreakMessage?: (stats: LoopBreakStats, stage: 1 | 2) => Message | null;
@@ -310,6 +323,10 @@ export function useAgentLoop(
   /** Access token most recently handed to the provider, so a 401 retry can name
    *  the token that was actually rejected. */
   const lastResolvedApiKey = useRef<string | undefined>(undefined);
+  // Claude subscription route: the Claude Code session to resume, and who to
+  // wake when a queued message can steer the live run.
+  const claudeCodeSessionRef = useRef<ClaudeCodeSessionState | null>(null);
+  const steeringListenersRef = useRef(new Set<() => void>());
   const toolsUsedRef = useRef<Set<string>>(new Set());
   const toolCountsRef = useRef<Map<string, number>>(new Map());
   // ── Loop-breaker tracking ──
@@ -402,6 +419,7 @@ export function useAgentLoop(
   const queueMessage = useCallback((content: UserContent, text?: string) => {
     queueRef.current.push({ content, text: text ?? textFromUserContent(content) });
     setQueuedCount(queueRef.current.length);
+    for (const listener of [...steeringListenersRef.current]) listener();
   }, []);
 
   const clearQueue = useCallback(() => {
@@ -422,6 +440,47 @@ export function useAgentLoop(
 
   const run = useCallback(
     async (userContent: UserContent) => {
+      /** Claude subscription route: Claude Code drives the loop (and its own compaction). */
+      const runClaudeCode = async function* (process: ClaudeCodeProcess, base: AgentOptions) {
+        const history = messages.current;
+        const resume = claudeCodeResumeId(claudeCodeSessionRef.current, history);
+        let sessionId = resume;
+        try {
+          return yield* claudeCodeLoop(history, {
+            ...base,
+            transformContext: undefined,
+            resolveCredentials: undefined,
+            maxToolResultChars: resolveSessionToolResultCharLimit(
+              options.model,
+              options.provider,
+              undefined,
+            ),
+            transformToolResult: flagUntrustedToolResult,
+            onSteeringAvailable: (listener) => {
+              steeringListenersRef.current.add(listener);
+              return () => steeringListenersRef.current.delete(listener);
+            },
+            claudeCode: {
+              ...process,
+              maxSeedChars: CLAUDE_CODE_SEED_CHARS,
+              ...(resume ? { resume } : {}),
+              onSessionId: (id) => {
+                sessionId = id;
+              },
+            },
+          });
+        } finally {
+          if (sessionId) {
+            const seen = history.filter((m) => m.role !== "system");
+            claudeCodeSessionRef.current = {
+              sessionId,
+              messageCount: seen.length,
+              anchor: seen.at(-1),
+            };
+          }
+        }
+      };
+
       /** Run a single user message through the agent loop. Returns true if aborted. */
       const runSingle = async (
         content: UserContent,
@@ -565,11 +624,12 @@ export function useAgentLoop(
         try {
           // Resolve fresh credentials (handles OAuth token refresh)
           const { resolveCredentials, transformContext } = options;
+          const claudeCode = (await options.resolveClaudeCode?.()) ?? null;
           let apiKey = options.apiKey;
           let accountId = options.accountId;
           let projectId = options.projectId;
           const credsStart = Date.now();
-          if (resolveCredentials) {
+          if (resolveCredentials && !claudeCode) {
             const creds = await resolveCredentials(credentialOpts);
             apiKey = creds.apiKey;
             accountId = creds.accountId;
@@ -582,26 +642,16 @@ export function useAgentLoop(
             resolved: options.resolveCredentials ? "yes" : "no",
           });
 
-          const uaStart = Date.now();
-          const userAgent =
-            options.provider === "anthropic" ? await getClaudeCliUserAgent() : undefined;
           // Kimi For Coding gates the managed endpoint on coding-agent identity
           // headers; attach them only when the Kimi OAuth token is in use.
           const defaultHeaders =
             options.provider === "moonshot" && isKimiCodingEndpoint(options.baseUrl)
               ? kimiCodingHeaders()
               : undefined;
-          if (options.provider === "anthropic") {
-            log("INFO", "ui", "useragent_resolved", {
-              ms: String(Date.now() - uaStart),
-              sinceRunStartMs: String(Date.now() - runStartRef.current),
-            });
-          }
-
           log("INFO", "ui", "agent_loop_invoke", {
             sinceRunStartMs: String(Date.now() - runStartRef.current),
           });
-          const generator = agentLoop(messages.current, {
+          const agentOptions: AgentOptions = {
             provider: options.provider,
             model: options.model,
             tools: options.tools,
@@ -635,7 +685,6 @@ export function useAgentLoop(
               accountId,
             ),
             signal: ac.signal,
-            userAgent,
             defaultHeaders,
             // Wrap transformContext to flag when a compaction actually shrank
             // the context — the re-grounding hook keys off this.
@@ -728,7 +777,10 @@ export function useAgentLoop(
             // clearToolUses disabled — causes model to output unsolicited context
             // summaries ("KEY CONTEXT TO REMEMBER") when it sees gaps from stripped
             // tool blocks. Normal client-side compaction handles context management.
-          });
+          };
+          const generator = claudeCode
+            ? runClaudeCode(claudeCode, agentOptions)
+            : agentLoop(messages.current, agentOptions);
 
           log("INFO", "ui", "iter_start", {
             sinceRunStartMs: String(Date.now() - runStartRef.current),

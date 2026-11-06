@@ -55,9 +55,9 @@ import { expandPromptCommand } from "./prompt-command-expansion.js";
 import { SettingsManager } from "./settings-manager.js";
 import { AuthStorage } from "./auth-storage.js";
 import { dualAuthProvider } from "@kenkaiiii/gg-core";
-import { getClaudeCliUserAgent } from "./claude-code-version.js";
 import {
   runSideWebSearch,
+  runSideWebSearchViaClaudeCode,
   SIDE_SEARCH_MODEL,
   type SideSearchRequest,
   type SideSearchResult,
@@ -169,6 +169,21 @@ import {
 } from "./compaction/tool-result-pruner.js";
 import { discoverAgents, type AgentDefinition } from "./agents.js";
 import { enhancePrompt, type EnhanceResult } from "../utils/prompt-enhancer.js";
+import { assistantText, renderTranscript } from "./claude-code/events.js";
+import { claudeCodeLoop } from "./claude-code/loop.js";
+import {
+  CLAUDE_CODE_SEED_CHARS,
+  CLAUDE_CODE_SESSION_KIND,
+  claudeCodeResumeId,
+  claudeCodeSessionEntryData,
+  parseClaudeCodeSessionState,
+  type ClaudeCodeSessionState,
+} from "./claude-code/session-sync.js";
+import {
+  claudeCodeComplete,
+  resolveClaudeCodeProcess,
+  type ClaudeCodeProcess,
+} from "./claude-code/complete.js";
 import { detectLanguages, detectProjectStack, type LanguageId } from "./language-detector.js";
 import { buildLoopBreakMessage } from "./loop-breaker.js";
 import { buildRegroundingMessage, requestTextForRegrounding } from "./regrounding.js";
@@ -936,12 +951,6 @@ export class AgentSession {
   async initialize(): Promise<void> {
     // Set model for accurate token estimation
     setEstimatorModel(this.model);
-
-    // The Anthropic transport needs the current Claude Code version for its
-    // User-Agent before the first request. Without a fresh on-disk cache that
-    // is an npm round-trip (~0.3–3s) on the user's first prompt; start it now
-    // so it overlaps session setup and the user's typing instead.
-    if (this.provider === "anthropic") void getClaudeCliUserAgent().catch(() => {});
     // The prompt's file list is a `git ls-files` (~30 ms on a mid-size repo)
     // that nothing before buildBasePrompt depends on: start it now so it runs
     // alongside settings/auth/skills/tools instead of after them.
@@ -1465,14 +1474,109 @@ export class AgentSession {
 
   private async runSideWebSearch(request: SideSearchRequest): Promise<SideSearchResult | null> {
     if (this.provider !== "anthropic") return null;
+    const claudeCode = await this.claudeCodeProcess();
+    if (claudeCode) return await runSideWebSearchViaClaudeCode(request, claudeCode);
     const creds = await this.authStorage.resolveCredentials("anthropic", {
       storageKeys: getAuthStorageKeys("anthropic", SIDE_SEARCH_MODEL),
     });
     return await runSideWebSearch(request, {
       apiKey: creds.accessToken,
       baseUrl: this.baseUrl ?? creds.baseUrl,
-      userAgent: await getClaudeCliUserAgent(),
     });
+  }
+
+  /** One run on the Claude subscription route: Claude Code drives the loop with our prompt and tools. */
+  private async runClaudeCodeLoop(
+    process: ClaudeCodeProcess,
+    options: PromptRunOptions,
+  ): Promise<void> {
+    let loopMessages = await this.prepareDynamicContext();
+    const resume = claudeCodeResumeId(this.claudeCodeSession, loopMessages);
+    // A fresh Claude Code session gets our history as text; summarize it first
+    // when it would not fit.
+    if (
+      !resume &&
+      renderTranscript(loopMessages, Number.MAX_SAFE_INTEGER).length > CLAUDE_CODE_SEED_CHARS
+    ) {
+      try {
+        await this.compact(undefined, "automatic");
+      } catch (error) {
+        if (isAbortError(error) || this.opts.signal?.aborted) throw error;
+        log("WARN", "compaction", "Summary before seeding Claude Code failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      loopMessages = await this.prepareDynamicContext();
+    }
+    let sessionId = resume;
+    const title = this.sessionPreview?.trim().slice(0, 80);
+    const generator = claudeCodeLoop(loopMessages, {
+      provider: this.provider,
+      model: this.model,
+      tools: options.disableTools ? [] : this.tools,
+      maxTurns: this.opts.maxTurns,
+      thinking:
+        this.planModeRef.current || options.capThinking
+          ? clampThinkingForPlanMode(this.thinkingLevel)
+          : this.thinkingLevel,
+      signal: this.opts.signal,
+      maxToolResultChars: resolveSessionToolResultCharLimit(this.model, this.provider, undefined),
+      transformToolResult: flagUntrustedToolResult,
+      ...(options.disableTools
+        ? {}
+        : { resolveTool: (name: string) => this.promoteDeferredBuiltin(name) }),
+      getSteeringMessages: () => this.getHookSteeringMessages(),
+      onSteeringAvailable: (listener) => {
+        this.steeringListeners.add(listener);
+        return () => this.steeringListeners.delete(listener);
+      },
+      getFollowUpMessages: () => this.getHookFollowUpMessages(),
+      claudeCode: {
+        ...process,
+        maxSeedChars: CLAUDE_CODE_SEED_CHARS,
+        ...(resume ? { resume } : {}),
+        ...(title ? { title } : {}),
+        onSessionId: (id) => {
+          sessionId = id;
+        },
+      },
+    });
+
+    this.activeLoopMessages = loopMessages;
+    try {
+      for await (const event of generator) {
+        await this.trackHookEvent(event);
+        this.eventBus.forwardAgentEvent(event);
+      }
+    } finally {
+      this.activeLoopMessages = null;
+      this.messages = loopMessages;
+      for (let i = this.lastPersistedIndex; i < this.messages.length; i++) {
+        await this.persistMessage(this.messages[i]);
+      }
+      this.lastPersistedIndex = this.messages.length;
+      if (sessionId) await this.recordClaudeCodeSession(sessionId);
+    }
+  }
+
+  private async recordClaudeCodeSession(sessionId: string): Promise<void> {
+    const history = this.messages.filter((m) => m.role !== "system");
+    const state = { sessionId, messageCount: history.length, anchor: history.at(-1) };
+    this.claudeCodeSession = state;
+    if (!this.sessionPath) return;
+    await this.sessionManager.appendEntry(this.sessionPath, {
+      type: "custom",
+      kind: CLAUDE_CODE_SESSION_KIND,
+      id: crypto.randomUUID(),
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      data: claudeCodeSessionEntryData(state),
+    });
+  }
+
+  /** Claude Code settings when this session runs on a Claude subscription, else null. */
+  private claudeCodeProcess(): Promise<ClaudeCodeProcess | null> {
+    return resolveClaudeCodeProcess(this.authStorage, this.provider, this.cwd);
   }
 
   /** Append a deferred built-in to the live tool list (append-only). */
@@ -2082,6 +2186,23 @@ export class AgentSession {
       throw new Error("Active model has no confirmed image support");
     signal.throwIfAborted();
     try {
+      const messages: Message[] = [
+        { role: "system", content: request.instruction },
+        { role: "user", content: [{ type: "text", text: request.context }, ...request.images] },
+      ];
+      const claudeCode = await this.claudeCodeProcess();
+      if (claudeCode) {
+        const response = await claudeCodeComplete({
+          ...claudeCode,
+          model,
+          messages,
+          thinking,
+          signal,
+        });
+        const text = assistantText(response.message.content);
+        if (text.length > 32_768) throw new Error("Review response exceeded its limit");
+        return { text, model, provider, thinking };
+      }
       const creds = await this.authStorage.resolveCredentials(provider, {
         storageKeys: this.currentAuthStorageKeys(),
       });
@@ -2089,10 +2210,7 @@ export class AgentSession {
       const result = stream({
         provider,
         model,
-        messages: [
-          { role: "system", content: request.instruction },
-          { role: "user", content: [{ type: "text", text: request.context }, ...request.images] },
-        ],
+        messages,
         maxTokens: 4000,
         thinking,
         apiKey: creds.accessToken,
@@ -2105,7 +2223,6 @@ export class AgentSession {
           provider === "moonshot" && isKimiCodingEndpoint(baseUrl)
             ? kimiCodingHeaders()
             : undefined,
-        userAgent: provider === "anthropic" ? await getClaudeCliUserAgent() : undefined,
         supportsImages: true,
       });
       const response = await result.response;
@@ -2130,6 +2247,19 @@ export class AgentSession {
    *  cheaper routing: judging a model's own failure patterns with a weaker
    *  model swaps false negatives for false positives. */
   private async callSemanticLoopJudge(prompt: string): Promise<string> {
+    const claudeCode = await this.claudeCodeProcess();
+    if (claudeCode) {
+      const response = await withJudgeTimeout(
+        claudeCodeComplete({
+          ...claudeCode,
+          model: this.model,
+          messages: [{ role: "user", content: prompt }],
+          signal: this.opts.signal,
+        }),
+        SEMANTIC_LOOP_JUDGE_TIMEOUT_MS,
+      );
+      return assistantText(response.message.content);
+    }
     const creds = await this.authStorage.resolveCredentials(this.provider, {
       storageKeys: this.currentAuthStorageKeys(),
     });
@@ -2391,6 +2521,14 @@ export class AgentSession {
       .find((m) => m.role === "user" && m.provenance?.kind !== "notification");
     this.resetHookState(requestTextForRegrounding(lastUser));
 
+    // A Claude subscription runs through Claude Code, which does its own
+    // retries, compaction and caching.
+    const claudeCode = await this.claudeCodeProcess();
+    if (claudeCode) {
+      await this.runClaudeCodeLoop(claudeCode, options);
+      return;
+    }
+
     // Resolve OAuth credentials and run agent loop.
     // On 401, force-refresh the token and retry once — the provider may have
     // revoked the token server-side before the stored expiry (e.g. after a restart).
@@ -2478,8 +2616,6 @@ export class AgentSession {
         }
       }
     }
-
-    const userAgent = this.provider === "anthropic" ? await getClaudeCliUserAgent() : undefined;
 
     const loopMessages = await this.prepareDynamicContext();
     // Re-read every run so rule-file edits apply on the next turn; a few small files.
@@ -2583,7 +2719,6 @@ export class AgentSession {
         },
         supportsImages: modelInfo?.supportsImages,
         supportsVideo: modelInfo?.supportsVideo,
-        userAgent,
         // Codex caps each tool output at 10K tokens. Other transports retain the
         // generic 30%-of-context allowance used before this provider policy.
         maxToolResultChars: resolveSessionToolResultCharLimit(this.model, this.provider, accountId),
@@ -3382,11 +3517,14 @@ export class AgentSession {
       abortSignal && this.opts.signal
         ? AbortSignal.any([this.opts.signal, abortSignal])
         : (abortSignal ?? this.opts.signal);
+    const claudeCode = existingCredentials ? null : await this.claudeCodeProcess();
     const creds =
       existingCredentials ??
-      (await this.authStorage.resolveCredentials(this.provider, {
-        storageKeys: this.currentAuthStorageKeys(),
-      }));
+      (claudeCode
+        ? { accessToken: "" }
+        : await this.authStorage.resolveCredentials(this.provider, {
+            storageKeys: this.currentAuthStorageKeys(),
+          }));
     const contextWindow = getContextWindow(this.model, {
       provider: this.provider,
       accountId: creds.accountId,
@@ -3418,6 +3556,12 @@ export class AgentSession {
         signal: compactionSignal,
         approvedPlanPath: this.approvedPlanPath,
         focus,
+        ...(claudeCode
+          ? {
+              complete: (req: { model: string; messages: Message[]; signal: AbortSignal }) =>
+                claudeCodeComplete({ ...claudeCode, ...req }),
+            }
+          : {}),
       });
       contextSelection = output.result.contextSelection;
       return output;
@@ -4664,9 +4808,13 @@ export class AgentSession {
     // if the user switches models while credential resolution is pending.
     const { provider, model, thinkingLevel, baseUrl } = this;
     const threshold = this.settingsManager.get("compactThreshold");
-    const creds = await this.authStorage.resolveCredentials(provider, {
-      storageKeys: this.currentAuthStorageKeys(),
-    });
+    const claudeCode = await this.claudeCodeProcess();
+    const creds: { accessToken: string; accountId?: string; projectId?: string; baseUrl?: string } =
+      claudeCode
+        ? { accessToken: "" }
+        : await this.authStorage.resolveCredentials(provider, {
+            storageKeys: this.currentAuthStorageKeys(),
+          });
     const maxTokens = outputCapForRequest({
       provider,
       model,
@@ -4687,7 +4835,6 @@ export class AgentSession {
       model,
       thinking: thinkingLevel,
       maxTokens,
-      userAgent: provider === "anthropic" ? await getClaudeCliUserAgent() : undefined,
       projectId: creds.projectId,
       prompt: text,
       stack,
@@ -4695,6 +4842,18 @@ export class AgentSession {
       baseUrl: baseUrl ?? creds.baseUrl,
       accountId: creds.accountId,
       signal: this.opts.signal,
+      ...(claudeCode
+        ? {
+            complete: (messages: Message[]) =>
+              claudeCodeComplete({
+                ...claudeCode,
+                model,
+                messages,
+                thinking: thinkingLevel,
+                signal: this.opts.signal,
+              }),
+          }
+        : {}),
     });
   }
 
@@ -4753,6 +4912,8 @@ export class AgentSession {
       .catch(() => {});
   }
   private prewarmController: AbortController | null = null;
+  /** Claude Code session that has seen this history (Claude subscription route). */
+  private claudeCodeSession: ClaudeCodeSessionState | null = null;
 
   /**
    * Best-effort Anthropic prompt-cache prewarm before the user's next turn
@@ -4762,6 +4923,9 @@ export class AgentSession {
    * first real reply is a cache read instead of a cold write.
    */
   async prewarm(signal?: AbortSignal): Promise<{ ok: boolean; reason: string; usage?: Usage }> {
+    // Claude Code keeps its own cache; there is no request prefix of ours to warm.
+    if (await this.claudeCodeProcess().catch(() => null))
+      return { ok: false, reason: "claude_code" };
     // Every provider: the user is typing, so the first request is seconds away.
     this.preconnect();
     if (this.provider !== "anthropic") return { ok: false, reason: "provider" };
@@ -4831,7 +4995,6 @@ export class AgentSession {
         promptCacheKey: this.getPromptCacheKey(),
         supportsImages: modelInfo?.supportsImages,
         supportsVideo: modelInfo?.supportsVideo,
-        userAgent: await getClaudeCliUserAgent(),
         prewarm: true,
         signal: controller.signal,
       });
@@ -4989,11 +5152,14 @@ export class AgentSession {
     // One backward scan for both latest host checkpoints (no full copies).
     let savedCompletionReview: (typeof loaded.entries)[number] | undefined;
     let savedVerification: (typeof loaded.entries)[number] | undefined;
+    let savedClaudeCode: (typeof loaded.entries)[number] | undefined;
     for (let i = loaded.entries.length - 1; i >= 0; i--) {
-      if (savedCompletionReview && savedVerification) break;
+      if (savedCompletionReview && savedVerification && savedClaudeCode) break;
       const entry = loaded.entries[i];
       if (entry?.type !== "custom") continue;
-      if (!savedCompletionReview && entry.kind === COMPLETION_REVIEW_STATE_KIND) {
+      if (!savedClaudeCode && entry.kind === CLAUDE_CODE_SESSION_KIND) {
+        savedClaudeCode = entry;
+      } else if (!savedCompletionReview && entry.kind === COMPLETION_REVIEW_STATE_KIND) {
         savedCompletionReview = entry;
       } else if (!savedVerification && entry.kind === VERIFICATION_STATE_KIND) {
         savedVerification = entry;
@@ -5053,6 +5219,10 @@ export class AgentSession {
     // not fail when Anthropic's stricter many-image limit activates later.
     const systemMsg = this.messages[0]; // Already built
     this.messages = [systemMsg, ...loadedMessages];
+    this.claudeCodeSession = parseClaudeCodeSessionState(
+      savedClaudeCode?.type === "custom" ? savedClaudeCode.data : null,
+      loadedMessages,
+    );
     // Reads recorded for the previous conversation don't carry over.
     this.clearReadTracker?.();
     const normalizedImageCount = await normalizeMessageImages(this.messages);

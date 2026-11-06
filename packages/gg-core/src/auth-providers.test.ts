@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Provider } from "@kenkaiiii/gg-ai";
 import { getListedModels, getModelsForProvider, isHiddenProvider } from "./model-registry.js";
-import { AUTH_PROVIDERS } from "./auth-providers.js";
+import { AUTH_PROVIDERS, describeAuthMethods } from "./auth-providers.js";
 
 /**
  * The login screen advertises each provider's models in prose. Nothing else
@@ -61,5 +61,16 @@ describe("hidden providers", () => {
     // The registry itself keeps the models, so un-hiding is a one-line change.
     expect(getModelsForProvider("gemini").length).toBeGreaterThan(0);
     expect(AUTH_PROVIDERS.map((p) => p.value)).toContain("anthropic");
+  });
+});
+
+describe("Anthropic auth methods", () => {
+  it("offers Sign in with Claude (via Claude Code) and an API key", () => {
+    const methods = describeAuthMethods("anthropic");
+    expect(methods.map((m) => m.method)).toEqual(["oauth", "apikey"]);
+    expect(methods[0]!.label).toBe("Sign in with Claude");
+    expect(methods[0]!.when).toMatch(/Claude Code/);
+    expect(methods[0]!.when).toMatch(/downloads/);
+    expect(methods[1]!.label).toBe("Anthropic API key");
   });
 });

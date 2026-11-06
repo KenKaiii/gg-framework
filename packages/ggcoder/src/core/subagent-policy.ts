@@ -50,7 +50,7 @@ export function applyAsyncSubagentPolicy(
   const supportsPolicy =
     toolNames.includes("spawn_agent") &&
     provider === "openai" &&
-    (baseModel === "gpt-6-astra" || baseModel === "gpt-6.1-sol");
+    (baseModel === "gpt-6-astra" || baseModel === "gpt-6.1-sol" || baseModel === "gpt-6.1-terra");
   if (!supportsPolicy) return basePrompt;
   return (
     basePrompt +

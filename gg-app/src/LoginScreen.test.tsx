@@ -2,13 +2,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { AuthProvider, SidecarEvent } from "./agent";
-import { authStatus } from "./agent";
+import { authLogout, authStatus } from "./agent";
 import { LoginScreen } from "./LoginScreen";
 
 const listeners = vi.hoisted(() => new Set<(e: SidecarEvent) => void>());
 
 vi.mock("./agent", () => ({
   authStatus: vi.fn(),
+  authLogout: vi.fn(),
   subscribe: (fn: (e: SidecarEvent) => void) => {
     listeners.add(fn);
     return () => listeners.delete(fn);
@@ -184,5 +185,40 @@ describe("LoginScreen brain bay", () => {
     // A new connection re-wires the existing brain; it isn't rebuilt.
     expect(bay.mount).toHaveBeenCalledTimes(1);
     expect(bay.setConnected).toHaveBeenLastCalledWith(["deepseek", "openai"]);
+  });
+});
+
+describe("LoginScreen retired Claude sign-in", () => {
+  function withRetiredSignIn(): AuthProvider[] {
+    return providers([]).map((p) => (p.value === "anthropic" ? { ...p, reauthRequired: true } : p));
+  }
+
+  it("asks to sign in again and opens the Anthropic login", async () => {
+    vi.mocked(authStatus).mockResolvedValue(withRetiredSignIn());
+    await act(async () => {
+      render(<LoginScreen onClose={vi.fn()} />);
+    });
+    expect(screen.getByText(/Your old Anthropic sign-in no longer works/)).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("removes the dead sign-in on dismiss and hides the notice", async () => {
+    vi.mocked(authStatus)
+      .mockResolvedValueOnce(withRetiredSignIn())
+      .mockResolvedValue(providers([]));
+    vi.mocked(authLogout).mockResolvedValue(undefined);
+    await act(async () => {
+      render(<LoginScreen onClose={vi.fn()} />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    });
+    expect(authLogout).toHaveBeenCalledWith("anthropic", "apikey");
+    expect(screen.queryByText(/Your old Anthropic sign-in no longer works/)).toBeNull();
   });
 });

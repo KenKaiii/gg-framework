@@ -91,6 +91,7 @@ describe("model registry invariants", () => {
       "claude-opus-5-5-fast",
       "gpt-6-astra-fast",
       "gpt-6.1-sol-fast",
+      "gpt-6.1-terra-fast",
       "gpt-6-luna-fast",
     ]);
     for (const id of fastIds) {
@@ -733,5 +734,21 @@ describe("runtime model registry", () => {
     registerRuntimeModels([local]);
 
     expect(getDefaultModel("local")).toBe(local);
+  });
+});
+
+describe("GPT-6.1 Terra", () => {
+  it("matches the Codex catalog: 500K Codex window, low default, Ultra ladder", () => {
+    expect(getModel("gpt-6.1-terra")).toMatchObject({
+      provider: "openai",
+      contextWindow: 1_050_000,
+      codexContextWindow: 500_000,
+      defaultThinkingLevel: "low",
+      maxThinkingLevel: "ultra",
+      costTier: "medium",
+    });
+    expect(getModel("gpt-6.1-terra-fast")?.billing).toBeDefined();
+    // Sol stays the OpenAI default.
+    expect(getDefaultModel("openai").id).toBe("gpt-6.1-sol");
   });
 });

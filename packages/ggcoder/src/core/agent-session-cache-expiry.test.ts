@@ -49,10 +49,6 @@ beforeEach(async () => {
     );
   await fs.mkdir(path.join(tempHome, ".gg"), { recursive: true });
   await fs.writeFile(
-    path.join(tempHome, ".gg", "claude-code-version.json"),
-    JSON.stringify({ version: "2.1.75", fetchedAt: Date.now() }),
-  );
-  await fs.writeFile(
     path.join(tempHome, ".gg", "auth.json"),
     JSON.stringify({
       anthropic: { accessToken: "t", refreshToken: "t", expiresAt: Date.now() + 3_600_000 },

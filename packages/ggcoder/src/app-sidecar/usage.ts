@@ -1,5 +1,6 @@
 import {
   fetchSubscriptionUsage,
+  readClaudeCodeUsage,
   SubscriptionUsageError,
   oauthStorageKey,
   type SubscriptionUsageProvider,
@@ -54,9 +55,35 @@ export function createUsageService(auth: AuthStorage): {
     }
   }
 
+  // Claude reports usage on each request it makes (SDK rate-limit events, saved
+  // by the loop), so there's no endpoint to call: show the last report.
+  async function claudeUsage(): Promise<UsageResult> {
+    const displayName = "Anthropic";
+    if (!(await auth.hasClaudeCodeLogin())) {
+      return {
+        provider: "anthropic",
+        displayName,
+        connected: false,
+        windows: [],
+        fetchedAt: Date.now(),
+      };
+    }
+    const snapshot = await readClaudeCodeUsage();
+    if (!snapshot || snapshot.windows.length === 0) {
+      return {
+        provider: "anthropic",
+        displayName,
+        connected: true,
+        windows: [],
+        fetchedAt: Date.now(),
+      };
+    }
+    return { ...snapshot, connected: true };
+  }
+
   async function fetchUsageProvider(provider: SubscriptionUsageProvider): Promise<UsageResult> {
-    const displayName =
-      provider === "anthropic" ? "Anthropic" : provider === "openai" ? "Codex" : "Kimi";
+    if (provider === "anthropic") return await claudeUsage();
+    const displayName = provider === "openai" ? "Codex" : "Kimi";
     // Kimi plan usage is tracked on the OAuth credential specifically — the
     // Moonshot platform API key is metered per-token, not per plan window.
     const authKey = oauthStorageKey(provider) ?? provider;

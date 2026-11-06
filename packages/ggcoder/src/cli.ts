@@ -1525,6 +1525,14 @@ async function resolveActiveProvider(
     "sakana",
     "xai",
   ];
+  if (await authStorage.takeLegacyClaudeSignIn()) {
+    console.warn(
+      chalk.yellow(
+        "⚠ Your old Claude sign-in no longer works.\n" +
+          '  Run "ggcoder login", pick Anthropic, then "Sign in with Claude" to connect again.',
+      ),
+    );
+  }
   const loggedInProviders: Provider[] = [];
   for (const p of allProviders) {
     if (await authStorage.hasProviderAuth(p)) loggedInProviders.push(p);

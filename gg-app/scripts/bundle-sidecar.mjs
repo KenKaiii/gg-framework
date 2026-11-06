@@ -65,7 +65,20 @@ const EXTERNAL = [
   // Bash launches SRT's physical CLI as a child process for per-session OS
   // sandboxing; keep its platform binaries and CLI files on disk.
   "@anthropic-ai/sandbox-runtime",
+  // The Claude subscription route drives the Agent SDK, which spawns Claude Code
+  // and loads its own chunks by path. Its ~200 MB platform binaries are never
+  // shipped: GG downloads one on first "Sign in with Claude".
+  "@anthropic-ai/claude-agent-sdk",
 ];
+
+// Claude Code platform builds; see the EXTERNAL note above.
+const NEVER_SHIPPED = /^@anthropic-ai\/claude-agent-sdk-/;
+
+// Peer dependencies an external package imports at runtime. copyPackage only
+// follows dependencies/optionalDependencies, so name these explicitly.
+const RUNTIME_PEERS = {
+  "@anthropic-ai/claude-agent-sdk": ["zod"],
+};
 
 // require resolver anchored at the ggcoder package, where these deps live.
 const ggcoderRequire = createRequire(join(repoRoot, "packages", "ggcoder", "package.json"));
@@ -173,7 +186,7 @@ function packageRoot(name, fromRequire, fromDir) {
  * (npm-style hoist); the smoke test validates the result loads.
  */
 function copyPackage(name, fromRequire, fromDir, copied) {
-  if (copied.has(name)) return;
+  if (copied.has(name) || NEVER_SHIPPED.test(name)) return;
   const linkedRoot = packageRoot(name, fromRequire, fromDir);
   if (!linkedRoot) {
     console.warn(`skip (not found): ${name}`);
@@ -196,7 +209,7 @@ function copyPackage(name, fromRequire, fromDir, copied) {
     ...(pkg.optionalDependencies || {}),
   };
   const childRequire = createRequire(join(root, "package.json"));
-  for (const dep of Object.keys(deps)) {
+  for (const dep of [...Object.keys(deps), ...(RUNTIME_PEERS[name] ?? [])]) {
     copyPackage(dep, childRequire, root, copied);
   }
 }

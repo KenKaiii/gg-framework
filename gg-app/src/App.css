@@ -2061,6 +2061,26 @@ select {
 .login-logo {
   object-fit: contain;
 }
+/* Retired Claude sign-in still on disk: one row above the brain bay. */
+.login-reauth {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-6);
+  padding: var(--space-6) 0;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.login-reauth-text {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.login-reauth-actions {
+  display: flex;
+  gap: var(--space-4);
+}
 
 /* ── Provider login modal ── */
 .login-modal-desc {

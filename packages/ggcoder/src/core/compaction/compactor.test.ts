@@ -784,6 +784,23 @@ describe("compact", () => {
     }
   });
 
+  it("sends the summary request through `complete` when given one", async () => {
+    const mockStream = vi.mocked(stream);
+    mockStream.mockReset();
+    const complete = vi.fn(async () => ({
+      message: { role: "assistant" as const, content: "Summary from the hook." },
+      stopReason: "end_turn" as const,
+      usage: { inputTokens: 10, outputTokens: 5 },
+    }));
+    const result = await compact(buildConversation(30), { ...baseOptions, complete });
+    expect(mockStream).not.toHaveBeenCalled();
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(complete.mock.calls[0]).toMatchObject([
+      { model: expect.any(String), maxTokens: expect.any(Number) },
+    ]);
+    expect(result.messages[1]!.content as string).toContain("Summary from the hook.");
+  });
+
   it("produces summary message with LLM response", async () => {
     const mockStream = vi.mocked(stream);
     mockStream.mockReturnValue(

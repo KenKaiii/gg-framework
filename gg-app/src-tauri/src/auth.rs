@@ -118,16 +118,47 @@ pub(crate) fn normalize_base_url(raw: Option<&str>) -> Result<Option<String>, St
     Ok(Some(value.trim_end_matches('/').to_string()))
 }
 
+/// auth.json key of the "signed in with Claude through Claude Code" marker
+/// (`{"via":"claude-code"}`). Mirrors gg-core's CLAUDE_CODE_AUTH_KEY.
+pub(crate) const CLAUDE_CODE_AUTH_KEY: &str = "anthropic-claude-code";
+
+/// An `anthropic` entry left by the retired Claude OAuth login (`sk-ant-oat…`).
+/// It is not an API key and no longer authenticates anything.
+fn is_legacy_anthropic_oauth(entry: Option<&serde_json::Value>) -> bool {
+    entry
+        .and_then(|c| c.get("accessToken"))
+        .and_then(|t| t.as_str())
+        .is_some_and(|t| t.starts_with("sk-ant-oat"))
+}
+
 pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     ProviderMeta {
         value: "anthropic",
         label: "Anthropic",
         description: "Claude Fable 5.1, Opus 5.5, Opus 5.5 Fast, Sonnet 5.5, Haiku 5.5",
-        methods: &["oauth"],
-        oauth_key: None,
+        // Sign in with Claude runs through Claude Code, which holds the token;
+        // auth.json keeps only a marker under its own key. The API key lives
+        // under `anthropic`. Mirrors gg-core's AUTH_PROVIDERS.
+        methods: &["oauth", "apikey"],
+        oauth_key: Some(CLAUDE_CODE_AUTH_KEY),
         oauth_label: None,
-        method_details: &[],
-        api_key_label: None,
+        method_details: &[
+            MethodDetail {
+                method: "oauth",
+                label: "Sign in with Claude",
+                billing: "Uses your Claude Pro or Max plan.",
+                when: "Runs through Anthropic's Claude Code, which GG Coder downloads once (about 140 MB) the first time you pick this.",
+                requires: Some("A Claude Pro or Max subscription."),
+            },
+            MethodDetail {
+                method: "apikey",
+                label: "Anthropic API key",
+                billing: "Pay-per-token from an Anthropic Console key.",
+                when: "No subscription needed. Used only while you are not signed in with Claude.",
+                requires: None,
+            },
+        ],
+        api_key_label: Some("Anthropic"),
         api_key_base_url: None,
         api_key_variants: &[],
     },
@@ -135,7 +166,7 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
         value: "openai",
         label: "OpenAI",
         description:
-            "GPT-6 Astra, GPT-6 Astra Fast, GPT-6.1 Sol, GPT-6.1 Sol Fast, GPT-6 Luna, GPT-6 Luna Fast",
+            "GPT-6 Astra, GPT-6 Astra Fast, GPT-6.1 Sol, GPT-6.1 Sol Fast, GPT-6.1 Terra, GPT-6.1 Terra Fast, GPT-6 Luna, GPT-6 Luna Fast",
         methods: &["oauth"],
         oauth_key: None,
         oauth_label: None,
@@ -396,7 +427,9 @@ pub(crate) fn auth_status_snapshot(creds: Option<&serde_json::Value>) -> serde_j
         }
         // With variants, the variant keys are the API-key keys: the provider id
         // may hold something else (Gemini keeps its OAuth login there).
-        if p.api_key_variants.is_empty() {
+        if p.value == "anthropic" {
+            has_key(p.value) && !is_legacy_anthropic_oauth(creds.and_then(|v| v.get(p.value)))
+        } else if p.api_key_variants.is_empty() {
             has_key(p.value)
         } else {
             p.api_key_variants.iter().any(|v| has_key(v.key))
@@ -473,6 +506,12 @@ pub(crate) fn auth_status_snapshot(creds: Option<&serde_json::Value>) -> serde_j
             if let Some(until) = sidelined_until {
                 obj["oauthExhaustedUntil"] = serde_json::json!(until);
             }
+            // The retired Claude sign-in is still on disk: ask the user once to
+            // sign in again. Signing in or dismissing removes the entry.
+            if p.value == "anthropic" && is_legacy_anthropic_oauth(creds.and_then(|v| v.get(p.value)))
+            {
+                obj["reauthRequired"] = serde_json::json!(true);
+            }
             if !p.method_details.is_empty() {
                 let guidance: Vec<serde_json::Value> = p
                     .method_details
@@ -498,6 +537,10 @@ pub(crate) fn auth_status_snapshot(creds: Option<&serde_json::Value>) -> serde_j
             if p.value == "gemini" {
                 obj["priorityNote"] = serde_json::json!(
                     "Uses the Gemini API key first when one is set; otherwise the Google sign-in."
+                );
+            } else if p.value == "anthropic" {
+                obj["priorityNote"] = serde_json::json!(
+                    "Uses Sign in with Claude while you are signed in; otherwise the Anthropic API key."
                 );
             } else if let (Some(oauth_label), Some(key_label)) = (p.oauth_label, p.api_key_label) {
                 obj["priorityNote"] = serde_json::json!(format!(
@@ -831,14 +874,32 @@ pub(crate) fn app_auth_baseurl(
 /// and every API-key variant (currently only Xiaomi's). Never touches the
 /// sidecar. Returns `{ ok: true }`.
 #[tauri::command]
-pub(crate) fn app_auth_logout(
-    app: tauri::AppHandle,
+pub(crate) async fn app_auth_logout(
+    webview: tauri::WebviewWindow,
+    client: tauri::State<'_, reqwest::Client>,
     provider: String,
     method: Option<String>,
 ) -> Result<serde_json::Value, String> {
     if let Some(m) = method.as_deref() {
         if m != "oauth" && m != "apikey" {
             return Err(format!("unknown auth method: {m}"));
+        }
+    }
+    let app = webview.app_handle().clone();
+    // Claude Code holds the Claude login itself; only the sidecar can run
+    // `claude auth logout`. Best effort: with no daemon the marker still goes.
+    if provider == "anthropic" && method.as_deref() != Some("apikey") {
+        if let (Some(port), Some(sid)) = (
+            crate::daemon::port_for(&webview),
+            crate::daemon::session_for(&webview),
+        ) {
+            let _ = client
+                .post(format!("{}/auth/logout", crate::daemon::sidecar_base(port)))
+                .header("x-gg-session", &sid)
+                .json(&serde_json::json!({ "provider": "anthropic", "method": "oauth" }))
+                .timeout(std::time::Duration::from_secs(20))
+                .send()
+                .await;
         }
     }
     let existing = std::fs::read_to_string(auth_file_path()).ok();
@@ -936,7 +997,12 @@ mod tests {
     #[test]
     fn resolve_apikey_target_gates_on_apikey_support() {
         // OAuth-only provider → not an API-key provider.
-        assert!(resolve_apikey_target("anthropic", None).is_none());
+        assert!(resolve_apikey_target("openai", None).is_none());
+        // Anthropic's API key lives under the provider id, apart from the sign-in marker.
+        assert_eq!(
+            resolve_apikey_target("anthropic", None),
+            Some(("anthropic".to_string(), None)),
+        );
         // Unknown provider → None.
         assert!(resolve_apikey_target("nope", None).is_none());
         // API-key provider with no custom base URL, no variants.
@@ -1169,12 +1235,61 @@ mod tests {
 
     #[test]
     fn apply_logout_oauth_only_provider_uses_provider_id_key() {
-        // Anthropic has no distinct OAuth key — its credential IS `anthropic`.
+        // OpenAI has no distinct OAuth key — its credential IS `openai`.
         let existing =
-            r#"{ "anthropic": { "accessToken": "t", "refreshToken": "r", "expiresAt": 1 } }"#;
+            r#"{ "openai": { "accessToken": "t", "refreshToken": "r", "expiresAt": 1 } }"#;
+        let out = apply_logout(Some(existing), "openai", Some("oauth")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert!(v.get("openai").is_none());
+    }
+
+    #[test]
+    fn anthropic_sign_in_marker_and_api_key_are_separate() {
+        let existing = r#"{ "anthropic-claude-code": { "via": "claude-code" }, "anthropic": { "accessToken": "sk-ant-api03-x", "refreshToken": "", "expiresAt": 1 } }"#;
         let out = apply_logout(Some(existing), "anthropic", Some("oauth")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert!(v.get("anthropic-claude-code").is_none());
+        assert_eq!(v["anthropic"]["accessToken"], "sk-ant-api03-x");
+
+        let out = apply_logout(Some(existing), "anthropic", Some("apikey")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert!(v.get("anthropic").is_none());
+        assert_eq!(v["anthropic-claude-code"]["via"], "claude-code");
+    }
+
+    #[test]
+    fn anthropic_status_counts_the_marker_and_ignores_the_retired_oauth_token() {
+        let find = |creds: serde_json::Value| -> serde_json::Value {
+            auth_status_snapshot(Some(&creds))["providers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["value"] == "anthropic")
+                .unwrap()
+                .clone()
+        };
+        let marker = find(serde_json::json!({ "anthropic-claude-code": { "via": "claude-code" } }));
+        assert_eq!(marker["connected"], true);
+        assert_eq!(marker["activeMethod"], "oauth");
+        assert_eq!(marker["methods"], serde_json::json!(["oauth", "apikey"]));
+
+        let both = find(serde_json::json!({
+            "anthropic-claude-code": { "via": "claude-code" },
+            "anthropic": { "accessToken": "sk-ant-api03-x" },
+        }));
+        assert_eq!(
+            both["connectedMethods"],
+            serde_json::json!(["oauth", "apikey"])
+        );
+        assert_eq!(both["activeMethod"], "oauth");
+
+        let legacy = find(serde_json::json!({
+            "anthropic": { "accessToken": "sk-ant-oat01-x", "refreshToken": "r" },
+        }));
+        assert_eq!(legacy["connected"], false);
+        assert_eq!(legacy["reauthRequired"], true);
+        assert!(marker.get("reauthRequired").is_none());
+        assert!(both.get("reauthRequired").is_none());
     }
 
     #[test]

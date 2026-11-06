@@ -1668,7 +1668,7 @@ export function toGlmReasoningEffort(
 }
 
 /**
- * Codex Ultra is a local delegation preset. Astra/Sol declare xhigh as their
+ * Codex Ultra is a local delegation preset. Astra/Sol/Terra declare xhigh as their
  * multi_agent_reasoning_effort; older catalogs without that override use max.
  * Source: openai/codex 4c9f42f4, models-manager/models.json and
  * protocol/src/openai_models/reasoning_effort.rs.
@@ -1678,7 +1678,9 @@ export function toCodexReasoningEffort(
   model: string,
 ): Exclude<ThinkingLevel, "ultra"> {
   if (level !== "ultra") return level;
-  return model === "gpt-6-astra" || model === "gpt-6.1-sol" ? "xhigh" : "max";
+  return model === "gpt-6-astra" || model === "gpt-6.1-sol" || model === "gpt-6.1-terra"
+    ? "xhigh"
+    : "max";
 }
 
 const DECLARED_EFFORT_ORDER = ["low", "medium", "high", "xhigh", "max"] as const;

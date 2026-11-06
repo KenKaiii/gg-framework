@@ -85,13 +85,29 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
     value: "anthropic",
     label: "Anthropic",
     description: "Claude Fable 5.1, Opus 5.5, Opus 5.5 Fast, Sonnet 5.5, Haiku 5.5",
-    methods: ["oauth"],
+    methods: ["oauth", "apikey"],
+    apiKeyLabel: "Anthropic",
+    methodDetails: {
+      oauth: {
+        method: "oauth",
+        label: "Sign in with Claude",
+        billing: "Uses your Claude Pro or Max plan.",
+        when: "Runs through Anthropic's Claude Code, which GG Coder downloads once (about 140 MB) the first time you pick this.",
+        requires: "A Claude Pro or Max subscription.",
+      },
+      apikey: {
+        method: "apikey",
+        label: "Anthropic API key",
+        billing: "Pay-per-token from an Anthropic Console key.",
+        when: "No subscription needed. Used only while you are not signed in with Claude.",
+      },
+    },
   },
   {
     value: "openai",
     label: "OpenAI",
     description:
-      "GPT-6 Astra, GPT-6 Astra Fast, GPT-6.1 Sol, GPT-6.1 Sol Fast, GPT-6 Luna, GPT-6 Luna Fast",
+      "GPT-6 Astra, GPT-6 Astra Fast, GPT-6.1 Sol, GPT-6.1 Sol Fast, GPT-6.1 Terra, GPT-6.1 Terra Fast, GPT-6 Luna, GPT-6 Luna Fast",
     methods: ["oauth"],
   },
   {
@@ -280,6 +296,9 @@ export function authPriorityNote(provider: string): string | undefined {
   // Code Assist OAuth refuses personal accounts, so a key the user added wins.
   if (provider === "gemini") {
     return "Uses the Gemini API key first when one is set; otherwise the Google sign-in.";
+  }
+  if (provider === "anthropic") {
+    return "Uses Sign in with Claude while you are signed in; otherwise the Anthropic API key.";
   }
   const dual = dualAuthProvider(provider);
   if (!dual) return undefined;

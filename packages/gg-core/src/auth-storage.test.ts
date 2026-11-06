@@ -15,6 +15,7 @@ import {
   readStoredBaseUrlSync,
 } from "./auth-storage.js";
 import { isHiddenProvider } from "./hidden-providers.js";
+import { CLAUDE_CODE_AUTH_KEY, CLAUDE_CODE_AUTH_MARKER } from "./claude-code/runtime.js";
 
 const refreshOpenAIToken = vi.hoisted(() => vi.fn());
 vi.mock("./oauth/openai.js", () => ({ refreshOpenAIToken }));
@@ -863,5 +864,102 @@ describe("AuthStorage — Xiaomi Token Plan cluster", () => {
     expect(await storage.relocateRegionalApiKey([XIAOMI_CREDITS_KEY])).toBeUndefined();
     expect(await storage.relocateRegionalApiKey(["glm"])).toBeUndefined();
     expect(detect).not.toHaveBeenCalled();
+  });
+});
+
+describe("AuthStorage — Claude Code sign-in marker", () => {
+  it("reports the login and resolves Anthropic without a token", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({ [CLAUDE_CODE_AUTH_KEY]: CLAUDE_CODE_AUTH_MARKER }),
+    );
+    const storage = new AuthStorage(filePath);
+    expect(await storage.hasClaudeCodeLogin()).toBe(true);
+    expect((await storage.resolveCredentials("anthropic")).accessToken).toBe("");
+  });
+
+  it("still serves an Anthropic API key stored next to the marker", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        [CLAUDE_CODE_AUTH_KEY]: CLAUDE_CODE_AUTH_MARKER,
+        anthropic: {
+          accessToken: "sk-ant-api-key",
+          refreshToken: "",
+          expiresAt: Date.now() + 1e12,
+        },
+      }),
+    );
+    const storage = new AuthStorage(filePath);
+    expect((await storage.resolveCredentials("anthropic")).accessToken).toBe("sk-ant-api-key");
+  });
+
+  it("is signed out without the marker", async () => {
+    const storage = await makeStorage();
+    expect(await storage.hasClaudeCodeLogin()).toBe(false);
+    await expect(storage.resolveCredentials("anthropic")).rejects.toThrow();
+  });
+  it("treats an old GG Claude sign-in token as signed out and never refreshes it", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    const legacy = { accessToken: "sk-ant-oat01-old", refreshToken: "rt", expiresAt: 0 };
+    await fs.writeFile(filePath, JSON.stringify({ anthropic: legacy }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const storage = new AuthStorage(filePath);
+    expect(await storage.hasProviderAuth("anthropic")).toBe(false);
+    await expect(storage.resolveCredentials("anthropic")).rejects.toThrow(NotLoggedInError);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({ anthropic: legacy, [CLAUDE_CODE_AUTH_KEY]: CLAUDE_CODE_AUTH_MARKER }),
+    );
+    const signedIn = new AuthStorage(filePath);
+    expect(await signedIn.hasProviderAuth("anthropic")).toBe(true);
+    expect((await signedIn.resolveCredentials("anthropic")).accessToken).toBe("");
+  });
+
+  it("removes an old GG Claude sign-in token exactly once", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    const legacy = { accessToken: "sk-ant-oat01-old", refreshToken: "rt", expiresAt: 0 };
+    const apiKey = { accessToken: "sk-ant-api03-k", refreshToken: "", expiresAt: 0 };
+    await fs.writeFile(filePath, JSON.stringify({ anthropic: legacy, openai: apiKey }));
+    const storage = new AuthStorage(filePath);
+
+    expect(await storage.takeLegacyClaudeSignIn()).toBe(true);
+    expect(await storage.takeLegacyClaudeSignIn()).toBe(false);
+    const saved = JSON.parse(await fs.readFile(filePath, "utf-8")) as Record<string, unknown>;
+    expect(saved.anthropic).toBeUndefined();
+    expect(saved.openai).toEqual(apiKey);
+  });
+
+  it("keeps an Anthropic API key, which is not an old sign-in", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    const apiKey = { accessToken: "sk-ant-api03-k", refreshToken: "", expiresAt: 0 };
+    await fs.writeFile(filePath, JSON.stringify({ anthropic: apiKey }));
+    const storage = new AuthStorage(filePath);
+
+    expect(await storage.takeLegacyClaudeSignIn()).toBe(false);
+    expect((await storage.resolveCredentials("anthropic")).accessToken).toBe("sk-ant-api03-k");
+  });
+
+  it("drops the old sign-in token when the user signs in with Claude again", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    const legacy = { accessToken: "sk-ant-oat01-old", refreshToken: "rt", expiresAt: 0 };
+    await fs.writeFile(filePath, JSON.stringify({ anthropic: legacy }));
+    const storage = new AuthStorage(filePath);
+
+    await storage.setClaudeCodeLogin();
+    const saved = JSON.parse(await fs.readFile(filePath, "utf-8")) as Record<string, unknown>;
+    expect(saved.anthropic).toBeUndefined();
+    expect(saved[CLAUDE_CODE_AUTH_KEY]).toEqual(CLAUDE_CODE_AUTH_MARKER);
   });
 });

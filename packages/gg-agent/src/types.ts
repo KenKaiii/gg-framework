@@ -367,8 +367,6 @@ export interface AgentOptions {
   onContextPrepared?: StreamOptions["onContextPrepared"];
   /** Stable per-session cache routing key for providers that support it. */
   promptCacheKey?: StreamOptions["promptCacheKey"];
-  /** Override the User-Agent sent with OAuth-authenticated Anthropic requests. */
-  userAgent?: StreamOptions["userAgent"];
   /** Extra HTTP headers attached to every model request (e.g. Kimi For Coding
    *  client-identity headers). Merged into the underlying SDK default headers. */
   defaultHeaders?: StreamOptions["defaultHeaders"];

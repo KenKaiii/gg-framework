@@ -20,7 +20,7 @@ export const FAST_MODE_SUFFIX = "-fast";
  */
 const FAST_MODE_BASE_MODELS: Readonly<Partial<Record<Provider, readonly string[]>>> = {
   anthropic: ["claude-opus-5-5"],
-  openai: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"],
+  openai: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"],
 };
 
 export interface FastModeResolution {

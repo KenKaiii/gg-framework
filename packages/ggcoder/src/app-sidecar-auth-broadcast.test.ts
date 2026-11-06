@@ -331,7 +331,7 @@ describe("a model that spends real money", () => {
       path.join(tmpHome, ".gg", "auth.json"),
       JSON.stringify({
         anthropic: {
-          accessToken: "sk-ant-oat-fake-for-tests",
+          accessToken: "sk-ant-api03-test",
           refreshToken: "fake-refresh",
           expiresAt: Date.now() + 86_400_000,
         },
@@ -445,12 +445,12 @@ describe("connecting a provider", () => {
 });
 
 describe("OAuth login across windows", () => {
-  /** Park an Anthropic OAuth flow at its "paste the code" step in one window. */
+  /** Park an OpenAI OAuth flow at its "paste the code" step in one window. */
   async function startParkedLogin(session: string): Promise<{ types: string[] }> {
     const stream = await openEventStream(session);
     const started = await request("POST", "/auth/oauth/start", {
       session,
-      body: { provider: "anthropic" },
+      body: { provider: "openai" },
     });
     expect(started.status).toBe(202);
     // The flow opens a browser URL, then blocks on the pasted code.
@@ -482,7 +482,7 @@ describe("OAuth login across windows", () => {
     // guard cannot see across windows; the daemon-wide one must.
     const second = await request("POST", "/auth/oauth/start", {
       session: windowB,
-      body: { provider: "anthropic" },
+      body: { provider: "openai" },
     });
     expect(second.status).toBe(409);
     expect(String(second.json.error)).toContain("another window");
@@ -493,11 +493,11 @@ describe("OAuth login across windows", () => {
     const windowB = await createSession();
     await startParkedLogin(windowA);
 
-    // The guard is per provider, not a global lock: connecting Anthropic in
-    // one window must not block connecting OpenAI in another.
+    // The guard is per provider, not a global lock: connecting OpenAI in
+    // one window must not block connecting Grok in another.
     const other = await request("POST", "/auth/oauth/start", {
       session: windowB,
-      body: { provider: "openai" },
+      body: { provider: "xai" },
     });
     expect(other.status).toBe(202);
   }, 90_000);
@@ -536,7 +536,7 @@ describe("OAuth login across windows", () => {
     // would be permanently unloggable until the app restarts.
     const retry = await request("POST", "/auth/oauth/start", {
       session: windowB,
-      body: { provider: "anthropic" },
+      body: { provider: "openai" },
     });
     expect(retry.status).toBe(202);
   }, 90_000);

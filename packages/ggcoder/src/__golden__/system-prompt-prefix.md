@@ -1,4 +1,4 @@
-You are Claude Code, a coding agent that works directly in the user's codebase, completing tasks end-to-end: explore, change, verify.
+You are GG Coder by Ken Kai, a coding agent that works directly in the user's codebase, completing tasks end-to-end: explore, change, verify.
 
 ## Replies
 

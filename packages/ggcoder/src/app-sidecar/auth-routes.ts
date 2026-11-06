@@ -1,6 +1,11 @@
 import type http from "node:http";
-import { GEMINI_API_KEY, XIAOMI_CREDITS_KEY, dualAuthProvider } from "@kenkaiiii/gg-core";
-import { loginAnthropic } from "../core/oauth/anthropic.js";
+import {
+  GEMINI_API_KEY,
+  XIAOMI_CREDITS_KEY,
+  dualAuthProvider,
+  signInWithClaudeCode,
+  signOutOfClaudeCode,
+} from "@kenkaiiii/gg-core";
 import { loginOpenAI } from "../core/oauth/openai.js";
 import { loginGemini } from "../core/oauth/gemini.js";
 import { loginKimi } from "../core/oauth/kimi.js";
@@ -153,9 +158,10 @@ export function handleAuthRoutes(
       void (async () => {
         const cb = ctx.authCallbacks();
         try {
-          let creds: OAuthCredentials;
+          let creds: OAuthCredentials | null = null;
           let storageKey = provider;
-          if (provider === "anthropic") creds = await loginAnthropic(cb);
+          // Claude Code holds the Claude login; auth.json only gets a marker.
+          if (provider === "anthropic") await signInWithClaudeCode(ctx.auth, cb);
           else if (provider === "openai") creds = await loginOpenAI(cb);
           else if (provider === "gemini") creds = await loginGemini(cb);
           else if (provider === "moonshot" || provider === "xai") {
@@ -168,7 +174,7 @@ export function handleAuthRoutes(
           } else {
             throw new Error(`OAuth not implemented for ${provider}`);
           }
-          await ctx.auth.setCredentials(storageKey, creds);
+          if (creds) await ctx.auth.setCredentials(storageKey, creds);
           // Terminal outcome of a GLOBAL change: every window's login modal
           // should close and its provider list refresh, not just the one
           // that started the flow.
@@ -317,7 +323,8 @@ export function handleAuthRoutes(
       // vice versa. Omitting `method` still clears everything (the plain
       // "Disconnect" action).
       if (logoutMethod !== "apikey") {
-        await ctx.auth.clearCredentials(dual ? dual.oauthKey : provider);
+        if (provider === "anthropic") await signOutOfClaudeCode(ctx.auth);
+        else await ctx.auth.clearCredentials(dual ? dual.oauthKey : provider);
       }
       if (logoutMethod !== "oauth") {
         // Non-dual providers store their only credential under the provider id,

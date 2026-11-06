@@ -308,9 +308,9 @@ export const MODELS: ModelInfo[] = [
     billing: CODEX_FAST_BILLING,
   },
   // GPT-6 Sol + Luna — released 2026-09-22 below Astra, replacing the whole
-  // GPT-5.6 family (Sol/Terra/Luna; there is no GPT-6 Terra — OpenAI's Codex
+  // GPT-5.6 family (Sol/Terra/Luna; there was no GPT-6 Terra — OpenAI's Codex
   // catalog upgrades 5.6 Terra to 6 Sol). GPT-6.1 Sol (2026-09-29) then replaced
-  // GPT-6 Sol. Same window split as Astra: 1.05M on the public Responses API,
+  // GPT-6 Sol, and GPT-6.1 Terra (2026-10-26) sits between Sol and Luna. Same window split as Astra: 1.05M on the public Responses API,
   // 272K on the Codex route; 128K output, text+image input, freeform
   // apply_patch, responses-lite transport. The GPT-5.6 ids and `gpt-6-sol` are
   // retired — a saved session on one falls back to the provider default on
@@ -343,6 +343,40 @@ export const MODELS: ModelInfo[] = [
     provider: "openai",
     contextWindow: 1_050_000,
     codexContextWindow: 272_000,
+    maxOutputTokens: 128_000,
+    supportsThinking: true,
+    defaultThinkingLevel: "low",
+    supportsImages: true,
+    supportsVideo: false,
+    costTier: "medium",
+    maxThinkingLevel: "ultra",
+    billing: CODEX_FAST_BILLING,
+  },
+  {
+    // GPT-6.1 Terra (Codex priority 7, default low, client >= 0.153.0). $1/$5
+    // MTok, cached input $0.05. Unlike Sol/Astra the Codex route gets a 500K
+    // window (catalog `context_window`). Same ladder and Ultra preset as Sol.
+    id: "gpt-6.1-terra",
+    name: "GPT-6.1 Terra",
+    provider: "openai",
+    contextWindow: 1_050_000,
+    codexContextWindow: 500_000,
+    maxOutputTokens: 128_000,
+    supportsThinking: true,
+    defaultThinkingLevel: "low",
+    supportsImages: true,
+    supportsVideo: false,
+    costTier: "medium",
+    maxThinkingLevel: "ultra",
+  },
+  {
+    // Codex Fast mode for 6.1 Terra ("1.5x speed") — see `gpt-6-astra-fast`
+    // for the wire mapping and billing.
+    id: "gpt-6.1-terra-fast",
+    name: "GPT-6.1 Terra Fast",
+    provider: "openai",
+    contextWindow: 1_050_000,
+    codexContextWindow: 500_000,
     maxOutputTokens: 128_000,
     supportsThinking: true,
     defaultThinkingLevel: "low",

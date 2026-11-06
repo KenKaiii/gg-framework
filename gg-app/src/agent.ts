@@ -1331,6 +1331,8 @@ export interface AuthProvider {
   priorityNote?: string;
   /** Per-method guidance — only set when a provider offers a real choice. */
   methodGuidance?: AuthMethodGuidance[];
+  /** An old sign-in that no longer works is still saved; ask the user to sign in again. */
+  reauthRequired?: boolean;
 }
 
 /**

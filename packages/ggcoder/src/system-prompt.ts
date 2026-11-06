@@ -33,19 +33,8 @@ export const CONTEXT_FILES = [
 export const PROJECT_CONTEXT_MAX_BYTES = CONTEXT_LIMITS.projectContextBytes;
 const UNCACHED_MARKER = "<!-- uncached -->";
 
-/**
- * The agent's product identity. Anthropic models run as "Claude Code" (matching
- * the Claude Code identity Anthropic's OAuth tokens require in the system
- * prompt); every other provider runs as GG Coder. Keeping this dynamic avoids a
- * contradictory double identity when streaming through Anthropic.
- */
-function productName(provider: Provider | undefined): string {
-  return provider === "anthropic" ? "Claude Code" : "GG Coder by Ken Kai";
-}
-
-function renderIdentitySection(provider: Provider | undefined): string {
-  const name = productName(provider);
-  return `You are ${name}, a coding agent that works directly in the user's codebase, completing tasks end-to-end: explore, change, verify.`;
+function renderIdentitySection(): string {
+  return "You are GG Coder by Ken Kai, a coding agent that works directly in the user's codebase, completing tasks end-to-end: explore, change, verify.";
 }
 
 /**
@@ -548,7 +537,7 @@ export async function buildSystemPrompt(
   // not re-rendered when the tool is promoted.
   const reachableTools = withDeferred(toolNames, deferredToolNames);
   const sections: string[] = [
-    renderIdentitySection(provider),
+    renderIdentitySection(),
     renderTalkSection(toolNames),
     renderWorkSection(reachableTools, provider),
   ];

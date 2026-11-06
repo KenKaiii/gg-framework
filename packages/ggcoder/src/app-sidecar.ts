@@ -64,6 +64,7 @@ import {
   parseLocalModelId,
   probeEndpoint,
   ollamaServedContext,
+  resolveClaudeCodeBinary,
   toModelInfo as localModelInfo,
   type LocalEndpoint,
   type LocalEndpointProbe,
@@ -2385,6 +2386,7 @@ async function createSession(
       oauthExhaustedUntil?: number;
       priorityNote?: string;
       methodGuidance: AuthMethodMeta[];
+      claudeCodeInstalled?: boolean;
     })[];
     localConnected: boolean;
   }> {
@@ -2396,7 +2398,9 @@ async function createSession(
         // cannot express "OAuth signed in, key also on file as backup", nor offer
         // a per-method disconnect.
         const oauthKey = dual?.oauthKey;
-        const hasOAuth = oauthKey ? await auth.hasCredentials(oauthKey) : false;
+        const hasOAuth = oauthKey
+          ? await auth.hasCredentials(oauthKey)
+          : p.value === "anthropic" && (await auth.hasClaudeCodeLogin());
         const apiKeyKeys = p.apiKeyVariants?.map((v) => v.key) ?? [p.value];
         const hasApiKey = p.methods.includes("apikey")
           ? (await Promise.all(apiKeyKeys.map((k) => auth.hasCredentials(k)))).some(Boolean)
@@ -2404,9 +2408,10 @@ async function createSession(
         const connectedMethods: AuthMethod[] = [];
         // OAuth-only providers (Anthropic/OpenAI/Gemini) store under the provider
         // id itself, so `hasProviderAuth` is what proves their OAuth connection.
+        // Anthropic's id holds only its API key; its sign-in is the Claude Code marker.
         if (
           p.methods.includes("oauth") &&
-          (hasOAuth || (!dual && (await auth.hasCredentials(p.value))))
+          (hasOAuth || (!dual && p.value !== "anthropic" && (await auth.hasCredentials(p.value))))
         )
           connectedMethods.push("oauth");
         if (hasApiKey) connectedMethods.push("apikey");
@@ -2440,6 +2445,10 @@ async function createSession(
           ...(oauthSidelined ? { oauthExhaustedUntil: exhaustedUntil } : {}),
           ...(authPriorityNote(p.value) ? { priorityNote: authPriorityNote(p.value)! } : {}),
           methodGuidance: describeAuthMethods(p.value),
+          // Whether "Sign in with Claude" still has to download Claude Code first.
+          ...(p.value === "anthropic"
+            ? { claudeCodeInstalled: resolveClaudeCodeBinary() !== null }
+            : {}),
         };
       }),
     );

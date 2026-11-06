@@ -1,4 +1,5 @@
 import { stream, type ServerToolDefinition, type Usage } from "@kenkaiiii/gg-ai";
+import { claudeCodeComplete, type ClaudeCodeProcess } from "../core/claude-code/complete.js";
 
 export interface SideSearchRequest {
   query: string;
@@ -21,7 +22,6 @@ export type SideWebSearch = (request: SideSearchRequest) => Promise<SideSearchRe
 export interface SideSearchCredentials {
   apiKey: string;
   baseUrl?: string;
-  userAgent?: string;
 }
 
 // Anthropic's server search runs in its own small request so the result pages
@@ -105,7 +105,6 @@ export async function runSideWebSearch(
     maxTokens: 1_024,
     apiKey: credentials.apiKey,
     ...(credentials.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
-    ...(credentials.userAgent ? { userAgent: credentials.userAgent } : {}),
     signal: request.signal,
   });
   const response = await result.response;
@@ -119,6 +118,75 @@ export async function runSideWebSearch(
   }
   return {
     text: formatSideSearch(request.query, hits, summary, request.maxResults),
+    usage: response.usage,
+    model: SIDE_SEARCH_MODEL,
+  };
+}
+
+/** Hits from Claude Code's `WebSearch` output (`results[].content[]`). */
+export function claudeCodeSearchHits(outputs: readonly unknown[]): WebSearchHit[] {
+  const hits: WebSearchHit[] = [];
+  for (const output of outputs) {
+    const results = (output as { results?: unknown } | null | undefined)?.results;
+    if (!Array.isArray(results)) continue;
+    for (const result of results) {
+      const content = (result as { content?: unknown } | null)?.content;
+      if (!Array.isArray(content)) continue;
+      for (const item of content) {
+        const r = item as { title?: unknown; url?: unknown };
+        if (typeof r.url !== "string") continue;
+        hits.push({ title: typeof r.title === "string" ? r.title : r.url, url: r.url });
+      }
+    }
+  }
+  return hits;
+}
+
+/** The same side search on a Claude subscription, through Claude Code's WebSearch tool. */
+export async function runSideWebSearchViaClaudeCode(
+  request: SideSearchRequest,
+  process: ClaudeCodeProcess,
+): Promise<SideSearchResult> {
+  const domains = [
+    request.includeDomains.length > 0
+      ? ` Only use these domains (allowed_domains): ${request.includeDomains.join(", ")}.`
+      : "",
+    request.excludeDomains.length > 0
+      ? ` Exclude these domains (blocked_domains): ${request.excludeDomains.join(", ")}.`
+      : "",
+  ].join("");
+  const recency = request.timeRange ? ` Prefer results from the past ${request.timeRange}.` : "";
+  const response = await claudeCodeComplete({
+    ...process,
+    model: SIDE_SEARCH_MODEL,
+    messages: [
+      {
+        role: "user",
+        content:
+          `Use the WebSearch tool once for: ${request.query}${domains}${recency}\n\n` +
+          "Then state, in at most 150 words, the facts from the results that answer the query, " +
+          "naming the result title each fact comes from. No preamble.",
+      },
+    ],
+    builtinTools: ["WebSearch"],
+    maxTurns: 2,
+    signal: request.signal,
+  });
+  const content = response.message.content;
+  const summary =
+    typeof content === "string"
+      ? content
+      : content
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join("");
+  return {
+    text: formatSideSearch(
+      request.query,
+      claudeCodeSearchHits(response.toolOutputs),
+      summary,
+      request.maxResults,
+    ),
     usage: response.usage,
     model: SIDE_SEARCH_MODEL,
   };

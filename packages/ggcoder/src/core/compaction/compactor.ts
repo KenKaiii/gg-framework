@@ -4,6 +4,7 @@ import {
   type Provider,
   type ContentPart,
   type ToolResult,
+  type StreamResponse,
 } from "@kenkaiiii/gg-ai";
 import { estimateConversationTokens, estimateMessageTokens } from "./token-estimator.js";
 import { findLatestHumanQuery, selectQueryAwareContext } from "./query-aware-selector.js";
@@ -1190,6 +1191,13 @@ export async function compact(
      * everything relevant to it verbatim. Optional — default behaviour is
      * unchanged. */
     focus?: string;
+    /** Sends the summary request elsewhere (a Claude subscription runs it through Claude Code). */
+    complete?: (request: {
+      model: string;
+      messages: Message[];
+      maxTokens: number;
+      signal: AbortSignal;
+    }) => Promise<StreamResponse>;
   },
 ): Promise<{ messages: Message[]; result: CompactionResult }> {
   const originalCount = messages.length;
@@ -1414,6 +1422,23 @@ export async function compact(
     options.signal?.addEventListener("abort", forwardAbort, { once: true });
 
     try {
+      if (options.complete) {
+        const response = await awaitSummaryResponseWithTimeout(
+          options.complete({
+            model: request.modelId,
+            messages: request.summaryMessages,
+            maxTokens: request.outputTokens,
+            signal: attemptController.signal,
+          }),
+          SUMMARY_ATTEMPT_TIMEOUT_MS,
+          options.signal,
+          () => attemptController.abort(),
+        );
+        options.signal?.throwIfAborted();
+        summaryText = extractSummaryText(response.message.content);
+        if (summaryText.length > 0) break;
+        continue;
+      }
       const result = stream({
         provider: options.provider,
         model: request.modelId,

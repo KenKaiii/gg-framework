@@ -66,10 +66,6 @@ beforeEach(async () => {
     );
   await fs.mkdir(path.join(tempHome, ".gg"), { recursive: true });
   await fs.writeFile(
-    path.join(tempHome, ".gg", "claude-code-version.json"),
-    JSON.stringify({ version: "2.1.75", fetchedAt: Date.now() }),
-  );
-  await fs.writeFile(
     path.join(tempHome, ".gg", "auth.json"),
     JSON.stringify({
       gemini: {
@@ -148,9 +144,7 @@ describe("AgentSession model switch", () => {
           thinking: "high",
           maxTokens: getModel(model)?.maxOutputTokens ?? 16384,
         });
-        if (provider === "anthropic") {
-          expect(request.userAgent).toMatch(/^claude-cli\//);
-        }
+        expect(request).not.toHaveProperty("userAgent");
         if (provider === "gemini") {
           expect(request.projectId).toBe("test-google-project");
         }

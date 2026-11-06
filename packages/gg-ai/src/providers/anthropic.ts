@@ -19,11 +19,6 @@ import {
   providerHtmlErrorMessage,
 } from "../errors.js";
 import { StreamResult } from "../utils/event-stream.js";
-import {
-  CLAUDE_CODE_FALLBACK_VERSION,
-  claudeCliUserAgent,
-  getClaudeCliUserAgent,
-} from "../claude-code-version.js";
 import { mergeProviderOptions } from "../utils/provider-options.js";
 import {
   downgradeUnsupportedImages,
@@ -57,9 +52,7 @@ import {
  * The SDK constructor parses config, computes auth headers, and sets up the
  * fetch dispatcher. Node's undici pool already reuses TCP connections, but
  * the SDK overhead itself (config parsing, header computation) repeats on
- * every call. Keyed by the identity-relevant fields (apiKey, baseUrl,
- * userAgent) so a mid-session model switch (which may change the UA) gets a
- * fresh client.
+ * every call. Keyed by the identity-relevant fields (apiKey, baseUrl).
  */
 const anthropicClientCache = new Map<string, Anthropic>();
 
@@ -122,8 +115,7 @@ export const anthropicServerFallback = {
 };
 
 function serverFallbackKey(options: StreamOptions): string {
-  const auth = options.apiKey?.startsWith("sk-ant-oat") ? "oauth" : "key";
-  return `${options.baseUrl ?? process.env.ANTHROPIC_BASE_URL ?? ""}|${auth}`;
+  return options.baseUrl ?? process.env.ANTHROPIC_BASE_URL ?? "";
 }
 
 /**
@@ -180,20 +172,8 @@ export function sumUsageIterations(usage: unknown): IterationTotals | null {
   return totals;
 }
 
-/** OAuth callers that don't pass `userAgent` get the live Claude Code version. */
-async function withClaudeUserAgent<T extends { apiKey?: string; userAgent?: string }>(
-  options: T,
-): Promise<T> {
-  if (options.userAgent || !options.apiKey?.startsWith("sk-ant-oat")) return options;
-  return { ...options, userAgent: await getClaudeCliUserAgent() };
-}
-
 function createClient(options: StreamOptions): Anthropic {
-  const isOAuth = options.apiKey?.startsWith("sk-ant-oat");
-  const userAgent = isOAuth
-    ? (options.userAgent ?? claudeCliUserAgent(CLAUDE_CODE_FALLBACK_VERSION))
-    : "";
-  const cacheKey = `${options.apiKey ?? ""}|${options.baseUrl ?? ""}|${userAgent}`;
+  const cacheKey = `${options.apiKey ?? ""}|${options.baseUrl ?? ""}`;
 
   // Skip cache when a custom fetch is provided (tests, React Native, etc.) —
   // the cached client would carry the wrong fetch implementation.
@@ -203,21 +183,11 @@ function createClient(options: StreamOptions): Anthropic {
   }
 
   const client = new Anthropic({
-    ...(isOAuth
-      ? { apiKey: null as unknown as string, authToken: options.apiKey }
-      : { apiKey: options.apiKey }),
+    apiKey: options.apiKey,
     ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
     // Default transport lifts undici's 300s header/body caps (see provider-fetch.ts).
     fetch: options.fetch ?? providerFetch,
     maxRetries: 0,
-    ...(isOAuth
-      ? {
-          defaultHeaders: {
-            "user-agent": userAgent,
-            "x-app": "cli",
-          },
-        }
-      : {}),
   });
 
   // Only cache production clients (no custom fetch override).
@@ -248,18 +218,14 @@ export async function prewarmAnthropicCache(options: {
   tools?: StreamOptions["tools"];
   serverTools?: StreamOptions["serverTools"];
   baseUrl?: string;
-  userAgent?: string;
   cacheRetention?: StreamOptions["cacheRetention"];
   signal?: AbortSignal;
 }): Promise<void> {
   try {
-    const client = createClient(
-      await withClaudeUserAgent({
-        apiKey: options.apiKey,
-        baseUrl: options.baseUrl,
-        userAgent: options.userAgent,
-      } as StreamOptions),
-    );
+    const client = createClient({
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+    } as StreamOptions);
     const cacheControl = toAnthropicCacheControl(options.cacheRetention ?? "long", options.baseUrl);
     const { system, messages } = toAnthropicMessages(
       [
@@ -268,16 +234,6 @@ export async function prewarmAnthropicCache(options: {
       ],
       cacheControl,
     );
-    const isOAuth = options.apiKey.startsWith("sk-ant-oat");
-    const fullSystem = isOAuth
-      ? [
-          {
-            type: "text" as const,
-            text: "You are Claude Code, Anthropic's official CLI for Claude.",
-          },
-          ...(system ?? []),
-        ]
-      : system;
     const tools = options.tools?.length
       ? toAnthropicTools(options.tools, {
           cacheControl,
@@ -286,7 +242,7 @@ export async function prewarmAnthropicCache(options: {
           enableFineGrainedToolStreaming: fineGrainedToolStreamingEnabled(),
         })
       : undefined;
-    if (estimatePrefixTokens(fullSystem, tools) < anthropicMinCacheableTokens(options.model)) {
+    if (estimatePrefixTokens(system, tools) < anthropicMinCacheableTokens(options.model)) {
       return;
     }
     await client.messages.create(
@@ -294,7 +250,7 @@ export async function prewarmAnthropicCache(options: {
         model: options.model,
         max_tokens: 1,
         messages,
-        ...(fullSystem ? { system: fullSystem as Anthropic.MessageCreateParams["system"] } : {}),
+        ...(system ? { system: system as Anthropic.MessageCreateParams["system"] } : {}),
         ...(tools
           ? {
               tools: [
@@ -307,14 +263,10 @@ export async function prewarmAnthropicCache(options: {
       {
         signal: options.signal ?? undefined,
         ...(() => {
-          // Mirror runStream's beta headers for the parts that affect caching:
-          // OAuth identity betas + the extended-cache-ttl beta, without which a
-          // 1-h pre-warm silently writes a 5-min cache and expires before the
+          // Mirror runStream's extended-cache-ttl beta, without which a 1-h
+          // pre-warm silently writes a 5-min cache and expires before the
           // user's first turn.
-          const betas = [
-            ...(isOAuth ? ["claude-code-20250219", "oauth-2025-04-20"] : []),
-            ...(cacheControl?.ttl === "1h" ? ["extended-cache-ttl-2025-04-11"] : []),
-          ];
+          const betas = cacheControl?.ttl === "1h" ? ["extended-cache-ttl-2025-04-11"] : [];
           return betas.length ? { headers: { "anthropic-beta": betas.join(",") } } : {};
         })(),
       },
@@ -329,8 +281,7 @@ export function streamAnthropic(options: StreamOptions): StreamResult {
 }
 
 async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, StreamResponse> {
-  const client = createClient(await withClaudeUserAgent(options));
-  const isOAuth = options.apiKey?.startsWith("sk-ant-oat");
+  const client = createClient(options);
   // Prewarm uses a single non-streaming request: the stream flag is not part of
   // the prompt-cache key, and a 1-token response needs no incremental events.
   const useStreaming = options.streaming !== false && !options.prewarm;
@@ -361,7 +312,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
       ? planDeferredTools(options.tools, options.deferredTools, downgradedMessages)
       : undefined;
   const toolReferences = deferredPlan?.loaded;
-  const { system: rawSystem, messages } = toAnthropicMessages(downgradedMessages, cacheControl, {
+  const { system, messages } = toAnthropicMessages(downgradedMessages, cacheControl, {
     fallbackBlocks: useServerFallback,
     toolReferences,
   });
@@ -371,17 +322,6 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     options.speed === "fast" &&
     options.provider === "anthropic" &&
     isDirectAnthropicApi(options.baseUrl);
-
-  // OAuth tokens require Claude Code identity in the system prompt
-  const system = isOAuth
-    ? [
-        {
-          type: "text" as const,
-          text: "You are Claude Code, Anthropic's official CLI for Claude.",
-        },
-        ...(rawSystem ?? []),
-      ]
-    : rawSystem;
 
   let maxTokens = options.maxTokens ?? 4096;
   let thinking: Anthropic.ThinkingConfigParam | undefined;
@@ -492,7 +432,6 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   const hasAdaptiveThinking = isAdaptiveThinkingModel(options.model);
 
   const betaHeaders = [
-    ...(isOAuth ? ["claude-code-20250219", "oauth-2025-04-20"] : []),
     ...(options.compaction ? ["compact-2026-01-12"] : []),
     ...(options.clearToolUses ? ["context-management-2025-06-27"] : []),
     // Eager tool-input streaming beta — opt-in only (see

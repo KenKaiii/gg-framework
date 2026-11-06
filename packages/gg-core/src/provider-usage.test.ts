@@ -10,50 +10,6 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("fetchSubscriptionUsage", () => {
-  it("normalizes Anthropic current and weekly windows", async () => {
-    const fetchFn = vi.fn(async () =>
-      jsonResponse({
-        five_hour: { utilization: 31.5, resets_at: "2030-01-01T05:00:00Z" },
-        seven_day: { utilization: 67, resets_at: "2030-01-07T00:00:00Z" },
-      }),
-    );
-
-    const result = await fetchSubscriptionUsage(
-      "anthropic",
-      { accessToken: "anthropic-token" },
-      { fetchFn, now: () => 1234 },
-    );
-
-    expect(result).toEqual({
-      provider: "anthropic",
-      displayName: "Anthropic",
-      windows: [
-        {
-          kind: "current",
-          label: "5-hour",
-          usedPercent: 31.5,
-          resetsAt: Date.parse("2030-01-01T05:00:00Z"),
-        },
-        {
-          kind: "weekly",
-          label: "Weekly",
-          usedPercent: 67,
-          resetsAt: Date.parse("2030-01-07T00:00:00Z"),
-        },
-      ],
-      fetchedAt: 1234,
-    });
-    expect(fetchFn).toHaveBeenCalledWith(
-      "https://api.anthropic.com/api/oauth/usage",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer anthropic-token",
-          "anthropic-beta": "oauth-2025-04-20",
-        }),
-      }),
-    );
-  });
-
   it("normalizes Codex windows and sends the account id", async () => {
     const now = 2_000_000;
     const fetchFn = vi.fn(async () =>
@@ -231,7 +187,7 @@ describe("fetchSubscriptionUsage", () => {
   it("rejects provider HTTP errors without exposing the response body", async () => {
     await expect(
       fetchSubscriptionUsage(
-        "anthropic",
+        "openai",
         { accessToken: "expired" },
         { fetchFn: async () => jsonResponse({ secret: "raw-provider-detail" }, 401) },
       ),
@@ -246,7 +202,7 @@ describe("fetchSubscriptionUsage", () => {
   it("preserves provider Retry-After guidance on rate limits", async () => {
     await expect(
       fetchSubscriptionUsage(
-        "anthropic",
+        "openai",
         { accessToken: "test-token" },
         {
           fetchFn: async () =>

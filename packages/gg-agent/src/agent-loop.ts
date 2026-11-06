@@ -1131,7 +1131,6 @@ export async function* agentLoop(
               supportsVideo: options.supportsVideo,
               compaction: options.compaction,
               clearToolUses: options.clearToolUses,
-              userAgent: options.userAgent,
               defaultHeaders: options.defaultHeaders,
               providerOptions: options.providerOptions,
               fetch: options.fetch,

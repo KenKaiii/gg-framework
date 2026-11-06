@@ -2,6 +2,7 @@
 export { Agent, AgentStream } from "./agent.js";
 export {
   agentLoop,
+  capToolResults,
   cancelledBeforeStartText,
   indeterminateOutcomeText,
   isAbortError,
@@ -27,6 +28,7 @@ export type {
   StreamRulesConfig,
 } from "./stream-rules.js";
 export { isLocalBackendUrl } from "./local-backend.js";
+export { argumentHints, unknownToolMessage } from "./tool-call-hints.js";
 
 // Types
 export type {

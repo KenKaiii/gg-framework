@@ -137,12 +137,6 @@ export { CODEX_CLIENT_VERSION, usesResponsesLite } from "./providers/openai-code
 
 // Cache pre-warming (Anthropic — fires a max_tokens:1 warm-up to prime the KV cache)
 export { prewarmAnthropicCache } from "./providers/anthropic.js";
-export {
-  CLAUDE_CODE_FALLBACK_VERSION,
-  getClaudeCodeVersion,
-  getClaudeCliUserAgent,
-  pendingClaudeCodeVersionRefresh,
-} from "./claude-code-version.js";
 
 // Palsu provider (testing)
 export {

@@ -407,12 +407,6 @@ export interface StreamOptions {
    *  budget_tokens < max_tokens), no request is sent and the response has
    *  zero usage with stopReason "end_turn". */
   prewarm?: boolean;
-  /** Override the User-Agent sent with OAuth-authenticated Anthropic requests.
-   *  Anthropic's OAuth edge rejects requests whose claude-cli version lags too
-   *  far behind the real Claude Code release; callers that track the live
-   *  version should pass it here. Ignored for non-Anthropic providers and for
-   *  Anthropic requests using a regular API key. */
-  userAgent?: string;
   /** Extra HTTP headers attached to every model request. Used by providers
    *  whose endpoint gates on client identity (e.g. Kimi For Coding requires a
    *  `User-Agent: kimi-code-cli/...` and `X-Msh-*` device headers). Merged

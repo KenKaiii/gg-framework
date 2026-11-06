@@ -753,7 +753,7 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("the nearest file wins");
   });
 
-  it("uses the Claude Code identity for Anthropic and GG Coder for other providers", async () => {
+  it("uses the GG Coder identity for every provider, Anthropic included", async () => {
     const cwd = await makeProject();
     const anthropic = await buildSystemPrompt(
       cwd,
@@ -774,10 +774,9 @@ describe("buildSystemPrompt", () => {
       "openai",
     );
 
-    expect(anthropic.startsWith("You are Claude Code")).toBe(true);
-    expect(anthropic).not.toContain("GG Coder by Ken Kai");
+    expect(anthropic.startsWith("You are GG Coder by Ken Kai")).toBe(true);
     expect(openai.startsWith("You are GG Coder by Ken Kai")).toBe(true);
-    expect(openai).not.toContain("You are Claude Code");
+    expect(anthropic).not.toContain("Claude Code");
   });
 
   it("is byte-stable across builds in one process (prefix-cache safety)", async () => {

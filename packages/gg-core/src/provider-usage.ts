@@ -2,6 +2,8 @@ import { kimiCodeBaseUrl, kimiCodingHeaders } from "./oauth/kimi.js";
 import type { OAuthCredentials } from "./oauth/types.js";
 
 export type SubscriptionUsageProvider = "anthropic" | "openai" | "moonshot";
+/** Providers whose usage endpoint we call with a token. Claude reports its own (claude-code/usage.ts). */
+export type FetchedSubscriptionUsageProvider = Exclude<SubscriptionUsageProvider, "anthropic">;
 
 export interface SubscriptionUsageWindow {
   kind: "current" | "weekly";
@@ -37,16 +39,6 @@ interface FetchSubscriptionUsageOptions {
   now?: () => number;
 }
 
-interface AnthropicWindow {
-  utilization?: unknown;
-  resets_at?: unknown;
-}
-
-interface AnthropicUsageResponse {
-  five_hour?: AnthropicWindow | null;
-  seven_day?: AnthropicWindow | null;
-}
-
 interface CodexWindow {
   limit_window_seconds?: unknown;
   used_percent?: unknown;
@@ -78,7 +70,6 @@ interface KimiUsageResponse {
   limits?: KimiLimit[] | null;
 }
 
-const ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 
 function finiteNumber(value: unknown): number | undefined {
@@ -164,51 +155,6 @@ async function readUsageResponse(response: Response, now: number): Promise<unkno
   } catch {
     throw new SubscriptionUsageError("Subscription usage response was not valid JSON");
   }
-}
-
-async function fetchAnthropicUsage(
-  credentials: Pick<OAuthCredentials, "accessToken">,
-  fetchFn: FetchFn,
-  signal: AbortSignal,
-  now: () => number,
-): Promise<SubscriptionUsageSnapshot> {
-  const response = await fetchFn(ANTHROPIC_USAGE_URL, {
-    method: "GET",
-    signal,
-    headers: {
-      Authorization: `Bearer ${credentials.accessToken}`,
-      Accept: "application/json",
-      "anthropic-version": "2023-06-01",
-      "anthropic-beta": "oauth-2025-04-20",
-      "User-Agent": "ggcoder",
-    },
-  });
-  const data = (await readUsageResponse(response, now())) as AnthropicUsageResponse;
-  const windows: SubscriptionUsageWindow[] = [];
-  const currentPercent = clampPercent(data.five_hour?.utilization);
-  if (currentPercent !== undefined) {
-    windows.push({
-      kind: "current",
-      label: "5-hour",
-      usedPercent: currentPercent,
-      resetsAt: isoTimestamp(data.five_hour?.resets_at),
-    });
-  }
-  const weeklyPercent = clampPercent(data.seven_day?.utilization);
-  if (weeklyPercent !== undefined) {
-    windows.push({
-      kind: "weekly",
-      label: "Weekly",
-      usedPercent: weeklyPercent,
-      resetsAt: isoTimestamp(data.seven_day?.resets_at),
-    });
-  }
-  return {
-    provider: "anthropic",
-    displayName: "Anthropic",
-    windows,
-    fetchedAt: now(),
-  };
 }
 
 async function fetchCodexUsage(
@@ -350,7 +296,7 @@ async function fetchKimiUsage(
  * reset timestamps to their UI.
  */
 export async function fetchSubscriptionUsage(
-  provider: SubscriptionUsageProvider,
+  provider: FetchedSubscriptionUsageProvider,
   credentials: Pick<OAuthCredentials, "accessToken" | "accountId">,
   options: FetchSubscriptionUsageOptions = {},
 ): Promise<SubscriptionUsageSnapshot> {
@@ -358,11 +304,9 @@ export async function fetchSubscriptionUsage(
   const now = options.now ?? Date.now;
   const signal = AbortSignal.timeout(options.timeoutMs ?? 8_000);
   try {
-    return provider === "anthropic"
-      ? await fetchAnthropicUsage(credentials, fetchFn, signal, now)
-      : provider === "openai"
-        ? await fetchCodexUsage(credentials, fetchFn, signal, now)
-        : await fetchKimiUsage(credentials, fetchFn, signal, now);
+    return provider === "openai"
+      ? await fetchCodexUsage(credentials, fetchFn, signal, now)
+      : await fetchKimiUsage(credentials, fetchFn, signal, now);
   } catch (error) {
     if (error instanceof SubscriptionUsageError) throw error;
     const message = error instanceof Error ? error.message : String(error);

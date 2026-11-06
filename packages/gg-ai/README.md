@@ -79,7 +79,7 @@ gg-ai makes one model call. To run the tools and send results back until the mod
 | Provider      | Built-in models                                                 | Notes                                                                                                     |
 | ------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `anthropic`   | Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5               | Extended thinking, prompt caching, server-side compaction                                                 |
-| `openai`      | GPT-6 Astra, GPT-6.1 Sol, GPT-6 Luna                            | API key, or a ChatGPT sign-in token plus `accountId` (Codex endpoint)                                     |
+| `openai`      | GPT-6 Astra, GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Luna             | API key, or a ChatGPT sign-in token plus `accountId` (Codex endpoint)                                     |
 | `gemini`      | Gemini 3.1 Pro (Preview), 3.8 / 3.5 Flash, 3.5 / 3.1 Flash Lite | Code Assist sign-in by default; for an AI Studio key, set `baseUrl` to the Gemini API. Native video input |
 | `xai`         | Grok 4.7                                                        | API key or Grok sign-in                                                                                   |
 | `moonshot`    | Kimi K3, K2.8 Preview, K2.7 Code, K2.7 Code HighSpeed           | API key or Kimi sign-in. Native video input                                                               |

@@ -130,6 +130,7 @@ export interface SessionRouteContext {
       oauthExhaustedUntil?: number | undefined;
       priorityNote?: string | undefined;
       methodGuidance: AuthMethodMeta[];
+      claudeCodeInstalled?: boolean | undefined;
     })[];
     localConnected: boolean;
   }>;

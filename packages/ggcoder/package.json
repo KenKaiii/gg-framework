@@ -120,6 +120,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sandbox-runtime": "0.0.78",
+    "@anthropic-ai/claude-agent-sdk": "0.3.318",
     "@kenkaiiii/agent-home-sdk": "^0.3.8",
     "@kenkaiiii/gg-agent": "workspace:*",
     "@kenkaiiii/gg-ai": "workspace:*",

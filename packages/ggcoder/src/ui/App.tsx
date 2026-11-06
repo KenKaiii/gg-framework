@@ -77,6 +77,7 @@ import {
 import type { MCPClientManager } from "../core/mcp/index.js";
 import { getAllMcpServers } from "../core/mcp/index.js";
 import type { AuthStorage } from "../core/auth-storage.js";
+import { resolveClaudeCodeProcess } from "../core/claude-code/complete.js";
 import {
   trimFlushedItems,
   flushOnTurnText,
@@ -934,6 +935,9 @@ export function App(props: AppProps) {
       accountId: activeAccountId,
       projectId: activeProjectId,
       resolveCredentials: authStorage ? resolveCredentials : undefined,
+      resolveClaudeCode: authStorage
+        ? () => resolveClaudeCodeProcess(authStorage, currentProvider, props.cwd)
+        : undefined,
       transformContext,
       getLoopBreakMessage: (stats, stage) => {
         if (!idealReviewEnabledRef.current) return null;

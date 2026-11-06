@@ -5,7 +5,6 @@ import { renderLoginSelector } from "../ui/login.js";
 import { ensureAppDirs } from "../config.js";
 import { initLogger, log, closeLogger } from "../core/logger.js";
 import { AuthStorage } from "../core/auth-storage.js";
-import { loginAnthropic } from "../core/oauth/anthropic.js";
 import { loginOpenAI } from "../core/oauth/openai.js";
 import { loginGemini } from "../core/oauth/gemini.js";
 import { loginKimi } from "../core/oauth/kimi.js";
@@ -15,6 +14,8 @@ import {
   GEMINI_API_KEY_BASE_URL,
   XIAOMI_CREDITS_KEY,
   dualAuthProvider,
+  signInWithClaudeCode,
+  signOutOfClaudeCode,
 } from "@kenkaiiii/gg-core";
 import { getAuthProvider, describeAuthMethods } from "../core/auth-providers.js";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "../core/oauth/types.js";
@@ -53,9 +54,17 @@ export async function runLogin(): Promise<void> {
   // Phase 2: OAuth flow (readline needed for Anthropic code paste)
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
+  // Download progress repaints one terminal line instead of printing ~100.
+  let progressLine = false;
+  const endProgressLine = () => {
+    if (progressLine) process.stdout.write("\n");
+    progressLine = false;
+  };
+
   try {
     const callbacks: OAuthLoginCallbacks = {
       onOpenUrl: (url) => {
+        endProgressLine();
         console.log(chalk.hex("#60a5fa").bold("Opening browser..."));
         openBrowser(url);
         console.log(
@@ -71,6 +80,12 @@ export async function runLogin(): Promise<void> {
         return signal ? rl.question(message + " ", { signal }) : rl.question(message + " ");
       },
       onStatus: (message) => {
+        if (process.stdout.isTTY && message.startsWith("Downloading Claude Code…")) {
+          process.stdout.write(`\r\x1b[2K${chalk.hex("#6b7280")(message)}`);
+          progressLine = true;
+          return;
+        }
+        endProgressLine();
         console.log(chalk.hex("#6b7280")(message));
       },
     };
@@ -123,6 +138,43 @@ export async function runLogin(): Promise<void> {
       geminiOAuth = choice === "2";
     }
 
+    // Anthropic: Sign in with Claude (runs through Claude Code, downloaded on
+    // first use) or an Anthropic API key on the normal request path.
+    let claudeSignIn = false;
+    if (provider === "anthropic") {
+      const details = describeAuthMethods(provider);
+      for (const detail of details) {
+        const n = detail.method === "oauth" ? "1" : "2";
+        console.log(chalk.hex("#a78bfa")(`  (${n}) ${detail.label}`));
+        console.log(chalk.hex("#6b7280")(`      ${detail.billing}`));
+        if (detail.when) console.log(chalk.hex("#6b7280")(`      ${detail.when}`));
+      }
+      if (details.some((d) => d.method === "apikey")) {
+        const choice = (
+          await rl.question(
+            chalk.hex("#60a5fa")(
+              "Use (1) Sign in with Claude [default] or (2) an Anthropic API key? ",
+            ),
+          )
+        ).trim();
+        claudeSignIn = choice === "" || choice === "1";
+      } else {
+        claudeSignIn = true;
+      }
+    }
+
+    if (claudeSignIn) {
+      const status = await signInWithClaudeCode(authStorage, callbacks);
+      endProgressLine();
+      log("INFO", "auth", "Signed in with Claude through Claude Code");
+      console.log(
+        chalk.hex("#4ade80")(
+          `\n✓ Signed in with Claude${status.email ? ` as ${status.email}` : ""}!`,
+        ),
+      );
+      return;
+    }
+
     // Xiaomi splits API-key auth across two distinct endpoints: the Token Plan
     // (default, current behavior) and API Credits (required for models like
     // mimo-v2.6-pro-ultraspeed that aren't served over the Token Plan).
@@ -172,18 +224,14 @@ export async function runLogin(): Promise<void> {
       }
       if (provider === "gemini") storageKey = GEMINI_API_KEY;
     } else {
-      creds =
-        provider === "anthropic"
-          ? await loginAnthropic(callbacks)
-          : provider === "gemini"
-            ? await loginGemini(callbacks)
-            : await loginOpenAI(callbacks);
+      creds = provider === "gemini" ? await loginGemini(callbacks) : await loginOpenAI(callbacks);
     }
 
     await authStorage.setCredentials(storageKey, creds);
     log("INFO", "auth", `Login succeeded for ${displayName(provider)}`);
     console.log(chalk.hex("#4ade80")(`\n✓ Logged in to ${displayName(provider)} successfully!`));
   } finally {
+    endProgressLine();
     rl.close();
     closeLogger();
   }
@@ -455,6 +503,8 @@ export async function runLogout(): Promise<void> {
 
   const authStorage = new AuthStorage();
   await authStorage.load();
+  // Claude Code holds the Claude login itself; the marker goes with clearAll.
+  await signOutOfClaudeCode(authStorage);
   await authStorage.clearAll();
   log("INFO", "auth", "Logout succeeded");
   closeLogger();

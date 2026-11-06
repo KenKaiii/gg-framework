@@ -123,6 +123,7 @@ describe("streamOpenAICodex", () => {
   it.each([
     { model: "gpt-6-luna-fast", tier: "priority" },
     { model: "gpt-6.1-sol-fast", tier: "priority" },
+    { model: "gpt-6.1-terra-fast", tier: "priority" },
     { model: "gpt-6-luna", tier: undefined },
   ])("sends Codex Fast mode as service_tier priority: $model", async ({ model, tier }) => {
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
@@ -294,6 +295,7 @@ describe("streamOpenAICodex", () => {
     ["gpt-6-sol", "ultra", "max"],
     ["gpt-6-astra", "ultra", "xhigh"],
     ["gpt-6.1-sol", "ultra", "xhigh"],
+    ["gpt-6.1-terra", "ultra", "xhigh"],
     ["gpt-6-astra", "max", "max"],
     ["gpt-6.1-sol", "max", "max"],
   ] as const)(
