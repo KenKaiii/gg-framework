@@ -35,6 +35,11 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "@tauri-apps/plugin-*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # Dependabot can't resolve the lockfile for these majors; upgrade them by hand.
+      - dependency-name: diff
+        versions: ["9.x"]
+      - dependency-name: react-markdown
+        versions: ["10.x"]
 
   # Tauri desktop app (gg-app).
   - package-ecosystem: cargo
