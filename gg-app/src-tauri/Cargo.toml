@@ -63,5 +63,5 @@ libc = "0.2"
 # Launcher list for opening links/files (`open::commands`); already in the
 # build via tauri-plugin-opener. We spawn + reap it ourselves because the
 # plugin's detached spawn leaves a zombie per opened link (process.rs).
-open = "=5.3.5"
+open = "=5.4.5"
 
