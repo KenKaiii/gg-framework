@@ -64,6 +64,12 @@ The published packages share one version and follow [semantic versioning](https:
 
 Model list updates and prompt changes are patch or minor, never major.
 
+Each changeset becomes a changelog entry, so keep it readable:
+
+- One change per changeset. Run `pnpm changeset` again for a second change rather than listing several in one entry.
+- Select only the packages the change touches. The others still get the version bump, without an entry of their own.
+- Write one or two sentences from the user's point of view: what changed and why it matters, not how it was done.
+
 CI runs on Linux, macOS and Windows, and all three must pass. Don't skip or disable tests to get it green, and don't commit with `--no-verify`. On Windows, files used by a running process can't be deleted, so tests that start processes should wait for them to exit before cleaning up.
 
 ## License
