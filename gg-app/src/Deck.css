@@ -522,11 +522,6 @@
   background: var(--surface-3);
   text-decoration: none;
 }
-/* The tool-panel chevron beside Stop: the panel is a single floating line
-   now, so there's nothing to fold. */
-.deck .statusrow-tools-toggle {
-  display: none;
-}
 .deck-flag {
   flex: none;
   margin-right: var(--space-6);

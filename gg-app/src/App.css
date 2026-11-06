@@ -455,10 +455,10 @@
 }
 
 /* ── Button system (shared) ───────────────────────────────────────────────
-   .btn is the base; pair with .btn-primary (cobalt key), .btn-ghost (alloy
-   key) or .btn-success (ship-green key). Alloy keys: a lit top edge and a dark
-   lip below, so a control reads as raised off the surface it sits on. Hover
-   changes the fill only — no movement. */
+   .btn is the base; pair with .btn-primary (cobalt key) or .btn-ghost (alloy
+   key). Alloy keys: a lit top edge and a dark lip below, so a control reads
+   as raised off the surface it sits on. Hover changes the fill only — no
+   movement. */
 .btn {
   position: relative;
   display: inline-flex;
@@ -516,7 +516,6 @@
     .btn,
     .modal-btn,
     .nav-toggle,
-    .thinking-toggle,
     .modal-close,
     .toast-close,
     .attach-remove,
@@ -540,7 +539,6 @@
     .btn,
     .modal-btn,
     .nav-toggle,
-    .thinking-toggle,
     .modal-close,
     .toast-close,
     .attach-remove,
@@ -571,17 +569,6 @@
 .btn-primary:hover:not(:disabled) {
   background: var(--primary-fill-hi);
   filter: none;
-}
-
-/* Success — same construction in the ship colour (an active /commit or live
-   serve). Luminous fill, near-black label. */
-.btn-success {
-  background: var(--success);
-  color: var(--on-success);
-  border-color: transparent;
-}
-.btn-success:hover:not(:disabled) {
-  filter: brightness(1.06);
 }
 
 /* Ghost — neutral surface, no border, no sheen. Separation is lightness. */
@@ -766,15 +753,7 @@
    Keyed by presence, so a changing number doesn't replay it. Inline, so a
    fade: a blur would need inline-block and break the strip's truncation. */
 .chat-head-title
-  > :is(
-    .chat-head-accent-dot,
-    .chat-head-cwd,
-    .chat-head-health,
-    .chat-head-branch,
-    .chat-head-dirty,
-    .chat-head-github,
-    .chat-head-ci
-  ),
+  > :is(.chat-head-accent-dot, .chat-head-cwd, .chat-head-health, .chat-head-github, .chat-head-ci),
 .chat-head-strip > .title-usage-meter {
   animation: fade-in var(--dur-dissolve) var(--ease-out) backwards;
 }
@@ -2667,79 +2646,19 @@ select {
   margin: 0 var(--space-4);
   color: var(--border);
 }
-.chat-head-branch {
-  color: var(--secondary);
-  /* Stable context, not a changing count — the FIRST segment to give way
-     (higher shrink factor than the folder), and fully hidden ≤600px below. */
-  flex: 0 3 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* Uncommitted-file count — teal (--info), deliberately NOT --warning amber:
-   the UI already leans on amber heavily (usage meter, plan mode, code tokens),
-   and an informational git status shouldn't compete with real warnings. */
-.chat-head-dirty {
-  flex: none;
-  color: var(--info);
-}
 /* Narrow-window cascade (media = window width; halves ≈ 750px, quads ≈ 375px).
    Segments drop WHOLE, highest-context-cost first, so every surviving count
    stays complete and readable instead of all ellipsizing into uselessness.
    The full string always remains in the strip's hover tooltip. */
-@media (max-width: 600px) {
-  /* Branch is the least glance-critical (it's stable context, not a changing
-     count) — drop it (+ its leading separator) so folder + counts stay whole. */
-  .chat-head-branch,
-  .chat-head-sep:has(+ .chat-head-branch) {
-    display: none;
-  }
-}
 @media (max-width: 440px) {
   /* Quad-tile widths: the folder had already shrunk to nothing, leaving the
      accent dot and a leading separator. Drop it and that separator explicitly
      so the whole counts get the room. (The separator to drop is the one not
-     preceded by a count chip; the uncommitted count before it goes too.) */
+     preceded by a count chip.) */
   /* Direct children only: the CI indicator keeps its own separator. */
   .chat-head-cwd,
   .chat-head-health,
-  .chat-head-uncommitted,
   .chat-head-title > .chat-head-sep:not(.chat-head-github + .chat-head-sep) {
-    display: none;
-  }
-}
-@media (max-width: 520px) {
-  /* Near the 480px minimum window the strip also carries the macOS traffic-light
-     gutter and the usage meter; folder + dirty + issues + PRs don't fit, and the
-     issues chip was hard-clipped mid-word. Keep identity (folder, elastic) +
-     the GitHub counts: the added-roots chip drops whole. */
-  .chat-head-dirty:not(.chat-head-uncommitted),
-  .chat-head-sep:has(+ .chat-head-dirty:not(.chat-head-uncommitted)) {
-    display: none;
-  }
-}
-/* The uncommitted count gives way in two steps, and only to make room for the
-   other counts (issues, PRs, CI); beside the folder alone it stays whole.
-   First it condenses to its number ("12 uncommitted" → "12", ~80px back),
-   then it drops. The widths are tuned on typical counts ("4 issues │ 1 PR")
-   so the folder name keeps a few readable characters at each step. The word
-   stays readable to screen readers (the .sr-only pattern), and the tooltip
-   still spells it out. */
-@container chat-head-title (max-width: 290px) {
-  .chat-head-title:has(.chat-head-github) .chat-head-uncommitted-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-}
-@container chat-head-title (max-width: 190px) {
-  .chat-head-title:has(.chat-head-github) > .chat-head-uncommitted,
-  .chat-head-title:has(.chat-head-github) > .chat-head-sep:has(+ .chat-head-uncommitted) {
     display: none;
   }
 }
@@ -3361,35 +3280,6 @@ select {
   .chat-head-title:has(.chat-head-ci) > .chat-head-sep:has(+ .chat-head-github) {
     display: none;
   }
-}
-/* Position pill — "1/4" reading-order indicator for multi-window orientation.
-   Shown only when >1 window is open. Dimmed when this window is not focused. */
-.window-index {
-  flex: 0 0 auto;
-  font-family: var(--sans);
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  color: var(--text-muted);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 0 7px;
-  line-height: 18px;
-  white-space: nowrap;
-  user-select: none;
-}
-.window-index.dim {
-  opacity: 0.45;
-}
-.chat-head-nav {
-  display: flex;
-  align-items: center;
-  gap: var(--space-7);
-  /* Wrap the action cluster below the back button on narrow windows instead of
-     letting the fixed-width buttons overflow / clip off the right edge. */
-  flex-wrap: wrap;
-  row-gap: var(--space-4);
-  padding: var(--space-1) var(--rail) var(--space-6);
 }
 .picker-head-actions {
   margin-left: auto;
@@ -4515,15 +4405,6 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mcp-scope {
-  flex: 0 0 auto;
-  font-family: var(--sans);
-  font-size: var(--fs-xs);
-  padding: 1px var(--space-3);
-  border-radius: var(--radius-button);
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-}
 .mcp-meta {
   flex: 0 0 auto;
   font-family: var(--sans);
@@ -5077,26 +4958,13 @@ select {
 }
 .app.goal-world-open .chat-head-title,
 .app.goal-world-open .chat-head-cwd,
-.app.goal-world-open .chat-head-branch,
 .app.goal-world-open .chat-head-sep,
 .app.goal-world-open .title-usage-window,
 .app.goal-world-open .title-usage-reset,
 .app.goal-world-open .goal-tally,
-.app.goal-world-open .rank-level,
 .app.goal-world-open .nav-toggle {
   color: var(--text);
 }
-/* The level pill gets a darker glass so its coloured rank name (gradient
-   text, which a text shadow smears) reads on its own. */
-.app.goal-world-open .rank-badge,
-.app.goal-world-open .chat-head-nav .btn-ghost {
-  background: rgb(10 12 18 / 0.62);
-  color: var(--text);
-}
-.app.goal-world-open .rank-name {
-  text-shadow: none;
-}
-.app.goal-world-open .rank-badge,
 .app.goal-world-open .nav-toggle,
 .app.goal-world-open .title-usage-track {
   /* Icons and pills: a drop shadow follows their shape, unlike a box shadow. */
@@ -6524,36 +6392,6 @@ select {
   }
 }
 
-/* Plan decision rows (accepted / feedback / rejected) dissolve into the
-   transcript rather than just rising, echoing the pane they replace. */
-.row-enter[data-kind="plan_decision"] {
-  animation: plan-band-in 460ms var(--ease-out) backwards;
-  --band-y: 4px;
-}
-/* Plan mode arriving: the banner rows resolve out of a blur top to bottom
-   (staggered by each line's --line index), then the reason line. The amber
-   shimmer keeps running underneath, so the art never flashes plain. */
-.row-enter[data-kind="plan"] .plan-logo-line {
-  --band-y: 0px;
-  animation:
-    plan-band-in 420ms var(--ease-out) calc(var(--line, 0) * 35ms) backwards,
-    ggshimmer 5s linear infinite;
-  animation-play-state: running, var(--loop-play-state, running);
-}
-.row-enter[data-kind="plan"] .plan-logo-reason {
-  --band-y: 4px;
-  animation: plan-band-in 420ms var(--ease-out) 360ms backwards;
-}
-@media (prefers-reduced-motion: reduce) {
-  .row-enter[data-kind="plan_decision"],
-  .row-enter[data-kind="plan"] .plan-logo-reason {
-    animation-name: fade-in;
-  }
-  .row-enter[data-kind="plan"] .plan-logo-line {
-    animation: fade-in var(--dur-enter) var(--ease-out) backwards;
-  }
-}
-
 /* ── Plan mode ASCII banner ──
    "Delta Corps Priest 1", the same FIGlet font as the home GG CODER banner. */
 .plan-logo {
@@ -6802,10 +6640,6 @@ select {
     background: none;
     -webkit-text-fill-color: currentColor;
   }
-}
-.footer-plan {
-  margin-left: var(--space-5);
-  font-family: var(--sans);
 }
 
 /* ── Assistant message: the text alone, no lead marker ── */
@@ -7073,40 +6907,6 @@ select {
   opacity: 0;
 }
 
-/* The footer's Critters mark (CritterIcon.tsx), sized like Ken's face. */
-.critter-icon {
-  display: inline-block;
-  flex: 0 0 auto;
-}
-.critter-icon > img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  image-rendering: pixelated;
-  user-select: none;
-}
-
-/* GG Coder's robot face (GgFace.tsx): same stacking as Ken's, with a blink
-   layer only on the Ready mood. */
-.gg-face {
-  position: relative;
-  display: inline-block;
-  flex: 0 0 auto;
-}
-.gg-face-layer {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  image-rendering: pixelated;
-  user-select: none;
-}
-.gg-face-blink {
-  opacity: 0;
-  animation: ken-face-blink 5.2s steps(1, end) infinite;
-  animation-play-state: var(--loop-play-state, running);
-}
 /* In the reply gutter: one cell per CSS px, centred on the first text line
    (assistant text is 15px at line-height 1.55), where the dot used to sit. */
 .ken-face-slot {
@@ -7259,21 +7059,13 @@ select {
   .ken-face,
   .ken-face.ken-face-talking,
   .ken-face .ken-face-layer,
-  .ken-face .ken-face-z,
-  .gg-face-blink {
+  .ken-face .ken-face-z {
     animation: none;
   }
   .ken-face-on .ken-face-happy,
   .ken-face-off .ken-face-sleepy {
     opacity: 1;
   }
-}
-/* Ken's activity bar reuses the GG Coder ActivityBar's running statusrow as-is
-   (same top border, padding, spinner, layout, meta readout) so it's the same
-   control aligned to what we have, just tinted to Ken. Only the spinner glow is
-   re-tinted from brand-blue to Ken's color. */
-.ken-spinner {
-  text-shadow: 0 0 8px color-mix(in srgb, var(--ken) 55%, transparent);
 }
 
 /* Ken's runnable-prompt block: Ken-tinted, with a Send-to-GG-Coder button. */
@@ -7478,11 +7270,6 @@ select {
 }
 
 /* ── Tool rows (styled verb/detail/summary, no lead marker) ── */
-.tool-row {
-  display: flex;
-  padding: 1px 0;
-  align-items: baseline;
-}
 .tool-line {
   flex: 1 1 auto;
   min-width: 0;
@@ -7555,80 +7342,6 @@ select {
   font-size: var(--fs-lg);
   font-weight: 600;
   line-height: 1.55;
-}
-.subagents-head {
-  display: flex;
-  gap: var(--space-3);
-  align-items: baseline;
-  padding: 1px 0 var(--space-2);
-  font-family: var(--sans);
-}
-.subagents-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  /* Indent the agent list under the header dot. */
-  padding-left: var(--space-9);
-  border-left: 1px solid var(--border);
-  margin-left: 5px;
-}
-.subagent {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-.subagent-row {
-  display: flex;
-  gap: var(--space-3);
-  align-items: baseline;
-  font-family: var(--sans);
-  min-width: 0;
-}
-.subagent-icon {
-  flex: 0 0 auto;
-}
-.subagent-name {
-  font-weight: 600;
-  flex: 0 0 auto;
-}
-.subagent-tokens {
-  flex: 0 0 auto;
-  font-size: 0.92em;
-  white-space: nowrap;
-}
-.subagent-summary {
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.subagent-feed {
-  display: flex;
-  flex-direction: column;
-  /* Align activity lines under the agent name (past the icon + gap). */
-  padding-left: var(--space-9);
-  min-width: 0;
-}
-.subagent-activity {
-  font-family: var(--sans);
-  font-size: 0.92em;
-  /* One line each, truncated with ellipsis so the panel reflows on resize. */
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-/* Status indicator gutter (idle caret / running spinner / done sparkle). Shares
-   the SAME fixed px width + left-align + gap as the assistant message dot, so
-   the icon left edge AND the label both line up with the transcript rows above
-   — a px gutter (not em) keeps that true across the bar's smaller font size. */
-.statusrow-icon {
-  display: inline-block;
-  width: 16px;
-  text-align: left;
-  flex: 0 0 auto;
 }
 .spinner {
   /* Brand-blue glow ties the working indicator to the wake-screen aesthetic. */
@@ -8267,26 +7980,6 @@ select {
   box-shadow: 0 0 8px var(--critter-color);
   pointer-events: none;
 }
-.critter-spark {
-  position: absolute;
-  left: 50%;
-  bottom: calc(var(--critter-px) * 5);
-  width: var(--critter-px);
-  height: var(--critter-px);
-  background: var(--critter-spark, white);
-  box-shadow: 0 0 4px var(--critter-spark, white);
-  pointer-events: none;
-}
-.critter-sweat {
-  position: absolute;
-  top: 2px;
-  width: 3px;
-  height: 4px;
-  border-radius: 50% 50% 50% 50% / 30% 30% 70% 70%;
-  background: #7fd8ff;
-  pointer-events: none;
-}
-
 /* Speech bubble (latest tool) and status badges (✓, ✗, !). */
 .critter-bubble,
 .critter-badge {
@@ -8904,14 +8597,6 @@ select {
   font-feature-settings: "tnum";
 }
 
-/* Idle "ready" line: icon + label aligned with a clean gap. The 6px gap matches
-   the assistant message row so the label column lines up. */
-.statusrow-ready {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
 /* Plan-step progress badge in the activity bar (amber "Plan Steps n/total"). */
 .plan-steps-badge {
   font-family: var(--sans);
@@ -8948,12 +8633,6 @@ select {
 .statusrow.running .statusrow-right .cancel {
   margin-left: 0;
   padding-left: 0;
-}
-/* The tool-panel chevron lives in the activity bar (idle + running). Inherits
-   the nav-toggle look; nudge it to align with the bar's text baseline. */
-.statusrow-tools-toggle {
-  display: inline-flex;
-  align-items: center;
 }
 .tools-toggle {
   flex: 0 0 auto;
@@ -10387,19 +10066,12 @@ select {
   position: relative;
   z-index: 2;
 }
-.footer-chat {
-  justify-content: flex-end;
-}
-.footer-chat .footer-right {
-  margin-left: auto;
-}
 
 /* Footer clusters reveal as one faded unit once the session has hydrated,
    instead of cwd/git/thinking/model popping in piecemeal and reflowing. The
    skeleton occupies the same box first, so this is a true crossfade in place.
    The transcript's own hydration reveal is the same motion, so both share one
    rule — they were identical declarations sitting either side of the keyframe. */
-.footer-reveal,
 .transcript-reveal {
   animation: dissolve-in var(--dur-dissolve) var(--ease-out) backwards;
 }
@@ -10813,7 +10485,6 @@ select {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .footer-reveal,
   .transcript-reveal,
   .skeleton-msg,
   .skeleton-item,
@@ -10838,60 +10509,6 @@ select {
   overflow: hidden;
   white-space: nowrap;
 }
-/* Dividers sit flush (no flex gap) so ` │ ` reads as one separator unit. */
-.footer-sep {
-  flex: 0 0 auto;
-}
-
-/* Right cluster holds the controls (context, thinking, model, provider) at
-   their natural size so they stay legible and clickable. */
-.footer-right {
-  flex: 0 1 auto;
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  min-width: 0;
-  /* Narrow windows: controls wrap to a second line as whole units instead of
-     breaking inside "Thinking medium" or a model name. */
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  row-gap: var(--space-3);
-  white-space: nowrap;
-}
-
-/* Thinking level: borderless colored text (mirrors TUI footer), color graded
-   by tier. No badge, no icon — just the label changing hue. */
-.thinking-toggle {
-  background: transparent;
-  border: none;
-  font-family: var(--sans);
-  font-size: var(--fs-base);
-  padding: 0;
-  cursor: pointer;
-  line-height: 1.55;
-  transition:
-    color var(--t-fast),
-    filter var(--t-fast);
-}
-/* Hover lifts the text brightness rather than underlining it — these footer
-   controls carry their own inline color (thinking level is hue-graded, Ken's
-   picker is purple), so a fixed hover color would flatten the grading while
-   `filter` brightens whatever hue the control already has. */
-.thinking-toggle:hover:not(:disabled) {
-  filter: brightness(1.25);
-}
-/* Locked mid-run: drop the hover affordance and the pointer, so the control
-   reads as unavailable before the click. Mirrors `.model-select:disabled`. */
-.thinking-toggle:disabled {
-  cursor: default;
-}
-
-/* ── Footer: context percentage ── */
-.ctx-meter-pct {
-  font-size: var(--fs-sm);
-  font-variant-numeric: tabular-nums;
-}
-
 /* ── Footer: background tasks indicator + popover ── */
 /* No outer margin: the first pill's edge sits on the footer rail, lined up
    with the composer and transcript above; `.footer-left`'s gap spaces the rest. */
@@ -10920,35 +10537,12 @@ select {
 .bgtasks-button:hover {
   background: var(--surface-1);
 }
-.bgtasks-icon {
-  flex: 0 0 auto;
-}
 /* The popover itself is a .pop-panel (see "Popovers"). */
 .bgtasks-button[data-open] {
   background: var(--surface-1);
 }
 
 /* ── Model picker (footer, native <select>) ── */
-.model-anchor {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-/* Static "GG" / "Ken" prefix — plain text, never clickable. Only the model
-   select next to it opens the dropdown. `line-height: 1` matches `.model-select`
-   below so both sit on the same baseline — without it the control's default UA
-   line-height differs from the inherited body line-height and the label
-   visibly floats above the model name. */
-.model-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--sans);
-  font-size: var(--fs-base);
-  line-height: 1;
-}
-
 /* Text-look picker with a native dropdown: the visible label is plain mono
    text (like the old footer button); a transparent <select> stretched over it
    takes the click and opens the OS-native dropdown. */
@@ -11077,209 +10671,7 @@ select {
   background: var(--surface-1);
 }
 
-/* ── Autopilot toggle (Material switch, Uiverse by lenin55) ──
-   Sits left of the "+ New" button in the nav row. The switch markup mirrors the
-   source snippet; colors are re-themed for the dark canvas: the off-track uses a
-   visible neutral (the original rgba(0,0,0,.38) vanished on dark), and the
-   checked track/thumb use the app accent instead of the source teal. */
-.autopilot-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex: 0 0 auto;
-  /* Match the sibling .btn-sm height (25px) and reset the inherited 1.55
-     line-height so the label's tall line box can't push the nav row taller than
-     the buttons — the switch is 24px, the label collapses to its glyph height,
-     so the cluster stays ≤ the buttons and the row height is unchanged. */
-  height: 25px;
-  line-height: 1;
-}
-.autopilot-label {
-  font-size: var(--fs-base);
-  line-height: 1;
-  color: var(--text-muted);
-  user-select: none;
-}
-
-.cl-toggle-switch {
-  position: relative;
-  /* Center the inline-block switch as a flex child at its exact height. As a
-     plain inline box the wrapper baseline-aligned the switch, inflating its own
-     line box to 26px (taller than the 25px row) and lifting the switch ~1px above
-     the row center. Flex + fixed height removes the baseline/line-box effect so
-     the switch sits dead center with the label and buttons. */
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-}
-.cl-switch {
-  position: relative;
-  display: inline-block;
-  /* The track (span::before) floats and the thumb (::after) is absolute, so
-     neither adds height — an auto-height box collapses and the switch sits off
-     center in the flex row. Pin the switch to the track's real footprint
-     (36px + 10px left margin wide, 14px + 5px×2 margin tall) so the parent's
-     align-items:center lines it up with the label and buttons. */
-  width: 46px;
-  height: 24px;
-}
-/* Input */
-.cl-switch > input {
-  appearance: none;
-  -moz-appearance: none;
-  -webkit-appearance: none;
-  z-index: -1;
-  position: absolute;
-  right: 6px;
-  top: -8px;
-  display: block;
-  margin: 0;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  background-color: var(--secondary);
-  outline: none;
-  opacity: 0;
-  transform: scale(1);
-  pointer-events: none;
-  transition:
-    opacity 0.3s var(--ease-out) 0.1s,
-    transform 0.2s var(--ease-out) 0.1s;
-}
-/* Track */
-.cl-switch > span::before {
-  content: "";
-  float: right;
-  display: inline-block;
-  margin: 5px 0 5px var(--space-5);
-  border-radius: 7px;
-  width: 36px;
-  height: 14px;
-  background-color: var(--border-strong);
-  vertical-align: top;
-  transition:
-    background-color var(--t-fast),
-    opacity var(--t-fast);
-}
-/* Thumb */
-.cl-switch > span::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  right: 16px;
-  border-radius: 50%;
-  width: 20px;
-  height: 20px;
-  background-color: #cdd2db;
-  box-shadow:
-    0 3px 1px -2px rgba(0, 0, 0, 0.2),
-    0 2px 2px 0 rgba(0, 0, 0, 0.14),
-    0 1px 5px 0 rgba(0, 0, 0, 0.12);
-  transition:
-    background-color var(--t-fast),
-    transform var(--t-fast);
-}
-/* Checked */
-.cl-switch > input:checked {
-  right: -10px;
-  background-color: var(--secondary);
-}
-.cl-switch > input:checked + span::before {
-  background-color: rgba(155, 140, 247, 0.5);
-}
-.cl-switch > input:checked + span::after {
-  background-color: var(--secondary);
-  transform: translateX(16px);
-}
-/* Hover, Focus */
-.cl-switch:hover > input {
-  opacity: 0.04;
-}
-.cl-switch > input:focus {
-  opacity: 0.12;
-}
-/* The input is a 12%-opacity ripple, so an outline on it would be near
-   invisible. Keyboard focus rings the visible track instead. */
-.cl-switch > input:focus-visible {
-  outline: none;
-}
-.cl-switch > input:focus-visible + span::before {
-  outline: 2px solid var(--primary);
-  outline-offset: 3px;
-}
-.cl-switch:hover > input:focus {
-  opacity: 0.16;
-}
-/* Active */
-.cl-switch > input:active {
-  opacity: 1;
-  transform: scale(0);
-  transition:
-    transform 0s,
-    opacity 0s;
-}
-.cl-switch > input:active + span::before {
-  background-color: var(--border-strong);
-}
-.cl-switch > input:checked:active + span::before {
-  background-color: rgba(155, 140, 247, 0.5);
-}
-/* Disabled */
-.cl-switch > input:disabled {
-  opacity: 0;
-}
-.cl-switch > input:disabled + span::before {
-  background-color: var(--border);
-}
-.cl-switch > input:checked:disabled + span::before {
-  background-color: rgba(155, 140, 247, 0.3);
-}
-.cl-switch > input:checked:disabled + span::after {
-  background-color: rgba(155, 140, 247, 0.6);
-}
-
 /* ── Rank / Progress (Ranks system) ───────────────────────────────────── */
-.rank-badge-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
-.rank-badge {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  min-width: 0;
-  max-width: 160px;
-  height: 26px;
-  padding: var(--space-2) 11px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--radius-pill);
-  background: var(--gloss-neutral);
-  color: var(--text-secondary);
-  box-shadow: var(--gloss-shadow-neutral);
-  font-family: var(--sans);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  /* Fixed height + flex centring set the box; 1.25 just gives the label its
-     descender room so it sits optically centred instead of high. */
-  line-height: 1.25;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  overflow: visible;
-  transition:
-    filter var(--t-fast),
-    background-color var(--t-fast),
-    box-shadow var(--t-fast),
-    color var(--t-fast);
-}
-.rank-badge:hover {
-  filter: brightness(1.18);
-  color: var(--text);
-}
 .rank-xp-chip-layer {
   position: absolute;
   left: 50%;
@@ -11312,66 +10704,6 @@ select {
   line-height: 1.25;
   white-space: nowrap;
   animation: rankXpChip 1.7s ease-out both;
-}
-.rank-glyph {
-  position: relative;
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-  border-radius: var(--radius-pill);
-  background: linear-gradient(180deg, rgba(77, 157, 255, 0.28), rgba(155, 140, 247, 0.18));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
-}
-.rank-glyph::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  border-radius: 1.5px;
-  background: var(--primary-fill);
-  transform: translate(-50%, -50%) rotate(45deg);
-}
-.rank-level {
-  color: var(--text-muted);
-  font-weight: 700;
-}
-.rank-badge-celebrate::before {
-  content: "";
-  position: absolute;
-  inset: -5px;
-  border-radius: var(--radius-pill);
-  border: 1px solid rgba(77, 157, 255, 0.42);
-  opacity: 0;
-  pointer-events: none;
-}
-.rank-sparks {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 4px;
-  height: 4px;
-  border-radius: var(--radius-pill);
-  pointer-events: none;
-  opacity: 0;
-  box-shadow:
-    0 -18px 0 var(--primary),
-    14px -12px 0 var(--secondary),
-    18px 2px 0 var(--info),
-    9px 16px 0 var(--primary),
-    -11px 15px 0 var(--secondary),
-    -18px -2px 0 var(--info),
-    -13px -13px 0 var(--primary);
-}
-.rank-name {
-  display: inline-block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 700;
-  line-height: 1.1;
 }
 .rank-fx-dim {
   color: var(--text-dim);
@@ -11472,21 +10804,6 @@ select {
   text-shadow: 0 0 16px rgba(125, 249, 255, 0.3);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .rank-badge-celebrate::before {
-    animation: rankBadgePulse 2.2s ease-out both;
-  }
-  .rank-badge-celebrate .rank-glyph {
-    animation: rankBadgeGlyph 2.2s ease-out both;
-  }
-  .rank-badge-celebrate .rank-level {
-    animation: rankBadgeLevel 0.42s var(--ease-out) both;
-  }
-  .rank-badge-celebrate .rank-name {
-    animation: rankBadgeName 0.7s var(--ease-out) both;
-  }
-  .rank-badge-celebrate .rank-sparks {
-    animation: rankBadgeSparks 1.2s ease-out both;
-  }
   .rank-fx-animated {
     animation: rankArcaneShift 8s ease-in-out infinite;
     animation-play-state: var(--loop-play-state, running);
@@ -11539,65 +10856,6 @@ select {
   100% {
     opacity: 0;
     transform: translateY(-10px) scale(0.98);
-  }
-}
-@keyframes rankBadgePulse {
-  0% {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  18% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.18);
-  }
-}
-@keyframes rankBadgeGlyph {
-  0% {
-    filter: brightness(1);
-  }
-  24% {
-    filter: brightness(1.5);
-  }
-  100% {
-    filter: brightness(1);
-  }
-}
-@keyframes rankBadgeLevel {
-  0% {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@keyframes rankBadgeName {
-  0% {
-    opacity: 0;
-    transform: translateX(5px);
-    filter: brightness(1.35);
-  }
-  100% {
-    opacity: 1;
-    transform: translateX(0);
-    filter: brightness(1);
-  }
-}
-@keyframes rankBadgeSparks {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.35);
-  }
-  18% {
-    opacity: 0.9;
-  }
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(1.15);
   }
 }
 @keyframes rankArcaneShift {
@@ -12080,19 +11338,12 @@ select {
 }
 
 /* ── Footer responsiveness ──
-   The right cluster is `flex: 0 0 auto` at full width so its controls stay at
-   natural size. Below 900px that cluster plus a schedules/tasks pill overflows,
-   so the controls are allowed to shrink and the left cluster yields first. */
+   Below 900px a schedules/tasks pill can overflow, so the left cluster yields. */
 @media (max-width: 900px) {
   .footer {
     gap: var(--space-4);
     /* Tighten the gap between clusters, never the rail — the footer has to keep
        lining up with the composer and transcript above it at every width. */
-  }
-  .footer-right {
-    flex: 0 1 auto;
-    gap: var(--space-5);
-    overflow: hidden;
   }
   .footer-left {
     flex: 1 1 0;
@@ -12118,14 +11369,6 @@ select {
   }
   .footer:has(.footer-left > *) .footer-left::-webkit-scrollbar {
     display: none;
-  }
-  .footer:has(.footer-left > *) .footer-right {
-    flex: 1 1 100%;
-    justify-content: flex-end;
-  }
-  .footer-right {
-    gap: var(--space-4);
-    font-size: var(--fs-sm);
   }
   .schedules-menu {
     min-width: 0;
