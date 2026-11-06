@@ -1,5 +1,17 @@
 # @kenkaiiii/gg-agent
 
+## 5.94.0
+
+### Minor Changes
+
+- 5092ebc: Updated Claude sign-in. Claude Pro/Max plans now connect through Anthropic's official sign-in, and an Anthropic API key is also an option. If you were signed in to Claude before, sign in once more (`ggcoder login`, or AI Providers in the desktop app) to keep using Claude models. Removed `loginAnthropic`, `refreshAnthropicToken` and `getClaudeCliUserAgent`.
+
+### Patch Changes
+
+- Updated dependencies [5092ebc]
+- Updated dependencies [5092ebc]
+  - @kenkaiiii/gg-ai@5.94.0
+
 ## 5.93.0
 
 ### Patch Changes
