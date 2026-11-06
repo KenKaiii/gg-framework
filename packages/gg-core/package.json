@@ -3,6 +3,7 @@
   "version": "5.92.0",
   "type": "module",
   "description": "Model registry, sign-in and stored credentials, and local model discovery for apps built on gg-ai. No UI, no agent loop.",
+  "author": "Ken Kai",
   "keywords": [
     "llm",
     "ai",

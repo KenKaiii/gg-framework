@@ -3,6 +3,7 @@
   "version": "5.92.0",
   "type": "module",
   "description": "Agent loop for LLMs: runs your tools, feeds results back and loops until done, with retries, steering and cancellation. Works with every gg-ai provider.",
+  "author": "Ken Kai",
   "keywords": [
     "llm",
     "ai",
