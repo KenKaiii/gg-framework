@@ -2,7 +2,19 @@
   "name": "@kenkaiiii/gg-ai",
   "version": "5.92.0",
   "type": "module",
-  "description": "Unified LLM streaming API for Anthropic, OpenAI, Gemini, xAI, Moonshot, GLM, DeepSeek, OpenRouter, local models and more",
+  "description": "One streaming API for 12 LLM providers and local models: Anthropic, OpenAI, Gemini, xAI, Moonshot, GLM, DeepSeek, OpenRouter and more. Tool calls, reasoning, embeddings and reranking.",
+  "keywords": [
+    "llm",
+    "ai",
+    "streaming",
+    "anthropic",
+    "openai",
+    "gemini",
+    "openrouter",
+    "ollama",
+    "tool-calling",
+    "embeddings"
+  ],
   "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=22"
@@ -11,6 +23,10 @@
     "type": "git",
     "url": "git+https://github.com/kenkaiiii/gg-framework.git",
     "directory": "packages/gg-ai"
+  },
+  "homepage": "https://github.com/KenKaiii/gg-framework/tree/main/packages/gg-ai#readme",
+  "bugs": {
+    "url": "https://github.com/KenKaiii/gg-framework/issues"
   },
   "exports": {
     ".": {

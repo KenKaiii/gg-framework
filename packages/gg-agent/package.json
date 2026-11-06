@@ -2,7 +2,16 @@
   "name": "@kenkaiiii/gg-agent",
   "version": "5.92.0",
   "type": "module",
-  "description": "Agentic loop system with tool execution for LLMs",
+  "description": "Agent loop for LLMs: runs your tools, feeds results back and loops until done, with retries, steering and cancellation. Works with every gg-ai provider.",
+  "keywords": [
+    "llm",
+    "ai",
+    "agent",
+    "agent-loop",
+    "tool-calling",
+    "anthropic",
+    "openai"
+  ],
   "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=22"
@@ -11,6 +20,10 @@
     "type": "git",
     "url": "git+https://github.com/kenkaiiii/gg-framework.git",
     "directory": "packages/gg-agent"
+  },
+  "homepage": "https://github.com/KenKaiii/gg-framework/tree/main/packages/gg-agent#readme",
+  "bugs": {
+    "url": "https://github.com/KenKaiii/gg-framework/issues"
   },
   "exports": {
     ".": {

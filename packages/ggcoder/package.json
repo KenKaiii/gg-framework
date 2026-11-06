@@ -2,7 +2,17 @@
   "name": "@kenkaiiii/ggcoder",
   "version": "5.92.0",
   "type": "module",
-  "description": "Lean CLI coding agent for 12 LLM providers and local models, with OAuth for Anthropic, OpenAI and Gemini",
+  "description": "The engine and CLI behind the GG Coder desktop app: a lean coding agent for Claude, ChatGPT, Grok, Kimi, 12 providers and local models.",
+  "keywords": [
+    "coding-agent",
+    "ai",
+    "cli",
+    "llm",
+    "claude",
+    "openai",
+    "agent",
+    "terminal"
+  ],
   "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=22"
@@ -11,6 +21,10 @@
     "type": "git",
     "url": "git+https://github.com/kenkaiiii/gg-framework.git",
     "directory": "packages/ggcoder"
+  },
+  "homepage": "https://github.com/KenKaiii/gg-framework/tree/main/packages/ggcoder#readme",
+  "bugs": {
+    "url": "https://github.com/KenKaiii/gg-framework/issues"
   },
   "bin": {
     "ggcoder": "./dist/cli.js"

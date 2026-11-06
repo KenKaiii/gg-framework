@@ -1,243 +1,155 @@
-![ggcoder](screenshots/ggcoder.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/KenKaiii/gg-framework/main/gg-app/icon-source.png" alt="GG Coder icon" width="96">
+</p>
+
+<h1 align="center">GG Coder CLI</h1>
 
 <p align="center">
-  <strong>The fast, lean coding agent. Twelve providers plus local models. Zero bloat.</strong>
+  <strong>A fast, lean coding agent for your terminal. Use the AI subscription you already pay for.</strong>
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@kenkaiiii/ggcoder"><img src="https://img.shields.io/npm/v/@kenkaiiii/ggcoder?style=for-the-badge" alt="npm version"></a>
-  <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=for-the-badge" alt="AGPL-3.0 License"></a>
-  <a href="https://youtube.com/@kenkaidoesai"><img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube"></a>
-  <a href="https://skool.com/kenkai"><img src="https://img.shields.io/badge/Skool-Community-7C3AED?style=for-the-badge" alt="Skool"></a>
-  <a href="https://github.com/KenKaiii"><img src="https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>
+  <a href="https://www.npmjs.com/package/@kenkaiiii/ggcoder"><img src="https://img.shields.io/npm/v/@kenkaiiii/ggcoder?style=for-the-badge&color=blue" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@kenkaiiii/ggcoder"><img src="https://img.shields.io/npm/dm/@kenkaiiii/ggcoder?style=for-the-badge&color=2ecc71" alt="npm downloads per month"></a>
+  <a href="https://github.com/KenKaiii/gg-framework"><img src="https://img.shields.io/github/stars/KenKaiii/gg-framework?style=for-the-badge&label=Stars&color=yellow" alt="GitHub stars"></a>
+  <a href="https://github.com/KenKaiii/gg-framework/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=for-the-badge" alt="AGPL-3.0 License"></a>
 </p>
 
-A coding agent that ships only what the model needs to work — a tiny system prompt, no bundled MCPs, and a focused tool set. Switch between Anthropic, OpenAI, Gemini, xAI, Moonshot, GLM, MiniMax, Xiaomi, DeepSeek, Sakana, OpenRouter, Hugging Face, and your own local models mid-conversation. Run it in the terminal, or use the same engine in the [GG Coder desktop app](../../README.md).
+`ggcoder` is the command-line version of [GG Coder](https://github.com/KenKaiii/gg-framework). It reads your code, edits files, runs commands and checks its own work, with Claude, ChatGPT, Grok, Kimi, an API key or a model on your own machine.
 
-Built on [`@kenkaiiii/gg-ai`](../gg-ai/README.md), [`@kenkaiiii/gg-agent`](../gg-agent/README.md), and `@kenkaiiii/gg-core`. Part of the [GG Framework](../../README.md) monorepo.
+> **GG Coder is now an app first.** All new features and design work go into the [GG Coder desktop app](https://github.com/KenKaiii/gg-framework/releases/latest) for macOS, Windows and Linux. It runs the same engine as this CLI and adds GG Goals, Chat, GG Motion and one-click project checks.
+>
+> The CLI still works and gets every engine update (providers, models, tools, fixes), but the terminal interface itself isn't being actively developed. Keeping the focus on one interface is what keeps GG Coder manageable. For the best experience, [download the app](https://github.com/KenKaiii/gg-framework/releases/latest).
 
----
+## Why GG Coder
 
-## Run It
+- **More work per plan.** In a race of 20 coding agents on the same model, GG Coder was the fastest and used the least. Claude Code used 169% more for the same work. [See the results.](https://github.com/KenKaiii/gg-framework#why-gg-coder)
+- **A small prompt.** Every request carries the system prompt and tool list. GG Coder keeps both short, and loads rarely used tools only when the agent asks for them.
+- **No MCP pile-up.** None are installed by default. Checking against real-world code is a built-in tool (`steroids`) that costs nothing until it's used.
+- **Your subscriptions.** Switch provider or model mid-conversation without losing anything.
 
-```bash
-npm i -g @kenkaiiii/ggcoder
-
-ggcoder login    # Pick provider, authenticate
-ggcoder          # Start coding
-```
-
-OAuth for Anthropic, OpenAI, and Gemini; OAuth or an API key for xAI and Moonshot (log in once, auto-refresh, no key to leak). API keys for the rest. Up and running in seconds either way. Auth lives in `~/.gg/auth.json` and is shared with the GG Coder desktop app.
-
----
-
-## The system prompt problem
-
-Every token in the system prompt gets processed on **every single turn**. It's not a one-time cost. It's a tax on every request.
-
-|                    | **Claude Code / Agent SDK** | **GG Coder**      |
-| ------------------ | --------------------------- | ----------------- |
-| System prompt size | ~15,000 tokens              | **~1,100 tokens** |
-| Ratio              | baseline                    | **~13x smaller**  |
-
-### Why you should care
-
-- **Slower responses.** More input tokens = longer time-to-first-token. In a 30-turn session, that wait adds up to minutes.
-- **Worse instruction following.** More rules = more things the model ignores. "Lost in the middle" is well-documented. A 1,100 token prompt gets read. A 15,000 token one gets skimmed.
-- **Context fills up faster.** ~15,000 tokens sitting in your window permanently. That's ~7.5% of a 200K model gone before you say hello. You hit compaction sooner, lose history faster, and the agent forgets what it was doing.
-- **Higher cost.** Input tokens aren't free. Every cache miss charges you for the full bloat. Smaller prompt = smaller bill.
-
-GG Coder sends only what the model needs: how to work, what tools it has, and your project context. No walls of rules. No formatting instructions. Just signal.
-
----
-
-## The MCP problem
-
-Same philosophy applies to tools. People collect MCPs like Pokemon. Slack MCP, GitHub MCP, Notion MCP, five different file system MCPs. Every single one injects its tool descriptions into the context. The model now has to figure out which of 40+ tools to use for any given task.
-
-This doesn't help. It confuses the agent. More tool descriptions = more noise = worse tool selection. The model spends tokens reasoning about tools it will never call.
-
-GG Coder ships with no MCPs by default. Checking work against real-world code is a native tool instead: `steroids` finds production repos similar to yours so the agent can confirm API usage, library idioms, and patterns. It loads only when the agent asks for it, so it costs nothing until it's used. (On GLM, the Z.AI MCP servers that come with your key are connected automatically.)
-
-You can still add your own MCPs in `~/.gg/mcp.json` or `.gg/mcp.json`. But start with less. You'll get better results.
-
----
-
-## Twelve providers, one agent
-
-Switch mid-conversation with `/model`. Not locked to anyone.
-
-| Provider          | Models                                                                         | Auth             |
-| ----------------- | ------------------------------------------------------------------------------ | ---------------- |
-| **Anthropic**     | Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5                              | OAuth            |
-| **OpenAI**        | GPT-6 Astra, GPT-6.1 Sol, GPT-6 Luna                                           | OAuth            |
-| **Gemini**        | Gemini 3.1 Pro (Preview), 3.8 Flash, 3.5 Flash, 3.5 Flash Lite, 3.1 Flash Lite | OAuth            |
-| **xAI (Grok)**    | Grok 4.7                                                                       | OAuth or API key |
-| **Moonshot**      | Kimi K3, K2.8 Preview (Kimi sign-in), K2.7 Code, K2.7 Code HighSpeed           | OAuth or API key |
-| **Z.AI (GLM)**    | GLM-5.3, GLM-5.3-Flash                                                         | API key          |
-| **MiniMax**       | MiniMax M3                                                                     | API key          |
-| **Xiaomi (MiMo)** | MiMo-V2.6-Pro, MiMo-V2.6-Flash, MiMo-V2.6-Pro-UltraSpeed                       | API key          |
-| **DeepSeek**      | DeepSeek V4 Pro, V4.1 Flash                                                    | API key          |
-| **Sakana (Fugu)** | Fugu, Fugu Max, Fugu Ultra                                                     | API key          |
-| **OpenRouter**    | Qwen3.8 Max                                                                    | API key          |
-| **Hugging Face**  | Kimi K2.7 Code, DeepSeek V4.1 Flash, GPT-OSS 120B (Inference Providers router) | API key          |
-| **Local**         | Any model on an OpenAI-compatible server: Ollama, LM Studio, llama.cpp, vLLM   | None             |
-
-Every hosted model above except GLM-5.3, DeepSeek V4 Pro, and GPT-OSS 120B accepts images.
-
-The same conversation, the same tools, the same project context — only the model changes. Use a strong reasoning model when you need it, swap to a fast cheap one for grunt work, never restart your session.
-
-**Attachments.** Drag, paste, or type a path to attach images and video in the chat input. Video is sent natively to models that support it (Gemini 3.x, every Moonshot Kimi model, MiniMax M3, MiMo-V2.6, Qwen3.8 Max); for other models the video is saved to a temp file and the model is told to inspect it with ffmpeg or its own tools.
-
----
-
-## Keybindings
-
-| Key                         | What it does                                                     |
-| --------------------------- | ---------------------------------------------------------------- |
-| <kbd>Ctrl+T</kbd>           | Open the Task pane                                               |
-| <kbd>Ctrl+S</kbd>           | Open the Skills pane                                             |
-| <kbd>Shift+Tab</kbd>        | Cycle extended thinking (off / low / medium / high / max)        |
-| <kbd>Esc</kbd>              | Interrupt the agent mid-turn                                     |
-| <kbd>Ctrl+C</kbd> ×2        | Exit                                                             |
-| <kbd>↑</kbd> / <kbd>↓</kbd> | Recall previous prompts (when input is empty)                    |
-| <kbd>Enter</kbd>            | Send · <kbd>Shift+Enter</kbd> newline · `/` opens the slash menu |
-
----
-
-## Slash commands
-
-Everything runs through slash commands inside the session. Not CLI flags.
-
-| Command                 | What it does                                               |
-| ----------------------- | ---------------------------------------------------------- |
-| `/model` (`/m`)         | Switch model on the fly                                    |
-| `/compact` (`/c`)       | Compress context when it gets long                         |
-| `/new` (`/n`)           | Start a fresh session in this project                      |
-| `/session` (`/s`)       | Resume a prior session                                     |
-| `/branch` (`/b`)        | Branch the current conversation                            |
-| `/branches`             | List branches of the current session                       |
-| `/rewind`               | Restore files and/or conversation to an earlier checkpoint |
-| `/add-dir`              | Add another project folder to this workspace               |
-| `/remove-dir`           | Remove an added project folder from this workspace         |
-| `/settings` (`/config`) | Open settings                                              |
-| `/help` (`/h`, `/?`)    | Show all commands                                          |
-| `/quit` (`/q`, `/exit`) | Exit                                                       |
-
-Plus built-in workflows that ship with the binary:
+## Get started
 
 ```bash
-/expand        # Find exciting new features to add
-/init          # Generate or update AGENTS.md / CLAUDE.md for your project
-/setup-commit  # Generate a /commit command with quality checks
-/setup-ci      # Set up or harden CI for any stack
-/compare       # Compare your code against real-world code
-/steroids      # Index real repos like this project
+npm install -g @kenkaiiii/ggcoder
+
+ggcoder login   # pick a provider and sign in
+ggcoder         # start coding in the current folder
 ```
 
----
+Needs Node.js 22 or newer. Sign-ins are saved in `~/.gg/auth.json`, shared with the desktop app, and refreshed automatically.
+
+## Providers
+
+Switch any time with `/model`.
+
+| Provider         | Models                                                                             | Sign-in         |
+| ---------------- | ---------------------------------------------------------------------------------- | --------------- |
+| **Anthropic**    | Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5                                  | Claude account  |
+| **OpenAI**       | GPT-6 Astra, GPT-6.1 Sol, GPT-6 Luna                                               | ChatGPT account |
+| **xAI**          | Grok 4.7                                                                           | Grok or API key |
+| **Moonshot**     | Kimi K3, K2.8 Preview, K2.7 Code, K2.7 Code HighSpeed                              | Kimi or API key |
+| **Z.AI**         | GLM-5.3, GLM-5.3-Flash                                                             | API key         |
+| **MiniMax**      | MiniMax M3.1 Flash, M3                                                             | API key         |
+| **Xiaomi**       | MiMo-V2.6-Pro, MiMo-V2.6-Flash, MiMo-V2.6-Pro-UltraSpeed                           | API key         |
+| **DeepSeek**     | DeepSeek V4 Pro, V4.1 Flash                                                        | API key         |
+| **Sakana**       | Fugu, Fugu Max, Fugu Ultra                                                         | API key         |
+| **OpenRouter**   | Qwen3.8 Max                                                                        | API key         |
+| **Hugging Face** | Kimi K2.7 Code, DeepSeek V4.1 Flash, GPT-OSS 120B                                  | API key         |
+| **Local**        | Anything on Ollama, LM Studio, llama.cpp, vLLM or another OpenAI-compatible server | None            |
+
+Every model above except GLM-5.3, DeepSeek V4 Pro and GPT-OSS 120B accepts images. Paste, drag or type a path to attach images or video. Models that can't watch video get it as a file to inspect with their own tools.
+
+## Using it
+
+| Key                     | What it does                                 |
+| ----------------------- | -------------------------------------------- |
+| <kbd>Enter</kbd>        | Send (<kbd>Shift+Enter</kbd> for a new line) |
+| <kbd>Esc</kbd>          | Stop the agent mid-turn                      |
+| <kbd>Shift+Tab</kbd>    | Change thinking level                        |
+| <kbd>Ctrl+T</kbd>       | Tasks                                        |
+| <kbd>Ctrl+S</kbd>       | Skills                                       |
+| <kbd>Ctrl+R</kbd>       | Search earlier prompts                       |
+| <kbd>Ctrl+V</kbd>       | Paste an image                               |
+| <kbd>Ctrl+C</kbd> twice | Quit                                         |
+
+| Command           | What it does                                           |
+| ----------------- | ------------------------------------------------------ |
+| `/model` (`/m`)   | Switch model                                           |
+| `/compact` (`/c`) | Shrink a long conversation                             |
+| `/new` (`/n`)     | Start a new session                                    |
+| `/session` (`/s`) | Resume an earlier session                              |
+| `/branch` (`/b`)  | Fork the conversation from an earlier point            |
+| `/rewind`         | Undo the agent's file edits, the conversation, or both |
+| `/add-dir`        | Add another project folder to this session             |
+| `/settings`       | Settings                                               |
+| `/help`           | Every command                                          |
+
+Built-in workflows:
+
+| Command         | What it does                                            |
+| --------------- | ------------------------------------------------------- |
+| `/init`         | Write or update the project's `AGENTS.md` / `CLAUDE.md` |
+| `/setup-commit` | Create a `/commit` command with your project's checks   |
+| `/setup-ci`     | Set up or harden CI for any stack                       |
+| `/compare`      | Compare your code against real-world code               |
+| `/steroids`     | Index real repos similar to this project                |
+| `/expand`       | Suggest new features worth building                     |
 
 ## Tools
 
-GG Coder comes with a focused set of tools. Only six core tools — `read`, `write`, `edit`, `bash`, `grep`, and `skill` — plus `tool_search` send their full schemas on every request. Everything else is listed as a one-line hint and loads the first time the agent needs it, so rarely used tools cost almost nothing.
+The agent always has `read`, `write`, `edit`, `bash`, `grep`, `skill`, `ask_user` and `tool_search`. Everything else costs one short line in the prompt until the agent loads it:
 
-| Tool                              | What it does                                                                                           |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `bash`                            | Run shell commands, in the foreground or background (`task_output` / `task_send` / `task_stop`)        |
-| `read`                            | Read file contents                                                                                     |
-| `write`                           | Write files                                                                                            |
-| `edit`                            | Surgical string replacements                                                                           |
-| `grep`                            | Search file contents (regex)                                                                           |
-| `skill`                           | Load a skill's instructions                                                                            |
-| `tool_search`                     | Load an on-demand tool by capability                                                                   |
-| `find` / `ls`                     | Find files by glob pattern / list a directory                                                          |
-| `web_fetch` / `web_search`        | Fetch a URL / search the web                                                                           |
-| `steroids`                        | Find real production repos similar to yours and read how they do it                                    |
-| `source_path`                     | Locate an installed dependency's source                                                                |
-| `screenshot`                      | Open a URL / dev server in a headless browser and capture a PNG so the agent can see the rendered page |
-| `debug`                           | Drive the Node debugger                                                                                |
-| `enter_plan` / `exit_plan`        | Plan before editing, then hand the plan back for approval                                              |
-| `subagent`                        | Run one blocking, isolated child task (backward-compatible)                                            |
-| `spawn_agent` / `wait_agent`      | Launch persistent child turns concurrently and collect results                                         |
-| `send_message` / `followup_task`  | Steer a running child or reuse an idle child's context                                                 |
-| `list_agents` / `interrupt_agent` | Inspect or interrupt persistent children                                                               |
+- **Files and search:** `find`, `ls`, `source_path` (the source of an installed dependency)
+- **Web:** `web_search`, `web_fetch`, `steroids` (current open-source code similar to yours)
+- **Checking work:** `screenshot` (opens a page in a headless browser), `debug` (Node debugger)
+- **Planning:** `enter_plan` / `exit_plan`, `tasks`
+- **Helpers:** `subagent` for one focused job, or `spawn_agent` to run several in parallel
+- **Extras:** `generate_image`, `checklist`, UI component browsing
 
-The `screenshot` tool needs the optional `playwright` dependency plus a one-time `npx playwright install chromium`. Without it the tool returns an install hint instead of failing the turn. Captured images render inline in graphics-capable terminals (kitty, Ghostty, WezTerm, iTerm2); other terminals show a text line.
+`screenshot` needs Playwright: `npx playwright install chromium`. Without it, the tool explains how to install it.
 
-Add your own MCPs in `~/.gg/mcp.json` or `.gg/mcp.json` if you need more — but start lean.
+## Make it yours
 
-### Async subagent lifecycle
+- **Project instructions.** Put an `AGENTS.md` or `CLAUDE.md` in your repo (or a parent folder) and it's loaded automatically. Per folder, the first match wins: `AGENTS.override.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `CONVENTIONS.md`.
+- **Custom commands.** Each Markdown file in `.gg/commands/` becomes a slash command for that project.
+- **Skills.** Reusable instructions in `~/.gg/skills/` (everywhere) or `.gg/skills/` (one project), as `name.md` or `name/SKILL.md`. The agent loads one when the work matches. Two ship built in: `compliance-guard` (legal exposure such as personal data, payments or marketing) and `durable` (not losing stored data).
+- **MCP servers.** `ggcoder mcp add` uses the same syntax and `mcpServers` format as Claude Code. Servers go in `~/.gg/mcp.json` (everywhere) or `.gg/mcp.json` (one project). Project servers only connect after you trust them in settings.
 
-`subagent` remains blocking. The async suite launches persistent NDJSON worker processes, so a parent can start up to four active child turns, keep working, steer them, and wait for any or all results. Up to eight idle workers remain available for follow-up; bounded snapshots retain the latest 20 agents.
+`/rewind` restores files the agent changed with `write` and `edit`. Changes made through `bash` (for example `rm` or code generators) aren't tracked. Checkpoints live in `~/.gg/checkpoints/`, never in your repo.
 
-Only GPT-6 Astra and GPT-6.1 Sol at **Ultra** delegate proactively. Lower Astra/Sol levels use async agents only when the user or project/skill instructions request delegation; other models receive no proactive policy.
+## More commands
 
-Children share the parent working directory, not isolated worktrees. Parallel writes must target disjoint files or subsystems. Async fan-out is one level deep, child output is bounded, idle workers reap after 10 minutes, and workers are not resumable after a CLI/app restart.
+| Command            | What it does                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------- |
+| `ggcoder continue` | Resume the most recent session                                                                    |
+| `ggcoder sessions` | Browse and resume earlier sessions                                                                |
+| `ggcoder logout`   | Remove saved sign-ins                                                                             |
+| `ggcoder doctor`   | Find and fix sign-in and config problems                                                          |
+| `ggcoder mcp`      | Add and manage MCP servers                                                                        |
+| `ggcoder acp`      | Run as an [Agent Client Protocol](https://agentclientprotocol.com) agent, for editors such as Zed |
+| `ggcoder serve`    | Start an HTTP/WebSocket API server                                                                |
+| `ggcoder telegram` | Talk to the agent from Telegram                                                                   |
 
-Parent cancellation interrupts active children. Session disposal shuts down every worker process alongside background commands, LSP servers, and MCP connections.
+Flags: `--provider`, `--model`, `--thinking <level>` and `--resume <id>`. Run `ggcoder --help` for all of them.
 
----
+## Use it as a library
 
-## Custom commands
+The engine behind the CLI and the desktop app is exported too: `AgentSession`, the built-in tools (`createTools`), sessions, compaction, skills and the system prompt builder. For your own agent, start lower with [`@kenkaiiii/gg-agent`](https://www.npmjs.com/package/@kenkaiiii/gg-agent).
 
-Drop a markdown file in `.gg/commands/` and it becomes a slash command. Your React app gets `/deploy` and `/storybook`. Your API gets `/migrate` and `/seed`. Different projects, different commands.
-
----
-
-## Checkpoints & `/rewind`
-
-Before every file the agent writes or edits, GG Coder snapshots the prior on-disk content into a per-session checkpoint (stored under `~/.gg/checkpoints/`, never in your repo). Run `/rewind` to pick an earlier checkpoint and restore **code only**, **conversation only**, or **both**.
-
-Only edits made through ggcoder's `write`/`edit` tools are tracked — changes made by `bash` (e.g. `sed`, `rm`, codegen) are **not** captured.
-
----
-
-## Skills
-
-Reusable behaviors across projects. Drop `.md` files in:
-
-- `~/.gg/skills/` for global skills (available everywhere)
-- `.gg/skills/` for project-specific skills
-
-They get loaded into the system prompt automatically. The agent knows what it can do without you explaining it each session. <kbd>Ctrl+S</kbd> opens a pane to browse and toggle them.
-
-Two ship built in, and route themselves when the work matches:
-
-| Skill              | Fires on                                                                                                                                                                                |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `compliance-guard` | Legal exposure — personal data, consent, marketing email/SMS, payments, UGC, minors, or a licensed/regulated feature.                                                                   |
-| `durable`          | User data must not be lost — first database/table, migrations, backfills/imports, destructive operations, backups and recovery; any store (Postgres, MySQL, SQLite, Mongo, serverless). |
-
-Two more, `bulletproof` (security) and `lean` (performance), are hidden from routine work and load only for the app's Checklist audits.
-
----
-
-## Project guidelines
-
-Drop an `AGENTS.md` or `CLAUDE.md` in your repo root (or any parent directory). GG Coder picks it up automatically. One file per directory is loaded, first match wins: `AGENTS.override.md` > `AGENTS.md` > `CLAUDE.md` > `.cursorrules` > `CONVENTIONS.md`.
-
-Your rules. Your conventions. The agent follows them.
-
----
+| Package                                                                  | What it does                                                      |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| [@kenkaiiii/gg-ai](https://www.npmjs.com/package/@kenkaiiii/gg-ai)       | One streaming API for every provider                              |
+| [@kenkaiiii/gg-agent](https://www.npmjs.com/package/@kenkaiiii/gg-agent) | The agent loop: runs tools and feeds results back to the model    |
+| [@kenkaiiii/gg-core](https://www.npmjs.com/package/@kenkaiiii/gg-core)   | Model list, sign-in and stored credentials, local model discovery |
+| **@kenkaiiii/ggcoder**                                                   | The GG Coder coding agent: CLI, tools and sessions (this package) |
 
 ## Community
 
-- [YouTube @kenkaidoesai](https://youtube.com/@kenkaidoesai) — tutorials and demos
-- [Skool community](https://skool.com/kenkai) — come hang out
-- [GitHub @KenKaiii](https://github.com/KenKaiii)
-
----
+- [Skool community](https://skool.com/kenkai): get help and share what you build
+- [YouTube @kenkaidoesai](https://youtube.com/@kenkaidoesai): tutorials and demos
+- [GitHub](https://github.com/KenKaiii/gg-framework): source, issues and the desktop app. If GG Coder saves you time, ⭐ star it so more people find it.
 
 ## License
 
-AGPL-3.0-only. See [LICENSE](../../LICENSE).
-
----
-
-<p align="center">
-  <strong>Lean prompt. Sharp tools. Real results.</strong>
-</p>
-
-<p align="center">
-  <a href="https://www.npmjs.com/package/@kenkaiiii/ggcoder"><img src="https://img.shields.io/badge/Install-npm%20i%20--g%20%40kenkaiiii%2Fggcoder-blue?style=for-the-badge" alt="Install"></a>
-</p>
+[AGPL-3.0-only](https://github.com/KenKaiii/gg-framework/blob/main/LICENSE). You can build on it; if you distribute your changes or run them as a network service, share their source under the same license.
