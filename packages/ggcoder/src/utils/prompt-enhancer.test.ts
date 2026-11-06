@@ -6,7 +6,12 @@ import {
   type StreamEvent,
   type StreamResponse,
 } from "@kenkaiiii/gg-ai";
-import { ENHANCER_SYSTEM_PROMPT, enhancePrompt, parseEnhanced } from "./prompt-enhancer.js";
+import {
+  ENHANCER_SYSTEM_PROMPT,
+  enhancePrompt,
+  parseEnhanced,
+  stackHint,
+} from "./prompt-enhancer.js";
 
 vi.mock("@kenkaiiii/gg-ai", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -34,8 +39,56 @@ function respond(content: string, stopReason: StopReason = "end_turn"): void {
 }
 
 describe("enhancer examples", () => {
-  it("includes five varied input/output pairs", () => {
-    expect(examples).toHaveLength(5);
+  it("includes nine varied input/output pairs", () => {
+    expect(examples).toHaveLength(9);
+  });
+
+  function example(match: string): { input: string; output: string } {
+    const found = examples.find(({ input }) => input.includes(match));
+    if (!found) throw new Error(`missing example: ${match}`);
+    return found;
+  }
+
+  it("is field-agnostic: one general method, examples framed as illustrations", () => {
+    const instructions = ENHANCER_SYSTEM_PROMPT.split("<examples>")[0] ?? "";
+    expect(instructions).toContain("This works for any field.");
+    expect(instructions).toContain(
+      "What would an experienced practitioner in this field call this?",
+    );
+    expect(ENHANCER_SYSTEM_PROMPT).toContain(
+      "These examples illustrate the method. They are not a list of supported fields or terms",
+    );
+    // No per-field vocabulary lists outside the examples.
+    for (const term of ["J-cut", "Bevel", "padding", "empty state", "debounce"]) {
+      expect(instructions.toLowerCase()).not.toContain(term.toLowerCase());
+    }
+    // Terminology is the main job, not an optional extra.
+    expect(instructions).toContain("Your main job is terminology");
+    expect(instructions).not.toMatch(/often 0/);
+  });
+
+  it.each([
+    ["cards are squished", ["responsive", "padding", "empty state"], "Don't change the colours."],
+    ["cut to her face", ["J-cut", "Colour-match"], "Don't touch the music."],
+    ["edges of the table less sharp", ["Bevel"], "Keep the polygon count low."],
+  ])("translates the %s example into field terms and keeps its limits", (match, terms, limit) => {
+    const result = parseEnhanced(example(match).output);
+    for (const text of terms) {
+      expect(result.segments).toContainEqual(expect.objectContaining({ kind: "term", text }));
+    }
+    expect(result.enhanced).toContain(limit);
+  });
+
+  it("names the described behavior without inventing a mechanism", () => {
+    const persist = parseEnhanced(example("remember the theme").output);
+    expect(persist.segments).toContainEqual(
+      expect.objectContaining({ kind: "term", text: "Persist" }),
+    );
+    expect(persist.enhanced).toContain("after closing and reopening the app");
+    expect(persist.enhanced).not.toMatch(/localStorage|database|file/);
+    const realtime = parseEnhanced(example("show up right away").output);
+    expect(realtime.enhanced).toBe("Make updates appear in real time.");
+    expect(realtime.enhanced).not.toMatch(/WebSocket|polling|optimistic/i);
   });
 
   it.each(examples)("keeps the marker contract for $input", ({ input, output }) => {
@@ -82,13 +135,30 @@ describe("enhancePrompt", () => {
         { role: "user", content: examples[1].input },
       ],
     });
-    expect(result.enhanced).toBe("In Search.tsx, debounce search requests by 300ms.");
+    expect(result.enhanced).toBe(
+      "In Search.tsx, debounce search requests: send the request after typing has stopped for 300ms.",
+    );
     expect(result.segments).toContainEqual({
       kind: "term",
       text: "debounce",
       original: "wait until I stop typing",
       note: "Wait for a pause before sending the request",
     });
+  });
+
+  it("scopes the stack hint to code so other fields ignore it", async () => {
+    const video = examples.find(({ input }) => input.includes("cut to her face"));
+    if (!video) throw new Error("missing video example");
+    respond(video.output);
+    const result = await enhancePrompt({ ...options, prompt: video.input, stack: " React " });
+    const system = vi.mocked(stream).mock.calls[0]?.[0].messages[0]?.content;
+    expect(system).toBe(`${ENHANCER_SYSTEM_PROMPT}\n\n${stackHint("React")}`);
+    expect(system).toContain("Use this only for parts of the draft about this project's code");
+    expect(system).toContain("Ignore it for any other field");
+    expect(result.segments).toContainEqual(
+      expect.objectContaining({ kind: "term", text: "J-cut" }),
+    );
+    expect(result.enhanced).not.toMatch(/React|component/i);
   });
 
   it.each([
