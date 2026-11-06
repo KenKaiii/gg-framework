@@ -11,18 +11,15 @@ export function createEnterPlanTool(
   return {
     name: "enter_plan",
     description:
-      "Enter read-only plan mode for complex or risky work (writes only under .gg/plans/).",
+      "Enter read-only plan mode: research, then write a plan for the user to approve before changing code.",
     parameters: EnterPlanParams,
     executionMode: "sequential",
     async execute({ reason }) {
       await onEnterPlan(reason);
       return (
-        "Plan mode activated. You are now in read-only research mode.\n\n" +
-        "Allowed actions:\n" +
-        "- Use read, grep, find, ls, source_path, web_fetch/web_search, and code search tools to investigate\n" +
-        "- Write the implementation plan to .gg/plans/<name>.md\n\n" +
-        "Restricted: bash, edit, write outside .gg/plans/, subagent, and task mutation.\n\n" +
-        "When the plan is ready, call exit_plan with the plan file path."
+        "Plan mode is on. Research read-only (read-only bash is allowed), write the plan to " +
+        ".gg/plans/<name>.md ending in a numbered '## Steps' list, then call exit_plan with its path. " +
+        "Edits outside .gg/plans/, mutating bash and helper agents that can edit are blocked until the plan is approved."
       );
     },
   };

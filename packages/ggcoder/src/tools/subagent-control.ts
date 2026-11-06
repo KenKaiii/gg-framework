@@ -1,7 +1,11 @@
 import { z } from "zod";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import type { SubAgentManager, SubAgentSnapshot } from "../core/subagent-manager.js";
-import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
+import {
+  isPlanModeActive,
+  isReadOnlyAgent,
+  planModeAgentRestriction,
+} from "../core/runtime-mode.js";
 import { renderAgentRoster } from "./subagent-shared.js";
 import { AcceptanceChecksParam } from "../core/acceptance-checks.js";
 import { ACTIVE_LIMIT, DEFAULT_WAIT_MS, MAX_WAIT_MS } from "../core/subagent-manager.js";
@@ -68,8 +72,16 @@ export function createSubAgentControlTools(
   manager: SubAgentManager,
   planModeRef?: { current: boolean },
 ): AgentTool[] {
-  const blocked = (name: string) =>
-    isPlanModeActive(planModeRef) ? planModeRestriction(name) : undefined;
+  const agentNamed = (name: string | undefined) =>
+    name === undefined ? undefined : manager.agents.find((agent) => agent.name === name);
+  // Plan mode lets only read-only children run (see isReadOnlyAgent); an
+  // unnamed or unknown child counts as able to edit.
+  const blocked = (tool: string, agentNames: readonly (string | undefined)[]) =>
+    isPlanModeActive(planModeRef) && !agentNames.every((name) => isReadOnlyAgent(agentNamed(name)))
+      ? planModeAgentRestriction(tool, manager.agents)
+      : undefined;
+  const childAgent = (agentId: string) =>
+    manager.list().find((child) => child.agent_id === agentId)?.agent_name;
 
   // Constrain `agent` to the real roster when one exists: a name the model
   // invented then fails schema validation, which it can correct, instead of
@@ -118,7 +130,10 @@ export function createSubAgentControlTools(
     parameters: spawnParams,
     executionMode: "parallel",
     async execute(args) {
-      const restriction = blocked("spawn_agent");
+      const restriction = blocked(
+        "spawn_agent",
+        args.tasks.map((t) => t.agent ?? manager.defaultAgent),
+      );
       if (restriction) return restriction;
       // Each spawn runs its limit and duplicate-name checks and registers its
       // worker before its first await, so starting them together cannot
@@ -156,7 +171,7 @@ export function createSubAgentControlTools(
     description: "Queue steering into a running child agent without starting another turn.",
     parameters: messageParams,
     async execute(args) {
-      const restriction = blocked("send_message");
+      const restriction = blocked("send_message", [childAgent(args.agent_id)]);
       if (restriction) return restriction;
       return json({
         agent_id: args.agent_id,
@@ -175,7 +190,7 @@ export function createSubAgentControlTools(
     description: "Start another turn in an idle child while preserving that child's context.",
     parameters: followupParams,
     async execute(args) {
-      const restriction = blocked("followup_task");
+      const restriction = blocked("followup_task", [childAgent(args.agent_id)]);
       if (restriction) return restriction;
       return json(spawnView(await manager.followup(args.agent_id, args.task, args.checks)));
     },

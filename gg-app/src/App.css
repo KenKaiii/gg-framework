@@ -76,6 +76,10 @@
   --warning: #f0c75e;
   --on-warning: #1c1405;
   --error: #ff7d70;
+  /* The composer's Stop key: a deeper red than --error so its white square
+     clears 3:1 (--error is tuned for red text, not a fill under white). */
+  --stop-fill: #d93a3a;
+  --stop-fill-hi: #e44c4c;
   /* Between warning and error: "improving, not there yet" (Project Health). */
   --caution: #ff9f5c;
   --on-error: #240704;
@@ -93,6 +97,9 @@
 
   /* Ken Kai (mentor agent) — must match theme.ken in theme.ts. */
   --ken: #62e8d8;
+  /* A solid @Ken bubble: Ken's teal with dark ink (11.3:1). */
+  --ken-fill: #62e8d8;
+  --on-ken-fill: #04211e;
   /* Critters — pink; must match theme.critter in theme.ts. */
   --critter: #ff8fd0;
 
@@ -143,6 +150,8 @@
   --warning: #855400;
   --on-warning: #ffffff;
   --error: #b8241a;
+  --stop-fill: #b8241a;
+  --stop-fill-hi: #cc2f22;
   --caution: #9c4700;
   --on-error: #ffffff;
   --secondary: #2848d8;
@@ -151,6 +160,8 @@
   --glow: #8ea2e6;
 
   --ken: #0b6b74;
+  --ken-fill: #0b6b74;
+  --on-ken-fill: #ffffff;
   --critter: #a8256f;
 
   --code-bg: #e6e9ed;
@@ -336,6 +347,9 @@
      1100px wide, 17px at 1550, 18px from 1850). Bigger windows get bigger
      text rather than longer lines, so a line holds the same ~72 characters. */
   --fs-read: clamp(15.5px, 11.8px + 0.335vw, 18px);
+  /* m5x7 in chat rows: 1.5x its 16px grid (3 device px per art px on Retina),
+     where its letters match --fs-read's size. */
+  --fs-pixel: 24px;
   /* A reply step's number well. */
   --step-well: 28px;
   --step-well-h: 22px;
@@ -6392,64 +6406,25 @@ select {
   }
 }
 
-/* ── Plan mode ASCII banner ──
-   "Delta Corps Priest 1", the same FIGlet font as the home GG CODER banner. */
+/* ── Plan mode title ──
+   Home's pixel type: the Alagard title art at one screen pixel per art pixel,
+   and the reason in m5x7 at the chat's text size (--fs-pixel). */
 .plan-logo {
   margin: var(--space-5) 0;
-  padding-left: var(--space-1);
 }
-.plan-logo-art {
-  font-family: var(--mono);
-  /* 101 mono columns ≈ 61em: 8px fits ~490px. Shrink with the window rather
-     than overflow the transcript (rails + scrollbar ≈ 64px). */
-  font-size: min(8px, (100vw - 64px) / 64);
-  /* Half blocks (▄ ▀) draw the curves, so rows must touch: any extra
-     leading cuts gaps through every letter. */
-  line-height: 1;
-  letter-spacing: 0;
-}
-/* The amber sweep is painted per line, on the element that owns the text
-   (WebKit clips a text background only to the element's own glyphs). Every
-   line is padded to one width, so the gradient lines up down the banner. */
-.plan-logo-line {
-  width: max-content;
-  white-space: pre;
-  background: linear-gradient(
-    100deg,
-    #c98828 0%,
-    var(--warning) 25%,
-    #f6c97a 50%,
-    var(--warning) 75%,
-    #c98828 100%
-  );
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: var(--warning);
-  animation: ggshimmer 5s linear infinite;
-  animation-play-state: var(--loop-play-state, running);
-}
-@media (prefers-reduced-motion: reduce) {
-  .plan-logo-line {
-    animation: none;
-  }
-}
-/* Forced colours drop the gradient; show the art in plain system text. */
-@media (forced-colors: active) {
-  .plan-logo-line {
-    background: none;
-    -webkit-text-fill-color: currentColor;
-  }
+.plan-logo-title {
+  display: block;
+  image-rendering: pixelated;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 .plan-logo-reason {
-  /* Back onto the rail (the banner's 2px optical inset), so the critter sits
-     in the assistant-dot gutter like every other critter line. */
-  margin: var(--space-4) 0 0 -2px;
-}
-/* A reason can run long: wrap it rather than ellipsize the agent's words. */
-.plan-logo-reason .subagents-compact-text {
-  white-space: normal;
+  margin: var(--space-4) 0 0;
+  font-family: "m5x7", monospace;
+  font-size: var(--fs-pixel);
+  line-height: var(--fs-pixel);
+  -webkit-font-smoothing: none;
+  color: var(--warning);
 }
 
 /* ── User message chip (the TUI's UserMessage bubble; fill is --user-bg) ── */
@@ -6475,13 +6450,11 @@ select {
      the text and every bubble below it at the moment the message is sent. */
   border: 1px solid transparent;
 }
-/* `@Ken` prompt bubble: Ken's colour on the ink (matching his replies + the
-   input highlight) and on the bubble's reserved border, so the transcript
-   shows this message went to the mentor, not GG Coder. The fill stays the
-   normal user bubble: a Ken-tinted wash under Ken-coloured text muddied both. */
+/* `@Ken` prompt bubble: solid in Ken's teal, so the transcript shows at a
+   glance this message went to the mentor, not GG Coder. */
 .user-msg.user-ken {
-  color: var(--ken);
-  border-color: color-mix(in srgb, var(--ken) 45%, transparent);
+  background: var(--ken-fill);
+  color: var(--on-ken-fill);
 }
 /* "Sent to GG Coder" bubble (from a Ken prompt-block button): same Ken border
    as a @Ken bubble, with the shimmer label carrying Ken's color. */
@@ -6864,14 +6837,26 @@ select {
   border-color: var(--border-strong);
   background: var(--surface-2);
 }
-/* Ken Kai (mentor agent). Whole paragraphs of cyan were tiring to read, so the
-   prose stays in normal ink and Ken is marked by what frames it instead: a
-   thin teal rule down the reply, and teal headings / bold / links
-   as accents. Still unmistakably Ken at a glance, without the colour wall.
-   The runnable-prompt block keeps its own styling below. */
-.ken-msg .assistant-text {
-  padding-left: var(--space-5);
-  border-left: 2px solid color-mix(in srgb, var(--ken) 55%, transparent);
+/* Ken Kai (mentor agent). The prose stays in normal ink; Ken is marked by his
+   pixel face on its own row above the reply, and teal headings / bold / links
+   as accents. The runnable-prompt block keeps its own styling below. */
+.ken-msg {
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-5);
+}
+.ken-byline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+/* m5x7 at the chat's pixel size, like the plan and critter lines. */
+.ken-byline-name {
+  font-family: "m5x7", monospace;
+  font-size: var(--fs-pixel);
+  line-height: var(--fs-pixel);
+  -webkit-font-smoothing: none;
+  color: var(--ken);
 }
 .ken-msg .assistant-text .markdown :is(h1, h2, h3, h4, strong) {
   color: var(--ken);
@@ -7339,9 +7324,16 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--fs-lg);
-  font-weight: 600;
-  line-height: 1.55;
+  /* Home's pixel body face at the chat's text size. A pixel font has one
+     weight: faux bold would smear its strokes. */
+  font-family: "m5x7", monospace;
+  font-size: var(--fs-pixel);
+  font-weight: 400;
+  line-height: var(--fs-pixel);
+  -webkit-font-smoothing: none;
+}
+.subagents-compact-text .shimmer-text {
+  font-weight: 400;
 }
 .spinner {
   /* Brand-blue glow ties the working indicator to the wake-screen aesthetic. */
@@ -8547,10 +8539,8 @@ select {
   flex: 1 1 auto;
 }
 
-/* ── Plan step completion row (✓ from [DONE:n] markers): blue circle + tick,
-   mirroring the requested ggcoder treatment. The tick takes --on-primary, the
-   ink paired with every --primary fill: white on this periwinkle measured
-   1.91:1, dark ink measures 9.92:1. ── */
+/* ── Plan step completion row (from [DONE:n] markers): a pixel tick in the
+   critter style, sat in the critter gutter so it lines up with critter rows. ── */
 .plan-step-done {
   display: flex;
   align-items: center;
@@ -8559,21 +8549,17 @@ select {
 }
 .plan-step-check {
   flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   width: 18px;
   height: 18px;
-  border-radius: var(--radius-pill);
-  background: var(--primary-fill);
-  color: var(--on-primary-fill);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  line-height: 1;
+  image-rendering: pixelated;
+  user-select: none;
 }
 .plan-step-label {
-  font-size: var(--fs-md);
-  font-weight: 600;
+  font-family: "m5x7", monospace;
+  font-size: var(--fs-pixel);
+  line-height: var(--fs-pixel);
+  -webkit-font-smoothing: none;
   color: var(--text);
 }
 
@@ -8824,6 +8810,52 @@ select {
 .icon-circle:disabled {
   cursor: not-allowed;
   opacity: 0.4;
+}
+/* Mid-run the send key becomes Stop: red with a white square, and two rings
+   pulsing out of it so the one way to stop the agent reads as live. */
+.icon-circle-stop {
+  position: relative;
+  color: #ffffff;
+  background: var(--stop-fill);
+}
+.icon-circle-stop:hover:not(:disabled) {
+  color: #ffffff;
+  background: var(--stop-fill-hi);
+}
+.icon-circle-stop::before,
+.icon-circle-stop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--stop-fill);
+  opacity: 0;
+  pointer-events: none;
+  animation: stop-ripple 1.8s var(--ease-out) infinite;
+  animation-play-state: var(--loop-play-state, running);
+}
+.icon-circle-stop::after {
+  animation-delay: 0.9s;
+}
+.icon-circle-stop:disabled::before,
+.icon-circle-stop:disabled::after {
+  animation: none;
+}
+@keyframes stop-ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .icon-circle-stop::before,
+  .icon-circle-stop::after {
+    animation: none;
+  }
 }
 /* Chat-input stack: the textarea plus (transiently) the enhance animation layer.
    Highlights for enhanced terms are NOT drawn over the input — an overlay can't

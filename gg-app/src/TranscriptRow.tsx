@@ -10,6 +10,7 @@ import { HookNotice } from "./HookNotice";
 import { SubAgentFeed } from "./SubAgentFeed";
 import { CompactionNotice } from "./CompactionNotice";
 import { PlanModeLogo } from "./PlanModeLogo";
+import { KenFace } from "./KenFace";
 import { PlanDecisionNotice } from "./PlanDecisionNotice";
 import { SecurityNotice } from "./SecurityNotice";
 import { AskBand } from "./AskBand";
@@ -19,6 +20,7 @@ import { Markdown } from "./Markdown";
 import { ImageGenCard } from "./image-gen/ImageGenCard";
 import { ImageCard } from "./ImageCard";
 import { segmentDoneMarkers, hasDoneMarker } from "./plan-steps";
+import { PLAN_STEP_TICK } from "./plan-step-tick";
 import { hidePartialKenLine, stripKenLine } from "./goal-ken-talk";
 import { EnhancedSegments } from "./PromptEnhancement";
 import { basename } from "./tool-format";
@@ -87,9 +89,7 @@ function AssistantReply({
       {segments.map((seg, i) =>
         seg.kind === "done" ? (
           <div key={i} className={`plan-step-done${i >= mountedSegments ? " dissolve-in" : ""}`}>
-            <span className="plan-step-check" aria-hidden="true">
-              {"\u2713"}
-            </span>
+            <img className="plan-step-check" src={PLAN_STEP_TICK} alt="" draggable={false} />
             <span className="plan-step-label">{`Step ${seg.stepNum} completed`}</span>
           </div>
         ) : (
@@ -104,9 +104,18 @@ function AssistantReply({
   );
 }
 
+/** Ken's face and name on their own row above his reply (the face talks while he types). */
+function KenByline({ talking = false }: { talking?: boolean }): React.ReactElement {
+  return (
+    <div className="ken-byline">
+      <KenFace mood="chat" talking={talking} />
+      <span className="ken-byline-name">Ken</span>
+    </div>
+  );
+}
+
 /**
- * Ken Kai's reply: led by his little pixel face (it talks while the reply
- * streams in) instead of the dot, framed by a teal rule. No badge, no byline.
+ * Ken Kai's reply: his byline (face and name) on its own row above the text.
  * The Markdown component special-cases ```prompt fences into a "Send to GG
  * Coder" button. Streams through the live-text store like `AssistantReply`.
  */
@@ -124,6 +133,7 @@ function KenReply({
   const { text, streaming } = useLiveText(id, stored);
   return (
     <div className="assistant-msg ken-msg" data-talking={talking || undefined}>
+      <KenByline talking={talking} />
       <div className="assistant-text">
         <StreamingMarkdown text={text} streaming={streaming} onGrow={onGrow} />
       </div>
@@ -347,6 +357,7 @@ function TranscriptRowBody({
       };
       return (
         <div className="assistant-msg ken-msg">
+          <KenByline />
           <div className="assistant-text">
             <Markdown>{copy[item.phase]}</Markdown>
           </div>

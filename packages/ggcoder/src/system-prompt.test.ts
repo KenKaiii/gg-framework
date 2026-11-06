@@ -490,7 +490,7 @@ describe("buildSystemPrompt", () => {
         expect(prompt).not.toContain("Tip: install Agent Steroids");
         expect(prompt).not.toContain("does not count toward the word budget");
         if (planMode) {
-          expect(prompt).toContain("Research with read/search tools and read-only bash");
+          expect(prompt).toContain("Use read/search tools");
           expect(prompt).toContain("Repository indexing needs user approval even in plan mode");
           expect(prompt).toContain("no code edits outside `.gg/plans/`");
           expect(prompt).toContain("End it with a heading exactly `## Steps`");
@@ -623,7 +623,9 @@ describe("buildSystemPrompt", () => {
     // +100 for the light-comments rule (Haiku 5.5 arena 2026-10-28, 160/160 pass:
     // added comment lines −60%, output tokens −5.5%; RESULTS-2026-10-28-haiku55.md).
     expect(measurements.normal.characters).toBeLessThan(3_200);
-    expect(measurements.planMode.characters).toBeLessThan(3_600);
+    // Plan mode +300 for the 2026-11 refresh: research callers/tests, ask when
+    // a requirement is unclear, keep the plan out of chat, verification commands.
+    expect(measurements.planMode.characters).toBeLessThan(3_900);
     // +~120 for the parallel-calls fact shown with bash (agent-race, 2026-11-03).
     expect(measurements.typescriptProjectContextToolsSkills.characters).toBeLessThan(4_400);
     expect(measurements.planMode.characters).toBeGreaterThan(measurements.normal.characters);

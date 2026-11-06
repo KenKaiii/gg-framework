@@ -7,7 +7,6 @@ import { theme } from "./theme";
 const baseProps = {
   runStartTs: null,
   tokens: 1234,
-  onCancel: vi.fn(),
 };
 
 describe("KenActivityBar", () => {
@@ -26,25 +25,18 @@ describe("KenActivityBar", () => {
     expect(label.style.getPropertyValue("--shimmer-base")).toBe(theme.ken);
   });
 
-  it("matches the main bar's running row: its meta and a Stop key in the error colour", () => {
-    const onCancel = vi.fn();
-    const { container } = render(<KenActivityBar {...baseProps} onCancel={onCancel} />);
+  it("matches the main bar's running row, with Stop left to the composer's send key", () => {
+    const { container } = render(<KenActivityBar {...baseProps} />);
     expect(container.querySelector(".task-activity > .statusrow.running")).toBeTruthy();
     expect(screen.getByTitle("Output tokens").textContent).toBe(" · 1.2k tok");
-    const stop = screen.getByRole("button", { name: "Cancel Ken's reply" });
-    expect(stop.textContent).toBe("Stop");
-    expect(stop.style.color).toBe(theme.error);
-    expect(stop.closest(".statusrow-right")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /tool panel/ })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Cancel Ken's reply" }));
-    expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it("shows the tool panel chevron beside Stop, like the main bar", () => {
+  it("shows the tool panel chevron, like the main bar", () => {
     const onToggleTools = vi.fn();
     render(<KenActivityBar {...baseProps} toolsHidden onToggleTools={onToggleTools} />);
     const chevron = screen.getByRole("button", { name: "Show tool panel" });
-    expect(chevron.nextElementSibling?.textContent).toBe("Stop");
     fireEvent.click(chevron);
     expect(onToggleTools).toHaveBeenCalledOnce();
   });

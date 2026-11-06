@@ -111,11 +111,19 @@ ${
 - Precedence: user > nearest project instructions > skills > this prompt. Project conventions and skills grant no extra authorization.`;
 }
 
-export function renderPlanModeSection(): string {
+export function renderPlanModeSection(reachableTools?: readonly string[]): string {
+  // Name only research tools this session can reach (steroids needs its binary).
+  const tools = new Set(reachableTools ?? DEFAULT_TOOL_NAMES);
+  const research = ["read/search tools", "read-only bash"];
+  if (tools.has("steroids")) research.push("`steroids` for how real projects solve it");
+  if (tools.has("web_search") || tools.has("web_fetch")) research.push("the web for current docs");
+  const researchList = `${research.slice(0, -1).join(", ")} and ${research.at(-1)}`;
   return (
     `## Plan Mode (ACTIVE)\n\n` +
-    `- Research with read/search tools and read-only bash; no code edits outside \`.gg/plans/\`, no mutating bash, no subagents. Repository indexing needs user approval even in plan mode.\n` +
-    `- Write the plan to \`.gg/plans/<name>.md\`: exact files, functions, risks, verification. End it with a heading exactly \`## Steps\` and a numbered list of concrete, doable steps (no notes or questions).\n` +
+    `- Research first: the code involved, its callers and tests. Use ${researchList}; no code edits outside \`.gg/plans/\`, no mutating bash, and only read-only helper agents. Repository indexing needs user approval even in plan mode.\n` +
+    `- If a requirement or tradeoff is unclear, ask the user before planning; don't guess.\n` +
+    `- Write the plan to \`.gg/plans/<name>.md\`, not in chat: goal, approach, exact files and functions, risks, verification commands. Keep it short.\n` +
+    `- End it with a heading exactly \`## Steps\` and a numbered list of concrete steps, each checkable on its own (no notes or questions).\n` +
     `- Then call \`exit_plan\` with that path and stop.`
   );
 }
@@ -140,7 +148,7 @@ export async function renderApprovedPlanSection(
     `## Approved Plan\n\n` +
     `Follow this plan. File: ${approvedPlanPath}\n\n` +
     `<approved_plan>\n${planContent.trim()}\n</approved_plan>\n\n` +
-    `- Follow step order. Don't deviate without user confirmation.` +
+    `- Follow step order. If a step turns out wrong or blocked, ask the user rather than improvising. Run the plan's verification before finishing.` +
     stepInstruction
   );
 }
@@ -545,7 +553,7 @@ export async function buildSystemPrompt(
     renderWorkSection(reachableTools, provider),
   ];
 
-  if (planMode) sections.push(renderPlanModeSection());
+  if (planMode) sections.push(renderPlanModeSection(reachableTools));
 
   const approvedPlanSection = await renderApprovedPlanSection(approvedPlanPath);
   if (approvedPlanSection) sections.push(approvedPlanSection);

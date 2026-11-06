@@ -12,7 +12,6 @@ const baseProps = {
   isThinking: false,
   thinkingStartTs: null,
   thinkingAccumMs: 0,
-  onCancel: vi.fn(),
 };
 
 describe("ActivityBar plan progress", () => {
@@ -98,9 +97,6 @@ describe("ActivityBar task outcomes", () => {
       theme.error,
     );
     expect(container.querySelector("canvas")).toBeTruthy();
-    expect(
-      (screen.getByRole("button", { name: "Cancel agent run" }) as HTMLButtonElement).disabled,
-    ).toBe(false);
   });
 
   it.each([
@@ -199,7 +195,7 @@ describe("ActivityBar task outcomes", () => {
     expect(screen.queryByText("Run the missing tests before using the changes.")).toBeNull();
     expect(container.querySelector(".activity-details")).toBeNull();
   });
-  it("stops animation while waiting for a decision but keeps cancellation available", () => {
+  it("stops animation while waiting for a decision", () => {
     const { container } = render(
       <ActivityBar
         {...baseProps}
@@ -212,29 +208,37 @@ describe("ActivityBar task outcomes", () => {
       />,
     );
     expect(container.querySelector("canvas")).toBeNull();
-    expect(screen.getByRole("button", { name: "Cancel agent run" })).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain("Your call from here");
   });
 });
 
 describe("ActivityBar cancellation state", () => {
-  it("shows an enabled cancel action during a normal run", () => {
-    render(<ActivityBar {...baseProps} />);
-    expect(
-      (screen.getByRole("button", { name: "Cancel agent run" }) as HTMLButtonElement).disabled,
-    ).toBe(false);
+  it("has no Stop of its own: the composer's send key stops runs and reviews", () => {
+    const { rerender } = render(<ActivityBar {...baseProps} />);
+    expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull();
     const orb = screen.getByRole("status").querySelector("canvas");
     expect(orb?.getAttribute("aria-hidden")).toBe("true");
     expect(orb?.getAttribute("aria-label")).toBe("Listening…");
     expect(orb?.style.width).toBe("20px");
+    rerender(
+      <ActivityBar
+        {...baseProps}
+        running={false}
+        activity={{
+          ...INITIAL_ACTIVITY,
+          phase: "reviewing",
+          label: "Ken is reviewing",
+          startedAt: 1,
+        }}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull();
   });
 
-  it("announces and disables cancellation while awaiting settlement", () => {
+  it("says the task is stopping while cancellation settles", () => {
     render(<ActivityBar {...baseProps} cancelling />);
-    const button = screen.getByRole("button", { name: "Cancellation in progress" });
-    expect((button as HTMLButtonElement).disabled).toBe(true);
-    expect(button.textContent).toContain("Stopping…");
     expect(screen.getByRole("status")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull();
   });
 });
 

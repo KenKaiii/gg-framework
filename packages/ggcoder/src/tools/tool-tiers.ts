@@ -31,6 +31,10 @@ export const CORE_TOOL_NAMES: readonly string[] = [
   "grep",
   "skill",
   "tool_search",
+  // Under the one-in-five rule (1% of sessions), but as an on-demand line it
+  // was almost never reached even when a request needed a plan. The steering
+  // line in prompt-hints.ts says when to use it.
+  "enter_plan",
 ];
 
 /**
@@ -82,7 +86,6 @@ export const DEFERRED_TOOL_NAMES: readonly string[] = [
   "web_fetch",
   "task_send",
   "spawn_agent",
-  "enter_plan",
   "exit_plan",
   "web_search",
   "steroids",

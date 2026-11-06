@@ -25,7 +25,6 @@ import {
   setCritterModel,
   sendPrompt,
   sendKenPrompt,
-  cancelKen,
   setAutopilot,
   cancel,
   newSession,
@@ -3252,7 +3251,6 @@ function App(): React.ReactElement {
                   <KenActivityBar
                     runStartTs={kenRunStartTs}
                     tokens={kenTokens}
-                    onCancel={() => void cancelKen()}
                     toolsHidden={toolsHidden}
                     onToggleTools={toggleTools}
                   />
@@ -3269,7 +3267,6 @@ function App(): React.ReactElement {
                     thinkingAccumMs={thinkingAccumMs}
                     planTotal={workspaceMode !== "code" ? 0 : planTotal}
                     planDone={workspaceMode !== "code" ? 0 : Math.min(planDone.size, planTotal)}
-                    onCancel={requestCancel}
                     toolsHidden={toolsHidden}
                     hasToolFeed={liveToolFeed.length > 0}
                     onToggleTools={toggleTools}

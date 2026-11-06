@@ -33,7 +33,6 @@ export const TOOL_PROMPT_HINTS: Record<string, string> = {
     "Read/record project checks with evidence and scope; re-record an item after fixing it. No unasked audits.",
   tasks: "Task list; only if asked.",
   ask_user: "Ask the user via clickable options; mark your pick `recommended`.",
-  enter_plan: "Plan mode.",
   exit_plan: "Submit a plan.",
   subagent: "Blocking child agent.",
   skill: "Load a named skill's instructions.",
@@ -86,6 +85,11 @@ export const TOOL_STEERING_CLAUSES: ReadonlyArray<{
     // packed reads into bash loops instead (agent-race, 2026-11-03).
     needs: ["bash"],
     text: "Calls in one reply run in parallel, except shell commands and edits (run in listed order); batch independent work.",
+  },
+  {
+    // Planning costs a review round-trip, so it is for work that needs it.
+    needs: ["enter_plan"],
+    text: "Call `enter_plan` first only when the request needs research and careful step-by-step work (several files, real risk, or an unclear approach). Go straight to work on small or clear changes; planning slows them down.",
   },
   {
     needs: ["read", "grep"],

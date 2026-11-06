@@ -10,21 +10,19 @@ interface Props {
   runStartTs: number | null;
   /** Accumulated output tokens for Ken's current run. */
   tokens: number;
-  onCancel: () => void;
-  /** The tool panel's show/hide chevron, beside Stop as on the main bar. */
+  /** The tool panel's show/hide chevron, as on the main bar. */
   toolsHidden?: boolean;
   onToggleTools?: () => void;
 }
 
 /**
  * Ken Kai's activity bar: the GG Coder ActivityBar's running row exactly (the
- * listening orb, label, `elapsed · N tok` meta and the Stop key), with the orb
+ * listening orb, label and `elapsed · N tok` meta), with the orb
  * and label tinted Ken's colour and reading "Ken is thinking…".
  */
 export function KenActivityBar({
   runStartTs,
   tokens,
-  onCancel,
   toolsHidden = false,
   onToggleTools,
 }: Props): React.ReactElement {
@@ -82,14 +80,6 @@ export function KenActivityBar({
         </div>
         <span className="statusrow-right">
           {onToggleTools && <ToolsToggle hidden={toolsHidden} onToggle={onToggleTools} />}
-          <button
-            className="cancel dissolve-in"
-            style={{ color: theme.error }}
-            onClick={onCancel}
-            aria-label="Cancel Ken's reply"
-          >
-            Stop
-          </button>
         </span>
       </div>
     </div>

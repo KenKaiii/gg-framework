@@ -92,7 +92,6 @@ interface Props {
   planTotal?: number;
   /** Completed plan steps so far. */
   planDone?: number;
-  onCancel: () => void;
   /** Whether the live tool panel is currently collapsed. */
   toolsHidden?: boolean;
   /** True when there are tool entries to show (gates the toggle's visibility). */
@@ -187,7 +186,6 @@ export function ActivityBar({
   doneStatus,
   planTotal = 0,
   planDone = 0,
-  onCancel,
   toolsHidden = false,
   hasToolFeed = false,
   onToggleTools,
@@ -253,7 +251,6 @@ export function ActivityBar({
     (!active && outcomePhrase(fullLabel, activity?.startedAt ?? 0)) ||
     SHORT_LABELS[fullLabel] ||
     fullLabel;
-  const canCancel = running || active;
 
   return (
     <div className="task-activity" data-phase={activity?.phase ?? (running ? "working" : "idle")}>
@@ -329,17 +326,6 @@ export function ActivityBar({
         <span className="statusrow-right">
           {showToolsToggle && onToggleTools && (
             <ToolsToggle hidden={toolsHidden} onToggle={onToggleTools} />
-          )}
-          {canCancel && (
-            <button
-              className="cancel dissolve-in"
-              style={{ color: cancelling ? theme.textMuted : theme.error }}
-              onClick={onCancel}
-              disabled={cancelling}
-              aria-label={cancelling ? "Cancellation in progress" : "Cancel agent run"}
-            >
-              {cancelling ? "Stopping…" : "Stop"}
-            </button>
           )}
         </span>
       </div>

@@ -304,3 +304,24 @@ describe("Environment file list", () => {
     expect(prompt).not.toContain("- Files (");
   });
 });
+
+describe("plan mode steering", () => {
+  it("says when to enter plan mode, and that small changes skip it", () => {
+    const steering = buildToolSteering(["read", "bash", "enter_plan"]);
+    expect(steering).toContain("Call `enter_plan` first only when the request needs research");
+    expect(steering).toContain("Go straight to work on small or clear changes");
+    expect(buildToolSteering(["read", "bash"])).not.toContain("enter_plan");
+  });
+});
+
+describe("plan mode research tools", () => {
+  it("names steroids and web research only when the session can reach them", async () => {
+    const { renderPlanModeSection } = await import("./system-prompt.js");
+    const full = renderPlanModeSection(["read", "bash", "steroids", "web_search"]);
+    expect(full).toContain("`steroids` for how real projects solve it");
+    expect(full).toContain("the web for current docs");
+    const bare = renderPlanModeSection(["read", "bash"]);
+    expect(bare).toContain("Use read/search tools and read-only bash;");
+    expect(bare).not.toContain("steroids");
+  });
+});

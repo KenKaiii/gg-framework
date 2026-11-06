@@ -4106,7 +4106,10 @@ export class AgentSession {
       planMode: this.planModeRef.current,
       approvedPlanPath: this.approvedPlanPath,
     };
-    const message = await buildPlanStateMessage(this.seenPlanState, state);
+    const message = await buildPlanStateMessage(this.seenPlanState, state, [
+      ...this.tools.map((t) => t.name),
+      ...this.deferredBuiltinToolNames,
+    ]);
     this.pendingPlanNotice = message ? { message, state } : null;
   }
 

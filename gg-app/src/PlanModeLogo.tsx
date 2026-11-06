@@ -1,51 +1,25 @@
-// The amber "PLAN MODE" banner shown when the agent enters plan mode. Set in
-// the "Delta Corps Priest 1" FIGlet font, like the home screen's GG CODER
-// banner. Every line is padded to the same width so the block art never
-// shears, and the last row carries the L's descender.
+// The "Plan Mode" title shown when the agent enters plan mode: the same
+// Alagard pixel lettering as Home's "GG Coder" title (scripts/gen-home-title.py),
+// with the agent's reason beneath it in m5x7, Home's pixel body face.
 
-import { useMemo } from "react";
-import { CritterLine } from "./CritterLine";
-import { pickCritter } from "./critter-sprites";
-import { theme } from "./theme";
+import title from "./assets/home/plan-mode-title.png";
 
-const PLAN_MODE_LOGO = [
-  "   ▄███████▄  ▄█          ▄████████ ███▄▄▄▄          ▄▄▄▄███▄▄▄▄    ▄██████▄  ████████▄     ▄████████",
-  "  ███    ███ ███         ███    ███ ███▀▀▀██▄      ▄██▀▀▀███▀▀▀██▄ ███    ███ ███   ▀███   ███    ███",
-  "  ███    ███ ███         ███    ███ ███   ███      ███   ███   ███ ███    ███ ███    ███   ███    █▀ ",
-  "  ███    ███ ███         ███    ███ ███   ███      ███   ███   ███ ███    ███ ███    ███  ▄███▄▄▄    ",
-  "▀█████████▀  ███       ▀███████████ ███   ███      ███   ███   ███ ███    ███ ███    ███ ▀▀███▀▀▀    ",
-  "  ███        ███         ███    ███ ███   ███      ███   ███   ███ ███    ███ ███    ███   ███    █▄ ",
-  "  ███        ███▌    ▄   ███    ███ ███   ███      ███   ███   ███ ███    ███ ███   ▄███   ███    ███",
-  " ▄████▀      █████▄▄██   ███    █▀   ▀█   █▀        ▀█   ███   █▀   ▀██████▀  ████████▀    ██████████",
-  "             ▀                                                                                       ",
-];
+/** The title art's size in its own pixels (see scripts/gen-home-title.py). */
+const PLAN_TITLE_W = 231;
+const PLAN_TITLE_H = 39;
 
-/**
- * The plan-mode banner, with the agent's reason on a critter line beneath it:
- * a critter (picked from the reason, so it stays put on re-render) standing in
- * the assistant-dot gutter beside the reason in plan-mode amber.
- */
 export function PlanModeLogo({ reason }: { reason?: string }): React.ReactElement {
-  const critter = useMemo(
-    () => pickCritter(undefined, `plan-mode:${reason ?? ""}`, new Set()),
-    [reason],
-  );
   return (
     <div className="plan-logo">
-      {/* Block-glyph art is gibberish read aloud; the sr-only label stands in. */}
-      <div className="plan-logo-art" aria-hidden="true">
-        {PLAN_MODE_LOGO.map((line, i) => (
-          <div key={i} className="plan-logo-line" style={{ "--line": i } as React.CSSProperties}>
-            {line}
-          </div>
-        ))}
-      </div>
-      <span className="sr-only">Plan mode</span>
-      {reason ? (
-        <div className="plan-logo-reason">
-          <CritterLine critter={critter} tone="done" color={theme.warning} text={reason} />
-        </div>
-      ) : null}
+      <img
+        className="plan-logo-title"
+        src={title}
+        alt="Plan mode"
+        width={PLAN_TITLE_W}
+        height={PLAN_TITLE_H}
+        draggable={false}
+      />
+      {reason ? <p className="plan-logo-reason">{reason}</p> : null}
     </div>
   );
 }

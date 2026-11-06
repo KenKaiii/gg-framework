@@ -220,6 +220,33 @@ describe("async subagent control tools", () => {
     ).resolves.toContain("plan mode");
     expect(manager.spawn).toHaveBeenCalledTimes(1);
   });
+
+  it("lets read-only agents research in plan mode but blocks ones that can edit", async () => {
+    const roster = [
+      ...ROSTER,
+      {
+        name: "bee",
+        description: "Edits",
+        tools: ["read", "edit"],
+        systemPrompt: "Edit.",
+        source: "bundled" as const,
+      },
+    ];
+    const manager = fakeManager(roster);
+    const tools = createSubAgentControlTools(manager, { current: true });
+    const spawn = tools.find((tool) => tool.name === "spawn_agent")!;
+
+    await expect(
+      spawn.execute({ tasks: [{ task_name: "scan", task: "inspect", agent: "owl" }] }, context),
+    ).resolves.toMatchObject({ content: expect.stringContaining("12345678") });
+    const refused = await spawn.execute(
+      { tasks: [{ task_name: "fix", task: "edit", agent: "bee" }] },
+      context,
+    );
+    expect(refused).toContain("restricted in plan mode");
+    expect(refused).toContain("Only read-only agents can run in plan mode: owl.");
+    expect(manager.spawn).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("subagent control results stay lean for the parent model", () => {

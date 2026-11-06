@@ -28,6 +28,7 @@ import { SlashMenu } from "./SlashMenu";
 import { theme } from "./theme";
 import { toast } from "./toast";
 import { WorkingBeam } from "./WorkingBeam";
+import { sendKeyAction } from "./send-key";
 
 export interface ComposerProps {
   workspaceMode: WorkspaceMode;
@@ -175,6 +176,8 @@ export function Composer({
   submit,
   requestCancel,
 }: ComposerProps): React.ReactElement {
+  const keyAction = sendKeyAction({ shellMode, running, kenRunning, autopilotReviewing });
+  const stopping = keyAction !== "send";
   return (
     <div
       ref={composerRef}
@@ -382,11 +385,10 @@ export function Composer({
                 e.preventDefault();
                 submit();
               } else if (e.key === "Escape") {
-                // Cancel the build if it's running; otherwise cancel Ken so the
-                // Escape stops him too, like the Stop key on his bar.
+                // Escape stops whatever the send key would stop.
                 if (slashOpen) setInput("");
-                else if (running && !cancelling) requestCancel();
-                else if (kenRunning) void cancelKen();
+                else if (keyAction === "stop-run" && !cancelling) requestCancel();
+                else if (keyAction === "stop-ken") void cancelKen();
               }
             }}
             autoFocus
@@ -412,31 +414,29 @@ export function Composer({
               {enhancing ? "Enhancing\u2026" : "Enhance"}
             </button>
           )}
-          <WorkingBeam active={running} size="sm" />
           {/* A command runs alongside the agent, so mid-run this is Run, not Stop. */}
           <button
-            className="icon-circle icon-circle-primary"
+            className={`icon-circle icon-circle-primary${stopping ? " icon-circle-stop" : ""}`}
             title={
               shellMode
                 ? "Run command"
-                : running
+                : keyAction === "stop-run"
                   ? "Stop the run"
-                  : attachmentsLoading
-                    ? "Loading attachments…"
-                    : "Send"
+                  : keyAction === "stop-ken"
+                    ? "Stop Ken"
+                    : attachmentsLoading
+                      ? "Loading attachments…"
+                      : "Send"
             }
             aria-label={shellMode ? "Run command" : undefined}
-            disabled={shellMode ? sendDisabled : cancelling || (!running && sendDisabled)}
+            disabled={shellMode ? sendDisabled : cancelling || (!stopping && sendDisabled)}
             onClick={() => {
-              if (running && !shellMode) requestCancel();
+              if (keyAction === "stop-run") requestCancel();
+              else if (keyAction === "stop-ken") void cancelKen();
               else submit();
             }}
           >
-            {running && !shellMode ? (
-              <SquareIcon size={12} weight="fill" />
-            ) : (
-              <ArrowUpIcon size={16} />
-            )}
+            {stopping ? <SquareIcon size={12} weight="fill" /> : <ArrowUpIcon size={16} />}
           </button>
         </div>
       </div>

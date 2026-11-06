@@ -29,11 +29,12 @@ export function samePlanState(a: PlanPromptState, b: PlanPromptState): boolean {
 export async function buildPlanStateMessage(
   known: PlanPromptState,
   current: PlanPromptState,
+  reachableTools?: readonly string[],
 ): Promise<Message | null> {
   if (samePlanState(known, current)) return null;
   const parts: string[] = [];
   if (current.planMode) {
-    parts.push(renderPlanModeSection());
+    parts.push(renderPlanModeSection(reachableTools));
   } else {
     parts.push(
       "## Plan Mode (OFF)\n\nPlan mode has ended: ignore any earlier Plan Mode instructions; normal edits and tools are allowed again.",

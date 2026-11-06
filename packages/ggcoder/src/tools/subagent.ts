@@ -13,7 +13,11 @@ import {
   formatCheckResults,
   verifyAcceptanceChecks,
 } from "../core/acceptance-checks.js";
-import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
+import {
+  isPlanModeActive,
+  isReadOnlyAgent,
+  planModeAgentRestriction,
+} from "../core/runtime-mode.js";
 import {
   boundSubAgentOutput,
   childSubAgentEnv,
@@ -94,10 +98,6 @@ export function createSubAgentTool(
     // generically by the loop's shorter default before that can happen.
     timeoutMs: SUB_AGENT_TIMEOUT_MS + 30_000,
     async execute(args, context) {
-      if (isPlanModeActive(planModeRef)) {
-        return planModeRestriction("subagent");
-      }
-
       if (currentSubAgentDepth() >= MAX_BLOCKING_SUBAGENT_DEPTH) {
         return {
           content: `Sub-agent nesting limit reached (${MAX_BLOCKING_SUBAGENT_DEPTH}). Complete this task in the current agent.`,
@@ -120,6 +120,9 @@ export function createSubAgentTool(
         return {
           content: `Unknown agent: "${args.agent}". Available agents: ${agents.map((a) => a.name).join(", ") || "none"}`,
         };
+      }
+      if (isPlanModeActive(planModeRef) && !isReadOnlyAgent(agentDef)) {
+        return planModeAgentRestriction("subagent", agents);
       }
       const useModel = selection.model;
       const parentCacheKey = getParentCacheKey?.();

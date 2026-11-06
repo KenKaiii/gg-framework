@@ -47,7 +47,7 @@ describe("plan mode", () => {
       expect(prompt).not.toContain("1. Explore");
       // Live-tool guidance moved out of the prompt, not out of the model's tool catalog.
       expect(tools.find((tool) => tool.name === "enter_plan")?.description).toContain(
-        "Enter read-only plan mode for complex or risky work (writes only under .gg/plans/).",
+        "Enter read-only plan mode: research, then write a plan for the user to approve",
       );
       expect(tools.find((tool) => tool.name === "exit_plan")?.description).toContain(
         "Submit the plan for the user to approve or reject.",
