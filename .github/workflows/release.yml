@@ -131,7 +131,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-14 # Apple Silicon (arm64)
+          # Apple Silicon (arm64). macos-14 was retired by GitHub (jobs fail with
+          # "configuration not supported"); CI already builds on macos-latest.
+          - platform: macos-latest
             args: "--target aarch64-apple-darwin"
           # NOTE: Intel macOS (x86_64) is intentionally omitted. GitHub's free
           # Intel mac runners are effectively unavailable (jobs queue for hours),

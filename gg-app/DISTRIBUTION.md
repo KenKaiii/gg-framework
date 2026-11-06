@@ -89,7 +89,7 @@ top offset on Windows/Linux.
 
 ## Release pipeline
 
-`.github/workflows/release.yml` runs on a `v*` tag: a matrix (`macos-14` arm64,
+`.github/workflows/release.yml` runs on a `v*` tag: a matrix (`macos-latest` arm64,
 `windows-latest`, `ubuntu-22.04`) stages node + sidecar, smoke tests, then
 `tauri-apps/tauri-action` bundles, signs the updater artifacts, uploads them to
 a published GitHub release, and generates `latest.json` for the updater endpoint
