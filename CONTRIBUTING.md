@@ -54,6 +54,16 @@ Read [CONTEXT.md](CONTEXT.md) for the project's vocabulary before naming new thi
 5. If your change affects a published package (`gg-ai`, `gg-agent`, `gg-core` or `ggcoder`), add a changeset with `pnpm changeset` and describe the change for users.
 6. Open a pull request and fill in the template.
 
+## Versioning
+
+The published packages share one version and follow [semantic versioning](https://semver.org/). When you add a changeset, pick the bump by its effect on code that uses the packages:
+
+- **patch:** bug fixes and internal changes, with no change to the public API.
+- **minor:** new features or options that existing code keeps working with.
+- **major:** a breaking change to the public API (removed or renamed exports, changed signatures or behaviour callers rely on).
+
+Model list updates and prompt changes are patch or minor, never major.
+
 CI runs on Linux, macOS and Windows, and all three must pass. Don't skip or disable tests to get it green, and don't commit with `--no-verify`. On Windows, files used by a running process can't be deleted, so tests that start processes should wait for them to exit before cleaning up.
 
 ## License
