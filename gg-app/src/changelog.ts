@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.104.0",
+    date: "2026-11-06",
+    items: [
+      "`Plan Mode` got a full glow-up. It now kicks in on its own for the big, careful jobs and stays out of your way on quick fixes. It researches the real code first, asks you when something is unclear, and can send read-only helpers like `researcher` to dig in parallel. Plans land under a gold pixel title with crisp pixel ticks as each step is done.",
+      "Stopping is now one big red button. The send key turns red and pulses while GG, `Autopilot` or Ken is working, and one click stops whichever of them is busy. No more hunting for a tiny Stop link.",
+      "Ken has a fresh look. Your `@Ken` messages are solid teal bubbles, and his replies come with his little pixel face and name on top, so you always know who is talking.",
+    ],
+  },
+  {
     version: "0.103.1",
     date: "2026-11-05",
     items: [
