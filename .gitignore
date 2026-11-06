@@ -81,5 +81,10 @@ packages/*/.bench-*.mjs
 /gg-app/mockups/
 /gg-app/dev/
 
+# GG World working briefs (local only; the contracts code relies on stay tracked).
+/packages/gg-world/docs/*-BRIEF.md
+/packages/gg-world/docs/GX-REBUILD.md
+/packages/gg-world/docs/MINIGAME-STYLE.md
+
 # agent-race: local race harness (Claude Code vs GG Coder), see agent-race/README.md
 /agent-race/

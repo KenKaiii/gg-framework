@@ -1,5 +1,5 @@
 // @ts-check
-// Room registry. Each room module exports `build(ctx)` returning a Room (see ROOMS-BRIEF.md).
+// Room registry. Each room module exports `build(ctx)` returning a Room.
 // Order = order on the map. Room builders only edit their own file; this list stays as is.
 import * as bar from './bar.js';
 import * as den from './den.js';

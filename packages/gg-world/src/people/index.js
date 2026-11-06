@@ -1,5 +1,5 @@
 // @ts-check
-// Loads the people content (written to PEOPLE-BRIEF.md) and gives safe defaults if a file is missing.
+// Loads the people content and gives safe defaults if a file is missing.
 import personasA from './personas-a.js';
 import personasB from './personas-b.js';
 import ROOM_LINES from './rooms.js';

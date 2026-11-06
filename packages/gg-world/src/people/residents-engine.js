@@ -1,5 +1,5 @@
 // @ts-check
-// Ken: the dev of GG Coder, roaming the Engine Room fixing things at each station (FORMAT D, PEOPLE-BRIEF.md).
+// Ken: the dev of GG Coder, roaming the Engine Room fixing things at each station (FORMAT D).
 // look.tag 'ken' lets rooms/engine.js find him (wrench in hand + a spark/steam puff when he stops at a station).
 export default [
   {

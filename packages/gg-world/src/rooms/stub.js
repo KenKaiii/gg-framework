@@ -1,5 +1,5 @@
 // @ts-check
-// Placeholder room used until a real room module exists. Valid against the room contract (see ROOMS-BRIEF.md).
+// Placeholder room used until a real room module exists. Valid against the room contract.
 import * as THREE from 'three';
 import { makeRoom, lightRig, mat, rbox, put } from './kit.js';
 import * as TX from './tex.js';
