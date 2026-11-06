@@ -91,6 +91,10 @@ jobs:
     outputs:
       id: ${{ steps.release.outputs.id }}
     steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.x
       - name: Create or find the release
         id: release
         shell: bash
@@ -100,6 +104,9 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -uo pipefail
+          # Notes come from the in-app "What's new" entry for this version.
+          body=$(node .github/ci/release-notes.mjs "$TAG") ||
+            body="Download the installer for your platform from the assets below."
           id=""
           for attempt in 1 2 3 4 5 6; do
             # GET first: a create that 500s may still have made the release.
@@ -107,7 +114,7 @@ jobs:
             id=$(gh api -X POST "repos/$REPO/releases" \
               -f tag_name="$TAG" \
               -f name="gg-coder $TAG" \
-              -f body="See the assets to download and install this version." \
+              -f body="$body" \
               -F draft=false -F prerelease=false --jq .id) && break
             id=""
             echo "Release lookup/create failed (attempt $attempt); retrying" >&2
