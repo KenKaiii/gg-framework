@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.104.1",
+    date: "2026-11-06",
+    items: [
+      "A quick follow-up so your `Mac` gets this update too. The smarter `Plan Mode`, the one red Stop button and Ken's fresh look now land on Mac, Windows and Linux together.",
+    ],
+  },
+  {
     version: "0.104.0",
     date: "2026-11-06",
     items: [
