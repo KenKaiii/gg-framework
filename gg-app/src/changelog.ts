@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.106.2",
+    date: "2026-11-08",
+    items: [
+      "Messages you send while Claude is mid-task now show up right where they belong. On a `Claude` subscription, the `Queued` label clears the moment Claude picks your message up, and a message you fire off just as a run wraps is kept safe for the next one.",
+    ],
+  },
+  {
     version: "0.106.1",
     date: "2026-11-08",
     items: [
