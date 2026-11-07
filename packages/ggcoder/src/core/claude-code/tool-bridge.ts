@@ -23,6 +23,8 @@ const TOOL_PREFIX = `mcp__${CLAUDE_CODE_MCP_SERVER}__`;
 const DEFAULT_TOOL_TIMEOUT_MS = 300_000;
 // Our own per-tool timeout must fire first so its specific message reaches the model.
 const SERVER_TIMEOUT_MARGIN_MS = 60_000;
+// How long a call that changed the tool list waits for Claude Code to re-list.
+const RELIST_WAIT_MS = 3_000;
 
 /** Name the model sees for one of our tools on the Claude Code route. */
 export function claudeCodeToolName(name: string): string {
@@ -44,6 +46,8 @@ export interface ToolBridgeOptions {
   onEvent: (event: AgentEvent) => void;
   /** A tool returned `endRun`; the loop should stop after this result. */
   onEndRun?: () => void;
+  /** Wait for Claude Code's re-list after a promotion (default 3s). */
+  relistWaitMs?: number;
 }
 
 export interface ToolBridge {
@@ -234,6 +238,16 @@ export function createToolBridge(options: ToolBridgeOptions): ToolBridge {
   let callCount = 0;
   // Claude Code reads tools/list once; tell it when tool_search promotes more.
   let listedNames: string | undefined;
+  // Calls waiting for Claude Code to re-read tools/list.
+  let relistWaiters: (() => void)[] = [];
+  const waitForRelist = (): Promise<void> =>
+    new Promise((resolve) => {
+      const timer = setTimeout(resolve, options.relistWaitMs ?? RELIST_WAIT_MS);
+      relistWaiters.push(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
   const toolNames = () =>
     listTools()
       .map((t) => t.name)
@@ -284,6 +298,9 @@ export function createToolBridge(options: ToolBridgeOptions): ToolBridge {
               }
             }
             reply(id, { result: { tools } });
+            const waiters = relistWaiters;
+            relistWaiters = [];
+            for (const done of waiters) done();
             return;
           }
           case "tools/call": {
@@ -296,13 +313,19 @@ export function createToolBridge(options: ToolBridgeOptions): ToolBridge {
                 : `gg_call_${++callCount}`;
             const args = (params.arguments ?? {}) as Record<string, unknown>;
             void callTool(String(params.name), args, toolCallId, controller.signal)
-              .then((result) => {
+              .then(async (result) => {
                 results.set(toolCallId, result);
                 if (listedNames !== undefined && toolNames() !== listedNames) {
                   listedNames = toolNames();
+                  // Hold this result until Claude Code has the new list: it
+                  // checks every call against its own copy, so the model's
+                  // next call to the promoted tool failed with "No such tool
+                  // available" when the result arrived first.
+                  const relisted = waitForRelist();
                   void transport
                     .send({ jsonrpc: "2.0", method: "notifications/tools/list_changed" })
                     .catch(() => {});
+                  await relisted;
                 }
                 reply(id, {
                   result: {

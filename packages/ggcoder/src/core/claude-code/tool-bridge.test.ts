@@ -21,7 +21,10 @@ interface Rpc {
   error?: { code: number; message: string };
 }
 
-async function connect(opts: Partial<ToolBridgeOptions> & { tools: AgentTool[] }) {
+async function connect(
+  opts: Partial<ToolBridgeOptions> & { tools: AgentTool[] },
+  claudeCode: { relistOnChange?: boolean } = {},
+) {
   const events: AgentEvent[] = [];
   const bridge = createToolBridge({ onEvent: (e) => events.push(e), ...opts });
   const pending = new Map<number, (msg: Rpc) => void>();
@@ -32,6 +35,10 @@ async function connect(opts: Partial<ToolBridgeOptions> & { tools: AgentTool[] }
     async send(msg: Rpc) {
       sent.push(msg);
       pending.get(msg.id!)?.(msg);
+      // Claude Code answers list_changed by reading tools/list again.
+      if (claudeCode.relistOnChange && msg.method === "notifications/tools/list_changed") {
+        setTimeout(() => void request("tools/list"), 5);
+      }
     },
   };
   await (bridge.config.instance as unknown as { connect(t: unknown): Promise<void> }).connect(
@@ -275,7 +282,7 @@ describe("createToolBridge", () => {
       },
     };
     tools.push(promote);
-    const { request, call, sent } = await connect({ tools });
+    const { request, call, sent } = await connect({ tools }, { relistOnChange: true });
     const init = await request("initialize", { protocolVersion: "2025-11-25" });
     expect(init.result).toMatchObject({ capabilities: { tools: { listChanged: true } } });
     await request("tools/list");
@@ -284,13 +291,45 @@ describe("createToolBridge", () => {
       sent.filter((m) => m.method === "notifications/tools/list_changed").length;
     await call("echo", { text: "a" });
     expect(listChanged()).toBe(0);
-    await call("tool_search", {});
+    const searched = await call("tool_search", {});
     expect(listChanged()).toBe(1);
+    // Regression: the result went back before Claude Code re-listed, so the
+    // model's next call to the promoted tool failed with "No such tool
+    // available". The re-list must reach Claude Code first.
+    const relistAt = sent.findIndex(
+      (m, i) =>
+        i > sent.findIndex((n) => n.method === "notifications/tools/list_changed") &&
+        Array.isArray((m.result as { tools?: unknown } | undefined)?.tools),
+    );
+    expect(relistAt).toBeGreaterThan(-1);
+    expect(relistAt).toBeLessThan(sent.indexOf(searched));
     await call("echo", { text: "b" });
     expect(listChanged()).toBe(1);
 
     const list = await request("tools/list");
     const names = (list.result!.tools as { name: string }[]).map((t) => t.name);
     expect(names).toEqual(["echo", "tool_search", "later"]);
+  });
+});
+
+describe("createToolBridge — promotion without a re-list", () => {
+  it("still answers when Claude Code never re-lists", async () => {
+    const tools: AgentTool[] = [];
+    const promote: AgentTool = {
+      name: "tool_search",
+      description: "",
+      parameters: z.object({}),
+      execute: () => {
+        tools.push({ ...echo, name: "later" });
+        return "later is now available";
+      },
+    };
+    tools.push(promote);
+    const { request, call } = await connect({ tools, relistWaitMs: 20 });
+    await request("tools/list");
+    const started = Date.now();
+    const result = await call("tool_search", {});
+    expect(result.result).toBeDefined();
+    expect(Date.now() - started).toBeLessThan(2_000);
   });
 });
