@@ -223,8 +223,17 @@ export async function* claudeCodeLoop(
   };
   if (aborted) onAbort();
   else options.signal?.addEventListener("abort", onAbort, { once: true });
+  // Take the queued message on the next tick, not inside the call that queued
+  // it: the caller first reports the message as queued, and the app only drops
+  // a bubble's "Queued" label once it has seen the message pending.
+  // Cancelled when the loop ends, so a late drain can't take a message off the
+  // session queue after nothing is left to deliver it (it stays for the next run).
+  let steeringTimer: ReturnType<typeof setTimeout> | undefined;
   const unsubscribeSteering = options.onSteeringAvailable?.(() => {
-    void drainSteering();
+    steeringTimer ??= setTimeout(() => {
+      steeringTimer = undefined;
+      void drainSteering();
+    }, 0);
   });
 
   let hitMaxTurns = false;
@@ -300,6 +309,7 @@ export async function* claudeCodeLoop(
   } finally {
     options.signal?.removeEventListener("abort", onAbort);
     unsubscribeSteering?.();
+    if (steeringTimer) clearTimeout(steeringTimer);
     input.end();
     channel.end();
     if (killTimer) clearTimeout(killTimer);

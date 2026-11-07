@@ -299,6 +299,62 @@ describe("claudeCodeLoop", () => {
     expect(calls.inputs).toHaveLength(1);
   });
 
+  it("takes queued steering after the call that queued it returns", async () => {
+    // Regression: draining inside queueMessage left the queue empty before the
+    // sidecar reported the message as queued, so the app never saw it pending
+    // and kept its bubble labelled "Queued" after the agent had it.
+    let wake: (() => void) | undefined;
+    const queue: Message[] = [];
+    let drainedDuringQueue = false;
+    const { query, calls } = fakeQuery(async function* (ctx) {
+      await ctx.nextInput();
+      queue.push(user("Also, be brief."));
+      wake!();
+      drainedDuringQueue = queue.length === 0;
+      await ctx.nextInput();
+      yield result({ num_turns: 1 });
+    });
+    await run(
+      [user("Start")],
+      options(query, {
+        getSteeringMessages: () => (queue.length > 0 ? queue.splice(0) : null),
+        onSteeringAvailable: (listener) => {
+          wake = listener;
+          return () => {};
+        },
+      }),
+    );
+    expect(drainedDuringQueue).toBe(false);
+    // It still reached Claude Code right after.
+    expect(calls.inputs).toHaveLength(2);
+  });
+
+  it("leaves a message queued as the run ends in the queue for the next run", async () => {
+    // A hand-off still pending when the loop ends must not take the message:
+    // nothing would deliver it, and it belongs to the next run.
+    let wake: (() => void) | undefined;
+    const queue: Message[] = [];
+    const { query } = fakeQuery(async function* (ctx) {
+      await ctx.nextInput();
+      queue.push(user("Also, be brief."));
+      wake!();
+      // The run stops abruptly (max turns) before the hand-off fires.
+      yield result({ subtype: "error_max_turns", num_turns: 1 });
+    });
+    await run(
+      [user("Start")],
+      options(query, {
+        getSteeringMessages: () => (queue.length > 0 ? queue.splice(0) : null),
+        onSteeringAvailable: (listener) => {
+          wake = listener;
+          return () => {};
+        },
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(queue).toHaveLength(1);
+  });
+
   it("continues with follow-ups after a result, then stops", async () => {
     let followed = false;
     const { query, calls } = fakeQuery(async function* (ctx) {
