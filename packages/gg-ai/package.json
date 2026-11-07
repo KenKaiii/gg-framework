@@ -1,6 +1,6 @@
 {
   "name": "@kenkaiiii/gg-ai",
-  "version": "5.94.0",
+  "version": "5.95.0",
   "type": "module",
   "description": "One streaming API for 12 LLM providers and local models: Anthropic, OpenAI, Gemini, xAI, Moonshot, GLM, DeepSeek, OpenRouter and more. Tool calls, reasoning, embeddings and reranking.",
   "author": "Ken Kai",
