@@ -118,6 +118,19 @@ describe("PlanReviewModal", () => {
     expect(handlers.onReject).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the decision keys beside send, with one primary action at a time", () => {
+    renderPlan();
+    const accept = screen.getByRole("button", { name: "Accept plan" });
+    const send = screen.getByRole("button", { name: "Send feedback" });
+    expect(accept.closest(".inputactions-trailing")).toBe(send.closest(".inputactions-trailing"));
+    expect(screen.getByRole("button", { name: "Reject" }).closest(".inputactions-trailing")).toBe(
+      send.closest(".inputactions-trailing"),
+    );
+    expect(accept.className).toContain("primary");
+    fireEvent.change(feedbackBox(), { target: { value: "split step 2" } });
+    expect(accept.className).not.toContain("primary");
+  });
+
   it("says when Ken is reviewing, without locking the decision", () => {
     renderPlan({ kenReviewing: true });
     expect(screen.getByRole("status").textContent).toContain("Ken is reviewing it");

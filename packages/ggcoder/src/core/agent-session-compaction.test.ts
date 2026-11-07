@@ -106,12 +106,15 @@ beforeEach(async () => {
     path.join(tmpHome, ".gg", "auth.json"),
     Object.fromEntries(
       authProviders.map((provider) => [
-        provider,
+        // OpenAI as the ChatGPT plan sign-in, Gemini as its AI Studio key.
+        provider === "openai" ? "openai-chatgpt" : provider === "gemini" ? "gemini-api" : provider,
         {
           accessToken: `test-${provider}-token`,
-          refreshToken: `test-${provider}-refresh`,
+          refreshToken: provider === "openai" ? "test-openai-refresh" : "",
           expiresAt: Date.now() + 3_600_000,
-          ...(provider === "openai" ? { accountId: "chatgpt-account" } : {}),
+          ...(provider === "openai"
+            ? { accountId: "chatgpt-account", clientId: "oaiapp_test" }
+            : {}),
         },
       ]),
     ),

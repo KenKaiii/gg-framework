@@ -393,21 +393,29 @@ describe("model registry context windows", () => {
       contextWindow: 262_144,
       maxThinkingLevel: "high",
     });
-    // K2.8 Preview only exists on the Kimi sign-in endpoint, and is never
+    // K2.8 Preview only exists on the Kimi Code plan endpoint, and is never
     // mislabelled with the K2.7 name it replaced behind the rolling alias.
     expect(getModel("kimi-for-coding")).toMatchObject({
       name: "Kimi K2.8 Preview",
       contextWindow: 1_048_576,
       maxThinkingLevel: "max",
-      authStorageKeys: ["moonshot-oauth"],
+      authStorageKeys: ["kimi-code"],
     });
-    expect(getAuthStorageKeys("moonshot", "kimi-for-coding")).toEqual(["moonshot-oauth"]);
+    expect(getAuthStorageKeys("moonshot", "kimi-for-coding")).toEqual(["kimi-code"]);
+    // The other Kimi models take the plan key first, then a Moonshot key.
+    for (const id of ["kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed"]) {
+      expect(getAuthStorageKeys("moonshot", id), id).toEqual(["kimi-code", "moonshot"]);
+    }
+    expect(getAuthStorageKeys("gemini", "gemini-3.8-flash")).toEqual(["gemini-api"]);
     expect(getContextWindow("kimi-k3", { provider: "moonshot" })).toBe(1_048_576);
   });
 
-  it("starts Kimi K3 at the endpoint's declared default effort, kimi-code-style", () => {
-    // Kimi For Coding OAuth endpoint declares default_effort "high" …
+  it("starts Kimi K3 at the endpoint's declared default effort", () => {
+    // The Kimi Code plan endpoint (either host) declares default_effort "high" …
     expect(getDefaultThinkingLevel("kimi-k3", { baseUrl: "https://api.kimi.com/coding/v1" })).toBe(
+      "high",
+    );
+    expect(getDefaultThinkingLevel("kimi-k3", { baseUrl: "https://api.kimi.ai/coding/v1" })).toBe(
       "high",
     );
     // … the public Moonshot API declares "max" …

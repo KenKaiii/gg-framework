@@ -199,7 +199,6 @@ export interface AppProps {
   apiKey?: string;
   baseUrl?: string;
   accountId?: string;
-  projectId?: string;
   cwd: string;
   version: string;
   showTokenUsage?: boolean;
@@ -208,7 +207,7 @@ export interface AppProps {
   loggedInProviders?: Provider[];
   credentialsByProvider?: Record<
     string,
-    { accessToken: string; accountId?: string; projectId?: string; baseUrl?: string }
+    { accessToken: string; accountId?: string; baseUrl?: string }
   >;
   initialHistory?: CompletedItem[];
   sessionsDir?: string;
@@ -680,7 +679,6 @@ export function App(props: AppProps) {
     .find((c) => c !== undefined);
   const activeApiKey = currentCreds?.accessToken ?? props.apiKey;
   const activeAccountId = currentCreds ? currentCreds.accountId : props.accountId;
-  const activeProjectId = currentCreds ? currentCreds.projectId : props.projectId;
   const activeBaseUrl =
     currentProvider === "gemini" ? undefined : currentCreds ? currentCreds.baseUrl : props.baseUrl;
   const contextWindowOptions = useMemo(
@@ -866,7 +864,6 @@ export function App(props: AppProps) {
       contextWindowOptions,
       activeApiKey,
       activeAccountId,
-      activeProjectId,
       activeBaseUrl,
       setLiveItems,
       getId,
@@ -910,7 +907,6 @@ export function App(props: AppProps) {
       return {
         apiKey: creds.accessToken,
         accountId: creds.accountId,
-        projectId: creds.projectId,
       };
     },
     [authStorage, currentProvider, currentModel],
@@ -933,7 +929,6 @@ export function App(props: AppProps) {
       apiKey: activeApiKey,
       baseUrl: activeBaseUrl,
       accountId: activeAccountId,
-      projectId: activeProjectId,
       resolveCredentials: authStorage ? resolveCredentials : undefined,
       resolveClaudeCode: authStorage
         ? () => resolveClaudeCodeProcess(authStorage, currentProvider, props.cwd)

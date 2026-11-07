@@ -462,6 +462,11 @@ export interface ModelOption {
    * `standardModel` is what replaces it wherever it isn't carried over.
    */
   billing?: { label: string; detail: string; paid: boolean; standardModel?: string };
+  /**
+   * Why this model can't run on what is connected, e.g. "Not in your ChatGPT
+   * plan" or "Needs a Kimi Code plan key". The picker shows it, disabled.
+   */
+  unavailable?: string;
 }
 
 export interface SlashCommand {
@@ -671,7 +676,8 @@ export async function setKeepAwake(enabled: boolean): Promise<boolean> {
   return keepAwakeEnabled(await invoke<{ enabled?: unknown }>("agent_keep_awake_set", { enabled }));
 }
 
-export type SubscriptionUsageProvider = "anthropic" | "openai" | "moonshot";
+// ChatGPT has no meter: plan usage is managed at chatgpt.com/settings/usage.
+export type SubscriptionUsageProvider = "anthropic" | "moonshot";
 
 export interface SubscriptionUsageWindow {
   kind: "current" | "weekly";
@@ -1281,13 +1287,17 @@ export interface ApiKeyVariant {
   key: string;
   /** Display label, e.g. "Token Plan" or "API Credits". */
   label: string;
+  /** "plan" bills the user's subscription; "payg" bills per token. */
+  kind?: "plan" | "payg";
+  /** What the user spends with this key. */
+  billing?: string;
   baseUrl?: string;
 }
 
 /** What one auth method bills against and when to pick it. */
 export interface AuthMethodGuidance {
   method: AuthMethod;
-  /** Button/row label, e.g. "Sign in with Grok". */
+  /** Button/row label, e.g. "Continue with ChatGPT". */
   label: string;
   /** What the user spends on this method. */
   billing: string;
@@ -1331,8 +1341,10 @@ export interface AuthProvider {
   priorityNote?: string;
   /** Per-method guidance — only set when a provider offers a real choice. */
   methodGuidance?: AuthMethodGuidance[];
-  /** An old sign-in that no longer works is still saved; ask the user to sign in again. */
+  /** An old sign-in that no longer works is still saved; ask the user to reconnect. */
   reauthRequired?: boolean;
+  /** What to tell the user about that retired sign-in. */
+  reauthMessage?: string;
 }
 
 /**
@@ -1474,7 +1486,8 @@ export async function answerAskUser(
  * drop a spent xAI API key without signing out of the Grok subscription. Omit it
  * to disconnect the provider entirely.
  */
-export async function authLogout(provider: string, method?: AuthMethod): Promise<void> {
+/** `legacy` dismisses a retired sign-in and removes nothing else. */
+export async function authLogout(provider: string, method?: AuthMethod | "legacy"): Promise<void> {
   await invoke("app_auth_logout", { provider, method });
 }
 

@@ -154,10 +154,6 @@ const SettingsSchema = z.object({
   /** Pre-warm the Anthropic prompt cache (max_tokens: 1, identical prefix) when the
    *  desktop app signals the user is about to type after opening a chat / idling. */
   cachePrewarm: z.boolean().default(true),
-  /** Codex (ChatGPT login) Responses-Lite request shape for gpt-5.6/gpt-6 models.
-   *  Lite allows one tool call per response. `auto` turns it off (measured
-   *  faster on gpt-6-astra, gpt-6.1-sol and gpt-6-luna); `on` restores it. */
-  codexResponsesLite: z.enum(["auto", "on", "off"]).default("auto"),
   /** OpenAI strict tool schemas. Strict calls spell out every optional
    *  argument as null, costing output tokens and latency per call. `auto`
    *  turns it off (measured faster on all three gpt-6 models); `on` restores it. */
@@ -195,7 +191,6 @@ export const DEFAULT_SETTINGS: Settings = {
   speedProfile: "optimized",
   keepAwake: true,
   cachePrewarm: true,
-  codexResponsesLite: "auto",
   codexStrictTools: "auto",
   packageCooldownDays: 2,
 };

@@ -68,7 +68,6 @@ function Harness({
     contextWindowOptions: { provider },
     activeApiKey: "test-key",
     activeAccountId: undefined,
-    activeProjectId: undefined,
     activeBaseUrl: undefined,
     setLiveItems,
     getId: () => "compact-1",

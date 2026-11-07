@@ -35,7 +35,6 @@ import {
   type ClaudeCodeSessionState,
 } from "../../core/claude-code/session-sync.js";
 import { flagUntrustedToolResult } from "../../core/injection-detect.js";
-import { kimiCodingHeaders, isKimiCodingEndpoint } from "../../core/oauth/kimi.js";
 import { log } from "../../core/logger.js";
 import { wrapSteeringContent } from "../../core/steering.js";
 
@@ -129,7 +128,6 @@ export interface AgentLoopOptions {
   apiKey?: string;
   baseUrl?: string;
   accountId?: string;
-  projectId?: string;
   /** Resolve fresh credentials before each run (e.g. OAuth token refresh).
    *  When `forceRefresh` is true, bypass cache and fetch a new token (used on 401 retry). */
   resolveCredentials?: (opts?: {
@@ -137,7 +135,7 @@ export interface AgentLoopOptions {
     /** Access token the provider just rejected, so the refresh can adopt a
      *  newer token another process already wrote instead of minting one. */
     rejectedToken?: string;
-  }) => Promise<{ apiKey: string; accountId?: string; projectId?: string }>;
+  }) => Promise<{ apiKey: string; accountId?: string }>;
   transformContext?: (
     messages: Message[],
     options: TransformContextOptions,
@@ -627,13 +625,11 @@ export function useAgentLoop(
           const claudeCode = (await options.resolveClaudeCode?.()) ?? null;
           let apiKey = options.apiKey;
           let accountId = options.accountId;
-          let projectId = options.projectId;
           const credsStart = Date.now();
           if (resolveCredentials && !claudeCode) {
             const creds = await resolveCredentials(credentialOpts);
             apiKey = creds.apiKey;
             accountId = creds.accountId;
-            projectId = creds.projectId;
           }
           lastResolvedApiKey.current = apiKey;
           log("INFO", "ui", "creds_resolved", {
@@ -642,12 +638,6 @@ export function useAgentLoop(
             resolved: options.resolveCredentials ? "yes" : "no",
           });
 
-          // Kimi For Coding gates the managed endpoint on coding-agent identity
-          // headers; attach them only when the Kimi OAuth token is in use.
-          const defaultHeaders =
-            options.provider === "moonshot" && isKimiCodingEndpoint(options.baseUrl)
-              ? kimiCodingHeaders()
-              : undefined;
           log("INFO", "ui", "agent_loop_invoke", {
             sinceRunStartMs: String(Date.now() - runStartRef.current),
           });
@@ -676,7 +666,6 @@ export function useAgentLoop(
               : {}),
             baseUrl: options.baseUrl,
             accountId,
-            projectId,
             // Aggregate per-turn budget across parallel tool results — same
             // fan-out guard the AgentSession applies (see agent-session.ts).
             maxTurnToolResultChars: resolveSessionTurnToolResultCharLimit(
@@ -685,7 +674,6 @@ export function useAgentLoop(
               accountId,
             ),
             signal: ac.signal,
-            defaultHeaders,
             // Wrap transformContext to flag when a compaction actually shrank
             // the context — the re-grounding hook keys off this.
             transformContext: transformContext

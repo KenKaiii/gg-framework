@@ -18,7 +18,7 @@ import { toolResultText } from "./transform.js";
  * Consumer for the OpenAI Responses stream protocol (`response.output_text.*`,
  * `response.function_call_arguments.*`, `response.output_item.*`, reasoning
  * summaries, `response.completed`/`incomplete`), shared by every transport that
- * speaks it: the ChatGPT Codex backend and xAI's Responses API.
+ * speaks it: OpenAI's Responses API and xAI's.
  */
 export interface ResponsesStreamContext {
   /** Provider name stamped on errors. */
@@ -109,7 +109,7 @@ export async function* consumeResponsesEvents(
     }
 
     if (type === "error") {
-      // Codex Responses streams two error shapes:
+      // Responses streams two error shapes:
       //   { type:"error", error:{ type, code, message, param }, sequence_number }
       //   { type:"error", code, message, param, sequence_number }
       // Pick the first message field we find; fall back to the chunk code/type
@@ -129,8 +129,8 @@ export async function* consumeResponsesEvents(
       // FormattedError can surface it on its own line.
       const requestId =
         extractRequestIdFromMessage(message) ?? (event.request_id as string | undefined);
-      // ChatGPT-subscription usage-window exhaustion can arrive mid-stream as an
-      // error chunk. Surface it as a hard usage-limit stop, not a retriable error.
+      // ChatGPT plan usage exhaustion can arrive mid-stream as an error chunk.
+      // Surface it as a hard usage-limit stop, not a retriable error.
       const usageLimit = ctx.errorChunk?.(nested ?? (event as Record<string, unknown>), requestId);
       if (usageLimit) throw usageLimit;
       throw new ProviderError(ctx.provider, message, {
@@ -140,10 +140,16 @@ export async function* consumeResponsesEvents(
     }
 
     if (type === "response.failed") {
-      const nested = event.error as Record<string, unknown> | undefined;
+      // OpenAI puts the failure on `response.error`; older shapes on `error`.
+      const nested =
+        (event.error as Record<string, unknown> | undefined) ??
+        ((event.response as Record<string, unknown> | undefined)?.error as
+          Record<string, unknown> | undefined);
       const message = (nested?.message as string | undefined) ?? `${ctx.label} response failed.`;
       const requestId =
         extractRequestIdFromMessage(message) ?? (event.request_id as string | undefined);
+      const usageLimit = nested ? ctx.errorChunk?.(nested, requestId) : null;
+      if (usageLimit) throw usageLimit;
       throw new ProviderError(ctx.provider, message, {
         ...(requestId != null ? { requestId } : {}),
       });
@@ -580,6 +586,8 @@ export function toResponsesInput(
      * tool becomes callable without changing the top-level `tools` array.
      */
     toolSearchLoads?: ReadonlyMap<string, unknown>;
+    /** Namespace the request's tools are grouped under; replayed calls name it too. */
+    toolNamespace?: string;
   },
 ): { system: string | undefined; input: unknown[] } {
   const mapId = options.mapId ?? ((id: string) => id);
@@ -648,6 +656,7 @@ export function toResponsesInput(
             ...(sendItemId ? { id: mapId(itemId ?? callId, idMap) } : {}),
             call_id: mapId(callId, idMap),
             name: part.name,
+            ...(options.toolNamespace ? { namespace: options.toolNamespace } : {}),
             arguments: JSON.stringify(part.args),
           });
         }

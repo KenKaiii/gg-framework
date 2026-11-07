@@ -1,15 +1,12 @@
 import type http from "node:http";
 import {
-  GEMINI_API_KEY,
-  XIAOMI_CREDITS_KEY,
+  OPENAI_CHATGPT_KEY,
+  apiKeyStorageKeys,
   dualAuthProvider,
   signInWithClaudeCode,
   signOutOfClaudeCode,
 } from "@kenkaiiii/gg-core";
-import { loginOpenAI } from "../core/oauth/openai.js";
-import { loginGemini } from "../core/oauth/gemini.js";
-import { loginKimi } from "../core/oauth/kimi.js";
-import { loginXai } from "../core/oauth/xai.js";
+import { loginChatGPT, revokeChatGPTSignIn } from "../core/oauth/openai.js";
 import type { OAuthCredentials } from "../core/oauth/types.js";
 import { AUTH_PROVIDERS, type AuthMethod } from "../core/auth-providers.js";
 import type { ElicitResult } from "@modelcontextprotocol/client";
@@ -92,10 +89,9 @@ export function handleAuthRoutes(
         json(res, 400, { error: "API key is required" });
         return;
       }
-      // Providers with multiple API-key variants (currently only Xiaomi: Token
-      // Plan vs. API Credits) store under the chosen variant's key/baseUrl,
-      // defaulting to the first variant. Single-variant providers fall back to
-      // the legacy provider-id storage key + flat apiKeyBaseUrl.
+      // Providers with a plan key and a pay-per-token key (Kimi, Xiaomi) store
+      // under the chosen variant's key/baseUrl, defaulting to the first variant.
+      // Single-key providers use the provider id + flat apiKeyBaseUrl.
       const chosenVariant =
         meta.apiKeyVariants?.find((v) => v.key === variant) ?? meta.apiKeyVariants?.[0];
       const storageKey = chosenVariant?.key ?? provider;
@@ -158,23 +154,17 @@ export function handleAuthRoutes(
       void (async () => {
         const cb = ctx.authCallbacks();
         try {
-          let creds: OAuthCredentials | null = null;
-          let storageKey = provider;
           // Claude Code holds the Claude login; auth.json only gets a marker.
           if (provider === "anthropic") await signInWithClaudeCode(ctx.auth, cb);
-          else if (provider === "openai") creds = await loginOpenAI(cb);
-          else if (provider === "gemini") creds = await loginGemini(cb);
-          else if (provider === "moonshot" || provider === "xai") {
-            // Subscription OAuth (Kimi plan / SuperGrok-X Premium) stores under
-            // a distinct key so it can coexist with the provider's API key.
-            const dual = dualAuthProvider(provider);
-            if (!dual) throw new Error(`No subscription storage key for ${provider}`);
-            creds = provider === "moonshot" ? await loginKimi(cb) : await loginXai(cb);
-            storageKey = dual.oauthKey;
+          else if (provider === "openai") {
+            // Continue with ChatGPT: stored apart from the OpenAI API key so the
+            // two coexist. The current sign-in's ID token skips the account picker.
+            const previous = await ctx.auth.getCredentials(OPENAI_CHATGPT_KEY);
+            const creds = await loginChatGPT(cb, previous ? { previous } : {});
+            await ctx.auth.setCredentials(OPENAI_CHATGPT_KEY, creds);
           } else {
-            throw new Error(`OAuth not implemented for ${provider}`);
+            throw new Error(`Sign-in not implemented for ${provider}`);
           }
-          if (creds) await ctx.auth.setCredentials(storageKey, creds);
           // Terminal outcome of a GLOBAL change: every window's login modal
           // should close and its provider list refresh, not just the one
           // that started the flow.
@@ -307,38 +297,47 @@ export function handleAuthRoutes(
     void readBody(req, res).then(async (raw) => {
       if (raw === null) return;
       let provider: string;
-      let logoutMethod: AuthMethod | undefined;
+      let logoutMethod: AuthMethod | "legacy" | undefined;
       try {
         const body = JSON.parse(raw) as { provider?: string; method?: string };
         provider = body.provider ?? "";
         logoutMethod =
-          body.method === "oauth" || body.method === "apikey" ? body.method : undefined;
+          body.method === "oauth" || body.method === "apikey" || body.method === "legacy"
+            ? body.method
+            : undefined;
       } catch {
         json(res, 400, { error: "invalid JSON body" });
         return;
       }
       const dual = dualAuthProvider(provider);
+      let revoked: boolean | undefined;
+      // `legacy` dismisses a retired sign-in and touches nothing else.
+      if (logoutMethod === "legacy") {
+        await ctx.auth.takeLegacySignIn(provider);
+        ctx.broadcast("auth_done", { provider });
+        json(res, 200, { ok: true });
+        return;
+      }
       // A dual-auth provider can be disconnected one method at a time: dropping
-      // a spent API key should not sign the user out of their subscription, and
-      // vice versa. Omitting `method` still clears everything (the plain
-      // "Disconnect" action).
+      // a spent API key should not sign the user out of their plan, and vice
+      // versa. Omitting `method` clears everything (the plain "Disconnect").
       if (logoutMethod !== "apikey") {
         if (provider === "anthropic") await signOutOfClaudeCode(ctx.auth);
-        else await ctx.auth.clearCredentials(dual ? dual.oauthKey : provider);
+        else if (dual) {
+          const plan = await ctx.auth.getCredentials(dual.oauthKey);
+          // End the renewable session at OpenAI before dropping it locally.
+          if (provider === "openai" && plan) revoked = await revokeChatGPTSignIn(plan);
+          await ctx.auth.clearCredentials(dual.oauthKey);
+        }
       }
       if (logoutMethod !== "oauth") {
-        // Non-dual providers store their only credential under the provider id,
-        // so this covers both them and a dual provider's API key — except
-        // Gemini, whose provider id holds the OAuth login and whose API key
-        // lives under its own key.
-        if (provider === "gemini") await ctx.auth.clearCredentials(GEMINI_API_KEY);
-        else await ctx.auth.clearCredentials(provider);
-        // Xiaomi's API Credits credential lives under a distinct key — clear it
-        // too so "disconnect" fully removes both the Token Plan and Credits keys.
-        if (provider === "xiaomi") await ctx.auth.clearCredentials(XIAOMI_CREDITS_KEY);
+        // Every API key the provider holds: the plan key and the pay-per-token
+        // key for Kimi and Xiaomi, `gemini-api` for Gemini.
+        for (const key of apiKeyStorageKeys(provider)) await ctx.auth.clearCredentials(key);
+        await ctx.auth.takeLegacySignIn(provider);
       }
       ctx.broadcast("auth_done", { provider });
-      json(res, 200, { ok: true });
+      json(res, 200, { ok: true, ...(revoked !== undefined ? { revoked } : {}) });
     });
     return true;
   }

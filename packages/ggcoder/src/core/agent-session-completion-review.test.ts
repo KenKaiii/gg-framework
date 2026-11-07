@@ -21,7 +21,6 @@ interface Internals {
     resolveCredentials(): Promise<{
       accessToken: string;
       accountId: string;
-      projectId: string;
       baseUrl: string;
     }>;
   };
@@ -107,7 +106,6 @@ describe("optional completion-review seam", () => {
         return {
           accessToken: "test-only-token",
           accountId: "account-route",
-          projectId: "project-route",
           baseUrl: "https://example.invalid",
         };
       },
@@ -123,7 +121,6 @@ describe("optional completion-review seam", () => {
     expect(transport).toHaveBeenCalledWith(
       expect.objectContaining({
         accountId: "account-route",
-        projectId: "project-route",
         apiKey: "test-only-token",
         thinking: "high",
         signal: controller.signal,

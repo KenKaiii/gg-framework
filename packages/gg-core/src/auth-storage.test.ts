@@ -6,29 +6,18 @@ import {
   AuthStorage,
   GEMINI_API_KEY,
   GEMINI_API_KEY_BASE_URL,
-  MOONSHOT_OAUTH_KEY,
+  KIMI_CODE_KEY,
   NotLoggedInError,
-  XAI_OAUTH_KEY,
+  OPENAI_CHATGPT_KEY,
   XIAOMI_CREDITS_KEY,
   dualAuthProvider,
   providerStorageKeys,
   readStoredBaseUrlSync,
 } from "./auth-storage.js";
-import { isHiddenProvider } from "./hidden-providers.js";
 import { CLAUDE_CODE_AUTH_KEY, CLAUDE_CODE_AUTH_MARKER } from "./claude-code/runtime.js";
 
-const refreshOpenAIToken = vi.hoisted(() => vi.fn());
-vi.mock("./oauth/openai.js", () => ({ refreshOpenAIToken }));
-const refreshGeminiToken = vi.hoisted(() => vi.fn());
-vi.mock("./oauth/gemini.js", async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  refreshGeminiToken,
-}));
-const refreshKimiToken = vi.hoisted(() => vi.fn());
-vi.mock("./oauth/kimi.js", async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  refreshKimiToken,
-}));
+const refreshChatGPTToken = vi.hoisted(() => vi.fn());
+vi.mock("./oauth/openai.js", () => ({ refreshChatGPTToken }));
 
 async function tempAuthFile(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "gg-core-auth-storage-test-"));
@@ -38,7 +27,7 @@ async function tempAuthFile(): Promise<string> {
 const tmpFiles: string[] = [];
 
 afterEach(async () => {
-  refreshOpenAIToken.mockReset();
+  refreshChatGPTToken.mockReset();
   while (tmpFiles.length > 0) {
     const f = tmpFiles.pop()!;
     await fs.rm(path.dirname(f), { recursive: true, force: true }).catch(() => {});
@@ -93,15 +82,20 @@ describe("AuthStorage — shared-file concurrency", () => {
     const filePath = await tempAuthFile();
     tmpFiles.push(filePath);
     const runningSession = new AuthStorage(filePath);
-    await runningSession.setCredentials("openai", oauthCreds("old-token", "revoked-refresh"));
+    await runningSession.setCredentials(
+      OPENAI_CHATGPT_KEY,
+      oauthCreds("old-token", "revoked-refresh"),
+    );
 
     const loginSession = new AuthStorage(filePath);
-    await loginSession.setCredentials("openai", oauthCreds("new-token", "new-refresh"));
+    await loginSession.setCredentials(OPENAI_CHATGPT_KEY, oauthCreds("new-token", "new-refresh"));
 
-    const resolved = await runningSession.resolveCredentials("openai", { forceRefresh: true });
+    const resolved = await runningSession.resolveCredentials(OPENAI_CHATGPT_KEY, {
+      forceRefresh: true,
+    });
     expect(resolved.accessToken).toBe("new-token");
-    expect(refreshOpenAIToken).not.toHaveBeenCalled();
-    expect((await new AuthStorage(filePath).getCredentials("openai"))?.accessToken).toBe(
+    expect(refreshChatGPTToken).not.toHaveBeenCalled();
+    expect((await new AuthStorage(filePath).getCredentials(OPENAI_CHATGPT_KEY))?.accessToken).toBe(
       "new-token",
     );
   });
@@ -147,49 +141,49 @@ describe("AuthStorage — shared-file concurrency", () => {
     // A long-lived process (the desktop sidecar runs for days) caches the
     // credential it resolved at startup.
     const sidecar = new AuthStorage(filePath);
-    await sidecar.setCredentials("openai", oauthCreds("token-a"));
-    expect((await sidecar.resolveCredentials("openai")).accessToken).toBe("token-a");
+    await sidecar.setCredentials(OPENAI_CHATGPT_KEY, oauthCreds("token-a"));
+    expect((await sidecar.resolveCredentials(OPENAI_CHATGPT_KEY)).accessToken).toBe("token-a");
 
     // Any sibling (another window, a CLI session) refreshing the grant
     // invalidates token-a server-side. Serving it from cache is what surfaced
     // as a random mid-session authentication_error.
-    await new AuthStorage(filePath).setCredentials("openai", oauthCreds("token-b"));
+    await new AuthStorage(filePath).setCredentials(OPENAI_CHATGPT_KEY, oauthCreds("token-b"));
 
-    expect((await sidecar.resolveCredentials("openai")).accessToken).toBe("token-b");
-    expect(refreshOpenAIToken).not.toHaveBeenCalled();
+    expect((await sidecar.resolveCredentials(OPENAI_CHATGPT_KEY)).accessToken).toBe("token-b");
+    expect(refreshChatGPTToken).not.toHaveBeenCalled();
   });
 
   it("detects a rotated token when replacement size and mtime match the cached file", async () => {
     const sidecar = await makeStorage();
     const timestamp = new Date("2026-01-01T00:00:00Z");
-    await sidecar.setCredentials("openai", oauthCreds("token-a"));
+    await sidecar.setCredentials(OPENAI_CHATGPT_KEY, oauthCreds("token-a"));
     await fs.utimes(sidecar.path, timestamp, timestamp);
     await sidecar.load();
     const before = await fs.stat(sidecar.path);
-    expect((await sidecar.resolveCredentials("openai")).accessToken).toBe("token-a");
+    expect((await sidecar.resolveCredentials(OPENAI_CHATGPT_KEY)).accessToken).toBe("token-a");
 
-    await new AuthStorage(sidecar.path).setCredentials("openai", oauthCreds("token-b"));
+    await new AuthStorage(sidecar.path).setCredentials(OPENAI_CHATGPT_KEY, oauthCreds("token-b"));
     await fs.utimes(sidecar.path, timestamp, timestamp);
     const after = await fs.stat(sidecar.path);
     expect(after.size).toBe(before.size);
     expect(after.mtimeMs).toBe(before.mtimeMs);
     expect(after.ino).not.toBe(before.ino);
 
-    expect((await sidecar.resolveCredentials("openai")).accessToken).toBe("token-b");
-    expect(refreshOpenAIToken).not.toHaveBeenCalled();
+    expect((await sidecar.resolveCredentials(OPENAI_CHATGPT_KEY)).accessToken).toBe("token-b");
+    expect(refreshChatGPTToken).not.toHaveBeenCalled();
   });
 
   it("adopts a sibling's token on 401 instead of minting one that revokes theirs", async () => {
     const filePath = await tempAuthFile();
     tmpFiles.push(filePath);
     const sessionA = new AuthStorage(filePath);
-    await sessionA.setCredentials("openai", oauthCreds("token-a"));
-    await sessionA.resolveCredentials("openai");
+    await sessionA.setCredentials(OPENAI_CHATGPT_KEY, oauthCreds("token-a"));
+    await sessionA.resolveCredentials(OPENAI_CHATGPT_KEY);
 
     // Sibling rotates the grant; sessionA's in-flight request 401s as a result.
-    await new AuthStorage(filePath).setCredentials("openai", oauthCreds("token-b"));
+    await new AuthStorage(filePath).setCredentials(OPENAI_CHATGPT_KEY, oauthCreds("token-b"));
 
-    const recovered = await sessionA.resolveCredentials("openai", {
+    const recovered = await sessionA.resolveCredentials(OPENAI_CHATGPT_KEY, {
       forceRefresh: true,
       rejectedToken: "token-a",
     });
@@ -197,15 +191,15 @@ describe("AuthStorage — shared-file concurrency", () => {
     // Refreshing here would mint token-c and revoke token-b — breaking the
     // sibling and starting a mutual-revocation cascade across processes.
     expect(recovered.accessToken).toBe("token-b");
-    expect(refreshOpenAIToken).not.toHaveBeenCalled();
+    expect(refreshChatGPTToken).not.toHaveBeenCalled();
   });
 
   it("still refreshes when the rejected token is the one on disk", async () => {
     const filePath = await tempAuthFile();
     tmpFiles.push(filePath);
     const session = new AuthStorage(filePath);
-    await session.setCredentials("openai", oauthCreds("token-a"));
-    refreshOpenAIToken.mockResolvedValue({
+    await session.setCredentials(OPENAI_CHATGPT_KEY, oauthCreds("token-a"));
+    refreshChatGPTToken.mockResolvedValue({
       accessToken: "token-fresh",
       refreshToken: "refresh-fresh",
       expiresAt: Date.now() + 1_000_000,
@@ -213,38 +207,38 @@ describe("AuthStorage — shared-file concurrency", () => {
 
     // Nobody else rotated it, so this credential is genuinely dead and a real
     // refresh is the only recovery.
-    const refreshed = await session.resolveCredentials("openai", {
+    const refreshed = await session.resolveCredentials(OPENAI_CHATGPT_KEY, {
       forceRefresh: true,
       rejectedToken: "token-a",
     });
 
     expect(refreshed.accessToken).toBe("token-fresh");
-    expect(refreshOpenAIToken).toHaveBeenCalledTimes(1);
+    expect(refreshChatGPTToken).toHaveBeenCalledTimes(1);
   });
 
   it("keeps a sibling's newer login when its own refresh is rejected mid-request", async () => {
     const filePath = await tempAuthFile();
     tmpFiles.push(filePath);
     const session = new AuthStorage(filePath);
-    await session.setCredentials("openai", oauthCreds("token-a"));
+    await session.setCredentials(OPENAI_CHATGPT_KEY, oauthCreds("token-a"));
     await session.setCredentials("anthropic", oauthCreds("anthropic-token"));
 
     // While this refresh is in flight, a sibling (which broke the file lock)
     // refreshes the same grant and saves token-b; ours is then rejected as reused.
-    refreshOpenAIToken.mockImplementation(async () => {
+    refreshChatGPTToken.mockImplementation(async () => {
       const disk = JSON.parse(await fs.readFile(filePath, "utf-8"));
-      disk.openai = oauthCreds("token-b");
+      disk[OPENAI_CHATGPT_KEY] = oauthCreds("token-b");
       await fs.writeFile(filePath, JSON.stringify(disk));
       throw new Error("OpenAI token refresh failed (400): invalid_grant");
     });
 
-    const recovered = await session.resolveCredentials("openai", { forceRefresh: true });
+    const recovered = await session.resolveCredentials(OPENAI_CHATGPT_KEY, { forceRefresh: true });
 
     // Deleting from the pre-request snapshot used to wipe token-b from disk and
     // sign every window out ("Not logged in"), forcing a manual re-login.
     expect(recovered.accessToken).toBe("token-b");
     const onDisk = JSON.parse(await fs.readFile(filePath, "utf-8"));
-    expect(onDisk.openai.accessToken).toBe("token-b");
+    expect(onDisk[OPENAI_CHATGPT_KEY].accessToken).toBe("token-b");
     expect(onDisk.anthropic.accessToken).toBe("anthropic-token");
   });
 
@@ -252,55 +246,54 @@ describe("AuthStorage — shared-file concurrency", () => {
     const filePath = await tempAuthFile();
     tmpFiles.push(filePath);
     const session = new AuthStorage(filePath);
-    await session.setCredentials("openai", oauthCreds("token-a"));
+    await session.setCredentials(OPENAI_CHATGPT_KEY, oauthCreds("token-a"));
     await session.setCredentials("anthropic", oauthCreds("anthropic-token"));
-    refreshOpenAIToken.mockRejectedValue(
+    refreshChatGPTToken.mockRejectedValue(
       new Error("OpenAI token refresh failed (400): invalid_grant"),
     );
 
-    await expect(session.resolveCredentials("openai", { forceRefresh: true })).rejects.toThrow(
-      NotLoggedInError,
-    );
+    await expect(
+      session.resolveCredentials(OPENAI_CHATGPT_KEY, { forceRefresh: true }),
+    ).rejects.toThrow(NotLoggedInError);
     const onDisk = JSON.parse(await fs.readFile(filePath, "utf-8"));
-    expect(onDisk.openai).toBeUndefined();
+    expect(onDisk[OPENAI_CHATGPT_KEY]).toBeUndefined();
     expect(onDisk.anthropic.accessToken).toBe("anthropic-token");
   });
 });
 
-describe("AuthStorage — proactive refresh threshold (kimi-code parity)", () => {
-  // A short-lived token (15-min lifetime, like Kimi) must refresh at its
-  // halfway point, not 60s before expiry. Ported from MoonshotAI/kimi-code's
-  // defaultRefreshThreshold = max(300s, expiresIn * 0.5).
+describe("AuthStorage — proactive refresh threshold", () => {
+  // A short-lived token must refresh at its halfway point, not 60s before
+  // expiry: threshold = max(300s, expiresIn * 0.5).
   it("refreshes a 15-min token once it is within the lifetime-scaled threshold", async () => {
     const storage = await makeStorage();
     // 6 min left on a 15-min token → inside the 7.5-min threshold → refresh.
-    await storage.setCredentials("openai", {
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, {
       ...oauthCreds("live-15m"),
       expiresAt: Date.now() + 6 * 60_000,
       expiresIn: 15 * 60,
     });
-    refreshOpenAIToken.mockResolvedValue({
+    refreshChatGPTToken.mockResolvedValue({
       ...oauthCreds("refreshed-15m"),
       expiresAt: Date.now() + 15 * 60_000,
       expiresIn: 15 * 60,
     });
 
-    const resolved = await storage.resolveCredentials("openai");
-    expect(refreshOpenAIToken).toHaveBeenCalledOnce();
+    const resolved = await storage.resolveCredentials(OPENAI_CHATGPT_KEY);
+    expect(refreshChatGPTToken).toHaveBeenCalledOnce();
     expect(resolved.accessToken).toBe("refreshed-15m");
   });
 
   it("does not refresh a 15-min token still outside the threshold", async () => {
     const storage = await makeStorage();
     // 9 min left on a 15-min token → outside the 7.5-min threshold → keep.
-    await storage.setCredentials("openai", {
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, {
       ...oauthCreds("live-9m"),
       expiresAt: Date.now() + 9 * 60_000,
       expiresIn: 15 * 60,
     });
 
-    const resolved = await storage.resolveCredentials("openai");
-    expect(refreshOpenAIToken).not.toHaveBeenCalled();
+    const resolved = await storage.resolveCredentials(OPENAI_CHATGPT_KEY);
+    expect(refreshChatGPTToken).not.toHaveBeenCalled();
     expect(resolved.accessToken).toBe("live-9m");
   });
 
@@ -308,17 +301,17 @@ describe("AuthStorage — proactive refresh threshold (kimi-code parity)", () =>
     const storage = await makeStorage();
     // No expiresIn (legacy credential): threshold floors at 300s. 4 min left
     // → inside the floor → refresh.
-    await storage.setCredentials("openai", {
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, {
       ...oauthCreds("legacy-live"),
       expiresAt: Date.now() + 4 * 60_000,
     });
-    refreshOpenAIToken.mockResolvedValue({
+    refreshChatGPTToken.mockResolvedValue({
       ...oauthCreds("legacy-refreshed"),
       expiresAt: Date.now() + 60 * 60_000,
     });
 
-    const resolved = await storage.resolveCredentials("openai");
-    expect(refreshOpenAIToken).toHaveBeenCalledOnce();
+    const resolved = await storage.resolveCredentials(OPENAI_CHATGPT_KEY);
+    expect(refreshChatGPTToken).toHaveBeenCalledOnce();
     expect(resolved.accessToken).toBe("legacy-refreshed");
   });
 });
@@ -367,33 +360,10 @@ describe("AuthStorage — Xiaomi dual credential (Token Plan vs. API Credits)", 
     expect(creds.baseUrl).toBe("https://api.xiaomimimo.com/v1");
   });
 
-  it("refreshes an expired OAuth credential reached through storageKeys (Kimi K2.8 Preview)", async () => {
-    const storage = await makeStorage();
-    await storage.setCredentials(MOONSHOT_OAUTH_KEY, {
-      accessToken: "stale",
-      refreshToken: "kimi-refresh",
-      expiresAt: Date.now() - 1_000,
-      baseUrl: "https://api.kimi.com/coding/v1",
-    });
-    refreshKimiToken.mockResolvedValueOnce({
-      accessToken: "fresh",
-      refreshToken: "kimi-refresh-2",
-      expiresAt: Date.now() + 1_000_000,
-      baseUrl: "https://api.kimi.com/coding/v1",
-    });
-
-    const creds = await storage.resolveCredentials("moonshot", {
-      storageKeys: [MOONSHOT_OAUTH_KEY],
-    });
-
-    expect(refreshKimiToken).toHaveBeenCalledTimes(1);
-    expect(creds.accessToken).toBe("fresh");
-  });
-
-  it("uses a Gemini API key first, and still refreshes the Google sign-in when it is the only one", async () => {
-    const keys = [GEMINI_API_KEY, "gemini"];
+  it("uses only the Gemini API key, never the retired Google sign-in", async () => {
+    const keys = [GEMINI_API_KEY];
     const both = await makeStorage();
-    await both.setCredentials("gemini", oauthCreds("oauth-token"));
+    await both.setCredentials("gemini", { ...oauthCreds("oauth-token"), projectId: "p" });
     await both.setCredentials(GEMINI_API_KEY, {
       accessToken: "aistudio-key",
       refreshToken: "",
@@ -403,42 +373,15 @@ describe("AuthStorage — Xiaomi dual credential (Token Plan vs. API Credits)", 
     const picked = await both.resolveCredentials("gemini", { storageKeys: keys });
     // The key carries the public API base URL — the transport routes on it.
     expect(picked).toMatchObject({ accessToken: "aistudio-key", baseUrl: GEMINI_API_KEY_BASE_URL });
-    // Credentials still resolve while Gemini is hidden; it just isn't "connected".
-    expect(await both.hasProviderAuth("gemini")).toBe(!isHiddenProvider("gemini"));
+    expect(await both.hasProviderAuth("gemini")).toBe(true);
 
-    // OAuth only, and expired: reached through the list, it must still refresh.
     const oauthOnly = await makeStorage();
-    await oauthOnly.setCredentials("gemini", {
-      accessToken: "stale",
-      refreshToken: "g-refresh",
-      expiresAt: Date.now() - 1_000,
-    });
-    refreshGeminiToken.mockResolvedValueOnce({
-      accessToken: "fresh",
-      refreshToken: "g-refresh-2",
-      expiresAt: Date.now() + 1_000_000,
-    });
-    const refreshed = await oauthOnly.resolveCredentials("gemini", { storageKeys: keys });
-    expect(refreshGeminiToken).toHaveBeenCalledTimes(1);
-    expect(refreshed.accessToken).toBe("fresh");
-
-    // API key only satisfies hasProviderAuth too.
-    const keyOnly = await makeStorage();
-    await keyOnly.setCredentials(GEMINI_API_KEY, oauthCreds("k", ""));
-    expect(await keyOnly.hasProviderAuth("gemini")).toBe(!isHiddenProvider("gemini"));
-  });
-
-  it("reports a hidden provider as not connected even with credentials on disk", async () => {
-    // Pickers and startup filter on hasProviderAuth, so this is what keeps a
-    // hidden provider (Gemini, for now) out of them for users with old logins.
-    expect(isHiddenProvider("gemini")).toBe(true);
-    const storage = await makeStorage();
-    await storage.setCredentials("gemini", oauthCreds("oauth-token"));
-    await storage.setCredentials(GEMINI_API_KEY, oauthCreds("k", ""));
-    expect(await storage.hasProviderAuth("gemini")).toBe(false);
-    // Other providers are unaffected.
-    await storage.setCredentials("anthropic", oauthCreds("a"));
-    expect(await storage.hasProviderAuth("anthropic")).toBe(true);
+    await oauthOnly.setCredentials("gemini", { ...oauthCreds("stale"), projectId: "p" });
+    expect(await oauthOnly.hasProviderAuth("gemini")).toBe(false);
+    await expect(oauthOnly.resolveCredentials("gemini", { storageKeys: keys })).rejects.toThrow(
+      NotLoggedInError,
+    );
+    await expect(oauthOnly.resolveCredentials("gemini")).rejects.toThrow(NotLoggedInError);
   });
 
   it("resolveCredentials prefers the first storageKey, falling back to the next when only that's configured", async () => {
@@ -537,102 +480,213 @@ describe("AuthStorage — Xiaomi dual credential (Token Plan vs. API Credits)", 
   });
 });
 
-describe("AuthStorage — Moonshot dual credential (Kimi OAuth vs. API key)", () => {
-  const oauthCreds = () => ({
-    accessToken: "kimi-oauth-token",
-    refreshToken: "kimi-refresh",
+describe("AuthStorage — OpenAI dual credential (ChatGPT plan vs. API key)", () => {
+  const planCreds = () => ({
+    accessToken: "chatgpt-plan-token",
+    refreshToken: "chatgpt-refresh",
     expiresAt: Date.now() + 1_000_000,
-    baseUrl: "https://api.kimi.com/coding/v1",
+    accountId: "user-sub",
+    clientId: "oaiapp_issued",
+    baseUrl: "https://api.openai.com/v1",
   });
   const apiKeyCreds = () => ({
-    accessToken: "moonshot-api-key",
+    accessToken: "sk-openai-key",
     refreshToken: "",
     expiresAt: Date.now() + 1_000_000,
   });
 
-  it("prefers the Kimi OAuth credential when both are configured", async () => {
+  it("prefers the ChatGPT plan when both are configured", async () => {
     const storage = await makeStorage();
-    await storage.setCredentials("moonshot", apiKeyCreds());
-    await storage.setCredentials(MOONSHOT_OAUTH_KEY, oauthCreds());
-    const creds = await storage.resolveCredentials("moonshot", { storageKeys: ["moonshot"] });
-    expect(creds.accessToken).toBe("kimi-oauth-token");
-    expect(await storage.isStaticApiKey("moonshot")).toBe(false);
+    await storage.setCredentials("openai", apiKeyCreds());
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, planCreds());
+    // AgentSession passes storageKeys: ["openai"] — which must NOT shortcut past
+    // the plan preference.
+    const creds = await storage.resolveCredentials("openai", { storageKeys: ["openai"] });
+    expect(creds.accessToken).toBe("chatgpt-plan-token");
+    expect(creds.accountId).toBe("user-sub");
+    expect(await storage.isStaticApiKey("openai")).toBe(false);
   });
 
-  it("falls back to the API key while the OAuth credential is marked usage-exhausted", async () => {
+  it("falls back to the API key while the plan is marked usage-exhausted", async () => {
     const storage = await makeStorage();
-    await storage.setCredentials("moonshot", apiKeyCreds());
-    await storage.setCredentials(MOONSHOT_OAUTH_KEY, oauthCreds());
+    await storage.setCredentials("openai", apiKeyCreds());
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, planCreds());
 
-    await storage.markUsageExhausted(MOONSHOT_OAUTH_KEY);
-    const creds = await storage.resolveCredentials("moonshot", { storageKeys: ["moonshot"] });
-    expect(creds.accessToken).toBe("moonshot-api-key");
-    // The API key is the active credential now — a 401 should clear it, not
-    // force-refresh the sidelined OAuth token.
-    expect(await storage.isStaticApiKey("moonshot")).toBe(true);
+    await storage.markUsageExhausted(OPENAI_CHATGPT_KEY);
+    const creds = await storage.resolveCredentials("openai", { storageKeys: ["openai"] });
+    expect(creds.accessToken).toBe("sk-openai-key");
+    expect(creds.accountId).toBeUndefined();
+    // The key is active now: a 401 should clear it, not refresh the sidelined plan.
+    expect(await storage.isStaticApiKey("openai")).toBe(true);
+    expect(storage.getStoredBaseUrl("openai")).toBeUndefined();
   });
 
   it("honors a provider-stated reset time (unix seconds) for the exhaustion mark", async () => {
     const storage = await makeStorage();
-    await storage.setCredentials(MOONSHOT_OAUTH_KEY, oauthCreds());
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, planCreds());
     const resetsAt = Math.floor(Date.now() / 1000) + 3600;
-    await storage.markUsageExhausted(MOONSHOT_OAUTH_KEY, resetsAt);
-    const stored = await storage.getCredentials(MOONSHOT_OAUTH_KEY);
+    await storage.markUsageExhausted(OPENAI_CHATGPT_KEY, resetsAt);
+    const stored = await storage.getCredentials(OPENAI_CHATGPT_KEY);
     expect(stored?.usageExhaustedUntil).toBe(resetsAt * 1000);
   });
 
-  it("reports the active endpoint's baseUrl for endpoint-aware defaults", async () => {
+  it("resumes the plan once the exhaustion mark lapses", async () => {
     const storage = await makeStorage();
-    // OAuth present → the managed Kimi For Coding endpoint.
-    await storage.setCredentials(MOONSHOT_OAUTH_KEY, oauthCreds());
-    expect(storage.getStoredBaseUrl("moonshot")).toBe("https://api.kimi.com/coding/v1");
-    // The sync file read agrees (boot paths use it before AuthStorage exists).
-    expect(readStoredBaseUrlSync(storage.path, "moonshot")).toBe("https://api.kimi.com/coding/v1");
-
-    // API-key-only → no stored baseUrl (the public Moonshot API is the default).
-    const keyOnly = await makeStorage();
-    await keyOnly.setCredentials("moonshot", apiKeyCreds());
-    expect(keyOnly.getStoredBaseUrl("moonshot")).toBeUndefined();
-
-    // Usage-exhausted OAuth + API key configured → the key is active (public API).
-    await storage.setCredentials("moonshot", apiKeyCreds());
-    await storage.markUsageExhausted(MOONSHOT_OAUTH_KEY);
-    expect(storage.getStoredBaseUrl("moonshot")).toBeUndefined();
-
-    // Other providers read their own entry; unknown providers yield undefined.
-    expect(storage.getStoredBaseUrl("anthropic")).toBeUndefined();
-    expect(
-      readStoredBaseUrlSync(path.join(os.tmpdir(), "does-not-exist.json"), "moonshot"),
-    ).toBeUndefined();
-  });
-
-  it("resumes OAuth once the exhaustion mark lapses", async () => {
-    const storage = await makeStorage();
-    await storage.setCredentials("moonshot", apiKeyCreds());
-    const oauth = oauthCreds();
-    await storage.setCredentials(MOONSHOT_OAUTH_KEY, {
-      ...oauth,
-      usageExhaustedUntil: Date.now() - 1_000, // already lapsed
+    await storage.setCredentials("openai", apiKeyCreds());
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, {
+      ...planCreds(),
+      usageExhaustedUntil: Date.now() - 1_000,
     });
-    const creds = await storage.resolveCredentials("moonshot", { storageKeys: ["moonshot"] });
-    expect(creds.accessToken).toBe("kimi-oauth-token");
+    const creds = await storage.resolveCredentials("openai", { storageKeys: ["openai"] });
+    expect(creds.accessToken).toBe("chatgpt-plan-token");
   });
 
-  it("still resolves OAuth when exhausted but no API key exists (real error must surface)", async () => {
+  it("keeps serving the plan when exhausted with no API key (real error must surface)", async () => {
     const storage = await makeStorage();
-    await storage.setCredentials(MOONSHOT_OAUTH_KEY, oauthCreds());
-    await storage.markUsageExhausted(MOONSHOT_OAUTH_KEY);
-    const creds = await storage.resolveCredentials("moonshot", { storageKeys: ["moonshot"] });
-    expect(creds.accessToken).toBe("kimi-oauth-token");
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, planCreds());
+    await storage.markUsageExhausted(OPENAI_CHATGPT_KEY);
+    const creds = await storage.resolveCredentials("openai", { storageKeys: ["openai"] });
+    expect(creds.accessToken).toBe("chatgpt-plan-token");
   });
 
   it("markUsageExhausted is a no-op when nothing is stored under the key", async () => {
     const storage = await makeStorage();
-    await storage.markUsageExhausted(MOONSHOT_OAUTH_KEY);
-    expect(await storage.getCredentials(MOONSHOT_OAUTH_KEY)).toBeUndefined();
+    await storage.markUsageExhausted(OPENAI_CHATGPT_KEY);
+    expect(await storage.getCredentials(OPENAI_CHATGPT_KEY)).toBeUndefined();
   });
 
-  it("treats the xAI API key as a static credential when no OAuth login exists", async () => {
+  it("persists the exhaustion mark so a new process (or another app window) sees it", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    const storage = new AuthStorage(filePath);
+    await storage.setCredentials("openai", apiKeyCreds());
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, planCreds());
+    await storage.markUsageExhausted(OPENAI_CHATGPT_KEY);
+
+    const secondProcess = new AuthStorage(filePath);
+    const creds = await secondProcess.resolveCredentials("openai", { storageKeys: ["openai"] });
+    expect(creds.accessToken).toBe("sk-openai-key");
+  });
+
+  it("reports the plan endpoint as active while the plan serves", async () => {
+    const storage = await makeStorage();
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, planCreds());
+    expect(storage.getStoredBaseUrl("openai")).toBe("https://api.openai.com/v1");
+    expect(readStoredBaseUrlSync(storage.path, "openai")).toBe("https://api.openai.com/v1");
+  });
+
+  it("keeps the issued client and ID token across a refresh", async () => {
+    const storage = await makeStorage();
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, {
+      ...planCreds(),
+      idToken: "id-token",
+      scopes: ["chatgpt.tokens.use.direct"],
+      expiresAt: Date.now() - 1_000,
+    });
+    refreshChatGPTToken.mockResolvedValue({
+      accessToken: "fresh",
+      refreshToken: "refresh-2",
+      expiresAt: Date.now() + 3_600_000,
+    });
+    const creds = await storage.resolveCredentials("openai");
+    expect(refreshChatGPTToken).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: "oaiapp_issued", refreshToken: "chatgpt-refresh" }),
+    );
+    expect(creds).toMatchObject({
+      accessToken: "fresh",
+      accountId: "user-sub",
+      clientId: "oaiapp_issued",
+      idToken: "id-token",
+      scopes: ["chatgpt.tokens.use.direct"],
+      baseUrl: "https://api.openai.com/v1",
+    });
+  });
+
+  it("either credential satisfies hasProviderAuth", async () => {
+    const storage = await makeStorage();
+    expect(await storage.hasProviderAuth("openai")).toBe(false);
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, planCreds());
+    expect(await storage.hasProviderAuth("openai")).toBe(true);
+
+    const keyOnly = await makeStorage();
+    await keyOnly.setCredentials("openai", apiKeyCreds());
+    expect(await keyOnly.hasProviderAuth("openai")).toBe(true);
+  });
+
+  it("exposes both storage keys in resolution order", () => {
+    expect(providerStorageKeys("openai")).toEqual([OPENAI_CHATGPT_KEY, "openai"]);
+    // Kimi and xAI are key-only now.
+    expect(providerStorageKeys("moonshot")).toEqual(["moonshot"]);
+    expect(providerStorageKeys("xai")).toEqual(["xai"]);
+    expect(providerStorageKeys("anthropic")).toEqual(["anthropic"]);
+    expect(dualAuthProvider("anthropic")).toBeUndefined();
+  });
+});
+
+describe("AuthStorage — Kimi Code plan key vs. Moonshot key", () => {
+  const key = (accessToken: string, baseUrl?: string) => ({
+    accessToken,
+    refreshToken: "",
+    expiresAt: Date.now() + 1_000_000,
+    ...(baseUrl ? { baseUrl } : {}),
+  });
+  async function storageWith(detect: (key: string) => Promise<string | undefined>) {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    return { filePath, storage: new AuthStorage(filePath, { detectKimiCodeBaseUrl: detect }) };
+  }
+
+  it("serves the plan key first and probes its host once", async () => {
+    const detect = vi.fn(async () => "https://api.kimi.ai/coding/v1");
+    const { filePath, storage } = await storageWith(detect);
+    await storage.setCredentials("moonshot", key("moonshot-key"));
+    await storage.setCredentials(KIMI_CODE_KEY, key("kimi-code-key"));
+
+    const creds = await storage.resolveCredentials("moonshot", {
+      storageKeys: [KIMI_CODE_KEY, "moonshot"],
+    });
+    expect(creds).toMatchObject({
+      accessToken: "kimi-code-key",
+      baseUrl: "https://api.kimi.ai/coding/v1",
+    });
+    expect(readStoredBaseUrlSync(filePath, "moonshot")).toBe("https://api.kimi.ai/coding/v1");
+    await storage.resolveCredentials("moonshot", { storageKeys: [KIMI_CODE_KEY, "moonshot"] });
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(await storage.isStaticApiKey("moonshot")).toBe(true);
+  });
+
+  it("uses the default plan host when the probe is inconclusive, without saving it", async () => {
+    const { filePath, storage } = await storageWith(async () => undefined);
+    await storage.setCredentials(KIMI_CODE_KEY, key("kimi-code-key"));
+    const creds = await storage.resolveCredentials("moonshot", { storageKeys: [KIMI_CODE_KEY] });
+    expect(creds.baseUrl).toBe("https://api.kimi.com/coding/v1");
+    expect(storage.getStoredBaseUrl("moonshot")).toBe("https://api.kimi.com/coding/v1");
+    const saved = JSON.parse(await fs.readFile(filePath, "utf-8"));
+    expect(saved[KIMI_CODE_KEY].baseUrl).toBeUndefined();
+  });
+
+  it("falls back to the Moonshot key when no plan key is stored", async () => {
+    const detect = vi.fn(async () => undefined);
+    const { storage } = await storageWith(detect);
+    await storage.setCredentials("moonshot", key("moonshot-key"));
+    const creds = await storage.resolveCredentials("moonshot", {
+      storageKeys: [KIMI_CODE_KEY, "moonshot"],
+    });
+    expect(creds.accessToken).toBe("moonshot-key");
+    expect(storage.getStoredBaseUrl("moonshot")).toBeUndefined();
+    expect(detect).not.toHaveBeenCalled();
+  });
+
+  it("either key satisfies hasProviderAuth", async () => {
+    const { storage } = await storageWith(async () => undefined);
+    expect(await storage.hasProviderAuth("moonshot")).toBe(false);
+    await storage.setCredentials(KIMI_CODE_KEY, key("kimi-code-key"));
+    expect(await storage.hasProviderAuth("moonshot")).toBe(true);
+  });
+});
+
+describe("AuthStorage — static API keys", () => {
+  it("treats the xAI API key as a static credential", async () => {
     const storage = await makeStorage();
     await storage.setCredentials("xai", {
       accessToken: "xai-api-key",
@@ -655,109 +709,113 @@ describe("AuthStorage — Moonshot dual credential (Kimi OAuth vs. API key)", ()
     const creds = await storage.resolveCredentials("huggingface");
     expect(creds.accessToken).toBe("hf-token");
   });
-
-  it("persists the exhaustion mark so a new process (or another app window) sees it", async () => {
-    const filePath = await tempAuthFile();
-    tmpFiles.push(filePath);
-    const storage = new AuthStorage(filePath);
-    await storage.setCredentials("moonshot", apiKeyCreds());
-    await storage.setCredentials(MOONSHOT_OAUTH_KEY, oauthCreds());
-    await storage.markUsageExhausted(MOONSHOT_OAUTH_KEY);
-
-    const secondProcess = new AuthStorage(filePath);
-    const creds = await secondProcess.resolveCredentials("moonshot", {
-      storageKeys: ["moonshot"],
-    });
-    expect(creds.accessToken).toBe("moonshot-api-key");
-  });
 });
 
-// Grok rides the same dual-auth policy as Kimi. These assert the POLICY is
-// generic (table-driven) rather than a Moonshot special case — the exact bug the
-// hardcoded provider checks would have reintroduced for every new provider.
-describe("AuthStorage — xAI dual credential (Grok OAuth vs. API key)", () => {
-  const oauthCreds = () => ({
-    accessToken: "grok-oauth-token",
-    refreshToken: "grok-refresh",
+describe("AuthStorage — retired sign-ins", () => {
+  const codexToken = {
+    accessToken: "codex-jwt",
+    refreshToken: "codex-refresh",
     expiresAt: Date.now() + 1_000_000,
-    baseUrl: "https://cli-chat-proxy.grok.com/v1",
-  });
-  const apiKeyCreds = () => ({
-    accessToken: "xai-api-key",
-    refreshToken: "",
-    expiresAt: Date.now() + 1_000_000,
-  });
+    accountId: "acct",
+  };
 
-  it("prefers the Grok OAuth credential when both are configured", async () => {
-    const storage = await makeStorage();
-    await storage.setCredentials("xai", apiKeyCreds());
-    await storage.setCredentials(XAI_OAUTH_KEY, oauthCreds());
-    // AgentSession passes storageKeys: ["xai"] — which must NOT shortcut past the
-    // OAuth preference (the bug that once served the raw API key for Moonshot).
-    const creds = await storage.resolveCredentials("xai", { storageKeys: ["xai"] });
-    expect(creds.accessToken).toBe("grok-oauth-token");
-    expect(creds.baseUrl).toBe("https://cli-chat-proxy.grok.com/v1");
-    expect(await storage.isStaticApiKey("xai")).toBe(false);
-  });
+  async function storageWithFile(data: Record<string, unknown>): Promise<AuthStorage> {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    await fs.writeFile(filePath, JSON.stringify(data));
+    return new AuthStorage(filePath);
+  }
 
-  it("falls back to the API key while the OAuth credential is usage-exhausted", async () => {
-    const storage = await makeStorage();
-    await storage.setCredentials("xai", apiKeyCreds());
-    await storage.setCredentials(XAI_OAUTH_KEY, oauthCreds());
-
-    await storage.markUsageExhausted(XAI_OAUTH_KEY);
-    const creds = await storage.resolveCredentials("xai", { storageKeys: ["xai"] });
-    expect(creds.accessToken).toBe("xai-api-key");
-    // The key is active now, so its endpoint (public api.x.ai default) applies and
-    // a 401 should clear it instead of force-refreshing the sidelined token.
-    expect(storage.getStoredBaseUrl("xai")).toBeUndefined();
-    expect(await storage.isStaticApiKey("xai")).toBe(true);
+  it("never serves an old Codex sign-in as an OpenAI API key", async () => {
+    const storage = await storageWithFile({ openai: codexToken });
+    expect(await storage.hasProviderAuth("openai")).toBe(false);
+    expect(await storage.isStaticApiKey("openai")).toBe(true);
+    await expect(storage.resolveCredentials("openai")).rejects.toThrow(NotLoggedInError);
+    await expect(storage.resolveCredentials("openai", { storageKeys: ["openai"] })).rejects.toThrow(
+      NotLoggedInError,
+    );
+    expect(refreshChatGPTToken).not.toHaveBeenCalled();
+    expect(storage.getStoredBaseUrl("openai")).toBeUndefined();
   });
 
-  it("keeps serving OAuth when exhausted with no API key (real error must surface)", async () => {
-    const storage = await makeStorage();
-    await storage.setCredentials(XAI_OAUTH_KEY, oauthCreds());
-    await storage.markUsageExhausted(XAI_OAUTH_KEY);
-    const creds = await storage.resolveCredentials("xai", { storageKeys: ["xai"] });
-    expect(creds.accessToken).toBe("grok-oauth-token");
-  });
-
-  it("resumes OAuth once the exhaustion mark lapses", async () => {
-    const storage = await makeStorage();
-    await storage.setCredentials("xai", apiKeyCreds());
-    await storage.setCredentials(XAI_OAUTH_KEY, {
-      ...oauthCreds(),
-      usageExhaustedUntil: Date.now() - 1_000,
+  it("ignores old Kimi, Grok and Google sign-ins", async () => {
+    const storage = await storageWithFile({
+      "moonshot-oauth": { ...codexToken, baseUrl: "https://api.kimi.com/coding/v1" },
+      "xai-oauth": { ...codexToken, baseUrl: "https://cli-chat-proxy.grok.com/v1" },
+      gemini: { ...codexToken, projectId: "p" },
     });
-    const creds = await storage.resolveCredentials("xai", { storageKeys: ["xai"] });
-    expect(creds.accessToken).toBe("grok-oauth-token");
+    for (const provider of ["moonshot", "xai", "gemini"]) {
+      expect(await storage.hasProviderAuth(provider), provider).toBe(false);
+    }
+    expect(storage.getStoredBaseUrl("moonshot")).toBeUndefined();
+    expect(storage.getStoredBaseUrl("xai")).toBeUndefined();
+    await expect(storage.resolveCredentials("xai")).rejects.toThrow(NotLoggedInError);
+    await expect(storage.resolveCredentials("moonshot-oauth")).rejects.toThrow(NotLoggedInError);
   });
 
-  it("reports the Grok CLI proxy as the active endpoint while OAuth is live", async () => {
-    const storage = await makeStorage();
-    await storage.setCredentials(XAI_OAUTH_KEY, oauthCreds());
-    expect(storage.getStoredBaseUrl("xai")).toBe("https://cli-chat-proxy.grok.com/v1");
-    // Boot paths read the file synchronously before AuthStorage exists — agree.
-    expect(readStoredBaseUrlSync(storage.path, "xai")).toBe("https://cli-chat-proxy.grok.com/v1");
+  it("lists retired sign-ins with a message per provider", async () => {
+    const storage = await storageWithFile({
+      openai: codexToken,
+      "xai-oauth": codexToken,
+      moonshot: { accessToken: "sk-moonshot", refreshToken: "", expiresAt: 0 },
+    });
+    const retired = await storage.legacySignIns();
+    expect(retired.map((r) => r.provider)).toEqual(["openai", "xai"]);
+    expect(retired[0]!.message).toMatch(/Continue with ChatGPT/);
+    expect(retired[1]!.message).toMatch(/xAI API key/);
   });
 
-  it("either credential satisfies hasProviderAuth", async () => {
-    const storage = await makeStorage();
-    expect(await storage.hasProviderAuth("xai")).toBe(false);
-    await storage.setCredentials(XAI_OAUTH_KEY, oauthCreds());
-    expect(await storage.hasProviderAuth("xai")).toBe(true);
-
-    const keyOnly = await makeStorage();
-    await keyOnly.setCredentials("xai", apiKeyCreds());
-    expect(await keyOnly.hasProviderAuth("xai")).toBe(true);
+  it("removes one provider's retired sign-in exactly once, keeping real keys", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    const moonshotKey = { accessToken: "sk-moonshot", refreshToken: "", expiresAt: 0 };
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({ "moonshot-oauth": codexToken, moonshot: moonshotKey }),
+    );
+    const storage = new AuthStorage(filePath);
+    expect(await storage.takeLegacySignIn("moonshot")).toBe(true);
+    expect(await storage.takeLegacySignIn("moonshot")).toBe(false);
+    const saved = JSON.parse(await fs.readFile(filePath, "utf-8"));
+    expect(saved["moonshot-oauth"]).toBeUndefined();
+    expect(saved.moonshot).toEqual(moonshotKey);
   });
 
-  it("exposes both storage keys in resolution order", () => {
-    expect(providerStorageKeys("xai")).toEqual([XAI_OAUTH_KEY, "xai"]);
-    expect(providerStorageKeys("moonshot")).toEqual([MOONSHOT_OAUTH_KEY, "moonshot"]);
-    // Single-method providers are unaffected.
-    expect(providerStorageKeys("anthropic")).toEqual(["anthropic"]);
-    expect(dualAuthProvider("anthropic")).toBeUndefined();
+  it("drops the retired sign-in when the user connects that provider again", async () => {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({ openai: codexToken, "moonshot-oauth": codexToken }),
+    );
+    const storage = new AuthStorage(filePath);
+
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, {
+      accessToken: "plan",
+      refreshToken: "r",
+      expiresAt: Date.now() + 1_000_000,
+    });
+    await storage.setCredentials(KIMI_CODE_KEY, {
+      accessToken: "kimi-code-key",
+      refreshToken: "",
+      expiresAt: 0,
+    });
+    const saved = JSON.parse(await fs.readFile(filePath, "utf-8"));
+    expect(saved.openai).toBeUndefined();
+    expect(saved["moonshot-oauth"]).toBeUndefined();
+    expect(Object.keys(saved).sort()).toEqual([KIMI_CODE_KEY, OPENAI_CHATGPT_KEY].sort());
+  });
+
+  it("keeps a real OpenAI API key when the user also signs in with ChatGPT", async () => {
+    const storage = await storageWithFile({
+      openai: { accessToken: "sk-openai", refreshToken: "", expiresAt: 0 },
+    });
+    await storage.setCredentials(OPENAI_CHATGPT_KEY, {
+      accessToken: "plan",
+      refreshToken: "r",
+      expiresAt: Date.now() + 1_000_000,
+    });
+    expect((await storage.getCredentials("openai"))?.accessToken).toBe("sk-openai");
   });
 });
 
@@ -932,8 +990,8 @@ describe("AuthStorage — Claude Code sign-in marker", () => {
     await fs.writeFile(filePath, JSON.stringify({ anthropic: legacy, openai: apiKey }));
     const storage = new AuthStorage(filePath);
 
-    expect(await storage.takeLegacyClaudeSignIn()).toBe(true);
-    expect(await storage.takeLegacyClaudeSignIn()).toBe(false);
+    expect(await storage.takeLegacySignIn("anthropic")).toBe(true);
+    expect(await storage.takeLegacySignIn("anthropic")).toBe(false);
     const saved = JSON.parse(await fs.readFile(filePath, "utf-8")) as Record<string, unknown>;
     expect(saved.anthropic).toBeUndefined();
     expect(saved.openai).toEqual(apiKey);
@@ -946,7 +1004,7 @@ describe("AuthStorage — Claude Code sign-in marker", () => {
     await fs.writeFile(filePath, JSON.stringify({ anthropic: apiKey }));
     const storage = new AuthStorage(filePath);
 
-    expect(await storage.takeLegacyClaudeSignIn()).toBe(false);
+    expect(await storage.takeLegacySignIn("anthropic")).toBe(false);
     expect((await storage.resolveCredentials("anthropic")).accessToken).toBe("sk-ant-api03-k");
   });
 

@@ -23,8 +23,7 @@ export const PROVIDER_TRANSPORT_TIMEOUT_MS = 45 * 60_000;
  * How long an idle pooled provider connection stays open when the server sends
  * no Keep-Alive hint (the usual case over HTTPS). undici's default is 4s, so a
  * tool call or a human pause longer than that dropped the socket and the next
- * request paid DNS+TCP+TLS again (measured: ~130 ms to api.openai.com, ~120 ms
- * to chatgpt.com). 30s stays below common load-balancer idle limits (60s+), so
+ * request paid DNS+TCP+TLS again (measured: ~130 ms to api.openai.com). 30s stays below common load-balancer idle limits (60s+), so
  * a pooled socket is not reused after the server has already closed it.
  */
 export const PROVIDER_KEEP_ALIVE_TIMEOUT_MS = 30_000;

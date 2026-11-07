@@ -714,6 +714,9 @@
 .deck-note[data-paid] {
   color: var(--warning);
 }
+.deck-note a {
+  color: var(--primary);
+}
 .paid-confirm .deck-note + .deck-note {
   padding-top: 0;
 }

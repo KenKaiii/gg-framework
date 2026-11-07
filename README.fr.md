@@ -37,7 +37,7 @@ GG Coder est un agent de code pour ordinateur qui tire davantage de l'abonnement
 - **Du vrai code, pas des suppositions.** Agent Steroids cherche du vrai code open source, à jour, sur votre machine. Pas de serveur MCP limité en débit, pas de limites.
 - **Terminé veut dire vérifié.** Ken Autopilot poursuit le travail jusqu'à ce qu'il soit réellement vérifié.
 - **Livrez proprement, même en débutant.** Coder n'est qu'une partie du travail. Des vérifications en un clic pour la sécurité, la conformité, la protection des données, l'accessibilité, les tests et plus, avec un score Project health, pour que vous n'ayez pas besoin de savoir quoi demander.
-- **Vos abonnements.** Claude, ChatGPT, Gemini, Grok, Kimi, clés API ou modèles locaux.
+- **Vos abonnements.** Forfaits Claude, ChatGPT, Kimi Code, MiniMax et MiMo, toute clé API ou modèles locaux.
 
 | Agent              | Temps pour la suite complète | Consommation par suite | Temps vs GG Coder | Consommation vs GG Coder |
 | ------------------ | ---------------------------- | ---------------------- | ----------------- | ------------------------ |

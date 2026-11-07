@@ -45,8 +45,8 @@ function prefersReducedMotion(): boolean {
 /**
  * Full-window plan review shown on plan_exit. Laid out like the chat itself so
  * it reads as part of the workspace: a header strip, the plan where the
- * transcript sits, a critter crew on the activity bar, the decision (Accept /
- * Reject) in the activity bar, and the chat composer for feedback. It
+ * transcript sits, a critter crew above the deck, and the workspace deck with
+ * the feedback box and the decision keys (Reject / Accept) beside send. It
  * dissolves in, and dissolves out before the chosen decision runs.
  */
 export function PlanReviewModal({
@@ -135,84 +135,98 @@ export function PlanReviewModal({
         </div>
       </div>
 
-      <div className="liveregion">
+      {/* The workspace's own deck, plan-mode dashed, so the decision reads as
+          the next step of the chat. Accept and Reject are keys beside send,
+          where Enhance sits in the chat. */}
+      <div className="plan-review-dock">
         <PlanCritters random={random} />
-        <div className="task-activity" data-phase="attention">
-          <div className="statusrow">
-            <div className="activity-summary">
-              <span className="statusrow-left" role="status" aria-live="polite" aria-atomic="true">
-                <span className="activity-label-reveal">
-                  {kenReviewing ? (
-                    <ShimmerText base={theme.ken} bright={theme.text}>
-                      Ken is reviewing it. Your call still wins
-                    </ShimmerText>
-                  ) : (
-                    <span style={{ color: theme.warning }}>Your call on the plan</span>
-                  )}
-                </span>
-              </span>
+        <div className="deck plan-review-deck" data-plan-mode>
+          <div className="deck-main">
+            <div className="deck-status">
+              <div className="task-activity" data-phase="attention">
+                <div className="statusrow">
+                  <div className="activity-summary">
+                    <span
+                      className="statusrow-left"
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
+                    >
+                      <span className="activity-label-reveal">
+                        {kenReviewing ? (
+                          <ShimmerText base={theme.ken} bright={theme.text}>
+                            Ken is reviewing it. Your call still wins
+                          </ShimmerText>
+                        ) : (
+                          <span style={{ color: theme.warning }}>Your call on the plan</span>
+                        )}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <span className="deck-flag">Plan mode</span>
             </div>
-            <span className="statusrow-right">
-              <button
-                className="cancel"
-                style={{ color: theme.error }}
-                disabled={leaving !== null}
-                onClick={() => decide(onReject)}
-              >
-                Reject
-              </button>
-              <button
-                className="btn btn-primary btn-sm plan-review-accept"
-                disabled={leaving !== null}
-                onClick={() => decide(onAccept)}
-              >
-                Accept plan
-              </button>
-            </span>
+            <div className="deck-compose">
+              <div className="inputwrap">
+                <div className="inputrow">
+                  <div className="input-stack">
+                    {/* Initial focus: typing feedback is the likeliest next move, and an
+                        Enter already in flight from the chat composer lands here, where
+                        an empty draft does nothing, instead of on Accept. */}
+                    <textarea
+                      ref={inputRef}
+                      className="input"
+                      rows={1}
+                      value={feedback}
+                      aria-label="Feedback on the plan"
+                      placeholder="Tell GG what to change in the plan…"
+                      readOnly={leaving !== null}
+                      data-modal-initial-focus
+                      onChange={(e) => setFeedback(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                          e.preventDefault();
+                          sendFeedback();
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="inputactions-trailing">
+                    <button
+                      type="button"
+                      className="key key-sm plan-review-reject"
+                      disabled={leaving !== null}
+                      onClick={() => decide(onReject)}
+                    >
+                      Reject
+                    </button>
+                    {/* One primary at a time: Accept leads until there is feedback
+                        to send, then send does. */}
+                    <button
+                      type="button"
+                      className={`key key-sm plan-review-accept${trimmed ? "" : " primary"}`}
+                      disabled={leaving !== null}
+                      onClick={() => decide(onAccept)}
+                    >
+                      Accept plan
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-circle icon-circle-primary"
+                      title="Send feedback (Enter)"
+                      aria-label="Send feedback"
+                      disabled={!trimmed || leaving !== null}
+                      onClick={sendFeedback}
+                    >
+                      <ArrowUpIcon size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div className="inputwrap">
-        <div className="inputrow">
-          <div className="input-stack">
-            {/* Initial focus: typing feedback is the likeliest next move, and an
-                Enter already in flight from the chat composer lands here, where
-                an empty draft does nothing, instead of on Accept. */}
-            <textarea
-              ref={inputRef}
-              className="input"
-              rows={1}
-              value={feedback}
-              aria-label="Feedback on the plan"
-              placeholder="Tell GG what to change in the plan…"
-              readOnly={leaving !== null}
-              data-modal-initial-focus
-              onChange={(e) => setFeedback(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  sendFeedback();
-                }
-              }}
-            />
-          </div>
-          <div className="inputactions-trailing">
-            <button
-              className="icon-circle icon-circle-primary"
-              title="Send feedback"
-              aria-label="Send feedback"
-              disabled={!trimmed || leaving !== null}
-              onClick={sendFeedback}
-            >
-              <ArrowUpIcon size={16} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="footer plan-review-footer" style={{ color: theme.textMuted }}>
-        <span>Enter sends feedback and GG revises the plan · Shift+Enter for a new line</span>
       </div>
     </div>
   );

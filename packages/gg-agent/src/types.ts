@@ -350,25 +350,23 @@ export interface AgentOptions {
    * turn fails with an authentication error. Returning the current credential
    * here keeps a long run alive across rotations.
    *
-   * Falls back to `apiKey`/`accountId`/`projectId` when omitted or when the
+   * Falls back to `apiKey`/`accountId` when omitted or when the
    * resolver throws (the provider call then surfaces the real auth error).
    */
   resolveCredentials?: () => Promise<{
     apiKey: string;
     accountId?: string;
-    projectId?: string;
   }>;
   baseUrl?: string;
   signal?: AbortSignal;
   accountId?: string;
   transportSessionId?: StreamOptions["transportSessionId"];
-  projectId?: StreamOptions["projectId"];
   cacheRetention?: StreamOptions["cacheRetention"];
   onContextPrepared?: StreamOptions["onContextPrepared"];
   /** Stable per-session cache routing key for providers that support it. */
   promptCacheKey?: StreamOptions["promptCacheKey"];
-  /** Extra HTTP headers attached to every model request (e.g. Kimi For Coding
-   *  client-identity headers). Merged into the underlying SDK default headers. */
+  /** Extra HTTP headers attached to every model request. Merged into the
+   *  underlying SDK default headers. */
   defaultHeaders?: StreamOptions["defaultHeaders"];
   /** Provider-specific request-body fields forwarded to every model request
    *  (e.g. OpenRouter `provider: { zdr: true }`). See gg-ai `ProviderOptions`. */
@@ -377,9 +375,7 @@ export interface AgentOptions {
   fetch?: StreamOptions["fetch"];
   /** OpenAI service tier for latency-sensitive first-party API requests. */
   serviceTier?: StreamOptions["serviceTier"];
-  /** Codex Responses-Lite request shape override (see StreamOptions). */
-  responsesLite?: StreamOptions["responsesLite"];
-  /** Codex strict tool schema override (see StreamOptions). */
+  /** OpenAI strict tool schema override (see StreamOptions). */
   strictTools?: StreamOptions["strictTools"];
   /** Whether the target model supports image input. When false, image blocks
    *  in messages/tool_results are downgraded to text placeholders. Default: true. */

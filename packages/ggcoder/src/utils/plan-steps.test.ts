@@ -3,6 +3,7 @@ import {
   extractPlanSteps,
   rebasePlanSteps,
   segmentDisplayText,
+  stepsDoneThrough,
   stripDoneMarkers,
   type PlanStep,
 } from "./plan-steps.js";
@@ -174,5 +175,21 @@ describe("plan step display markers", () => {
       { kind: "done", stepNum: 6, description: "Ship the final response" },
       { kind: "text", text: "\n\nStep 7 next" },
     ]);
+  });
+});
+
+describe("stepsDoneThrough", () => {
+  it("counts every step up to the highest marker, so skipped markers don't stall progress", () => {
+    expect(stepsDoneThrough([2, 7, 9], 15)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it("completes the plan when the last marker lands even if a middle one was skipped", () => {
+    const all = Array.from({ length: 15 }, (_, i) => i + 1).filter((step) => step !== 8);
+    expect(stepsDoneThrough(all, 15)).toHaveLength(15);
+  });
+
+  it("ignores markers beyond the plan's total and non-positive steps", () => {
+    expect(stepsDoneThrough([0, -1, 99], 4)).toEqual([]);
+    expect(stepsDoneThrough([3, 99], 4)).toEqual([1, 2, 3]);
   });
 });

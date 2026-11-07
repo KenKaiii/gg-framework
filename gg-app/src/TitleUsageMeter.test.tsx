@@ -15,10 +15,17 @@ afterEach(() => {
 });
 
 describe("TitleUsageMeter", () => {
+  it("shows no meter for ChatGPT, whose usage lives in ChatGPT settings", async () => {
+    const { container } = render(<TitleUsageMeter currentProvider="openai" />);
+    await act(async () => {});
+    expect(container.innerHTML).toBe("");
+    expect(getUsageMock).not.toHaveBeenCalled();
+  });
+
   it("shows the active provider's current window and toggles to weekly", async () => {
     getUsageMock.mockResolvedValue({
-      provider: "openai",
-      displayName: "Codex",
+      provider: "moonshot",
+      displayName: "Kimi",
       connected: true,
       windows: [
         { kind: "current", label: "5-hour", usedPercent: 22 },
@@ -27,9 +34,9 @@ describe("TitleUsageMeter", () => {
       fetchedAt: Date.now(),
     });
 
-    render(<TitleUsageMeter currentProvider="openai" />);
+    render(<TitleUsageMeter currentProvider="moonshot" />);
 
-    const meter = await screen.findByRole("button", { name: /Codex 5-hour: 22% used/ });
+    const meter = await screen.findByRole("button", { name: /Kimi 5-hour: 22% used/ });
     expect(screen.getByText("5h")).toBeDefined();
     expect(meter.querySelector<HTMLElement>(".title-usage-fill")?.style.width).toBe("22%");
     fireEvent.click(meter);
@@ -37,7 +44,7 @@ describe("TitleUsageMeter", () => {
     expect(meter.querySelector<HTMLElement>(".title-usage-fill")?.style.width).toBe("48%");
     expect(meter.getAttribute("aria-pressed")).toBe("true");
     expect(meter.getAttribute("aria-disabled")).toBe("false");
-    expect(getUsageMock).toHaveBeenCalledWith("openai");
+    expect(getUsageMock).toHaveBeenCalledWith("moonshot");
   });
 
   it("refreshes a partial Anthropic snapshot when the window regains focus", async () => {
@@ -83,8 +90,8 @@ describe("TitleUsageMeter", () => {
 
   it("renders a weekly-only provider window without a bogus 168h label", async () => {
     getUsageMock.mockResolvedValue({
-      provider: "openai",
-      displayName: "Codex",
+      provider: "moonshot",
+      displayName: "Kimi",
       connected: true,
       windows: [
         {
@@ -97,29 +104,29 @@ describe("TitleUsageMeter", () => {
       fetchedAt: Date.now(),
     });
 
-    render(<TitleUsageMeter currentProvider="openai" />);
+    render(<TitleUsageMeter currentProvider="moonshot" />);
 
-    const meter = await screen.findByRole("button", { name: /Codex Weekly: 11% used/ });
+    const meter = await screen.findByRole("button", { name: /Kimi Weekly: 11% used/ });
     expect(screen.getByText("week")).toBeDefined();
     expect(screen.queryByText("168h")).toBeNull();
     expect(meter.querySelector<HTMLElement>(".title-usage-fill")?.style.width).toBe("11%");
   });
 
-  // Codex regularly reports weekly-only. The toggle is inert then, and the
+  // A provider may report weekly-only. The toggle is inert then, and the
   // global click-sound listener in App keys off `aria-disabled` — without it the
   // meter cued a press that did nothing.
   it("marks a single-window meter as non-interactive and ignores clicks", async () => {
     getUsageMock.mockResolvedValue({
-      provider: "openai",
-      displayName: "Codex",
+      provider: "moonshot",
+      displayName: "Kimi",
       connected: true,
       windows: [{ kind: "weekly", label: "Weekly", usedPercent: 11 }],
       fetchedAt: Date.now(),
     });
 
-    render(<TitleUsageMeter currentProvider="openai" />);
+    render(<TitleUsageMeter currentProvider="moonshot" />);
 
-    const meter = await screen.findByRole("button", { name: /Codex Weekly: 11% used/ });
+    const meter = await screen.findByRole("button", { name: /Kimi Weekly: 11% used/ });
     expect(meter.getAttribute("aria-disabled")).toBe("true");
     // Nothing to switch to, so the label must not advertise a toggle.
     expect(meter.getAttribute("title")).not.toContain("Click for");
@@ -132,40 +139,40 @@ describe("TitleUsageMeter", () => {
   it("keeps the last good snapshot when a refresh comes back unavailable", async () => {
     getUsageMock
       .mockResolvedValueOnce({
-        provider: "openai",
-        displayName: "Codex",
+        provider: "moonshot",
+        displayName: "Kimi",
         connected: true,
         windows: [{ kind: "current", label: "5-hour", usedPercent: 22 }],
         fetchedAt: Date.now(),
       })
       .mockResolvedValue({
-        provider: "openai",
-        displayName: "Codex",
+        provider: "moonshot",
+        displayName: "Kimi",
         connected: true,
         windows: [],
         fetchedAt: Date.now(),
         error: "Usage is temporarily unavailable.",
       });
 
-    render(<TitleUsageMeter currentProvider="openai" />);
+    render(<TitleUsageMeter currentProvider="moonshot" />);
 
-    await screen.findByRole("button", { name: /Codex 5-hour: 22% used/ });
+    await screen.findByRole("button", { name: /Kimi 5-hour: 22% used/ });
     window.dispatchEvent(new Event("focus"));
     await waitFor(() => expect(getUsageMock).toHaveBeenCalledTimes(2));
-    expect(screen.getByRole("button", { name: /Codex 5-hour: 22% used/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /Kimi 5-hour: 22% used/ })).toBeDefined();
   });
 
   it("marks a replayed snapshot as last-known rather than live", async () => {
     getUsageMock.mockResolvedValue({
-      provider: "openai",
-      displayName: "Codex",
+      provider: "moonshot",
+      displayName: "Kimi",
       connected: true,
       windows: [{ kind: "current", label: "5-hour", usedPercent: 22 }],
       fetchedAt: Date.now(),
       stale: true,
     });
 
-    render(<TitleUsageMeter currentProvider="openai" />);
+    render(<TitleUsageMeter currentProvider="moonshot" />);
 
     const meter = await screen.findByRole("button", { name: /last known/ });
     expect(meter.className).toContain("is-stale");
@@ -174,22 +181,22 @@ describe("TitleUsageMeter", () => {
   it("hides when the provider is no longer connected", async () => {
     getUsageMock
       .mockResolvedValueOnce({
-        provider: "openai",
-        displayName: "Codex",
+        provider: "moonshot",
+        displayName: "Kimi",
         connected: true,
         windows: [{ kind: "current", label: "5-hour", usedPercent: 22 }],
         fetchedAt: Date.now(),
       })
       .mockResolvedValue({
-        provider: "openai",
-        displayName: "Codex",
+        provider: "moonshot",
+        displayName: "Kimi",
         connected: false,
         windows: [],
         fetchedAt: Date.now(),
       });
 
-    const { container } = render(<TitleUsageMeter currentProvider="openai" />);
-    await screen.findByRole("button", { name: /Codex 5-hour: 22% used/ });
+    const { container } = render(<TitleUsageMeter currentProvider="moonshot" />);
+    await screen.findByRole("button", { name: /Kimi 5-hour: 22% used/ });
     window.dispatchEvent(new Event("focus"));
     await waitFor(() => expect(container.firstChild).toBeNull());
   });
@@ -198,8 +205,8 @@ describe("TitleUsageMeter", () => {
     vi.useFakeTimers();
     try {
       getUsageMock.mockResolvedValue({
-        provider: "openai",
-        displayName: "Codex",
+        provider: "moonshot",
+        displayName: "Kimi",
         connected: true,
         windows: [{ kind: "current", label: "5-hour", usedPercent: 22 }],
         fetchedAt: Date.now(),
@@ -208,7 +215,7 @@ describe("TitleUsageMeter", () => {
       const hasFocus = vi.spyOn(document, "hasFocus").mockImplementation(() => focused);
       onTestFinished(() => hasFocus.mockRestore());
 
-      render(<TitleUsageMeter currentProvider="openai" />);
+      render(<TitleUsageMeter currentProvider="moonshot" />);
       expect(getUsageMock).toHaveBeenCalledTimes(1);
 
       await act(async () => {

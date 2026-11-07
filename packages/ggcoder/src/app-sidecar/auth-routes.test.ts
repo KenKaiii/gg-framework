@@ -8,6 +8,9 @@ import type { SessionRouteContext } from "./route-context.js";
 
 const signIn = vi.hoisted(() => vi.fn());
 const signOut = vi.hoisted(() => vi.fn());
+const loginChatGPT = vi.hoisted(() => vi.fn());
+const revokeChatGPTSignIn = vi.hoisted(() => vi.fn());
+vi.mock("../core/oauth/openai.js", () => ({ loginChatGPT, revokeChatGPTSignIn }));
 vi.mock("@kenkaiiii/gg-core", async () => {
   const actual = await vi.importActual<typeof GgCore>("@kenkaiiii/gg-core");
   return { ...actual, signInWithClaudeCode: signIn, signOutOfClaudeCode: signOut };
@@ -46,9 +49,17 @@ function call(ctx: object, url: string, body: unknown): Promise<Reply> {
 
 function authContext() {
   const events: { scope: "one" | "all"; type: string; data: unknown }[] = [];
+  const stored: Record<string, unknown> = {};
   const auth = {
-    setCredentials: vi.fn(async () => {}),
-    clearCredentials: vi.fn(async () => {}),
+    stored,
+    setCredentials: vi.fn(async (key: string, creds: unknown) => {
+      stored[key] = creds;
+    }),
+    clearCredentials: vi.fn(async (key: string) => {
+      delete stored[key];
+    }),
+    getCredentials: vi.fn(async (key: string) => stored[key]),
+    takeLegacySignIn: vi.fn(async () => false),
   };
   const ctx = {
     auth,
@@ -119,5 +130,62 @@ describe("Anthropic sign-in route (Claude Code)", () => {
     await call(ctx, "/auth/logout", { provider: "anthropic", method: "apikey" });
     expect(signOut).not.toHaveBeenCalled();
     expect(auth.clearCredentials).toHaveBeenCalledWith("anthropic");
+  });
+});
+
+describe("Continue with ChatGPT route", () => {
+  it("stores the plan sign-in apart from the OpenAI API key", async () => {
+    const creds = { accessToken: "plan", refreshToken: "r", expiresAt: 1, clientId: "oaiapp_x" };
+    loginChatGPT.mockResolvedValue(creds);
+    const { ctx, auth } = authContext();
+    auth.stored["openai-chatgpt"] = { ...creds, idToken: "old-id-token" };
+    await call(ctx, "/auth/oauth/start", { provider: "openai" });
+    await vi.waitFor(() => expect(ctx.oauthInFlight).toBe(false));
+    // The current sign-in's ID token goes back as a hint.
+    expect(loginChatGPT).toHaveBeenCalledWith(expect.anything(), {
+      previous: expect.objectContaining({ idToken: "old-id-token" }),
+    });
+    expect(auth.setCredentials).toHaveBeenCalledWith("openai-chatgpt", creds);
+  });
+
+  it("revokes the plan session at OpenAI before signing out, keeping the API key", async () => {
+    revokeChatGPTSignIn.mockResolvedValue(true);
+    const { ctx, auth } = authContext();
+    const plan = { accessToken: "plan", refreshToken: "r", expiresAt: 1, clientId: "oaiapp_x" };
+    auth.stored["openai-chatgpt"] = plan;
+    auth.stored.openai = { accessToken: "sk-key", refreshToken: "", expiresAt: 1 };
+    const reply = await call(ctx, "/auth/logout", { provider: "openai", method: "oauth" });
+    expect(reply.body).toEqual({ ok: true, revoked: true });
+    expect(revokeChatGPTSignIn).toHaveBeenCalledWith(plan);
+    expect(auth.stored["openai-chatgpt"]).toBeUndefined();
+    expect(auth.stored.openai).toBeDefined();
+  });
+
+  it("dismisses a retired sign-in without touching anything else", async () => {
+    const { ctx, auth } = authContext();
+    await call(ctx, "/auth/logout", { provider: "moonshot", method: "legacy" });
+    expect(auth.takeLegacySignIn).toHaveBeenCalledWith("moonshot");
+    expect(auth.clearCredentials).not.toHaveBeenCalled();
+  });
+
+  it("removes both Kimi keys on an API-key disconnect", async () => {
+    const { ctx, auth } = authContext();
+    await call(ctx, "/auth/logout", { provider: "moonshot", method: "apikey" });
+    expect(auth.clearCredentials.mock.calls.map((c) => c[0])).toEqual(["kimi-code", "moonshot"]);
+  });
+
+  it("stores a Kimi Code plan key under its own storage key", async () => {
+    const { ctx, auth } = authContext();
+    await call(ctx, "/auth/apikey", { provider: "moonshot", key: "kc-key", variant: "kimi-code" });
+    expect(auth.setCredentials).toHaveBeenCalledWith(
+      "kimi-code",
+      expect.objectContaining({ accessToken: "kc-key", refreshToken: "" }),
+    );
+  });
+
+  it("refuses a sign-in for a provider that only takes keys", async () => {
+    const { ctx } = authContext();
+    const reply = await call(ctx, "/auth/oauth/start", { provider: "xai" });
+    expect(reply.status).toBe(400);
   });
 });

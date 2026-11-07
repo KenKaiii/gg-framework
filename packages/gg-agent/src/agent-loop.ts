@@ -1041,13 +1041,13 @@ export async function* agentLoop(
         // let the provider report the real auth error.
         let liveApiKey = options.apiKey;
         let liveAccountId = options.accountId;
-        let liveProjectId = options.projectId;
         if (options.resolveCredentials) {
           try {
             const fresh = await options.resolveCredentials();
             liveApiKey = fresh.apiKey;
-            if (fresh.accountId !== undefined) liveAccountId = fresh.accountId;
-            if (fresh.projectId !== undefined) liveProjectId = fresh.projectId;
+            // The account belongs to the credential: a ChatGPT plan that fell
+            // back to an OpenAI API key must drop it, or the key rides the plan route.
+            liveAccountId = fresh.accountId;
           } catch (credErr) {
             diag("credential_refresh_failed", {
               error: (credErr instanceof Error ? credErr.message : String(credErr)).slice(0, 200),
@@ -1119,13 +1119,11 @@ export async function* agentLoop(
               signal,
               accountId: liveAccountId,
               transportSessionId: options.transportSessionId,
-              projectId: liveProjectId,
               cacheRetention: options.cacheRetention,
               // A hedge duplicates an already-observed request; observe it once.
               onContextPrepared: arm === "primary" ? options.onContextPrepared : undefined,
               promptCacheKey: options.promptCacheKey,
               serviceTier: options.serviceTier,
-              responsesLite: options.responsesLite,
               strictTools: options.strictTools,
               supportsImages: options.supportsImages,
               supportsVideo: options.supportsVideo,

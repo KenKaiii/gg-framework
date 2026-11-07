@@ -54,8 +54,9 @@ describe("toolCallNameRuleFor", () => {
   it.each<[string, { accountId?: string; baseUrl?: string } | undefined, ToolCallNameRule["id"]]>([
     ["anthropic", undefined, "anthropic"],
     ["anthropic", { baseUrl: "https://proxy.example.com" }, "anthropic"],
-    ["openai", undefined, "openai-chat"],
-    ["openai", { baseUrl: "https://api.openai.com/v1" }, "openai-chat"],
+    // OpenAI itself (plan or API key) rides the Responses API.
+    ["openai", undefined, "openai-responses"],
+    ["openai", { baseUrl: "https://api.openai.com/v1" }, "openai-responses"],
     ["openai", { accountId: "acct" }, "openai-responses"],
     ["openai", { baseUrl: "http://localhost:1234/v1" }, "generic"],
     ["gemini", undefined, "gemini"],

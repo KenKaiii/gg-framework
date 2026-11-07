@@ -10,7 +10,6 @@ import { estimateConversationTokens, estimateMessageTokens } from "./token-estim
 import { findLatestHumanQuery, selectQueryAwareContext } from "./query-aware-selector.js";
 import { getSummaryModel, getContextWindow, getModel } from "../model-registry.js";
 import { isModelUnavailableFailure } from "../model-unavailable.js";
-import { kimiCodingHeaders, isKimiCodingEndpoint } from "../oauth/kimi.js";
 import { log } from "../logger.js";
 import { editTargetPaths } from "../../tools/edit-targets.js";
 
@@ -1179,7 +1178,6 @@ export async function compact(
     model: string;
     apiKey?: string;
     accountId?: string;
-    projectId?: string;
     baseUrl?: string;
     contextWindow: number;
     /** The active-context trigger this rewrite must land below. */
@@ -1446,12 +1444,7 @@ export async function compact(
         maxTokens: request.outputTokens,
         apiKey: options.apiKey,
         accountId: options.accountId,
-        projectId: options.projectId,
         baseUrl: options.baseUrl,
-        defaultHeaders:
-          options.provider === "moonshot" && isKimiCodingEndpoint(options.baseUrl)
-            ? kimiCodingHeaders()
-            : undefined,
         signal: attemptController.signal,
       });
 

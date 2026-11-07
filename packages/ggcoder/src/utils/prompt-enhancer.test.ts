@@ -112,7 +112,6 @@ describe("enhancePrompt", () => {
       model: "claude-fable-5-1",
       maxTokens: 128000,
       thinking: "high" as const,
-      projectId: "account-project",
       baseUrl: "https://provider.example/v1",
       accountId: "account-id",
       signal: new AbortController().signal,

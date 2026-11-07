@@ -100,7 +100,7 @@ import type { GitHubCI } from "./utils/github-ci.js";
 import type { ProjectHealthScan } from "./core/project-health-scan.js";
 import { scoreProjectHealth, type ProjectHealth } from "./core/project-health-score.js";
 import { type RepoPolls, createRepoPolls } from "./app-sidecar/repo-polls.js";
-import { extractPlanSteps } from "./utils/plan-steps.js";
+import { extractPlanSteps, stepsDoneThrough } from "./utils/plan-steps.js";
 import { getSupportedThinkingLevels, isThinkingLevelSupported } from "./core/thinking-level.js";
 import { PROMPT_COMMANDS } from "./core/prompt-commands.js";
 import { pruneDoneTasksSync } from "./core/tasks-store.js";
@@ -600,7 +600,7 @@ async function main(): Promise<void> {
     if (method === "GET" && (url === "/usage" || url.startsWith("/usage?"))) {
       void (async () => {
         const provider = new URL(url, `http://${host}`).searchParams.get("provider");
-        if (provider !== "anthropic" && provider !== "openai" && provider !== "moonshot") {
+        if (provider !== "anthropic" && provider !== "moonshot") {
           daemonJson(res, 400, { error: "unsupported usage provider" });
           return;
         }
@@ -1439,10 +1439,10 @@ async function createSession(
   let planProgressSync: Promise<boolean> = Promise.resolve(false);
 
   function planProgressPayload(): { total: number; completed: number[] } {
-    const completed = [...approvedPlanMarkers]
-      .filter((step) => step >= 1 && step <= approvedPlanTotal)
-      .sort((a, b) => a - b);
-    return { total: approvedPlanTotal, completed };
+    return {
+      total: approvedPlanTotal,
+      completed: stepsDoneThrough(approvedPlanMarkers, approvedPlanTotal),
+    };
   }
 
   async function syncApprovedPlanProgress(generation: number): Promise<boolean> {
@@ -1456,13 +1456,9 @@ async function createSession(
       // Keep the last real total instead of flashing 0 or declaring completion.
       if (freshTotal > 0 || approvedPlanTotal === 0) approvedPlanTotal = freshTotal;
     }
-    broadcast("plan_progress", planProgressPayload());
-    return (
-      approvedPlanTotal > 0 &&
-      Array.from({ length: approvedPlanTotal }, (_, index) => index + 1).every((step) =>
-        approvedPlanMarkers.has(step),
-      )
-    );
+    const progress = planProgressPayload();
+    broadcast("plan_progress", progress);
+    return progress.total > 0 && progress.completed.length === progress.total;
   }
 
   function queueApprovedPlanProgressSync(): Promise<boolean> {
@@ -2379,7 +2375,7 @@ async function createSession(
   }
 
   async function authStatusPayload(): Promise<{
-    providers: (AuthProviderMeta & {
+    providers: (Omit<AuthProviderMeta, "methodDetails"> & {
       connected: boolean;
       connectedMethods: AuthMethod[];
       activeMethod?: AuthMethod;
@@ -2387,9 +2383,11 @@ async function createSession(
       priorityNote?: string;
       methodGuidance: AuthMethodMeta[];
       claudeCodeInstalled?: boolean;
+      reauthMessage?: string;
     })[];
     localConnected: boolean;
   }> {
+    const retired = await auth.legacySignIns();
     const providers = await Promise.all(
       AUTH_PROVIDERS.map(async (p) => {
         const dual = dualAuthProvider(p.value);
@@ -2401,19 +2399,9 @@ async function createSession(
         const hasOAuth = oauthKey
           ? await auth.hasCredentials(oauthKey)
           : p.value === "anthropic" && (await auth.hasClaudeCodeLogin());
-        const apiKeyKeys = p.apiKeyVariants?.map((v) => v.key) ?? [p.value];
-        const hasApiKey = p.methods.includes("apikey")
-          ? (await Promise.all(apiKeyKeys.map((k) => auth.hasCredentials(k)))).some(Boolean)
-          : false;
+        const hasApiKey = p.methods.includes("apikey") && (await auth.hasApiKey(p.value));
         const connectedMethods: AuthMethod[] = [];
-        // OAuth-only providers (Anthropic/OpenAI/Gemini) store under the provider
-        // id itself, so `hasProviderAuth` is what proves their OAuth connection.
-        // Anthropic's id holds only its API key; its sign-in is the Claude Code marker.
-        if (
-          p.methods.includes("oauth") &&
-          (hasOAuth || (!dual && p.value !== "anthropic" && (await auth.hasCredentials(p.value))))
-        )
-          connectedMethods.push("oauth");
+        if (p.methods.includes("oauth") && hasOAuth) connectedMethods.push("oauth");
         if (hasApiKey) connectedMethods.push("apikey");
 
         // Which one a request would actually use, mirroring AuthStorage's
@@ -2423,15 +2411,12 @@ async function createSession(
           ? ((await auth.getCredentials(oauthKey))?.usageExhaustedUntil ?? 0)
           : 0;
         const oauthSidelined = hasOAuth && Date.now() < exhaustedUntil && hasApiKey;
-        // Gemini resolves the API key first (model registry authStorageKeys).
-        const keyFirst = p.value === "gemini" && hasApiKey;
-        const activeMethod = keyFirst
-          ? ("apikey" as const)
-          : connectedMethods.includes("oauth")
-            ? oauthSidelined
-              ? ("apikey" as const)
-              : ("oauth" as const)
-            : connectedMethods[0];
+        const reauthMessage = retired.find((r) => r.provider === p.value)?.message;
+        const activeMethod = connectedMethods.includes("oauth")
+          ? oauthSidelined
+            ? ("apikey" as const)
+            : ("oauth" as const)
+          : connectedMethods[0];
 
         // `methodDetails` is the server-side lookup table behind
         // `methodGuidance` — shipping both would duplicate every string on the
@@ -2445,6 +2430,8 @@ async function createSession(
           ...(oauthSidelined ? { oauthExhaustedUntil: exhaustedUntil } : {}),
           ...(authPriorityNote(p.value) ? { priorityNote: authPriorityNote(p.value)! } : {}),
           methodGuidance: describeAuthMethods(p.value),
+          // A retired sign-in is still on disk: ask the user once to reconnect.
+          ...(reauthMessage ? { reauthMessage } : {}),
           // Whether "Sign in with Claude" still has to download Claude Code first.
           ...(p.value === "anthropic"
             ? { claudeCodeInstalled: resolveClaudeCodeBinary() !== null }

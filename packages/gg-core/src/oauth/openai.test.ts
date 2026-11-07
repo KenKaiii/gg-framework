@@ -1,148 +1,332 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { loginOpenAI } from "./openai.js";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  CHATGPT_PLAN_BASE_URL,
+  ChatGPTPlanNotEnabledError,
+  getChatGPTHostId,
+  loginChatGPT,
+  refreshChatGPTToken,
+  revokeChatGPTSignIn,
+} from "./openai.js";
 import type { OAuthLoginCallbacks } from "./types.js";
 
 const originalFetch = globalThis.fetch;
+const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+const KID = "test-key";
+const PLAN_SCOPES = "chatgpt.tokens.use.direct email offline_access openid profile resource.invoke";
 
-/** An access token carrying the account-id claim `loginOpenAI` requires. */
-function accessTokenWithAccount(): string {
-  const payload = Buffer.from(
-    JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-123" } }),
-  ).toString("base64url");
-  return `header.${payload}.sig`;
+function signIdToken(claims: Record<string, unknown>, key = privateKey): string {
+  const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: KID })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
+  const signature = crypto.sign("RSA-SHA256", Buffer.from(`${header}.${payload}`), key);
+  return `${header}.${payload}.${signature.toString("base64url")}`;
 }
 
-function mockTokenExchange(): ReturnType<typeof vi.fn> {
-  const fetchMock = vi.fn(
-    async () =>
-      new Response(
-        JSON.stringify({
-          access_token: accessTokenWithAccount(),
-          refresh_token: "refresh-1",
-          expires_in: 3_600,
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      ),
-  );
+interface FakeAuthServer {
+  fetch: ReturnType<typeof vi.fn>;
+  /** Form bodies posted to each endpoint path. */
+  posts: Map<string, URLSearchParams[]>;
+}
+
+/** OpenAI's auth server: JWKS, token and revoke endpoints. The ID token echoes the nonce. */
+function fakeAuthServer(opts: {
+  scope?: string;
+  idTokenClaims?: (nonce: string) => Record<string, unknown>;
+}): { server: FakeAuthServer; setNonce: (nonce: string) => void } {
+  let nonce = "";
+  const posts = new Map<string, URLSearchParams[]>();
+  const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/.well-known/jwks.json") {
+      const jwk = { ...publicKey.export({ format: "jwk" }), kid: KID, alg: "RS256" };
+      return new Response(JSON.stringify({ keys: [jwk] }), { status: 200 });
+    }
+    const form = new URLSearchParams(String(init?.body ?? ""));
+    posts.set(url.pathname, [...(posts.get(url.pathname) ?? []), form]);
+    if (url.pathname === "/api/accounts/oauth/revoke") return new Response("", { status: 200 });
+    const clientId = form.get("client_id")!;
+    const claims = opts.idTokenClaims?.(nonce) ?? {
+      iss: "https://auth.openai.com",
+      aud: clientId,
+      sub: "user-sub-1",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      nonce,
+    };
+    return new Response(
+      JSON.stringify({
+        access_token: "plan-access",
+        refresh_token: "plan-refresh",
+        id_token: signIdToken(claims),
+        expires_in: 3600,
+        scope: opts.scope ?? PLAN_SCOPES,
+      }),
+      { status: 200 },
+    );
+  });
   globalThis.fetch = fetchMock as unknown as typeof fetch;
-  return fetchMock;
+  return { server: { fetch: fetchMock, posts }, setNonce: (n) => (nonce = n) };
 }
 
-/** Capture the authorize URL the flow asks the browser to open. */
-function callbacksWithPaste(paste: (message: string) => Promise<string>): {
-  callbacks: OAuthLoginCallbacks;
-  authUrl: () => string;
-  prompts: string[];
-} {
-  let opened = "";
+/** Paste the callback URL the browser would land on, built from the opened authorize URL. */
+function pasteCallbacks(
+  query: (auth: URL) => string,
+  setNonce: (nonce: string) => void,
+): { callbacks: OAuthLoginCallbacks; authUrl: () => URL; prompts: string[] } {
+  let opened: URL | undefined;
   const prompts: string[] = [];
   return {
     prompts,
-    authUrl: () => opened,
+    authUrl: () => opened!,
     callbacks: {
       onOpenUrl: (url) => {
-        opened = url;
+        opened = new URL(url);
+        setNonce(opened.searchParams.get("nonce")!);
       },
       onStatus: () => {},
       onPromptCode: async (message) => {
         prompts.push(message);
-        return paste(message);
+        return `${opened!.searchParams.get("redirect_uri")}?${query(opened!)}`;
       },
     },
   };
 }
 
-afterEach(() => {
-  globalThis.fetch = originalFetch;
-  vi.restoreAllMocks();
+let dir: string;
+let files: { hostIdFile: string; registrationFile: string };
+
+beforeEach(async () => {
+  dir = await fs.mkdtemp(path.join(os.tmpdir(), "gg-chatgpt-signin-"));
+  files = {
+    hostIdFile: path.join(dir, "openai-host-id"),
+    registrationFile: path.join(dir, "openai-chatgpt-client.json"),
+  };
 });
 
-describe("loginOpenAI on a headless host", () => {
-  /**
-   * Regression for #20. Over SSH the loopback listener binds fine (port 1455 is
-   * free on the server) but no browser will ever hit it, so waiting on it alone
-   * meant a two-minute silence. The paste route must be offered immediately.
-   */
-  it("offers the paste prompt immediately instead of waiting out the listener", async () => {
-    mockTokenExchange();
-    let promptedAt = 0;
-    const startedAt = Date.now();
+afterEach(async () => {
+  globalThis.fetch = originalFetch;
+  vi.restoreAllMocks();
+  await fs.rm(dir, { recursive: true, force: true });
+});
 
-    const holder = callbacksWithPaste(async () => {
-      promptedAt = Date.now();
-      const state = new URL(holder.authUrl()).searchParams.get("state");
-      return `http://localhost:1455/auth/callback?code=abc123&state=${state}`;
-    });
+const firstRegistration = (auth: URL) =>
+  `code=abc123&state=${auth.searchParams.get("state")}&client_id=oaiapp_issued&scope=${encodeURIComponent(PLAN_SCOPES)}`;
 
-    // Nothing will ever hit the listener here; the paste route drives this
-    // login, and it has to be offered without waiting for the listener to lapse.
-    const creds = await loginOpenAI(holder.callbacks);
+describe("Continue with ChatGPT", () => {
+  it("registers GG Coder on first sign-in and saves the issued client", async () => {
+    const { server, setNonce } = fakeAuthServer({});
+    const holder = pasteCallbacks(firstRegistration, setNonce);
 
-    expect(promptedAt).toBeGreaterThan(0);
-    expect(promptedAt - startedAt).toBeLessThan(5_000);
-    expect(creds.accountId).toBe("acct-123");
-  }, 20_000);
+    const creds = await loginChatGPT(holder.callbacks, files);
 
-  it("does not blame a local server that started fine", async () => {
-    mockTokenExchange();
-    const holder = callbacksWithPaste(async () => {
-      const state = new URL(holder.authUrl()).searchParams.get("state");
-      return `http://localhost:1455/auth/callback?code=abc123&state=${state}`;
-    });
-
-    await loginOpenAI(holder.callbacks);
-
-    // The listener bound fine — the browser is simply elsewhere. Saying the
-    // server failed sent people chasing a port problem they did not have.
-    expect(holder.prompts.length).toBeGreaterThan(0);
-    expect(holder.prompts[0]).not.toContain("Could not start local server");
-    expect(holder.prompts[0]).toContain("SSH/headless");
-  }, 20_000);
-
-  it("completes the login from a pasted callback URL", async () => {
-    const fetchMock = mockTokenExchange();
-    let pasted: string | null = null;
-
-    const holder = callbacksWithPaste(async () => {
-      // The operator copies the whole URL the browser landed on, state included.
-      const state = new URL(holder.authUrl()).searchParams.get("state");
-      pasted = `http://localhost:1455/auth/callback?code=abc123&state=${state}`;
-      return pasted;
-    });
-
-    const creds = await loginOpenAI(holder.callbacks);
-
-    expect(pasted).not.toBeNull();
-    expect(creds.accessToken).toBe(accessTokenWithAccount());
-    expect(creds.accountId).toBe("acct-123");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  }, 20_000);
-
-  // The listener enforces this; a pasted URL must not be a way around it.
-  it("rejects a pasted callback whose state belongs to another attempt", async () => {
-    mockTokenExchange();
-    const { callbacks } = callbacksWithPaste(
-      async () => "http://localhost:1455/auth/callback?code=abc123&state=not-my-state",
+    const auth = holder.authUrl();
+    expect(auth.origin + auth.pathname).toBe("https://auth.openai.com/api/accounts/authorize");
+    expect(auth.searchParams.get("client_id")).toBe("dynamic_agent_client");
+    expect(auth.searchParams.get("agent_name_hint")).toBe("GG Coder");
+    expect(auth.searchParams.get("ext_agent_host_id")).toMatch(/^urn:uuid:/);
+    expect(auth.searchParams.get("scope")).toContain("chatgpt.tokens.use.direct");
+    expect(auth.searchParams.get("resource")).toBe("https://api.openai.com/v1");
+    expect(auth.searchParams.get("redirect_uri")).toMatch(
+      /^http:\/\/127\.0\.0\.1:\d+\/auth\/callback$/,
     );
+    // No Codex identity anywhere.
+    expect(auth.toString()).not.toMatch(/codex|originator/);
 
-    await expect(loginOpenAI(callbacks)).rejects.toThrow(/state mismatch/i);
-  }, 20_000);
+    const exchange = server.posts.get("/api/accounts/oauth/token")![0]!;
+    expect(exchange.get("client_id")).toBe("oaiapp_issued");
+    expect(exchange.get("resource")).toBe("https://api.openai.com/v1");
+    expect(exchange.get("redirect_uri")).toBe(auth.searchParams.get("redirect_uri"));
 
-  it("re-asks when the paste contains no code rather than failing the login", async () => {
-    mockTokenExchange();
-    let attempt = 0;
-
-    const holder = callbacksWithPaste(async () => {
-      attempt++;
-      if (attempt === 1) return "oops wrong clipboard";
-      const state = new URL(holder.authUrl()).searchParams.get("state");
-      return `http://localhost:1455/auth/callback?code=abc123&state=${state}`;
+    expect(creds).toMatchObject({
+      accessToken: "plan-access",
+      refreshToken: "plan-refresh",
+      accountId: "user-sub-1",
+      clientId: "oaiapp_issued",
+      baseUrl: CHATGPT_PLAN_BASE_URL,
     });
-
-    const creds = await loginOpenAI(holder.callbacks);
-
-    expect(attempt).toBe(2);
-    expect(holder.prompts[1]).toContain("didn't contain an authorization code");
-    expect(creds.accountId).toBe("acct-123");
+    expect(creds.scopes).toContain("chatgpt.tokens.use.direct");
+    expect(JSON.parse(await fs.readFile(files.registrationFile, "utf-8"))).toEqual({
+      clientId: "oaiapp_issued",
+      subject: "user-sub-1",
+    });
   }, 20_000);
+
+  it("reuses the issued client and host ID on a later sign-in", async () => {
+    const first = fakeAuthServer({});
+    const one = pasteCallbacks(firstRegistration, first.setNonce);
+    const firstCreds = await loginChatGPT(one.callbacks, files);
+
+    const second = fakeAuthServer({});
+    const two = pasteCallbacks(
+      (auth) => `code=def456&state=${auth.searchParams.get("state")}`,
+      second.setNonce,
+    );
+    await loginChatGPT(two.callbacks, { ...files, previous: firstCreds });
+
+    const auth = two.authUrl();
+    expect(auth.searchParams.get("client_id")).toBe("oaiapp_issued");
+    expect(auth.searchParams.get("agent_name_hint")).toBeNull();
+    expect(auth.searchParams.get("id_token_hint")).toBe(firstCreds.idToken);
+    expect(auth.searchParams.get("ext_agent_host_id")).toBe(
+      one.authUrl().searchParams.get("ext_agent_host_id"),
+    );
+    expect(second.server.posts.get("/api/accounts/oauth/token")![0]!.get("client_id")).toBe(
+      "oaiapp_issued",
+    );
+  }, 20_000);
+
+  it("fails with a clear choice when plan use wasn't granted, and revokes the session", async () => {
+    const { server, setNonce } = fakeAuthServer({ scope: "openid profile email offline_access" });
+    const holder = pasteCallbacks(firstRegistration, setNonce);
+
+    await expect(loginChatGPT(holder.callbacks, files)).rejects.toThrow(ChatGPTPlanNotEnabledError);
+    await expect(fs.stat(files.registrationFile)).rejects.toThrow();
+    expect(server.posts.get("/api/accounts/oauth/revoke")).toHaveLength(1);
+  }, 20_000);
+
+  it("treats a declined consent as plan use not enabled", async () => {
+    const { setNonce } = fakeAuthServer({});
+    const holder = pasteCallbacks(
+      (auth) => `error=access_denied&state=${auth.searchParams.get("state")}`,
+      setNonce,
+    );
+    await expect(loginChatGPT(holder.callbacks, files)).rejects.toThrow(
+      /Allow Use your ChatGPT plan, or add an OpenAI API key/,
+    );
+  }, 20_000);
+
+  it("rejects an ID token with the wrong nonce or a forged signature", async () => {
+    const wrongNonce = fakeAuthServer({
+      idTokenClaims: () => ({
+        iss: "https://auth.openai.com",
+        aud: "oaiapp_issued",
+        sub: "s",
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        nonce: "someone-else",
+      }),
+    });
+    await expect(
+      loginChatGPT(pasteCallbacks(firstRegistration, wrongNonce.setNonce).callbacks, files),
+    ).rejects.toThrow(/nonce/);
+
+    const forged = fakeAuthServer({});
+    const other = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+    forged.server.fetch.mockImplementation(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/.well-known/jwks.json") {
+        const jwk = { ...publicKey.export({ format: "jwk" }), kid: KID };
+        return new Response(JSON.stringify({ keys: [jwk] }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          access_token: "a",
+          refresh_token: "r",
+          id_token: signIdToken({ sub: "s" }, other.privateKey),
+          scope: PLAN_SCOPES,
+        }),
+        { status: 200 },
+      );
+    });
+    await expect(
+      loginChatGPT(pasteCallbacks(firstRegistration, forged.setNonce).callbacks, files),
+    ).rejects.toThrow(/signature/);
+  }, 20_000);
+
+  it("treats an unfinished registration (no issued client) as incomplete", async () => {
+    const { setNonce } = fakeAuthServer({});
+    const holder = pasteCallbacks(
+      (auth) => `code=abc123&state=${auth.searchParams.get("state")}`,
+      setNonce,
+    );
+    await expect(loginChatGPT(holder.callbacks, files)).rejects.toThrow(/didn't finish/);
+  }, 20_000);
+});
+
+describe("Continue with ChatGPT on a headless host", () => {
+  // Regression for #20: the paste route is offered at once, not after the listener lapses.
+  it("offers the paste prompt immediately", async () => {
+    const { setNonce } = fakeAuthServer({});
+    const startedAt = Date.now();
+    const holder = pasteCallbacks(firstRegistration, setNonce);
+    await loginChatGPT(holder.callbacks, files);
+    expect(holder.prompts[0]).toContain("SSH/headless");
+    expect(Date.now() - startedAt).toBeLessThan(10_000);
+  }, 20_000);
+
+  it("rejects a pasted callback whose state belongs to another attempt", async () => {
+    const { setNonce } = fakeAuthServer({});
+    const holder = pasteCallbacks(() => "code=abc&state=not-mine&client_id=x", setNonce);
+    await expect(loginChatGPT(holder.callbacks, files)).rejects.toThrow(/state mismatch/i);
+  }, 20_000);
+
+  it("re-asks when the paste isn't a callback URL", async () => {
+    const { setNonce } = fakeAuthServer({});
+    let attempt = 0;
+    let opened: URL | undefined;
+    const prompts: string[] = [];
+    const callbacks: OAuthLoginCallbacks = {
+      onOpenUrl: (url) => {
+        opened = new URL(url);
+        setNonce(opened.searchParams.get("nonce")!);
+      },
+      onStatus: () => {},
+      onPromptCode: async (message) => {
+        prompts.push(message);
+        attempt++;
+        if (attempt === 1) return "oops wrong clipboard";
+        return `${opened!.searchParams.get("redirect_uri")}?${firstRegistration(opened!)}`;
+      },
+    };
+    const creds = await loginChatGPT(callbacks, files);
+    expect(attempt).toBe(2);
+    expect(prompts[1]).toContain("wasn't a callback URL");
+    expect(creds.accountId).toBe("user-sub-1");
+  }, 20_000);
+});
+
+describe("ChatGPT plan tokens", () => {
+  it("refreshes with the issued client ID and the resource", async () => {
+    const { server } = fakeAuthServer({});
+    const creds = await refreshChatGPTToken({ refreshToken: "r1", clientId: "oaiapp_issued" });
+    const form = server.posts.get("/api/accounts/oauth/token")![0]!;
+    expect(form.get("grant_type")).toBe("refresh_token");
+    expect(form.get("client_id")).toBe("oaiapp_issued");
+    expect(form.get("resource")).toBe("https://api.openai.com/v1");
+    expect(form.get("scope")).toBeNull();
+    expect(creds.accessToken).toBe("plan-access");
+    expect(creds.refreshToken).toBe("plan-refresh");
+  });
+
+  it("refuses to refresh without an issued client (an auth failure, so the sign-in is cleared)", async () => {
+    await expect(refreshChatGPTToken({ refreshToken: "r1" })).rejects.toThrow(/\(401\)/);
+  });
+
+  it("revokes the refresh token on sign-out", async () => {
+    const { server } = fakeAuthServer({});
+    expect(await revokeChatGPTSignIn({ refreshToken: "r1", clientId: "oaiapp_issued" })).toBe(true);
+    const form = server.posts.get("/api/accounts/oauth/revoke")![0]!;
+    expect(form.get("token")).toBe("r1");
+    expect(form.get("token_type_hint")).toBe("refresh_token");
+    expect(form.get("client_id")).toBe("oaiapp_issued");
+  });
+
+  it("reports an unconfirmed revoke after retrying a server error", async () => {
+    const fetchMock = vi.fn(async () => new Response("", { status: 503 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    expect(await revokeChatGPTSignIn({ refreshToken: "r", clientId: "c" }, { backoffMs: 1 })).toBe(
+      false,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps one host ID per machine, owner-only", async () => {
+    const first = await getChatGPTHostId(files.hostIdFile);
+    expect(first).toMatch(/^urn:uuid:[0-9a-f-]{36}$/);
+    expect(await getChatGPTHostId(files.hostIdFile)).toBe(first);
+    if (process.platform !== "win32") {
+      expect((await fs.stat(files.hostIdFile)).mode & 0o777).toBe(0o600);
+    }
+  });
 });

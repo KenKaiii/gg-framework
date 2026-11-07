@@ -62,8 +62,6 @@ import {
   type SideSearchRequest,
   type SideSearchResult,
 } from "../tools/side-web-search.js";
-import { kimiCodingHeaders, isKimiCodingEndpoint } from "./oauth/kimi.js";
-import { isGrokCliEndpoint } from "./oauth/xai.js";
 import {
   SessionManager,
   type MessageEntry,
@@ -118,11 +116,7 @@ import {
   type SubAgentSnapshot,
 } from "./subagent-manager.js";
 import { applyAsyncSubagentPolicy } from "./subagent-policy.js";
-import {
-  resolveResponsesLite,
-  resolveStrictTools,
-  type CodexShapeSetting,
-} from "./codex-request-shape.js";
+import { resolveStrictTools, type CodexShapeSetting } from "./codex-request-shape.js";
 import { subAgentDescription } from "../tools/subagent.js";
 import { getAllMcpServers } from "./mcp/index.js";
 import type { MCPElicitHandler } from "./mcp/index.js";
@@ -2215,14 +2209,9 @@ export class AgentSession {
         thinking,
         apiKey: creds.accessToken,
         accountId: creds.accountId,
-        projectId: creds.projectId,
         baseUrl,
         signal,
         transportSessionId: this.sessionId || this.transportSessionId,
-        defaultHeaders:
-          provider === "moonshot" && isKimiCodingEndpoint(baseUrl)
-            ? kimiCodingHeaders()
-            : undefined,
         supportsImages: true,
       });
       const response = await result.response;
@@ -2270,7 +2259,6 @@ export class AgentSession {
       maxTokens: 500,
       apiKey: creds.accessToken,
       accountId: creds.accountId,
-      projectId: creds.projectId,
       baseUrl: this.baseUrl ?? creds.baseUrl,
       signal: this.opts.signal,
     });
@@ -2621,7 +2609,7 @@ export class AgentSession {
     // Re-read every run so rule-file edits apply on the next turn; a few small files.
     const streamRules = await loadStreamRules(this.cwd);
 
-    const runAgentLoop = async (apiKey: string, accountId?: string, projectId?: string) => {
+    const runAgentLoop = async (apiKey: string, accountId?: string) => {
       lastResolvedAccessToken = apiKey;
       const modelInfo = getModel(this.model);
       const effectiveBaseUrl = this.baseUrl ?? creds.baseUrl;
@@ -2660,29 +2648,16 @@ export class AgentSession {
           return {
             apiKey: live.accessToken,
             ...(live.accountId !== undefined ? { accountId: live.accountId } : {}),
-            ...(live.projectId !== undefined ? { projectId: live.projectId } : {}),
           };
         },
         baseUrl: effectiveBaseUrl,
         signal: this.opts.signal,
         accountId,
         transportSessionId: this.sessionId || this.transportSessionId,
-        projectId,
-        // Kimi For Coding gates the managed endpoint on coding-agent identity
-        // headers; attach them only when the Kimi OAuth token is in use.
-        defaultHeaders:
-          this.provider === "moonshot" && isKimiCodingEndpoint(effectiveBaseUrl)
-            ? kimiCodingHeaders()
-            : undefined,
         // speedProfile "optimized": 1-h cache TTL (survives turns >5 min apart)
         // + pre-warm before the first turn. "baseline": current 5-min default.
         cacheRetention: this.isSpeedOptimized() ? "long" : "short",
         promptCacheKey: this.getPromptCacheKey(),
-        responsesLite: resolveResponsesLite(
-          this.codexShapeSetting("codexResponsesLite"),
-          this.provider,
-          this.model,
-        ),
         strictTools: resolveStrictTools(this.codexShapeSetting("codexStrictTools"), this.provider),
         onContextPrepared: (context) => {
           const report = this.cacheDiagnostics.prepare(context, {
@@ -2863,7 +2838,6 @@ export class AgentSession {
               {
                 accessToken: apiKey,
                 accountId,
-                projectId,
                 baseUrl: effectiveBaseUrl,
               },
               force ? "forced" : "automatic",
@@ -2931,35 +2905,31 @@ export class AgentSession {
     };
 
     try {
-      await runAgentLoop(creds.accessToken, creds.accountId, creds.projectId);
+      await runAgentLoop(creds.accessToken, creds.accountId);
     } catch (err) {
       // Abort errors are expected (user cancellation) — don't retry or re-throw
       if (isAbortError(err) || this.opts.signal?.aborted) {
         return;
       }
-      // A subscription OAuth plan ran out of usage (hard usage-limit stop, or an
-      // HTTP 402 billing stop). If the user ALSO configured that provider's API
-      // key, mark the OAuth credential usage-exhausted (honoring the
-      // provider-stated reset time when present) and retry this turn on the API
-      // key — OAuth stays the preferred credential and resumes automatically once
+      // The ChatGPT plan ran out of usage (hard usage-limit stop, or an HTTP 402
+      // billing stop). If the user ALSO configured an OpenAI API key, mark the
+      // plan usage-exhausted (honoring a stated reset time when present) and
+      // retry this turn on the key — the plan stays preferred and resumes once
       // the mark lapses. A generic 429 is deliberately excluded: it may be a
-      // transient rate limit and must not silently switch the user to a billed
-      // API key.
+      // transient rate limit and must not silently switch the user to a billed key.
       //
-      // Grok adds one case Kimi doesn't have: xAI gates its CLI chat proxy by
-      // subscription tier, so an entitled-looking account can be refused outright
-      // with a 403. That means "OAuth cannot serve this", not a transient error,
-      // so it counts as exhausted too — otherwise a dual-configured user would
-      // hard-fail while holding a perfectly good API key.
+      // An account or workspace that isn't eligible for plan use is refused with
+      // a 403; that means "the plan cannot serve this", so it counts too.
       //
-      // Guarded on the subscription endpoint actually being in use: if the API key
-      // was already active, the same error means BOTH are out and must surface.
+      // Guarded on the plan route actually being in use: if the API key was
+      // already active, the same error means BOTH are out and must surface.
       const dualAuth = dualAuthProvider(this.provider);
-      const onSubscriptionEndpoint =
-        (this.provider === "moonshot" && isKimiCodingEndpoint(creds.baseUrl)) ||
-        (this.provider === "xai" && isGrokCliEndpoint(creds.baseUrl));
+      const onSubscriptionEndpoint = this.provider === "openai" && Boolean(creds.accountId);
       const tierRefusal =
-        this.provider === "xai" && err instanceof ProviderError && err.statusCode === 403;
+        this.provider === "openai" &&
+        err instanceof ProviderError &&
+        err.statusCode === 403 &&
+        /ChatGPT plan use isn't available/.test(err.message);
       const oauthIsOut =
         isUsageLimitError(err) ||
         (err instanceof ProviderError && err.statusCode === 402) ||
@@ -2983,11 +2953,10 @@ export class AgentSession {
           storageKeys: this.currentAuthStorageKeys(),
         });
         this.lastAccountId = creds.accountId;
-        // The runAgentLoop closure re-reads `creds`, so the retry picks up the
-        // API key's public baseUrl (api.moonshot.ai / api.x.ai) and drops the
-        // subscription endpoint's client-identity headers.
+        // The runAgentLoop closure re-reads `creds`, so the retry runs on the
+        // API key without the plan's account.
         try {
-          await runAgentLoop(creds.accessToken, creds.accountId, creds.projectId);
+          await runAgentLoop(creds.accessToken, creds.accountId);
         } catch (fallbackErr) {
           // The fallback is inside this catch branch, so its errors do not pass
           // through the outer 401 handler. Clear a rejected API key explicitly
@@ -3007,7 +2976,7 @@ export class AgentSession {
         });
         this.lastAccountId = creds.accountId;
         try {
-          await runAgentLoop(creds.accessToken, creds.accountId, creds.projectId);
+          await runAgentLoop(creds.accessToken, creds.accountId);
         } catch (retryErr) {
           await clearInvalidStaticApiKey(retryErr);
           throw retryErr;
@@ -3032,7 +3001,7 @@ export class AgentSession {
           rejectedToken: lastResolvedAccessToken,
         });
         this.lastAccountId = creds.accountId;
-        await runAgentLoop(creds.accessToken, creds.accountId, creds.projectId);
+        await runAgentLoop(creds.accessToken, creds.accountId);
       } else {
         throw err;
       }
@@ -3407,7 +3376,6 @@ export class AgentSession {
   private maybeCompactPostTurn(creds: {
     accessToken: string;
     accountId?: string;
-    projectId?: string;
     baseUrl?: string;
   }): void {
     if (!this.settingsManager.get("autoCompact")) return;
@@ -3503,7 +3471,6 @@ export class AgentSession {
     existingCredentials?: {
       accessToken: string;
       accountId?: string;
-      projectId?: string;
       baseUrl?: string;
     },
     mode: "manual" | "automatic" | "forced" = "manual",
@@ -3549,7 +3516,6 @@ export class AgentSession {
         model: this.model,
         apiKey: creds.accessToken,
         accountId: creds.accountId,
-        projectId: creds.projectId,
         baseUrl: this.baseUrl ?? creds.baseUrl,
         contextWindow,
         targetTokens: policy.targetTokens,
@@ -4809,12 +4775,11 @@ export class AgentSession {
     const { provider, model, thinkingLevel, baseUrl } = this;
     const threshold = this.settingsManager.get("compactThreshold");
     const claudeCode = await this.claudeCodeProcess();
-    const creds: { accessToken: string; accountId?: string; projectId?: string; baseUrl?: string } =
-      claudeCode
-        ? { accessToken: "" }
-        : await this.authStorage.resolveCredentials(provider, {
-            storageKeys: this.currentAuthStorageKeys(),
-          });
+    const creds: { accessToken: string; accountId?: string; baseUrl?: string } = claudeCode
+      ? { accessToken: "" }
+      : await this.authStorage.resolveCredentials(provider, {
+          storageKeys: this.currentAuthStorageKeys(),
+        });
     const maxTokens = outputCapForRequest({
       provider,
       model,
@@ -4835,7 +4800,6 @@ export class AgentSession {
       model,
       thinking: thinkingLevel,
       maxTokens,
-      projectId: creds.projectId,
       prompt: text,
       stack,
       apiKey: creds.accessToken,
@@ -5044,7 +5008,7 @@ export class AgentSession {
     }
   }
 
-  private codexShapeSetting(key: "codexResponsesLite" | "codexStrictTools"): CodexShapeSetting {
+  private codexShapeSetting(key: "codexStrictTools"): CodexShapeSetting {
     return this.settingsManager?.get(key) ?? "auto";
   }
 

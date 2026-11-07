@@ -132,8 +132,9 @@ export {
 export type { ToolCallNameRule } from "./providers/transform.js";
 export { continuesTurn, opensTurn } from "./utils/turn-continuation.js";
 
-// Codex model family served with the Responses-Lite request shape
-export { CODEX_CLIENT_VERSION, usesResponsesLite } from "./providers/openai-codex.js";
+// GPT-6 model family (reasoning floor, low verbosity)
+export { usesResponsesLite } from "./providers/openai-responses.js";
+export { GG_CODER_USER_AGENT } from "./user-agent.js";
 
 // Cache pre-warming (Anthropic — fires a max_tokens:1 warm-up to prime the KV cache)
 export { prewarmAnthropicCache } from "./providers/anthropic.js";

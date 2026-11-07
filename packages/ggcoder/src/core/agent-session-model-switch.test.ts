@@ -68,14 +68,21 @@ beforeEach(async () => {
   await fs.writeFile(
     path.join(tempHome, ".gg", "auth.json"),
     JSON.stringify({
-      gemini: {
-        accessToken: "test-gemini-token",
-        refreshToken: "test-gemini-refresh",
+      "gemini-api": {
+        accessToken: "test-gemini-key",
+        refreshToken: "",
         expiresAt: Date.now() + 3_600_000,
-        projectId: "test-google-project",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
       },
-      anthropic: { accessToken: "t", refreshToken: "t", expiresAt: Date.now() + 3_600_000 },
-      openai: { accessToken: "t", refreshToken: "t", expiresAt: Date.now() + 3_600_000 },
+      anthropic: { accessToken: "t", refreshToken: "", expiresAt: Date.now() + 3_600_000 },
+      "openai-chatgpt": {
+        accessToken: "t",
+        refreshToken: "t",
+        expiresAt: Date.now() + 3_600_000,
+        accountId: "user-sub",
+        clientId: "oaiapp_test",
+        baseUrl: "https://api.openai.com/v1",
+      },
       moonshot: { accessToken: "t", refreshToken: "", expiresAt: Date.now() + 3_600_000 },
     }),
   );
@@ -145,9 +152,7 @@ describe("AgentSession model switch", () => {
           maxTokens: getModel(model)?.maxOutputTokens ?? 16384,
         });
         expect(request).not.toHaveProperty("userAgent");
-        if (provider === "gemini") {
-          expect(request.projectId).toBe("test-google-project");
-        }
+        expect(request).not.toHaveProperty("projectId");
       }
     } finally {
       await session.dispose();

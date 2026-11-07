@@ -1,6 +1,6 @@
 import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
-import { isKimiCodingEndpoint } from "./oauth/kimi.js";
-import { GEMINI_API_KEY, MOONSHOT_OAUTH_KEY, XIAOMI_CREDITS_KEY } from "./auth-storage.js";
+import { isKimiCodingEndpoint } from "./kimi-region.js";
+import { GEMINI_API_KEY, KIMI_CODE_KEY, XIAOMI_CREDITS_KEY } from "./auth-storage.js";
 import { isHiddenProvider } from "./hidden-providers.js";
 
 export { HIDDEN_PROVIDERS, isHiddenProvider } from "./hidden-providers.js";
@@ -11,9 +11,9 @@ export interface ModelInfo {
   provider: Provider;
   contextWindow: number;
   /**
-   * ChatGPT Codex transport uses product-specific windows that can differ from
-   * the public API model window. OpenAI OAuth requests include an accountId and
-   * route through `/codex/responses`; API-key requests do not.
+   * The ChatGPT plan route uses product-specific windows that can differ from
+   * the public API model window. ChatGPT plan requests carry an accountId;
+   * API-key requests do not.
    */
   codexContextWindow?: number;
   maxOutputTokens: number;
@@ -66,8 +66,7 @@ export interface ModelInfo {
   /**
    * Ordered preference of auth-storage keys this model resolves credentials
    * from, for providers that split auth across multiple distinct
-   * endpoints/keys (currently only Xiaomi: the Token Plan endpoint vs. the
-   * API Credits endpoint). The first key with stored credentials wins, so a
+   * endpoints/keys (a plan key vs. a pay-per-token key). The first key with stored credentials wins, so a
    * model can both prefer one endpoint AND fall back to another the user has
    * configured instead:
    *   - `mimo-v2.6-pro` / `mimo-v2.6-flash`: `["xiaomi", XIAOMI_CREDITS_KEY]` —
@@ -75,9 +74,9 @@ export interface ModelInfo {
    *     every MiMo model, so a Credits-only user still reaches these).
    *   - `mimo-v2.6-pro-ultraspeed`: `[XIAOMI_CREDITS_KEY]` only — not served
    *     over the Token Plan endpoint, so there's no fallback to it.
-   *   - every Gemini model: `[GEMINI_API_KEY, "gemini"]` — an AI Studio API key
-   *     first (the user chose to pay per token, and Code Assist OAuth now
-   *     refuses personal accounts), then the Code Assist OAuth login.
+   *   - Kimi: `[KIMI_CODE_KEY, "moonshot"]` — the Kimi Code plan key first;
+   *     K2.8 Preview is `[KIMI_CODE_KEY]` only (the plan endpoint serves it).
+   *   - every Gemini model: `[GEMINI_API_KEY]` — the AI Studio key.
    * Falls back to `[provider]` — the normal single-credential case — when
    * unset. Read via `getAuthStorageKeys()` / `getAuthStorageKey()`.
    */
@@ -135,8 +134,11 @@ const CODEX_FAST_BILLING: ModelBilling = {
 
 // Provider display order — mirrors `PROVIDERS` in ui/login.tsx so the
 // /model selector and login selector sort models identically.
-/** Gemini credential order: an AI Studio API key first, then Code Assist OAuth. */
-const GEMINI_AUTH_KEYS = [GEMINI_API_KEY, "gemini"];
+/** Gemini connects with an AI Studio API key only. */
+const GEMINI_AUTH_KEYS = [GEMINI_API_KEY];
+
+/** Kimi credential order: a Kimi Code plan key first, then a Moonshot key. */
+const KIMI_AUTH_KEYS = [KIMI_CODE_KEY, "moonshot"];
 
 export const MODELS: ModelInfo[] = [
   // ── Anthropic ──────────────────────────────────────────
@@ -267,14 +269,13 @@ export const MODELS: ModelInfo[] = [
   {
     // GPT-6 Astra — "Our most capable model for complex, demanding work."
     // (Codex catalog priority 2, listed for every ChatGPT plan, requires a
-    // Codex client >= 0.153.0 — see CODEX_CLIENT_VERSION). Same split as 5.6:
-    // 1.05M on the public Responses API, 272K on the ChatGPT OAuth route
+    // Codex client >= 0.153.0). Same split as 5.6:
+    // 1.05M on the public Responses API, 272K on the ChatGPT plan route
     // (openai/codex models.json, `gpt-6-astra`). Reasoning ladder low → medium
     // → high → xhigh → max → ultra; `ultra` is the Codex orchestration preset
     // (multi_agent v2) and is Codex-only — the public API tops out at `max`.
-    // Note: through a plain API key OpenAI requires the Responses API for tool
-    // calling on Astra, so the Chat Completions path is text-only; the OAuth
-    // Codex route is the supported way to use it as an agent.
+    // OpenAI requires the Responses API for tool calling on Astra, so both
+    // the ChatGPT plan and API keys ride gg-ai's Responses transport.
     id: "gpt-6-astra",
     name: "GPT-6 Astra",
     provider: "openai",
@@ -317,9 +318,7 @@ export const MODELS: ModelInfo[] = [
   // next start.
   {
     // GPT-6.1 Sol — "Latest workhorse model for coding and everyday work."
-    // (Codex priority 1, default low). The catalog says Codex client >= 0.153.0,
-    // but the ChatGPT backend only serves it from 0.159.0 (see
-    // CODEX_CLIENT_VERSION). $2/$10 MTok, cached input $0.10. Ladder low →
+    // (Codex priority 1, default low). $2/$10 MTok, cached input $0.10. Ladder low →
     // medium → high → xhigh → max → ultra; ultra is the Codex orchestration
     // preset (xhigh effort on the wire + proactive local subagent delegation).
     id: "gpt-6.1-sol",
@@ -506,8 +505,8 @@ export const MODELS: ModelInfo[] = [
     maxThinkingLevel: "high",
     authStorageKeys: GEMINI_AUTH_KEYS,
   },
-  // Keep 3.1 Flash Lite first for the working OAuth default and fast-model routing.
-  // New GA models are opt-in; Code Assist access varies by account. Gemini 3.7
+  // Keep 3.1 Flash Lite first for the default and fast-model routing.
+  // Gemini 3.7
   // Flash is retired: Google deprecated it on 2026-10-08 and routes every
   // `gemini-3.7-flash` request to 3.8 Flash (ai.google.dev/gemini-api/docs/
   // changelog), so a saved session on it falls back to the provider default.
@@ -540,9 +539,7 @@ export const MODELS: ModelInfo[] = [
     authStorageKeys: GEMINI_AUTH_KEYS,
   },
   {
-    // Wire name `gemini-3-flash` — the Code Assist (OAuth) backend rejects the
-    // display string `gemini-3.5-flash` with a 404, so gemini-cli keeps this
-    // alternative name (SECONDARY_GEMINI_3_5_FLASH_MODEL) for that endpoint.
+    // Wire name `gemini-3-flash`, the id Google serves 3.5 Flash under.
     id: "gemini-3-flash",
     name: "Gemini 3.5 Flash",
     provider: "gemini",
@@ -557,9 +554,7 @@ export const MODELS: ModelInfo[] = [
     authStorageKeys: GEMINI_AUTH_KEYS,
   },
   {
-    // Gemini 3.1 Pro is public preview — gated behind Code Assist preview
-    // enablement, so free/personal OAuth accounts 404 on it (see
-    // ACCOUNT_GATED_MODELS in gg-ai's gemini provider).
+    // Gemini 3.1 Pro is public preview.
     id: "gemini-3.1-pro-preview",
     name: "Gemini 3.1 Pro (Preview)",
     provider: "gemini",
@@ -576,8 +571,8 @@ export const MODELS: ModelInfo[] = [
   // ── Moonshot (Kimi) ────────────────────────────────────
   // K3 is Kimi's 2.8T-parameter flagship for long-horizon coding, knowledge
   // work, and deep reasoning. Its effort ladder is server-declared as
-  // low/high/max on both the public API (default max) and the Kimi For Coding
-  // OAuth endpoint (default high); thinking can also be fully disabled.
+  // low/high/max on both the public API (default max) and the Kimi Code plan
+  // endpoint (default high); thinking can also be fully disabled.
   {
     id: "kimi-k3",
     name: "Kimi K3",
@@ -592,12 +587,13 @@ export const MODELS: ModelInfo[] = [
     maxVideoBytes: 100 * 1024 * 1024,
     costTier: "high",
     maxThinkingLevel: "max",
+    authStorageKeys: KIMI_AUTH_KEYS,
   },
-  // K2.8 Preview (2026-09-11) is served only on the Kimi For Coding OAuth
-  // endpoint, under its rolling `kimi-for-coding` id (live /models, 2026-09-28:
+  // K2.8 Preview (2026-09-11) is served only on the Kimi Code plan endpoint,
+  // under its rolling `kimi-for-coding` id (live /models, 2026-09-28:
   // display_name "K2.8 Preview", 1M context, image + video input, efforts
-  // low/high/max default max). The public API-key endpoint does not serve it,
-  // so it resolves from the Kimi sign-in credential only.
+  // low/high/max default max). The public Moonshot API does not serve it, so
+  // it resolves from a Kimi Code plan key only.
   {
     id: "kimi-for-coding",
     name: "Kimi K2.8 Preview",
@@ -610,7 +606,7 @@ export const MODELS: ModelInfo[] = [
     maxVideoBytes: 100 * 1024 * 1024,
     costTier: "medium",
     maxThinkingLevel: "max",
-    authStorageKeys: [MOONSHOT_OAUTH_KEY],
+    authStorageKeys: [KIMI_CODE_KEY],
   },
   // K2.7 Code is requested by its pinned id (not the `kimi-for-coding` alias
   // that moved to K2.8), so it stays the real K2.7 on both endpoints.
@@ -626,6 +622,7 @@ export const MODELS: ModelInfo[] = [
     maxVideoBytes: 100 * 1024 * 1024,
     costTier: "medium",
     maxThinkingLevel: "high",
+    authStorageKeys: KIMI_AUTH_KEYS,
   },
   // K2.7 Code HighSpeed — the same model as K2.7 Code served at ~180 tok/s
   // (up to ~260 on short contexts), 256K context (platform.kimi.ai model list,
@@ -645,6 +642,7 @@ export const MODELS: ModelInfo[] = [
     maxVideoBytes: 100 * 1024 * 1024,
     costTier: "medium",
     maxThinkingLevel: "high",
+    authStorageKeys: KIMI_AUTH_KEYS,
   },
   // ── Z.AI (GLM) ─────────────────────────────────────────
   // Two GLM entries, both live on the coding endpoint (verified against its
@@ -1156,9 +1154,9 @@ export function getMaxThinkingLevel(modelId: string): ThinkingLevel {
 /**
  * The thinking level a fresh session starts at. Identical to
  * {@link getMaxThinkingLevel} except where the provider declares a lower
- * default effort server-side — Kimi K3's Kimi For Coding OAuth endpoint
- * declares `default_effort: "high"` in its /models think_efforts (the public
- * Moonshot API declares "max"), and the official kimi-code CLI starts there.
+ * default effort server-side — Kimi K3's Kimi Code plan endpoint declares
+ * `default_effort: "high"` in its /models think_efforts (the public Moonshot
+ * API declares "max").
  * Pass the active credential's baseUrl so the endpoint-aware default resolves;
  * matching it keeps plan-usage burn identical to the official CLI (users can
  * still toggle up to max).

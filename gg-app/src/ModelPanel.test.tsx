@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ModelPanel, type SecondAgent } from "./ModelPanel";
-import type { AgentState, ModelOption } from "./agent";
+import { authStatus, openUrl, type AgentState, type AuthProvider, type ModelOption } from "./agent";
 
-vi.mock("./agent", () => ({ setThinkingLevel: vi.fn(() => Promise.resolve()) }));
+vi.mock("./agent", () => ({
+  setThinkingLevel: vi.fn(() => Promise.resolve()),
+  authStatus: vi.fn(() => Promise.resolve([])),
+  openUrl: vi.fn(() => Promise.resolve()),
+}));
 
 // jsdom has no layout, so no `scrollIntoView` (same stub as Dropdown.test.tsx).
 beforeAll(() => {
@@ -111,5 +115,76 @@ describe("ModelPanel — a model that spends real money", () => {
     expect(paid.textContent).toContain("main chat only");
     fireEvent.click(paid);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe("ModelPanel — ChatGPT plan", () => {
+  function renderOpenAI() {
+    render(
+      <ModelPanel
+        state={{ provider: "openai", model: "gpt-6.1-sol" } as AgentState}
+        models={[{ id: "gpt-6.1-sol", name: "GPT-6.1 Sol", provider: "openai" }]}
+        modelsFailed={false}
+        running={false}
+        onSelectModel={vi.fn()}
+        second={null}
+        onClose={vi.fn()}
+      />,
+    );
+  }
+
+  it("says when requests use the ChatGPT plan, with a Manage usage link", async () => {
+    vi.mocked(authStatus).mockResolvedValue([
+      { value: "openai", activeMethod: "oauth" } as AuthProvider,
+    ]);
+    renderOpenAI();
+    const link = await screen.findByRole("link", { name: "Manage usage" });
+    expect(screen.getByText(/Using ChatGPT plan/)).toBeDefined();
+    fireEvent.click(link);
+    expect(openUrl).toHaveBeenCalledWith("https://chatgpt.com/settings/usage");
+  });
+
+  it("says nothing on an OpenAI API key", async () => {
+    vi.mocked(authStatus).mockResolvedValue([
+      { value: "openai", activeMethod: "apikey" } as AuthProvider,
+    ]);
+    renderOpenAI();
+    await act(async () => {});
+    expect(screen.queryByText(/Using ChatGPT plan/)).toBeNull();
+  });
+
+  it("never reads auth status for other providers", () => {
+    renderPanel();
+    expect(authStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe("ModelPanel — models the user's plan or keys can't run", () => {
+  it("shows why and won't switch to them", () => {
+    const onSelectModel = vi.fn();
+    render(
+      <ModelPanel
+        state={{ provider: "openai", model: "gpt-6-luna" } as AgentState}
+        models={[
+          { id: "gpt-6-luna", name: "GPT-6 Luna", provider: "openai" },
+          {
+            id: "gpt-6.1-sol",
+            name: "GPT-6.1 Sol",
+            provider: "openai",
+            unavailable: "Not in your ChatGPT plan",
+          },
+        ]}
+        modelsFailed={false}
+        running={false}
+        onSelectModel={onSelectModel}
+        second={null}
+        onClose={vi.fn()}
+      />,
+    );
+    const sol = option(/GPT-6\.1 Sol/);
+    expect(sol.textContent).toContain("Not in your ChatGPT plan");
+    expect(sol.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(sol);
+    expect(onSelectModel).not.toHaveBeenCalled();
   });
 });

@@ -37,7 +37,7 @@ GG Coder es un agente de programación de escritorio que saca más partido a la 
 - **Código real, no suposiciones.** Agent Steroids busca código abierto real y actual en tu equipo. Sin servidores MCP con límite de peticiones, sin límites.
 - **Terminado significa comprobado.** Ken Autopilot sigue trabajando hasta que todo está realmente verificado.
 - **Publica bien, aunque estés empezando.** Programar es solo una parte. Revisiones con un clic de seguridad, cumplimiento normativo, protección de datos, accesibilidad, tests y más, además de una puntuación de Project health, para que no necesites saber qué pedir.
-- **Tus suscripciones.** Claude, ChatGPT, Gemini, Grok, Kimi, claves de API o modelos locales.
+- **Tus suscripciones.** Planes de Claude, ChatGPT, Kimi Code, MiniMax y MiMo, cualquier clave de API o modelos locales.
 
 | Agente             | Tiempo de la batería completa | Consumo por batería | Tiempo vs GG Coder | Consumo vs GG Coder |
 | ------------------ | ----------------------------- | ------------------- | ------------------ | ------------------- |

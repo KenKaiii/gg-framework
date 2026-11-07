@@ -18,27 +18,30 @@ pub(crate) fn auth_file_path() -> PathBuf {
     home_dir().join(".gg").join("auth.json")
 }
 
-/// One API-key option for a provider that splits auth across multiple
-/// distinct endpoints/credentials (currently only Xiaomi: Token Plan vs.
-/// API Credits). Mirrors `ApiKeyVariant` in
-/// packages/ggcoder/src/core/auth-providers.ts.
+/// One API-key option for a provider that takes both a plan key and a
+/// pay-per-token key (Kimi, Xiaomi), or whose key lives apart from the provider
+/// id (Gemini). Mirrors `ApiKeyVariant` in packages/gg-core/src/auth-providers.ts.
 #[derive(PartialEq, Debug)]
 pub(crate) struct ApiKeyVariant {
     /// Storage key in auth.json (distinct from the provider `value`).
     pub(crate) key: &'static str,
     /// Display label, e.g. "Token Plan" or "API Credits".
     pub(crate) label: &'static str,
+    /// "plan" bills the user's subscription; "payg" bills per token.
+    pub(crate) kind: &'static str,
+    /// What the user spends with this key.
+    pub(crate) billing: &'static str,
     /// Base URL stored alongside this variant's credential.
     pub(crate) base_url: Option<&'static str>,
 }
 
 /// Guidance for one auth method — what it bills against and when to pick it.
-/// Only providers offering a real choice (the dual-auth ones) carry these.
-/// Mirrors `AuthMethodMeta` in packages/ggcoder/src/core/auth-providers.ts.
+/// Every provider carries these. Mirrors `AuthMethodMeta` in
+/// packages/gg-core/src/auth-providers.ts.
 pub(crate) struct MethodDetail {
     /// "oauth" or "apikey".
     pub(crate) method: &'static str,
-    /// Button/row label, e.g. "Sign in with Grok".
+    /// Button/row label, e.g. "Continue with ChatGPT".
     pub(crate) label: &'static str,
     /// What the user spends on this method.
     pub(crate) billing: &'static str,
@@ -57,33 +60,29 @@ pub(crate) struct ProviderMeta {
     pub(crate) description: &'static str,
     /// Supported auth methods, e.g. `["oauth"]`, `["apikey"]`, or both.
     pub(crate) methods: &'static [&'static str],
-    /// Distinct auth.json key holding subscription OAuth credentials, for the
-    /// providers that can hold OAuth *and* an API key at once. Mirrors gg-core's
-    /// DUAL_AUTH_PROVIDERS — OAuth-only providers store under `value` itself and
-    /// leave this `None`.
+    /// Distinct auth.json key holding the sign-in, for the providers that can
+    /// hold a sign-in *and* an API key at once. Mirrors gg-core's
+    /// DUAL_AUTH_PROVIDERS (plus Anthropic's Claude Code marker).
     pub(crate) oauth_key: Option<&'static str>,
-    /// Display name of the OAuth credential ("Grok OAuth"), for the
-    /// priority note. Only meaningful alongside `oauth_key`.
+    /// Display name of the sign-in ("ChatGPT plan"), for the priority note.
+    /// Only meaningful alongside `oauth_key`.
     pub(crate) oauth_label: Option<&'static str>,
-    /// Per-method guidance; empty when the provider offers no choice.
+    /// Per-method guidance.
     pub(crate) method_details: &'static [MethodDetail],
     pub(crate) api_key_label: Option<&'static str>,
     /// Custom API base URL stored alongside an API-key credential. Used as the
     /// default when `api_key_variants` is empty.
     pub(crate) api_key_base_url: Option<&'static str>,
-    /// When a provider's API-key auth splits across multiple endpoints, the
-    /// choices to present (first = default). Empty for every single-credential
-    /// provider.
+    /// When a provider takes a plan key and a pay-per-token key, the choices to
+    /// present (first = default). Empty for every single-key provider.
     pub(crate) api_key_variants: &'static [ApiKeyVariant],
 }
 
-/// The provider catalog (single source of truth for app_auth_status +
-/// app_auth_apikey). Order is the display order in the login hub.
 /// Providers left out of the app's provider list (and so its login and
 /// settings screens). Their rows stay below so logout and stored keys still
 /// resolve. Mirrors gg-core's `HIDDEN_PROVIDERS` (hidden-providers.ts) — keep
-/// in sync. Gemini: Google no longer serves personal accounts over sign-in.
-pub(crate) const HIDDEN_PROVIDERS: &[&str] = &["gemini"];
+/// in sync. None today.
+pub(crate) const HIDDEN_PROVIDERS: &[&str] = &[];
 
 /// Providers whose API key may point at a compatible gateway instead of the
 /// vendor endpoint, with the default the transport uses (gg-ai's
@@ -122,13 +121,80 @@ pub(crate) fn normalize_base_url(raw: Option<&str>) -> Result<Option<String>, St
 /// (`{"via":"claude-code"}`). Mirrors gg-core's CLAUDE_CODE_AUTH_KEY.
 pub(crate) const CLAUDE_CODE_AUTH_KEY: &str = "anthropic-claude-code";
 
-/// An `anthropic` entry left by the retired Claude OAuth login (`sk-ant-oat…`).
-/// It is not an API key and no longer authenticates anything.
-fn is_legacy_anthropic_oauth(entry: Option<&serde_json::Value>) -> bool {
-    entry
-        .and_then(|c| c.get("accessToken"))
-        .and_then(|t| t.as_str())
-        .is_some_and(|t| t.starts_with("sk-ant-oat"))
+/// auth.json key of the ChatGPT plan sign-in. Mirrors gg-core's OPENAI_CHATGPT_KEY.
+pub(crate) const OPENAI_CHATGPT_KEY: &str = "openai-chatgpt";
+
+/// A sign-in GG Coder no longer uses (it posed as another vendor's app, or its
+/// token stopped working): `(provider, storage key, message)`. Never counted as
+/// connected; the user is asked once to reconnect. Mirrors gg-core's
+/// RETIRED_SIGN_INS — keep the messages identical.
+pub(crate) const RETIRED_SIGN_INS: &[(&str, &str, &str)] = &[
+    (
+        "anthropic",
+        "anthropic",
+        "Your old Claude sign-in no longer works. Sign in with Claude again to keep using your subscription.",
+    ),
+    (
+        "openai",
+        "openai",
+        "Your old ChatGPT sign-in no longer works. Continue with ChatGPT again, or add an OpenAI API key.",
+    ),
+    (
+        "moonshot",
+        "moonshot-oauth",
+        "Kimi sign-in was removed. Paste a Kimi Code plan key from the Kimi Code Console, or a Moonshot API key.",
+    ),
+    (
+        "xai",
+        "xai-oauth",
+        "Grok sign-in was removed: xAI offers SuperGrok and X Premium usage only in apps it partners with. Add an xAI API key instead.",
+    ),
+    (
+        "gemini",
+        "gemini",
+        "Google sign-in was removed. Add a Gemini API key from Google AI Studio instead.",
+    ),
+];
+
+/// True when `entry`, stored under `storage_key`, is a retired sign-in rather
+/// than a usable credential. Mirrors gg-core's `isRetiredEntry`.
+pub(crate) fn is_retired_entry(storage_key: &str, entry: Option<&serde_json::Value>) -> bool {
+    let Some(entry) = entry.filter(|e| !e.is_null()) else {
+        return false;
+    };
+    let non_empty = |field: &str| {
+        entry
+            .get(field)
+            .and_then(|v| v.as_str())
+            .is_some_and(|v| !v.is_empty())
+    };
+    match storage_key {
+        // An old GG Claude sign-in token (`sk-ant-oat…`), not an API key.
+        "anthropic" => entry
+            .get("accessToken")
+            .and_then(|t| t.as_str())
+            .is_some_and(|t| t.starts_with("sk-ant-oat")),
+        // These slots now hold API keys; only a refreshable sign-in is retired.
+        "openai" | "gemini" => {
+            non_empty("refreshToken") || non_empty("accountId") || non_empty("projectId")
+        }
+        _ => RETIRED_SIGN_INS
+            .iter()
+            .any(|(_, key, _)| *key == storage_key),
+    }
+}
+
+/// The retired sign-in still on disk for `provider`, if any: `(storage key, message)`.
+fn retired_sign_in(
+    creds: Option<&serde_json::Value>,
+    provider: &str,
+) -> Option<(&'static str, &'static str)> {
+    RETIRED_SIGN_INS
+        .iter()
+        .find(|(p, key, _)| {
+            *p == provider && is_retired_entry(key, creds.and_then(|v| v.get(*key)))
+        })
+        .map(|(_, key, message)| (*key, *message))
 }
 
 pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
@@ -138,7 +204,7 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
         description: "Claude Fable 5.1, Opus 5.5, Opus 5.5 Fast, Sonnet 5.5, Haiku 5.5",
         // Sign in with Claude runs through Claude Code, which holds the token;
         // auth.json keeps only a marker under its own key. The API key lives
-        // under `anthropic`. Mirrors gg-core's AUTH_PROVIDERS.
+        // under `anthropic`.
         methods: &["oauth", "apikey"],
         oauth_key: Some(CLAUDE_CODE_AUTH_KEY),
         oauth_label: None,
@@ -165,71 +231,74 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     ProviderMeta {
         value: "openai",
         label: "OpenAI",
-        description:
-            "GPT-6 Astra, GPT-6 Astra Fast, GPT-6.1 Sol, GPT-6.1 Sol Fast, GPT-6.1 Terra, GPT-6.1 Terra Fast, GPT-6 Luna, GPT-6 Luna Fast",
-        methods: &["oauth"],
-        oauth_key: None,
-        oauth_label: None,
-        method_details: &[],
-        api_key_label: None,
+        description: "GPT-6 Astra, GPT-6 Astra Fast, GPT-6.1 Sol, GPT-6.1 Sol Fast, GPT-6.1 Terra, GPT-6.1 Terra Fast, GPT-6 Luna, GPT-6 Luna Fast",
+        // The ChatGPT plan sign-in lives under `openai-chatgpt`, the API key
+        // under `openai` — a dual-auth provider (gg-core DUAL_AUTH_PROVIDERS).
+        methods: &["oauth", "apikey"],
+        oauth_key: Some(OPENAI_CHATGPT_KEY),
+        oauth_label: Some("ChatGPT plan"),
+        method_details: &[
+            MethodDetail {
+                method: "oauth",
+                label: "Continue with ChatGPT",
+                billing: "Uses your ChatGPT plan.",
+                when: "Signs in through OpenAI. Manage what GG Coder may use at chatgpt.com/settings/usage.",
+                requires: Some("A ChatGPT plan."),
+            },
+            MethodDetail {
+                method: "apikey",
+                label: "OpenAI API key",
+                billing: "Pay-per-token from an OpenAI Platform key.",
+                when: "No subscription needed. Covers you while your ChatGPT plan's usage is out.",
+                requires: None,
+            },
+        ],
+        api_key_label: Some("OpenAI"),
         api_key_base_url: None,
         api_key_variants: &[],
     },
     ProviderMeta {
         value: "gemini",
         label: "Gemini",
-        description:
-            "Gemini 3.8 Flash, 3.5 Flash Lite, 3.1 Flash Lite, 3.5 Flash, 3.1 Pro (Preview)",
-        // Google sign-in (Code Assist, stored under `gemini`) or an AI Studio
-        // key stored under its own `gemini-api` key — mirrors gg-core's
-        // AUTH_PROVIDERS. Not a dual-auth provider: the API key is used first.
-        methods: &["oauth", "apikey"],
+        description: "Gemini 3.8 Flash, 3.5 Flash Lite, 3.1 Flash Lite, 3.5 Flash, 3.1 Pro (Preview)",
+        // Stored under `gemini-api`: `gemini` held the retired Google sign-in.
+        methods: &["apikey"],
         oauth_key: None,
         oauth_label: None,
         method_details: &[
             MethodDetail {
-                method: "oauth",
-                label: "Sign in with Google",
-                billing: "Gemini Code Assist Standard or Enterprise licence.",
-                when: "Personal Google accounts are no longer served here (Google ended it on June 18, 2026).",
-                requires: None,
-            },
-            MethodDetail {
                 method: "apikey",
                 label: "Gemini API key",
                 billing: "Pay-per-token from a Google AI Studio key.",
-                when: "Used first whenever it is set.",
+                when: "",
                 requires: None,
             },
         ],
         api_key_label: Some("Gemini"),
         api_key_base_url: Some("https://generativelanguage.googleapis.com/v1beta"),
-        api_key_variants: &[ApiKeyVariant {
-            key: "gemini-api",
-            label: "Google AI Studio",
-            base_url: Some("https://generativelanguage.googleapis.com/v1beta"),
-        }],
+        api_key_variants: &[
+            ApiKeyVariant {
+                key: "gemini-api",
+                label: "Google AI Studio",
+                kind: "payg",
+                billing: "Pay-per-token from a Google AI Studio key.",
+                base_url: Some("https://generativelanguage.googleapis.com/v1beta"),
+            },
+        ],
     },
     ProviderMeta {
         value: "xai",
         label: "xAI (Grok)",
-        description: "Grok 4.7 · OAuth or API key",
-        methods: &["oauth", "apikey"],
-        oauth_key: Some("xai-oauth"),
-        oauth_label: Some("Grok OAuth"),
+        description: "Grok 4.7",
+        methods: &["apikey"],
+        oauth_key: None,
+        oauth_label: None,
         method_details: &[
-            MethodDetail {
-                method: "oauth",
-                label: "Sign in with Grok",
-                billing: "Included with SuperGrok or X Premium.",
-                when: "",
-                requires: None,
-            },
             MethodDetail {
                 method: "apikey",
                 label: "xAI API key",
-                billing: "Pay-per-token on console.x.ai credits.",
-                when: "",
+                billing: "Pay-per-token from console.x.ai credits.",
+                when: "SuperGrok and X Premium usage is only offered in apps xAI partners with.",
                 requires: None,
             },
         ],
@@ -239,30 +308,38 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     },
     ProviderMeta {
         value: "moonshot",
-        label: "Moonshot",
-        description: "Kimi K3, K2.8 Preview (Kimi sign-in), K2.7 Code · OAuth or API key",
-        methods: &["oauth", "apikey"],
-        oauth_key: Some("moonshot-oauth"),
-        oauth_label: Some("Kimi OAuth"),
+        label: "Kimi (Moonshot)",
+        description: "Kimi K3, K2.8 Preview (Kimi Code plan), K2.7 Code, K2.7 Code HighSpeed",
+        methods: &["apikey"],
+        oauth_key: None,
+        oauth_label: None,
         method_details: &[
             MethodDetail {
-                method: "oauth",
-                label: "Sign in with Kimi",
-                billing: "Included with a Kimi For Coding plan.",
-                when: "",
-                requires: None,
-            },
-            MethodDetail {
                 method: "apikey",
-                label: "Moonshot API key",
-                billing: "Pay-per-token on Moonshot credits.",
+                label: "Kimi API key",
+                billing: "A Kimi Code plan key uses your plan; a Moonshot key is pay-per-token.",
                 when: "",
                 requires: None,
             },
         ],
-        api_key_label: Some("Moonshot"),
+        api_key_label: Some("Kimi"),
         api_key_base_url: None,
-        api_key_variants: &[],
+        api_key_variants: &[
+            ApiKeyVariant {
+                key: "kimi-code",
+                label: "Kimi Code plan",
+                kind: "plan",
+                billing: "Uses your Kimi Code plan. Create the key in the Kimi Code Console.",
+                base_url: None,
+            },
+            ApiKeyVariant {
+                key: "moonshot",
+                label: "Moonshot API",
+                kind: "payg",
+                billing: "Pay-per-token from platform.moonshot.ai.",
+                base_url: None,
+            },
+        ],
     },
     ProviderMeta {
         value: "glm",
@@ -271,7 +348,15 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
         methods: &["apikey"],
         oauth_key: None,
         oauth_label: None,
-        method_details: &[],
+        method_details: &[
+            MethodDetail {
+                method: "apikey",
+                label: "Z.AI API key",
+                billing: "Pay-per-token from your Z.AI account balance.",
+                when: "GLM Coding Plan quota can't be used here: Z.AI limits the plan to the tools it lists.",
+                requires: None,
+            },
+        ],
         api_key_label: Some("Z.AI"),
         api_key_base_url: None,
         api_key_variants: &[],
@@ -283,7 +368,15 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
         methods: &["apikey"],
         oauth_key: None,
         oauth_label: None,
-        method_details: &[],
+        method_details: &[
+            MethodDetail {
+                method: "apikey",
+                label: "MiniMax API key",
+                billing: "An M Plan key uses your plan; a pay-as-you-go key is pay-per-token.",
+                when: "The key you paste decides which one is billed.",
+                requires: None,
+            },
+        ],
         api_key_label: Some("MiniMax"),
         api_key_base_url: None,
         api_key_variants: &[],
@@ -291,23 +384,34 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     ProviderMeta {
         value: "xiaomi",
         label: "Xiaomi (MiMo)",
-        description:
-            "MiMo-V2.6-Pro, MiMo-V2.6-Flash, MiMo-V2.6-Pro-UltraSpeed · Token Plan or API Credits",
+        description: "MiMo-V2.6-Pro, MiMo-V2.6-Flash, MiMo-V2.6-Pro-UltraSpeed · Token Plan or API Credits",
         methods: &["apikey"],
         oauth_key: None,
         oauth_label: None,
-        method_details: &[],
+        method_details: &[
+            MethodDetail {
+                method: "apikey",
+                label: "Xiaomi MiMo API key",
+                billing: "A Token Plan key uses your plan; an API Credits key is pay-per-token.",
+                when: "",
+                requires: None,
+            },
+        ],
         api_key_label: Some("Xiaomi MiMo"),
         api_key_base_url: Some("https://token-plan-sgp.xiaomimimo.com/v1"),
         api_key_variants: &[
             ApiKeyVariant {
                 key: "xiaomi",
                 label: "Token Plan",
+                kind: "plan",
+                billing: "Uses your MiMo Token Plan.",
                 base_url: Some("https://token-plan-sgp.xiaomimimo.com/v1"),
             },
             ApiKeyVariant {
                 key: "xiaomi-credits",
-                label: "API Credits (required for UltraSpeed)",
+                label: "API Credits",
+                kind: "payg",
+                billing: "Pay-per-token from MiMo API Credits. Required for UltraSpeed.",
                 base_url: Some("https://api.xiaomimimo.com/v1"),
             },
         ],
@@ -319,7 +423,15 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
         methods: &["apikey"],
         oauth_key: None,
         oauth_label: None,
-        method_details: &[],
+        method_details: &[
+            MethodDetail {
+                method: "apikey",
+                label: "DeepSeek API key",
+                billing: "Pay-per-token from platform.deepseek.com.",
+                when: "",
+                requires: None,
+            },
+        ],
         api_key_label: Some("DeepSeek"),
         api_key_base_url: None,
         api_key_variants: &[],
@@ -331,7 +443,15 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
         methods: &["apikey"],
         oauth_key: None,
         oauth_label: None,
-        method_details: &[],
+        method_details: &[
+            MethodDetail {
+                method: "apikey",
+                label: "Sakana API key",
+                billing: "Pay-per-token from your Sakana API account.",
+                when: "",
+                requires: None,
+            },
+        ],
         api_key_label: Some("Sakana"),
         api_key_base_url: None,
         api_key_variants: &[],
@@ -343,7 +463,15 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
         methods: &["apikey"],
         oauth_key: None,
         oauth_label: None,
-        method_details: &[],
+        method_details: &[
+            MethodDetail {
+                method: "apikey",
+                label: "OpenRouter API key",
+                billing: "Pay-per-token from OpenRouter credits.",
+                when: "",
+                requires: None,
+            },
+        ],
         api_key_label: Some("OpenRouter"),
         api_key_base_url: None,
         api_key_variants: &[],
@@ -351,8 +479,8 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
 ];
 
 /// Pure: resolve `(storage_key, base_url)` for an API-key submission to
-/// `provider`, given an optional variant key. Providers with multiple
-/// `api_key_variants` (currently only Xiaomi: Token Plan vs. API Credits)
+/// `provider`, given an optional variant key. Providers with
+/// `api_key_variants` (Kimi and Xiaomi: plan key vs. pay-per-token key; Gemini)
 /// select the matching variant, defaulting to the first/primary one when
 /// `variant` is absent or unknown. Single-variant providers ignore `variant`
 /// and use the flat `api_key_base_url`. Returns `None` if `provider` is
@@ -374,11 +502,10 @@ pub(crate) fn resolve_apikey_target(
 }
 
 /// Native: provider list + live connection status, read directly from
-/// ~/.gg/auth.json. `connected` is true when a credential key is present
-/// (a dual-auth provider like Moonshot/xAI is satisfied by either its OAuth key
-/// or its API key; a multi-variant provider like Xiaomi is satisfied by ANY of
-/// its variant keys — mirrors AuthStorage.hasProviderAuth). Never needs the
-/// sidecar.
+/// ~/.gg/auth.json. `connected` is true when a usable credential is present
+/// (OpenAI is satisfied by its plan sign-in or its API key; a provider with key
+/// variants like Kimi or Xiaomi by ANY of them; a retired sign-in never counts —
+/// mirrors AuthStorage.hasProviderAuth). Never needs the sidecar.
 ///
 /// Also reports WHICH methods are connected and which one a request would
 /// actually use, mirroring AuthStorage's resolution order: subscription OAuth
@@ -420,31 +547,25 @@ pub(crate) fn auth_status_snapshot(creds: Option<&serde_json::Value>) -> serde_j
             .and_then(|v| v.as_i64())
             .unwrap_or(0)
     };
+    // A usable credential under `key`: present and not a retired sign-in (an
+    // old Codex token in the `openai` slot must never read as an API key).
+    let has_usable = |key: &str| -> bool {
+        has_key(key) && !is_retired_entry(key, creds.and_then(|v| v.get(key)))
+    };
     // API-key credential present under any of the provider's key(s).
     let has_api_key = |p: &ProviderMeta| -> bool {
         if !p.methods.contains(&"apikey") {
             return false;
         }
-        // With variants, the variant keys are the API-key keys: the provider id
-        // may hold something else (Gemini keeps its OAuth login there).
-        if p.value == "anthropic" {
-            has_key(p.value) && !is_legacy_anthropic_oauth(creds.and_then(|v| v.get(p.value)))
-        } else if p.api_key_variants.is_empty() {
-            has_key(p.value)
+        if p.api_key_variants.is_empty() {
+            has_usable(p.value)
         } else {
-            p.api_key_variants.iter().any(|v| has_key(v.key))
+            p.api_key_variants.iter().any(|v| has_usable(v.key))
         }
     };
-    // OAuth credential present. Dual-auth providers keep it under a distinct key;
-    // OAuth-only providers store it under the provider id itself.
+    // Sign-in present, under its own key (the ChatGPT plan, the Claude Code marker).
     let has_oauth = |p: &ProviderMeta| -> bool {
-        if !p.methods.contains(&"oauth") {
-            return false;
-        }
-        match p.oauth_key {
-            Some(key) => has_key(key),
-            None => has_key(p.value),
-        }
+        p.methods.contains(&"oauth") && p.oauth_key.is_some_and(has_key)
     };
     let connected = |p: &ProviderMeta| -> bool { has_oauth(p) || has_api_key(p) };
 
@@ -476,11 +597,7 @@ pub(crate) fn auth_status_snapshot(creds: Option<&serde_json::Value>) -> serde_j
                 }
                 _ => None,
             };
-            // Gemini resolves its API key first (gg-core model registry
-            // authStorageKeys); every other provider prefers OAuth.
-            let active_method = if p.value == "gemini" && api_key {
-                Some("apikey")
-            } else if oauth {
+            let active_method = if oauth {
                 if sidelined_until.is_some() {
                     Some("apikey")
                 } else {
@@ -506,11 +623,11 @@ pub(crate) fn auth_status_snapshot(creds: Option<&serde_json::Value>) -> serde_j
             if let Some(until) = sidelined_until {
                 obj["oauthExhaustedUntil"] = serde_json::json!(until);
             }
-            // The retired Claude sign-in is still on disk: ask the user once to
-            // sign in again. Signing in or dismissing removes the entry.
-            if p.value == "anthropic" && is_legacy_anthropic_oauth(creds.and_then(|v| v.get(p.value)))
-            {
+            // A retired sign-in is still on disk: ask the user once to
+            // reconnect. Connecting again or dismissing removes the entry.
+            if let Some((_, message)) = retired_sign_in(creds, p.value) {
                 obj["reauthRequired"] = serde_json::json!(true);
+                obj["reauthMessage"] = serde_json::json!(message);
             }
             if !p.method_details.is_empty() {
                 let guidance: Vec<serde_json::Value> = p
@@ -531,20 +648,22 @@ pub(crate) fn auth_status_snapshot(creds: Option<&serde_json::Value>) -> serde_j
                     .collect();
                 obj["methodGuidance"] = serde_json::json!(guidance);
             }
-            // Only a provider with two methods has a priority to explain. Keep the
-            // wording in sync with gg-core's DUAL_AUTH_PROVIDERS resolution order
-            // (and authPriorityNote, which words Gemini's key-first order).
-            if p.value == "gemini" {
-                obj["priorityNote"] = serde_json::json!(
-                    "Uses the Gemini API key first when one is set; otherwise the Google sign-in."
-                );
-            } else if p.value == "anthropic" {
+            // Only a provider with two credentials has a priority to explain.
+            // Keep the wording identical to gg-core's authPriorityNote.
+            let plan = p.api_key_variants.iter().find(|v| v.kind == "plan");
+            let payg = p.api_key_variants.iter().find(|v| v.kind == "payg");
+            if p.value == "anthropic" {
                 obj["priorityNote"] = serde_json::json!(
                     "Uses Sign in with Claude while you are signed in; otherwise the Anthropic API key."
                 );
             } else if let (Some(oauth_label), Some(key_label)) = (p.oauth_label, p.api_key_label) {
                 obj["priorityNote"] = serde_json::json!(format!(
-                    "Uses {oauth_label} first; the {key_label} API key takes over when it runs out, then switches back."
+                    "Uses your {oauth_label} first; the {key_label} API key takes over while its usage is out, then switches back."
+                ));
+            } else if let (Some(plan), Some(payg)) = (plan, payg) {
+                obj["priorityNote"] = serde_json::json!(format!(
+                    "Uses the {} key first when both are set; the {} key covers models the plan doesn't include.",
+                    plan.label, payg.label
                 ));
             }
             if let Some(l) = p.api_key_label {
@@ -575,6 +694,8 @@ pub(crate) fn auth_status_snapshot(creds: Option<&serde_json::Value>) -> serde_j
                         serde_json::json!({
                             "key": v.key,
                             "label": v.label,
+                            "kind": v.kind,
+                            "billing": v.billing,
                             "baseUrl": v.base_url,
                         })
                     })
@@ -689,28 +810,52 @@ pub(crate) fn apikey_credential_json(
 /// the file is missing). Errors only on a malformed (non-object) existing file.
 pub(crate) fn apply_apikey(
     existing: Option<&str>,
-    provider: &str,
+    storage_key: &str,
     base_url: Option<&str>,
     now_ms: i64,
     key: &str,
 ) -> Result<String, String> {
     let mut root = parse_auth_object(existing)?;
+    let provider = storage_key_provider(storage_key);
     if let Some(map) = root.as_object_mut() {
+        // Connecting again also removes that provider's retired sign-in —
+        // what the reconnect notice asked for (mirrors AuthStorage.setCredentials).
+        for (p, retired_key, _) in RETIRED_SIGN_INS {
+            if *p == provider
+                && *retired_key != storage_key
+                && is_retired_entry(retired_key, map.get(*retired_key))
+            {
+                map.remove(*retired_key);
+            }
+        }
         map.insert(
-            provider.to_string(),
+            storage_key.to_string(),
             apikey_credential_json(key, base_url, now_ms),
         );
     }
     serde_json::to_string_pretty(&root).map_err(|e| e.to_string())
 }
 
+/// Logical provider for a storage key (`kimi-code` → `moonshot`). Mirrors
+/// gg-core's `storageKeyProvider`.
+fn storage_key_provider(storage_key: &str) -> &str {
+    if storage_key == OPENAI_CHATGPT_KEY {
+        return "openai";
+    }
+    AUTH_PROVIDERS
+        .iter()
+        .find(|p| p.api_key_variants.iter().any(|v| v.key == storage_key))
+        .map(|p| p.value)
+        .unwrap_or(storage_key)
+}
+
 /// Pure: remove a provider's credential(s) from the existing auth.json text.
 ///
-/// `method` scopes the removal for dual-auth providers (Moonshot, xAI), which
-/// hold two independent credentials: `Some("oauth")` drops only the subscription
-/// login, `Some("apikey")` drops only the key(s), and `None` disconnects the
-/// provider entirely. Dropping a spent API key must not sign the user out of
-/// their subscription, and vice versa.
+/// `method` scopes the removal: `Some("oauth")` drops only the sign-in (the
+/// ChatGPT plan, the Claude Code marker), `Some("apikey")` drops only the
+/// key(s), `Some("legacy")` drops only a retired sign-in, and `None`
+/// disconnects the provider entirely. Dropping a spent API key must not sign
+/// the user out of their plan, and vice versa.
 ///
 /// Returns the new pretty-printed JSON (an empty object `{}` when nothing
 /// remains / no file).
@@ -722,33 +867,29 @@ pub(crate) fn apply_logout(
     let mut root = parse_auth_object(existing)?;
     let meta = AUTH_PROVIDERS.iter().find(|p| p.value == provider);
     if let Some(map) = root.as_object_mut() {
+        let retired = retired_sign_in(Some(&serde_json::Value::Object(map.clone())), provider);
+        if method == Some("legacy") {
+            if let Some((key, _)) = retired {
+                map.remove(key);
+            }
+            return serde_json::to_string_pretty(&root).map_err(|e| e.to_string());
+        }
         if method != Some("apikey") {
-            // A dual-auth provider's OAuth credential lives under its own key;
-            // every other provider's lives under the provider id.
-            match meta.and_then(|m| m.oauth_key) {
-                Some(key) => {
-                    map.remove(key);
-                }
-                None => {
-                    map.remove(provider);
-                }
+            if let Some(key) = meta.and_then(|m| m.oauth_key) {
+                map.remove(key);
             }
         }
         if method != Some("oauth") {
-            // Covers single-credential providers and a dual provider's API key,
-            // plus every variant key (Xiaomi's two, Gemini's one). A provider
-            // that also signs in with OAuth under its own id (Gemini) keeps
-            // that key when only the API key is removed.
-            let oauth_under_provider_id = meta
-                .map(|m| m.methods.contains(&"oauth") && m.oauth_key.is_none())
-                .unwrap_or(false);
-            if !(oauth_under_provider_id && method == Some("apikey")) {
-                map.remove(provider);
-            }
+            // The provider id plus every variant key (Kimi's two, Xiaomi's two,
+            // Gemini's one), and any retired sign-in left behind.
+            map.remove(provider);
             if let Some(meta) = meta {
                 for v in meta.api_key_variants {
                     map.remove(v.key);
                 }
+            }
+            if let Some((key, _)) = retired {
+                map.remove(key);
             }
         }
     }
@@ -798,8 +939,8 @@ pub(crate) fn write_auth_file(contents: &str) -> Result<(), String> {
 /// touches the sidecar, so it can't hang on a not-yet-booted agent. Validates
 /// that the provider exists and supports API-key auth, and that the key is
 /// non-empty. `variant` selects which storage key/base URL to use for
-/// providers with multiple API-key options (currently only Xiaomi); omitted or
-/// unknown defaults to the first/primary variant. `base_url` overrides the
+/// providers with key variants (Kimi, Xiaomi); omitted or unknown defaults to
+/// the first/primary variant. `base_url` overrides the
 /// endpoint for providers in `CUSTOM_BASE_URL_PROVIDERS`. Returns `{ ok: true }`.
 #[tauri::command]
 pub(crate) fn app_auth_apikey(
@@ -869,10 +1010,11 @@ pub(crate) fn app_auth_baseurl(
 }
 
 /// Native: disconnect a provider (remove its credential from ~/.gg/auth.json).
-/// `method` ("oauth" | "apikey") disconnects just one of a dual-auth provider's
-/// two credentials; omitted, it removes all of them — including the OAuth key
-/// and every API-key variant (currently only Xiaomi's). Never touches the
-/// sidecar. Returns `{ ok: true }`.
+/// `method` ("oauth" | "apikey" | "legacy") disconnects just one credential;
+/// omitted, it removes all of them — the sign-in, every API-key variant and any
+/// retired sign-in. Signing out of Claude or ChatGPT asks the sidecar first
+/// (best effort) so it can sign Claude Code out or revoke the ChatGPT session.
+/// Returns `{ ok: true }`.
 #[tauri::command]
 pub(crate) async fn app_auth_logout(
     webview: tauri::WebviewWindow,
@@ -881,14 +1023,16 @@ pub(crate) async fn app_auth_logout(
     method: Option<String>,
 ) -> Result<serde_json::Value, String> {
     if let Some(m) = method.as_deref() {
-        if m != "oauth" && m != "apikey" {
+        if m != "oauth" && m != "apikey" && m != "legacy" {
             return Err(format!("unknown auth method: {m}"));
         }
     }
     let app = webview.app_handle().clone();
-    // Claude Code holds the Claude login itself; only the sidecar can run
-    // `claude auth logout`. Best effort: with no daemon the marker still goes.
-    if provider == "anthropic" && method.as_deref() != Some("apikey") {
+    // Claude Code holds the Claude login itself, and a ChatGPT sign-out must
+    // revoke the session at OpenAI; only the sidecar does those. Best effort:
+    // with no daemon the local credential still goes.
+    let signs_out = method.is_none() || method.as_deref() == Some("oauth");
+    if (provider == "anthropic" || provider == "openai") && signs_out {
         if let (Some(port), Some(sid)) = (
             crate::daemon::port_for(&webview),
             crate::daemon::session_for(&webview),
@@ -896,7 +1040,7 @@ pub(crate) async fn app_auth_logout(
             let _ = client
                 .post(format!("{}/auth/logout", crate::daemon::sidecar_base(port)))
                 .header("x-gg-session", &sid)
-                .json(&serde_json::json!({ "provider": "anthropic", "method": "oauth" }))
+                .json(&serde_json::json!({ "provider": provider, "method": "oauth" }))
                 .timeout(std::time::Duration::from_secs(20))
                 .send()
                 .await;
@@ -996,8 +1140,11 @@ mod tests {
 
     #[test]
     fn resolve_apikey_target_gates_on_apikey_support() {
-        // OAuth-only provider → not an API-key provider.
-        assert!(resolve_apikey_target("openai", None).is_none());
+        // OpenAI takes an API key beside the ChatGPT plan sign-in.
+        assert_eq!(
+            resolve_apikey_target("openai", None),
+            Some(("openai".to_string(), None)),
+        );
         // Anthropic's API key lives under the provider id, apart from the sign-in marker.
         assert_eq!(
             resolve_apikey_target("anthropic", None),
@@ -1010,9 +1157,13 @@ mod tests {
             resolve_apikey_target("glm", None),
             Some(("glm".to_string(), None)),
         );
-        // Moonshot supports both oauth + apikey, no variants.
+        // Kimi defaults to the Kimi Code plan key; the Moonshot key is the other variant.
         assert_eq!(
             resolve_apikey_target("moonshot", None),
+            Some(("kimi-code".to_string(), None)),
+        );
+        assert_eq!(
+            resolve_apikey_target("moonshot", Some("moonshot")),
             Some(("moonshot".to_string(), None)),
         );
         // xAI uses the public OpenAI-compatible API with a console.x.ai key.
@@ -1199,11 +1350,12 @@ mod tests {
     }
 
     #[test]
-    fn apply_logout_moonshot_drops_both_keys() {
-        let existing = r#"{ "moonshot": { "accessToken": "key", "refreshToken": "", "expiresAt": 1 }, "moonshot-oauth": { "accessToken": "oauth", "refreshToken": "r", "expiresAt": 1 } }"#;
-        let out = apply_logout(Some(existing), "moonshot", None).unwrap();
+    fn apply_logout_moonshot_drops_both_keys_and_the_retired_sign_in() {
+        let existing = r#"{ "moonshot": { "accessToken": "key", "refreshToken": "", "expiresAt": 1 }, "kimi-code": { "accessToken": "plan", "refreshToken": "", "expiresAt": 1 }, "moonshot-oauth": { "accessToken": "oauth", "refreshToken": "r", "expiresAt": 1 } }"#;
+        let out = apply_logout(Some(existing), "moonshot", Some("apikey")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert!(v.get("moonshot").is_none());
+        assert!(v.get("kimi-code").is_none());
         assert!(v.get("moonshot-oauth").is_none());
     }
 
@@ -1218,29 +1370,135 @@ mod tests {
 
     #[test]
     fn apply_logout_scoped_to_one_method_keeps_the_other() {
-        // Disconnecting Grok OAuth must leave a configured API key usable, and
-        // dropping a spent API key must not sign the user out of the subscription.
-        let existing = r#"{ "xai": { "accessToken": "key", "refreshToken": "", "expiresAt": 1 }, "xai-oauth": { "accessToken": "oauth", "refreshToken": "r", "expiresAt": 1 } }"#;
+        // Signing out of ChatGPT must leave a configured API key usable, and
+        // dropping a spent API key must not sign the user out of the plan.
+        let existing = r#"{ "openai": { "accessToken": "key", "refreshToken": "", "expiresAt": 1 }, "openai-chatgpt": { "accessToken": "plan", "refreshToken": "r", "expiresAt": 1 } }"#;
 
-        let out = apply_logout(Some(existing), "xai", Some("oauth")).unwrap();
+        let out = apply_logout(Some(existing), "openai", Some("oauth")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert!(v.get("xai-oauth").is_none());
-        assert_eq!(v["xai"]["accessToken"], "key");
+        assert!(v.get("openai-chatgpt").is_none());
+        assert_eq!(v["openai"]["accessToken"], "key");
 
-        let out = apply_logout(Some(existing), "xai", Some("apikey")).unwrap();
+        let out = apply_logout(Some(existing), "openai", Some("apikey")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert!(v.get("xai").is_none());
-        assert_eq!(v["xai-oauth"]["accessToken"], "oauth");
+        assert!(v.get("openai").is_none());
+        assert_eq!(v["openai-chatgpt"]["accessToken"], "plan");
     }
 
     #[test]
-    fn apply_logout_oauth_only_provider_uses_provider_id_key() {
-        // OpenAI has no distinct OAuth key — its credential IS `openai`.
-        let existing =
-            r#"{ "openai": { "accessToken": "t", "refreshToken": "r", "expiresAt": 1 } }"#;
-        let out = apply_logout(Some(existing), "openai", Some("oauth")).unwrap();
+    fn apply_logout_legacy_removes_only_the_retired_sign_in() {
+        // An old Codex token in the `openai` slot, plus a real key elsewhere.
+        let existing = r#"{ "openai": { "accessToken": "codex", "refreshToken": "r", "expiresAt": 1, "accountId": "a" }, "openai-chatgpt": { "accessToken": "plan", "refreshToken": "r", "expiresAt": 1 } }"#;
+        let out = apply_logout(Some(existing), "openai", Some("legacy")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert!(v.get("openai").is_none());
+        assert_eq!(v["openai-chatgpt"]["accessToken"], "plan");
+
+        // A real OpenAI API key is not retired: dismissing leaves it.
+        let key =
+            r#"{ "openai": { "accessToken": "sk-key", "refreshToken": "", "expiresAt": 1 } }"#;
+        let out = apply_logout(Some(key), "openai", Some("legacy")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["openai"]["accessToken"], "sk-key");
+    }
+
+    #[test]
+    fn apply_apikey_replaces_a_retired_sign_in_of_the_same_provider() {
+        let existing = r#"{ "moonshot-oauth": { "accessToken": "o", "refreshToken": "r", "expiresAt": 1 }, "glm": { "accessToken": "g", "refreshToken": "", "expiresAt": 1 } }"#;
+        let out = apply_apikey(Some(existing), "kimi-code", None, 0, "kc").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert!(v.get("moonshot-oauth").is_none());
+        assert_eq!(v["kimi-code"]["accessToken"], "kc");
+        assert_eq!(v["glm"]["accessToken"], "g");
+    }
+
+    #[test]
+    fn openai_status_never_reads_an_old_codex_token_as_a_key() {
+        let find = |creds: serde_json::Value| -> serde_json::Value {
+            auth_status_snapshot(Some(&creds))["providers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["value"] == "openai")
+                .unwrap()
+                .clone()
+        };
+        let codex = find(serde_json::json!({
+            "openai": { "accessToken": "codex", "refreshToken": "r", "accountId": "a" },
+        }));
+        assert_eq!(codex["connected"], false);
+        assert_eq!(codex["connectedMethods"], serde_json::json!([]));
+        assert_eq!(codex["reauthRequired"], true);
+        assert!(codex["reauthMessage"]
+            .as_str()
+            .unwrap()
+            .contains("Continue with ChatGPT"));
+
+        let both = find(serde_json::json!({
+            "openai": { "accessToken": "sk-key", "refreshToken": "" },
+            "openai-chatgpt": { "accessToken": "plan", "refreshToken": "r" },
+        }));
+        assert_eq!(
+            both["connectedMethods"],
+            serde_json::json!(["oauth", "apikey"])
+        );
+        assert_eq!(both["activeMethod"], "oauth");
+        assert!(both.get("reauthRequired").is_none());
+        assert_eq!(
+            both["priorityNote"],
+            "Uses your ChatGPT plan first; the OpenAI API key takes over while its usage is out, then switches back."
+        );
+        assert_eq!(both["methodGuidance"][0]["label"], "Continue with ChatGPT");
+    }
+
+    #[test]
+    fn only_claude_and_chatgpt_offer_a_sign_in_and_every_provider_takes_a_key() {
+        let with_oauth: Vec<&str> = AUTH_PROVIDERS
+            .iter()
+            .filter(|p| p.methods.contains(&"oauth"))
+            .map(|p| p.value)
+            .collect();
+        assert_eq!(with_oauth, vec!["anthropic", "openai"]);
+        for p in AUTH_PROVIDERS {
+            assert!(p.methods.contains(&"apikey"), "{} has no API key", p.value);
+            assert!(
+                p.method_details.iter().any(|d| d.method == "apikey"),
+                "{} has no API-key guidance",
+                p.value
+            );
+            for v in p.api_key_variants {
+                assert!(
+                    v.kind == "plan" || v.kind == "payg",
+                    "{}/{}",
+                    p.value,
+                    v.key
+                );
+                assert!(!v.billing.is_empty(), "{}/{}", p.value, v.key);
+            }
+        }
+    }
+
+    #[test]
+    fn kimi_status_lists_both_variants_with_billing() {
+        let status = auth_status_snapshot(Some(&serde_json::json!({
+            "kimi-code": { "accessToken": "kc", "refreshToken": "" },
+        })));
+        let kimi = status["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["value"] == "moonshot")
+            .unwrap()
+            .clone();
+        assert_eq!(kimi["connected"], true);
+        assert_eq!(kimi["methods"], serde_json::json!(["apikey"]));
+        assert_eq!(kimi["apiKeyVariants"][0]["key"], "kimi-code");
+        assert_eq!(kimi["apiKeyVariants"][0]["kind"], "plan");
+        assert_eq!(kimi["apiKeyVariants"][1]["kind"], "payg");
+        assert!(kimi["priorityNote"]
+            .as_str()
+            .unwrap()
+            .contains("Kimi Code plan"));
     }
 
     #[test]
@@ -1293,20 +1551,27 @@ mod tests {
     }
 
     #[test]
-    fn apply_logout_gemini_methods_are_separate() {
-        // Gemini's Google sign-in lives under `gemini`, its AI Studio key under
-        // `gemini-api`: removing one must keep the other.
-        let existing = r#"{ "gemini": { "accessToken": "o", "refreshToken": "r", "expiresAt": 1 }, "gemini-api": { "accessToken": "k", "refreshToken": "", "expiresAt": 1 } }"#;
-        let key_only = apply_logout(Some(existing), "gemini", Some("apikey")).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&key_only).unwrap();
-        assert!(v.get("gemini").is_some());
-        assert!(v.get("gemini-api").is_none());
+    fn gemini_is_listed_on_its_key_and_flags_the_retired_google_sign_in() {
+        let existing = r#"{ "gemini": { "accessToken": "o", "refreshToken": "r", "expiresAt": 1, "projectId": "p" }, "gemini-api": { "accessToken": "k", "refreshToken": "", "expiresAt": 1 } }"#;
+        let creds: serde_json::Value = serde_json::from_str(existing).unwrap();
+        let status = auth_status_snapshot(Some(&creds));
+        let gemini = status["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["value"] == "gemini")
+            .unwrap()
+            .clone();
+        assert_eq!(gemini["connectedMethods"], serde_json::json!(["apikey"]));
+        assert_eq!(gemini["reauthRequired"], true);
 
-        let oauth_only = apply_logout(Some(existing), "gemini", Some("oauth")).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&oauth_only).unwrap();
+        // Dismissing drops the sign-in and keeps the key.
+        let dismissed = apply_logout(Some(existing), "gemini", Some("legacy")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&dismissed).unwrap();
         assert!(v.get("gemini").is_none());
         assert!(v.get("gemini-api").is_some());
 
+        // A full disconnect removes both.
         let both = apply_logout(Some(existing), "gemini", None).unwrap();
         let v: serde_json::Value = serde_json::from_str(&both).unwrap();
         assert!(v.get("gemini").is_none());
@@ -1314,7 +1579,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_apikey_target_gemini_never_overwrites_the_oauth_login() {
+    fn resolve_apikey_target_gemini_stores_under_its_own_key() {
         assert_eq!(
             resolve_apikey_target("gemini", None),
             Some((

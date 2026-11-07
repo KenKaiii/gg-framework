@@ -37,7 +37,7 @@ GG Coder ist ein Coding-Agent für den Desktop, der mehr aus dem KI-Abo herausho
 - **Echter Code statt Raten.** Agent Steroids durchsucht echten, aktuellen Open-Source-Code auf deinem Rechner. Kein MCP-Server mit Rate-Limit, keine Limits.
 - **Fertig heißt geprüft.** Ken Autopilot arbeitet weiter, bis alles wirklich verifiziert ist.
 - **Sauber veröffentlichen, auch als Einsteiger.** Programmieren ist nur ein Teil. Prüfungen per Klick für Sicherheit, Compliance, Datensicherheit, Barrierefreiheit, Tests und mehr, dazu ein Project-health-Score, damit du nicht wissen musst, wonach du fragen sollst.
-- **Deine Abos.** Claude, ChatGPT, Gemini, Grok, Kimi, API-Schlüssel oder lokale Modelle.
+- **Deine Abos.** Claude-, ChatGPT-, Kimi-Code-, MiniMax- und MiMo-Pläne, jeder API-Schlüssel oder lokale Modelle.
 
 | Agent              | Zeit für die ganze Suite | Verbrauch pro Suite | Zeit vs. GG Coder | Verbrauch vs. GG Coder |
 | ------------------ | ------------------------ | ------------------- | ----------------- | ---------------------- |

@@ -76,21 +76,21 @@ gg-ai makes one model call. To run the tools and send results back until the mod
 
 ## Providers
 
-| Provider      | Built-in models                                                 | Notes                                                                                                     |
-| ------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `anthropic`   | Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5               | Extended thinking, prompt caching, server-side compaction                                                 |
-| `openai`      | GPT-6 Astra, GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Luna             | API key, or a ChatGPT sign-in token plus `accountId` (Codex endpoint)                                     |
-| `gemini`      | Gemini 3.1 Pro (Preview), 3.8 / 3.5 Flash, 3.5 / 3.1 Flash Lite | Code Assist sign-in by default; for an AI Studio key, set `baseUrl` to the Gemini API. Native video input |
-| `xai`         | Grok 4.7                                                        | API key or Grok sign-in                                                                                   |
-| `moonshot`    | Kimi K3, K2.8 Preview, K2.7 Code, K2.7 Code HighSpeed           | API key or Kimi sign-in. Native video input                                                               |
-| `glm`         | GLM-5.3, GLM-5.3-Flash                                          | Z.AI coding endpoint                                                                                      |
-| `minimax`     | MiniMax M3.1 Flash, M3                                          | Anthropic-compatible endpoint. Native video input                                                         |
-| `xiaomi`      | MiMo-V2.6-Pro, MiMo-V2.6-Flash, MiMo-V2.6-Pro-UltraSpeed        | Native video input                                                                                        |
-| `deepseek`    | DeepSeek V4 Pro, V4.1 Flash                                     |                                                                                                           |
-| `sakana`      | Fugu, Fugu Max, Fugu Ultra                                      |                                                                                                           |
-| `openrouter`  | Qwen3.8 Max, or any OpenRouter model id                         | Gateway to hundreds of models                                                                             |
-| `huggingface` | Kimi K2.7 Code, DeepSeek V4.1 Flash, GPT-OSS 120B               | Inference Providers router                                                                                |
-| `local`       | Whatever your server runs                                       | Ollama, LM Studio, llama.cpp, vLLM or any OpenAI-compatible server. `baseUrl` is required                 |
+| Provider      | Built-in models                                                 | Notes                                                                                     |
+| ------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `anthropic`   | Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5               | Extended thinking, prompt caching, server-side compaction                                 |
+| `openai`      | GPT-6 Astra, GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Luna             | Responses API. API key, or a ChatGPT plan token plus `accountId` (Sign in with ChatGPT)   |
+| `gemini`      | Gemini 3.1 Pro (Preview), 3.8 / 3.5 Flash, 3.5 / 3.1 Flash Lite | Google AI Studio key on the public Gemini API. Native video input                         |
+| `xai`         | Grok 4.7                                                        | API key                                                                                   |
+| `moonshot`    | Kimi K3, K2.8 Preview, K2.7 Code, K2.7 Code HighSpeed           | Moonshot key, or a Kimi Code plan key with its `baseUrl`. Native video input              |
+| `glm`         | GLM-5.3, GLM-5.3-Flash                                          | Z.AI standard (pay-per-token) endpoint                                                    |
+| `minimax`     | MiniMax M3.1 Flash, M3                                          | Anthropic-compatible endpoint. Native video input                                         |
+| `xiaomi`      | MiMo-V2.6-Pro, MiMo-V2.6-Flash, MiMo-V2.6-Pro-UltraSpeed        | Native video input                                                                        |
+| `deepseek`    | DeepSeek V4 Pro, V4.1 Flash                                     |                                                                                           |
+| `sakana`      | Fugu, Fugu Max, Fugu Ultra                                      |                                                                                           |
+| `openrouter`  | Qwen3.8 Max, or any OpenRouter model id                         | Gateway to hundreds of models                                                             |
+| `huggingface` | Kimi K2.7 Code, DeepSeek V4.1 Flash, GPT-OSS 120B               | Inference Providers router                                                                |
+| `local`       | Whatever your server runs                                       | Ollama, LM Studio, llama.cpp, vLLM or any OpenAI-compatible server. `baseUrl` is required |
 
 "Built-in models" are the ones GG Coder lists (from [`@kenkaiiii/gg-core`](https://www.npmjs.com/package/@kenkaiiii/gg-core)). `model` is passed straight to the provider, so any model id the provider accepts works. Every default endpoint can be changed with `baseUrl`, and `providerRegistry.register()` adds your own provider.
 
@@ -212,7 +212,7 @@ What you can rely on:
 | `gemini`     | ✓ (AI Studio key, not sign-in)       | 100                |                                   |
 | `local`      | ✓ Ollama, LM Studio, llama.cpp, vLLM | 64                 | ✓ llama.cpp (`--rerank`) and vLLM |
 
-Other providers don't offer these endpoints. Calling them throws `GGAIError` with `source: "capability"`; check first with `providerRegistry.supports(provider, "embed")`. OpenAI embeddings need a platform API key; ChatGPT sign-in tokens can't call them.
+Other providers don't offer these endpoints. Calling them throws `GGAIError` with `source: "capability"`; check first with `providerRegistry.supports(provider, "embed")`. OpenAI embeddings need a platform API key; ChatGPT plan tokens can't call them.
 
 ### Your own provider
 

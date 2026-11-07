@@ -10,92 +10,6 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("fetchSubscriptionUsage", () => {
-  it("normalizes Codex windows and sends the account id", async () => {
-    const now = 2_000_000;
-    const fetchFn = vi.fn(async () =>
-      jsonResponse({
-        rate_limit: {
-          primary_window: {
-            limit_window_seconds: 18_000,
-            used_percent: 22,
-            reset_after_seconds: 600,
-          },
-          secondary_window: {
-            limit_window_seconds: 604_800,
-            used_percent: 48,
-            reset_at: 2_000_000_000,
-          },
-        },
-      }),
-    );
-
-    const result = await fetchSubscriptionUsage(
-      "openai",
-      { accessToken: "openai-token", accountId: "acct-123" },
-      { fetchFn, now: () => now },
-    );
-
-    expect(result).toEqual({
-      provider: "openai",
-      displayName: "Codex",
-      windows: [
-        {
-          kind: "current",
-          label: "5-hour",
-          usedPercent: 22,
-          resetsAt: now + 600_000,
-        },
-        {
-          kind: "weekly",
-          label: "Weekly",
-          usedPercent: 48,
-          resetsAt: 2_000_000_000_000,
-        },
-      ],
-      fetchedAt: now,
-    });
-    expect(fetchFn).toHaveBeenCalledWith(
-      "https://chatgpt.com/backend-api/wham/usage",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer openai-token",
-          "ChatGPT-Account-Id": "acct-123",
-        }),
-      }),
-    );
-  });
-
-  it("treats a weekly-only Codex primary window as weekly", async () => {
-    const now = 2_000_000;
-    const result = await fetchSubscriptionUsage(
-      "openai",
-      { accessToken: "openai-token" },
-      {
-        now: () => now,
-        fetchFn: async () =>
-          jsonResponse({
-            rate_limit: {
-              primary_window: {
-                limit_window_seconds: 604_800,
-                used_percent: 11,
-                reset_after_seconds: 593_701,
-              },
-              secondary_window: null,
-            },
-          }),
-      },
-    );
-
-    expect(result.windows).toEqual([
-      {
-        kind: "weekly",
-        label: "Weekly",
-        usedPercent: 11,
-        resetsAt: now + 593_701_000,
-      },
-    ]);
-  });
-
   it("normalizes Kimi weekly quota and the 5-hour rate-limit window", async () => {
     const fetchFn = vi.fn(async () =>
       jsonResponse({
@@ -148,7 +62,21 @@ describe("fetchSubscriptionUsage", () => {
     expect(url).toBe("https://api.kimi.com/coding/v1/usages");
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization?.endsWith("kimi-token")).toBe(true);
-    expect(headers["X-Msh-Platform"]).toBe("kimi_code_cli");
+    // GG Coder's own identity, never the Kimi Code CLI's.
+    expect(headers["User-Agent"]).toMatch(/^ggcoder/);
+    expect(Object.keys(headers).some((h) => h.toLowerCase().startsWith("x-msh-"))).toBe(false);
+  });
+
+  it("reads usage from the host that issued the plan key", async () => {
+    const fetchFn = vi.fn(async (_url: string | URL | Request) =>
+      jsonResponse({ usage: null, limits: [] }),
+    );
+    await fetchSubscriptionUsage(
+      "moonshot",
+      { accessToken: "kimi-token", baseUrl: "https://api.kimi.ai/coding/v1" },
+      { fetchFn },
+    );
+    expect(fetchFn.mock.calls[0]![0]).toBe("https://api.kimi.ai/coding/v1/usages");
   });
 
   it("skips Kimi windows with unknown time units or unusable counters", async () => {
@@ -187,7 +115,7 @@ describe("fetchSubscriptionUsage", () => {
   it("rejects provider HTTP errors without exposing the response body", async () => {
     await expect(
       fetchSubscriptionUsage(
-        "openai",
+        "moonshot",
         { accessToken: "expired" },
         { fetchFn: async () => jsonResponse({ secret: "raw-provider-detail" }, 401) },
       ),
@@ -202,7 +130,7 @@ describe("fetchSubscriptionUsage", () => {
   it("preserves provider Retry-After guidance on rate limits", async () => {
     await expect(
       fetchSubscriptionUsage(
-        "openai",
+        "moonshot",
         { accessToken: "test-token" },
         {
           fetchFn: async () =>

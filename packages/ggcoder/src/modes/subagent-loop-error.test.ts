@@ -359,10 +359,12 @@ describe("spawn_agent worker", () => {
 
   it("restores inherited OpenAI Ultra when a pinned model falls back to the parent", async () => {
     await writeJson(path.join(tmpHome, ".gg", "auth.json"), {
-      openai: {
+      "openai-chatgpt": {
         accessToken: "test-access",
         refreshToken: "test-refresh",
         expiresAt: Date.now() + 3_600_000,
+        accountId: "chatgpt-account",
+        clientId: "oaiapp_test",
       },
     });
     agentLoopMock

@@ -162,11 +162,12 @@ beforeEach(async () => {
   await fs.writeFile(
     path.join(tmpHome, ".gg", "auth.json"),
     JSON.stringify({
-      openai: {
+      "openai-chatgpt": {
         accessToken: "test-openai-token",
         refreshToken: "test-openai-refresh",
         expiresAt: Date.now() + 3_600_000,
         accountId: "chatgpt-account",
+        clientId: "oaiapp_test",
       },
     }),
   );

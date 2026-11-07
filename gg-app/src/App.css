@@ -6251,10 +6251,10 @@ select {
 
 /* ── Plan review (plan_exit) ──
    A full-window takeover laid out like the chat itself: header strip, the plan
-   where the transcript sits, a critter crew on the activity bar, Accept /
-   Reject in the activity bar, and the chat composer for feedback. The shared
-   `.liveregion`, `.statusrow`, `.inputwrap` and `.footer` rules style the
-   bottom half, so it can never drift from the real composer. */
+   in the transcript's centred column, a critter crew, and the workspace deck
+   (Deck.css) holding the feedback box with Reject / Accept beside send. The
+   shared `.deck`, `.statusrow` and `.inputwrap` rules style the bottom half,
+   so it can never drift from the real composer. */
 .plan-review {
   position: fixed;
   inset: 0;
@@ -6313,10 +6313,11 @@ select {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  /* Mirrors `.transcript` so the plan's left edge, the critter gutter and the
-     composer below share one rail. */
+  /* Mirrors `.transcript`: the same centred column, so the plan sits over the
+     deck the way the conversation does. */
   scrollbar-gutter: stable;
-  padding: var(--space-8) calc(var(--rail) - var(--scrollbar)) var(--space-10) var(--rail);
+  padding: var(--space-8) calc(var(--gutter-chat) - var(--scrollbar)) var(--space-10)
+    var(--gutter-chat);
   font-size: var(--fs-lg);
   outline: none;
 }
@@ -6338,27 +6339,25 @@ select {
 /* The plan reads in the assistant text column, right of the critter gutter. */
 .plan-review-doc {
   padding-left: var(--space-11);
-  max-width: 860px;
 }
-.plan-review .inputrow .input-stack {
-  /* No paperclip here, so the field carries the gap the circle would leave. */
-  padding-left: var(--space-4);
+/* Below the plan, like the workspace dock: the crew walks the chat's column
+   and the deck takes the deck's (Deck.css `.deck` margins). */
+.plan-review-dock {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
 }
+.plan-review-dock > .critter-lane {
+  margin: 0 var(--gutter-chat);
+}
+/* Reject reads in the error colour, like the deck's Stop key. */
+.plan-review-reject,
+.plan-review-reject:hover:not(:disabled) {
+  color: var(--error);
+}
+.plan-review-reject,
 .plan-review-accept {
-  /* Same height as the Stop/Reject text so the row keeps --bar-pad rhythm. */
-  line-height: 1.25;
-  padding-top: 2.4px;
-  padding-bottom: 3.6px;
-}
-.plan-review-footer {
-  justify-content: flex-start;
-  min-width: 0;
-}
-.plan-review-footer > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  align-self: center;
 }
 /* The crew's lane is decorative: it never takes clicks meant for the plan. */
 .plan-review-critters {
@@ -6406,11 +6405,10 @@ select {
 .plan-review-body {
   animation: plan-band-in 420ms var(--ease-out) 120ms backwards;
 }
-.plan-review .liveregion {
+.plan-review-critters {
   animation: plan-band-in 360ms var(--ease-out) 220ms backwards;
 }
-.plan-review .inputwrap,
-.plan-review-footer {
+.plan-review-deck {
   --band-y: 12px;
   animation: plan-band-in 360ms var(--ease-out) 300ms backwards;
 }
@@ -6418,9 +6416,8 @@ select {
   .plan-review,
   .plan-review.leaving,
   .plan-review-body,
-  .plan-review .liveregion,
-  .plan-review .inputwrap,
-  .plan-review-footer {
+  .plan-review-critters,
+  .plan-review-deck {
     animation-name: fade-in;
     animation-duration: var(--dur-enter);
   }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { theme } from "./theme";
 import { Modal } from "./Modal";
 import { ModalDismissButton } from "./modal-embed";
@@ -26,6 +26,26 @@ function untilLabel(epochMs: number): string {
   const mins = Math.max(1, Math.round((epochMs - Date.now()) / 60_000));
   if (mins < 60) return `${mins}m`;
   return `${Math.round(mins / 60)}h`;
+}
+
+const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage";
+const CHATGPT_WELCOMED_KEY = "gg-chatgpt-plan-welcomed";
+
+/** True once the first-sign-in ChatGPT plan notice was shown on this machine. */
+function chatgptWelcomed(): boolean {
+  try {
+    return localStorage.getItem(CHATGPT_WELCOMED_KEY) === "1";
+  } catch {
+    return true;
+  }
+}
+
+function rememberChatgptWelcomed(): void {
+  try {
+    localStorage.setItem(CHATGPT_WELCOMED_KEY, "1");
+  } catch {
+    // Storage unavailable: the notice may show once more, which is harmless.
+  }
 }
 
 const LINK_STYLE: React.CSSProperties = {
@@ -79,6 +99,10 @@ export function ProviderLoginModal({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // This window started the sign-in (auth_done reaches every window).
+  const startedSignIn = useRef(false);
+  // OpenAI asks apps to confirm plan use once, after the first ChatGPT sign-in.
+  const [planWelcome, setPlanWelcome] = useState(false);
   const [baseUrl, setBaseUrl] = useState(provider.currentBaseUrl ?? "");
   // Only OpenRouter syncs a catalog today; `null` = not checked yet.
   const syncsCatalog = provider.allowCustomBaseUrl === true && provider.value === "openrouter";
@@ -121,6 +145,11 @@ export function ProviderLoginModal({
           if (d.provider === provider.value) {
             setBusy(false);
             onChanged();
+            if (provider.value === "openai" && startedSignIn.current && !chatgptWelcomed()) {
+              rememberChatgptWelcomed();
+              setPlanWelcome(true);
+              return;
+            }
             onClose();
           }
           break;
@@ -203,9 +232,11 @@ export function ProviderLoginModal({
     setBusy(true);
     setError(null);
     setStatus("Starting login…");
+    startedSignIn.current = true;
     try {
       await authOAuthStart(provider.value);
     } catch (e) {
+      startedSignIn.current = false;
       setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
     }
@@ -246,6 +277,25 @@ export function ProviderLoginModal({
   const savesBaseUrlOnly = provider.connected && !apiKey.trim() && baseUrlChanged;
   const connectedMethods = provider.connectedMethods ?? [];
   const guidance = provider.methodGuidance ?? [];
+
+  if (planWelcome) {
+    return (
+      <Modal title="You're using your ChatGPT plan" onClose={onClose}>
+        <div className="login-modal-desc">
+          Eligible requests in GG Coder now use your ChatGPT plan. You can review usage and set a
+          limit for GG Coder in ChatGPT settings.
+        </div>
+        <div className="modal-actions">
+          <button className="modal-btn" onClick={() => void openUrl(CHATGPT_USAGE_URL)}>
+            Manage usage
+          </button>
+          <button className="modal-btn primary" autoFocus onClick={onClose}>
+            Got it
+          </button>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal title={`Connect ${provider.label}`} onClose={onClose}>
@@ -324,12 +374,14 @@ export function ProviderLoginModal({
           {provider.apiKeyVariants && provider.apiKeyVariants.length > 1 && (
             <>
               <div className="modal-label" style={{ color: theme.textMuted }}>
-                Endpoint
+                Key type
               </div>
-              <div className="login-method-row">
+              <div className="login-method-row" role="radiogroup" aria-label="Key type">
                 {provider.apiKeyVariants.map((v) => (
                   <button
                     key={v.key}
+                    role="radio"
+                    aria-checked={variantKey === v.key}
                     className={"modal-btn" + (variantKey === v.key ? " primary" : "")}
                     onClick={() => setVariantKey(v.key)}
                   >
@@ -339,6 +391,25 @@ export function ProviderLoginModal({
               </div>
             </>
           )}
+          {/* What this key bills: the chosen variant's line, or the provider's
+              own guidance (e.g. GLM's Coding Plan can't be used here). */}
+          {(() => {
+            const variant = provider.apiKeyVariants?.find((v) => v.key === variantKey);
+            const keyGuidance = guidance.find((g) => g.method === "apikey");
+            const lines =
+              variant?.billing && (provider.apiKeyVariants?.length ?? 0) > 1
+                ? [variant.billing]
+                : single
+                  ? [keyGuidance?.billing, keyGuidance?.when]
+                  : [];
+            return lines
+              .filter((line): line is string => Boolean(line))
+              .map((line) => (
+                <div key={line} className="login-method-note">
+                  {line}
+                </div>
+              ));
+          })()}
           <div className="modal-label" style={{ color: theme.textMuted }}>
             {apiKeyLabel} API key
           </div>
@@ -422,7 +493,7 @@ export function ProviderLoginModal({
                 className="modal-input"
                 style={{ color: theme.text, background: theme.inputBackground }}
                 value={code}
-                placeholder="Paste the code"
+                placeholder="Paste the code or callback URL"
                 autoFocus
                 onChange={(e) => setCode(e.target.value)}
                 onKeyDown={(e) => {
@@ -510,7 +581,8 @@ export function ProviderLoginModal({
         )}
         {method === "oauth" && !needCode && (
           <button className="modal-btn primary" disabled={busy} onClick={() => void startOAuth()}>
-            {busy ? "Waiting…" : "Continue"}
+            {/* OpenAI's sign-in button must read "Continue with ChatGPT". */}
+            {busy ? "Waiting…" : provider.value === "openai" ? "Continue with ChatGPT" : "Continue"}
           </button>
         )}
       </div>

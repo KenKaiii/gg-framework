@@ -9,37 +9,126 @@ import {
   isClaudeCodeAuthMarker,
   isLegacyClaudeOAuth,
 } from "./claude-code/runtime.js";
-import { refreshOpenAIToken } from "./oauth/openai.js";
-import { refreshGeminiToken } from "./oauth/gemini.js";
-import { refreshKimiToken } from "./oauth/kimi.js";
-import { refreshXaiToken } from "./oauth/xai.js";
+import { refreshChatGPTToken } from "./oauth/openai.js";
 import { withFileLock } from "./file-lock.js";
 import { log } from "./logger.js";
 import { isHiddenProvider } from "./hidden-providers.js";
 import { LOCAL_NO_API_KEY } from "@kenkaiiii/gg-ai";
 import { detectMiniMaxBaseUrl } from "./minimax-region.js";
 import { detectXiaomiTokenPlanBaseUrl } from "./xiaomi-region.js";
+import { KIMI_CODE_DEFAULT_BASE_URL, detectKimiCodeBaseUrl } from "./kimi-region.js";
 
 type AuthData = Record<string, OAuthCredentials>;
 
 /**
- * Storage key for Kimi Code OAuth credentials. Kept distinct from the
- * `moonshot` API-key entry so a user can configure BOTH and we always
- * prefer OAuth for the logical `moonshot` provider.
+ * Storage key for the ChatGPT plan sign-in (Continue with ChatGPT). Kept
+ * distinct from the `openai` entry, which holds an OpenAI API key, so a user can
+ * hold both: the plan serves first and the key covers while its usage is out.
  */
-export const MOONSHOT_OAUTH_KEY = "moonshot-oauth";
+export const OPENAI_CHATGPT_KEY = "openai-chatgpt";
 
 /**
- * Storage key for Grok (xAI) subscription OAuth credentials. Kept distinct from
- * the `xai` API-key entry for the same reason as Kimi's: a user may configure
- * BOTH — a SuperGrok/X Premium subscription plus a metered console key — and we
- * always prefer OAuth for the logical `xai` provider.
+ * Storage key for a Kimi Code plan key (Kimi Code Console), served by
+ * `api.kimi.com/coding/v1` or `api.kimi.ai/coding/v1`. Kept distinct from the
+ * `moonshot` entry, which holds a pay-per-token Moonshot platform key.
  */
-export const XAI_OAUTH_KEY = "xai-oauth";
+export const KIMI_CODE_KEY = "kimi-code";
 
 /**
- * A provider that can hold two credentials at once: a refreshable subscription
- * OAuth token and a static API key. One policy governs all of them — see
+ * A sign-in GG Coder no longer uses, because it posed as another vendor's app
+ * (Codex CLI, Kimi Code CLI, Grok CLI, Gemini CLI) or its token stopped
+ * working. The entry is never served; the user is asked once to reconnect.
+ */
+export interface RetiredSignIn {
+  /** Logical provider the credential belonged to. */
+  provider: string;
+  /** auth.json key holding the retired credential. */
+  storageKey: string;
+  /** What to tell the user, without CLI/app-specific instructions. */
+  message: string;
+}
+
+export const RETIRED_SIGN_INS: readonly RetiredSignIn[] = [
+  {
+    provider: "anthropic",
+    storageKey: "anthropic",
+    message:
+      "Your old Claude sign-in no longer works. Sign in with Claude again to keep using your subscription.",
+  },
+  {
+    provider: "openai",
+    storageKey: "openai",
+    message:
+      "Your old ChatGPT sign-in no longer works. Continue with ChatGPT again, or add an OpenAI API key.",
+  },
+  {
+    provider: "moonshot",
+    storageKey: "moonshot-oauth",
+    message:
+      "Kimi sign-in was removed. Paste a Kimi Code plan key from the Kimi Code Console, or a Moonshot API key.",
+  },
+  {
+    provider: "xai",
+    storageKey: "xai-oauth",
+    message:
+      "Grok sign-in was removed: xAI offers SuperGrok and X Premium usage only in apps it partners with. Add an xAI API key instead.",
+  },
+  {
+    provider: "gemini",
+    storageKey: "gemini",
+    message: "Google sign-in was removed. Add a Gemini API key from Google AI Studio instead.",
+  },
+];
+
+/** True when `value`, stored under `retired.storageKey`, is that retired sign-in. */
+function isRetiredEntry(retired: RetiredSignIn, value: OAuthCredentials | undefined): boolean {
+  if (!value) return false;
+  switch (retired.storageKey) {
+    case "anthropic":
+      return isLegacyClaudeOAuth(value);
+    // These slots now hold API keys; only a refreshable sign-in token is retired.
+    case "openai":
+    case "gemini":
+      return Boolean(value.refreshToken) || Boolean(value.accountId) || Boolean(value.projectId);
+    default:
+      return true;
+  }
+}
+
+function isRetiredStorageKey(data: AuthData, storageKey: string): boolean {
+  return RETIRED_SIGN_INS.some(
+    (r) => r.storageKey === storageKey && isRetiredEntry(r, data[storageKey]),
+  );
+}
+
+/** The usable credential stored under `storageKey`; a retired sign-in reads as absent. */
+function usableEntry(data: AuthData, storageKey: string): OAuthCredentials | undefined {
+  return isRetiredStorageKey(data, storageKey) ? undefined : data[storageKey];
+}
+
+/** Logical provider for a storage key (`kimi-code` → `moonshot`). */
+export function storageKeyProvider(storageKey: string): string {
+  if (storageKey === OPENAI_CHATGPT_KEY) return "openai";
+  if (storageKey === KIMI_CODE_KEY) return "moonshot";
+  if (storageKey === XIAOMI_CREDITS_KEY) return "xiaomi";
+  if (storageKey === GEMINI_API_KEY) return "gemini";
+  return storageKey;
+}
+
+/**
+ * API-key storage keys for a provider whose keys split into a plan key and a
+ * pay-per-token key, plan first. Single-key providers yield just their own key.
+ */
+export function apiKeyStorageKeys(provider: string): string[] {
+  if (provider === "moonshot") return [KIMI_CODE_KEY, "moonshot"];
+  if (provider === "xiaomi") return ["xiaomi", XIAOMI_CREDITS_KEY];
+  if (provider === "gemini") return [GEMINI_API_KEY];
+  return [provider];
+}
+
+/**
+ * A provider that can hold two credentials at once: a refreshable plan sign-in
+ * and a static API key. One policy governs all of them — see
  * {@link DUAL_AUTH_PROVIDERS} — so adding a provider here is enough to give it
  * OAuth-first resolution, usage-exhaustion fallback, per-method logout and the
  * matching UI affordances.
@@ -72,18 +161,12 @@ export interface DualAuthProvider {
  */
 const DUAL_AUTH_PROVIDERS: readonly DualAuthProvider[] = [
   {
-    provider: "moonshot",
-    oauthKey: MOONSHOT_OAUTH_KEY,
-    oauthLabel: "Kimi OAuth",
-    apiKeyLabel: "Moonshot API key",
-    restoreHint: 'Run "ggcoder login" and choose Kimi OAuth to restore OAuth auth.',
-  },
-  {
-    provider: "xai",
-    oauthKey: XAI_OAUTH_KEY,
-    oauthLabel: "Grok OAuth",
-    apiKeyLabel: "xAI API key",
-    restoreHint: 'Run "ggcoder login" and choose Grok OAuth to restore OAuth auth.',
+    provider: "openai",
+    oauthKey: OPENAI_CHATGPT_KEY,
+    oauthLabel: "ChatGPT plan",
+    apiKeyLabel: "OpenAI API key",
+    restoreHint:
+      'Run "ggcoder login" and choose Continue with ChatGPT to use your ChatGPT plan again.',
   },
 ];
 
@@ -124,9 +207,7 @@ export const XIAOMI_CREDITS_KEY = "xiaomi-credits";
 /**
  * Storage key for a Gemini API key (Google AI Studio, billed per token), served
  * by the public Gemini API at {@link GEMINI_API_KEY_BASE_URL}. Kept distinct from
- * the `gemini` entry, which holds the Code Assist OAuth login: Google stopped
- * serving Code Assist to personal accounts on 2026-06-18, so an API key is how
- * those accounts reach Gemini at all, and a licensed account may hold both.
+ * the `gemini` entry, which held the retired Google sign-in.
  */
 export const GEMINI_API_KEY = "gemini-api";
 
@@ -156,14 +237,21 @@ function activeBaseUrlEntry(data: AuthData, provider: string): OAuthCredentials 
   const dual = dualAuthProvider(provider);
   if (dual) {
     const oauth = data[dual.oauthKey];
+    const apiKey = usableEntry(data, dual.provider);
     if (oauth) {
       const exhaustedUntil = oauth.usageExhaustedUntil ?? 0;
-      if (Date.now() < exhaustedUntil && data[dual.provider]) return data[dual.provider];
+      if (Date.now() < exhaustedUntil && apiKey) return apiKey;
       return oauth;
     }
-    return data[dual.provider];
+    return apiKey;
   }
-  return data[provider];
+  const key = apiKeyStorageKeys(provider).find((k) => usableEntry(data, k));
+  const entry = key ? data[key] : undefined;
+  // A Kimi Code key not yet probed still goes to the plan endpoint.
+  if (key === KIMI_CODE_KEY && entry && !entry.baseUrl) {
+    return { ...entry, baseUrl: KIMI_CODE_DEFAULT_BASE_URL };
+  }
+  return entry;
 }
 
 // Shared across AuthStorage instances (one per app window). An inconclusive
@@ -176,6 +264,16 @@ function cachedMiniMaxRegion(apiKey: string): Promise<string | undefined> {
   if (cached && Date.now() - cached.at < MINIMAX_REGION_RETRY_MS) return cached.result;
   const result = detectMiniMaxBaseUrl(apiKey).catch(() => undefined);
   miniMaxRegionProbes.set(apiKey, { at: Date.now(), result });
+  return result;
+}
+
+const kimiRegionProbes = new Map<string, { at: number; result: Promise<string | undefined> }>();
+
+function cachedKimiRegion(apiKey: string): Promise<string | undefined> {
+  const cached = kimiRegionProbes.get(apiKey);
+  if (cached && Date.now() - cached.at < MINIMAX_REGION_RETRY_MS) return cached.result;
+  const result = detectKimiCodeBaseUrl(apiKey).catch(() => undefined);
+  kimiRegionProbes.set(apiKey, { at: Date.now(), result });
   return result;
 }
 
@@ -196,16 +294,10 @@ export function readStoredBaseUrlSync(authFile: string, provider: string): strin
 }
 
 /**
- * Proactive-refresh threshold, ported from MoonshotAI/kimi-code's OAuthManager
- * (`defaultRefreshThreshold`): refresh when the token is within
+ * Proactive-refresh threshold: refresh when the token is within
  * `max(MIN_REFRESH_THRESHOLD_MS, lifetime * REFRESH_THRESHOLD_RATIO)` of expiry.
- *
- * A flat skew is wrong for short-lived tokens. Kimi access tokens live only
- * 15 min, so a 60s skew rode them to the boundary and reliably 401'd — misread
- * as a dead credential, silently falling back to a static API key (or hard-
- * failing the run when a concurrent-session refresh race rotated the token).
- * Scaling by lifetime refreshes a 15-min token at its 7.5-min halfway point,
- * and never earlier than 5 min before expiry for longer-lived tokens.
+ * A flat skew rides short-lived tokens to the boundary and 401s; scaling by
+ * lifetime refreshes a 1-hour ChatGPT token at its halfway point.
  */
 const MIN_REFRESH_THRESHOLD_MS = 300_000;
 const REFRESH_THRESHOLD_RATIO = 0.5;
@@ -224,22 +316,11 @@ function refreshThresholdMs(creds: OAuthCredentials): number {
  */
 const USAGE_EXHAUSTED_DEFAULT_MS = 15 * 60 * 1000;
 
-/** Providers whose credentials are static API keys (no refresh mechanism). */
-const STATIC_API_KEY_PROVIDERS = new Set([
-  // Anthropic is API-key only; Claude subscriptions run through Claude Code.
-  "anthropic",
-  "glm",
-  "moonshot",
-  "xiaomi",
-  "minimax",
-  "deepseek",
-  "openrouter",
-  "huggingface",
-  "sakana",
-  "xai",
-  // Local endpoints: a fixed (usually placeholder) key, never refreshable.
-  "local",
-]);
+/**
+ * Storage keys whose credential refreshes. Everything else is a static API key:
+ * Claude subscriptions run through Claude Code, and every other plan is a key.
+ */
+const REFRESHABLE_STORAGE_KEYS = new Set([OPENAI_CHATGPT_KEY]);
 
 export class AuthStorage {
   private data: AuthData = {};
@@ -262,18 +343,21 @@ export class AuthStorage {
 
   private readonly detectMiniMaxRegion: (apiKey: string) => Promise<string | undefined>;
   private readonly detectXiaomiCluster: (apiKey: string) => Promise<string | undefined>;
+  private readonly detectKimiRegion: (apiKey: string) => Promise<string | undefined>;
 
   constructor(
     filePath?: string,
     options?: {
       detectMiniMaxBaseUrl?: (apiKey: string) => Promise<string | undefined>;
       detectXiaomiTokenPlanBaseUrl?: (apiKey: string) => Promise<string | undefined>;
+      detectKimiCodeBaseUrl?: (apiKey: string) => Promise<string | undefined>;
     },
   ) {
     this.filePath = filePath ?? getAppPaths().authFile;
     this.detectMiniMaxRegion = options?.detectMiniMaxBaseUrl ?? cachedMiniMaxRegion;
     this.detectXiaomiCluster =
       options?.detectXiaomiTokenPlanBaseUrl ?? detectXiaomiTokenPlanBaseUrl;
+    this.detectKimiRegion = options?.detectKimiCodeBaseUrl ?? cachedKimiRegion;
   }
 
   /** Path to the on-disk auth file. Useful for status output. */
@@ -306,9 +390,8 @@ export class AuthStorage {
   }
 
   /**
-   * True if the user has any usable auth for the logical provider. For a
-   * dual-auth provider (Kimi/Grok) either the OAuth credential or the API key
-   * satisfies it.
+   * True if the user has any usable auth for the logical provider: the plan
+   * sign-in or any of its API keys. A retired sign-in doesn't count.
    */
   async hasProviderAuth(provider: string): Promise<boolean> {
     // A hidden provider counts as not connected, so pickers and startup skip
@@ -317,13 +400,7 @@ export class AuthStorage {
     await this.ensureFresh();
     const dual = dualAuthProvider(provider);
     if (dual) {
-      return Boolean(this.data[dual.oauthKey] || this.data[dual.provider]);
-    }
-    if (provider === "xiaomi") {
-      return Boolean(this.data["xiaomi"] || this.data[XIAOMI_CREDITS_KEY]);
-    }
-    if (provider === "gemini") {
-      return Boolean(this.data["gemini"] || this.data[GEMINI_API_KEY]);
+      return Boolean(this.data[dual.oauthKey] || usableEntry(this.data, dual.provider));
     }
     if (provider === "anthropic") {
       return (
@@ -335,7 +412,27 @@ export class AuthStorage {
     if (provider === "local") {
       return Object.keys(this.data).some((key) => key.startsWith(LOCAL_AUTH_KEY_PREFIX));
     }
-    return Boolean(this.data[provider]);
+    return apiKeyStorageKeys(provider).some((key) => Boolean(usableEntry(this.data, key)));
+  }
+
+  /** True if any of `provider`'s API keys is stored. A retired sign-in in a key slot doesn't count. */
+  async hasApiKey(provider: string): Promise<boolean> {
+    await this.ensureFresh();
+    if (provider === "anthropic" && isLegacyClaudeOAuth(this.data.anthropic)) return false;
+    return apiKeyStorageKeys(provider).some((key) => Boolean(usableEntry(this.data, key)));
+  }
+
+  /**
+   * `provider`'s first stored API key, never its plan sign-in. For calls that
+   * only an API key may make (OpenAI's Images API isn't on the ChatGPT plan).
+   */
+  async resolveApiKey(provider: string): Promise<OAuthCredentials> {
+    await this.ensureFresh();
+    for (const key of apiKeyStorageKeys(provider)) {
+      const creds = usableEntry(this.data, key);
+      if (creds && !(provider === "anthropic" && isLegacyClaudeOAuth(creds))) return creds;
+    }
+    throw new NotLoggedInError(provider);
   }
 
   /** True when the user signed in with Claude through Claude Code (marker only, no token). */
@@ -352,17 +449,25 @@ export class AuthStorage {
     });
   }
 
-  /**
-   * Remove an old GG Claude sign-in token (`sk-ant-oat…`), if any. True when one
-   * was removed, so the caller can tell the user once to sign in with Claude again.
-   */
-  async takeLegacyClaudeSignIn(): Promise<boolean> {
+  /** Retired sign-ins still on disk, so the UI can ask the user to reconnect. */
+  async legacySignIns(): Promise<RetiredSignIn[]> {
     await this.ensureFresh();
-    if (!isLegacyClaudeOAuth(this.data.anthropic)) return false;
+    return RETIRED_SIGN_INS.filter((r) => isRetiredEntry(r, this.data[r.storageKey]));
+  }
+
+  /**
+   * Remove `provider`'s retired sign-in, if any. True when one was removed, so
+   * the caller can tell the user once to reconnect.
+   */
+  async takeLegacySignIn(provider: string): Promise<boolean> {
+    const retired = RETIRED_SIGN_INS.find((r) => r.provider === provider);
+    if (!retired) return false;
+    await this.ensureFresh();
+    if (!isRetiredEntry(retired, this.data[retired.storageKey])) return false;
     let removed = false;
     await this.mutateLatest((latest) => {
-      if (!isLegacyClaudeOAuth(latest.anthropic)) return;
-      delete latest.anthropic;
+      if (!isRetiredEntry(retired, latest[retired.storageKey])) return;
+      delete latest[retired.storageKey];
       removed = true;
     });
     return removed;
@@ -409,24 +514,25 @@ export class AuthStorage {
     const dual = dualAuthProvider(provider);
     const oauthCreds = dual ? this.data[dual.oauthKey] : undefined;
     if (dual && oauthCreds) {
-      // A usage-exhausted OAuth credential with an API key configured means
-      // the API key is what actually resolves right now — treat it as the
-      // static key it is (so a 401 clears the key instead of pointlessly
-      // force-refreshing the sidelined OAuth token).
+      // A usage-exhausted plan sign-in with an API key configured means the
+      // API key is what actually resolves right now — treat it as the static
+      // key it is (so a 401 clears the key instead of pointlessly
+      // force-refreshing the sidelined token).
       const exhaustedUntil = oauthCreds.usageExhaustedUntil ?? 0;
-      const apiKeyActive = Date.now() < exhaustedUntil && Boolean(this.data[dual.provider]);
+      const apiKeyActive =
+        Date.now() < exhaustedUntil && Boolean(usableEntry(this.data, dual.provider));
       if (!apiKeyActive) return false;
     }
-    return STATIC_API_KEY_PROVIDERS.has(provider);
+    return !REFRESHABLE_STORAGE_KEYS.has(provider);
   }
 
   /**
    * The base URL on the credential that is active right now, if any.
    * Synchronous — call only after load()/resolveCredentials() populated the
-   * snapshot. For a dual-auth provider this is the subscription endpoint (Kimi
-   * For Coding, the Grok CLI proxy) whenever the OAuth entry is the one
-   * resolveCredentials would serve (i.e. not currently usage-exhausted with an
-   * API key configured).
+   * snapshot. For a dual-auth provider this is the plan endpoint whenever the
+   * sign-in is the one resolveCredentials would serve (i.e. not currently
+   * usage-exhausted with an API key configured); for a plan/pay-per-token key
+   * split it is the plan key's endpoint when one is stored.
    */
   getStoredBaseUrl(provider: string): string | undefined {
     return activeBaseUrlEntry(this.data, provider)?.baseUrl;
@@ -565,9 +671,35 @@ export class AuthStorage {
     return { ...creds, baseUrl };
   }
 
-  async setCredentials(provider: string, creds: OAuthCredentials): Promise<void> {
+  /**
+   * A Kimi Code key saved without an endpoint gets the host that issued it
+   * (`api.kimi.com` or `api.kimi.ai`), saved so the check runs once.
+   */
+  private async withKimiRegion(creds: OAuthCredentials): Promise<OAuthCredentials> {
+    const baseUrl = await this.detectKimiRegion(creds.accessToken);
+    if (!baseUrl) return { ...creds, baseUrl: KIMI_CODE_DEFAULT_BASE_URL };
+    log("INFO", "auth", `Kimi Code key belongs to ${baseUrl} — saved for future requests`);
     await this.mutateLatest((latest) => {
-      latest[provider] = creds;
+      const current = latest[KIMI_CODE_KEY];
+      if (current?.accessToken === creds.accessToken && !current.baseUrl) {
+        current.baseUrl = baseUrl;
+      }
+    });
+    return { ...creds, baseUrl };
+  }
+
+  /**
+   * Store `creds` under `storageKey`. Connecting a provider again also removes
+   * its retired sign-in, which is what the reconnect notice asked for.
+   */
+  async setCredentials(storageKey: string, creds: OAuthCredentials): Promise<void> {
+    const provider = storageKeyProvider(storageKey);
+    await this.mutateLatest((latest) => {
+      for (const retired of RETIRED_SIGN_INS) {
+        if (retired.provider !== provider || retired.storageKey === storageKey) continue;
+        if (isRetiredEntry(retired, latest[retired.storageKey])) delete latest[retired.storageKey];
+      }
+      latest[storageKey] = creds;
     });
   }
 
@@ -608,9 +740,9 @@ export class AuthStorage {
    * Mark the credential stored under `storageKey` as usage-exhausted until
    * `resetsAt` (unix SECONDS, from the provider's rate-limit response) or a
    * 15-minute default when no reset time is known. While the mark is in the
-   * future, `resolveCredentials("moonshot")` serves the Moonshot API key
-   * instead of the subscription OAuth credential (when both are configured) — OAuth
-   * stays the preferred credential and is retried automatically once the mark
+   * future, `resolveCredentials("openai")` serves the OpenAI API key instead of
+   * the ChatGPT plan sign-in (when both are configured) — the plan stays the
+   * preferred credential and is retried automatically once the mark
    * lapses. Persisted to auth.json so a restart (or another gg-app window)
    * doesn't burn a request rediscovering the same exhausted window. No-op if
    * nothing is stored under `storageKey`.
@@ -692,40 +824,38 @@ export class AuthStorage {
         ? opts.storageKeys
         : providerStorageKeys(provider);
     if (
-      !directStorageKeys.some((key) => Boolean(this.data[key])) &&
+      !directStorageKeys.some((key) => Boolean(usableEntry(this.data, key))) &&
       !(provider === "anthropic" && this.data[CLAUDE_CODE_AUTH_KEY])
     ) {
       await this.reloadLatest();
     }
 
-    // Explicit ordered storage-key override (e.g. Xiaomi: prefer the Token
-    // Plan credential, fall back to API Credits if only that's configured).
-    // Bypasses the provider-name resolution below entirely when given —
-    // these are always static API keys with no refresh mechanism, so a
-    // direct first-match lookup is correct. A single-entry list equal to
-    // `[provider]` falls through to normal resolution below.
+    // Explicit ordered storage-key override (e.g. Kimi: prefer the Kimi Code
+    // plan key, fall back to the Moonshot key if only that's configured).
+    // Bypasses the provider-name resolution below entirely when given. A
+    // single-entry list equal to `[provider]` falls through to normal
+    // resolution below.
     if (opts?.storageKeys && !(opts.storageKeys.length === 1 && opts.storageKeys[0] === provider)) {
       for (const key of opts.storageKeys) {
-        const creds = this.data[key];
+        const creds = usableEntry(this.data, key);
         if (!creds) continue;
-        // An OAuth storage key (e.g. Kimi sign-in for an OAuth-only model) must
-        // still refresh, so resolve it as its own provider instead of returning
-        // a possibly expired token.
+        // A plan sign-in storage key must still refresh, so resolve it as its
+        // own provider instead of returning a possibly expired token.
         if (key !== provider && dualAuthProviderByOAuthKey(key)) {
           return await this.resolveCredentials(key, {
             ...(opts.forceRefresh ? { forceRefresh: true } : {}),
             ...(opts.rejectedToken !== undefined ? { rejectedToken: opts.rejectedToken } : {}),
           });
         }
-        // The provider's own key in an ordered list (Gemini: API key first,
-        // then the `gemini` Code Assist OAuth login) may be a refreshable OAuth
-        // credential — resolve it through the normal path so it refreshes.
+        // The provider's own key in an ordered list resolves through the normal
+        // path, so a dual-auth provider still prefers its plan sign-in.
         if (key === provider) {
           return await this.resolveCredentials(provider, {
             ...(opts.forceRefresh ? { forceRefresh: true } : {}),
             ...(opts.rejectedToken !== undefined ? { rejectedToken: opts.rejectedToken } : {}),
           });
         }
+        if (key === KIMI_CODE_KEY && !creds.baseUrl) return await this.withKimiRegion(creds);
         return creds;
       }
       throw new NotLoggedInError(provider);
@@ -744,11 +874,11 @@ export class AuthStorage {
       if (this.data.anthropic) throw new NotLoggedInError(provider);
     }
 
-    // Prefer subscription OAuth over the API key for a dual-auth provider
-    // (Kimi/Grok). When an OAuth credential exists, resolve (and refresh) that
-    // instead — this is the "default to OAuth first" rule.
+    // Prefer the plan sign-in over the API key for a dual-auth provider
+    // (OpenAI). When a sign-in exists, resolve (and refresh) that instead.
     const dual = dualAuthProvider(provider);
     const dualOAuthCreds = dual ? this.data[dual.oauthKey] : undefined;
+    const dualApiKey = dual ? usableEntry(this.data, dual.provider) : undefined;
     if (dual && dualOAuthCreds) {
       // OAuth plan usage window exhausted (marked by the agent loop when the
       // subscription endpoint rejected with a usage/quota stop). Serve the API
@@ -757,22 +887,20 @@ export class AuthStorage {
       // error (with its reset time) surfaces to the user instead of a
       // misleading "not logged in".
       const exhaustedUntil = dualOAuthCreds.usageExhaustedUntil ?? 0;
-      if (Date.now() < exhaustedUntil && this.data[dual.provider]) {
+      if (Date.now() < exhaustedUntil && dualApiKey) {
         log(
           "WARN",
           "auth",
           `${dual.oauthLabel} usage window is exhausted — using the ${dual.apiKeyLabel} until ` +
             `${new Date(exhaustedUntil).toISOString()} (OAuth resumes automatically).`,
         );
-        return this.data[dual.provider]!;
+        return dualApiKey;
       }
       try {
         // Do NOT forward `storageKeys` here: the caller's keys (e.g.
-        // AgentSession's ["moonshot"]) no longer match the recursive
-        // provider ("moonshot-oauth"), so forwarding them tripped the
-        // storage-key override branch — silently returning the raw API key
-        // when both credentials existed (misattributed "usage is out"
-        // errors) and throwing NotLoggedInError for OAuth-only users.
+        // AgentSession's ["openai"]) don't match the recursive provider
+        // ("openai-chatgpt"), so forwarding them would trip the storage-key
+        // override branch and silently return the raw API key.
         return await this.resolveCredentials(dual.oauthKey, {
           ...(opts?.forceRefresh ? { forceRefresh: true } : {}),
           ...(opts?.rejectedToken !== undefined ? { rejectedToken: opts.rejectedToken } : {}),
@@ -783,29 +911,31 @@ export class AuthStorage {
         // metered key), so make it loud in the debug log rather than silent —
         // the user expects OAuth to stay active and should know a re-login is
         // needed to restore it.
-        if (err instanceof NotLoggedInError && this.data[dual.provider]) {
+        if (err instanceof NotLoggedInError && dualApiKey) {
           log(
             "WARN",
             "auth",
             `${dual.oauthLabel} credential is no longer valid — falling back to the ` +
               `${dual.apiKeyLabel}. ${dual.restoreHint}`,
           );
-          return this.data[dual.provider]!;
+          return dualApiKey;
         }
         throw err;
       }
     }
 
-    const creds = this.data[provider];
+    // A retired sign-in (old Codex token in the `openai` key slot, …) is never
+    // served — above all never as an API key.
+    const creds = usableEntry(this.data, provider);
     if (!creds) {
       throw new NotLoggedInError(provider);
     }
 
-    // Static API-key providers have no refresh mechanism. The dual-auth OAuth
-    // keys (`moonshot-oauth`, `xai-oauth`) are intentionally excluded from that
-    // set — they refresh below.
-    if (STATIC_API_KEY_PROVIDERS.has(provider)) {
+    // Static API keys have no refresh mechanism; only the ChatGPT plan
+    // sign-in refreshes below.
+    if (!REFRESHABLE_STORAGE_KEYS.has(provider)) {
       if (provider === "minimax" && !creds.baseUrl) return await this.withMiniMaxRegion(creds);
+      if (provider === KIMI_CODE_KEY && !creds.baseUrl) return await this.withKimiRegion(creds);
       return creds;
     }
 
@@ -860,17 +990,9 @@ export class AuthStorage {
         return latestCreds;
       }
 
-      const refreshFn =
-        provider === "gemini"
-          ? refreshGeminiToken
-          : provider === MOONSHOT_OAUTH_KEY
-            ? refreshKimiToken
-            : provider === XAI_OAUTH_KEY
-              ? refreshXaiToken
-              : refreshOpenAIToken;
       let refreshed: OAuthCredentials;
       try {
-        refreshed = await refreshFn(latestCreds.refreshToken);
+        refreshed = await refreshChatGPTToken(latestCreds);
       } catch (err) {
         // Refresh token revoked / expired / invalid → the stored creds are
         // unusable. Delete only this provider from the latest snapshot so a
@@ -878,7 +1000,9 @@ export class AuthStorage {
         const msg = err instanceof Error ? err.message : String(err);
         const isAuthFailure =
           /\((401|400)\)/.test(msg) ||
-          /invalid_grant|invalid_token|invalid.*refresh/i.test(msg) ||
+          /invalid_grant|invalid_token|invalid.*refresh|token_expired|refresh_token_(?:expired|invalidated|reused)/i.test(
+            msg,
+          ) ||
           /unauthorized/i.test(msg);
         if (isAuthFailure) {
           // Re-read before deleting. The refresh ran over the network while
@@ -905,15 +1029,12 @@ export class AuthStorage {
         }
         throw err;
       }
-      if (!refreshed.accountId && latestCreds.accountId) {
-        refreshed.accountId = latestCreds.accountId;
-      }
-      if (!refreshed.projectId && latestCreds.projectId) {
-        refreshed.projectId = latestCreds.projectId;
-      }
-      if (!refreshed.baseUrl && latestCreds.baseUrl) {
-        refreshed.baseUrl = latestCreds.baseUrl;
-      }
+      // The refresh response carries tokens only; keep the identity and
+      // routing fields saved at sign-in.
+      refreshed = {
+        ...pick(latestCreds, ["accountId", "baseUrl", "clientId", "idToken", "scopes"]),
+        ...refreshed,
+      };
       latest[provider] = refreshed;
       this.data = latest;
       // Write atomically (we already hold the file lock).
@@ -941,6 +1062,12 @@ export class AuthStorage {
     const creds = await this.resolveCredentials(provider);
     return creds.accessToken;
   }
+}
+
+function pick<T extends object, K extends keyof T>(value: T, keys: K[]): Partial<Pick<T, K>> {
+  const out: Partial<Pick<T, K>> = {};
+  for (const key of keys) if (value[key] !== undefined) out[key] = value[key];
+  return out;
 }
 
 /** Read the latest complete auth snapshot while a caller holds the file lock. */

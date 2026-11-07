@@ -43,17 +43,17 @@ console.log(models.map((m) => m.id));
 
 ## What's inside
 
-| Area            | Main exports                                                                                                               |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Models          | `getModel`, `getAllModels`, `getModelsForProvider`, `getDefaultModel`, `getContextWindow`, `MODELS`                        |
-| Thinking levels | `getSupportedThinkingLevels`, `getMaxThinkingLevel`, `getDefaultThinkingLevel`, `getNextThinkingLevel`                     |
-| Credentials     | `AuthStorage`: reads and writes `~/.gg/auth.json`, refreshes sign-in tokens, safe across processes                         |
-| Sign-in         | `loginOpenAI`, `loginKimi`, `loginXai`, `loginGemini` and matching `refresh…Token` functions; `loginClaudeCode` for Claude |
-| Provider list   | `AUTH_PROVIDERS`: each provider's name, models and sign-in methods, ready for a login screen                               |
-| Local models    | `discoverLocalModels`, `probeEndpoint`: Ollama by default, plus LM Studio, llama.cpp, vLLM or any custom URL               |
-| Plan usage      | `fetchSubscriptionUsage`: remaining Claude, ChatGPT and Kimi plan usage                                                    |
-| Paths           | `getAppPaths`: every file GG Coder keeps under `~/.gg/`                                                                    |
-| Other           | Logger, file lock, Telegram bot, voice transcription, auto-update                                                          |
+| Area            | Main exports                                                                                                                  |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Models          | `getModel`, `getAllModels`, `getModelsForProvider`, `getDefaultModel`, `getContextWindow`, `MODELS`                           |
+| Thinking levels | `getSupportedThinkingLevels`, `getMaxThinkingLevel`, `getDefaultThinkingLevel`, `getNextThinkingLevel`                        |
+| Credentials     | `AuthStorage`: reads and writes `~/.gg/auth.json`, refreshes sign-in tokens, safe across processes                            |
+| Sign-in         | `loginChatGPT` (Sign in with ChatGPT), `refreshChatGPTToken`, `revokeChatGPTSignIn`; `loginClaudeCode` for Claude             |
+| Provider list   | `AUTH_PROVIDERS`: each provider's name, models, sign-in methods and plan/pay-per-token keys, ready for a login screen         |
+| Local models    | `discoverLocalModels`, `probeEndpoint`: Ollama by default, plus LM Studio, llama.cpp, vLLM or any custom URL                  |
+| Plan usage      | `fetchSubscriptionUsage`: remaining Kimi Code plan usage (Claude reports its own; ChatGPT's is at chatgpt.com/settings/usage) |
+| Paths           | `getAppPaths`: every file GG Coder keeps under `~/.gg/`                                                                       |
+| Other           | Logger, file lock, Telegram bot, voice transcription, auto-update                                                             |
 
 `AuthStorage` shares `~/.gg/auth.json` with GG Coder, so a user who has signed in there is already signed in to your tool. Pass a different file path to the constructor to keep your own.
 

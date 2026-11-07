@@ -6,13 +6,21 @@ export interface OAuthCredentials {
    *  scale the proactive-refresh threshold: short-lived tokens (e.g. Kimi's
    *  15-min access token) must refresh well before expiry, not 60s prior. */
   expiresIn?: number;
-  accountId?: string; // OpenAI chatgpt_account_id from JWT
-  projectId?: string; // Google Cloud/Code Assist project ID for Gemini OAuth
+  /** ChatGPT plan: the validated ID-token subject. Its presence routes OpenAI to the plan transport. */
+  accountId?: string;
+  /** Retired Gemini Code Assist project ID; only read to recognise an old sign-in. */
+  projectId?: string;
   baseUrl?: string; // Custom API base URL (e.g. Xiaomi token plan endpoint)
+  /** ChatGPT plan: the client ID OpenAI issued at first sign-in (never `dynamic_agent_client`). */
+  clientId?: string;
+  /** ChatGPT plan: the last validated ID token, sent back as `id_token_hint`. */
+  idToken?: string;
+  /** ChatGPT plan: scopes the token response granted. */
+  scopes?: string[];
   /** ms timestamp until which this credential's usage window is exhausted.
    *  Set by AuthStorage.markUsageExhausted() when the provider rejects with a
    *  usage/quota stop; while in the future, resolution may skip this credential
-   *  in favor of a configured fallback (e.g. Kimi OAuth → Moonshot API key). */
+   *  in favor of a configured fallback (e.g. ChatGPT plan → OpenAI API key). */
   usageExhaustedUntil?: number;
 }
 

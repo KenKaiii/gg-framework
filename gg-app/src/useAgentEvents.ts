@@ -33,7 +33,7 @@ import { type SubAgentLine } from "./SubAgentFeed";
 import { playSound } from "./sounds";
 import { takeNewSecurityNotices, withSecurityRow } from "./security-notices";
 import { toast } from "./toast";
-import { findCompletedSteps, countPlanSteps } from "./plan-steps";
+import { findCompletedSteps, countPlanSteps, stepsDoneThrough } from "./plan-steps";
 import type { PendingAttachment } from "./attachments";
 import type { Item } from "./App";
 import { readChatError } from "./chat-error";
@@ -659,9 +659,7 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           const done = findCompletedSteps(assistantTextRef.current);
           if (done.length > 0) {
             const next = new Set(planDoneRef.current);
-            for (const n of done) {
-              if (n >= 1 && n <= planTotalRef.current) next.add(n);
-            }
+            for (const n of stepsDoneThrough(done, planTotalRef.current)) next.add(n);
             if (next.size !== planDoneRef.current.size) {
               planDoneRef.current = next;
               setPlanDone(next);

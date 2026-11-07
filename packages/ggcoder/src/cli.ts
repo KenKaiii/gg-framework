@@ -493,7 +493,7 @@ async function runInkTUI(opts: {
   // mimo-v2.6-pro-ultraspeed) since a user may hold either or both.
   const credentialsByProvider: Record<
     string,
-    { accessToken: string; accountId?: string; projectId?: string; baseUrl?: string }
+    { accessToken: string; accountId?: string; baseUrl?: string }
   > = {};
   const expiredProviders: Provider[] = [];
   for (const p of loggedInProviders) {
@@ -511,7 +511,6 @@ async function runInkTUI(opts: {
         credentialsByProvider[key] = {
           accessToken: resolved.accessToken,
           accountId: resolved.accountId,
-          projectId: resolved.projectId,
           baseUrl: resolved.baseUrl,
         };
         resolvedAny = true;
@@ -596,7 +595,6 @@ async function runInkTUI(opts: {
   const creds = {
     accessToken: cached.accessToken,
     accountId: cached.accountId,
-    projectId: cached.projectId,
     refreshToken: "", // not needed downstream; SDK only uses accessToken
     expiresAt: Number.POSITIVE_INFINITY,
   };
@@ -831,7 +829,6 @@ async function runInkTUI(opts: {
                     model,
                     apiKey: creds.accessToken,
                     accountId: creds.accountId,
-                    projectId: creds.projectId,
                     baseUrl: cached.baseUrl,
                     contextWindow,
                     targetTokens: policy.targetTokens,
@@ -990,7 +987,6 @@ async function runInkTUI(opts: {
     thinking: opts.thinkingLevel,
     apiKey: creds.accessToken,
     accountId: creds.accountId,
-    projectId: creds.projectId,
     cwd,
     theme: opts.theme,
     loggedInProviders,
@@ -1525,13 +1521,11 @@ async function resolveActiveProvider(
     "sakana",
     "xai",
   ];
-  if (await authStorage.takeLegacyClaudeSignIn()) {
-    console.warn(
-      chalk.yellow(
-        "⚠ Your old Claude sign-in no longer works.\n" +
-          '  Run "ggcoder login", pick Anthropic, then "Sign in with Claude" to connect again.',
-      ),
-    );
+  // Retired sign-ins (old Claude, Codex, Kimi, Grok or Google tokens) are never
+  // used. Tell the user once, then remove them.
+  for (const retired of await authStorage.legacySignIns()) {
+    if (!(await authStorage.takeLegacySignIn(retired.provider))) continue;
+    console.warn(chalk.yellow(`⚠ ${retired.message}\n  Run "ggcoder login" to connect again.`));
   }
   const loggedInProviders: Provider[] = [];
   for (const p of allProviders) {

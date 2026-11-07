@@ -84,9 +84,9 @@ export function LoginScreen({ onClose }: Props): React.ReactElement {
   const readFailed = !loading && providers.length === 0;
   const reauth = providers.find((p) => p.reauthRequired);
 
-  // Dismissing removes the dead token, so the notice shows only until the user acts.
+  // Dismissing removes only the dead sign-in, so the notice shows until the user acts.
   const dismissReauth = (provider: AuthProvider): void => {
-    void authLogout(provider.value, "apikey")
+    void authLogout(provider.value, "legacy")
       .catch(() => undefined)
       .then(refresh);
   };
@@ -114,7 +114,7 @@ export function LoginScreen({ onClose }: Props): React.ReactElement {
       {reauth && (
         <div className="login-reauth" role="status">
           <span className="login-reauth-text">
-            {`Your old ${reauth.label} sign-in no longer works. Sign in with Claude again to keep using your subscription.`}
+            {reauth.reauthMessage ?? `Your old ${reauth.label} sign-in no longer works.`}
           </span>
           <div className="login-reauth-actions">
             <button
@@ -122,7 +122,7 @@ export function LoginScreen({ onClose }: Props): React.ReactElement {
               className="btn btn-sm btn-primary"
               onClick={() => setActive(reauth)}
             >
-              Sign in again
+              Reconnect
             </button>
             <button
               type="button"

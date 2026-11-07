@@ -6,6 +6,7 @@
 import {
   GEMINI_API_KEY,
   GEMINI_API_KEY_BASE_URL,
+  KIMI_CODE_KEY,
   XIAOMI_CREDITS_KEY,
   dualAuthProvider,
 } from "./auth-storage.js";
@@ -14,17 +15,20 @@ import { isHiddenProvider } from "./hidden-providers.js";
 export type AuthMethod = "oauth" | "apikey";
 
 /**
- * One API-key option for a provider that splits auth across multiple distinct
- * endpoints/credentials (currently only Xiaomi: Token Plan vs. API Credits).
- * Each variant stores under its own auth.json key so a user can hold both at
- * once — the model registry picks which one a given model resolves via
- * `getAuthStorageKeys()`.
+ * One API-key option for a provider that takes two kinds of key: a plan key
+ * (the user's subscription) and a pay-per-token key. Each variant stores under
+ * its own auth.json key so a user can hold both at once; the model registry
+ * picks which one a model resolves via `getAuthStorageKeys()`.
  */
 export interface ApiKeyVariant {
   /** Storage key in auth.json (distinct from `value` when multiple variants exist). */
   key: string;
   /** Display label, e.g. "Token Plan" or "API Credits". */
   label: string;
+  /** `plan` bills the user's subscription; `payg` bills per token. */
+  kind: "plan" | "payg";
+  /** What the user spends with this key, e.g. "Uses your Kimi Code plan." */
+  billing: string;
   /** Base URL stored alongside this variant's credential. */
   baseUrl?: string;
 }
@@ -43,17 +47,12 @@ export interface AuthProviderMeta {
   /** Fixed base URL stored alongside an API key (e.g. Xiaomi's token plan). */
   apiKeyBaseUrl?: string;
   /**
-   * When a provider's API-key auth splits across multiple endpoints, the
-   * choices to present (in order). The first variant is the default. Absent
-   * for every provider with a single API-key credential.
+   * When a provider takes both a plan key and a pay-per-token key, the choices
+   * to present (in order). The first variant is the default.
    */
   apiKeyVariants?: ApiKeyVariant[];
-  /**
-   * Per-method guidance overrides. Only providers whose methods differ in
-   * billing/entitlement (the dual-auth ones) need these; everything else is
-   * described generically by {@link describeAuthMethods}.
-   */
-  methodDetails?: Partial<Record<AuthMethod, AuthMethodMeta>>;
+  /** What each method means for this provider (billing, when to pick it). */
+  methodDetails: Partial<Record<AuthMethod, AuthMethodMeta>>;
 }
 
 /**
@@ -62,7 +61,7 @@ export interface AuthProviderMeta {
  */
 export interface AuthMethodMeta {
   method: AuthMethod;
-  /** Button/row label, e.g. "Sign in with Grok (SuperGrok / X Premium)". */
+  /** Button/row label, e.g. "Continue with ChatGPT". */
   label: string;
   /** What the user spends on this method. */
   billing: string;
@@ -72,13 +71,21 @@ export interface AuthMethodMeta {
   requires?: string;
 }
 
+function apiKeyDetails(
+  label: string,
+  billing: string,
+  when = "",
+): Partial<Record<AuthMethod, AuthMethodMeta>> {
+  return { apikey: { method: "apikey", label, billing, when } };
+}
+
 /**
- * Every provider a user can connect, in login-screen order. `description`
- * lists that provider's models and feeds both the CLI login screen and the
- * app's provider list, so `auth-providers.test.ts` pins each one to the model
- * registry — a registry change that isn't reflected here fails the suite.
- * Hidden providers (see `hidden-providers.ts`) keep their row here but are
- * left out of the exported list.
+ * Every provider a user can connect, in login-screen order. Each one connects
+ * only in a way its owner allows: `oauth` is a real sign-in (Claude, ChatGPT),
+ * and a plan that works with a pasted key is an `apikey` variant marked `plan`.
+ * `description` lists that provider's models and feeds both the CLI login
+ * screen and the app's provider list, so `auth-providers.test.ts` pins each one
+ * to the model registry. Mirrored in gg-app/src-tauri/src/auth.rs.
  */
 const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
   {
@@ -108,76 +115,79 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
     label: "OpenAI",
     description:
       "GPT-6 Astra, GPT-6 Astra Fast, GPT-6.1 Sol, GPT-6.1 Sol Fast, GPT-6.1 Terra, GPT-6.1 Terra Fast, GPT-6 Luna, GPT-6 Luna Fast",
-    methods: ["oauth"],
+    methods: ["oauth", "apikey"],
+    apiKeyLabel: "OpenAI",
+    methodDetails: {
+      oauth: {
+        method: "oauth",
+        label: "Continue with ChatGPT",
+        billing: "Uses your ChatGPT plan.",
+        when: "Signs in through OpenAI. Manage what GG Coder may use at chatgpt.com/settings/usage.",
+        requires: "A ChatGPT plan.",
+      },
+      apikey: {
+        method: "apikey",
+        label: "OpenAI API key",
+        billing: "Pay-per-token from an OpenAI Platform key.",
+        when: "No subscription needed. Covers you while your ChatGPT plan's usage is out.",
+      },
+    },
   },
   {
     value: "gemini",
     label: "Gemini",
     description: "Gemini 3.8 Flash, 3.5 Flash Lite, 3.1 Flash Lite, 3.5 Flash, 3.1 Pro (Preview)",
-    methods: ["oauth", "apikey"],
+    methods: ["apikey"],
     apiKeyLabel: "Gemini",
     apiKeyBaseUrl: GEMINI_API_KEY_BASE_URL,
-    // Stored under its own key so it never overwrites the `gemini` OAuth login.
+    // Stored under its own key: `gemini` held the retired Google sign-in.
     apiKeyVariants: [
-      { key: GEMINI_API_KEY, label: "Google AI Studio", baseUrl: GEMINI_API_KEY_BASE_URL },
-    ],
-    methodDetails: {
-      oauth: {
-        method: "oauth",
-        label: "Sign in with Google",
-        billing: "Gemini Code Assist Standard or Enterprise licence.",
-        when: "Personal Google accounts are no longer served here (Google ended it on June 18, 2026).",
-      },
-      apikey: {
-        method: "apikey",
-        label: "Gemini API key",
+      {
+        key: GEMINI_API_KEY,
+        label: "Google AI Studio",
+        kind: "payg",
         billing: "Pay-per-token from a Google AI Studio key.",
-        when: "Used first whenever it is set.",
+        baseUrl: GEMINI_API_KEY_BASE_URL,
       },
-    },
+    ],
+    methodDetails: apiKeyDetails("Gemini API key", "Pay-per-token from a Google AI Studio key."),
   },
   {
     value: "xai",
     label: "xAI (Grok)",
-    description: "Grok 4.7 · OAuth or API key",
-    methods: ["oauth", "apikey"],
+    description: "Grok 4.7",
+    methods: ["apikey"],
     apiKeyLabel: "xAI",
-    methodDetails: {
-      oauth: {
-        method: "oauth",
-        label: "Sign in with Grok",
-        billing: "Included with SuperGrok or X Premium.",
-        when: "",
-      },
-      apikey: {
-        method: "apikey",
-        label: "xAI API key",
-        billing: "Pay-per-token on console.x.ai credits.",
-        when: "",
-      },
-    },
+    methodDetails: apiKeyDetails(
+      "xAI API key",
+      "Pay-per-token from console.x.ai credits.",
+      "SuperGrok and X Premium usage is only offered in apps xAI partners with.",
+    ),
   },
   {
     value: "moonshot",
-    label: "Moonshot",
-    description:
-      "Kimi K3, K2.8 Preview (Kimi sign-in), K2.7 Code, K2.7 Code HighSpeed · OAuth or API key",
-    methods: ["oauth", "apikey"],
-    apiKeyLabel: "Moonshot",
-    methodDetails: {
-      oauth: {
-        method: "oauth",
-        label: "Sign in with Kimi",
-        billing: "Included with a Kimi For Coding plan.",
-        when: "",
+    label: "Kimi (Moonshot)",
+    description: "Kimi K3, K2.8 Preview (Kimi Code plan), K2.7 Code, K2.7 Code HighSpeed",
+    methods: ["apikey"],
+    apiKeyLabel: "Kimi",
+    apiKeyVariants: [
+      {
+        key: KIMI_CODE_KEY,
+        label: "Kimi Code plan",
+        kind: "plan",
+        billing: "Uses your Kimi Code plan. Create the key in the Kimi Code Console.",
       },
-      apikey: {
-        method: "apikey",
-        label: "Moonshot API key",
-        billing: "Pay-per-token on Moonshot credits.",
-        when: "",
+      {
+        key: "moonshot",
+        label: "Moonshot API",
+        kind: "payg",
+        billing: "Pay-per-token from platform.moonshot.ai.",
       },
-    },
+    ],
+    methodDetails: apiKeyDetails(
+      "Kimi API key",
+      "A Kimi Code plan key uses your plan; a Moonshot key is pay-per-token.",
+    ),
   },
   {
     value: "glm",
@@ -185,6 +195,11 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
     description: "GLM-5.3, GLM-5.3-Flash",
     methods: ["apikey"],
     apiKeyLabel: "Z.AI",
+    methodDetails: apiKeyDetails(
+      "Z.AI API key",
+      "Pay-per-token from your Z.AI account balance.",
+      "GLM Coding Plan quota can't be used here: Z.AI limits the plan to the tools it lists.",
+    ),
   },
   {
     value: "minimax",
@@ -192,6 +207,11 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
     description: "MiniMax M3.1 Flash, M3",
     methods: ["apikey"],
     apiKeyLabel: "MiniMax",
+    methodDetails: apiKeyDetails(
+      "MiniMax API key",
+      "An M Plan key uses your plan; a pay-as-you-go key is pay-per-token.",
+      "The key you paste decides which one is billed.",
+    ),
   },
   {
     value: "xiaomi",
@@ -205,14 +225,22 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
       {
         key: "xiaomi",
         label: "Token Plan",
+        kind: "plan",
+        billing: "Uses your MiMo Token Plan.",
         baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1",
       },
       {
         key: XIAOMI_CREDITS_KEY,
-        label: "API Credits (required for UltraSpeed)",
+        label: "API Credits",
+        kind: "payg",
+        billing: "Pay-per-token from MiMo API Credits. Required for UltraSpeed.",
         baseUrl: "https://api.xiaomimimo.com/v1",
       },
     ],
+    methodDetails: apiKeyDetails(
+      "Xiaomi MiMo API key",
+      "A Token Plan key uses your plan; an API Credits key is pay-per-token.",
+    ),
   },
   {
     value: "deepseek",
@@ -220,6 +248,7 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
     description: "DeepSeek V4 Pro, V4.1 Flash",
     methods: ["apikey"],
     apiKeyLabel: "DeepSeek",
+    methodDetails: apiKeyDetails("DeepSeek API key", "Pay-per-token from platform.deepseek.com."),
   },
   {
     value: "sakana",
@@ -227,6 +256,7 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
     description: "Fugu, Fugu Max, Fugu Ultra",
     methods: ["apikey"],
     apiKeyLabel: "Sakana",
+    methodDetails: apiKeyDetails("Sakana API key", "Pay-per-token from your Sakana API account."),
   },
   {
     value: "openrouter",
@@ -234,6 +264,7 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
     description: "Qwen3.8 Max · multi-provider gateway",
     methods: ["apikey"],
     apiKeyLabel: "OpenRouter",
+    methodDetails: apiKeyDetails("OpenRouter API key", "Pay-per-token from OpenRouter credits."),
   },
   {
     value: "huggingface",
@@ -241,8 +272,25 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
     description: "Kimi K2.7 Code, DeepSeek V4.1 Flash, GPT-OSS 120B",
     methods: ["apikey"],
     apiKeyLabel: "Hugging Face",
+    methodDetails: apiKeyDetails(
+      "Hugging Face token",
+      "Pay-per-token from Hugging Face Inference Providers credits.",
+    ),
   },
 ];
+
+/**
+ * What a model needs when it runs only on some of its provider's keys (Kimi
+ * K2.8 Preview on a Kimi Code plan key, MiMo UltraSpeed on API Credits), named
+ * by the variants' labels. Undefined for a model any of the provider's keys runs.
+ */
+export function requiredKeyLabel(provider: string, storageKeys: string[]): string | undefined {
+  const variants = ALL_AUTH_PROVIDERS.find((p) => p.value === provider)?.apiKeyVariants ?? [];
+  const needed = variants.filter((v) => storageKeys.includes(v.key));
+  if (needed.length === 0 || needed.length === variants.length) return undefined;
+  const names = needed.map((v) => v.label).join(" or ");
+  return `Needs ${/^[aeiou]/i.test(names) ? "an" : "a"} ${names} key`;
+}
 
 /** Every provider a user can connect right now, in login-screen order. */
 export const AUTH_PROVIDERS: AuthProviderMeta[] = ALL_AUTH_PROVIDERS.filter(
@@ -254,9 +302,8 @@ export function getAuthProvider(value: string): AuthProviderMeta | undefined {
 }
 
 /**
- * Per-method guidance for a provider, in resolution order. Providers with a
- * single method get a generic description; the dual-auth ones (Kimi, Grok) carry
- * explicit `methodDetails` because the choice changes what the user is billed.
+ * Per-method guidance for a provider, in resolution order. Every provider
+ * carries `methodDetails`; the generic fallback only covers a missing entry.
  */
 export function describeAuthMethods(provider: string): AuthMethodMeta[] {
   const meta = getAuthProvider(provider);
@@ -292,15 +339,18 @@ export function describeAuthMethods(provider: string): AuthMethodMeta[] {
  * gg-core (`DUAL_AUTH_PROVIDERS`) — it is the user-facing description of it.
  */
 export function authPriorityNote(provider: string): string | undefined {
-  // Gemini resolves the other way round (model registry `authStorageKeys`):
-  // Code Assist OAuth refuses personal accounts, so a key the user added wins.
-  if (provider === "gemini") {
-    return "Uses the Gemini API key first when one is set; otherwise the Google sign-in.";
-  }
   if (provider === "anthropic") {
     return "Uses Sign in with Claude while you are signed in; otherwise the Anthropic API key.";
   }
   const dual = dualAuthProvider(provider);
-  if (!dual) return undefined;
-  return `Uses ${dual.oauthLabel} first; the ${dual.apiKeyLabel} takes over when it runs out, then switches back.`;
+  if (dual) {
+    return `Uses your ${dual.oauthLabel} first; the ${dual.apiKeyLabel} takes over while its usage is out, then switches back.`;
+  }
+  const variants = getAuthProvider(provider)?.apiKeyVariants;
+  const plan = variants?.find((v) => v.kind === "plan");
+  const payg = variants?.find((v) => v.kind === "payg");
+  if (plan && payg) {
+    return `Uses the ${plan.label} key first when both are set; the ${payg.label} key covers models the plan doesn't include.`;
+  }
+  return undefined;
 }

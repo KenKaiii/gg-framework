@@ -8,7 +8,13 @@ function fakeFetch(): ReturnType<typeof vi.fn<typeof globalThis.fetch>> {
 describe("preconnectOrigin", () => {
   it("resolves the origin each route's real requests go to", () => {
     expect(preconnectOrigin({ provider: "openai" })).toBe("https://api.openai.com");
-    expect(preconnectOrigin({ provider: "openai", accountId: "acct" })).toBe("https://chatgpt.com");
+    expect(preconnectOrigin({ provider: "openai", accountId: "acct" })).toBe(
+      "https://api.openai.com",
+    );
+    expect(preconnectOrigin({ provider: "glm" })).toBe("https://api.z.ai");
+    expect(preconnectOrigin({ provider: "gemini" })).toBe(
+      "https://generativelanguage.googleapis.com",
+    );
     expect(preconnectOrigin({ provider: "deepseek" })).toBe("https://api.deepseek.com");
     expect(preconnectOrigin({ provider: "xai", baseUrl: "https://proxy.example.com/v1" })).toBe(
       "https://proxy.example.com",
@@ -57,11 +63,9 @@ describe("preconnectProvider", () => {
     expect(preconnectProvider({ ...base, now: 1_000 + PRECONNECT_INTERVAL_MS - 1 })).toBe(
       undefined,
     );
-    preconnectProvider({ ...base, accountId: "acct", now: 1_000 });
     preconnectProvider({ ...base, now: 1_000 + PRECONNECT_INTERVAL_MS });
     expect(fetch.mock.calls.map(([url]) => url)).toEqual([
       "https://api.openai.com/v1",
-      "https://chatgpt.com/backend-api",
       "https://api.openai.com/v1",
     ]);
   });
@@ -71,7 +75,7 @@ describe("preconnectProvider", () => {
       throw new TypeError("fetch failed");
     });
     expect(preconnectProvider({ provider: "gemini", warmedAt: new Map(), fetch })).toBe(
-      "https://cloudcode-pa.googleapis.com",
+      "https://generativelanguage.googleapis.com",
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
   });

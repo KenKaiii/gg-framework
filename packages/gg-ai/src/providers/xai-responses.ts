@@ -19,8 +19,7 @@ import {
 } from "./transform.js";
 
 /**
- * xAI (Grok) over the Responses API — both the `api.x.ai` key route and the
- * subscription Grok CLI proxy, which serves the same `/v1/responses` surface.
+ * xAI (Grok) over the Responses API with an `api.x.ai` key.
  *
  * xAI deprecates Chat Completions for its reasoning models: Chat has no field
  * for the encrypted reasoning, so every tool round discarded Grok's earlier

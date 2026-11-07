@@ -15,7 +15,7 @@
   <a href="https://github.com/KenKaiii/gg-framework/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=for-the-badge" alt="AGPL-3.0 License"></a>
 </p>
 
-`ggcoder` is the command-line version of [GG Coder](https://github.com/KenKaiii/gg-framework). It reads your code, edits files, runs commands and checks its own work, with Claude, ChatGPT, Grok, Kimi, an API key or a model on your own machine.
+`ggcoder` is the command-line version of [GG Coder](https://github.com/KenKaiii/gg-framework). It reads your code, edits files, runs commands and checks its own work, with your Claude, ChatGPT or Kimi Code plan, an API key or a model on your own machine.
 
 > **GG Coder is now an app first.** All new features and design work go into the [GG Coder desktop app](https://github.com/KenKaiii/gg-framework/releases/latest) for macOS, Windows and Linux. It runs the same engine as this CLI and adds GG Goals, Chat, GG Motion and one-click project checks.
 >
@@ -43,24 +43,27 @@ Needs Node.js 22 or newer. Sign-ins are saved in `~/.gg/auth.json`, shared with 
 
 Switch any time with `/model`.
 
-| Provider         | Models                                                                             | Sign-in           |
-| ---------------- | ---------------------------------------------------------------------------------- | ----------------- |
-| **Anthropic**    | Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5                                  | Claude or API key |
-| **OpenAI**       | GPT-6 Astra, GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Luna                                | ChatGPT account   |
-| **xAI**          | Grok 4.7                                                                           | Grok or API key   |
-| **Moonshot**     | Kimi K3, K2.8 Preview, K2.7 Code, K2.7 Code HighSpeed                              | Kimi or API key   |
-| **Z.AI**         | GLM-5.3, GLM-5.3-Flash                                                             | API key           |
-| **MiniMax**      | MiniMax M3.1 Flash, M3                                                             | API key           |
-| **Xiaomi**       | MiMo-V2.6-Pro, MiMo-V2.6-Flash, MiMo-V2.6-Pro-UltraSpeed                           | API key           |
-| **DeepSeek**     | DeepSeek V4 Pro, V4.1 Flash                                                        | API key           |
-| **Sakana**       | Fugu, Fugu Max, Fugu Ultra                                                         | API key           |
-| **OpenRouter**   | Qwen3.8 Max                                                                        | API key           |
-| **Hugging Face** | Kimi K2.7 Code, DeepSeek V4.1 Flash, GPT-OSS 120B                                  | API key           |
-| **Local**        | Anything on Ollama, LM Studio, llama.cpp, vLLM or another OpenAI-compatible server | None              |
+| Provider         | Models                                                                             | Sign-in                                |
+| ---------------- | ---------------------------------------------------------------------------------- | -------------------------------------- |
+| **Anthropic**    | Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5                                  | Claude or API key                      |
+| **OpenAI**       | GPT-6 Astra, GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Luna                                | Continue with ChatGPT or API key       |
+| **Gemini**       | Gemini 3.8 Flash, 3.5 Flash Lite, 3.1 Flash Lite, 3.5 Flash, 3.1 Pro (Preview)     | API key (Google AI Studio)             |
+| **xAI**          | Grok 4.7                                                                           | API key                                |
+| **Kimi**         | Kimi K3, K2.8 Preview, K2.7 Code, K2.7 Code HighSpeed                              | Kimi Code plan key or Moonshot API key |
+| **Z.AI**         | GLM-5.3, GLM-5.3-Flash                                                             | API key (pay-per-token)                |
+| **MiniMax**      | MiniMax M3.1 Flash, M3                                                             | M Plan key or API key                  |
+| **Xiaomi**       | MiMo-V2.6-Pro, MiMo-V2.6-Flash, MiMo-V2.6-Pro-UltraSpeed                           | Token Plan key or API Credits key      |
+| **DeepSeek**     | DeepSeek V4 Pro, V4.1 Flash                                                        | API key                                |
+| **Sakana**       | Fugu, Fugu Max, Fugu Ultra                                                         | API key                                |
+| **OpenRouter**   | Qwen3.8 Max                                                                        | API key                                |
+| **Hugging Face** | Kimi K2.7 Code, DeepSeek V4.1 Flash, GPT-OSS 120B                                  | API key                                |
+| **Local**        | Anything on Ollama, LM Studio, llama.cpp, vLLM or another OpenAI-compatible server | None                                   |
 
 Every model above except GLM-5.3, DeepSeek V4 Pro and GPT-OSS 120B accepts images. Paste, drag or type a path to attach images or video. Models that can't watch video get it as a file to inspect with their own tools.
 
 Signing in with a Claude Pro or Max plan goes through Anthropic's official Claude Code. GG Coder downloads it (about 200 MB, checked against a pinned hash) into `~/.gg/claude-code` the first time you pick "Sign in with Claude", and keeps its own Claude login there, separate from any Claude Code you already use. On this route Claude Code runs each turn with GG Coder's prompt and tools. Without a plan, use an Anthropic API key.
+
+Each provider connects only the way its owner allows. "Continue with ChatGPT" is OpenAI's official sign-in for open-source apps; manage what GG Coder may use at [chatgpt.com/settings/usage](https://chatgpt.com/settings/usage). Kimi Code, MiniMax M Plan and MiMo Token Plan keys use your plan. xAI, Gemini and Z.AI take pay-per-token keys: their plans are limited to their own or partner apps. Image generation (`generate_image`) needs an OpenAI API key.
 
 ## Using it
 

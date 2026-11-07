@@ -21,11 +21,11 @@ function isStructured(result: string | StructuredToolResult): result is Structur
   return typeof result !== "string";
 }
 
-/** A fake auth that always resolves the OpenAI token successfully. */
+/** A fake auth that always resolves the OpenAI API key successfully. */
 function fakeAuth(): GenerateImageAuth & { hasProviderAuth(p: string): Promise<boolean> } {
   return {
-    async resolveCredentials() {
-      return { accessToken: "test-token", accountId: "acct-123" };
+    async resolveApiKey() {
+      return { accessToken: "test-token" };
     },
     async hasProviderAuth() {
       return true;
@@ -33,10 +33,10 @@ function fakeAuth(): GenerateImageAuth & { hasProviderAuth(p: string): Promise<b
   };
 }
 
-/** A fake auth that throws (OpenAI not connected). */
+/** A fake auth with no OpenAI API key (no OpenAI, or only the ChatGPT plan). */
 function noAuth(): GenerateImageAuth & { hasProviderAuth(p: string): Promise<boolean> } {
   return {
-    async resolveCredentials() {
+    async resolveApiKey() {
       throw new Error("Not logged in to openai");
     },
     async hasProviderAuth() {
@@ -45,7 +45,7 @@ function noAuth(): GenerateImageAuth & { hasProviderAuth(p: string): Promise<boo
   };
 }
 
-/** A Codex image endpoint reply (`codex/images/generations` or `/edits`). */
+/** An Image API reply (`images/generations` or `/edits`). */
 function makeImageResponse(b64Images: string[], status = 200, size?: string): Response {
   return new Response(
     JSON.stringify({
@@ -56,12 +56,6 @@ function makeImageResponse(b64Images: string[], status = 200, size?: string): Re
     }),
     { status, headers: { "Content-Type": "application/json" } },
   );
-}
-
-/** An unsigned JWT-shaped token whose auth claim carries `plan`. */
-function tokenForPlan(plan: string): string {
-  const part = (value: object): string => Buffer.from(JSON.stringify(value)).toString("base64url");
-  return `${part({ alg: "none" })}.${part({ "https://api.openai.com/auth": { chatgpt_plan_type: plan } })}.sig`;
 }
 
 let tmpDir: string;
@@ -96,19 +90,19 @@ describe("generate_image param schema", () => {
         out_path: "out.png",
       }).success,
     ).toBe(true);
-    // Codex sends only opaque or transparent; transparency is supported.
+    // Only opaque or transparent; transparency is supported.
     expect(schema.safeParse({ prompt: "x", background: "transparent" }).success).toBe(true);
     expect(schema.safeParse({ prompt: "x", background: "auto" }).success).toBe(false);
-    // No model choice: Codex pins the image model, so the schema offers none.
+    // No model choice: the tool picks the image model, so the schema offers none.
     expect("model" in schema.shape).toBe(false);
-    // Codex's MAX_EDIT_IMAGES.
+    // An edit takes up to five references.
     expect(schema.safeParse({ prompt: "x", images: ["a.png"] }).success).toBe(true);
     expect(schema.safeParse({ prompt: "x", images: Array(6).fill("a.png") }).success).toBe(false);
     // Invalid quality rejected.
     expect(schema.safeParse({ prompt: "x", quality: "ultra" }).success).toBe(false);
     // n out of range.
     expect(schema.safeParse({ prompt: "x", n: 5 }).success).toBe(false);
-    // GIF output, within Codex's GifOptions bounds.
+    // GIF output, within the API's frame bounds.
     expect(schema.safeParse({ prompt: "x", gif: {} }).success).toBe(true);
     expect(
       schema.safeParse({ prompt: "x", gif: { frame_count: 16, frame_duration_ms: 20 } }).success,
@@ -120,7 +114,7 @@ describe("generate_image param schema", () => {
 });
 
 describe("generate_image — generation (no image input)", () => {
-  it("calls Codex's image endpoint directly and returns structured image result", async () => {
+  it("calls OpenAI's public Image API with the API key and returns a structured result", async () => {
     const fetchMock = vi.fn().mockResolvedValue(makeImageResponse([TINY_PNG_B64]));
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
@@ -130,31 +124,20 @@ describe("generate_image — generation (no image input)", () => {
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0]!;
-    // Regression: this went through `codex/responses` with a retired chat
-    // model (gpt-5.5) driving a hosted tool, which the backend rejected.
-    expect(url).toBe("https://chatgpt.com/backend-api/codex/images/generations");
+    expect(url).toBe("https://api.openai.com/v1/images/generations");
     expect(init?.method).toBe("POST");
     const headers = init?.headers as Record<string, string>;
     expect(headers["Authorization"]).toBe("Bearer test-token");
-    expect(headers["chatgpt-account-id"]).toBe("acct-123");
-    // The same Codex client identity chat sends; the backend gates on it.
-    const { CODEX_CLIENT_VERSION } = await import("@kenkaiiii/gg-ai");
-    expect(CODEX_CLIENT_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(headers["originator"]).toBe("codex_cli_rs");
-    expect(headers["version"]).toBe(CODEX_CLIENT_VERSION);
-    expect(headers["User-Agent"]).toMatch(new RegExp(`^codex_cli_rs/${CODEX_CLIENT_VERSION} `));
+    // GG Coder's own identity, never the Codex CLI's.
+    expect(headers["User-Agent"]).toMatch(/^ggcoder/);
+    for (const codex of ["chatgpt-account-id", "originator", "version", "x-codex-image-turn-id"]) {
+      expect(headers, codex).not.toHaveProperty(codex);
+    }
 
-    // One id per tool call, as Codex sends per turn.
-    expect(headers["x-codex-image-turn-id"]).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-    );
-
-    // Exactly the body openai/codex asserts in app-server/tests/suite/v2/
-    // imagegen_extension.rs: no chat model, no stream, no hosted tool.
     expect(JSON.parse(init?.body as string)).toEqual({
       prompt: "a cat sitting on a desk",
       background: "opaque",
-      model: "gpt-image-2",
+      model: "gpt-image-2.6-flare",
       quality: "auto",
       size: "auto",
     });
@@ -187,7 +170,7 @@ describe("generate_image — generation (no image input)", () => {
     expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({
       prompt: "a logo",
       background: "transparent",
-      model: "gpt-image-2",
+      model: "gpt-image-2.6-flare",
       quality: "high",
       size: "1536x1024",
     });
@@ -206,14 +189,8 @@ describe("generate_image — generation (no image input)", () => {
     for (const [, init] of fetchMock.mock.calls) {
       const body = JSON.parse(init?.body as string);
       expect(body.n).toBeUndefined();
-      expect(body.model).toBe("gpt-image-2");
+      expect(body.model).toBe("gpt-image-2.6-flare");
     }
-    // Both images belong to the same tool call.
-    const turnIds = fetchMock.mock.calls.map(
-      ([, init]) => (init?.headers as Record<string, string>)["x-codex-image-turn-id"],
-    );
-    expect(turnIds[0]).toBeTruthy();
-    expect(turnIds[1]).toBe(turnIds[0]);
     expect(isStructured(result)).toBe(true);
     if (!isStructured(result)) return;
     const details = result.details as { imagePreviews?: unknown[] };
@@ -359,7 +336,7 @@ describe("generate_image — delivered size", () => {
   });
 });
 
-describe("generate_image — retries (Codex's policy)", () => {
+describe("generate_image — retries", () => {
   /** Retry seams with no real waiting: records each wait, jitter factor exactly 1. */
   function instantRetry(now = 0) {
     const waits: number[] = [];
@@ -378,7 +355,7 @@ describe("generate_image — retries (Codex's policy)", () => {
   const serverError = (status: number, headers?: Record<string, string>): Response =>
     new Response(JSON.stringify({ detail: "upstream hiccup" }), { status, headers });
 
-  it("retries a 5xx with Codex's backoff, then succeeds", async () => {
+  it("retries a 5xx with backoff, then succeeds", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(serverError(502))
@@ -532,12 +509,12 @@ describe("generate_image — edit (with image input)", () => {
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("https://chatgpt.com/backend-api/codex/images/edits");
+    expect(url).toBe("https://api.openai.com/v1/images/edits");
     expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({
       images: [{ image_url: `data:image/png;base64,${TINY_PNG_B64}` }],
       prompt: "make the background darker",
       background: "opaque",
-      model: "gpt-image-2",
+      model: "gpt-image-2.6-sunburst",
       quality: "auto",
       size: "auto",
     });
@@ -598,7 +575,7 @@ describe("generate_image — error handling", () => {
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock;
     const auth = fakeAuth();
-    const credentials = vi.spyOn(auth, "resolveCredentials");
+    const credentials = vi.spyOn(auth, "resolveApiKey");
     const { createGenerateImageTool } = await import("./generate-image.js");
     const tool = createGenerateImageTool(tmpDir, auth);
     const result = await tool.execute(
@@ -611,17 +588,14 @@ describe("generate_image — error handling", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("explains a used-up image quota with its reset time and stops the batch", async () => {
-    // The 429 shape openai/codex's usage-limit test replays.
-    const resetAt = 1_786_150_800;
+  it("explains an API key with no credit left and stops the batch", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
           error: {
-            type: "usage_limit_reached",
-            message: "image limit reached",
-            resets_at: resetAt,
-            plan_type: "plus",
+            type: "insufficient_quota",
+            code: "insufficient_quota",
+            message: "You exceeded your current quota.",
           },
         }),
         { status: 429 },
@@ -631,17 +605,20 @@ describe("generate_image — error handling", () => {
     const { createGenerateImageTool } = await import("./generate-image.js");
     const tool = createGenerateImageTool(tmpDir, fakeAuth());
     const result = await tool.execute({ prompt: "a cat", n: 3 }, ctx());
-    expect(result).toContain("reached its image generation limit");
-    expect(result).toContain(new Date(resetAt * 1000).toISOString());
+    expect(result).toContain("no credit left for image generation");
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it("returns a user-facing message when OpenAI is not connected", async () => {
+  it("explains that image generation needs an OpenAI API key, not the ChatGPT plan", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
     const { createGenerateImageTool } = await import("./generate-image.js");
     const tool = createGenerateImageTool(tmpDir, noAuth());
     const result = await tool.execute({ prompt: "a cat" }, ctx());
     expect(typeof result).toBe("string");
-    expect(result).toContain("not connected");
+    expect(result).toContain("needs an OpenAI API key");
+    expect(result).toContain("No request was sent");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("returns a user-facing message on API error (non-200)", async () => {
@@ -659,28 +636,22 @@ describe("generate_image — error handling", () => {
     expect(result).toContain("moderation");
   });
 
-  it.each([
-    ["free", "not included with a free ChatGPT plan"],
-    ["plus", "does not appear to include image generation"],
-  ])("explains a 403 on a %s plan instead of echoing Forbidden", async (plan, expected) => {
-    // A free ChatGPT login gets a bare `{"detail":"Forbidden"}` for every image
-    // request (seen live, 2026-10-17).
+  it("explains a 403 instead of echoing Forbidden, and stops the batch", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(new Response(JSON.stringify({ detail: "Forbidden" }), { status: 403 }));
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { message: "Your organization must be verified." } }),
+          { status: 403 },
+        ),
+      );
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-    const auth: GenerateImageAuth = {
-      async resolveCredentials() {
-        return { accessToken: tokenForPlan(plan), accountId: "acct-123" };
-      },
-    };
-
     const { createGenerateImageTool } = await import("./generate-image.js");
-    const tool = createGenerateImageTool(tmpDir, auth);
+    const tool = createGenerateImageTool(tmpDir, fakeAuth());
     const result = await tool.execute({ prompt: "a cat", n: 3 }, ctx());
-    expect(result).toContain(expected);
+    expect(result).toContain("organization may need verification");
+    expect(result).toContain("must be verified");
     expect(result).toContain("will not help");
-    // A refused account stops at the first request rather than burning n.
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
@@ -723,7 +694,7 @@ async function makeAnimatedGif(): Promise<Buffer> {
 }
 
 describe("generate_image — animated GIF", () => {
-  it("asks for a GIF the way Codex does and saves it untouched, previewing the animation", async () => {
+  it("asks for a GIF and saves it untouched, previewing the animation", async () => {
     const gif = await makeAnimatedGif();
     const fetchMock = vi.fn().mockResolvedValue(makeImageResponse([gif.toString("base64")]));
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
@@ -738,9 +709,7 @@ describe("generate_image — animated GIF", () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
     expect(body).toMatchObject({ output_format: "gif", frame_count: 2, frame_duration_ms: 200 });
-    expect(fetchMock.mock.calls[0]![0]).toBe(
-      "https://chatgpt.com/backend-api/codex/images/generations",
-    );
+    expect(fetchMock.mock.calls[0]![0]).toBe("https://api.openai.com/v1/images/generations");
 
     expect(isStructured(result)).toBe(true);
     if (!isStructured(result)) return;
@@ -750,7 +719,7 @@ describe("generate_image — animated GIF", () => {
     expect((await readFile(savedPath)).equals(gif)).toBe(true);
     expect(extractToolImagePaths(summary)).toEqual([savedPath]);
 
-    // The model sees the first frame as a still, like Codex's preview.
+    // The model sees the first frame as a still.
     const blocks = Array.isArray(result.content) ? result.content : [];
     const modelImage = blocks.find((c) => c.type === "image") as {
       mediaType: string;

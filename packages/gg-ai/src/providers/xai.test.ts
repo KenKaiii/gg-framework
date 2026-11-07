@@ -108,10 +108,7 @@ beforeEach(() => {
   clientOptions.length = 0;
 });
 
-// Grok subscription OAuth routes to the Grok CLI chat proxy, which only serves
-// recognized Grok-CLI clients. Injecting that identity in the transport (not at
-// each call site) is what makes compaction, title-gen and sub-agents work too —
-// they build their own streams and would otherwise be rejected.
+// xAI connects with an API key only; GG Coder never poses as the Grok CLI.
 describe("xai provider transport", () => {
   it("defaults to the public API host with no client-identity headers", async () => {
     responsesCreateMock.mockResolvedValueOnce(responsesStream({ text: "ok" }));
@@ -119,28 +116,18 @@ describe("xai provider transport", () => {
     const options = clientOptions[0] ?? {};
     expect(options.baseURL).toBe("https://api.x.ai/v1");
     const headers = (options.defaultHeaders ?? {}) as Record<string, string>;
-    // An API key is not a Grok CLI client — sending CLI identity to api.x.ai
-    // would misrepresent the caller.
     expect(headers["X-XAI-Token-Auth"]).toBeUndefined();
   });
 
-  it("attaches Grok CLI identity when routed to the OAuth chat proxy", async () => {
+  it("never sends Grok CLI identity headers", async () => {
     responsesCreateMock.mockResolvedValueOnce(responsesStream({ text: "ok" }));
-    await run({ model: "grok-4.5", baseUrl: "https://cli-chat-proxy.grok.com/v1" });
-    const options = clientOptions[0] ?? {};
-    expect(options.baseURL).toBe("https://cli-chat-proxy.grok.com/v1");
-    const headers = (options.defaultHeaders ?? {}) as Record<string, string>;
-    expect(headers["X-XAI-Token-Auth"]).toBe("xai-grok-cli");
-    expect(headers["x-grok-client-version"]).toMatch(/^\d+\.\d+/);
-    // The proxy 426s every request below its 1.0.13 floor (unless overridden).
-    if (process.env.GROK_CLI_VERSION === undefined) {
-      const [major = 0, minor = 0, patch = 0] = (headers["x-grok-client-version"] ?? "")
-        .split(".")
-        .map(Number);
-      expect(major * 1e6 + minor * 1e3 + patch).toBeGreaterThanOrEqual(1_000_013);
+    await run({ model: "grok-4.7", baseUrl: "https://cli-chat-proxy.grok.com/v1" });
+    const headers = (clientOptions[0]?.defaultHeaders ?? {}) as Record<string, string>;
+    for (const name of Object.keys(headers)) {
+      expect(name.toLowerCase()).not.toMatch(
+        /^x-xai-token-auth$|^x-grok-client|^x-grok-model-override$/,
+      );
     }
-    // The proxy routes by override header, so the model must travel in it.
-    expect(headers["x-grok-model-override"]).toBe("grok-4.5");
   });
 
   // xAI caches per server: the key keeps a conversation on one cache-warm

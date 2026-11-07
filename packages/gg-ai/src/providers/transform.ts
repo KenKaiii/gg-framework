@@ -476,8 +476,8 @@ function isDefaultOrHost(baseUrl: string | undefined, host: string): boolean {
 
 /**
  * Pick the tool-name rule for the transport a request will actually use. Mirrors
- * the routing in `stream.ts`: `openai` with an `accountId` is the Codex
- * (Responses) endpoint, MiniMax rides the Anthropic transport but is a third
+ * the routing in `stream.ts`: `openai` itself (the ChatGPT plan or an API key)
+ * is the Responses API, MiniMax rides the Anthropic transport but is a third
  * party, and an `openai` pointed at a custom baseUrl is an unknown compatible
  * server.
  */
@@ -491,7 +491,7 @@ export function toolCallNameRuleFor(
     case "openai":
       if (options?.accountId) return TOOL_CALL_NAME_RULES["openai-responses"];
       return isDefaultOrHost(options?.baseUrl, "api.openai.com")
-        ? TOOL_CALL_NAME_RULES["openai-chat"]
+        ? TOOL_CALL_NAME_RULES["openai-responses"]
         : TOOL_CALL_NAME_RULES.generic;
     case "gemini":
       return TOOL_CALL_NAME_RULES.gemini;
@@ -844,8 +844,13 @@ export function usesDeferredToolLoading(options: {
     const firstParty = !options.baseUrl || options.baseUrl.includes("api.anthropic.com");
     return firstParty && supportsAnthropicDeferredTools(options.model);
   }
-  if (options.provider === "openai" && options.accountId) {
-    return supportsResponsesToolSearch(options.model);
+  // OpenAI API keys only: the ChatGPT plan route (accountId) rejects
+  // `tool_search`, so promoted tools are appended to `tools` there instead.
+  if (options.provider === "openai" && !options.accountId) {
+    return (
+      isDefaultOrHost(options.baseUrl, "api.openai.com") &&
+      supportsResponsesToolSearch(options.model)
+    );
   }
   return false;
 }

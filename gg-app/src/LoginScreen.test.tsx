@@ -188,25 +188,29 @@ describe("LoginScreen brain bay", () => {
   });
 });
 
-describe("LoginScreen retired Claude sign-in", () => {
+describe("LoginScreen retired sign-ins", () => {
+  const RETIRED_MESSAGE =
+    "Grok sign-in was removed: xAI offers SuperGrok and X Premium usage only in apps it partners with. Add an xAI API key instead.";
   function withRetiredSignIn(): AuthProvider[] {
-    return providers([]).map((p) => (p.value === "anthropic" ? { ...p, reauthRequired: true } : p));
+    return providers([]).map((p) =>
+      p.value === "xai" ? { ...p, reauthRequired: true, reauthMessage: RETIRED_MESSAGE } : p,
+    );
   }
 
-  it("asks to sign in again and opens the Anthropic login", async () => {
+  it("shows the provider's own reconnect message and opens its login", async () => {
     vi.mocked(authStatus).mockResolvedValue(withRetiredSignIn());
     await act(async () => {
       render(<LoginScreen onClose={vi.fn()} />);
     });
-    expect(screen.getByText(/Your old Anthropic sign-in no longer works/)).toBeTruthy();
+    expect(screen.getByText(RETIRED_MESSAGE)).toBeTruthy();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+      fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
     });
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("removes the dead sign-in on dismiss and hides the notice", async () => {
+  it("removes only the retired sign-in on dismiss and hides the notice", async () => {
     vi.mocked(authStatus)
       .mockResolvedValueOnce(withRetiredSignIn())
       .mockResolvedValue(providers([]));
@@ -218,7 +222,7 @@ describe("LoginScreen retired Claude sign-in", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     });
-    expect(authLogout).toHaveBeenCalledWith("anthropic", "apikey");
-    expect(screen.queryByText(/Your old Anthropic sign-in no longer works/)).toBeNull();
+    expect(authLogout).toHaveBeenCalledWith("xai", "legacy");
+    expect(screen.queryByText(RETIRED_MESSAGE)).toBeNull();
   });
 });

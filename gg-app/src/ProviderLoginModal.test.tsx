@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { authApiKey, authSetBaseUrl, openRouterCatalog, type AuthProvider } from "./agent";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  authApiKey,
+  authOAuthStart,
+  authSetBaseUrl,
+  openRouterCatalog,
+  subscribe,
+  type AuthProvider,
+  type SidecarEvent,
+} from "./agent";
 import { ProviderLoginModal } from "./ProviderLoginModal";
 
 vi.mock("./agent", () => ({
@@ -138,5 +146,152 @@ describe("ProviderLoginModal — custom base URL", () => {
 
     expect(screen.queryByLabelText("API base URL")).toBeNull();
     expect(catalogMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("ProviderLoginModal — what each key bills", () => {
+  const KIMI: AuthProvider = {
+    value: "moonshot",
+    label: "Kimi (Moonshot)",
+    description: "Kimi K3",
+    methods: ["apikey"],
+    apiKeyLabel: "Kimi",
+    apiKeyVariants: [
+      {
+        key: "kimi-code",
+        label: "Kimi Code plan",
+        kind: "plan",
+        billing: "Uses your Kimi Code plan. Create the key in the Kimi Code Console.",
+      },
+      {
+        key: "moonshot",
+        label: "Moonshot API",
+        kind: "payg",
+        billing: "Pay-per-token from platform.moonshot.ai.",
+      },
+    ],
+    connected: false,
+    connectedMethods: [],
+  };
+
+  it("shows the chosen key type's billing and stores the key under it", async () => {
+    authApiKeyMock.mockResolvedValue(undefined);
+    render(<ProviderLoginModal provider={KIMI} onClose={vi.fn()} onChanged={vi.fn()} />);
+    expect(screen.getByText(/Uses your Kimi Code plan/)).toBeDefined();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Moonshot API" }));
+    expect(screen.getByText("Pay-per-token from platform.moonshot.ai.")).toBeDefined();
+    expect(screen.queryByText(/Uses your Kimi Code plan/)).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText("Paste your API key"), {
+      target: { value: "sk-moonshot" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() =>
+      expect(authApiKeyMock).toHaveBeenCalledWith("moonshot", "sk-moonshot", "moonshot", undefined),
+    );
+  });
+
+  it("tells a single-key provider's guidance, such as GLM's Coding Plan limit", () => {
+    const glm: AuthProvider = {
+      value: "glm",
+      label: "Z.AI (GLM)",
+      description: "GLM-5.3",
+      methods: ["apikey"],
+      apiKeyLabel: "Z.AI",
+      methodGuidance: [
+        {
+          method: "apikey",
+          label: "Z.AI API key",
+          billing: "Pay-per-token from your Z.AI account balance.",
+          when: "GLM Coding Plan quota can't be used here: Z.AI limits the plan to the tools it lists.",
+        },
+      ],
+      connected: false,
+      connectedMethods: [],
+    };
+    render(<ProviderLoginModal provider={glm} onClose={vi.fn()} onChanged={vi.fn()} />);
+    expect(screen.getByText(/Z.AI account balance/)).toBeDefined();
+    expect(screen.getByText(/Coding Plan quota can't be used here/)).toBeDefined();
+  });
+
+  it("labels the OpenAI sign-in Continue with ChatGPT", () => {
+    const openai: AuthProvider = {
+      value: "openai",
+      label: "OpenAI",
+      description: "GPT-6.1 Sol",
+      methods: ["oauth", "apikey"],
+      apiKeyLabel: "OpenAI",
+      methodGuidance: [
+        {
+          method: "oauth",
+          label: "Continue with ChatGPT",
+          billing: "Uses your ChatGPT plan.",
+          when: "",
+        },
+        { method: "apikey", label: "OpenAI API key", billing: "Pay-per-token.", when: "" },
+      ],
+      connected: false,
+      connectedMethods: [],
+    };
+    render(<ProviderLoginModal provider={openai} onClose={vi.fn()} onChanged={vi.fn()} />);
+    expect(screen.getByText("Continue with ChatGPT")).toBeDefined();
+    fireEvent.click(screen.getAllByRole("button", { name: "Connect" })[0]!);
+    expect(screen.getByRole("button", { name: "Continue with ChatGPT" })).toBeDefined();
+  });
+});
+
+describe("ProviderLoginModal — first ChatGPT sign-in", () => {
+  const OPENAI: AuthProvider = {
+    value: "openai",
+    label: "OpenAI",
+    description: "GPT-6 Luna",
+    methods: ["oauth", "apikey"],
+    methodGuidance: [
+      {
+        method: "oauth",
+        label: "Continue with ChatGPT",
+        billing: "Uses your ChatGPT plan.",
+        when: "",
+      },
+      { method: "apikey", label: "OpenAI API key", billing: "Pay-per-token.", when: "" },
+    ],
+    connected: false,
+    connectedMethods: [],
+  };
+
+  async function signIn(onClose: () => void): Promise<void> {
+    let listener: ((e: SidecarEvent) => void) | undefined;
+    vi.mocked(subscribe).mockImplementation((fn) => {
+      listener = fn as (e: SidecarEvent) => void;
+      return () => {};
+    });
+    vi.mocked(authOAuthStart).mockResolvedValue(undefined);
+    render(<ProviderLoginModal provider={OPENAI} onClose={onClose} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Connect" })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Continue with ChatGPT" }));
+    await waitFor(() => expect(authOAuthStart).toHaveBeenCalledWith("openai"));
+    await act(async () => {
+      listener!({ type: "auth_done", data: { provider: "openai" } } as SidecarEvent);
+    });
+  }
+
+  beforeEach(() => localStorage.removeItem("gg-chatgpt-plan-welcomed"));
+
+  it("confirms plan use once, with Manage usage and Got it", async () => {
+    const onClose = vi.fn();
+    await signIn(onClose);
+    expect(screen.getByText("You're using your ChatGPT plan")).toBeDefined();
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Got it" }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("closes straight away on later sign-ins", async () => {
+    localStorage.setItem("gg-chatgpt-plan-welcomed", "1");
+    const onClose = vi.fn();
+    await signIn(onClose);
+    expect(screen.queryByText("You're using your ChatGPT plan")).toBeNull();
+    expect(onClose).toHaveBeenCalled();
   });
 });

@@ -69,7 +69,7 @@ beforeEach(async () => {
     path.join(tempHome, ".gg", "auth.json"),
     JSON.stringify({
       anthropic: { accessToken: "t", refreshToken: "t", expiresAt: Date.now() + 3_600_000 },
-      openai: { accessToken: "t", refreshToken: "t", expiresAt: Date.now() + 3_600_000 },
+      openai: { accessToken: "t", refreshToken: "", expiresAt: Date.now() + 3_600_000 },
     }),
   );
 });

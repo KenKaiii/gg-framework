@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { Message, Tool } from "../types.js";
-import { streamOpenAICodex } from "./openai-codex.js";
+import { streamOpenAIResponses } from "./openai-responses.js";
 import {
   planDeferredTools,
   toAnthropicMessages,
@@ -84,7 +84,7 @@ describe("deferred tool loading", () => {
     ]);
   });
 
-  it("adds a Codex tool_search pair without changing tools or the earlier prefix", async () => {
+  it("adds a tool_search pair for an OpenAI API key without changing tools or the earlier prefix", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -96,14 +96,13 @@ describe("deferred tool loading", () => {
       ),
     );
     const send = async (tools: Tool[], messages: Message[]) => {
-      for await (const _ of streamOpenAICodex({
+      for await (const _ of streamOpenAIResponses({
         provider: "openai",
         model: "gpt-6-luna",
         messages,
         tools,
         deferredTools: catalog,
         apiKey: "t",
-        accountId: "a",
       })) {
         /* consume */
       }
@@ -130,12 +129,12 @@ describe("deferred tool loading", () => {
     expect(usesDeferredToolLoading({ provider: "anthropic", model: "claude-sonnet-5-5" })).toBe(
       true,
     );
-    expect(
-      usesDeferredToolLoading({ provider: "openai", model: "gpt-6-luna", accountId: "a" }),
-    ).toBe(true);
+    expect(usesDeferredToolLoading({ provider: "openai", model: "gpt-6-luna" })).toBe(true);
     for (const options of [
-      { provider: "openai", model: "gpt-6-luna" }, // chat completions (API key)
-      { provider: "openai", model: "gpt-5.2", accountId: "a" }, // pre-5.4 Codex
+      // The ChatGPT plan route rejects tool_search: promoted tools are appended.
+      { provider: "openai", model: "gpt-6-luna", accountId: "a" },
+      { provider: "openai", model: "gpt-5.2" }, // pre-5.4
+      { provider: "openai", model: "gpt-6-luna", baseUrl: "https://gateway.example/v1" },
       { provider: "anthropic", model: "claude-opus-4-1" },
       { provider: "minimax", model: "MiniMax-M3", baseUrl: "https://api.minimax.io/anthropic" },
       { provider: "gemini", model: "gemini-3-flash" },
@@ -147,5 +146,48 @@ describe("deferred tool loading", () => {
     }
     // No catalog → no plan → providers send `tools` exactly as before.
     expect(planDeferredTools([read], undefined, [user])).toBeUndefined();
+  });
+});
+
+describe("deferred tools on the ChatGPT plan route", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("appends a promoted tool to the namespace and never sends tool_search", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            `data: ${JSON.stringify({ type: "response.completed", response: { usage: { input_tokens: 1, output_tokens: 1 } } })}\n\n`,
+            { status: 200, headers: { "content-type": "text/event-stream" } },
+          ),
+      ),
+    );
+    const tool = (name: string): Tool => ({
+      name,
+      description: name,
+      parameters: z.object({}),
+    });
+    for await (const _ of streamOpenAIResponses({
+      provider: "openai",
+      model: "gpt-6-luna",
+      messages: [{ role: "user", content: "hi" }],
+      tools: [tool("read"), tool("steroids")],
+      deferredTools: [tool("steroids"), tool("other")],
+      apiKey: "t",
+      accountId: "a",
+    })) {
+      /* consume */
+    }
+    const body = JSON.parse(vi.mocked(fetch).mock.calls.at(-1)![1]!.body as string) as {
+      tools: Array<{ type: string; tools: Array<{ name: string }> }>;
+      input: Array<{ type?: string }>;
+    };
+    expect(body.tools).toHaveLength(1);
+    expect(body.tools[0]!.type).toBe("namespace");
+    expect(body.tools[0]!.tools.map((t) => t.name)).toEqual(["read", "steroids"]);
+    expect(JSON.stringify(body)).not.toContain("tool_search");
   });
 });

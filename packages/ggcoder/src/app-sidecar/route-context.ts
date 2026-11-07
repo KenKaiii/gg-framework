@@ -123,7 +123,7 @@ export interface SessionRouteContext {
   readonly activateApprovedPlan: (planPath: string | undefined) => Promise<number>;
   readonly planProgressPayload: () => { total: number; completed: number[] };
   readonly authStatusPayload: () => Promise<{
-    providers: (AuthProviderMeta & {
+    providers: (Omit<AuthProviderMeta, "methodDetails"> & {
       connected: boolean;
       connectedMethods: AuthMethod[];
       activeMethod?: AuthMethod | undefined;
@@ -131,6 +131,7 @@ export interface SessionRouteContext {
       priorityNote?: string | undefined;
       methodGuidance: AuthMethodMeta[];
       claudeCodeInstalled?: boolean | undefined;
+      reauthMessage?: string | undefined;
     })[];
     localConnected: boolean;
   }>;

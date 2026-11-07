@@ -1,8 +1,8 @@
 import {
+  KIMI_CODE_KEY,
   fetchSubscriptionUsage,
   readClaudeCodeUsage,
   SubscriptionUsageError,
-  oauthStorageKey,
   type SubscriptionUsageProvider,
   type SubscriptionUsageSnapshot,
 } from "@kenkaiiii/gg-core";
@@ -83,10 +83,10 @@ export function createUsageService(auth: AuthStorage): {
 
   async function fetchUsageProvider(provider: SubscriptionUsageProvider): Promise<UsageResult> {
     if (provider === "anthropic") return await claudeUsage();
-    const displayName = provider === "openai" ? "Codex" : "Kimi";
-    // Kimi plan usage is tracked on the OAuth credential specifically — the
-    // Moonshot platform API key is metered per-token, not per plan window.
-    const authKey = oauthStorageKey(provider) ?? provider;
+    const displayName = "Kimi";
+    // Kimi plan usage is tracked on the Kimi Code plan key specifically — the
+    // Moonshot platform key is metered per token, not per plan window.
+    const authKey = KIMI_CODE_KEY;
     if (!(await auth.hasProviderAuth(authKey))) {
       // Logged out: drop the replay cache so a later login on a DIFFERENT
       // account can never inherit the previous one's numbers.

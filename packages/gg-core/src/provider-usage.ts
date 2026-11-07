@@ -1,7 +1,9 @@
-import { kimiCodeBaseUrl, kimiCodingHeaders } from "./oauth/kimi.js";
+import { GG_CODER_USER_AGENT } from "@kenkaiiii/gg-ai";
+import { KIMI_CODE_DEFAULT_BASE_URL } from "./kimi-region.js";
 import type { OAuthCredentials } from "./oauth/types.js";
 
-export type SubscriptionUsageProvider = "anthropic" | "openai" | "moonshot";
+// ChatGPT has no meter here: plan usage is reviewed at chatgpt.com/settings/usage.
+export type SubscriptionUsageProvider = "anthropic" | "moonshot";
 /** Providers whose usage endpoint we call with a token. Claude reports its own (claude-code/usage.ts). */
 export type FetchedSubscriptionUsageProvider = Exclude<SubscriptionUsageProvider, "anthropic">;
 
@@ -39,20 +41,6 @@ interface FetchSubscriptionUsageOptions {
   now?: () => number;
 }
 
-interface CodexWindow {
-  limit_window_seconds?: unknown;
-  used_percent?: unknown;
-  reset_at?: unknown;
-  reset_after_seconds?: unknown;
-}
-
-interface CodexUsageResponse {
-  rate_limit?: {
-    primary_window?: CodexWindow | null;
-    secondary_window?: CodexWindow | null;
-  } | null;
-}
-
 interface KimiUsageDetail {
   limit?: unknown;
   used?: unknown;
@@ -70,67 +58,14 @@ interface KimiUsageResponse {
   limits?: KimiLimit[] | null;
 }
 
-const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
-
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function clampPercent(value: unknown): number | undefined {
-  const number = finiteNumber(value);
-  return number === undefined ? undefined : Math.min(100, Math.max(0, number));
 }
 
 function isoTimestamp(value: unknown): number | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? timestamp : undefined;
-}
-
-function unixTimestamp(value: unknown): number | undefined {
-  const seconds = finiteNumber(value);
-  return seconds === undefined ? undefined : seconds * 1000;
-}
-
-function codexResetAt(window: CodexWindow, now: number): number | undefined {
-  const absolute = unixTimestamp(window.reset_at);
-  if (absolute !== undefined) return absolute;
-  const afterSeconds = finiteNumber(window.reset_after_seconds);
-  return afterSeconds === undefined ? undefined : now + afterSeconds * 1000;
-}
-
-function currentWindowLabel(seconds: unknown, fallbackHours: number): string {
-  const duration = finiteNumber(seconds);
-  const hours = Math.max(1, Math.round((duration ?? fallbackHours * 3600) / 3600));
-  return `${hours}-hour`;
-}
-
-function codexWindowKind(
-  window: CodexWindow,
-  fallback: "current" | "weekly",
-): "current" | "weekly" {
-  const duration = finiteNumber(window.limit_window_seconds);
-  if (duration === undefined) return fallback;
-  // The API can put its seven-day limit in either primary or secondary.
-  // Classify by duration without mislabeling a future 24-hour window as weekly.
-  return duration >= 6 * 24 * 60 * 60 ? "weekly" : "current";
-}
-
-function normalizedCodexWindow(
-  window: CodexWindow | null | undefined,
-  fallbackKind: "current" | "weekly",
-  now: number,
-): SubscriptionUsageWindow | null {
-  if (!window) return null;
-  const usedPercent = clampPercent(window.used_percent);
-  if (usedPercent === undefined) return null;
-  const kind = codexWindowKind(window, fallbackKind);
-  return {
-    kind,
-    label: kind === "weekly" ? "Weekly" : currentWindowLabel(window.limit_window_seconds, 5),
-    usedPercent,
-    resetsAt: codexResetAt(window, now),
-  };
 }
 
 function retryAfterMs(response: Response, now: number): number | undefined {
@@ -157,39 +92,8 @@ async function readUsageResponse(response: Response, now: number): Promise<unkno
   }
 }
 
-async function fetchCodexUsage(
-  credentials: Pick<OAuthCredentials, "accessToken" | "accountId">,
-  fetchFn: FetchFn,
-  signal: AbortSignal,
-  now: () => number,
-): Promise<SubscriptionUsageSnapshot> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${credentials.accessToken}`,
-    Accept: "application/json",
-    originator: "ggcoder",
-    "User-Agent": "ggcoder",
-  };
-  if (credentials.accountId) headers["ChatGPT-Account-Id"] = credentials.accountId;
-  const response = await fetchFn(CODEX_USAGE_URL, { method: "GET", signal, headers });
-  const data = (await readUsageResponse(response, now())) as CodexUsageResponse;
-  const windows = [
-    normalizedCodexWindow(data.rate_limit?.primary_window, "current", now()),
-    normalizedCodexWindow(data.rate_limit?.secondary_window, "weekly", now()),
-  ].filter((window): window is SubscriptionUsageWindow => window !== null);
-  windows.sort((left, right) => {
-    if (left.kind === right.kind) return 0;
-    return left.kind === "current" ? -1 : 1;
-  });
-  return {
-    provider: "openai",
-    displayName: "Codex",
-    windows,
-    fetchedAt: now(),
-  };
-}
-
 /**
- * Kimi For Coding (`/coding/v1/usages`) reports plan quota as string-valued
+ * Kimi Code (`/coding/v1/usages`) reports plan quota as string-valued
  * counters, so accept numbers too rather than trusting one wire shape.
  */
 function kimiNumber(value: unknown): number | undefined {
@@ -226,20 +130,19 @@ function kimiWindowMinutes(window: KimiLimit["window"]): number | undefined {
 }
 
 async function fetchKimiUsage(
-  credentials: Pick<OAuthCredentials, "accessToken" | "accountId">,
+  credentials: Pick<OAuthCredentials, "accessToken" | "baseUrl">,
   fetchFn: FetchFn,
   signal: AbortSignal,
   now: () => number,
 ): Promise<SubscriptionUsageSnapshot> {
-  const response = await fetchFn(`${kimiCodeBaseUrl()}/usages`, {
+  const baseUrl = (credentials.baseUrl ?? KIMI_CODE_DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const response = await fetchFn(`${baseUrl}/usages`, {
     method: "GET",
     signal,
     headers: {
       Authorization: "Bearer " + credentials.accessToken,
       Accept: "application/json",
-      // The managed coding endpoint gates on the kimi-code-cli client identity,
-      // same as model requests.
-      ...kimiCodingHeaders(),
+      "User-Agent": GG_CODER_USER_AGENT,
     },
   });
   const data = (await readUsageResponse(response, now())) as KimiUsageResponse;
@@ -291,22 +194,20 @@ async function fetchKimiUsage(
 }
 
 /**
- * Fetch subscription quota windows with an already-resolved OAuth credential.
+ * Fetch plan quota windows with an already-resolved plan credential.
  * Tokens stay server-side: callers expose only the normalized percentages and
  * reset timestamps to their UI.
  */
 export async function fetchSubscriptionUsage(
   provider: FetchedSubscriptionUsageProvider,
-  credentials: Pick<OAuthCredentials, "accessToken" | "accountId">,
+  credentials: Pick<OAuthCredentials, "accessToken" | "baseUrl">,
   options: FetchSubscriptionUsageOptions = {},
 ): Promise<SubscriptionUsageSnapshot> {
   const fetchFn = options.fetchFn ?? fetch;
   const now = options.now ?? Date.now;
   const signal = AbortSignal.timeout(options.timeoutMs ?? 8_000);
   try {
-    return provider === "openai"
-      ? await fetchCodexUsage(credentials, fetchFn, signal, now)
-      : await fetchKimiUsage(credentials, fetchFn, signal, now);
+    return await fetchKimiUsage(credentials, fetchFn, signal, now);
   } catch (error) {
     if (error instanceof SubscriptionUsageError) throw error;
     const message = error instanceof Error ? error.message : String(error);

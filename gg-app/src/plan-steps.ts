@@ -41,6 +41,16 @@ export function hasDoneMarker(text: string): boolean {
   return doneMarkerRegex().test(text);
 }
 
+// Steps run in order, so `[DONE:n]` also covers earlier steps the model forgot
+// to mark (mirrors ggcoder's stepsDoneThrough).
+export function stepsDoneThrough(markers: Iterable<number>, total: number): number[] {
+  let highest = 0;
+  for (const step of markers) {
+    if (Number.isInteger(step) && step <= total && step > highest) highest = step;
+  }
+  return Array.from({ length: highest }, (_, index) => index + 1);
+}
+
 /** All step numbers marked complete via `[DONE:n]` in the given text. */
 export function findCompletedSteps(text: string): number[] {
   const nums: number[] = [];

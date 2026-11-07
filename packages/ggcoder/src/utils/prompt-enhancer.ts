@@ -170,7 +170,6 @@ export async function enhancePrompt(opts: {
   apiKey?: string;
   baseUrl?: string;
   accountId?: string;
-  projectId?: string;
   signal?: AbortSignal;
   /** Sends the request elsewhere (a Claude subscription runs it through Claude Code). */
   complete?: (messages: Message[]) => Promise<StreamResponse>;
@@ -226,7 +225,6 @@ async function streamEnhance(
     apiKey: opts.apiKey,
     baseUrl: opts.baseUrl,
     accountId: opts.accountId,
-    projectId: opts.projectId,
     signal: opts.signal,
   });
 

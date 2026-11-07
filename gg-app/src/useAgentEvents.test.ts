@@ -1260,6 +1260,16 @@ describe("useAgentEvents", () => {
     expect(marker).toMatchObject({ kind: "autopilot", phase: "plan_approved" });
   });
 
+  it("counts steps the model skipped marking before a later [DONE:n]", () => {
+    const { hook, deps } = setup();
+    deps.planTotalRef.current = 15;
+    act(() => {
+      hook.result.current.handleEvent(ev("text_delta", { text: "[DONE:2] Step 3 now. " }));
+      hook.result.current.handleEvent(ev("text_delta", { text: "Step 7 done. [DONE:7]" }));
+    });
+    expect([...deps.planDoneRef.current].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
   it("uses sidecar plan progress as the authoritative live-file snapshot", () => {
     const { hook, deps } = setup();
     deps.planTotalRef.current = 2;

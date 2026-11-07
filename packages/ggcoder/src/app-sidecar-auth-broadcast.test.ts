@@ -445,7 +445,7 @@ describe("connecting a provider", () => {
 });
 
 describe("OAuth login across windows", () => {
-  /** Park an OpenAI OAuth flow at its "paste the code" step in one window. */
+  /** Park a Continue with ChatGPT flow at its "paste the callback" step in one window. */
   async function startParkedLogin(session: string): Promise<{ types: string[] }> {
     const stream = await openEventStream(session);
     const started = await request("POST", "/auth/oauth/start", {
@@ -488,18 +488,14 @@ describe("OAuth login across windows", () => {
     expect(String(second.json.error)).toContain("another window");
   }, 90_000);
 
-  it("allows a different provider to log in concurrently", async () => {
+  it("refuses a sign-in for a provider that connects with a key only", async () => {
     const windowA = await createSession();
-    const windowB = await createSession();
-    await startParkedLogin(windowA);
-
-    // The guard is per provider, not a global lock: connecting OpenAI in
-    // one window must not block connecting Grok in another.
+    // xAI offers SuperGrok / X Premium only in partner apps: an API key is the way in.
     const other = await request("POST", "/auth/oauth/start", {
-      session: windowB,
+      session: windowA,
       body: { provider: "xai" },
     });
-    expect(other.status).toBe(202);
+    expect(other.status).toBe(400);
   }, 90_000);
 
   it("reports a failed login only to the window that attempted it", async () => {
@@ -508,10 +504,10 @@ describe("OAuth login across windows", () => {
     const streamB = await openEventStream(windowB);
     const streamA = await startParkedLogin(windowA);
 
-    // A malformed code fails the state check locally — no network needed.
+    // A callback from another attempt fails the state check locally — no network needed.
     const sent = await request("POST", "/auth/oauth/code", {
       session: windowA,
-      body: { code: "bogus#mismatch" },
+      body: { code: "http://127.0.0.1:1455/auth/callback?code=bogus&state=mismatch" },
     });
     expect(sent.status).toBe(200);
     await waitFor(() => streamA.types.includes("auth_error"));
@@ -528,7 +524,7 @@ describe("OAuth login across windows", () => {
 
     await request("POST", "/auth/oauth/code", {
       session: windowA,
-      body: { code: "bogus#mismatch" },
+      body: { code: "http://127.0.0.1:1455/auth/callback?code=bogus&state=mismatch" },
     });
     await waitFor(() => streamA.types.includes("auth_error"));
 
@@ -543,8 +539,8 @@ describe("OAuth login across windows", () => {
 });
 
 /**
- * Providers that accept subscription OAuth AND an API key (Kimi, Grok) hold two
- * independent credentials. The app renders a per-method comparison and per-method
+ * OpenAI takes the ChatGPT plan sign-in AND an API key: two independent
+ * credentials. The app renders a per-method comparison and per-method
  * disconnect from this payload, so a single "connected" bit is not enough.
  */
 describe("dual-auth providers (OAuth + API key)", () => {
@@ -557,89 +553,132 @@ describe("dual-auth providers (OAuth + API key)", () => {
     return found!;
   }
 
-  it("offers Grok both methods, with guidance and the priority rule", async () => {
+  it("offers OpenAI both methods, with guidance and the priority rule", async () => {
     const session = await createSession();
-    const xai = await providerStatus(session, "xai");
+    const openai = await providerStatus(session, "openai");
 
-    expect(xai.methods).toEqual(["oauth", "apikey"]);
-    expect(xai.connected).toBe(false);
-    expect(xai.connectedMethods).toEqual([]);
+    expect(openai.methods).toEqual(["oauth", "apikey"]);
+    expect(openai.connected).toBe(false);
+    expect(openai.connectedMethods).toEqual([]);
     // The UI cannot invent this copy — the choice changes what the user is billed.
-    const guidance = xai.methodGuidance as { method: string; billing: string }[];
-    expect(guidance.map((g) => g.method)).toEqual(["oauth", "apikey"]);
-    expect(String(xai.priorityNote)).toMatch(/first/i);
+    const guidance = openai.methodGuidance as { method: string; label: string }[];
+    expect(guidance.map((g) => g.label)).toEqual(["Continue with ChatGPT", "OpenAI API key"]);
+    expect(String(openai.priorityNote)).toMatch(/first/i);
+    // Grok is key-only now.
+    expect((await providerStatus(session, "xai")).methods).toEqual(["apikey"]);
   }, 90_000);
 
   it("reports which method is connected and which one requests will use", async () => {
     const session = await createSession();
     await request("POST", "/auth/apikey", {
       session,
-      body: { provider: "xai", key: "xai-test-key" },
+      body: { provider: "openai", key: "sk-test-key" },
     });
 
-    const xai = await providerStatus(session, "xai");
-    expect(xai.connected).toBe(true);
-    // Key only: it is both connected and active, and OAuth is still on offer.
-    expect(xai.connectedMethods).toEqual(["apikey"]);
-    expect(xai.activeMethod).toBe("apikey");
-    expect(xai.oauthExhaustedUntil).toBeUndefined();
+    const openai = await providerStatus(session, "openai");
+    expect(openai.connected).toBe(true);
+    // Key only: it is both connected and active, and the plan is still on offer.
+    expect(openai.connectedMethods).toEqual(["apikey"]);
+    expect(openai.activeMethod).toBe("apikey");
+    expect(openai.oauthExhaustedUntil).toBeUndefined();
   }, 90_000);
 
   it("disconnects one method without dropping the other", async () => {
     const session = await createSession();
-    // Write both credentials directly: an OAuth login needs a real browser, and
+    // Write both credentials directly: a sign-in needs a real browser, and
     // what matters here is the two-credential state the app has to manage.
     await fs.writeFile(
       path.join(tmpHome, ".gg", "auth.json"),
       JSON.stringify({
-        xai: { accessToken: "key", refreshToken: "", expiresAt: Date.now() + 1_000_000 },
-        "xai-oauth": {
-          accessToken: "oauth",
+        openai: { accessToken: "key", refreshToken: "", expiresAt: Date.now() + 1_000_000 },
+        "openai-chatgpt": {
+          accessToken: "plan",
           refreshToken: "r",
           expiresAt: Date.now() + 1_000_000,
-          baseUrl: "https://cli-chat-proxy.grok.com/v1",
+          accountId: "user-sub",
+          clientId: "oaiapp_test",
+          baseUrl: "https://api.openai.com/v1",
         },
       }),
     );
 
-    const both = await providerStatus(session, "xai");
+    const both = await providerStatus(session, "openai");
     expect(both.connectedMethods).toEqual(["oauth", "apikey"]);
-    // Both on file → the subscription is what actually gets used.
+    // Both on file → the plan is what actually gets used.
     expect(both.activeMethod).toBe("oauth");
 
-    // Dropping a spent API key must not sign the user out of the subscription.
+    // Dropping a spent API key must not sign the user out of the plan.
     const out = await request("POST", "/auth/logout", {
       session,
-      body: { provider: "xai", method: "apikey" },
+      body: { provider: "openai", method: "apikey" },
     });
     expect(out.status).toBe(200);
 
-    const after = await providerStatus(session, "xai");
+    const after = await providerStatus(session, "openai");
     expect(after.connectedMethods).toEqual(["oauth"]);
     expect(after.connected).toBe(true);
   }, 90_000);
 
-  // Gemini is hidden (gg-core hidden-providers.ts): Google no longer serves
-  // personal accounts over sign-in. Restore the dual-method test from git
-  // history ("adds a Gemini API key beside the Google sign-in") when un-hiding.
-  it("hides Gemini from the provider list and the model picker, even with a login on disk", async () => {
+  it("asks to reconnect a retired sign-in and never counts it as a key", async () => {
     const session = await createSession();
     await fs.writeFile(
       path.join(tmpHome, ".gg", "auth.json"),
       JSON.stringify({
+        openai: {
+          accessToken: "codex",
+          refreshToken: "r",
+          expiresAt: Date.now() + 1_000_000,
+          accountId: "acct",
+        },
         gemini: { accessToken: "oauth", refreshToken: "r", expiresAt: Date.now() + 1_000_000 },
         "gemini-api": { accessToken: "k", refreshToken: "", expiresAt: Date.now() + 1_000_000 },
       }),
     );
-    const status = await request("GET", "/auth/status", { session });
-    expect(status.status).toBe(200);
-    const values = (status.json.providers as { value: string }[]).map((p) => p.value);
-    expect(values).not.toContain("gemini");
-    expect(values).toContain("xai");
+    const openai = await providerStatus(session, "openai");
+    expect(openai.connected).toBe(false);
+    expect(openai.connectedMethods).toEqual([]);
+    expect(String(openai.reauthMessage)).toMatch(/Continue with ChatGPT/);
 
-    const models = await request("GET", "/models", { session });
-    const providers = (models.json.models as { provider: string }[]).map((m) => m.provider);
-    expect(providers).not.toContain("gemini");
+    // Gemini is listed again, on its AI Studio key.
+    const gemini = await providerStatus(session, "gemini");
+    expect(gemini.methods).toEqual(["apikey"]);
+    expect(gemini.connectedMethods).toEqual(["apikey"]);
+    expect(String(gemini.reauthMessage)).toMatch(/Gemini API key/);
+
+    // Dismissing removes only the retired entry.
+    await request("POST", "/auth/logout", {
+      session,
+      body: { provider: "gemini", method: "legacy" },
+    });
+    const saved = JSON.parse(await fs.readFile(path.join(tmpHome, ".gg", "auth.json"), "utf-8"));
+    expect(saved.gemini).toBeUndefined();
+    expect(saved["gemini-api"]).toBeDefined();
+  }, 90_000);
+
+  it("marks models the connected keys can't run, with the key they need", async () => {
+    const session = await createSession();
+    const key = (accessToken: string) => ({
+      accessToken,
+      refreshToken: "",
+      expiresAt: Date.now() + 1_000_000,
+    });
+    await fs.writeFile(
+      path.join(tmpHome, ".gg", "auth.json"),
+      JSON.stringify({
+        moonshot: key("sk-moonshot"),
+        xiaomi: { ...key("tp-key"), baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1" },
+      }),
+    );
+    const res = await request("GET", "/models", { session });
+    const models = res.json.models as { id: string; unavailable?: string }[];
+    const reason = (id: string) => models.find((m) => m.id === id)?.unavailable;
+    // K2.8 Preview is served on the Kimi Code plan endpoint only.
+    expect(reason("kimi-for-coding")).toBe("Needs a Kimi Code plan key");
+    // UltraSpeed runs on API Credits only.
+    expect(reason("mimo-v2.6-pro-ultraspeed")).toBe("Needs an API Credits key");
+    // Models any connected key runs carry no reason.
+    expect(reason("kimi-k3")).toBeUndefined();
+    expect(reason("mimo-v2.6-flash")).toBeUndefined();
   }, 90_000);
 
   it("counts a stale Ollama credential only while Ollama serves models", async () => {
