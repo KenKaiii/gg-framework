@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.95.2
+
+### Patch Changes
+
+- 538741d: On a Claude subscription, a message you send while the agent is working no longer stays labelled "Queued" after Claude has already picked it up. GG Coder handed the message to Claude Code before reporting it as queued, so the app never saw it pending and never cleared the label; the message is now taken a moment later, after the app has been told.
+  - @kenkaiiii/gg-ai@5.95.2
+  - @kenkaiiii/gg-agent@5.95.2
+  - @kenkaiiii/gg-core@5.95.2
+
 ## 5.95.1
 
 ### Patch Changes
