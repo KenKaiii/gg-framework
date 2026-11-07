@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.106.1",
+    date: "2026-11-08",
+    items: [
+      "Claude on your subscription now grabs the right tool on the very first try. When it reaches for `web search`, `web fetch` or a `screenshot`, it just works instead of stumbling once and retrying, so your runs go smoother and waste less of your plan.",
+    ],
+  },
+  {
     version: "0.106.0",
     date: "2026-11-07",
     items: [
