@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.95.1
+
+### Patch Changes
+
+- 488d9b2: On a Claude subscription, a tool loaded with `tool_search` (such as `web_search`, `web_fetch`, `screenshot` or `subagent`) now works on its first call. GG Coder used to answer `tool_search` before Claude Code had re-read the tool list, so the next call failed with "No such tool available" and had to be retried; it now waits (up to 3 seconds) for Claude Code to pick up the new tool first.
+  - @kenkaiiii/gg-ai@5.95.1
+  - @kenkaiiii/gg-agent@5.95.1
+  - @kenkaiiii/gg-core@5.95.1
+
 ## 5.95.0
 
 ### Minor Changes
