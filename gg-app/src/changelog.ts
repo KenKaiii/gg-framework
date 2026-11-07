@@ -22,6 +22,16 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.106.0",
+    date: "2026-11-07",
+    items: [
+      "Connecting your AI accounts got a clean upgrade. `Continue with ChatGPT` now uses OpenAI's official sign-in, and you can add an OpenAI `API key` too, which steps in automatically if your plan's usage runs out. Kimi, xAI and Gemini now connect with an `API key`, and if you used an older sign-in, the app asks you once to reconnect. That's it.",
+      "The model picker now tells you upfront what you can run. Any model your plan or keys don't cover is greyed out with a short note saying exactly what it needs.",
+      "Plan review now feels like part of the chat. `Accept plan` and `Reject` sit right beside send, so you can give feedback or decide in one spot.",
+      "Image generation now runs on OpenAI's Image API with `GPT Image 2.6`. Add an OpenAI API key and you're set.",
+    ],
+  },
+  {
     version: "0.105.0",
     date: "2026-11-07",
     items: [
