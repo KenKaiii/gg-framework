@@ -1344,7 +1344,7 @@ dependencies = [
 
 [[package]]
 name = "gg-app"
-version = "0.104.1"
+version = "0.105.0"
 dependencies = [
  "base64 0.23.1",
  "futures-util",

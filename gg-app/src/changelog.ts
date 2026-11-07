@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.105.0",
+    date: "2026-11-07",
+    items: [
+      "I refreshed how your `Claude` account connects so your Claude models keep running smoothly. One quick thing: if you use Claude, open `AI Providers` and sign in to Anthropic once more. You can now connect with an Anthropic `API key` too.",
+      "`GPT-6.1 Terra` just landed, with a Fast mode that runs `1.5x` quicker. It is light, cheap and climbs all the way up to `Ultra` when you want it to really think.",
+    ],
+  },
+  {
     version: "0.104.1",
     date: "2026-11-06",
     items: [
