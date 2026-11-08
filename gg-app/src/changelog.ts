@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.107.1",
+    date: "2026-11-09",
+    items: [
+      "When Claude asks you a question with a choice card, you can now just type your answer instead. It reads your reply on the spot and gets right back to work, no more `I'll wait for your message` stalls.",
+      "Your messages cut straight through again on your `Claude` subscription. Send one while Claude is sitting on a long wait and it stops within a blink to answer you, and a message you fire off mid-answer always gets its own reply instead of vanishing.",
+      "Connecting `Anthropic` now speaks plain app. If a sign-in hiccups you get a clear try-again message, never a terminal command you can't run.",
+    ],
+  },
+  {
     version: "0.107.0",
     date: "2026-11-08",
     items: [
