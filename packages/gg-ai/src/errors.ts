@@ -161,6 +161,7 @@ const PROVIDER_DISPLAY: Record<string, string> = {
   sakana: "Sakana",
   xai: "xAI (Grok)",
   huggingface: "Hugging Face",
+  nous: "Hermes Nous Portal",
   xiaomi: "Xiaomi (MiMo)",
   minimax: "MiniMax",
 };

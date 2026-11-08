@@ -150,6 +150,23 @@ providerRegistry.register("huggingface", {
     }),
 });
 
+/** Strip the registry's `nous/` namespace — the Portal only knows the raw id. */
+export function nousWireModelId(id: string): string {
+  return id.startsWith("nous/") ? id.slice("nous/".length) : id;
+}
+
+providerRegistry.register("nous", {
+  // Nous Portal via Hermes's subscription proxy (`hermes proxy start`): Hermes
+  // holds the sign-in and attaches it per request, so any bearer works.
+  stream: (options) =>
+    streamOpenAI({
+      ...options,
+      baseUrl: options.baseUrl ?? "http://127.0.0.1:8645/v1",
+      model: nousWireModelId(options.model),
+      webSearch: false,
+    }),
+});
+
 providerRegistry.register("sakana", {
   // Sakana Fugu is a multi-agent system exposed as a standard LLM through the
   // OpenAI-compatible Sakana API. We ride the Chat Completions transport (the

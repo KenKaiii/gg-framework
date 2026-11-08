@@ -10,10 +10,19 @@ const signIn = vi.hoisted(() => vi.fn());
 const signOut = vi.hoisted(() => vi.fn());
 const loginChatGPT = vi.hoisted(() => vi.fn());
 const revokeChatGPTSignIn = vi.hoisted(() => vi.fn());
+const signInWithHermes = vi.hoisted(() => vi.fn());
+const syncNousCatalog = vi.hoisted(() => vi.fn());
+const resetNousCatalog = vi.hoisted(() => vi.fn());
 vi.mock("../core/oauth/openai.js", () => ({ loginChatGPT, revokeChatGPTSignIn }));
+vi.mock("../core/nous-catalog-store.js", () => ({ syncNousCatalog, resetNousCatalog }));
 vi.mock("@kenkaiiii/gg-core", async () => {
   const actual = await vi.importActual<typeof GgCore>("@kenkaiiii/gg-core");
-  return { ...actual, signInWithClaudeCode: signIn, signOutOfClaudeCode: signOut };
+  return {
+    ...actual,
+    signInWithClaudeCode: signIn,
+    signOutOfClaudeCode: signOut,
+    signInWithHermes,
+  };
 });
 
 interface Reply {
@@ -67,6 +76,7 @@ function authContext() {
     broadcastAll: (type: string, data: unknown) => events.push({ scope: "all", type, data }),
     oauthInFlight: false,
     oauthInFlightProviders: new Set<string>(),
+    hermesProxy: { ensure: vi.fn(async () => {}), stop: vi.fn() },
     pendingCode: null,
     authCallbacks: (): OAuthLoginCallbacks => ({
       onOpenUrl: (url) => events.push({ scope: "one", type: "auth_url", data: { url } }),
@@ -187,5 +197,47 @@ describe("Continue with ChatGPT route", () => {
     const { ctx } = authContext();
     const reply = await call(ctx, "/auth/oauth/start", { provider: "xai" });
     expect(reply.status).toBe(400);
+  });
+});
+
+describe("Nous Portal sign-in route (Hermes)", () => {
+  it("signs in through Hermes, starts its proxy, then lists the plan's models", async () => {
+    signInWithHermes.mockResolvedValue(undefined);
+    syncNousCatalog.mockResolvedValue(42);
+    const { ctx, auth, events } = authContext();
+    await call(ctx, "/auth/oauth/start", { provider: "nous" });
+    await vi.waitFor(() => expect(ctx.oauthInFlight).toBe(false));
+
+    expect(signInWithHermes).toHaveBeenCalledWith(auth, expect.anything());
+    expect(ctx.hermesProxy.ensure).toHaveBeenCalled();
+    expect(syncNousCatalog).toHaveBeenCalledWith(auth);
+    expect(events.filter((e) => e.scope === "all").map((e) => e.type)).toEqual([
+      "auth_done",
+      "auth_change",
+      "models_change",
+    ]);
+  });
+
+  it("reports a missing Hermes install or failed proxy to the window that asked", async () => {
+    signInWithHermes.mockResolvedValue(undefined);
+    const { ctx, events } = authContext();
+    ctx.hermesProxy.ensure.mockRejectedValue(new Error("The Hermes proxy stopped: port in use"));
+    await call(ctx, "/auth/oauth/start", { provider: "nous" });
+    await vi.waitFor(() => expect(ctx.oauthInFlight).toBe(false));
+    expect(events.at(-1)).toEqual({
+      scope: "one",
+      type: "auth_error",
+      data: { provider: "nous", message: "The Hermes proxy stopped: port in use" },
+    });
+  });
+
+  it("disconnects GG Coder only: stops its proxy and drops the plan list", async () => {
+    const { ctx, auth } = authContext();
+    auth.stored.nous = { accessToken: "hermes-proxy", refreshToken: "", expiresAt: 1 };
+    const reply = await call(ctx, "/auth/logout", { provider: "nous" });
+    expect(reply.status).toBe(200);
+    expect(ctx.hermesProxy.stop).toHaveBeenCalled();
+    expect(auth.stored.nous).toBeUndefined();
+    expect(resetNousCatalog).toHaveBeenCalled();
   });
 });

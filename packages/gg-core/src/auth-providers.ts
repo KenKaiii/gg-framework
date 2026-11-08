@@ -277,6 +277,22 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
       "Pay-per-token from Hugging Face Inference Providers credits.",
     ),
   },
+  {
+    // Via Hermes Agent's subscription proxy — the Portal issues no keys.
+    value: "nous",
+    label: "Hermes Nous Portal",
+    description: "GLM 5.3, DeepSeek V4.1 Flash · every model on your Nous Portal plan",
+    methods: ["oauth"],
+    methodDetails: {
+      oauth: {
+        method: "oauth",
+        label: "Sign in with Hermes",
+        billing: "Uses your Nous Portal subscription.",
+        when: "Runs through Hermes Agent's subscription proxy, which GG Coder starts for you. Hermes keeps the Portal sign-in.",
+        requires: "Hermes Agent installed, and a Nous Portal subscription.",
+      },
+    },
+  },
 ];
 
 /**

@@ -22,6 +22,7 @@ export const ALL_PROVIDERS: Provider[] = [
   "deepseek",
   // Open-community gateway, before the provider-agnostic one
   "huggingface",
+  "nous",
   // Japan, then provider-agnostic gateway last
   "sakana",
   "openrouter",

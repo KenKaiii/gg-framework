@@ -2343,6 +2343,7 @@ export function App(props: AppProps) {
               | "deepseek"
               | "openrouter"
               | "huggingface"
+              | "nous"
               | "sakana"
               | "xai",
           );

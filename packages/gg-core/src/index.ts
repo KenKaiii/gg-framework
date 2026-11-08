@@ -9,6 +9,8 @@ export * from "./file-lock.js";
 export * from "./claude-code/runtime.js";
 export * from "./claude-code/sign-in.js";
 export * from "./claude-code/usage.js";
+export * from "./hermes/runtime.js";
+export * from "./hermes/sign-in.js";
 export * from "./auth-storage.js";
 export * from "./minimax-region.js";
 export * from "./xiaomi-region.js";

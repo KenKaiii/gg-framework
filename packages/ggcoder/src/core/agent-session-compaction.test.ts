@@ -101,6 +101,7 @@ beforeEach(async () => {
     "deepseek",
     "openrouter",
     "huggingface",
+    "nous",
   ];
   await writeJson(
     path.join(tmpHome, ".gg", "auth.json"),

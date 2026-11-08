@@ -476,6 +476,27 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
         api_key_base_url: None,
         api_key_variants: &[],
     },
+    ProviderMeta {
+        value: "nous",
+        label: "Hermes Nous Portal",
+        description: "GLM 5.3, DeepSeek V4.1 Flash · every model on your Nous Portal plan",
+        // Sign-in lives in Hermes Agent; auth.json keeps the proxy address.
+        methods: &["oauth"],
+        oauth_key: Some("nous"),
+        oauth_label: None,
+        method_details: &[
+            MethodDetail {
+                method: "oauth",
+                label: "Sign in with Hermes",
+                billing: "Uses your Nous Portal subscription.",
+                when: "Runs through Hermes Agent's subscription proxy, which GG Coder starts for you. Hermes keeps the Portal sign-in.",
+                requires: Some("Hermes Agent installed, and a Nous Portal subscription."),
+            },
+        ],
+        api_key_label: None,
+        api_key_base_url: None,
+        api_key_variants: &[],
+    },
 ];
 
 /// Pure: resolve `(storage_key, base_url)` for an API-key submission to
@@ -1028,11 +1049,10 @@ pub(crate) async fn app_auth_logout(
         }
     }
     let app = webview.app_handle().clone();
-    // Claude Code holds the Claude login itself, and a ChatGPT sign-out must
-    // revoke the session at OpenAI; only the sidecar does those. Best effort:
-    // with no daemon the local credential still goes.
+    // Claude Code and ChatGPT sign-outs, and a Nous disconnect (stop the Hermes
+    // proxy, drop the plan's models), need the sidecar; best effort only.
     let signs_out = method.is_none() || method.as_deref() == Some("oauth");
-    if (provider == "anthropic" || provider == "openai") && signs_out {
+    if (provider == "anthropic" || provider == "openai" || provider == "nous") && signs_out {
         if let (Some(port), Some(sid)) = (
             crate::daemon::port_for(&webview),
             crate::daemon::session_for(&webview),
@@ -1091,6 +1111,7 @@ mod tests {
                 "deepseek",
                 "sakana",
                 "openrouter",
+                "nous",
             ]
         );
     }
@@ -1452,14 +1473,18 @@ mod tests {
     }
 
     #[test]
-    fn only_claude_and_chatgpt_offer_a_sign_in_and_every_provider_takes_a_key() {
+    fn claude_chatgpt_and_nous_offer_a_sign_in_and_every_other_provider_takes_a_key() {
         let with_oauth: Vec<&str> = AUTH_PROVIDERS
             .iter()
             .filter(|p| p.methods.contains(&"oauth"))
             .map(|p| p.value)
             .collect();
-        assert_eq!(with_oauth, vec!["anthropic", "openai"]);
+        assert_eq!(with_oauth, vec!["anthropic", "openai", "nous"]);
         for p in AUTH_PROVIDERS {
+            // Nous Portal issues no API keys; Hermes's subscription proxy is the route.
+            if p.value == "nous" {
+                continue;
+            }
             assert!(p.methods.contains(&"apikey"), "{} has no API key", p.value);
             assert!(
                 p.method_details.iter().any(|d| d.method == "apikey"),
@@ -1548,6 +1573,37 @@ mod tests {
         assert_eq!(legacy["reauthRequired"], true);
         assert!(marker.get("reauthRequired").is_none());
         assert!(both.get("reauthRequired").is_none());
+    }
+
+    #[test]
+    fn nous_status_counts_the_hermes_connection_as_oauth() {
+        let status = auth_status_snapshot(Some(&serde_json::json!({
+            "nous": {
+                "accessToken": "hermes-proxy",
+                "refreshToken": "",
+                "expiresAt": 1,
+                "baseUrl": "http://127.0.0.1:8645/v1",
+            },
+        })));
+        let nous = status["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["value"] == "nous")
+            .unwrap()
+            .clone();
+        assert_eq!(nous["connected"], true);
+        assert_eq!(nous["connectedMethods"], serde_json::json!(["oauth"]));
+        assert_eq!(nous["activeMethod"], "oauth");
+        assert_eq!(nous["methods"], serde_json::json!(["oauth"]));
+        assert!(nous.get("reauthRequired").is_none());
+
+        // A full disconnect removes the proxy connection.
+        let existing = r#"{ "nous": { "accessToken": "hermes-proxy", "refreshToken": "", "expiresAt": 1 }, "glm": { "accessToken": "k", "refreshToken": "", "expiresAt": 1 } }"#;
+        let out = apply_logout(Some(existing), "nous", None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert!(v.get("nous").is_none());
+        assert!(v.get("glm").is_some());
     }
 
     #[test]

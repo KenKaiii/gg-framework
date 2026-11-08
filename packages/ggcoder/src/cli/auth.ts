@@ -15,6 +15,7 @@ import {
   OPENAI_CHATGPT_KEY,
   dualAuthProvider,
   signInWithClaudeCode,
+  signInWithHermes,
   signOutOfClaudeCode,
 } from "@kenkaiiii/gg-core";
 import { getAuthProvider, describeAuthMethods } from "../core/auth-providers.js";
@@ -168,6 +169,15 @@ export async function runLogin(): Promise<void> {
       log("INFO", "auth", "Signed in with ChatGPT");
       console.log(chalk.hex("#4ade80")("\n✓ Signed in with ChatGPT!"));
       console.log(chalk.hex("#6b7280")(`  Manage what GG Coder may use at ${CHATGPT_USAGE_URL}`));
+      return;
+    }
+
+    // Nous Portal signs in through Hermes, which also owns the proxy.
+    if (provider === "nous") {
+      await signInWithHermes(authStorage, callbacks);
+      endProgressLine();
+      log("INFO", "auth", "Signed in to Nous Portal through Hermes");
+      console.log(chalk.hex("#4ade80")("\n✓ Signed in to Nous Portal through Hermes!"));
       return;
     }
 

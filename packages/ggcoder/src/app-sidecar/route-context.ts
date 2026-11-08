@@ -6,6 +6,7 @@ import type { AuthMethod, AuthMethodMeta, AuthProviderMeta } from "../core/auth-
 import type { WorkflowCommandSpec } from "../core/autopilot-gate.js";
 import type { EffectiveKenModel, KenModelPref } from "../core/ken-model.js";
 import type { ElicitationBridge } from "../core/mcp/elicitation-bridge.js";
+import type { HermesProxySupervisor } from "../core/hermes-proxy.js";
 import type { BackgroundProcess } from "../core/process-manager.js";
 import type { RunClaim } from "../core/run-claim.js";
 import type { GoalRecord } from "../core/goals-store.js";
@@ -138,6 +139,8 @@ export interface SessionRouteContext {
   readonly broadcastAll: (type: string, data: unknown) => void;
   oauthInFlight: boolean;
   readonly oauthInFlightProviders: Set<string>;
+  /** Daemon-wide: the Hermes proxy behind the `nous` provider. */
+  readonly hermesProxy: HermesProxySupervisor;
   readonly authCallbacks: () => OAuthLoginCallbacks;
   pendingCode: ((code: string) => void) | null;
   readonly elicitations: ElicitationBridge;

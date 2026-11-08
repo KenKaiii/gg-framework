@@ -166,7 +166,8 @@ describe("resolveCompactionPolicy", () => {
   it("gives every registered model a trigger inside its window, from a sourced rule", () => {
     // Providers verified to have NO evidence either way. Adding a provider
     // means adding a sourced rule to policy.ts, or listing it here on purpose.
-    const unverified = new Set(["sakana", "huggingface"]);
+    // Nous Portal proxies many upstreams, so window and caching vary per model.
+    const unverified = new Set(["sakana", "huggingface", "nous"]);
     for (const model of MODELS) {
       const contextWindow = getContextWindow(model.id, { provider: model.provider });
       const { targetTokens } = resolveCompactionPolicy({
