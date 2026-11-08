@@ -65,7 +65,7 @@ export type AskUserResult =
    * No answer. `superseded` means the user replied with a message of their own
    * instead of picking — the question is moot, but they are still talking.
    */
-  | { action: "cancel"; superseded?: boolean }
+  | { action: "cancel"; superseded?: boolean; message?: string }
   /**
    * The soft deadline passed with no answer. The question stays open; a later
    * answer is delivered to the agent as a message (see `onLateAnswer`).
@@ -225,6 +225,16 @@ export function formatAskResult(questions: AskQuestion[], result: AskUserResult)
   if (result.action === "deferred") return ASK_DEFERRED_RESULT;
   if (result.action === "cancel") {
     if (result.superseded) {
+      // The message itself, not a promise that it follows: a transport that
+      // queues it behind the current turn (Claude Code) would leave the model
+      // waiting on a message it can't see yet.
+      if (result.message?.trim()) {
+        return (
+          "The user skipped the question and replied with this message instead:\n\n" +
+          `<user_message>\n${result.message.trim()}\n</user_message>\n\n` +
+          "Treat it as their answer and continue. Do not ask this again."
+        );
+      }
       return (
         "The user ignored the question and sent their own message instead. " +
         "It arrives next — treat it as their answer and continue. Do not ask this again."

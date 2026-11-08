@@ -213,6 +213,29 @@ describe("AgentSession on a Claude subscription", () => {
     expect(processes[3]!.closed).toEqual(["shutdown"]);
   }, 20_000);
 
+  it("marks a reply that answered a question as already read by Claude Code", async () => {
+    const session = await newSession();
+    const seen: { text: string; alreadyRead: boolean }[] = [];
+    claudeCodeLoopMock.mockImplementation(async function* (
+      messages: Message[],
+      opts: ClaudeCodeLoopOptions,
+    ) {
+      session.queueMessage("typed over the question", [], { answeredAsk: true });
+      session.queueMessage("a plain steer");
+      for (const message of (await opts.getSteeringMessages?.()) ?? []) {
+        seen.push({
+          text: JSON.stringify(message.content),
+          alreadyRead: opts.steeringAlreadyRead?.(message) ?? false,
+        });
+      }
+      yield* claudeCodeRun("cc-ask", "answer")(messages, opts);
+    });
+    await session.prompt("go");
+    expect(seen.map((s) => s.alreadyRead)).toEqual([true, false]);
+    expect(seen[0]!.text).toContain("typed over the question");
+    await session.dispose();
+  });
+
   it("reuses the process after the SDK stamps its version into the env", async () => {
     // Regression: the SDK sets process.env.CLAUDE_AGENT_SDK_VERSION on its first
     // query(), which read as an env change and restarted every chat's second message.

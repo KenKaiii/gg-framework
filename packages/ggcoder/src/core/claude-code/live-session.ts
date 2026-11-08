@@ -44,6 +44,8 @@ export interface ClaudeCodeSessionOptions extends ClaudeCodeProcess {
 
 export interface ClaudeCodeLoopOptions extends AgentOptions {
   claudeCode: ClaudeCodeSessionOptions;
+  /** Steering the model already read (in an ask_user result): record it, don't send it again. */
+  steeringAlreadyRead?: (message: Message) => boolean;
 }
 
 export interface ClaudeCodeLiveSessionOptions {
@@ -258,8 +260,9 @@ export class ClaudeCodeLiveSession {
       },
     });
 
-    // Steering sent to Claude Code but not yet placed in our transcript.
+    // Steering not yet placed in our transcript, and how many of those went to Claude Code.
     let unplaced: Message[] = [];
+    let unplacedSent = 0;
     const sendUser = (message: Message) => {
       this.input.push(
         toSdkUserMessage(toSdkUserContent(message.content as UserMessage["content"])),
@@ -271,16 +274,22 @@ export class ClaudeCodeLiveSession {
         yield { type: "steering_message", content: message.content };
       }
       unplaced = [];
+      unplacedSent = 0;
     };
-    const drainSteering = async (): Promise<boolean> => {
+    /** Takes queued steering; returns how many messages went to Claude Code. */
+    const drainSteering = async (): Promise<number> => {
       // Handed off (e.g. a submitted plan): queued messages stay queued for the next run.
-      if (endRun) return false;
+      if (endRun) return 0;
       const steering = (await options.getSteeringMessages?.()) ?? [];
+      let sent = 0;
       for (const message of steering) {
-        sendUser(message);
         unplaced.push(message);
+        if (options.steeringAlreadyRead?.(message)) continue;
+        sendUser(message);
+        unplacedSent++;
+        sent++;
       }
-      return steering.length > 0;
+      return sent;
     };
 
     const { prior, pending } = splitPending(messages);
@@ -413,15 +422,16 @@ export class ClaudeCodeLiveSession {
           yield* placeSteering();
           break;
         }
-        // Claude Code may still hold steering it has not answered yet.
-        if (unplaced.length > 0) {
+        // Claude Code still owes a turn for steering queued behind this result.
+        // Older CLIs don't report the count; then only unplaced sent steering says so.
+        const queuedTurns = message.queued_turn_count;
+        if (queuedTurns !== undefined ? queuedTurns > 0 : unplacedSent > 0) {
           yield* placeSteering();
           continue;
         }
-        if (await drainSteering()) {
-          yield* placeSteering();
-          continue;
-        }
+        const sent = await drainSteering();
+        yield* placeSteering();
+        if (sent > 0) continue;
         const followUps = (await options.getFollowUpMessages?.()) ?? [];
         if (followUps.length > 0) {
           for (const followUp of followUps) {

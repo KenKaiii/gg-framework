@@ -177,6 +177,21 @@ describe("ask_user", () => {
     expect(bridge.pendingCount).toBe(0);
   });
 
+  it("puts the user's own message in the result, so the model needn't wait for it", async () => {
+    // Regression: on Claude Code the typed message queued behind the turn, so
+    // the model read "it arrives next" alone and replied "I'll wait for your message".
+    const { bridge, call, prompt } = harness();
+    const result = call({
+      questions: [{ id: "name", question: "Use a descriptive name?", kind: "confirm" }],
+    });
+    await prompt();
+    bridge.cancelAll({ action: "cancel", superseded: true, message: "I like proper names." });
+    const text = await result;
+    expect(text).toContain("<user_message>\nI like proper names.\n</user_message>");
+    expect(text).toContain("Treat it as their answer");
+    expect(text).not.toContain("arrives next");
+  });
+
   it("reports a question that cannot be rendered instead of parking the turn", async () => {
     const { call, broadcast } = harness();
     await expect(

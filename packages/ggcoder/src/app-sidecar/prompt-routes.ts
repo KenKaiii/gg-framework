@@ -171,7 +171,14 @@ export function handlePromptRoutes(
         // message sits behind it as steering that only drains once the tool
         // returns, so the turn looks frozen. The webview closes the band on
         // send; a racing /ask POST just 409s.
-        ctx.asks.cancelAll({ action: "cancel", superseded: true });
+        // A text-only reply also goes into the question's result, so the model
+        // reads it there instead of waiting for it to arrive as steering.
+        const answersAsk = ctx.asks.pendingCount > 0 && attachments.length === 0;
+        ctx.asks.cancelAll({
+          action: "cancel",
+          superseded: true,
+          ...(answersAsk ? { message: text } : {}),
+        });
         if (
           ctx.runLifecycle.running &&
           ctx.runLifecycle.isCancellationRequested(ctx.runLifecycle.generation)
@@ -197,7 +204,7 @@ export function handlePromptRoutes(
           // path as a non-queued attachment prompt when it drains.
           const prepared =
             attachments.length > 0 ? await prepareAttachments(ctx.cwd, attachments) : [];
-          const count = ctx.session.queueMessage(text, prepared);
+          const count = ctx.session.queueMessage(text, prepared, { answeredAsk: answersAsk });
           ctx.broadcast("queued", { count, messages: ctx.session.listQueuedMessages() });
           json(res, 202, { queued: true, count });
           void recordPromptTrophies(ctx, {

@@ -775,7 +775,14 @@ export class AgentSession {
   // message by identity. Index-based removal would race: the queue drains at
   // every turn boundary, so an index captured by the UI can point at a
   // different message (or past the end) by the time the cancel arrives.
-  private userQueue: Array<{ id: string; text: string; attachments: SessionAttachment[] }> = [];
+  private userQueue: Array<{
+    id: string;
+    text: string;
+    attachments: SessionAttachment[];
+    answeredAsk?: boolean;
+  }> = [];
+  // Steering whose text the model already read in an ask_user result.
+  private askAnswerSteering = new WeakSet<Message>();
   // Taken into the run but not yet in the transcript. Claude Code takes queued
   // messages at once but reads them at its next turn, so they still show as queued.
   private deliveringQueue: Array<{ id: string; text: string; content: unknown }> = [];
@@ -1530,6 +1537,7 @@ export class AgentSession {
         ? {}
         : { resolveTool: (name: string) => this.promoteDeferredBuiltin(name) }),
       getSteeringMessages: () => this.getHookSteeringMessages(),
+      steeringAlreadyRead: (message) => this.askAnswerSteering.has(message),
       onSteeringAvailable: (listener) => {
         this.steeringListeners.add(listener);
         return () => this.steeringListeners.delete(listener);
@@ -2166,7 +2174,8 @@ export class AgentSession {
         return { role: "user", content: parts, provenance };
       });
       steeringMessages.forEach((message, index) => {
-        const { id, text } = queued[index]!;
+        const { id, text, answeredAsk } = queued[index]!;
+        if (answeredAsk) this.askAnswerSteering.add(message);
         this.deliveringQueue.push({ id, text, content: message.content });
       });
       const userShell = this.takeUserShellContext();
@@ -4068,9 +4077,18 @@ export class AgentSession {
   /** Queue a user message (optionally with attachments) to be injected mid-run
    *  as steering. Returns the new queue length. No-op semantics are the caller's
    *  concern. */
-  queueMessage(text: string, attachments: SessionAttachment[] = []): number {
+  queueMessage(
+    text: string,
+    attachments: SessionAttachment[] = [],
+    opts: { answeredAsk?: boolean } = {},
+  ): number {
     this.queueSeq += 1;
-    this.userQueue.push({ id: `q${this.queueSeq}`, text, attachments });
+    this.userQueue.push({
+      id: `q${this.queueSeq}`,
+      text,
+      attachments,
+      ...(opts.answeredAsk ? { answeredAsk: true } : {}),
+    });
     // Instant interrupt: preempt running tools so the steer lands right away.
     for (const listener of [...this.steeringListeners]) listener();
     return this.userQueue.length;

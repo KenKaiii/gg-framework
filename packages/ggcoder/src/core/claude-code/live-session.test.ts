@@ -252,3 +252,59 @@ describe("ClaudeCodeLiveSession", () => {
     other.close();
   });
 });
+
+describe("ClaudeCodeLiveSession steering", () => {
+  it("stays for the turn Claude Code queued behind a result", async () => {
+    // Regression: steering that missed the running turn got its own turn after
+    // the result; the run ended at the first result, so that reply went nowhere
+    // and the idle output killed the process.
+    let secondResult = false;
+    const { query } = fakeQuery(async function* (ctx) {
+      yield init;
+      await ctx.nextInput();
+      yield result({ queued_turn_count: 1 });
+      secondResult = true;
+      yield result({ queued_turn_count: 0 });
+      await ctx.nextInput();
+    });
+    const live = new ClaudeCodeLiveSession();
+    await drain(live, [user("Start")], options(query));
+    expect(secondResult).toBe(true);
+    await tick();
+    expect(live.alive).toBe(true);
+    live.close();
+  });
+
+  it("records steering the model already read without sending it again", async () => {
+    let wake: (() => void) | undefined;
+    const queue: Message[] = [];
+    const reply = user("I like proper names.");
+    const { query, calls } = fakeQuery(async function* (ctx) {
+      yield init;
+      await ctx.nextInput();
+      queue.push(reply);
+      wake!();
+      await tick();
+      yield result({ queued_turn_count: 0 });
+      await ctx.nextInput();
+    });
+    const live = new ClaudeCodeLiveSession();
+    const messages = [user("Start")];
+    const events = await drain(
+      live,
+      messages,
+      options(query, {
+        getSteeringMessages: () => (queue.length > 0 ? queue.splice(0) : null),
+        steeringAlreadyRead: (message) => message === reply,
+        onSteeringAvailable: (listener) => {
+          wake = listener;
+          return () => {};
+        },
+      }),
+    );
+    expect(calls.inputs).toHaveLength(1);
+    expect(events.filter((e) => e.type === "steering_message")).toHaveLength(1);
+    expect(messages).toContain(reply);
+    live.close();
+  });
+});
