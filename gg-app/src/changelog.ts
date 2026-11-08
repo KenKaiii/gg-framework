@@ -22,6 +22,16 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.107.0",
+    date: "2026-11-08",
+    items: [
+      "Home now has a `Weekly poll`, and you get a say in what I build next. Pick the feature you want most, watch the bars fill as everyone votes, and change your mind any time that week. Your vote is anonymous.",
+      "Claude on your subscription now stays warm between messages. I keep one live `Claude Code` session per chat instead of starting fresh every time, so replies kick off faster, and a message you send mid-run slips straight into the work Claude is already doing.",
+      "Plans tick themselves off reliably again. Every finished step lands on the `progress` bar as Claude goes, so a plan never sits at `0/8` while the work is actually getting done.",
+      "I retired `GG World` to keep GG Coder lean and focused on your work. Fewer moving parts, a lighter app, more speed where it counts.",
+    ],
+  },
+  {
     version: "0.106.2",
     date: "2026-11-08",
     items: [
