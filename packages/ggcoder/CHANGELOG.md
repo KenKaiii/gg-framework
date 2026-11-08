@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.95.4
+
+### Patch Changes
+
+- Claude Code chats: a message typed instead of answering `ask_user` now goes into the question's result, so the model acts on it instead of saying it will wait; a run keeps going until Claude Code has answered every message sent to it (tracked by the uuids each result reports, since `queued_turn_count` reads 0), so a reply to a message sent mid-answer is no longer lost; and a message sent while a tool runs (e.g. a long `task_output` wait) cuts that tool short, as on the native loop. The sign-in dialog no longer shows CLI `ggcoder login` advice, and failed sign-ins are logged.
+  - @kenkaiiii/gg-ai@5.95.4
+  - @kenkaiiii/gg-agent@5.95.4
+  - @kenkaiiii/gg-core@5.95.4
+
 ## 5.95.3
 
 ### Patch Changes
