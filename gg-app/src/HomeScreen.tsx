@@ -15,7 +15,7 @@ import {
   openUrl,
   waitForReady,
   getSettings,
-  authStatus,
+  hasModelSource,
   openWhatsNewWindow,
   getProgress,
   setRemoteActive,
@@ -54,7 +54,7 @@ export function HomeScreen({
   refreshSignal = 0,
 }: Props): React.ReactElement {
   const [folderSet, setFolderSet] = useState(false);
-  const [providerCount, setProviderCount] = useState(0);
+  const [providerConnected, setProviderConnected] = useState(false);
   const [version, setVersion] = useState<string | null>(null);
   const [progress, setProgress] = useState<ProgressSnapshot | null>(null);
   const [showScorecard, setShowScorecard] = useState(false);
@@ -75,12 +75,12 @@ export function HomeScreen({
     // Settings + auth are read NATIVELY (Rust) — do them first, WITHOUT waiting on
     // the sidecar, so the workspace gate never stays dimmed just because the
     // agent is slow/crashed.
-    const [settings, providers] = await Promise.all([getSettings(), authStatus()]);
+    const [settings, connected] = await Promise.all([getSettings(), hasModelSource()]);
     // Prefer the explicit `configured` flag; fall back to a non-empty root so an
     // older sidecar (one that predates the flag) degrades to "set" instead of
     // dimming forever.
     setFolderSet(settings?.configured ?? Boolean(settings?.projectsRoot));
-    setProviderCount(providers.filter((p) => p.connected).length);
+    setProviderConnected(connected);
     // Keep the macOS tray's Remote label in step with the sidecar (it may have
     // respawned). Best-effort, and never blocks the native reads above.
     void waitForReady()
@@ -103,7 +103,7 @@ export function HomeScreen({
     if (refreshSignal > 0) void refresh().catch(() => {});
   }, [refreshSignal]);
 
-  const ready = folderSet && providerCount > 0;
+  const ready = folderSet && providerConnected;
 
   function handleWorkspace(open: () => void): void {
     if (ready) {
@@ -115,7 +115,7 @@ export function HomeScreen({
     if (!folderSet) {
       toast("Set a workspace folder first.", "warning");
       onSettings("general");
-    } else if (providerCount === 0) {
+    } else if (!providerConnected) {
       toast("Connect an AI provider first.", "warning");
       onSettings("providers");
     }

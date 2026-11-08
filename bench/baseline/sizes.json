@@ -1,12 +1,12 @@
 {
   "artifacts": {
     "dist:ggcoder": {
-      "bytes": 8057866,
-      "recorded_at": "2026-11-04T19:59:34.867Z"
+      "bytes": 8604163,
+      "recorded_at": "2026-11-05T17:05:15.160Z"
     },
     "sidecar": {
-      "bytes": 8678607,
-      "recorded_at": "2026-11-04T19:57:43.224Z"
+      "bytes": 8863197,
+      "recorded_at": "2026-11-05T17:19:49.202Z"
     },
     "frontend:initial": {
       "bytes": 1065082,

@@ -323,7 +323,7 @@
         "flags": "giu"
       },
       "expectedOccurrences": {
-        "tracked": 1546,
+        "tracked": 1537,
         "packed": 0
       },
       "bucket": "compatibility",
@@ -503,7 +503,7 @@
         "literal": "ggcoder"
       },
       "expectedOccurrences": {
-        "tracked": 1622,
+        "tracked": 1552,
         "packed": 0
       },
       "bucket": "compatibility",
@@ -704,7 +704,7 @@
         "flags": "giu"
       },
       "expectedOccurrences": {
-        "tracked": 14,
+        "tracked": 13,
         "packed": 0
       },
       "bucket": "compatibility",
@@ -1588,7 +1588,7 @@
         "literal": "ggcoder"
       },
       "expectedOccurrences": {
-        "tracked": 2,
+        "tracked": 3,
         "packed": 0
       },
       "bucket": "compatibility",
@@ -2113,8 +2113,8 @@
       "removeWhen": "A coordinated repository path migration updates scripts and evidence locations together."
     },
     {
-      "id": "bundled-find-skills-legacy-seed",
-      "path": "packages/ggcoder/src/config.ts",
+      "id": "retired-find-skills-seed-fixtures",
+      "path": "packages/ggcoder/src/__fixtures__/seeded-find-skills-*.md",
       "scope": "content",
       "targets": [
         "tracked"
@@ -2123,13 +2123,13 @@
         "literal": "gg-coder"
       },
       "expectedOccurrences": {
-        "tracked": 2,
+        "tracked": 4,
         "packed": 0
       },
       "bucket": "compatibility",
       "owner": "Coder skills owner",
-      "reason": "The bundled seed remains unchanged until the Step 9 no-overwrite migration and tests land.",
-      "removeWhen": "Step 9 updates only the new-install default while preserving every existing user skill."
+      "reason": "Byte-exact copies of the find-skills seed earlier versions wrote to the skills folder. config.test.ts hashes them to prove the cleanup deletes only untouched copies, so their text cannot change.",
+      "removeWhen": "The retired-seed cleanup (removeRetiredSeededSkills) is removed."
     },
     {
       "id": "coder-runtime-temporary-prefixes",
@@ -2223,7 +2223,7 @@
       },
       "expectedOccurrences": {
         "tracked": 0,
-        "packed": 16
+        "packed": 20
       },
       "bucket": "compatibility",
       "owner": "Provider integration owner",
@@ -2348,25 +2348,6 @@
       "owner": "Coder public API owner",
       "reason": "Packed runtime and declarations retain the legacy APP_NAME export.",
       "removeWhen": "A later major version removes the documented legacy export."
-    },
-    {
-      "id": "packed-coder-find-skills-seed",
-      "path": "packages/ggcoder/dist/config.js",
-      "scope": "content",
-      "targets": [
-        "packed"
-      ],
-      "match": {
-        "literal": "gg-coder"
-      },
-      "expectedOccurrences": {
-        "tracked": 0,
-        "packed": 2
-      },
-      "bucket": "compatibility",
-      "owner": "Coder skills owner",
-      "reason": "Packed new-install seed output remains unchanged until the Step 9 no-overwrite migration lands.",
-      "removeWhen": "Step 9 updates the bundled default while preserving every existing user skill."
     },
     {
       "id": "packed-coder-prompt-cache-contract",
@@ -2611,7 +2592,7 @@
       },
       "expectedOccurrences": {
         "tracked": 0,
-        "packed": 744
+        "packed": 755
       },
       "bucket": "compatibility",
       "owner": "Manager build owner",
@@ -2797,7 +2778,7 @@
       "removeWhen": "A coordinated repository path migration rebuilds package metadata."
     },
     {
-      "id": "packed-manager-find-skills-seed",
+      "id": "packed-manager-coder-legacy-literals",
       "path": "packages/gg-boss/dist/**",
       "scope": "content",
       "targets": [
@@ -2808,12 +2789,12 @@
       },
       "expectedOccurrences": {
         "tracked": 0,
-        "packed": 9
+        "packed": 5
       },
       "bucket": "compatibility",
-      "owner": "Coder skills owner",
-      "reason": "Inlined new-install seed output remains unchanged until the Step 9 no-overwrite migration lands.",
-      "removeWhen": "Step 9 updates the bundled default while preserving every existing user skill."
+      "owner": "Coder runtime owner",
+      "reason": "Inlined Coder modules keep the legacy name in the steroids release-download user agent, the MCP OAuth client URI and a project-discovery comment.",
+      "removeWhen": "Those Coder modules drop the legacy name."
     },
     {
       "id": "packed-manager-error-discriminators",
@@ -2848,7 +2829,7 @@
       },
       "expectedOccurrences": {
         "tracked": 0,
-        "packed": 14
+        "packed": 16
       },
       "bucket": "compatibility",
       "owner": "Provider integration owner",
@@ -4420,25 +4401,6 @@
       "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
     },
     {
-      "id": "upstream-20260911-86cc04835c4c",
-      "path": "packages/ggcoder/assets/skills/evidence-led-ui/references/provenance.md",
-      "scope": "content",
-      "targets": [
-        "tracked"
-      ],
-      "match": {
-        "regex": "(?:The package structure was checked against the \\[Agent Skills specification\\]\\(https://agentskills\\.io/specification\\), \\[Anthropic skill-authoring best practices\\]\\(https://platform\\.claude\\.com/docs/en/agents-and-tools/agent-skills/best-practices\\.md\\), \\[OpenAI Skills guidance\\]\\(https://platform\\.openai\\.com/docs/guides/tools-skills\\), and \\[Agent Skills evaluation guidance\\]\\(https://agentskills\\.io/skill-creation/evaluating-skills\\): loader-visible name/description metadata, a concise directly actionable `SKILL\\.md`, references one level from the root, focused on-demand documents, self-contained scripts, explicit validation, and evaluation-driven iteration\\. The installed GG Coder loader reads `name` and `description`; the portable `license` and `compatibility` fields are retained for other Agent Skills clients and safely ignored by GG Coder\\.)",
-        "flags": "gu"
-      },
-      "expectedOccurrences": {
-        "tracked": 2
-      },
-      "bucket": "provenance",
-      "owner": "Kleio framework maintainers",
-      "reason": "Reviewed pinned upstream source-directory references, legacy CLI examples, implementation comments, attribution, and test/benchmark fixtures; not package-resolution dependencies.",
-      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
-    },
-    {
       "id": "upstream-20260911-287c2df82876",
       "path": "packages/ggcoder/scripts/compress-bench-real.ts",
       "scope": "content",
@@ -4888,25 +4850,6 @@
       },
       "expectedOccurrences": {
         "tracked": 2
-      },
-      "bucket": "provenance",
-      "owner": "Kleio framework maintainers",
-      "reason": "Reviewed pinned upstream source-directory references, legacy CLI examples, implementation comments, attribution, and test/benchmark fixtures; not package-resolution dependencies.",
-      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
-    },
-    {
-      "id": "upstream-20260911-0c0bde402f90",
-      "path": "packages/ggcoder/src/core/auth-providers.ts",
-      "scope": "content",
-      "targets": [
-        "tracked"
-      ],
-      "match": {
-        "regex": "(?:// authenticates\\. Mirrors the CLI's `ggcoder login` provider list \\(ui/login\\.tsx\\))",
-        "flags": "gu"
-      },
-      "expectedOccurrences": {
-        "tracked": 1
       },
       "bucket": "provenance",
       "owner": "Kleio framework maintainers",
@@ -6225,25 +6168,6 @@
       "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
     },
     {
-      "id": "packed-20260911-86cc04835c4c",
-      "path": "packages/ggcoder/assets/skills/evidence-led-ui/references/provenance.md",
-      "scope": "content",
-      "targets": [
-        "packed"
-      ],
-      "match": {
-        "regex": "(?:The package structure was checked against the \\[Agent Skills specification\\]\\(https://agentskills\\.io/specification\\), \\[Anthropic skill-authoring best practices\\]\\(https://platform\\.claude\\.com/docs/en/agents-and-tools/agent-skills/best-practices\\.md\\), \\[OpenAI Skills guidance\\]\\(https://platform\\.openai\\.com/docs/guides/tools-skills\\), and \\[Agent Skills evaluation guidance\\]\\(https://agentskills\\.io/skill-creation/evaluating-skills\\): loader-visible name/description metadata, a concise directly actionable `SKILL\\.md`, references one level from the root, focused on-demand documents, self-contained scripts, explicit validation, and evaluation-driven iteration\\. The installed GG Coder loader reads `name` and `description`; the portable `license` and `compatibility` fields are retained for other Agent Skills clients and safely ignored by GG Coder\\.)",
-        "flags": "gu"
-      },
-      "expectedOccurrences": {
-        "packed": 2
-      },
-      "bucket": "provenance",
-      "owner": "Kleio framework maintainers",
-      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
-      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
-    },
-    {
       "id": "packed-20260911-a512acc160a3",
       "path": "packages/ggcoder/dist/app-sidecar-sessions.js",
       "scope": "content",
@@ -6636,25 +6560,6 @@
       },
       "expectedOccurrences": {
         "packed": 2
-      },
-      "bucket": "provenance",
-      "owner": "Kleio framework maintainers",
-      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
-      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
-    },
-    {
-      "id": "packed-20260911-136fc01a8ebb",
-      "path": "packages/ggcoder/dist/core/auth-providers.js",
-      "scope": "content",
-      "targets": [
-        "packed"
-      ],
-      "match": {
-        "regex": "(?:// authenticates\\. Mirrors the CLI's `ggcoder login` provider list \\(ui/login\\.tsx\\))",
-        "flags": "gu"
-      },
-      "expectedOccurrences": {
-        "packed": 1
       },
       "bucket": "provenance",
       "owner": "Kleio framework maintainers",
@@ -8056,16 +7961,36 @@
         "tracked"
       ],
       "match": {
-        "regex": "(?:expect\\(requestOptions\\.headers\\?\\.\\[\"x-grok-conv-id\"\\]\\)\\.toBe\\(\"ggcoder:session-1\"\\);|promptCacheKey: \"ggcoder:session-1\",)",
+        "regex": "(?:expect\\(requestOptions\\.headers\\?\\.\\[\"x-grok-conv-id\"\\]\\)\\.toBe\\(\"ggcoder:session-1\"\\);|expect\\(lastBody\\(\\)\\.prompt_cache_key\\)\\.toBe\\(\"ggcoder:session-1\"\\);|promptCacheKey: \"ggcoder:session-1\"[,\\s}])",
         "flags": "gu"
       },
       "expectedOccurrences": {
-        "tracked": 3
+        "tracked": 4
       },
       "bucket": "compatibility",
       "owner": "Kleio framework maintainers",
-      "reason": "The xAI conversation-id test uses the retained ggcoder:<session> prompt-cache key (LEGACY_CODER_PROMPT_CACHE_PREFIX), which routes requests and keeps cache continuity. Imported by the 2026-10-29 selective upstream sync (507281c5).",
+      "reason": "The xAI conversation-id and prompt_cache_key tests use the retained ggcoder:<session> prompt-cache key (LEGACY_CODER_PROMPT_CACHE_PREFIX), which routes requests and keeps cache continuity. Imported by the 2026-10-29 selective upstream sync (507281c5); the Responses API assertions came with upstream d493df83 (PR 3b).",
       "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
+    },
+    {
+      "id": "xai-responses-prompt-cache-identity",
+      "path": "packages/gg-ai/src/providers/xai-responses.ts",
+      "scope": "content",
+      "targets": [
+        "tracked"
+      ],
+      "match": {
+        "regex": "(?:prompt_cache_key|x-grok-conv-id)[^\\n]*\"ggcoder\"",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "tracked": 2,
+        "packed": 0
+      },
+      "bucket": "compatibility",
+      "owner": "Provider cache owner",
+      "reason": "Grok's Responses API transport keeps the ggcoder prompt-cache default that openai.ts sent on Chat Completions (x-grok-conv-id), so a session's cached prefix and server routing carry over. Moved with upstream d493df83 (PR 3b).",
+      "removeWhen": "A measured provider cache migration accepts an intentional cold-cache cutover."
     },
     {
       "id": "packed-20261029-988943721d31",
@@ -8075,7 +8000,7 @@
         "packed"
       ],
       "match": {
-        "regex": "(?:            \\\\\"x-grok-conv-id\\\\\": normalizePromptCacheKey\\(options\\.promptCacheKey \\?\\? \\\\\"ggcoder\\\\\"\\),)",
+        "regex": "(?:      \\\\\"x-grok-conv-id\\\\\": normalizePromptCacheKey\\(options\\.promptCacheKey \\?\\? \\\\\"ggcoder\\\\\"\\),)",
         "flags": "gu"
       },
       "expectedOccurrences": {
@@ -8083,7 +8008,7 @@
       },
       "bucket": "compatibility",
       "owner": "Kleio framework maintainers",
-      "reason": "Emitted contexts of upstream text imported by the 2026-10-29 selective sync (507281c5): the x-grok-conv-id header, which falls back to the retained ggcoder prompt-cache key (classified in source by openai-provider-identity). No allowance for new engine dependency names.",
+      "reason": "Emitted contexts of upstream text imported by the 2026-10-29 selective sync (507281c5): the x-grok-conv-id header, which falls back to the retained ggcoder prompt-cache key (classified in source by openai-provider-identity). No allowance for new engine dependency names. The header moved from openai.ts to xai-responses.ts with upstream d493df83 (PR 3b).",
       "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
     },
     {
@@ -8113,7 +8038,7 @@
         "packed"
       ],
       "match": {
-        "regex": "(?:            \\\\\"x-grok-conv-id\\\\\": normalizePromptCacheKey\\(options\\.promptCacheKey \\?\\? \\\\\"ggcoder\\\\\"\\),)",
+        "regex": "(?:      \\\\\"x-grok-conv-id\\\\\": normalizePromptCacheKey\\(options\\.promptCacheKey \\?\\? \\\\\"ggcoder\\\\\"\\),)",
         "flags": "gu"
       },
       "expectedOccurrences": {
@@ -8121,7 +8046,7 @@
       },
       "bucket": "compatibility",
       "owner": "Kleio framework maintainers",
-      "reason": "Emitted contexts of upstream text imported by the 2026-10-29 selective sync (507281c5): the x-grok-conv-id header, which falls back to the retained ggcoder prompt-cache key (classified in source by openai-provider-identity). No allowance for new engine dependency names.",
+      "reason": "Emitted contexts of upstream text imported by the 2026-10-29 selective sync (507281c5): the x-grok-conv-id header, which falls back to the retained ggcoder prompt-cache key (classified in source by openai-provider-identity). No allowance for new engine dependency names. The header moved from openai.ts to xai-responses.ts with upstream d493df83 (PR 3b).",
       "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
     },
     {
@@ -8151,7 +8076,7 @@
         "packed"
       ],
       "match": {
-        "regex": "(?:            \\\\\"x-grok-conv-id\\\\\": normalizePromptCacheKey\\(options\\.promptCacheKey \\?\\? \\\\\"ggcoder\\\\\"\\),|    const mtime = await lastUsedGgcoderSessionMtime\\(dir\\);|    const value = await readFirstFromGgcoderFile\\(file\\.path, extractor\\);|    if \\(await readFirstFromGgcoderFile\\(file\\.path, ggcoderMessageExtractor\\)\\) return file\\.mtime;| \\* Last activity in a ggcoder session store, counting only sessions that| \\* Stream one ggcoder session file, plain or archived, and return the first|async function lastUsedGgcoderSessionMtime\\(dir: string\\): Promise<number \\| null> \\{|async function readFirstFromGgcoderFile\\(|const ggcoderMessageExtractor: LineExtractor = \\(line\\) => \\{)",
+        "regex": "(?:      \\\\\"x-grok-conv-id\\\\\": normalizePromptCacheKey\\(options\\.promptCacheKey \\?\\? \\\\\"ggcoder\\\\\"\\),|    const mtime = await lastUsedGgcoderSessionMtime\\(dir\\);|    const value = await readFirstFromGgcoderFile\\(file\\.path, extractor\\);|    if \\(await readFirstFromGgcoderFile\\(file\\.path, ggcoderMessageExtractor\\)\\) return file\\.mtime;| \\* Last activity in a ggcoder session store, counting only sessions that| \\* Stream one ggcoder session file, plain or archived, and return the first|async function lastUsedGgcoderSessionMtime\\(dir: string\\): Promise<number \\| null> \\{|async function readFirstFromGgcoderFile\\(|const ggcoderMessageExtractor: LineExtractor = \\(line\\) => \\{)",
         "flags": "gu"
       },
       "expectedOccurrences": {
@@ -8159,7 +8084,7 @@
       },
       "bucket": "compatibility",
       "owner": "Kleio framework maintainers",
-      "reason": "Emitted contexts of upstream text imported by the 2026-10-29 selective sync (32dee6ec, 507281c5): identifiers and comments naming the persisted ggcoder session store (the source contract of upstream-20261029-09e156f193f6); the x-grok-conv-id header, which falls back to the retained ggcoder prompt-cache key (classified in source by openai-provider-identity). No allowance for new engine dependency names.",
+      "reason": "Emitted contexts of upstream text imported by the 2026-10-29 selective sync (32dee6ec, 507281c5): identifiers and comments naming the persisted ggcoder session store (the source contract of upstream-20261029-09e156f193f6); the x-grok-conv-id header, which falls back to the retained ggcoder prompt-cache key (classified in source by openai-provider-identity). No allowance for new engine dependency names. The header moved from openai.ts to xai-responses.ts with upstream d493df83 (PR 3b).",
       "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
     },
     {

@@ -136,75 +136,6 @@
       "hash": "fdd372f3bc77217fe4271f4f04448759ba7559eedc0b86bdc21e9b49cc5a711a"
     },
     {
-      "name": "code_nav",
-      "description": "Language server: exact definition, references (callers), file outline, type.",
-      "schema": {
-        "type": "object",
-        "properties": {
-          "op": {
-            "type": "string",
-            "enum": [
-              "definition",
-              "references",
-              "symbols",
-              "hover"
-            ],
-            "description": "symbols = file outline; hover = type/signature"
-          },
-          "file": {
-            "type": "string"
-          },
-          "line": {
-            "description": "Not needed when `symbol` is given",
-            "type": "integer",
-            "minimum": 1
-          },
-          "column": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "symbol": {
-            "description": "Symbol name",
-            "type": "string"
-          },
-          "max_results": {
-            "description": "Default 60",
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "required": [
-          "op",
-          "file"
-        ]
-      },
-      "hash": "4734eceb00cd72a9bbccfa12e306a9b4e7ba6e017ae4f2fffe111c490611b79c"
-    },
-    {
-      "name": "code_search",
-      "description": "Find functions/classes by what they do; returns whole symbols.",
-      "schema": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "max_results": {
-            "description": "Default 8",
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "required": [
-          "query"
-        ]
-      },
-      "hash": "26e7c3d13be1bff57c79530753790d4345a8d0a40de04b8130ed2c9b4fd9a3ed"
-    },
-    {
       "name": "debug",
       "description": "Debug a Node.js program (JS, or TS run by Node's type stripping) with real breakpoints. Use it when a bug depends on runtime state: launch with breakpoints, read variables at the stop, step, and evaluate expressions in the paused frame — instead of adding prints and re-running. launch, continue, step_* and pause return where it stopped, the source around it and the local variables. It pauses on uncaught exceptions by default. One session at a time; launching again stops the previous program. To debug a node:test file, launch it with node_args [\"--test\", \"--test-isolation=none\"]. Test runners that run tests in worker processes (vitest, jest) do not reach breakpoints this way.",
       "schema": {
@@ -449,7 +380,7 @@
     },
     {
       "name": "grep",
-      "description": "Regex search of file contents → path:line:text. Skips .gitignored and binary files.",
+      "description": "Regex search of file contents → matches grouped by file (path, then line:text rows). Skips .gitignored and binary files.",
       "schema": {
         "type": "object",
         "properties": {
@@ -476,7 +407,7 @@
           "pattern"
         ]
       },
-      "hash": "fca2f3ad82151cecaa09d52c16967cb8d190468497beed8a9079e4c90945b351"
+      "hash": "aea09b5cbebb692cd0adc330f8b2a8bbcfc623493875474ee6555fdd276cc6aa"
     },
     {
       "name": "ls",
@@ -818,7 +749,7 @@
             "exclusiveMinimum": 0
           },
           "max_length": {
-            "description": "Default 10000 (2000 for outline)",
+            "description": "Default 10000, max 20000 (2000 for outline)",
             "type": "number"
           },
           "format": {
@@ -830,12 +761,17 @@
               "outline"
             ]
           },
+          "offset": {
+            "description": "Continue a truncated page from this character (single url)",
+            "type": "integer",
+            "minimum": 0
+          },
           "prefer_llms_txt": {
             "type": "boolean"
           }
         }
       },
-      "hash": "523ccaa4ac316bcabf0055c7d35dfdb3cc314b60a8a19b1d719c69c3ad502311"
+      "hash": "28a840e270717ecad54c273639f8fabebd106077fe489b6dc214b47a14c79b8a"
     },
     {
       "name": "write",

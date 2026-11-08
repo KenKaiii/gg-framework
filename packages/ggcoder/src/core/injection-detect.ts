@@ -25,7 +25,7 @@ export interface InjectionHit {
   sample: string;
 }
 
-const SCAN_WINDOW = 200_000;
+const SCAN_WINDOW = 100_000;
 const MAX_BLOBS = 64;
 const MAX_BLOB_CHARS = 16_384;
 
@@ -177,7 +177,7 @@ const RULES: { kind: string; re: RegExp }[] = [
     re: new RegExp(
       String.raw`<\|im_start\|>\s*(?:system|assistant)|<\|(?:start_header_id|eot_id|endoftext|system)\|>` +
         String.raw`|</?(?:tool_result|function_results|function_calls|system-reminder|system_prompt)>` +
-        String.raw`|(?:^|\n)[ \t]*\[(?:system|/?inst)\][ \t]*(?:\n|$|[a-z])`,
+        String.raw`|(?:^|\n)[ \t]*\[(?:system|/?inst)\][ \t]*\r?(?:\n|$|[a-z])`,
     ),
   },
 ];
@@ -238,8 +238,19 @@ export function detectInjection(text: string): InjectionHit | null {
   return scanBlobs(window.replace(INVISIBLE, ""));
 }
 
+/**
+ * Bash commands whose output is third-party text: issue/PR bodies and
+ * comments (`gh`, `glab`) and fetched web pages (`curl`/`wget`).
+ */
+const UNTRUSTED_BASH =
+  /(?:^|[\s;&|(])(?:gh\s+(?:issue\s+(?:view|list)|pr\s+(?:view|diff|list)|api|release\s+view|search)\b|glab\s|curl\s|wget\s)/;
+
 /** Tools whose output is attacker-controllable content from outside the repo. */
-export function isUntrustedTool(name: string): boolean {
+export function isUntrustedTool(name: string, args?: Record<string, unknown>): boolean {
+  if (name === "bash") {
+    const command = args?.command;
+    return typeof command === "string" && UNTRUSTED_BASH.test(command);
+  }
   return name === "web_fetch" || name === "web_search" || name.startsWith("mcp__");
 }
 
@@ -252,10 +263,10 @@ export function injectionWarning(kind: string): string {
  * line on a hit. Content is never altered otherwise.
  */
 export function flagUntrustedToolResult(
-  call: { name: string },
+  call: { name: string; args?: Record<string, unknown> },
   content: ToolResultContent,
 ): ToolResultContent {
-  if (!isUntrustedTool(call.name)) return content;
+  if (!isUntrustedTool(call.name, call.args)) return content;
   if (typeof content === "string") {
     const hit = detectInjection(content);
     return hit ? `${content}\n\n${injectionWarning(hit.kind)}` : content;

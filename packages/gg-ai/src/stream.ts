@@ -4,6 +4,7 @@ import type { StreamResult } from "./utils/event-stream.js";
 import { streamAnthropic } from "./providers/anthropic.js";
 import { streamOpenAI } from "./providers/openai.js";
 import { streamOpenAICodex } from "./providers/openai-codex.js";
+import { streamXaiResponses } from "./providers/xai-responses.js";
 import { streamGemini } from "./providers/gemini.js";
 import { GEMINI_EMBED_BATCH_SIZE, embedGemini } from "./providers/gemini-embeddings.js";
 import {
@@ -19,6 +20,8 @@ import {
 import { sanitizeMessagesForWire } from "./utils/well-formed.js";
 import { markContinuesTurn } from "./utils/turn-continuation.js";
 import { observePreparedContext } from "./utils/context-observation.js";
+import { resolveFastModeModel } from "./fast-mode.js";
+import { localBearerKey } from "./local-api-key.js";
 
 /** OpenAI's documented cap: an embeddings `input` array may hold at most 2048 entries. */
 const OPENAI_EMBED_BATCH_SIZE = 2048;
@@ -53,14 +56,13 @@ const KIMI_CODE_USER_AGENT = `kimi-code-cli/${process.env.KIMI_CODE_VERSION ?? "
 const GROK_CLI_PROXY_HOST = "cli-chat-proxy.grok.com";
 
 /**
- * Client identity the Grok CLI chat proxy requires. It hard-gates on this: with
- * no version it answers "Your Grok CLI version (none) is outdated. Please update
- * to version 0.1.202 or later", so the value must look like a real Grok CLI build
- * (they ship 0.1.x/0.2.x) rather than a placeholder. Overridable via
+ * Client identity the Grok CLI chat proxy requires. It hard-gates the version
+ * with a semver minimum (HTTP 426 "Your Grok CLI version (x) is outdated"
+ * below it); the floor rose to 1.0.13 around 2026-10-01. Overridable via
  * GROK_CLI_VERSION. Keep in sync with gg-core's `grokCliHeaders()`, the
  * login-side source of truth.
  */
-const GROK_CLI_VERSION = process.env.GROK_CLI_VERSION ?? "0.2.101";
+const GROK_CLI_VERSION = process.env.GROK_CLI_VERSION ?? "1.0.67";
 
 // ── Register built-in providers ────────────────────────────
 
@@ -183,13 +185,12 @@ providerRegistry.register("sakana", {
 });
 
 providerRegistry.register("xai", {
-  // xAI's public API (console.x.ai key) is OpenAI-compatible — ride the Chat
-  // Completions transport like Moonshot/DeepSeek. Grok reasoning models take
-  // top-level `reasoning_effort` (low/medium/high), which the shared thinking
-  // path already sends.
+  // Both Grok routes ride xAI's Responses API (see providers/xai-responses.ts):
+  // Chat Completions is deprecated for Grok reasoning models and can't carry
+  // the encrypted reasoning that keeps long tool loops coherent.
   //
   // Subscription OAuth (SuperGrok / X Premium) routes to the Grok CLI chat proxy
-  // instead, which speaks the same Chat Completions wire but gates on Grok-CLI
+  // instead, which serves the same `/v1/responses` surface but gates on Grok-CLI
   // client identity. Inject those headers centrally here — exactly as the Kimi
   // endpoint above — so EVERY stream (agent loop, compaction, title-gen,
   // sub-agents) is accepted rather than depending on each call site to thread
@@ -205,7 +206,7 @@ providerRegistry.register("xai", {
           ...options.defaultHeaders,
         }
       : options.defaultHeaders;
-    return streamOpenAI({ ...options, baseUrl, defaultHeaders });
+    return streamXaiResponses({ ...options, baseUrl, defaultHeaders });
   },
 });
 
@@ -250,20 +251,26 @@ providerRegistry.register("local", {
   // Every supported local server exposes OpenAI-compatible `/v1/embeddings`
   // (the model must be an embedding model). None has an input-type parameter.
   embed: (request) =>
-    embedOpenAICompatible(request, {
-      provider: "local",
-      baseUrl: requireLocalBaseUrl(request.baseUrl),
-      wireModel: localWireModelId(request.model),
-    }),
+    embedOpenAICompatible(
+      { ...request, apiKey: localBearerKey(request.apiKey) },
+      {
+        provider: "local",
+        baseUrl: requireLocalBaseUrl(request.baseUrl),
+        wireModel: localWireModelId(request.model),
+      },
+    ),
   embedBatchSize: LOCAL_EMBED_BATCH_SIZE,
   // llama.cpp (`llama-server --rerank`) and vLLM serve `/v1/rerank`; Ollama and
   // LM Studio don't, and answer with a 404 ProviderError.
   rerank: (request) =>
-    rerankCohereCompatible(request, {
-      provider: "local",
-      baseUrl: requireLocalBaseUrl(request.baseUrl),
-      wireModel: localWireModelId(request.model),
-    }),
+    rerankCohereCompatible(
+      { ...request, apiKey: localBearerKey(request.apiKey) },
+      {
+        provider: "local",
+        baseUrl: requireLocalBaseUrl(request.baseUrl),
+        wireModel: localWireModelId(request.model),
+      },
+    ),
 });
 
 function requireLocalBaseUrl(baseUrl: string | undefined): string {
@@ -301,7 +308,14 @@ function requireLocalBaseUrl(baseUrl: string | undefined): string {
  * const response = await stream({ provider: "openai", model: "gpt-4.1", messages });
  * ```
  */
-export function stream(options: StreamOptions): StreamResult {
+export function stream(requested: StreamOptions): StreamResult {
+  // Fast-mode ids (`claude-opus-5-5-fast`, `gpt-6.1-sol-fast`) are the base
+  // model at a faster speed tier — rewrite here so every call site (agent
+  // loop, compaction, sub-agents) and every model-id check below sees the real id.
+  const fastMode = resolveFastModeModel(requested.provider, requested.model);
+  const options: StreamOptions = fastMode.fast
+    ? { ...requested, model: fastMode.model, speed: "fast" }
+    : requested;
   const entry = providerRegistry.get(options.provider);
   if (!entry) {
     throw new GGAIError(

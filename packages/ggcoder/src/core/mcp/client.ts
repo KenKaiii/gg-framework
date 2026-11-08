@@ -18,6 +18,7 @@ import { KLEIO_PRODUCT_PROFILE } from "@kleio/core";
 import { z } from "zod";
 import http from "node:http";
 import os from "node:os";
+import path from "node:path";
 import { log } from "../logger.js";
 import type { MCPServerConfig } from "./types.js";
 import {
@@ -29,7 +30,10 @@ import { McpOAuthStore } from "./oauth-store.js";
 import { isLocalhost, alternateLoopback, isNetworkError } from "./loopback.js";
 import { toToolResult } from "./content.js";
 import { resolveStdioCommand } from "./resolve-stdio.js";
+import { checkMcpLaunch } from "../package-threats.js";
+import { launchCooldownEnv } from "../package-cooldown.js";
 import { McpCatalogCache, type ProtocolEra } from "./catalog-cache.js";
+import { McpToolGuard, type HiddenMcpTool } from "./tool-guard.js";
 import {
   isShareableServer,
   sharedMcpPool,
@@ -43,6 +47,7 @@ export interface MCPClientManagerOptions {
   /** Injectable environment used to resolve compatibility overrides. */
   environment?: Readonly<Record<string, string | undefined>>;
   catalogCache?: McpCatalogCache;
+  toolGuard?: McpToolGuard;
   modernProtocol?: boolean;
   onElicit?: MCPElicitHandler;
   sharedPool?: SharedMcpPool;
@@ -115,6 +120,8 @@ export interface MCPConnectResult {
   toolCount: number;
   tools: AgentTool[];
   error?: string;
+  /** Tools the gg-safe guard withheld from the model, with one-line reasons. */
+  hidden?: HiddenMcpTool[];
   /** True when the server returned 401/Unauthorized and an OAuth login is
    *  required before it can connect. The UI surfaces this as "requires login". */
   requiresAuth?: boolean;
@@ -194,6 +201,10 @@ export class MCPClientManager {
   private sharedHandles = new Map<string, SharedServerHandle>();
 
   private readonly catalogCache: McpCatalogCache;
+  /** Scans + pins each server's tool descriptions before exposure (gg-safe S2). */
+  private readonly toolGuard: McpToolGuard;
+  /** Tools hidden by the guard on the latest connect, per server. */
+  private readonly hiddenTools = new Map<string, HiddenMcpTool[]>();
   /**
    * Opt into the 2026-07-28 revision. Off by default: `mode: "auto"` probes with
    * `server/discover` before falling back to `initialize`, and a legacy stdio
@@ -240,6 +251,11 @@ export class MCPClientManager {
   constructor(opts: MCPClientManagerOptions = {}) {
     this.clientName = resolveMcpClientName(opts.clientName, opts.environment ?? process.env);
     this.catalogCache = opts.catalogCache ?? new McpCatalogCache();
+    // Pins sit beside the catalog cache, so a test that isolates the cache
+    // isolates the pins too (and the real app folder is never touched).
+    this.toolGuard =
+      opts.toolGuard ??
+      new McpToolGuard(path.join(path.dirname(this.catalogCache.path), "mcp-tool-pins.json"));
     this.modernProtocol = opts.modernProtocol ?? false;
     this.onElicit = opts.onElicit;
     this.pool = opts.sharedPool ?? sharedMcpPool;
@@ -452,6 +468,7 @@ export class MCPClientManager {
       throw new Error(handle.result.error ?? "connection failed");
     }
     this.sharedHandles.set(config.name, handle);
+    this.hiddenTools.set(config.name, handle.result.hidden ?? []);
 
     // Wrap each pooled tool so a call from THIS session is attributable while
     // it runs. The pool needs that to answer "which window asked?" when the
@@ -545,7 +562,14 @@ export class MCPClientManager {
     const results: MCPConnectResult[] = settled.map((result, i) => {
       const name = enabled[i].name;
       if (result.status === "fulfilled") {
-        return { name, ok: true, toolCount: result.value.length, tools: result.value };
+        const hidden = this.hiddenTools.get(name) ?? [];
+        return {
+          name,
+          ok: true,
+          toolCount: result.value.length,
+          tools: result.value,
+          ...(hidden.length > 0 ? { hidden } : {}),
+        };
       }
       const requiresAuth = isUnauthorized(result.reason);
       const error = requiresAuth
@@ -766,11 +790,19 @@ export class MCPClientManager {
       // wrapper whose only job is to resolve+launch the real server, doubling
       // memory per connection. Non-resolvable / non-npx commands pass through
       // unchanged. Mirrors the LSP `process.execPath`+bin pattern.
+      // Same package guard as bash installs: a flagged `npx`/`uvx` package is
+      // never started (P7). Throws like any other connect failure.
+      const packageBlocked = await checkMcpLaunch(config.command, config.args ?? []);
+      if (packageBlocked) {
+        log("WARN", "mcp", `not starting "${config.name}": ${packageBlocked}`);
+        throw new Error(`MCP server "${config.name}" not started. ${packageBlocked}`);
+      }
+      const cooldownEnv = await launchCooldownEnv(config.command, config.args ?? [], os.homedir());
       const resolved = resolveStdioCommand(config.command, config.args);
       transport = new StdioClientTransport({
         command: resolved.command,
         args: resolved.args,
-        env: { ...process.env, ...config.env } as Record<string, string>,
+        env: { ...process.env, ...cooldownEnv, ...config.env } as Record<string, string>,
         cwd: os.homedir(),
         stderr: "pipe",
       });
@@ -834,7 +866,16 @@ export class MCPClientManager {
       this.onServerClosed?.(config.name);
     };
 
-    const { tools } = await client.listTools(undefined, { timeout });
+    const listed = await client.listTools(undefined, { timeout });
+    // gg-safe S2: hide poisoned / shadowing / rug-pulled tools before anything
+    // (catalog cache, deferred catalog, model) sees them.
+    const guarded = await this.toolGuard.filter(
+      config.name,
+      client.getServerVersion()?.version,
+      listed.tools,
+    );
+    const tools = guarded.tools;
+    this.hiddenTools.set(config.name, guarded.hidden);
 
     // Start the idle countdown (a no-op for HTTP / keepAlive / a call in
     // flight). A probe connection is closed right away, so it never idles.

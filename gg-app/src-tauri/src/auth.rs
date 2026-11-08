@@ -79,11 +79,17 @@ pub(crate) struct ProviderMeta {
 
 /// The provider catalog (single source of truth for app_auth_status +
 /// app_auth_apikey). Order is the display order in the login hub.
+/// Providers left out of the app's provider list (and so its login and
+/// settings screens). Their rows stay below so logout and stored keys still
+/// resolve. Mirrors gg-core's `HIDDEN_PROVIDERS` (hidden-providers.ts) — keep
+/// in sync. Gemini: Google no longer serves personal accounts over sign-in.
+pub(crate) const HIDDEN_PROVIDERS: &[&str] = &["gemini"];
+
 pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     ProviderMeta {
         value: "anthropic",
         label: "Anthropic",
-        description: "Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5",
+        description: "Claude Fable 5.1, Opus 5.5, Opus 5.5 Fast, Sonnet 5.5, Haiku 5.5",
         methods: &["oauth"],
         oauth_key: None,
         oauth_label: None,
@@ -95,7 +101,8 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     ProviderMeta {
         value: "openai",
         label: "OpenAI",
-        description: "GPT-6 Astra, GPT-6.1 Sol, GPT-6 Luna",
+        description:
+            "GPT-6 Astra, GPT-6 Astra Fast, GPT-6.1 Sol, GPT-6.1 Sol Fast, GPT-6 Luna, GPT-6 Luna Fast",
         methods: &["oauth"],
         oauth_key: None,
         oauth_label: None,
@@ -108,14 +115,36 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
         value: "gemini",
         label: "Gemini",
         description:
-            "Gemini 3.8 Flash, 3.5 Flash Lite, 3.7 Flash, 3.1 Flash Lite, 3.5 Flash, 3.1 Pro (Preview)",
-        methods: &["oauth"],
+            "Gemini 3.8 Flash, 3.5 Flash Lite, 3.1 Flash Lite, 3.5 Flash, 3.1 Pro (Preview)",
+        // Google sign-in (Code Assist, stored under `gemini`) or an AI Studio
+        // key stored under its own `gemini-api` key — mirrors gg-core's
+        // AUTH_PROVIDERS. Not a dual-auth provider: the API key is used first.
+        methods: &["oauth", "apikey"],
         oauth_key: None,
         oauth_label: None,
-        method_details: &[],
-        api_key_label: None,
-        api_key_base_url: None,
-        api_key_variants: &[],
+        method_details: &[
+            MethodDetail {
+                method: "oauth",
+                label: "Sign in with Google",
+                billing: "Gemini Code Assist Standard or Enterprise licence.",
+                when: "Personal Google accounts are no longer served here (Google ended it on June 18, 2026).",
+                requires: None,
+            },
+            MethodDetail {
+                method: "apikey",
+                label: "Gemini API key",
+                billing: "Pay-per-token from a Google AI Studio key.",
+                when: "Used first whenever it is set.",
+                requires: None,
+            },
+        ],
+        api_key_label: Some("Gemini"),
+        api_key_base_url: Some("https://generativelanguage.googleapis.com/v1beta"),
+        api_key_variants: &[ApiKeyVariant {
+            key: "gemini-api",
+            label: "Google AI Studio",
+            base_url: Some("https://generativelanguage.googleapis.com/v1beta"),
+        }],
     },
     ProviderMeta {
         value: "xai",
@@ -186,7 +215,7 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     ProviderMeta {
         value: "minimax",
         label: "MiniMax",
-        description: "MiniMax M3",
+        description: "MiniMax M3.1 Flash, M3",
         methods: &["apikey"],
         oauth_key: None,
         oauth_label: None,
@@ -308,10 +337,21 @@ pub(crate) async fn app_auth_status(webview: WebviewWindow) -> serde_json::Value
             serde_json::json!({ "providers": [], "error": e })
         });
     }
-    // Parse the auth file into a JSON object; missing/invalid → empty (no creds).
-    let creds = std::fs::read_to_string(auth_file_path())
+    let creds = read_auth_file();
+    let mut status = auth_status_snapshot(creds.as_ref());
+    status["localConnected"] = serde_json::json!(local_model_source(creds.as_ref()).await);
+    status
+}
+
+/// Parse the auth file into a JSON object; missing/invalid → None (no creds).
+fn read_auth_file() -> Option<serde_json::Value> {
+    std::fs::read_to_string(auth_file_path())
         .ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+}
+
+/// Provider tiles from the auth file; `localConnected` is added by the command.
+pub(crate) fn auth_status_snapshot(creds: Option<&serde_json::Value>) -> serde_json::Value {
     let has_key = |key: &str| -> bool {
         creds
             .as_ref()
@@ -334,7 +374,13 @@ pub(crate) async fn app_auth_status(webview: WebviewWindow) -> serde_json::Value
         if !p.methods.contains(&"apikey") {
             return false;
         }
-        has_key(p.value) || p.api_key_variants.iter().any(|v| has_key(v.key))
+        // With variants, the variant keys are the API-key keys: the provider id
+        // may hold something else (Gemini keeps its OAuth login there).
+        if p.api_key_variants.is_empty() {
+            has_key(p.value)
+        } else {
+            p.api_key_variants.iter().any(|v| has_key(v.key))
+        }
     };
     // OAuth credential present. Dual-auth providers keep it under a distinct key;
     // OAuth-only providers store it under the provider id itself.
@@ -352,6 +398,7 @@ pub(crate) async fn app_auth_status(webview: WebviewWindow) -> serde_json::Value
     let now_ms = current_unix_millis();
     let list: Vec<serde_json::Value> = AUTH_PROVIDERS
         .iter()
+        .filter(|p| !HIDDEN_PROVIDERS.contains(&p.value))
         .map(|p| {
             let oauth = has_oauth(p);
             let api_key = has_api_key(p);
@@ -376,7 +423,11 @@ pub(crate) async fn app_auth_status(webview: WebviewWindow) -> serde_json::Value
                 }
                 _ => None,
             };
-            let active_method = if oauth {
+            // Gemini resolves its API key first (gg-core model registry
+            // authStorageKeys); every other provider prefers OAuth.
+            let active_method = if p.value == "gemini" && api_key {
+                Some("apikey")
+            } else if oauth {
                 if sidelined_until.is_some() {
                     Some("apikey")
                 } else {
@@ -422,8 +473,13 @@ pub(crate) async fn app_auth_status(webview: WebviewWindow) -> serde_json::Value
                 obj["methodGuidance"] = serde_json::json!(guidance);
             }
             // Only a provider with two methods has a priority to explain. Keep the
-            // wording in sync with gg-core's DUAL_AUTH_PROVIDERS resolution order.
-            if let (Some(oauth_label), Some(key_label)) = (p.oauth_label, p.api_key_label) {
+            // wording in sync with gg-core's DUAL_AUTH_PROVIDERS resolution order
+            // (and authPriorityNote, which words Gemini's key-first order).
+            if p.value == "gemini" {
+                obj["priorityNote"] = serde_json::json!(
+                    "Uses the Gemini API key first when one is set; otherwise the Google sign-in."
+                );
+            } else if let (Some(oauth_label), Some(key_label)) = (p.oauth_label, p.api_key_label) {
                 obj["priorityNote"] = serde_json::json!(format!(
                     "Uses {oauth_label} first; the {key_label} API key takes over when it runs out, then switches back."
                 ));
@@ -453,6 +509,70 @@ pub(crate) async fn app_auth_status(webview: WebviewWindow) -> serde_json::Value
         .collect();
 
     serde_json::json!({ "providers": list })
+}
+
+/// Local endpoints in auth.json, split the way the sidecar's `localConnected`
+/// splits them: user-added ones (`local:custom-<host>`, see `endpointIdFor`)
+/// count as configured; an auto-detected one (Ollama) keeps its credential after
+/// the server stops, so it's returned by base URL to be checked live.
+fn local_endpoints(creds: Option<&serde_json::Value>) -> (bool, Vec<String>) {
+    let mut custom = false;
+    let mut detected = Vec::new();
+    for (key, value) in creds.and_then(|v| v.as_object()).into_iter().flatten() {
+        let Some(id) = key.strip_prefix("local:") else {
+            continue;
+        };
+        if value.is_null() {
+            continue;
+        }
+        if id.starts_with("custom-") {
+            custom = true;
+        } else if let Some(url) = value.get("baseUrl").and_then(|u| u.as_str()) {
+            detected.push(url.to_string());
+        }
+    }
+    (custom, detected)
+}
+
+/// Whether a local endpoint can serve a model right now.
+async fn local_model_source(creds: Option<&serde_json::Value>) -> bool {
+    let (custom, detected) = local_endpoints(creds);
+    if custom {
+        return true;
+    }
+    for base_url in detected {
+        if serves_a_model(&base_url).await {
+            return true;
+        }
+    }
+    false
+}
+
+/// GET `<base>/models` and check it lists something. Its own client: the shared
+/// one carries the daemon token, which must never reach another local server.
+async fn serves_a_model(base_url: &str) -> bool {
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(800))
+        .build()
+    else {
+        return false;
+    };
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let Ok(res) = client.get(&url).send().await else {
+        return false;
+    };
+    if !res.status().is_success() {
+        return false;
+    }
+    res.json::<serde_json::Value>()
+        .await
+        .ok()
+        .and_then(|v| {
+            v.get("data")
+                .and_then(|d| d.as_array())
+                .map(|a| !a.is_empty())
+        })
+        .unwrap_or(false)
 }
 
 // ── Native API-key auth writes (~/.gg/auth.json) ──────────────────────────
@@ -539,8 +659,15 @@ pub(crate) fn apply_logout(
         }
         if method != Some("oauth") {
             // Covers single-credential providers and a dual provider's API key,
-            // plus every extra variant key (currently only Xiaomi's).
-            map.remove(provider);
+            // plus every variant key (Xiaomi's two, Gemini's one). A provider
+            // that also signs in with OAuth under its own id (Gemini) keeps
+            // that key when only the API key is removed.
+            let oauth_under_provider_id = meta
+                .map(|m| m.methods.contains(&"oauth") && m.oauth_key.is_none())
+                .unwrap_or(false);
+            if !(oauth_under_provider_id && method == Some("apikey")) {
+                map.remove(provider);
+            }
             if let Some(meta) = meta {
                 for v in meta.api_key_variants {
                     map.remove(v.key);
@@ -692,6 +819,49 @@ mod tests {
                 "openrouter",
             ]
         );
+    }
+
+    #[test]
+    fn auth_status_omits_hidden_providers() {
+        let status = auth_status_snapshot(None);
+        let values: Vec<&str> = status["providers"]
+            .as_array()
+            .expect("providers array")
+            .iter()
+            .filter_map(|p| p["value"].as_str())
+            .collect();
+        assert!(values.contains(&"anthropic"));
+        for hidden in HIDDEN_PROVIDERS {
+            assert!(!values.contains(hidden), "{hidden} is still listed");
+        }
+    }
+
+    #[test]
+    fn local_endpoints_splits_user_added_from_auto_detected() {
+        let creds = serde_json::json!({
+            "anthropic": { "accessToken": "t" },
+            "local:ollama": { "accessToken": "local", "baseUrl": "http://127.0.0.1:11434/v1" },
+            "local:gone": null,
+        });
+        assert_eq!(
+            local_endpoints(Some(&creds)),
+            (false, vec!["http://127.0.0.1:11434/v1".to_string()])
+        );
+        let custom = serde_json::json!({ "local:custom-gw": { "accessToken": "k" } });
+        assert_eq!(local_endpoints(Some(&custom)), (true, vec![]));
+        assert_eq!(local_endpoints(None), (false, vec![]));
+    }
+
+    #[test]
+    fn a_stopped_ollama_is_not_a_model_source() {
+        // Port 9 (discard) on loopback is closed on CI and dev machines.
+        install_rustls_provider();
+        let creds = serde_json::json!({
+            "local:ollama": { "accessToken": "local", "baseUrl": "http://127.0.0.1:9/v1" },
+        });
+        assert!(!tauri::async_runtime::block_on(local_model_source(Some(
+            &creds
+        ))));
     }
 
     #[test]
@@ -858,6 +1028,38 @@ mod tests {
         let out = apply_logout(Some(existing), "anthropic", Some("oauth")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert!(v.get("anthropic").is_none());
+    }
+
+    #[test]
+    fn apply_logout_gemini_methods_are_separate() {
+        // Gemini's Google sign-in lives under `gemini`, its AI Studio key under
+        // `gemini-api`: removing one must keep the other.
+        let existing = r#"{ "gemini": { "accessToken": "o", "refreshToken": "r", "expiresAt": 1 }, "gemini-api": { "accessToken": "k", "refreshToken": "", "expiresAt": 1 } }"#;
+        let key_only = apply_logout(Some(existing), "gemini", Some("apikey")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&key_only).unwrap();
+        assert!(v.get("gemini").is_some());
+        assert!(v.get("gemini-api").is_none());
+
+        let oauth_only = apply_logout(Some(existing), "gemini", Some("oauth")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&oauth_only).unwrap();
+        assert!(v.get("gemini").is_none());
+        assert!(v.get("gemini-api").is_some());
+
+        let both = apply_logout(Some(existing), "gemini", None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&both).unwrap();
+        assert!(v.get("gemini").is_none());
+        assert!(v.get("gemini-api").is_none());
+    }
+
+    #[test]
+    fn resolve_apikey_target_gemini_never_overwrites_the_oauth_login() {
+        assert_eq!(
+            resolve_apikey_target("gemini", None),
+            Some((
+                "gemini-api".to_string(),
+                Some("https://generativelanguage.googleapis.com/v1beta")
+            )),
+        );
     }
 
     #[test]

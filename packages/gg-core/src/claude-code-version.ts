@@ -67,6 +67,27 @@ async function fetchLatest(): Promise<string | null> {
   }
 }
 
+let refreshing: Promise<void> | null = null;
+
+function refreshInBackground(): Promise<void> {
+  refreshing ??= (async () => {
+    try {
+      const fetched = await fetchLatest();
+      if (!fetched) return;
+      await writeDiskCache({ version: fetched, fetchedAt: Date.now() });
+      memoryCache = { version: fetched, expiresAt: Date.now() + CACHE_TTL_MS };
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
+/** Test hook: the pending background refresh, if any. */
+export function pendingClaudeCodeVersionRefresh(): Promise<void> | null {
+  return refreshing;
+}
+
 /**
  * Resolve the current Claude Code release version for spoofing the claude-cli
  * User-Agent on OAuth and inference requests. Cached in-memory for the process
@@ -86,14 +107,22 @@ export async function getClaudeCodeVersion(): Promise<string> {
       memoryCache = { version: disk.version, expiresAt: Date.now() + CACHE_TTL_MS };
       return disk.version;
     }
+    if (disk) {
+      // Stale-while-revalidate: a day-old version is still accepted by the
+      // OAuth edge, so serve it now and refresh in the background instead of
+      // blocking the first request of the day on npm (up to FETCH_TIMEOUT_MS).
+      memoryCache = { version: disk.version, expiresAt: Date.now() + 5 * 60 * 1000 };
+      void refreshInBackground();
+      return disk.version;
+    }
     const fetched = await fetchLatest();
     if (fetched) {
       await writeDiskCache({ version: fetched, fetchedAt: Date.now() });
       memoryCache = { version: fetched, expiresAt: Date.now() + CACHE_TTL_MS };
       return fetched;
     }
-    // npm unreachable — prefer stale disk cache over hardcoded fallback.
-    const resolved = disk?.version ?? FALLBACK_VERSION;
+    // npm unreachable and no disk cache (a stale one was served above).
+    const resolved = FALLBACK_VERSION;
     // Short TTL so we retry the npm fetch soon, but don't hammer it.
     memoryCache = { version: resolved, expiresAt: Date.now() + 5 * 60 * 1000 };
     log(

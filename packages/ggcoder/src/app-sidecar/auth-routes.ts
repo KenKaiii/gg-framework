@@ -6,7 +6,7 @@ import { loginOpenAI } from "../core/oauth/openai.js";
 import { loginGemini } from "../core/oauth/gemini.js";
 import { loginKimi } from "../core/oauth/kimi.js";
 import { loginXai } from "../core/oauth/xai.js";
-import { dualAuthProvider, XIAOMI_CREDITS_KEY } from "@kleio/core";
+import { dualAuthProvider, GEMINI_API_KEY, XIAOMI_CREDITS_KEY } from "@kleio/core";
 import type { ElicitResult } from "@modelcontextprotocol/client";
 import type { AskUserResult } from "../core/ask-user.js";
 import type { SessionRouteContext } from "./route-context.js";
@@ -280,8 +280,11 @@ export function handleAuthRoutes(
       }
       if (logoutMethod !== "oauth") {
         // Non-dual providers store their only credential under the provider id,
-        // so this covers both them and a dual provider's API key.
-        await ctx.auth.clearCredentials(provider);
+        // so this covers both them and a dual provider's API key — except
+        // Gemini, whose provider id holds the OAuth login and whose API key
+        // lives under its own key.
+        if (provider === "gemini") await ctx.auth.clearCredentials(GEMINI_API_KEY);
+        else await ctx.auth.clearCredentials(provider);
         // Xiaomi's API Credits credential lives under a distinct key — clear it
         // too so "disconnect" fully removes both the Token Plan and Credits keys.
         if (provider === "xiaomi") await ctx.auth.clearCredentials(XIAOMI_CREDITS_KEY);

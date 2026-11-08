@@ -44,6 +44,22 @@ export function buildNotificationSteeringText(lines: readonly string[]): string 
 }
 
 /**
+ * The same framing for a run started BY the notification, after the agent had
+ * already finished its turn. "Continue your current task" alone would leave it
+ * nothing to do, so this says what is expected. Keeps NOTIFICATION_PREFIX first:
+ * transcript restore recognises status updates by that prefix.
+ */
+export function buildIdleWakeNotificationText(lines: readonly string[]): string {
+  return (
+    NOTIFICATION_PREFIX +
+    "You had already finished your turn; this arrived afterwards. If it shows a " +
+    "problem in work you did or started, act on it (fix it, or tell the user plainly " +
+    "what failed). If it needs nothing, say so in one short line.\n\n" +
+    lines.map((line) => `- ${line}`).join("\n")
+  );
+}
+
+/**
  * Wrap a steering `UserContent` (string or multimodal parts) with the framing
  * prefix. Media blocks pass through untouched; the prefix is prepended to the
  * leading text so attachments still ride the same native-block path.

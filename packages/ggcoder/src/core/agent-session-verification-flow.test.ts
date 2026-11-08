@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Message } from "@kleio/ai";
 import { useFakeHome } from "../test-support/fake-home.js";
+import { removeWhenReleased } from "./lsp/test-support.js";
 import type { AgentEvent } from "@kleio/agent";
 import type { AgentSession } from "./agent-session.js";
 import type { ProcessManager } from "./process-manager.js";
@@ -61,8 +62,9 @@ afterEach(async () => {
   await session?.dispose();
   session = undefined;
   restoreHome?.();
-  await fs.rm(tmpHome, { recursive: true, force: true });
-  await fs.rm(tmpProject, { recursive: true, force: true });
+  // Windows refuses to delete a folder a still-exiting npm/node child holds.
+  await removeWhenReleased(tmpHome);
+  await removeWhenReleased(tmpProject);
 });
 
 /** Records the client-visible event stream in emission order. */

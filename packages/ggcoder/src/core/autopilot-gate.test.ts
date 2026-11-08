@@ -265,10 +265,9 @@ describe("isMechanicalOnlyTurn", () => {
       { name: "web_fetch", args: { url: "https://example.com" } },
       { name: "web_search", args: { query: "x" } },
       { name: "source_path", args: { package: "zod" } },
-      { name: "code_search", args: { query: "x" } },
       { name: "task_output", args: { id: "abc" } },
       { name: "screenshot", args: { url: "http://localhost:3000" } },
-      { name: "skill", args: { skill: "find-skills" } },
+      { name: "skill", args: { skill: "example-skill" } },
     ];
     expect(isMechanicalOnlyTurn(calls)).toBe(true);
   });

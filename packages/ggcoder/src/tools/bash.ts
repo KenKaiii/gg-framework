@@ -2,19 +2,29 @@ import { z } from "zod";
 import type { AgentTool } from "@kleio/agent";
 import type { ProcessManager } from "../core/process-manager.js";
 import { killProcessTree } from "../utils/process.js";
-import { truncateTail, MAX_BYTES, describeCompressed } from "./truncate.js";
+import { truncateTail, MAX_LINES, describeCompressed } from "./truncate.js";
 import { compressToolOutput } from "./compress.js";
+import { compactRoutineOutput } from "./routine-output.js";
 import { writeOverflow } from "./overflow.js";
 import { localOperations, type ToolOperations } from "./operations.js";
 import { getSafeToolEnv } from "./safe-env.js";
 import { resolveShell, type ResolveShellOpts } from "../core/shell.js";
 import { PersistentShell } from "../core/persistent-shell.js";
 import { isReadOnlyCommand, sleepOnlySeconds } from "./read-only-bash.js";
+import { backgroundWatchWarnings } from "./background-watch-lint.js";
 import { isPlanModeActive, planModeRestriction } from "../core/runtime-mode.js";
 import { isCatastrophicCommand } from "../core/workspace-guard.js";
 import { checkDestructiveGit } from "../core/destructive-git-guard.js";
 import { shellThreatBlockMessage } from "../core/shell-threats.js";
-import { checkPackageInstall } from "../core/package-threats.js";
+import { checkPackageInstall, packageBlockMessage } from "../core/package-threats.js";
+import {
+  bunCooldownCommand,
+  cooldownFailureHint,
+  detectMentionedVersions,
+  mayInstall,
+  packageCooldownEnv,
+  scopeCooldown,
+} from "../core/package-cooldown.js";
 import { classifyVerificationCommand } from "../core/verification-evidence.js";
 import { checkCommandPolicy, type GetNetworkPolicy } from "../core/network-guard.js";
 import {
@@ -28,8 +38,11 @@ import { annotateSandboxDenial } from "../core/sandbox-feedback.js";
 import { collectVerificationReview } from "./verification-review.js";
 
 /** Tool env, plus the tweaks that only make sense inside the OS sandbox. */
-function sandboxAwareEnv(sandboxed: boolean): Record<string, string> {
-  const env = getSafeToolEnv();
+function sandboxAwareEnv(
+  sandboxed: boolean,
+  cooldown: Record<string, string> = {},
+): Record<string, string> {
+  const env = { ...getSafeToolEnv(), ...cooldown };
   return sandboxed ? { ...env, ...SANDBOX_ENV_PATCH } : env;
 }
 
@@ -84,6 +97,14 @@ function killLeftoverGroup(pid: number): boolean {
     return false;
   }
 }
+/**
+ * Bash output over this many bytes is offloaded and shown compressed — Claude
+ * Code's inline limit (BASH_MAX_OUTPUT_LENGTH default 30,000). At the old 50KB,
+ * `cat` of whole source files came back verbatim and stayed in every later
+ * request (agent-race, 2026-11-04).
+ */
+export const BASH_INLINE_MAX_BYTES = 30_000;
+
 /** A sleep at least this long is a guess at when something finishes, not a
  *  settle pause before poking a service that is already up. */
 const GUESSED_WAIT_SECONDS = 10;
@@ -108,10 +129,12 @@ const GUESSED_WAIT_SECONDS = 10;
  * paired trials, 2026-10-18).
  */
 export async function renderBashOutput(rawOutput: string): Promise<string> {
-  const result = truncateTail(rawOutput);
-  if (!result.truncated) return result.content;
+  const result = truncateTail(rawOutput, MAX_LINES, BASH_INLINE_MAX_BYTES);
+  // Under the limit: drop routine boilerplate (git log/status labels, ls
+  // owner columns, green per-file test lines) — see routine-output.ts.
+  if (!result.truncated) return compactRoutineOutput(result.content);
   const overflowPath =
-    Buffer.byteLength(rawOutput, "utf-8") > MAX_BYTES
+    Buffer.byteLength(rawOutput, "utf-8") > BASH_INLINE_MAX_BYTES
       ? await writeOverflow(rawOutput, "bash").catch(() => null)
       : null;
   const overflowNotice = overflowPath
@@ -150,12 +173,12 @@ export function createBashTool(
   getSandboxPolicy?: () => SandboxPolicy,
   /** Default foreground budget; injectable so tests need not wait 120s. */
   defaultTimeoutMs: number = DEFAULT_TIMEOUT,
+  /** Package release-age cooldown in days; 0 disables. Default 2. */
+  getPackageCooldownDays: () => number = () => 2,
 ): AgentTool<typeof BashParams> {
   // Lazily created on the first persist:true call; one session per tool
   // instance (i.e. per agent session), killed when the process exits.
   let sessionShell: PersistentShell | null = null;
-  /** Install commands the model re-ran after a typosquat warning. */
-  const confirmedInstalls = new Set<string>();
   let sessionSandboxKey: string | null = null;
   let sessionSandboxed = false;
   // Shell selection doesn't depend on the command, so resolve ONCE at tool
@@ -255,21 +278,37 @@ export function createBashTool(
       if (threatBlocked) {
         return `Error: ${threatBlocked}`;
       }
-      // Package-install guard: known malware (OSV, fail-open) is refused;
-      // a likely typosquat is stopped once and allowed on an identical retry.
-      const packageThreats = await checkPackageInstall(command, { signal: context.signal });
-      const malware = packageThreats.find((threat) => threat.severity === "block");
-      if (malware) {
-        return `Error: Blocked by package safety check (${malware.rule}): ${malware.detail}`;
+      // Package-install guard: known malware (local feed + version-aware OSV),
+      // lockfile contents, provenance downgrade, release age and precise
+      // typosquats. A catch is a block; network only for installs, fail-open.
+      const cooldownDays = getPackageCooldownDays();
+      // Version detection starts now, in parallel with the check (shared, once per process).
+      const install = mayInstall(command);
+      const versionsReady = install
+        ? detectMentionedVersions(command, cwd)
+        : Promise.resolve({} as Awaited<ReturnType<typeof detectMentionedVersions>>);
+      const packageThreats = install
+        ? await checkPackageInstall(command, { signal: context.signal, cwd, cooldownDays })
+        : [];
+      const packageBlocked = packageBlockMessage(packageThreats);
+      if (packageBlocked) {
+        // `details` carries the refused packages to the session, which records
+        // them in the project's "don't install" list (core/blocked-packages-file.ts).
+        const blocked = packageThreats.flatMap((t) => t.blocked ?? []);
+        return {
+          content: `Error: ${packageBlocked}`,
+          ...(blocked.length > 0 ? { details: { safetyBlock: { packages: blocked } } } : {}),
+        };
       }
-      const typosquats = packageThreats.filter((threat) => threat.severity === "warn");
-      if (typosquats.length > 0 && !confirmedInstalls.has(command)) {
-        confirmedInstalls.add(command);
-        return (
-          `Error: not run — ${typosquats.map((threat) => threat.detail).join("; ")}. ` +
-          `If this really is the package you want, run the exact same command again.`
-        );
-      }
+      // Native release-age cooldown for every install (transitive deps too).
+      const versions = await versionsReady;
+      const cooldownEnv = install
+        ? packageCooldownEnv(command, { days: cooldownDays, now: Date.now(), cwd, versions })
+        : {};
+      // bun has no env setting: the cooldown goes in as a flag.
+      const runCommand = install
+        ? bunCooldownCommand(command, cooldownDays, versions.bun ?? null)
+        : command;
       // Network allowlist — defence in depth only. Recognises the common egress
       // command shapes; an unrecognised command is never blocked (see
       // core/network-guard.ts for why this is not a sandbox).
@@ -299,7 +338,12 @@ export function createBashTool(
             });
             sessionShell = new PersistentShell(
               cwd,
-              sandboxAwareEnv(launch.sandboxed),
+              // Env is fixed at shell start: only pip's (always safe) here;
+              // the others are scoped per command below.
+              sandboxAwareEnv(
+                launch.sandboxed,
+                cooldownDays > 0 ? { PIP_UPLOADED_PRIOR_TO: `P${cooldownDays}D` } : {},
+              ),
               MAX_OUTPUT_BYTES,
               shellOpts,
               launch,
@@ -312,14 +356,16 @@ export function createBashTool(
         }
         if (context.signal.aborted) return CANCELLED_BEFORE_START;
         const res = await sessionShell.run(
-          command,
+          scopeCooldown(runCommand, cooldownEnv),
           timeoutMs ?? DEFAULT_TIMEOUT,
           context.signal,
           context.onUpdate
             ? (text) => context.onUpdate?.({ type: "bash_progress", output: text, totalBytes: 0 })
             : undefined,
         );
-        const output = await renderBashOutput(res.output);
+        const hint =
+          install && res.exitCode !== 0 ? cooldownFailureHint(res.output, cooldownDays) : null;
+        const output = (hint ? `[${hint}]\n` : "") + (await renderBashOutput(res.output));
         const exitCode =
           res.exitCode === "TIMEOUT"
             ? `TIMEOUT (${timeoutMs ?? DEFAULT_TIMEOUT}ms)` +
@@ -336,12 +382,13 @@ export function createBashTool(
       if (run_in_background) {
         let launch: SandboxLaunch;
         try {
-          launch = await prepareLaunch(resolveShell(command, shellOpts));
+          launch = await prepareLaunch(resolveShell(runCommand, shellOpts));
         } catch (error) {
           return `Error: OS sandbox unavailable; command was not run: ${(error as Error).message}`;
         }
         if (context.signal.aborted) return CANCELLED_BEFORE_START;
-        const result = await processManager.start(command, cwd, launch, wakeRules);
+        const result = await processManager.start(runCommand, cwd, launch, wakeRules, cooldownEnv);
+        const watchWarnings = backgroundWatchWarnings(command);
         return (
           `Background process started.\n` +
           `ID: ${result.id}\n` +
@@ -360,7 +407,8 @@ export function createBashTool(
               : `Wake conditions were NOT armed: this session has no notification path, so nothing will wake you automatically. Poll task_output periodically instead.\n`
             : "") +
           `Use task_output with id="${result.id}" to read output, ` +
-          `task_send to type input/answer prompts, task_stop to stop it.`
+          `task_send to type input/answer prompts, task_stop to stop it.` +
+          watchWarnings.map((warning) => `\nWarning: ${warning}`).join("")
         );
       }
 
@@ -368,7 +416,7 @@ export function createBashTool(
 
       // Cross-platform shell: bash on macOS/Linux, Git Bash on Windows (or
       // cmd.exe fallback), wrapped by the OS sandbox before any child starts.
-      const shell = resolveShell(command, shellOpts);
+      const shell = resolveShell(runCommand, shellOpts);
       let launch: SandboxLaunch;
       try {
         launch = await prepareLaunch(shell);
@@ -384,7 +432,7 @@ export function createBashTool(
           cwd,
           detached: true,
           stdio: ["ignore", "pipe", "pipe"],
-          env: sandboxAwareEnv(launch.sandboxed),
+          env: sandboxAwareEnv(launch.sandboxed, cooldownEnv),
         });
 
         const chunks: Buffer[] = [];
@@ -448,7 +496,7 @@ export function createBashTool(
                 `ID: ${adopted.id}\n` +
                 `PID: ${adopted.pid}\n` +
                 `Log: ${adopted.logFile}\n` +
-                `You will be notified when it exits. Use task_output with id="${adopted.id}" ` +
+                `You will be notified when it exits or prints a failure. Use task_output with id="${adopted.id}" ` +
                 `(wait_ms to block until it exits) to read output, task_stop to stop it. ` +
                 `Pass an explicit timeout to have a command stopped instead.\n` +
                 (soFar ? `Output so far:\n${soFar}` : "No output so far."),
@@ -511,6 +559,9 @@ export function createBashTool(
               "Install Git for Windows to get bash.]\n" +
               output;
           }
+          const hint =
+            install && code !== 0 && !killed ? cooldownFailureHint(rawOutput, cooldownDays) : null;
+          if (hint) output = `[${hint}]\n` + output;
           if (leftover && !killed) {
             const fate =
               leftover === "stopped"

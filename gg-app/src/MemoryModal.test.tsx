@@ -171,7 +171,7 @@ describe("MemoryModal", () => {
     listMemoriesMock.mockRejectedValue(new Error("daemon unavailable"));
     render(<MemoryModal onClose={vi.fn()} />);
     expect((await screen.findByRole("alert")).textContent).toContain(
-      "Couldn’t load memories: daemon unavailable",
+      "Couldn't load memories: daemon unavailable",
     );
   });
 

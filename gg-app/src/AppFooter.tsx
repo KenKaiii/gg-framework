@@ -67,7 +67,7 @@ export function AppFooter({
   contextPct: number;
   running: boolean;
   models: ModelOption[];
-  onSelectModel: (modelId: string) => void;
+  onSelectModel: (modelId: string, options?: { confirmPaid?: boolean }) => void;
   onSelectKenModel: (modelId: string | null) => void;
   kenRunning: boolean;
   autopilotReviewing: boolean;
@@ -171,6 +171,7 @@ export function AppFooter({
                 models={models}
                 currentModel={state?.model ?? ""}
                 onSelect={onSelectModel}
+                offerPaid
                 compact={phoneHeader}
                 disabled={running}
                 title={`Switch ${workspaceMode === "chat" ? "Kleio" : workspaceProductName(workspaceMode)}'s model`}

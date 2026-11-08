@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { z } from "zod";
-import { GGAIError, ProviderError, ResponseStalledError, formatError } from "@kleio/ai";
+import { GGAIError, ProviderError, ResponseStalledError, formatChatError } from "@kleio/ai";
 import {
   agentLoop,
   setStreamDiagnostic,
@@ -1542,8 +1542,8 @@ describe("agentLoop", () => {
     if (terminal?.type !== "error") throw new Error("expected terminal error");
     expect(terminal.error).toBeInstanceOf(ResponseStalledError);
     expect((terminal.error as ResponseStalledError).inToolCall).toBe(true);
-    const formatted = formatError(terminal.error);
-    expect(formatted.headline).toBe("The response kept stalling before it finished.");
+    const formatted = formatChatError(terminal.error);
+    expect(formatted.headline).toBe("The response kept stalling");
     expect(formatted.headline).not.toContain("reach");
   }, 30_000);
 

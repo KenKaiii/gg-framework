@@ -177,6 +177,12 @@ pub(crate) fn spawn_daemon(app: tauri::AppHandle, is_respawn: bool) {
                         _ => terminate_child(old_child),
                     }
                 }
+                // A daemon that died on its own leaves its MCP/LSP children
+                // running in its (now leaderless) process group, and on Windows
+                // `taskkill /T` can no longer reach them through the dead
+                // parent. The ledger sweep kills dead-leader groups, so run it
+                // now rather than waiting for the next app launch.
+                sweep_orphan_sidecars();
                 let mut attempts = daemon.respawn_attempts.lock().unwrap();
                 if started_at.elapsed() >= DAEMON_STABLE_UPTIME {
                     *attempts = 0;

@@ -106,6 +106,7 @@ import {
   getDefaultThinkingLevel,
   getModel,
   getModelsForProvider,
+  isPaidModel,
 } from "./core/model-registry.js";
 import { MCPClientManager, getAllMcpServers } from "./core/mcp/index.js";
 import { runPixel } from "./cli/pixel.js";
@@ -120,7 +121,7 @@ import {
 } from "./cli/shared.js";
 import { discoverAgents } from "./core/agents.js";
 import { applyAsyncSubagentPolicy } from "./core/subagent-policy.js";
-import { discoverSkills } from "./core/skills.js";
+import { blockedSkillNotice, discoverSkillsWithBlocked } from "./core/skills.js";
 import path from "node:path";
 import chalk from "chalk";
 import { KLEIO_PRODUCT_PROFILE } from "@kleio/core";
@@ -407,7 +408,7 @@ function main(): void {
     if (p === "gemini") return "gemini-3.1-flash-lite";
     if (p === "glm") return "glm-5.3";
     if (p === "moonshot") return "kimi-k3";
-    if (p === "minimax") return "MiniMax-M3";
+    if (p === "minimax") return "MiniMax-M3.1-Flash";
     if (p === "deepseek") return "deepseek-v4-pro";
     if (p === "huggingface") return "Qwen/Qwen3-Coder-480B-A35B-Instruct";
     if (p === "openrouter") return "qwen/qwen3.8-max";
@@ -541,9 +542,9 @@ async function runInkTUI(opts: {
   // The model a provider should actually boot with, given which storage keys
   // resolved: prefer the provider's default model, but for a provider like
   // Xiaomi that splits credentials across models, fall back to whichever
-  // model's specific storage key DID resolve (e.g. a user who configured only
-  // API Credits, no Token Plan, must still land on mimo-v2.6-pro-ultraspeed,
-  // not get treated as logged out of Xiaomi entirely).
+  // model's specific storage key DID resolve, so a user with only one of the
+  // keys is not treated as logged out entirely. Never a paid model: a fallback
+  // the user didn't pick must not start spending real money.
   const resolvedKeyFor = (p: Provider, modelId: string): string | undefined =>
     getAuthStorageKeys(p, modelId).find((key) => credentialsByProvider[key]);
   const modelResolves = (p: Provider, modelId: string): boolean =>
@@ -551,7 +552,7 @@ async function runInkTUI(opts: {
   const resolvableModelFor = (p: Provider): string | undefined => {
     const def = getDefaultModel(p).id;
     if (modelResolves(p, def)) return def;
-    return getModelsForProvider(p).find((m) => modelResolves(p, m.id))?.id;
+    return getModelsForProvider(p).find((m) => !isPaidModel(m.id) && modelResolves(p, m.id))?.id;
   };
 
   // Fall back if the preferred provider/model didn't resolve. The settings
@@ -560,8 +561,8 @@ async function runInkTUI(opts: {
   let provider = preferredProvider;
   let model = preferredModel;
   if (!modelResolves(provider, model)) {
-    // Same provider, different model first — e.g. Xiaomi Credits-only users
-    // land on mimo-v2.6-pro-ultraspeed instead of bouncing to another provider.
+    // Same provider, different model first, instead of bouncing to another
+    // provider when only one of its credential keys resolved.
     const sameProviderModel = resolvableModelFor(provider);
     if (sameProviderModel) {
       model = sameProviderModel;
@@ -622,10 +623,13 @@ async function runInkTUI(opts: {
     globalAgentsDir: paths.agentsDir,
     projectDir: cwd,
   });
-  const skills = await discoverSkills({
+  const { skills, blocked: blockedSkills } = await discoverSkillsWithBlocked({
     globalSkillsDir: paths.skillsDir,
     projectDir: cwd,
   });
+  // Same startup-warning line as an expired login: plain, never a prompt.
+  for (const blocked of blockedSkills)
+    console.warn(chalk.yellow(`⚠ ${blockedSkillNotice(blocked)}`));
 
   // Runtime mode refs — shared between tools and UI
   const planModeRef = { current: false };
@@ -647,6 +651,7 @@ async function runInkTUI(opts: {
   const toolOptions: CreateToolsOptions = {
     agents,
     skills,
+    blockedSkills,
     provider,
     model,
     planModeRef,
@@ -1086,7 +1091,7 @@ async function runSessions(): Promise<void> {
     if (p === "gemini") return "gemini-3.1-flash-lite";
     if (p === "glm") return "glm-5.3";
     if (p === "moonshot") return "kimi-k3";
-    if (p === "minimax") return "MiniMax-M3";
+    if (p === "minimax") return "MiniMax-M3.1-Flash";
     if (p === "deepseek") return "deepseek-v4-pro";
     if (p === "huggingface") return "Qwen/Qwen3-Coder-480B-A35B-Instruct";
     if (p === "sakana") return "fugu";

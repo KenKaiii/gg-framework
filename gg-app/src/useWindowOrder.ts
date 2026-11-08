@@ -32,15 +32,21 @@ export function useWindowOrder(inputRef: RefObject<HTMLTextAreaElement | null>) 
   // windows are arranged, moved (debounced), created, closed, or focused.
   useEffect(() => {
     let un: (() => void) | undefined;
+    let disposed = false;
     void onWindowOrder((e) => {
       const idx = e.order.indexOf(windowLabel);
       setWindowIndex(idx >= 0 ? idx + 1 : null);
       setWindowTotal(e.order.length);
       setIsThisFocused(e.focused === windowLabel);
     }).then((fn) => {
-      un = fn;
+      // Unmounted before listen() resolved: drop the listener at once.
+      if (disposed) fn();
+      else un = fn;
     });
-    return () => un?.();
+    return () => {
+      disposed = true;
+      un?.();
+    };
   }, []);
 
   // Global UI click sound — plays only when an actual interactive element is

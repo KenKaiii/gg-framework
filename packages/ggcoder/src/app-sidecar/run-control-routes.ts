@@ -7,7 +7,7 @@ import {
   saveKenModelPref,
 } from "./app-settings.js";
 import { getAllModels, getModel } from "../core/model-registry.js";
-import { findProbedModel, parseLocalModelId } from "@kleio/core";
+import { findProbedModel, localModelShortName, parseLocalModelId } from "@kleio/core";
 import { json, readBody } from "./http.js";
 import {
   isThinkingLevelSupported,
@@ -39,12 +39,21 @@ export function handleRunControlRoutes(
         .filter((m) => m.provider === "local" || loggedIn.includes(m.provider))
         .map((m) => {
           if (m.provider !== "local") {
-            return { id: m.id, name: m.name, provider: m.provider };
+            // `billing` flags models that change what the user pays (fast modes).
+            return {
+              id: m.id,
+              name: m.name,
+              provider: m.provider,
+              ...(m.billing ? { billing: m.billing } : {}),
+            };
           }
           const probed = findProbedModel(ctx.localProbes, m.id);
+          const rawId = parseLocalModelId(m.id)?.rawId;
           return {
             id: m.id,
-            name: m.name,
+            // The app groups local models by endpoint, so the name drops the
+            // registry's "(Endpoint)" suffix, like every other model's name.
+            name: rawId ? localModelShortName(rawId) : m.name,
             provider: m.provider,
             local: true,
             endpoint: probed?.endpoint.label ?? parseLocalModelId(m.id)?.endpointId,
@@ -65,8 +74,11 @@ export function handleRunControlRoutes(
     void readBody(req, res).then(async (raw) => {
       if (raw === null) return;
       let modelId: string;
+      let confirmPaid: boolean;
       try {
-        modelId = (JSON.parse(raw) as { model?: string }).model ?? "";
+        const body = JSON.parse(raw) as { model?: string; confirmPaid?: unknown };
+        modelId = body.model ?? "";
+        confirmPaid = body.confirmPaid === true;
       } catch {
         json(res, 400, { error: "invalid JSON body" });
         return;
@@ -74,6 +86,17 @@ export function handleRunControlRoutes(
       const target = getModel(modelId);
       if (!target) {
         json(res, 404, { error: `unknown model: ${modelId}` });
+        return;
+      }
+      // A model that spends real money (Claude fast mode bills usage credits)
+      // is never switched to implicitly: the caller must pass the user's
+      // explicit confirmation. Fails closed for every client of this route.
+      if (target.billing?.paid && !confirmPaid) {
+        json(res, 409, {
+          error: `${target.name} spends real money: ${target.billing.detail} Confirm before switching.`,
+          requiresPaidConfirmation: true,
+          billing: target.billing,
+        });
         return;
       }
       if (ctx.running) {
@@ -87,7 +110,10 @@ export function handleRunControlRoutes(
           return;
         }
       }
-      await ctx.session.switchModel(target.provider, target.id);
+      await ctx.session.switchModel(target.provider, target.id, { confirmPaid });
+      // Picking an Ollama model loads it, so the footer shows the context Ollama
+      // really serves instead of the 4K guess. Never delays the switch.
+      if (target.provider === "local") void ctx.learnServedContext(target.id, true).catch(() => {});
       // Ken follows GG Coder's model only while un-pinned; a user-set Ken
       // override survives GG model switches untouched.
       if (!ctx.kenModelOverride) {
@@ -171,6 +197,14 @@ export function handleRunControlRoutes(
         const target = getModel(modelId);
         if (!target) {
           json(res, 404, { error: `unknown model: ${modelId}` });
+          return;
+        }
+        // Ken and the autopilot reviewer run unwatched in the background, so
+        // they never run on a model that spends real money.
+        if (target.billing?.paid) {
+          json(res, 400, {
+            error: `${target.name} spends real money, so it's only for your main chat. Pick another model for Ken.`,
+          });
           return;
         }
         ctx.kenModelOverride = { provider: target.provider, model: target.id };

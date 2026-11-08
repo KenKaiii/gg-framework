@@ -184,6 +184,12 @@ export function handleHistoryRoutes(
               text: "",
               task: { title: typeof d.title === "string" ? d.title : "" },
             });
+          } else if (marker.kind === "security" && typeof d.rule === "string") {
+            history.push({
+              role: "assistant",
+              text: "",
+              security: { rule: d.rule, target: typeof d.target === "string" ? d.target : "" },
+            });
           } else if (marker.kind === "error" && typeof d.headline === "string") {
             const error = restoreAppErrorPayload(d);
             if (error) history.push({ role: "assistant", text: "", error });

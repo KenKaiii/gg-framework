@@ -30,13 +30,25 @@ export function createTaskOutputTool(
     async execute({ id, from_start, wait_ms }, context) {
       let waitNotice = "";
       if (wait_ms !== undefined) {
-        const reason = await processManager.waitForExitOrWake(id, wait_ms, context?.signal);
+        const { reason, detail } = await processManager.waitForActivity(
+          id,
+          wait_ms,
+          context?.signal,
+        );
         if (reason === "timeout") {
           waitNotice = ` — still running after waiting ${Math.round(wait_ms / 1000)}s`;
         } else if (reason === "pattern") {
           waitNotice = " — wake pattern matched; inspect output before declaring success";
         } else if (reason === "silence") {
           waitNotice = " — silence wake fired; process may be stalled, not necessarily ready";
+        } else if (reason === "failure") {
+          waitNotice =
+            " — stopped waiting: the output shows a failure while it is still running; " +
+            "read it and act now rather than waiting for the exit";
+        } else if (reason === "other") {
+          waitNotice =
+            " — stopped waiting early because other background work needs attention" +
+            (detail ? `: ${detail}` : "");
         }
       }
       const result = await processManager.readOutput(id, from_start);

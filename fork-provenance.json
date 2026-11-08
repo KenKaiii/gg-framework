@@ -190,8 +190,9 @@
       "upstreamTipDesktopVersion": "0.102.1",
       "reviewedCommits": 287,
       "importedAt": "2026-11-04",
-      "status": "open",
+      "status": "merged",
       "pullRequest": "https://github.com/fmckie/gg-framework/pull/76",
+      "mergeCommit": "bf32819684dba2781ac927317004cb421ce525fc",
       "rule": "upstream.lastImportedCommit stays 3f2bb6bc because the fork does not contain everything up to any later upstream commit; a later full sync must treat these commits as already applied",
       "picked": [
         {"upstream": "0108094070d1103dfe3710c8be07ca31aeea2c2c", "downstream": "6e81833e09c6beff7a6a4c54279cf2cd5c5024ba"},
@@ -235,6 +236,57 @@
         {"upstream": "12da5c3a41e23abe0f2cf3f2010202f1fd769d9d", "reason": "upstream's relicense from MIT to the GNU Affero General Public License v3.0 only, with its NOTICE files"},
         {"upstream": "023752941b4a142ad7aca63ed80fa739e1e6b2ad", "reason": "5.91.1 version commit, after the relicense"},
         {"upstream": "af5b1df4a46a8a308a147afe17bd4a084e958fa7", "reason": "0.102.1 version commit, after the relicense"}
+      ]
+    },
+    {
+      "branch": "sync/upstream-models-safety",
+      "baseCommit": "bf32819684dba2781ac927317004cb421ce525fc",
+      "upstreamTip": "296df256b164ec18a4cc72ec7a824633da245bcb",
+      "upstreamTipVersion": "5.91.2",
+      "upstreamTipDesktopVersion": "0.102.2",
+      "reviewedCommits": 290,
+      "importedAt": "2026-11-05",
+      "status": "open",
+      "pullRequest": "https://github.com/fmckie/gg-framework/pull/77",
+      "rule": "upstream.lastImportedCommit stays 3f2bb6bc because the fork does not contain everything up to any later upstream commit; a later full sync must treat these commits as already applied",
+      "picked": [
+        {"upstream": "ae156b90df060cb366552b608aebc66c4fa323d8", "downstream": "3f2155160763ffb61ff9947d636ae54b1a11e016"},
+        {"upstream": "67e957c87e1eaf6fbdd200286e9dc635c2798f80", "downstream": "5a0d627609d274fee43f19aae310eab7d4cd8b66"},
+        {"upstream": "5546cce95624cb2c1c94c323344ca747c1d2f6d5", "downstream": "eaa8b64c1bcb8cfdfb800a5f440fed0191949e3c"},
+        {"upstream": "67b47a83ebb43e4e2bcc2eea8ddb1b4db1d6e133", "downstream": "dd46dacb7abecaf52417985c288d78cf3127d68b"},
+        {"upstream": "5315a8a259c94bbcec26b4a01a6f788c66e3fb39", "downstream": "9a150219d0a708681205162443b513a4600b789f"},
+        {"upstream": "a4bb110c4149a196d5a69d10a595f3f78a8ac723", "downstream": "5c81b468aa5cd1e076bd563926d4210bc55ba1e3"},
+        {"upstream": "0ba5729617b4a825127db49494ea0fbfae19303a", "downstream": "2c4fea82eaa907c9a294faec41c955a17c7942d2"},
+        {"upstream": "0a9d083f14789bf94da17d6be33b35bcf3c4e23a", "downstream": "9bba7a1fde352d3c852000dba404542e2b0bee22"}
+      ],
+      "ported": [
+        {"upstream": "9d7cbe6dc99eeb65c3b016103fd2cc62215b254b", "downstream": "2b3c506a1fd530b01c609928abd3c68f57c0f9d6", "scope": "auth providers move to @kleio/core, the git-target split and the settings and teardown race fixes; the goal finish card, GoalWorld, goal-routes hunks, resolveGitCwd and the goal-window test go to PR 4; App.css, glass.css, WhatsNew.css and the HfPullModal colour not taken (the fork owns the desktop design); upstream's removal of the manager package not taken (the fork keeps it as @kleio/manager); the ci.yml FFmpeg retry not taken (.github/workflows is protected)"},
+        {"upstream": "f9da5393f82fb585d23b947a6f87f121e28df4b8", "downstream": "99da3f7897c1e7998f8b98ea3c2a733b233e9e0c", "scope": "all"},
+        {"upstream": "d9ad9050bbdcc6d3aaa7a88b512244b9c4705867", "downstream": "475eaf2a2f224f6be633350d17dfbc0a0e68ea05", "scope": "all but claude-opus-5-5-fast's defaultThinkingLevel, which comes with 127ec0a9 (PR 4 row 7) for both Opus 5.5 entries"},
+        {"upstream": "bc7e5733a25fc9cb1e51ed93b72407a5c7a5eb6f", "downstream": "fadf0be783f40e8ec872612615bc381a522b9f2b", "scope": "paid-model confirmation through ModelSelect and placeholder/PaidModelConfirm.tsx; ModelPanel.tsx, ModelPanel.test.tsx, Deck.tsx and Deck.css not taken (the fork owns the desktop design); the goal-routes.ts and goals-agent.ts hunks that keep Goals workers off paid models go to PR 4"},
+        {"upstream": "a083cf12c4525807d6d2c8a499a28e2c55b39cde", "downstream": "7c949498f1851cca138012676af7f6c841e045b3", "scope": "MiMo UltraSpeed is paid and a fallback never moves onto a paid tier; the ModelPanel hunks go into placeholder/PaidModelConfirm.tsx and ModelSelect.tsx"},
+        {"upstream": "494374d7941d25cbba6afd5c571187de64ab0c5d", "downstream": "2eef3b384c51077c58e24e6501643ce554da64d9", "scope": "the engine half: failure detectors, the task_output wake, urgent notifications, IdleWakeController and the background-watch lint; the app-sidecar.ts wiring that starts the idle wake reads Goals state and goes to PR 4 row 12"},
+        {"upstream": "5a3c24b349492e5888ccae3c8c9b1efb795941f1", "downstream": "fb27b92cab005bb7933282d82a33852f910870ba", "scope": "all but the reworded Sonnet 5.5 defaultThinkingLevel comment (comes with 127ec0a9, PR 4 row 7) and a README Gemini row the fork doesn't have"},
+        {"upstream": "67f5a4be8d261f52ec7cc5f9725c9c63fb801d2c", "downstream": "14aaa85cf64c3b416a8f96e58d0668a283eae971", "scope": "all"},
+        {"upstream": "d493df831d3bfe5c7ef3fbda7169ba3e267e93ad", "downstream": "947238b0f611587760e76b527bfbece3136c71d2", "scope": "the rest after ef690ba3 (#66, the fetch-cap half): Grok on xAI's Responses API with encrypted reasoning replay, and the chat-error.ts copy; the fork keeps its undici pin (7.29.1)"},
+        {"upstream": "a69cc275a86d02f31831c280755f335e5b7a117f", "downstream": "b0eebc5bd002acf7550f0c3dc250935e8127243e", "scope": "slow git no longer reported as not a repo, and the Windows verification-flow tests; resolveGitCwd's settled flag, retargetGit's re-read and the goal-window test go to PR 4 row 12"},
+        {"upstream": "c08602e981a735fba7952260d2de3b353884d1ed", "downstream": "2752e67ab9c1d0f69355b4ed1145683ab5e45de5", "scope": "all but the README provider-table hunk"},
+        {"upstream": "d7419c46d0b372a1f3c888fa34703e4a826aa0db", "downstream": "02a99b7c67f52aca75c277af5f873913d167774d", "scope": "the gg-safe security layer; SecurityNotice.tsx becomes placeholder/SecurityNotice.tsx and the McpModal row notes placeholder/McpRowNotes.tsx; App.css, upstream's McpModal re-layout and LiveToolPanel.tsx markup not taken (the fork owns the desktop design)"},
+        {"upstream": "5db7ab615b72663a4e94082f6aec98b3926917b3", "downstream": "3c63ee41bc913c1ce1f31f7bf333b672e0fb2f06", "scope": "all"},
+        {"upstream": "0b9dbe96e6ba818d6119d50150c8c091dbf2b06a", "downstream": "ccc572e3bdfcab8cb12f618da75eb0d84fa0ecd3", "scope": "the rest after 73ab3385 (#66, the lost-messages half): unresolved deferred web_search calls are no longer replayed to Anthropic"},
+        {"upstream": "1c91814c243acfbe7a797fbd5adaecb3091b19b6", "downstream": "45be349e39bf2a887e4a81cc82da0cb7426f6767", "scope": "the Grok HTTP 426 fix, the hidden Gemini provider, getListedModels and routine bash output compaction; auth.rs's local half moves into local_auth_status() because the fork's app_auth_status is async; Deck.css, ModelPanel.tsx and RoyaleKey.test.tsx not taken. Gemini stays hidden (HIDDEN_PROVIDERS = [\"gemini\"], matching upstream), by the user's decision: using Gemini through third-party tools risks Google flagging or banning accounts. Existing Gemini logins stop working. To re-enable it, remove \"gemini\" from HIDDEN_PROVIDERS in packages/gg-core/src/hidden-providers.ts and from the matching list in gg-app/src-tauri/src/auth.rs"},
+        {"upstream": "ba10f31b4a9891185a0e59dcc7fed6b61fa28650", "downstream": "01e471063207ffebdec0082712d766371d0f109e", "scope": "all but the README benchmark tables"},
+        {"upstream": "705af9035f11d9c5c925cf64cb8a90071b035d98", "downstream": "ae5cb9903abbd1eb372c80df31a8747023154c43", "scope": "the tools/skill.ts delegation and host rules that PR 3a (#76) left for the skills refresh; the SKILL.md rewrites, the bundled-agents.ts rate-limit wording, docs/skills-refresh.md and their test not taken, as #75 recorded"},
+        {"upstream": "21adf9451460b367aef6d880dcce0c7a2aac8771", "downstream": "c065296a5d1a0c9ccef1531739b4617cb77193e7", "scope": "skills cut to compliance-guard and durable, with bulletproof and lean hidden, and code_search and code_nav removed; evidence-led-ui leaves with its corpus/awesome-design-md folder (74 DESIGN.md files and their MIT LICENSE, from upstream 25601bdf), which upstream dropped in 705af903's skills refresh; docs/skills-refresh.md, trophies/* and the README provider and tools tables not taken; the critter-tool-kind and goal-team.ts hunks, 223830dc's skill-root brief and the routable-skills test go to PR 4"},
+        {"upstream": "7302fa5a555077476ca5695698ad84bd52215705", "downstream": "75e7bce355e67c844211e9b4a5b9ec6beee2b33e", "scope": "all but the trophies/catalog-more.ts hunk (the fork has no trophies)"},
+        {"upstream": "856bf0ebe8ea3d292e283ad45dbb14e28b6ae124", "downstream": "b2bd8d286249c5d37c9fb7713fc3aab8d155aaa2", "scope": "web-search history fix only (historyUsesNativeWebSearch and its two regression tests), taken ahead of cf6c9a23, which needs it; the duplicate sub-agent completion notice fix (subagent-manager.ts and its test) and the desktop checkpoint pruning (app-sidecar.ts) stay flagged and are not taken"},
+        {"upstream": "cf6c9a2327397b573d47762536aad7ab56501ed4", "downstream": "b651552f25eed339148ccbec2b64ecf4cd1ba3c9", "scope": "Anthropic web search as a Claude Haiku 5.5 side request, web_fetch offsets, the 30,000-byte bash offload, the steroids changes (upstream's text, including c73b1866's shorter wording, by the user's decision), local-model fixes (keyless endpoints, served context, rejected-key guidance, localConnected), and the language style packs and setup-history.ts removed; .gitignore (agent-race), ModelPanel.tsx and model-search.ts not taken; the LoginScreen tile rename to Local models not taken (the tile is the fork's own design); the SettingsScreen hunk has no counterpart in the fork; openai.ts maxRetries: 0, transform.ts's blocking-tool cache TTL and tool_reference handling need c73b1866 (flagged) and are not taken"},
+        {"upstream": "5d340fa3bc1be03d3200b40cfbe8f8abfb5551bf", "downstream": "5ee0bfca8f24c3535143c84d233f7317c9f105aa", "scope": "non-Goals part only: config.ts, settings-manager.ts and its new test, app-sidecar.ts hunks 1, 3, 6, 7 and 8 (1 and 7 placed by hand) and the two non-Goals auth-broadcast tests; the Goals half (goals-store.ts and goals-agent.ts with their tests, prompt-routes.ts, route-context.ts, app-sidecar.ts hunks 2, 4, 5 and 9, and the \"starting a goal by typing\" test) goes to PR 4 row 20; temp prefixes settings- and other-folder-"}
+      ],
+      "skipped": [
+        {"upstream": "a1c4f64240804262f91281f738fd85c62a4183ef", "reason": "after upstream's relicense (12da5c3a): first released in 5.91.2 and v0.102.2 under the GNU Affero General Public License"},
+        {"upstream": "4fd3d17bbfa66a5ee67109bef0b542914c23b490", "reason": "5.91.2 version commit, after the relicense"},
+        {"upstream": "296df256b164ec18a4cc72ec7a824633da245bcb", "reason": "0.102.2 version commit, after the relicense"}
       ]
     }
   ],

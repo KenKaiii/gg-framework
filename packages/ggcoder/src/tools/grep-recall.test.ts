@@ -6,6 +6,25 @@ import readline from "node:readline";
 import { createReadStream } from "node:fs";
 import { createGrepTool } from "./grep.js";
 
+/** Grouped grep output back to flat `path:line:text` records (+ trailing notes). */
+function flat(output: unknown): string {
+  const s = String(output);
+  const idx = s.search(/\n\n(?:\[Truncated|\d+ match)/);
+  const body = idx >= 0 ? s.slice(0, idx) : s;
+  const tail = idx >= 0 ? s.slice(idx) : "";
+  const records: string[] = [];
+  let file: string | undefined;
+  for (const line of body.split("\n")) {
+    if (!line) {
+      file = undefined;
+      continue;
+    }
+    if (file !== undefined && /^\d+:/.test(line)) records.push(`${file}:${line}`);
+    else file = line;
+  }
+  return records.length > 0 ? records.join("\n") + tail : s;
+}
+
 function context() {
   return { signal: new AbortController().signal, toolCallId: "test" };
 }
@@ -36,7 +55,7 @@ describe.each(scanners)("grep recall ($label)", ({ useExternalScanner }) => {
     });
 
     const result = await grep(dir).execute({ pattern: "runs-on" }, context());
-    expect(result).toContain(path.join(".github", "workflows", "ci.yml") + ":3:");
+    expect(flat(result)).toContain(path.join(".github", "workflows", "ci.yml") + ":3:");
   });
 
   it("skips files matched by .gitignore", async () => {
@@ -48,9 +67,9 @@ describe.each(scanners)("grep recall ($label)", ({ useExternalScanner }) => {
     });
 
     const result = await grep(dir).execute({ pattern: "marker" }, context());
-    expect(result).toContain(path.join("src", "app.ts") + ":1:");
-    expect(result).not.toContain("dist");
-    expect(result).not.toContain("debug.log");
+    expect(flat(result)).toContain(path.join("src", "app.ts") + ":1:");
+    expect(flat(result)).not.toContain("dist");
+    expect(flat(result)).not.toContain("debug.log");
   });
 
   it("still searches an ignored directory when it is the explicit path", async () => {
@@ -60,7 +79,7 @@ describe.each(scanners)("grep recall ($label)", ({ useExternalScanner }) => {
     });
 
     const result = await grep(dir).execute({ pattern: "marker", path: "dist" }, context());
-    expect(result).toContain("app.js:1:");
+    expect(flat(result)).toContain("app.js:1:");
   });
 
   it("never scans node_modules or .git", async () => {
@@ -71,9 +90,9 @@ describe.each(scanners)("grep recall ($label)", ({ useExternalScanner }) => {
     });
 
     const result = await grep(dir).execute({ pattern: "marker" }, context());
-    expect(result).toContain(path.join("src", "keep.ts") + ":1:");
-    expect(result).not.toContain("node_modules");
-    expect(result).not.toContain(".git");
+    expect(flat(result)).toContain(path.join("src", "keep.ts") + ":1:");
+    expect(flat(result)).not.toContain("node_modules");
+    expect(flat(result)).not.toContain(".git");
   });
 });
 
@@ -92,7 +111,7 @@ describe("grep scan ordering", () => {
     }).execute({ pattern: "marker", max_results: 500 }, context());
 
     const expected = await sequentialScan(dir, /marker/g);
-    expect(String(parallel).split("\n\n")[0]).toBe(expected.join("\n"));
+    expect(flat(parallel).split("\n\n")[0]).toBe(expected.join("\n"));
   });
 });
 

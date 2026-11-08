@@ -16,9 +16,7 @@ pub(crate) async fn agent_state(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: shared durable chat memories.
@@ -225,9 +223,7 @@ pub(crate) async fn agent_progress(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: the active provider's subscription quota snapshot. Account-wide, so
@@ -331,24 +327,37 @@ pub(crate) async fn sidecar_get_json(
         .send()
         .await
         .map_err(|e| e.to_string())?;
+    sidecar_json(res).await
+}
+
+/// Decode a sidecar response: the JSON body on 2xx, otherwise an error taken
+/// from the body's `message`, then `error`, then the HTTP status reason. A
+/// non-JSON error body falls back to the status reason.
+pub(crate) async fn sidecar_json(res: reqwest::Response) -> Result<serde_json::Value, String> {
     let status = res.status();
-    let body = res
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())?;
     if status.is_success() {
-        return Ok(body);
+        return res
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|e| e.to_string());
     }
-    Err(body
-        .get("message")
-        .or_else(|| body.get("error"))
+    let body = res.json::<serde_json::Value>().await.ok();
+    Err(sidecar_status_error(status, body.as_ref()))
+}
+
+/// Pick the user-facing error for a non-2xx sidecar response.
+pub(crate) fn sidecar_status_error(
+    status: reqwest::StatusCode,
+    body: Option<&serde_json::Value>,
+) -> String {
+    body.and_then(|b| b.get("message").or_else(|| b.get("error")))
         .and_then(|value| value.as_str())
         .unwrap_or_else(|| {
             status
                 .canonical_reason()
                 .unwrap_or("sidecar request failed")
         })
-        .to_string())
+        .to_string()
 }
 
 /// Proxy: resumed conversation history (user + assistant text) for hydration.
@@ -432,35 +441,14 @@ pub(crate) async fn agent_new_session(
 ) -> Result<(), String> {
     let port = port_for(&webview).ok_or("daemon not ready")?;
     let gg_sid = session_for(&webview).ok_or("session not ready")?;
-    client
+    let res = client
         .post(format!("{}/new-session", sidecar_base(port)))
         .header("x-gg-session", &gg_sid)
         .send()
         .await
         .map_err(|e| e.to_string())?;
+    sidecar_json(res).await?;
     Ok(())
-}
-
-/// Proxy: store an API key for a provider.
-#[tauri::command]
-pub(crate) async fn agent_auth_apikey(
-    webview: WebviewWindow,
-    client: State<'_, reqwest::Client>,
-    provider: String,
-    key: String,
-) -> Result<serde_json::Value, String> {
-    let port = port_for(&webview).ok_or("daemon not ready")?;
-    let gg_sid = session_for(&webview).ok_or("session not ready")?;
-    let res = client
-        .post(format!("{}/auth/apikey", sidecar_base(port)))
-        .header("x-gg-session", &gg_sid)
-        .json(&serde_json::json!({ "provider": provider, "key": key }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
 }
 
 /// Proxy: begin an OAuth login. Progress streams back via `agent-event`
@@ -480,9 +468,7 @@ pub(crate) async fn agent_auth_oauth_start(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: submit a pasted OAuth code to an in-flight login.
@@ -501,9 +487,7 @@ pub(crate) async fn agent_auth_oauth_code(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: answer an MCP server's mid-tool-call request for user input.
@@ -531,9 +515,7 @@ pub(crate) async fn agent_mcp_elicit(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: answer an `ask_user` question band.
@@ -558,30 +540,7 @@ pub(crate) async fn agent_ask_user(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// Proxy: disconnect a provider (clear its stored credentials).
-#[tauri::command]
-pub(crate) async fn agent_auth_logout(
-    webview: WebviewWindow,
-    client: State<'_, reqwest::Client>,
-    provider: String,
-) -> Result<serde_json::Value, String> {
-    let port = port_for(&webview).ok_or("daemon not ready")?;
-    let gg_sid = session_for(&webview).ok_or("session not ready")?;
-    let res = client
-        .post(format!("{}/auth/logout", sidecar_base(port)))
-        .header("x-gg-session", &gg_sid)
-        .json(&serde_json::json!({ "provider": provider }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: cancel one pending queued message by id. Returns
@@ -602,9 +561,7 @@ pub(crate) async fn agent_cancel_queued(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: stop a background task by id. Returns `{ message }`.
@@ -623,9 +580,7 @@ pub(crate) async fn agent_kill_task(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: import a Claude Code / Codex / Cursor transcript into a resumable
@@ -647,9 +602,7 @@ pub(crate) async fn agent_import_transcript(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: app-wide radio state — `{ stations, current, volume }`.
@@ -683,9 +636,7 @@ pub(crate) async fn agent_radio_state(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: play a station by id, or stop with `station = "off"`. Returns
@@ -785,9 +736,7 @@ pub(crate) async fn agent_tasks(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: the project health checklist (`.gg-checklist.json` joined with the
@@ -839,9 +788,7 @@ pub(crate) async fn agent_run_tasks(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: delete a task by id. Returns the remaining `{ tasks }`.
@@ -860,9 +807,7 @@ pub(crate) async fn agent_delete_task(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: accept the pending plan — bakes its `## Steps` into the system prompt
@@ -997,9 +942,7 @@ pub(crate) async fn agent_autopilot_set(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: list workflow (prompt-template) slash commands.
@@ -1016,9 +959,7 @@ pub(crate) async fn agent_commands(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: list models available to the logged-in providers.
@@ -1035,30 +976,32 @@ pub(crate) async fn agent_models(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: switch the active model. Returns the new provider/model + thinking state.
+/// `confirm_paid` carries the user's explicit "yes, spend real money" for a
+/// model that bills usage credits; the sidecar refuses such a switch without it.
 #[tauri::command]
 pub(crate) async fn agent_switch_model(
     webview: WebviewWindow,
     client: State<'_, reqwest::Client>,
     model: String,
+    confirm_paid: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     let port = port_for(&webview).ok_or("daemon not ready")?;
     let gg_sid = session_for(&webview).ok_or("session not ready")?;
     let res = client
         .post(format!("{}/model", sidecar_base(port)))
         .header("x-gg-session", &gg_sid)
-        .json(&serde_json::json!({ "model": model }))
+        .json(&serde_json::json!({
+            "model": model,
+            "confirmPaid": confirm_paid.unwrap_or(false),
+        }))
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: pin Ken (mentor + autopilot) to a model, or clear the pin so he
@@ -1079,9 +1022,7 @@ pub(crate) async fn agent_switch_ken_model(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: rewrite a draft prompt into a tighter, terminology-correct version
@@ -1189,49 +1130,7 @@ pub(crate) async fn agent_cycle_thinking(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// Proxy: read gg-app settings (e.g. the projects root folder).
-#[tauri::command]
-pub(crate) async fn agent_settings(
-    webview: WebviewWindow,
-    client: State<'_, reqwest::Client>,
-) -> Result<serde_json::Value, String> {
-    let port = port_for(&webview).ok_or("daemon not ready")?;
-    let gg_sid = session_for(&webview).ok_or("session not ready")?;
-    let res = client
-        .get(format!("{}/settings", sidecar_base(port)))
-        .header("x-gg-session", &gg_sid)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// Proxy: save gg-app settings.
-#[tauri::command]
-pub(crate) async fn agent_save_settings(
-    webview: WebviewWindow,
-    client: State<'_, reqwest::Client>,
-    projects_root: String,
-) -> Result<serde_json::Value, String> {
-    let port = port_for(&webview).ok_or("daemon not ready")?;
-    let gg_sid = session_for(&webview).ok_or("session not ready")?;
-    let res = client
-        .post(format!("{}/settings", sidecar_base(port)))
-        .header("x-gg-session", &gg_sid)
-        .json(&serde_json::json!({ "projectsRoot": projects_root }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 #[tauri::command]
@@ -1384,6 +1283,29 @@ mod tests {
         assert_eq!(
             accept_plan_error(reqwest::StatusCode::INTERNAL_SERVER_ERROR, "<html>"),
             "plan accept failed (HTTP 500)"
+        );
+    }
+
+    #[test]
+    fn sidecar_error_prefers_message_then_error_then_status() {
+        let both = serde_json::json!({ "message": "m", "error": "e" });
+        assert_eq!(
+            sidecar_status_error(reqwest::StatusCode::CONFLICT, Some(&both)),
+            "m"
+        );
+        let err = serde_json::json!({ "error": "a login is already in progress" });
+        assert_eq!(
+            sidecar_status_error(reqwest::StatusCode::CONFLICT, Some(&err)),
+            "a login is already in progress"
+        );
+        let other = serde_json::json!({ "ok": false });
+        assert_eq!(
+            sidecar_status_error(reqwest::StatusCode::BAD_REQUEST, Some(&other)),
+            "Bad Request"
+        );
+        assert_eq!(
+            sidecar_status_error(reqwest::StatusCode::INTERNAL_SERVER_ERROR, None),
+            "Internal Server Error"
         );
     }
 }

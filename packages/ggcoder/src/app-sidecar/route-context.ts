@@ -87,6 +87,7 @@ export interface SessionRouteContext {
   readonly auth: AuthStorage;
   localProbes: LocalEndpointProbe[];
   readonly localModelBlocker: (modelId: string) => Promise<string | undefined>;
+  readonly learnServedContext: (modelId: string, load: boolean) => Promise<void>;
   kenModelOverride: KenModelPref | null;
   readonly syncKenAutoModel: (provider: Provider, model: string) => Promise<void>;
   autopilotReviewing: boolean;
@@ -118,6 +119,7 @@ export interface SessionRouteContext {
       priorityNote?: string;
       methodGuidance: AuthMethodMeta[];
     })[];
+    localConnected: boolean;
   }>;
   readonly broadcastAll: (type: string, data: unknown) => void;
   oauthInFlight: boolean;

@@ -53,3 +53,8 @@
   gap: 0.75rem;
   padding: 0.25rem 0;
 }
+.placeholder-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.85em;
+}

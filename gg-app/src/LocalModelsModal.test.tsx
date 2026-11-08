@@ -148,13 +148,33 @@ describe("LocalModelsModal", () => {
     expect(switchModelMock).not.toHaveBeenCalled();
   });
 
-  it("keeps the hint to one short line about tool calling and unknown context", async () => {
+  it("keeps the hint short: where to pick a model, tool calling, unknown context", async () => {
     render(<LocalModelsModal onClose={vi.fn()} />);
     await screen.findByText("Ollama");
 
+    // The rows aren't clickable, so say where picking happens (users tried the rows).
+    expect(screen.getByText(/Pick a model from the model menu in a session/)).toBeTruthy();
     expect(screen.getByText(/No tool calling = can’t run the agent/)).toBeTruthy();
-    // The old three-sentence hint (including how to pick a model) was cut.
-    expect(screen.queryByText(/model selector at the bottom/)).toBeNull();
+    expect(screen.queryByText(/small context/)).toBeNull();
+  });
+
+  it("explains how to raise Ollama's context when it serves a model at 4K", async () => {
+    const ollama = STATE.endpoints[0]!;
+    const small = {
+      ...STATE,
+      endpoints: [
+        {
+          ...ollama,
+          models: [{ ...ollama.models[0]!, contextWindow: 4096, contextWindowKnown: true }],
+        },
+      ],
+    };
+    getLocalModelsMock.mockResolvedValue(small);
+    scanLocalModelsMock.mockResolvedValue(small);
+    render(<LocalModelsModal onClose={vi.fn()} />);
+    await screen.findByText("Ollama");
+
+    expect(screen.getByText(/Raise Context length in Ollama’s settings/)).toBeTruthy();
   });
 
   it("re-probes on Scan", async () => {
@@ -173,7 +193,7 @@ describe("LocalModelsModal", () => {
     await screen.findByText("Ollama");
 
     fireEvent.click(screen.getByText("Add endpoint"));
-    fireEvent.change(screen.getByPlaceholderText("http://127.0.0.1:11434/v1"), {
+    fireEvent.change(screen.getByPlaceholderText("http://127.0.0.1:1234/v1"), {
       target: { value: "ftp://nope" },
     });
     fireEvent.click(screen.getByText("Save"));

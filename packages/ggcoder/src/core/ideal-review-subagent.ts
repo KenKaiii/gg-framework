@@ -23,7 +23,7 @@ import type { IdealReviewStats } from "./ideal-review.js";
  */
 
 /** Read-only toolset — the reviewer examines, it never repairs. */
-export const REVIEWER_TOOLS = ["read", "grep", "find", "ls", "code_search", "source_path"] as const;
+export const REVIEWER_TOOLS = ["read", "grep", "find", "ls", "source_path"] as const;
 
 /**
  * How long the reviewer may examine the work before it must give its verdict.

@@ -15,8 +15,6 @@ export const TOOL_PROMPT_HINTS: Record<string, string> = {
   ui_adopt: "Adopt Bklit/Kokonut component source.",
   find: "Glob search.",
   ls: "List a dir.",
-  code_nav: "Exact definitions/callers.",
-  code_search: "Find code by meaning (“where is X”).",
   task_send: "Process stdin.",
   spawn_agent: "Parallel child agents.",
   source_path: "Dependency source.",
@@ -41,7 +39,7 @@ export const TOOL_PROMPT_HINTS: Record<string, string> = {
   skill: "Load a named skill's instructions.",
   tool_search: "Load on-demand and integration tools by capability.",
   generate_image: "Images; only if asked.",
-  steroids: "Real-repo examples.",
+  steroids: "Current open-source code, when it may be newer than your training.",
 };
 
 /**
@@ -53,10 +51,25 @@ export const TOOL_PROMPT_HINTS: Record<string, string> = {
  */
 export const TOOL_STEERING_CLAUSES: ReadonlyArray<{
   needs: readonly string[];
+  /** Skip the clause when any of these tools is active. */
+  without?: readonly string[];
+  /** Render only when changes go through one POSIX `bash` command (true) or not (false). */
+  oneCommandChanges?: boolean;
   text: string;
 }> = [
   {
+    // Arena 2026-10-25 (Haiku 5.5, 8 tasks × 10 reps): with this replacing the
+    // edit-preference line and the Work section's script rule, GG ran the suite
+    // 21% faster and 19% cheaper, in fewer turns; on a one-line fix in a 700-line
+    // file it still never rewrote the file. `python3` is named because Haiku
+    // otherwise reaches for GNU `sed -i`, which fails on macOS.
+    needs: ["bash"],
+    oneCommandChanges: true,
+    text: "Make each change in one `bash` command that writes only what's new: `cat > file <<'EOF'` for a small file that mostly changes, a `python3` replace asserting exactly one match for a few lines of a bigger file, `cat >>` for added tests; end it with the test command.",
+  },
+  {
     needs: ["edit", "write"],
+    oneCommandChanges: false,
     text: "Prefer `edit` over `write` for changes to existing files.",
   },
   {
@@ -67,15 +80,40 @@ export const TOOL_STEERING_CLAUSES: ReadonlyArray<{
     text: "To orient, combine `ls`/`find`/`rg`/`cat` in one `bash` call.",
   },
   {
+    // A fact, not a rule: the model can't see how calls execute. Told only to
+    // batch "reads/searches", race lanes made one steroids call per reply and
+    // packed reads into bash loops instead (agent-race, 2026-11-03).
+    needs: ["bash"],
+    text: "Calls in one reply run in parallel, except shell commands and edits (run in listed order); batch independent work.",
+  },
+  {
     needs: ["read", "grep"],
+    without: ["bash"],
     text: "Batch independent reads/searches in one turn; they run in parallel.",
   },
 ];
 
+/**
+ * Changes go through one shell command when `bash` is available and runs a
+ * POSIX shell (not the cmd.exe fallback on bash-less Windows).
+ */
+export function usesOneCommandChanges(
+  activeTools: readonly string[],
+  posixShell: boolean,
+): boolean {
+  return posixShell && activeTools.includes("bash");
+}
+
 /** Build the steering line from whichever clauses apply to the active tools. */
-export function buildToolSteering(activeTools: readonly string[]): string {
+export function buildToolSteering(activeTools: readonly string[], posixShell = true): string {
   const active = new Set(activeTools);
-  return TOOL_STEERING_CLAUSES.filter((c) => c.needs.every((n) => active.has(n)))
+  const oneCommand = usesOneCommandChanges(activeTools, posixShell);
+  return TOOL_STEERING_CLAUSES.filter(
+    (c) =>
+      c.needs.every((n) => active.has(n)) &&
+      !(c.without ?? []).some((n) => active.has(n)) &&
+      (c.oneCommandChanges === undefined || c.oneCommandChanges === oneCommand),
+  )
     .map((c) => c.text)
     .join(" ");
 }
@@ -92,8 +130,6 @@ export const BUILTIN_TOOL_NAMES: readonly string[] = [
   "ask_user",
   "bash",
   "checklist",
-  "code_nav",
-  "code_search",
   "debug",
   "edit",
   "enter_plan",
@@ -134,8 +170,6 @@ export const DEFAULT_TOOL_NAMES: readonly string[] = [
   "bash",
   "find",
   "grep",
-  "code_nav",
-  "code_search",
   "ls",
   "source_path",
   "web_fetch",

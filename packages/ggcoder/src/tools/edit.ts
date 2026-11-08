@@ -21,6 +21,7 @@ import type { EditSource } from "../core/lsp/edit-telemetry.js";
 import { resolveWriteGuard, type WriteGuardSettings } from "../core/workspace-guard.js";
 import { redactedOldTextHint, redactionLossError } from "./redaction-guard.js";
 import { isRecord } from "../core/foreign-transcript-blocks.js";
+import { configWriteBlockMessage } from "../core/action-threats.js";
 
 type MutationCallback = (filePath: string) => void | Promise<void>;
 
@@ -721,6 +722,10 @@ export function createEditTool(
     // Never replace real secrets with the placeholder the model was shown.
     const lossError = redactionLossError(originalNormalized, working, fileName);
     if (lossError) throw new Error(lossError);
+
+    // Action guard: no switching on auto-run / guard-off settings elsewhere.
+    const configBlocked = configWriteBlockMessage(resolved, working, originalNormalized);
+    if (configBlocked) throw new Error(configBlocked);
 
     const relPath = path.relative(cwd, resolved);
     const diff = generateDiff(originalNormalized, working, relPath);

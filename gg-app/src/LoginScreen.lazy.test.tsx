@@ -28,7 +28,7 @@ it("loads local-model and download forms only after selection, without scanning 
   expect(native.hfPullStatus).not.toHaveBeenCalled();
   local.focus();
   fireEvent.click(local);
-  await screen.findByRole("dialog", { name: /Ollama/i });
+  await screen.findByRole("dialog", { name: /Local models/i });
   await waitFor(() => expect(native.scanLocalModels).toHaveBeenCalledTimes(1));
   fireEvent.keyDown(document, { key: "Escape" });
   expect(screen.queryByRole("dialog")).toBeNull();

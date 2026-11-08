@@ -44,6 +44,8 @@ export interface HistoryEntryForWire {
   error?: AppErrorPayload;
   /** Webview-copy info row marker (e.g. the video-capability warning). */
   infoKind?: "video_warning";
+  /** Safety-block chat row (persisted `security` app marker). */
+  security?: { rule: string; target: string };
   // Each image's preview (`src`), or with `?images=refs` its ref and its
   // preview's size, for the app to load as it's scrolled to.
   toolImages?: Array<

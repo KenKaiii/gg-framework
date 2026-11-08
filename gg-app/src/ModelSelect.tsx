@@ -4,11 +4,16 @@ import { compactModelName, modelDisplayName } from "./model-name";
 import { groupByProvider } from "./provider-labels";
 import { supportsNativeSelectPopup } from "./platform";
 import type { ModelOption } from "./agent";
+import { PaidModelConfirm } from "./placeholder/PaidModelConfirm";
 
 interface Props {
   models: readonly ModelOption[];
   currentModel: string;
-  onSelect: (modelId: string) => void;
+  onSelect: (modelId: string, options?: { confirmPaid?: boolean }) => void;
+  /** Offer models that spend real money (Claude fast mode) behind an explicit
+   *  confirmation. Leave off for pickers that drive background agents (the
+   *  Helper), which never run on one: those never list a paid model. */
+  offerPaid?: boolean;
   disabled?: boolean;
   /** Tooltip + accessible name (e.g. "Switch GG Coder's model"). */
   title: string;
@@ -89,6 +94,7 @@ export function ModelSelect({
   models,
   currentModel,
   onSelect,
+  offerPaid = false,
   disabled,
   title,
   label: actionLabel,
@@ -98,6 +104,9 @@ export function ModelSelect({
   compact = false,
 }: Props): React.ReactElement {
   const [open, setOpen] = useState(false);
+  // A real-money model waiting on the user's explicit yes. Picking it never
+  // switches by itself: the picker asks first, with Cancel as the default.
+  const [pendingPaid, setPendingPaid] = useState<ModelOption | null>(null);
   const rootRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
@@ -120,11 +129,21 @@ export function ModelSelect({
   // (it's the user's own machine, not an account, and its length depends on what
   // they've pulled). A flat list of 40+ models across a dozen vendors is
   // unreadable; the vendor is the first thing you scan for.
-  const groups = groupByProvider(models);
+  // Without `offerPaid` there is no "spend real money" confirmation, so a paid
+  // model (Claude fast mode) is never offered unless it's already the current one.
+  const groups = groupByProvider(
+    models.filter(
+      (model) => offerPaid || model.billing?.paid !== true || model.id === currentModel,
+    ),
+  );
   const activeLocal = models.find((model) => model.id === currentModel && model.local);
+  // A model that changes what the user pays says so for as long as it's active.
+  const currentBilling = models.find((model) => model.id === currentModel)?.billing;
+  const paidActive = currentBilling?.paid === true;
   // Which machine/server is answering matters when a local model is active.
+  const baseTitle = activeLocal?.endpoint ? `${title} — ${activeLocal.endpoint}` : title;
   const triggerTitle =
-    unavailableReason ?? (activeLocal?.endpoint ? `${title} — ${activeLocal.endpoint}` : title);
+    unavailableReason ?? (currentBilling ? `${baseTitle} — ${currentBilling.detail}` : baseTitle);
   // Dim to match every other disabled control in the footer, so "you can't use
   // this right now" is visible before the click rather than after it.
   //
@@ -134,7 +153,13 @@ export function ModelSelect({
   // are mid-range already and keep it.
   const controlColor = unavailable ? theme.textDim : (color ?? theme.textSecondary);
   const currentName = modelDisplayName(models, currentModel);
-  const label = actionLabel ?? (compact ? compactModelName(currentName) : currentName);
+  const shownName = compact ? compactModelName(currentName) : currentName;
+  const label = actionLabel ?? (paidActive ? `${shownName} · paid` : shownName);
+
+  // A run starting (or the list emptying) while the question is open cancels it.
+  useEffect(() => {
+    if (unavailable) setPendingPaid(null);
+  }, [unavailable]);
 
   useEffect(() => {
     if (!open) return;
@@ -163,11 +188,43 @@ export function ModelSelect({
     };
   }, [open]);
 
+  /** True when picking `modelId` must wait for the paid confirmation. */
+  function needsPaidConfirm(modelId: string): boolean {
+    if (!offerPaid || modelId === currentModel) return false;
+    const model = models.find((m) => m.id === modelId);
+    if (model?.billing?.paid !== true) return false;
+    setPendingPaid(model);
+    return true;
+  }
+
   function chooseModel(modelId: string): void {
     setOpen(false);
+    if (needsPaidConfirm(modelId)) return;
     onSelect(modelId);
     requestAnimationFrame(() => triggerRef.current?.focus());
   }
+
+  function settlePaid(confirmed: boolean): void {
+    const model = pendingPaid;
+    setPendingPaid(null);
+    if (confirmed && model && !unavailable) onSelect(model.id, { confirmPaid: true });
+    requestAnimationFrame(() =>
+      (triggerRef.current ?? rootRef.current?.querySelector<HTMLElement>("select"))?.focus(),
+    );
+  }
+
+  const paidConfirm = pendingPaid && !unavailable && (
+    <PaidModelConfirm
+      model={pendingPaid}
+      standardName={
+        pendingPaid.billing?.standardModel
+          ? modelDisplayName(models, pendingPaid.billing.standardModel)
+          : undefined
+      }
+      onConfirm={() => settlePaid(true)}
+      onCancel={() => settlePaid(false)}
+    />
+  );
 
   function chooseFollow(): void {
     setOpen(false);
@@ -212,19 +269,25 @@ export function ModelSelect({
         title={
           toolless
             ? `${model.name} has no tool calling, so it can't run the agent`
-            : model.endpoint
-              ? `${model.endpoint} · ${model.id}`
-              : `${model.provider} · ${model.id}`
+            : model.billing
+              ? `${model.provider} · ${model.id} · ${model.billing.detail}`
+              : model.endpoint
+                ? `${model.endpoint} · ${model.id}`
+                : `${model.provider} · ${model.id}`
         }
       >
-        {model.name}
+        {model.billing ? `${model.name} · ${model.billing.label}` : model.name}
       </button>
     );
   }
 
   if (supportsNativeSelectPopup()) {
     return (
-      <span className="model-picker model-picker-native" style={{ color: controlColor }}>
+      <span
+        className="model-picker model-picker-native"
+        ref={rootRef}
+        style={{ color: controlColor }}
+      >
         <span className="model-select-text" aria-hidden="true">
           {label}
         </span>
@@ -237,7 +300,7 @@ export function ModelSelect({
           onChange={(event) => {
             const next = event.target.value;
             if (next === FOLLOW_VALUE) onSelectFollow?.();
-            else if (next) onSelect(next);
+            else if (next && !needsPaidConfirm(next)) onSelect(next);
           }}
         >
           {value === "" && (
@@ -254,19 +317,24 @@ export function ModelSelect({
           )}
           {!known && currentModel !== "" && <option value={currentModel}>{currentModel}</option>}
           {groups.map((group) => (
-            <optgroup key={group.provider} label={group.label}>
+            <optgroup key={group.key} label={group.label}>
               {group.models.map((model) => (
                 <option
                   key={`${model.provider}:${model.id}`}
                   value={model.id}
                   disabled={model.supportsTools === false}
                 >
-                  {model.supportsTools === false ? `${model.name} — no tool calling` : model.name}
+                  {model.supportsTools === false
+                    ? `${model.name} — no tool calling`
+                    : model.billing
+                      ? `${model.name} · ${model.billing.label}`
+                      : model.name}
                 </option>
               ))}
             </optgroup>
           ))}
         </select>
+        {paidConfirm}
       </span>
     );
   }
@@ -314,7 +382,7 @@ export function ModelSelect({
             </button>
           )}
           {groups.map((group) => (
-            <div key={group.provider} className="model-menu-section">
+            <div key={group.key} className="model-menu-section">
               <div
                 className="model-menu-subtitle"
                 style={{ color: theme.textMuted }}
@@ -329,6 +397,7 @@ export function ModelSelect({
           ))}
         </div>
       )}
+      {paidConfirm}
     </span>
   );
 }

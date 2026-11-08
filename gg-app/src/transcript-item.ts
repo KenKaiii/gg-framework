@@ -44,6 +44,8 @@ export type Item =
   // streamed from the ken_* SSE events. Never mistaken for GG Coder.
   | { kind: "ken"; id: number; text: string }
   | { kind: "info"; id: number; text: string }
+  // A safety guard blocked something (or found an infected installed package).
+  | { kind: "security"; id: number; rule: string; target: string; count?: number }
   // Structured error (see gg-ai's formatChatError), validated by readChatError:
   // headline and guidance lead, the raw report sits behind details. `reason`
   // picks the recovery; `text` is a legacy fallback for older items.

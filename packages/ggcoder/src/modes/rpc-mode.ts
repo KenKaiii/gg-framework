@@ -1,6 +1,6 @@
 import readline from "node:readline";
 import type { Provider, ThinkingLevel } from "@kleio/ai";
-import { AgentSession } from "../core/agent-session.js";
+import { AgentSession, PaidModelConfirmationError } from "../core/agent-session.js";
 import { isAbortError } from "@kleio/agent";
 import { formatUserError } from "../utils/error-handler.js";
 import { closeLogger } from "../core/logger.js";
@@ -37,6 +37,8 @@ interface RpcSwitchModelCommand {
   command: "switch_model";
   provider: string;
   model: string;
+  /** Required for a model that spends real money (Claude fast mode). */
+  confirm_paid?: boolean;
 }
 
 interface RpcBranchCommand {
@@ -92,7 +94,8 @@ function emitError(id: string, message: string): void {
  * - { id, command: "prompt", text } → run agent loop, stream events, return result
  * - { id, command: "compact" } → compact conversation
  * - { id, command: "new_session" } → start new session
- * - { id, command: "switch_model", provider, model } → switch model
+ * - { id, command: "switch_model", provider, model, confirm_paid? } → switch model
+ *   (`confirm_paid: true` is required for a model that spends real money)
  * - { id, command: "branch", steps_back? } → create conversation branch
  * - { id, command: "get_state" } → return current session state
  * - { id, command: "abort" } → abort current operation
@@ -193,7 +196,17 @@ async function handleCommand(
       break;
 
     case "switch_model":
-      await session.switchModel(cmd.provider, cmd.model);
+      try {
+        await session.switchModel(cmd.provider, cmd.model, {
+          confirmPaid: cmd.confirm_paid === true,
+        });
+      } catch (err) {
+        if (err instanceof PaidModelConfirmationError) {
+          emitError(cmd.id, `${err.message} Resend with "confirm_paid": true to use it.`);
+          break;
+        }
+        throw err;
+      }
       emitResult(cmd.id, { status: "switched", state: session.getState() });
       break;
 

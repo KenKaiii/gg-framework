@@ -19,13 +19,12 @@ import { createBashTool } from "./bash.js";
 import { recordBashReads } from "./bash-read-evidence.js";
 import { createFindTool } from "./find.js";
 import { createGrepTool } from "./grep.js";
-import { createSearchCodeTool } from "./search-code.js";
-import { createCodeNavTool } from "./code-nav.js";
 import { createLsTool } from "./ls.js";
 import { createSubAgentTool } from "./subagent.js";
 import { createSubAgentControlTools } from "./subagent-control.js";
 import { createWebFetchTool } from "./web-fetch.js";
 import { createWebSearchTool } from "./web-search.js";
+import type { SideWebSearch } from "./side-web-search.js";
 import { createSourcePathTool } from "./source-path.js";
 import { createTaskOutputTool } from "./task-output.js";
 import { createTaskStopTool } from "./task-stop.js";
@@ -46,7 +45,7 @@ import type { WriteGuardSettings } from "../core/workspace-guard.js";
 import type { GetNetworkPolicy } from "../core/network-guard.js";
 import type { SandboxPolicy } from "../core/sandbox.js";
 import type { AgentDefinition } from "../core/agents.js";
-import type { Skill } from "../core/skills.js";
+import type { BlockedSkill, Skill } from "../core/skills.js";
 import type { AgentNotificationQueue } from "../core/agent-notifications.js";
 
 // Canonical registry of built-in tool names. Defined in prompt-hints (a leaf
@@ -57,6 +56,8 @@ export { BUILTIN_TOOL_NAMES } from "./prompt-hints.js";
 export interface CreateToolsOptions {
   agents?: AgentDefinition[];
   skills?: Skill[];
+  /** Skills the safety scan refused; the skill tool names them instead of "not found". */
+  blockedSkills?: readonly BlockedSkill[];
   /** Byte budgets for skill catalog / MCP descriptions in tool schemas. */
   contextLimits?: ContextLimits;
   provider?: Provider;
@@ -131,6 +132,8 @@ export interface CreateToolsOptions {
   getNetworkPolicy?: GetNetworkPolicy;
   /** Lazily read the OS command-sandbox mode and allowed network domains. */
   getSandboxPolicy?: () => SandboxPolicy;
+  /** Package release-age cooldown in days (settings `packageCooldownDays`). */
+  getPackageCooldownDays?: () => number;
   /**
    * Lazily read whether `grep` may use the external `rg` scanner when present
    * (grepUseRipgrep). Defaults to enabled when omitted.
@@ -142,6 +145,8 @@ export interface CreateToolsOptions {
    * detection happens once.
    */
   steroidsBin?: string | null;
+  /** Runs web_search as a separate provider request (Anthropic); see side-web-search.ts. */
+  sideWebSearch?: SideWebSearch;
   /**
    * Push queue for out-of-band notifications (child completions, background
    * process progress). When provided, producers enqueue here and the session
@@ -271,11 +276,11 @@ export async function createTools(
       undefined,
       opts?.getNetworkPolicy,
       ops === localOperations ? opts?.getSandboxPolicy : undefined,
+      undefined,
+      opts?.getPackageCooldownDays,
     ),
     createFindTool(cwd),
     createGrepTool(cwd, ops, { useExternalScanner: opts?.getUseExternalGrep }),
-    createSearchCodeTool(cwd, ops),
-    createCodeNavTool(cwd, lspManager, ops),
     createLsTool(cwd, ops),
     createSourcePathTool(cwd),
     createWebFetchTool(opts?.getNetworkPolicy),
@@ -296,9 +301,10 @@ export async function createTools(
   const steroidsBin = opts?.steroidsBin === undefined ? findSteroidsBinary() : opts.steroidsBin;
   if (steroidsBin) tools.push(createSteroidsTool(steroidsBin));
 
-  // Add web search tool for providers without reliable native web search
-  if (opts?.provider && opts.provider !== "anthropic") {
-    tools.push(createWebSearchTool(opts?.getNetworkPolicy));
+  // Client web search. On Anthropic it runs the native search in a side
+  // request (sideWebSearch), so result pages stay out of the main context.
+  if (opts?.provider) {
+    tools.push(createWebSearchTool(opts?.getNetworkPolicy, opts?.sideWebSearch));
   }
 
   let subAgentManager: SubAgentManager | undefined;
@@ -336,7 +342,7 @@ export async function createTools(
   }
 
   if (opts?.skills && opts.skills.length > 0) {
-    tools.push(createSkillTool(opts.skills, opts.contextLimits));
+    tools.push(createSkillTool(opts.skills, opts.contextLimits, opts.blockedSkills));
   }
 
   if (opts?.onEnterPlan) {
@@ -414,8 +420,6 @@ export { createEditTool } from "./edit.js";
 export { createBashTool } from "./bash.js";
 export { createFindTool } from "./find.js";
 export { createGrepTool } from "./grep.js";
-export { createSearchCodeTool } from "./search-code.js";
-export { createCodeNavTool } from "./code-nav.js";
 export { createLsTool } from "./ls.js";
 export { createWebFetchTool } from "./web-fetch.js";
 export { createWebSearchTool } from "./web-search.js";

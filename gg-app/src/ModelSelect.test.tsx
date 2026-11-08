@@ -15,7 +15,7 @@ const MODELS: ModelOption[] = [
   { id: "grok-4.5", name: "Grok 4.5", provider: "xai" },
   {
     id: "local/ollama/gemma4:e2b",
-    name: "gemma4:e2b (Ollama)",
+    name: "gemma4:e2b",
     provider: "local",
     local: true,
     endpoint: "Ollama",
@@ -24,7 +24,7 @@ const MODELS: ModelOption[] = [
   },
   {
     id: "local/ollama/tiny",
-    name: "tiny (Ollama)",
+    name: "tiny",
     provider: "local",
     local: true,
     endpoint: "Ollama",
@@ -57,6 +57,201 @@ describe("ModelSelect — compact recovery action", () => {
   });
 });
 
+describe("ModelSelect — models that change what you pay", () => {
+  const paid: ModelOption = {
+    id: "claude-opus-5-5-fast",
+    name: "Claude Opus 5.5 Fast",
+    provider: "anthropic",
+    billing: {
+      label: "bills usage credits",
+      detail: "Fast mode bills your Claude usage credits, never your plan's included usage.",
+      paid: true,
+    },
+  };
+  const planFast: ModelOption = {
+    id: "gpt-6-luna-fast",
+    name: "GPT-6 Luna Fast",
+    provider: "openai",
+    billing: { label: "2.5x plan usage", detail: "Uses plan limits at 2.5x.", paid: false },
+  };
+
+  it.each([true, false])(
+    "never offers a real-money model it can't confirm, but labels plan-usage tiers (native=%s)",
+    (native) => {
+      supportsNativeMock.mockReturnValue(native);
+      render(
+        <ModelSelect
+          models={[...MODELS, paid, planFast]}
+          currentModel="claude-sonnet-5"
+          onSelect={vi.fn()}
+          title="Switch model"
+          label="Choose model"
+        />,
+      );
+      if (!native) fireEvent.click(screen.getByRole("button", { name: "Choose model" }));
+      const role = native ? "option" : "menuitemradio";
+      expect(screen.queryByRole(role, { name: /Claude Opus 5\.5 Fast/ })).toBeNull();
+      expect(screen.getByRole(role, { name: "GPT-6 Luna Fast · 2.5x plan usage" })).toBeTruthy();
+    },
+  );
+
+  it("still shows a real-money model that is already the current one", () => {
+    supportsNativeMock.mockReturnValue(false);
+    render(
+      <ModelSelect
+        models={[...MODELS, paid]}
+        currentModel="claude-opus-5-5-fast"
+        onSelect={vi.fn()}
+        title="Switch model"
+        label="Choose model"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Choose model" }));
+    expect(
+      screen.getByRole("menuitemradio", { name: "Claude Opus 5.5 Fast · bills usage credits" }),
+    ).toBeTruthy();
+  });
+});
+
+describe("ModelSelect — confirming a model that spends real money", () => {
+  const paid: ModelOption = {
+    id: "claude-opus-5-5-fast",
+    name: "Claude Opus 5.5 Fast",
+    provider: "anthropic",
+    billing: {
+      label: "bills usage credits",
+      detail: "Fast mode bills your Claude usage credits from the first token.",
+      paid: true,
+      standardModel: "claude-opus-5-5",
+    },
+  };
+  const standard: ModelOption = {
+    id: "claude-opus-5-5",
+    name: "Claude Opus 5.5",
+    provider: "anthropic",
+  };
+  const QUESTION = "Claude Opus 5.5 Fast spends real money.";
+
+  function renderMain(native: boolean, extra: { disabled?: boolean } = {}) {
+    supportsNativeMock.mockReturnValue(native);
+    const onSelect = vi.fn();
+    const view = render(
+      <ModelSelect
+        models={[...MODELS, standard, paid]}
+        currentModel="claude-sonnet-5"
+        onSelect={onSelect}
+        offerPaid
+        title="Switch model"
+        {...extra}
+      />,
+    );
+    return { onSelect, view };
+  }
+
+  function pick(native: boolean, id: string, name: string): void {
+    if (native) {
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: id } });
+      return;
+    }
+    fireEvent.click(screen.getByRole("button", { name: /Switch model|Claude Sonnet 5/ }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name }));
+  }
+
+  it.each([true, false])(
+    "asks first, with Cancel as the default, and never switches on its own (native=%s)",
+    (native) => {
+      const { onSelect } = renderMain(native);
+      pick(native, paid.id, "Claude Opus 5.5 Fast · bills usage credits");
+
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(screen.getByText(QUESTION)).toBeTruthy();
+      // Names the fallback from the model list, not a Claude-only "standard speed".
+      expect(screen.getByText(/go back to Claude Opus 5\.5, and the Helper/)).toBeTruthy();
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(screen.queryByText(QUESTION)).toBeNull();
+    },
+  );
+
+  it("backs out on Escape", () => {
+    const { onSelect } = renderMain(false);
+    pick(false, paid.id, "Claude Opus 5.5 Fast · bills usage credits");
+    fireEvent.keyDown(screen.getByRole("button", { name: "Cancel" }), { key: "Escape" });
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.queryByText(QUESTION)).toBeNull();
+  });
+
+  it.each([true, false])(
+    "switches only after the explicit yes, and says so on the request (native=%s)",
+    (native) => {
+      const { onSelect } = renderMain(native);
+      pick(native, paid.id, "Claude Opus 5.5 Fast · bills usage credits");
+      fireEvent.click(screen.getByRole("button", { name: "Use it and pay" }));
+      expect(onSelect).toHaveBeenCalledWith("claude-opus-5-5-fast", { confirmPaid: true });
+      expect(screen.queryByText(QUESTION)).toBeNull();
+    },
+  );
+
+  it("switches a standard model straight away, with no confirmation", () => {
+    const { onSelect } = renderMain(false);
+    pick(false, "gpt-6.1-sol", "GPT-6.1 Sol");
+    expect(screen.queryByText(/spends real money/)).toBeNull();
+    expect(onSelect).toHaveBeenCalledWith("gpt-6.1-sol");
+  });
+
+  it("drops the question when a run starts, so it can't switch mid-run", () => {
+    const { onSelect, view } = renderMain(false);
+    pick(false, paid.id, "Claude Opus 5.5 Fast · bills usage credits");
+    expect(screen.getByText(QUESTION)).toBeTruthy();
+    view.rerender(
+      <ModelSelect
+        models={[...MODELS, paid]}
+        currentModel="claude-sonnet-5"
+        onSelect={onSelect}
+        offerPaid
+        disabled
+        title="Switch model"
+      />,
+    );
+    expect(screen.queryByText(QUESTION)).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("keeps it off the Helper's picker, which runs unwatched", () => {
+    supportsNativeMock.mockReturnValue(false);
+    render(
+      <ModelSelect
+        models={[...MODELS, paid]}
+        currentModel="claude-sonnet-5"
+        onSelect={vi.fn()}
+        onSelectFollow={vi.fn()}
+        followActive
+        title="Switch Helper's model"
+        label="Helper model"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Helper model" }));
+    expect(screen.queryByRole("menuitemradio", { name: /Claude Opus 5\.5 Fast/ })).toBeNull();
+  });
+
+  it("says it's paid on the control while the paid model is active", () => {
+    supportsNativeMock.mockReturnValue(false);
+    render(
+      <ModelSelect
+        models={[...MODELS, paid]}
+        currentModel="claude-opus-5-5-fast"
+        onSelect={vi.fn()}
+        offerPaid
+        title="Switch model"
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "Claude Opus 5.5 Fast · paid" });
+    expect(trigger.getAttribute("title")).toContain("bills your Claude usage credits");
+  });
+});
+
 describe("ModelSelect — native popup", () => {
   it("groups every provider under its own label, local last", () => {
     supportsNativeMock.mockReturnValue(true);
@@ -70,7 +265,7 @@ describe("ModelSelect — native popup", () => {
     );
 
     const groups = Array.from(document.querySelectorAll("optgroup")).map((g) => g.label);
-    expect(groups).toEqual(["Anthropic", "OpenAI", "xAI (Grok)", "Local"]);
+    expect(groups).toEqual(["Anthropic", "OpenAI", "xAI (Grok)", "Local · Ollama"]);
   });
 
   it("disables a tool-less local option and says why in its label", () => {
@@ -84,7 +279,7 @@ describe("ModelSelect — native popup", () => {
       />,
     );
 
-    const option = screen.getByRole("option", { name: /tiny \(Ollama\) — no tool calling/ });
+    const option = screen.getByRole("option", { name: /^tiny — no tool calling/ });
     expect(option.hasAttribute("disabled")).toBe(true);
   });
 
@@ -234,9 +429,9 @@ describe("ModelSelect — in-webview menu", () => {
     const headings = Array.from(document.querySelectorAll(".model-menu-subtitle")).map(
       (el) => el.textContent,
     );
-    expect(headings).toEqual(["Anthropic", "OpenAI", "xAI (Grok)", "Local"]);
+    expect(headings).toEqual(["Anthropic", "OpenAI", "xAI (Grok)", "Local · Ollama"]);
     // Each section's grid is labelled for screen readers.
-    expect(screen.getByRole("group", { name: "Local" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Local · Ollama" })).toBeTruthy();
   });
 
   it("selects a model from its provider group", () => {
@@ -250,7 +445,7 @@ describe("ModelSelect — in-webview menu", () => {
   it("refuses to select a tool-less local model", () => {
     const onSelect = openMenu();
 
-    const item = screen.getByRole("menuitemradio", { name: "tiny (Ollama)" });
+    const item = screen.getByRole("menuitemradio", { name: "tiny" });
     expect(item.hasAttribute("disabled")).toBe(true);
     expect(item.getAttribute("title")).toContain("has no tool calling");
 
@@ -262,9 +457,7 @@ describe("ModelSelect — in-webview menu", () => {
     openMenu("local/ollama/gemma4:e2b");
 
     expect(
-      screen
-        .getByRole("menuitemradio", { name: "gemma4:e2b (Ollama)" })
-        .getAttribute("aria-checked"),
+      screen.getByRole("menuitemradio", { name: "gemma4:e2b" }).getAttribute("aria-checked"),
     ).toBe("true");
   });
 });

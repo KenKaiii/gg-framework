@@ -318,6 +318,79 @@ describe("Anthropic transform", () => {
     expect(result.system?.[1]?.text).toBe("Today's date: 17 May 2026");
   });
 
+  describe("deferred server tool calls", () => {
+    // web_search called alongside a client tool: the API defers the search and
+    // returns its result at the start of the NEXT response.
+    const deferred: Message[] = [
+      { role: "user", content: "research this" },
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_call", id: "toolu_a", name: "web_fetch", args: { url: "https://a" } },
+          {
+            type: "server_tool_call",
+            id: "srvtoolu_1",
+            name: "web_search",
+            input: { query: "q1" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [{ type: "tool_result", toolCallId: "toolu_a", content: "page a" }],
+      },
+    ];
+    const blockTypes = (result: ReturnType<typeof toAnthropicMessages>) =>
+      result.messages.map((m) =>
+        typeof m.content === "string" ? ["string"] : m.content.map((b) => b.type),
+      );
+
+    it("keeps an unresolved call while the follow-up holds only tool results", () => {
+      expect(blockTypes(toAnthropicMessages(deferred))).toEqual([
+        ["string"],
+        ["tool_use", "server_tool_use"],
+        ["tool_result"],
+      ]);
+    });
+
+    it("keeps a call whose result arrived in the next assistant message", () => {
+      const resolved: Message[] = [
+        ...deferred,
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "server_tool_result",
+              toolUseId: "srvtoolu_1",
+              resultType: "web_search_tool_result",
+              data: { type: "web_search_tool_result", tool_use_id: "srvtoolu_1", content: [] },
+            },
+            { type: "text", text: "done" },
+          ],
+        },
+        { role: "user", content: "thanks" },
+      ];
+      expect(blockTypes(toAnthropicMessages(resolved))).toEqual([
+        ["string"],
+        ["tool_use", "server_tool_use"],
+        ["tool_result"],
+        ["web_search_tool_result", "text"],
+        ["string"],
+      ]);
+    });
+
+    // Regression: a post-compaction re-grounding note (or a new prompt after
+    // a failed run) after the tool results closes the turn, and the API 400s:
+    // "`web_search` tool use with id … was found without a corresponding
+    // `web_search_tool_result` block" on every later request.
+    it("drops an unresolved call once something other than tool results closes the turn", () => {
+      const closed: Message[] = [...deferred, { role: "user", content: "re-grounding note" }];
+      const result = toAnthropicMessages(closed);
+      expect(blockTypes(result)).toEqual([["string"], ["tool_use"], ["tool_result"], ["string"]]);
+      expect(JSON.stringify(result.messages)).not.toContain("srvtoolu_1");
+    });
+  });
+
   describe("conversation cache breakpoints with a 1-h TTL", () => {
     const long = { type: "ephemeral" as const, ttl: "1h" as const };
     const short = { type: "ephemeral" as const };
@@ -351,6 +424,16 @@ describe("Anthropic transform", () => {
       ];
 
       expect(marks(messages, long)).toEqual([long, undefined, undefined, undefined, short]);
+    });
+
+    // Regression: switching the tail to 1 h after 6 rounds re-wrote the whole
+    // tool loop, because a 1-h breakpoint never reads the 5-min entries.
+    it("keeps the tail at 5 min for a long ordinary tool loop", () => {
+      const messages: Message[] = [{ role: "user", content: "fix it" }];
+      for (let i = 0; i < 30; i++) {
+        messages.push(call(`c${i}`), result(`c${i}`));
+        expect(marks(messages, long).at(-1)).toEqual(short);
+      }
     });
 
     it("treats a runtime notice as part of the tool loop, not a new turn", () => {
@@ -423,6 +506,42 @@ describe("Anthropic transform", () => {
     const content = out[1]?.content as unknown as Array<Record<string, unknown>>;
     expect(content.map((b) => b.type)).toEqual(["text", "thinking", "tool_use"]);
     expect(content[1]).toEqual({ type: "thinking", thinking: "reasoning", signature: "sig-abc" });
+  });
+
+  it("keeps an error tool_result text-only and moves its image after it", () => {
+    const messages: Message[] = [
+      { role: "user", content: "shot" },
+      {
+        role: "assistant",
+        content: [{ type: "tool_call", id: "toolu_e", name: "screenshot", args: {} }],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool_result",
+            toolCallId: "toolu_e",
+            isError: true,
+            content: [
+              { type: "text", text: "page errored" },
+              { type: "image", mediaType: "image/png", data: "AAAA" },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const { messages: out } = toAnthropicMessages(messages);
+    expect(out.at(-1)?.content).toEqual([
+      {
+        type: "tool_result",
+        tool_use_id: "toolu_e",
+        content: [{ type: "text", text: "page errored" }],
+        is_error: true,
+      },
+      { type: "text", text: "Attachments from tool call toolu_e:" },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
+    ]);
   });
 
   it("keeps empty text before a redacted_thinking (raw) block", () => {
@@ -874,6 +993,16 @@ describe("OpenAI transform", () => {
 });
 
 describe("toAnthropicThinking", () => {
+  it("sends MiniMax M3.1 Flash adaptive thinking with its effort, never Anthropic's display", () => {
+    for (const level of ["low", "medium", "high", "xhigh", "max"] as const) {
+      expect(toAnthropicThinking(level, MAX_TOKENS, "MiniMax-M3.1-Flash")).toEqual({
+        thinking: { type: "adaptive" },
+        maxTokens: MAX_TOKENS,
+        outputConfig: { effort: level },
+      });
+    }
+  });
+
   // Opus 4.8 is no longer in ggcoder's model picker, but gg-ai is a standalone
   // library and Anthropic still serves that ID — keep the wire format correct.
   it("passes Anthropic adaptive effort levels through for Opus 5.5 / 5 (and legacy 4.8)", () => {
@@ -902,18 +1031,24 @@ describe("toAnthropicThinking", () => {
     });
   });
 
-  it.each(["claude-sonnet-5-5", "claude-sonnet-5.5", "claude-haiku-5-5", "claude-haiku-5.5"])(
-    "passes every adaptive effort through for %s",
-    (model) => {
-      for (const level of ["low", "medium", "high", "xhigh", "max"] as const) {
-        expect(toAnthropicThinking(level, MAX_TOKENS, model)).toEqual({
-          thinking: { type: "adaptive", display: "summarized" },
-          maxTokens: MAX_TOKENS,
-          outputConfig: { effort: level },
-        });
-      }
-    },
-  );
+  it.each([
+    "claude-sonnet-5-5",
+    "claude-sonnet-5.5",
+    "claude-haiku-5-5",
+    "claude-haiku-5.5",
+    // Fable/Mythos 5.x accept xhigh (platform.claude.com effort docs); it used
+    // to be clamped to high.
+    "claude-fable-5-1",
+    "claude-mythos-5-1",
+  ])("passes every adaptive effort through for %s", (model) => {
+    for (const level of ["low", "medium", "high", "xhigh", "max"] as const) {
+      expect(toAnthropicThinking(level, MAX_TOKENS, model)).toEqual({
+        thinking: { type: "adaptive", display: "summarized" },
+        maxTokens: MAX_TOKENS,
+        outputConfig: { effort: level },
+      });
+    }
+  });
 
   it("clamps xhigh to high on adaptive Anthropic models that do not support xhigh", () => {
     expect(toAnthropicThinking("xhigh", MAX_TOKENS, "claude-sonnet-5").outputConfig).toEqual({
@@ -924,13 +1059,14 @@ describe("toAnthropicThinking", () => {
     });
   });
 
-  it("treats the Fable and Mythos line as adaptive thinking models (max, xhigh clamps to high)", () => {
+  it("treats the Fable and Mythos line as adaptive thinking models with xhigh and max", () => {
+    // Anthropic's effort docs list xhigh and max on Fable 5 / 5.1 and Mythos 5.
     for (const model of ["claude-fable-5-1", "claude-fable-5", "claude-mythos-5"]) {
       const result = toAnthropicThinking("max", MAX_TOKENS, model);
       expect(result.outputConfig).toEqual({ effort: "max" });
       expect((result.thinking as { type: string }).type).toBe("adaptive");
       expect(toAnthropicThinking("xhigh", MAX_TOKENS, model).outputConfig).toEqual({
-        effort: "high",
+        effort: "xhigh",
       });
     }
   });

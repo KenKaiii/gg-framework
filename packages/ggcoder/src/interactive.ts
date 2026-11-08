@@ -1,4 +1,5 @@
 import readline from "node:readline/promises";
+import chalk from "chalk";
 import { stdin, stdout } from "node:process";
 import { agentLoop, type AgentEvent } from "@kleio/agent";
 import type { Message } from "@kleio/ai";
@@ -16,17 +17,17 @@ import {
   formatToolCallStart,
   formatToolCallEnd,
   formatUsage,
-  formatError,
   formatWelcome,
 } from "./utils/format.js";
+import { formatUserError } from "./utils/error-handler.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { kimiCodingHeaders, isKimiCodingEndpoint } from "./core/oauth/kimi.js";
 import { ensureAppDirs, loadSavedSettings } from "./config.js";
-import { discoverSkills } from "./core/skills.js";
+import { blockedSkillNotice, discoverSkillsWithBlocked } from "./core/skills.js";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { shouldCompact, compact } from "./core/compaction/compactor.js";
-import { getContextWindow } from "./core/model-registry.js";
+import { getAuthStorageKeys, getContextWindow } from "./core/model-registry.js";
 import { resolveCompactionPolicy } from "./core/compaction/policy.js";
 
 export async function runInteractive(config: CliConfig): Promise<void> {
@@ -46,12 +47,16 @@ export async function runInteractive(config: CliConfig): Promise<void> {
   await authStorage.load();
 
   // Discover skills and create tools before building the prompt so tool names are accurate.
-  const skills = await discoverSkills({
+  const { skills, blocked: blockedSkills } = await discoverSkillsWithBlocked({
     globalSkillsDir: paths.skillsDir,
     projectDir: cwd,
   });
+  // Same startup-warning line as an expired login: plain, never a prompt.
+  for (const blocked of blockedSkills)
+    console.warn(chalk.yellow(`⚠ ${blockedSkillNotice(blocked)}`));
   const { tools, processManager, lspManager, debugManager } = await createTools(cwd, {
     skills,
+    blockedSkills,
     provider,
     model,
     authStorage,
@@ -109,7 +114,9 @@ export async function runInteractive(config: CliConfig): Promise<void> {
   // Auto-compact on load if the restored session exceeds the context window.
   // Without this, huge sessions (1M+ tokens) get loaded into memory and OOM.
   if (messages.length > 1) {
-    const creds = await authStorage.resolveCredentials(provider);
+    const creds = await authStorage.resolveCredentials(provider, {
+      storageKeys: getAuthStorageKeys(provider, model),
+    });
     const contextWindow = getContextWindow(model, { provider, accountId: creds.accountId });
     const policy = resolveCompactionPolicy({
       provider,
@@ -202,7 +209,11 @@ export async function runInteractive(config: CliConfig): Promise<void> {
     try {
       stdout.write("\n");
 
-      const creds = await authStorage.resolveCredentials(provider);
+      // The model's credential order (Gemini: API key, then Google sign-in;
+      // MiMo: Token Plan, then API Credits) — same as AgentSession.
+      const creds = await authStorage.resolveCredentials(provider, {
+        storageKeys: getAuthStorageKeys(provider, model),
+      });
       const generator = agentLoop(messages, {
         provider,
         model,
@@ -230,7 +241,7 @@ export async function runInteractive(config: CliConfig): Promise<void> {
         stdout.write("\n\nInterrupted.\n");
       } else {
         stdout.write(
-          "\n" + formatError(err instanceof Error ? err : new Error(String(err))) + "\n",
+          "\n" + formatUserError(err instanceof Error ? err : new Error(String(err))) + "\n",
         );
       }
     } finally {
@@ -282,7 +293,7 @@ function renderEvent(event: AgentEvent): void {
       break;
 
     case "error":
-      stdout.write(formatError(event.error) + "\n");
+      stdout.write(formatUserError(event.error) + "\n");
       break;
   }
 }

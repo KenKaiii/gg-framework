@@ -1,5 +1,13 @@
 // Core entry point
 export { stream, localWireModelId } from "./stream.js";
+export { LOCAL_NO_API_KEY, localBearerKey } from "./local-api-key.js";
+export {
+  FAST_MODE_SUFFIX,
+  describeFastModeRejection,
+  parseFastModeRejection,
+  resolveFastModeModel,
+} from "./fast-mode.js";
+export type { FastModeRejection, FastModeResolution } from "./fast-mode.js";
 
 // Embeddings + reranking (resolved through the same provider registry)
 export { embed, rerank } from "./embed.js";

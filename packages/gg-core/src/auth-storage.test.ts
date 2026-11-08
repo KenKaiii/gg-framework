@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import {
   AuthStorage,
+  GEMINI_API_KEY,
+  GEMINI_API_KEY_BASE_URL,
   MOONSHOT_OAUTH_KEY,
   NotLoggedInError,
   XAI_OAUTH_KEY,
@@ -12,9 +14,15 @@ import {
   providerStorageKeys,
   readStoredBaseUrlSync,
 } from "./auth-storage.js";
+import { isHiddenProvider } from "./hidden-providers.js";
 
 const refreshOpenAIToken = vi.hoisted(() => vi.fn());
 vi.mock("./oauth/openai.js", () => ({ refreshOpenAIToken }));
+const refreshGeminiToken = vi.hoisted(() => vi.fn());
+vi.mock("./oauth/gemini.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  refreshGeminiToken,
+}));
 const refreshKimiToken = vi.hoisted(() => vi.fn());
 vi.mock("./oauth/kimi.js", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -381,6 +389,57 @@ describe("AuthStorage — Xiaomi dual credential (Token Plan vs. API Credits)", 
     expect(creds.accessToken).toBe("fresh");
   });
 
+  it("uses a Gemini API key first, and still refreshes the Google sign-in when it is the only one", async () => {
+    const keys = [GEMINI_API_KEY, "gemini"];
+    const both = await makeStorage();
+    await both.setCredentials("gemini", oauthCreds("oauth-token"));
+    await both.setCredentials(GEMINI_API_KEY, {
+      accessToken: "aistudio-key",
+      refreshToken: "",
+      expiresAt: Date.now() + 1_000_000,
+      baseUrl: GEMINI_API_KEY_BASE_URL,
+    });
+    const picked = await both.resolveCredentials("gemini", { storageKeys: keys });
+    // The key carries the public API base URL — the transport routes on it.
+    expect(picked).toMatchObject({ accessToken: "aistudio-key", baseUrl: GEMINI_API_KEY_BASE_URL });
+    // Credentials still resolve while Gemini is hidden; it just isn't "connected".
+    expect(await both.hasProviderAuth("gemini")).toBe(!isHiddenProvider("gemini"));
+
+    // OAuth only, and expired: reached through the list, it must still refresh.
+    const oauthOnly = await makeStorage();
+    await oauthOnly.setCredentials("gemini", {
+      accessToken: "stale",
+      refreshToken: "g-refresh",
+      expiresAt: Date.now() - 1_000,
+    });
+    refreshGeminiToken.mockResolvedValueOnce({
+      accessToken: "fresh",
+      refreshToken: "g-refresh-2",
+      expiresAt: Date.now() + 1_000_000,
+    });
+    const refreshed = await oauthOnly.resolveCredentials("gemini", { storageKeys: keys });
+    expect(refreshGeminiToken).toHaveBeenCalledTimes(1);
+    expect(refreshed.accessToken).toBe("fresh");
+
+    // API key only satisfies hasProviderAuth too.
+    const keyOnly = await makeStorage();
+    await keyOnly.setCredentials(GEMINI_API_KEY, oauthCreds("k", ""));
+    expect(await keyOnly.hasProviderAuth("gemini")).toBe(!isHiddenProvider("gemini"));
+  });
+
+  it("reports a hidden provider as not connected even with credentials on disk", async () => {
+    // Pickers and startup filter on hasProviderAuth, so this is what keeps a
+    // hidden provider (Gemini, for now) out of them for users with old logins.
+    expect(isHiddenProvider("gemini")).toBe(true);
+    const storage = await makeStorage();
+    await storage.setCredentials("gemini", oauthCreds("oauth-token"));
+    await storage.setCredentials(GEMINI_API_KEY, oauthCreds("k", ""));
+    expect(await storage.hasProviderAuth("gemini")).toBe(false);
+    // Other providers are unaffected.
+    await storage.setCredentials("anthropic", oauthCreds("a"));
+    expect(await storage.hasProviderAuth("anthropic")).toBe(true);
+  });
+
   it("resolveCredentials prefers the first storageKey, falling back to the next when only that's configured", async () => {
     // Mirrors mimo-v2.6-pro: prefer Token Plan ("xiaomi"), fall back to
     // API Credits when only that's configured.
@@ -698,5 +757,111 @@ describe("AuthStorage — xAI dual credential (Grok OAuth vs. API key)", () => {
     // Single-method providers are unaffected.
     expect(providerStorageKeys("anthropic")).toEqual(["anthropic"]);
     expect(dualAuthProvider("anthropic")).toBeUndefined();
+  });
+});
+
+describe("AuthStorage — clearRejectedApiKey", () => {
+  it("drops a rejected provider key but keeps a local endpoint's key", async () => {
+    const storage = await makeStorage();
+    await storage.setCredentials("glm", {
+      accessToken: "bad-key",
+      refreshToken: "",
+      expiresAt: Date.now() + 60_000,
+    });
+    await storage.setLocalEndpoint("custom-gw", "https://gw.example/v1", "sk-gateway");
+
+    expect(await storage.clearRejectedApiKey("glm")).toBe(true);
+    expect(await storage.clearRejectedApiKey("local:custom-gw")).toBe(false);
+
+    expect(await storage.hasCredentials("glm")).toBe(false);
+    expect((await storage.getCredentials("local:custom-gw"))?.accessToken).toBe("sk-gateway");
+    expect(await storage.hasProviderAuth("local")).toBe(true);
+  });
+});
+
+describe("AuthStorage — MiniMax key region", () => {
+  async function storageWith(detect: (key: string) => Promise<string | undefined>) {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    return { filePath, storage: new AuthStorage(filePath, { detectMiniMaxBaseUrl: detect }) };
+  }
+  const minimaxKey = (baseUrl?: string) => ({
+    accessToken: "sk-cp-china",
+    refreshToken: "",
+    expiresAt: Date.now() + 60_000,
+    ...(baseUrl ? { baseUrl } : {}),
+  });
+
+  it("saves the detected region on a key stored without one, and checks only once", async () => {
+    const detect = vi.fn(async () => "https://api.minimax.cn/anthropic");
+    const { filePath, storage } = await storageWith(detect);
+    await storage.setCredentials("minimax", minimaxKey());
+
+    expect((await storage.resolveCredentials("minimax")).baseUrl).toBe(
+      "https://api.minimax.cn/anthropic",
+    );
+    expect(readStoredBaseUrlSync(filePath, "minimax")).toBe("https://api.minimax.cn/anthropic");
+
+    await storage.resolveCredentials("minimax");
+    expect(detect).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the key untouched when the region can't be determined", async () => {
+    const { filePath, storage } = await storageWith(async () => undefined);
+    await storage.setCredentials("minimax", minimaxKey());
+
+    expect((await storage.resolveCredentials("minimax")).baseUrl).toBeUndefined();
+    expect(readStoredBaseUrlSync(filePath, "minimax")).toBeUndefined();
+  });
+
+  it("never re-checks a key that already has an endpoint", async () => {
+    const detect = vi.fn(async () => "https://api.minimax.cn/anthropic");
+    const { storage } = await storageWith(detect);
+    await storage.setCredentials("minimax", minimaxKey("https://api.minimax.io/anthropic"));
+
+    expect((await storage.resolveCredentials("minimax")).baseUrl).toBe(
+      "https://api.minimax.io/anthropic",
+    );
+    expect(detect).not.toHaveBeenCalled();
+  });
+});
+
+describe("AuthStorage — Xiaomi Token Plan cluster", () => {
+  const SGP = "https://token-plan-sgp.xiaomimimo.com/v1";
+  const AMS = "https://token-plan-ams.xiaomimimo.com/v1";
+  async function storageWith(detect: (key: string) => Promise<string | undefined>) {
+    const filePath = await tempAuthFile();
+    tmpFiles.push(filePath);
+    return {
+      filePath,
+      storage: new AuthStorage(filePath, { detectXiaomiTokenPlanBaseUrl: detect }),
+    };
+  }
+  const tokenPlanKey = { accessToken: "tp-eu", refreshToken: "", expiresAt: 1, baseUrl: SGP };
+
+  it("moves a Europe key rejected by Singapore to its own cluster instead of losing it", async () => {
+    const { filePath, storage } = await storageWith(async () => AMS);
+    await storage.setCredentials("xiaomi", tokenPlanKey);
+
+    expect(await storage.relocateRegionalApiKey(["xiaomi", XIAOMI_CREDITS_KEY])).toBe(AMS);
+    expect(readStoredBaseUrlSync(filePath, "xiaomi")).toBe(AMS);
+    expect((await storage.resolveCredentials("xiaomi")).accessToken).toBe("tp-eu");
+  });
+
+  it("reports nothing to relocate when the key's own cluster rejected it", async () => {
+    const { storage } = await storageWith(async () => SGP);
+    await storage.setCredentials("xiaomi", tokenPlanKey);
+    expect(await storage.relocateRegionalApiKey(["xiaomi"])).toBeUndefined();
+  });
+
+  it("never probes for non-regional keys", async () => {
+    const detect = vi.fn(async () => AMS);
+    const { storage } = await storageWith(detect);
+    await storage.setCredentials(XIAOMI_CREDITS_KEY, { ...tokenPlanKey, accessToken: "sk-x" });
+    await storage.setCredentials("glm", { ...tokenPlanKey, accessToken: "glm-key" });
+
+    expect(await storage.relocateRegionalApiKey([XIAOMI_CREDITS_KEY])).toBeUndefined();
+    expect(await storage.relocateRegionalApiKey(["glm"])).toBeUndefined();
+    expect(detect).not.toHaveBeenCalled();
   });
 });

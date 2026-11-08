@@ -18,6 +18,7 @@
  * Deliberately allow-shaped, not deny-shaped: a command with no recognised host
  * is never blocked, so ordinary work is unaffected.
  */
+import { urlExfilBlockMessage } from "./action-threats.js";
 
 /** Host pattern match: exact, or `*.example.com` matching any subdomain. */
 export function isHostAllowed(host: string, allow: readonly string[]): boolean {
@@ -208,6 +209,10 @@ export type GetNetworkPolicy = () => NetworkPolicy | undefined;
 
 /** Check a URL against a possibly-absent policy. */
 export function checkUrlPolicy(url: string, getPolicy?: GetNetworkPolicy): string | null {
+  // Exfil channels (collection hosts, credential literals) are refused under
+  // every policy, including "off".
+  const exfil = urlExfilBlockMessage(url);
+  if (exfil) return exfil;
   const policy = getPolicy?.();
   if (!policy) return null;
   return checkUrlNetwork(url, policy.mode, policy.allow);

@@ -11,6 +11,8 @@ import {
   formatLocalModelId,
   isLocalModelId,
   localAuthStorageKey,
+  localModelShortName,
+  ollamaServedContext,
   parseLocalModelId,
   probeEndpoint,
   toModelInfo,
@@ -469,5 +471,151 @@ describe("discoverLocalModels", () => {
     expect(findProbedModel(probes, "local/ollama/qwen3:8b")?.model.supportsTools).toBe(true);
     expect(findProbedModel(probes, "local/ollama/absent")).toBeUndefined();
     expect(findProbedModel(probes, "claude-sonnet-5")).toBeUndefined();
+  });
+});
+
+describe("probeEndpoint — Authorization", () => {
+  async function authSeenBy(apiKey: string | undefined): Promise<string | undefined> {
+    let seen: string | undefined = "not called";
+    const server = http.createServer((req, res) => {
+      seen = req.headers.authorization;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "free-model" }] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    const { port } = server.address() as AddressInfo;
+    await probeEndpoint(
+      {
+        id: "custom-gw",
+        label: "gw",
+        baseUrl: `http://127.0.0.1:${port}/v1`,
+        kind: "custom",
+        ...(apiKey ? { apiKey } : {}),
+      },
+      { timeoutMs: 2000 },
+    );
+    return seen;
+  }
+
+  it("sends no Authorization header to an endpoint without a key", async () => {
+    expect(await authSeenBy(undefined)).toBeUndefined();
+  });
+
+  it("sends the endpoint's own key as a bearer token", async () => {
+    expect(await authSeenBy("sk-gateway")).toBe("Bearer sk-gateway");
+  });
+});
+
+describe("localModelShortName", () => {
+  it("keeps only the model's own name from a namespaced raw id", () => {
+    expect(localModelShortName("minimax/minimax-m2:free")).toBe("minimax-m2:free");
+    expect(localModelShortName("hf.co/user/repo:q4")).toBe("repo:q4");
+    expect(localModelShortName("qwen3-coder:30b")).toBe("qwen3-coder:30b");
+  });
+});
+
+describe("probeEndpoint — user-added endpoints", () => {
+  it("reads a llama.cpp-style server's context from /props (PolyStrata, Strata)", async () => {
+    const endpoint = await endpointFor("custom", {
+      "/v1/models": { data: [{ id: "qwen3.6-35b-a3b" }] },
+      "/props": { default_generation_settings: { n_ctx: 65536 } },
+    });
+    const probe = await probeEndpoint(endpoint, { timeoutMs: 2000 });
+    expect(probe.models[0]).toMatchObject({ contextWindow: 65536, contextWindowKnown: true });
+  });
+
+  it("reads LM Studio's loaded context and drops its embedding models", async () => {
+    const endpoint = await endpointFor("custom", {
+      "/v1/models": { data: [{ id: "qwen3-coder-30b" }, { id: "text-embedder" }] },
+      "/api/v1/models": {
+        models: [
+          {
+            key: "qwen3-coder-30b",
+            type: "llm",
+            loaded_instances: [{ id: "qwen3-coder-30b", config: { context_length: 32768 } }],
+          },
+          { key: "text-embedder", type: "embedding", loaded_instances: [] },
+        ],
+      },
+    });
+    const probe = await probeEndpoint(endpoint, { timeoutMs: 2000 });
+    expect(probe.models.map((m) => m.rawId)).toEqual(["qwen3-coder-30b"]);
+    expect(probe.models[0]).toMatchObject({ contextWindow: 32768, contextWindowKnown: true });
+  });
+
+  it("takes a gateway's context_length without probing further", async () => {
+    const endpoint = await endpointFor("custom", {
+      "/v1/models": { data: [{ id: "minimax/minimax-m2:free", context_length: 204800 }] },
+    });
+    const probe = await probeEndpoint(endpoint, { timeoutMs: 2000 });
+    expect(probe.models[0]).toMatchObject({ contextWindow: 204800, contextWindowKnown: true });
+  });
+
+  it("falls back when the server reports no context anywhere", async () => {
+    const endpoint = await endpointFor("custom", { "/v1/models": { data: [{ id: "m" }] } });
+    const probe = await probeEndpoint(endpoint, { timeoutMs: 2000 });
+    expect(probe.models[0]).toMatchObject({
+      contextWindow: FALLBACK_CONTEXT_WINDOW,
+      contextWindowKnown: false,
+    });
+  });
+});
+
+describe("Ollama context sizes", () => {
+  it("uses a Modelfile's num_ctx for a model that isn't loaded", async () => {
+    const endpoint = await endpointFor("ollama", {
+      "/v1/models": { data: [{ id: "coder-32k" }] },
+      "/api/ps": { models: [] },
+      "/api/show": {
+        capabilities: ["completion", "tools"],
+        parameters: "num_ctx                        32768\ntemperature                    0.6",
+      },
+    });
+    const probe = await probeEndpoint(endpoint, { timeoutMs: 2000 });
+    expect(probe.models[0]).toMatchObject({ contextWindow: 32768, contextWindowKnown: true });
+  });
+
+  it("leaves an unloaded model without num_ctx unknown", async () => {
+    const endpoint = await endpointFor("ollama", {
+      "/v1/models": { data: [{ id: "qwen3:0.6b" }] },
+      "/api/ps": { models: [] },
+      "/api/show": { capabilities: ["completion", "tools"], parameters: "temperature 0.6" },
+    });
+    const probe = await probeEndpoint(endpoint, { timeoutMs: 2000 });
+    expect(probe.models[0]).toMatchObject({
+      contextWindow: FALLBACK_CONTEXT_WINDOW,
+      contextWindowKnown: false,
+    });
+  });
+
+  it("loads the model, then reads the size Ollama served it with", async () => {
+    const requests: string[] = [];
+    let loaded = false;
+    const server = http.createServer((req, res) => {
+      requests.push(`${req.method} ${req.url}`);
+      if (req.url === "/api/generate") loaded = true;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify(
+          req.url === "/api/ps"
+            ? { models: loaded ? [{ name: "qwen3:0.6b", context_length: 16384 }] : [] }
+            : { done: true, done_reason: "load" },
+        ),
+      );
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    const endpoint: LocalEndpoint = {
+      id: "ollama",
+      label: "Ollama",
+      baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
+      kind: "ollama",
+    };
+
+    expect(await ollamaServedContext(endpoint, "qwen3:0.6b")).toBeUndefined();
+    expect(requests).toEqual(["GET /api/ps"]);
+    expect(await ollamaServedContext(endpoint, "qwen3:0.6b", { load: true })).toBe(16384);
+    expect(requests.slice(1)).toEqual(["POST /api/generate", "GET /api/ps"]);
   });
 });

@@ -22,7 +22,7 @@ export interface ReceiptCall {
   name: string;
   /** Raw key target (path / command / pattern / URL / agent), unshortened. */
   target: string;
-  /** Search root for grep/find/ls/code_search, unresolved. */
+  /** Search root for grep/find/ls, unresolved. */
   root?: string;
   outcome: "ok" | "error" | "pending";
   /** Parsed from bash's `Exit code: N` result prefix. */
@@ -31,7 +31,7 @@ export interface ReceiptCall {
 
 const FILE_TOOLS = new Set(["read", "write", "edit"]);
 const MUTATING_TOOLS = new Set(["write", "edit"]);
-const ROOT_TOOLS = new Set(["grep", "find", "ls", "code_search"]);
+const ROOT_TOOLS = new Set(["grep", "find", "ls"]);
 
 function str(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
@@ -50,11 +50,8 @@ export function keyTarget(name: string, args: Record<string, unknown> = {}): str
     case "grep":
     case "find":
       return str(args.pattern) ?? "";
-    case "code_search":
     case "web_search":
       return str(args.query) ?? "";
-    case "code_nav":
-      return str(args.file) ?? "";
     case "bash":
       return (str(args.command) ?? "").split("\n")[0]!.trim();
     case "web_fetch":
@@ -148,11 +145,11 @@ function clip(text: string, max: number): string {
 function renderTarget(call: ReceiptCall, cwd: string): string {
   const { name, target } = call;
   if (!target) return "";
-  if (FILE_TOOLS.has(name) || name === "ls" || name === "code_nav") {
+  if (FILE_TOOLS.has(name) || name === "ls") {
     return displayPath(target, cwd);
   }
   if (name === "bash") return `\`${clip(target, COMMAND_MAX_CHARS)}\``;
-  if (name === "grep" || name === "find" || name === "code_search" || name === "web_search") {
+  if (name === "grep" || name === "find" || name === "web_search") {
     const root = call.root && call.root !== "." ? ` in ${displayPath(call.root, cwd)}` : "";
     return `"${clip(target, TARGET_MAX_CHARS - 2)}"${root}`;
   }
@@ -249,7 +246,7 @@ function isUnder(target: string, root: string): boolean {
 /**
  * Paths the report names that the helper never read, wrote, edited, listed or
  * searched. Conservative by design — anything plausibly touched is covered:
- * exact resolved match, inside a grep/find/ls/code_search root, or (for a
+ * exact resolved match, inside a grep/find/ls root, or (for a
  * relative mention) the trailing segments of a touched file.
  */
 export function findUnbackedPaths(
@@ -261,7 +258,7 @@ export function findUnbackedPaths(
   const roots: string[] = [];
   for (const call of calls) {
     if (call.outcome === "error") continue;
-    if ((FILE_TOOLS.has(call.name) || call.name === "code_nav") && call.target) {
+    if (FILE_TOOLS.has(call.name) && call.target) {
       files.push(path.resolve(cwd, call.target));
     }
     if (call.root) roots.push(path.resolve(cwd, call.root));

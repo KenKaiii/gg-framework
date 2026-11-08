@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { FAST_MODE_SUFFIX, resolveFastModeModel } from "@kleio/ai";
 import { XIAOMI_CREDITS_KEY } from "./auth-storage.js";
 import {
   MODELS,
@@ -15,7 +16,9 @@ import {
   getModelsForProvider,
   getSummaryModel,
   getToolResultCharLimit,
+  isPaidModel,
   usesOpenAICodexTransport,
+  withoutPaidTier,
 } from "./model-registry.js";
 
 const PROVIDERS = [
@@ -79,6 +82,78 @@ describe("model registry invariants", () => {
           `${model.id} maxOutputTokens <= codexContextWindow`,
         ).toBeLessThanOrEqual(model.codexContextWindow);
       }
+    }
+  });
+
+  it("registers fast-mode entries as the same model as their base, wired in gg-ai", () => {
+    const fastIds = MODELS.filter((m) => m.id.endsWith(FAST_MODE_SUFFIX)).map((m) => m.id);
+    expect(fastIds).toEqual([
+      "claude-opus-5-5-fast",
+      "gpt-6-astra-fast",
+      "gpt-6.1-sol-fast",
+      "gpt-6-luna-fast",
+    ]);
+    for (const id of fastIds) {
+      const { id: _id, name, billing, ...fast } = getModel(id) as ModelInfo;
+      const resolved = resolveFastModeModel(fast.provider, id);
+      expect(resolved.fast, `${id} resolves in gg-ai`).toBe(true);
+      const { id: _baseId, name: baseName, ...base } = getModel(resolved.model) as ModelInfo;
+      expect(fast, `${id} metadata matches ${resolved.model}`).toEqual(base);
+      expect(name).toBe(`${baseName} Fast`);
+      // Every fast tier changes what the user pays, so it must say so.
+      expect(billing, `${id} declares its billing`).toBeDefined();
+      expect(base.billing, `${resolved.model} bills normally`).toBeUndefined();
+    }
+    // Claude fast mode spends real money (usage credits); Codex fast spends plan allowance.
+    expect(getModel("claude-opus-5-5-fast")?.billing?.paid).toBe(true);
+    expect(getModel("gpt-6.1-sol-fast")?.billing?.paid).toBe(false);
+    // Only a real-money tier is ever stripped back to the standard model.
+    expect(isPaidModel("claude-opus-5-5-fast")).toBe(true);
+    expect(withoutPaidTier("claude-opus-5-5-fast")).toBe("claude-opus-5-5");
+    expect(withoutPaidTier("gpt-6.1-sol-fast")).toBe("gpt-6.1-sol-fast");
+    expect(withoutPaidTier("claude-sonnet-5-5")).toBe("claude-sonnet-5-5");
+    expect(withoutPaidTier("not-a-model")).toBe("not-a-model");
+    // Compaction summaries never land on a fast (premium) tier.
+    expect(getSummaryModel("openai", "gpt-6.1-sol-fast").id).toBe("gpt-6-luna");
+    expect(getSummaryModel("anthropic", "claude-opus-5-5-fast").id).toBe("claude-sonnet-5-5");
+  });
+
+  it("treats MiMo UltraSpeed as real money and strips it back to MiMo-V2.6-Pro", () => {
+    // UltraSpeed only runs on pay-per-token API Credits, never the Token Plan.
+    expect(isPaidModel("mimo-v2.6-pro-ultraspeed")).toBe(true);
+    expect(withoutPaidTier("mimo-v2.6-pro-ultraspeed")).toBe("mimo-v2.6-pro");
+    expect(isPaidModel("mimo-v2.6-pro")).toBe(false);
+  });
+
+  it("gives every paid model a registered, same-provider, unpaid standard model", () => {
+    for (const model of getAllModels().filter((m) => m.billing?.paid === true)) {
+      const standard = model.billing?.standardModel;
+      expect(standard, `${model.id} names its standard model`).toBeDefined();
+      const target = standard ? getModel(standard) : undefined;
+      expect(target, `${model.id} → ${standard} is registered`).toBeDefined();
+      expect(target?.provider, `${model.id} → ${standard} same provider`).toBe(model.provider);
+      expect(isPaidModel(standard ?? ""), `${model.id} → ${standard} is unpaid`).toBe(false);
+      expect(withoutPaidTier(model.id)).toBe(standard);
+    }
+  });
+
+  it("never strips a paid model back to a paid id when its standard model is missing", () => {
+    // Fail closed: a paid runtime model with no usable standard model falls
+    // back to the provider default, not to itself.
+    registerRuntimeModels([
+      {
+        ...(getModel("mimo-v2.6-pro-ultraspeed") as ModelInfo),
+        id: "mimo-test-paid-orphan",
+        billing: { label: "paid", detail: "paid", paid: true, standardModel: "not-registered" },
+      },
+    ]);
+    try {
+      const fallback = withoutPaidTier("mimo-test-paid-orphan");
+      expect(fallback).not.toBe("mimo-test-paid-orphan");
+      expect(isPaidModel(fallback)).toBe(false);
+      expect(getModel(fallback)).toBeDefined();
+    } finally {
+      clearRuntimeModels((m) => m.id === "mimo-test-paid-orphan");
     }
   });
 
@@ -400,16 +475,20 @@ describe("model registry context windows", () => {
     }
   });
 
-  it("defaults MiniMax to the multimodal M3 with a 1M context window", () => {
+  it("defaults MiniMax to M3.1 Flash, the model plan keys cover, and keeps M3", () => {
     expect(getDefaultModel("minimax")).toMatchObject({
-      id: "MiniMax-M3",
-      name: "MiniMax M3",
+      id: "MiniMax-M3.1-Flash",
+      name: "MiniMax M3.1 Flash",
       provider: "minimax",
       contextWindow: 1_000_000,
       supportsImages: true,
       supportsVideo: true,
+      maxThinkingLevel: "max",
     });
-    expect(getModelsForProvider("minimax").map((model) => model.id)).toEqual(["MiniMax-M3"]);
+    expect(getModelsForProvider("minimax").map((model) => model.id)).toEqual([
+      "MiniMax-M3.1-Flash",
+      "MiniMax-M3",
+    ]);
     expect(getContextWindow("MiniMax-M3", { provider: "minimax" })).toBe(1_000_000);
   });
 
@@ -467,7 +546,6 @@ describe("model registry context windows", () => {
       "gemini-3.1-flash-lite",
       "gemini-3.8-flash",
       "gemini-3.5-flash-lite",
-      "gemini-3.7-flash",
       "gemini-3-flash",
       "gemini-3.1-pro-preview",
     ]);
@@ -482,7 +560,8 @@ describe("model registry context windows", () => {
       // Summaries intentionally stay on the selected Gemini model.
       expect(getSummaryModel("gemini", id).id).toBe(id);
     }
-    expect(getContextWindow("gemini-3.7-flash", { provider: "gemini" })).toBe(1_048_576);
+    // Retired: Google routes gemini-3.7-flash to 3.8 Flash since 2026-10-08.
+    expect(getModel("gemini-3.7-flash")).toBeUndefined();
     expect(getContextWindow("gemini-3.1-flash-lite", { provider: "gemini" })).toBe(1_048_576);
     expect(getContextWindow("gemini-3-flash", { provider: "gemini" })).toBe(1_048_576);
   });
@@ -490,7 +569,8 @@ describe("model registry context windows", () => {
   it("retargets deepseek-v4-pro to the 0813 stable build under the same id", () => {
     expect(getDefaultModel("deepseek")).toMatchObject({
       id: "deepseek-v4-pro",
-      contextWindow: 1_048_576,
+      // Decimal 1M, as DeepSeek's own harness sizes it (DEFAULT_CONTEXT_WINDOW).
+      contextWindow: 1_000_000,
       maxOutputTokens: 384_000,
       supportsImages: false,
       costTier: "medium",
@@ -507,7 +587,7 @@ describe("model registry context windows", () => {
       name: "DeepSeek V4.1 Flash",
       supportsImages: true,
       supportsVideo: false,
-      contextWindow: 1_048_576,
+      contextWindow: 1_000_000,
       maxOutputTokens: 384_000,
       maxThinkingLevel: "max",
     });

@@ -131,7 +131,7 @@ describe("validateAgentTools", () => {
   it("accepts built-in and mcp__<server>__<tool> names", () => {
     expect(
       validateAgentTools(
-        { ...base, tools: ["read", "code_search", "mcp__example-server__searchCode"] },
+        { ...base, tools: ["read", "grep", "mcp__example-server__searchCode"] },
         "test",
       ),
     ).toEqual([]);

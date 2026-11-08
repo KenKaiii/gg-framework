@@ -2,6 +2,7 @@ import * as zstd from "@bokuweb/zstd-wasm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { streamOpenAICodex } from "./openai-codex.js";
+import { stream } from "../stream.js";
 import { normalizePromptCacheKey } from "./prompt-cache-key.js";
 
 function createSseResponse(events: Record<string, unknown>[]): Response {
@@ -118,6 +119,28 @@ describe("streamOpenAICodex", () => {
       expect(fetchMock).toHaveBeenCalledTimes(attempts);
     },
   );
+
+  it.each([
+    { model: "gpt-6-luna-fast", tier: "priority" },
+    { model: "gpt-6.1-sol-fast", tier: "priority" },
+    { model: "gpt-6-luna", tier: undefined },
+  ])("sends Codex Fast mode as service_tier priority: $model", async ({ model, tier }) => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
+      createSseResponse([{ type: "response.completed", response: {} }]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const result = stream({
+      provider: "openai",
+      model,
+      apiKey: "test",
+      accountId: "acct",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    await result.response;
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1].body));
+    expect(body.model).toBe(model.replace(/-fast$/, ""));
+    expect(body.service_tier).toBe(tier);
+  });
 
   it("preserves streamed function call arguments", async () => {
     vi.stubGlobal(

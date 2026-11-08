@@ -381,8 +381,10 @@ export interface AgentOptions {
   /** Whether the target model supports video input. When false, video blocks
    *  in messages are downgraded to text placeholders. Default: false. */
   supportsVideo?: boolean;
-  /** Enable provider-native web search. */
-  webSearch?: boolean;
+  /** Enable provider-native web search. A function is re-evaluated before every
+   *  request, so a host can attach the server tool mid-run (after the model
+   *  promotes it) without restarting the loop. */
+  webSearch?: boolean | (() => boolean);
   /** Enable server-side compaction (Anthropic only, beta). */
   compaction?: boolean;
   /** Enable server-side clearing of old tool use/result pairs (Anthropic only, beta). */

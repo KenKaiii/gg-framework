@@ -339,7 +339,6 @@ describe("Motion agent", () => {
       "tool_search",
       "ui_registry",
       "ui_adopt",
-      "code_nav",
       "source_path",
       "steroids",
       "motion_review",

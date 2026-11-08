@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { Provider, ThinkingLevel } from "@kleio/ai";
 import { KLEIO_PRODUCT_PROFILE } from "@kleio/core";
-import { AgentSession } from "../core/agent-session.js";
+import { AgentSession, paidModelRefusal } from "../core/agent-session.js";
 import { isAbortError } from "@kleio/agent";
 import { TelegramBot, type TelegramMessage, type TelegramVoiceMessage } from "../core/telegram.js";
 import { transcribeVoice, isModelLoaded, setProgressCallback } from "../core/voice-transcriber.js";
@@ -11,7 +11,7 @@ import { formatUserError } from "../utils/error-handler.js";
 import { log, closeLogger } from "../core/logger.js";
 import { installTerminationHandlers } from "../core/shutdown.js";
 import { getAppPaths } from "../config.js";
-import { MODELS, getContextWindow } from "../core/model-registry.js";
+import { MODELS, getContextWindow, getListedModels } from "../core/model-registry.js";
 import { estimateConversationTokens } from "../core/compaction/token-estimator.js";
 import { PROMPT_COMMANDS } from "../core/prompt-commands.js";
 import { loadCustomCommands } from "../core/custom-commands.js";
@@ -441,6 +441,10 @@ export async function startServeMode(options: ServeModeOptions): Promise<ServeCo
         return;
       }
       const selected = pendingModels[num - 1]!;
+      if (selected.billing?.paid) {
+        await bot.send(chatId, paidModelRefusal(selected.name));
+        return;
+      }
       const projectPath = resolveProjectPath(chatId);
       const chatState = await getOrCreateChat(chatId, projectPath);
       await chatState.session.switchModel(selected.provider, selected.id);
@@ -585,8 +589,12 @@ export async function startServeMode(options: ServeModeOptions): Promise<ServeCo
       if (args) {
         // Direct switch: /m 3 (number) or /m opus (name fragment)
         const num = parseInt(args, 10);
-        if (!isNaN(num) && num >= 1 && num <= MODELS.length) {
-          const selected = MODELS[num - 1]!;
+        if (!isNaN(num) && num >= 1 && num <= getListedModels().length) {
+          const selected = getListedModels()[num - 1]!;
+          if (selected.billing?.paid) {
+            await bot.send(chatId, paidModelRefusal(selected.name));
+            return;
+          }
           const projectPath = resolveProjectPath(chatId);
           const chatState = await getOrCreateChat(chatId, projectPath);
           await chatState.session.switchModel(selected.provider, selected.id);
@@ -595,10 +603,14 @@ export async function startServeMode(options: ServeModeOptions): Promise<ServeCo
         }
         // Try matching by name fragment
         const lower = args.toLowerCase();
-        const match = MODELS.find(
+        const match = getListedModels().find(
           (m) => m.name.toLowerCase().includes(lower) || m.id.toLowerCase().includes(lower),
         );
         if (match) {
+          if (match.billing?.paid) {
+            await bot.send(chatId, paidModelRefusal(match.name));
+            return;
+          }
           const projectPath = resolveProjectPath(chatId);
           const chatState = await getOrCreateChat(chatId, projectPath);
           await chatState.session.switchModel(match.provider, match.id);
@@ -612,7 +624,7 @@ export async function startServeMode(options: ServeModeOptions): Promise<ServeCo
       // No args — show numbered list grouped by provider
       let listText = "*Models*\n";
       let lastProvider = "";
-      const modelList = [...MODELS];
+      const modelList = getListedModels();
       modelList.forEach((m, i) => {
         if (m.provider !== lastProvider) {
           lastProvider = m.provider;

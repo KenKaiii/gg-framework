@@ -17,8 +17,10 @@ import {
   AuthStorage,
   DEFAULT_LOCAL_ENDPOINTS,
   clearLocalDiscoveryCache,
+  withFileLock,
   type LocalEndpoint,
 } from "@kleio/core";
+import { atomicWrite } from "./session-storage.js";
 
 /** What the caller supplies when adding an endpoint. */
 export interface LocalEndpointInput {
@@ -110,10 +112,17 @@ async function readSettings(file?: string): Promise<Record<string, unknown>> {
   }
 }
 
-async function writeSettings(settings: Record<string, unknown>, file?: string): Promise<void> {
+/** Replace `localEndpoints` under the shared gg-app.json lock with an atomic
+ *  write, re-reading the file inside the lock so a concurrent save of another
+ *  key (model prefs, hidden projects) is never lost. */
+async function writeLocalEndpoints(value: unknown, file?: string): Promise<void> {
   const target = appSettingsFile(file);
   await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(target, JSON.stringify(settings, null, 2), "utf-8");
+  await withFileLock(target, async () => {
+    const settings = await readSettings(file);
+    settings["localEndpoints"] = value;
+    await atomicWrite(target, JSON.stringify(settings, null, 2));
+  });
 }
 
 function parseStored(value: unknown): LocalEndpoint[] {
@@ -185,14 +194,15 @@ export async function addCustomEndpoint(
     ? existing.map((e) => (e.id === id ? endpoint : e))
     : [...existing, endpoint];
 
-  const settings = await readSettings(options.settingsFile);
-  settings["localEndpoints"] = next.map(({ id: eid, label, baseUrl: url, apiKey }) => ({
-    id: eid,
-    label,
-    baseUrl: url,
-    ...(apiKey ? { apiKey } : {}),
-  }));
-  await writeSettings(settings, options.settingsFile);
+  await writeLocalEndpoints(
+    next.map(({ id: eid, label, baseUrl: url, apiKey }) => ({
+      id: eid,
+      label,
+      baseUrl: url,
+      ...(apiKey ? { apiKey } : {}),
+    })),
+    options.settingsFile,
+  );
   await auth.setLocalEndpoint(id, baseUrl, endpoint.apiKey);
   clearLocalDiscoveryCache();
   return endpoint;
@@ -215,16 +225,17 @@ export async function removeCustomEndpoint(
   if (!existing.some((e) => e.id === id)) {
     throw new LocalEndpointError(`Unknown local endpoint "${id}".`);
   }
-  const settings = await readSettings(options.settingsFile);
-  settings["localEndpoints"] = existing
-    .filter((e) => e.id !== id)
-    .map(({ id: eid, label, baseUrl, apiKey }) => ({
-      id: eid,
-      label,
-      baseUrl,
-      ...(apiKey ? { apiKey } : {}),
-    }));
-  await writeSettings(settings, options.settingsFile);
+  await writeLocalEndpoints(
+    existing
+      .filter((e) => e.id !== id)
+      .map(({ id: eid, label, baseUrl, apiKey }) => ({
+        id: eid,
+        label,
+        baseUrl,
+        ...(apiKey ? { apiKey } : {}),
+      })),
+    options.settingsFile,
+  );
   await auth.removeLocalEndpoint(id);
   clearLocalDiscoveryCache();
 }

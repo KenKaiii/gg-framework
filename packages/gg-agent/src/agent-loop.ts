@@ -1105,7 +1105,8 @@ export async function* agentLoop(
               tools: options.tools,
               serverTools: options.serverTools,
               toolChoice: options.toolChoice,
-              webSearch: options.webSearch,
+              webSearch:
+                typeof options.webSearch === "function" ? options.webSearch() : options.webSearch,
               // Clamped to whatever ceiling this route has already rejected us for
               // (identity when nothing has been learned).
               maxTokens: clampOutputTokens(ceilingKey, options.maxTokens),

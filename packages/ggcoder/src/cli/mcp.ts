@@ -11,6 +11,7 @@ import {
   globalMcpPath,
   projectMcpPath,
   parseMcpAddCommand,
+  hiddenToolMessage,
   type MCPScope,
   type MCPServerConfig,
 } from "../core/mcp/index.js";
@@ -131,6 +132,9 @@ async function buildRows(cwd: string): Promise<McpServerRow[]> {
           ok: result?.ok ?? false,
           toolCount: result?.toolCount ?? 0,
           error: result?.error,
+          ...(result?.hidden?.length
+            ? { warning: result.hidden.map(hiddenToolMessage).join("\n") }
+            : {}),
         };
       }),
       ...blocked.map((s): McpServerRow => ({
@@ -162,6 +166,7 @@ async function runList(cwd: string): Promise<void> {
     console.log(
       `${primary(row.config.name)} ${dim(`(${row.scope})`)}  ${status}\n  ${dim(transportSummary(row.config))}`,
     );
+    if (row.warning) console.log(bad(`  ⚠ ${row.warning.split("\n").join("\n  ⚠ ")}`));
   }
 }
 

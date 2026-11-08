@@ -134,7 +134,7 @@ export function WorkspaceHeaderActions({
               <button
                 className="btn btn-sm btn-ghost"
                 disabled={running}
-                title="Initialize git + create a GitHub repository"
+                title="Initialize Git + create a GitHub repository"
                 onClick={() => setShowInitGit(true)}
               >
                 {"Initialize Git"}

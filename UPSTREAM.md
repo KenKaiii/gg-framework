@@ -379,16 +379,19 @@ Local macOS checks, each compared with `main` at `c2a1ea88`:
   build output at 7318.5 KB. The bundled sidecar (8373.7 KB) and the initial frontend
   JavaScript (1017.0 KB) stay within their budgets.
 
-## Agent tools and prompts from upstream (open)
+## Agent tools and prompts from upstream (merged)
 
 - Upstream tip reviewed: `af5b1df4a46a8a308a147afe17bd4a084e958fa7` (engine **5.91.1**,
   desktop **0.102.1**), 287 commits after `3f2bb6bc`.
 - Branch: `sync/upstream-agent-tools`, based on `main` at `9a89e75c`
-- PR: [#76](https://github.com/fmckie/gg-framework/pull/76), opened as a draft on
-  2026-11-04
+- PR: [#76](https://github.com/fmckie/gg-framework/pull/76), merged at `bf328196` on
+  2026-11-04; all nine CI jobs passed on `082ad689` (run **41918584286**). GitHub
+  squashed the branch, so the downstream SHAs below are on
+  `sync/upstream-agent-tools`; the squash commit keeps all 28 trailers (23
+  `Ported from upstream`, 5 `cherry picked from commit`).
 - PR 3a of the 4 in `.gg/plans/upstream-selective-import-phased.md`: agent tools and prompts,
   in upstream date order. PR 3b (models, providers, gg-safe and skills) follows from `main`
-  once this merges.
+  at `bf328196`.
 - `upstream.lastImportedCommit` stays `3f2bb6bc`, for the reason given in the 988f920e
   section. Picks carry `cherry picked from commit <sha>`, ports carry
   `Ported from upstream <sha>`, and `fork-provenance.json` `selectiveImports` holds the
@@ -596,6 +599,287 @@ Local macOS checks, each compared with `main` at `9a89e75c`:
   as are the excluded packages, the `three` lines and `upstream.lastImportedCommit`. The
   critter-art checks match only upstream's image fixture in `App.attachments.test.tsx`
   (`c617d8ab`), whose preview data URI holds the ten bytes "screenshot".
+
+## Models, providers, gg-safe and skills from upstream (open)
+
+- Upstream tip reviewed: `296df256b164ec18a4cc72ec7a824633da245bcb` (engine **5.91.2**,
+  desktop **0.102.2**), 290 commits after `3f2bb6bc`. Upstream has since moved 9 commits
+  further, to `f6b17fc5` (desktop **0.103.1**). All nine come after the relicense, and this
+  import doesn't review them.
+- Branch: `sync/upstream-models-safety`, based on `main` at `bf328196`.
+- PR: [#77](https://github.com/fmckie/gg-framework/pull/77), opened as a draft on
+  2026-11-08
+- PR 3b of the 4 in `.gg/plans/upstream-selective-import-phased.md`: models, providers,
+  gg-safe and skills. Its first commit, `97398b68`, records #76 as merged. Plan rows 24–46
+  follow in order, then `cf6c9a23`, `a4bb110c`, `0ba57296`, `0a9d083f` and the non-Goals
+  half of `5d340fa3`.
+- `upstream.lastImportedCommit` stays `3f2bb6bc`, for the reason given in the 988f920e
+  section. Picks carry `cherry picked from commit <sha>`, ports carry
+  `Ported from upstream <sha>`, and `fork-provenance.json` `selectiveImports` holds the full
+  hashes on both sides.
+- Every commit taken is an ancestor of `c1aa287b` (desktop v0.102.0), upstream's last
+  release under MIT. See the licence note below.
+
+The 30 upstream commits taken, in branch order. A pick is `git cherry-pick -x`, with
+upstream's author and date, and has the same patch as upstream unless its row says
+otherwise. A port is made by hand and takes the whole commit except design, README and docs
+hunks, which the lists below name. A partial port also leaves code out, which its row and
+the lists below name.
+
+| Upstream                                   | Downstream | Method             | Taken                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------ | ---------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `9d7cbe6dc99eeb65c3b016103fd2cc62215b254b` | `2b3c506a` | Partial port       | Auth providers move to `@kleio/core`, the sidecar's git-target code splits out, and settings and teardown races are fixed. Its Goals hunks go to PR 4                                                                                                                                                                                                        |
+| `f9da5393f82fb585d23b947a6f87f121e28df4b8` | `99da3f78` | Port               | `grep` scans on worker threads, with byte prefilters, pruned walks and a 100,000-file cap                                                                                                                                                                                                                                                                    |
+| `ae156b90df060cb366552b608aebc66c4fa323d8` | `3f215516` | Pick               | The grep deadline test drives its budget with a fake clock instead of real time                                                                                                                                                                                                                                                                              |
+| `d9ad9050bbdcc6d3aaa7a88b512244b9c4705867` | `475eaf2a` | Partial port       | Claude Opus 5.5 fast and Codex GPT-6 fast through subscription logins. Opus 5.5 fast's thinking default goes to PR 4                                                                                                                                                                                                                                         |
+| `bc7e5733a25fc9cb1e51ed93b72407a5c7a5eb6f` | `fadf0be7` | Partial port       | Paid Claude fast mode asks before switching (`PaidModelConfirm`), and credit errors say what happened. Keeping Goals workers off paid models goes to PR 4                                                                                                                                                                                                    |
+| `a083cf12c4525807d6d2c8a499a28e2c55b39cde` | `7c949498` | Port               | MiMo UltraSpeed counts as paid, and a fallback never moves onto a paid tier                                                                                                                                                                                                                                                                                  |
+| `494374d7941d25cbba6afd5c571187de64ab0c5d` | `2eef3b38` | Partial port       | The engine half of waking on background failures: failure detectors, the `task_output` wake, urgent notifications and `IdleWakeController`. Its sidecar wiring reads Goals state and goes to PR 4                                                                                                                                                            |
+| `5a3c24b349492e5888ccae3c8c9b1efb795941f1` | `fb27b92c` | Partial port       | Model settings follow vendor evidence, and Gemini's personal-account cutoff is explained. A reworded Sonnet 5.5 comment goes to PR 4                                                                                                                                                                                                                         |
+| `67f5a4be8d261f52ec7cc5f9725c9c63fb801d2c` | `14aaa85c` | Port               | A Gemini API key login for accounts Code Assist no longer serves                                                                                                                                                                                                                                                                                             |
+| `67e957c87e1eaf6fbdd200286e9dc635c2798f80` | `5a0d6276` | Pick               | The ModelSelector test waits for each key's re-render                                                                                                                                                                                                                                                                                                        |
+| `d493df831d3bfe5c7ef3fbda7169ba3e267e93ad` | `947238b0` | Port               | Grok on xAI's Responses API, replaying encrypted reasoning. #66 took the fetch-cap half (`ef690ba3`), and the fork keeps `undici` 7.29.1                                                                                                                                                                                                                     |
+| `a69cc275a86d02f31831c280755f335e5b7a117f` | `b0eebc5b` | Partial port       | Slow git is no longer reported as "not a repo", and the Windows verification-flow tests are hardened. The goal-window git hunks go to PR 4                                                                                                                                                                                                                   |
+| `c08602e981a735fba7952260d2de3b353884d1ed` | `2752e67a` | Port               | Anthropic web search loads on demand, `grep` groups its output by file, compressed tool output is capped, and the Claude Code version is prefetched                                                                                                                                                                                                          |
+| `d7419c46d0b372a1f3c888fa34703e4a826aa0db` | `02a99b7c` | Port               | The gg-safe security layer: package malware and cooldown guards, a daily threat feed, skill and MCP scanning, action guards and blocked-package notices                                                                                                                                                                                                      |
+| `5546cce95624cb2c1c94c323344ca747c1d2f6d5` | `eaa8b64c` | Pick               | No Windows teardown race in the safety mode tests                                                                                                                                                                                                                                                                                                            |
+| `5db7ab615b72663a4e94082f6aec98b3926917b3` | `3c63ee41` | Port               | An install of a version with a HIGH or CRITICAL advisory moves to the newest fixed release in the same major version                                                                                                                                                                                                                                         |
+| `67b47a83ebb43e4e2bcc2eea8ddb1b4db1d6e133` | `dd46dacb` | Pick               | The safety mode test polls for the blocked-packages list instead of waiting a fixed 150 ms                                                                                                                                                                                                                                                                   |
+| `0b9dbe96e6ba818d6119d50150c8c091dbf2b06a` | `ccc572e3` | Port               | Unresolved deferred `web_search` calls are no longer replayed to Anthropic. #66 took the lost-messages half (`73ab3385`)                                                                                                                                                                                                                                     |
+| `1c91814c243acfbe7a797fbd5adaecb3091b19b6` | `45be349e` | Port               | Grok's HTTP 426 is fixed, Gemini is hidden (see below), `getListedModels` leaves out hidden providers, and routine bash output is compacted                                                                                                                                                                                                                  |
+| `ba10f31b4a9891185a0e59dcc7fed6b61fa28650` | `01e47106` | Port               | Each code change is one `bash` command, and the first prompt lists the project's files                                                                                                                                                                                                                                                                       |
+| `5315a8a259c94bbcec26b4a01a6f788c66e3fb39` | `9a150219` | Pick               | The threat feed cache no longer serves a stale feed when a rewrite keeps the same mtime                                                                                                                                                                                                                                                                      |
+| `705af9035f11d9c5c925cf64cb8a90071b035d98` | `ae5cb990` | Partial port       | The `tools/skill.ts` delegation and host rules that #76 left for the skills refresh                                                                                                                                                                                                                                                                          |
+| `21adf9451460b367aef6d880dcce0c7a2aac8771` | `c065296a` | Partial port       | Bundled skills are cut to `compliance-guard` and `durable`, with `bulletproof` and `lean` hidden for Checklist audits; the skill name is required; `code_search` and `code_nav` are removed                                                                                                                                                                  |
+| `7302fa5a555077476ca5695698ad84bd52215705` | `75e7bce3` | Port               | The `find-skills` seed and `/setup-skills` are retired, with a light-comments prompt rule and sharper skill descriptions                                                                                                                                                                                                                                     |
+| `856bf0ebe8ea3d292e283ad45dbb14e28b6ae124` | `b2bd8d28` | Partial port       | Only the web-search history fix: a restored Anthropic session with native web search no longer fails with HTTP 400. Taken ahead of `cf6c9a23`, which needs it                                                                                                                                                                                                |
+| `cf6c9a2327397b573d47762536aad7ab56501ed4` | `b651552f` | Partial port       | Anthropic web search as a Claude Haiku 5.5 side request, `web_fetch` offsets, a 30,000-byte bash offload, local-model fixes and the `steroids` changes. Language style packs and `setup-history.ts` are removed                                                                                                                                              |
+| `a4bb110c4149a196d5a69d10a595f3f78a8ac723` | `5c81b468` | Pick               | `steroids` guidance drops the STALE refresh prompts and frames the tool as current open-source code                                                                                                                                                                                                                                                          |
+| `0ba5729617b4a825127db49494ea0fbfae19303a` | `2c4fea82` | Pick               | The sidecar auth-broadcast test prints the sidecar log when it fails                                                                                                                                                                                                                                                                                         |
+| `0a9d083f14789bf94da17d6be33b35bcf3c4e23a` | `9bba7a1f` | Pick (3 conflicts) | MiniMax M3.1 Flash becomes MiniMax's default, and MiniMax and Xiaomi Token Plan keys go to the region that issued them. Conflicts resolved: `errors.ts` names the product only through the caller's display profile (one test added), the fork's `getDefaultModel` line stands in for upstream's `DEFAULT_MODEL_IDS` table, and the `@kleio/ai` import stays |
+| `5d340fa3bc1be03d3200b40cfbe8f8abfb5551bf` | `5ee0bfca` | Partial port       | The non-Goals half: a setting a build rejects falls back on its own, unknown keys are kept, settings save atomically, and the desktop sidecar waits for the saved local model at boot                                                                                                                                                                        |
+
+**Gemini stays hidden.** `1c91814c` hides the Gemini provider with
+`HIDDEN_PROVIDERS = ["gemini"]`, and the fork keeps it hidden, as upstream does. This is the
+owner's decision: using Gemini through third-party tools risks Google flagging or banning
+the account. Existing Gemini logins stop working. To re-enable Gemini, remove `"gemini"`
+from `HIDDEN_PROVIDERS` in `packages/gg-core/src/hidden-providers.ts` and in
+`gg-app/src-tauri/src/auth.rs`.
+
+Left out of the partial ports, and the dependency bump:
+
+- `856bf0eb`: only its web-search history fix is taken (`historyUsesNativeWebSearch` and its
+  two regression tests). Its duplicate sub-agent completion notice fix
+  (`subagent-manager.ts` and its test) and its desktop checkpoint pruning (`app-sidecar.ts`)
+  stay flagged, waiting for a decision, and are not taken.
+- `5d340fa3`: its Goals half moves to PR 4, as row 20 of the phased plan: `goals-store.ts`
+  and `goals-agent.ts` with their tests, `prompt-routes.ts`, `route-context.ts`,
+  `app-sidecar.ts` hunks 2, 4, 5 and 9, and the "starting a goal by typing" test. This
+  import takes `config.ts`, `settings-manager.ts` and its new test, `app-sidecar.ts` hunks
+  1, 3, 6, 7 and 8, and two auth-broadcast tests.
+- `c86b56db` (`@anthropic-ai/sdk` 1.x and `openai` 7.50) is not taken. Nothing here needs
+  it: `0a9d083f`'s conflicts resolve without it, and `@kleio/ai` stays on
+  `@anthropic-ai/sdk` ^0.124.0 and `openai` ^7.13.0. It stays a dependency PR of its own,
+  after this one.
+- `cf6c9a23`: `openai.ts`'s `maxRetries: 0`, and `transform.ts`'s blocking-tool cache TTL
+  and `tool_reference` handling, need `c73b1866`, which is flagged, so they are not taken.
+  Its `steroids` text is taken as upstream wrote it, including `c73b1866`'s shorter wording,
+  by the owner's decision. The 1,800-character limit in `system-prompt.test.ts` is
+  unchanged. Its `.gitignore` hunk is not taken, and neither is its `LoginScreen.tsx` hunk
+  with its test, which renames the Ollama tile to Local models: the tile is the fork's own
+  design, so it still says Ollama while the dialog it opens is now called Local models. Its
+  `SettingsScreen.tsx` hunk with its test, `ModelPanel.tsx` and `model-search.ts` have no
+  counterpart in the fork.
+- `9d7cbe6d`: upstream's removal of the manager package (the fork keeps it as
+  `@kleio/manager`), and the `ci.yml` FFmpeg retry: `.github/workflows` is a protected
+  directory in `scripts/upstream-sync-policy.json`, and `verify-ci-candidate.test.mjs` pins
+  that step, so it needs its own CI change.
+
+Moved to PR 4 (Goals and motion), as rows in the phased plan:
+
+- `9d7cbe6d`: the goal finish card (with `useAgentEvents.ts`'s run summary and its test, and
+  `ActivityBar.tsx`'s `formatElapsed` export), the GoalWorld and `goal-routes.ts` hunks,
+  `resolveGitCwd` and its test, and the goal-window auth-broadcast test.
+- `bc7e5733`: `goal-routes.ts` refuses a paid model for Goals workers, and `goals-agent.ts`
+  runs workers on `withoutPaidTier(model.id)`.
+- `494374d7`: the `app-sidecar.ts` wiring that starts the idle wake, which reads Goals state
+  (row 12). Until it lands, the desktop app doesn't wake an idle agent on a background
+  failure.
+- `a69cc275`: `resolveGitCwd`'s settled flag, `retargetGit`'s re-read and the goal-window
+  git test (row 12).
+- `d9ad9050` and `5a3c24b3`: `claude-opus-5-5-fast`'s `defaultThinkingLevel` and the
+  reworded Sonnet 5.5 comment, with `127ec0a9` (row 7).
+- `21adf945`: the `critter-tool-kind.ts` and `goal-team.ts` hunks, `223830dc`'s skill-root
+  brief and the routable-skills test.
+- `5d340fa3`: the Goals half, listed above (row 20).
+
+Not taken:
+
+- Desktop design, which the fork owns: see the UI boundary below.
+- README hunks (`c08602e9`'s provider table, `5a3c24b3`'s Gemini row, `ba10f31b`'s benchmark
+  tables and `21adf945`'s provider and tools tables), `docs/skills-refresh.md`, and the
+  trophies hunks in `21adf945` and `7302fa5a` (the fork has no trophies).
+- `705af903`'s `SKILL.md` rewrites, its `bundled-agents.ts` rate-limit wording and their
+  test, as #75 recorded.
+- Still waiting for a decision, as recorded for #75 and #76: `a2ca7720`, `c73b1866`,
+  `adea7972` and `9403d456`, and the rest of `856bf0eb` (above).
+- The upstream changesets.
+- The licence-boundary commits: see the licence note below.
+
+Changesets: `.changeset/upstream-models-safety-ai.md`, `-agent.md`, `-core.md` and
+`-coder.md` (patch); `@kleio/manager` follows through the fixed group. gg-app is not a
+changesets package, so its changes are recorded only here.
+
+### UI boundary
+
+As in #76, this import takes behaviour only from upstream's gg-app hunks: state, data flow,
+`invoke` and event wiring, error handling and race fixes. New screens render through minimal
+components in `gg-app/src/placeholder/`, styled only with `kleio-theme.css` variables, for
+the redesign branch to restyle after rebasing.
+
+New files:
+
+| File                                       | Replaces upstream                          | Takes                                                                                          | Mounted in          |
+| ------------------------------------------ | ------------------------------------------ | ---------------------------------------------------------------------------------------------- | ------------------- |
+| `placeholder/PaidModelConfirm.tsx` (+test) | `ModelPanel.tsx`'s paid-model confirmation | The paid model's name and billing, the standard model's name, and confirm and cancel callbacks | `ModelSelect.tsx`   |
+| `placeholder/SecurityNotice.tsx` (+test)   | `SecurityNotice.tsx`                       | A blocked action's rule, target and count                                                      | `TranscriptRow.tsx` |
+| `placeholder/McpRowNotes.tsx` (+test)      | The row notes in `McpModal.tsx`            | One MCP server row: its connect error, and up to three tools the safety guard hid              | `McpModal.tsx`      |
+
+New logic and test files, with no rendering of their own: `security-notices.ts` and
+`blocked-skills.ts` (each +test), `tool-format.safety.test.ts` and
+`agent-auth-status.test.ts`. `placeholder/placeholder.css` gains one rule,
+`.placeholder-list`, with theme variables only.
+
+Changed existing files, in logic, props and text: `App.tsx`, `AppFooter.tsx`,
+`HomeScreen.tsx` (+test), `LocalModelsModal.tsx` (+test), `LoginScreen.lazy.test.tsx`,
+`McpModal.tsx`, `MemoryModal.tsx` (+test), `ModelSelect.tsx` (+test), `TasksModal.tsx`,
+`ToolRow.tsx`, `TranscriptRow.tsx`, `WorkspaceHeaderActions.tsx`, `agent-radio.test.ts`,
+`agent.ts`, `kleio/keepAwake.ts`, `provider-labels.ts` (+test), `task-activity.ts`,
+`task-outcome-matrix.test.ts`, `tool-format.ts`, `transcript-item.ts`, `useAgentEvents.ts`,
+`useWindowOrder.ts` and `scripts/smoke-sidecar.mjs`. Rust: `auth.rs`, `commands/agent.rs`,
+`commands/agent_admin.rs`, `daemon.rs`, `keep_awake.rs`, `lib.rs` and `settings.rs`.
+`McpModal.tsx` wraps each server row in a `Fragment` to mount `McpRowNotes`, and
+`ModelSelect.tsx`'s outer `span` gains a `ref` for `PaidModelConfirm`; neither changes a
+class or a style. Two markup changes come with the new behaviour:
+
+- `MemoryModal.tsx` adds a "Try again" button with the fork's existing
+  `btn btn-sm btn-ghost` classes (`2b3c506a`, from `9d7cbe6d`).
+- `ToolRow.tsx` colours a blocked step with the theme's `warning` colour (`02a99b7c`, from
+  `d7419c46`).
+
+Not taken, because the fork owns the design: upstream's `App.css`, `glass.css`,
+`WhatsNew.css` and `Deck.css` hunks; `ModelPanel.tsx` with its test, `Deck.tsx` and
+`RoyaleKey.test.tsx`; the `HfPullModal.tsx` colour change; and `d7419c46`'s `McpModal.tsx`
+re-layout and `LiveToolPanel.tsx` markup.
+
+### Licence note
+
+This is engineering guidance, not legal advice.
+
+The boundary is the one #76's licence note sets out. Every commit this import takes is an
+ancestor of `c1aa287b` (desktop v0.102.0). No `NOTICE` file changes.
+
+One `LICENSE` file is deleted, together with everything it covers. `c065296a` (`21adf945`)
+removes the `evidence-led-ui` skill, and with it the skill's `LICENSES.md` and its
+`corpus/awesome-design-md/` folder: 74 `DESIGN.md` files and their MIT `LICENSE`
+(VoltAgent). The corpus came from upstream `25601bdf`. Upstream dropped it in `705af903`'s
+skills refresh, which the fork didn't take, so here it leaves with the skill. Nothing from
+the corpus remains, and `git grep awesome-design-md` finds nothing. Releases before this
+import still ship the corpus with its `LICENSE`.
+
+Not taken:
+
+- `a1c4f642` (chat attachments), which follows the relicense (`12da5c3a`) and was first
+  released in 5.91.2 and v0.102.2, under the new licence.
+- The version commits `4fd3d17b` (5.91.2) and `296df256` (desktop 0.102.2, the tip
+  reviewed).
+- The commits #76 left out for the licence: `85cb0ef7`, `8020944e`, `8627ee65` and
+  `0d443e0f` (licence unclear), `12da5c3a` itself, and the version commits `02375294` and
+  `af5b1df4`.
+- The nine upstream commits after `296df256`, up to `f6b17fc5`, all after the relicense.
+  This import doesn't review them.
+
+#76's backlog for a lawyer still stands.
+
+### Verification record
+
+Local macOS checks, each compared with `main` at `bf328196`:
+
+- Test totals: `@kleio/ai` 590 → 634 tests (25 files), `@kleio/core` 272 → 322 (15 → 19
+  files), `@kleio/coder` 4742 → 4931 (354 → 368 files; 17 skipped, as on `main`) and gg-app
+  1876 → 1916 (160 → 167 files). `@kleio/agent` (226), `@kleio/manager` (332), gg-editor
+  (950), kleio-host (973) and gg-pixel (115) are unchanged. `pnpm test` passes in all 12
+  packages with tests, and the plan's PR 3b tests run and pass: `side-web-search`,
+  `web-fetch`, `steroids`, `settings-manager`, `minimax-region` and `xiaomi-region`.
+- Fewer tests only where upstream removed them: `task-outcome-matrix.test.ts` drops its
+  `code_search` and `code_nav` cases (`c065296a`, as in `21adf945`), and
+  `checklist-items.test.ts` runs 8 fewer `it.each` cases, because `c065296a` removes 8
+  `skill:` entries from `checklist-items.ts`. `setup-history.test.ts`, `code-nav.test.ts`
+  and `search-code.test.ts` go with their code, `agent-session-style-packs.test.ts` becomes
+  `agent-session-languages.test.ts`, and Coder's `core/auth-providers.test.ts` moves to
+  `@kleio/core`.
+- `cargo test`: 310 passed and 3 ignored. The branch adds 8 tests: 5 in `auth.rs`, 2 in
+  `settings.rs` and 1 in `commands/agent.rs`. `cargo clippy --all-targets -- -D warnings`
+  passes. `cargo fmt --check` reports the same 10 differences as on `main`, all in files
+  this import doesn't touch (`ask_notify.rs`, and `brief.rs`, `commands.rs`, `live.rs` and
+  `phone.rs` under `kleio/`); CI runs `cargo fmt` only for `packages/kleio-link`.
+- The golden prompt is identical to upstream's at `5d340fa3`. Against `main` it changes in
+  four commits: `2752e67a` (`c08602e9`: `grep`'s description), `01e47106` (`ba10f31b`: one
+  `bash` command per change replaces the multi-file script line and the `edit`-first line),
+  `75e7bce3` (`7302fa5a`: the comments rule) and `b651552f` (`cf6c9a23`: the Precedence line
+  drops its style-pack sentence, and the parallel-calls sentence now says shell commands and
+  edits run in listed order). Line 1 doesn't change, the Kleio Coder assertions in
+  `system-prompt.test.ts` pass, and `cleanInstructionText` still runs in
+  `collectProjectContext`.
+- The tool catalog drops `code_search` and `code_nav` and changes `grep` and `web_fetch`. It
+  matches upstream's at `5d340fa3` except `checklist`, `debug` and `screenshot`, which keep
+  `main`'s text: upstream rewrote all three descriptions in `c73b1866` (flagged), and
+  `checklist`'s `accepted` field and `senior-review` item come from `c346f81f`, as #76
+  recorded.
+- Identity audit, tracked (3163 files) and packed (2190 files): 0 unclassified hits and 0
+  count mismatches. Each count moves in the commit that changes it. The larger moves are the
+  Coder source-directory seam 1622 → 1552 (up with the new Coder files, then down by 100 at
+  `c065296a` with the cut skills), Manager's packed Coder paths 744 → 755 and the
+  allowlist's own control data 1546 → 1537. `947238b0` adds
+  `xai-responses-prompt-cache-identity`, and `75e7bce3` replaces the `find-skills` seed
+  entries with `retired-find-skills-seed-fixtures` and
+  `packed-manager-coder-legacy-literals`.
+- The build, typecheck, lint, format check, the tracked script tests (143), the
+  fixed-version check, the bundled sidecar smoke and the startup gate pass. The startup
+  median is 548 ms, against a 477 ms baseline and a 5000 ms budget.
+  `gg-app/scripts/kleio-identity.test.mjs` runs in gg-app's suite, as #75 notes.
+- Size: the `@kleio/coder` build output grows from 7887.1 KB on `main` to 8437.5 KB, and the
+  initial frontend JavaScript from 1041.6 KB to 1045.4 KB. The bundled sidecar falls from
+  8507.8 KB to 5352.9 KB, because `c065296a` cuts the bundled skills from 3635 KB to 332 KB.
+  No test file is in the build output. The 16 new Coder modules, one of them a
+  `test-support/` helper that builds like the three on `main`, make up 314 KB of its growth
+  with their maps and declarations. Two ports re-baseline where an artifact first crosses
+  its limit: `2752e67a` (`c08602e9`) the build output at 8219543 bytes, and `02a99b7c`
+  (`d7419c46`) the build output at 8604163 and the sidecar at 8863197. The size gate passes
+  on each of the 31 commits.
+- Licence: every picked or ported upstream commit is an ancestor of `c1aa287b` (30 of 30),
+  and no added line carries the new licence's short identifier.
+  `git diff origin/main...HEAD -- LICENSE NOTICE '**/LICENSE' '**/NOTICE'` is not empty: it
+  shows the corpus `LICENSE` deleted with the `evidence-led-ui` skill (see the licence
+  note). No other `LICENSE` or `NOTICE` file changes.
+- UI: no CSS changes outside `gg-app/src/placeholder/`, `placeholder.css` uses theme
+  variables only, the 12 new gg-app files are the ones listed under UI boundary, and
+  `ModelSelect.tsx` and `McpModal.tsx` are the only files that newly import from
+  `placeholder/` (`App.tsx`, `Composer.tsx` and `TranscriptRow.tsx` already did, from #76).
+- `patches/`, `pnpm-workspace.yaml`, the package manifests and the lockfile are unchanged,
+  so `undici` stays 7.29.1, `@anthropic-ai/sdk` ^0.124.0 and `openai` ^7.13.0. So are the
+  excluded packages, the `three` lines and `upstream.lastImportedCommit`.
+- Skills: Coder's bundled skills are exactly `bulletproof`, `compliance-guard`, `durable`
+  and `lean`. `code_search`, `code_nav`, `find-skills` and `/setup-skills` are gone from the
+  catalog snapshot, and from source except upstream's own mentions at `5d340fa3`: a removal
+  note in `tool-tiers.ts`, a `code_search` stub in `tool-search.test.ts`, and the cleanup in
+  `config.ts` that deletes an unchanged retired `find-skills` seed, with its test and two
+  fixtures.
+- `style-packs/` and `setup-history.ts` are gone. No code adds a `~/.gg` path: the added
+  lines that name it are comments and the retired seed's test fixtures, and the one
+  home-directory path the branch touches, `setup-history.json`, goes with
+  `setup-history.ts`.
+- The critter-art checks match nothing.
 
 ## Original imported baseline
 

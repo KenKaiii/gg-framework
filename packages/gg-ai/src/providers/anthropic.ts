@@ -32,6 +32,13 @@ import {
 } from "./transform.js";
 import { isJsonObject } from "../utils/json.js";
 import {
+  FAST_MODE_REJECTION_HEADER,
+  describeFastModeRejection,
+  fastModeRejectionMessage,
+  parseFastModeRejection,
+  type FastModeRejection,
+} from "../fast-mode.js";
+import {
   PROVIDER_TRANSPORT_TIMEOUT_MS,
   providerFetch,
   withBodyActivity,
@@ -102,6 +109,8 @@ export function fineGrainedToolStreamingEnabled(): boolean {
 
 /** Beta that enables server-side refusal fallback (`fallbacks` body param). */
 export const SERVER_FALLBACK_BETA = "server-side-fallback-2026-07-01";
+/** Beta that gates `speed: "fast"` (fast mode research preview, Opus 5.5/5/4.8). */
+export const FAST_MODE_BETA = "fast-mode-2026-02-01";
 
 /**
  * Per-process memo of provider configs whose server-side-fallback request was
@@ -331,6 +340,12 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   const { system: rawSystem, messages } = toAnthropicMessages(downgradedMessages, cacheControl, {
     fallbackBlocks: useServerFallback,
   });
+  // Fast mode (`speed: "fast"` + its beta) is a first-party-API feature; never
+  // send it to Anthropic-compatible endpoints (MiniMax, gateways).
+  const useFastMode =
+    options.speed === "fast" &&
+    options.provider === "anthropic" &&
+    isDirectAnthropicApi(options.baseUrl);
 
   // OAuth tokens require Claude Code identity in the system prompt
   const system = isOAuth
@@ -427,6 +442,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
       return contextEdits.length ? { context_management: { edits: contextEdits } } : {};
     })(),
     ...(useServerFallback ? { fallbacks: "default" } : {}),
+    ...(useFastMode ? { speed: "fast" } : {}),
     stream: useStreaming,
   } as Anthropic.MessageCreateParams;
   // Caller-supplied provider-specific body fields; they only fill unset fields.
@@ -451,6 +467,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     // is only "1h" on the first-party endpoint (see toAnthropicCacheControl).
     ...(cacheControl?.ttl === "1h" ? ["extended-cache-ttl-2025-04-11"] : []),
     ...(useServerFallback ? [SERVER_FALLBACK_BETA] : []),
+    ...(useFastMode ? [FAST_MODE_BETA] : []),
   ];
 
   const toRequestOptions = (
@@ -514,7 +531,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
       yield* synthesizeEventsFromMessage(message);
       return messageToResponse(message);
     } catch (err) {
-      throw toError(err);
+      throw toError(err, { fastMode: useFastMode, provider: options.provider });
     }
   }
 
@@ -689,7 +706,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
                 const snippet =
                   rawPartial.length > 200 ? `${rawPartial.slice(0, 200)}\u2026` : rawPartial;
                 throw new ProviderError(
-                  "anthropic",
+                  options.provider,
                   `Tool "${accum.toolName}" input JSON was truncated in the stream ` +
                     `(${rawPartial.length} bytes): ${snippet}; ${(parseErr as Error).message}`,
                   { cause: parseErr },
@@ -809,7 +826,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
       }
     }
   } catch (err) {
-    throw toError(err);
+    throw toError(err, { fastMode: useFastMode, provider: options.provider });
   }
 
   // Race-condition safety: if the SDK's stream ended (or error'd) before the
@@ -817,7 +834,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   // Treat that as a transport failure so the agent loop retries instead of
   // presenting a phantom empty reply.
   if (!receivedAnyEvent) {
-    throw new ProviderError("anthropic", "Stream ended without producing any events.", {
+    throw new ProviderError(options.provider, "Stream ended without producing any events.", {
       statusCode: 504,
     });
   }
@@ -831,7 +848,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   // transport failure (same bucket as a mid-stream socket destroy). The partial
   // body is surfaced on `cause` for debugging, never silently returned.
   if (stopReason === null) {
-    throw new ProviderError("anthropic", "Stream ended before completion (no stop_reason).", {
+    throw new ProviderError(options.provider, "Stream ended before completion (no stop_reason).", {
       statusCode: 504,
       cause: { partialContent: contentParts, outputTokens },
     });
@@ -975,6 +992,23 @@ function messageToResponse(message: Anthropic.Message): StreamResponse {
 }
 
 /**
+ * A fast-mode request Anthropic refused because usage credits couldn't pay for
+ * it: the overage-disabled-reason header on a fast 429, or the fast-mode body
+ * text on any request. Undefined for every other error.
+ */
+function readFastModeRejection(
+  err: InstanceType<typeof Anthropic.APIError>,
+  message: string,
+  fastMode: boolean,
+): FastModeRejection | undefined {
+  const reason = readHeader(err.headers, FAST_MODE_REJECTION_HEADER);
+  if (fastMode && err.status === 429 && reason) return describeFastModeRejection(reason);
+  const fromBody = parseFastModeRejection(message);
+  if (!fromBody) return undefined;
+  return reason ? describeFastModeRejection(reason) : fromBody;
+}
+
+/**
  * Read Anthropic's unified rate-limit headers — the subscription (OAuth) quota
  * signal. `anthropic-ratelimit-unified-status: rejected` means the usage window
  * is spent (not a transient per-minute throttle); `-reset` is the unix-seconds
@@ -993,7 +1027,13 @@ function readUnifiedRateLimit(headers: unknown): { rejected: boolean; resetsAt?:
   return { rejected: status === "rejected", ...(resetsAt ? { resetsAt } : {}) };
 }
 
-function toError(err: unknown): ProviderError {
+function toError(
+  err: unknown,
+  context?: { fastMode?: boolean; provider?: StreamOptions["provider"] },
+): ProviderError {
+  // Anthropic-compatible third parties (MiniMax) ride this transport; name them
+  // in errors so a MiniMax problem never reads as "Anthropic usage limit".
+  const provider = context?.provider ?? "anthropic";
   // Already normalized (e.g. the truncated-tool-JSON guard in runStream throws a
   // ProviderError whose cause is the SyntaxError). Pass it through untouched so
   // its statusCode and cause chain survive for agent-loop's retry classifiers
@@ -1040,6 +1080,23 @@ function toError(err: unknown): ProviderError {
         ? `${bodyType}: ${bodyMessage}`
         : (bodyMessage ?? fallbackMessage);
 
+    // Fast mode on a Claude subscription bills usage credits only. When it
+    // can't, Anthropic answers 429 with a generic body and the real reason in
+    // the overage-disabled-reason header (no credits, credits off, spend cap,
+    // org policy). It also carries a far-off unified reset, so it must be read
+    // before the plan-limit check below or it shows as "usage limit reached".
+    // The header can also accompany plain plan-limit 429s, so only trust it on
+    // a fast request; the body wording is fast-mode specific either way.
+    const fastRejection = readFastModeRejection(err, message, context?.fastMode === true);
+    if (fastRejection) {
+      return new ProviderError("anthropic", fastModeRejectionMessage(fastRejection), {
+        statusCode: err.status,
+        ...(requestId ? { requestId } : {}),
+        hint: fastRejection.guidance,
+        cause: err,
+      });
+    }
+
     // Subscription (OAuth) usage-window exhaustion. Anthropic returns 429 with
     // the unified rate-limit headers; a "rejected" status — or a reset stamp
     // meaningfully in the future — means the plan's usage is spent, not a
@@ -1067,21 +1124,21 @@ function toError(err: unknown): ProviderError {
       const usageMessage = /usage limit reached/i.test(message)
         ? message
         : `usage limit reached: ${message}`;
-      return new ProviderError("anthropic", usageMessage, {
+      return new ProviderError(provider, usageMessage, {
         statusCode: err.status,
         ...(requestId ? { requestId } : {}),
         cause: err,
       });
     }
 
-    return new ProviderError("anthropic", message, {
+    return new ProviderError(provider, message, {
       statusCode: err.status,
       ...(requestId ? { requestId } : {}),
       cause: err,
     });
   }
   if (err instanceof Error) {
-    return new ProviderError("anthropic", err.message, { cause: err });
+    return new ProviderError(provider, err.message, { cause: err });
   }
-  return new ProviderError("anthropic", String(err));
+  return new ProviderError(provider, String(err));
 }

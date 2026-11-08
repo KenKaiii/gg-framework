@@ -438,8 +438,8 @@ function getCompactDoneLabel(name: string, args: Record<string, unknown>, result
   switch (name) {
     case "grep": {
       const lines = result.split("\n").filter((l) => l.length > 0);
-      // Filter out the summary line ("N match(es) found" or "[Truncated at N matches]")
-      const matchCount = lines.filter((l) => !l.match(/^\d+ match|^\[Truncated/)).length;
+      // Match rows in either layout (grouped `line:text` or flat `path:line:text`).
+      const matchCount = lines.filter((l) => /^\d+:/.test(l) || /^.+?:\d+:/.test(l)).length;
       return `Searched for 1 pattern${matchCount > 0 ? ` (${matchCount} match${matchCount !== 1 ? "es" : ""})` : ""}`;
     }
     case "read": {

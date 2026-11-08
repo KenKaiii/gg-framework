@@ -8,7 +8,7 @@ import path from "node:path";
 import {
   loadAppSettings,
   appSettingsFile,
-  saveAppSettings,
+  updateAppSettings,
   isValidProjectName,
 } from "./app-settings.js";
 import fs from "node:fs/promises";
@@ -105,11 +105,11 @@ export function handleWorkspaceRoutes(
         json(res, 400, { error: "projectsRoot is required" });
         return;
       }
-      // Read-modify-write so the per-project model map survives a projectsRoot
-      // change (a naive overwrite would drop every window's saved model).
-      const s = await loadAppSettings();
-      s.projectsRoot = projectsRoot;
-      await saveAppSettings(s);
+      // Read-modify-write under the settings lock so the per-project model
+      // map survives a projectsRoot change and a racing save isn't lost.
+      await updateAppSettings((s) => {
+        s.projectsRoot = projectsRoot;
+      });
       json(res, 200, { projectsRoot });
     });
     return true;
@@ -173,12 +173,13 @@ export function handleWorkspaceRoutes(
       }
       const key = path.resolve(target);
       try {
-        const settings = await loadAppSettings();
-        const current = new Set((settings.hiddenProjects ?? []).map((p) => path.resolve(p)));
-        if (body.hidden === false) current.delete(key);
-        else current.add(key);
-        settings.hiddenProjects = current.size > 0 ? Array.from(current) : undefined;
-        await saveAppSettings(settings);
+        const current = await updateAppSettings((settings) => {
+          const next = new Set((settings.hiddenProjects ?? []).map((p) => path.resolve(p)));
+          if (body.hidden === false) next.delete(key);
+          else next.add(key);
+          settings.hiddenProjects = next.size > 0 ? Array.from(next) : undefined;
+          return next;
+        });
         json(res, 200, { hidden: Array.from(current) });
       } catch (err) {
         json(res, 500, { error: err instanceof Error ? err.message : String(err) });

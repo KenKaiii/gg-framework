@@ -11,6 +11,7 @@
  * The agent spine (gg-ai → gg-agent → gg-core) and every tool are reused
  * unchanged via AgentSession — this file is only a network seam.
  */
+import { startThreatFeedSync } from "./core/threat-feed.js";
 import http from "node:http";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -49,14 +50,22 @@ import { cleanupToolOutputs } from "./tools/overflow.js";
 import {
   dualAuthProvider,
   discoverLocalModels,
+  findProbedModel,
+  isLocalModelId,
   formatLocalModelId,
   parseLocalModelId,
+  ollamaServedContext,
+  toModelInfo as localModelInfo,
   createDictation,
   type Dictation,
   type LocalEndpoint,
   type LocalEndpointProbe,
 } from "@kleio/core";
-import { listAllEndpoints, syncEndpointCredentials } from "./core/local-endpoint-store.js";
+import {
+  listAllEndpoints,
+  listCustomEndpoints,
+  syncEndpointCredentials,
+} from "./core/local-endpoint-store.js";
 import type { OAuthLoginCallbacks } from "./core/oauth/types.js";
 import {
   AUTH_PROVIDERS,
@@ -69,6 +78,7 @@ import {
 import { ensureAppDirs, loadSavedSettings } from "./config.js";
 import {
   getModel,
+  withoutPaidTier,
   getDefaultThinkingLevel,
   getContextWindow,
   clearRuntimeModels,
@@ -76,7 +86,7 @@ import {
 } from "./core/model-registry.js";
 import { resolveStartOrFallback } from "./core/resolve-start.js";
 import { getGitBranch, getGitDirtyFileCount, isGitRepo } from "./utils/git.js";
-import { getGitHubOpenCounts, getGitHubRepoSlug } from "./utils/github.js";
+import { getGitHubOpenCounts } from "./utils/github.js";
 import { startGitHubCIPoll, type GitHubCI } from "./utils/github-ci.js";
 import { extractPlanSteps } from "./utils/plan-steps.js";
 import { getSupportedThinkingLevels, isThinkingLevelSupported } from "./core/thinking-level.js";
@@ -139,6 +149,7 @@ import { handleKeepAwakeRoutes } from "./app-sidecar/keep-awake-routes.js";
 import { handleBrainEditRoutes } from "./app-sidecar/brain-edit-routes.js";
 import { handleSessionRoutes } from "./app-sidecar/session-routes.js";
 import { handleWorkspaceRoutes } from "./app-sidecar/workspace-routes.js";
+import { readGitState } from "./app-sidecar/git-target.js";
 import { handleProjectFolderRoutes } from "./app-sidecar/project-folder-routes.js";
 import { handleHistoryRoutes } from "./app-sidecar/history-routes.js";
 import { handlePromptRoutes } from "./app-sidecar/prompt-routes.js";
@@ -153,6 +164,9 @@ import type { SessionRouteContext, DaemonRouteContext } from "./app-sidecar/rout
 /** App-wide idle-sleep guard: every window's runs share one OS assertion. The
  *  `keepAwake` setting is applied at daemon start and live via /keep-awake. */
 const keepAwake = new KeepAwake();
+
+/** Limit for re-reading git state in the background when git missed the usual 2 s. */
+const SLOW_GIT_READ_TIMEOUT_MS = 15_000;
 
 async function main(): Promise<void> {
   // Hidden persistent-worker dispatch must win before strict JSON/server parsing.
@@ -244,6 +258,10 @@ async function main(): Promise<void> {
   // Sweep recoverable full tool outputs (~/.gg/tool-output/) older than 48h.
   // Fire-and-forget: cleanup must never delay or break startup.
   void cleanupToolOutputs().catch(() => {});
+
+  // Daily malicious-package feed (OSV MAL-, npm + PyPI): deferred, background,
+  // fail-silent; at most one sync a day (core/threat-feed.ts).
+  startThreatFeedSync();
 
   const auth = new AuthStorage(paths.authFile);
   await auth.load();
@@ -713,7 +731,7 @@ async function createSession(
   // parsing); the daemon owns the real listen host.
   const host = "127.0.0.1";
 
-  const saved = loadSavedSettings(paths.settingsFile);
+  const saved = loadSavedSettings(paths.settingsFile, { localModels: true });
   // Native login/logout and other live sessions share auth.json. Refresh the
   // daemon-level snapshot before choosing this session's provider so a project
   // never boots against credentials that were just replaced or disconnected.
@@ -823,18 +841,28 @@ async function createSession(
   }
 
   /**
-   * Guidance for a connection failure against the ACTIVE local endpoint, or
+   * Guidance for a connection or auth failure against the ACTIVE local endpoint, or
    * undefined when that isn't the situation (so the generic wording stands).
    * "Disable your VPN / allow us through the firewall" is useless advice for a
    * server running on this machine — name what the user has to restart.
    */
-  function localNetworkGuidance(source: string | undefined): string | undefined {
-    if (source !== "network") return undefined;
+  function localEndpointGuidance(
+    source: string | undefined,
+    reason: string | undefined,
+  ): string | undefined {
+    if (source !== "network" && reason !== "auth") return undefined;
     const state = session.getState();
     if (state.provider !== "local") return undefined;
     const parsed = parseLocalModelId(state.model);
     const probe = localProbes.find((p) => p.endpoint.id === parsed?.endpointId);
     if (!probe) return undefined;
+    // Custom endpoints live in the Local models tile, not the provider sign-in tiles.
+    if (reason === "auth") {
+      return (
+        `${probe.endpoint.label} rejected the request at ${probe.endpoint.baseUrl}. ` +
+        "Check its key under Local models in AI Providers settings."
+      );
+    }
     return (
       `${probe.endpoint.label} stopped responding at ${probe.endpoint.baseUrl}. ` +
       "Start it again and retry, or pick another model."
@@ -854,7 +882,7 @@ async function createSession(
   ): void {
     const f = formatChatError(err);
     const message = f.message ? desktopGuidance(f.message) : undefined;
-    const guidance = localNetworkGuidance(f.source) ?? desktopGuidance(f.guidance);
+    const guidance = localEndpointGuidance(f.source, f.reason) ?? desktopGuidance(f.guidance);
     const payload = createAppErrorPayload(
       { ...f, ...(message ? { message } : {}), guidance },
       type,
@@ -1057,9 +1085,66 @@ async function createSession(
   // frame when it lands.
   let localProbes: LocalEndpointProbe[] = [];
 
+  // Context Ollama served each model with, learned when it was last loaded
+  // ("<endpointId>/<rawId>"). A model Ollama has since unloaded keeps its size.
+  const servedContexts = new Map<string, number>();
+
+  function withServedContexts(probe: LocalEndpointProbe): LocalEndpointProbe {
+    if (probe.endpoint.kind !== "ollama") return probe;
+    return {
+      ...probe,
+      models: probe.models.map((m) => {
+        const served = servedContexts.get(`${m.endpointId}/${m.rawId}`);
+        return served === undefined || m.contextWindowKnown
+          ? m
+          : { ...m, contextWindow: served, contextWindowKnown: true };
+      }),
+    };
+  }
+
+  /**
+   * Learn the context an Ollama model really runs with and use it everywhere.
+   * `load` (on an explicit pick) loads the model first; after a run it's
+   * already loaded and `/api/ps` alone answers.
+   */
+  async function learnServedContext(modelId: string, load: boolean): Promise<void> {
+    const parsed = parseLocalModelId(modelId);
+    const probe = localProbes.find((p) => p.endpoint.id === parsed?.endpointId);
+    if (!parsed || !probe || probe.endpoint.kind !== "ollama") return;
+    const served = await ollamaServedContext(probe.endpoint, parsed.rawId, { load });
+    if (served === undefined) return;
+    const known = probe.models.find((m) => m.rawId === parsed.rawId);
+    if (known?.contextWindowKnown && known.contextWindow === served) return;
+    servedContexts.set(`${parsed.endpointId}/${parsed.rawId}`, served);
+    localProbes = localProbes.map((p) =>
+      p.endpoint.id !== parsed.endpointId
+        ? p
+        : {
+            ...p,
+            models: p.models.map((m) =>
+              m.rawId === parsed.rawId
+                ? { ...m, contextWindow: served, contextWindowKnown: true }
+                : m,
+            ),
+          },
+    );
+    const updated = findProbedModel(localProbes, modelId);
+    if (updated) registerRuntimeModels([localModelInfo(updated.model, updated.endpoint)]);
+    log("INFO", "app-sidecar", "learned served context", {
+      model: modelId,
+      contextWindow: String(served),
+    });
+    broadcast("extras", footerExtras());
+    broadcast("models_change", { local: localStatePayload() });
+  }
+
   async function scanLocalModels(force: boolean): Promise<LocalEndpointProbe[]> {
     const endpoints = await listAllEndpoints();
-    const { probes, models } = await discoverLocalModels(endpoints, { force });
+    const discovered = await discoverLocalModels(endpoints, { force });
+    const probes = discovered.probes.map(withServedContexts);
+    const models = probes.flatMap((probe) =>
+      probe.models.map((model) => localModelInfo(model, probe.endpoint)),
+    );
     localProbes = probes;
     // Only endpoints that answered get a credential: writing one for a server
     // that isn't running would make `hasProviderAuth("local")` true forever.
@@ -1142,7 +1227,7 @@ async function createSession(
    * that has since been shut down.
    */
   async function localModelBlocker(modelId: string): Promise<string | undefined> {
-    const { problem, probe } = await probeLocalModelBlocker(modelId);
+    const { problem, probe } = await probeLocalModelBlocker(modelId, withServedContexts);
     // Keep the cached view honest: this probe is fresher than the last scan.
     if (probe) {
       localProbes = localProbes.map((p) => (p.endpoint.id === probe.endpoint.id ? probe : p));
@@ -1171,19 +1256,13 @@ async function createSession(
   // Workspace extras (context window, git status, background tasks). Git state
   // is resolved once at startup and refreshed after every run; the context
   // window follows the active model.
-  const [initialGitBranch, initialGitIsRepo, initialDirtyFileCount, initialGitHubSlug] =
-    await Promise.all([
-      getGitBranch(cwd).catch(() => null),
-      isGitRepo(cwd).catch(() => false),
-      getGitDirtyFileCount(cwd).catch(() => 0),
-      getGitHubRepoSlug(cwd).catch(() => null),
-    ]);
-  let gitBranch: string | null = initialGitBranch;
-  let gitIsRepo: boolean = initialGitIsRepo;
-  let gitDirtyFileCount = initialDirtyFileCount;
+  const initialGit = await readGitState(cwd);
+  let gitBranch: string | null = initialGit.branch;
+  let gitIsRepo: boolean = initialGit.isRepo;
+  let gitDirtyFileCount = initialGit.dirtyFileCount;
   // Open issue/PR counts for the origin repo's GitHub slug, via the `gh` CLI's
   // auth. null = unknown (gh missing/unauthed, non-GitHub origin) → chips hidden.
-  const gitHubSlug: string | null = initialGitHubSlug;
+  const gitHubSlug: string | null = initialGit.gitHubSlug;
   let gitHubIssues: number | null = null;
   let gitHubPRs: number | null = null;
   let gitHubCI: GitHubCI | null = null;
@@ -1220,8 +1299,26 @@ async function createSession(
     };
   }
 
-  void scanLocalModels(false)
-    .then(() => {
+  // Startup resolves the model before discovery runs, so a saved local model
+  // isn't registered yet and boot falls back. Switch to it once the scan finds it,
+  // unless the user has already picked something else or a run has started.
+  async function restoreSavedLocalModel(): Promise<void> {
+    if (preferred !== "local" || !savedModel || parseLocalModelId(savedModel) === undefined) return;
+    const stillBootModel = (): boolean => !running && session.getState().model === model;
+    if (savedModel === model || !stillBootModel() || !getModel(savedModel)) return;
+    const blocker = await localModelBlocker(savedModel);
+    if (blocker) {
+      log("WARN", "app-sidecar", "saved local model not restored", { model: savedModel, blocker });
+      return;
+    }
+    if (!stillBootModel()) return;
+    await session.switchModel("local", savedModel);
+    log("INFO", "app-sidecar", "restored saved local model", { model: savedModel });
+  }
+
+  const initialLocalScan = scanLocalModels(false)
+    .then(async () => {
+      await restoreSavedLocalModel();
       clampLocalThinking();
       broadcast("extras", footerExtras());
     })
@@ -1233,6 +1330,18 @@ async function createSession(
         error: err instanceof Error ? err.message : String(err),
       });
     });
+  // A run that starts before the scan would run on the fallback model; a goal's
+  // kickoff fires as its window opens and lost that race (#133). Never rejects.
+  let savedLocalModelPending: Promise<void> | null =
+    preferred === "local" &&
+    savedModel !== undefined &&
+    savedModel !== model &&
+    isLocalModelId(savedModel)
+      ? initialLocalScan
+      : null;
+  void initialLocalScan.finally(() => {
+    savedLocalModelPending = null;
+  });
 
   // Refresh the GitHub counts and broadcast only on change. Transient failures
   // keep the last-known numbers so the chips don't flicker off on a timeout.
@@ -1417,6 +1526,8 @@ async function createSession(
   session.eventBus.on("model_change", (d) => broadcast("model_change", d));
   session.eventBus.on("hook", (d) => broadcast("hook", d));
   session.eventBus.on("diagnostics", (d) => broadcast("diagnostics", d));
+  session.eventBus.on("security_notice", (d) => broadcast("security_notice", d));
+  session.eventBus.on("security_block", (d) => broadcast("security_block", d));
   // Fires BEFORE the candidate final answer streams. The webview holds assistant
   // text back while armed, so an Ideal review supersedes a draft that was never
   // painted instead of deleting one the user already started reading.
@@ -1631,20 +1742,25 @@ async function createSession(
   }
 
   /** The model Ken uses next turn: the pin when set, else GG Coder's. */
+  // Ken never follows the chat onto a paid tier: he runs in the background, unwatched.
   function kenCurrentModel(): { provider: Provider; model: string } {
     if (kenModelOverride) return kenModelOverride;
     const st = session.getState();
-    return { provider: st.provider, model: st.model };
+    return { provider: st.provider, model: withoutPaidTier(st.model) };
   }
 
   /** Footer payload: Ken's effective model + whether it's a pin. Merged into
    *  /state, the SSE ready frame, and every ken_model_change broadcast. */
   function kenStatePayload(): ReturnType<typeof effectiveKenModel> {
     const st = session.getState();
-    return effectiveKenModel(kenModelOverride, { provider: st.provider, model: st.model });
+    return effectiveKenModel(kenModelOverride, {
+      provider: st.provider,
+      model: withoutPaidTier(st.model),
+    });
   }
 
-  async function syncKenModel(provider: Provider, model: string): Promise<void> {
+  async function syncKenModel(provider: Provider, requested: string): Promise<void> {
+    const model = withoutPaidTier(requested);
     if (kenRunning) {
       pendingKenModel = { provider, model };
       return;
@@ -1719,7 +1835,9 @@ async function createSession(
   let kenAutoAbort = new AbortController();
   let pendingKenAutoModel: { provider: Provider; model: string } | null = null;
 
-  async function syncKenAutoModel(provider: Provider, model: string): Promise<void> {
+  async function syncKenAutoModel(provider: Provider, requested: string): Promise<void> {
+    // The autopilot reviewer runs every turn, unwatched: never on a paid tier.
+    const model = withoutPaidTier(requested);
     if (autopilotReviewing) {
       pendingKenAutoModel = { provider, model };
       return;
@@ -1811,6 +1929,8 @@ async function createSession(
     run: () => Promise<void>,
     reviewPending: () => boolean = () => false,
   ): Promise<void> {
+    // Only at boot: afterwards runAgent stays synchronous up to its first await.
+    if (savedLocalModelPending) await savedLocalModelPending;
     const ownsGeneration = !runLifecycle.running;
     const generation = ownsGeneration
       ? runLifecycle.begin(abortOwnedWork).generation
@@ -1902,6 +2022,11 @@ async function createSession(
       // cycle; its outer finalizer emits the one terminal cancelled run_end.
       if (!(cancelled && !ownsGeneration)) {
         if (cancelled) cancelledRunEndGenerations.add(generation);
+        // The run loaded the model, so Ollama can now say what size it served.
+        const runModel = session.getState().model;
+        if (session.getState().provider === "local") {
+          void learnServedContext(runModel, false).catch(() => {});
+        }
         broadcast("run_end", {
           ...(cancelled ? { cancelled: true } : {}),
           ...(verificationProblem ? { unverified: true } : {}),
@@ -2104,6 +2229,7 @@ async function createSession(
       priorityNote?: string;
       methodGuidance: AuthMethodMeta[];
     })[];
+    localConnected: boolean;
   }> {
     const providers = await Promise.all(
       AUTH_PROVIDERS.map(async (p) => {
@@ -2135,11 +2261,15 @@ async function createSession(
           ? ((await auth.getCredentials(oauthKey))?.usageExhaustedUntil ?? 0)
           : 0;
         const oauthSidelined = hasOAuth && Date.now() < exhaustedUntil && hasApiKey;
-        const activeMethod = connectedMethods.includes("oauth")
-          ? oauthSidelined
-            ? ("apikey" as const)
-            : ("oauth" as const)
-          : connectedMethods[0];
+        // Gemini resolves the API key first (model registry authStorageKeys).
+        const keyFirst = p.value === "gemini" && hasApiKey;
+        const activeMethod = keyFirst
+          ? ("apikey" as const)
+          : connectedMethods.includes("oauth")
+            ? oauthSidelined
+              ? ("apikey" as const)
+              : ("oauth" as const)
+            : connectedMethods[0];
 
         // `methodDetails` is the server-side lookup table behind
         // `methodGuidance` — shipping both would duplicate every string on the
@@ -2156,7 +2286,13 @@ async function createSession(
         };
       }),
     );
-    return { providers };
+    // Local endpoints have no tile here, but they are a usable model source. An
+    // auto-detected server's credential outlives it, so it counts only while it
+    // answered the last scan with a model; a user-added endpoint always counts.
+    const localConnected =
+      (await listCustomEndpoints()).length > 0 ||
+      localProbes.some((probe) => probe.reachable && probe.models.length > 0);
+    return { providers, localConnected };
   }
 
   // Background tasks have no event source (the bash tool just spawns them), so
@@ -2206,6 +2342,24 @@ async function createSession(
     gitPoll.unref?.();
   };
   scheduleGitPoll(5000);
+  // Git missed its 2 s limit at startup (a busy machine): the titlebar would
+  // show "not a repo" until the next run. Read again in the background with
+  // more time; window creation doesn't wait for it.
+  if (!initialGit.settled) {
+    readGitState(cwd, { timeoutMs: SLOW_GIT_READ_TIMEOUT_MS })
+      .then((state) => {
+        if (gitPollStopped) return;
+        gitBranch = state.branch;
+        gitIsRepo = state.isRepo;
+        gitDirtyFileCount = state.dirtyFileCount;
+        broadcast("extras", footerExtras());
+      })
+      .catch((err: unknown) => {
+        log("WARN", "app-sidecar", "slow git re-read failed", {
+          message: err instanceof Error ? err.message : String(err),
+        });
+      });
+  }
 
   // GitHub issue/PR counts change outside the app (web UI, teammates), so poll
   // on a slow cadence. Network-bound, so keep it well under the search API's
@@ -2355,6 +2509,7 @@ async function createSession(
       localProbes = v;
     },
     localModelBlocker,
+    learnServedContext,
     get kenModelOverride() {
       return kenModelOverride;
     },
@@ -2467,6 +2622,12 @@ async function createSession(
   }
 
   async function dispose(): Promise<void> {
+    // A window closed (or switched project) mid-run: stop the run itself, any
+    // run-all sweep or autopilot turn, and a model download this window
+    // started. Otherwise they keep streaming tokens and running tools on a
+    // session that is being torn down.
+    abortOwnedWork();
+    cancelHfPull();
     releaseRunAwake?.();
     releaseRunAwake = null;
     releaseSubagentAwake?.();

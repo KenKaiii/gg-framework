@@ -45,11 +45,15 @@ const MODEL_SHORT_NAMES: Record<string, string> = {
   "claude-fable-5-1": "Fable",
   "claude-mythos-5": "Mythos",
   "claude-opus-5-5": "Opus",
+  "claude-opus-5-5-fast": "Opus Fast",
   "claude-sonnet-5-5": "Sonnet",
   "claude-haiku-5-5": "Haiku",
   "gpt-6-astra": "GPT-6 Astra",
+  "gpt-6-astra-fast": "GPT-6 Astra Fast",
   "gpt-6.1-sol": "GPT-6.1 Sol",
+  "gpt-6.1-sol-fast": "GPT-6.1 Sol Fast",
   "gpt-6-luna": "GPT-6 Luna",
+  "gpt-6-luna-fast": "GPT-6 Luna Fast",
 };
 
 function getShortModelName(model: string): string {

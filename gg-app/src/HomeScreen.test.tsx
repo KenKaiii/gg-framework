@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { authStatus, getSettings } from "./agent";
+import { getSettings, hasModelSource } from "./agent";
 import { HomeScreen } from "./HomeScreen";
 
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: vi.fn(async () => "1.0.0") }));
@@ -15,7 +15,7 @@ vi.mock("./agent", () => ({
   openUrl: vi.fn(),
   waitForReady: vi.fn(async () => undefined),
   getSettings: vi.fn(),
-  authStatus: vi.fn(),
+  hasModelSource: vi.fn(),
   openWhatsNewWindow: vi.fn(),
   getProgress: vi.fn(async () => null),
   setRemoteActive: vi.fn(),
@@ -30,16 +30,7 @@ afterEach(() => {
 describe("HomeScreen", () => {
   it("offers Motion beside Code and Chat and opens it once set up", async () => {
     vi.mocked(getSettings).mockResolvedValue({ projectsRoot: "/workspaces", configured: true });
-    vi.mocked(authStatus).mockResolvedValue([
-      {
-        value: "anthropic",
-        label: "Anthropic",
-        description: "",
-        methods: [],
-        connected: true,
-        connectedMethods: [],
-      },
-    ]);
+    vi.mocked(hasModelSource).mockResolvedValue(true);
     const onMotion = vi.fn();
 
     render(
@@ -58,7 +49,7 @@ describe("HomeScreen", () => {
 
   it("says under the Motion button that Motion is still in process", async () => {
     vi.mocked(getSettings).mockResolvedValue({ projectsRoot: "/workspaces", configured: true });
-    vi.mocked(authStatus).mockResolvedValue([]);
+    vi.mocked(hasModelSource).mockResolvedValue(false);
 
     render(
       <HomeScreen onProjects={vi.fn()} onChat={vi.fn()} onMotion={vi.fn()} onSettings={vi.fn()} />,

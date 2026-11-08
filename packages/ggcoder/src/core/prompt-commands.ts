@@ -124,7 +124,7 @@ This file is injected verbatim into the **cached prefix of every request in ever
 Read this list once and apply it to every step below. These are already supplied by the system prompt, so writing them into the context file is pure duplication:
 
 1. **Agent behavior** — Do NOT add generic agent behavior already covered by the system prompt: read before edit/write, re-read after formatters, ask before destructive actions, no fake verification, generic code-quality advice, how to use tools, or how to talk to the user.
-2. **Language conventions** — a Language Style Packs section is auto-injected for every language detected in this repo. Do not duplicate language style packs, generic verification rules, or boilerplate quality gates such as "After editing ANY file" / "Code Quality — Zero Tolerance".
+2. **Generic conventions** — Do not add generic language style guides, generic verification rules, or boilerplate quality gates such as "After editing ANY file" / "Code Quality — Zero Tolerance". Record only conventions this project actually enforces.
 3. **Verify commands** — a Verification section is auto-generated from package scripts / manifests (lint, typecheck, format, test) with the correct runner already resolved from the lockfile. Only write a command down if it is NOT discoverable that way: an undocumented multi-step sequence, a required ordering, a non-obvious flag, or a command that lives outside the manifest. Never add guidance that requires running checks, builds, or the full quality suite after every edit or every file change, and never turn discovered commands into mandatory after-every-edit requirements unless local CI explicitly enforces that sequence.
 4. **The file tree** — the agent can list and grep the repo in one call. Do NOT embed generated symbol maps, exhaustive file indexes, auto-generated directory listings, or large trees. Do not add symbol indexes or auto-generated project inventories; the context file must remain durable, agent-focused project context.
 
@@ -151,6 +151,7 @@ All content you generate goes inside these exact fence markers:
 - If the file exists and already has the fence: **replace everything between the markers wholesale**. Text outside the fence is user-owned — do not touch it, do not reformat it, do not move it.
 - If the file exists without the fence: read it, decide which content is hand-written knowledge worth keeping, move that above the fence untouched, and put your generated content inside a new fence. Remove generic guidance that is already covered by the system prompt (see the list above) unless it is a deliberate project-specific override.
 - If the file does not exist: create it with the fence.
+- A \`<!-- gg-safe:blocked-packages:start -->\` … \`<!-- gg-safe:blocked-packages:end -->\` block is maintained by the app (packages its safety checks blocked). Keep it outside your fence, exactly as it is.
 
 ## Step 3: Analyze the project (sub-agents in parallel)
 
@@ -441,105 +442,6 @@ Do not index anything until the user answers.
 ## Phase 3: Index
 
 Tell the user indexing is starting and can take a few minutes (each repo is a full download). Then index exactly the chosen repos with \`steroids\` \`add\` (\`repos\` = owner/name list, \`tag\` = a short slug for this project, e.g. its directory name), 2-3 repos per call so progress is visible and a cancel loses little. Then confirm with \`steroids\` \`repos\` filtered by that tag and report what was added, what failed, and the new corpus size. Suggest one concrete \`steroids\` \`search\` the user could run next against the new repos.`,
-  },
-  {
-    name: "setup-skills",
-    aliases: [],
-    description: "Recommend useful skills",
-    prompt: `# Skills Audit: Find useful skills for this project
-
-Analyze this project and recommend skills from the open ecosystem that would make **working on this project more efficient, easier, and safer**. That is the goal, full stop. Every recommendation must pass the test: does this skill save real time, lower real cognitive load, or prevent real mistakes for someone working on THIS project, repeatedly?
-
-Ranked by real impact, not volume.
-
-This project could be anything — a web app, a CLI, a mobile app, a game, firmware, a data pipeline, a library, a scientific tool. Do not assume a stack. Let the codebase tell you what it is, then decide what to look for.
-
-## Phase 1: Understand what this project is
-
-Read just enough to know what kind of project this is. Look at whichever signals actually apply:
-
-- Build / manifest files: \`package.json\`, \`pyproject.toml\`, \`Cargo.toml\`, \`go.mod\`, \`pubspec.yaml\`, \`Podfile\`, Xcode project, Gradle build, \`*.csproj\`, \`CMakeLists.txt\`, Unity/Unreal project files, Makefile — whatever exists.
-- Any README, CLAUDE.md, or AGENTS.md.
-- Top-level directory layout and obvious entry points.
-- Any CI config, lockfile, or config directory that hints at workflow.
-
-**Do NOT read source code yet.** You need only a coarse answer to: what kind of project is this, what platform/stack/language, what stage (greenfield vs mature), and what does the surrounding workflow look like (build, test, release, distribute, deploy — whatever applies for THIS project type).
-
-## Phase 2: Decide which domains to investigate
-
-Based on Phase 1, pick 4–6 domain slices that represent the **recurring work someone actually does on this project** — not abstract "areas of the codebase," but the real activities that eat time, attention, or trust. Do not use a fixed template. The right domains for a Rust CLI are different from an iOS app, a Unity game, a Django backend, a Kubernetes operator, or an ML notebook.
-
-Illustrative only (not prescriptive):
-
-- Web app → shipping features, API changes, handling data safely, deploys
-- Mobile app → building screens, store releases, platform quirks, crash & accessibility triage
-- CLI tool → adding commands, packaging & distribution, user-facing UX, error handling
-- Game → adding content, platform ports, perf passes, build pipeline
-- Library → designing public APIs, cutting releases, downstream compatibility, docs/examples
-- Data / ML → running experiments, pipeline orchestration, reproducibility, serving models
-- Embedded → adding peripherals, size/memory passes, flashing, hardware bring-up
-
-**Announce your chosen domains to the user in one line before spawning agents**, so they can see what you're looking at (e.g. \`Domains: adding content, platform ports, perf passes, build pipeline\`).
-
-## Phase 3: Parallel sweep
-
-Spawn one sub-agent per domain you chose, ${spawnParallel("N")} — one task per domain. Each explores its assigned domain and returns skill-worthy opportunities.
-
-**Skill-worthy means**: a recurring activity someone will do on THIS project — shipping, reviewing, migrating, debugging, onboarding, whatever applies — where a reusable instruction set would make it **faster** (efficient), **lower-effort** (easier), or **less likely to break something** (safer). The test is: will this skill save real time, reduce real cognitive load, or prevent real mistakes, repeatedly, on this project? If no, drop it. A domain returning zero candidates is a valid outcome.
-
-Each sub-agent must return candidates in this exact shape, nothing else:
-
-\`\`\`
-[domain] — candidate title
-Why: one sentence on the real friction observed in THIS project
-Search terms: 2–3 keywords the parent should feed to find-skills
-\`\`\`
-
-Don't invent. Don't pad.
-
-## Phase 4: Ecosystem search
-
-After all sub-agents complete, use the **skill** tool to invoke the \`find-skills\` skill. Feed it the aggregated candidate list with search terms. Let find-skills drive discovery across skills.sh, vercel-labs/agent-skills, and anthropics/skills.
-
-For each candidate, record the best 0–1 ecosystem match: skill name, source repo URL, and enough evidence from the skill README/source to prove it fits this project. If no fit exists, record "no match". **Do NOT install anything yet.**
-
-## Phase 5: Prioritized recommendation
-
-Rank every candidate that returned a real match by **crucial factor** — a 0–100% score combining:
-
-- **Frequency** — how often someone will do this work on this project
-- **Lift** — how much the skill makes it faster (efficient), lower-effort (easier), or safer (fewer mistakes, broken builds, bad releases) per hit
-- **Fit** — how well the ecosystem match actually matches this project
-
-Present highest first, in this exact format:
-
-\`\`\`
-# Skills Audit
-
-1. <skill-name> — 92%
-   Benefit: <one sentence on what it does for this project>
-   Source: <repo URL>
-   Scope: project
-
-2. <skill-name> — 78%
-   Benefit: …
-   Source: …
-   Scope: project
-\`\`\`
-
-Cap the list at 8. If you'd list more, you're padding. Default scope is \`project\` per find-skills' rules; only mark \`global\` when the skill is genuinely cross-cutting.
-
-If strong candidates had no ecosystem match, list them at the bottom:
-
-\`\`\`
-## Gaps worth authoring
-
-- <candidate title> — <why it matters for this project> — consider scaffolding a custom SKILL.md
-\`\`\`
-
-## Phase 6: Wait for the user
-
-After presenting the list, ask which (if any) to install. Install nothing without explicit confirmation. Once confirmed, hand off to find-skills to perform the actual install.`,
   },
 ];
 

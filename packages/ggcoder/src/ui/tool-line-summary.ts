@@ -140,9 +140,11 @@ function inlineSummary(name: string, result: string, details: unknown): string {
       return exit ? `exit ${exit}` : "";
     }
     case "grep": {
+      // Match rows in either layout: grouped `line:text` under a path heading,
+      // or flat `path:line:text` (sessions saved before grep grouped by file).
       const matches = result
         .split("\n")
-        .filter((line) => line.length > 0 && !/^\d+ match|^\[Truncated/.test(line)).length;
+        .filter((line) => /^\d+:/.test(line) || /^.+?:\d+:/.test(line)).length;
       return matches > 0 ? `${matches} ${plural(matches, "match", "matches")}` : "";
     }
     case "find": {

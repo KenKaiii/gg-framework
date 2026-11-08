@@ -1,6 +1,6 @@
 /**
  * AST-aware code retrieval — the pure, UI-free core shared by the semantic-search
- * benchmark and the `code_search` tool.
+ * benchmark.
  *
  * `chunkFile` splits a source file into top-level declaration chunks (functions,
  * classes, interfaces, types, enums, consts) with their full bodies; `bm25Rank`
@@ -55,7 +55,7 @@ export function languageForFile(rel: string): ChunkLanguage | undefined {
   return EXTENSION_LANGUAGES[path.extname(rel).toLowerCase()];
 }
 
-/** Every extension `code_search` can index, without leading dots. */
+/** Every extension the retrieval code can index, without leading dots. */
 export const CHUNKABLE_EXTENSIONS: readonly string[] = Object.keys(EXTENSION_LANGUAGES).map((e) =>
   e.slice(1),
 );

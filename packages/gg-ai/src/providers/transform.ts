@@ -166,6 +166,60 @@ export function applyServerFallbackReplay(
   return out.every(isServerFallbackBlock) ? [] : out;
 }
 
+/** Id of a server-tool call block (`server_tool_call` part or raw `server_tool_use`). */
+function serverToolUseId(part: ContentPart): string | undefined {
+  if (part.type === "server_tool_call") return part.id;
+  if (
+    part.type === "raw" &&
+    part.data.type === "server_tool_use" &&
+    typeof part.data.id === "string"
+  )
+    return part.data.id;
+  return undefined;
+}
+
+/**
+ * Ids of server-tool calls that must not be replayed: no result block for them
+ * exists anywhere in the history, and the turn they belong to is closed.
+ *
+ * When Claude calls a server tool (web_search) alongside a client tool, the API
+ * defers the server tool: the response holds a `server_tool_use` with no result,
+ * and the result arrives at the start of the NEXT response — but only if the
+ * follow-up user message holds nothing except `tool_result` blocks. Anything
+ * after the results (a re-grounding or steering note, a new prompt after an
+ * error) closes the turn, and the API 400s on the still-unresolved call:
+ * "`web_search` tool use with id … was found without a corresponding
+ * `web_search_tool_result` block". Every later request repeats it, so the
+ * session is stuck. So a resultless call is kept only while it can still
+ * resolve: in the last assistant message, followed by nothing but tool results
+ * (or nothing at all — a `pause_turn` resend).
+ */
+function unresolvedServerToolUseIds(messages: Message[]): Set<string> {
+  const resultIds = new Set<string>();
+  let lastAssistantIdx = -1;
+  messages.forEach((msg, idx) => {
+    if (msg.role !== "assistant") return;
+    lastAssistantIdx = idx;
+    if (typeof msg.content === "string") return;
+    for (const part of msg.content) {
+      if (part.type === "server_tool_result") resultIds.add(part.toolUseId);
+      else if (part.type === "raw" && typeof part.data.tool_use_id === "string")
+        resultIds.add(part.data.tool_use_id);
+    }
+  });
+  const turnStillOpen = messages.slice(lastAssistantIdx + 1).every((m) => m.role === "tool");
+  const dropped = new Set<string>();
+  messages.forEach((msg, idx) => {
+    if (msg.role !== "assistant" || typeof msg.content === "string") return;
+    if (idx === lastAssistantIdx && turnStillOpen) return;
+    for (const part of msg.content) {
+      const id = serverToolUseId(part);
+      if (id !== undefined && !resultIds.has(id)) dropped.add(id);
+    }
+  });
+  return dropped;
+}
+
 /** Map a single assistant content part to its Anthropic wire block (or null to drop). */
 function toAnthropicAssistantPart(
   part: ContentPart,
@@ -898,6 +952,7 @@ export function toAnthropicMessages(
   const keepFallbackBlocks = options?.fallbackBlocks === true;
   // Client tool calls dropped by the fallback replay rules; their results go too.
   const droppedToolCallIds = new Set<string>();
+  const unresolvedServerToolIds = unresolvedServerToolUseIds(messages);
 
   // Thinking is preserved across the ACTIVE trajectory: every assistant turn
   // after the last real user message (tool results are role "tool", not "user").
@@ -970,11 +1025,18 @@ export function toAnthropicMessages(
       // filter below and would reach the wire as an empty string — Anthropic
       // 400s on it just like an empty text block. Drop it (baseline #20 D).
       if (typeof msg.content === "string" && msg.content === "") continue;
-      const content =
-        typeof msg.content === "string"
+      const replayable =
+        typeof msg.content === "string" || unresolvedServerToolIds.size === 0
           ? msg.content
+          : msg.content.filter((part) => {
+              const id = serverToolUseId(part);
+              return id === undefined || !unresolvedServerToolIds.has(id);
+            });
+      const content =
+        typeof replayable === "string"
+          ? replayable
           : toAnthropicAssistantContent(
-              applyServerFallbackReplay(msg.content, keepFallbackBlocks, droppedToolCallIds),
+              applyServerFallbackReplay(replayable, keepFallbackBlocks, droppedToolCallIds),
               msgIdx > trajectoryStartIdx,
               idMap,
             );
@@ -990,16 +1052,39 @@ export function toAnthropicMessages(
         ? msg.content.filter((r) => !droppedToolCallIds.has(r.toolCallId))
         : msg.content;
       if (results.length === 0) continue;
+      const trailing: unknown[] = [];
+      const blocks = results.map((result) => {
+        const toolUseId = remapAnthropicToolCallId(result.toolCallId, idMap);
+        const content = toAnthropicToolResultContent(result.content);
+        if (
+          result.isError &&
+          typeof content !== "string" &&
+          content.some((part) => part.type !== "text")
+        ) {
+          // An is_error tool_result must be text-only (API 400), so its media
+          // follows the tool_result blocks as ordinary user content.
+          const text = content.filter((part) => part.type === "text" && part.text !== "");
+          trailing.push({ type: "text", text: `Attachments from tool call ${toolUseId}:` });
+          for (const part of content) if (part.type !== "text") trailing.push(part);
+          return {
+            type: "tool_result" as const,
+            tool_use_id: toolUseId,
+            content: text.length > 0 ? text : "Tool call failed; its attachments follow.",
+            is_error: true,
+          };
+        }
+        return {
+          type: "tool_result" as const,
+          tool_use_id: toolUseId,
+          content,
+          is_error: result.isError,
+        };
+      });
       out.push({
         role: "user",
         // Cast covers the video block (used by the Anthropic-compatible MiniMax
         // API), which isn't in the first-party Anthropic tool_result types.
-        content: results.map((result) => ({
-          type: "tool_result" as const,
-          tool_use_id: remapAnthropicToolCallId(result.toolCallId, idMap),
-          content: toAnthropicToolResultContent(result.content),
-          is_error: result.isError,
-        })) as unknown as Anthropic.ContentBlockParam[],
+        content: [...blocks, ...trailing] as unknown as Anthropic.ContentBlockParam[],
       });
     }
   }
@@ -1146,14 +1231,26 @@ export function toAnthropicThinking(
   maxTokens: number;
   outputConfig?: { effort: string };
 } {
+  if (model.startsWith("MiniMax-M3.1")) {
+    // MiniMax's own wire shape: adaptive thinking (it rejects `disabled`) with
+    // low/medium/high/xhigh/max effort. No `display` — that's Anthropic-only.
+    return {
+      thinking: { type: "adaptive" },
+      maxTokens,
+      outputConfig: { effort: level === "ultra" ? "max" : level },
+    };
+  }
   if (isAdaptiveThinkingModel(model)) {
     // Adaptive thinking — model decides when/how much to think.
     // budget_tokens is deprecated on Opus 5.x / 4.8 / 4.7 / 4.6 and Sonnet 5.
     // Anthropic's output_config.effort accepts low, medium, high, xhigh, and max.
-    // xhigh is supported by Opus 5.x / 4.8 / 4.7, Sonnet 5.5 and Haiku 5.5;
-    // all support max.
+    // xhigh is supported by Fable/Mythos 5.x, Opus 5.x / 4.8 / 4.7, Sonnet 5.5
+    // and Haiku 5.5; all support max (platform.claude.com effort docs).
     let effort: string = level;
-    if (effort === "xhigh" && !/opus-5|opus-4-8|opus-4-7|sonnet-5[-.]5|haiku-5[-.]5/.test(model)) {
+    if (
+      effort === "xhigh" &&
+      !/fable-5|mythos-5|opus-5|opus-4-8|opus-4-7|sonnet-5[-.]5|haiku-5[-.]5/.test(model)
+    ) {
       effort = "high";
     }
     return {

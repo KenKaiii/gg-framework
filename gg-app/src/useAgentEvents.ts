@@ -25,6 +25,8 @@ import { formatTokenCount } from "./ActivityBar";
 import { type LiveToolEntry, LIVE_TOOL_PANEL_ROWS } from "./LiveToolPanel";
 import { type SubAgentLine } from "./SubAgentFeed";
 import { playSound } from "./sounds";
+import { takeNewSecurityNotices, withSecurityRow } from "./security-notices";
+import { toast } from "./toast";
 import { findCompletedSteps, countPlanSteps } from "./plan-steps";
 import type { PendingAttachment } from "./attachments";
 import type { Item } from "./App";
@@ -349,6 +351,7 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
               return prev;
           }
         }
+        if (item.kind === "security") return withSecurityRow(prev, item);
         return [...prev, item];
       });
     },
@@ -1209,6 +1212,29 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
             });
           });
           schedulePromotionEnd();
+          break;
+        }
+        case "security_block": {
+          // A guard refused a step: a lasting row in the chat (the step line
+          // above the composer is gone once the run ends).
+          endStreamingText();
+          pushItem({
+            kind: "security",
+            id: nextId(),
+            rule: String(d.rule ?? ""),
+            target: String(d.target ?? ""),
+          });
+          break;
+        }
+        case "security_notice": {
+          // A project lockfile pins a package now known to be malware. Shown
+          // once; the agent was already told to replace it (never a prompt).
+          for (const message of takeNewSecurityNotices(
+            [{ key: String(d.key ?? ""), message: String(d.message ?? "") }],
+            localStorage,
+          )) {
+            toast(message, "warning", 12000);
+          }
           break;
         }
         case "diagnostics": {

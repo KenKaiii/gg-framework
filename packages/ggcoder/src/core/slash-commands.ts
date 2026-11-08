@@ -4,7 +4,11 @@ import { isGgApp } from "./runtime-mode.js";
 
 export interface SlashCommandContext {
   // These will be wired by AgentSession
-  switchModel: (provider: string, model: string) => Promise<void>;
+  switchModel: (
+    provider: string,
+    model: string,
+    options?: { confirmPaid?: boolean },
+  ) => Promise<void>;
   /** Compact now. `focus` is the user's `/compact <focus>` text: a short
    * description of what must survive the summary verbatim. */
   compact: (focus?: string) => Promise<void>;
@@ -96,25 +100,39 @@ export class SlashCommandRegistry {
 
 // ── Built-in Commands ──────────────────────────────────────
 
+/** Typed confirmation for switching to a model that spends real money. */
+export const CONFIRM_PAID_FLAG = "--confirm-paid";
+
 export function createBuiltinCommands(): SlashCommand[] {
   return [
     {
       name: "model",
       aliases: ["m", "models"],
       description: "Switch model or list available models",
-      usage: "/model [provider:model]",
-      async execute(args, ctx) {
-        if (!args) {
+      usage: "/model [provider:model] [--confirm-paid]",
+      async execute(rawArgs, ctx) {
+        if (!rawArgs) {
           return ctx.getModelList();
         }
+        // A model that spends real money (Claude fast mode) needs the user to
+        // type their yes; without it the session refuses and we say why.
+        const tokens = rawArgs.split(/\s+/).filter(Boolean);
+        const confirmPaid = tokens.includes(CONFIRM_PAID_FLAG);
+        const args = tokens.filter((token) => token !== CONFIRM_PAID_FLAG).join(" ");
+        if (!args) return ctx.getModelList();
         const parts = args.split(":");
-        if (parts.length === 2) {
-          await ctx.switchModel(parts[0], parts[1]);
-          return `Switched to ${parts[0]}:${parts[1]}`;
+        const [provider, model] = parts.length === 2 ? [parts[0], parts[1]] : ["", args];
+        try {
+          await ctx.switchModel(provider, model, { confirmPaid });
+        } catch (err) {
+          if (err instanceof Error && err.name === "PaidModelConfirmationError") {
+            return `${err.message}\nIt stays on for this session only. To use it, run: /model ${args} ${CONFIRM_PAID_FLAG}`;
+          }
+          throw err;
         }
-        // Assume it's just a model name with current provider
-        await ctx.switchModel("", args);
-        return `Switched to model: ${args}`;
+        return parts.length === 2
+          ? `Switched to ${provider}:${model}`
+          : `Switched to model: ${args}`;
       },
     },
     {

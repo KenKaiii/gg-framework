@@ -136,3 +136,63 @@ describe("AgentSession pushed notifications", () => {
     }
   }, 15_000);
 });
+
+describe("AgentSession idle wake", () => {
+  it("runs from an urgent background alert as a hidden status update", async () => {
+    const { session, internals } = await makeSession();
+    try {
+      let alerts = 0;
+      session.onBackgroundAlert(() => {
+        alerts += 1;
+      });
+      const seen: Array<{ role: string; content: unknown; provenance?: unknown }> = [];
+      agentLoopMock.mockImplementation(async function* (
+        messages: Array<{ role: string; content: unknown; provenance?: unknown }>,
+      ) {
+        seen.push(...messages);
+        messages.push({ role: "assistant", content: "CI failed on Windows; fixing." });
+        yield {
+          type: "agent_done",
+          totalTurns: 1,
+          totalUsage: { inputTokens: 0, outputTokens: 0 },
+        };
+      });
+
+      // Progress is not an alert: nothing to wake for.
+      internals.notifications.enqueue("process", "p0", "Build still running.");
+      expect(alerts).toBe(0);
+      expect(await session.continueFromNotifications()).toBe(false);
+      expect(agentLoopMock).not.toHaveBeenCalled();
+
+      internals.notifications.enqueue(
+        "process",
+        "p1",
+        "Background process p1 exited with code 1.",
+        {
+          terminal: true,
+          urgent: true,
+        },
+      );
+      expect(alerts).toBe(1);
+      expect(session.hasPendingBackgroundAlert()).toBe(true);
+      const humanBefore = session.getHumanPromptSeq();
+
+      expect(await session.continueFromNotifications()).toBe(true);
+      const wake = seen.at(-1);
+      expect(wake?.role).toBe("user");
+      expect(String(wake?.content).startsWith(NOTIFICATION_PREFIX)).toBe(true);
+      expect(String(wake?.content)).toContain("exited with code 1");
+      expect(String(wake?.content)).toContain("already finished your turn");
+      expect(wake?.provenance).toEqual({
+        source: "runtime",
+        kind: "notification",
+        visibility: "hidden",
+      });
+      // Delivered once; not a human prompt, so it does not reset wake budgets.
+      expect(session.hasPendingBackgroundAlert()).toBe(false);
+      expect(session.getHumanPromptSeq()).toBe(humanBefore);
+    } finally {
+      await session.dispose();
+    }
+  }, 15_000);
+});

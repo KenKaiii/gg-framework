@@ -338,9 +338,21 @@ export async function runBackgroundGit(
 
 // ── Background helpers ──────────────────────────────────────────────────────
 
-export async function getGitBranch(cwd: string): Promise<string | null> {
+/** Options for GG's read-only git status helpers. */
+export interface GitReadOptions {
+  /** Per-call limit; defaults to runBackgroundGit's 2 s. */
+  timeoutMs?: number;
+}
+
+export async function getGitBranch(
+  cwd: string,
+  options: GitReadOptions = {},
+): Promise<string | null> {
   try {
-    const { stdout } = await runBackgroundGit(["rev-parse", "--abbrev-ref", "HEAD"], { cwd });
+    const { stdout } = await runBackgroundGit(["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd,
+      timeoutMs: options.timeoutMs,
+    });
     return stdout.trim() || null;
   } catch {
     return null;
@@ -348,9 +360,13 @@ export async function getGitBranch(cwd: string): Promise<string | null> {
 }
 
 /** Count staged, modified, deleted, renamed, and untracked files. */
-export async function getGitDirtyFileCount(cwd: string): Promise<number> {
+export async function getGitDirtyFileCount(
+  cwd: string,
+  options: GitReadOptions = {},
+): Promise<number> {
   const { stdout } = await runBackgroundGit(["status", "--porcelain=v1", "--untracked-files=all"], {
     cwd,
+    timeoutMs: options.timeoutMs,
   });
   return stdout.split(/\r?\n/).filter(Boolean).length;
 }
@@ -359,12 +375,22 @@ export async function getGitDirtyFileCount(cwd: string): Promise<number> {
  * Whether `cwd` is inside a git work tree. Distinct from getGitBranch, which
  * returns null both for non-repos AND for freshly-init'd repos with no commits
  * (rev-parse HEAD fails before the first commit).
+ *
+ * False only when git ran and answered no. A timeout or a failed spawn is no
+ * answer and rejects, so callers keep what they knew: reporting it as "not a
+ * repo" hid a busy machine's project changes from the titlebar.
  */
-export async function isGitRepo(cwd: string): Promise<boolean> {
+export async function isGitRepo(cwd: string, options: GitReadOptions = {}): Promise<boolean> {
   try {
-    const { stdout } = await runBackgroundGit(["rev-parse", "--is-inside-work-tree"], { cwd });
+    const { stdout } = await runBackgroundGit(["rev-parse", "--is-inside-work-tree"], {
+      cwd,
+      timeoutMs: options.timeoutMs,
+    });
     return stdout.trim() === "true";
-  } catch {
-    return false;
+  } catch (error) {
+    if (error instanceof BackgroundGitError && typeof error.code === "number" && !error.killed) {
+      return false;
+    }
+    throw error;
   }
 }

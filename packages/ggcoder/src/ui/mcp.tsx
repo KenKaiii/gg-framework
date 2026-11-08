@@ -32,6 +32,8 @@ export interface McpServerRow {
   ok: boolean;
   toolCount: number;
   error?: string;
+  /** gg-safe: one line per tool the guard hid from the model. */
+  warning?: string;
 }
 
 export type McpDashboardAction =

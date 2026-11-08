@@ -29,6 +29,27 @@ describe("local provider", () => {
       }),
     ).toThrow(GGAIError);
   });
+
+  it.each([
+    ["local", null],
+    ["sk-gateway", "Bearer sk-gateway"],
+  ])("sends key %s as Authorization %s", async (apiKey, expected) => {
+    let authorization: string | null | undefined;
+    const fetch: typeof globalThis.fetch = async (_url, init) => {
+      authorization = new Headers(init?.headers).get("authorization");
+      return new Response("{}", { status: 401 });
+    };
+    const result = stream({
+      provider: "local",
+      model: "local/custom-gw/free-model",
+      messages: [{ role: "user", content: "hi" }],
+      baseUrl: "http://127.0.0.1:9/v1",
+      apiKey,
+      fetch,
+    });
+    await expect(result).rejects.toThrow();
+    expect(authorization).toBe(expected);
+  });
 });
 
 describe("provider wire boundary", () => {

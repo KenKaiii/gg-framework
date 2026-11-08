@@ -175,7 +175,6 @@ const TOOL_KINDS: Record<string, string> = {
   ls: "read",
   find: "read",
   grep: "search",
-  code_search: "search",
   web_search: "search",
   edit: "edit",
   write: "edit",
@@ -420,11 +419,15 @@ function configOptionsFor(session: AcpAgentSession): ConfigOption[] {
       category: "model",
       type: "select",
       currentValue: model,
-      options: getAllModels().map((entry) => ({
-        value: entry.id,
-        name: entry.name,
-        description: entry.provider,
-      })),
+      // Editors have no "spend real money" confirmation, so a paid model
+      // (Claude fast mode) is never offered here unless it's already current.
+      options: getAllModels()
+        .filter((entry) => entry.billing?.paid !== true || entry.id === model)
+        .map((entry) => ({
+          value: entry.id,
+          name: entry.name,
+          description: entry.provider,
+        })),
     },
     {
       id: THINKING_CONFIG_ID,
@@ -1363,6 +1366,11 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
     if (configId === MODEL_CONFIG_ID) {
       const target = getModel(value);
       if (!target) throw new InvalidParams(`Unknown model '${value}'.`);
+      if (target.billing?.paid && target.id !== session.getState().model) {
+        throw new InvalidParams(
+          `${target.name} spends real money (${target.billing.detail}) and can only be switched to in the Kleio app or the Kleio Coder CLI, where you confirm it.`,
+        );
+      }
       await session.switchModel(target.provider, target.id);
       // Thinking levels are per-model, so a level the previous model allowed can
       // be above the new one's ceiling. Clamping here keeps the session's actual

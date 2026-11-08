@@ -14,6 +14,43 @@ export interface ToolLinePart {
   bold?: boolean;
   tone?: ToolTone;
   dim?: boolean;
+  /** A safety block: shown in the warning colour, not as a plain failure. */
+  warn?: boolean;
+}
+
+/** Plain words for each safety-block rule (the coder's core guards). */
+const SAFETY_RULES: Record<string, string> = {
+  "malicious-package": "known malware",
+  "known-vulnerability": "serious known flaw",
+  "release-age": "too new to trust yet",
+  typosquat: "lookalike name",
+  "provenance-downgrade": "unsigned release",
+  "secret-exfil": "would send secrets",
+  "secret-literal-exfil": "would send a key",
+  "exfil-host": "data-collection site",
+  "dns-exfil": "would leak data",
+  "ai-cli-bypass": "AI tool, safety off",
+  "auto-run-config": "turns on auto-run",
+  "gg-auth-write": "your login file",
+  "pipe-to-shell": "runs downloaded code",
+  "reverse-shell": "remote control",
+  "lookalike-host": "lookalike address",
+  "terminal-tricks": "hidden characters",
+  "installed-malware": "infected package",
+};
+
+/** Plain words for a safety rule (shared by the step line and the chat row). */
+export function safetyRuleReason(rule: string): string {
+  return SAFETY_RULES[rule] ?? "safety rule";
+}
+
+const SAFETY_BLOCK =
+  /^(?:Error: )?Blocked (?:install|by (?:shell|action) safety check) \(([a-z-]+)\)/;
+
+/** The plain reason for a guard's block ("known malware"), else null. */
+export function safetyBlockSummary(result: string | undefined): string | null {
+  const rule = SAFETY_BLOCK.exec(result ?? "")?.[1];
+  return rule ? safetyRuleReason(rule) : null;
 }
 
 interface VerbPair {
@@ -203,9 +240,11 @@ function inlineSummary(name: string, result: string, details: unknown): string {
       return exit ? `exit ${exit}` : "";
     }
     case "grep": {
+      // Match rows in either layout: grouped `line:text` under a path heading,
+      // or flat `path:line:text` (sessions saved before grep grouped by file).
       const matches = result
         .split("\n")
-        .filter((line) => line.length > 0 && !/^\d+ match|^\[Truncated/.test(line)).length;
+        .filter((line) => /^\d+:/.test(line) || /^.+?:\d+:/.test(line)).length;
       return matches > 0 ? `${matches} ${plural(matches, "match", "matches")}` : "";
     }
     case "find": {
@@ -254,6 +293,18 @@ export function buildToolLineParts(
   const verb = input.done ? verbs.done : verbs.running;
   const { text: detail, quote } = toolDetail(name, args);
 
+  // Guards return their block as the tool's text (isError stays false), so the
+  // result's own "Blocked … (rule)" prefix is what marks it.
+  const blocked = input.done ? safetyBlockSummary(input.result) : null;
+  if (blocked) {
+    // The reason leads and the command trails, so a narrow line cuts the
+    // command, never the reason. A blocked call never ran: no "Ran".
+    return [
+      { text: "Blocked for safety", bold: true, warn: true },
+      { text: ` \u00b7 ${blocked}`, warn: true },
+      ...(detail ? [{ text: ` \u00b7 ${quote ? `"${detail}"` : detail}`, dim: true }] : []),
+    ];
+  }
   const parts: ToolLinePart[] = [{ text: verb, bold: true, tone }];
   if (detail) {
     parts.push({ text: ` ${quote ? `"${detail}"` : detail}` });

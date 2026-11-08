@@ -262,7 +262,9 @@ async function replaceFile(tempPath: string, filePath: string): Promise<void> {
   }
 }
 
-async function atomicWrite(filePath: string, content: string): Promise<void> {
+/** Write via a synced sibling temp file + rename (Windows-safe replace), so a
+ *  crash or a concurrent reader never sees a half-written file. */
+export async function atomicWrite(filePath: string, content: string): Promise<void> {
   const tempPath = temporarySiblingPath(filePath);
   try {
     await fs.writeFile(tempPath, content, { encoding: "utf8", flag: "wx" });

@@ -55,6 +55,11 @@ export interface BusEventMap {
   /** Informational edit feedback, not a completion gate or a draft replacement. */
   diagnostics: { text: string };
 
+  /** A project's lockfile pins a package now known to be malware (background check). */
+  security_notice: { key: string; message: string };
+  /** A guard blocked something (or found an infected installed package): a chat row. */
+  security_block: { rule: string; target: string };
+
   // Agent self-correction hooks (ideal review / verification / loop-break /
   // re-grounding). Carries only the semantic kind; the presentation layer owns
   // text + color.

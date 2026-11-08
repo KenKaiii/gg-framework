@@ -23,7 +23,7 @@ You map how THIS repository fits together — structure, symbols, call chains, p
 When given a task:
 1. Fix the scope — the exact symbol, pattern, or question to resolve
 2. \`find\`/\`ls\` to map the relevant directories
-3. \`code_search\` for "where is X implemented" in TS/JS; \`grep\` for exact strings and other languages
+3. \`grep\` for where things are, then \`read\` the matches
 4. \`read\` the key files to confirm details — never report a call chain you haven't read
 5. Trace connections — exports, imports, callers, data flow
 
@@ -201,7 +201,7 @@ export const BUNDLED_AGENTS: AgentDefinition[] = [
   {
     name: "bee",
     description: "Implements a self-contained change in place.",
-    tools: ["read", "write", "edit", "bash", "find", "grep", "code_search", "ls", "source_path"],
+    tools: ["read", "write", "edit", "bash", "find", "grep", "ls", "source_path"],
     model: "inherit",
     systemPrompt: BEE_PROMPT,
     source: "bundled",
@@ -209,7 +209,7 @@ export const BUNDLED_AGENTS: AgentDefinition[] = [
   {
     name: "owl",
     description: "Read-only questions about this repo.",
-    tools: ["read", "grep", "find", "ls", "code_search", "source_path"],
+    tools: ["read", "grep", "find", "ls", "source_path"],
     model: "inherit",
     // Conventions and style rules don't change where a symbol is defined, and
     // skipping them keeps recon fast (matching Claude Code's Explore agent).
@@ -220,17 +220,7 @@ export const BUNDLED_AGENTS: AgentDefinition[] = [
   {
     name: "researcher",
     description: "Research needing docs or dependency source outside the repo.",
-    tools: [
-      "read",
-      "grep",
-      "find",
-      "ls",
-      "code_search",
-      "source_path",
-      "web_fetch",
-      "web_search",
-      "steroids",
-    ],
+    tools: ["read", "grep", "find", "ls", "source_path", "web_fetch", "web_search", "steroids"],
     model: "inherit",
     systemPrompt: RESEARCHER_PROMPT,
     source: "bundled",
@@ -238,7 +228,7 @@ export const BUNDLED_AGENTS: AgentDefinition[] = [
   {
     name: "worker",
     description: "Lands one change on its own branch and commits it.",
-    tools: ["read", "write", "edit", "bash", "find", "grep", "code_search", "ls"],
+    tools: ["read", "write", "edit", "bash", "find", "grep", "ls"],
     model: "inherit",
     systemPrompt: WORKER_PROMPT,
     source: "bundled",
@@ -246,7 +236,7 @@ export const BUNDLED_AGENTS: AgentDefinition[] = [
   {
     name: "auditor",
     description: "Read-only security review.",
-    tools: ["read", "grep", "find", "ls", "code_search", "bash", "web_fetch", "web_search"],
+    tools: ["read", "grep", "find", "ls", "bash", "web_fetch", "web_search"],
     model: "inherit",
     systemPrompt: AUDITOR_PROMPT,
     source: "bundled",
@@ -254,17 +244,7 @@ export const BUNDLED_AGENTS: AgentDefinition[] = [
   {
     name: "skeptic",
     description: "Verifies `auditor` findings.",
-    tools: [
-      "read",
-      "grep",
-      "find",
-      "ls",
-      "code_search",
-      "bash",
-      "web_fetch",
-      "web_search",
-      "steroids",
-    ],
+    tools: ["read", "grep", "find", "ls", "bash", "web_fetch", "web_search", "steroids"],
     model: "inherit",
     systemPrompt: SKEPTIC_PROMPT,
     source: "bundled",

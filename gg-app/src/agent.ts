@@ -146,7 +146,31 @@ export interface GitHubCI {
   stale?: boolean;
 }
 
+/** A skill the sidecar's safety scan refused to load (it is simply absent). */
+export interface BlockedSkill {
+  name: string;
+  path: string;
+  /** "project", "global", "bundled" or "motion". */
+  scope: string;
+  /** Plain words: what the skill tried to do. */
+  reason: string;
+  /** Content hash; "" when the block isn't about content. */
+  hash: string;
+}
+
+/** A project lockfile pins a package now known to be malware (background check). */
+export interface SecurityNotice {
+  /** Stable id; the same notice is shown once. */
+  key: string;
+  /** One plain line for the user. */
+  message: string;
+}
+
 export interface AgentState {
+  /** Skills kept out of this session for safety. Absent on older sidecars. */
+  blockedSkills?: BlockedSkill[];
+  /** Installed packages now known to be infected. Absent on older sidecars. */
+  installedThreats?: SecurityNotice[];
   provider: string;
   model: string;
   cwd: string;
@@ -245,12 +269,20 @@ export async function listTasks(): Promise<ProjectTask[]> {
 
 /** Run a single task end-to-end in its own fresh session. */
 export async function runTask(id: string): Promise<void> {
-  await invoke("agent_run_tasks", { id, all: false });
+  try {
+    await invoke("agent_run_tasks", { id, all: false });
+  } catch (e) {
+    await logError(`agent_run_tasks failed: ${String(e)}`);
+  }
 }
 
 /** Run every pending task sequentially (a fresh session each), in order. */
 export async function runAllTasks(): Promise<void> {
-  await invoke("agent_run_tasks", { id: null, all: true });
+  try {
+    await invoke("agent_run_tasks", { id: null, all: true });
+  } catch (e) {
+    await logError(`agent_run_tasks failed: ${String(e)}`);
+  }
 }
 
 /** Delete a task by id. Returns the remaining tasks. */
@@ -460,6 +492,12 @@ export interface ModelOption {
   /** False when the local server didn't report a real context length (we guessed). */
   contextWindowKnown?: boolean;
   supportsThinking?: boolean;
+  /**
+   * Set when picking this model changes what the user pays (fast modes,
+   * MiMo UltraSpeed). `paid` means real money, never the plan;
+   * `standardModel` is what replaces it wherever it isn't carried over.
+   */
+  billing?: { label: string; detail: string; paid: boolean; standardModel?: string };
 }
 
 export interface SlashCommand {
@@ -938,6 +976,8 @@ export interface HistoryEntry {
   error?: ChatErrorData & { scope: string; headline: string };
   /** Webview-copy info row marker (e.g. the video-capability warning). */
   infoKind?: "video_warning";
+  /** Safety-block chat row. */
+  security?: { rule: string; target: string };
   /** Tool-produced images rendered inline (same as live `images` items),
    *  reconstructed from ImageContent blocks in persisted tool results: each
    *  its preview (`src`), or, asked for by ref, a `ref` to load it by as it's
@@ -1076,17 +1116,33 @@ export interface AuthStatusResult {
   providers: AuthProvider[];
   /** Why the list couldn't be read (kleio: e.g. the Mac mini isn't answering). */
   error: string | null;
+  /** A local endpoint answered with a model (absent from older builds). */
+  localConnected?: boolean;
 }
 
 /** `authStatus`, keeping the reason when the list couldn't be read. */
 export async function authStatusWithError(): Promise<AuthStatusResult> {
   try {
-    const res = await invoke<{ providers?: AuthProvider[]; error?: string }>("app_auth_status");
-    return { providers: res.providers ?? [], error: res.error ?? null };
+    const res = await invoke<{
+      providers?: AuthProvider[];
+      error?: string;
+      localConnected?: boolean;
+    }>("app_auth_status");
+    return {
+      providers: res.providers ?? [],
+      error: res.error ?? null,
+      localConnected: res.localConnected === true,
+    };
   } catch (e) {
     await logError(`app_auth_status failed: ${String(e)}`);
     return { providers: [], error: String(e).replace(/^Error:\s*/, "") };
   }
+}
+
+/** True when the agent has something to run on: a connected provider or a local endpoint. */
+export async function hasModelSource(): Promise<boolean> {
+  const status = await authStatusWithError();
+  return status.localConnected === true || status.providers.some((p) => p.connected);
 }
 
 /**
@@ -1362,10 +1418,16 @@ export async function listModels(): Promise<ModelOption[] | null> {
  * rather than as a thrown IPC error — so unpack it here and let the caller
  * surface it.
  */
-export async function switchModel(model: string): Promise<SwitchModelResult | { error: string }> {
+export async function switchModel(
+  model: string,
+  options: { confirmPaid?: boolean } = {},
+): Promise<SwitchModelResult | { error: string }> {
   try {
+    // `confirmPaid` is only ever set from the explicit "spend real money"
+    // confirmation; the sidecar refuses a paid model without it.
     const res = await invoke<SwitchModelResult & { error?: string }>("agent_switch_model", {
       model,
+      confirmPaid: options.confirmPaid === true,
     });
     if (res.error) {
       await logError(`agent_switch_model refused: ${res.error}`);
@@ -1525,6 +1587,7 @@ export async function createProject(name: string): Promise<string> {
 /** Discover known projects (ggcoder + Claude Code + Codex), most recent first. */
 export async function listProjects(): Promise<DiscoveredProject[]> {
   try {
+    await waitForReady();
     const res = await invoke<{ projects: DiscoveredProject[] }>("agent_projects");
     return res.projects ?? [];
   } catch (e) {
@@ -1979,7 +2042,11 @@ export async function hfPullStatus(): Promise<HfPullState | null> {
 /** Cancel the running pull (no-op when none). Partial bytes are kept by Ollama. */
 export async function hfPullCancel(): Promise<void> {
   await waitForReady();
-  await invoke("agent_hf_pull_cancel");
+  try {
+    await invoke("agent_hf_pull_cancel");
+  } catch (e) {
+    await logError(`agent_hf_pull_cancel failed: ${String(e)}`);
+  }
 }
 
 // ── Telegram serve (remote control via Telegram) ───────────
@@ -2055,6 +2122,7 @@ export interface SteroidsStatus {
 /** Probe the `steroids` CLI. Never throws — an unreachable sidecar reads as "not installed". */
 export async function getSteroidsStatus(): Promise<SteroidsStatus> {
   try {
+    await waitForReady();
     return await invoke<SteroidsStatus>("agent_steroids_status");
   } catch (e) {
     await logError(`agent_steroids_status failed: ${String(e)}`);
@@ -2090,6 +2158,8 @@ export interface McpServerRow {
   summary: string;
   /** True when the server returned 401 and needs an interactive OAuth login. */
   requiresAuth?: boolean;
+  /** gg-safe: one line per tool hidden from the model, and why. */
+  warning?: string;
 }
 
 /** Outcome of adding an MCP server from a pasted command line. */

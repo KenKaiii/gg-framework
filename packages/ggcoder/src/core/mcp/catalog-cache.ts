@@ -108,6 +108,11 @@ export class McpCatalogCache {
 
   constructor(private readonly filePath: string = getAppPaths().mcpCatalogFile) {}
 
+  /** Where this cache lives; sibling state (tool pins) is kept beside it. */
+  get path(): string {
+    return this.filePath;
+  }
+
   private async readAll(): Promise<CatalogFile> {
     try {
       const raw = await fs.readFile(this.filePath, "utf-8");

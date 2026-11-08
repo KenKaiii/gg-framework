@@ -40,7 +40,7 @@ describe("request outcome matrix", () => {
     },
   );
 
-  it.each(["read", "grep", "find", "ls", "web_search", "web_fetch", "code_search", "code_nav"])(
+  it.each(["read", "grep", "find", "ls", "web_search", "web_fetch"])(
     "uses findings, not a test verdict, after %s",
     (name) => {
       const state = end(tool(start(), name), { verification: "failed" });

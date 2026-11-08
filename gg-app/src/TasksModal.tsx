@@ -21,9 +21,9 @@ interface Props {
 }
 
 const STATUS_STYLE: Record<ProjectTask["status"], { label: string; color: string }> = {
-  pending: { label: "pending", color: theme.textMuted },
-  "in-progress": { label: "running", color: theme.warning },
-  done: { label: "done", color: theme.success },
+  pending: { label: "Pending", color: theme.textMuted },
+  "in-progress": { label: "Running", color: theme.warning },
+  done: { label: "Done", color: theme.success },
 };
 
 export function TasksModal({
@@ -66,6 +66,7 @@ export function TasksModal({
                   </span>
                   {!isDone && (
                     <button
+                      type="button"
                       className="btn btn-sm btn-ghost tasks-run-one"
                       disabled={running}
                       title="Run this task in a fresh session"
@@ -75,9 +76,11 @@ export function TasksModal({
                     </button>
                   )}
                   <button
+                    type="button"
                     className="tasks-delete"
                     style={{ color: theme.textDim }}
                     title="Delete task"
+                    aria-label={`Delete ${task.title}`}
                     onClick={() => onDelete(task.id)}
                   >
                     <XIcon size={12} weight="bold" aria-hidden="true" />
@@ -88,6 +91,7 @@ export function TasksModal({
           </div>
           <div className="tasks-actions">
             <button
+              type="button"
               className="btn btn-sm btn-primary"
               disabled={running || !hasPending}
               title={

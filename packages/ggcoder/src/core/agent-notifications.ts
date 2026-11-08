@@ -16,7 +16,7 @@
  */
 
 /** Notification source. Extended as new push producers are added. */
-export type NotificationKind = "subagent" | "process";
+export type NotificationKind = "subagent" | "process" | "notice";
 
 export interface AgentNotification {
   kind: NotificationKind;
@@ -26,9 +26,19 @@ export interface AgentNotification {
   text: string;
   /** True once the producer reached a final state (child done, process exited). */
   terminal: boolean;
+  /**
+   * The agent should act on this now: a background task failed or exited
+   * non-zero, or a child agent finished. Urgent entries release a blocking
+   * `task_output` wait on a DIFFERENT task and may wake an idle session.
+   * Routine progress and readiness matches are not urgent.
+   */
+  urgent: boolean;
   /** Unix epoch ms of the most recent update for this `(kind, id)`. */
   updatedAt: number;
 }
+
+/** Called synchronously after an urgent entry is recorded. */
+export type UrgentNotificationListener = (entry: AgentNotification) => void;
 
 /** Max characters retained for a single notification's text. */
 export const NOTIFICATION_MAX_CHARS = 512;
@@ -47,6 +57,7 @@ function truncate(text: string, maxChars: number): string {
  */
 export class AgentNotificationQueue {
   private entries = new Map<string, AgentNotification>();
+  private urgentListeners = new Set<UrgentNotificationListener>();
 
   private static key(kind: NotificationKind, id: string): string {
     return `${kind}:${id}`;
@@ -60,26 +71,57 @@ export class AgentNotificationQueue {
     kind: NotificationKind,
     id: string,
     text: string,
-    options: { terminal?: boolean } = {},
+    options: { terminal?: boolean; urgent?: boolean } = {},
   ): boolean {
     const terminal = options.terminal === true;
     const key = AgentNotificationQueue.key(kind, id);
     const existing = this.entries.get(key);
     // A completion is the last word — a late progress tick must not erase it.
     if (existing?.terminal && !terminal) return false;
-    this.entries.set(key, {
+    // A routine update must not downgrade a pending urgent one for the same
+    // producer: the urgency is about what happened, not about the latest line.
+    const urgent = options.urgent === true || (existing?.urgent === true && !terminal);
+    const entry: AgentNotification = {
       kind,
       id,
       text: truncate(text, NOTIFICATION_MAX_CHARS),
       terminal,
+      urgent,
       updatedAt: Date.now(),
-    });
+    };
+    this.entries.set(key, entry);
+    if (options.urgent === true) {
+      for (const listener of [...this.urgentListeners]) {
+        try {
+          listener(entry);
+        } catch {
+          // A listener is an observer; it must never break the producer.
+        }
+      }
+    }
     return true;
+  }
+
+  /**
+   * Observe urgent entries as they are recorded. Returns an unsubscribe
+   * function. Listeners run synchronously inside `enqueue`.
+   */
+  onUrgent(listener: UrgentNotificationListener): () => void {
+    this.urgentListeners.add(listener);
+    return () => {
+      this.urgentListeners.delete(listener);
+    };
   }
 
   /** Number of notifications currently waiting. */
   get size(): number {
     return this.entries.size;
+  }
+
+  /** True while at least one urgent notification is waiting to be delivered. */
+  hasUrgent(): boolean {
+    for (const entry of this.entries.values()) if (entry.urgent) return true;
+    return false;
   }
 
   /** Discard any pending notification for one producer (e.g. on reap). */

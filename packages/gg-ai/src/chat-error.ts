@@ -1,10 +1,12 @@
 import {
   formatError,
   ProviderError,
+  ResponseStalledError,
   VideoUnsupportedError,
   type ErrorDisplayOptions,
   type FormattedError,
 } from "./errors.js";
+import { parseFastModeRejection } from "./fast-mode.js";
 
 /** Display meaning is separate from retry policy: a hard stop is not always a plan limit. */
 export type ChatErrorReason =
@@ -73,6 +75,17 @@ export function formatChatError(error: unknown, display?: ErrorDisplayOptions): 
       "Update the app, or choose another model.",
     );
   }
+  // Anthropic fast mode bills usage credits only. Its refusals arrive as 429s,
+  // but waiting never clears them, so name the actual cause (credits off, empty,
+  // capped, or blocked by an admin) instead of "limiting requests".
+  const fastRejection = base.provider === "anthropic" ? parseFastModeRejection(raw) : undefined;
+  if (fastRejection) {
+    return present(
+      fastRejection.kind === "billing" ? "billing" : "model_access",
+      fastRejection.headline,
+      fastRejection.guidance,
+    );
+  }
   // Check billing and entitlement BEFORE the canonical hard-stop token stamped by adapters.
   if (
     /insufficient.*(?:balance|credits?)|(?:balance|credits?).*(?:insufficient|exhausted|depleted)|credit balance is too low|payment_required/.test(
@@ -121,11 +134,29 @@ export function formatChatError(error: unknown, display?: ErrorDisplayOptions): 
       "Wait for the reset, or use another provider.",
     );
   }
+  // Connected, but the reply never finished: saying "couldn't reach the
+  // provider" sends the user to debug a network that was working.
+  if (error instanceof ResponseStalledError) {
+    return present(
+      "network",
+      "The response kept stalling",
+      error.inToolCall
+        ? "Ask for the change in smaller pieces, then try again."
+        : "Try again, or choose another model if it keeps happening.",
+    );
+  }
   if (base.source === "network") {
     return present(
       "network",
       "Couldn’t reach the provider",
       "Check your connection before trying again.",
+    );
+  }
+  if (base.provider === "local" && (base.source === "auth" || base.statusCode === 401)) {
+    return present(
+      "auth",
+      "The local server rejected its key",
+      "Check the endpoint's key under Local models in AI Providers settings.",
     );
   }
   if (base.source === "auth" || base.statusCode === 401) {

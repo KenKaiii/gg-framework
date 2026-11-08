@@ -18,6 +18,7 @@ import { EnhancedSegments } from "./PromptEnhancement";
 import { basename } from "./tool-format";
 import type { Item } from "./transcript-item";
 import { ErrorNotice } from "./placeholder/ErrorNotice";
+import { SecurityNotice } from "./placeholder/SecurityNotice";
 
 const ALL_CLEAR_VARIATIONS = [
   "All clear. Looks good to me.",
@@ -415,6 +416,8 @@ function TranscriptRowBody({
       );
     case "subagent_group":
       return <SubAgentFeed agents={item.agents} aborted={item.aborted} />;
+    case "security":
+      return <SecurityNotice rule={item.rule} target={item.target} count={item.count} />;
     case "compaction":
       return (
         <CompactionNotice

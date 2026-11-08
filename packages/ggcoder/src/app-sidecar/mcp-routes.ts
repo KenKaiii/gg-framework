@@ -142,7 +142,7 @@ export function handleMcpRoutes(
 
   // Interactive OAuth login for a remote (HTTP) MCP server. The browser is
   // opened by the webview in response to the broadcast `mcp_auth_url` event;
-  // progress + outcome stream via `mcp_auth_status` / `mcp_auth_done` /
+  // progress + outcome stream via `mcp_auth_done` /
   // `mcp_auth_error`. Responds 202 immediately and runs the flow in the
   // background (the browser round-trip can take a while).
   if (method === "POST" && url === "/mcp/login") {
@@ -176,7 +176,6 @@ export function handleMcpRoutes(
         return;
       }
       json(res, 202, { accepted: true });
-      ctx.broadcast("mcp_auth_status", { name, message: "Starting login\u2026" });
       const manager = new MCPClientManager();
       try {
         const result = await manager.login(scoped.config, (authUrl) => {

@@ -18,6 +18,11 @@ export function handleSessionRoutes(
       ...st,
       mode: ctx.mode,
       chatAgent: ctx.chatAgent,
+      // Skills the safety scan kept out; the app shows each once (toast).
+      blockedSkills: ctx.session.getBlockedSkills(),
+      installedThreats: ctx.session
+        .getInstalledThreats()
+        .map(({ key, message }) => ({ key, message })),
       running: ctx.running,
       runState: ctx.runLifecycle.state,
       ready: true,
@@ -112,6 +117,11 @@ export function handleSessionRoutes(
           ...st,
           mode: ctx.mode,
           chatAgent: ctx.chatAgent,
+          // Skills the safety scan kept out; the app shows each once (toast).
+          blockedSkills: ctx.session.getBlockedSkills(),
+          installedThreats: ctx.session
+            .getInstalledThreats()
+            .map(({ key, message }) => ({ key, message })),
           running: ctx.running,
           reviewPending: ctx.autopilotActive,
           // A reconnecting window (reload/reopen) re-opens the review box for

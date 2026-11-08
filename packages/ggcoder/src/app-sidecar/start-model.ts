@@ -68,6 +68,8 @@ export async function discoverLocalModelForPin(modelId: string): Promise<void> {
  */
 export async function probeLocalModelBlocker(
   modelId: string,
+  // A session overlays the context Ollama really served (withServedContexts).
+  adjust: (probe: LocalEndpointProbe) => LocalEndpointProbe = (probe) => probe,
 ): Promise<{ problem?: string; probe?: LocalEndpointProbe }> {
   const parsed = parseLocalModelId(modelId);
   if (!parsed) return {};
@@ -76,7 +78,7 @@ export async function probeLocalModelBlocker(
   if (!endpoint) {
     return { problem: `Unknown local endpoint "${parsed.endpointId}" — re-scan for local models.` };
   }
-  const probe = await probeEndpoint(endpoint);
+  const probe = adjust(await probeEndpoint(endpoint));
   if (!probe.reachable) {
     return {
       problem: `${endpoint.label} isn't running at ${endpoint.baseUrl}. Start it and scan again.`,

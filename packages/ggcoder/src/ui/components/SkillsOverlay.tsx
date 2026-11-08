@@ -67,7 +67,8 @@ export function SkillsOverlay({ cwd, onClose }: SkillsOverlayProps) {
   // and directory-layout (<dir>/SKILL.md) skills both show up.
   useEffect(() => {
     void discoverSkills({ globalSkillsDir: getAppPaths().skillsDir, projectDir: cwd }).then((s) => {
-      setSkills(s);
+      // Hidden skills (Checklist-only) aren't for routine use; don't offer them.
+      setSkills(s.filter((skill) => !skill.hidden));
       setLoaded(true);
     });
   }, [cwd]);

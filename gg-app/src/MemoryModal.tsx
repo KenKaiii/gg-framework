@@ -412,7 +412,16 @@ export function MemoryModal({ onClose }: Props): React.ReactElement {
                 <div className="memory-modal-state">Loading {label}…</div>
               ) : error ? (
                 <div className="memory-modal-state memory-modal-error" role="alert">
-                  Couldn’t load {label}: {error}
+                  Couldn't load {label}: {error}
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    onClick={() =>
+                      void (activeTab === "memories" ? refreshMemories() : refreshJiwa())
+                    }
+                  >
+                    Try again
+                  </button>
                 </div>
               ) : entries.length === 0 ? (
                 <div className="memory-modal-state">

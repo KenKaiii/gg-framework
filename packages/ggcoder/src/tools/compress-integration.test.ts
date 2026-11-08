@@ -59,4 +59,28 @@ describe("compressToolOutput (live tool-output seam)", () => {
     expect(truncateTail(small).truncated).toBe(false);
     expect(MAX_LINES).toBeGreaterThan(10);
   });
+
+  it("holds output made of a few huge lines to the byte cap", () => {
+    // rg over minified bundles: few lines, each tens of KB. Line-based
+    // compression alone let 245 KB through (135k tokens in one result).
+    const minified = "const t=181,e={LEFT:0,MIDDLE:1,RIGHT:2},".repeat(450); // ~18 KB
+    const lines: string[] = [];
+    for (let i = 0; i < 52; i++) lines.push(`vendor/three.core.min.js:${i}:${minified}`);
+    lines.push("packages/coder/src/core/mcp/shared-pool.ts:11: * The daemon hosts many sessions");
+    const raw = lines.join("\n");
+    expect(Buffer.byteLength(raw)).toBeGreaterThan(500 * 1024);
+
+    const c = compressToolOutput(raw);
+    expect(Buffer.byteLength(c.content)).toBeLessThanOrEqual(50 * 1024 + 200);
+    expect(c.content).toContain("more chars on this line");
+    // The short, readable match at the end survives intact.
+    expect(c.content).toContain("shared-pool.ts:11: * The daemon hosts many sessions");
+  });
+
+  it("leaves ordinary over-limit output untouched by the byte guard", () => {
+    const raw = Array.from({ length: 5000 }, (_, i) => `INFO step ${i} ok`).join("\n");
+    const c = compressToolOutput(raw);
+    expect(c.content).not.toContain("byte cap");
+    expect(c.content).not.toContain("more chars on this line");
+  });
 });

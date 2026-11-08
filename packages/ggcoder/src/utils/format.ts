@@ -1,6 +1,5 @@
 import chalk from "chalk";
 import { KLEIO_PRODUCT_PROFILE } from "@kleio/core";
-import { formatUserError } from "./error-handler.js";
 import { editTargetLabel } from "../tools/edit-targets.js";
 
 /**
@@ -34,13 +33,6 @@ export function formatToolCallEnd(
  */
 export function formatUsage(inputTokens: number, outputTokens: number): string {
   return chalk.dim(`  tokens: ${formatNumber(inputTokens)} in / ${formatNumber(outputTokens)} out`);
-}
-
-/**
- * Format an error for display.
- */
-export function formatError(error: Error): string {
-  return formatUserError(error);
 }
 
 /**

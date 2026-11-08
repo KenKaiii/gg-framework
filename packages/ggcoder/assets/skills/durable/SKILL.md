@@ -1,6 +1,6 @@
 ---
 name: durable
-description: "Use when data could be lost: migrations, destructive ops, real databases. Do NOT use for query speed."
+description: "Use to keep stored data from being lost: before running or writing anything that could delete, overwrite or reshape it, and when asked whether data is backed up and recoverable. Do NOT use for read-only queries or query speed."
 license: Data-durability engineering guidance, not a DBA certification. Sources and snapshot date are recorded at the foot of each reference file.
 compatibility: Snapshot dated 17 August 2026. Version behaviors (fast-path ALTERs, pooler modes, tool flags) decay — re-verify with web access before asserting them as current.
 ---

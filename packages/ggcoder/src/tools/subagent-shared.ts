@@ -4,6 +4,7 @@ import type { Provider, ThinkingLevel } from "@kleio/ai";
 import type { AgentDefinition } from "../core/agents.js";
 import type { AgentSession } from "../core/agent-session.js";
 import { getLowestThinkingLevel, getSupportedThinkingLevels } from "../core/thinking-level.js";
+import { withoutPaidTier } from "../core/model-registry.js";
 import { truncateTail } from "./truncate.js";
 
 export const SUB_AGENT_MAX_TURNS = 50;
@@ -59,7 +60,9 @@ export function selectSubAgent(
   parentThinkingLevel?: ThinkingLevel,
 ): SubAgentSelection {
   const agentDef = resolveAgentDefinition(agents, requestedName);
-  const model = resolveAgentModel(agentDef, parentModel);
+  // Children never run on a paid tier: one opted-in parent would otherwise
+  // multiply real-money spend across every agent it starts.
+  const model = withoutPaidTier(resolveAgentModel(agentDef, parentModel));
   return {
     agentDef,
     provider,

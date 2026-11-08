@@ -11,6 +11,7 @@ import { isPlanModeActive } from "../core/runtime-mode.js";
 import { resolveWriteGuard, type WriteGuardSettings } from "../core/workspace-guard.js";
 import { REDACTION_MARKER } from "@kleio/ai";
 import { redactionLossError } from "./redaction-guard.js";
+import { classifyConfigPath, configWriteBlockMessage } from "../core/action-threats.js";
 
 type MutationCallback = (filePath: string) => void | Promise<void>;
 
@@ -205,6 +206,13 @@ export function createWriteTool(
           }
         }
       }
+      // Action guard: no switching on auto-run / guard-off settings elsewhere.
+      // Only protected config paths are scanned; skip the extra read otherwise.
+      const isConfig = classifyConfigPath(resolved) !== null;
+      const previous = isConfig && exists ? await ops.readFile(resolved).catch(() => "") : "";
+      const configBlocked = isConfig ? configWriteBlockMessage(resolved, content, previous) : null;
+      if (configBlocked) return `Error: ${configBlocked}`;
+
       // Snapshot the pre-mutation on-disk state for /rewind before writing.
       await onPreFileMutation?.(resolved);
       await ops.writeFile(resolved, content);

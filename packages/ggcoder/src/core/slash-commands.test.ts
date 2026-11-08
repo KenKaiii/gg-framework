@@ -30,6 +30,30 @@ function context(overrides: Partial<SlashCommandContext> = {}): SlashCommandCont
   };
 }
 
+describe("/model and a model that spends real money", () => {
+  it("passes the typed confirmation through and strips it from the model id", async () => {
+    const ctx = context();
+    await registry().execute("/model anthropic:claude-opus-5-5-fast --confirm-paid", ctx);
+    expect(ctx.switchModel).toHaveBeenCalledWith("anthropic", "claude-opus-5-5-fast", {
+      confirmPaid: true,
+    });
+  });
+
+  it("explains how to confirm when the session refuses, instead of switching", async () => {
+    const refusal = Object.assign(new Error("Claude Opus 5.5 Fast spends real money."), {
+      name: "PaidModelConfirmationError",
+    });
+    const ctx = context({ switchModel: vi.fn(async () => Promise.reject(refusal)) });
+    const reply = await registry().execute("/model claude-opus-5-5-fast", ctx);
+    expect(ctx.switchModel).toHaveBeenCalledWith("", "claude-opus-5-5-fast", {
+      confirmPaid: false,
+    });
+    expect(reply).toContain("spends real money");
+    expect(reply).toContain("/model claude-opus-5-5-fast --confirm-paid");
+    expect(reply).not.toContain("Switched");
+  });
+});
+
 describe("/remove-dir", () => {
   it("requires a current root when no path is supplied", async () => {
     await expect(registry().execute("/remove-dir", context())).resolves.toContain(

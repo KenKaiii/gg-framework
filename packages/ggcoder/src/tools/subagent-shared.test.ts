@@ -49,6 +49,26 @@ describe("spawnedTasks", () => {
 
 describe("selectSubAgent", () => {
   it.each([
+    ["an inheriting child", agent({ name: "worker" }), "claude-opus-5-5-fast"],
+    [
+      "an agent file naming the paid tier",
+      agent({ name: "pinned", model: "claude-opus-5-5-fast" }),
+      "claude-opus-5-5",
+    ],
+  ])("never starts %s on a model that spends real money", (_label, definition, parentModel) => {
+    expect(selectSubAgent([definition], definition.name, "anthropic", parentModel).model).toBe(
+      "claude-opus-5-5",
+    );
+  });
+
+  it("keeps a plan-usage fast tier (Codex) on the parent model", () => {
+    const definition = agent({ name: "worker" });
+    expect(selectSubAgent([definition], "worker", "openai", "gpt-6-luna-fast").model).toBe(
+      "gpt-6-luna-fast",
+    );
+  });
+
+  it.each([
     ["inherit", agent({ name: "worker", tools: ["read", "bash"], model: "inherit" })],
     ["no model policy", agent({ name: "researcher", tools: ["read", "grep", "web_fetch"] })],
     ["legacy fast", agent({ name: "owl", model: "fast" })],

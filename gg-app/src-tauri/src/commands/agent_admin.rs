@@ -1,6 +1,7 @@
 //! Daemon-global proxy commands: telegram, local models, serve, MCP, projects,
 //! routines and saved chats.
 
+use super::agent::sidecar_json;
 use crate::*;
 
 /// Proxy: read Telegram config status (configured + masked preview).
@@ -17,9 +18,7 @@ pub(crate) async fn agent_telegram_get(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: local model endpoints + their last-scan status (no probing).
@@ -36,9 +35,7 @@ pub(crate) async fn agent_local(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: re-probe every local endpoint (the "Scan" button). Slower than
@@ -56,9 +53,7 @@ pub(crate) async fn agent_local_scan(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: add a custom local endpoint (URL + optional API key).
@@ -79,9 +74,7 @@ pub(crate) async fn agent_local_endpoint_add(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: remove a custom local endpoint (and its stored credential).
@@ -103,9 +96,7 @@ pub(crate) async fn agent_local_endpoint_remove(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: search Hugging Face for GGUF repos (the "Add from Hugging Face" modal).
@@ -183,9 +174,7 @@ pub(crate) async fn agent_hf_pull_status(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: cancel the running Hugging Face pull (if any).
@@ -202,9 +191,7 @@ pub(crate) async fn agent_hf_pull_cancel(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: save Telegram config (bot token + user id). Verifies the token via
@@ -254,9 +241,7 @@ pub(crate) async fn agent_serve_status(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: start the Telegram serve loop. Returns `{ running }` or an error.
@@ -302,9 +287,7 @@ pub(crate) async fn agent_serve_stop(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: Agent Steroids status (`{ installed, connected, version?, repos?, … }`).
@@ -321,9 +304,7 @@ pub(crate) async fn agent_steroids_status(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: download + verify + install the `steroids` binary. Returns the
@@ -373,9 +354,7 @@ pub(crate) async fn agent_mcp_list(
         req = req.query(&[("cwd", c)]);
     }
     let res = req.send().await.map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: add an MCP server from a pasted `claude mcp add …` line. Returns
@@ -433,14 +412,12 @@ pub(crate) async fn agent_mcp_remove(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Proxy: begin an interactive OAuth login for a remote (HTTP) MCP server.
 /// Returns 202 immediately; progress + outcome stream back via `agent-event`
-/// (`mcp_auth_url`, `mcp_auth_status`, `mcp_auth_done`, `mcp_auth_error`). The
+/// (`mcp_auth_url`, `mcp_auth_done`, `mcp_auth_error`). The
 /// webview opens the browser when it receives `mcp_auth_url`.
 /// `cwd` is required for project scope (the target project path).
 #[tauri::command]
@@ -470,38 +447,6 @@ pub(crate) async fn agent_mcp_login(
             .get("error")
             .and_then(|v| v.as_str())
             .unwrap_or("failed to start MCP login");
-        return Err(msg.to_string());
-    }
-    Ok(body)
-}
-
-/// Proxy: create a new project folder under the configured projects root.
-/// Returns `{ path }` on success, or an error message on validation/conflict.
-#[tauri::command]
-pub(crate) async fn agent_create_project(
-    webview: WebviewWindow,
-    client: State<'_, reqwest::Client>,
-    name: String,
-) -> Result<serde_json::Value, String> {
-    let port = port_for(&webview).ok_or("daemon not ready")?;
-    let gg_sid = session_for(&webview).ok_or("session not ready")?;
-    let res = client
-        .post(format!("{}/create-project", sidecar_base(port)))
-        .header("x-gg-session", &gg_sid)
-        .json(&serde_json::json!({ "name": name }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    let status = res.status();
-    let body = res
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())?;
-    if !status.is_success() {
-        let msg = body
-            .get("error")
-            .and_then(|v| v.as_str())
-            .unwrap_or("failed to create project");
         return Err(msg.to_string());
     }
     Ok(body)
@@ -553,9 +498,7 @@ pub(crate) async fn agent_projects(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// "Open existing" while paired with a Kleio host: the folders in the HOST's
@@ -688,9 +631,7 @@ pub(crate) async fn agent_sessions(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Pull the sidecar's `{ "error": ".." }` message out of a failed response
@@ -746,9 +687,7 @@ pub(crate) async fn agent_files(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    sidecar_json(res).await
 }
 
 /// Minimal percent-encoding for a filesystem path in a query string.

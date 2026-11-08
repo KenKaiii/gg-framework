@@ -18,7 +18,7 @@
  * - A turn whose ONLY tool calls were mechanical usage — a bash command that
  *   starts a background process (dev server, watcher), is read-only, or is a
  *   plain `git add`/`commit`/`push` workflow; a dedicated read-only tool
- *   (read/grep/find/ls/web_fetch/web_search/source_path/code_search/
+ *   (read/grep/find/ls/web_fetch/web_search/source_path/
  *   task_output/screenshot/skill); or NO tool calls at all (a plain-text
  *   answer with nothing built) — was always going to come back as Ken's
  *   IGNORE verdict (see the autopilot system prompt's "mechanical operation"
@@ -182,7 +182,7 @@ export interface TurnToolCall {
 }
 
 /** Dedicated tools that can never touch the repo/filesystem in a way worth
- *  reviewing: pure lookups (read/grep/find/ls/source_path/code_search),
+ *  reviewing: pure lookups (read/grep/find/ls/source_path),
  *  network research (web_fetch/web_search), reading a background process's
  *  output (task_output), a UI screenshot, or loading a skill definition. Any
  *  call to one of these is mechanical regardless of its arguments — unlike
@@ -199,7 +199,6 @@ const READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "web_fetch",
   "web_search",
   "source_path",
-  "code_search",
   "task_output",
   "screenshot",
   "skill",

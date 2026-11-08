@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AgentTool } from "@kleio/agent";
 import { log } from "../core/logger.js";
 import { checkUrlPolicy, withNetworkPolicy, type GetNetworkPolicy } from "../core/network-guard.js";
+import type { SideWebSearch } from "./side-web-search.js";
 
 const USER_AGENTS = [
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -1018,6 +1019,7 @@ function statsFooter(stats: FilterStats): string {
 
 export function createWebSearchTool(
   getNetworkPolicy?: GetNetworkPolicy,
+  sideSearch?: SideWebSearch,
 ): AgentTool<typeof parameters> {
   return {
     name: "web_search",
@@ -1034,6 +1036,30 @@ export function createWebSearchTool(
         excludeDomains: normalizeDomains(args.exclude_domains),
         ...(args.time_range ? { timeRange: args.time_range } : {}),
       };
+
+      if (sideSearch) {
+        try {
+          const side = await sideSearch({
+            query: args.query,
+            maxResults,
+            includeDomains: filters.includeDomains,
+            excludeDomains: filters.excludeDomains,
+            ...(filters.timeRange ? { timeRange: filters.timeRange } : {}),
+            signal: context.signal,
+          });
+          if (side) {
+            return {
+              content: side.text,
+              details: { engine: "anthropic", model: side.model, usage: side.usage },
+            };
+          }
+        } catch (error) {
+          context.signal.throwIfAborted();
+          log("WARN", "web-search", "Side search failed; using the engine search", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
 
       const { results, engine, stats } = await cachedSearch(
         args.query,

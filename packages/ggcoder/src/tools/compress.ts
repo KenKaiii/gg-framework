@@ -211,6 +211,36 @@ function compressText(lines: string[], o: Required<CompressOptions>): string {
 /* Tool-output integration seam                                              */
 /* ----------------------------------------------------------------------- */
 
+/** Same byte cap the bash / task_output truncation enforces (tools/truncate.ts MAX_BYTES). */
+const TOOL_OUTPUT_MAX_BYTES = 50 * 1024;
+/** Longer lines are minified bundles, base64, or data dumps — never readable as-is. */
+const LONG_LINE_CHARS = 2_000;
+
+function clipLongLines(text: string): string {
+  if (text.length <= LONG_LINE_CHARS) return text;
+  let changed = false;
+  const lines = text.split("\n").map((line) => {
+    if (line.length <= LONG_LINE_CHARS) return line;
+    changed = true;
+    return `${line.slice(0, LONG_LINE_CHARS)}… [${line.length - LONG_LINE_CHARS} more chars on this line]`;
+  });
+  return changed ? lines.join("\n") : text;
+}
+
+function capBytes(text: string): string {
+  if (Buffer.byteLength(text, "utf-8") <= TOOL_OUTPUT_MAX_BYTES) return text;
+  const lines = text.split("\n");
+  let size = 0;
+  let start = lines.length;
+  while (start > 0) {
+    const next = Buffer.byteLength(lines[start - 1]!, "utf-8") + 1;
+    if (size + next > TOOL_OUTPUT_MAX_BYTES) break;
+    size += next;
+    start--;
+  }
+  return [`… ${start} earlier lines omitted (byte cap) …`, ...lines.slice(start)].join("\n");
+}
+
 export interface ToolOutputCompression {
   content: string;
   /** Human/agent-facing summary of what was kept, for the truncation notice. */
@@ -230,6 +260,17 @@ export interface ToolOutputCompression {
  */
 export function compressToolOutput(raw: string): ToolOutputCompression {
   const r = compressOutput(raw, { headLines: 12, tailLines: 30, minTokens: 0 });
+  // Compression is line-based, so a few huge lines survive it intact: one
+  // `rg` that hit minified bundles kept 42 lines totalling 245 KB — 135k
+  // input tokens in a single result, ~50× a normal trial (bench/h2h/arena
+  // opt-arena-full, gg-before explore r3). The caller only gets here because
+  // the output was over the byte cap, so hold the compressed text to it too:
+  // clip pathological lines, then keep the tail within the cap.
+  const capped = capBytes(clipLongLines(r.content));
+  if (capped !== r.content) {
+    r.content = capped;
+    r.compressedTokens = tokens(capped);
+  }
   const saved = r.originalTokens - r.compressedTokens;
   const notice =
     r.strategy === "none"

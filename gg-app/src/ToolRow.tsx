@@ -41,7 +41,13 @@ export function ToolRow({ parts, state, as = "div", title, children }: Props): R
           <span
             key={i}
             style={{
-              color: p.dim ? theme.textDim : p.tone ? toneColor(p.tone) : theme.text,
+              color: p.warn
+                ? theme.warning
+                : p.dim
+                  ? theme.textDim
+                  : p.tone
+                    ? toneColor(p.tone)
+                    : theme.text,
               fontWeight: p.bold ? 600 : 400,
             }}
           >

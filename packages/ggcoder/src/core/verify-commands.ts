@@ -4,7 +4,7 @@ import type { LanguageId } from "./language-detector.js";
 
 /**
  * A verification command the agent should consider running after meaningful
- * edits to satisfy the active style pack(s). These are *recommendations* —
+ * edits. These are *recommendations* —
  * the agent picks the relevant ones for the change it just made.
  *
  * Detection is filesystem-only (manifest reads + script-name scans) — no

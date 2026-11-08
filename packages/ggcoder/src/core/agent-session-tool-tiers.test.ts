@@ -214,6 +214,119 @@ describe("AgentSession built-in tool tiering", () => {
     }
   }, 20_000);
 
+  it("promotes web_search as a client tool on Anthropic, never the native server tool", async () => {
+    // Native search put 11–20k tokens of result pages into the main context
+    // per search (agent-race 2026-11-04); the client tool runs it as a side request.
+    const session = await createSession();
+    try {
+      const s = session as unknown as {
+        nativeWebSearchOn(): boolean;
+        promoteDeferredBuiltin(name: string): AgentTool | undefined;
+      };
+      const prompt = String(session.getMessages()[0]?.content ?? "");
+      expect(prompt).toContain("- **web_search**:");
+      expect(liveToolNames(session)).not.toContain("web_search");
+      expect(s.nativeWebSearchOn()).toBe(false);
+
+      const before = liveToolNames(session);
+      expect(s.promoteDeferredBuiltin("web_search")?.name).toBe("web_search");
+      expect(liveToolNames(session)).toEqual([...before, "web_search"]);
+      expect(s.nativeWebSearchOn()).toBe(false);
+    } finally {
+      await session.dispose();
+    }
+  }, 20_000);
+
+  it("keeps native web search on when the restored history already used it", async () => {
+    // Regression: a resumed/compacted session whose history holds native
+    // web_search blocks, but whose live tool list was rebuilt without the
+    // promoted tool, was rejected by Anthropic (400 "server_tool_use block
+    // references web_search, but web_search is not defined in tools").
+    const session = await createSession();
+    try {
+      const s = session as unknown as { nativeWebSearchOn(): boolean; messages: unknown[] };
+      expect(s.nativeWebSearchOn()).toBe(false);
+      s.messages.push(
+        { role: "user", content: "Does Outlook need IT approval?" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "server_tool_call",
+              id: "srvtoolu_1",
+              name: "web_search",
+              input: { query: "entra admin consent" },
+            },
+            {
+              type: "server_tool_result",
+              toolUseId: "srvtoolu_1",
+              resultType: "web_search_tool_result",
+              data: { type: "web_search_tool_result", tool_use_id: "srvtoolu_1", content: [] },
+            },
+            { type: "text", text: "Personal accounts never need IT." },
+          ],
+        },
+      );
+      expect(s.nativeWebSearchOn()).toBe(true);
+    } finally {
+      await session.dispose();
+    }
+  }, 20_000);
+
+  it("detects native web search in raw server_tool_use history blocks", async () => {
+    const { historyUsesNativeWebSearch } = await import("./agent-session.js");
+    expect(
+      historyUsesNativeWebSearch([
+        { role: "assistant", content: [{ type: "text", text: "no search" }] },
+      ] as never),
+    ).toBe(false);
+    expect(
+      historyUsesNativeWebSearch([
+        {
+          role: "assistant",
+          content: [{ type: "raw", data: { type: "server_tool_use", name: "web_search" } }],
+        },
+      ] as never),
+    ).toBe(true);
+  });
+
+  it("attaches web_search up front when the human prompt asks for the web", async () => {
+    const session = await createSession();
+    try {
+      const s = session as unknown as {
+        nativeWebSearchOn(): boolean;
+        attachWebSearchIfAsked(content: unknown): void;
+      };
+      s.attachWebSearchIfAsked("Rename circleArea and search for its callers.");
+      expect(liveToolNames(session)).not.toContain("web_search");
+      s.attachWebSearchIfAsked([
+        { type: "text", text: "Search the web for the Node release page" },
+      ]);
+      s.attachWebSearchIfAsked("Search the web again");
+      expect(s.nativeWebSearchOn()).toBe(false);
+      expect(liveToolNames(session).filter((n) => n === "web_search")).toHaveLength(1);
+    } finally {
+      await session.dispose();
+    }
+  }, 20_000);
+
+  it("gives untiered Anthropic sessions the client web_search, not the native tool", async () => {
+    await writeSettings({ deferredBuiltinTools: false });
+    const eager = await createSession();
+    const allowed = await createSession({ allowedTools: ["read", "grep"] });
+    try {
+      for (const session of [eager, allowed]) {
+        expect((session as unknown as { nativeWebSearchOn(): boolean }).nativeWebSearchOn()).toBe(
+          false,
+        );
+      }
+      expect(liveToolNames(eager)).toContain("web_search");
+    } finally {
+      await eager.dispose();
+      await allowed.dispose();
+    }
+  }, 20_000);
+
   it("registers tool_search even with no MCP server connected", async () => {
     const session = await createSession();
     try {

@@ -1,6 +1,8 @@
 ---
 name: bulletproof
-description: "Use for attacker-reachable code: auth, tokens, crypto, untrusted input, secrets, tenant data, CI, agent tools. Do NOT use for local scripts without auth or network."
+description: "Use to secure code an attacker can reach: finding and fixing ways someone could break in, steal secrets or reach another user's data. Do NOT use for local-only scripts, legal questions or performance."
+# Checklist audits only (Security, Dependencies, Secrets / Performance); hidden from routine coding after the 27 Oct 2026 skill-value bench.
+hidden: true
 license: Apache-2.0. Content is defensive engineering guidance, not a security certification or a penetration test. See references/provenance.md.
 compatibility: Works offline from the bundled references, which are a snapshot dated 12 August 2026. Version numbers, CVEs, and incident details decay fast; re-verify date-sensitive claims with web access before stating them as current. Never certifies that software is secure.
 ---

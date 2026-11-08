@@ -153,9 +153,7 @@ pub async fn agent_keep_awake_get(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    crate::commands::agent::sidecar_json(res).await
 }
 
 /// Proxy: turn keep-awake on/off; applies live to in-flight runs.
@@ -172,9 +170,7 @@ pub async fn agent_keep_awake_set(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    res.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    crate::commands::agent::sidecar_json(res).await
 }
 
 pub use os::OsBackend;

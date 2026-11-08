@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { CheckCircleIcon, XCircleIcon, LockIcon, XIcon } from "@phosphor-icons/react";
 import { theme } from "./theme";
 import { Modal } from "./Modal";
@@ -19,6 +19,7 @@ import {
   type SidecarEvent,
 } from "./agent";
 import { toast } from "./toast";
+import { McpRowNotes } from "./placeholder/McpRowNotes";
 
 interface Props {
   onClose: () => void;
@@ -191,58 +192,64 @@ export function McpModal({ onClose }: Props): React.ReactElement {
         <ListSkeleton rows={3} />
       ) : visible.length === 0 ? (
         <div className="mcp-empty" style={{ color: theme.textMuted }}>
-          No MCP’s configured.
+          No MCP servers yet.
         </div>
       ) : (
         <div className="mcp-list">
           {visible.map((s) => (
-            <div className="mcp-item" key={`${s.scope}:${s.name}`}>
-              <span
-                className="mcp-dot"
-                style={{
-                  color: s.ok ? theme.success : s.requiresAuth ? theme.warning : theme.error,
-                }}
-              >
-                {s.ok ? (
-                  <CheckCircleIcon size={15} />
-                ) : s.requiresAuth ? (
-                  <LockIcon size={14} />
-                ) : (
-                  <XCircleIcon size={15} />
-                )}
-              </span>
-              <span className="mcp-name" style={{ color: theme.text }} title={s.summary}>
-                {s.name}
-              </span>
-              {s.ok ? (
-                <span className="mcp-meta" style={{ color: theme.textDim }}>
-                  {`${s.toolCount} tool${s.toolCount === 1 ? "" : "s"}`}
-                </span>
-              ) : s.requiresAuth ? (
-                <span className="mcp-meta" style={{ color: theme.warning }}>
-                  Requires login
-                </span>
-              ) : null}
-              {s.requiresAuth && !s.ok && (
-                <button
-                  className="modal-btn primary"
-                  style={{ padding: "2px 12px", fontSize: 12 }}
-                  disabled={loggingIn === s.name}
-                  title={`Sign in to "${s.name}"`}
-                  onClick={() => void signIn(s.name, s.scope)}
+            <Fragment key={`${s.scope}:${s.name}`}>
+              <div className="mcp-item">
+                <span
+                  className="mcp-dot"
+                  style={{
+                    color: s.ok ? theme.success : s.requiresAuth ? theme.warning : theme.error,
+                  }}
                 >
-                  {loggingIn === s.name ? "Signing in\u2026" : "Sign in"}
+                  {s.ok ? (
+                    <CheckCircleIcon size={15} />
+                  ) : s.requiresAuth ? (
+                    <LockIcon size={14} />
+                  ) : (
+                    <XCircleIcon size={15} />
+                  )}
+                </span>
+                <span className="mcp-name" style={{ color: theme.text }} title={s.summary}>
+                  {s.name}
+                </span>
+                {s.ok ? (
+                  <span className="mcp-meta" style={{ color: theme.textDim }}>
+                    {`${s.toolCount} tool${s.toolCount === 1 ? "" : "s"}`}
+                  </span>
+                ) : s.requiresAuth ? (
+                  <span className="mcp-meta" style={{ color: theme.warning }}>
+                    Requires login
+                  </span>
+                ) : null}
+                {s.requiresAuth && !s.ok && (
+                  <button
+                    type="button"
+                    className="modal-btn primary"
+                    style={{ padding: "2px 12px", fontSize: 12 }}
+                    disabled={loggingIn === s.name}
+                    title={`Sign in to "${s.name}"`}
+                    onClick={() => void signIn(s.name, s.scope)}
+                  >
+                    {loggingIn === s.name ? "Signing in\u2026" : "Sign in"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="mcp-delete"
+                  style={{ color: theme.textDim }}
+                  title={`Remove "${s.name}"`}
+                  aria-label={`Delete ${s.name}`}
+                  onClick={() => void remove(s.name, s.scope)}
+                >
+                  <XIcon size={12} weight="bold" aria-hidden="true" />
                 </button>
-              )}
-              <button
-                className="mcp-delete"
-                style={{ color: theme.textDim }}
-                title={`Remove "${s.name}"`}
-                onClick={() => void remove(s.name, s.scope)}
-              >
-                <XIcon size={12} weight="bold" aria-hidden="true" />
-              </button>
-            </div>
+              </div>
+              <McpRowNotes server={s} />
+            </Fragment>
           ))}
         </div>
       )}

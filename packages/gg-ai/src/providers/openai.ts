@@ -41,6 +41,7 @@ import {
 import { parseToolArguments } from "../utils/json.js";
 import { getEnvironment } from "../utils/env.js";
 import { PROVIDER_TRANSPORT_TIMEOUT_MS, providerFetch } from "../utils/provider-fetch.js";
+import { localBearerKey } from "../local-api-key.js";
 
 // Kimi K3's declared effort rungs (server-validated; anything else 400s).
 // Official alias mapping from Moonshot's K3 third-party-tools docs:
@@ -106,7 +107,7 @@ function extractOpenAIUsage(usage: OpenAI.CompletionUsage): {
  *  See anthropic.ts for rationale. Keyed by identity-relevant fields. */
 const openaiClientCache = new Map<string, OpenAI>();
 
-function createClient(options: StreamOptions): OpenAI {
+export function createClient(options: StreamOptions): OpenAI {
   const cacheKey = `${options.apiKey ?? ""}|${options.baseUrl ?? ""}|${JSON.stringify(options.defaultHeaders ?? {})}`;
 
   // Skip cache when a custom fetch is provided (tests, React Native, etc.).
@@ -115,12 +116,17 @@ function createClient(options: StreamOptions): OpenAI {
     if (cached) return cached;
   }
 
+  // A keyless local endpoint gets no Authorization header (null drops the SDK's bearer).
+  const omitAuth = options.provider === "local" && localBearerKey(options.apiKey) === undefined;
+  const defaultHeaders = omitAuth
+    ? { ...options.defaultHeaders, Authorization: null }
+    : options.defaultHeaders;
   const client = new OpenAI({
     apiKey: options.apiKey,
     ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
     // Default transport lifts undici's 300s header/body caps (see provider-fetch.ts).
     fetch: options.fetch ?? providerFetch,
-    ...(options.defaultHeaders ? { defaultHeaders: options.defaultHeaders } : {}),
+    ...(defaultHeaders ? { defaultHeaders } : {}),
   });
 
   if (!options.fetch) {
@@ -279,8 +285,10 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     (params as unknown as Record<string, unknown>).reasoning_effort = "max";
   }
 
-  if (options.provider === "openai" && options.serviceTier) {
-    (params as unknown as Record<string, unknown>).service_tier = options.serviceTier;
+  // Fast mode on the public API is priority processing; an explicit tier wins.
+  const serviceTier = options.serviceTier ?? (options.speed === "fast" ? "priority" : undefined);
+  if (options.provider === "openai" && serviceTier) {
+    (params as unknown as Record<string, unknown>).service_tier = serviceTier;
   }
 
   if (isKimiK3) {
@@ -352,21 +360,6 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     );
   }
 
-  // xAI caches per server: x-grok-conv-id routes one conversation's requests to
-  // the same server, so its cached prefix is actually reused. Without it Grok
-  // "often" bills full input price on a cache-cold server (docs.x.ai Grok 4.7
-  // guide; Chat Completions uses this header, prompt_cache_key is the
-  // Responses API's). Sent per request, not on the shared client, so sessions
-  // reuse one client.
-  const requestHeaders =
-    options.provider === "xai"
-      ? {
-          headers: {
-            "x-grok-conv-id": normalizePromptCacheKey(options.promptCacheKey ?? "ggcoder"),
-          },
-        }
-      : {};
-
   // Non-streaming fallback: issue a single request/response and synthesize
   // stream events from the final ChatCompletion. Used by the agent loop after
   // the streaming transport has stalled repeatedly -- flipping to a plain
@@ -375,7 +368,6 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     try {
       const completion = (await client.chat.completions.create(requestParams, {
         signal: options.signal ?? undefined,
-        ...requestHeaders,
         // The whole reply arrives in one response, so the SDK's 10min default
         // would undercut the agent loop's 15min thinking cap for this call.
         timeout: PROVIDER_TRANSPORT_TIMEOUT_MS,
@@ -391,7 +383,6 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   try {
     stream = (await client.chat.completions.create(requestParams, {
       signal: options.signal ?? undefined,
-      ...requestHeaders,
     })) as AsyncIterable<OpenAI.ChatCompletionChunk>;
   } catch (err) {
     throw toError(err, providerName);
@@ -779,7 +770,7 @@ function classifyOpenAICompatLimit(args: {
   return null;
 }
 
-function toError(err: unknown, provider: string = "openai"): ProviderError {
+export function toError(err: unknown, provider: string = "openai"): ProviderError {
   // Already classified (e.g. an in-stream gateway error frame). Re-wrapping via
   // the generic Error branch below would discard statusCode/resetsAt and demote
   // a 429 to an unclassified failure.

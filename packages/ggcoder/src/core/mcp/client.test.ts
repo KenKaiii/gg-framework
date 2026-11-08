@@ -26,6 +26,8 @@ vi.mock("@modelcontextprotocol/client", async (importOriginal) => ({
     listTools = sdkMocks.listTools;
     callTool = sdkMocks.callTool;
     close = sdkMocks.close;
+    // The safety tool guard pins tools by server version; these servers report none.
+    getServerVersion = (): undefined => undefined;
   },
   StreamableHTTPClientTransport: class StreamableHTTPClientTransportMock {
     constructor(url: URL, options: unknown) {

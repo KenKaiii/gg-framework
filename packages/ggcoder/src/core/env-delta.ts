@@ -1,5 +1,6 @@
 import type { Message } from "@kleio/ai";
-import type { SystemPromptEnvironment } from "../system-prompt.js";
+import { renderLanguageGuidance, type SystemPromptEnvironment } from "../system-prompt.js";
+import type { LanguageId } from "./language-detector.js";
 
 /**
  * Keep the model's picture of its environment true without breaking the cache.
@@ -75,5 +76,27 @@ export function buildEnvDeltaMessage(
       "and these values are now the correct ones:\n" +
       lines.join("\n") +
       "\nTrust them over anything earlier that disagrees. Do not restate this note; just proceed.",
+  };
+}
+
+/**
+ * Verify commands for languages that appeared after the system prompt was
+ * cached (e.g. the previous task scaffolded a TypeScript project). Same
+ * append-only idea as the environment update: re-rendering the prompt would
+ * invalidate every cached byte after it. `null` when nothing renders.
+ */
+export function buildLanguageUpdateMessage(
+  languages: Set<LanguageId>,
+  cwd: string,
+): Message | null {
+  const sections = renderLanguageGuidance(languages, cwd);
+  if (sections.length === 0) return null;
+  return {
+    role: "user",
+    provenance: { source: "runtime", kind: "notification", visibility: "hidden" },
+    content:
+      "Project update: new languages are now in use, with these checks.\n\n" +
+      sections.join("\n\n") +
+      "\n\nDo not restate this note; just proceed.",
   };
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { streamGemini } from "./gemini.js";
+import { isCodeAssistLicenseRequired, streamGemini } from "./gemini.js";
 import { formatError } from "../errors.js";
 
 const originalFetch = globalThis.fetch;
@@ -452,7 +452,7 @@ describe("streamGemini", () => {
       error: { code: 404, message: "Requested entity was not found.", status: "NOT_FOUND" },
     });
 
-    for (const model of ["gemini-3-flash", "gemini-3.1-pro-preview", "gemini-3.7-flash"]) {
+    for (const model of ["gemini-3-flash", "gemini-3.1-pro-preview"]) {
       globalThis.fetch = vi.fn().mockResolvedValue(new Response(body, { status: 404 }));
       const result = streamGemini({
         provider: "gemini",
@@ -478,6 +478,150 @@ describe("streamGemini", () => {
       // The guidance line carries the fix.
       expect(formatted.guidance).toMatch(/Gemini 3\.1 Flash Lite/i);
       expect(formatted.guidance).toMatch(/Code Assist Standard\/Enterprise/i);
+    }
+  });
+
+  it("sends an AI Studio API key to the public Gemini API, not Code Assist", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          // The public API answers unwrapped (no Code Assist `response` envelope).
+          candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 2, totalTokenCount: 12 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    globalThis.fetch = fetchMock;
+
+    const result = streamGemini({
+      provider: "gemini",
+      // Code Assist's wire name for 3.5 Flash; the public API calls it gemini-3.5-flash.
+      model: "gemini-3-flash",
+      apiKey: "aistudio-key",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      promptCacheKey: "ggcoder:session-1",
+      streaming: false,
+      messages: [{ role: "user", content: "hi" }],
+    });
+    const response = await result.response;
+    expect(response.message.content).toEqual([{ type: "text", text: "ok" }]);
+
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(String(url)).toBe(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
+    );
+    const headers = init.headers as Record<string, string>;
+    expect(headers["x-goog-api-key"]).toBe("aistudio-key");
+    expect(headers.Authorization).toBeUndefined();
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    // Bare request: no Code Assist envelope, and no Code Assist-only session_id.
+    expect(body.contents).toBeDefined();
+    expect(body.request).toBeUndefined();
+    expect(body.project).toBeUndefined();
+    expect(body.session_id).toBeUndefined();
+  });
+
+  it("explains an invalid AI Studio key instead of dumping Google's JSON", async () => {
+    // Google's real answer to a bad key (verified live, 2026-10-16).
+    const body = JSON.stringify({
+      error: {
+        code: 400,
+        message: "API key not valid. Please pass a valid API key.",
+        status: "INVALID_ARGUMENT",
+        details: [
+          { "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "API_KEY_INVALID" },
+        ],
+      },
+    });
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(body, { status: 400 }));
+    const result = streamGemini({
+      provider: "gemini",
+      model: "gemini-3.8-flash",
+      apiKey: "bad-key",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    const err = await result.response.then(
+      () => {
+        throw new Error("expected rejection");
+      },
+      (e: unknown) => e,
+    );
+    const formatted = formatError(err);
+    expect(formatted.message).toMatch(/Gemini API key: it is not valid/);
+    expect(formatted.guidance).toMatch(/aistudio\.google\.com\/apikey/);
+    expect(formatted.message).not.toContain("INVALID_ARGUMENT");
+  });
+
+  it("does not call a public-API 403 a missing Code Assist licence", async () => {
+    const body = JSON.stringify({
+      error: {
+        code: 403,
+        message: "API key not valid. Please pass a valid API key.",
+        status: "PERMISSION_DENIED",
+        details: [{ reason: "SUBSCRIPTION_REQUIRED" }],
+      },
+    });
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(body, { status: 403 }));
+    const result = streamGemini({
+      provider: "gemini",
+      model: "gemini-3.8-flash",
+      apiKey: "bad-key",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    const err = await result.response.then(
+      () => {
+        throw new Error("expected rejection");
+      },
+      (e: unknown) => e,
+    );
+    expect(formatError(err).message).not.toMatch(/Code Assist licence/);
+  });
+
+  it("explains a personal account with no Code Assist licence instead of suggesting a model switch", async () => {
+    // Real response on a Google AI Pro account (2026-10-16), every model: Google
+    // stopped serving Code Assist to personal accounts on 2026-06-18.
+    const body = JSON.stringify({
+      error: {
+        code: 403,
+        message: "The caller does not have permission",
+        status: "PERMISSION_DENIED",
+        details: [
+          {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            reason: "SUBSCRIPTION_REQUIRED",
+            domain: "cloudcode-pa.googleapis.com",
+          },
+        ],
+      },
+    });
+    expect(isCodeAssistLicenseRequired(403, body)).toBe(true);
+    expect(isCodeAssistLicenseRequired(403, '{"error":{"code":403}}')).toBe(false);
+    expect(isCodeAssistLicenseRequired(404, body)).toBe(false);
+
+    for (const model of ["gemini-3.1-flash-lite", "gemini-3.8-flash"]) {
+      globalThis.fetch = vi.fn().mockResolvedValue(new Response(body, { status: 403 }));
+      const result = streamGemini({
+        provider: "gemini",
+        model,
+        projectId: "test-project",
+        apiKey: "access-token",
+        messages: [{ role: "user", content: "hi" }],
+      });
+      const err = await result.response.then(
+        () => {
+          throw new Error("expected rejection");
+        },
+        (e: unknown) => e,
+      );
+      const formatted = formatError(err);
+      expect(formatted.message).toMatch(/no Gemini Code Assist licence/);
+      expect(formatted.message).toMatch(/every Gemini model/);
+      expect(formatted.guidance).toMatch(/Standard or Enterprise licence/);
+      // Never the old advice to switch to a Gemini model "that works".
+      expect(formatted.guidance).not.toMatch(/it works on this account/);
     }
   });
 

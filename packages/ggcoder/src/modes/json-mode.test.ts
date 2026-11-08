@@ -85,6 +85,18 @@ describe("exitAfterFlush", () => {
   });
 });
 
+describe("runJsonMode tool-output cleanup", () => {
+  // Regression: only the TUI and the app swept ~/.gg/tool-output/, so outputs
+  // offloaded by headless runs piled up until the next app start (2026-11-04).
+  it("sweeps stale offloaded outputs before the session starts, without awaiting it", () => {
+    const source = fs.readFileSync(path.join(__dirname, "json-mode.ts"), "utf-8");
+    const body = source.slice(source.indexOf("export async function runJsonMode"));
+    expect(body).toContain("void cleanupToolOutputs().catch(() => {});");
+    expect(body).not.toContain("await cleanupToolOutputs(");
+    expect(body.indexOf("cleanupToolOutputs()")).toBeLessThan(body.indexOf("new AgentSession("));
+  });
+});
+
 describe("runJsonMode termination contract", () => {
   it("ends its success path by exiting rather than just returning", () => {
     // Guards the actual defect: returning from runJsonMode left the process

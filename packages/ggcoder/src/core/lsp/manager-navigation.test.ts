@@ -78,7 +78,7 @@ describe("LspManager navigation", () => {
     expect(outcome.kind).toBe("ok");
     if (outcome.kind !== "ok") return;
     // The manager passes the server's tree through untouched; trimming it to a
-    // readable outline is the code_nav tool's job.
+    // readable outline is the caller's job.
     expect(outcome.value.map((s) => s.name)).toEqual(["helper", "tmp", "i", "Widget", "render"]);
   });
 

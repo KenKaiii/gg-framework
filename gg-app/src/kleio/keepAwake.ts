@@ -45,7 +45,7 @@ export function holdAwake(): AwakeHold {
   };
 }
 
-/** The proxy forwards sidecar error bodies (`{ error }`) as values; surface them. */
+/** Non-2xx sidecar errors throw from the proxy; also reject a malformed body. */
 function keepAwakeEnabled(result: { enabled?: unknown; error?: unknown }): boolean {
   if (typeof result.enabled === "boolean") return result.enabled;
   throw new Error(typeof result.error === "string" ? result.error : "keep-awake request failed");

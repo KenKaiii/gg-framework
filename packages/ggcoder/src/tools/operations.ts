@@ -136,7 +136,7 @@ export interface ToolOperations {
  */
 export const localOperations: ToolOperations = {
   // Bounded deliberately: this is the chokepoint every file-reading tool goes
-  // through (read, edit, code_search, code_nav), so the cap lives here once
+  // through (read, edit), so the cap lives here once
   // rather than in each caller. A remote implementation owns its own bound.
   readFile: async (path) => (await readFileBounded(path)).toString("utf-8"),
 
