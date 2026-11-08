@@ -131,7 +131,7 @@ export async function renderApprovedPlanSection(
   // against content that isn't a task list.
   const hasSteps = extractPlanSteps(planContent).length > 0;
   const stepInstruction = hasSteps
-    ? `\n- After each step from \`## Steps\`, output \`[DONE:n]\` (e.g. \`[DONE:1]\`) to update the progress widget, then continue with step n+1 in the same turn.`
+    ? `\n- After each step from \`## Steps\`, write \`[DONE:n]\` (e.g. \`[DONE:1]\`) in your reply text to update the progress widget, then continue with step n+1 in the same turn. The widget reads only your reply text: a marker inside a tool call, such as \`echo "[DONE:1]"\`, is never counted.`
     : "";
   return (
     `## Approved Plan\n\n` +

@@ -10,6 +10,7 @@ import {
   buildSystemPrompt,
   collectProjectContext,
   PROJECT_CONTEXT_MAX_BYTES,
+  renderApprovedPlanSection,
 } from "./system-prompt.js";
 import { buildKenSystemPrompt } from "./core/ken-prompt.js";
 import { resolveContextLimits } from "./core/context-limits.js";
@@ -1058,5 +1059,18 @@ describe("system prompt byte ceiling", () => {
     );
     expect(Buffer.byteLength(prompt, "utf8")).toBeLessThanOrEqual(16 * 1024);
     expect(prompt).toContain("system prompt exceeded the 16384-byte ceiling");
+  });
+});
+
+describe("renderApprovedPlanSection", () => {
+  it("asks for [DONE:n] in reply text, not inside a tool call", async () => {
+    // Regression: a run echoed `[DONE:n]` from bash, which the widget never
+    // reads, so an 8-step plan showed 0/8 while steps 1-7 were done.
+    const cwd = await makeProject({
+      "plan.md": "# Plan\n\n## Steps\n1. First step.\n2. Second step.\n",
+    });
+    const section = await renderApprovedPlanSection(path.join(cwd, "plan.md"));
+    expect(section).toContain("write `[DONE:n]` (e.g. `[DONE:1]`) in your reply text");
+    expect(section).toContain("a marker inside a tool call");
   });
 });
