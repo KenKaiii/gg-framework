@@ -179,6 +179,7 @@ describe("Claude Sonnet 5.5", () => {
       supportsImages: true,
       supportsVideo: false,
       costTier: "medium",
+      defaultThinkingLevel: "medium",
       maxThinkingLevel: "max",
     });
     expect(getModelsForProvider("anthropic")).toContain(model);
@@ -201,6 +202,7 @@ describe("Claude Haiku 5.5", () => {
       supportsImages: true,
       supportsVideo: false,
       costTier: "low",
+      defaultThinkingLevel: "medium",
       maxThinkingLevel: "max",
     });
     expect(getModelsForProvider("anthropic")).toContain(model);
@@ -397,12 +399,23 @@ describe("model registry context windows", () => {
     );
     // … and no stored endpoint (e.g. API-key-only auth) means the public API.
     expect(getDefaultThinkingLevel("kimi-k3")).toBe("max");
-    // Every other model starts at its registry max regardless of endpoint.
+    // Models without a declared default start at their registry max regardless of endpoint.
     expect(
       getDefaultThinkingLevel("kimi-k2.7-code", { baseUrl: "https://api.kimi.com/coding/v1" }),
     ).toBe("high");
-    expect(getDefaultThinkingLevel("claude-opus-5-5")).toBe("max");
-    expect(getDefaultThinkingLevel("claude-opus-5-5")).toBe("max");
+  });
+
+  it("starts the Claude 5.5 family at medium, matching the API and Claude Code", () => {
+    for (const id of [
+      "claude-opus-5-5",
+      "claude-opus-5-5-fast",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+    ]) {
+      expect(getDefaultThinkingLevel(id)).toBe("medium");
+      // Ceiling unchanged — users can still opt up to max.
+      expect(getModel(id)?.maxThinkingLevel).toBe("max");
+    }
   });
 
   it("starts Codex models at their catalog default, not the ladder ceiling", () => {

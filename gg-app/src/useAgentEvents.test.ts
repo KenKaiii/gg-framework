@@ -143,6 +143,25 @@ describe("useAgentEvents", () => {
     expect(deps.handleActivityEvent).toHaveBeenCalledWith(review);
   });
 
+  it("reports how each run ended, with its turns and tokens, for the goal finish card", () => {
+    const { hook, deps } = setup();
+    const onRunEnd = vi.fn<NonNullable<AgentEventsDeps["onRunEnd"]>>();
+    deps.onRunEnd = onRunEnd;
+    hook.rerender();
+    act(() => hook.result.current.handleEvent(ev("run_start", {})));
+    act(() => hook.result.current.handleEvent(ev("turn_end", { usage: { outputTokens: 300 } })));
+    act(() => hook.result.current.handleEvent(ev("turn_end", { usage: { outputTokens: 200 } })));
+    act(() => hook.result.current.handleEvent(ev("run_end", {})));
+    expect(onRunEnd).toHaveBeenLastCalledWith(
+      expect.objectContaining({ turns: 2, outputTokens: 500, outcome: "done" }),
+    );
+    act(() => hook.result.current.handleEvent(ev("run_start", {})));
+    act(() => hook.result.current.handleEvent(ev("run_end", { cancelled: true })));
+    expect(onRunEnd).toHaveBeenLastCalledWith(
+      expect.objectContaining({ turns: 0, outcome: "cancelled" }),
+    );
+  });
+
   it("shows Unverified instead of completion and does not finish an approved plan", () => {
     const { hook, deps } = setup();
     act(() => hook.result.current.handleEvent(ev("run_start", {})));

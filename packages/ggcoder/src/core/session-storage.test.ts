@@ -372,6 +372,24 @@ describe("cold session archive safety", () => {
     expect(existsSync(partial)).toBe(false);
   });
 
+  it("rejects a missing transcript without leaving an unhandled stream error", async () => {
+    // Live bug: the stream was opened before the gzip check, so its ENOENT
+    // went uncaught in the app's daemon when a saved session file was gone.
+    const dir = await makeTempDir();
+    const uncaught: unknown[] = [];
+    const onUncaught = (err: unknown) => uncaught.push(err);
+    process.on("uncaughtException", onUncaught);
+    try {
+      await expect(openSessionReadStream(path.join(dir, "gone.jsonl"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } finally {
+      process.off("uncaughtException", onUncaught);
+    }
+    expect(uncaught).toEqual([]);
+  });
+
   it("reads a retained gzip stream without thawing when only discovery is needed", async () => {
     const root = await makeTempDir();
     const manager = new SessionManager(root);

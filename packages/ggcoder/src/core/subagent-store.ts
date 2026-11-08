@@ -195,6 +195,7 @@ function isPersistedRecord(value: unknown): value is PersistedSubAgentRecord {
     optionalBoundedString(record.output) &&
     optionalBoundedString(record.error) &&
     optionalBoundedString(record.current_activity) &&
-    optionalBoundedString(record.child_session_path)
+    optionalBoundedString(record.child_session_path) &&
+    optionalBoundedString(record.cwd)
   );
 }

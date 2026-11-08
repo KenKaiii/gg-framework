@@ -35,6 +35,8 @@ export interface SessionContext {
   dispose: () => Promise<void>;
   /** Synchronously stop this context's background commands (all its sessions). */
   stopBackgroundProcesses: () => void;
+  /** Working right now: a run in progress, or a worker still on a task. */
+  isBusy: () => boolean;
 }
 
 export interface HfPullState {

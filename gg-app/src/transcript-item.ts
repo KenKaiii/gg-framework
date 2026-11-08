@@ -118,3 +118,5 @@ export interface TranscriptImage {
 export let idSeq = 0;
 
 export const nextId = (): number => ++idSeq;
+/** The newest id issued so far. */
+export const lastIssuedId = (): number => idSeq;

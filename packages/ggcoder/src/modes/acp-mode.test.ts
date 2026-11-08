@@ -116,7 +116,7 @@ class AcpClient {
   stderr = "";
   exit: Promise<number | null>;
 
-  constructor() {
+  constructor(extraEnv: Record<string, string> = {}) {
     this.child = spawn(process.execPath, [agentBundle, tmpProject, tmpOtherProject], {
       // The project directory is passed explicitly rather than inherited from
       // the test runner.
@@ -126,6 +126,7 @@ class AcpClient {
         HOME: tmpHome,
         USERPROFILE: tmpHome,
         GG_DISABLE_TELEMETRY: "1",
+        ...extraEnv,
       },
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams;
@@ -1339,3 +1340,812 @@ describe("ACP mode over stdio", () => {
   // surfaces their diagnostic (pending frames + child stderr) instead of
   // vitest's bare "Test timed out".
 }, 30_000);
+
+// ── GG extensions (namespace `gg`) ─────────────────────────
+
+/** Wait for the first frame matching `match`, polling what has arrived. */
+async function untilFrame(
+  acp: AcpClient,
+  match: (frame: Frame) => boolean,
+  timeoutMs = 20_000,
+): Promise<Frame> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const found = acp.received().find(match);
+    if (found) return found;
+    if (Date.now() >= deadline) {
+      throw new Error(`timed out; got ${JSON.stringify(acp.received())} stderr=${acp.stderr}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+/** Params of every frame with this method, in arrival order. */
+function paramsOf(frames: Frame[], method: string): Record<string, unknown>[] {
+  return frames
+    .filter((frame) => frame.method === method)
+    .map((frame) => frame.params as Record<string, unknown>);
+}
+
+/** Send a request and return its response frame. */
+async function request(
+  acp: AcpClient,
+  id: number,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<Frame> {
+  acp.send({ jsonrpc: "2.0", id, method, params });
+  return (await acp.until(id)).at(-1)!;
+}
+
+interface GoalRow {
+  id: string;
+  path: string;
+  status: string;
+  agentSessionId: string | null;
+}
+
+describe("ACP mode GG extensions", () => {
+  it("advertises gg capabilities and image prompts", async () => {
+    client = new AcpClient();
+    const init = await request(client, 1, "initialize", { protocolVersion: 1 });
+    expect(init.result!.agentCapabilities).toMatchObject({
+      promptCapabilities: { image: true },
+      _meta: { gg: { queue: 1, askUser: 1, goals: 1 } },
+    });
+  });
+
+  it("hands image prompt blocks to the attachment path", async () => {
+    client = new AcpClient();
+    const sessionId = await client.handshake();
+    // A real 2x2 PNG: the attachment path decodes it before trusting it as an image.
+    const data =
+      "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAE0lEQVQImWP4z8DwnwGM/zMwAAAf7gP9qS/A4gAAAABJRU5ErkJggg==";
+    client.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [
+          { type: "text", text: "what is this" },
+          { type: "image", mimeType: "image/png", data },
+        ],
+      },
+    });
+    const frames = await client.until(3);
+    expect(frames.at(-1)!.result).toEqual({ stopReason: "end_turn" });
+    const text = updatesOfKind(frames, "agent_message_chunk")
+      .map((u) => (u.content as { text: string }).text)
+      .join("");
+    expect(text).toContain("images=1 kind=image type=image/png saved=true text=what is this");
+  });
+
+  it("queues steering mid-run, reports it drained, and refuses it when idle", async () => {
+    client = new AcpClient();
+    const sessionId = await client.handshake();
+
+    const idle = await request(client, 3, "_gg/queue", { sessionId, text: "too early" });
+    expect(idle.error?.code).toBe(-32602);
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "session/prompt",
+      params: { sessionId, prompt: [{ type: "text", text: "steer me" }] },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Queue two, withdraw one: the drained report only carries what ran.
+    client.send({ jsonrpc: "2.0", id: 5, method: "_gg/queue", params: { sessionId, text: "a" } });
+    client.send({ jsonrpc: "2.0", id: 6, method: "_gg/queue", params: { sessionId, text: "b" } });
+    const queued = (await client.until(6)).at(-1)!;
+    expect(queued.result).toEqual({
+      id: "q2",
+      queued: [
+        { id: "q1", text: "a" },
+        { id: "q2", text: "b" },
+      ],
+    });
+    const frames = await client.until(4);
+    expect(frames.at(-1)!.result).toEqual({ stopReason: "end_turn" });
+    expect(paramsOf(frames, "_gg/queue_update")).toEqual([
+      {
+        sessionId,
+        queued: [],
+        drained: [
+          { id: "q1", text: "a" },
+          { id: "q2", text: "b" },
+        ],
+      },
+    ]);
+
+    const late = await request(client, 7, "_gg/queue/cancel", { sessionId, id: "q1" });
+    expect(late.result).toEqual({ cancelled: false, queued: [] });
+  });
+
+  it("returns leftover queue at turn end and on cancel", async () => {
+    client = new AcpClient();
+    const sessionId = await client.handshake();
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "session/prompt",
+      params: { sessionId, prompt: [{ type: "text", text: "end before steering" }] },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await request(client, 4, "_gg/queue", { sessionId, text: "next" });
+    const ended = await client.until(3);
+    expect(paramsOf(ended, "_gg/queue_update")).toEqual([
+      { sessionId, queued: [], returned: [{ id: "q1", text: "next" }], turnEnded: true },
+    ]);
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "session/prompt",
+      params: { sessionId, prompt: [{ type: "text", text: "hang" }] },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await request(client, 6, "_gg/queue", { sessionId, text: "keep" });
+    const withdrawn = await request(client, 7, "_gg/queue", { sessionId, text: "drop" });
+    const dropId = (withdrawn.result!.id as string) ?? "";
+    const cancel = await request(client, 8, "_gg/queue/cancel", { sessionId, id: dropId });
+    expect(cancel.result).toEqual({ cancelled: true, queued: [{ id: "q2", text: "keep" }] });
+    client.send({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId } });
+    const cancelled = await client.until(5);
+    expect(cancelled.at(-1)!.result).toEqual({ stopReason: "cancelled" });
+    expect(paramsOf(cancelled, "_gg/queue_update").at(-1)).toEqual({
+      sessionId,
+      queued: [],
+      returned: [{ id: "q2", text: "keep" }],
+    });
+  });
+
+  it("registers ask_user only for clients that opt in", async () => {
+    client = new AcpClient();
+    const sessionId = await client.handshake();
+    client.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "session/prompt",
+      params: { sessionId, prompt: [{ type: "text", text: "ask me" }] },
+    });
+    const frames = await client.until(3);
+    expect(updatesOfKind(frames, "agent_message_chunk").at(-1)!.content).toEqual({
+      type: "text",
+      text: "no ask tool",
+    });
+  });
+
+  it("asks the client over _gg/ask_user, and counts an error reply as cancel", async () => {
+    client = new AcpClient();
+    await request(client, 1, "initialize", {
+      protocolVersion: 1,
+      clientCapabilities: { _meta: { gg: { askUser: true } } },
+    });
+    const created = await request(client, 2, "session/new", { cwd: tmpProject });
+    const sessionId = created.result!.sessionId as string;
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "session/prompt",
+      params: { sessionId, prompt: [{ type: "text", text: "ask me" }] },
+    });
+    const ask = await untilFrame(client, (f) => f.method === "_gg/ask_user");
+    expect(ask.params).toMatchObject({ sessionId, questions: [{ id: "go", kind: "choice" }] });
+    client.send({ jsonrpc: "2.0", id: ask.id, result: { action: "answer", answers: { go: "b" } } });
+    const answered = await client.until(3);
+    const text = (
+      updatesOfKind(answered, "agent_message_chunk").at(-1)!.content as { text: string }
+    ).text;
+    expect(text).toContain("asked:");
+    expect(text).toContain("b");
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "session/prompt",
+      params: { sessionId, prompt: [{ type: "text", text: "ask me" }] },
+    });
+    const second = await untilFrame(client, (f) => f.method === "_gg/ask_user" && f.id !== ask.id);
+    client.send({ jsonrpc: "2.0", id: second.id, error: { code: -32000, message: "gone" } });
+    const refused = await client.until(4);
+    expect(refused.at(-1)!.result).toEqual({ stopReason: "end_turn" });
+    const cancelText = (
+      updatesOfKind(refused, "agent_message_chunk").at(-1)!.content as { text: string }
+    ).text;
+    expect(cancelText).not.toContain('"b"');
+    expect(cancelText).toContain("asked:");
+  });
+
+  it("lists, creates and deletes goals in the agent directory's goals folder", async () => {
+    client = new AcpClient();
+    await request(client, 1, "initialize", { protocolVersion: 1 });
+    expect((await request(client, 2, "_gg/goals/list", {})).result).toEqual({ goals: [] });
+
+    const bad = await request(client, 3, "_gg/goals/create", { name: "", goal: "x", context: [] });
+    expect(bad.error?.code).toBe(-32602);
+    expect(bad.error?.message).toBe("Give the goal a name");
+
+    const created = await request(client, 4, "_gg/goals/create", {
+      name: "Ship it",
+      goal: "Ship the thing",
+      context: [tmpOtherProject],
+      instructions: "Keep old URLs working",
+    });
+    const goal = created.result!.goal as GoalRow & Record<string, unknown>;
+    expect(goal).toMatchObject({
+      name: "Ship it",
+      status: "briefing",
+      agentSessionId: null,
+      instructions: "Keep old URLs working",
+    });
+    expect(goal).not.toHaveProperty("latestSessionPath");
+    expect(path.dirname(goal.path)).toBe(path.join(tmpHome, ".gg", "goals"));
+
+    const listed = (await request(client, 5, "_gg/goals/list", {})).result!.goals as GoalRow[];
+    expect(listed.map((g) => g.id)).toEqual([goal.id]);
+    // Settings on another client prefill from the list.
+    expect((listed[0] as GoalRow & Record<string, unknown>).instructions).toBe(
+      "Keep old URLs working",
+    );
+
+    expect((await request(client, 6, "_gg/goals/delete", { id: goal.id })).result).toEqual({
+      ok: true,
+    });
+    expect((await request(client, 7, "_gg/goals/list", {})).result).toEqual({ goals: [] });
+    expect((await request(client, 8, "_gg/goals/delete", { id: goal.id })).error?.code).toBe(
+      -32602,
+    );
+  });
+
+  it("opens a goal folder as its coordinator, runs the kickoff turn, and starts on answer", async () => {
+    client = new AcpClient();
+    await request(client, 1, "initialize", {
+      protocolVersion: 1,
+      clientCapabilities: { _meta: { gg: { askUser: true } } },
+    });
+    const goal = (
+      await request(client, 2, "_gg/goals/create", {
+        name: "Ship it",
+        goal: "Ship the thing",
+        context: [],
+      })
+    ).result!.goal as GoalRow;
+
+    const opened = await request(client, 3, "session/new", { cwd: goal.path });
+    const sessionId = opened.result!.sessionId as string;
+    expect(opened.result!._meta).toEqual({
+      gg: { goal: { id: goal.id, phase: "briefing", paused: false, needsKickoff: true } },
+    });
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "session/prompt",
+      params: { sessionId, prompt: [], _meta: { gg: { goalTurn: "kickoff" } } },
+    });
+    const kickoff = await client.until(4);
+    expect(kickoff.at(-1)!.result).toEqual({ stopReason: "end_turn" });
+    const said = updatesOfKind(kickoff, "agent_message_chunk")
+      .map((u) => (u.content as { text: string }).text)
+      .join("");
+    expect(said).toContain('goal-turn:The user just created the goal "Ship it"');
+
+    // A second kickoff has nothing to do.
+    const again = await request(client, 5, "session/prompt", {
+      sessionId,
+      prompt: [],
+      _meta: { gg: { goalTurn: "kickoff" } },
+    });
+    expect(again.result).toEqual({ stopReason: "end_turn" });
+
+    // The worker roster arrives throttled, reaped reading as closed.
+    const roster = await untilFrame(
+      client,
+      (f) =>
+        f.method === "_gg/goal_state" &&
+        ((f.params as { workers?: unknown[] }).workers?.length ?? 0) > 0,
+    );
+    expect(roster.params).toMatchObject({
+      sessionId,
+      goalId: goal.id,
+      phase: "briefing",
+      paused: false,
+      critterModel: null,
+      workers: [
+        {
+          id: "w1",
+          name: "build it",
+          agent: "builder",
+          state: "closed",
+          activity: "editing",
+          toolUses: 3,
+        },
+      ],
+    });
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 6,
+      method: "session/prompt",
+      params: { sessionId, prompt: [{ type: "text", text: "ask me" }] },
+    });
+    const ask = await untilFrame(client, (f) => f.method === "_gg/ask_user");
+    client.send({
+      jsonrpc: "2.0",
+      id: ask.id,
+      result: { action: "answer", answers: { go: "start" } },
+    });
+    await client.until(6);
+    const started = await untilFrame(
+      client,
+      (f) => f.method === "_gg/goal_state" && (f.params as { phase?: string }).phase === "active",
+    );
+    expect(started.params).toMatchObject({ sessionId, goalId: goal.id, phase: "active" });
+
+    const paused = await request(client, 7, "_gg/goal/pause", { sessionId });
+    expect(paused.result).toEqual({ paused: true });
+    const listed = (await request(client, 8, "_gg/goals/list", {})).result!.goals as GoalRow[];
+    expect(listed[0]?.status).toBe("paused");
+  });
+
+  it("defers an unanswered question to the model but keeps it open, then delivers the late answer", async () => {
+    client = new AcpClient({ GG_ACP_TEST_ASK_DEADLINE_MS: "200" });
+    await request(client, 1, "initialize", {
+      protocolVersion: 1,
+      clientCapabilities: { _meta: { gg: { askUser: true } } },
+    });
+    const goal = (
+      await request(client, 2, "_gg/goals/create", { name: "Late", goal: "Do it", context: [] })
+    ).result!.goal as GoalRow;
+    const sessionId = (await request(client, 3, "session/new", { cwd: goal.path })).result!
+      .sessionId as string;
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "session/prompt",
+      params: { sessionId, prompt: [{ type: "text", text: "ask me" }] },
+    });
+    const ask = await untilFrame(client, (f) => f.method === "_gg/ask_user");
+    // Nobody answers: past the deadline the model hears "no answer yet".
+    const turn = await client.until(4);
+    expect(turn.at(-1)!.result).toEqual({ stopReason: "end_turn" });
+    const told = (updatesOfKind(turn, "agent_message_chunk").at(-1)!.content as { text: string })
+      .text;
+    expect(told).toContain("No answer yet");
+
+    // The question stayed open: answering it now starts the goal and hands
+    // the late answer back as the next prompt.
+    client.send({
+      jsonrpc: "2.0",
+      id: ask.id,
+      result: { action: "answer", answers: { go: "start" } },
+    });
+    const started = await untilFrame(
+      client,
+      (f) => f.method === "_gg/goal_state" && (f.params as { phase?: string }).phase === "active",
+    );
+    expect(started.params).toMatchObject({ sessionId, goalId: goal.id, phase: "active" });
+    const handed = await untilFrame(
+      client,
+      (f) =>
+        f.method === "_gg/queue_update" &&
+        ((f.params as { returned?: { id: string }[] }).returned?.[0]?.id ?? "").startsWith("late-"),
+    );
+    const params = handed.params as Record<string, unknown>;
+    expect(params).toMatchObject({ sessionId, queued: [], turnEnded: true });
+    const returned = params.returned as { id: string; text: string }[];
+    expect(returned).toEqual([{ id: `late-${String(ask.id)}`, text: expect.any(String) }]);
+    expect(returned[0]!.text).toMatch(/^Late answer to: Ready\?\n→ start/);
+    // Goal state precedes the hand-back, so the client sees the start first.
+    const frames = client.received();
+    expect(frames.indexOf(started)).toBeLessThan(frames.indexOf(handed));
+  });
+
+  describe("round 2: plan review, autopilot, checklist", () => {
+    function live(): AcpClient {
+      if (!client) throw new Error("no client");
+      return client;
+    }
+
+    async function reviewHandshake(planReview = true): Promise<string> {
+      client = new AcpClient();
+      live().send({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: 1,
+          clientCapabilities: { _meta: { gg: planReview ? { planReview: true } : {} } },
+        },
+      });
+      const init = await live().until(1);
+      expect(
+        (init.at(-1)!.result as { agentCapabilities: { _meta: { gg: unknown } } }).agentCapabilities
+          ._meta.gg,
+      ).toMatchObject({ planReview: 1, autopilot: 1, checklist: 1 });
+      live().send({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/new",
+        params: { cwd: tmpProject, mcpServers: [] },
+      });
+      return (await live().until(2)).at(-1)!.result!.sessionId as string;
+    }
+
+    type Pending = { planPath: string; content: string; generation: number } | null;
+    const planStates = (frames: Frame[]) =>
+      frames
+        .filter((f) => f.method === "_gg/plan_state")
+        .map((f) => f.params as { planMode: boolean; pending: Pending });
+
+    async function submitPlan(sessionId: string, id: number): Promise<number> {
+      live().send({
+        jsonrpc: "2.0",
+        id,
+        method: "session/prompt",
+        params: { sessionId, prompt: [{ type: "text", text: "submit a plan" }] },
+      });
+      const frames = await live().until(id);
+      const text = updatesOfKind(frames, "agent_message_chunk")
+        .map((u) => (u.content as { text: string }).text)
+        .join("");
+      expect(text).toContain("Plan submitted for user review");
+      const pending = planStates(frames).at(-1)!.pending;
+      expect(pending).toMatchObject({
+        content: expect.stringContaining("1. Build the first piece"),
+      });
+      return pending!.generation;
+    }
+
+    const decide = (sessionId: string, id: number, planDecision: Record<string, unknown>) =>
+      live().send({
+        jsonrpc: "2.0",
+        id,
+        method: "session/prompt",
+        params: { sessionId, prompt: [], _meta: { gg: { planDecision } } },
+      });
+
+    it("accept resets context under a stable ACP id and runs the implement turn", async () => {
+      const sessionId = await reviewHandshake();
+      const generation = await submitPlan(sessionId, 3);
+      decide(sessionId, 4, { action: "accept", generation });
+      const frames = await live().until(4);
+      const reset = frames.find((f) => f.method === "_gg/session_reset")!;
+      expect(reset.params).toEqual({
+        sessionId,
+        agentSessionId: "acp-fixture-session-fresh",
+        planTotal: 2,
+      });
+      expect(frames.indexOf(reset)).toBeLessThan(
+        frames.findIndex(
+          (f) =>
+            (f.params as { update?: { sessionUpdate?: string } })?.update?.sessionUpdate === "plan",
+        ),
+      );
+      const text = updatesOfKind(frames, "agent_message_chunk")
+        .map((u) => (u.content as { text: string }).text)
+        .join("");
+      expect(text).toContain("goal-turn:The plan has been approved");
+      expect(updatesOfKind(frames, "user_message_chunk")).toHaveLength(0);
+      expect(planStates(frames).at(-1)!.pending).toBeNull();
+      expect(frames.at(-1)!.result).toEqual({ stopReason: "end_turn" });
+    });
+
+    it("feedback revises in plan mode; stale generation and reject", async () => {
+      const sessionId = await reviewHandshake();
+      const generation = await submitPlan(sessionId, 3);
+      decide(sessionId, 4, { action: "accept", generation: generation - 1 });
+      expect((await live().until(4)).at(-1)!.error!.code).toBe(-32602);
+
+      decide(sessionId, 5, { action: "feedback", feedback: "smaller steps", generation });
+      const frames = await live().until(5);
+      expect(updatesOfKind(frames, "user_message_chunk")[0]!.content).toEqual({
+        type: "text",
+        text: "smaller steps",
+      });
+      expect(planStates(frames).some((p) => p.planMode)).toBe(true);
+      const text = updatesOfKind(frames, "agent_message_chunk")
+        .map((u) => (u.content as { text: string }).text)
+        .join("");
+      expect(text).toContain("revise:true");
+      const next = planStates(frames).at(-1)!.pending!.generation;
+
+      decide(sessionId, 6, { action: "reject", generation: next });
+      const rejected = await live().until(6);
+      expect(rejected.at(-1)!.result).toEqual({ stopReason: "end_turn" });
+      expect(planStates(rejected).at(-1)).toMatchObject({ planMode: false, pending: null });
+    });
+
+    it("auto-approves for a client that did not opt in", async () => {
+      const sessionId = await reviewHandshake(false);
+      live().send({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/prompt",
+        params: { sessionId, prompt: [{ type: "text", text: "submit a plan" }] },
+      });
+      const frames = await live().until(3);
+      const text = updatesOfKind(frames, "agent_message_chunk")
+        .map((u) => (u.content as { text: string }).text)
+        .join("");
+      expect(text).toContain("Plan approved");
+      expect(frames.some((f) => f.method === "_gg/plan_state")).toBe(false);
+    });
+
+    it("answers _gg/checklist and flags checklist changes", async () => {
+      const sessionId = await reviewHandshake();
+      live().send({ jsonrpc: "2.0", id: 3, method: "_gg/checklist", params: { sessionId } });
+      const result = (await live().until(3)).at(-1)!.result as { items: unknown[] };
+      expect(Array.isArray(result.items)).toBe(true);
+      expect(result).toHaveProperty("staleAfterDays");
+
+      live().send({
+        jsonrpc: "2.0",
+        id: 4,
+        method: "session/prompt",
+        params: { sessionId, prompt: [{ type: "text", text: "touch checklist" }] },
+      });
+      const frames = await live().until(4);
+      expect(frames.find((f) => f.method === "_gg/checklist_changed")!.params).toEqual({
+        sessionId,
+      });
+    });
+
+    it("persists autopilot per project and reports its state", async () => {
+      const sessionId = await reviewHandshake();
+      await untilFrame(live(), (f) => f.method === "_gg/autopilot_state");
+      live().send({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "_gg/autopilot/set",
+        params: { sessionId, enabled: true },
+      });
+      const frames = await live().until(3);
+      expect(frames.at(-1)!.result).toEqual({ enabled: true });
+      expect(frames.filter((f) => f.method === "_gg/autopilot_state").at(-1)!.params).toEqual({
+        sessionId,
+        enabled: true,
+        reviewing: false,
+      });
+      const settings = JSON.parse(
+        await fs.readFile(path.join(tmpHome, ".gg", "gg-app.json"), "utf8"),
+      ) as { autopilot: Record<string, boolean> };
+      expect(Object.values(settings.autopilot)).toEqual([true]);
+    });
+  });
+
+  describe("round 2: autopilot cycle", () => {
+    function live(): AcpClient {
+      if (!client) throw new Error("no client");
+      return client;
+    }
+
+    async function autopilotSession(ken: string[], planReview = false): Promise<string> {
+      client = new AcpClient({ GG_ACP_TEST_KEN: JSON.stringify(ken) });
+      live().send({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: 1,
+          clientCapabilities: { _meta: { gg: planReview ? { planReview: true } : {} } },
+        },
+      });
+      await live().until(1);
+      live().send({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/new",
+        params: { cwd: tmpProject, mcpServers: [] },
+      });
+      const sessionId = (await live().until(2)).at(-1)!.result!.sessionId as string;
+      live().send({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "_gg/autopilot/set",
+        params: { sessionId, enabled: true },
+      });
+      await live().until(3);
+      return sessionId;
+    }
+
+    const prompt = (sessionId: string, id: number, text: string) =>
+      live().send({
+        jsonrpc: "2.0",
+        id,
+        method: "session/prompt",
+        params: { sessionId, prompt: [{ type: "text", text }] },
+      });
+
+    const events = (frames: Frame[]) =>
+      frames
+        .filter((f) => f.method === "_gg/autopilot_event")
+        .map((f) => {
+          const { sessionId: _s, ...rest } = f.params as Record<string, unknown>;
+          return rest;
+        });
+
+    it("prompts Kleio Coder hidden, then finishes with done", async () => {
+      const sessionId = await autopilotSession(["PROMPT\nAdd a test.", "ALL_CLEAR"]);
+      prompt(sessionId, 4, "build it");
+      const frames = await live().until(4);
+      expect(events(frames)).toEqual([
+        { phase: "review_start" },
+        { phase: "prompted", body: "Add a test.", round: 1 },
+        { phase: "review_start" },
+        { phase: "done" },
+      ]);
+      expect(updatesOfKind(frames, "user_message_chunk")).toHaveLength(0);
+      const reviewing = frames
+        .filter((f) => f.method === "_gg/autopilot_state")
+        .map((f) => (f.params as { reviewing: boolean }).reviewing);
+      expect(reviewing.slice(-4)).toEqual([true, false, true, false]);
+      expect(frames.at(-1)!.result).toEqual({ stopReason: "end_turn" });
+    });
+
+    it("persists Ken's markers and replays them on session/load to _gg clients only", async () => {
+      const sessionId = await autopilotSession(["PROMPT\nAdd a test.", "ALL_CLEAR"]);
+      prompt(sessionId, 4, "build it");
+      await live().until(4);
+      // Markers are persisted fire-and-forget, like the desktop's.
+      const deadline = Date.now() + 10_000;
+      const persisted = () => /persisted-session=(\S+) (.+)/.exec(live().stderr);
+      while (!persisted() && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      const [, saved, file] = persisted() ?? [];
+      expect(saved).toBeDefined();
+
+      // The session file holds both markers.
+      const markerLines = async (): Promise<Record<string, unknown>[]> =>
+        (await fs.readFile(file!.trim(), "utf8"))
+          .split("\n")
+          .filter((l) => l.includes('"autopilot_marker"'))
+          .map((l) => (JSON.parse(l) as { data: Record<string, unknown> }).data);
+      while ((await markerLines()).length < 2 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(await markerLines()).toEqual([
+        { version: 1, phase: "prompted", afterMessageCount: 2, body: "Add a test." },
+        { version: 1, phase: "done", afterMessageCount: 4 },
+      ]);
+
+      const load = async (gg: boolean): Promise<Frame[]> => {
+        live().kill();
+        client = new AcpClient();
+        live().send({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: 1,
+            ...(gg ? { clientCapabilities: { _meta: { gg: {} } } } : {}),
+          },
+        });
+        await live().until(1);
+        live().send({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "session/load",
+          params: { sessionId: saved, cwd: tmpProject, mcpServers: [] },
+        });
+        return live().until(2);
+      };
+
+      const frames = await load(true);
+      const sequence = frames
+        .filter(
+          (f) =>
+            f.method === "_gg/autopilot_event" ||
+            (f.method === "session/update" &&
+              !OUT_OF_BAND_UPDATES.has(f.params!.update!.sessionUpdate as string)),
+        )
+        .map((f) =>
+          f.method === "_gg/autopilot_event"
+            ? f.params
+            : (f.params!.update!.sessionUpdate as string),
+        );
+      expect(sequence).toEqual([
+        "user_message_chunk",
+        "agent_message_chunk",
+        "tool_call",
+        { sessionId: saved, phase: "prompted", body: "Add a test.", history: true },
+        // Ken's injected prompt itself stays hidden; Kleio Coder's reply follows.
+        "tool_call_update",
+        "agent_message_chunk",
+        { sessionId: saved, phase: "done", history: true },
+      ]);
+
+      expect((await load(false)).filter((f) => f.method === "_gg/autopilot_event")).toEqual([]);
+    });
+
+    it("stops for a human and at the round cap", async () => {
+      const sessionId = await autopilotSession([
+        "HUMAN\nPick a colour.",
+        "PROMPT\na",
+        "PROMPT\nb",
+        "PROMPT\nc",
+      ]);
+      prompt(sessionId, 4, "build it");
+      expect(events(await live().until(4)).at(-1)).toEqual({
+        phase: "human",
+        reason: "Pick a colour.",
+      });
+      prompt(sessionId, 5, "build it");
+      const capped = events(await live().until(5));
+      expect(capped.filter((e) => e.phase === "prompted")).toHaveLength(3);
+      expect(capped.at(-1)).toEqual({ phase: "capped", round: 3 });
+    });
+
+    it("approves a plan: plan_accepted, session reset, implementation", async () => {
+      const sessionId = await autopilotSession(["ALL_CLEAR", "ALL_CLEAR"], true);
+      prompt(sessionId, 4, "submit a plan");
+      const frames = await live().until(4);
+      const accepted = frames.findIndex(
+        (f) =>
+          f.method === "_gg/autopilot_event" &&
+          (f.params as { phase: string }).phase === "plan_accepted",
+      );
+      const reset = frames.findIndex((f) => f.method === "_gg/session_reset");
+      expect(accepted).toBeGreaterThan(-1);
+      expect(reset).toBeGreaterThan(accepted);
+      expect(events(frames).map((e) => e.phase)).toEqual([
+        "review_start",
+        "plan_accepted",
+        "review_start",
+        "done",
+      ]);
+      // Ken approved, so the plan is never offered to the human.
+      expect(
+        frames.some(
+          (f) => f.method === "_gg/plan_state" && (f.params as { pending: unknown }).pending,
+        ),
+      ).toBe(false);
+    });
+
+    it("session/cancel stops the cycle mid-review", async () => {
+      const sessionId = await autopilotSession(["WAIT"]);
+      prompt(sessionId, 4, "build it");
+      await untilFrame(
+        live(),
+        (f) =>
+          f.method === "_gg/autopilot_event" &&
+          (f.params as { phase: string }).phase === "review_start",
+      );
+      live().send({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId } });
+      const frames = await live().until(4);
+      expect(frames.at(-1)!.result).toEqual({ stopReason: "cancelled" });
+      expect(events(frames)).toEqual([{ phase: "review_start" }]);
+    });
+
+    it("a queued message during review ends the cycle and is handed back", async () => {
+      const sessionId = await autopilotSession(["WAIT"]);
+      prompt(sessionId, 4, "build it");
+      await untilFrame(
+        live(),
+        (f) =>
+          f.method === "_gg/autopilot_event" &&
+          (f.params as { phase: string }).phase === "review_start",
+      );
+      live().send({
+        jsonrpc: "2.0",
+        id: 5,
+        method: "_gg/queue",
+        params: { sessionId, text: "also this" },
+      });
+      const frames = await live().until(4);
+      expect(events(frames).at(-1)).toEqual({ phase: "ignored" });
+      const back = frames.filter((f) => f.method === "_gg/queue_update").at(-1)!.params as {
+        returned: { text: string }[];
+        turnEnded: boolean;
+      };
+      expect(back.returned.map((r) => r.text)).toEqual(["also this"]);
+      expect(back.turnEnded).toBe(true);
+    });
+  });
+});

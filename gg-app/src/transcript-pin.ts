@@ -56,6 +56,19 @@ export function distanceFromBottom(el: ScrollGeometry): number {
  * move that shares a frame with a re-pin must be measured from where the
  * re-pin left the view, or an up-scroll reads as down.
  */
+/**
+ * Whether a scroller is hidden behind another view: React's <Activity> hides
+ * a subtree with an inline `display: none` on its top element. A hidden
+ * scroller has no size, and the scroll the hide causes says nothing about
+ * where the reader is.
+ */
+export function isHiddenScroller(el: HTMLElement): boolean {
+  for (let node: HTMLElement | null = el; node; node = node.parentElement) {
+    if (node.style.display === "none") return true;
+  }
+  return false;
+}
+
 export function pinAfterScroll(pinned: boolean, lastTop: number, el: ScrollGeometry): boolean {
   // Content that fits the viewport (say, a cleared conversation) has nothing
   // above it to read, so whatever arrives next should be followed.

@@ -17,7 +17,13 @@ export function useWindowOrder(inputRef: RefObject<HTMLTextAreaElement | null>) 
   // intentionally (e.g. a menu button), and always on iPhone (composer-refocus.ts).
   useEffect(() => {
     const focusInput = (): void => {
-      if (refocusesComposer(document, inputRef.current)) inputRef.current?.focus();
+      // Nor into a composer that isn't on screen (a goal's Workers view hides
+      // the chat): keys would go into a box nobody can see, and macOS draws its
+      // caret marker where the box was. Hidden (display: none anywhere above
+      // it) means it has no boxes.
+      const input = inputRef.current;
+      if (!input || input.getClientRects().length === 0) return;
+      if (refocusesComposer(document, input)) input.focus();
     };
     window.addEventListener("focus", focusInput);
     window.addEventListener("mouseup", focusInput);

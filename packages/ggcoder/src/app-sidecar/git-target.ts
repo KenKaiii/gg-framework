@@ -5,6 +5,33 @@ import {
   type GitReadOptions,
 } from "../utils/git.js";
 import { getGitHubRepoSlug } from "../utils/github.js";
+import type { GoalRecord } from "../core/goals-store.js";
+
+/**
+ * The folder whose git state a window's titlebar shows (branch, uncommitted
+ * files, GitHub, CI). Normally the window's cwd. A Goal window's cwd is the
+ * goal's own folder in the agent directory, which is not a repo, so it uses
+ * the first attached folder that is inside a git work tree: the project the
+ * goal is actually changing.
+ *
+ * `settled` is false when a folder's check failed or timed out before the
+ * choice was made, so the caller should resolve again with more time.
+ */
+export async function resolveGitCwd(
+  cwd: string,
+  goal: Pick<GoalRecord, "context"> | null,
+  isRepo: (dir: string) => Promise<boolean> = isGitRepo,
+): Promise<{ dir: string; settled: boolean }> {
+  if (!goal) return { dir: cwd, settled: true };
+  let settled = true;
+  for (const item of goal.context) {
+    if (item.kind !== "folder") continue;
+    const repo = await isRepo(item.path).catch(() => null);
+    if (repo === null) settled = false;
+    if (repo) return { dir: item.path, settled };
+  }
+  return { dir: cwd, settled };
+}
 
 export interface GitState {
   branch: string | null;

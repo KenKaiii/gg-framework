@@ -196,15 +196,29 @@ describe("AskBand", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
-  it("routes a text-only question straight to the composer", () => {
+  it("gives a question asking for information its own field in the card", () => {
+    // Live goal: the coordinator asked for the site's URL in a card of three
+    // questions, and there was nowhere in the card to type it.
+    const onAnswer = vi.fn();
     render(
       <AskBand
-        prompt={prompt({ id: "name", question: "What should I call the flag?", kind: "text" })}
-        onAnswer={vi.fn()}
+        prompt={prompt(
+          { id: "url", question: "What's the live address?", kind: "text" },
+          { id: "go", question: "Ready?", kind: "choice", options: [{ label: "Start" }] },
+        )}
+        onAnswer={onAnswer}
         onTypeInstead={onTypeInstead}
       />,
     );
-    expect(onTypeInstead).toHaveBeenCalledWith("name");
+    const field = screen.getByRole("textbox", { name: "What's the live address?" });
+    const send = screen.getByRole("button", { name: "Answer" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    // Typing goes to the field, not the band's number keys or the composer.
+    fireEvent.keyDown(field, { key: "1" });
+    fireEvent.change(field, { target: { value: "  www.yaatuber.com " } });
+    fireEvent.submit(field.closest("form") as HTMLFormElement);
+    expect(onAnswer).toHaveBeenCalledWith({ url: "www.yaatuber.com" });
+    expect(onTypeInstead).not.toHaveBeenCalled();
   });
 
   it("refuses free text when the agent opts out", () => {
@@ -281,6 +295,35 @@ describe("AskBand", () => {
     fireEvent.keyDown(screen.getByTestId("composer"), { key: "1" });
     expect(onAnswer).not.toHaveBeenCalled();
     expect(screen.queryByRole("textbox", { name: /Your answer/ })).toBeNull();
+  });
+
+  it("lets the number keys pick while the chat composer is focused but empty", () => {
+    // Live run: the app keeps the composer focused, so "Press 1–2 to choose"
+    // typed a 1 into it instead. Once something is typed, digits are text.
+    const onAnswer = vi.fn();
+    render(
+      <>
+        <textarea data-testid="composer" data-composer-input="" defaultValue="" />
+        <AskBand
+          prompt={prompt({
+            id: "go",
+            question: "Ready to start?",
+            kind: "choice",
+            options: [{ label: "Start the goal now" }, { label: "Hang on" }],
+          })}
+          onAnswer={onAnswer}
+          onTypeInstead={onTypeInstead}
+        />
+      </>,
+    );
+    const composer = screen.getByTestId("composer") as HTMLTextAreaElement;
+    composer.value = "2 weeks";
+    fireEvent.keyDown(composer, { key: "1" });
+    expect(onAnswer).not.toHaveBeenCalled();
+
+    composer.value = "";
+    fireEvent.keyDown(composer, { key: "1" });
+    expect(onAnswer).toHaveBeenCalledWith({ go: "Start the goal now" });
   });
 
   it("reports each answered question, and only reads complete once all are in", () => {
@@ -472,7 +515,11 @@ describe("AskBand", () => {
         onTypeInstead={onTypeInstead}
       />,
     );
-    expect(screen.getByRole("button", { name: "yaatuber-web" })).toBeTruthy();
+    // Shown in its field, ready to change.
+    expect(
+      (screen.getByRole("textbox", { name: "What should I call it?" }) as HTMLInputElement).value,
+    ).toBe("yaatuber-web");
+    expect(screen.getByRole("button", { name: "Answered" })).toBeTruthy();
   });
 
   it("holds a multi-select until it is confirmed, so it cannot commit half-picked", () => {

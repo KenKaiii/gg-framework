@@ -323,7 +323,7 @@
         "flags": "giu"
       },
       "expectedOccurrences": {
-        "tracked": 1537,
+        "tracked": 1593,
         "packed": 0
       },
       "bucket": "compatibility",
@@ -503,7 +503,7 @@
         "literal": "ggcoder"
       },
       "expectedOccurrences": {
-        "tracked": 1552,
+        "tracked": 1569,
         "packed": 0
       },
       "bucket": "compatibility",
@@ -2592,7 +2592,7 @@
       },
       "expectedOccurrences": {
         "tracked": 0,
-        "packed": 755
+        "packed": 796
       },
       "bucket": "compatibility",
       "owner": "Manager build owner",
@@ -3443,25 +3443,6 @@
       ],
       "match": {
         "regex": "(?:/// Proxy: discover known projects across ggcoder/Claude Code/Codex stores\\.)",
-        "flags": "gu"
-      },
-      "expectedOccurrences": {
-        "tracked": 1
-      },
-      "bucket": "provenance",
-      "owner": "Kleio framework maintainers",
-      "reason": "Pinned imported app labels, app-specific mentor wording, source references, and fixtures. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
-      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
-    },
-    {
-      "id": "upstream-20260911-30c3656bb95d",
-      "path": "gg-app/src-tauri/src/daemon.rs",
-      "scope": "content",
-      "targets": [
-        "tracked"
-      ],
-      "match": {
-        "regex": "(?:\"Agent daemon stopped after repeated crashes\\. Restart GG Coder to try again\\.\";)",
         "flags": "gu"
       },
       "expectedOccurrences": {
@@ -8104,6 +8085,25 @@
       "bucket": "provenance",
       "owner": "Kleio framework maintainers",
       "reason": "Emitted contexts of upstream text imported by the 2026-10-29 selective sync (5789eabb): Ken mentor wording kept as GG Coder (owner decision, 2026-10-29). No allowance for new engine dependency names.",
+      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
+    },
+    {
+      "id": "packed-20261108-4961ad8cc6a1",
+      "path": "packages/gg-boss/dist/chunk-????????.js.map",
+      "scope": "content",
+      "targets": [
+        "packed"
+      ],
+      "match": {
+        "regex": "(?:      return msg\\.content\\.trim\\(\\) \\? `\\*\\*GG Coder:\\*\\* \\$\\{cap\\(msg\\.content\\)\\}` : null;|    `## Recent activity \\(GG Coder and user\\)\\\\|    `## What GG Coder can do\\\\|    `GG Coder's tools are for the actual building\\. Check with your own eyes first — ` \\+|    `Litmus test: if your answer is something the user could've told GG Coder ` \\+|    `Never direct GG Coder to copy protected markup, computed styles, assets, branding, or product identity wholesale\\.`|    `RIGHT — keyword first, why \\(if any\\) inside the body for GG Coder's benefit:\\\\|    `The user can already talk to GG Coder directly, so you are not a second way to ` \\+|    `When there's a real next step, hand over a runnable GG Coder prompt instead of ` \\+|    `You are Ken Kai, the developer of GG Coder, sitting beside the user as their ` \\+|    `You are the second opinion that isn't invested in the work\\. GG Coder defends ` \\+|    `You direct GG Coder, so you have to know its reach\\. It is a full coding agent ` \\+|    `ask for work\\. You are what GG Coder structurally can't be: it is heads-down ` \\+|    `don't send GG Coder off to find out something you could confirm faster ` \\+|    `indexing just to finish a review\\. If indexing is genuinely needed, hand it to GG Coder, ` \\+|    `known in-scope gap\\. The prompt body should tell GG Coder to fix it AND prove it ` \\+|    `mentor inside the app\\. You are NOT the coding agent\\. GG Coder does the actual ` \\+|    `one of those user-level decisions\\. If GG Coder merely asks permission to ` \\+|    `only if GG Coder needs it to do the work>\\\\|    `product\\/taste choice the user must own\\. GG Coder asking the user a ` \\+|    `recent GG Coder and user activity\\. Read it, then answer the actual question\\. If ` \\+|    `reviewing GG Coder's just-finished turn directly, and your reply is read by a ` \\+|    `the prompt body\\)\\. The app renders that block as a \\\\\"Send to GG Coder\\\\\" button, ` \\+|    `what to do and why, never raw code to paste\\. One coherent unit of work\\. Prefer prompts that tell GG Coder ` \\+|    `when GG Coder itself needs it to do the job\\. The parser reads the FIRST line ` \\+|    renderGGCoderCapabilities\\(\\),|    return segments\\.length > 0 \\? `\\*\\*GG Coder:\\*\\* \\$\\{segments\\.join\\(\\\\\" \\\\\"\\)\\}` : null;|   \\*  GG Coder's model \\(the historical behavior\\)\\. Set → Ken \\(chat \\+ autopilot\\)|   \\*  uses this model regardless of GG Coder's\\. \\*\\/|  \\/\\*\\* True when a user-set override is active \\(not following GG Coder\\)\\. \\*\\/|  \\\\\"ALL_CLEAR, IGNORE, or HUMAN\\), with the payload after\\. If GG Coder ended by \\\\\" \\+|  \\\\\"GG Coder just finished a turn\\. Review its work against the user's original \\\\\" \\+|  \\\\\"GG Coder submitted an implementation plan \\(the 'Plan under review' section \\\\\" \\+|  \\\\\"safe for GG Coder to do without new information, use PROMPT with the next \\\\\" \\+| \\*   - No override set → Ken follows GG Coder's model \\(including live switches\\)\\.| \\*   - Override set    → Ken uses it; GG Coder model switches no longer touch him\\.| \\*  The webview special-cases ```prompt blocks into a \\\\\"Send to GG Coder\\\\\" button\\. \\*\\/| \\*  use next turn, plus whether that's a pin or just following GG Coder\\. \\*\\/| \\* Autopilot Ken doesn't answer a user — he reviews the just-finished GG Coder| \\* Build Ken Kai's system prompt\\. No tool\\/work sections of the GG Coder coding| \\* Ken never appears in GG Coder's transcript; on each question we read GG| \\* Ken\\. He never talks to the user here; he auto-reviews GG Coder's work and| \\* The build session \\(GG Coder\\) and Ken are two separate `AgentSession` objects\\.| \\* The user talks to him with `@Ken <prompt>`\\. Ken understands what GG Coder is| \\* mentorship\\. Ken never writes code; he recommends, GG Coder executes\\.| \\* runnable prompts the user can fire into GG Coder, plus blunt, casual| \\* silently resolves to null so Ken falls back to following GG Coder instead| \\* start after a finished GG Coder turn\\.|\\/\\*\\* The fenced-block language Ken wraps every recommended GG Coder prompt in\\.|\\/\\/ App-specific, separate from the shared ggcoder settings file so the desktop|<a runnable GG Coder prompt: a few lines, or a short bullet list when ` \\+|You are Ken Kai in autopilot, reviewing GG Coder's just-finished turn\\. No user is in this conversation; a machine parses your reply\\. Below is the work under review\\.\\\\\",|You are Ken Kai, mentoring the user inside GG Coder\\. Your persona is in your system prompt\\. Below is what GG Coder and the user are working on\\.\\\\\",|function renderGGCoderCapabilities\\(\\): string \\{)",
+        "flags": "gu"
+      },
+      "expectedOccurrences": {
+        "packed": 56
+      },
+      "bucket": "provenance",
+      "owner": "Kleio framework maintainers",
+      "reason": "Emitted source-map contexts of coder source already classified on the tracked side (Ken mentor, Ken model, autopilot and gg-app settings wording kept as GG Coder): upstream 351f590b's ACP autopilot (modes/acp-autopilot.ts) imports those modules into the coder entry that the Manager bundles. No allowance for new engine dependency names.",
       "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
     },
     {

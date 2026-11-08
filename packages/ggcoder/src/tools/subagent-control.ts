@@ -24,14 +24,30 @@ export function createSubAgentControlTools(
   // throwing at spawn time or silently starting a generic child with no agent
   // prompt and the full toolset.
   const agentNames = manager.agents.map((agent) => agent.name);
-  const agentParam = (
-    agentNames.length > 0 ? z.enum(agentNames as [string, ...string[]]) : z.string()
-  ).optional();
+  const anyAgent = agentNames.length > 0 ? z.enum(agentNames as [string, ...string[]]) : z.string();
+  // A fixed team (Kleio Goals) must pick each worker's role: left out, every task
+  // went to the default builder, research without web search included.
+  const agentParam =
+    manager.defaultAgent && agentNames.length > 0
+      ? anyAgent.describe("Which team member does this task: pick the one whose role fits it")
+      : anyAgent.optional();
   const taskParams = z.object({
     task_name: z.string().min(1),
     task: z.string().min(1).describe("Standalone brief"),
     agent: agentParam,
     checks: AcceptanceChecksParam,
+    cwd: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Absolute folder to work in (a workspace root); default: yours"),
+    context_files: z
+      .array(z.string().min(1))
+      .max(20)
+      .optional()
+      .describe(
+        "Files you already read that it needs: their contents go in its brief, so it doesn't read them again",
+      ),
   });
   // A list, so one call starts every child: on models that send one tool call
   // per turn (GPT-6.x), a one-child-per-call shape cost a model turn per child
@@ -57,8 +73,12 @@ export function createSubAgentControlTools(
       // exceed ACTIVE_LIMIT or the per-model cap.
       const settled = await Promise.allSettled(
         args.tasks.map((t) =>
-          t.checks
-            ? manager.spawn(t.task_name, t.task, t.agent, { checks: t.checks })
+          t.checks || t.cwd || t.context_files
+            ? manager.spawn(t.task_name, t.task, t.agent, {
+                ...(t.checks && { checks: t.checks }),
+                ...(t.cwd && { cwd: t.cwd }),
+                ...(t.context_files && { contextFiles: t.context_files }),
+              })
             : manager.spawn(t.task_name, t.task, t.agent),
         ),
       );

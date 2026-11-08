@@ -181,8 +181,12 @@ export async function openSessionReadStream(filePath: string): Promise<{
   close: () => void;
 }> {
   const resolved = await resolveSessionPath(filePath);
+  // Check before opening: a missing file rejects here, and a stream opened
+  // first would be left with no error listener, so its own ENOENT would
+  // surface as an uncaught exception on top of this rejection.
+  const gzip = await isGzipSessionPath(resolved);
   const input: ReadStream = createReadStream(resolved);
-  if (await isGzipSessionPath(resolved)) {
+  if (gzip) {
     const stream = input.pipe(createGunzip());
     return {
       path: resolved,

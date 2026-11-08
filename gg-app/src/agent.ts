@@ -92,9 +92,13 @@ export interface BackgroundTask {
 export type WorkspaceMode = "code" | "chat" | "motion";
 export type ChatAgentId = "general" | "therapist" | "research";
 
-/** Product name shown when a window has no project context to title it. */
-export function workspaceProductName(mode: WorkspaceMode): string {
+/**
+ * Product name shown when a window has no project context to title it. A Goal
+ * window is a code-mode session whose agent is the Goals coordinator.
+ */
+export function workspaceProductName(mode: WorkspaceMode, isGoal = false): string {
   // kleio: Kleio Desktop's own names, so it never reads as GG Coder.
+  if (isGoal) return "Kleio Goals";
   return mode === "chat" ? "Kleio Chat" : mode === "motion" ? "Kleio Motion" : "Kleio Coder";
 }
 
@@ -223,6 +227,10 @@ export interface AgentState {
   kenModelOverride?: boolean;
   /** Live background tasks (footer indicator). */
   tasks?: BackgroundTask[];
+  /** Set when this window is a Goal's coordinator; null/absent otherwise. */
+  goal?: GoalStateInfo | null;
+  /** Questions still waiting on the user (validate with `parseOpenAskPrompts`). */
+  openAskPrompts?: unknown;
   /** Cold-prompt-cache status (sidecar /state + `cache_expiry` event). Null when
    *  the route has no known cache TTL or the chat is empty; absent on older sidecars. */
   cacheExpiry?: CacheExpiryStatus | null;
@@ -1596,6 +1604,136 @@ export async function listProjects(): Promise<DiscoveredProject[]> {
   }
 }
 
+/** The goal a window is coordinating, as reported by the sidecar's /state. */
+export interface GoalStateInfo {
+  id: string;
+  name: string;
+  /** True until the coordinator's automatic first reply has started. */
+  needsKickoff: boolean;
+  /** Briefing until the user starts the goal; active once the work begins. */
+  phase: "briefing" | "active";
+  /** Paused by the user: it doesn't carry on by itself until resumed. */
+  paused?: boolean;
+  /** Started, not paused, and cut off mid-work (the app closed): carry it on. */
+  needsResume?: boolean;
+  /** The user's standing instructions for the goal. */
+  instructions?: string;
+  /** The goal's attached folders and files. */
+  context?: GoalContextItem[];
+  /** The workers' pinned model; null: they follow Kleio Goals' model. */
+  critterModel?: string | null;
+}
+
+/** One attached context item; kind comes from the filesystem. */
+export interface GoalContextItem {
+  path: string;
+  kind: "folder" | "file";
+}
+
+/** Mirrors the sidecar's `app-sidecar/goal-routes.ts` GoalSummary. */
+export interface GoalSummary {
+  id: string;
+  name: string;
+  goal: string;
+  context: GoalContextItem[];
+  /** The goal's folder: the coordinator session's cwd. */
+  path: string;
+  createdAt: string;
+  lastActiveMs: number;
+  lastActiveDisplay: string;
+  /** Newest session to resume; null starts the coordinator fresh. */
+  latestSessionPath: string | null;
+  /**
+   * Where the goal stands: briefing (not started), running (working right
+   * now), paused (by the user), interrupted (cut off mid-work: the app closed
+   * or it was stopped), or idle (started, not working). Absent from an older
+   * sidecar: treat as idle.
+   */
+  status?: "briefing" | "running" | "paused" | "interrupted" | "idle";
+}
+
+/** Every Goal, most recently active first. */
+export async function listGoals(): Promise<GoalSummary[]> {
+  try {
+    const res = await invoke<{ goals: GoalSummary[] }>("agent_goals");
+    return res.goals ?? [];
+  } catch (e) {
+    await logError(`agent_goals failed: ${String(e)}`);
+    throw e;
+  }
+}
+
+/** Create a Goal. Context entries are absolute folder or file paths. */
+export async function createGoal(input: {
+  name: string;
+  goal: string;
+  context: string[];
+  instructions?: string;
+}): Promise<GoalSummary> {
+  const res = await invoke<{ goal: GoalSummary }>("agent_create_goal", {
+    ...input,
+    instructions: input.instructions || null,
+  });
+  return res.goal;
+}
+
+/**
+ * Change this window's goal: its attached folders/files and/or its standing
+ * instructions (an empty string clears them). Kleio Goals picks the change up
+ * in the goal's next session. Refused while the goal is working.
+ */
+export async function updateGoal(change: {
+  context?: string[];
+  instructions?: string;
+}): Promise<{ context: GoalContextItem[]; instructions: string }> {
+  await waitForReady();
+  return invoke("agent_update_goal", {
+    context: change.context ?? null,
+    instructions: change.instructions ?? null,
+  });
+}
+
+/** Pause this window's goal: it stays put, even across restarts, until resumed. */
+export async function pauseGoal(): Promise<void> {
+  await waitForReady();
+  await invoke("agent_goal_pause");
+}
+
+/**
+ * Carry this window's goal on after a pause, or after the app closed while it
+ * was working. Safe to call any time: returns false when there's nothing to do.
+ */
+export async function resumeGoal(): Promise<boolean> {
+  await waitForReady();
+  const res = await invoke<{ resumed?: boolean }>("agent_goal_resume");
+  return res.resumed === true;
+}
+
+/**
+ * Pin the model this goal's workers run on, or clear it (null) so they follow
+ * Kleio Goals. Applies to the next worker started. Returns the effective pick.
+ */
+export async function setCritterModel(
+  model: string | null,
+): Promise<{ critterModel: string | null }> {
+  return invoke<{ critterModel: string | null }>("agent_set_critter_model", { model });
+}
+
+/** Delete a Goal: its folder and coordinator sessions. Attached context is untouched. */
+export async function deleteGoal(id: string): Promise<void> {
+  await invoke("agent_delete_goal", { id });
+}
+
+/**
+ * Start the coordinator's automatic first reply for this window's goal. Safe to
+ * call repeatedly: the sidecar starts it at most once per goal.
+ */
+export async function kickoffGoal(): Promise<boolean> {
+  await waitForReady();
+  const res = await invoke<{ started?: boolean }>("agent_goal_kickoff");
+  return res.started === true;
+}
+
 /**
  * Hide a project from the picker, or restore it with `hidden: false`. Keyed by
  * path so a dismissed scratch directory stays gone even though its sessions
@@ -2115,6 +2253,8 @@ export interface SteroidsStatus {
   version?: string;
   repos?: number;
   documents?: number;
+  /** Corpus size on disk as the CLI prints it, e.g. "2.0GB". */
+  diskSize?: string;
   path?: string;
   error?: string;
 }
@@ -2260,39 +2400,69 @@ export function subscribe(onEvent: (e: SidecarEvent) => void): () => void {
   return () => localSubscribers.delete(onEvent);
 }
 
-/** Wait until the sidecar reports a port (proves the agent is up). */
+/**
+ * Backstop for `waitForReady`. The Rust shell already ends a failed start with
+ * its real reason (via `sidecar_port` / `sidecar-error`) and waits up to 180s
+ * for a daemon that is slow to come up — first launch after an install or
+ * update can sit in macOS's Gatekeeper/XProtect scan for well over 30s.
+ */
+const READY_BACKSTOP_MS = 200_000;
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Wait until this window's agent session exists. Rejects with the concrete
+ * reason as soon as the shell reports the start failed (spawn failure, crash
+ * loop, session creation error) instead of a generic timeout.
+ */
 export async function waitForReady(): Promise<void> {
-  const immediate = await invoke<number | null>("sidecar_port").catch(() => null);
+  const immediate = await invoke<number | null>("sidecar_port").catch((error: unknown) => {
+    throw new Error(errorText(error));
+  });
   if (typeof immediate === "number") return;
   await new Promise<void>((resolve, reject) => {
     let settled = false;
-    let unlisten: (() => void) | undefined;
-    const timeout = setTimeout(() => {
-      if (!settled) {
-        clearInterval(poll);
-        unlisten?.();
-        reject(new Error("sidecar did not start in time"));
-      }
-    }, 30000);
-    const finish = (): void => {
+    const unlisteners: Array<() => void> = [];
+    const settle = (error?: string): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
       clearInterval(poll);
-      unlisten?.();
-      resolve();
+      for (const unlisten of unlisteners) unlisten();
+      if (error === undefined) resolve();
+      else reject(new Error(error));
     };
-    appWindow
-      .listen<number>("sidecar-ready", finish)
-      .then((u) => {
-        if (settled) u();
-        else unlisten = u;
-      })
-      .catch(() => {});
+    const timeout = setTimeout(
+      () => settle("The agent is taking too long to start."),
+      READY_BACKSTOP_MS,
+    );
+    const track = (pending: Promise<() => void>): void => {
+      pending
+        .then((unlisten) => {
+          if (settled) unlisten();
+          else unlisteners.push(unlisten);
+        })
+        .catch(() => {});
+    };
+    track(appWindow.listen<number>("sidecar-ready", () => settle()));
+    track(appWindow.listen<string>("sidecar-error", (event) => settle(String(event.payload))));
     const poll = setInterval(() => {
-      void invoke<number | null>("sidecar_port").then((p) => {
-        if (typeof p === "number") finish();
-      });
+      void invoke<number | null>("sidecar_port").then(
+        (port) => {
+          if (typeof port === "number") settle();
+        },
+        (error: unknown) => settle(errorText(error)),
+      );
     }, 500);
   });
+}
+
+/**
+ * Restart this window's failed agent start. If the shared daemon itself gave
+ * up, the shell respawns it with a fresh retry budget. Pair with re-hydrating.
+ */
+export async function retryWindowSession(): Promise<void> {
+  await invoke("retry_window_session");
 }

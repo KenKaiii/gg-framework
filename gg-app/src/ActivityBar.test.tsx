@@ -249,3 +249,38 @@ describe("ActivityBar cancellation state", () => {
     expect(screen.getByRole("status")).toBeTruthy();
   });
 });
+
+describe("ActivityBar timer", () => {
+  it("keeps counting from the run's start when the chat is hidden and shown again", async () => {
+    // Regression: going to a goal's Workers view and back restarted the timer
+    // at 0s, because the bar took a fresh start when its effects re-ran.
+    const { Activity } = await import("react");
+    const { act } = await import("@testing-library/react");
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(100_000);
+      const startedAt = 100_000;
+      const view = (shown: boolean) => (
+        <Activity mode={shown ? "visible" : "hidden"}>
+          <ActivityBar {...baseProps} runStartedAt={startedAt} />
+        </Activity>
+      );
+      const { rerender, container } = render(view(true));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(24_000);
+      });
+      expect(container.textContent).toContain("24s");
+      rerender(view(false));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      rerender(view(true));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      expect(container.textContent).toContain("30s");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

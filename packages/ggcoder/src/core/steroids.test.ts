@@ -9,6 +9,7 @@ import {
   extractBinary,
   findSteroidsBinary,
   installSteroids,
+  parseStats,
   releaseTarget,
   verifySha256,
 } from "./steroids.js";
@@ -40,6 +41,29 @@ function tgz(...entries: Buffer[]): Buffer {
 
 const BIN = process.platform === "win32" ? "steroids.exe" : "steroids";
 const payload = Buffer.from("#!/bin/sh\necho steroids 9.9.9\n");
+
+describe("parseStats", () => {
+  it("reads the counts and the total size on disk", () => {
+    const stats = [
+      "  location     : /Users/me/.steroids",
+      "  repositories : 514",
+      "  documents    : 604849",
+      "  source code  : 4.4GB raw",
+      "  blobs.bin    : 1.4GB compressed",
+      "  corpus.db    : 680.8MB (metadata + trigram index)",
+      "  TOTAL ON DISK: 2.0GB",
+      "  per repo     : 4.0MB",
+    ].join("\n");
+    expect(parseStats(stats)).toEqual({ repos: 514, documents: 604849, diskSize: "2.0GB" });
+  });
+
+  it("leaves the size out when stats has no total line", () => {
+    expect(parseStats("  repositories : 0\n  documents    : 0\n")).toEqual({
+      repos: 0,
+      documents: 0,
+    });
+  });
+});
 
 describe("extractBinary", () => {
   it("extracts the single steroids entry", () => {

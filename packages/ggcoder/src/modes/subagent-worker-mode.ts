@@ -1,6 +1,8 @@
+import path from "node:path";
 import { createInterface } from "node:readline";
 import type { Provider, ThinkingLevel } from "@kleio/ai";
 import { AgentSession } from "../core/agent-session.js";
+import { log } from "../core/logger.js";
 import { isModelUnavailableError } from "../core/model-unavailable.js";
 import {
   boundSubAgentOutput,
@@ -105,11 +107,43 @@ export function classifyResolvedTurn(turn: {
   return { status: "completed" };
 }
 
+/**
+ * Add the parent's shared roots to a child's workspace (see
+ * SubagentWorkerInitialize.additionalRoots). A root that's gone or already
+ * covered is skipped, never fatal: the child still has its own folder.
+ * Returns the roots added.
+ */
+export async function addSharedRoots(
+  session: Pick<AgentSession, "addDirectory">,
+  roots: readonly string[],
+): Promise<string[]> {
+  const added: string[] = [];
+  for (const root of roots) {
+    const result = await session.addDirectory(root);
+    if (result.ok) added.push(result.root);
+    else if (!result.error.startsWith("Already in the workspace")) {
+      log("WARN", "subagent-worker", "shared workspace root unavailable", { error: result.error });
+    }
+  }
+  return added;
+}
+
+/** Absolute folder paths from a parent frame; anything else is dropped. */
+export function parseRootList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((root): root is string => typeof root === "string" && path.isAbsolute(root));
+}
+
 export interface SubagentWorkerInitialize {
   provider: Provider;
   model: string;
   fallbackModel?: string;
   cwd: string;
+  /**
+   * More folders the child may read and change besides its cwd (the
+   * parent's shared workspace roots, see SubAgentManager.shareWorkspaceRoots).
+   */
+  additionalRoots?: string[];
   baseUrl?: string;
   /** Replaces the whole system prompt. */
   systemPrompt?: string;
@@ -138,7 +172,14 @@ type WorkerCommand =
   | { request_id: string; command: "initialize"; options: SubagentWorkerInitialize }
   | { request_id: string; command: "start"; task: string; checks?: unknown }
   | { request_id: string; command: "queue_message"; message: string }
-  | { request_id: string; command: "followup"; task: string; checks?: unknown }
+  | {
+      request_id: string;
+      command: "followup";
+      task: string;
+      checks?: unknown;
+      /** The parent's shared roots now; any added since initialize join first. */
+      additionalRoots?: unknown;
+    }
   | { request_id: string; command: "interrupt" }
   | { request_id: string; command: "shutdown" };
 
@@ -251,6 +292,7 @@ export async function runSubagentWorkerMode(): Promise<void> {
       fallbackModel: _fallbackModel,
       childSessionPath,
       turnTimeoutMs: _turnTimeoutMs,
+      additionalRoots = [],
       ...sessionOptions
     } = options;
     const next = new AgentSession({
@@ -265,6 +307,8 @@ export async function runSubagentWorkerMode(): Promise<void> {
     });
     wireEvents(next);
     await next.initialize();
+    // Before the first turn, so the prompt names every root from the start.
+    await addSharedRoots(next, additionalRoots);
     return next;
   };
 
@@ -429,6 +473,9 @@ export async function runSubagentWorkerMode(): Promise<void> {
         case "followup":
           if (!session) throw new Error("Worker is not initialized");
           if (state === "running") throw new Error("Worker already has an active turn");
+          if (command.command === "followup") {
+            await addSharedRoots(session, parseRootList(command.additionalRoots));
+          }
           acknowledge(command.request_id, { status: "running" });
           runTurn(command.task, parseAcceptanceChecks(command.checks));
           return;

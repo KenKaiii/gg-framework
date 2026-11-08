@@ -13,9 +13,10 @@ const ROSTER = [
   },
 ];
 
-function fakeManager(agents: unknown[] = ROSTER): SubAgentManager {
+function fakeManager(agents: unknown[] = ROSTER, defaultAgent?: string): SubAgentManager {
   return {
     agents,
+    defaultAgent,
     spawn: vi.fn(async (taskName: string) => ({
       agent_id: "12345678",
       task_name: taskName,
@@ -86,6 +87,21 @@ describe("async subagent control tools", () => {
     expect(params.safeParse({ task_name: "a", task: "b" }).success).toBe(false);
   });
 
+  it("requires every task to name its agent when the team has a default (Kleio Goals)", () => {
+    // Live runs: Kleio Goals left `agent` out and every task went to the default
+    // builder, research included, so researchers never got web search.
+    const spawn = createSubAgentControlTools(fakeManager(ROSTER, "owl")).find(
+      (tool) => tool.name === "spawn_agent",
+    )!;
+    const params = spawn.parameters as unknown as {
+      safeParse(value: unknown): { success: boolean };
+    };
+    expect(params.safeParse({ tasks: [{ task_name: "a", task: "b" }] }).success).toBe(false);
+    expect(params.safeParse({ tasks: [{ task_name: "a", task: "b", agent: "owl" }] }).success).toBe(
+      true,
+    );
+  });
+
   it("accepts any name when no agents are configured", () => {
     const spawn = createSubAgentControlTools(fakeManager([])).find(
       (tool) => tool.name === "spawn_agent",
@@ -129,6 +145,18 @@ describe("async subagent control tools", () => {
     await spawn.execute({ tasks: [{ task_name: "a", task: "one", checks }] }, context);
 
     expect(manager.spawn).toHaveBeenCalledWith("a", "one", undefined, { checks });
+  });
+
+  it("forwards the files a task needs, so the child starts with their contents", async () => {
+    const manager = fakeManager();
+    const spawn = createSubAgentControlTools(manager).find((tool) => tool.name === "spawn_agent")!;
+    await spawn.execute(
+      { tasks: [{ task_name: "a", task: "one", context_files: ["/p/a.js"] }] },
+      context,
+    );
+    expect(manager.spawn).toHaveBeenCalledWith("a", "one", undefined, {
+      contextFiles: ["/p/a.js"],
+    });
   });
 
   it("reports a failed start in place and still starts the others", async () => {

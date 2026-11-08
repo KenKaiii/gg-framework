@@ -93,6 +93,17 @@ describe("command_passed", () => {
     expect(verifyOne(check, [bash("pnpm test")])?.status).toBe("UNVERIFIED");
   });
 
+  it("treats a cd into the helper's own folder as the same command", () => {
+    // Live goal runs: Kleio Goals asked for `cd <folder> && npm test`, the worker
+    // ran plain `npm test` there, and every check came back unverified, costing
+    // a follow-up per worker to prove what had already passed.
+    const inFolder: AcceptanceCheck = { type: "command_passed", target: `cd ${cwd} && pnpm test` };
+    expect(verifyOne(inFolder, [bash("pnpm test", "0")])?.status).toBe("PASS");
+    expect(verifyOne(check, [bash(`cd "${cwd}" && pnpm test`, "0")])?.status).toBe("PASS");
+    // A cd somewhere else is a different run.
+    expect(verifyOne(check, [bash("cd /elsewhere && pnpm test", "0")])?.status).toBe("UNVERIFIED");
+  });
+
   it("does not count a narrower command as the requested one", () => {
     expect(verifyOne(check, [bash("pnpm test --filter x", "0")])?.status).toBe("UNVERIFIED");
   });

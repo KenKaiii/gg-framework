@@ -107,6 +107,97 @@ describe("AgentSession built-in tool tiering", () => {
     }
   }, 20_000);
 
+  it("keeps a session's chosen built-ins in the core set, in their original order", async () => {
+    // Kleio Goals orchestrates: tools it relies on must not need a tool_search turn.
+    const plain = await createSession();
+    const kept = await createSession({ coreTools: ["web_fetch", "find"] });
+    try {
+      const before = liveToolNames(plain);
+      const after = liveToolNames(kept);
+      expect(before).not.toContain("web_fetch");
+      expect(before).not.toContain("find");
+      expect(after).toContain("web_fetch");
+      expect(after).toContain("find");
+      // Everything else is unchanged and keeps its relative order.
+      expect(after.filter((name) => name !== "web_fetch" && name !== "find")).toEqual(before);
+      // Offered once, not also as a deferred catalog entry.
+      const prompt = String(kept.getMessages()[0]?.content ?? "");
+      expect(prompt).not.toContain("- **web_fetch**:");
+      expect(prompt).not.toContain("- **find**:");
+    } finally {
+      await plain.dispose();
+      await kept.dispose();
+    }
+  }, 20_000);
+
+  it("never creates .gg folders in a sub-agent worker's folder", async () => {
+    // Regression: Kleio Goals' workers left empty .gg/agents, commands and
+    // skills folders in the user's attached folders.
+    const worker = await createSession({ projectCustomization: true, subagentWorker: true });
+    try {
+      await expect(fs.stat(path.join(tempProject, ".gg"))).rejects.toThrow();
+    } finally {
+      await worker.dispose();
+    }
+    const owner = await createSession({ projectCustomization: true });
+    try {
+      expect((await fs.stat(path.join(tempProject, ".gg", "skills"))).isDirectory()).toBe(true);
+    } finally {
+      await owner.dispose();
+    }
+  }, 20_000);
+
+  it("offers only a fixed sub-agent team when one is given, instead of discovering agents", async () => {
+    // Kleio Goals' workers are its own team, never Kleio Coder's or the user's.
+    const team = [
+      {
+        name: "goal-builder",
+        description: "Makes changes.",
+        tools: ["read", "write"],
+        model: "inherit",
+        systemPrompt: "Build.",
+        source: "bundled" as const,
+      },
+    ];
+    const plain = await createSession({ coreTools: ["spawn_agent"], globalSubagents: true });
+    const goals = await createSession({ coreTools: ["spawn_agent"], subAgents: team });
+    const spawnDescription = (session: unknown): string =>
+      (session as { tools: { name: string; description: string }[] }).tools.find(
+        (t) => t.name === "spawn_agent",
+      )?.description ?? "";
+    try {
+      expect(spawnDescription(goals)).toContain("- goal-builder: Makes changes.");
+      expect(spawnDescription(goals)).not.toContain("- bee:");
+      expect(spawnDescription(plain)).toContain("- bee:");
+      expect(spawnDescription(plain)).not.toContain("goal-builder");
+    } finally {
+      await plain.dispose();
+      await goals.dispose();
+    }
+  }, 20_000);
+
+  it("leaves out a session's withheld tools entirely, keeping the rest and their tiering", async () => {
+    // Kleio Goals never edits or runs anything: it never has those tools, so it
+    // can't reach for a shell to look around.
+    const plain = await createSession();
+    const without = ["edit", "write", "bash", "ui_adopt"];
+    const goals = await createSession({ withoutTools: without });
+    try {
+      const before = liveToolNames(plain);
+      const after = liveToolNames(goals);
+      for (const name of without) expect(after).not.toContain(name);
+      expect(after).toEqual(before.filter((name) => !without.includes(name)));
+      expect(after).toContain("tool_search");
+      // Not offered on demand either.
+      const prompt = String(goals.getMessages()[0]?.content ?? "");
+      expect(prompt).not.toContain("- **ui_adopt**:");
+      expect(String(plain.getMessages()[0]?.content ?? "")).toContain("- **ui_adopt**:");
+    } finally {
+      await plain.dispose();
+      await goals.dispose();
+    }
+  }, 20_000);
+
   it("discovers UI libraries in a normal session and executes the promoted tool offline", async () => {
     const session = await createSession();
     try {

@@ -600,15 +600,18 @@ Local macOS checks, each compared with `main` at `9a89e75c`:
   critter-art checks match only upstream's image fixture in `App.attachments.test.tsx`
   (`c617d8ab`), whose preview data URI holds the ten bytes "screenshot".
 
-## Models, providers, gg-safe and skills from upstream (open)
+## Models, providers, gg-safe and skills from upstream (merged)
 
 - Upstream tip reviewed: `296df256b164ec18a4cc72ec7a824633da245bcb` (engine **5.91.2**,
   desktop **0.102.2**), 290 commits after `3f2bb6bc`. Upstream has since moved 9 commits
   further, to `f6b17fc5` (desktop **0.103.1**). All nine come after the relicense, and this
   import doesn't review them.
 - Branch: `sync/upstream-models-safety`, based on `main` at `bf328196`.
-- PR: [#77](https://github.com/fmckie/gg-framework/pull/77), opened as a draft on
-  2026-11-08
+- PR: [#77](https://github.com/fmckie/gg-framework/pull/77), merged at `7150a676` on
+  2026-11-08; all nine CI jobs passed on `ae265c0e` (run **42511087761**). GitHub
+  squashed the branch, so the downstream SHAs below are on
+  `sync/upstream-models-safety`; the squash commit keeps all 32 trailers (23
+  `Ported from upstream`, 9 `cherry picked from commit`).
 - PR 3b of the 4 in `.gg/plans/upstream-selective-import-phased.md`: models, providers,
   gg-safe and skills. Its first commit, `97398b68`, records #76 as merged. Plan rows 24–46
   follow in order, then `cf6c9a23`, `a4bb110c`, `0ba57296`, `0a9d083f` and the non-Goals
@@ -879,6 +882,166 @@ Local macOS checks, each compared with `main` at `bf328196`:
   lines that name it are comments and the retired seed's test fixtures, and the one
   home-directory path the branch touches, `setup-history.json`, goes with
   `setup-history.ts`.
+- The critter-art checks match nothing.
+
+## Goals from upstream (open)
+
+- Upstream tip reviewed: `296df256b164ec18a4cc72ec7a824633da245bcb` (engine **5.91.2**,
+  desktop **0.102.2**), as for #77. The 9 later upstream commits, up to `f6b17fc5`, all
+  follow the relicense and are not reviewed.
+- Branch: `sync/upstream-goals`, based on `main` at `7150a676`.
+- PR: [#78](https://github.com/fmckie/gg-framework/pull/78), opened as a draft on
+  2026-11-08
+- PR 4a of PR 4 in `.gg/plans/upstream-selective-import-phased.md`, re-planned as 4a (Goals)
+  and 4b (motion) in `.gg/plans/upstream-pr4-goals-motion.md`. Its first commit, `14e1c85b`,
+  records #77 as merged. Then `223830dc`'s ask-user slice (moved ahead, because `e98215da`
+  imports it) and the Goals rows in upstream date order, with the Goals hunks PR 3a and 3b
+  held back.
+- `upstream.lastImportedCommit` stays `3f2bb6bc`, for the reason given in the 988f920e
+  section. Picks carry `cherry picked from commit <sha>`, ports carry
+  `Ported from upstream <sha>`, and `fork-provenance.json` `selectiveImports` holds the full
+  hashes on both sides.
+- Every commit taken is an ancestor of `c1aa287b` (desktop v0.102.0), upstream's last
+  release under MIT.
+
+The 20 upstream commits taken, in branch order. `21adf945` appears twice and `6c63a63e`,
+`d9ad9050` and `5a3c24b3` ride on other rows, because their held-back hunks land with the
+code they touch.
+
+| Upstream                                   | Downstream | Method       | Taken                                                                                                                                                                                                                                                                |
+| ------------------------------------------ | ---------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `223830dc49452b8c4596c33db92adc27ca363558` | `3d78dc65` | Partial port | `answerAskItem` and `firstOpenAskId` in gg-app's `ask-user.ts`. The rest of `223830dc` goes to PR 4b                                                                                                                                                                 |
+| `46e534bce060d384e7d674088ea384a389e008bf` | `1da5f4fe` | Partial port | Goals: the goal store, routes and coordinator agent, the subagent and project-list hunks, the five Rust goal commands and the data layer. Goal sessions keep Ideal self-review suppressed (fork-only, until PR 4b removes Ideal review). The UI becomes placeholders |
+| `6c63a63edc4cdbfa914cf24f011580dabcd6e9ae` | `1da5f4fe` | Partial port | Its `critter-tool-kind.ts` line, in `placeholder/worker-status.ts`                                                                                                                                                                                                   |
+| `21adf9451460b367aef6d880dcce0c7a2aac8771` | `1da5f4fe` | Partial port | `critter-tool-kind.ts` without `code_search` and `code_nav`, in `placeholder/worker-status.ts`                                                                                                                                                                       |
+| `e98215daccb5aa52c5440b787bc89e671d588918` | `38e32af0` | Partial port | Update, pause and resume; `retry_window_session` and real start failures; questions survive reload; the coordinator's own team (`goal-team.ts`); focus, scroll and restart fixes. The farm and Ken-talk are not taken                                                |
+| `21adf9451460b367aef6d880dcce0c7a2aac8771` | `38e32af0` | Partial port | `goal-team.ts` without `code_search`, folded in because `goal-team.test` fails on the removed tool                                                                                                                                                                   |
+| `b252380d33aab0d6da50cec37e9a820f40619272` | `55121f64` | Partial port | The goals-path test compares with platform separators                                                                                                                                                                                                                |
+| `9d7cbe6dc99eeb65c3b016103fd2cc62215b254b` | `263ce512` | Partial port | The Goals part #77 held back: git from the goal's project (`resolveGitCwd`, `retargetGit`), `RunEnd`, and the finish card as a placeholder                                                                                                                           |
+| `6325d417565fae2ff004a641ff39dea3ed4805d2` | `7ee2302b` | Partial port | Workers reach folders attached mid-goal                                                                                                                                                                                                                              |
+| `db5ad07faf469999eac90a391bfce8acf0019ac0` | `12d719c0` | Partial port | Steroids for Goals workers, and its disk size                                                                                                                                                                                                                        |
+| `127ec0a914f558b2e21a0cc44e6d7b4d6c8e9e63` | `4931ba68` | Partial port | The goal status pill as a placeholder, and the Claude 5.5 family at medium thinking                                                                                                                                                                                  |
+| `d9ad9050bbdcc6d3aaa7a88b512244b9c4705867` | `4931ba68` | Partial port | Opus 5.5 fast's `defaultThinkingLevel`, held back from #77                                                                                                                                                                                                           |
+| `5a3c24b349492e5888ccae3c8c9b1efb795941f1` | `4931ba68` | Partial port | The reworded Sonnet 5.5 comment, held back from #77                                                                                                                                                                                                                  |
+| `351f590bf09cef7d5c3090ec4e859fec447a777d` | `842ecaf8` | Port         | Goals and autopilot in ACP mode, with goal summaries shared with the sidecar                                                                                                                                                                                         |
+| `de2392c352e11374c71063700b1b46bffbcf4543` | `f633e48e` | Pick         | The ACP steering test drains its queue only after both messages arrive                                                                                                                                                                                               |
+| `5e689aa0e8393f976035b5c8100f5c067bc60c79` | `9fd6320b` | Partial port | Slash commands from every workspace root. The farm sounds are not taken                                                                                                                                                                                              |
+| `818ed96bc25395113e6e002317f4bc62cd65f37c` | `a4b0e0c6` | Partial port | Live goal runs marked across processes. The Deck, Git overview, model panel, set-thinking route and glass styles are not taken                                                                                                                                       |
+| `bc7e5733a25fc9cb1e51ed93b72407a5c7a5eb6f` | `d7314a20` | Partial port | The Goals part #77 held back: workers never run on a paid model                                                                                                                                                                                                      |
+| `494374d7941d25cbba6afd5c571187de64ab0c5d` | `a935c25b` | Partial port | The sidecar part #77 held back: the idle wake for background failures                                                                                                                                                                                                |
+| `a69cc275a86d02f31831c280755f335e5b7a117f` | `c2f0707f` | Partial port | The Goals part #77 held back: the slow-git re-read through the goal's target                                                                                                                                                                                         |
+| `5d340fa3bc1be03d3200b40cfbe8f8abfb5551bf` | `e1648e49` | Partial port | The Goals half #77 held back: a typed go-ahead starts a goal, with a goal write lock and atomic writes                                                                                                                                                               |
+
+Not taken:
+
+- Every farm, map, world, Ken-portrait, Ken-talk, critter, sound and font file, `GoalWorld`,
+  `KenStatus`'s art and `KenDialogue`, and the `KEN_FACES` "line on the farm" prompt
+  section (the coordinator's prompt test checks it asks for no such line).
+- All gg-app CSS and `DESIGN.md`, and upstream's `HomeScreen`, `WakeScreen`, `AppFooter`,
+  `WorkspaceHeader(Actions)` and `ModelSelect` goal hunks (their controls are in the
+  placeholders).
+- From `818ed96b`: the Deck and model panel, the glass styles, the Git overview
+  (`utils/git-overview.ts`, `/git/overview`, `agent_git_overview`) and `POST /thinking
+{level}` (`agent_set_thinking`). Nothing in the fork would call them.
+- `816c385d`'s trophy lines, met in `5d340fa3`'s context.
+- The upstream changesets.
+
+Changesets: `.changeset/upstream-goals-coder.md` and `-core.md` (patch); `@kleio/manager`
+follows through the fixed group. gg-app is not a changesets package, so its changes are
+recorded only here.
+
+### UI boundary
+
+As in #76 and #77, this import takes behaviour only from upstream's gg-app hunks. New
+screens render through minimal components in `gg-app/src/placeholder/`, styled only with
+`kleio-theme.css` variables, for the redesign branch to restyle after rebasing. The Goals
+views load with `React.lazy`, so they stay out of the start-up bundle.
+
+New files:
+
+| File                                 | Replaces upstream                                                                                                              | Takes                                                                                                                               | Mounted in                      |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `placeholder/GoalList.tsx` (+test)   | `GoalPicker.tsx`                                                                                                               | The goal list from `agent.ts`: open, search, delete with a confirm, a status label, and the New goal form                           | `App.tsx` (lazy)                |
+| `placeholder/GoalForm.tsx`           | `NewGoalModal.tsx`, `GoalContextPicker.tsx`, `GoalInstructionsField.tsx`                                                       | Name, goal, folders and files, instructions; the sidecar's error as is                                                              | `GoalList.tsx`, `GoalPanel.tsx` |
+| `placeholder/GoalPanel.tsx` (+test)  | `WorkspaceHeaderActions.tsx`'s goal controls, `GoalSettingsModal.tsx`, `GoalAskNotice.tsx`, the footer's workers' model picker | The goal, its view, the transcript, workers, runs and tools; it owns the tally, the open question, the finish card and the settings | `App.tsx` (lazy)                |
+| `placeholder/WorkerList.tsx` (+test) | `GoalWorld.tsx`                                                                                                                | The coordinator and each worker, with a state label and activity                                                                    | `App.tsx` (lazy)                |
+| `placeholder/GoalFinish.tsx` (+test) | `GoalFinishCard.tsx`                                                                                                           | A finished stretch's score and a way to the chat                                                                                    | `GoalPanel.tsx`                 |
+| `placeholder/StatusPill.tsx` (+test) | `KenStatus.tsx`                                                                                                                | What the coordinator is doing, its timer and extra line                                                                             | `GoalPanel.tsx`                 |
+
+New logic files, each with a test and no rendering of its own: `placeholder/worker-status.ts`
+(from `goal-world-agents.ts`, `CritterFloor.tsx`'s `collectFloorAgents` and
+`critter-tool-kind.ts`), `placeholder/goal-status.ts` (from `goal-ken-status.ts`, without
+`face` and `mark`), `placeholder/goal-progress.ts`, `placeholder/goal-finish.ts` (without
+Ken's face and line), `hidden-focus.ts` and `transcript-status.ts`; and
+`useWindowOrder.test.ts`. `placeholder/placeholder.css` gains `.placeholder-goals`,
+`.placeholder-form`, `.placeholder-bar` and an `active` dot tone, on theme variables, and
+`StatusDot` gains `active` and `neutral` tones.
+
+Changed existing files, in logic, props and text: `App.tsx`, `ActivityBar.tsx` (+test),
+`AskBand.tsx` (+test), `Composer.tsx`, `agent.ts`, `agent-radio.test.ts`,
+`app-entry-view.ts`, `ask-user.ts` (+test), `kleio/KleioHome.tsx` (+test),
+`transcript-item.ts`, `transcript-pin.ts` (+test), `useAgentEvents.ts` (+test),
+`useTranscriptScroll.ts` and `useWindowOrder.ts`. Rust: `commands/agent.rs`,
+`commands/agent_admin.rs`, `daemon.rs`, `lib.rs` and `state.rs`. Markup that comes with the
+behaviour:
+
+- `kleio/KleioHome.tsx` gets one plain "Goals" text button, with the existing
+  `btn btn-ghost home-action` classes.
+- `AskBand.tsx` gives a text question its own field and Answer button (`e98215da`), with
+  upstream's class names.
+- `App.tsx` adds a "Try again" button (existing `btn btn-sm btn-ghost` classes) to a failed
+  start, which calls `retryWindowSession`; the fork had no button there.
+
+The data names `critterModel`, `agent_set_critter_model` and `setCritterModel` keep
+upstream's names. They are in the engine, the Rust commands and the data layer, and as
+identifiers only (never visible text) in `App.tsx` and `placeholder/GoalPanel.tsx`.
+
+### Licence note
+
+This is engineering guidance, not legal advice. The boundary is the one #76's licence note
+sets out. Every commit this import takes is an ancestor of `c1aa287b` (20 of 20), checked
+with `git merge-base --is-ancestor`, and the relicense commit `12da5c3a` is not. No
+`LICENSE` or `NOTICE` file changes. #76's backlog for a lawyer still stands.
+
+### Verification record
+
+Local macOS checks on the branch head, each compared with `main` at `7150a676`:
+
+- Test totals: `@kleio/coder` 4931 → 5045 tests (368 → 376 files; 17 skipped, as on
+  `main`), gg-app 1916 → 2023 (167 → 179 files) and `@kleio/core` 322 → 323. `@kleio/ai`
+  (634), `@kleio/agent` (226), `@kleio/manager` (332), gg-editor (950), kleio-host (973)
+  and gg-pixel (115) are unchanged. `pnpm test` passes in every package with tests, and the
+  4a tests named in the plan run in those suites. The Windows path test (`b252380d`) runs
+  only in CI.
+- `cargo test`: 315 passed and 3 ignored (310 on `main`); `cargo clippy --all-targets -- -D
+warnings` passes, and `rustfmt --check` passes on the five Rust files this import
+  touches. `cargo fmt --check` reports the same differences as on `main`, all in files this
+  import doesn't touch.
+- The golden prompt and the tool catalog snapshot are unchanged.
+- Identity audit, tracked (3206 files) and packed (2217 files): 0 unclassified hits and 0
+  count mismatches. Each count moves in the commit that changes it: the Coder
+  source-directory seam 1552 → 1569 (17 new Coder files), Manager's packed Coder paths 755
+  → 796, the allowlist's own control data 1537 → 1593, one tightening removal (`daemon.rs`'s
+  crash message that named upstream's product is gone), and one new exact-context packed entry,
+  `packed-20261108-4961ad8cc6a1`, for the 56 source-map occurrences ACP mode's autopilot
+  brings into the Manager bundle (`842ecaf8`).
+- No added line contains upstream's product names for the app and its Goals, "Autopilot
+  Ken", upstream's package scope or `.join(".gg")`, outside the records. The goals root is `goalsRoot(agentDir)`.
+- The build, typecheck, lint, format check, the tracked script tests (143), the
+  fixed-version check, the bundled-sidecar smoke with a temporary `HOME` and the startup
+  gate (median 509 ms against a 477 ms baseline and a 5000 ms budget) pass.
+- Size: the `@kleio/coder` build output grows from 8437.5 KB to 8747.3 KB. It crosses its
+  limit at `38e32af0` (`e98215da`, 8605.9 KB against 8570.6 KB) and is re-baselined there,
+  once, to 8812455 bytes with `--only` for that artifact, so its limit is now 8778.0 KB. The
+  initial frontend JavaScript grows from 1045.4 KB to 1054.8 KB, under its 1060.9 KB limit,
+  with the Goals views lazy. The bundled sidecar is 5411.0 KB, against a 5352.9 KB build on
+  `main` and an 8828.6 KB limit. The sidecar baseline is not ratcheted down.
+- UI: no CSS changes outside `gg-app/src/placeholder/`, `placeholder.css` has no colour
+  literals or motion, the new gg-app files are the ones listed under UI boundary, and only
+  `App.tsx` newly imports from `placeholder/` (`McpModal.tsx`, `ModelSelect.tsx`,
+  `Composer.tsx` and `TranscriptRow.tsx` already did).
+- `patches/`, `pnpm-workspace.yaml`, the package manifests and both lockfiles are unchanged,
+  as are the excluded packages, the `three` lines and `upstream.lastImportedCommit`.
 - The critter-art checks match nothing.
 
 ## Original imported baseline

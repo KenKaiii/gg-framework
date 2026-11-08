@@ -31,6 +31,8 @@ interface Props {
   onChat: () => void;
   /** Coding projects on the Mac mini. */
   onCode: () => void;
+  /** Goals: long-running objectives the coordinator splits among workers. */
+  onGoals: () => void;
   /** Kleio's specialists ("Blobs" in the code and on the host). Apps live in Settings. */
   onBlobs: () => void;
   onSettings: (tab?: SettingsTabId) => void;
@@ -40,6 +42,7 @@ interface Props {
 export function KleioHome({
   onChat,
   onCode,
+  onGoals,
   onBlobs,
   onSettings,
   refreshSignal = 0,
@@ -172,6 +175,9 @@ export function KleioHome({
         >
           <CodeIcon size={18} weight="bold" aria-hidden="true" />
           Code
+        </button>
+        <button type="button" className="btn btn-ghost home-action" onClick={onGoals}>
+          Goals
         </button>
         <button type="button" className="btn btn-ghost home-action" onClick={onBlobs}>
           <CirclesThreeIcon size={18} weight="bold" aria-hidden="true" />

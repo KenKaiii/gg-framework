@@ -47,11 +47,19 @@ function manager(
     provider?: Provider;
     model?: string;
     getThinkingLevel?: () => ThinkingLevel | undefined;
+    workspaceRoots?: string[];
+    shareWorkspaceRoots?: boolean;
+    defaultAgent?: string;
+    childModel?: { provider: Provider; model: string };
   } = {},
 ) {
   const instance = new SubAgentManager({
     notifications: options.notifications,
     cwd: options.cwd ?? process.cwd(),
+    getWorkspaceRoots: () => options.workspaceRoots ?? [],
+    shareWorkspaceRoots: options.shareWorkspaceRoots,
+    defaultAgent: options.defaultAgent,
+    getChildModel: () => options.childModel,
     agents: options.agentDefs ?? agents,
     getProvider: () => options.provider ?? "openai",
     getModel: () => options.model ?? "gpt-6.1-sol",
@@ -82,6 +90,127 @@ afterEach(async () => {
 });
 
 describe("SubAgentManager", () => {
+  it("runs children on the goal's critter model, even on another provider", async () => {
+    const instance = manager({
+      provider: "openai",
+      model: "gpt-6.1-sol",
+      childModel: { provider: "anthropic", model: "claude-sonnet-5-5" },
+    });
+    const requestSpy = vi.spyOn(
+      instance as unknown as { request: (...args: unknown[]) => Promise<unknown> },
+      "request",
+    );
+    await instance.spawn("worker", "do it");
+    const initializeCall = requestSpy.mock.calls.find(([, command]) => command === "initialize");
+    const options = (initializeCall?.[2] as { options: Record<string, unknown> }).options;
+    expect(options).toMatchObject({ provider: "anthropic", model: "claude-sonnet-5-5" });
+    // The parent's model belongs to another provider, so it is no fallback.
+    expect(options.fallbackModel).toBeUndefined();
+  });
+
+  it("starts a child in a folder of the parent's workspace, and only there", async () => {
+    // Kleio Goals coordinates from its notes folder and sends each worker to the
+    // attached project it works on.
+    const home = await tempDir();
+    const project = await tempDir();
+    const outside = await tempDir();
+    await fs.mkdir(path.join(project, "src"));
+    const instance = manager({ cwd: home, workspaceRoots: [project] });
+    const requestSpy = vi.spyOn(
+      instance as unknown as { request: (...args: unknown[]) => Promise<unknown> },
+      "request",
+    );
+
+    const started = await instance.spawn("fixer", "fix it", undefined, {
+      cwd: path.join(project, "src"),
+    });
+    const initializeCall = requestSpy.mock.calls.find(([, command]) => command === "initialize");
+    expect(initializeCall?.[2]).toMatchObject({ options: { cwd: path.join(project, "src") } });
+    expect(started.cwd).toBe(path.join(project, "src"));
+
+    await expect(instance.spawn("stray", "x", undefined, { cwd: outside })).rejects.toThrow(
+      /outside this session's workspace/,
+    );
+    await expect(instance.spawn("relative", "x", undefined, { cwd: "src" })).rejects.toThrow(
+      /absolute path/,
+    );
+    await expect(
+      instance.spawn("missing", "x", undefined, { cwd: path.join(project, "nope") }),
+    ).rejects.toThrow(/not an existing folder/);
+    // No cwd: the parent's own folder, and nothing recorded.
+    const plain = await instance.spawn("plain", "x");
+    expect(plain.cwd).toBeUndefined();
+  });
+
+  it("gives a child the parent's other roots too when they're shared, less its own folder", async () => {
+    // Kleio Goals' workers reach every attached folder, not only the one they work in.
+    const home = await tempDir();
+    const site = await tempDir();
+    const docs = await tempDir();
+    const optionsOf = async (share: boolean): Promise<Record<string, unknown>> => {
+      const instance = manager({
+        cwd: home,
+        workspaceRoots: [site, docs],
+        shareWorkspaceRoots: share,
+      });
+      const requestSpy = vi.spyOn(
+        instance as unknown as { request: (...args: unknown[]) => Promise<unknown> },
+        "request",
+      );
+      await instance.spawn("w", "x", undefined, { cwd: site });
+      const call = requestSpy.mock.calls.find(([, command]) => command === "initialize");
+      return (call?.[2] as { options: Record<string, unknown> }).options;
+    };
+    expect((await optionsOf(true)).additionalRoots).toEqual([path.resolve(docs)]);
+    // Not shared (Kleio Coder): the child gets only its own folder, as before.
+    expect((await optionsOf(false)).additionalRoots).toBeUndefined();
+  });
+
+  it("sends a follow-up the roots attached since the child started", async () => {
+    // Live goal: a website folder attached mid-goal stayed blocked for the
+    // resumed worker's write tool, so it edited through the shell instead.
+    const home = await tempDir();
+    const site = await tempDir();
+    const web = await tempDir();
+    const roots = [site];
+    const instance = manager({ cwd: home, workspaceRoots: roots, shareWorkspaceRoots: true });
+    const requestSpy = vi.spyOn(
+      instance as unknown as { request: (...args: unknown[]) => Promise<unknown> },
+      "request",
+    );
+    const child = await instance.spawn("w", "fast", "fake", { cwd: site });
+    await instance.wait([child.agent_id], "all", 1_000);
+
+    roots.push(web);
+    await instance.followup(child.agent_id, "fast");
+    const call = requestSpy.mock.calls.find(([, command]) => command === "followup");
+    expect(call?.[2]).toMatchObject({ additionalRoots: [path.resolve(web)] });
+  });
+
+  it("starts a child that names no agent as the default agent, when there is one", async () => {
+    // Live run: Kleio Goals left out `agent` and the worker ran with Kleio Coder's
+    // generic prompt instead of its team's rules.
+    const spawnAs = async (defaultAgent?: string): Promise<Record<string, unknown>> => {
+      const instance = manager({ defaultAgent });
+      const requestSpy = vi.spyOn(
+        instance as unknown as { request: (...args: unknown[]) => Promise<unknown> },
+        "request",
+      );
+      const started = await instance.spawn("w", "x");
+      const call = requestSpy.mock.calls.find(([, command]) => command === "initialize");
+      return {
+        ...(call?.[2] as { options: Record<string, unknown> }).options,
+        name: started.agent_name,
+      };
+    };
+    const named = await spawnAs("fake");
+    expect(named.name).toBe("fake");
+    expect(named.agentPrompt).toBe("fake");
+    const plain = await spawnAs(undefined);
+    expect(plain.name).toBeUndefined();
+    expect(plain.agentPrompt).toBeUndefined();
+  });
+
   it("applies explicit spawn overrides for harness-owned children", async () => {
     const instance = manager();
     const requestSpy = vi.spyOn(
@@ -622,6 +751,8 @@ describe("SubAgentManager", () => {
     const instance = manager({ store, cwd, sessionRootDir });
 
     await instance.hydrate("current-parent");
+    // Retention runs after hydrate returns so it never delays window readiness.
+    await instance.waitForRetention();
 
     await expect(fs.stat(unreferencedSession)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(fs.stat(referencedSession)).resolves.toBeTruthy();

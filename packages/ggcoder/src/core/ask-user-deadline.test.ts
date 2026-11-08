@@ -68,6 +68,23 @@ describe("ask_user soft deadline", () => {
     expect(bridge.deferredCount).toBe(1);
   });
 
+  it("lists every open question with its prompt, so a reloaded window can show it again", async () => {
+    // Live bug: a webview reload while Kleio Goals waited on a question lost the
+    // card, and nothing re-sent it.
+    const { bridge, call, lastPrompt } = harness();
+    const first = call("Use Postgres?");
+    await vi.advanceTimersByTimeAsync(1001);
+    await first;
+    const deferredPrompt = lastPrompt();
+    void call("Which tool do you deploy with?");
+    const pendingPrompt = lastPrompt();
+    // The newer question supersedes the deferred one.
+    expect(bridge.openPrompts()).toEqual([{ prompt: pendingPrompt, deferred: false }]);
+    expect(deferredPrompt.id).not.toBe(pendingPrompt.id);
+    bridge.cancelAll();
+    expect(bridge.openPrompts()).toEqual([]);
+  });
+
   it("delivers a late answer exactly once", async () => {
     const { bridge, call, lastPrompt, onLateAnswer } = harness();
     const result = call("Use Postgres?");

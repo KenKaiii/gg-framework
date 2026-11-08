@@ -78,16 +78,20 @@ function Question({
   const multi = question.kind === "multi";
   const [draft, setDraft] = useState<string[]>();
 
-  // A text-only question has nothing to click, so it sends the user straight to
-  // the composer rather than rendering an empty band. The ref keeps that to one
-  // hand-off per question: `onTypeInstead` is a fresh closure every render, and
-  // re-running this would yank focus back mid-typing.
-  const routed = useRef<string | null>(null);
-  useEffect(() => {
-    if (question.kind !== "text" || routed.current === question.id) return;
-    routed.current = question.id;
-    onTypeInstead();
-  }, [question.kind, question.id, onTypeInstead]);
+  // A question that asks for information (a URL, a name) has nothing to click:
+  // it gets its own field right under the question, so the answer is typed
+  // where it's asked. It used to hand off to the chat composer, which in a
+  // card of several questions left the user looking for where to type.
+  const isText = question.kind === "text";
+  const saved = typeof answer === "string" ? answer : "";
+  // null until the user types, so a saved answer (from history, or given
+  // already) shows in the field without being copied into local state.
+  const [typedDraft, setTypedDraft] = useState<string | null>(null);
+  const shown = typedDraft ?? saved;
+  const submitTyped = (): void => {
+    const value = shown.trim();
+    if (value && value !== saved) onAnswer(value);
+  };
 
   // A multi-select parks its picks locally: "two of these three" is not an
   // answer until the user says they are done, and nothing else in the band can
@@ -152,7 +156,9 @@ function Question({
   // which is also the only way back out of one.
 
   const typed =
-    typeof answer === "string" && !options.some((option) => valueOf(option) === answer) ? (
+    !isText &&
+    typeof answer === "string" &&
+    !options.some((option) => valueOf(option) === answer) ? (
       <button
         type="button"
         className="btn btn-sm btn-primary"
@@ -182,6 +188,34 @@ function Question({
           {options.map((option, i) => optionButton(option, i + 1))}
           {typed}
         </div>
+      )}
+      {isText && (
+        <form
+          className="ask-text"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitTyped();
+          }}
+        >
+          <input
+            className="modal-input ask-text-input"
+            aria-label={question.question}
+            placeholder="Type your answer"
+            value={shown}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(e) => setTypedDraft(e.target.value)}
+            // Typing here belongs to this field, not the band's number keys.
+            onKeyDown={(e) => e.stopPropagation()}
+          />
+          <button
+            type="submit"
+            className="btn btn-sm btn-primary"
+            disabled={!shown.trim() || shown.trim() === saved}
+          >
+            {saved && shown.trim() === saved ? "Answered" : "Answer"}
+          </button>
+        </form>
       )}
       {/* The one control the band keeps. A multi-select is the only kind whose
           selection cannot commit itself: "Tests and Build" and "Tests, so far"
@@ -247,9 +281,17 @@ export function AskBand({
       // The target is the document itself when nothing is focused, so this
       // cannot assume an Element.
       const target = e.target;
+      // The app keeps the composer focused, so an EMPTY composer still lets
+      // the number keys pick (live: "Press 1–2 to choose" never worked).
+      // Once anything is typed there, digits are part of the message.
+      const emptyComposer =
+        target instanceof HTMLTextAreaElement &&
+        target.hasAttribute("data-composer-input") &&
+        target.value === "";
       if (
         target instanceof Element &&
-        target.closest("input, textarea, [contenteditable='true']")
+        target.closest("input, textarea, [contenteditable='true']") &&
+        !(emptyComposer && /^[1-9]$/.test(e.key))
       ) {
         return;
       }

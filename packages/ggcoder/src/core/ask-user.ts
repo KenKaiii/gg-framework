@@ -107,6 +107,14 @@ export interface AskUserBridge {
    * `deferred: true`) before the ones the turn is blocked on.
    */
   pending: () => Array<AskUserPrompt & { deferred?: true }>;
+  /** Ids of every question that can still be answered (pending or deferred). */
+  readonly openIds: () => string[];
+  /**
+   * Every question that can still be answered, in the order asked, so a
+   * reconnecting window can show the cards again (a reload lost them, leaving
+   * the agent waiting on a question nobody could see).
+   */
+  readonly openPrompts: () => Array<{ prompt: AskUserPrompt; deferred: boolean }>;
 }
 
 export interface AskUserBridgeOptions {
@@ -202,6 +210,11 @@ export function createAskUserBridge(opts: AskUserBridgeOptions): AskUserBridge {
     pending: () => [
       ...[...deferred.values()].map((prompt) => ({ ...prompt, deferred: true as const })),
       ...[...pending.values()].map((entry) => entry.prompt),
+    ],
+    openIds: () => [...pending.keys(), ...deferred.keys()],
+    openPrompts: () => [
+      ...[...deferred.values()].map((prompt) => ({ prompt, deferred: true })),
+      ...[...pending.values()].map(({ prompt }) => ({ prompt, deferred: false })),
     ],
   };
 }

@@ -49,7 +49,7 @@ import {
   type SlashCommandContext,
 } from "./slash-commands.js";
 import { PROMPT_COMMANDS, getPromptCommand } from "./prompt-commands.js";
-import { loadCustomCommands } from "./custom-commands.js";
+import { loadWorkspaceCustomCommands, type CustomCommand } from "./custom-commands.js";
 import { expandPromptCommand } from "./prompt-command-expansion.js";
 import { SettingsManager } from "./settings-manager.js";
 import { AuthStorage } from "./auth-storage.js";
@@ -113,7 +113,9 @@ import { buildProcessCompletionFollowUp } from "./process-gate.js";
 import { PLAN_SUBMISSION_NUDGE, shouldNudgePlanSubmission } from "./plan-submission-gate.js";
 import {
   buildSubAgentCompletionFollowUp,
+  type ChildModelPick,
   type SubAgentManager,
+  type SubAgentSnapshot,
   type SubAgentState,
 } from "./subagent-manager.js";
 import { applyAsyncSubagentPolicy } from "./subagent-policy.js";
@@ -162,7 +164,7 @@ import { extractPlanSteps, findCompletedMarkers } from "../utils/plan-steps.js";
 import { readFileSync } from "node:fs";
 import { clampThinkingForPlanMode } from "./thinking-level.js";
 import { pruneStaleToolResults, shouldPruneToolResults } from "./compaction/tool-result-pruner.js";
-import { discoverAgents } from "./agents.js";
+import { discoverAgents, type AgentDefinition } from "./agents.js";
 import { enhancePrompt, type EnhanceResult } from "../utils/prompt-enhancer.js";
 import { detectLanguages, detectProjectStack, type LanguageId } from "./language-detector.js";
 import {
@@ -382,6 +384,14 @@ export interface AgentSessionOptions {
    */
   transient?: boolean;
   /**
+   * Told when an agent loop starts (true) and when the outermost one ends
+   * (false), however it ended. Nested loops (a template prompt inside a run)
+   * don't repeat it. Kleio Goals uses it to tell other processes the goal is
+   * being worked on (`core/goal-run-marker.ts`). A throwing listener is
+   * ignored: it must never fail or wedge a run.
+   */
+  onRunActive?: (active: boolean) => void;
+  /**
    * If true, `initialize()` returns WITHOUT waiting for MCP servers to connect —
    * the connection runs in the background and tools are appended when ready.
    * Hosts whose readiness is gated on `initialize()` (the gg-app sidecar, which
@@ -416,6 +426,45 @@ export interface AgentSessionOptions {
    * UI. Omitted by callers that don't want plan mode (CLI wires its own).
    */
   onEnterPlan?: (reason?: string) => void | Promise<void>;
+  /**
+   * Built-in tools to keep in the core set instead of the deferred
+   * tool_search catalog: for a specialist whose job is a deferred tool (Kleio
+   * Goals orchestrates with spawn_agent and friends). Fixed for the session.
+   */
+  coreTools?: readonly string[];
+  /**
+   * Default provider/model for the workers this session spawns, when their
+   * agent names no model of its own. Read at spawn time.
+   */
+  getChildModel?: () => ChildModelPick | undefined;
+  /**
+   * Wrap each built-in tool once, at registration. Must keep the tool's name,
+   * description and parameters (only `execute` may change), so the tool block
+   * stays prompt-cache stable. Used by Kleio Goals to gate its own editing.
+   */
+  wrapTool?: (tool: AgentTool) => AgentTool;
+  /**
+   * Built-in tools this session never has, removed at registration (before
+   * tiering) and left out of the system prompt's Tools section. Unlike
+   * `allowedTools`, the rest of the tool set and its tiering are untouched.
+   * Fixed for the session, so the cached tool block never changes. Used by
+   * Kleio Goals, which never edits or runs anything itself.
+   */
+  withoutTools?: readonly string[];
+  /**
+   * A fixed team of sub-agents, replacing agent discovery (project, global
+   * and bundled): the only agents spawn_agent and subagent can start. Used by
+   * Kleio Goals, whose workers follow their own rules (goals-agent/goal-team.ts).
+   */
+  subAgents?: readonly AgentDefinition[];
+  /**
+   * Start every spawned child with this session's extra workspace roots too
+   * (less the folder it works in), so it can read and change all of them.
+   * Kleio Goals' workers work across all of a goal's attached folders.
+   */
+  shareRootsWithSubAgents?: boolean;
+  /** The sub-agent a spawned child is when the spawn names none (one of `subAgents`). */
+  defaultSubAgent?: string;
   onExitPlan?: (planPath: string) => Promise<ToolExecuteResult>;
   /**
    * If provided, the session's tool set is filtered to ONLY these tool names
@@ -930,7 +979,10 @@ export class AgentSession {
       projectCustomization &&
       !this.opts.skills &&
       (this.opts.agentContext ?? "project") === "project";
-    if (projectCustomization) {
+    // A sub-agent worker never creates them: the session that owns the
+    // project does. Goals workers work in the user's attached folders,
+    // which mustn't gain empty .gg folders as a side effect.
+    if (projectCustomization && !this.opts.subagentWorker) {
       // Ensure project-local .gg directories exist.
       const localGGDir = path.join(this.cwd, ".gg");
       await fs.mkdir(path.join(localGGDir, "skills"), { recursive: true });
@@ -953,14 +1005,16 @@ export class AgentSession {
 
     // Discover agents and create tools (with sub-agent support). Chat sessions
     // can retain bundled workers without loading project/global customization.
-    const agents = projectCustomization
-      ? await discoverAgents({
-          globalAgentsDir: paths.agentsDir,
-          projectDir: this.cwd,
-        })
-      : this.opts.globalSubagents
-        ? await discoverAgents({ globalAgentsDir: paths.agentsDir })
-        : [];
+    const agents = this.opts.subAgents
+      ? [...this.opts.subAgents]
+      : projectCustomization
+        ? await discoverAgents({
+            globalAgentsDir: paths.agentsDir,
+            projectDir: this.cwd,
+          })
+        : this.opts.globalSubagents
+          ? await discoverAgents({ globalAgentsDir: paths.agentsDir })
+          : [];
     const {
       tools: builtInTools,
       processManager,
@@ -973,6 +1027,8 @@ export class AgentSession {
       subAgentManager,
     } = await createTools(this.cwd, {
       agents,
+      shareWorkspaceRoots: this.opts.shareRootsWithSubAgents,
+      defaultSubAgent: this.opts.defaultSubAgent,
       skills: this.skills,
       blockedSkills: this.blockedSkills,
       contextLimits: this.contextLimits,
@@ -1019,6 +1075,7 @@ export class AgentSession {
       getBaseUrl: () => this.baseUrl,
       getCacheKey: () => this.getPromptCacheKey(),
       getMaxPerModel: () => this.settingsManager.get("subagentMaxPerModel"),
+      getChildModel: this.opts.getChildModel,
       // A persistent child is already the single allowed fan-out level. Blocking
       // `subagent` here created a timeout sandwich: the nested call could consume
       // the child's entire 10-minute turn budget, discarding all nested results.
@@ -1046,6 +1103,15 @@ export class AgentSession {
     // a hallucinated call can't mutate the repo — and buildSystemPrompt below is
     // fed the same filtered names so the Tools section matches exactly.
     this.tools = this.opts.allowedTools ? tools.filter((t) => this.isToolAllowed(t.name)) : tools;
+    const without = new Set(this.opts.withoutTools ?? []);
+    if (without.size > 0) this.tools = this.tools.filter((t) => !without.has(t.name));
+    // A host may wrap built-ins (Kleio Goals holds back its own editing once a
+    // goal is underway). Same names and schemas, so the cached tool block and
+    // the system prompt's Tools section are unchanged.
+    if (this.opts.wrapTool) {
+      const wrap = this.opts.wrapTool;
+      this.tools = this.tools.map((t) => wrap(t));
+    }
     // Both delegation tools carry the agent roster; when both survive the
     // allow-list, `subagent` points at `spawn_agent`'s copy instead.
     if (this.tools.some((t) => t.name === "spawn_agent")) {
@@ -1062,7 +1128,14 @@ export class AgentSession {
       // catalog must hold the wrapped tool so a promoted spawn still loads
       // wait_agent.
       this.promoteFollowUpTools();
-      const { core, deferred } = partitionToolsByTier(this.tools);
+      const partition = partitionToolsByTier(this.tools);
+      // A session can keep chosen built-ins in its core set (Kleio Goals
+      // orchestrates, so its agent tools are always at hand). Fixed for the
+      // session, so the cached tool block stays byte-stable.
+      const keep = new Set(this.opts.coreTools ?? []);
+      const deferred = partition.deferred.filter((t) => !keep.has(t.name));
+      // Everything not deferred, in the original relative order.
+      const core = keep.size > 0 ? this.tools.filter((t) => !deferred.includes(t)) : partition.core;
       if (deferred.length > 0) {
         // Append-only: `core` preserves the original relative order and
         // tool_search is pushed after it, so the serialized tool block that
@@ -1178,7 +1251,6 @@ export class AgentSession {
       const helpCmd = this.slashCommands.get("help");
       if (helpCmd) {
         const registry = this.slashCommands;
-        const cwd = this.cwd;
         helpCmd.execute = async () => {
           const all = registry.getAll();
           const lines = all.map(
@@ -1195,7 +1267,7 @@ export class AgentSession {
             }
           }
 
-          const customCmds = await loadCustomCommands(cwd);
+          const customCmds = await this.loadCustomCommands();
           if (customCmds.length > 0) {
             lines.push("", "Custom commands:");
             for (const cmd of customCmds) lines.push(`  /${cmd.name} — ${cmd.description}`);
@@ -1473,7 +1545,7 @@ export class AgentSession {
     if (!parsed) return null;
     // GG Coder alone can resolve its prompt-template and project commands.
     const builtinPromptCmd = coderCommands ? getPromptCommand(parsed.name) : undefined;
-    const customCmds = coderCommands ? await loadCustomCommands(this.cwd) : [];
+    const customCmds = coderCommands ? await this.loadCustomCommands() : [];
     const customPromptCmd = !builtinPromptCmd
       ? customCmds.find((c) => c.name === parsed.name)
       : undefined;
@@ -2567,11 +2639,24 @@ export class AgentSession {
   private async runLoop(options: PromptRunOptions = {}): Promise<void> {
     this.prewarmController?.abort();
     this.runLoopDepth++;
+    if (this.runLoopDepth === 1) this.notifyRunActive(true);
     try {
       await this.runLoopInner(options);
     } finally {
       this.runLoopDepth--;
       this.lastRealRequestAt = Date.now();
+      if (this.runLoopDepth === 0) this.notifyRunActive(false);
+    }
+  }
+
+  /** `opts.onRunActive`, never allowed to throw into the run. */
+  private notifyRunActive(active: boolean): void {
+    try {
+      this.opts.onRunActive?.(active);
+    } catch (err) {
+      log("WARN", "session", "onRunActive listener threw", {
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -4189,6 +4274,11 @@ export class AgentSession {
     return true;
   }
 
+  /** This session's sub-agents (workers), newest-state, including ones restored after a restart. */
+  listSubAgents(): SubAgentSnapshot[] {
+    return this.subAgentManager?.list() ?? [];
+  }
+
   /** Snapshot of background processes (bash run_in_background), newest-state. */
   listBackgroundProcesses(): BackgroundProcess[] {
     return this.processManager?.list() ?? [];
@@ -4257,6 +4347,15 @@ export class AgentSession {
   /** Extra workspace roots added with `/add-dir`, in the order added. */
   getAdditionalRoots(): string[] {
     return [...this.additionalRoots];
+  }
+
+  /**
+   * The custom `.gg/commands` slash commands this session can run: the
+   * project's, then those of every added root (a goal's attached repos too).
+   * Read fresh, so a new command file is picked up without a restart.
+   */
+  loadCustomCommands(): Promise<CustomCommand[]> {
+    return loadWorkspaceCustomCommands([this.cwd, ...this.additionalRoots]);
   }
 
   /**

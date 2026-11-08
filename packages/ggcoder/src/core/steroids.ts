@@ -22,6 +22,8 @@ export interface SteroidsStatus {
   version?: string;
   repos?: number;
   documents?: number;
+  /** The corpus's total size on disk as `stats` prints it, e.g. "2.0GB". */
+  diskSize?: string;
   path?: string;
   /** Why the binary could not be probed (stderr line), if it was found. */
   error?: string;
@@ -98,6 +100,20 @@ function parseCount(stats: string, label: string): number | undefined {
   return m ? Number(m[1]) : undefined;
 }
 
+/** The corpus figures from `steroids stats`; a missing line reads as 0 / absent. */
+export function parseStats(stats: string): {
+  repos: number;
+  documents: number;
+  diskSize?: string;
+} {
+  const size = /^\s*TOTAL ON DISK\s*:\s*(\d+(?:\.\d+)?\s*[KMGT]?i?B)\b/im.exec(stats)?.[1];
+  return {
+    repos: parseCount(stats, "repositories") ?? 0,
+    documents: parseCount(stats, "documents") ?? 0,
+    ...(size ? { diskSize: size.replace(/\s+/g, "") } : {}),
+  };
+}
+
 let cache: { bin: string; at: number; status: SteroidsStatus } | null = null;
 
 /** Run `--version` and `stats`; cached 30s per binary path. */
@@ -116,9 +132,16 @@ export async function probeSteroids(
   try {
     const version = (await run(bin, ["--version"])).trim().replace(/^steroids\s+/, "");
     const stats = await run(bin, ["stats"]);
-    const repos = parseCount(stats, "repositories") ?? 0;
-    const documents = parseCount(stats, "documents") ?? 0;
-    status = { installed: true, connected: repos > 0, version, repos, documents, path: bin };
+    const { repos, documents, diskSize } = parseStats(stats);
+    status = {
+      installed: true,
+      connected: repos > 0,
+      version,
+      repos,
+      documents,
+      ...(diskSize ? { diskSize } : {}),
+      path: bin,
+    };
   } catch (err) {
     status = {
       installed: true,

@@ -187,6 +187,10 @@ export const MODELS: ModelInfo[] = [
     supportsImages: true,
     supportsVideo: false,
     costTier: "high",
+    // Anthropic's API and Claude Code both start the 5.5 family at medium; at a
+    // given level 5.5 thinks more than 5, so the ladder ceiling (max) made fresh
+    // sessions slow and expensive. Users can still opt up.
+    defaultThinkingLevel: "medium",
     maxThinkingLevel: "max",
   },
   {
@@ -205,6 +209,7 @@ export const MODELS: ModelInfo[] = [
     supportsImages: true,
     supportsVideo: false,
     costTier: "high",
+    defaultThinkingLevel: "medium",
     maxThinkingLevel: "max",
     billing: CLAUDE_FAST_BILLING,
   },
@@ -220,6 +225,11 @@ export const MODELS: ModelInfo[] = [
     supportsImages: true,
     supportsVideo: false,
     costTier: "medium",
+    // We start Sonnet 5.5 at medium like the rest of the 5.5 family (the API's
+    // own default for Sonnet 5.5 is high). At a given level 5.5 thinks more
+    // than 5, so the ladder ceiling (max) made fresh sessions slow and
+    // expensive. Users can still opt up.
+    defaultThinkingLevel: "medium",
     maxThinkingLevel: "max",
   },
   {
@@ -240,6 +250,10 @@ export const MODELS: ModelInfo[] = [
     supportsImages: true,
     supportsVideo: false,
     costTier: "low",
+    // Anthropic's API and Claude Code both start the 5.5 family at medium; at a
+    // given level 5.5 thinks more than 5, so the ladder ceiling (max) made fresh
+    // sessions slow and expensive. Users can still opt up.
+    defaultThinkingLevel: "medium",
     maxThinkingLevel: "max",
   },
   // ── OpenAI (Codex) ─────────────────────────────────────

@@ -48,6 +48,56 @@ export function mergeAskAnswers(
 }
 
 /**
+ * Record answers for the band `itemId`. When that completes it, the answered
+ * band leaves its spot and is re-added at the END of the conversation under a
+ * fresh id, so the answer lands below everything the agent said meanwhile, the
+ * way a sent prompt does (it rendered where the question was asked, often far
+ * above the view, so it looked as if nothing was sent). The fresh id makes it a
+ * new row: it dissolves in like any other. `answeredLive` tells the band it
+ * mounted already answered because it was answered just now (its shimmer marks
+ * that), not because it was restored. Returns the complete answers when this
+ * call completed the band, so the caller can send them.
+ */
+export function answerAskItem<
+  T extends {
+    kind: string;
+    id: number;
+    sent?: boolean;
+    answers?: AskAnswers;
+    answeredLive?: boolean;
+    prompt?: unknown;
+  },
+>(
+  items: readonly T[],
+  itemId: number,
+  delta: AskAnswers,
+  questionsOf: (item: T) => readonly AskQuestion[],
+  nextId: () => number,
+): { items: T[]; completed: AskAnswers | null } {
+  const index = items.findIndex((it) => it.kind === "ask" && it.id === itemId && !it.sent);
+  const item = items[index];
+  if (index < 0 || item === undefined) return { items: [...items], completed: null };
+  const { answers, complete } = mergeAskAnswers(item.answers, delta, questionsOf(item));
+  if (!complete) {
+    const next = [...items];
+    next[index] = { ...item, answers };
+    return { items: next, completed: null };
+  }
+  const rest = items.filter((_, i) => i !== index);
+  return {
+    items: [...rest, { ...item, id: nextId(), answers, sent: true, answeredLive: true }],
+    completed: answers,
+  };
+}
+
+/** The oldest question band still waiting on an answer, if any. */
+export function firstOpenAskId<
+  T extends { kind: string; id: number; sent?: boolean; cancelled?: boolean },
+>(items: readonly T[]): number | null {
+  return items.find((it) => it.kind === "ask" && !it.sent && !it.cancelled)?.id ?? null;
+}
+
+/**
  * Drop the question bands a freshly sent prompt supersedes.
  *
  * Sending a message of your own IS the answer: the sidecar releases the parked
@@ -159,6 +209,70 @@ function isOpenAsk(it: AskItem, ids: ReadonlySet<string>): boolean {
 export function markAskDeferred<T extends AskItem>(items: readonly T[], promptId: string): T[] {
   const ids = new Set([promptId]);
   return items.map((it) => (isOpenAsk(it, ids) ? { ...it, deferred: true } : it));
+}
+
+/**
+ * On (re)connect: close every open question the sidecar can no longer take an
+ * answer to (`open` is its list). After a daemon restart the old run is gone,
+ * so its cards would otherwise stay up as buttons that reach no one.
+ */
+export function closeAsksNotIn<T extends AskItem>(
+  items: readonly T[],
+  open: readonly string[],
+): T[] {
+  const live = new Set(open);
+  const stale = new Set<string>();
+  for (const it of items) {
+    if (it.kind !== "ask" || it.sent === true || it.cancelled === true) continue;
+    const id = (it.prompt as { id?: unknown } | undefined)?.id;
+    if (typeof id === "string" && !live.has(id)) stale.add(id);
+  }
+  return stale.size === 0 ? [...items] : closeAsks(items, [...stale]);
+}
+
+/** An open question as the sidecar lists it on (re)connect. */
+export interface OpenAskPrompt {
+  prompt: AskUserPrompt;
+  deferred: boolean;
+}
+
+/** The sidecar's `openAskPrompts` list, dropping anything malformed. */
+export function parseOpenAskPrompts(data: unknown): OpenAskPrompt[] {
+  if (!Array.isArray(data)) return [];
+  return data.flatMap((entry: unknown) => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const { prompt, deferred } = entry as { prompt?: unknown; deferred?: unknown };
+    return isAskUserPrompt(prompt) ? [{ prompt, deferred: deferred === true }] : [];
+  });
+}
+
+/**
+ * Show the cards for questions still waiting on the user that the transcript
+ * has no card for. A reloaded window rebuilds its transcript from history,
+ * which keeps the tool call but not the card, so the agent sat waiting on a
+ * question nobody could see.
+ */
+export function withOpenAsks<T>(
+  items: readonly T[],
+  open: readonly OpenAskPrompt[],
+  makeItem: (ask: OpenAskPrompt) => T,
+): T[] {
+  const shown = new Set<string>();
+  for (const it of items as readonly AskItem[]) {
+    if (it.kind !== "ask" || typeof it.prompt !== "object" || it.prompt === null) continue;
+    const id = (it.prompt as { id?: unknown }).id;
+    if (typeof id === "string") shown.add(id);
+  }
+  const missing = open.filter((ask) => !shown.has(ask.prompt.id));
+  return missing.length === 0 ? [...items] : [...items, ...missing.map(makeItem)];
+}
+
+/** A transcript card for an open question listed by the sidecar. */
+export function askItemFor(
+  ask: OpenAskPrompt,
+  id: number,
+): { kind: "ask"; id: number; prompt: AskUserPrompt; deferred?: true } {
+  return { kind: "ask", id, prompt: ask.prompt, ...(ask.deferred ? { deferred: true } : {}) };
 }
 
 /**

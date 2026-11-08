@@ -862,6 +862,28 @@ describe("SessionManager.pruneOldSessions", () => {
     expect(existsSync(activePath)).toBe(true);
   });
 
+  it("resolves keep paths once per pass, not once per session", async () => {
+    // Regression: the keep set was rebuilt for every session on disk, so
+    // ~1,200 keeps x ~4,000 sessions held the event loop for ~0.8s on every
+    // window open.
+    const sessionsDir = await makeTempDir();
+    const manager = new SessionManager(sessionsDir);
+    for (let i = 0; i < 6; i++) await makeAgedSession(manager, `/proj/many-${i}`, 5);
+    const keepPaths = Array.from({ length: 50 }, (_, i) =>
+      path.join(sessionsDir, "kept", `${i}.jsonl`),
+    );
+    const resolve = vi.spyOn(path, "resolve");
+    try {
+      await manager.pruneOldSessions({ maxAgeDays: 30, keepPaths });
+      const keepResolutions = resolve.mock.calls.filter(
+        (args) => typeof args[0] === "string" && args[0].includes(`${path.sep}kept${path.sep}`),
+      );
+      expect(keepResolutions).toHaveLength(keepPaths.length);
+    } finally {
+      resolve.mockRestore();
+    }
+  });
+
   it("removes project dirs left empty and is a no-op when retention is 0", async () => {
     const sessionsDir = await makeTempDir();
     const manager = new SessionManager(sessionsDir);

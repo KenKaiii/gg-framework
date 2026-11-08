@@ -24,10 +24,47 @@ import readline from "node:readline";
 import path from "node:path";
 import { readFileSync, statSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import type { Message, Provider, ThinkingLevel } from "@kleio/ai";
+import type { Message, MessageProvenance, Provider, ThinkingLevel } from "@kleio/ai";
 import { isAbortError, type ToolExecuteResult } from "@kleio/agent";
-import { getAllModels, getMaxThinkingLevel, getModel } from "@kleio/core";
-import { AgentSession } from "../core/agent-session.js";
+import { getAllModels, getAppPaths, getMaxThinkingLevel, getModel } from "@kleio/core";
+import { AgentSession, type SessionAttachment } from "../core/agent-session.js";
+import type { ChildModelPick, SubAgentSnapshot } from "../core/subagent-manager.js";
+import {
+  createAskUserBridge,
+  formatLateAnswer,
+  type AskQuestion,
+  type AskUserResult,
+  type LateAskAnswer,
+} from "../core/ask-user.js";
+import { createAskUserTool } from "../tools/ask-user.js";
+import {
+  deleteGoal,
+  goalKickoffPrompt,
+  goalNeedsKickoff,
+  goalPhase,
+  goalResumePrompt,
+  goalSettingsNote,
+  goalWasInterrupted,
+  goalsRoot,
+  isGoalDir,
+  markGoalKickoff,
+  readGoal,
+  setGoalCritterModel,
+  setGoalPaused,
+  startGoalOnAnswer,
+  updateGoal,
+  type GoalBriefExtras,
+  type GoalRecord,
+} from "../core/goals-store.js";
+import { goalRunningElsewhere } from "../core/goal-run-marker.js";
+import { GOAL_RUNTIME_PROVENANCE } from "../core/goal-summary.js";
+import {
+  createGoalsAgentSession,
+  goalCritterPick,
+  loadGoalBriefExtras,
+} from "../goals-agent/goals-agent.js";
+import { prepareAttachments } from "../app-sidecar/attachments.js";
+import { acpImageAttachments, createAcpGoal, goalWorkers, listAcpGoals } from "./acp-goals.js";
 import type { EventBus } from "../core/event-bus.js";
 import { PROMPT_COMMANDS } from "../core/prompt-commands.js";
 import { loadCustomCommands } from "../core/custom-commands.js";
@@ -39,11 +76,13 @@ import {
 } from "../session.js";
 import {
   getHistoryMessageVisibility,
+  normalizeAutopilotMarkersForHistory,
   reconstructCheckpointHistory,
   restoreUserRow,
 } from "../core/session-history.js";
 import { findUserSessionPrompt } from "../core/session-preview.js";
 import { sessionGroupPaths } from "../core/session-storage.js";
+import type { AutopilotMarkerPayload } from "../core/session-manager.js";
 import {
   extractPlanSteps,
   findCompletedMarkers,
@@ -54,6 +93,32 @@ import {
 import { formatUserError } from "../utils/error-handler.js";
 import { closeLogger } from "../core/logger.js";
 import { acpToolImages } from "./acp-images.js";
+import {
+  buildUserPlanFeedbackPrompt,
+  IMPLEMENT_PLAN_PROMPT,
+  PLAN_SUBMITTED_FOR_REVIEW,
+  shouldOfferPendingPlan,
+} from "../core/plan-handoff.js";
+import { readChecklistSnapshot } from "../core/checklist-snapshot.js";
+import { CHECKLIST_FILE } from "../core/checklist-items.js";
+import { loadAutopilot, saveAutopilot } from "../app-sidecar/app-settings.js";
+import { formatErrorForDisplay } from "@kleio/ai";
+import { buildKenAutopilotContext, buildKenAutopilotPlanContext } from "../core/ken-context.js";
+import { parseAutopilotVerdict, type AutopilotVerdict } from "../core/autopilot-verdict.js";
+import {
+  countAssistantMessages,
+  extractTurnToolCalls,
+  isMechanicalOnlyTurn,
+  isWorkflowCommandText,
+  shouldStartAutopilotCycle,
+  type WorkflowCommandSpec,
+} from "../core/autopilot-gate.js";
+import {
+  driveAutopilotCycle,
+  frameAutopilotInjection,
+  type AutopilotCycleEmit,
+} from "../core/autopilot-cycle.js";
+import { createAcpKenReviewer, type AcpKenReviewer } from "./acp-autopilot.js";
 
 /** The ACP major version this mode implements. Bumped only for breaking changes. */
 export const ACP_PROTOCOL_VERSION = 1;
@@ -66,6 +131,9 @@ interface JsonRpcRequest {
   id?: string | number;
   method?: string;
   params?: unknown;
+  /** Present on responses to our own outbound requests (`_gg/ask_user`). */
+  result?: unknown;
+  error?: unknown;
 }
 
 /** JSON-RPC 2.0 reserved codes. ACP adds no codes of its own. */
@@ -96,7 +164,24 @@ class InvalidParams extends Error {}
 export interface AcpAgentSession {
   readonly eventBus: Pick<EventBus, "on">;
   initialize(): Promise<void>;
-  prompt(content: string): Promise<void>;
+  /** `provenance` marks Kleio Goals' hidden kickoff/resume instructions. */
+  prompt(content: string, provenance?: MessageProvenance): Promise<void>;
+  /** Image prompts (`promptCapabilities.image`); without it images are ignored. */
+  promptWithAttachments?(text: string, attachments: SessionAttachment[]): Promise<void>;
+  /**
+   * Mid-run steering (`_gg/queue`). Optional so a test double or alternative
+   * session need not support it; `_gg/queue` then answers -32602.
+   */
+  queueMessage?(text: string): number;
+  listQueuedMessages?(): Array<{ id: string; text: string }>;
+  cancelQueuedMessage?(id: string): boolean;
+  drainQueue?(): string;
+  /** Kleio Goals' workers, for `_gg/goal_state`. */
+  listSubAgents?(): SubAgentSnapshot[];
+  /** Adds a goal's attached folder to the workspace. */
+  addDirectory?(dir: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Tell the agent a fact at its next turn (goal settings changed). */
+  notify?(id: string, text: string): void;
   getState(): { sessionId: string; provider: Provider; model: string };
   /**
    * Context accounting for the ACP `usage_update` notification. Optional so a
@@ -109,6 +194,16 @@ export interface AcpAgentSession {
   setSignal(signal: AbortSignal): void;
   /** Replay a session file from disk into this session. */
   loadSession(sessionPath: string): Promise<void>;
+  /**
+   * Ken's verdict markers (desktop `persistAutopilotMarker`). Optional so a
+   * test double need not persist; without them a reopened session has no
+   * Ken bubbles.
+   */
+  persistAutopilotMarker?(
+    phase: AutopilotMarkerPayload["phase"],
+    extra?: { reason?: string; body?: string },
+  ): Promise<void>;
+  getAutopilotMarkers?(): AutopilotMarkerPayload[];
   /** The conversation as restored, used to replay history to the client. */
   getMessages(): Message[];
   switchModel(provider: string, model: string): Promise<void>;
@@ -119,6 +214,14 @@ export interface AcpAgentSession {
   setPlanMode(active: boolean): Promise<void>;
   /** Bake an approved plan into the prompt so [DONE:n] progress markers work. */
   setApprovedPlan(planPath: string | undefined): Promise<void>;
+  /** Host verification evidence for Ken's digest; optional for test doubles. */
+  getVerificationEvidence?(): AgentSession["getVerificationEvidence"] extends () => infer R
+    ? R
+    : never;
+  getVerificationProblem?(): string | null;
+  /** Fresh context for an accepted plan (desktop /plan/accept). Optional:
+   *  without it an accept keeps the current context and sends no reset. */
+  newSession?(preserveConversation?: boolean): Promise<void>;
   /**
    * Registry commands (/model, /compact, …), including any an extension
    * registered during `initialize`. Optional so a test double need not carry a
@@ -143,6 +246,51 @@ export interface AcpPlanHooks {
   onExitPlan: (planPath: string) => Promise<ToolExecuteResult>;
 }
 
+/**
+ * What a session is being built for, beyond the plan hooks.
+ *
+ * A third argument rather than a change to the first two so existing session
+ * factories (tests) keep working unchanged.
+ */
+export interface AcpSessionContext {
+  /** The session's working directory: the goal folder for a goal session. */
+  cwd: string;
+  /** Set when the cwd is a goal folder: build a Kleio Goals coordinator. */
+  goal: { dir: string; record: GoalRecord } | null;
+  /** The goal's brief extras (memory, attached projects' rules), read once. */
+  goalExtras?: GoalBriefExtras;
+  /** Read live: true once the user has started the goal. */
+  isGoalActive: () => boolean;
+  /** Read live at each worker spawn. */
+  getChildModel: () => ChildModelPick | undefined;
+  /**
+   * The `ask_user` tool, present only when the client opted in with
+   * `clientCapabilities._meta.gg.askUser`. Goes in `additionalTools` at
+   * construction (the tool array is append-only for the prompt cache).
+   */
+  askUserTool?: ReturnType<typeof createAskUserTool>;
+  /**
+   * The client reviews plans itself (`clientCapabilities._meta.gg.planReview`):
+   * exit_plan parks the plan for a human decision instead of auto-approving,
+   * and the session gets the desktop's `planSubmissionGate`.
+   */
+  planReview?: boolean;
+}
+
+/**
+ * A plan submitted via exit_plan that awaits a decision (desktop parity:
+ * app-sidecar.ts pendingPlanPath/planGeneration/offeredPlanGeneration). One
+ * object so the autopilot cycle can read and settle it.
+ */
+export interface AcpPendingPlanState {
+  planPath: string | null;
+  content: string;
+  /** Bumped on every set/clear; a stale decision is refused. */
+  generation: number;
+  /** Generation last offered to the client; -1 when none. */
+  offeredGeneration: number;
+}
+
 export interface AcpModeOptions {
   provider: Provider;
   model: string;
@@ -158,8 +306,37 @@ export interface AcpModeOptions {
    * Builds the session for `session/new`. Overridden by tests; production
    * always gets a real {@link AgentSession}.
    */
-  createSession?: (signal: AbortSignal, hooks: AcpPlanHooks) => AcpAgentSession;
+  createSession?: (
+    signal: AbortSignal,
+    hooks: AcpPlanHooks,
+    context: AcpSessionContext,
+  ) => AcpAgentSession;
+  /** The agent directory by default; where goals (`goals/`) and sessions live. */
+  agentDir?: string;
+  /**
+   * `ask_user` soft deadline (default: the desktop's interactive 10 min). Past
+   * it the model hears "no answer yet" and the client's question stays open.
+   */
+  askUserDeadlineMs?: number;
+  /**
+   * Builds the autopilot reviewer for a session's project. Overridden by
+   * tests; production gets {@link createAcpKenReviewer}.
+   */
+  createKenReviewer?: (
+    cwd: string,
+    buildModel: () => { provider: Provider; model: string },
+  ) => AcpKenReviewer;
 }
+
+/** Desktop MAX_AUTOPILOT_ROUNDS (app-sidecar.ts). */
+const MAX_AUTOPILOT_ROUNDS = 3;
+
+/** Autopilot-injected runs: hidden, as on the desktop (autopilot-runner.ts). */
+const AUTOMATION_PROVENANCE: MessageProvenance = {
+  source: "runtime",
+  kind: "automation",
+  visibility: "hidden",
+};
 
 // ── Tool mapping ───────────────────────────────────────────
 
@@ -576,16 +753,71 @@ function messageText(content: unknown): string {
  * the protocol needs of them.
  */
 export function historyUpdates(messages: readonly Message[]): Record<string, unknown>[] {
-  const updates: Record<string, unknown>[] = [];
+  return historyFrames(messages, []).flatMap((f) => ("update" in f ? [f.update] : []));
+}
+
+/** A replayed Ken marker, as `_gg/autopilot_event` params (sans sessionId). */
+export interface HistoryAutopilotEvent {
+  phase: string;
+  reason?: string;
+  body?: string;
+  history: true;
+}
+
+/**
+ * {@link historyUpdates} with Ken's verdict markers interleaved at their
+ * `afterMessageCount` (non-system messages, as the desktop history route
+ * counts them). Marker phase `plan_approved` replays as ACP `plan_accepted`.
+ */
+export function historyFrames(
+  messages: readonly Message[],
+  markers: readonly AutopilotMarkerPayload[],
+): Array<{ update: Record<string, unknown> } | { autopilot: HistoryAutopilotEvent }> {
+  const frames: Array<{ update: Record<string, unknown> } | { autopilot: HistoryAutopilotEvent }> =
+    [];
+  const updates = {
+    push: (update: Record<string, unknown>) => frames.push({ update }),
+  };
+  const byCount = new Map<number, AutopilotMarkerPayload[]>();
+  const nonSystem = messages.filter((m) => m.role !== "system").length;
+  for (const marker of normalizeAutopilotMarkersForHistory(markers, nonSystem)) {
+    const list = byCount.get(marker.afterMessageCount) ?? [];
+    list.push(marker);
+    byCount.set(marker.afterMessageCount, list);
+  }
+  const flush = (count: number): void => {
+    for (const marker of byCount.get(count) ?? []) {
+      frames.push({
+        autopilot: {
+          phase: marker.phase === "plan_approved" ? "plan_accepted" : marker.phase,
+          ...(marker.reason !== undefined ? { reason: marker.reason } : {}),
+          ...(marker.body !== undefined ? { body: marker.body } : {}),
+          history: true,
+        },
+      });
+    }
+    byCount.delete(count);
+  };
   let replayed = 0;
+  let counted = 0;
   const nextMessageId = (): string => `hist-${++replayed}`;
 
+  flush(0);
   for (const message of messages) {
-    if (getHistoryMessageVisibility(message) === "hidden") continue;
+    replayMessage(message);
+    if (message.role !== "system") {
+      counted += 1;
+      flush(counted);
+    }
+  }
+  return frames;
+
+  function replayMessage(message: Message): void {
+    if (getHistoryMessageVisibility(message) === "hidden") return;
 
     if (message.role === "user") {
       const restored = restoreUserRow(message.content, message.provenance);
-      if (restored.autopilotInjected || restored.notification) continue;
+      if (restored.autopilotInjected || restored.notification) return;
       if (restored.text) {
         updates.push({
           sessionUpdate: "user_message_chunk",
@@ -593,7 +825,7 @@ export function historyUpdates(messages: readonly Message[]): Record<string, unk
           content: { type: "text", text: restored.text },
         });
       }
-      continue;
+      return;
     }
 
     if (message.role === "assistant") {
@@ -623,7 +855,7 @@ export function historyUpdates(messages: readonly Message[]): Record<string, unk
           });
         }
       }
-      continue;
+      return;
     }
 
     for (const result of message.content) {
@@ -642,8 +874,6 @@ export function historyUpdates(messages: readonly Message[]): Record<string, unk
       });
     }
   }
-
-  return updates;
 }
 
 // ── Mode ───────────────────────────────────────────────────
@@ -710,6 +940,235 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
   /** Whether this session has already announced a title to the client. */
   let titleAnnounced = false;
 
+  // ── GG extensions (namespace `gg`) ──
+  const agentDir = options.agentDir ?? getAppPaths().agentDir;
+  /** The client answers `_gg/ask_user` (clientCapabilities._meta.gg.askUser). */
+  let clientAsksUser = false;
+  /** The client reviews plans (`clientCapabilities._meta.gg.planReview`). */
+  let clientPlanReview = false;
+  /** The client sent any `clientCapabilities._meta.gg` (reads `_gg/*` notifications). */
+  let clientSpeaksGg = false;
+  /** Whether the CURRENT session was built with plan review on. */
+  let sessionPlanReview = false;
+  /** Pending plan, reachable by the autopilot cycle. */
+  const pendingPlan: AcpPendingPlanState = {
+    planPath: null,
+    content: "",
+    generation: 0,
+    offeredGeneration: -1,
+  };
+  /** Autopilot (Ken) state for the session's project; `reviewing` is set by the cycle. */
+  const autopilot = { enabled: false, reviewing: false };
+  /**
+   * The cycle in flight inside a `session/prompt`. `stop` is set by
+   * session/cancel ("cancelled") or a queued message during review ("ignored").
+   */
+  const cycle: { active: boolean; stop: "cancelled" | "ignored" | null } = {
+    active: false,
+    stop: null,
+  };
+  /** Ken's reviewer for the current session, built on first review. */
+  let kenReviewer: AcpKenReviewer | null = null;
+  /** The text of the user turn the cycle reviews (pinned in Ken's digest). */
+  let originalRequest = "";
+  /** Bodies Ken injected this conversation, framed (digest labelling). */
+  let injectedPrompts: string[] = [];
+  /** The active session's working directory: the goal folder for a goal session. */
+  let sessionCwd = options.cwd;
+  /** The goal the active session coordinates, kept current as it changes. */
+  let goal: { dir: string; record: GoalRecord } | null = null;
+  /** The queue as last reported, to tell which entries a `queue_drained` took. */
+  let knownQueue: Array<{ id: string; text: string }> = [];
+  /** Trailing throttle for worker-driven `_gg/goal_state` (≤ 4/s). */
+  const GOAL_STATE_INTERVAL_MS = 250;
+  let goalStateTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastGoalStateAt = 0;
+
+  function queueSnapshot(): Array<{ id: string; text: string }> {
+    return session?.listQueuedMessages?.() ?? [];
+  }
+
+  /** `_gg/queue_update`: the current queue, plus what was drained or returned. */
+  function notifyQueue(extra: Record<string, unknown>): void {
+    const queued = queueSnapshot();
+    knownQueue = queued;
+    write({
+      jsonrpc: "2.0",
+      method: "_gg/queue_update",
+      params: { sessionId, queued, ...extra },
+    });
+  }
+
+  /**
+   * Hand whatever is still queued back to the client instead of running it:
+   * on `session/cancel`, and at a turn end that never reached a steering
+   * boundary (`turnEnded`, so the client sends it as the next prompt).
+   */
+  function returnQueue(turnEnded: boolean): void {
+    const left = queueSnapshot();
+    if (left.length === 0 || !session?.drainQueue) return;
+    session.drainQueue();
+    notifyQueue({ returned: left, ...(turnEnded ? { turnEnded: true } : {}) });
+  }
+
+  function goalStatePayload(): Record<string, unknown> | null {
+    if (!goal || !session) return null;
+    const { record } = goal;
+    return {
+      sessionId,
+      goalId: record.id,
+      phase: goalPhase(record),
+      paused: Boolean(record.pausedAt),
+      critterModel: goalCritterPick(record)?.model ?? null,
+      workers: goalWorkers(session.listSubAgents?.() ?? []),
+    };
+  }
+
+  /** `_gg/goal_state`, now: full state each time. */
+  function notifyGoalState(): void {
+    if (goalStateTimer) {
+      clearTimeout(goalStateTimer);
+      goalStateTimer = null;
+    }
+    const params = goalStatePayload();
+    if (!params) return;
+    lastGoalStateAt = Date.now();
+    write({ jsonrpc: "2.0", method: "_gg/goal_state", params });
+  }
+
+  /** `_gg/goal_state` for worker churn, at most every 250ms (trailing). */
+  function notifyGoalStateSoon(): void {
+    if (goalStateTimer || !goal) return;
+    const wait = Math.max(0, GOAL_STATE_INTERVAL_MS - (Date.now() - lastGoalStateAt));
+    goalStateTimer = setTimeout(() => {
+      goalStateTimer = null;
+      notifyGoalState();
+    }, wait);
+  }
+
+  /** `_meta.gg.goal` for session/new|load|resume responses on a goal session. */
+  function goalMeta(target: AcpAgentSession): Record<string, unknown> {
+    if (!goal) return {};
+    const { record } = goal;
+    return {
+      _meta: {
+        gg: {
+          goal: {
+            id: record.id,
+            phase: goalPhase(record),
+            paused: Boolean(record.pausedAt),
+            needsKickoff: goalNeedsKickoff(record, target.getMessages()),
+          },
+        },
+      },
+    };
+  }
+
+  /**
+   * `_gg/ask_user`, on the desktop's ask bridge: the JSON-RPC id is the
+   * bridge's question id. Past the soft deadline the model is told "no answer
+   * yet" and proceeds, while the client's request stays OPEN; a late answer
+   * goes to {@link deliverLateAnswer}. A JSON-RPC error or malformed reply
+   * counts as cancel; `session/cancel`, close and disconnect cancel everything
+   * (including deferred questions, whose later replies are then ignored).
+   */
+  const asks = createAskUserBridge({
+    broadcast: (prompt) =>
+      write({
+        jsonrpc: "2.0",
+        id: prompt.id,
+        method: "_gg/ask_user",
+        params: { sessionId, questions: prompt.questions },
+      }),
+    ...(options.askUserDeadlineMs !== undefined ? { timeoutMs: options.askUserDeadlineMs } : {}),
+    onLateAnswer: (late) => void deliverLateAnswer(late),
+  });
+
+  /**
+   * A late answer reaches the agent the way the desktop delivers it: a goal
+   * start is recorded at once, then the "Late answer to:" text joins the queue.
+   * Mid-run it is steering (reported like any queued message). Idle, the coder
+   * never starts a turn itself, so it is handed back as `returned` with
+   * `turnEnded` and the client sends it as the next prompt.
+   */
+  async function deliverLateAnswer(late: LateAskAnswer): Promise<void> {
+    const target = session;
+    await startGoalFrom({ action: "answer", answers: late.answers }, late.prompt.questions);
+    if (!target || target !== session) return;
+    const text = formatLateAnswer(late);
+    if (running && target.queueMessage) {
+      target.queueMessage(text);
+      notifyQueue({});
+      return;
+    }
+    write({
+      jsonrpc: "2.0",
+      method: "_gg/queue_update",
+      params: {
+        sessionId,
+        queued: queueSnapshot(),
+        returned: [{ id: `late-${late.prompt.id}`, text }],
+        turnEnded: true,
+      },
+    });
+  }
+
+  function cancelPendingAsks(): void {
+    asks.cancelAll();
+  }
+
+  /** The client's answer to an outbound `_gg/ask_user`, validated. */
+  function settleAsk(id: string, frame: { result?: unknown; error?: unknown }): void {
+    const result = frame.result as { action?: unknown; answers?: unknown } | undefined;
+    if (
+      frame.error === undefined &&
+      result?.action === "answer" &&
+      result.answers &&
+      typeof result.answers === "object" &&
+      !Array.isArray(result.answers)
+    ) {
+      const answers: Record<string, string | string[]> = {};
+      for (const [key, value] of Object.entries(result.answers as Record<string, unknown>)) {
+        if (typeof value === "string") answers[key] = value;
+        else if (Array.isArray(value)) {
+          answers[key] = value.filter((v): v is string => typeof v === "string");
+        }
+      }
+      asks.settle(id, { action: "answer", answers });
+      return;
+    }
+    asks.settle(id, { action: "cancel" });
+  }
+
+  /**
+   * A goal starts when the user picks "Start the goal now", exactly as the
+   * desktop sidecar does. Never throws: a failed write leaves it briefing.
+   */
+  async function startGoalFrom(
+    result: AskUserResult,
+    questions: ReadonlyArray<AskQuestion>,
+  ): Promise<void> {
+    const current = goal;
+    if (!current) return;
+    const started = await startGoalOnAnswer(
+      current.dir,
+      current.record,
+      result,
+      new Date(),
+      questions,
+    ).catch(() => null);
+    if (started && goal === current) {
+      goal = { dir: current.dir, record: started };
+      notifyGoalState();
+    }
+  }
+
+  const askUserTool = createAskUserTool(async (request) => {
+    const result = await asks.park(request);
+    await startGoalFrom(result, request.questions);
+    return result;
+  });
+
   function notifyUpdate(update: Record<string, unknown>): void {
     write({
       jsonrpc: "2.0",
@@ -758,7 +1217,428 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
       if (session !== target || sessionId !== forSession) return;
       notifyUsage(target);
       notifySessionInfo(target);
+      notifyGoalState();
+      notifyPlanState();
+      notifyAutopilotState();
     }, 0);
+  }
+
+  // ── GG extensions: plan review, autopilot state ──
+
+  function setPendingPlan(planFile: string, content: string): void {
+    pendingPlan.planPath = planFile;
+    pendingPlan.content = content;
+    pendingPlan.generation++;
+  }
+
+  function clearPendingPlan(): void {
+    if (pendingPlan.planPath === null) return;
+    pendingPlan.planPath = null;
+    pendingPlan.content = "";
+    pendingPlan.generation++;
+  }
+
+  /** `_gg/plan_state`: full state. `pending` only once offered to the human. */
+  function notifyPlanState(): void {
+    if (!sessionPlanReview || !session) return;
+    const offered =
+      pendingPlan.planPath !== null && pendingPlan.offeredGeneration === pendingPlan.generation;
+    write({
+      jsonrpc: "2.0",
+      method: "_gg/plan_state",
+      params: {
+        sessionId,
+        planMode: session.getPlanMode(),
+        pending: offered
+          ? {
+              planPath: pendingPlan.planPath,
+              content: pendingPlan.content,
+              generation: pendingPlan.generation,
+            }
+          : null,
+      },
+    });
+  }
+
+  /** Desktop offerPendingPlan: hand the plan over once everything settled. */
+  function offerPendingPlan(): void {
+    if (!sessionPlanReview || !session) return;
+    const offer = shouldOfferPendingPlan({
+      planPath: pendingPlan.planPath,
+      generation: pendingPlan.generation,
+      offeredGeneration: pendingPlan.offeredGeneration,
+      running,
+      starting: false,
+      autopilotActive: autopilot.reviewing,
+      queued: session.listQueuedMessages?.().length ?? 0,
+    });
+    if (!offer) return;
+    pendingPlan.offeredGeneration = pendingPlan.generation;
+    notifyPlanState();
+  }
+
+  /** `_gg/autopilot_state` for coding sessions of a client that speaks `_gg`. */
+  function notifyAutopilotState(): void {
+    if (!clientSpeaksGg || !session || goal) return;
+    write({
+      jsonrpc: "2.0",
+      method: "_gg/autopilot_state",
+      params: { sessionId, enabled: autopilot.enabled, reviewing: autopilot.reviewing },
+    });
+  }
+
+  function setReviewing(on: boolean): void {
+    if (autopilot.reviewing === on) return;
+    autopilot.reviewing = on;
+    notifyAutopilotState();
+  }
+
+  /** `_gg/autopilot_event`, one per desktop `autopilot_*` frame. */
+  function notifyAutopilotEvent(params: {
+    phase: string;
+    reason?: string;
+    body?: string;
+    round?: number;
+  }): void {
+    write({ jsonrpc: "2.0", method: "_gg/autopilot_event", params: { sessionId, ...params } });
+  }
+
+  /** Desktop autopilot-runner's `persistAutopilotMarker`, same phases and moments. */
+  function persistMarker(
+    target: AcpAgentSession,
+    phase: AutopilotMarkerPayload["phase"],
+    extra?: { reason?: string; body?: string },
+  ): void {
+    void target.persistAutopilotMarker?.(phase, extra).catch(() => {});
+  }
+
+  function emitCycleFrame(event: AutopilotCycleEmit): void {
+    switch (event.type) {
+      case "autopilot_done":
+        notifyAutopilotEvent({ phase: "done", ...event.data });
+        return;
+      case "autopilot_ignored":
+        notifyAutopilotEvent({ phase: "ignored" });
+        return;
+      case "autopilot_human":
+        notifyAutopilotEvent({ phase: "human", reason: event.data.reason });
+        return;
+      case "autopilot_capped":
+        notifyAutopilotEvent({ phase: "capped", round: event.data.rounds });
+        return;
+      case "autopilot_plan_accepted":
+        notifyAutopilotEvent({ phase: "plan_accepted" });
+        return;
+    }
+  }
+
+  async function workflowCommandSpecs(): Promise<WorkflowCommandSpec[]> {
+    const custom = await loadCustomCommands(sessionCwd).catch(() => []);
+    return [
+      ...PROMPT_COMMANDS.map((c) => ({ name: c.name, aliases: c.aliases, prompt: c.prompt })),
+      ...custom.map((c) => ({ name: c.name, aliases: [] as string[], prompt: c.prompt })),
+    ];
+  }
+
+  function reviewer(target: AcpAgentSession): AcpKenReviewer {
+    kenReviewer ??= (options.createKenReviewer ?? defaultKenReviewer)(sessionCwd, () => {
+      const st = target.getState();
+      return { provider: st.provider, model: st.model };
+    });
+    return kenReviewer;
+  }
+
+  function defaultKenReviewer(
+    cwd: string,
+    buildModel: () => { provider: Provider; model: string },
+  ): AcpKenReviewer {
+    return createAcpKenReviewer({ cwd, buildModel });
+  }
+
+  /** One Ken review (work or plan); null on failure or when the cycle stopped. */
+  async function kenReview(
+    target: AcpAgentSession,
+    plan: { content: string; generation: number } | null,
+  ): Promise<AutopilotVerdict | null> {
+    setReviewing(true);
+    notifyAutopilotEvent({ phase: "review_start" });
+    try {
+      const input = {
+        cwd: sessionCwd,
+        gitBranch: null,
+        messages: target.getMessages(),
+        verificationEvidence: target.getVerificationEvidence?.() ?? [],
+        verificationProblem: target.getVerificationProblem?.() ?? null,
+        originalRequest,
+        injectedPrompts: [...injectedPrompts],
+        workflowCommands: await workflowCommandSpecs(),
+      };
+      const digest = plan
+        ? buildKenAutopilotPlanContext({ ...input, planContent: plan.content })
+        : buildKenAutopilotContext(input);
+      const reply = await reviewer(target).review(digest);
+      if (cycle.stop || (plan && plan.generation !== pendingPlan.generation)) return null;
+      return parseAutopilotVerdict(reply);
+    } catch (err) {
+      if (!cycle.stop) notifyAutopilotEvent({ phase: "error", reason: formatErrorForDisplay(err) });
+      return null;
+    } finally {
+      setReviewing(false);
+    }
+  }
+
+  /**
+   * AUTOPILOT HOOK — runs inside `session/prompt` after a non-cancelled build
+   * turn: desktop runAutopilotCycle over the shared driveAutopilotCycle. The
+   * prompt response waits for it; injected runs stream as normal turns.
+   * Returns the stop result the prompt answers with.
+   */
+  async function afterBuildTurn(
+    target: AcpAgentSession,
+    result: unknown,
+    turn: { messagesBefore: number; assistantBefore: number; text: string },
+  ): Promise<unknown> {
+    const messages = target.getMessages();
+    const gate = shouldStartAutopilotCycle({
+      enabled: autopilot.enabled && !goal,
+      cancelled: false,
+      planMode: target.getPlanMode(),
+      planPending: pendingPlan.planPath !== null,
+      workflowCommand: isWorkflowCommandText(turn.text, await workflowCommandSpecs()),
+      assistantMessagesAdded: countAssistantMessages(messages) - turn.assistantBefore,
+      mechanicalOnly: isMechanicalOnlyTurn(extractTurnToolCalls(messages, turn.messagesBefore)),
+    });
+    if (!gate.start) return result;
+
+    originalRequest = turn.text;
+    cycle.active = true;
+    cycle.stop = null;
+    let last = result;
+    let planGenAtReview = -1;
+    const isStopped = () => cycle.stop !== null || target !== session;
+    const injectedRun = async (prompt: string, before?: () => Promise<void>) => {
+      last = await runTurn(async (t) => {
+        await before?.();
+        await t.prompt(prompt, AUTOMATION_PROVENANCE);
+      });
+      if (cancelled) cycle.stop ??= "cancelled";
+    };
+    try {
+      await driveAutopilotCycle({
+        maxRounds: pendingPlan.planPath !== null ? MAX_AUTOPILOT_ROUNDS + 2 : MAX_AUTOPILOT_ROUNDS,
+        isCancelled: isStopped,
+        verificationProblem: () => target.getVerificationProblem?.() ?? null,
+        isPlanMode: () => target.getPlanMode(),
+        planPending: () => pendingPlan.planPath !== null,
+        resetReviewer: async () => {
+          await kenReviewer?.reset();
+        },
+        review: () => kenReview(target, null),
+        reviewPlan: () => {
+          planGenAtReview = pendingPlan.generation;
+          return kenReview(target, {
+            content: pendingPlan.planPath
+              ? readPlanFile(pendingPlan.planPath) || pendingPlan.content
+              : pendingPlan.content,
+            generation: planGenAtReview,
+          });
+        },
+        acceptPlan: async (reason) => {
+          if (pendingPlan.planPath === null || pendingPlan.generation !== planGenAtReview) {
+            return false;
+          }
+          notifyAutopilotEvent({ phase: "plan_accepted" });
+          try {
+            await acceptPendingPlan(target);
+          } catch (err) {
+            notifyAutopilotEvent({ phase: "error", reason: formatErrorForDisplay(err) });
+            return false;
+          }
+          // Persisted into the NEW session (as the desktop does) so a reload
+          // shows the marker.
+          persistMarker(target, "plan_approved", { reason });
+          injectedPrompts = [];
+          return true;
+        },
+        runImplement: async () => {
+          const framed = frameAutopilotInjection(IMPLEMENT_PLAN_PROMPT);
+          injectedPrompts.push(framed);
+          await injectedRun(framed);
+        },
+        onInjected: (body, round) => {
+          clearPendingPlan();
+          injectedPrompts.push(frameAutopilotInjection(body));
+          notifyAutopilotEvent({ phase: "prompted", body, round });
+          persistMarker(target, "prompted", { body });
+        },
+        runPrompt: (body, opts) =>
+          injectedRun(
+            frameAutopilotInjection(body),
+            opts?.planRevision ? () => reenterPlanModeForRevision(target) : undefined,
+          ),
+        emit: (event) => {
+          // plan_accepted is sent by acceptPlan, ahead of _gg/session_reset.
+          if (event.type !== "autopilot_plan_accepted") emitCycleFrame(event);
+          if (event.type === "autopilot_done") persistMarker(target, "done", event.data);
+          else if (event.type === "autopilot_human") {
+            persistMarker(target, "human", { reason: event.data.reason });
+          } else if (event.type === "autopilot_capped") persistMarker(target, "capped");
+        },
+      });
+    } finally {
+      const stop = cycle.stop;
+      cycle.active = false;
+      cycle.stop = null;
+      setReviewing(false);
+      // A queued message ended the cycle: hand it back as the next prompt.
+      if (stop === "ignored") {
+        notifyAutopilotEvent({ phase: "ignored" });
+        if (target === session) returnQueue(true);
+      }
+      if (stop === "cancelled") last = { stopReason: "cancelled" };
+    }
+    return last;
+  }
+
+  /** mtime of the project's checklist file, or null when absent. */
+  function checklistStamp(): number | null {
+    try {
+      return statSync(path.join(sessionCwd, CHECKLIST_FILE)).mtimeMs;
+    } catch {
+      return null;
+    }
+  }
+
+  /** A build turn plus the settle steps (autopilot hook, plan offer, checklist). */
+  async function runBuildTurn(
+    text: string,
+    work: (target: AcpAgentSession) => Promise<void>,
+  ): Promise<unknown> {
+    const target = session;
+    const before = checklistStamp();
+    const messagesBefore = target?.getMessages() ?? [];
+    const turn = {
+      messagesBefore: messagesBefore.length,
+      assistantBefore: countAssistantMessages(messagesBefore),
+      text,
+    };
+    let result = await runTurn(work);
+    if (target && target === session) {
+      if (!cancelled) result = await afterBuildTurn(target, result, turn);
+      offerPendingPlan();
+      if (checklistStamp() !== before) {
+        write({ jsonrpc: "2.0", method: "_gg/checklist_changed", params: { sessionId } });
+      }
+    }
+    return result;
+  }
+
+  /** `_meta.gg.planDecision` on a `session/prompt`. */
+  function planDecisionOf(
+    params: unknown,
+  ): { action: "accept" | "feedback" | "reject"; feedback: string; generation: number } | null {
+    const raw = (params as { _meta?: { gg?: { planDecision?: unknown } } } | undefined)?._meta?.gg
+      ?.planDecision;
+    if (!raw || typeof raw !== "object") return null;
+    const { action, feedback, generation } = raw as Record<string, unknown>;
+    if (action !== "accept" && action !== "feedback" && action !== "reject") {
+      throw new InvalidParams("planDecision.action must be accept, feedback or reject.");
+    }
+    if (typeof generation !== "number") {
+      throw new InvalidParams("planDecision.generation must be a number.");
+    }
+    return { action, feedback: typeof feedback === "string" ? feedback : "", generation };
+  }
+
+  /**
+   * Desktop /plan/accept: fresh context with the plan baked in, ACP sessionId
+   * kept stable, `_gg/session_reset` then the ACP `plan`. A session without
+   * `newSession` keeps its context and sends no reset.
+   */
+  async function acceptPendingPlan(target: AcpAgentSession): Promise<void> {
+    const planFile = pendingPlan.planPath ?? undefined;
+    clearPendingPlan();
+    if (target.newSession) {
+      await target.newSession(true);
+      titleAnnounced = false;
+    }
+    await target.setApprovedPlan(planFile);
+    const steps = planFile ? extractPlanSteps(readPlanFile(planFile)) : [];
+    if (target.newSession) {
+      write({
+        jsonrpc: "2.0",
+        method: "_gg/session_reset",
+        params: { sessionId, agentSessionId: target.getState().sessionId, planTotal: steps.length },
+      });
+    }
+    notifyPlanState();
+    if (planFile) adoptPlan(planFile);
+  }
+
+  /** Desktop reenterPlanModeForRevision. */
+  async function reenterPlanModeForRevision(target: AcpAgentSession): Promise<void> {
+    if (target.getPlanMode()) return;
+    await target.setPlanMode(true);
+    notifyModeChange(MODE_PLAN);
+  }
+
+  async function handlePlanDecision(
+    decision: NonNullable<ReturnType<typeof planDecisionOf>>,
+  ): Promise<unknown> {
+    const target = session;
+    if (!target) throw new InvalidParams("No session. Call session/new first.");
+    if (pendingPlan.planPath === null || decision.generation !== pendingPlan.generation) {
+      throw new InvalidParams("That plan is no longer pending.");
+    }
+    if (decision.action === "reject") {
+      clearPendingPlan();
+      if (target.getPlanMode()) {
+        await target.setPlanMode(false);
+        notifyModeChange(MODE_DEFAULT);
+      }
+      notifyPlanState();
+      return { stopReason: "end_turn" };
+    }
+    if (decision.action === "accept") {
+      await acceptPendingPlan(target);
+      return runBuildTurn(IMPLEMENT_PLAN_PROMPT, (t) =>
+        t.prompt(IMPLEMENT_PLAN_PROMPT, {
+          source: "runtime",
+          kind: "notification",
+          visibility: "hidden",
+        }),
+      );
+    }
+    const feedback = decision.feedback.trim();
+    if (!feedback) throw new InvalidParams("planDecision feedback needs text.");
+    clearPendingPlan();
+    await reenterPlanModeForRevision(target);
+    notifyPlanState();
+    notifyUpdate({
+      sessionUpdate: "user_message_chunk",
+      content: { type: "text", text: feedback },
+    });
+    return runBuildTurn(feedback, (t) => t.prompt(buildUserPlanFeedbackPrompt(feedback)));
+  }
+
+  async function handleAutopilotSet(params: unknown): Promise<unknown> {
+    activeSession(params, "_gg/autopilot/set");
+    const enabled = (params as { enabled?: unknown }).enabled;
+    if (typeof enabled !== "boolean") throw new InvalidParams("_gg/autopilot/set needs enabled.");
+    if (goal) throw new InvalidParams("Autopilot is for coding sessions.");
+    await saveAutopilot(sessionCwd, enabled);
+    if (autopilot.enabled !== enabled) {
+      autopilot.enabled = enabled;
+      notifyAutopilotState();
+    }
+    return { enabled };
+  }
+
+  async function handleChecklist(params: unknown): Promise<unknown> {
+    activeSession(params, "_gg/checklist");
+    const snapshot = await readChecklistSnapshot(sessionCwd, new Date());
+    if (!snapshot.ok) throw new InvalidParams(snapshot.error);
+    return snapshot.value;
   }
 
   /**
@@ -871,7 +1751,7 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
       // A second session/new (or a dispose) beat us here; that session will
       // announce its own commands.
       if (session !== target || sessionId !== forSession) return;
-      void availableCommands(target, options.cwd)
+      void availableCommands(target, sessionCwd)
         .then((commands) => {
           if (session !== target || sessionId !== forSession) return;
           notifyUpdate({
@@ -957,7 +1837,7 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
         // afterwards is a new one.
         endMessage();
 
-        const locations = toolLocations(args, options.cwd);
+        const locations = toolLocations(args, sessionCwd);
         // Snapshot BEFORE the tool runs. This handler is synchronous and the
         // tool starts writing immediately after it, which is the only window
         // where the file still holds its pre-edit contents.
@@ -1032,6 +1912,20 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
       bus.on("compaction_end", () => {
         notifyUsage(target);
       }),
+
+      // Queued steering was folded into the run: tell the client which ones,
+      // so it can log them as user turns at this point.
+      bus.on("queue_drained", () => {
+        if (target !== session) return;
+        const current = queueSnapshot();
+        const drained = knownQueue.filter((m) => !current.some((c) => c.id === m.id));
+        if (drained.length > 0) notifyQueue({ drained });
+        else knownQueue = current;
+      }),
+
+      bus.on("subagent_state", () => {
+        if (target === session) notifyGoalStateSoon();
+      }),
     ];
   }
 
@@ -1047,6 +1941,7 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
    */
   function resetSessionState(): void {
     diffSnapshots.clear();
+    injectedPrompts = [];
     planPath = undefined;
     planSteps = [];
     completedSteps.clear();
@@ -1054,15 +1949,29 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
     titleAnnounced = false;
     currentMessageId = null;
     messageSeq = 0;
+    knownQueue = [];
+    pendingPlan.planPath = null;
+    pendingPlan.content = "";
+    pendingPlan.generation++;
+    pendingPlan.offeredGeneration = -1;
+    if (goalStateTimer) clearTimeout(goalStateTimer);
+    goalStateTimer = null;
   }
 
   async function disposeSession(): Promise<void> {
     if (!session) return;
+    // Questions belong to the session that asked them.
+    asks.cancelAll();
     unwireAll();
     resetSessionState();
+    cycle.stop ??= cycle.active ? "cancelled" : null;
+    const ken = kenReviewer;
+    kenReviewer = null;
+    await ken?.dispose().catch(() => undefined);
     const previous = session;
     session = null;
     sessionId = "";
+    goal = null;
     await previous.dispose();
   }
 
@@ -1081,8 +1990,17 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
     onEnterPlan: async () => {
       await session?.setPlanMode(true);
       notifyModeChange(MODE_PLAN);
+      notifyPlanState();
     },
     onExitPlan: async (approvedPath) => {
+      if (sessionPlanReview) {
+        // Desktop onExitPlan: park the plan; it is offered once the run settles.
+        await session?.setPlanMode(false);
+        notifyModeChange(MODE_DEFAULT);
+        setPendingPlan(approvedPath, readPlanFile(approvedPath));
+        notifyPlanState();
+        return PLAN_SUBMITTED_FOR_REVIEW;
+      }
       await session?.setPlanMode(false);
       await session?.setApprovedPlan(approvedPath);
       notifyModeChange(MODE_DEFAULT);
@@ -1099,11 +2017,29 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
 
   const createSession =
     options.createSession ??
-    ((signal: AbortSignal, hooks: AcpPlanHooks): AcpAgentSession =>
-      new AgentSession({
+    ((signal: AbortSignal, hooks: AcpPlanHooks, context: AcpSessionContext): AcpAgentSession => {
+      const additionalTools = context.askUserTool ? [context.askUserTool] : [];
+      if (context.goal) {
+        // A goal folder's session is Kleio Goals, the coordinator, as on the desktop.
+        return createGoalsAgentSession({
+          provider: options.provider,
+          model: options.model,
+          cwd: context.cwd,
+          baseUrl: options.baseUrl,
+          thinkingLevel: options.thinkingLevel,
+          backgroundMcpConnect: true,
+          signal,
+          goal: context.goal,
+          extras: context.goalExtras,
+          isActive: context.isGoalActive,
+          getChildModel: context.getChildModel,
+          additionalTools,
+        });
+      }
+      return new AgentSession({
         provider: options.provider,
         model: options.model,
-        cwd: options.cwd,
+        cwd: context.cwd,
         baseUrl: options.baseUrl,
         systemPrompt: options.systemPrompt,
         thinkingLevel: options.thinkingLevel,
@@ -1117,21 +2053,37 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
         backgroundMcpConnect: true,
         onEnterPlan: hooks.onEnterPlan,
         onExitPlan: hooks.onExitPlan,
+        ...(context.planReview ? { planSubmissionGate: true } : {}),
+        ...(additionalTools.length > 0 ? { additionalTools } : {}),
         signal,
-      }));
+      });
+    });
 
   // ── Method handlers ──────────────────────────────────────
 
-  function handleInitialize(): unknown {
+  function handleInitialize(params: unknown): unknown {
+    const gg = (
+      params as
+        | { clientCapabilities?: { _meta?: { gg?: { askUser?: unknown; planReview?: unknown } } } }
+        | undefined
+    )?.clientCapabilities?._meta?.gg;
+    clientAsksUser = gg?.askUser === true;
+    clientPlanReview = gg?.planReview === true;
+    clientSpeaksGg = gg !== undefined && gg !== null;
     return {
       protocolVersion: ACP_PROTOCOL_VERSION,
       agentCapabilities: {
         loadSession: true,
-        promptCapabilities: { image: false, audio: false, embeddedContext: false },
+        promptCapabilities: { image: true, audio: false, embeddedContext: false },
         mcpCapabilities: { http: false, sse: false, acp: false },
         // `{}` is how ACP says "supported" for a capability with no options of
         // its own. Omitting the key means unsupported, so this is not cosmetic.
         sessionCapabilities: { list: {}, resume: {}, close: {}, delete: {} },
+        // GG's own extensions (custom `_gg/*` methods). Clients that don't
+        // read this see standard ACP only.
+        _meta: {
+          gg: { queue: 1, askUser: 1, goals: 1, planReview: 1, autopilot: 1, checklist: 1 },
+        },
       },
       authMethods: [],
       agentInfo: { name: "ggcoder", title: "GG Coder", version: options.version },
@@ -1144,25 +2096,61 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
    * `session/new` and `session/load` differ only in whether history is
    * restored first, so they share this path rather than drifting apart.
    */
-  async function startSession(restorePath?: string): Promise<AcpAgentSession> {
+  async function startSession(
+    restorePath: string | undefined,
+    requestedCwd: string,
+  ): Promise<AcpAgentSession> {
     // Replacing an in-flight session would strand the prompt that is running
     // on it, so the old one is stopped first, deliberately and visibly.
     await disposeSession();
+    // A session whose cwd is a goal folder is that goal's coordinator.
+    // Everything else keeps the directory the agent was started in.
+    const record = isGoalDir(goalsRoot(agentDir), requestedCwd)
+      ? await readGoal(requestedCwd)
+      : null;
+    goal = record ? { dir: requestedCwd, record } : null;
+    sessionCwd = goal ? goal.dir : options.cwd;
+    const goalExtras = goal ? await loadGoalBriefExtras(goal) : undefined;
     abort = new AbortController();
-    const created = createSession(abort.signal, planHooks);
+    // Plan review is for coding sessions only; Kleio Goals has no plan mode.
+    sessionPlanReview = clientPlanReview && !goal;
+    autopilot.enabled = goal ? false : await loadAutopilot(sessionCwd).catch(() => false);
+    autopilot.reviewing = false;
+    const created = createSession(abort.signal, planHooks, {
+      ...(sessionPlanReview ? { planReview: true } : {}),
+      cwd: sessionCwd,
+      goal,
+      ...(goalExtras ? { goalExtras } : {}),
+      isGoalActive: () => Boolean(goal?.record.startedAt),
+      getChildModel: () => goalCritterPick(goal?.record),
+      ...(clientAsksUser ? { askUserTool } : {}),
+    });
     await created.initialize();
     if (restorePath) await created.loadSession(restorePath);
+    // A goal's attached folders join its workspace so the coordinator can read
+    // them. A resumed session may already carry them.
+    if (goal && created.addDirectory) {
+      for (const item of goal.record.context) {
+        if (item.kind !== "folder") continue;
+        await created.addDirectory(item.path).catch(() => undefined);
+      }
+    }
     session = created;
     sessionId = created.getState().sessionId;
     wire(created);
     return created;
   }
 
-  async function handleNewSession(): Promise<unknown> {
-    const created = await startSession();
+  async function handleNewSession(params: unknown): Promise<unknown> {
+    const created = await startSession(undefined, requestCwd(params));
     notifyAvailableCommands(created);
     announceSessionSoon(created);
-    return { sessionId, configOptions: configOptionsFor(created), modes: sessionModes(created) };
+    return {
+      sessionId,
+      configOptions: configOptionsFor(created),
+      modes: sessionModes(created),
+      ...goalMeta(created),
+    };
   }
 
   /** The directory a request is about, defaulting to the one we were started in. */
@@ -1225,7 +2213,7 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
     const sessionPath = await findSessionById(requested, requestCwd(params));
     if (!sessionPath) throw new InvalidParams(`Unknown session '${requested}'.`);
 
-    const restored = await startSession(sessionPath);
+    const restored = await startSession(sessionPath, requestCwd(params));
     // Display history is reconstructed separately. The live AgentSession above
     // deliberately keeps only the canonical newest checkpoint as model context.
     const checkpoints = await loadSessionCheckpointChain(sessionPath);
@@ -1235,11 +2223,26 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
     // client addressing a session it never heard of.
     sessionId = requested;
 
-    for (const update of historyUpdates(displayMessages)) notifyUpdate(update);
+    // Ken's verdict markers ride between the replayed frames as
+    // `_gg/autopilot_event` with `history: true`, only for `_gg` clients.
+    const markers = clientSpeaksGg ? (restored.getAutopilotMarkers?.() ?? []) : [];
+    for (const frame of historyFrames(displayMessages, markers)) {
+      if ("update" in frame) notifyUpdate(frame.update);
+      else
+        write({
+          jsonrpc: "2.0",
+          method: "_gg/autopilot_event",
+          params: { sessionId, ...frame.autopilot },
+        });
+    }
     notifyAvailableCommands(restored);
     announceSessionSoon(restored);
 
-    return { configOptions: configOptionsFor(restored), modes: sessionModes(restored) };
+    return {
+      configOptions: configOptionsFor(restored),
+      modes: sessionModes(restored),
+      ...goalMeta(restored),
+    };
   }
 
   /**
@@ -1278,13 +2281,17 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
     const sessionPath = await findSessionById(requested, requestCwd(params));
     if (!sessionPath) throw new InvalidParams(`Unknown session '${requested}'.`);
 
-    const restored = await startSession(sessionPath);
+    const restored = await startSession(sessionPath, requestCwd(params));
     // As in session/load: the client keeps addressing the id it asked for.
     sessionId = requested;
     notifyAvailableCommands(restored);
     announceSessionSoon(restored);
 
-    return { configOptions: configOptionsFor(restored), modes: sessionModes(restored) };
+    return {
+      configOptions: configOptionsFor(restored),
+      modes: sessionModes(restored),
+      ...goalMeta(restored),
+    };
   }
 
   /**
@@ -1418,20 +2425,28 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
       .trim();
   }
 
-  async function handlePrompt(params: unknown): Promise<unknown> {
-    if (!session) throw new InvalidParams("No session. Call session/new first.");
-    if (running) throw new InvalidParams("A prompt is already running in this session.");
+  /** `_meta.gg.goalTurn` on a `session/prompt`: Kleio Goals' kickoff or resume. */
+  function goalTurnOf(params: unknown): "kickoff" | "resume" | undefined {
+    const turn = (params as { _meta?: { gg?: { goalTurn?: unknown } } } | undefined)?._meta?.gg
+      ?.goalTurn;
+    return turn === "kickoff" || turn === "resume" ? turn : undefined;
+  }
 
-    const text = promptText(params);
-    if (!text) throw new InvalidParams("prompt must contain at least one non-empty text block.");
-
+  /**
+   * Run one turn with the ACP lifecycle around it: one at a time, cancel
+   * resolves as `cancelled`, leftover queued steering is handed back.
+   */
+  async function runTurn(work: (target: AcpAgentSession) => Promise<void>): Promise<unknown> {
+    const target = session;
+    if (!target) throw new InvalidParams("No session. Call session/new first.");
     running = true;
     cancelled = false;
     truncation = undefined;
     hitMaxTurns = false;
+    knownQueue = [];
 
     try {
-      await session.prompt(text);
+      await work(target);
     } catch (err) {
       // A cancel aborts the loop, which surfaces here. The spec requires the
       // turn to still resolve with `cancelled` rather than reject — the client
@@ -1447,14 +2462,90 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
       // Cleared here rather than on `turn_end`, which fires before that turn's
       // tools execute and would discard snapshots still in use.
       diffSnapshots.clear();
+      // Steering that never reached a boundary goes back to the client as the
+      // next prompt; the coder never starts a turn by itself.
+      if (!cancelled && target === session) returnQueue(true);
     }
 
     return { stopReason: cancelled ? "cancelled" : stopReasonFor(truncation, hitMaxTurns) };
   }
 
+  async function handlePrompt(params: unknown): Promise<unknown> {
+    if (!session) throw new InvalidParams("No session. Call session/new first.");
+    if (running || cycle.active) {
+      throw new InvalidParams("A prompt is already running in this session.");
+    }
+
+    const goalTurn = goalTurnOf(params);
+    if (goalTurn) return runGoalTurn(goalTurn);
+    const decision = planDecisionOf(params);
+    if (decision) return handlePlanDecision(decision);
+
+    const text = promptText(params);
+    const images = acpImageAttachments((params as { prompt?: unknown })?.prompt);
+    if (!text && images.length === 0) {
+      throw new InvalidParams("prompt must contain at least one non-empty text block.");
+    }
+
+    return runBuildTurn(text, async (target) => {
+      if (images.length > 0 && target.promptWithAttachments) {
+        // Same path as the desktop: saved under .gg/uploads, sent as native blocks.
+        const prepared = await prepareAttachments(sessionCwd, images);
+        await target.promptWithAttachments(text, prepared);
+        return;
+      }
+      if (!text) return;
+      await target.prompt(text);
+    });
+  }
+
+  /**
+   * Kleio Goals' kickoff / resume as an ordinary turn, with the hidden runtime
+   * provenance the desktop uses. Nothing to do answers `end_turn` at once.
+   */
+  async function runGoalTurn(kind: "kickoff" | "resume"): Promise<unknown> {
+    const current = goal;
+    if (!current || !session) return { stopReason: "end_turn" };
+    if (kind === "kickoff" && !goalNeedsKickoff(current.record, session.getMessages())) {
+      return { stopReason: "end_turn" };
+    }
+
+    return runTurn(async (target) => {
+      if (kind === "kickoff") {
+        const updated = await markGoalKickoff(current.dir, new Date());
+        if (!updated) return;
+        if (goal === current) goal = { dir: current.dir, record: updated };
+        await target.prompt(goalKickoffPrompt(updated), GOAL_RUNTIME_PROVENANCE);
+        return;
+      }
+      const wasPaused = Boolean(current.record.pausedAt);
+      const record = wasPaused
+        ? ((await setGoalPaused(current.dir, false, new Date())) ?? current.record)
+        : current.record;
+      if (goal === current) goal = { dir: current.dir, record };
+      if (wasPaused) notifyGoalState();
+      // Never resume a goal another process is running (the desktop app):
+      // that would start a second coordinator on it.
+      const cutOff =
+        !goalRunningElsewhere(current.dir) &&
+        (wasPaused ||
+          goalWasInterrupted(record, target.getMessages(), target.listSubAgents?.() ?? []));
+      if (!cutOff) return;
+      await target.prompt(goalResumePrompt(record), GOAL_RUNTIME_PROVENANCE);
+    });
+  }
+
   function handleCancel(): void {
+    // A question parked on the user is not released by the signal.
+    cancelPendingAsks();
+    if (cycle.active) {
+      cycle.stop = "cancelled";
+      kenReviewer?.abort();
+    }
     if (!running || !session) return;
     cancelled = true;
+    // Whatever was still queued is handed back, not run.
+    returnQueue(false);
     abort.abort();
     // `AgentSession` keeps the construction signal for future turns. Re-arm it
     // immediately after aborting this turn, or every later prompt sees an
@@ -1463,12 +2554,133 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
     session.setSignal(abort.signal);
   }
 
+  // ── GG extensions: queue ──
+
+  /** The active session a `_gg/*` request names, validated. */
+  function activeSession(params: unknown, method: string): AcpAgentSession {
+    const requested = requestedSessionId(params, method);
+    if (!session || requested !== sessionId) {
+      throw new InvalidParams(`Session '${requested}' is not active.`);
+    }
+    return session;
+  }
+
+  function handleQueue(params: unknown): unknown {
+    const target = activeSession(params, "_gg/queue");
+    const text = (params as { text?: unknown }).text;
+    if (typeof text !== "string" || !text.trim()) {
+      throw new InvalidParams("_gg/queue requires non-empty text.");
+    }
+    if (cycle.active && !running && target.queueMessage && target.listQueuedMessages) {
+      // Desktop: a user message during Ken's review ends the cycle (ignored)
+      // and runs next; here it is handed back with turnEnded when the cycle ends.
+      cycle.stop ??= "ignored";
+      kenReviewer?.abort();
+    } else if (!running || !target.queueMessage || !target.listQueuedMessages) {
+      throw new InvalidParams("No prompt is running. Send session/prompt instead.");
+    }
+    target.queueMessage(text);
+    const queued = target.listQueuedMessages();
+    knownQueue = queued;
+    return { id: queued.at(-1)?.id ?? "", queued };
+  }
+
+  function handleQueueCancel(params: unknown): unknown {
+    const target = activeSession(params, "_gg/queue/cancel");
+    const id = (params as { id?: unknown }).id;
+    if (typeof id !== "string" || !id) throw new InvalidParams("_gg/queue/cancel requires an id.");
+    // false is the normal race (it already drained), not an error.
+    const cancelled = target.cancelQueuedMessage?.(id) ?? false;
+    const queued = queueSnapshot();
+    knownQueue = queued;
+    return { cancelled, queued };
+  }
+
+  // ── GG extensions: goals ──
+
+  async function handleGoalsCreate(params: unknown): Promise<unknown> {
+    const created = await createAcpGoal(agentDir, params);
+    if (!created.ok) throw new InvalidParams(created.error);
+    return { goal: created.value };
+  }
+
+  async function handleGoalsDelete(params: unknown): Promise<unknown> {
+    const id = (params as { id?: unknown } | undefined)?.id;
+    if (typeof id !== "string" || !id) throw new InvalidParams("Missing goal id");
+    const ownsIt = goal?.record.id === id;
+    if (ownsIt && running) throw new InvalidParams("This goal is still working. Stop it first.");
+    const deleted = await deleteGoal(goalsRoot(agentDir), path.join(agentDir, "sessions"), id);
+    if (!deleted.ok) throw new InvalidParams(deleted.error);
+    if (ownsIt) goal = null;
+    return { ok: true };
+  }
+
+  /** The goal the named session coordinates. */
+  function activeGoal(
+    params: unknown,
+    method: string,
+  ): { target: AcpAgentSession; current: { dir: string; record: GoalRecord } } {
+    const target = activeSession(params, method);
+    if (!goal) throw new InvalidParams("This session is not a goal.");
+    return { target, current: goal };
+  }
+
+  async function handleGoalPause(params: unknown): Promise<unknown> {
+    const { current } = activeGoal(params, "_gg/goal/pause");
+    const updated = await setGoalPaused(current.dir, true, new Date());
+    if (!updated) throw new InvalidParams("Unknown goal");
+    if (goal === current) goal = { dir: current.dir, record: updated };
+    // Stops the run; its workers stop through the same signal.
+    handleCancel();
+    notifyGoalState();
+    return { paused: true };
+  }
+
+  async function handleGoalUpdate(params: unknown): Promise<unknown> {
+    const { target, current } = activeGoal(params, "_gg/goal/update");
+    if (running) throw new InvalidParams("This goal is still working. Pause it first.");
+    const { context, instructions } = params as { context?: unknown; instructions?: unknown };
+    const updated = await updateGoal(current.dir, {
+      ...(Array.isArray(context)
+        ? { context: context.filter((p): p is string => typeof p === "string") }
+        : {}),
+      ...(typeof instructions === "string" ? { instructions } : {}),
+    });
+    if (!updated.ok) throw new InvalidParams(updated.error);
+    if (goal === current) goal = { dir: current.dir, record: updated.value };
+    // Kleio Goals' brief is fixed for the session (prompt cache): it hears the new
+    // settings at its next turn, and they're in the brief from the next session.
+    target.notify?.("goal-settings", goalSettingsNote(updated.value));
+    for (const item of updated.value.context) {
+      if (item.kind !== "folder") continue;
+      await target.addDirectory?.(item.path).catch(() => undefined);
+    }
+    return { context: updated.value.context, instructions: updated.value.instructions ?? "" };
+  }
+
+  async function handleGoalCritterModel(params: unknown): Promise<unknown> {
+    const { current } = activeGoal(params, "_gg/goal/critter_model");
+    const raw = (params as { model?: unknown }).model;
+    const requested = typeof raw === "string" && raw.trim() ? raw.trim() : null;
+    let pick: { provider: string; model: string } | null = null;
+    if (requested !== null) {
+      const target = getModel(requested);
+      if (!target) throw new InvalidParams(`unknown model: ${requested}`);
+      pick = { provider: target.provider, model: target.id };
+    }
+    const updated = await setGoalCritterModel(current.dir, pick);
+    if (!updated) throw new InvalidParams("Unknown goal");
+    if (goal === current) goal = { dir: current.dir, record: updated };
+    notifyGoalState();
+    return { critterModel: goalCritterPick(updated)?.model ?? null };
+  }
+
   async function dispatch(method: string, params: unknown): Promise<unknown> {
     switch (method) {
       case "initialize":
-        return handleInitialize();
+        return handleInitialize(params);
       case "session/new":
-        return handleNewSession();
+        return handleNewSession(params);
       case "session/prompt":
         return handlePrompt(params);
       case "session/list":
@@ -1485,6 +2697,26 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
         return handleSetConfigOption(params);
       case "session/set_mode":
         return handleSetMode(params);
+      case "_gg/queue":
+        return handleQueue(params);
+      case "_gg/queue/cancel":
+        return handleQueueCancel(params);
+      case "_gg/goals/list":
+        return { goals: await listAcpGoals(agentDir) };
+      case "_gg/goals/create":
+        return handleGoalsCreate(params);
+      case "_gg/goals/delete":
+        return handleGoalsDelete(params);
+      case "_gg/goal/pause":
+        return handleGoalPause(params);
+      case "_gg/goal/update":
+        return handleGoalUpdate(params);
+      case "_gg/goal/critter_model":
+        return handleGoalCritterModel(params);
+      case "_gg/autopilot/set":
+        return handleAutopilotSet(params);
+      case "_gg/checklist":
+        return handleChecklist(params);
       default:
         return undefined;
     }
@@ -1544,6 +2776,11 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
       const { id, method } = frame;
 
       if (typeof method !== "string") {
+        // A response to one of our own requests (`_gg/ask_user`).
+        if (typeof id === "string" && asks.openIds().includes(id)) {
+          settleAsk(id, frame);
+          continue;
+        }
         if (id !== undefined) fail(id, RPC_INVALID_REQUEST, "Missing 'method'");
         continue;
       }
@@ -1559,6 +2796,8 @@ export async function runAcpMode(options: AcpModeOptions): Promise<void> {
     }
   } finally {
     rl.close();
+    // Nobody is left to answer a question: it counts as cancel.
+    cancelPendingAsks();
     // The client is gone, so a turn still running has nowhere to report to.
     // Cancelling first is what stops the wait below from being unbounded.
     handleCancel();

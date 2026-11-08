@@ -1,6 +1,5 @@
 import { json, readBody } from "./http.js";
 import { PROMPT_COMMANDS } from "../core/prompt-commands.js";
-import { loadCustomCommands } from "../core/custom-commands.js";
 import { type AppAttachment, prepareAttachments } from "./attachments.js";
 import {
   isWorkflowCommandText,
@@ -53,7 +52,7 @@ export function handlePromptRoutes(
           source: "built-in" as const,
         },
       ];
-      const custom = (await loadCustomCommands(ctx.cwd))
+      const custom = (await ctx.session.loadCustomCommands())
         // A custom command can't shadow a built-in name or app action.
         .filter(
           (c) =>
@@ -111,6 +110,8 @@ export function handlePromptRoutes(
           json(res, 400, { error: "empty prompt" });
           return;
         }
+        // Before the run checks below, so the run claim stays synchronous with them.
+        if (meta?.scheduled !== true) await ctx.startGoalFromMessage(text);
         // A typed prompt supersedes any question parked on the user: they
         // answered with a message of their own. Release the blocked tool call
         // NOW — otherwise it waits out its ten-minute timeout while this very

@@ -16,6 +16,13 @@ pub(crate) struct Daemon {
     /// Consecutive short-lived crashes. A daemon that stays up for the stable
     /// window resets this budget; repeated crashes hit a circuit breaker.
     pub(crate) respawn_attempts: Mutex<u32>,
+    /// Why the daemon is down for good (spawn failure or crash circuit breaker).
+    /// Session starts fail fast with this instead of waiting for a port that
+    /// will never arrive; `retry_window_session` clears it and respawns.
+    pub(crate) failure: Mutex<Option<String>>,
+    /// The latest `GG_APP_FATAL` reason. A single crash is retried silently;
+    /// this only surfaces if the crash loop exhausts its respawn budget.
+    pub(crate) last_fatal: Mutex<Option<String>>,
     /// Per-launch bearer token the daemon requires as `x-gg-token` on every
     /// request. Generated here, handed to the daemon via GG_APP_TOKEN, and
     /// attached by the shared reqwest client's default headers — without it
@@ -53,6 +60,9 @@ pub(crate) struct WindowSession {
     pub(crate) cwd: Option<PathBuf>,
     pub(crate) session_path: Option<String>,
     pub(crate) generation: u64,
+    /// Why the current generation's session start failed. `sidecar_port`
+    /// reports it so the webview shows the real cause instead of timing out.
+    pub(crate) start_error: Option<String>,
 }
 
 /// Per-window session registry, keyed by window label.

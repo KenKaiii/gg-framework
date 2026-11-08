@@ -447,7 +447,18 @@ pub(crate) async fn agent_new_session(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    sidecar_json(res).await?;
+    let body = sidecar_json(res).await?;
+    // Remember the new conversation, so a daemon respawn reopens it rather
+    // than the one this window started with.
+    if let Some(path) = json_session_path(&body) {
+        let windows: State<Windows> = webview.state();
+        let mut map = windows.map.lock().unwrap();
+        if let Some(entry) = map.get_mut(webview.label()) {
+            if entry.session_id.as_deref() == Some(gg_sid.as_str()) {
+                entry.session_path = Some(path);
+            }
+        }
+    }
     Ok(())
 }
 

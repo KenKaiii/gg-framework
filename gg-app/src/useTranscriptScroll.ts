@@ -2,6 +2,7 @@ import { useRef, useCallback, useState, useEffect, type RefObject } from "react"
 import {
   showJumpToLatest,
   followsOutput,
+  isHiddenScroller,
   TOUCH_SETTLE_MS,
   pinAfterTouchScroll,
   pinAfterScroll,
@@ -129,6 +130,7 @@ export function useTranscriptScroll({
   const onTranscriptScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    if (isHiddenScroller(el)) return;
     // iPhone: only a finger (or its fling) can scroll the transcript, so
     // only a finger can stop the follow (transcript-pin.ts).
     stickToBottomRef.current = isPhone()

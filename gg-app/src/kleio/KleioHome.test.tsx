@@ -68,6 +68,7 @@ function renderHome() {
   const props = {
     onChat: vi.fn(),
     onCode: vi.fn(),
+    onGoals: vi.fn(),
     onBlobs: vi.fn(),
     onSettings: vi.fn(),
   };
@@ -117,6 +118,13 @@ describe("KleioHome", () => {
     expect(screen.queryByRole("button", { name: /Blobs/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Apps/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Agents/ })).toBeNull();
+  });
+
+  it("opens Goals from its own text button", async () => {
+    const p = renderHome();
+    await waitFor(() => expect(getSettings).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Goals" }));
+    expect(p.onGoals).toHaveBeenCalledOnce();
   });
 
   it("holds its waves still while the voice screen covers it, so a call draws one set", async () => {

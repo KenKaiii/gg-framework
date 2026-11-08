@@ -413,7 +413,8 @@ export function handleRunControlRoutes(
         ctx.injectedAutopilotPrompts = [];
         ctx.clearPendingPlan();
         ctx.broadcast("session_reset", {});
-        json(res, 200, { ok: true });
+        // The new conversation's file, so a daemon restart reopens it.
+        json(res, 200, { ok: true, sessionPath: ctx.session.getState().sessionPath ?? null });
       })
       .catch((err) => {
         json(res, 500, { error: err instanceof Error ? err.message : String(err) });

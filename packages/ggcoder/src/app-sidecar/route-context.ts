@@ -1,5 +1,6 @@
 import type { AgentSession } from "../core/agent-session.js";
 import type { WorkspaceMode, SseClient, HfPullState, SessionContext } from "./session-types.js";
+import type { GoalRecord } from "../core/goals-store.js";
 import type { RunLifecycle } from "../core/run-lifecycle.js";
 import type { AskUserBridge } from "../core/ask-user.js";
 import type { effectiveKenModel, KenModelPref } from "../core/ken-model.js";
@@ -57,6 +58,14 @@ export interface SessionRouteContext {
   readonly cwd: string;
   historyImages: Map<string, { data: string; mediaType: string }>;
   readonly runClaim: RunClaim;
+  /** This window session's daemon id. */
+  readonly sessionId: string;
+  /** Ids of every live window session whose cwd is `cwd`, this one included. */
+  readonly sessionIdsAt: (cwd: string) => string[];
+  /** Whether any live window session in `cwd` is working right now (see goal list status). */
+  readonly busyAt: (cwd: string) => boolean;
+  /** Set when this session's cwd is a Goal folder; null for every other session. */
+  goal: { dir: string; record: GoalRecord } | null;
   readonly broadcast: (type: string, data: unknown) => void;
   readonly loadWorkflowCommandSpecs: () => Promise<WorkflowCommandSpec[]>;
   autopilotCancelled: boolean;
@@ -88,6 +97,8 @@ export interface SessionRouteContext {
   localProbes: LocalEndpointProbe[];
   readonly localModelBlocker: (modelId: string) => Promise<string | undefined>;
   readonly learnServedContext: (modelId: string, load: boolean) => Promise<void>;
+  /** Starts a goal in its briefing when the user's message says to. */
+  readonly startGoalFromMessage: (text: string) => Promise<void>;
   kenModelOverride: KenModelPref | null;
   readonly syncKenAutoModel: (provider: Provider, model: string) => Promise<void>;
   autopilotReviewing: boolean;

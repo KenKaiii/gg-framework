@@ -94,11 +94,28 @@ function verifyFileChanged(
   return { check, status: "FAIL", reason: "the helper never wrote or edited it" };
 }
 
-function verifyCommandPassed(check: AcceptanceCheck, calls: readonly ReceiptCall[]): CheckResult {
-  const wanted = normalizeCommand(check.target);
+/**
+ * A command without a leading `cd` into the helper's own folder: the helper's
+ * shell already starts there, so `cd <cwd> && npm test` and `npm test` are the
+ * same run. A `cd` anywhere else is kept, as it changes what ran.
+ */
+function inOwnFolder(command: string, cwd: string): string {
+  const match = /^cd\s+("[^"]+"|'[^']+'|\S+)\s*&&\s*(.+)$/.exec(command);
+  if (!match?.[1] || !match[2]) return command;
+  const dir = match[1].replace(/^["']|["']$/g, "");
+  return path.resolve(cwd, dir) === path.resolve(cwd) ? match[2] : command;
+}
+
+function verifyCommandPassed(
+  check: AcceptanceCheck,
+  calls: readonly ReceiptCall[],
+  cwd: string,
+): CheckResult {
+  const same = (command: string): string => inOwnFolder(normalizeCommand(command), cwd);
+  const wanted = same(check.target);
   let lastIndex = -1;
   calls.forEach((call, index) => {
-    if (call.name === "bash" && normalizeCommand(call.target) === wanted) lastIndex = index;
+    if (call.name === "bash" && same(call.target) === wanted) lastIndex = index;
   });
   const last = calls[lastIndex];
   if (!last) return { check, status: "UNVERIFIED", reason: "the helper never ran it" };
@@ -140,7 +157,7 @@ export function verifyAcceptanceChecks(
       case "file_changed":
         return verifyFileChanged(check, calls, cwd);
       case "command_passed":
-        return verifyCommandPassed(check, calls);
+        return verifyCommandPassed(check, calls, cwd);
     }
   });
 }

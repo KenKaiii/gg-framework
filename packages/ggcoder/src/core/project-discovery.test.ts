@@ -184,6 +184,22 @@ describe("discoverProjects (ggcoder store)", () => {
     expect(projects.some((p) => p.path === kept)).toBe(true);
   });
 
+  it("never lists Goal workspaces as projects", async () => {
+    const root = path.join(tmp, "gg-projects");
+    const goals = path.join(tmp, "agent", "goals");
+    const goal = path.join(goals, "api-latency");
+    const kept = path.join(root, "kept");
+    await fs.mkdir(goal, { recursive: true });
+    await fs.mkdir(kept, { recursive: true });
+    // A goal's coordinator writes ordinary sessions keyed by its folder.
+    await writeSession(path.join(state.sessionsDir, encodeCwd(goal)), goal);
+
+    const projects = await discoverProjects({ projectsRoot: root, excludeRoots: [goals] });
+
+    expect(projects.some((p) => p.path === goal)).toBe(false);
+    expect(projects.some((p) => p.path === kept)).toBe(true);
+  });
+
   it("scans explicitly configured extra roots", async () => {
     const root = path.join(tmp, "gg-projects");
     const extra = path.join(tmp, "second-home");

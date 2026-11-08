@@ -119,6 +119,37 @@ describe("AgentSession.addDirectory", () => {
     }
   }, 20_000);
 
+  it("offers and runs the custom commands of an added root, the project's winning a shared name", async () => {
+    // A goal's attached repos are added roots: their `.gg/commands` must show
+    // in the slash menu and expand like the project's own.
+    const write = async (root: string, name: string, body: string): Promise<void> => {
+      await fs.mkdir(path.join(root, ".gg", "commands"), { recursive: true });
+      await fs.writeFile(
+        path.join(root, ".gg", "commands", `${name}.md`),
+        `---\ndescription: ${name} from ${path.basename(root)}\n---\n${body}`,
+      );
+    };
+    await write(tempProject, "shared", "project body");
+    await write(sibling, "shared", "sibling body");
+    await write(sibling, "deploy", "deploy body");
+    const session = await createSession();
+    try {
+      expect((await session.loadCustomCommands()).map((c) => c.name)).toEqual(["shared"]);
+      expect(await session.willExpandPromptTemplate("/deploy")).toBe(false);
+
+      await session.addDirectory(sibling);
+      const commands = await session.loadCustomCommands();
+      expect(commands.map((c) => c.name).sort()).toEqual(["deploy", "shared"]);
+      expect(commands.find((c) => c.name === "shared")?.prompt).toContain("project body");
+      expect(await session.willExpandPromptTemplate("/deploy")).toBe(true);
+
+      await session.removeDirectory(sibling);
+      expect((await session.loadCustomCommands()).map((c) => c.name)).toEqual(["shared"]);
+    } finally {
+      await session.dispose();
+    }
+  }, 20_000);
+
   it("rejects a file, a missing path, and a duplicate", async () => {
     const session = await createSession();
     try {

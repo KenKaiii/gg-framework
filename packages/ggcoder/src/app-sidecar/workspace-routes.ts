@@ -5,6 +5,7 @@ import {
 } from "../core/extensions/plugin-bundles.js";
 import { json, readBody } from "./http.js";
 import path from "node:path";
+import { goalsRoot } from "../core/goals-store.js";
 import {
   loadAppSettings,
   appSettingsFile,
@@ -200,6 +201,8 @@ export function handleWorkspaceRoutes(
           projectsRoot,
           extraRoots: projectRoots,
           hiddenPaths: hiddenProjects,
+          // Goal workspaces have their own list; they are not coding projects.
+          excludeRoots: [goalsRoot(ctx.paths.agentDir)],
         });
         return resolveAppSettingsPaths(process.env, os.homedir()).ownProjectsOnly
           ? projectsWithin(projects, [projectsRoot, ...(projectRoots ?? [])])

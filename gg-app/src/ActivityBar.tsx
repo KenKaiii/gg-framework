@@ -48,7 +48,7 @@ function pickReadyPhrase(exclude?: string): string {
   return pool[Math.floor(Math.random() * pool.length)] ?? "Ready for work";
 }
 
-function formatElapsed(ms: number): string {
+export function formatElapsed(ms: number): string {
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
@@ -70,6 +70,13 @@ interface Props {
   activity?: TaskActivity;
   /** Cancellation was requested and is awaiting provider settlement. */
   cancelling?: boolean;
+  /**
+   * When the current run began, kept by the caller (which is never hidden).
+   * The bar sits inside the chat, which a goal's Workers view hides; its own
+   * effects re-run when the chat comes back, so a start it took itself would
+   * restart from zero every time.
+   */
+  runStartedAt?: number | null;
   /** Accumulated output tokens for the current/just-finished run. */
   tokens: number;
   /** Done-status phrase shown when a run just finished (e.g. "Brewed up a response in 12s"). */
@@ -175,6 +182,7 @@ const SHORT_LABELS: Record<string, string> = {
 export function ActivityBar({
   running,
   activity,
+  runStartedAt = null,
   cancelling = false,
   tokens,
   doneStatus,
@@ -201,11 +209,11 @@ export function ActivityBar({
   }, [bareIdle]);
   useEffect(() => {
     if (!active) return;
-    setFallbackStart(startedAt ?? Date.now());
+    setFallbackStart(startedAt ?? runStartedAt ?? Date.now());
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [active, startedAt]);
+  }, [active, startedAt, runStartedAt]);
 
   const showToolsToggle =
     Boolean(onToggleTools) && (hasToolFeed || toolsHidden || hasActivity || Boolean(doneStatus));

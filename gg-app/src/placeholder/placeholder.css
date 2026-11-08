@@ -20,6 +20,9 @@
 .placeholder-dot[data-tone="warning"] {
   background: var(--warning);
 }
+.placeholder-dot[data-tone="active"] {
+  background: var(--primary);
+}
 .placeholder-notice {
   display: flex;
   align-items: baseline;
@@ -57,4 +60,25 @@
   margin: 0;
   padding-left: 1.25rem;
   font-size: 0.85em;
+}
+.placeholder-goals {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  color: var(--text);
+}
+.placeholder-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 36rem;
+}
+.placeholder-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 1rem;
+  color: var(--text);
 }

@@ -34,3 +34,21 @@ export function shouldOfferPendingPlan(input: Readonly<PendingPlanOfferInput>): 
   if (input.running || input.starting || input.autopilotActive) return false;
   return input.queued === 0;
 }
+
+/** The tool result exit_plan returns while a submitted plan awaits review. */
+export const PLAN_SUBMITTED_FOR_REVIEW =
+  "Plan submitted for user review. Wait for the user to approve, reject, or dismiss it before implementing.";
+
+/** The prompt run in the fresh session after a plan is accepted — the SAME
+ *  string gg-app's PlanReviewModal sends on a manual Accept (App.tsx). */
+export const IMPLEMENT_PLAN_PROMPT =
+  "The plan has been approved. Implement it now, following each step in order.";
+
+/** The revision prompt for the user's plan feedback (gg-app App.tsx
+ *  sendPlanFeedback wording). */
+export function buildUserPlanFeedbackPrompt(feedback: string): string {
+  return (
+    `The plan was not approved. Feedback from the user:\n\n${feedback}\n\n` +
+    "Revise the plan based on this feedback, then call exit_plan again for review."
+  );
+}

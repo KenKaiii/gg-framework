@@ -739,11 +739,20 @@ export class SessionManager {
     if (active.size === 0) SessionManager.activePathsByRoot.delete(this.sessionsDir);
   }
 
-  private protectedSessionBases(keepPaths: string[] = []): Set<string> {
-    return new Set([
-      ...(SessionManager.activePathsByRoot.get(this.sessionsDir)?.keys() ?? []),
-      ...keepPaths.map((sessionPath) => path.resolve(plainSessionPath(sessionPath))),
-    ]);
+  /**
+   * Whether maintenance must leave `basePath` alone. Keep paths are resolved
+   * once per pass by the caller; open sessions are read live, so a session
+   * opened while a long pass is running is still protected.
+   */
+  private isProtectedSessionBase(basePath: string, keepBases: ReadonlySet<string>): boolean {
+    return (
+      keepBases.has(basePath) ||
+      (SessionManager.activePathsByRoot.get(this.sessionsDir)?.has(basePath) ?? false)
+    );
+  }
+
+  private static resolveKeepBases(keepPaths: readonly string[] = []): Set<string> {
+    return new Set(keepPaths.map((sessionPath) => path.resolve(plainSessionPath(sessionPath))));
   }
 
   async load(
@@ -1281,9 +1290,12 @@ export class SessionManager {
     const result = { deletedFiles: 0, freedBytes: 0 };
     if (options.maxAgeDays <= 0) return result;
     const cutoffMs = Date.now() - options.maxAgeDays * 86_400_000;
+    // Resolved once per pass: re-resolving every keep path for every file was
+    // quadratic (1,200 keeps x 4,000 sessions held the event loop ~0.8s).
+    const keepBases = SessionManager.resolveKeepBases(options.keepPaths);
     for (const directory of await this.storageDirectories()) {
       for (const basePath of await this.logicalSessionBases(directory)) {
-        if (this.protectedSessionBases(options.keepPaths).has(basePath)) continue;
+        if (this.isProtectedSessionBase(basePath, keepBases)) continue;
         try {
           const resolved = await resolveSessionPath(basePath);
           const stat = await fs.stat(resolved);
@@ -1351,12 +1363,13 @@ export class SessionManager {
 
     const now = options.now ?? Date.now();
     const coldCutoff = now - COLD_SESSION_AGE_DAYS * 86_400_000;
+    const keepBases = SessionManager.resolveKeepBases(options.keepPaths);
     for (const directory of await this.storageDirectories()) {
       const tempCleanup = await cleanupOldSessionTemps(directory, now - 86_400_000);
       metrics.deletedFiles += tempCleanup.deletedFiles;
       metrics.deletedBytes += tempCleanup.freedBytes;
       for (const basePath of await this.logicalSessionBases(directory)) {
-        if (this.protectedSessionBases(options.keepPaths).has(basePath)) continue;
+        if (this.isProtectedSessionBase(basePath, keepBases)) continue;
         try {
           const resolved = await resolveSessionPath(basePath);
           const stat = await fs.stat(resolved);

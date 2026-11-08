@@ -171,8 +171,11 @@ class ScriptedSession {
   #provider = "anthropic";
   #thinking;
 
-  constructor(signal, hooks) {
+  constructor(signal, hooks, context) {
     this.signal = signal;
+    // What the mode built this session for: cwd, goal, and the ask_user tool
+    // when the client opted in.
+    this.context = context;
     // The plan-mode callbacks the real agent loop would invoke from the
     // enter_plan/exit_plan tools. Held so a scripted prompt can approve a plan
     // without a model.
@@ -204,6 +207,58 @@ class ScriptedSession {
     this.#messages = loaded.messages;
     this.#sessionId = loaded.header.id;
     this.#model = loaded.header.model;
+    const raw = await manager.load(sessionPath);
+    this.#markers = manager.getAutopilotMarkers(raw.entries, raw.header.leafId);
+    this.#file = sessionPath;
+    this.#written = this.#messages.length;
+  }
+
+  // Ken's verdict markers, written to a REAL session file (created on first
+  // use, messages flushed ahead of the marker) so session/load reads them back
+  // through the real parser.
+  #markers = [];
+  #file = null;
+  #written = 0;
+
+  async persistAutopilotMarker(phase, extra) {
+    // Serialised: the done marker can fire before the first write lands.
+    const snapshot = [...this.#messages];
+    this.#chain = this.#chain.then(() => this.#persist(phase, extra, snapshot));
+    await this.#chain;
+  }
+
+  #chain = Promise.resolve();
+
+  async #persist(phase, extra, messages) {
+    if (!this.#file) {
+      const created = await manager.create(cwd, this.#provider, this.#model);
+      this.#file = created.path;
+      process.stderr.write(`persisted-session=${created.id} ${created.path}\n`);
+    }
+    for (const message of messages.slice(this.#written)) {
+      await appendMessage(this.#file, message);
+    }
+    this.#written = messages.length;
+    const payload = {
+      version: 1,
+      phase,
+      afterMessageCount: messages.filter((m) => m.role !== "system").length,
+      ...(extra?.reason !== undefined ? { reason: extra.reason } : {}),
+      ...(extra?.body !== undefined ? { body: extra.body } : {}),
+    };
+    this.#markers.push(payload);
+    await manager.appendEntry(this.#file, {
+      type: "custom",
+      kind: "autopilot_marker",
+      id: `fixture-marker-${++entrySequence}`,
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      data: payload,
+    });
+  }
+
+  getAutopilotMarkers() {
+    return this.#markers;
   }
 
   getMessages() {
@@ -234,11 +289,147 @@ class ScriptedSession {
     this.#planMode = active;
   }
 
+  async newSession() {
+    this.#sessionId = `${this.#sessionId}-fresh`;
+    this.#messages = [];
+    this.#markers = [];
+    this.#file = null;
+    this.#written = 0;
+  }
+
   async setApprovedPlan(planPath) {
     this.#approvedPlan = planPath;
   }
 
-  async prompt(content) {
+  // ── GG extensions: queue, workers, images ──
+  #queue = [];
+  #queueSeq = 0;
+  #workers = [];
+
+  queueMessage(text) {
+    this.#queue.push({ id: `q${++this.#queueSeq}`, text });
+    return this.#queue.length;
+  }
+
+  listQueuedMessages() {
+    return this.#queue.map((m) => ({ ...m }));
+  }
+
+  cancelQueuedMessage(id) {
+    const index = this.#queue.findIndex((m) => m.id === id);
+    if (index === -1) return false;
+    this.#queue.splice(index, 1);
+    return true;
+  }
+
+  drainQueue() {
+    return this.#queue
+      .splice(0)
+      .map((m) => m.text)
+      .join("\n\n");
+  }
+
+  listSubAgents() {
+    return this.#workers;
+  }
+
+  async addDirectory(dir) {
+    this.addedDirs = [...(this.addedDirs ?? []), dir];
+    return { ok: true, root: dir };
+  }
+
+  async promptWithAttachments(text, attachments) {
+    this.#messages.push({ role: "user", content: text });
+    const first = attachments[0];
+    this.eventBus.emit("text_delta", {
+      text: `images=${attachments.length} kind=${first?.kind} type=${first?.mediaType} saved=${Boolean(first?.path)} text=${text}`,
+    });
+    this.eventBus.emit("turn_end", { turn: 1, stopReason: "end_turn" });
+  }
+
+  /**
+   * Resolve once `count` messages are queued, or the turn is cancelled. A
+   * caller queueing several must wait for all of them: draining after the
+   * first lets a slow runner end the turn before the rest arrive.
+   */
+  async #waitForQueue(count = 1) {
+    while (this.#queue.length < count && !this.signal.aborted) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  async prompt(content, provenance) {
+    // Kleio Goals' hidden kickoff/resume instruction.
+    if (provenance?.visibility === "hidden") {
+      this.#messages.push({ role: "user", content, provenance });
+      this.#messages.push({ role: "assistant", content: [{ type: "text", text: "Hi." }] });
+      this.eventBus.emit("text_delta", { text: `goal-turn:${content.split("\n")[0]}` });
+      this.#workers = [
+        {
+          agent_id: "w1",
+          task_name: "build it",
+          agent_name: "builder",
+          state: "reaped",
+          started_at: 1,
+          updated_at: 2,
+          elapsed_ms: 5,
+          current_activity: "editing",
+          turn_count: 1,
+          tool_use_count: 3,
+          token_usage: { input: 0, output: 0 },
+          model: "claude-opus-5-5",
+        },
+      ];
+      this.eventBus.emit("subagent_state", this.#workers[0]);
+      this.eventBus.emit("turn_end", { turn: 1, stopReason: "end_turn" });
+      return;
+    }
+
+    // Steering folds in at a boundary: drained mid-run.
+    if (content === "steer me") {
+      // The test queues two; drain only once both are in.
+      await this.#waitForQueue(2);
+      this.#queue.splice(0);
+      this.eventBus.emit("queue_drained", { count: 0 });
+      this.eventBus.emit("turn_end", { turn: 1, stopReason: "end_turn" });
+      return;
+    }
+
+    // The turn ends before any steering boundary: the queue is left over.
+    if (content === "end before steering") {
+      await this.#waitForQueue();
+      this.eventBus.emit("turn_end", { turn: 1, stopReason: "end_turn" });
+      return;
+    }
+
+    if (content === "ask me") {
+      const tool = this.context?.askUserTool;
+      if (!tool) {
+        this.eventBus.emit("text_delta", { text: "no ask tool" });
+        return;
+      }
+      const result = await tool.execute(
+        {
+          questions: [
+            {
+              id: "go",
+              question: "Ready?",
+              kind: "choice",
+              options: [
+                { label: "Start the goal now", value: "start" },
+                { label: "Hang on, I want to discuss it more" },
+              ],
+            },
+          ],
+        },
+        {},
+      );
+      this.eventBus.emit("text_delta", {
+        text: `asked:${typeof result === "string" ? result : JSON.stringify(result)}`,
+      });
+      return;
+    }
+
     if (content === "show tool images") {
       const saved = await manager.create(cwd, "anthropic", "claude-opus-5-5");
       await appendMessage(saved.path, { role: "user", content: "tool image history" });
@@ -316,6 +507,44 @@ class ScriptedSession {
 
       this.eventBus.emit("turn_end", { turn: 1, stopReason: "end_turn" });
       this.eventBus.emit("agent_done", { totalTurns: 1 });
+      return;
+    }
+
+    // Plan review: the model submits a plan and the turn ends.
+    if (content === "submit a plan" || content.startsWith("The plan was not approved")) {
+      const planFile = path.join(cwd, "plan.md");
+      writeFileSync(
+        planFile,
+        "# Plan\n\n## Steps\n\n1. Build the first piece\n2. Build the second piece\n",
+      );
+      await this.hooks.onEnterPlan();
+      const review = await this.hooks.onExitPlan(planFile);
+      this.eventBus.emit("text_delta", {
+        text: `exit:${typeof review === "string" ? review : review.content}|revise:${content.length > 20}`,
+      });
+      this.eventBus.emit("turn_end", { turn: 1, stopReason: "end_turn" });
+      return;
+    }
+
+    // Real work for the autopilot reviewer.
+    if (content === "build it") {
+      this.#messages.push({ role: "user", content });
+      this.#messages.push({
+        role: "assistant",
+        content: [
+          { type: "tool_call", id: "w1", name: "write", args: { file_path: "x.ts" } },
+          { type: "text", text: "Built." },
+        ],
+      });
+      this.eventBus.emit("text_delta", { text: "Built." });
+      this.eventBus.emit("turn_end", { turn: 1, stopReason: "end_turn" });
+      return;
+    }
+
+    // Touches the project's checklist file.
+    if (content === "touch checklist") {
+      writeFileSync(path.join(cwd, ".gg-checklist.json"), "{}\n");
+      this.eventBus.emit("turn_end", { turn: 1, stopReason: "end_turn" });
       return;
     }
 
@@ -465,8 +694,33 @@ await runAcpMode({
   model: "claude-opus-5-5",
   cwd,
   version: "0.0.0-test",
-  createSession: (signal, hooks) => {
-    current = new ScriptedSession(signal, hooks);
+  // Short soft deadline for the late-answer test only.
+  ...(process.env.GG_ACP_TEST_ASK_DEADLINE_MS
+    ? { askUserDeadlineMs: Number(process.env.GG_ACP_TEST_ASK_DEADLINE_MS) }
+    : {}),
+  // The autopilot reviewer scripted from GG_ACP_TEST_KEN (JSON array of replies);
+  // "WAIT" parks the review until it is aborted.
+  createKenReviewer: () => {
+    const replies = JSON.parse(process.env.GG_ACP_TEST_KEN ?? "[]");
+    let release = null;
+    return {
+      async reset() {},
+      async review() {
+        const next = replies.shift() ?? "IGNORE";
+        if (next !== "WAIT") return next;
+        await new Promise((resolve) => (release = resolve));
+        throw new Error("aborted");
+      },
+      abort() {
+        release?.();
+      },
+      async dispose() {
+        release?.();
+      },
+    };
+  },
+  createSession: (signal, hooks, context) => {
+    current = new ScriptedSession(signal, hooks, context);
     return current;
   },
 });

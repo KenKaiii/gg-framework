@@ -246,8 +246,9 @@
       "upstreamTipDesktopVersion": "0.102.2",
       "reviewedCommits": 290,
       "importedAt": "2026-11-05",
-      "status": "open",
+      "status": "merged",
       "pullRequest": "https://github.com/fmckie/gg-framework/pull/77",
+      "mergeCommit": "7150a6764f44fa33dff2325169e3b133bcea0c81",
       "rule": "upstream.lastImportedCommit stays 3f2bb6bc because the fork does not contain everything up to any later upstream commit; a later full sync must treat these commits as already applied",
       "picked": [
         {"upstream": "ae156b90df060cb366552b608aebc66c4fa323d8", "downstream": "3f2155160763ffb61ff9947d636ae54b1a11e016"},
@@ -288,6 +289,44 @@
         {"upstream": "4fd3d17bbfa66a5ee67109bef0b542914c23b490", "reason": "5.91.2 version commit, after the relicense"},
         {"upstream": "296df256b164ec18a4cc72ec7a824633da245bcb", "reason": "0.102.2 version commit, after the relicense"}
       ]
+    },
+    {
+      "branch": "sync/upstream-goals",
+      "baseCommit": "7150a6764f44fa33dff2325169e3b133bcea0c81",
+      "upstreamTip": "296df256b164ec18a4cc72ec7a824633da245bcb",
+      "upstreamTipVersion": "5.91.2",
+      "upstreamTipDesktopVersion": "0.102.2",
+      "reviewedCommits": 290,
+      "importedAt": "2026-11-08",
+      "status": "open",
+      "pullRequest": "https://github.com/fmckie/gg-framework/pull/78",
+      "rule": "upstream.lastImportedCommit stays 3f2bb6bc because the fork does not contain everything up to any later upstream commit; a later full sync must treat these commits as already applied",
+      "picked": [
+        {"upstream": "de2392c352e11374c71063700b1b46bffbcf4543", "downstream": "f633e48ea5ff1e3cb6fbfd3f5523daa5172ad339"}
+      ],
+      "ported": [
+        {"upstream": "223830dc49452b8c4596c33db92adc27ca363558", "downstream": "3d78dc654754b8f551f751a46606c6a325e16c5e", "scope": "ask-user slice only: answerAskItem and firstOpenAskId with their tests, ahead of date order because e98215da imports them; the rest of 223830dc goes to PR 4b"},
+        {"upstream": "46e534bce060d384e7d674088ea384a389e008bf", "downstream": "1da5f4fe04e005929183deb84d302c0ca39bf88b", "scope": "engine and data layer (goals-store, goal-routes, goals-agent, the agent-session, subagent, project-discovery, session-manager and workspace-routes hunks, the five Rust goal commands, agent.ts and useAgentEvents goal_state); GoalPicker, NewGoalModal and goal-world-agents become placeholder/GoalList, GoalForm, GoalPanel, WorkerList and worker-status.ts; fork-only: goal sessions keep Ideal self-review suppressed until 223830dc removes it (PR 4b); the farm, map, world, critter and font files, GoalWorld, CritterIcon, AppFooter, HomeScreen, WakeScreen, WorkspaceHeader(Actions), ModelSelect, App.css and DESIGN.md not taken"},
+        {"upstream": "6c63a63edc4cdbfa914cf24f011580dabcd6e9ae", "downstream": "1da5f4fe04e005929183deb84d302c0ca39bf88b", "scope": "its critter-tool-kind.ts line, held back from PR 3a, as part of placeholder/worker-status.ts's tool-kind mapping"},
+        {"upstream": "21adf9451460b367aef6d880dcce0c7a2aac8771", "downstream": "1da5f4fe04e005929183deb84d302c0ca39bf88b", "scope": "critter-tool-kind.ts's removal of code_search and code_nav, in placeholder/worker-status.ts"},
+        {"upstream": "e98215daccb5aa52c5440b787bc89e671d588918", "downstream": "38e32af01dbeb4ede8e4053ebcce1bf3890f9182", "scope": "update, pause and resume, retry_window_session, openAsks and openAskPrompts, the brief-size rule, goal-team.ts, context-files.ts, focus and restart fixes, hidden-focus.ts, transcript-status.ts, the AskBand text field and number keys, ActivityBar runStartedAt; goal-progress.ts moves under placeholder/ and the goal settings become GoalPanel, GoalForm and GoalList changes; the farm, Ken portrait and Ken-talk (including the KEN_FACES prompt section), GoalWorld, CritterFloor and SubAgentFeed critter lines, HomeScreen, WorkspaceHeaderActions, the farm half of useAgentEvents.test.ts, fonts, App.css and DESIGN.md not taken"},
+        {"upstream": "21adf9451460b367aef6d880dcce0c7a2aac8771", "downstream": "38e32af01dbeb4ede8e4053ebcce1bf3890f9182", "scope": "goal-team.ts without code_search, folded into the e98215da port because goal-team.test failed on the removed tool"},
+        {"upstream": "b252380d33aab0d6da50cec37e9a820f40619272", "downstream": "55121f64dd15edc153a8090caa9ac5066beb688b", "scope": "the workspace-routes.test.ts hunk only; goal-map.test.ts is farm art"},
+        {"upstream": "9d7cbe6dc99eeb65c3b016103fd2cc62215b254b", "downstream": "263ce51242e889c21ec4a0003e8dc0418cd6a0b2", "scope": "the Goals part held back from PR 3b: resolveGitCwd and retargetGit (on the fork's own polls), goal-routes instructions, RunEnd and onRunEnd, formatElapsed, the goal-window test; the finish card becomes placeholder/GoalFinish.tsx and goal-finish.ts; GoalWorld and the portrait not taken"},
+        {"upstream": "6325d417565fae2ff004a641ff39dea3ed4805d2", "downstream": "7ee2302be4837e8d2d8327702a514b617b0c8211", "scope": "goal-worker part: follow-ups send the current shared roots, parseRootList, and the goal brief's command-folder line"},
+        {"upstream": "db5ad07faf469999eac90a391bfce8acf0019ac0", "downstream": "12d719c0ce87c741664b0cab58fd245580ce64d9", "scope": "engine part: steroids for builder, researcher and checker, and SteroidsStatus.diskSize; SettingsModal, SteroidsModal, KeepAwakeButton and App.css not taken"},
+        {"upstream": "127ec0a914f558b2e21a0cc44e6d7b4d6c8e9e63", "downstream": "4931ba685a29d3c44897e60bf4f36d15cd71ba1b", "scope": "placeholder/StatusPill.tsx and goal-status.ts (from goal-ken-status.ts, without face and mark), and the Claude 5.5 family at medium thinking; KenStatus art, KenDialogue, the farm thought marks and App.css not taken"},
+        {"upstream": "d9ad9050bbdcc6d3aaa7a88b512244b9c4705867", "downstream": "4931ba685a29d3c44897e60bf4f36d15cd71ba1b", "scope": "claude-opus-5-5-fast's defaultThinkingLevel medium, held back from PR 3b"},
+        {"upstream": "5a3c24b349492e5888ccae3c8c9b1efb795941f1", "downstream": "4931ba685a29d3c44897e60bf4f36d15cd71ba1b", "scope": "the reworded Sonnet 5.5 defaultThinkingLevel comment, held back from PR 3b"},
+        {"upstream": "351f590bf09cef7d5c3090ec4e859fec447a777d", "downstream": "842ecaf80959c69522ba5a03c2ec133b0a9960a4", "scope": "all: Goals and autopilot in ACP mode, goal-summary.ts, acp-goals.ts and acp-autopilot.ts; Kleio wording in added lines"},
+        {"upstream": "5e689aa0e8393f976035b5c8100f5c067bc60c79", "downstream": "9fd6320bc8d1c8da9f88e1d7f28f72bcb2d3d697", "scope": "slash commands from every workspace root, with App.tsx's re-read; the farm sound effects not taken"},
+        {"upstream": "818ed96bc25395113e6e002317f4bc62cd65f37c", "downstream": "a4b0e0c6a802bcbf9aa3d6e6e089e4fce3ce3259", "scope": "live goal runs across processes: goal-run-marker.ts, onRunActive and the goal-summary, acp-goals, acp-mode, goals-agent, goal-routes and session-routes hunks; the Deck, model panel, glass styles, Git overview (git-overview.ts, /git/overview, agent_git_overview) and POST /thinking {level} (agent_set_thinking) not taken"},
+        {"upstream": "bc7e5733a25fc9cb1e51ed93b72407a5c7a5eb6f", "downstream": "d7314a20c9c7d216d184b67e5c54034995eb1915", "scope": "the Goals hunks held back from PR 3b: goal-routes refuses a paid workers' model and goalCritterPick uses withoutPaidTier, with tests the fork adds"},
+        {"upstream": "494374d7941d25cbba6afd5c571187de64ab0c5d", "downstream": "a935c25b200eb470df95f3202567e8438dd5bee5", "scope": "the sidecar part held back from PR 3b: the IdleWakeController wiring in app-sidecar.ts"},
+        {"upstream": "a69cc275a86d02f31831c280755f335e5b7a117f", "downstream": "c2f0707f3b7775e89209102232ecd76363668561", "scope": "the Goals part held back from PR 3b: resolveGitCwd's settled flag, retargetGit's re-read replacing b0eebc5b's cwd-only re-read, and the goal-window test's poll"},
+        {"upstream": "5d340fa3bc1be03d3200b40cfbe8f8abfb5551bf", "downstream": "e1648e499aaa146c6220bce8216c5f0519be3e15", "scope": "the Goals half held back from PR 3b: goals-store typed start, write lock and atomic writes, goals-agent BRIEFING_ERROR, prompt-routes, route-context, app-sidecar.ts hunks 2, 4, 5 and 9 (by hand, past 816c385d's trophy lines) and the typed-start auth-broadcast test"}
+      ],
+      "skipped": []
     }
   ],
   "directRenameBaseline": {
