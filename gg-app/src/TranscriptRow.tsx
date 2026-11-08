@@ -1,8 +1,9 @@
-import { useLayoutEffect, memo } from "react";
+import { memo } from "react";
 import { theme } from "./theme";
-import { openProjectPath } from "./agent";
+import { openImageDataUrl, openProjectPath } from "./agent";
 import { HOOK_PRESENTATION } from "./useAgentEvents";
-import { useSmoothText } from "./useSmoothText";
+import { useLiveText } from "./live-text";
+import { StreamingMarkdown } from "./StreamingMarkdown";
 import { SubAgentFeed } from "./SubAgentFeed";
 import { CompactionNotice } from "./CompactionNotice";
 import { ShimmerText } from "./ShimmerText";
@@ -19,6 +20,7 @@ import { basename } from "./tool-format";
 import type { Item } from "./transcript-item";
 import { ErrorNotice } from "./placeholder/ErrorNotice";
 import { SecurityNotice } from "./placeholder/SecurityNotice";
+import { PlanDecisionNotice } from "./placeholder/PlanDecisionNotice";
 
 const ALL_CLEAR_VARIATIONS = [
   "All clear. Looks good to me.",
@@ -53,35 +55,88 @@ function allClearCopy(seed: string | undefined, fallbackId: number): string {
 const DOT = "\u23FA";
 
 /**
- * Assistant prose while it streams: the text is revealed at a steady rate
- * (rather than in whatever bursts the network delivered) and each new word
- * fades in as it lands.
- *
- * `onGrow` re-pins the transcript to the bottom. The reveal adds height
- * BETWEEN item updates, which the transcript's `items`-keyed scroll effect
- * cannot see, so without this the tail of a reply drifts under the fold.
+ * A Kleio Coder reply. While it streams, its text comes from the live-text
+ * store (`useLiveText`), so new chunks re-render this row alone, not the App.
  */
-function StreamingMarkdown({
-  text,
+function AssistantReply({
+  id,
+  text: stored,
   onGrow,
 }: {
+  id: number;
   text: string;
   onGrow?: () => void;
 }): React.ReactElement {
-  const { text: revealed, animating } = useSmoothText(text);
-  useLayoutEffect(() => {
-    onGrow?.();
-  }, [revealed, onGrow]);
-  return <Markdown animate={animating}>{revealed}</Markdown>;
+  const { text, streaming } = useLiveText(id, stored);
+  // Split out [DONE:n] plan-step markers so each renders as a "✓ Step n"
+  // completion row instead of leaking the raw marker into the prose.
+  const segments = hasDoneMarker(text)
+    ? segmentDoneMarkers(text)
+    : [{ kind: "text" as const, text }];
+  // Output cards (when paired to a Mac mini) sit once under the reply's
+  // last stretch of prose, covering every link in the whole reply.
+  const cardsAt = segments.map((s) => s.kind).lastIndexOf("text");
+  return (
+    <>
+      {segments.map((seg, i) =>
+        seg.kind === "done" ? (
+          <div key={i} className="plan-step-done">
+            <span className="plan-step-check" aria-hidden="true">
+              {"\u2713"}
+            </span>
+            <span className="plan-step-label">{`Step ${seg.stepNum} completed`}</span>
+          </div>
+        ) : (
+          <div key={i} className="assistant-msg">
+            <span className="assistant-dot" style={{ color: theme.primary }}>
+              {DOT}
+            </span>
+            <div className="assistant-text">
+              <StreamingMarkdown text={seg.text} streaming={streaming} onGrow={onGrow} />
+              {i === cardsAt && <WorkspaceFileCards text={text} />}
+            </div>
+          </div>
+        ),
+      )}
+    </>
+  );
+}
+
+/**
+ * Ken Kai's reply: the whole bubble is tinted in Ken's color (dot + all text),
+ * which is the ONLY differentiator from a normal reply. No badge, no byline.
+ * The Markdown component special-cases ```prompt fences into a "Send to Kleio
+ * Coder" button. Streams through the live-text store like `AssistantReply`.
+ */
+function KenReply({
+  id,
+  text: stored,
+  onGrow,
+}: {
+  id: number;
+  text: string;
+  onGrow?: () => void;
+}): React.ReactElement {
+  const { text, streaming } = useLiveText(id, stored);
+  return (
+    <div className="assistant-msg ken-msg">
+      <span className="assistant-dot" style={{ color: theme.ken }}>
+        {DOT}
+      </span>
+      <div className="assistant-text">
+        <StreamingMarkdown text={text} streaming={streaming} onGrow={onGrow} />
+      </div>
+    </div>
+  );
 }
 
 // ── Row renderers ──────────────────────────────────────────
-// Memoized per row: the streaming run rebuilds the `items` array on every
-// `text_delta`, but `appendAssistant` returns the SAME object reference for
-// every non-streaming row, and `onContentGrow` is a stable useCallback. So a
-// default shallow `memo` re-renders ONLY the row whose `item` reference changed
-// (the one actively streaming) — the rest bail out, keeping per-token cost O(1)
-// instead of O(transcript length).
+// Memoized per row. While a reply streams, its text grows in the live-text
+// store (live-text.ts) and only that row re-renders, via `useLiveText`; `items`
+// changes when rows are added, finished or removed. Those updates keep the SAME
+// object reference for every untouched row, and `onContentGrow` is a stable
+// useCallback, so a default shallow `memo` re-renders only the rows whose
+// `item` actually changed and the rest bail out.
 export const TranscriptRow = memo(function TranscriptRow({
   item,
   animateIn = false,
@@ -194,13 +249,16 @@ function TranscriptRowBody({
           {item.images && item.images.length > 0 && (
             <div className="user-img-row">
               {item.images.map((src, i) => (
-                <img
+                <button
                   key={i}
-                  className="user-img"
-                  src={src}
-                  alt="attachment"
-                  onLoad={onContentGrow}
-                />
+                  type="button"
+                  className="user-img-open"
+                  aria-label="Open attached image"
+                  title="Open in image viewer"
+                  onClick={() => void openImageDataUrl(src)}
+                >
+                  <img className="user-img" src={src} alt="" onLoad={onContentGrow} />
+                </button>
               ))}
             </div>
           )}
@@ -221,55 +279,10 @@ function TranscriptRowBody({
           )}
         </div>
       );
-    case "assistant": {
-      // Split out [DONE:n] plan-step markers so each renders as a "✓ Step n"
-      // completion row instead of leaking the raw marker into the prose.
-      const segments = hasDoneMarker(item.text)
-        ? segmentDoneMarkers(item.text)
-        : [{ kind: "text" as const, text: item.text }];
-      // Output cards (when paired to a Mac mini) sit once under the reply's
-      // last stretch of prose, covering every link in the whole reply.
-      const cardsAt = segments.map((s) => s.kind).lastIndexOf("text");
-      return (
-        <>
-          {segments.map((seg, i) =>
-            seg.kind === "done" ? (
-              <div key={i} className="plan-step-done">
-                <span className="plan-step-check" aria-hidden="true">
-                  {"\u2713"}
-                </span>
-                <span className="plan-step-label">{`Step ${seg.stepNum} completed`}</span>
-              </div>
-            ) : (
-              <div key={i} className="assistant-msg">
-                <span className="assistant-dot" style={{ color: theme.primary }}>
-                  {DOT}
-                </span>
-                <div className="assistant-text">
-                  <StreamingMarkdown text={seg.text} onGrow={onContentGrow} />
-                  {i === cardsAt && <WorkspaceFileCards text={item.text} />}
-                </div>
-              </div>
-            ),
-          )}
-        </>
-      );
-    }
+    case "assistant":
+      return <AssistantReply id={item.id} text={item.text} onGrow={onContentGrow} />;
     case "ken":
-      // Ken Kai's reply: the whole bubble is tinted in Ken's color (dot + all
-      // text), which is the ONLY differentiator from a normal GG Coder reply.
-      // No badge, no byline. The Markdown component special-cases ```prompt
-      // fences into a "Send to GG Coder" button.
-      return (
-        <div className="assistant-msg ken-msg">
-          <span className="assistant-dot" style={{ color: theme.ken }}>
-            {DOT}
-          </span>
-          <div className="assistant-text">
-            <StreamingMarkdown text={item.text} onGrow={onContentGrow} />
-          </div>
-        </div>
-      );
+      return <KenReply id={item.id} text={item.text} onGrow={onContentGrow} />;
     case "autopilot": {
       // Autopilot Ken's verdict, rendered like a normal @Ken reply (Ken-tinted
       // dot + text) rather than its own marker style. The text is his verdict as
@@ -390,12 +403,15 @@ function TranscriptRowBody({
       );
     case "plan":
       return <PlanModeLogo reason={item.reason} />;
+    case "plan_decision":
+      return <PlanDecisionNotice decision={item.decision} />;
     case "ask":
       return (
         <AskBand
           prompt={item.prompt}
           answers={item.answers}
           sent={item.sent}
+          answeredLive={item.answeredLive}
           cancelled={item.cancelled}
           deferred={item.deferred}
           onAnswer={(delta) => onAskAnswer?.(item.id, item.prompt.id, delta)}

@@ -1,6 +1,6 @@
 import type { ToolExecuteResult } from "@kleio/agent";
 import { log } from "../logger.js";
-import { shrinkToFit } from "../../utils/image.js";
+import { previewsForImageBlocks, shrinkToFit } from "../../utils/image.js";
 import { stripInvisibleUnicode } from "../../utils/text.js";
 
 /** Media types a provider will accept as an image part. */
@@ -211,5 +211,9 @@ export async function toToolResult(
 
   // Text first: it frames the images for the model, and matches `read`'s order.
   const leading = notes.join("\n");
-  return { content: leading ? [{ type: "text", text: leading }, ...parts] : parts };
+  const imagePreviews = await previewsForImageBlocks(parts);
+  return {
+    content: leading ? [{ type: "text", text: leading }, ...parts] : parts,
+    ...(imagePreviews.length > 0 ? { details: { imagePreviews } } : {}),
+  };
 }

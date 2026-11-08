@@ -7,6 +7,7 @@ import {
   boundedSize,
   fitsVisualBudget,
   previewForApp,
+  previewsForImageBlocks,
   shrinkToFit,
   withAppImagePreviews,
 } from "./image.js";
@@ -27,6 +28,22 @@ function makePng(width: number, height: number): Promise<Buffer> {
     .png()
     .toBuffer();
 }
+
+describe("previewsForImageBlocks", () => {
+  it("previews image blocks only, shrinking wide ones for the chat", async () => {
+    const wide = (await makePng(1200, 300)).toString("base64");
+    const caption = { type: "text", text: "caption" };
+    const previews = await previewsForImageBlocks([
+      caption,
+      { type: "image", mediaType: "image/png", data: wide },
+    ]);
+
+    expect(previews).toHaveLength(1);
+    expect(previews[0]?.mediaType).toBe("image/png");
+    const meta = await sharp(Buffer.from(previews[0]?.base64 ?? "", "base64")).metadata();
+    expect(meta.width).toBe(480);
+  });
+});
 
 describe("boundedSize", () => {
   const cases: Array<{

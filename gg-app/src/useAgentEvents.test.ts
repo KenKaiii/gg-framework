@@ -17,6 +17,7 @@ vi.mock("./agent", () => ({
 
 import { listModels } from "./agent";
 import { useAgentEvents, type AgentEventsDeps } from "./useAgentEvents";
+import { createLiveTextStore } from "./live-text";
 import type { Item } from "./App";
 import type { AgentState, SidecarEvent } from "./agent";
 import type { LiveToolEntry } from "./LiveToolPanel";
@@ -112,6 +113,7 @@ function setup(
     planReviewPathRef: { current: null },
     pendingPlanTotalRef: { current: null },
     stickToBottomRef: { current: true },
+    liveText: createLiveTextStore(),
   };
 
   const hook = renderHook(() => useAgentEvents(deps));
@@ -660,6 +662,44 @@ describe("useAgentEvents", () => {
     expect(items[0]).toMatchObject({ kind: "assistant", text: "Hello world" });
   });
 
+  it("grows a streaming reply in the live-text store, not the transcript, until it ends", () => {
+    vi.useFakeTimers();
+    try {
+      const { hook, deps, getItems } = setup();
+      act(() => hook.result.current.handleEvent(ev("text_delta", { text: "Hello" })));
+      const before = getItems();
+      const id = before[0]?.id ?? -1;
+
+      // Mid-stream flushes reach only the live-text store: the transcript
+      // array (and so the whole App) is untouched while the reply grows.
+      act(() => {
+        hook.result.current.handleEvent(ev("text_delta", { text: " there" }));
+        vi.advanceTimersByTime(100);
+        hook.result.current.handleEvent(ev("text_delta", { text: " world" }));
+        vi.advanceTimersByTime(100);
+      });
+      expect(getItems()).toBe(before);
+      expect(deps.liveText.get(id)).toBe("Hello there world");
+
+      // The end of the stream writes the final text into the transcript once
+      // and releases the store entry.
+      act(() => hook.result.current.endStreamingText());
+      expect(getItems()[0]).toMatchObject({ kind: "assistant", text: "Hello there world" });
+      expect(deps.liveText.get(id)).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("releases a streaming reply's live text when the session resets", () => {
+    const { hook, deps, getItems } = setup();
+    act(() => hook.result.current.handleEvent(ev("text_delta", { text: "Hello" })));
+    const id = getItems()[0]?.id ?? -1;
+    act(() => hook.result.current.handleEvent(ev("session_reset")));
+    expect(getItems()).toEqual([]);
+    expect(deps.liveText.get(id)).toBeUndefined();
+  });
+
   it("keeps raw diagnostics out of chat without interrupting plan progress", () => {
     const { hook, getItems } = setup();
     act(() => {
@@ -985,6 +1025,29 @@ describe("useAgentEvents", () => {
     });
     feed = getLiveToolFeed();
     expect(feed[0]).toMatchObject({ toolCallId: "t1", status: "done" });
+  });
+
+  it("keeps an image placeholder until its own generate_image call ends", () => {
+    const { hook, getItems } = setup();
+    act(() => {
+      hook.result.current.handleEvent(
+        ev("tool_call_start", {
+          toolCallId: "g1",
+          name: "generate_image",
+          args: { prompt: "a cat" },
+        }),
+      );
+      hook.result.current.handleEvent(
+        ev("tool_call_start", { toolCallId: "r1", name: "read", args: { file_path: "a.ts" } }),
+      );
+      hook.result.current.handleEvent(ev("tool_call_end", { toolCallId: "r1", isError: false }));
+    });
+    expect(getItems().filter((it) => it.kind === "generating_image")).toHaveLength(1);
+
+    act(() => {
+      hook.result.current.handleEvent(ev("tool_call_end", { toolCallId: "g1", isError: false }));
+    });
+    expect(getItems().filter((it) => it.kind === "generating_image")).toHaveLength(0);
   });
 
   it("turn_end accumulates output tokens across turns", () => {

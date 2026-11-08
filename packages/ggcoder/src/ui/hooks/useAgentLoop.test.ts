@@ -6,14 +6,6 @@ import type { Message } from "@kleio/ai";
 import type { TransformContextOptions } from "@kleio/agent";
 
 describe("useAgentLoop context transforms", () => {
-  it("adds missing read coverage to the initial Ideal review turn", () => {
-    const source = readFileSync(new URL("./useAgentLoop.ts", import.meta.url), "utf8");
-
-    expect(source).toMatch(
-      /withReviewCoverageRequirements\(\s*idealReviewMessage,\s*coverage\.missing\s*\)/,
-    );
-  });
-
   it("passes the per-turn tool-result budget to the agent loop", () => {
     const source = readFileSync(new URL("./useAgentLoop.ts", import.meta.url), "utf8");
 

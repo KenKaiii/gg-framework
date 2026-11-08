@@ -884,14 +884,17 @@ Local macOS checks, each compared with `main` at `bf328196`:
   `setup-history.ts`.
 - The critter-art checks match nothing.
 
-## Goals from upstream (open)
+## Goals from upstream (merged)
 
 - Upstream tip reviewed: `296df256b164ec18a4cc72ec7a824633da245bcb` (engine **5.91.2**,
   desktop **0.102.2**), as for #77. The 9 later upstream commits, up to `f6b17fc5`, all
   follow the relicense and are not reviewed.
 - Branch: `sync/upstream-goals`, based on `main` at `7150a676`.
-- PR: [#78](https://github.com/fmckie/gg-framework/pull/78), opened as a draft on
-  2026-11-08
+- PR: [#78](https://github.com/fmckie/gg-framework/pull/78), merged at `31597ce2` on
+  2026-11-08; all nine CI jobs passed on `55fd7c78` (run **42526668917**). GitHub
+  squashed the branch, so the downstream SHAs below are on `sync/upstream-goals`; the
+  squash commit keeps all 21 trailers (20 `Ported from upstream`, 1
+  `cherry picked from commit`).
 - PR 4a of PR 4 in `.gg/plans/upstream-selective-import-phased.md`, re-planned as 4a (Goals)
   and 4b (motion) in `.gg/plans/upstream-pr4-goals-motion.md`. Its first commit, `14e1c85b`,
   records #77 as merged. Then `223830dc`'s ask-user slice (moved ahead, because `e98215da`
@@ -1043,6 +1046,176 @@ warnings` passes, and `rustfmt --check` passes on the five Rust files this impor
 - `patches/`, `pnpm-workspace.yaml`, the package manifests and both lockfiles are unchanged,
   as are the excluded packages, the `three` lines and `upstream.lastImportedCommit`.
 - The critter-art checks match nothing.
+
+## Motion from upstream (open)
+
+- Upstream tip reviewed: `296df256b164ec18a4cc72ec7a824633da245bcb` (engine **5.91.2**,
+  desktop **0.102.2**), as for #77 and #78. Upstream has since moved to `57d1e7ed`; every
+  later commit follows the relicense and is not reviewed.
+- Branch: `sync/upstream-motion`, based on `main` at `31597ce2`.
+- PR: [#79](https://github.com/fmckie/gg-framework/pull/79), opened as a draft on
+  2026-11-08
+- PR 4b of PR 4 in `.gg/plans/upstream-selective-import-phased.md`, as re-planned in
+  `.gg/plans/upstream-pr4-goals-motion.md`. Its first commit, `0a2e1fb7`, records #78 as
+  merged. Then `4a0f2dbd`'s motion slice (which `223830dc` builds on), the motion hunks PR 3a
+  and 3b held back, the rest of `223830dc`, and `generate_image` on Codex's image endpoints,
+  in upstream date order.
+- `upstream.lastImportedCommit` stays `3f2bb6bc`, for the reason given in the 988f920e
+  section. Picks carry `cherry picked from commit <sha>`, ports carry
+  `Ported from upstream <sha>`, and `fork-provenance.json` `selectiveImports` holds the full
+  hashes on both sides.
+- Every commit taken is an ancestor of `c1aa287b` (desktop v0.102.0), upstream's last
+  release under MIT.
+
+The 10 upstream commits taken, in branch order. `21adf945` rides on `223830dc`'s row,
+because its held-back hunks land with the code they touch.
+
+| Upstream                                   | Downstream | Method       | Taken                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------ | ---------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `4a0f2dbd50a6f126385a65c2686972182aa166fc` | `389f7f6c` | Partial port | The motion half: the flash-rate check, the motion-language, easing and composition references, and the brand-kit, motion and video-qa skills. The sub-agent critter floor is not taken                                                                                                                                                                                              |
+| `f6b906c489c66624bde687dfc88643633a0deab5` | `c8166438` | Partial port | The motion hunks PR 3a held back: the HyperFrames CLI patch and its workspace line, and the motion-check and motion-review hunks                                                                                                                                                                                                                                                    |
+| `d83252b9d91e20bc49bb5552be71334b5a8c79a9` | `da4d6e8f` | Partial port | The motion hunks PR 3a held back: parallel motion checks in the patch and the tool                                                                                                                                                                                                                                                                                                  |
+| `223830dc49452b8c4596c33db92adc27ca363558` | `265dca7b` | Partial port | The rest, after PR 4a's ask-user slice and PR 3a's bash-read-evidence slice: Ideal review removed and the verification gate made passive; the motion-check tool removed; motion helpers, move kit, library pieces and job skills; kept-skill text; OAuth, Telegram and voice timeouts; streaming markdown, live text, the history window and the jump controls; opening chat images |
+| `21adf9451460b367aef6d880dcce0c7a2aac8771` | `265dca7b` | Partial port | The skill-root brief and the "keeps every bundled skill routable" test, held back from PR 3b                                                                                                                                                                                                                                                                                        |
+| `afc41586246693406640155e54ca7d20c5caf9c7` | `55b6d8b7` | Pick         | The cue-export e2e test runs with HyperFrames' managed browser on macOS                                                                                                                                                                                                                                                                                                             |
+| `063bb557d24d9a119c7e55d77f8046c68103d141` | `eb0a2cb4` | Pick         | Cue export drives Chrome over DevTools, and the e2e test runs on every runner                                                                                                                                                                                                                                                                                                       |
+| `dd9eec26e78bf83a026870368cc4e73c3ccf53fd` | `b30f0150` | Partial port | The motion hunks PR 3b held back: the motion and job skills, the motion prompt and its test                                                                                                                                                                                                                                                                                         |
+| `7ecf304cfdb4389c7a19e03518b71f9ee563fd61` | `d91cb733` | Partial port | The motion hunk PR 3a held back: a multi-file edit arms the Motion review (plus a fork-only regression test)                                                                                                                                                                                                                                                                        |
+| `bd2be639345578b9f312a00e90b04502e883121a` | `7ae50f6a` | Port         | `generate_image` on Codex's image endpoints. `CODEX_CLIENT_VERSION` is exported with the fork's value                                                                                                                                                                                                                                                                               |
+| `f178b72e6effaf734d29f3ea4b328e6d253c7379` | `b506adf5` | Port         | Delivered image sizes and the Codex retry policy                                                                                                                                                                                                                                                                                                                                    |
+
+How the engine half was placed:
+
+- PR 1 split `agent-session.ts` and `app-sidecar.ts` into modules, so `223830dc`'s
+  removal hunks were placed by hand in `agent-session.ts`, `agent-session/run-loop-monitor.ts`
+  (now byte-identical to upstream's tip), `agent-session/verification-tracker.ts`,
+  `app-sidecar.ts`, `autopilot-runner.ts`, `prompt-routes.ts` and `history-routes.ts`.
+- The verification gate keeps tracking evidence for run status and autopilot but no longer
+  forces a turn. `420b1ad3`'s refused-check rerun stays, as at upstream's tip.
+- Fork-only follow-through: `ui/project-runtime.ts` (the Pixel-fix project switch) drops the
+  review tracker; PR 4a's Goals suppression line and its test are deleted, as the plan said;
+  PR 3a's multi-file tamper test goes with the tamper check.
+- Already in the fork, so unchanged: `edit.ts`'s live-content freshness and the system
+  prompt's batching and scripted-edit rules (later upstream rewrites carry them). The golden
+  prompt and the tool catalog snapshot are unchanged.
+- `bd2be639` replaces the fork's `7fe46751` fix for the old `codex/responses` route (a chat
+  model driving the hosted tool) and its Flare/Sunburst model choice; upstream's new route
+  has no model choice.
+- `CODEX_CLIENT_VERSION` stays `0.159.1`: upstream's `0.161.0` came with `4f763ed2`, which
+  PR 1 took for structure only.
+
+Not taken:
+
+- Home scenery (`HomeScenery`, `campfire-scene`, `scene-light`, `use-local-hour`,
+  `use-random-biome`), `HomeScreen`, `home-background` and its button.
+- Every critter file, `PlanCritters`, `PlanModeLogo`, `PlanReviewModal`'s critter crew and
+  exit dissolve, and `4a0f2dbd`'s critter floor.
+- `transcript-motion.ts` (the jump teleport and the dissolve on loaded history), every
+  `dissolve-in` class (ActivityBar, LiveToolPanel, KenActivityBar, AutopilotReviewBar,
+  AskBand), QueuedBar's `pinSize` (its `usePresenceList` came with `b5833186`, not taken),
+  and the Export chat button's move.
+- All gg-app CSS, `glass.css` and `streaming-word-css.test.mjs`.
+- Every hunk to the seven skills #77 deleted, and `CONTEXT.md`'s "See ADR 0003" (upstream's
+  ADR 0003 came with `4f763ed2`'s docs; the fork's 0003 is about link pairing).
+- The upstream changesets.
+
+Changesets: `.changeset/upstream-motion-coder.md`, `-core.md` and `-ai.md` (patch);
+`@kleio/agent` and `@kleio/manager` follow through the fixed group. gg-app is not a
+changesets package, so its changes are recorded only here.
+
+### UI boundary
+
+As in #76 to #78, this import takes behaviour only from upstream's gg-app hunks. New
+screens render through minimal components in `gg-app/src/placeholder/`, styled only with
+`kleio-theme.css` variables and existing classes, for the redesign branch to restyle.
+
+New files:
+
+| File                                         | Replaces upstream            | Takes                                                                                                                                                      | Mounted in          |
+| -------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `placeholder/TranscriptJump.tsx` (+test)     | `TranscriptJumpControls.tsx` | "You have a new question", "You have new chats" and scroll to bottom, shown only when they apply. On the iPhone the fork's own jump-to-latest button stays | `App.tsx`           |
+| `placeholder/PlanDecisionNotice.tsx` (+test) | `PlanDecisionNotice.tsx`     | A plain line for an accepted, revised or rejected plan, with a status dot                                                                                  | `TranscriptRow.tsx` |
+
+New logic files, each with a test: `StreamingMarkdown.tsx` and `streaming-markdown.ts`
+(unfinished markdown closed at the tail while a reply streams, with `remend` 1.4.0 pinned
+exactly), `live-text.ts` (a streaming reply re-renders only its own row) and
+`transcript-window.ts` (only the newest page of turns stays mounted), plus
+`Markdown.links.test.tsx` and `Markdown.table.test.tsx`. `placeholder.css` gains
+`.placeholder-jump`, on theme variables. The `PlanDecision` type lives in
+`transcript-item.ts`, so the data layer imports nothing from `placeholder/`.
+
+Changed existing files, in logic, props and text: `App.tsx`, `AskBand.tsx` (+test),
+`AttachmentBar.tsx`, `Composer.tsx`, `Markdown.tsx` (+test), `MotionStarters.tsx` (+test),
+`motion-starters.ts`, `TitleUsageMeter.tsx` (+test), `TranscriptRow.tsx`, `agent.ts`,
+`composer-autosize.ts` (+test), `transcript-item.ts`, `useAgentEvents.ts` (+test),
+`useKenMentor.ts` (+test), `useSmoothText.ts` (+test), `useTranscriptScroll.ts`,
+`package.json` and `scripts/smoke-sidecar.mjs`. Rust: `commands/files.rs` (`open_image_data`,
+with tests), `commands/agent.rs` (a 60 s timeout on local sidecar reads) and `lib.rs`.
+Markup that comes with the behaviour:
+
+- AskBand's keyboard hint, multi-choice checkbox lead and resting shimmer, with upstream's
+  class names.
+- Attached and pasted images become buttons that open them in the default image viewer.
+- The Markdown table frame (`role="region"`, focusable) and the zero-height new-chats marker.
+
+### Licence note
+
+This is engineering guidance, not legal advice. The boundary is the one #76's licence note
+sets out. Every commit this import takes is an ancestor of `c1aa287b` (10 of 10, and
+`21adf945`), checked with `git merge-base --is-ancestor`, and the relicense commit `12da5c3a`
+is not. No `LICENSE` or `NOTICE` file changes. `remend` 1.4.0 is Apache-2.0, with no
+dependencies or install scripts. #76's backlog for a lawyer still stands.
+
+### Verification record
+
+Local macOS checks on the branch head, each compared with `main` at `31597ce2`:
+
+- Test totals: `@kleio/coder` 5062 → 5052 tests (378 → 376 files; 17 skipped, as on `main`:
+  the Ideal review, independent-review and motion-check-tool suites go, the motion blur,
+  cue, kit, music-fit and reference-study suites arrive), gg-app 2023 → 2098 (179 → 187
+  files). `@kleio/ai` (634), `@kleio/agent` (226), `@kleio/core` (323), `@kleio/manager`
+  (332), gg-editor (950), kleio-host (973) and gg-pixel (115) are unchanged.
+- `pnpm test` fails locally on one case: motion-blur's "never blends across a hard cut"
+  reads a red channel 5 levels off where the test allows 4. Frame 11 is pure scene B (no
+  blend across the cut), and the unblurred source frame already decodes 2 levels off, so the
+  drift is this Mac's ffmpeg 7.1.1 and x264 rounding over two lossy encodes. The assertion is
+  unchanged; CI's ffmpeg builds decide it.
+- `cargo test`: 317 passed and 3 ignored (315 on `main`); `cargo clippy --all-targets -- -D
+warnings` passes, and `rustfmt --check` passes on the three Rust files this import touches.
+- The golden prompt and the tool catalog snapshot are unchanged. Bundled skills are still
+  exactly bulletproof, compliance-guard, durable and lean; the one added file under
+  `assets/skills` is durable's `references/agent-db-safety.md`, which its `SKILL.md` cites.
+- Identity audit, tracked (3262 files) and packed (2250 files): 0 unclassified hits and 0
+  count mismatches. Each count moves in the commit that changes it: the Coder
+  source-directory seam 1569 → 1606 (1570 at `389f7f6c`, 1606 at `265dca7b`: 48 added, 12
+  deleted), Manager's packed Coder paths 796 → 792 and TranscriptRow's pinned app text 6 → 4
+  (`265dca7b`), Manager's packed provider identities 16 → 14 (`7ae50f6a`), and the
+  allowlist's own control data 1593 → 1582. Tightening removals: `contact-sheet.mjs`'s and
+  `generate-image.ts`'s old upstream lines (tracked and packed) are gone, the first replaced
+  with Kleio wording and the second with Codex's own client identity.
+- No added line contains upstream's product names for the app, upstream's package scope or
+  `.join(".gg")`, outside the records. Kleio wording replaces upstream's in the new lines of
+  `useKenMentor.ts`, bulletproof's `agent-surface.md`, lean's `SKILL.md` and
+  `contact-sheet.mjs`.
+- The build, typecheck, lint, format check, the tracked script tests (143), the
+  fixed-version check, the bundled-sidecar smoke with a temporary `HOME` and the startup
+  gate (median 602 ms against a 477 ms baseline and a 5000 ms budget) pass.
+- Size: the initial frontend JavaScript grows from 1054.8 KB to 1080.8 KB. It crosses its
+  limit at `265dca7b` (`223830dc`: streaming markdown, `remend`, live text and the history
+  window are on the start-up path) and is re-baselined there, once, to 1106784 bytes with
+  `--only` for that artifact. The `@kleio/coder` build output goes from 8747.3 KB to 8616.4 KB
+  and the bundled sidecar from 5411.0 KB to 5419.8 KB; neither baseline is ratcheted down.
+- Dependencies: `remend` is pinned at exactly `1.4.0` (published 2026-09-30, past the
+  2-day package cooldown). `pnpm-lock.yaml` changes only for `remend` and the HyperFrames
+  patch hash (byte-identical to upstream's patch, hash `ca31b263…`), and
+  `pnpm install --frozen-lockfile` passes. `patches/` and `pnpm-workspace.yaml` change only
+  for `hyperframes@0.8.82`.
+- UI: no CSS changes outside `gg-app/src/placeholder/`, `placeholder.css` has no colour
+  literals or motion, the new gg-app files are the ones listed under UI boundary, and no file
+  newly imports from `placeholder/` (`App.tsx` and `TranscriptRow.tsx` already did).
+- The excluded packages, the `three` lines and `upstream.lastImportedCommit` are unchanged.
+- The critter-art checks match no file; their content check matches only the motion
+  music-fit helper's `.mp3` handling and `generate-image.test.ts`'s 1×1 PNG fixture.
 
 ## Original imported baseline
 

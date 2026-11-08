@@ -298,8 +298,9 @@
       "upstreamTipDesktopVersion": "0.102.2",
       "reviewedCommits": 290,
       "importedAt": "2026-11-08",
-      "status": "open",
+      "status": "merged",
       "pullRequest": "https://github.com/fmckie/gg-framework/pull/78",
+      "mergeCommit": "31597ce2fa0cfc430c8e58410bb830b6642ebc6c",
       "rule": "upstream.lastImportedCommit stays 3f2bb6bc because the fork does not contain everything up to any later upstream commit; a later full sync must treat these commits as already applied",
       "picked": [
         {"upstream": "de2392c352e11374c71063700b1b46bffbcf4543", "downstream": "f633e48ea5ff1e3cb6fbfd3f5523daa5172ad339"}
@@ -325,6 +326,34 @@
         {"upstream": "494374d7941d25cbba6afd5c571187de64ab0c5d", "downstream": "a935c25b200eb470df95f3202567e8438dd5bee5", "scope": "the sidecar part held back from PR 3b: the IdleWakeController wiring in app-sidecar.ts"},
         {"upstream": "a69cc275a86d02f31831c280755f335e5b7a117f", "downstream": "c2f0707f3b7775e89209102232ecd76363668561", "scope": "the Goals part held back from PR 3b: resolveGitCwd's settled flag, retargetGit's re-read replacing b0eebc5b's cwd-only re-read, and the goal-window test's poll"},
         {"upstream": "5d340fa3bc1be03d3200b40cfbe8f8abfb5551bf", "downstream": "e1648e499aaa146c6220bce8216c5f0519be3e15", "scope": "the Goals half held back from PR 3b: goals-store typed start, write lock and atomic writes, goals-agent BRIEFING_ERROR, prompt-routes, route-context, app-sidecar.ts hunks 2, 4, 5 and 9 (by hand, past 816c385d's trophy lines) and the typed-start auth-broadcast test"}
+      ],
+      "skipped": []
+    },
+    {
+      "branch": "sync/upstream-motion",
+      "baseCommit": "31597ce2fa0cfc430c8e58410bb830b6642ebc6c",
+      "upstreamTip": "296df256b164ec18a4cc72ec7a824633da245bcb",
+      "upstreamTipVersion": "5.91.2",
+      "upstreamTipDesktopVersion": "0.102.2",
+      "reviewedCommits": 290,
+      "importedAt": "2026-11-08",
+      "status": "open",
+      "pullRequest": "https://github.com/fmckie/gg-framework/pull/79",
+      "rule": "upstream.lastImportedCommit stays 3f2bb6bc because the fork does not contain everything up to any later upstream commit; a later full sync must treat these commits as already applied",
+      "picked": [
+        {"upstream": "afc41586246693406640155e54ca7d20c5caf9c7", "downstream": "55b6d8b71692f882539482712840e2058996d341"},
+        {"upstream": "063bb557d24d9a119c7e55d77f8046c68103d141", "downstream": "eb0a2cb4e7283b36a571d7433e62f6a0bc47482d"}
+      ],
+      "ported": [
+        {"upstream": "4a0f2dbd50a6f126385a65c2686972182aa166fc", "downstream": "389f7f6c80e8e93a681a1ce8ee322b90fd53599f", "scope": "motion slice only, which 223830dc builds on: flash-check.mjs, the motion-language, gsap-easing-and-stagger and minimal-composition references, the brand-kit, motion and video-qa skills, motion-prompt.ts and the motion-check tool's flash check, with their tests; the sub-agent critter floor, SubAgentFeed, BackgroundTasksButton, App.tsx and App.css not taken"},
+        {"upstream": "f6b906c489c66624bde687dfc88643633a0deab5", "downstream": "c8166438516a5fb2a68b4f9766ff8e90094f4320", "scope": "the motion hunks held back from PR 3a: patches/hyperframes@0.8.82.patch (created), its pnpm-workspace.yaml line, the motion-check tool hunks and motionSourceHash's ignored files, with tests; lockfile gains only upstream's three hyperframes lines"},
+        {"upstream": "d83252b9d91e20bc49bb5552be71334b5a8c79a9", "downstream": "da4d6e8f008fcfa5bf6147f7cb5e7fd2e7a7dc78", "scope": "the motion hunks held back from PR 3a: the hyperframes patch's parallel-check hunks and the motion-check tool's auditPages, with its test (import line merged by hand); lockfile moves only the patch hash"},
+        {"upstream": "223830dc49452b8c4596c33db92adc27ca363558", "downstream": "265dca7b9df70f144663e2e8e598dc023e40564c", "scope": "the rest, after PR 4a's ask-user slice and PR 3a's bash-read-evidence slice: Ideal review, the independent reviewer and the review-coverage tracker removed and the verification gate made passive, placed by hand in PR 1's split modules (refused-check rerun kept, as at upstream's tip; 4a's Goals suppression line and PR 3a's tamper test deleted; project-runtime.ts drops the tracker); the motion-check tool removed; motion bin helpers, move kit, library pieces, build-sheet.md and six job skills (video-qa and motion-language.md deleted); kept-skill text with 21adf945's later frontmatter kept; gg-core OAuth, Telegram and voice timeouts; MCP image previews and per-image restore paths on the fork's app-preview helpers; streaming markdown with remend 1.4.0, live-text.ts, transcript-window.ts, the jump controls as placeholder/TranscriptJump.tsx and PlanDecisionNotice as placeholder/PlanDecisionNotice.tsx; AskBand, useSmoothText, composer-autosize, Markdown, TitleUsageMeter, useKenMentor, motion starters and Toaster hosts; open_image_data in commands/files.rs; CONTEXT.md without the ADR 0003 pointer; home scenery, critters, PlanCritters, PlanModeLogo, PlanReviewModal's crew, transcript-motion.ts, every dissolve-in class, QueuedBar's pinSize, ExportChatButton's move, App.css, glass.css, streaming-word-css.test.mjs and the deleted skills' hunks not taken; already in the fork: edit.ts freshness and the prompt's batching rules, so the golden prompt and tool catalog are unchanged"},
+        {"upstream": "21adf9451460b367aef6d880dcce0c7a2aac8771", "downstream": "265dca7b9df70f144663e2e8e598dc023e40564c", "scope": "the skill-root brief in skill.ts and the 'keeps every bundled skill routable' test, held back from PR 3b"},
+        {"upstream": "dd9eec26e78bf83a026870368cc4e73c3ccf53fd", "downstream": "b30f0150b1f829c33071773646fe7b1e43a8c768", "scope": "the motion hunks held back from PR 3b: the motion skill and six job skills, motion-prompt.ts and motion-agent.test.ts"},
+        {"upstream": "7ecf304cfdb4389c7a19e03518b71f9ee563fd61", "downstream": "d91cb7331d88bd2cc659b50195649ddef3374d6a", "scope": "the motion-review-session.ts hunk held back from PR 3a, with a fork-only regression test"},
+        {"upstream": "bd2be639345578b9f312a00e90b04502e883121a", "downstream": "7ae50f6aecf9ed3081c9821fc65baa767fdfad90", "scope": "generate_image on Codex's image endpoints and convertImageFormat; CODEX_CLIENT_VERSION exported with the fork's value 0.159.1 (upstream's 0.161.0 came with 4f763ed2, taken for structure only); supersedes the fork's 7fe46751 route fix and the Flare/Sunburst choice"},
+        {"upstream": "f178b72e6effaf734d29f3ea4b328e6d253c7379", "downstream": "b506adf56475f4b661b61a276a0caceb9692f5ab", "scope": "delivered-size reports (imageDimensions) and the Codex retry policy"}
       ],
       "skipped": []
     }

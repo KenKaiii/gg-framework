@@ -187,7 +187,6 @@ export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRun
     const generation = ctx.runLifecycle.begin(ctx.abortOwnedWork).generation;
     ctx.pendingCancelDrain = null;
     ctx.autopilotActive = true;
-    ctx.session.setIdealReviewSuppressed(true);
     // Generation captured by the last plan review; acceptPlan re-checks it so
     // a user Accept/Reject landing mid-review always wins.
     let planGenAtReview = -1;
@@ -308,7 +307,6 @@ export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRun
       });
     } finally {
       ctx.autopilotActive = false;
-      ctx.session.setIdealReviewSuppressed(ctx.autopilot);
       ctx.finishOwnedGeneration(
         generation,
         true,

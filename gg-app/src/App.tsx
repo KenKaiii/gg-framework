@@ -9,6 +9,7 @@ import {
   Suspense,
   Activity,
 } from "react";
+import { flushSync } from "react-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { theme } from "./theme";
 import { MetalButton } from "./MetalButton";
@@ -69,10 +70,10 @@ import {
 import {
   appendPendingAsks,
   askNotificationText,
+  answerAskItem,
   dropSupersededAsks,
   firstOpenAskId,
   isAskUserPrompt,
-  mergeAskAnswers,
 } from "./ask-user";
 import { glowPlacement, glowStateFor, glowVars } from "./window-glow";
 import { ActivityBar } from "./ActivityBar";
@@ -106,6 +107,9 @@ import { HostFoldersModal } from "./HostFoldersModal";
 import { NO_FOLDERS_TO_REMOVE, RemoveDirModal } from "./RemoveDirModal";
 import { KenPowerBanner } from "./KenPowerBanner";
 import { ExportChatButton } from "./ExportChatButton";
+import { earlierStartId, windowStartIndex } from "./transcript-window";
+import { createLiveTextStore, LiveTextContext } from "./live-text";
+import { TranscriptJump } from "./placeholder/TranscriptJump";
 import { PlanReviewModal } from "./PlanReviewModal";
 import { McpElicitModal } from "./McpElicitModal";
 import { windowShortcut } from "./window-shortcuts";
@@ -170,7 +174,7 @@ import { toWire, oversizedAttachmentsMessage } from "./attachments";
 import "./App.css";
 // Liquid glass trial layer (from veditor-app). Delete this line to revert.
 import "./glass.css";
-import { type Item, nextId, idSeq } from "./transcript-item";
+import { type Item, type PlanDecision, nextId, idSeq } from "./transcript-item";
 import { TranscriptRow } from "./TranscriptRow";
 import { activeChatErrorId, readChatError } from "./chat-error";
 import { focusesComposerOnOpen } from "./composer-refocus";
@@ -268,6 +272,9 @@ interface KleioOpen {
 
 function App(): React.ReactElement {
   const [items, setItems] = useState<Item[]>([]);
+  // Text of the reply streaming right now, grown outside `items` so each chunk
+  // re-renders only that row (live-text.ts). One store for the window's life.
+  const [liveText] = useState(createLiveTextStore);
   // The latest error row until a new message retires it: it alone offers recovery.
   const currentErrorId = useMemo(() => activeChatErrorId(items), [items]);
   // Ken Kai (mentor agent): own running flag, token/thinking metrics, streaming
@@ -281,7 +288,7 @@ function App(): React.ReactElement {
     kenThinkingStartTs,
     kenThinkingAccumMs,
     handleKenEvent,
-  } = useKenMentor({ setItems, nextId });
+  } = useKenMentor({ setItems, nextId, liveText });
   // Autopilot Ken (auto-reviewer): consumes the `autopilot_*` event family into
   // compact transcript markers + a "Ken reviewing…" flag. Separate hook, same
   // shared setItems/nextId pattern as useKenMentor.
@@ -540,6 +547,8 @@ function App(): React.ReactElement {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Bumped each time the transcript is reloaded from the session file.
   const [transcriptEpoch, setTranscriptEpoch] = useState(0);
+  // Told by the scroll hook after its pin rules run (syncReaderPosition below).
+  const readerMovedRef = useRef<((el: HTMLDivElement, wheelUp: boolean) => void) | null>(null);
   const {
     stickToBottomRef,
     lastScrollTopRef,
@@ -551,7 +560,182 @@ function App(): React.ReactElement {
     jumpToLatest,
     onTranscriptScroll,
     onTranscriptWheel,
-  } = useTranscriptScroll({ scrollRef });
+  } = useTranscriptScroll({ scrollRef, readerMovedRef });
+
+  // ── History window + the way back down ──
+  // Only the newest page of turns stays mounted (rules in transcript-window.ts);
+  // reading up to the top mounts the page before it. `windowStartId` null
+  // follows the newest turns; once the reader scrolls up it pins the first
+  // mounted row so nothing they're reading shifts as replies arrive below, and
+  // returning to the bottom lets go, unmounting the older pages again.
+  const [windowStartId, setWindowStartId] = useState<number | null>(null);
+  // Mirrors stickToBottomRef for rendering the jump controls.
+  const [following, setFollowing] = useState(true);
+  // Newest row id the reader had when they scrolled up; anything newer shows
+  // the "new chats" pill. Null while following.
+  const [seenUpToId, setSeenUpToId] = useState<number | null>(null);
+  const windowStart = useMemo(() => windowStartIndex(items, windowStartId), [items, windowStartId]);
+  const visibleItems = useMemo(
+    () => (windowStart === 0 ? items : items.slice(windowStart)),
+    [items, windowStart],
+  );
+  const firstNewId = useMemo(
+    () =>
+      seenUpToId === null ? null : (visibleItems.find((it) => it.id > seenUpToId)?.id ?? null),
+    [visibleItems, seenUpToId],
+  );
+  // Latest list + window start for the scroll handlers, which are stable
+  // callbacks and don't re-capture render values.
+  const windowRef = useRef<{ items: readonly Item[]; start: number }>({ items: [], start: 0 });
+  useLayoutEffect(() => {
+    windowRef.current = { items, start: windowStart };
+  }, [items, windowStart]);
+  // The oldest question still waiting on the user, for the "You have a
+  // question" pill, and where it sits in the transcript.
+  const openAskId = useMemo(() => firstOpenAskId(items), [items]);
+  const openAskPromptId = useMemo(() => {
+    const ask = items.find((it) => it.id === openAskId);
+    return ask?.kind === "ask" ? ask.prompt.id : null;
+  }, [items, openAskId]);
+  // Where that question is relative to the view: on screen, or above / below
+  // it (the agent kept talking after asking, or the reader scrolled away).
+  // Null when there is no open question.
+  const [askPlace, setAskPlace] = useState<"visible" | "above" | "below" | null>(null);
+  // The row that was first before older turns mounted above it, and where it
+  // sat on screen, so the layout effect below can hold it in place.
+  const pendingLoadRef = useRef<{ anchor: Element; top: number } | null>(null);
+  const newMarkerRef = useRef<HTMLDivElement>(null);
+
+  // Read the reader's position after the pin rules ran: follow or hold the
+  // window, track what's new, and mount older turns near the top.
+  const syncReaderPosition = useCallback(
+    (el: HTMLDivElement): void => {
+      const pinned = stickToBottomRef.current;
+      setFollowing(pinned);
+      if (pinned) {
+        setWindowStartId(null);
+        setSeenUpToId(null);
+        return;
+      }
+      const { items: all, start } = windowRef.current;
+      const newestId = all[all.length - 1]?.id ?? 0;
+      setSeenUpToId((prev) => prev ?? newestId);
+      setWindowStartId((prev) => prev ?? all[start]?.id ?? null);
+      if (el.scrollTop > Math.min(400, el.clientHeight / 2) || pendingLoadRef.current) return;
+      const earlier = earlierStartId(all, start);
+      const anchor = el.firstElementChild;
+      if (earlier === null || !anchor) return;
+      pendingLoadRef.current = { anchor, top: anchor.getBoundingClientRect().top };
+      setWindowStartId(earlier);
+    },
+    [stickToBottomRef],
+  );
+  useLayoutEffect(() => {
+    readerMovedRef.current = (el, wheelUp) => {
+      if (wheelUp) {
+        // A chat whose newest page fits on screen can't scroll, so no scroll
+        // event will ever ask for older turns: a wheel up is the request.
+        if (el.scrollHeight > el.clientHeight || windowRef.current.start === 0) return;
+        stickToBottomRef.current = false;
+      }
+      syncReaderPosition(el);
+    };
+  }, [syncReaderPosition, stickToBottomRef]);
+
+  // Older turns just mounted above: put the reader's row back where it was
+  // (prepending pushed it down).
+  useLayoutEffect(() => {
+    const pending = pendingLoadRef.current;
+    pendingLoadRef.current = null;
+    const el = scrollRef.current;
+    if (!pending || !el || !pending.anchor.isConnected) return;
+    el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.top;
+    lastScrollTopRef.current = el.scrollTop;
+  }, [windowStart, lastScrollTopRef]);
+
+  // Anything that re-pins the chat to the bottom without a scroll (a session
+  // reset, a hydrate, a project switch) also drops the reader's scrolled-up
+  // state: a short new chat never scrolls, so no scroll event would.
+  useLayoutEffect(() => {
+    if (!stickToBottomRef.current) return;
+    setFollowing(true);
+    setSeenUpToId(null);
+    setWindowStartId(null);
+  }, [items, stickToBottomRef]);
+
+  const jumpToBottom = useCallback(() => {
+    stickToBottomRef.current = true;
+    setFollowing(true);
+    setSeenUpToId(null);
+    setWindowStartId(null);
+    maybeScrollToBottom();
+  }, [stickToBottomRef, maybeScrollToBottom]);
+  const jumpToNew = useCallback(() => {
+    const el = scrollRef.current;
+    const marker = newMarkerRef.current;
+    const { items: all } = windowRef.current;
+    setSeenUpToId(all[all.length - 1]?.id ?? null);
+    if (!el || !marker) return;
+    // Land with the first new row at the top, a little breathing room above.
+    el.scrollTop += marker.getBoundingClientRect().top - el.getBoundingClientRect().top - 8;
+  }, []);
+
+  // Track the open question's place against the transcript viewport. Observed
+  // rather than measured on scroll, so it also catches the agent's later output
+  // pushing it up out of view. A band outside the mounted history window (older
+  // pages are unmounted) has no element, so it counts as above.
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!openAskPromptId || !root) {
+      setAskPlace(null);
+      return;
+    }
+    const band = root.querySelector(`.ask-band[data-ask-prompt="${CSS.escape(openAskPromptId)}"]`);
+    if (!band) {
+      setAskPlace("above");
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry) return;
+        const bounds = entry.rootBounds ?? root.getBoundingClientRect();
+        setAskPlace(
+          entry.isIntersecting
+            ? "visible"
+            : entry.boundingClientRect.top >= bounds.bottom
+              ? "below"
+              : "above",
+        );
+      },
+      { root },
+    );
+    observer.observe(band);
+    return () => observer.disconnect();
+  }, [openAskPromptId, windowStart]);
+
+  // "You have a new question": go to the open question, with a little room
+  // above it, mounting its page of history first if it was unloaded.
+  const jumpToAsk = useCallback(() => {
+    const el = scrollRef.current;
+    const askId = openAskId;
+    const promptId = openAskPromptId;
+    if (!el || askId === null || promptId === null) return;
+    const selector = `.ask-band[data-ask-prompt="${CSS.escape(promptId)}"]`;
+    // Reading it means leaving the bottom: stop following, and count what is
+    // below it as already seen, so the "new chats" pill doesn't pop up too.
+    stickToBottomRef.current = false;
+    const { items: all } = windowRef.current;
+    flushSync(() => {
+      setFollowing(false);
+      setSeenUpToId(all[all.length - 1]?.id ?? null);
+      if (!el.querySelector(selector)) setWindowStartId(askId);
+    });
+    const band = el.querySelector(selector);
+    if (!band) return;
+    // The reply the question belongs to sits just above it: keep a line of it.
+    el.scrollTop += band.getBoundingClientRect().top - el.getBoundingClientRect().top - 56;
+    lastScrollTopRef.current = el.scrollTop;
+  }, [openAskId, openAskPromptId, stickToBottomRef, lastScrollTopRef]);
 
   const { setDragOverActive } = useDragOverlay({ isFileDragOver, setIsFileDragOver });
 
@@ -620,7 +804,7 @@ function App(): React.ReactElement {
   // scrolled up reading mid-stream.
   useLayoutEffect(() => {
     maybeScrollToBottom();
-  }, [items, liveToolFeed, running, doneStatus, queuedCount, maybeScrollToBottom]);
+  }, [items, windowStart, liveToolFeed, running, doneStatus, queuedCount, maybeScrollToBottom]);
 
   // …and keep re-pinning while the chrome below the transcript ANIMATES its
   // height. The queued-message strip (`.queued-bar`) slides open over 260ms, the
@@ -807,6 +991,14 @@ function App(): React.ReactElement {
   const attachInput = useCallback(
     (el: HTMLTextAreaElement | null) => {
       inputRef.current = el;
+      // Turn off macOS inline predictive text in the composer. WebKit lays the
+      // grey suggested words out INSIDE the textarea, so a suggestion that runs
+      // past the line end adds a wrapped line to scrollHeight; the next
+      // keystroke's autosize grows the box to fit it, and the box drops back the
+      // moment the suggestion is dismissed. WKWebView shows these by default and
+      // the configuration switch is unreliable, so use the HTML attribute
+      // (WebKit 18+). Not in React's DOM types, hence setAttribute.
+      el?.setAttribute("writingsuggestions", "false");
       inputRoRef.current?.observer.disconnect();
       inputRoRef.current?.cancel();
       inputRoRef.current = null;
@@ -940,6 +1132,7 @@ function App(): React.ReactElement {
     stickToBottomRef,
     onGoalNeedsResume: resumeCutOffGoal,
     onRunEnd: recordGoalRun,
+    liveText,
   });
 
   // Run the connect/ready flow against the current sidecar and hydrate state,
@@ -1821,18 +2014,27 @@ function App(): React.ReactElement {
   // The POST is optimistic: a failed one means the question already timed out or
   // the run was cancelled, and re-opening the band would hand the user a button
   // that can no longer reach anyone.
+  //
+  // The finished answer moves to the end of the conversation (see
+  // answerAskItem): it reads as sent the way a typed prompt does, and the chat
+  // follows it down even when the question was far up in the scrollback.
   const answerAsk = useCallback(
     (itemId: number, promptId: string, delta: Record<string, string | string[]>) => {
-      setItems((prev) =>
-        prev.map((it) => {
-          if (it.kind !== "ask" || it.id !== itemId || it.sent) return it;
-          const { answers, complete } = mergeAskAnswers(it.answers, delta, it.prompt.questions);
-          if (complete) void answerAskUser(promptId, "answer", answers).catch(() => {});
-          return { ...it, answers, ...(complete ? { sent: true } : {}) };
-        }),
+      const result = answerAskItem(
+        windowRef.current.items,
+        itemId,
+        delta,
+        (it) => (it.kind === "ask" ? it.prompt.questions : []),
+        nextId,
       );
+      if (result.completed) {
+        // Sending is the user's own action: back to the bottom, like submit.
+        stickToBottomRef.current = true;
+        void answerAskUser(promptId, "answer", result.completed).catch(() => {});
+      }
+      setItems(result.items);
     },
-    [setItems],
+    [setItems, stickToBottomRef],
   );
 
   // "Something else" on a question: send the user to the composer they already
@@ -2095,9 +2297,9 @@ function App(): React.ReactElement {
   // plan is the user's, and a prompt landing during a run queues server-side.
   // (This used to bail silently on a stale `running` value, closing the box
   // and leaving the plan in limbo.)
-  function runPlanPrompt(prompt: string, info: string, meta?: PromptMeta): void {
+  function runPlanPrompt(prompt: string, decision: PlanDecision, meta?: PromptMeta): void {
     setPlanReview(null);
-    pushItem({ kind: "info", id: nextId(), text: info });
+    pushItem({ kind: "plan_decision", id: nextId(), decision });
     endStreamingText();
     void sendPrompt(prompt, [], meta).catch((error: unknown) => {
       reportPlanDecisionFailure("Your plan decision wasn't sent", error);
@@ -2144,7 +2346,7 @@ function App(): React.ReactElement {
     }
     runPlanPrompt(
       "The plan has been approved. Implement it now, following each step in order.",
-      "\u2713 Plan accepted. Implementing.",
+      "accepted",
     );
   }
 
@@ -2152,7 +2354,7 @@ function App(): React.ReactElement {
     runPlanPrompt(
       `The plan was not approved. Feedback from the user:\n\n${feedback}\n\n` +
         "Revise the plan based on this feedback, then call exit_plan again for review.",
-      "\u270e Feedback sent. Revising the plan.",
+      "feedback",
       { planRevision: true },
     );
   }
@@ -2160,7 +2362,7 @@ function App(): React.ReactElement {
   function rejectPlan(): void {
     runPlanPrompt(
       "The plan was rejected and dismissed. Do not implement it. Wait for new instructions.",
-      "\u2715 Plan rejected.",
+      "rejected",
     );
   }
 
@@ -2553,6 +2755,8 @@ function App(): React.ReactElement {
         <UpdateBanner update={appUpdate} />
         <NewPairingNotice key="new-pairing-notice" active={kleioRemote.status?.active ?? null} />
         {showTraySettings && <SettingsModal onClose={closeTraySettings} />}
+        {/* Tray Settings can toast a save failure over the picker. */}
+        <Toaster />
       </div>
     );
   }
@@ -2866,47 +3070,66 @@ function App(): React.ReactElement {
                     <WorkspaceFilesProvider
                       cwd={kleioRemote.status?.active ? (state?.cwd ?? null) : null}
                     >
-                      {items.map((it) => (
-                        <TranscriptRow
-                          key={it.id}
-                          item={it}
-                          animateIn={it.id >= liveFromId}
-                          errorActive={it.id === currentErrorId}
-                          errorModelPicker={
-                            it.kind === "error" && it.id === currentErrorId ? (
-                              <ModelSelect
-                                models={models}
-                                currentModel={
-                                  it.scope === "ken_error" || it.scope === "autopilot_error"
-                                    ? (state?.kenModel ?? state?.model ?? "")
-                                    : (state?.model ?? "")
-                                }
-                                onSelect={
-                                  it.scope === "ken_error" || it.scope === "autopilot_error"
-                                    ? onSelectKenModel
-                                    : onSelectModel
-                                }
-                                // The Helper never runs on a paid model; the main chat asks first.
-                                offerPaid={
-                                  it.scope !== "ken_error" && it.scope !== "autopilot_error"
-                                }
-                                disabled={running || kenRunning || autopilotReviewing}
-                                title={
-                                  it.scope === "ken_error" || it.scope === "autopilot_error"
-                                    ? "Switch Helper's model"
-                                    : "Switch model"
-                                }
-                                label={
-                                  it.reason === "usage_limit" ? "Switch provider" : "Choose model"
-                                }
-                              />
-                            ) : undefined
-                          }
-                          onContentGrow={maybeScrollToBottom}
-                          onAskAnswer={answerAsk}
-                          onAskType={typeAskInstead}
-                        />
-                      ))}
+                      <LiveTextContext.Provider value={liveText}>
+                        {visibleItems.flatMap((it) => {
+                          const row = (
+                            <TranscriptRow
+                              key={it.id}
+                              item={it}
+                              animateIn={it.id >= liveFromId}
+                              errorActive={it.id === currentErrorId}
+                              errorModelPicker={
+                                it.kind === "error" && it.id === currentErrorId ? (
+                                  <ModelSelect
+                                    models={models}
+                                    currentModel={
+                                      it.scope === "ken_error" || it.scope === "autopilot_error"
+                                        ? (state?.kenModel ?? state?.model ?? "")
+                                        : (state?.model ?? "")
+                                    }
+                                    onSelect={
+                                      it.scope === "ken_error" || it.scope === "autopilot_error"
+                                        ? onSelectKenModel
+                                        : onSelectModel
+                                    }
+                                    // The Helper never runs on a paid model; the main chat asks first.
+                                    offerPaid={
+                                      it.scope !== "ken_error" && it.scope !== "autopilot_error"
+                                    }
+                                    disabled={running || kenRunning || autopilotReviewing}
+                                    title={
+                                      it.scope === "ken_error" || it.scope === "autopilot_error"
+                                        ? "Switch Helper's model"
+                                        : "Switch model"
+                                    }
+                                    label={
+                                      it.reason === "usage_limit"
+                                        ? "Switch provider"
+                                        : "Choose model"
+                                    }
+                                  />
+                                ) : undefined
+                              }
+                              onContentGrow={maybeScrollToBottom}
+                              onAskAnswer={answerAsk}
+                              onAskType={typeAskInstead}
+                            />
+                          );
+                          // Zero-height landing spot for "You have new chats". A flat
+                          // keyed list, so rows never remount when it comes and goes.
+                          return it.id === firstNewId
+                            ? [
+                                <div
+                                  key="new-marker"
+                                  ref={newMarkerRef}
+                                  className="transcript-new-marker"
+                                  aria-hidden="true"
+                                />,
+                                row,
+                              ]
+                            : [row];
+                        })}
+                      </LiveTextContext.Provider>
                     </WorkspaceFilesProvider>
                   </HistoryImagesProvider>
                 </PromptSendProvider>
@@ -2918,6 +3141,16 @@ function App(): React.ReactElement {
               visible={chatHovered || exporting}
               busy={exporting}
               onExport={() => void exportTranscript()}
+            />
+          )}
+          {items.length > 0 && (
+            <TranscriptJump
+              away={!following && !isPhone()}
+              hasNew={firstNewId !== null}
+              askAt={askPlace === "above" || askPlace === "below" ? askPlace : null}
+              onScrollToBottom={jumpToBottom}
+              onJumpToNew={jumpToNew}
+              onJumpToAsk={jumpToAsk}
             />
           )}
           {/* iPhone: only ever a way back down — the top of a transcript is
@@ -3178,6 +3411,9 @@ function App(): React.ReactElement {
           onClose={() => setShowTasks(false)}
         />
       )}
+      {/* Workspace toasts (saved transcript, Remote on/off, a failed restart)
+          need their own host: the one in the Home/Settings branch isn't mounted here. */}
+      <Toaster />
     </div>
   );
 }

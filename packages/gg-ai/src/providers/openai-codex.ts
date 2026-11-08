@@ -43,7 +43,9 @@ const DEFAULT_BASE_URL = "https://chatgpt.com/backend-api";
 // 2026-09-30). Below the gate it answers "The '<model>' model is not supported
 // when using Codex with a ChatGPT account". Track the latest openai/codex
 // `rust-v*` release when adding a model, and check that model's live listing.
-const CODEX_CLIENT_VERSION = "0.159.1";
+// Exported so every other caller of the ChatGPT Codex backend (generate_image)
+// sends the same client identity as chat.
+export const CODEX_CLIENT_VERSION = "0.159.1";
 // OpenAI's Codex CLI enables zstd request compression by default. Keep tiny
 // synthetic/API requests readable, but compress real agent payloads before they
 // hit the backend's finite Envoy retry buffer.

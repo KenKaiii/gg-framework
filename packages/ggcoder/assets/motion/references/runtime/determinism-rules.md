@@ -15,7 +15,7 @@ For GSAP:
 - **Do not** call `tl.play()` for render-critical motion.
 - **Do not** create empty tweens only to set duration; use `data-duration` on the clip instead.
 
-Use the adjacent `gsap.md`, `gsap-timeline-and-labels.md` and `gsap-easing-and-stagger.md` for GSAP mechanics. These technical references do not choose the design; the video's plan in `frame.md` does.
+Use the adjacent `gsap.md`, `gsap-timeline-and-labels.md` and `gsap-easing-and-stagger.md` for GSAP mechanics. These technical references do not choose the design.
 
 ## Determinism Rules
 

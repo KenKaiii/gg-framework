@@ -1,0 +1,159 @@
+<!doctype html>
+<!--
+  gather-to-logo: the cast becomes the logo (move kit). Feature chips pop in
+  scattered around the frame, hold for a beat, then travel on arcs into the
+  centre and shrink into it; the moment the last one arrives the logo mark
+  and wordmark stamp in there and hold as the end card.
+  Needs the move kit: `library.mjs add` installs it; put its <script> in the
+  root head after GSAP.
+  Params (script top): POP_AT (first chip arrival), POP_STAGGER, GATHER_AT
+  (when they leave), GATHER_DURATION, GATHER_STAGGER, BOW (arc bend),
+  TARGET (gather point, stage px). Chip positions are left/top on each
+  .gl-chip (the chip's centre).
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  </head>
+  <body>
+    <div
+      id="gather-to-logo-root"
+      data-composition-id="gather-to-logo"
+      data-start="0"
+      data-duration="5"
+      data-width="1920"
+      data-height="1080"
+    >
+      <style>
+        [data-composition-id="gather-to-logo"] {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          color: var(--ink, #111);
+          font-family: var(--text, sans-serif);
+        }
+        [data-composition-id="gather-to-logo"] .gl-stage {
+          position: absolute;
+          inset: 0;
+        }
+        [data-composition-id="gather-to-logo"] .gl-chip {
+          position: absolute;
+          width: 0;
+          height: 0;
+        }
+        [data-composition-id="gather-to-logo"] .gl-pill {
+          position: absolute;
+          left: 0;
+          top: 0;
+          white-space: nowrap;
+          padding: 22px 38px;
+          border-radius: 999px;
+          background: var(--field, #fff);
+          border: 3px solid var(--ink, #111);
+          color: var(--ink, #111);
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          font-stretch: var(--display-stretch, 100%);
+          letter-spacing: var(--display-tracking, -0.02em);
+          font-size: 50px;
+          line-height: 1;
+          opacity: 0;
+        }
+        [data-composition-id="gather-to-logo"] .gl-pill.is-accent {
+          background: var(--accent, #2f5bff);
+          border-color: var(--accent, #2f5bff);
+          color: var(--field, #fff);
+        }
+        [data-composition-id="gather-to-logo"] .gl-logo {
+          position: absolute;
+          left: 960px;
+          top: 540px;
+          display: flex;
+          align-items: center;
+          gap: 36px;
+          white-space: nowrap;
+          opacity: 0;
+        }
+        [data-composition-id="gather-to-logo"] .gl-mark {
+          width: 176px;
+          height: 176px;
+          border-radius: var(--radius, 28px);
+          background: var(--accent, #2f5bff);
+          color: var(--field, #fff);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          font-stretch: var(--display-stretch, 100%);
+          font-size: 120px;
+          line-height: 1;
+        }
+        [data-composition-id="gather-to-logo"] .gl-word {
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          font-stretch: var(--display-stretch, 100%);
+          letter-spacing: var(--display-tracking, -0.02em);
+          font-size: 168px;
+          line-height: 1;
+          color: var(--ink, #111);
+        }
+      </style>
+      <div class="gl-stage">
+        <!-- edit: feature chips (left/top = chip centre in stage px; add is-accent for emphasis) -->
+        <div class="gl-chip" style="left: 330px; top: 210px"><div class="gl-pill">Fast sync</div></div>
+        <div class="gl-chip" style="left: 960px; top: 150px"><div class="gl-pill is-accent">Offline</div></div>
+        <div class="gl-chip" style="left: 1580px; top: 230px"><div class="gl-pill">Shared boards</div></div>
+        <div class="gl-chip" style="left: 1660px; top: 560px"><div class="gl-pill is-accent">Comments</div></div>
+        <div class="gl-chip" style="left: 1500px; top: 880px"><div class="gl-pill">Version history</div></div>
+        <div class="gl-chip" style="left: 920px; top: 930px"><div class="gl-pill">Templates</div></div>
+        <div class="gl-chip" style="left: 350px; top: 860px"><div class="gl-pill is-accent">Search</div></div>
+        <div class="gl-chip" style="left: 270px; top: 540px"><div class="gl-pill">Dark mode</div></div>
+        <div class="gl-logo">
+          <!-- edit: logo mark letter -->
+          <div class="gl-mark">n</div>
+          <!-- edit: wordmark -->
+          <div class="gl-word">notably</div>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        const kit = window.GGMotionKit;
+        const root = document.querySelector('[data-composition-id="gather-to-logo"]');
+        const stage = root.querySelector(".gl-stage");
+        const chips = root.querySelectorAll(".gl-chip");
+        const pills = root.querySelectorAll(".gl-pill");
+        const logo = root.querySelector(".gl-logo");
+        const tl = gsap.timeline({ paused: true });
+
+        const POP_AT = 0.2;
+        const POP_STAGGER = 0.09;
+        const GATHER_AT = 1.75;
+        const GATHER_DURATION = 0.85;
+        const GATHER_STAGGER = 0.07;
+        const BOW = 0.3;
+        const TARGET = { x: 960, y: 540 };
+
+        gsap.set(pills, { xPercent: -50, yPercent: -50 });
+        gsap.set(logo, { xPercent: -50, yPercent: -50 });
+        pills.forEach((pill, i) => kit.pop(tl, pill, POP_AT + i * POP_STAGGER, { from: 0.4 }));
+
+        const arrived = kit.converge(tl, chips, GATHER_AT, TARGET, {
+          duration: GATHER_DURATION,
+          stagger: GATHER_STAGGER,
+          bow: BOW,
+          space: stage,
+          seed: 7,
+        });
+        // The stamp's contact lands exactly on the last arrival.
+        kit.stamp(tl, logo, arrived - 0.2, { rotate: 0, from: 1.8 });
+        tl.set({}, {}, 5);
+
+        window.__timelines = window.__timelines || {};
+        window.__timelines["gather-to-logo"] = tl;
+      })();
+    </script>
+  </body>
+</html>

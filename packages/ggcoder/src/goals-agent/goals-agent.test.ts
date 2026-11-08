@@ -106,23 +106,6 @@ describe("Kleio Goals agent", () => {
     expect(prompt).toContain("Current memory:\n- Plain HTML only.");
   });
 
-  it("runs with Ideal self-review suppressed, even after an autopilot toggle", async () => {
-    const g = await goal();
-    const session = createGoalsAgentSession({
-      provider: "anthropic",
-      model: "claude-opus-5-5",
-      cwd: g.dir,
-      goal: g,
-      transient: true,
-    });
-    const suppressed = () =>
-      (session as unknown as { idealReviewSuppressed: boolean }).idealReviewSuppressed;
-    expect(suppressed()).toBe(true);
-    // The sidecar resets this when autopilot is off; a goal session keeps it.
-    session.setIdealReviewSuppressed(false);
-    expect(suppressed()).toBe(true);
-  });
-
   it("still needs its first reply when the conversation holds only the system prompt", async () => {
     const g = await goal();
     // Regression: a session carries its system message before anyone speaks,

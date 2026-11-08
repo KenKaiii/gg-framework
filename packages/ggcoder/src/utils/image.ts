@@ -691,6 +691,53 @@ export async function appToolImages(
 }
 
 /**
+ * Pixel dimensions from the image header, or null when it cannot be read.
+ * Header only: no pixel decode, so it is cheap on large images.
+ */
+export async function imageDimensions(
+  buffer: Buffer,
+): Promise<{ width: number; height: number } | null> {
+  try {
+    const sharp = await loadSharp();
+    const { width, height } = await sharp(buffer).metadata();
+    return width && height ? { width, height } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Re-encode an image as `format`. Unlike the preview helpers this is the saved
+ * file itself, so a failure propagates rather than silently keeping the
+ * original bytes under a mismatched extension.
+ */
+export async function convertImageFormat(
+  buffer: Buffer,
+  format: "png" | "jpeg" | "webp",
+): Promise<Buffer> {
+  const sharp = await loadSharp();
+  return sharp(buffer).toFormat(format).toBuffer();
+}
+
+/**
+ * Inline previews (`details.imagePreviews`) for image blocks a tool returns
+ * without a file of its own (MCP servers). The chat only
+ * renders tool images from these previews, so a tool that skips them shows
+ * nothing live and only surfaces its images after a session reload.
+ */
+export async function previewsForImageBlocks(
+  blocks: readonly { type: string; mediaType?: string; data?: string }[],
+): Promise<{ base64: string; mediaType: string }[]> {
+  const previews: { base64: string; mediaType: string }[] = [];
+  for (const block of blocks) {
+    if (block.type !== "image" || !block.mediaType || !block.data) continue;
+    const preview = await downscaleForPreview(Buffer.from(block.data, "base64"));
+    previews.push({ base64: preview.toString("base64"), mediaType: block.mediaType });
+  }
+  return previews;
+}
+
+/**
  * Read a file and return an attachment (base64 for images, raw text for text files).
  *
  * Image decode / shrink failures degrade to a text placeholder instead of throwing,

@@ -2,7 +2,7 @@
 
 Per-target controls. Load only the sections recon says apply. Format: **control → what to check in code → why it fails in practice.**
 
-Snapshot 12 August 2026. **[V]** verified, **[S]** snapshot-volatile, **[U]** uncertain.
+Snapshot 3 October 2026. **[V]** verified, **[S]** snapshot-volatile, **[U]** uncertain.
 
 ---
 
@@ -13,8 +13,9 @@ The best-understood surface; the failures are still the same three.
 | Control | Check | Why it fails |
 |---|---|---|
 | **Authorization at the data layer** | Every query filtered by the acting user/tenant, enforced in one chokepoint (policy layer, RLS, scoped repository) — not per-handler | Per-handler checks are correct on the day they are written and drift on the fifth new endpoint. Object-level authorization (BOLA/IDOR) is the top API risk and CWE-862 is top-five |
+| **Auth not only in middleware/edge** | Framework middleware (Next.js `middleware.ts`, edge functions, route guards) may redirect, but the route handler, server action, or data layer re-checks session and ownership | CVE-2025-29927 let a single `x-middleware-subrequest` header skip Next.js middleware entirely [V]; any app whose only check lived there was open. Server actions and API routes are public endpoints regardless of which page calls them |
 | **Parameterized queries** | No string concatenation or f-strings into SQL/NoSQL/LDAP/XPath; ORM `raw`/`literal`/`$where` calls audited individually | The ORM covers 95% and the last 5% is a report filter or a dynamic sort column |
-| **Output encoding** | Framework escaping left on; explicit unsafe sinks (`dangerouslySetInnerHTML`, `v-html`, `bypassSecurityTrust*`, `innerHTML`, raw template filters) each justified | XSS is still CWE-25 rank 1. Modern frameworks make the safe path default and the unsafe path a one-liner |
+| **Output encoding** | Framework escaping left on; explicit unsafe sinks (`dangerouslySetInnerHTML`, `v-html`, `bypassSecurityTrust*`, `innerHTML`, raw template filters) each justified | XSS is still rank 1 in the 2025 CWE Top 25 (then SQLi, CSRF, Missing Authorization) [V]. Modern frameworks make the safe path default and the unsafe path a one-liner |
 | **Server-side validation** | A schema at every entry point, allowlist-shaped, rejecting unknown fields; never trust client validation | Mass assignment: the model accepts `is_admin` because the schema was permissive |
 | **CSRF** | State-changing routes require a token or `SameSite=Lax/Strict` cookies plus origin checks; API-token auth is exempt, cookie auth is not. Pre-auth flows need it too — login, signup, password reset (login CSRF is real). Validation must reject a **missing** token, not just a wrong one | Cookie-authenticated JSON endpoints assumed safe because "it's an API"; token checks that only run when a token is present |
 | **SSRF** | Any URL from input: allowlist hosts, resolve then validate the IP, block private and link-local ranges, disable redirects or re-validate each hop — full sweep below | Metadata endpoints on cloud hosts turn SSRF into credential theft. Folded into A01 in the 2025 Top 10 |
@@ -24,7 +25,7 @@ The best-understood surface; the failures are still the same three.
 | **Rate limits on credential paths** | Login, reset, MFA, token exchange, invite acceptance | These are the endpoints where volume converts directly to account takeover |
 | **Errors** | Generic message to the client, detail to the log; no stack traces, SQL text, or env in responses | A10:2025 is new and is exactly this: fail-open and mishandled exceptional conditions |
 
-**Backend-as-a-service (Supabase / Firebase / PocketBase and similar) — the highest-yield indie failure** [S]:
+**Backend-as-a-service (Supabase / Firebase / PocketBase and similar) — the highest-yield indie failure** (CVE-2025-48757: 170+ generated apps shipped Supabase tables without RLS) [S]:
 
 1. RLS enabled on **every** table holding user data, including join tables and views.
 2. No `using (true)` policies. That is the generated default when a model is told to "add a policy" without a rule, and the dashboard still shows a green badge.
@@ -104,7 +105,7 @@ The distinguishing risk: **these programs open repositories, files, and projects
 
 1. **Shelling out.** Grep `shell: true`, `execSync`, `exec(`, backtick or f-string interpolation into `bash -c`, `os.system`, `subprocess` with `shell=True`. Use `spawn(file, args)` with an argument array. Where a shell is genuinely required, the invariant is that no model-derived or repo-derived string reaches it uninterpolated.
 2. **PATH and search-order hijack.** Bare command names in spawn calls resolve through `PATH`. Never prepend `.` or a repo-relative `node_modules/.bin` when the repo is untrusted; resolve to absolute paths.
-3. **Repo config is data, not code.** A malicious repository ships `.git/config` (`core.fsmonitor` and `core.pager` are code execution), `.vscode/tasks.json` with `runOn: folderOpen`, agent hook configs, `Makefile`, `package.json` scripts, editor and linter plugin paths. **The CHAINDROP worm used exactly the editor-task and agent-hook vectors** [V]. Never honor a repo-supplied plugin, loader, or interpreter path.
+3. **Repo config is data, not code.** A malicious repository ships `.git/config` (`core.fsmonitor` and `core.pager` are code execution), `.vscode/tasks.json` with `runOn: folderOpen`, agent hook configs, `Makefile`, `package.json` scripts, editor and linter plugin paths. **The ChainDrop worm (Aug 2026) used exactly the editor-task and agent-hook vectors** [V]. Never honor a repo-supplied plugin, loader, or interpreter path.
 4. **Terminal escape injection.** Untrusted file contents, git refs, branch names, and tool output printed raw can emit OSC 8 hyperlinks, OSC 52 clipboard writes, and cursor/title sequences that some terminals echo back as input. Strip C0/C1, CSI and OSC sequences from untrusted strings before writing to a TTY.
 5. **Symlinks and TOCTOU.** `existsSync` then `writeFile` is a race. Resolve with `realpath`, verify containment **after** opening, use `O_NOFOLLOW`/`openat` where available, and reject `..` and absolute entries when extracting archives.
 6. **Install-time execution.** `preinstall`/`postinstall` run arbitrary code with full developer privileges before anything is evaluated. Set `ignore-scripts` with an explicit allowlist for the few packages that need builds. See `supply-chain.md`.

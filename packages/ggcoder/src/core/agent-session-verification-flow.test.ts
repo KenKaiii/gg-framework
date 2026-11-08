@@ -457,34 +457,16 @@ describe("verification gate flow", { timeout: 60_000 }, () => {
     );
   });
 
-  it("arms before the draft streams, then announces itself when it injects", async () => {
+  it("never forces another turn after an unverified edit, but still reports it", async () => {
     const { internal, events } = await makeSession();
 
-    // Work: one code edit, nothing run since.
     await simulateToolCall(internal, "edit", { file_path: "src/a.ts" });
 
-    // Arming must land on the tool call — i.e. BEFORE the model writes the
-    // candidate final answer — or the client has already painted the draft it
-    // is about to replace.
-    expect(events).toContain("hook_armed:verification:true");
-    expect(events.indexOf("hook_armed:verification:true")).toBe(0);
-
-    // The stop: the gate injects, and says so.
-    const followUp = await internal.getHookFollowUpMessages();
-    expect(followUp).not.toBeNull();
-    expect(String(followUp![0]!.content)).toContain("Run the project's verification");
-    expect(events).toEqual([
-      "hook_armed:verification:true",
-      "hook:verification",
-      // Disarm AFTER the notice: clients release held text on disarm, so the
-      // reverse order paints the draft and then deletes it.
-      "hook_armed:verification:false",
-    ]);
-
-    // One notice, one injection: the reviewed answer that follows streams live
-    // and is the only final answer the user sees.
+    // No hold, no notice, no injected turn: the first final answer is the answer.
     expect(await internal.getHookFollowUpMessages()).toBeNull();
-    expect(events.filter((e) => e === "hook:verification")).toHaveLength(1);
+    expect(events).toEqual([]);
+    // Evidence stays honest for run status and autopilot.
+    expect(internal.getVerificationProblem()).toContain("Unverified");
   });
 
   it("does not count a code write refused in plan mode as an unverified change", async () => {
@@ -516,48 +498,18 @@ describe("verification gate flow", { timeout: 60_000 }, () => {
     expect(internal.getVerificationProblem()).toContain("Unverified");
   });
 
-  it("flags only the file of a multi-file edit that added a suppression", async () => {
-    const { internal } = await makeSession();
-
-    // The edit tool joins one diff section per file.
-    const diff = [
-      "--- a/src/a.ts",
-      "+++ b/src/a.ts",
-      "+// eslint-disable-next-line no-console",
-      "--- a/src/b.ts",
-      "+++ b/src/b.ts",
-      "+export const b = 2;",
-    ].join("\n");
-    await simulateToolCall(
-      internal,
-      "edit",
-      {
-        files: [
-          { file_path: "src/a.ts", edits: [] },
-          { file_path: "src/b.ts", edits: [] },
-        ],
-      },
-      diff,
-    );
-    await simulateToolCall(internal, "bash", { command: "cd pkg && npm test" });
-
-    const review = String((await internal.getHookFollowUpMessages())?.[0]?.content ?? "");
-    expect(review).toContain("- src/a.ts — adds ESLint rule suppression");
-    expect(review).not.toContain("src/b.ts");
-  });
-
   it("stays silent end to end when the run verified its own edit", async () => {
     const { internal, events } = await makeSession();
 
     await simulateToolCall(internal, "edit", { file_path: "src/a.ts" });
     await simulateToolCall(internal, "bash", { command: "cd pkg && npm test" });
 
-    // Disarmed by the verification, so no draft is ever held back.
-    expect(events).toEqual(["hook_armed:verification:true", "hook_armed:verification:false"]);
+    expect(events).toEqual([]);
+    expect(internal.getVerificationProblem()).toBeNull();
     expect(await internal.getHookFollowUpMessages()).toBeNull();
   });
 
-  it("accepts the transcript's format-check chain and only requests an internal test review", async () => {
+  it("accepts the transcript's format-check chain and never asks for a test-edit review", async () => {
     const { internal } = await makeSession();
     const notices: Record<string, unknown>[] = [];
     internal.eventBus.on("hook", (data) => notices.push(data));
@@ -567,36 +519,14 @@ describe("verification gate flow", { timeout: 60_000 }, () => {
       command: "pnpm check && pnpm lint && pnpm format:check && pnpm test",
     });
     expect(internal.getVerificationProblem()).toBeNull();
-    const followUp = await internal.getHookFollowUpMessages();
-    expect(followUp).toHaveLength(1);
-    expect(String(followUp![0]!.content)).toContain("review them internally");
-    expect(String(followUp![0]!.content)).toContain("task outcome");
-    expect(String(followUp![0]!.content)).not.toContain("Run the project's verification");
-    expect(notices).toEqual([{ kind: "verification", verificationReason: "check_review" }]);
     expect(await internal.getHookFollowUpMessages()).toBeNull();
+    expect(notices).toEqual([]);
   });
 
-  it("combines test review with verification and does not interrupt the corrected final again", async () => {
-    const { internal, events } = await makeSession();
-    await simulateToolCall(internal, "edit", { file_path: "src/a.test.ts" });
-    const followUp = await internal.getHookFollowUpMessages();
-    expect(followUp).toHaveLength(2);
-    expect(String(followUp![1]!.content)).toContain("src/a.test.ts");
-    await simulateToolCall(internal, "bash", { command: "pnpm test" });
-    expect(internal.getVerificationProblem()).toBeNull();
-    expect(await internal.getHookFollowUpMessages()).toBeNull();
-    expect(events.filter((e) => e === "hook:verification")).toHaveLength(1);
-  });
-
-  it("counts a check piped through a tail limiter, so a question turn is never hijacked", async () => {
+  it("counts a check piped through a tail limiter as passing evidence", async () => {
     const { internal, events } = await makeSession();
 
     await simulateToolCall(internal, "edit", { file_path: "src/a.ts" });
-    // The agent-habit shape that caused the real-world incident: green suite,
-    // output piped through tail. Pre-pipefail this was rejected as evidence,
-    // the gate stayed armed past the turn, and the NEXT turn — a plain user
-    // question — had its draft held, discarded, and replaced by the hook
-    // notice. With pipefail + the limiter rule it is ordinary passing evidence.
     await simulateToolCall(
       internal,
       "bash",
@@ -606,7 +536,7 @@ describe("verification gate flow", { timeout: 60_000 }, () => {
 
     expect(internal.getVerificationProblem()).toBeNull();
     expect(await internal.getHookFollowUpMessages()).toBeNull();
-    expect(events).toEqual(["hook_armed:verification:true", "hook_armed:verification:false"]);
+    expect(events).toEqual([]);
   });
 
   it("still rejects piped checks whose stages can transform results", async () => {
@@ -843,27 +773,18 @@ describe("verification gate flow", { timeout: 60_000 }, () => {
     expect(await internal.getHookFollowUpMessages()).toBeNull();
   });
 
-  it("answers later question turns instead of re-hijacking them with the verification hook", async () => {
-    // The live incident, replayed against the real session: code edited, the
-    // check the agent actually ran did not count as evidence, and EVERY later
-    // prompt — plain questions included — was answered by "Hook engaged"
-    // plus a verification status instead of the user's question.
+  it("never hijacks a work or question turn, even when a check did not count", async () => {
     const { internal, events } = await makeSession();
 
     await simulateToolCall(internal, "edit", { file_path: "src/a.ts" });
-    // `make test` is a real check the evidence classifier cannot vouch for:
-    // green output, exit 0 — but not bounded evidence.
+    // `make test` is a real check the evidence classifier cannot vouch for.
     await simulateToolCall(internal, "bash", { command: "make test" });
     expect(internal.getVerificationProblem()).toContain("Unverified");
-    // The work turn gets its one demand, as designed.
-    expect(await internal.getHookFollowUpMessages()).not.toBeNull();
+    expect(await internal.getHookFollowUpMessages()).toBeNull();
 
-    // The next user prompt: a new run with no edits. The inherited debt must
-    // NOT re-arm — no hold, no notice, the answer streams untouched.
-    const before = events.length;
     (internal as unknown as { verificationGate: { beginRun(): void } }).verificationGate.beginRun();
     expect(await internal.getHookFollowUpMessages()).toBeNull();
-    expect(events.length).toBe(before);
+    expect(events).toEqual([]);
   });
 
   it.each([

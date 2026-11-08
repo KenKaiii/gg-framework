@@ -53,7 +53,12 @@ export function TitleUsageMeter({ currentProvider }: { currentProvider: string }
     // A newly-active Anthropic window can gain reset timestamps a few seconds
     // after its utilization appears. Poll lightly and refresh immediately when
     // the app regains focus so the countdown fills in without a manual reload.
-    const refreshTimer = window.setInterval(() => void refresh(), 10_000);
+    // Background windows skip the poll (focus refreshes them on return): with
+    // several windows open, each one waking every 10s kept the daemon fetching
+    // the provider's quota endpoint all day while nobody was looking.
+    const refreshTimer = window.setInterval(() => {
+      if (document.hasFocus()) void refresh();
+    }, 10_000);
     const clockTimer = window.setInterval(() => setNow(Date.now()), 30_000);
     window.addEventListener("focus", refresh);
     return () => {

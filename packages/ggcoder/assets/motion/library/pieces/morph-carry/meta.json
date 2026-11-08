@@ -1,0 +1,13 @@
+{
+  "id": "morph-carry",
+  "name": "Morph carry",
+  "kind": "transition",
+  "description": "A cursor presses a pill button and the button's own box springs open into the full frame, its label leaving as the next scene's headline rises inside it. Edit the button label, the hint line and the next scene's kicker and headline.",
+  "tags": ["handoff", "continuous", "kit", "morph", "cursor", "button", "box-to-frame"],
+  "fonts": [],
+  "duration": 5,
+  "previewAt": 1.35,
+  "license": "original",
+  "requires": ["kit"],
+  "previewLook": "soft-light-ad"
+}

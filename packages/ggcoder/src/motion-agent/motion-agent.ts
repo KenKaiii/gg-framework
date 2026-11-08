@@ -2,7 +2,6 @@ import path from "node:path";
 import { AgentSession, type AgentSessionOptions } from "../core/agent-session.js";
 import { findMotionBundle, loadMotionSkills, type MotionBundle } from "../core/skills.js";
 import { MOTION_SYSTEM_PROMPT } from "./motion-prompt.js";
-import { createMotionCheckTool } from "./motion-check-tool.js";
 import { motionStudioPrompt, readMotionStudioContext } from "./motion-studio-context.js";
 
 /**
@@ -15,7 +14,11 @@ export const MOTION_SKILL_CATALOG_BYTES = 32 * 1024;
 /** Reserved `chatAgent` query value the app uses to list Motion sessions. */
 export const MOTION_SESSIONS_QUERY = "motion";
 
-/** Direct video work and sourcing only; no delegation, developer catalogs or MCP. */
+/**
+ * Direct video work and sourcing only; no delegation, developer catalogs or MCP.
+ * No checking tool: a check-fix loop more than doubled the time of a new video
+ * without making it better than building, looking at stills and rendering once.
+ */
 export const MOTION_TOOL_NAMES = [
   "read",
   "write",
@@ -33,7 +36,6 @@ export const MOTION_TOOL_NAMES = [
   "web_fetch",
   "screenshot",
   "generate_image",
-  "motion_check",
 ] as const;
 
 /** Motion's private session store, beside coder's `sessions/` and chat's `chat-sessions/`. */
@@ -126,10 +128,6 @@ export async function createMotionAgentSession(options: MotionAgentOptions): Pro
   return new AgentSession({
     ...sessionOptions,
     completionReview: undefined,
-    additionalTools: [
-      ...(sessionOptions.additionalTools ?? []),
-      createMotionCheckTool(options.cwd, bundle),
-    ],
     allowedTools: [...MOTION_TOOL_NAMES],
     allowedMcpServers: [],
     sessionId: resumableSession,

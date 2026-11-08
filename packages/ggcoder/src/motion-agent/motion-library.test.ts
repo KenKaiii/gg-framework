@@ -33,6 +33,7 @@ type Result = {
   kept?: string[];
   mount?: string[];
   importmap?: string;
+  kit?: string;
   head?: string[];
   results?: Array<{ id: string }>;
   looks?: Array<{ id: string; preview: string }>;
@@ -212,6 +213,27 @@ describe("Motion style library", () => {
     await expect(fs.readFile(edited, "utf8")).resolves.toBe("<!-- edited for this video -->");
     await lib(["add", tmp, "slam-word", "--force"]);
     await expect(fs.readFile(edited, "utf8")).resolves.toContain('data-composition-id="slam-word"');
+  });
+
+  it("installs the move kit for kit pieces and on its own", async () => {
+    const index = await loadIndex();
+    const kitPiece = index.pieces.find((p) => p.requires?.includes("kit"));
+    if (!kitPiece) throw new Error("library needs a move-kit piece");
+    const installed = path.join(tmp, "assets", "kit", "moves.js");
+
+    const plain = await lib(["add", tmp, "slam-word"]);
+    expect(plain.out.kit).toBeUndefined();
+    await expect(fs.access(installed)).rejects.toThrow();
+
+    const added = await lib(["add", tmp, kitPiece.id]);
+    expect(added.code).toBe(0);
+    expect(added.out.kit).toBe('<script src="assets/kit/moves.js"></script>');
+    await expect(fs.readFile(installed, "utf8")).resolves.toContain("GGMotionKit");
+
+    await fs.rm(installed);
+    const direct = await lib(["kit", tmp]);
+    expect(direct.out.kit).toBe('<script src="assets/kit/moves.js"></script>');
+    await expect(fs.readFile(installed, "utf8")).resolves.toContain("GGMotionKit");
   });
 
   it("refuses unknown pieces and missing projects", async () => {

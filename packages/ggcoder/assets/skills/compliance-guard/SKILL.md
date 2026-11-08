@@ -13,9 +13,9 @@ Catch the legal, privacy, and regulatory exposure in a shipped product before a 
 
 1. **Exposure drives obligations, not stack.** What the product *does*, *who can reach it*, and *whose data it touches* decide what applies. A CLI that never leaves the laptop owes almost nothing. A one-page site with a contact form and an ad pixel owes a surprising amount.
 2. **Never certify.** Do not write or say "compliant", "GDPR compliant", "ADA compliant", "fully legal", or "you're covered". Produce a risk register, implemented controls, residual risk, and an explicit *get a lawyer for this* list. This is engineering guidance, not legal advice, and must be labelled as such in every report.
-3. **Date-check before asserting.** The references are a snapshot dated **11 August 2026**. Effective dates, thresholds, injunctions, and penalty amounts move. Before stating a date, a threshold, or "this is in force", re-verify with web access if available; if unavailable, say the claim is from a dated snapshot and needs confirmation. Never invent a citation, statute section, or deadline.
+3. **Date-check before asserting.** The references are a snapshot dated **11 August 2026**, spot re-verified **3 October 2026** (`references/provenance.md` lists what was and was not re-checked). Effective dates, thresholds, injunctions, and penalty amounts move. Before stating a date, a threshold, or "this is in force", re-verify with web access if available; if unavailable, say the claim is from a dated snapshot and needs confirmation. Never invent a citation, statute section, or deadline.
 4. **Say it plainly when it is illegal.** If the requested build is unlawful, licensed, or criminal as described, state that clearly and early — before writing code, not after. Name the specific regime, the concrete red line, the safe subset that *can* be built, and what authorization would change the answer. Do not soften it into a vague caution, and do not silently build it.
-5. **Fix, do not just flag.** Anything code can fix, fix: consent gating, security P0s, opt-out plumbing, deletion propagation, disclosure strings, accessibility defects. Draft documents as clearly-marked templates with `[PLACEHOLDER]` fields. Never invent the user's legal facts — entity name, registered address, DPO, retention periods, or vendor list must come from the user or the repo.
+5. **Fix, do not just flag.** Anything code can fix, fix: consent gating, security P0s (via bulletproof's inline gate), opt-out plumbing, deletion propagation, disclosure strings, accessibility defects. Draft documents as clearly-marked templates with `[PLACEHOLDER]` fields. Never invent the user's legal facts — entity name, registered address, DPO, retention periods, or vendor list must come from the user or the repo.
 6. **Proportionality.** A weekend prototype with no users does not need 60 findings. Gate on *launch-blocking* first, rank by probability × severity, and keep the tail as a backlog. Overwhelming a solo dev produces zero fixes.
 7. **Jurisdictions are a matrix, not a country.** "Where the company is" rarely limits exposure; "who can reach the app" usually sets it. A US-only startup with EU visitors and an unblocked signup form is in scope for EU law.
 
@@ -25,7 +25,7 @@ Catch the legal, privacy, and regulatory exposure in a shipped product before a 
 
 This mode matters most, because the users who need this skill will never ask for it. They ask for a signup page, a Stripe checkout, a contact form, an image upload. **Build the control into the feature as you write it** rather than waiting to be asked — consent-gate the pixel you were told to add, put the unsubscribe link in the email template, enforce authorization at the data layer. Mention it in one line and move on. Do not stop the build to deliver a lecture, and do not silently ship the unsafe version and flag it later.
 
-**Full review** — triggered by pre-launch, "is this safe", audit, or first use of this skill on a project. Run the whole workflow below and write the register.
+**Full review** — triggered by pre-launch, "is this safe", or an audit. A first use on a project mid-build stays an inline gate. Run the whole workflow below and write the register.
 
 ## Workflow
 
@@ -214,6 +214,21 @@ The register is the artifact; the message to the user is what actually gets acte
 
 **Do not moralise and do not catastrophise.** State the base rate. "Small apps get sued over this regularly" and "this almost never gets enforced against someone your size, but it is cheap to fix" are both useful; "you could be fined €20 million" is not, because they will stop reading.
 
+## Scaling: one agent or several
+
+| Situation | Do |
+|---|---|
+| Inline gate, small edit, single feature | Main thread only. Never spawn for an inline gate. |
+| Full review, one deployable, one primary jurisdiction, every ledger row readable by you | Stay single-threaded. |
+| Several deployables/surfaces (web + mobile + admin + marketing site) **and** several jurisdictions or data flows | Build the coverage ledger first (rows = ledger items × surfaces × jurisdictions), then fan out. |
+
+Fan-out rules:
+- One `spawn_agent` call, ≤ 6 read-only children, each owning a disjoint slice — **by product surface** (paths) or **by jurisdiction** (US / EU / UK). Brief each with: absolute skill root, the exact reference files to read, its paths, the ledger rows it owns, the RUNTIME/CODE/DEDUCED labels, `[V]/[S]/[U]` markers, and the output schema (finding, file:line, label, severity, fix, plus explicit `checked` and `not checked` lists). Children never see this conversation.
+- Dated legal claims the report will rely on → one `researcher` child per jurisdiction to re-verify against primary sources (statute site, official journal, regulator, court), returning date, status, and URL.
+- **Merge:** a child that fails, times out, or omits a row → that row is `not checked`, never clean. Re-open each reported file:line yourself before reporting it.
+- **Independent verification, always, for a full review:** a fresh-context child gets the draft findings and tries to disprove each one (wrong jurisdiction, ban vs duty, stale date, wrong label). Downgrade or drop what it refutes.
+- Fixes stay serialized in the main thread (or `bee` children on strictly disjoint files); run checks once after merging.
+
 ## Hard stops
 
 Do not build these, regardless of framing. State the reason and offer the lawful subset from `references/sector-gates.md`:
@@ -232,7 +247,7 @@ Do not build these, regardless of framing. State the reason and offer the lawful
 - Never present something you read as something you ran. Every finding and every fix is **RUNTIME**, **CODE**, or **DEDUCED**, and the report says which. "I could not verify this" is a legitimate and useful output; a fabricated confirmation is not.
 - Report what you did **not** check. A review that silently skips the mobile app, the admin panel, or the marketing site reads as full coverage and is more dangerous than no review.
 - Never fabricate a statute, section number, case, effective date, or penalty. If unsure, say "verify this" and mark confidence.
-- Distinguish **verified**, **snapshot (11 Aug 2026, re-verify)**, and **uncertain** in the report. The references carry these markers — preserve them; do not launder a flagged-uncertain item into a confident statement.
+- Distinguish **verified**, **snapshot (11 Aug 2026 / 3 Oct 2026, re-verify)**, and **uncertain** in the report. The references carry these markers — preserve them; do not launder a flagged-uncertain item into a confident statement.
 - Do not use fear as a lever. Give the base rate and the fix, not doom.
 - When the user says a jurisdiction does not apply to them, record it as their stated assumption rather than silently accepting or arguing.
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { getSubscriptionUsage } from "./agent";
 import { TitleUsageMeter } from "./TitleUsageMeter";
 import { compactResetLabel } from "./usage-display";
@@ -192,6 +192,38 @@ describe("TitleUsageMeter", () => {
     await screen.findByRole("button", { name: /Codex 5-hour: 22% used/ });
     window.dispatchEvent(new Event("focus"));
     await waitFor(() => expect(container.firstChild).toBeNull());
+  });
+
+  it("polls only while its window is focused", async () => {
+    vi.useFakeTimers();
+    try {
+      getUsageMock.mockResolvedValue({
+        provider: "openai",
+        displayName: "Codex",
+        connected: true,
+        windows: [{ kind: "current", label: "5-hour", usedPercent: 22 }],
+        fetchedAt: Date.now(),
+      });
+      let focused = false;
+      const hasFocus = vi.spyOn(document, "hasFocus").mockImplementation(() => focused);
+      onTestFinished(() => hasFocus.mockRestore());
+
+      render(<TitleUsageMeter currentProvider="openai" />);
+      expect(getUsageMock).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(getUsageMock).toHaveBeenCalledTimes(1);
+
+      focused = true;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(getUsageMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("stays hidden for providers without subscription quota support", () => {

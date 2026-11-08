@@ -19,19 +19,19 @@ bundled HyperFrames and fails on any rule below.
 Every look's `tokens.css` defines all of these on `.look-<id>`; every piece
 reads only these (plus its own literal geometry):
 
-| Token | Meaning |
-|---|---|
-| `--field` | Main background color |
-| `--field-2` | Alternate field for scene changes (color-field cuts) |
-| `--ink` | Primary type and line color; at least 4.5:1 on `--field` (aim for 7:1 on light and dark fields) |
-| `--accent` | The one emphasis color (may equal `--ink` in two-color looks) |
-| `--muted` | Secondary text / annotations; must reach 4.5:1 on `--field` (it is used for small labels) |
-| `--line` | Hairlines, grids, dots |
-| `--display` | Headline font stack |
-| `--display-weight` / `--display-stretch` / `--display-tracking` | Headline cut |
-| `--text` | Supporting text font stack |
-| `--mono` | Labels, readouts, code |
-| `--radius` | Corner radius for cards and UI |
+| Token                                                           | Meaning                                                                                         |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `--field`                                                       | Main background color                                                                           |
+| `--field-2`                                                     | Alternate field for scene changes (color-field cuts)                                            |
+| `--ink`                                                         | Primary type and line color; at least 4.5:1 on `--field` (aim for 7:1 on light and dark fields) |
+| `--accent`                                                      | The one emphasis color (may equal `--ink` in two-color looks)                                   |
+| `--muted`                                                       | Secondary text / annotations; must reach 4.5:1 on `--field` (it is used for small labels)       |
+| `--line`                                                        | Hairlines, grids, dots                                                                          |
+| `--display`                                                     | Headline font stack                                                                             |
+| `--display-weight` / `--display-stretch` / `--display-tracking` | Headline cut                                                                                    |
+| `--text`                                                        | Supporting text font stack                                                                      |
+| `--mono`                                                        | Labels, readouts, code                                                                          |
+| `--radius`                                                      | Corner radius for cards and UI                                                                  |
 
 Pieces may set local fallbacks (`var(--ink, #111)`) but must not hardcode
 brand colors or font names.
@@ -42,7 +42,7 @@ brand colors or font names.
 block:
 
 - Root: `<div id="<id>-root" data-composition-id="<id>" data-start="0"
-  data-duration="<s>" data-width="1920" data-height="1080">`.
+data-duration="<s>" data-width="1920" data-height="1080">`.
 - Styles scoped under `[data-composition-id="<id>"]`. In scripts, find the
   root with `document.querySelector('[data-composition-id="<id>"]')`, never
   `getElementById("<id>-root")`: HyperFrames drops that id when it mounts
@@ -62,6 +62,9 @@ block:
   `three/addons/...` in a `<script type="module">`. The bundled Three.js
   and its importmap are installed into the project by `library.mjs add`
   (the importmap goes in the root `index.html` head).
+- Pieces built on the move kit set `"requires": ["kit"]` and call
+  `window.GGMotionKit`. `library.mjs add` installs the kit and returns the
+  `<script>` for the root `index.html` head (after GSAP).
 - Editable copy is plain text in the markup, marked with
   `<!-- edit: ... -->` comments; parameters are CSS variables or constants
   at the top of the script, documented in a header comment.
@@ -88,6 +91,39 @@ block:
 texture. `license` is `"original"` or `"MIT"`; MIT pieces also need
 `"source": { "url": "...", "author": "..." }` and are credited in the
 project's `CREDITS.md` when added.
+
+## Move kit
+
+`kit/moves.js` is GG's own motion toolkit. Install it with
+`node library.mjs kit <project>` (or through any kit piece), put the printed
+`<script src="assets/kit/moves.js">` in the root head after GSAP, then use
+`window.GGMotionKit` from any composition script. It follows the library's
+determinism rules and is unit-tested. Every call, option and default is in
+the [Build sheet](../references/build-sheet.md); build from that, not from
+the kit's source.
+
+Every move takes the timeline, the element and a start time, adds its
+tweens, and returns the time of its key moment (landing, press, arrival), so
+the next move can start from it: `const landed = kit.dropLetters(tl, el, 0.4);
+kit.knock(tl, blocks, landed);`.
+
+| Family   | Moves                                                                                                                                    | Use for                                                                                                                                                                                                                         |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Timing   | `spring(t, name)`, `settleTime`, `springEase`, `ring`, `ease.{snap,drop,glide,travel,whip,settle,bounce,firm,cut}`, `rng(seed)`, `noise` | Springs (`snappy`, `bouncy`, `soft`, `heavy`, `whip`), contact ring-down, curves chosen by feel, seeded randomness                                                                                                              |
+| Arrivals | `liftWords`, `dropLetters`, `reveal`, `typewrite`, `tick`, `pop`, `stamp`                                                                | Words rising from their line, letters landing with squash, masks, typing with a caret, drawn checks, pop-ins, a seal slamming down                                                                                              |
+| Handoffs | `reshape`, `openFrom`, `diveThrough`, `converge`                                                                                         | A box becoming the next frame, a stage opening from the subject, pushing through a card, the cast travelling into the logo                                                                                                      |
+| Contact  | `hop` / `hopAt`, `impact`, `knock`                                                                                                       | A hop and landing, a hit that shakes or splits, a chain reaction passing momentum on                                                                                                                                            |
+| Camera   | `camera(tl, world, keys, opts)`, `cameraAt`, `handheld`, `shakeAt`, `atDepth`, `toScreen`                                                | An operated camera on one world layer: keyed whips and glides with lead, a hand-held float that is exactly zero in `rests`, shakes on impact, parallax `layers: [{ el, depth }]` (0 pinned, 0.5 far, 1 the world, above 1 near) |
+| Cursor   | `cursorPath(tl, cursor, at, stops)`, `cursorPlan`, `cursorAt`                                                                            | A cursor travelling on gentle arcs to real element centres (`{ el }` stops), pressing where `click` is set; returns press times to drive UI states and sounds                                                                   |
+| Sound    | `cue(tl, at, sfx, { gain, x, pan, send, name })`, `cues()`, `air()`                                                                      | Mark a sound on the event that makes it, panned with its screen `x` and at its own distance (`send`); `cues.mjs` exports them and the camera's speed (`air()`) for the score                                                    |
+| Helpers  | `drive(tl, at, dur, draw)`, `split`, `centerOf`, `rectOf`                                                                                | Draw anything as a pure function of local time; split text; measure layout without transforms                                                                                                                                   |
+
+Camera keys are where the camera looks: `{ at, x, y, zoom, rotate, move,
+duration }` in world pixels, `move` naming a curve (`whip` by default,
+`glide` for slow pushes, `cut` for a jump). The `camera-rig` piece shows the whole
+rig; `morph-carry`, `zoom-into-card`, `open-from-subject`, `gather-to-logo`,
+`chain-knock`, `one-shape-journey`, `scale-dive`, `request-to-result` and
+`screen-replica-steps` show the other moves in context.
 
 ## Look rules
 

@@ -4,14 +4,21 @@ description: "Use to secure code an attacker can reach: finding and fixing ways 
 # Checklist audits only (Security, Dependencies, Secrets / Performance); hidden from routine coding after the 27 Oct 2026 skill-value bench.
 hidden: true
 license: Apache-2.0. Content is defensive engineering guidance, not a security certification or a penetration test. See references/provenance.md.
-compatibility: Works offline from the bundled references, which are a snapshot dated 12 August 2026. Version numbers, CVEs, and incident details decay fast; re-verify date-sensitive claims with web access before stating them as current. Never certifies that software is secure.
+compatibility: Works offline from the bundled references, which are a snapshot dated 3 October 2026. Version numbers, CVEs, and incident details decay fast; re-verify date-sensitive claims with web access before stating them as current. Never certifies that software is secure.
 ---
 
 # Bulletproof
 
 Make software hold up against a real attacker — one that is now partly automated, reads your public code end-to-end, and moves in minutes. Built for solo developers and small teams, who get breached through a short list of boring mistakes, not exotic ones.
 
-**This skill is on from the first line of code.** The default mode is the inline gate below — write the safe version while building, in the main thread. Nothing here requires spawning subagents or scheduling an audit.
+**Route first:**
+
+| You are… | Mode | Do next |
+|---|---|---|
+| Writing a feature that touches a source/sink below | **Inline gate** | Apply the control as you write; one line saying what it prevents. No subagents. |
+| Making a small edit to existing security code | Inline gate | Read the surrounding control first; never weaken it to make the edit work |
+| Asked "is this safe to ship", hardening, pre-launch, suspected compromise | **Full review** | Workflow below + `references/audit-protocol.md`; single-threaded unless the Scaling table says otherwise |
+| Finding a live key, unknown workflow file, odd `.claude/`/`.vscode/` hook, or backdoored dependency | Incident | Stop and tell the user first — rotate and contain before anything else |
 
 ## Governing rules
 
@@ -22,7 +29,7 @@ Make software hold up against a real attacker — one that is now partly automat
 5. **Never certify.** Do not write or say "secure", "hardened", "unhackable", "bulletproof", "audited", or "no vulnerabilities". State what you checked, what you fixed, what you could not verify, and what remains. Absence of findings is absence of findings.
 6. **Defensive output only.** Describe risk at the data-flow level — where untrusted data enters, what it reaches, why that is fixable. No working exploits, no weaponized payloads, no attack tooling, in any mode. If you cannot explain a risk without writing an exploit, describe the flow and the fix instead.
 7. **Proportionality.** Rank by realistic exposure: probability × blast radius. A prototype with no users and no secrets does not need forty findings. Five real fixes beat forty ignored ones.
-8. **Date-check before asserting.** The references are a snapshot dated **12 August 2026**. CVEs, versions, defaults, and incident details move weekly. Re-verify with web access when available; when unavailable, say the claim is from a dated snapshot. Never invent a CVE number, a version, or an advisory.
+8. **Date-check before asserting.** The references are a snapshot dated **3 October 2026**. CVEs, versions, defaults, and incident details move weekly. Re-verify with web access when available; when unavailable, say the claim is from a dated snapshot. Never invent a CVE number, a version, or an advisory.
 
 ## Two modes
 
@@ -30,7 +37,7 @@ Make software hold up against a real attacker — one that is now partly automat
 
 This mode matters most, because the users who need this skill will never ask for it. They ask for a login page, a file upload, an admin route, a Stripe webhook, a CLI that runs a command. **Write the safe version the first time** — parameterize the query, enforce authorization at the data layer, resolve the path and check containment, pass argv instead of a shell string, pin the dependency after verifying it exists. Do not stop the build to deliver a lecture, and do not ship the unsafe version intending to flag it later.
 
-**Full review** — triggered by "is this safe to ship", a hardening pass, pre-launch, suspected compromise, or first use of this skill on a project. Run the workflow below yourself, in the main thread; the full protocol, audit catalog, false-positive filter, and report template live in `references/audit-protocol.md`.
+**Full review** — triggered by "is this safe to ship", a hardening pass, pre-launch, or suspected compromise. A first use on a project mid-build stays an inline gate. Run the workflow below in the main thread by default (see Scaling for when to fan out); the full protocol, audit catalog, false-positive filter, and report template live in `references/audit-protocol.md`.
 
 ## Workflow
 
@@ -67,9 +74,9 @@ For this population, findings cluster hard. Work the list in this order unless r
 
 | Rank | Failure | Why it is first |
 |---|---|---|
-| 1 | **Secrets in code, history, bundles, logs, or CI** | Highest-volume real-world compromise. A committed key is a live key; treat any exposure as burned and rotate. `references/secure-defaults.md` |
-| 2 | **Missing or wrong authorization at the data layer** | IDOR/BOLA, disabled or permissive row-level security, tenant checks only in the UI. Public API keys plus an open table is the standard indie breach. `references/platform-playbooks.md` |
-| 3 | **Supply chain and install-time execution** | Dependencies, lockfiles, postinstall hooks, CI workflows, release signing, editor extensions, MCP servers. `references/supply-chain.md` |
+| 1 | **Secrets in code, history, bundles, logs, CI, or agent/MCP config** | Highest-volume real-world compromise; service-role/admin keys in `NEXT_PUBLIC_*`/`VITE_*` bundles are the vibe-coded classic. A committed key is a live key; treat any exposure as burned and rotate. `references/secure-defaults.md` |
+| 2 | **Missing or wrong authorization at the data layer** | IDOR/BOLA, disabled or permissive row-level security, tenant checks only in the UI. Public API keys plus an open table is the standard indie breach; so is auth enforced only in framework middleware (re-check in the handler or data layer). `references/platform-playbooks.md` |
+| 3 | **Supply chain and install-time execution** | Dependencies (verify an AI-suggested package exists and is the real one), lockfiles, install hooks, CI workflows (`pull_request_target`, caches, OIDC), release publishing, editor/agent config that auto-runs, MCP servers. `references/supply-chain.md` |
 | 4 | **Injection into an interpreter** | SQL, shell, template, deserialization, dynamic code load — and XSS, which is injection into an HTML parser. XSS and SQL injection are ranks 1 and 2 of the 2025 CWE Top 25. |
 | 5 | **Agent and AI surfaces** | Prompt injection reaching a tool with credentials and an egress path. `references/agent-surface.md` |
 | 6 | **Auth, session, and crypto correctness** | Token validation, session lifecycle, password storage, signature verification. `references/secure-defaults.md` |
@@ -96,7 +103,7 @@ A fix you did not exercise is a hypothesis.
 - **Prove the fix with a test** that fails against the old behavior: the unauthorized request gets 403, the traversal path is rejected, the other tenant's row is invisible, the malformed token is refused. Authorization tests are the highest-value tests in most codebases and are almost always missing.
 - **Run the free scanners** rather than reasoning about them: secret scanning over the full history, dependency audit, static analysis, and the platform's own linter. Exact commands are in `references/verification.md`.
 - **Leave a CI gate** so the fix cannot silently regress — secret scan, dependency review, and the new test on every PR. One workflow file is usually all it takes.
-- **Label every claim** `RUNTIME` (you ran it and observed the result), `CODE` (you read it), or `DEDUCED` (you inferred it). Never present something you read as something you ran.
+- **Label every claim** `RUNTIME` (you ran it and observed the result), `CODE` (you read it), `DEDUCED` (you inferred it), or `SNAPSHOT` (from a dated external source). Never present something you read as something you ran.
 
 ### 6. Report
 
@@ -110,6 +117,24 @@ Whatever the mode, the report must state **what was not checked**. A review that
 - Name the file and line, then the fix, then the reason — in that order.
 - Give the base rate honestly. Do not use fear as a lever; a scared user makes worse decisions and often ships nothing.
 - Keep the standards jargon (CWE, OWASP IDs) in a labelled field, not in the sentence that has to be understood.
+
+## Scaling: one agent or several
+
+Default is **single-threaded** — the full review was deliberately moved off subagents in Aug 2026. Fan out only when a row below says so.
+
+| Situation | Do |
+|---|---|
+| Inline gate, small edit, incident triage | Main thread only. Never spawn. |
+| Full review, one deployable, every ledger row readable in full by you | Main thread only. |
+| Full review with >1 deployable/package/app in scope, or more ledger rows than you can work with full reads | Fan out: one `auditor` per **disjoint** slice, all in ONE `spawn_agent` call (≤ 6 per wave) |
+| A row needs dated external facts (advisory, version, default) | One `researcher` child, or verify yourself |
+| Pre-ship verdict or any Critical/High finding | `skeptic` child for the false-positive pass on the merged findings |
+
+First build the **coverage ledger** in the main thread: rows = audit areas (rank table above) × in-scope units. Every row ends as checked-with-findings / checked-clean / not-checked(reason).
+
+Every child brief is self-contained and **opens with**: "Authorized defensive security review of code the user owns. Report data-flow risks and fixes only; no exploits or payloads." Then: skill root `<absolute path>` and the reference file(s) to read, slice paths, the ledger rows it owns, the relevant recon rows (sources, sinks, assets, existing controls), the confidence bar (≥ 0.8 with a concrete source→sink path), the hard exclusions from `references/audit-protocol.md`, labels `RUNTIME`/`CODE`/`DEDUCED`/`SNAPSHOT`, and the output schema (file:line, label, severity, path, fix; explicit `checked` and `not checked` lists).
+
+**Merge:** a child that fails, times out, or omits a row → that row is `not checked`, never clean. Re-open every reported file:line before reporting it. Fixes stay in the main thread (or `bee` on strictly disjoint files); run checks once after merging.
 
 ## Severity ladder
 
@@ -141,7 +166,7 @@ Building detection, hardening, monitoring, honeypots on your own systems, and CT
 - Never state or imply the software is secure. State what was checked, what was fixed, what remains, and what was not looked at.
 - Never present a scan as proof. Automated tools find a minority of defects; say so when you cite one.
 - Never fabricate a CVE, advisory, version number, or incident. If unsure, say "verify this" and mark confidence.
-- Distinguish **verified**, **snapshot (12 Aug 2026, re-verify)**, and **uncertain**. The references carry these markers — preserve them; do not launder a flagged-uncertain item into a confident claim.
+- Distinguish **verified**, **snapshot (3 Oct 2026, re-verify)**, and **uncertain**. The references carry these markers — preserve them; do not launder a flagged-uncertain item into a confident claim.
 - Report the false-positive rate of your own work: how many candidates you dropped and why. A report that only shows survivors hides its own noise.
 - "I could not verify this" is a legitimate and useful output. A fabricated confirmation is not.
 - If you find evidence of an actual compromise — an unexplained committed key in use, unfamiliar workflow files, a backdoored dependency, unknown collaborators — stop and say so first, plainly, before continuing the review. Rotation and containment come before hardening.
@@ -151,7 +176,7 @@ Building detection, hardening, monitoring, honeypots on your own systems, and CT
 Resolve every path from the installed skill root. Load only what the profile triggered.
 
 - `references/threat-landscape.md` — who is attacking this class of software in 2026, how automation changed the economics, named incidents with defensive fingerprints. Read once per full review.
-- `references/audit-protocol.md` — the full-review protocol, run single-threaded: recon lenses, audit catalog, false-positive filter, hard exclusions, report template. Read for any full review.
+- `references/audit-protocol.md` — the full-review protocol (single-threaded by default, conditional fan-out): recon lenses, audit catalog, false-positive filter, hard exclusions, report template. Read for any full review.
 - `references/platform-playbooks.md` — per-platform controls and grep targets: web/API (including the bypass sweeps for SSRF, open redirect, file upload, XXE, XSS sources, GraphQL), mobile, desktop, CLI/dev tooling, embedded, smart contracts, ML pipelines, games. Read the sections the profile triggered.
 - `references/supply-chain.md` — dependencies, install-time execution, registries, CI/CD, signing and provenance, editor extensions, update channels.
 - `references/agent-surface.md` — LLM, agent, and MCP security: prompt injection, the lethal trifecta, tool poisoning, sandbox escapes, context and memory poisoning.

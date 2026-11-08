@@ -90,11 +90,17 @@ export function inside(root: string, target: string): boolean {
     (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`))
   );
 }
-/** Existing paths only; checking their real paths rejects symlink escapes. */
+/**
+ * Existing paths only; checking their real paths rejects symlink escapes. A path is read
+ * against the workspace as it was named (so `/tmp/x/file` works for a workspace named
+ * `/tmp/x` although macOS keeps it at `/private/tmp/x`) and checked again by real path.
+ */
 export async function motionPath(root: string, input: string): Promise<string> {
   const base = await fs.realpath(root);
-  const requested = path.resolve(base, input);
-  if (!inside(base, requested)) throw new Error("Motion path escapes its workspace");
+  const named = path.resolve(root);
+  const requested = path.resolve(named, input);
+  if (!inside(named, requested) && !inside(base, requested))
+    throw new Error("Motion path escapes its workspace");
   const real = await fs.realpath(requested);
   if (!inside(base, real)) throw new Error("Motion symlink escapes its workspace");
   return real;
@@ -147,16 +153,21 @@ export async function readMotionText(
   }
 }
 
-/** Source/media fingerprint; output/QA folders are never composition inputs. */
+/**
+ * Source/media fingerprint; output/QA folders are never composition inputs. `ignored` names
+ * further files the composition never reads (e.g. a check's hold plan).
+ */
 export async function motionSourceHash(
   project: string,
   output: string,
   signal?: AbortSignal,
+  ignored: readonly string[] = [],
 ): Promise<string> {
   const root = await fs.realpath(project);
-  const excludedOutput = path.resolve(
-    root,
-    path.relative(path.resolve(project), path.resolve(output)),
+  const excluded = new Set(
+    [output, ...ignored].map((file) =>
+      path.resolve(root, path.relative(path.resolve(project), path.resolve(file))),
+    ),
   );
   const hash = createHash("sha256");
   let count = 0;
@@ -181,7 +192,7 @@ export async function motionSourceHash(
       )
         continue;
       const file = path.join(dir, entry.name);
-      if (file === excludedOutput) continue;
+      if (excluded.has(file)) continue;
       if (entry.isSymbolicLink())
         throw new Error("Motion source symlinks require local copies for review");
       if (entry.isDirectory()) await walk(file, depth + 1);

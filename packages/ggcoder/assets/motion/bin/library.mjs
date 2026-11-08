@@ -8,11 +8,14 @@
 //   node library.mjs show <id>
 //   node library.mjs look <project-dir> <look-id>
 //   node library.mjs add <project-dir> <piece-id> [<piece-id> ...] [--force]
+//   node library.mjs kit <project-dir>
 //
 // `look` writes <project>/assets/looks/<id>.css (design tokens as CSS
 // variables) and installs the look's fonts. `add` copies pieces into
 // <project>/compositions/<id>.html, installs their fonts, and records
-// third-party credits in CREDITS.md. Every command prints one JSON line.
+// third-party credits in CREDITS.md. `kit` installs the move kit
+// (library/kit/moves.js) as <project>/assets/kit/moves.js; `add` does the
+// same for pieces that require it. Every command prints one JSON line.
 import { execFileSync } from "node:child_process";
 import { appendFile, copyFile, mkdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -49,13 +52,26 @@ async function projectDir(arg) {
 /** Returns the installed families and fonts.mjs's page-ready <style> block. */
 function installFonts(project, families) {
   if (families.length === 0) return { installed: [], head: [] };
-  const out = execFileSync(process.execPath, [join(BIN, "fonts.mjs"), "add", project, ...families], {
-    encoding: "utf8",
-  });
+  const out = execFileSync(
+    process.execPath,
+    [join(BIN, "fonts.mjs"), "add", project, ...families],
+    {
+      encoding: "utf8",
+    },
+  );
   const result = JSON.parse(out);
   if (!result.ok) fail(`Font install failed: ${result.error}`);
   // Inline, not a linked fonts.css: `hf check` only sees @font-face written in the page.
   return { installed: result.installed, head: [result.head] };
+}
+
+const KIT_HEAD = '<script src="assets/kit/moves.js"></script>';
+
+/** Copies the move kit into the project; returns the <script> for the root head. */
+async function installKit(project) {
+  await mkdir(join(project, "assets", "kit"), { recursive: true });
+  await copyFile(join(LIBRARY, "kit", "moves.js"), join(project, "assets", "kit", "moves.js"));
+  return KIT_HEAD;
 }
 
 const summary = (entry, type) => ({
@@ -76,7 +92,8 @@ if (command === "list") {
   const which = rest[0] === "looks" || rest[0] === "pieces" ? rest[0] : undefined;
   const kindIndex = rest.indexOf("--kind");
   const kind = kindIndex >= 0 ? rest[kindIndex + 1] : undefined;
-  if (kind && !lib.kinds.includes(kind)) fail(`Unknown kind "${kind}". Kinds: ${lib.kinds.join(", ")}`);
+  if (kind && !lib.kinds.includes(kind))
+    fail(`Unknown kind "${kind}". Kinds: ${lib.kinds.join(", ")}`);
   const looks = which === "pieces" || kind ? [] : lib.looks.map((l) => summary(l, "look"));
   const pieces =
     which === "looks"
@@ -85,7 +102,8 @@ if (command === "list") {
   // Contact sheets show many previews in one image read.
   const sheets = {};
   if (looks.length > 0) sheets.looks = join(LIBRARY, "sheets", "looks.jpg");
-  for (const k of new Set(pieces.map((p) => p.kind))) sheets[k] = join(LIBRARY, "sheets", `${k}.jpg`);
+  for (const k of new Set(pieces.map((p) => p.kind)))
+    sheets[k] = join(LIBRARY, "sheets", `${k}.jpg`);
   done({ ok: true, kinds: lib.kinds, sheets, looks, pieces });
 }
 
@@ -120,7 +138,11 @@ if (command === "show") {
     ...(look ?? piece),
     preview: join(dir, "preview.jpg"),
     files: look
-      ? { spec: join(dir, "look.md"), tokens: join(dir, "tokens.css"), sample: join(dir, "sample.html") }
+      ? {
+          spec: join(dir, "look.md"),
+          tokens: join(dir, "tokens.css"),
+          sample: join(dir, "sample.html"),
+        }
       : { source: join(dir, "piece.html") },
   });
 }
@@ -142,6 +164,18 @@ if (command === "look") {
     use: "Paste head into the composition <head>, replacing any earlier fonts block.",
     root: `add class="look-${look.id}" to the root composition element`,
     spec: join(LIBRARY, "looks", look.id, "look.md"),
+  });
+}
+
+if (command === "kit") {
+  const project = await projectDir(rest[0]);
+  const kit = await installKit(project);
+  done({
+    ok: true,
+    installed: join(project, "assets", "kit", "moves.js"),
+    kit,
+    use: "Put kit in the root index.html <head> after GSAP; scripts then use window.GGMotionKit.",
+    reference: join(LIBRARY, "README.md"),
   });
 }
 
@@ -187,17 +221,26 @@ if (command === "add") {
   let importmap;
   if (pieces.some((p) => (p.requires ?? []).includes("three"))) {
     const three = JSON.parse(
-      execFileSync(process.execPath, [join(BIN, "three.mjs"), "add", project], { encoding: "utf8" }),
+      execFileSync(process.execPath, [join(BIN, "three.mjs"), "add", project], {
+        encoding: "utf8",
+      }),
     );
     if (!three.ok) fail(`Three.js install failed: ${three.error}`);
     importmap = three.importmap;
   }
+  // Kit pieces call window.GGMotionKit, loaded once by the root page.
+  const kit = pieces.some((p) => (p.requires ?? []).includes("kit"))
+    ? await installKit(project)
+    : undefined;
   done({
     ok: true,
     added,
     kept,
     fonts: fonts.installed,
-    ...(importmap ? { importmap, note: "put importmap in index.html <head> before any module script" } : {}),
+    ...(importmap
+      ? { importmap, note: "put importmap in index.html <head> before any module script" }
+      : {}),
+    ...(kit ? { kit, kitNote: "put kit in index.html <head> after GSAP" } : {}),
     mount: pieces.map(
       (p) =>
         `<div id="${p.id}-clip" data-composition-id="${p.id}" data-composition-src="compositions/${p.id}.html" data-start="0" data-duration="${p.duration}" data-width="1920" data-height="1080" data-track-index="0"></div>`,
@@ -206,5 +249,5 @@ if (command === "add") {
 }
 
 fail(
-  "usage: library.mjs list [looks|pieces] [--kind k] | search <words> | show <id> | look <project> <look-id> | add <project> <piece-id>... [--force]",
+  "usage: library.mjs list [looks|pieces] [--kind k] | search <words> | show <id> | look <project> <look-id> | add <project> <piece-id>... [--force] | kit <project>",
 );

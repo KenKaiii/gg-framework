@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { generatePKCE } from "./pkce.js";
 import { getClaudeCliUserAgent } from "../claude-code-version.js";
+import { oauthRequestSignal } from "./request-timeout.js";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "./types.js";
 
 const CLIENT_ID = atob("OWQxYzI1MGEtZTYxYi00NGQ5LTg4ZWQtNTk0NGQxOTYyZjVl");
@@ -39,7 +40,12 @@ async function postTokenRequest(
   for (const url of TOKEN_URLS) {
     let response: Response;
     try {
-      response = await fetch(url, { method: "POST", headers, body: encoded });
+      response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: encoded,
+        signal: oauthRequestSignal(),
+      });
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       continue;

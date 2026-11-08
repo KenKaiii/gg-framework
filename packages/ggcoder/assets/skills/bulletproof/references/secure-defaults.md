@@ -2,7 +2,7 @@
 
 The values to write **while building**, so the audit finds nothing. When a choice is not obviously required by the project, pick the default here and state it in one line.
 
-Snapshot 12 August 2026. **[V]** verified, **[S]** snapshot-volatile, **[U]** uncertain. Re-verify version-sensitive items before asserting them as current.
+Snapshot 3 October 2026. **[V]** verified, **[S]** snapshot-volatile, **[U]** uncertain. Re-verify version-sensitive items before asserting them as current.
 
 ## Secrets
 
@@ -12,7 +12,7 @@ Snapshot 12 August 2026. **[V]** verified, **[S]** snapshot-volatile, **[U]** un
 - Anything prefixed `NEXT_PUBLIC_`, `VITE_`, `EXPO_PUBLIC_`, `REACT_APP_` **is published**. Check the built bundle, not the source.
 - Scope every credential to the narrowest permission and shortest lifetime that works. Prefer short-lived OIDC federation over long-lived cloud keys; prefer per-service tokens over one shared key.
 - **A secret that touched a public surface, a build log, a paste, a screenshot, or a third-party tool is compromised.** Rotate it. Removing the commit does not unpublish it.
-- Config files for AI tooling count: thousands of live credentials have been found inside MCP configuration files [V]. Treat `.mcp.json`, agent settings, and editor config as secret-bearing.
+- Config files for AI tooling count: 24,008 unique secrets turned up in public MCP configuration files in 2025 [V]. Treat `.mcp.json`, agent settings, and editor config as secret-bearing.
 - Run a secret scanner in CI **and** as a pre-commit hook — gitleaks or trufflehog, both free. Detection after push is a rotation trigger, not prevention.
 
 ## Authentication
@@ -23,12 +23,13 @@ Baseline per **NIST SP 800-63B-4** (final 31 Jul 2025) [V]:
 - **No composition rules** and **no scheduled rotation** — change only on evidence of compromise. Both are explicit SHALL NOTs now; the old advice is now a finding.
 - **Screen against a breached-password blocklist** on set and change.
 - Allow password managers and paste/autofill. No password hints, no knowledge-based questions.
-- Passkeys/WebAuthn are the preferred factor — synced passkeys count at AAL2, device-bound at AAL3 [S]. Offer them before offering SMS.
+- Passkeys/WebAuthn are the preferred factor: 800-63B-4 accepts syncable authenticators (synced passkeys) up to AAL2 [V]; device-bound keys are needed for AAL3. Offer them before SMS codes.
+- **Passkey implementation**: use a maintained WebAuthn library, never hand-parse attestation; server-generated single-use challenge; verify `rpId` and origin; require user verification for sign-in; store credential ID + public key + sign count per user; let users register several passkeys; account recovery is the weak point — do not fall back to a weaker factor than the one being recovered.
 
 Implementation:
 
 - Hash with **argon2id** (memory-hard, tuned so a verification takes ~100–300 ms on your hardware) or bcrypt where argon2 is unavailable. Never a bare SHA family hash, never MD5.
-- **OAuth 2.1 direction** [S]: PKCE required for all authorization-code flows, the implicit and password grants are gone, exact redirect-URI matching, refresh-token rotation with reuse detection. Follow the OAuth Security BCP.
+- **OAuth**: cite **RFC 9700** (OAuth 2.0 Security BCP, Jan 2025) [V] — OAuth 2.1 is still an IETF draft as of Sep 2026 [V]. Concretely: authorization code + PKCE for every client; no implicit or password grant; exact-string redirect-URI matching; `state`/PKCE/nonce against CSRF; mix-up defense when talking to several authorization servers; short-lived access tokens; refresh tokens rotated with reuse detection or sender-constrained. Prefer a maintained library or hosted IdP over writing the flow.
 - Session tokens from a CSPRNG, ≥128 bits. Rotate the session identifier on login and on privilege change. Server-side revocation must exist — a stateless token you cannot revoke is an outage during an incident.
 - Constant-time comparison for tokens, signatures, and MFA codes — but **validate the shape before you compare**. A stored credential whose hex/base64 decodes to the wrong length, or whose scheme/salt/hash does not parse, must be rejected as malformed and fail closed; never fall through to the comparison. `timingSafeEqual` on two empty buffers returns true, so an unparsed record can verify any password.
 - Rate-limit and lock out on login, reset, MFA, and token exchange. Generic failure messages: never reveal whether the account exists.
@@ -61,7 +62,7 @@ Do not invent constructions. Use a vetted library's high-level API.
 | Transport | TLS 1.3, HSTS with a long max-age | TLS 1.0/1.1 gone; 1.2 only for legacy peers |
 | Tokens | Short-lived, audience-bound, revocable | Reject `alg: none`; pin the expected algorithm |
 
-**Post-quantum** [V]: FIPS 203 (ML-KEM), 204 (ML-DSA) and 205 (SLH-DSA) were finalised Aug 2024. Hybrid key exchange **X25519MLKEM768 is the de facto browser default in 2026** — Chrome since v131, Firefox since v132, with Apple platform support from the 2025 OS releases. Certificates remain classical; only the key exchange is PQ-protected. Practical guidance for an app developer: enable the hybrid group on your servers (prefer `X25519MLKEM768`, fall back to `X25519`), and treat **harvest-now-decrypt-later** as real only for data that must stay confidential for a decade or more. Do not hand-roll PQC. CNSA 2.0 dates matter only for national-security systems [V].
+**Post-quantum** [V]: FIPS 203 (ML-KEM), 204 (ML-DSA) and 205 (SLH-DSA) were finalised Aug 2024. Hybrid key exchange `X25519MLKEM768` is on by default in Chrome and Firefox [V] (Safari rollout [S]) and is the default TLS 1.3 group in **OpenSSL 3.5+** [V]. Certificates remain classical; only key exchange is PQ-protected. What a small team does: (1) if a CDN/PaaS terminates TLS, nothing — check it negotiates the hybrid; (2) if you run nginx/Apache/HAProxy yourself, run TLS 1.3 on OpenSSL 3.5+ and **delete or update any pinned curve list** (`ssl_ecdh_curve`, `Groups`) that omits `X25519MLKEM768`, which silently disables it; (3) don't touch PQ signatures or hand-roll PQC; (4) treat harvest-now-decrypt-later as material only for data that must stay secret for 10+ years.
 
 ## Input handling
 

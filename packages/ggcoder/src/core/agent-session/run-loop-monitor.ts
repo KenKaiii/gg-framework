@@ -12,7 +12,6 @@ import {
   type SemanticCallDigest,
   type SemanticLoopVerdict,
 } from "../semantic-loop-check.js";
-import type { IdealReviewStats } from "../ideal-review.js";
 import { TURN_EXTENSION_MAX_FAILURE_RATIO } from "./helpers.js";
 
 /** LLM-judged loop detection state for one run. */
@@ -36,15 +35,7 @@ function freshSemanticLoopState(): SemanticLoopRunState {
  * the judge call stay with the session.
  */
 export class RunLoopMonitor {
-  stats: IdealReviewStats = {
-    changedLines: 0,
-    toolCalls: 0,
-    toolFailures: 0,
-    turns: 0,
-    writeCalls: 0,
-    editCalls: 0,
-    bashCalls: 0,
-  };
+  stats = { toolCalls: 0, toolFailures: 0, turns: 0 };
   text = "";
   consecutiveFailures = 0;
   repeatedNoProgressCalls = 0;
@@ -63,15 +54,7 @@ export class RunLoopMonitor {
 
   /** Clean slate for a new run. */
   reset(): void {
-    this.stats = {
-      changedLines: 0,
-      toolCalls: 0,
-      toolFailures: 0,
-      turns: 0,
-      writeCalls: 0,
-      editCalls: 0,
-      bashCalls: 0,
-    };
+    this.stats = { toolCalls: 0, toolFailures: 0, turns: 0 };
     this.text = "";
     this.consecutiveFailures = 0;
     this.repeatedNoProgressCalls = 0;
@@ -95,9 +78,6 @@ export class RunLoopMonitor {
   ): void {
     this.stats.toolCalls += 1;
     if (isError) this.stats.toolFailures += 1;
-    if (name === "write") this.stats.writeCalls += 1;
-    if (name === "edit") this.stats.editCalls += 1;
-    if (name === "bash") this.stats.bashCalls += 1;
     this.consecutiveFailures = isError ? this.consecutiveFailures + 1 : 0;
     this.repeatedNoProgressCalls = this.progressTracker.record(name, args, result, isError);
     this.cyclicPattern = this.cycleDetector.record(name, args, result, isError);

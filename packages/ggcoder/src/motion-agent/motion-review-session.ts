@@ -28,6 +28,7 @@ import {
 } from "./motion-review.js";
 
 import { MotionReviewCoverage } from "./motion-review-coverage.js";
+import { editTargetPaths } from "../tools/edit-targets.js";
 
 const exec = promisify(execFile);
 const mediaBinariesSchema = z
@@ -108,10 +109,12 @@ export class MotionReviewSession implements CompletionReview {
   }
   async track(event: AgentEvent): Promise<void> {
     if (event.type === "tool_call_start") {
-      if (["write", "edit"].includes(event.name) && typeof event.args.file_path === "string") {
-        const file = path.resolve(this.cwd, event.args.file_path);
-        if (inside(path.resolve(this.cwd), file) && !file.split(path.sep).includes("qa"))
-          this.work();
+      if (["write", "edit"].includes(event.name)) {
+        const touchesWork = editTargetPaths(event.args).some((target) => {
+          const file = path.resolve(this.cwd, target);
+          return inside(path.resolve(this.cwd), file) && !file.split(path.sep).includes("qa");
+        });
+        if (touchesWork) this.work();
       }
       if (
         event.name === "bash" &&

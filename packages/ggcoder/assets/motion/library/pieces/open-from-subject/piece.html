@@ -1,0 +1,168 @@
+<!doctype html>
+<!--
+  open-from-subject: a hero mark (a round dot with a short label) pops in and
+  holds; then the next stage opens as a growing circle out of the mark's own
+  centre, revealing a --field-2 scene whose headline rises in. The headline
+  ink is whichever of --ink / --field reads better on --field-2 (measured
+  once from the look's tokens, so it stays seek-safe).
+  Needs the move kit: `library.mjs add` installs it; put its <script> in the
+  root head after GSAP.
+  Params (script top): POP_AT (mark arrives), LABEL_AT (label slides in),
+  OPEN_AT / OPEN_DUR / OPEN_EASE (the circle), HEAD_DELAY (open start ->
+  headline). Mark place: --os-x / --os-y (centre), size --os-size.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  </head>
+  <body>
+    <div
+      id="open-from-subject-root"
+      data-composition-id="open-from-subject"
+      data-start="0"
+      data-duration="4"
+      data-width="1920"
+      data-height="1080"
+    >
+      <style>
+        [data-composition-id="open-from-subject"] {
+          --os-x: 960px;
+          --os-y: 480px;
+          --os-size: 200px;
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          color: var(--ink, #111);
+          font-family: var(--text, sans-serif);
+        }
+        [data-composition-id="open-from-subject"] .os-mark {
+          position: absolute;
+          left: calc(var(--os-x) - var(--os-size) / 2);
+          top: calc(var(--os-y) - var(--os-size) / 2);
+          width: var(--os-size);
+          height: var(--os-size);
+          border-radius: 50%;
+          background: var(--ink, #111);
+          color: var(--field, #fff);
+          display: grid;
+          place-items: center;
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          font-size: calc(var(--os-size) * 0.42);
+          letter-spacing: var(--display-tracking, -0.02em);
+        }
+        [data-composition-id="open-from-subject"] .os-label {
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: calc(var(--os-y) + var(--os-size) / 2 + 44px);
+          text-align: center;
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          font-stretch: var(--display-stretch, 100%);
+          letter-spacing: var(--display-tracking, -0.02em);
+          font-size: 64px;
+          line-height: 1;
+        }
+        [data-composition-id="open-from-subject"] .os-stage {
+          position: absolute;
+          inset: 0;
+          background: var(--field-2, #222);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 36px;
+          clip-path: circle(0px at 50% 50%);
+        }
+        [data-composition-id="open-from-subject"] .os-kicker {
+          font-family: var(--mono, monospace);
+          font-size: 28px;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          opacity: 0;
+        }
+        [data-composition-id="open-from-subject"] .os-head {
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          font-stretch: var(--display-stretch, 100%);
+          letter-spacing: var(--display-tracking, -0.02em);
+          font-size: 150px;
+          line-height: 1;
+          white-space: nowrap;
+        }
+        [data-composition-id="open-from-subject"] .os-probe {
+          position: absolute;
+          width: 0;
+          height: 0;
+          visibility: hidden;
+        }
+      </style>
+      <!-- edit: the mark's glyph and its label -->
+      <div class="os-mark" data-layout-allow-occlusion>G</div>
+      <div class="os-label" data-layout-allow-occlusion>Gather</div>
+      <div class="os-stage">
+        <!-- edit: next stage kicker and headline -->
+        <div class="os-kicker">Introducing</div>
+        <div class="os-head">One place for all of it</div>
+      </div>
+      <i class="os-probe" style="color: var(--ink, #111); background-color: var(--field, #fff); border-color: var(--field-2, #222)"></i>
+    </div>
+    <script>
+      (function () {
+        const POP_AT = 0.2;
+        const LABEL_AT = 0.55;
+        const OPEN_AT = 1.75;
+        const OPEN_DUR = 1.0;
+        const OPEN_EASE = "travel";
+        const HEAD_DELAY = 0.55;
+
+        const kit = window.GGMotionKit;
+        const root = document.querySelector('[data-composition-id="open-from-subject"]');
+        const mark = root.querySelector(".os-mark");
+        const label = root.querySelector(".os-label");
+        const stage = root.querySelector(".os-stage");
+        const kicker = root.querySelector(".os-kicker");
+        const head = root.querySelector(".os-head");
+        const tl = gsap.timeline({ paused: true });
+
+        // Pick the stage ink: --ink or --field, whichever contrasts more with --field-2.
+        const probe = getComputedStyle(root.querySelector(".os-probe"));
+        const rgb = (s) => (s.match(/[\d.]+/g) || [0, 0, 0]).slice(0, 3).map(Number);
+        const lum = ([r, g, b]) => {
+          const f = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+          return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+        };
+        const contrast = (a, b) => {
+          const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+          return (hi + 0.05) / (lo + 0.05);
+        };
+        const bg = rgb(probe.borderTopColor);
+        const useInk = contrast(rgb(probe.color), bg) >= contrast(rgb(probe.backgroundColor), bg);
+        stage.style.color = useInk ? "var(--ink, #111)" : "var(--field, #fff)";
+
+        // The subject arrives and holds.
+        kit.pop(tl, mark, POP_AT, { spring: "bouncy" });
+        tl.fromTo(label, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: kit.ease.snap }, LABEL_AT);
+        // A small breath before the open, pulled from the centre.
+        tl.to(mark, { scale: 0.9, duration: 0.18, ease: "power2.in" }, OPEN_AT - 0.18);
+        tl.to(mark, { scale: 1.15, duration: 0.4, ease: kit.ease.snap }, OPEN_AT);
+
+        // The next stage opens out of the mark's centre.
+        const c = kit.centerOf(mark, root);
+        kit.openFrom(tl, stage, OPEN_AT, { x: c.x, y: c.y, duration: OPEN_DUR, ease: OPEN_EASE });
+
+        // Once the circle has swallowed the subject, take it out of the frame.
+        tl.set([mark, label], { visibility: "hidden" }, OPEN_AT + 0.45);
+
+        const riseAt = OPEN_AT + HEAD_DELAY;
+        kit.liftWords(tl, head, riseAt, { stagger: 0.08 });
+        tl.fromTo(kicker, { opacity: 0, y: 14 }, { opacity: 0.8, y: 0, duration: 0.4, ease: kit.ease.snap }, riseAt + 0.3);
+
+        window.__timelines = window.__timelines || {};
+        window.__timelines["open-from-subject"] = tl;
+      })();
+    </script>
+  </body>
+</html>

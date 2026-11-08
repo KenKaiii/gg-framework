@@ -30,7 +30,10 @@ function encodePng(width, height, channels, pixels) {
   const raw = Buffer.alloc((stride + 1) * height);
   for (let y = 0; y < height; y++) {
     raw[y * (stride + 1)] = 0;
-    Buffer.from(pixels.buffer, pixels.byteOffset + y * stride, stride).copy(raw, y * (stride + 1) + 1);
+    Buffer.from(pixels.buffer, pixels.byteOffset + y * stride, stride).copy(
+      raw,
+      y * (stride + 1) + 1,
+    );
   }
   const crcTable = new Int32Array(256).map((_, n) => {
     let c = n;
@@ -76,9 +79,10 @@ try {
   ({ totalPages, text } = await unpdf.extractText(pdf, { mergePages: false }));
 } catch (error) {
   // pdf.js errors carry the whole minified bundle in their stack; keep only the message.
-  const message = error instanceof Error || (error && typeof error.message === "string")
-    ? error.message
-    : String(error);
+  const message =
+    error instanceof Error || (error && typeof error.message === "string")
+      ? error.message
+      : String(error);
   process.stderr.write(`Could not read PDF ${input}: ${message}\n`);
   process.exit(1);
 }
@@ -93,7 +97,12 @@ try {
 const pages = Array.isArray(text) ? text : [String(text)];
 const md = [`# ${basename(input)}`, ""];
 pages.forEach((pageText, i) => {
-  md.push(`## Page ${i + 1}`, "", pageText.trim() || "_(no extractable text — likely scanned or image-only)_", "");
+  md.push(
+    `## Page ${i + 1}`,
+    "",
+    pageText.trim() || "_(no extractable text — likely scanned or image-only)_",
+    "",
+  );
 });
 await writeFile(join(outDir, "text.md"), md.join("\n"));
 
@@ -113,14 +122,15 @@ for (let page = 1; page <= totalPages; page++) {
     if (![1, 3, 4].includes(channels)) continue;
     n += 1;
     const file = `p${page}-${n}.png`;
-    await writeFile(join(outDir, "images", file), encodePng(img.width, img.height, channels, img.data));
+    await writeFile(
+      join(outDir, "images", file),
+      encodePng(img.width, img.height, channels, img.data),
+    );
     images.push({ page, file: `images/${file}`, width: img.width, height: img.height });
   }
 }
 
-const emptyPages = pages
-  .map((t, i) => (t.trim() ? null : i + 1))
-  .filter((p) => p !== null);
+const emptyPages = pages.map((t, i) => (t.trim() ? null : i + 1)).filter((p) => p !== null);
 const meta = {
   source: input,
   pages: totalPages,
@@ -130,4 +140,6 @@ const meta = {
   images,
 };
 await writeFile(join(outDir, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
-process.stdout.write(`${JSON.stringify({ ok: true, pages: totalPages, images: images.length, pagesWithoutText: emptyPages.length, outDir })}\n`);
+process.stdout.write(
+  `${JSON.stringify({ ok: true, pages: totalPages, images: images.length, pagesWithoutText: emptyPages.length, outDir })}\n`,
+);

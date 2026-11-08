@@ -111,8 +111,9 @@ export function isModelLoaded(): boolean {
  * Downloads the OGG Opus file, decodes to PCM, and runs Whisper locally.
  */
 export async function transcribeVoice(fileUrl: string): Promise<string> {
-  // Download the audio file
-  const response = await fetch(fileUrl);
+  // Download the audio file. Bounded so a stalled download can't hang the
+  // transcription (and the chat waiting on it) forever.
+  const response = await fetch(fileUrl, { signal: AbortSignal.timeout(60_000) });
   if (!response.ok) throw new Error(`Failed to download voice file: ${response.status}`);
   const buffer = new Uint8Array(await response.arrayBuffer());
 

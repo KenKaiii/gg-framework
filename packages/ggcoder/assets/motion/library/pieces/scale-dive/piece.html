@@ -1,0 +1,321 @@
+<!doctype html>
+<!--
+  scale-dive: a powers-of-ten dive (move kit). One world layer holds a
+  dashboard; kit.camera starts wide, dives into one card (zoom ~4), then into
+  the number inside it (zoom ~16), which fills the frame as the payoff and
+  rests dead still (no hand-held float in the rest).
+  Crisp at every level: each nested level is authored at the size it is SEEN
+  at and scaled down with a transform. The card's content is a 1920x1080 box
+  at scale(1/CARD_ZOOM); the number is a 1920x1080 box inside it at
+  scale(1/(NUM_ZOOM/CARD_ZOOM)). When the camera reaches a level, that
+  level's text is back at 1:1 pixels, so it renders sharp, not blown up.
+  Needs the move kit: `library.mjs add` installs it; put its <script> in the
+  root head after GSAP.
+  Params (script top): CARD_ZOOM / NUM_ZOOM (zoom per level; the card box is
+  1920/CARD_ZOOM wide, so keep it 16:9), DIVE_1 / DIVE_2 (start of each dive),
+  DIVE_DUR, REST_AT (rest starts; no float after it), DELTA_AT (the delta line
+  under the payoff). Move the target card with its left/top in world px.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  </head>
+  <body>
+    <div
+      id="scale-dive-root"
+      data-composition-id="scale-dive"
+      data-start="0"
+      data-duration="6"
+      data-width="1920"
+      data-height="1080"
+    >
+      <style>
+        [data-composition-id="scale-dive"] {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          color: var(--ink, #111);
+          font-family: var(--text, sans-serif);
+        }
+        [data-composition-id="scale-dive"] .sd-world {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 1920px;
+          height: 1080px;
+        }
+        [data-composition-id="scale-dive"] .sd-surface {
+          background: color-mix(in srgb, var(--field, #fff) 93%, var(--ink, #111));
+          border: 2px solid var(--line, rgba(0, 0, 0, 0.14));
+          border-radius: var(--radius, 16px);
+          box-sizing: border-box;
+        }
+        [data-composition-id="scale-dive"] .sd-side {
+          position: absolute;
+          left: 60px;
+          top: 60px;
+          width: 260px;
+          height: 960px;
+          padding: 40px 30px;
+          display: flex;
+          flex-direction: column;
+          gap: 26px;
+        }
+        [data-composition-id="scale-dive"] .sd-brand {
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          letter-spacing: var(--display-tracking, -0.02em);
+          font-size: 34px;
+          margin-bottom: 20px;
+        }
+        [data-composition-id="scale-dive"] .sd-nav {
+          font-size: 24px;
+          color: var(--muted, #666);
+        }
+        [data-composition-id="scale-dive"] .sd-nav.on {
+          color: var(--ink, #111);
+          font-weight: 600;
+        }
+        [data-composition-id="scale-dive"] .sd-head {
+          position: absolute;
+          left: 360px;
+          top: 70px;
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          letter-spacing: var(--display-tracking, -0.02em);
+          font-size: 56px;
+        }
+        [data-composition-id="scale-dive"] .sd-sub {
+          position: absolute;
+          left: 360px;
+          top: 150px;
+          font-family: var(--mono, monospace);
+          font-size: 22px;
+          color: var(--muted, #666);
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+        }
+        /* Small cards: plain world-px content (only ever seen wide). */
+        [data-composition-id="scale-dive"] .sd-card {
+          position: absolute;
+          width: 480px;
+          height: 270px;
+          padding: 30px 34px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          overflow: hidden;
+        }
+        [data-composition-id="scale-dive"] .sd-label {
+          font-family: var(--mono, monospace);
+          font-size: 18px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--muted, #666);
+        }
+        [data-composition-id="scale-dive"] .sd-val {
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          letter-spacing: var(--display-tracking, -0.02em);
+          font-size: 64px;
+          line-height: 1;
+        }
+        [data-composition-id="scale-dive"] .sd-bars {
+          display: flex;
+          align-items: flex-end;
+          gap: 10px;
+          height: 60px;
+        }
+        [data-composition-id="scale-dive"] .sd-bars i {
+          flex: 1;
+          background: var(--line, rgba(0, 0, 0, 0.18));
+          border-radius: 4px;
+        }
+        /* The target card: its content is authored at 1920x1080 and scaled down. */
+        [data-composition-id="scale-dive"] .sd-target {
+          position: absolute;
+          width: 480px;
+          height: 270px;
+          overflow: hidden;
+        }
+        [data-composition-id="scale-dive"] .sd-l1 {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 1920px;
+          height: 1080px;
+          transform-origin: 0 0;
+        }
+        [data-composition-id="scale-dive"] .sd-l1-label {
+          position: absolute;
+          left: 130px;
+          top: 110px;
+          font-family: var(--mono, monospace);
+          font-size: 64px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--muted, #666);
+        }
+        [data-composition-id="scale-dive"] .sd-l1-note {
+          position: absolute;
+          left: 130px;
+          bottom: 110px;
+          font-size: 56px;
+          color: var(--muted, #666);
+        }
+        [data-composition-id="scale-dive"] .sd-l1-chart {
+          position: absolute;
+          right: 130px;
+          top: 110px;
+          width: 520px;
+          height: 200px;
+        }
+        /* The number's box: one 1/(NUM/CARD) step smaller again, centred in the card. */
+        [data-composition-id="scale-dive"] .sd-l2 {
+          position: absolute;
+          left: 720px;
+          top: 405px;
+          width: 1920px;
+          height: 1080px;
+          transform-origin: 0 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
+        [data-composition-id="scale-dive"] .sd-num {
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          font-stretch: var(--display-stretch, 100%);
+          letter-spacing: var(--display-tracking, -0.03em);
+          font-size: 520px;
+          line-height: 0.9;
+          white-space: nowrap;
+        }
+        [data-composition-id="scale-dive"] .sd-num em {
+          font-style: normal;
+          color: var(--accent, #2f5bff);
+        }
+        [data-composition-id="scale-dive"] .sd-delta {
+          margin-top: 120px;
+          display: flex;
+          align-items: center;
+          gap: 24px;
+          font-family: var(--mono, monospace);
+          font-size: 64px;
+          letter-spacing: 0.04em;
+          color: var(--ink, #111);
+        }
+      </style>
+      <div class="sd-world">
+        <div class="sd-side sd-surface">
+          <!-- edit: app name + nav -->
+          <div class="sd-brand">Ledger</div>
+          <div class="sd-nav on">Overview</div>
+          <div class="sd-nav">Orders</div>
+          <div class="sd-nav">Customers</div>
+          <div class="sd-nav">Reports</div>
+          <div class="sd-nav">Settings</div>
+        </div>
+        <!-- edit: page title -->
+        <div class="sd-head">Overview</div>
+        <div class="sd-sub">Last 7 days</div>
+        <!-- edit: the surrounding cards (context only) -->
+        <div class="sd-card sd-surface" style="left: 360px; top: 240px">
+          <div class="sd-label">Revenue</div>
+          <div class="sd-val">$84.2k</div>
+          <div class="sd-bars"><i style="height: 40%"></i><i style="height: 55%"></i><i style="height: 48%"></i><i style="height: 70%"></i><i style="height: 66%"></i><i style="height: 90%"></i></div>
+        </div>
+        <div class="sd-card sd-surface" style="left: 1400px; top: 240px">
+          <div class="sd-label">Orders</div>
+          <div class="sd-val">1,906</div>
+          <div class="sd-bars"><i style="height: 60%"></i><i style="height: 52%"></i><i style="height: 74%"></i><i style="height: 58%"></i><i style="height: 80%"></i><i style="height: 72%"></i></div>
+        </div>
+        <div class="sd-card sd-surface" style="left: 360px; top: 550px">
+          <div class="sd-label">Refunds</div>
+          <div class="sd-val">0.6%</div>
+          <div class="sd-bars"><i style="height: 30%"></i><i style="height: 26%"></i><i style="height: 22%"></i><i style="height: 24%"></i><i style="height: 18%"></i><i style="height: 15%"></i></div>
+        </div>
+        <div class="sd-card sd-surface" style="left: 880px; top: 550px">
+          <div class="sd-label">Avg. basket</div>
+          <div class="sd-val">$44.10</div>
+          <div class="sd-bars"><i style="height: 50%"></i><i style="height: 54%"></i><i style="height: 52%"></i><i style="height: 58%"></i><i style="height: 61%"></i><i style="height: 64%"></i></div>
+        </div>
+        <div class="sd-card sd-surface" style="left: 1400px; top: 550px">
+          <div class="sd-label">New customers</div>
+          <div class="sd-val">312</div>
+          <div class="sd-bars"><i style="height: 35%"></i><i style="height: 45%"></i><i style="height: 62%"></i><i style="height: 58%"></i><i style="height: 77%"></i><i style="height: 84%"></i></div>
+        </div>
+        <!-- the target: left/top in world px; content authored at 1920x1080 -->
+        <div class="sd-target sd-surface" style="left: 880px; top: 240px">
+          <div class="sd-l1">
+            <!-- edit: target card label, note -->
+            <div class="sd-l1-label">Checkout conversion</div>
+            <svg class="sd-l1-chart" viewBox="0 0 520 200" fill="none">
+              <path d="M6 170 L90 150 L175 160 L260 118 L345 104 L430 60 L514 30" stroke="var(--accent, #2f5bff)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <div class="sd-l1-note">vs 3.51% the week before</div>
+            <div class="sd-l2">
+              <!-- edit: the payoff number + delta -->
+              <div class="sd-num">4.82<em>%</em></div>
+              <div class="sd-delta">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--accent, #2f5bff)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path class="sd-up" d="M4 17 L10 11 L14 15 L20 7 M14 7 H20 V13" /></svg>
+                <span class="sd-delta-txt">+1.31 pts this week</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        const CARD_ZOOM = 4; // camera zoom that fills the frame with the card
+        const NUM_ZOOM = 16; // camera zoom that fills the frame with the number
+        const DIVE_1 = 0.7;
+        const DIVE_2 = 2.7;
+        const DIVE_DUR = 1.3;
+        const REST_AT = 4.15;
+        const DELTA_AT = 4.25;
+
+        const kit = window.GGMotionKit;
+        const root = document.querySelector('[data-composition-id="scale-dive"]');
+        const world = root.querySelector(".sd-world");
+        const target = root.querySelector(".sd-target");
+        const l1 = root.querySelector(".sd-l1");
+        const l2 = root.querySelector(".sd-l2");
+        const tl = gsap.timeline({ paused: true });
+
+        const inner = NUM_ZOOM / CARD_ZOOM;
+        l1.style.transform = `scale(${1 / CARD_ZOOM})`;
+        l2.style.transform = `scale(${1 / inner})`;
+        // Number box centred in the card's 1920x1080 space.
+        l2.style.left = `${960 - 960 / inner}px`;
+        l2.style.top = `${540 - 540 / inner}px`;
+
+        const card = kit.centerOf(target, world);
+        const KEYS = [
+          { x: 960, y: 540, zoom: 1 },
+          { at: DIVE_1, x: card.x, y: card.y, zoom: CARD_ZOOM * 0.92, move: "travel", duration: DIVE_DUR },
+          { at: DIVE_2, x: card.x, y: card.y, zoom: NUM_ZOOM, move: "travel", duration: DIVE_DUR },
+        ];
+        kit.camera(tl, world, KEYS, {
+          duration: 6,
+          handheld: { amp: 4, rotate: 0.1, seed: 9 },
+          rests: [[REST_AT, 6]],
+        });
+
+        // The payoff's delta line: drawn arrow, then the words rise.
+        const txt = root.querySelector(".sd-delta-txt");
+        tl.fromTo(txt, { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.5, ease: "expo.out" }, DELTA_AT + 0.15);
+        const up = root.querySelector(".sd-up");
+        tl.fromTo(up, { opacity: 0 }, { opacity: 1, duration: 0.01 }, DELTA_AT);
+        kit.tick(tl, up, DELTA_AT, { duration: 0.45 });
+        tl.to({}, { duration: 6 - tl.duration() });
+
+        window.__timelines = window.__timelines || {};
+        window.__timelines["scale-dive"] = tl;
+      })();
+    </script>
+  </body>
+</html>

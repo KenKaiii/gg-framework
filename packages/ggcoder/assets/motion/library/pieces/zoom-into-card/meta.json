@@ -1,0 +1,13 @@
+{
+  "id": "zoom-into-card",
+  "name": "Zoom into card",
+  "kind": "transition",
+  "description": "Six cards pop in, one is picked and the camera pushes straight through it until its fill becomes the next scene, where a title drops in. Edit the card names, TARGET, and the next scene's kicker and title.",
+  "tags": ["handoff", "continuous", "kit", "zoom", "dive", "camera", "cards", "grid"],
+  "fonts": [],
+  "duration": 5,
+  "previewAt": 1.9,
+  "license": "original",
+  "requires": ["kit"],
+  "previewLook": "swiss-grid"
+}

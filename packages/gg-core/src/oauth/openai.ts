@@ -1,6 +1,7 @@
 import http from "node:http";
 import crypto from "node:crypto";
 import { generatePKCE } from "./pkce.js";
+import { oauthRequestSignal } from "./request-timeout.js";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "./types.js";
 
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -276,6 +277,7 @@ async function exchangeOpenAICode(code: string, verifier: string): Promise<OAuth
       redirect_uri: REDIRECT_URI,
       code_verifier: verifier,
     }),
+    signal: oauthRequestSignal(),
   });
 
   if (!response.ok) {
@@ -305,6 +307,7 @@ export async function refreshOpenAIToken(refreshToken: string): Promise<OAuthCre
       refresh_token: refreshToken,
       client_id: CLIENT_ID,
     }),
+    signal: oauthRequestSignal(),
   });
 
   if (!response.ok) {

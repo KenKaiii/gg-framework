@@ -1,0 +1,13 @@
+{
+  "id": "screen-replica-steps",
+  "name": "Screen replica steps",
+  "kind": "ui",
+  "description": "A real app screen rebuilt at its screenshot size and walked through step by step: a cursor opens a dropdown, picks an option and saves, every state scripted by a pure setState(t), with one camera close-up per step that follows the cursor and widens at the end. Replace the replica elements with your screenshot's measured layout and edit the copy.",
+  "tags": ["replica", "walkthrough", "cursor", "zoom", "camera", "screenshot", "settings", "continuous", "kit"],
+  "fonts": [],
+  "duration": 8,
+  "previewAt": 2.4,
+  "license": "original",
+  "requires": ["kit"],
+  "previewLook": "soft-light-ad"
+}

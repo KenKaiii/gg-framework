@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readMotionStudioContext } from "./motion-studio-context.js";
+import { motionStudioPrompt, readMotionStudioContext } from "./motion-studio-context.js";
 
 let tmp = "";
 beforeEach(async () => {
@@ -18,6 +18,11 @@ describe("Motion-only workspace preference boundary", () => {
       ok: true,
       context: { version: 1, production: "auto", preferences: {}, approvedReferences: [] },
     });
+  });
+  it("adds preferences without bringing back a planning file", async () => {
+    const prompt = motionStudioPrompt(await readMotionStudioContext(tmp));
+    expect(prompt).toContain("do not impose a new planning workflow");
+    expect(prompt).not.toContain("frame.md");
   });
   it("accepts bounded preferences and approved contained files", async () => {
     await fs.writeFile(path.join(tmp, "study.html"), "study");

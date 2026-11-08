@@ -15,8 +15,11 @@ const KEYBOARD_DISMISS_DRAG_PX = 10;
 
 export function useTranscriptScroll({
   scrollRef,
+  readerMovedRef,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
+  /** Told after each scroll (and each wheel up) once the pin rules ran. */
+  readerMovedRef?: RefObject<((el: HTMLDivElement, wheelUp: boolean) => void) | null>;
 }) {
   // NOTE: the build-session event machine's private refs (streaming bubble id,
   // rAF buffer, per-run accumulators, sub-agent / compaction group ids) now live
@@ -145,13 +148,16 @@ export function useTranscriptScroll({
     // A fling still running after the finger lifted keeps the hold on.
     if (transcriptHeldRef.current && !transcriptTouchingRef.current) settleTranscript();
     syncJumpToLatest();
-  }, [settleTranscript, syncJumpToLatest, scrollRef]);
+    readerMovedRef?.current?.(el, false);
+  }, [settleTranscript, syncJumpToLatest, scrollRef, readerMovedRef]);
   const onTranscriptWheel = useCallback(
     (e: React.WheelEvent<HTMLDivElement>) => {
       const el = scrollRef.current;
-      if (el) stickToBottomRef.current = pinAfterWheel(stickToBottomRef.current, e, el);
+      if (!el) return;
+      stickToBottomRef.current = pinAfterWheel(stickToBottomRef.current, e, el);
+      if (e.deltaY < 0) readerMovedRef?.current?.(el, true);
     },
-    [scrollRef],
+    [scrollRef, readerMovedRef],
   );
   return {
     stickToBottomRef,

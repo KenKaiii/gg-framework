@@ -1,0 +1,153 @@
+<!doctype html>
+<!--
+  camera-rig: an operated camera over one world layer (move kit). It starts
+  wide, whips to the first card, floats by hand, whips on to the second and
+  holds dead still for a rest, then pushes to the third as a stamp lands
+  (one shake on contact) and glides back out. The dotted backdrop is a
+  parallax layer at depth 0.6, so it slides slower than the cards.
+  Needs the move kit: `library.mjs add` installs it; put its <script> in the
+  root head after GSAP.
+  Params (script top): KEYS (where the camera looks, in world px), REST
+  (the still stretch), STAMP_AT, BACK_DEPTH (0 pinned, 1 moves with the
+  cards). Move the cards with their left/top (card centre in world px).
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  </head>
+  <body>
+    <div
+      id="camera-rig-root"
+      data-composition-id="camera-rig"
+      data-start="0"
+      data-duration="8"
+      data-width="1920"
+      data-height="1080"
+    >
+      <style>
+        [data-composition-id="camera-rig"] {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          color: var(--ink, #111);
+          font-family: var(--text, sans-serif);
+        }
+        [data-composition-id="camera-rig"] .cr-world,
+        [data-composition-id="camera-rig"] .cr-back {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 1920px;
+          height: 1080px;
+        }
+        /* The layer stays at 0,0 in world px (the camera maths needs that);
+           its dots overhang a full frame each way so no pan shows an edge. */
+        [data-composition-id="camera-rig"] .cr-back::before {
+          content: "";
+          position: absolute;
+          inset: -1080px -1920px;
+          background-image: radial-gradient(circle, var(--line, rgba(0, 0, 0, 0.18)) 2px, transparent 2.5px);
+          background-size: 48px 48px;
+          background-position: 24px 0;
+        }
+        [data-composition-id="camera-rig"] .cr-card {
+          position: absolute;
+          width: 520px;
+          height: 300px;
+          margin: -150px 0 0 -260px;
+          box-sizing: border-box;
+          padding: 40px 44px;
+          border-radius: var(--radius, 18px);
+          background: var(--field-2, #eee);
+          border: 2px solid var(--line, rgba(0, 0, 0, 0.18));
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+        }
+        [data-composition-id="camera-rig"] .cr-label {
+          font-family: var(--mono, monospace);
+          font-size: 24px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--muted, #666);
+        }
+        [data-composition-id="camera-rig"] .cr-title {
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          font-stretch: var(--display-stretch, 100%);
+          letter-spacing: var(--display-tracking, -0.02em);
+          font-size: 76px;
+          line-height: 1;
+        }
+        [data-composition-id="camera-rig"] .cr-stamp {
+          position: absolute;
+          right: 36px;
+          top: 30px;
+          padding: 8px 18px;
+          border: 4px solid var(--ink, #111);
+          border-radius: 10px;
+          background: var(--field, #fff);
+          color: var(--ink, #111);
+          font-family: var(--mono, monospace);
+          font-weight: 700;
+          font-size: 30px;
+          letter-spacing: 0.06em;
+          opacity: 0;
+        }
+      </style>
+      <div class="cr-back"></div>
+      <div class="cr-world">
+        <!-- edit: the three subjects (position with left/top = card centre in world px) -->
+        <div class="cr-card" style="left: 470px; top: 560px">
+          <div class="cr-label">01 / lead</div>
+          <div class="cr-title">Find it</div>
+        </div>
+        <div class="cr-card" style="left: 1450px; top: 320px">
+          <div class="cr-label">02 / rest</div>
+          <div class="cr-title">Read it</div>
+        </div>
+        <div class="cr-card" style="left: 1320px; top: 800px">
+          <div class="cr-label">03 / contact</div>
+          <div class="cr-title">Ship it</div>
+          <div class="cr-stamp">DONE</div>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        const kit = window.GGMotionKit;
+        const root = document.querySelector('[data-composition-id="camera-rig"]');
+        const world = root.querySelector(".cr-world");
+        const back = root.querySelector(".cr-back");
+        const stampEl = root.querySelector(".cr-stamp");
+        const tl = gsap.timeline({ paused: true });
+
+        // Where the camera looks (world px at frame centre) and when each move starts.
+        const KEYS = [
+          { x: 960, y: 540, zoom: 1 },
+          { at: 0.7, x: 470, y: 560, zoom: 1.9, move: "whip", duration: 0.8 },
+          { at: 2.5, x: 1450, y: 320, zoom: 2.1, move: "whip", duration: 0.8 },
+          { at: 4.9, x: 1320, y: 800, zoom: 1.8, move: "whip", duration: 0.8 },
+          { at: 6.6, x: 960, y: 540, zoom: 1, move: "glide", duration: 1.2 },
+        ];
+        const REST = [3.4, 4.7]; // dead still: no float, no drift
+        const STAMP_AT = 5.6;
+        const BACK_DEPTH = 0.6;
+
+        const contact = kit.stamp(tl, stampEl, STAMP_AT, { rotate: -6 });
+        kit.camera(tl, world, KEYS, {
+          duration: 8,
+          lead: 0.1,
+          handheld: { amp: 5, rotate: 0.15, seed: 4 },
+          rests: [REST],
+          shakes: [{ at: contact, amount: 12 }],
+          layers: [{ el: back, depth: BACK_DEPTH }],
+        });
+
+        window.__timelines = window.__timelines || {};
+        window.__timelines["camera-rig"] = tl;
+      })();
+    </script>
+  </body>
+</html>

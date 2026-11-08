@@ -480,6 +480,30 @@ export function resolveRestoredCommand(
 }
 
 /**
+ * Recover the on-disk paths of tool-produced images from the tool result's
+ * text block. Live SSE carries them in `details.imagePreviews`, but that is
+ * never persisted — on resume this text is the only source, and without a
+ * path a restored image isn't clickable. Formats (paths may contain spaces):
+ *   read:           "Read image file <path> [<mediaType>]..."
+ *   screenshot:     "Captured <url> → <path> [<mediaType>] (...)"
+ *   generate_image: "Generated image → <path>"
+ *                   "Generated N images → <path>, <path>" (first = primary;
+ *                   only the primary's pixels are persisted)
+ */
+export function extractToolImagePaths(text: string): string[] {
+  const read = /^Read image file (.+?) \[[^\]\s]+\]/.exec(text);
+  if (read?.[1]) return [read[1]];
+  const captured = /^Captured .* → (.+?) \[[^\]\s]+\]/.exec(text);
+  if (captured?.[1]) return [captured[1]];
+  const trimmed = text.trim();
+  const single = /^Generated image → (.+)$/.exec(trimmed);
+  if (single?.[1]) return [single[1]];
+  const multiple = /^Generated \d+ images → (.+)$/.exec(trimmed);
+  if (multiple?.[1]) return multiple[1].split(", ").filter((p) => p.length > 0);
+  return [];
+}
+
+/**
  * Split a persisted assistant message into per-bubble texts. Live streaming
  * ends the assistant bubble at every server_tool_call (see useAgentEvents'
  * server_tool_call case), so pre- and post-tool text render as separate rows.

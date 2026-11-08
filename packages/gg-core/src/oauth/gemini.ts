@@ -2,6 +2,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 import { resolveEnvironmentAlias } from "../product-profile.js";
 import { generatePKCE } from "./pkce.js";
+import { oauthRequestSignal } from "./request-timeout.js";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "./types.js";
 
 const CLIENT_ID_ENV = "KLEIO_CODER_GEMINI_OAUTH_CLIENT_ID";
@@ -290,6 +291,7 @@ async function postTokenRequest(body: Record<string, string>): Promise<GoogleTok
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(body),
+    signal: oauthRequestSignal(),
   });
 
   if (!response.ok) {
@@ -475,6 +477,7 @@ async function codeAssistRequest<T>(
   const response = await fetch(url, {
     ...init,
     headers: codeAssistHeaders(accessToken),
+    signal: oauthRequestSignal(),
   });
 
   if (!response.ok) {

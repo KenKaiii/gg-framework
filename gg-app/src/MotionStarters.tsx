@@ -14,6 +14,7 @@ export function MotionStarters({
           type="button"
           className="btn btn-sm btn-ghost motion-starter"
           style={{ color: theme.text }}
+          title={starter.hint}
           onClick={() => onPick(starter.prompt)}
         >
           {starter.label}

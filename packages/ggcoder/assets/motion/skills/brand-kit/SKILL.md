@@ -16,12 +16,12 @@ Do not overwrite a reusable kit while editing a video.
    inspect existing kits and the user's supplied sources before asking a question.
 2. Map identity to the video's palette roles, type roles, logo and media.
    Preserve required product names, taglines and assets.
-3. Record the selected kit and bindings in the video's `frame.md`.
 
-The kit's colours, fonts and motion personality feed the plan: they replace
-the motion-language defaults. Required identity outranks taste; if it conflicts
-with a requested treatment, resolve that actual choice with the user instead of
-silently changing the font, logo or colours.
+The kit's colours, fonts and motion personality replace any default and set
+the video's palette, type and feel. Required
+identity outranks taste; if it conflicts with a requested treatment, resolve
+that actual choice with the user instead of silently changing the font, logo or
+colours.
 
 If the source was already captured and the kit approved, reuse it. Do not
 repeat a brand interview, capture, audit or approval for a new headline.
@@ -35,6 +35,7 @@ do not fabricate a logo or claim a guessed font was found on the website.
 
 Create a reusable kit only when requested or needed for the user's brand
 workflow. Preserve the established `Motion.md` YAML frontmatter contract:
+
 - `name`, `kit` (lowercase kebab-case slug), `source` (origin and capture date).
 - `colors`: known `bg`, `surface`, `text`, `text-muted`, `primary`, `accent` roles.
 - `typography`: evidenced `display`, `body`, `mono` entries with family, weight,

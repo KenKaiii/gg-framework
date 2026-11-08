@@ -25,6 +25,7 @@ import { arch, hostname, release, type } from "node:os";
 import path from "node:path";
 
 import { getAppPaths } from "../paths.js";
+import { oauthRequestSignal } from "./request-timeout.js";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "./types.js";
 
 /** Public OAuth client id registered by Kimi Code (no client secret / PKCE). */
@@ -157,6 +158,7 @@ async function postForm(
       Accept: "application/json",
     },
     body: new URLSearchParams(params).toString(),
+    signal: oauthRequestSignal(),
   });
   let data: Record<string, unknown> = {};
   try {

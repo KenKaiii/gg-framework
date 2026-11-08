@@ -323,7 +323,7 @@
         "flags": "giu"
       },
       "expectedOccurrences": {
-        "tracked": 1593,
+        "tracked": 1582,
         "packed": 0
       },
       "bucket": "compatibility",
@@ -503,7 +503,7 @@
         "literal": "ggcoder"
       },
       "expectedOccurrences": {
-        "tracked": 1569,
+        "tracked": 1606,
         "packed": 0
       },
       "bucket": "compatibility",
@@ -2592,7 +2592,7 @@
       },
       "expectedOccurrences": {
         "tracked": 0,
-        "packed": 796
+        "packed": 792
       },
       "bucket": "compatibility",
       "owner": "Manager build owner",
@@ -2829,7 +2829,7 @@
       },
       "expectedOccurrences": {
         "tracked": 0,
-        "packed": 16
+        "packed": 14
       },
       "bucket": "compatibility",
       "owner": "Provider integration owner",
@@ -3556,11 +3556,11 @@
         "tracked"
       ],
       "match": {
-        "regex": "(?:// Sent from a Ken \"Send to GG Coder\" button: show a shimmering \"Sent to GG|// fences into a \"Send to GG Coder\" button\\.|// full prompt body\\. The full body still went to GG Coder\\.|// prose: for a PROMPT he shows what he sent GG Coder back to do; the|// text\\), which is the ONLY differentiator from a normal GG Coder reply\\.|Sent to GG Coder)",
+        "regex": "(?:// Sent from a Ken \"Send to GG Coder\" button: show a shimmering \"Sent to GG|// full prompt body\\. The full body still went to GG Coder\\.|// prose: for a PROMPT he shows what he sent GG Coder back to do; the|Sent to GG Coder)",
         "flags": "gu"
       },
       "expectedOccurrences": {
-        "tracked": 6
+        "tracked": 4
       },
       "bucket": "provenance",
       "owner": "Kleio framework maintainers",
@@ -5712,25 +5712,6 @@
       "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
     },
     {
-      "id": "upstream-20260911-96c0db669863",
-      "path": "packages/ggcoder/src/tools/generate-image.ts",
-      "scope": "content",
-      "targets": [
-        "tracked"
-      ],
-      "match": {
-        "regex": "(?:originator: \"ggcoder\",)",
-        "flags": "gu"
-      },
-      "expectedOccurrences": {
-        "tracked": 1
-      },
-      "bucket": "compatibility",
-      "owner": "Kleio framework maintainers",
-      "reason": "Reviewed OAuth/provider identifiers, persisted session source IDs, protocol names, installed-state migration references, or fixtures exercising those exact contracts; retained for mixed-version compatibility.",
-      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
-    },
-    {
       "id": "upstream-20260911-10fb9685bd24",
       "path": "packages/ggcoder/src/utils/github.test.ts",
       "scope": "content",
@@ -7384,25 +7365,6 @@
       "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
     },
     {
-      "id": "packed-20260911-5b0ed87686c8",
-      "path": "packages/ggcoder/dist/tools/generate-image.js",
-      "scope": "content",
-      "targets": [
-        "packed"
-      ],
-      "match": {
-        "regex": "(?:originator: \"ggcoder\",)",
-        "flags": "gu"
-      },
-      "expectedOccurrences": {
-        "packed": 1
-      },
-      "bucket": "compatibility",
-      "owner": "Kleio framework maintainers",
-      "reason": "Exact emitted OAuth/provider metadata, persisted source/progress/transcript identifiers, and ACP protocol labels from already classified source. These values are compatibility contracts, not a package rename.",
-      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
-    },
-    {
       "id": "upstream-20260924-c5e7ac50846f",
       "path": "bench/ui-library-real-flow/REPORT.md",
       "scope": "content",
@@ -7743,44 +7705,6 @@
       "owner": "Kleio framework maintainers",
       "reason": "Pinned upstream text imported by the 2026-09-30 sync (3f2bb6bc): GG Coder app labels, changelog copy and Motion-mode assets. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
       "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
-    },
-    {
-      "id": "upstream-20260930-2767f57b6bb0",
-      "path": "packages/ggcoder/assets/motion/bin/contact-sheet.mjs",
-      "scope": "content",
-      "targets": [
-        "tracked"
-      ],
-      "match": {
-        "regex": "(?:fail\\(\"Contact sheets need the HyperFrames bundled with GG\\. Reinstall GG Coder to restore Motion mode\\.\"\\);)",
-        "flags": "gu"
-      },
-      "expectedOccurrences": {
-        "tracked": 1
-      },
-      "bucket": "provenance",
-      "owner": "Kleio framework maintainers",
-      "reason": "Pinned upstream text imported by the 2026-09-30 sync (3f2bb6bc): GG Coder app labels, changelog copy and Motion-mode assets. The upstream app is distinct from Kleio Desktop; this exception does not cover engine package imports.",
-      "removeWhen": "Only after separately reviewing this exact file and the corresponding compatibility or upstream attribution contract."
-    },
-    {
-      "id": "packed-20260930-2767f57b6bb0",
-      "path": "packages/ggcoder/assets/motion/bin/contact-sheet.mjs",
-      "scope": "content",
-      "targets": [
-        "packed"
-      ],
-      "match": {
-        "regex": "(?:fail\\(\"Contact sheets need the HyperFrames bundled with GG\\. Reinstall GG Coder to restore Motion mode\\.\"\\);)",
-        "flags": "gu"
-      },
-      "expectedOccurrences": {
-        "packed": 1
-      },
-      "bucket": "provenance",
-      "owner": "Kleio framework maintainers",
-      "reason": "Exact emitted contexts from reviewed source: generated implementation comments/declarations, copied upstream skills, unchanged benchmark fixtures, imported app mentor wording, and their source-map fragments. No allowance for new engine dependency names.",
-      "removeWhen": "Review the exact generated artifact against its classified source whenever the build output changes."
     },
     {
       "id": "upstream-20260930-bf0e207d5869",

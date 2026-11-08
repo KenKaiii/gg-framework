@@ -1,0 +1,212 @@
+<!doctype html>
+<!--
+  request-to-result: one element carries the scene (move kit). A prompt box
+  sits mid-frame; the request types in (kit.typewrite), a cursor travels in and
+  presses Send (kit.cursorPath), and the prompt box itself grows into the
+  result card (kit.reshape). The request stays as the card's header and
+  result rows land one by one, each with a drawn check (kit.tick). No
+  crossfade: the box you typed into is the box that answers.
+  Needs the move kit: `library.mjs add` installs it; put its <script> in the
+  root head after GSAP.
+  Params (script top): TYPE_AT (typing starts), CPS (typing speed),
+  BOX_FROM / BOX_TO (prompt and result rects, stage px: x, y, w, h, r),
+  ROW_GAP (seconds between result rows), CURSOR_FROM (cursor start point).
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  </head>
+  <body>
+    <div
+      id="request-to-result-root"
+      data-composition-id="request-to-result"
+      data-start="0"
+      data-duration="7"
+      data-width="1920"
+      data-height="1080"
+    >
+      <style>
+        [data-composition-id="request-to-result"] {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          color: var(--ink, #111);
+          font-family: var(--text, sans-serif);
+        }
+        [data-composition-id="request-to-result"] .rr-box {
+          position: absolute;
+          left: 410px;
+          top: 470px;
+          width: 1100px;
+          height: 140px;
+          border-radius: 36px;
+          box-sizing: border-box;
+          overflow: hidden;
+          background: color-mix(in srgb, var(--field, #fff) 92%, var(--ink, #111));
+          border: 2px solid var(--line, rgba(0, 0, 0, 0.16));
+          box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.35);
+        }
+        [data-composition-id="request-to-result"] .rr-prompt {
+          position: absolute;
+          left: 52px;
+          top: 0;
+          right: 150px;
+          height: 136px;
+          display: flex;
+          align-items: center;
+          font-size: 38px;
+          white-space: nowrap;
+          overflow: hidden;
+        }
+        [data-composition-id="request-to-result"] .rr-send {
+          position: absolute;
+          right: 26px;
+          top: 26px;
+          width: 84px;
+          height: 84px;
+          border-radius: 50%;
+          background: var(--ink, #111);
+          color: var(--field, #fff);
+          display: grid;
+          place-items: center;
+        }
+        [data-composition-id="request-to-result"] .rr-rule {
+          position: absolute;
+          left: 52px;
+          right: 52px;
+          top: 136px;
+          height: 2px;
+          background: var(--line, rgba(0, 0, 0, 0.16));
+          transform-origin: 0 50%;
+        }
+        [data-composition-id="request-to-result"] .rr-rows {
+          position: absolute;
+          left: 52px;
+          right: 52px;
+          top: 176px;
+          display: flex;
+          flex-direction: column;
+          gap: 22px;
+        }
+        [data-composition-id="request-to-result"] .rr-head {
+          font-family: var(--mono, monospace);
+          font-size: 24px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--muted, #666);
+          margin-bottom: 6px;
+        }
+        [data-composition-id="request-to-result"] .rr-row {
+          display: flex;
+          align-items: center;
+          gap: 28px;
+          height: 88px;
+          padding: 0 30px;
+          border-radius: calc(var(--radius, 16px) * 0.8);
+          background: color-mix(in srgb, var(--field, #fff) 80%, var(--ink, #111) 4%);
+          border: 2px solid var(--line, rgba(0, 0, 0, 0.12));
+          font-size: 36px;
+        }
+        [data-composition-id="request-to-result"] .rr-row b {
+          font-weight: 600;
+        }
+        [data-composition-id="request-to-result"] .rr-row span.rr-meta {
+          margin-left: auto;
+          font-family: var(--mono, monospace);
+          font-size: 26px;
+          color: var(--muted, #666);
+        }
+        [data-composition-id="request-to-result"] .rr-cursor {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 56px;
+          height: 56px;
+          filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.22));
+        }
+      </style>
+      <div class="rr-box">
+        <!-- edit: the request -->
+        <div class="rr-prompt">Find invoices over $5k that are past due</div>
+        <div class="rr-send">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+        </div>
+        <div class="rr-rule"></div>
+        <div class="rr-rows">
+          <!-- edit: result header + rows (name, detail) -->
+          <div class="rr-head">3 invoices found</div>
+          <div class="rr-row">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent, #2f5bff)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path class="rr-check" d="M20 6L9 17l-5-5" /></svg>
+            <b>Northwind Ltd</b><span class="rr-meta">$12,400 · 21 days late</span>
+          </div>
+          <div class="rr-row">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent, #2f5bff)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path class="rr-check" d="M20 6L9 17l-5-5" /></svg>
+            <b>Halden &amp; Co</b><span class="rr-meta">$8,950 · 9 days late</span>
+          </div>
+          <div class="rr-row">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent, #2f5bff)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path class="rr-check" d="M20 6L9 17l-5-5" /></svg>
+            <b>Brightline Studio</b><span class="rr-meta">$5,300 · 4 days late</span>
+          </div>
+        </div>
+      </div>
+      <svg class="rr-cursor" viewBox="0 0 28 28">
+        <path d="M5 3.2v19.6c0 .8 1 1.2 1.5.6l4.6-5.1 3.4 7.6c.3.6 1 .9 1.6.6l2.3-1c.6-.3.9-1 .6-1.6l-3.4-7.5h6.8c.8 0 1.2-1 .6-1.6L6.5 2.6C6 2.1 5 2.4 5 3.2z" fill="var(--ink, #111)" stroke="var(--field, #fff)" stroke-width="1.6" stroke-linejoin="round" />
+      </svg>
+    </div>
+    <script>
+      (function () {
+        const TYPE_AT = 0.5;
+        const CPS = 24;
+        const BOX_FROM = { x: 410, y: 470, w: 1100, h: 140, r: 36 };
+        const BOX_TO = { x: 360, y: 230, w: 1200, h: 610, r: 36 };
+        const ROW_GAP = 0.42;
+        const CURSOR_FROM = { x: 1700, y: 960 };
+
+        const kit = window.GGMotionKit;
+        const root = document.querySelector('[data-composition-id="request-to-result"]');
+        const box = root.querySelector(".rr-box");
+        const send = root.querySelector(".rr-send");
+        const cursor = root.querySelector(".rr-cursor");
+        const rows = [...root.querySelectorAll(".rr-row")];
+        const checks = [...root.querySelectorAll(".rr-check")];
+        const tl = gsap.timeline({ paused: true });
+
+        gsap.set(box, { left: BOX_FROM.x, top: BOX_FROM.y, width: BOX_FROM.w, height: BOX_FROM.h, borderRadius: BOX_FROM.r });
+        tl.fromTo(box, { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.5, ease: "expo.out" }, 0);
+
+        const typed = kit.typewrite(tl, root.querySelector(".rr-prompt"), TYPE_AT, { cps: CPS, seed: 5 });
+
+        // Send's centre in stage px (box is at BOX_FROM when the press lands).
+        const sendAt = { x: BOX_FROM.x + BOX_FROM.w - 26 - 42, y: BOX_FROM.y + 26 + 42 };
+        tl.fromTo(cursor, { opacity: 0 }, { opacity: 1, duration: 0.2 }, typed - 0.2);
+        const path = kit.cursorPath(tl, cursor, typed - 0.2, [
+          { ...CURSOR_FROM },
+          { ...sendAt, click: true, hold: 0.1 },
+          { x: sendAt.x + 260, y: sendAt.y + 420, duration: 0.7 },
+        ]);
+        const press = path.presses[0];
+        tl.to(send, { scale: 0.88, duration: 0.09, ease: "power2.out" }, press);
+        tl.to(send, { scale: 1, duration: 0.3, ease: kit.ease.bounce }, press + 0.09);
+        tl.to(cursor, { opacity: 0, duration: 0.3 }, path.end - 0.3);
+
+        // The box becomes the result card; Send shrinks away.
+        const grown = kit.reshape(tl, box, press + 0.2, BOX_TO, { spring: "heavy" });
+        tl.to(send, { scale: 0, opacity: 0, duration: 0.3, ease: "power2.in" }, press + 0.35);
+        tl.fromTo(root.querySelector(".rr-rule"), { scaleX: 0 }, { scaleX: 1, duration: 0.6, ease: kit.ease.snap }, press + 0.3);
+        tl.fromTo(root.querySelector(".rr-head"), { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4, ease: "expo.out" }, grown - 0.1);
+
+        rows.forEach((row, i) => {
+          const at = grown + 0.15 + i * ROW_GAP;
+          tl.fromTo(row, { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.5, ease: kit.ease.snap }, at);
+          tl.fromTo(checks[i], { opacity: 0 }, { opacity: 1, duration: 0.01 }, at + 0.15);
+          kit.tick(tl, checks[i], at + 0.15, { duration: 0.35 });
+        });
+        tl.to({}, { duration: Math.max(0, 7 - tl.duration()) });
+
+        window.__timelines = window.__timelines || {};
+        window.__timelines["request-to-result"] = tl;
+      })();
+    </script>
+  </body>
+</html>

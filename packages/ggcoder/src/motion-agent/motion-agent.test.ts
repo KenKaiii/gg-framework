@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AgentSessionOptions } from "../core/agent-session.js";
 import { buildSubAgentSystemPrompt, SUBAGENT_RETURN_CONTRACT } from "../system-prompt.js";
+import { createAskUserTool } from "../tools/ask-user.js";
 import { createSkillTool } from "../tools/skill.js";
 import { CONTEXT_LIMITS, resolveContextLimits } from "../core/context-limits.js";
 import {
@@ -28,7 +29,25 @@ function optionsOf(agent: unknown): AgentSessionOptions {
   return (agent as { opts: AgentSessionOptions }).opts;
 }
 
-const EXPECTED_SKILLS = ["brand-kit", "motion", "source-ingest", "video-qa"];
+const JOB_SKILLS = [
+  "app-walkthrough",
+  "before-after",
+  "dev-tool-video",
+  "launch-video",
+  "match-reference",
+  "website-video",
+];
+const EXPECTED_SKILLS = [
+  "app-walkthrough",
+  "before-after",
+  "brand-kit",
+  "dev-tool-video",
+  "launch-video",
+  "match-reference",
+  "motion",
+  "source-ingest",
+  "website-video",
+];
 async function motionBundle(): Promise<MotionBundle> {
   const bundle = await findMotionBundle();
   if (!bundle) throw new Error("motion bundle missing");
@@ -36,7 +55,7 @@ async function motionBundle(): Promise<MotionBundle> {
 }
 
 describe("Motion agent", () => {
-  it("ships only its four authored skills, without templates or guidance overlays", async () => {
+  it("ships only its authored motion, support and job skills, without templates or guidance overlays", async () => {
     const bundle = await motionBundle();
     const skills = await loadMotionSkills(bundle);
     expect(skills.map((s) => s.name)).toEqual(EXPECTED_SKILLS);
@@ -64,6 +83,64 @@ describe("Motion agent", () => {
     expect(await fs.readFile(file, "utf8")).toBe(before);
   });
 
+  it("builds straight from the subject, with each job skill adding only its own questions and ideas", async () => {
+    const bundle = await motionBundle();
+    const skills = await loadMotionSkills(bundle);
+    const prompt = buildMotionAgentPrompt(bundle);
+    const motion = skills.find((skill) => skill.name === "motion")?.content ?? "";
+    expect(prompt).toContain("also load its job skill, at most one, before asking");
+    // Build, look, render once: planning documents and a check-fix loop more than doubled
+    // the time of a new video against a plain build, without a better result.
+    expect(prompt).toContain("write the page in one go");
+    expect(prompt).toContain("render once, with blur → deliver");
+    expect(prompt).toContain("No planning documents, draft renders or checking passes");
+    expect(prompt).not.toMatch(/motion_check|frame\.md|hold plan|beat sheet/);
+    expect(motion).not.toMatch(/motion_check|frame\.md|hold plan|Beats:|continuous-take/);
+    expect(motion).toContain("## Job skills");
+    expect(motion.indexOf("## Job skills")).toBeGreaterThan(motion.indexOf("## Support skills"));
+    for (const name of JOB_SKILLS) {
+      const job = skills.find((skill) => skill.name === name);
+      if (!job) throw new Error(`missing job skill ${name}`);
+      expect(prompt).toContain(`\`${name}\``);
+      expect(motion).toContain(`- \`${name}\`:`);
+      // Short catalog entries; the build itself lives once, in the motion skill.
+      expect(job.description.length).toBeLessThan(240);
+      expect(job.content).toContain("Build it as the `motion`");
+      expect(job.content).not.toMatch(/continuous-take|frame\.md|source-ingest/);
+      expect(job.content).toMatch(/## Ask \(on the motion skill's single card\)/);
+      expect(job.content).toContain("## Pitfalls");
+      expect(job.content).toContain(
+        "Use the shared visual-approach question from `motion` when unsettled",
+      );
+      expect(job.content).toContain("keep the card to four");
+    }
+    // The idea pitch joins the one upfront card; it is not a second stop.
+    expect(motion).toContain('"Which idea should we\ngo with?"');
+    expect(motion).toContain('"Let GG Motion choose"');
+    expect(motion).toContain("at most four questions");
+    // Real material only, and the build sheet replaces reading the kit's source.
+    expect(motion).toContain("never invent UI, facts, prices or claims");
+    expect(motion).toContain("never\nread the kit's source");
+  });
+
+  it("ships nothing that names or credits third-party method sources under the Motion bundle", async () => {
+    const bundle = await motionBundle();
+    const banned = /onetake|feitangyuan|polyform/i;
+    const textFile = /\.(md|mjs|js|json|html|css|txt|ts)$/;
+    const offenders: string[] = [];
+    const walk = async (dir: string): Promise<void> => {
+      for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) await walk(full);
+        else if (textFile.test(entry.name) && banned.test(await fs.readFile(full, "utf8"))) {
+          offenders.push(path.relative(bundle.root, full));
+        }
+      }
+    };
+    await walk(bundle.root);
+    expect(offenders).toEqual([]);
+  });
+
   it("discovers future skills without adding a routing table or an adapter", async () => {
     const bundle = await motionBundle();
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "gg-motion-skill-"));
@@ -83,10 +160,12 @@ describe("Motion agent", () => {
     }
   });
 
-  it("designs every video itself instead of selecting templates or stopping to ask", async () => {
+  it("designs every video itself instead of selecting templates, with no stops after the upfront questions", async () => {
     const prompt = buildMotionAgentPrompt(await motionBundle());
-    expect(prompt).toContain("Plan → build/edit → preview/check → deliver");
-    expect(prompt).toContain("then design the video yourself without stopping to ask");
+    expect(prompt).toContain("Ask → build → look → render once → deliver");
+    // One upfront question card for open prompts, then no further stops.
+    expect(prompt).toContain("first ask the few things only the user knows");
+    expect(prompt).toContain("then design the video yourself without further stops");
     expect(prompt).toContain("Never invent an unavailable skill");
     expect(prompt).toContain(
       "Use the user's brand kit, references and required assets over any default",
@@ -97,35 +176,182 @@ describe("Motion agent", () => {
     expect(prompt).not.toContain("references/index.json");
   });
 
+  it("keeps new video research separate from prior projects, while allowing selected edits", async () => {
+    const bundle = await motionBundle();
+    const prompt = buildMotionAgentPrompt(bundle);
+    const skills = await loadMotionSkills(bundle);
+    const motion = skills.find((skill) => skill.name === "motion")?.content ?? "";
+    const website = skills.find((skill) => skill.name === "website-video")?.content ?? "";
+
+    expect(prompt).toContain("create a fresh workspace subfolder before gathering assets");
+    expect(prompt).toContain("use plain mkdir, not mkdir -p");
+    expect(prompt).toContain("If it exists, choose a new name without opening it");
+    expect(prompt).toContain("Never browse, read or imitate prior video compositions");
+    expect(prompt).toContain("unless the user explicitly selects one for editing or reference");
+    expect(prompt).toContain("no workspace-wide searches");
+    expect(prompt).toContain("For edits or continuations, reuse only the video the user means");
+    expect(prompt).not.toContain("On follow-ups, reuse the existing project and assets");
+    expect(motion).toContain("The same subject does not make an\nold video relevant");
+    expect(motion).toContain("do not move assets out of older projects");
+    expect(motion).toContain("If the target is unclear, ask rather than browse");
+    expect(website).toContain("Work inside the fresh video folder");
+    expect(website).toContain("video about the same URL is not a source or design reference");
+  });
+
+  it("uses a website as source material for a brand film, not a default screenshot walkthrough", async () => {
+    const skills = await loadMotionSkills(await motionBundle());
+    const website = skills.find((skill) => skill.name === "website-video");
+    expect(website?.description).toContain("original animated brand film");
+    expect(website?.content).toContain("The website is source material, not the video");
+    expect(website?.content).toContain(
+      "Page screenshots are research, not default scene backgrounds",
+    );
+    expect(website?.content).toContain("original HTML/SVG/CSS illustrations");
+    expect(website?.content).toContain("Ask which visual approach the");
+    expect(website?.content).toContain("Follow the chosen");
+    expect(website?.content).toContain("user's photos with illustrations");
+    expect(website?.content).toContain("## If a website walkthrough is requested");
+    expect(website?.content).toContain("illustration must not invent product");
+    expect(website?.content).toContain(
+      "Website screenshots with animated text over them: not a brand film",
+    );
+    expect(website?.content).not.toContain("One scroll, operated");
+    expect(website?.content).not.toContain("A still hold on the site's best frame");
+  });
+
   it("holds every video to a showcase bar", async () => {
     const prompt = buildMotionAgentPrompt(await motionBundle());
     expect(prompt).toContain("Make every video a showcase piece");
-    expect(prompt).toContain("plan before building");
+    expect(prompt).toContain("every scene different");
+    const motion =
+      (await loadMotionSkills(await motionBundle())).find((s) => s.name === "motion")?.content ??
+      "";
+    expect(motion).toContain("**Go big.** Fill the frame");
+    // A short build left one model making slideshows: 80% near-still frames, 22 px labels.
+    expect(prompt).toContain("Never a slideshow: something always moving");
+    expect(motion).toContain("## Make it move");
+    expect(motion).toContain("A slow zoom on a photo is not motion on its own");
+    expect(motion).toContain("nothing under 32 px");
+    expect(motion).toContain("instead of sliding a new card over the old one");
   });
 
-  it("gives every video a shipped motion language of principles, not a fixed house look", async () => {
+  it("asks non-designers about their world in plain words and reports results the same way", async () => {
+    const bundle = await motionBundle();
+    const prompt = buildMotionAgentPrompt(bundle);
+    expect(prompt).toContain("Users are not motion designers");
+    expect(prompt).toContain("For every new-video job, ask what the visuals should use");
+    expect(prompt).toContain("a URL alone is not a choice");
+    expect(prompt).toContain("Follow their answer throughout the build");
+    expect(prompt).toContain('not "9:16 or 16:9?"');
+    expect(prompt).toContain("Keep craft terms (register, easing, LUFS, safe zone, fps) out");
+    // The written delivery is the final message. Live runs that also offered a card at delivery
+    // always called it first and never wrote the summary, so delivery has no card.
+    expect(prompt).toContain("Deliver with your final message, in plain words");
+    expect(prompt).toContain("one line on anything you assumed");
+    expect(prompt).toContain("one line on anything you assumed, then any limits");
+    expect(prompt).toContain(
+      "Close with one sentence naming the changes they're most likely to want",
+    );
+    expect(prompt).toContain("The delivery message ends the turn: no ask_user card at delivery");
+    const skills = await loadMotionSkills(bundle);
+    const motion = skills.find((skill) => skill.name === "motion")?.content ?? "";
+    // When to ask: once, before planning, and never for what is already answered.
+    expect(motion).toContain("For a new video from an open prompt, ask once, before planning");
+    expect(motion).toContain("## Deliver");
+    expect(motion).toContain('<node> "<motion bin>/reveal.mjs" renders/<file>.mp4');
+    expect(motion).toContain("as your final message");
+    expect(motion).toContain("An edit gets no intake questions");
+    expect(motion).toContain("list skips questions only for choices it actually settles");
+    expect(motion).toContain("at most four questions, each with a recommended");
+    expect(motion).toContain("it is not an approval step");
+    expect(motion).toContain('"What should we build the visuals from?"');
+    expect(motion).toContain("never silently choose an approach");
+    expect(motion).toContain("Never drop the unsettled visual-approach question");
+    expect(motion).toContain("already settles it. Tailor the options to the source");
+    expect(motion).toContain('1. "Where will people mostly watch this?"');
+    // The music answer can't promise a library that only fits upbeat subjects.
+    expect(motion).toContain("GG's built-in tracks are all upbeat and cheerful.");
+    expect(motion).not.toContain("I'll pick a fitting track from GG's built-in music");
+    // Delivery reports what was actually looked at, in a final message no card can hide.
+    expect(motion).toContain("Say what you looked at");
+    expect(motion).not.toMatch(/call `ask_user` in the same reply/);
+  });
+
+  it("gives every starting answer an outcome label the question card accepts", async () => {
+    const skills = await loadMotionSkills(await motionBundle());
+    const motion = skills.find((skill) => skill.name === "motion")?.content ?? "";
+    const bank = motion.slice(
+      motion.indexOf("**Starting wording.**"),
+      motion.indexOf("**Which idea?**"),
+    );
+    const multi = bank.match(/\(pick any\): ([^\n]+)\n {3}([^\n]+)/);
+    const labels = [
+      ...[...bank.matchAll(/^ {3}- ([^:\n]+):/gm)].map((match) => match[1] ?? ""),
+      // The pick-any answers are one "·"-separated list wrapped across two lines.
+      ...(multi ? `${multi[1] ?? ""} ${multi[2] ?? ""}`.split("·") : []),
+    ]
+      .map((label) => label.trim())
+      .filter(Boolean);
+    expect(labels).toHaveLength(29);
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        "My logo or colours",
+        "My photos or videos",
+        "Nothing, start fresh",
+        "Use my images",
+        "Use website photos",
+        "Animate illustrations",
+        "Mix photos and animation",
+      ]),
+    );
+    const shown: string[] = [];
+    const ask = createAskUserTool(async (request) => {
+      shown.push(...request.questions.flatMap((q) => q.options?.map((o) => o.label) ?? []));
+      return { action: "cancel" };
+    });
+    // Short enough to render as a chip, and never rejected as deferring the choice back.
+    for (const label of labels) expect(label.length).toBeLessThanOrEqual(24);
+    for (let start = 0; start < labels.length; start += 5) {
+      const options = [...labels.slice(start, start + 5), "Keep it as it is"].map((label) => ({
+        label,
+      }));
+      const result = await ask.execute(
+        { questions: [{ id: "bank", question: "Which fits?", kind: "multi", options }] },
+        { signal: new AbortController().signal, toolCallId: `bank-${start}` },
+      );
+      expect(String(result)).not.toMatch(/^Error/);
+    }
+    expect(shown).toEqual(expect.arrayContaining(labels));
+  });
+
+  it("ships no long method guides or checking scripts for the agent to wander into", async () => {
     const bundle = await motionBundle();
     const skills = await loadMotionSkills(bundle);
-    const motion = skills.find((skill) => skill.name === "motion");
-    if (!motion) throw new Error("missing motion skill");
-    expect(motion.content).toContain("](../../references/motion-language.md)");
-    // The plan is recorded where follow-up edits and the frame check can reuse it.
-    expect(motion.content).toContain("Concept: <the idea it demonstrates;");
-    expect(motion.content).toContain("against the `Concept` and `Language` in `frame.md`");
+    // Reading the long guides took minutes per video and checking passes more than doubled the
+    // time, without a better video; they are gone, and nothing points to them.
+    for (const gone of [
+      ["references", "motion-language.md"],
+      ["references", "continuous-take.md"],
+      ["bin", "look-check.mjs"],
+      ["bin", "carry-probe.mjs"],
+      ["bin", "sound-check.mjs"],
+      ["bin", "safe-zones.mjs"],
+    ])
+      await expect(fs.access(path.join(bundle.root, ...gone))).rejects.toThrow();
     for (const skill of skills) {
+      expect(skill.content).not.toMatch(/motion-language|continuous-take|motion_check|frame\.md/);
       expect(skill.content).not.toMatch(/recipe|choreograph|authoring|extraction guide/i);
     }
     // Users who bring an After Effects file get a clear redirect, not an import attempt.
     const ingest = skills.find((skill) => skill.name === "source-ingest")?.content ?? "";
     expect(ingest).toContain("Motion does not import or\n  convert them");
-    const language = await fs.readFile(
-      path.join(bundle.root, "references", "motion-language.md"),
+    const easing = await fs.readFile(
+      path.join(bundle.root, "references", "runtime", "gsap-easing-and-stagger.md"),
       "utf8",
     );
-    expect(language).toContain("Use this for every video you design");
-    expect(language).toContain("never\ncopy an earlier video's");
-    // Agnostic by design: palette roles and ranges, never fixed colour values.
-    expect(language).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(easing).toContain("Smooth by default, bounce by choice");
+    // Pointers to removed rules and files.
+    expect(easing).not.toMatch(/spring-pop-entrance|storyboard|t ≤ 0\.5s|the workflows'/);
     await expect(
       fs.access(path.join(bundle.root, "references", "README.md")),
     ).resolves.toBeUndefined();
@@ -134,32 +360,30 @@ describe("Motion agent", () => {
   it("keeps edits narrow, source holds legitimate and assets optional", async () => {
     const prompt = buildMotionAgentPrompt(await motionBundle());
     expect(prompt).toContain("Change only what was requested");
-    expect(prompt).toContain("no overlapping workflow chains or catalog tours");
+    expect(prompt).toContain("Load `brand-kit` or `source-ingest` only for an actual need");
     expect(prompt).toContain("Respect silence and deliberate holds");
-    expect(prompt).toContain("not mandatory creative selection steps");
-    // Seen costing real sessions: hunting for a local GSAP, missing-font false alarms,
-    // and a second full check after an undeclared end-card hold.
+    expect(prompt).toContain("optional building blocks");
+    // Seen costing real sessions: hunting for a local GSAP and missing-font false alarms.
     expect(prompt).toContain("there is no bundled copy to search for");
     expect(prompt).toContain("Paste the `head` block `add` returns");
-    expect(prompt).toContain("Before the first `motion_check`, write a hold plan");
     expect(prompt).toContain("No automatic music or sound on every movement");
-    expect(prompt).toContain("No default director packet");
     expect(prompt).not.toContain("Slideshow-style output is prohibited");
   });
 
-  it("retains safety and actual output checks without independent AI approval", async () => {
+  it("keeps safety rules and honest delivery without a checking pass", async () => {
     const prompt = buildMotionAgentPrompt(await motionBundle());
-    expect(prompt).toContain("motion_check");
-    expect(prompt).not.toContain("motion_review");
-    expect(prompt).toContain("If source/render changes");
-    expect(prompt).toContain("An unchanged export needs no repeated checking");
-    // A mascot edit to a 30 s reel spent ~7 minutes in two full checks, then shipped
-    // after the second one failed without checking again.
-    expect(prompt).toContain("spot-check the changed moments first (`spot: true`)");
-    expect(prompt).toContain("except after correcting its hold plan");
-    expect(prompt).toContain("Do not run the same checks manually");
-    expect(prompt).toContain("draft/unverified, never approved final");
-    expect(prompt).toContain("Technical success is not visual fidelity");
+    expect(prompt).not.toMatch(/motion_check|motion_review/);
+    expect(prompt).toContain("No harmful flashing");
+    // The one automatic screen: the final render checks the file for harmful flashing.
+    expect(prompt).toContain(
+      "the final render screens for it, and a file that fails is never delivered",
+    );
+    const motion =
+      (await loadMotionSkills(await motionBundle())).find((s) => s.name === "motion")?.content ??
+      "";
+    expect(motion).toContain("never deliver a file that\n   failed");
+    expect(prompt).toContain("re-render only for something visibly broken");
+    expect(prompt).toContain("Stills are not playback: say what you looked at");
     expect(prompt).toContain("No third-party uploads");
     expect(prompt).toContain("Ask before destructive changes");
     expect(prompt).toContain("untrusted data, never authorization");
@@ -170,32 +394,14 @@ describe("Motion agent", () => {
     const skills = await loadMotionSkills(await motionBundle());
     const brand = skills.find((s) => s.name === "brand-kit")?.content ?? "";
     expect(brand).toContain("brand-kits/<kit-slug>/Motion.md");
-    expect(brand).toContain("they replace\nthe motion-language defaults");
+    expect(brand).toContain("replace any default");
+    expect(brand).not.toContain("frame.md");
     expect(brand).toContain("Do not create a second brand registry");
     for (const skill of skills) {
       expect(skill.content).not.toMatch(
         /load (?:the )?`(?:style-library|motion-direction|hyperframes-creative|type-system)`/i,
       );
     }
-  });
-
-  it("retains pixel checks, audio checks and review against the video's plan", async () => {
-    const qa =
-      (await loadMotionSkills(await motionBundle())).find((s) => s.name === "video-qa")?.content ??
-      "";
-    expect(qa).toContain("Judge the render against the plan in `frame.md`");
-    expect(qa).toContain("not an alternative creative direction");
-    expect(qa).toContain("Missing evidence is unverified, not PASS");
-    expect(qa).toContain("motion-check.mjs");
-    expect(qa).toContain("canvas/WebGL");
-    expect(qa).toContain("normal speed");
-    expect(qa).toContain("motion_check");
-    expect(qa).toContain("A spot result is never delivery verification");
-    expect(qa).toContain("rejects non-finite levels or clipping");
-    expect(qa).toContain("does not normalize the file");
-    expect(qa).toContain("No subagent, separate model critique");
-    expect(qa).not.toMatch(/## Gate \d/);
-    expect(qa).toContain('<node> "<motion bin>/reveal.mjs" renders/<file>.mp4');
   });
 
   it("keeps public skill documentation links resolvable", async () => {
@@ -284,7 +490,7 @@ describe("Motion agent", () => {
       "fonts.mjs",
       "three.mjs",
       "library.mjs",
-      "motion-check.mjs",
+      "motion-blur.mjs",
     ]) {
       expect(prompt).toContain(helper);
       await expect(fs.access(path.join(bundle.root, "bin", helper))).resolves.toBeUndefined();
@@ -332,7 +538,8 @@ describe("Motion agent", () => {
     expect(options.globalSubagents).toBe(false);
     expect(options.allowedTools).toEqual([...MOTION_TOOL_NAMES]);
     expect(options.allowedMcpServers).toEqual([]);
-    expect(options.additionalTools?.map((tool) => tool.name)).toEqual(["motion_check"]);
+    // No checking tool: build, look at stills, render once.
+    expect(options.additionalTools ?? []).toEqual([]);
     for (const name of [
       "spawn_agent",
       "subagent",
@@ -342,6 +549,7 @@ describe("Motion agent", () => {
       "source_path",
       "steroids",
       "motion_review",
+      "motion_check",
     ])
       expect(options.allowedTools).not.toContain(name);
     for (const name of [
@@ -352,7 +560,6 @@ describe("Motion agent", () => {
       "web_search",
       "web_fetch",
       "generate_image",
-      "motion_check",
     ])
       expect(options.allowedTools).toContain(name);
     expect((options.skills ?? []).map((skill) => skill.name)).toEqual(EXPECTED_SKILLS);

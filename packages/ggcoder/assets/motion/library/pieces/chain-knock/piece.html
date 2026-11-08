@@ -1,0 +1,195 @@
+<!doctype html>
+<!--
+  chain-knock: cause and effect along a process (move kit). A ball hops in
+  from the left twice, its second landing puts it flush against block 1,
+  and that contact knocks the row block by block; as the last block takes
+  its hit, the result stamps onto it.
+  Needs the move kit: `library.mjs add` installs it; put its <script> in the
+  root head after GSAP.
+  Params (script top): HOPS (each hop's start, air time, height and the x it
+  lands at; the last one must land at CONTACT_X), BALL, KNOCK_PUSH,
+  KNOCK_GAP, STAMP_FALL (the stamp falls this long and lands on the last knock).
+  Geometry: --ck-* variables (block size and gap; the row is centred).
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  </head>
+  <body>
+    <div
+      id="chain-knock-root"
+      data-composition-id="chain-knock"
+      data-start="0"
+      data-duration="5"
+      data-width="1920"
+      data-height="1080"
+    >
+      <style>
+        [data-composition-id="chain-knock"] {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          color: var(--ink, #111);
+          font-family: var(--text, sans-serif);
+        }
+        [data-composition-id="chain-knock"] .ck-stage {
+          position: absolute;
+          inset: 0;
+        }
+        [data-composition-id="chain-knock"] .ck-floor {
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: 650px;
+          height: 3px;
+          background: var(--line, rgba(0, 0, 0, 0.2));
+        }
+        [data-composition-id="chain-knock"] .ck-row {
+          position: absolute;
+          left: 338px;
+          top: 470px;
+          display: flex;
+          gap: 36px;
+        }
+        [data-composition-id="chain-knock"] .ck-block {
+          position: relative;
+          width: 220px;
+          height: 180px;
+          box-sizing: border-box;
+          padding: 22px 24px;
+          border: 3px solid var(--ink, #111);
+          border-radius: calc(var(--radius, 18px) * 0.6);
+          background: var(--field, #fff);
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          transform-origin: 50% 100%;
+        }
+        [data-composition-id="chain-knock"] .ck-block.is-last {
+          background: var(--accent, #2f5bff);
+          border-color: var(--accent, #2f5bff);
+          color: var(--field, #fff);
+        }
+        [data-composition-id="chain-knock"] .ck-num {
+          font-family: var(--mono, monospace);
+          font-size: 22px;
+          letter-spacing: 0.08em;
+          color: var(--muted, #666);
+        }
+        [data-composition-id="chain-knock"] .ck-block.is-last .ck-num {
+          color: inherit;
+        }
+        [data-composition-id="chain-knock"] .ck-label {
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          font-stretch: var(--display-stretch, 100%);
+          letter-spacing: var(--display-tracking, -0.02em);
+          font-size: 46px;
+          line-height: 1;
+        }
+        [data-composition-id="chain-knock"] .ck-stamp {
+          position: absolute;
+          left: 50%;
+          top: -92px;
+          margin-left: -130px;
+          width: 260px;
+          box-sizing: border-box;
+          text-align: center;
+          padding: 12px 0;
+          border: 4px solid var(--ink, #111);
+          border-radius: 12px;
+          background: var(--field, #fff);
+          color: var(--ink, #111);
+          font-family: var(--mono, monospace);
+          font-weight: 700;
+          font-size: 30px;
+          letter-spacing: 0.08em;
+          opacity: 0;
+        }
+        [data-composition-id="chain-knock"] .ck-ball {
+          position: absolute;
+          left: 0;
+          top: 586px;
+          width: 64px;
+          height: 64px;
+        }
+        [data-composition-id="chain-knock"] .ck-ball-body {
+          width: 64px;
+          height: 64px;
+          border-radius: 50%;
+          background: var(--ink, #111);
+        }
+        [data-composition-id="chain-knock"] .ck-caption {
+          position: absolute;
+          left: 338px;
+          top: 720px;
+          font-family: var(--mono, monospace);
+          font-size: 24px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--muted, #666);
+        }
+      </style>
+      <div class="ck-stage">
+        <div class="ck-floor"></div>
+        <div class="ck-row">
+          <!-- edit: the five steps -->
+          <div class="ck-block"><div class="ck-num">01</div><div class="ck-label">Idea</div></div>
+          <div class="ck-block"><div class="ck-num">02</div><div class="ck-label">Draft</div></div>
+          <div class="ck-block"><div class="ck-num">03</div><div class="ck-label">Review</div></div>
+          <div class="ck-block"><div class="ck-num">04</div><div class="ck-label">Test</div></div>
+          <div class="ck-block is-last">
+            <div class="ck-num">05</div>
+            <div class="ck-label">Release</div>
+            <!-- edit: the result -->
+            <div class="ck-stamp">SHIPPED</div>
+          </div>
+        </div>
+        <!-- edit: caption -->
+        <div class="ck-caption">One push moves the whole pipeline</div>
+        <div class="ck-ball"><div class="ck-ball-body"></div></div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        const kit = window.GGMotionKit;
+        const root = document.querySelector('[data-composition-id="chain-knock"]');
+        const ball = root.querySelector(".ck-ball");
+        const body = root.querySelector(".ck-ball-body");
+        const blocks = root.querySelectorAll(".ck-block");
+        const stampEl = root.querySelector(".ck-stamp");
+        const tl = gsap.timeline({ paused: true });
+
+        const BALL = 64;
+        const START_X = -90; // off the left edge
+        const CONTACT_X = blocks[0].offsetLeft + blocks[0].offsetParent.offsetLeft - BALL; // flush with block 1
+        const HOPS = [
+          { at: 0.3, air: 0.5, height: 190, to: 110 },
+          { at: 1.05, air: 0.42, height: 120, to: CONTACT_X },
+        ];
+        const KNOCK_PUSH = 44;
+        const KNOCK_GAP = 0.13;
+        const STAMP_FALL = 0.2; // stamp contact lands on the last knock
+
+        let x = START_X;
+        let landed = 0;
+        HOPS.forEach((h, i) => {
+          landed = kit.hop(tl, body, h.at, { duration: h.air, height: h.height });
+          // Horizontal travel happens only in the air, so the landing is the contact.
+          tl.fromTo(ball, { x }, { x: h.to, duration: h.air, ease: "none", immediateRender: i === 0 }, h.at + 0.08);
+          x = h.to;
+        });
+
+        const last = kit.knock(tl, blocks, landed, { push: KNOCK_PUSH, gap: KNOCK_GAP, tilt: 6 });
+        // The ball gives a little and rolls back off the block it hit.
+        tl.to(ball, { x: CONTACT_X - 46, duration: kit.settleTime("soft"), ease: kit.springEase("soft") }, landed + 0.02);
+        kit.stamp(tl, stampEl, last - STAMP_FALL, { rotate: -5, duration: STAMP_FALL });
+        tl.set({}, {}, 5);
+
+        window.__timelines = window.__timelines || {};
+        window.__timelines["chain-knock"] = tl;
+      })();
+    </script>
+  </body>
+</html>

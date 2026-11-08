@@ -46,15 +46,42 @@ type Answers = Record<string, string | string[]>;
  * An answered question, collapsed. Reuses the transcript's shimmer label (the
  * same treatment as the "ideal?" hook) so a resolved ask reads as one of the
  * app's own quiet status lines rather than a green form-validation tick.
+ *
+ * The shimmer marks the moment of answering: it sweeps a couple of times when
+ * the answer lands (`live`) and then rests. It used to loop forever, so every
+ * answered question in a long chat kept animating, and opening history
+ * replayed them all.
  */
-function AnsweredLine({ text }: { text: string }): React.ReactElement {
+function AnsweredLine({ text, live }: { text: string; live: boolean }): React.ReactElement {
   return (
     <div className="ask-answered" aria-live="polite">
-      <span className="user-msg ask-answered-bubble">
+      <span className={`user-msg ask-answered-bubble${live ? " is-live" : ""}`}>
         <span className="shimmer-text">{text}</span>
       </span>
     </div>
   );
+}
+
+/**
+ * The keyboard hint under an open band, for the first unanswered question (the
+ * one the number keys and typing go to). Typing your own answer has no button
+ * of its own, so without this line nobody finds it.
+ */
+function keyHint(question: AskQuestion | undefined): string | null {
+  if (!question || question.kind === "text") return null;
+  const count = Math.min(question.options?.length ?? 0, 9);
+  const pick =
+    question.kind === "multi"
+      ? "Pick any that apply, then confirm"
+      : count > 1
+        ? `Press 1–${count} to choose`
+        : count === 1
+          ? "Press 1 to choose"
+          : null;
+  const type = allowsText(question) ? "start typing to answer in your own words" : null;
+  if (pick && type) return `${pick}, or ${type}.`;
+  if (pick) return `${pick}.`;
+  return type ? `${type.charAt(0).toUpperCase()}${type.slice(1)}.` : null;
 }
 
 /** One question: a heading and its stack of option rows. */
@@ -120,7 +147,19 @@ function Question({
   const optionButton = (option: AskOption, position: number): React.ReactElement => {
     const value = valueOf(option);
     const on = isOn(value);
-    const index = position <= 9 ? <span className="ask-num">{position}</span> : null;
+    // One leading slot for every kind, so labels line up across a band: a
+    // keycap with the number key for a single choice, a checkbox for a multi.
+    const lead = multi ? (
+      <span className={`ask-box${on ? " is-on" : ""}`} aria-hidden="true">
+        {on && <Check />}
+      </span>
+    ) : position <= 9 ? (
+      <span className="ask-num" aria-hidden="true">
+        {position}
+      </span>
+    ) : (
+      <span className="ask-num ask-num-empty" aria-hidden="true" />
+    );
     // Green: the recommendation is the one affirmative signal in the list, and
     // a neutral pill was indistinguishable from the row's own raised fill. On a
     // selected pill it switches to the fill's own ink — light green on the
@@ -137,7 +176,7 @@ function Question({
         {...(multi ? {} : { "data-ask-option": true })}
         onClick={() => (multi ? toggle(value) : onAnswer(value))}
       >
-        {multi ? on && <Check /> : index}
+        {lead}
         {option.hint ? (
           <span className="ask-row-main">
             <span>{option.label}</span>
@@ -165,6 +204,7 @@ function Question({
         aria-pressed="true"
         onClick={onTypeInstead}
       >
+        <span className="ask-num ask-num-empty" aria-hidden="true" />
         <span>{answer}</span>
       </button>
     ) : null;
@@ -241,6 +281,7 @@ export function AskBand({
   prompt,
   answers = {},
   sent,
+  answeredLive,
   cancelled,
   deferred,
   onAnswer,
@@ -255,6 +296,12 @@ export function AskBand({
   answers?: Answers;
   /** The answers have been sent to the blocked tool call — collapse the band. */
   sent?: boolean;
+  /**
+   * Answered just now in this window. The answered band moves to the end of the
+   * chat as a new row, so it mounts already sent; this keeps its shimmer (the
+   * mark of the moment of answering) instead of treating it as restored.
+   */
+  answeredLive?: boolean;
   /** The run ended without an answer — the question is dead, say so quietly. */
   cancelled?: boolean;
   /**
@@ -270,6 +317,9 @@ export function AskBand({
   const bandRef = useRef<HTMLDivElement | null>(null);
   const questions = prompt.questions;
   const done = sent === true;
+  // Settled while on screen (not restored that way): the answer's shimmer
+  // marks the moment of answering.
+  const [settledAtMount] = useState(done || Boolean(cancelled));
 
   // Number accelerators + type-to-open. Both are deliberately inert while the
   // user is typing anywhere else (the composer is a focused textarea), so the
@@ -350,7 +400,7 @@ export function AskBand({
       .join(" · ");
     return (
       <div className="ask-band is-done">
-        <AnsweredLine text={text} />
+        <AnsweredLine text={text} live={!settledAtMount || answeredLive === true} />
       </div>
     );
   }
@@ -358,9 +408,16 @@ export function AskBand({
   // Several questions are numbered so the accelerator keys have something to
   // refer to; a lone question needs no "1.".
   const numbered = questions.length > 1;
+  const hint = keyHint(questions.find((q) => answers[q.id] === undefined));
 
   return (
-    <div className="ask-band" ref={bandRef} role="group" aria-label="Kleio needs your answer">
+    <div
+      className="ask-band"
+      ref={bandRef}
+      role="group"
+      aria-label="Kleio needs your answer"
+      data-ask-prompt={prompt.id}
+    >
       {/* A status note about the run, set apart from the question below it. */}
       {deferred && (
         <p role="status">Agent continued with its best guess — your answer will still be sent</p>
@@ -376,6 +433,7 @@ export function AskBand({
           onTypeInstead={() => onTypeInstead(q.id)}
         />
       ))}
+      {hint && <p className="ask-hint">{hint}</p>}
     </div>
   );
 }

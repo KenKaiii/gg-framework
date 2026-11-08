@@ -2,7 +2,7 @@
 
 Security is the fastest route from "small app" to "regulatory incident": a breach triggers notification duties, class actions in states with a breach private right of action, and the deception theory that your privacy policy promised protection you did not provide. This file is the pre-deploy floor, weighted toward the failure modes that AI-generated and rapidly built apps produce most often.
 
-Snapshot **11 Aug 2026**. Verify version numbers and vendor terms before asserting them.
+Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 (see `provenance.md`). Verify version numbers and vendor terms before asserting them.
 
 ---
 
@@ -79,7 +79,7 @@ Academic and vendor studies through 2024–2026 consistently find a substantial 
 ## Payments
 
 - Use hosted fields/checkout from your processor so PAN never touches your origin. This is what keeps your PCI scope minimal.
-- Payment-page script integrity and script inventory requirements now apply to pages that take card data **[S]** — verify the current PCI DSS requirement numbers and SAQ eligibility with your processor before advising, since eligibility differs between fully hosted redirect and embedded-fields integrations.
+- PCI DSS v4.0.1 is the only active version (v4.0 retired 31 Dec 2024), and all 51 formerly future-dated requirements have been mandatory since **31 March 2025**, with no remaining grace period **[S]**. For web checkouts the ones that bite are 6.4.3 (inventory, authorise and integrity-check every script on the payment page) and 11.6.1 (detect unauthorised changes to payment-page scripts and security headers) **[S]**. Confirm SAQ eligibility with your processor before advising: it differs between a fully hosted redirect and embedded fields/iframes.
 - Verify webhook signatures; make handlers idempotent; never grant entitlements from a client-side success callback.
 - Reconcile: entitlement state must derive from the processor's record, not from your optimistic write.
 - Store only the processor's customer/payment-method reference, never card data.

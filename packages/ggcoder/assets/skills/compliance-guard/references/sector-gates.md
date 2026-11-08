@@ -2,7 +2,7 @@
 
 Domains where **building the thing is the problem**, not the privacy policy. Evaluate these *before* any other checklist: if the product cannot lawfully exist as described, nothing downstream matters.
 
-Snapshot **11 Aug 2026**. Markers: **[V]** verified · **[S]** re-verify · **[U]** genuinely unresolved.
+Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 (see `provenance.md`). Markers: **[V]** verified · **[S]** re-verify · **[U]** genuinely unresolved.
 
 Each entry gives the trigger, the **safe subset** a small dev can ship, and the **red line** that means stop.
 
@@ -107,7 +107,7 @@ The test is **prize + chance + consideration**. Remove one leg or you need a lic
 - **Screening or scoring people** — assembling or evaluating consumer information for eligibility decisions makes you a **consumer reporting agency**: permissible purpose, maximum possible accuracy, dispute handling, and adverse-action notices **[V]**. "It's just an AI background check" does not escape this; it is the classic small-company FCRA class action.
 - **Credit** — adverse-action notices must state **specific principal reasons**. A black-box model that cannot articulate reasons is itself the violation **[V]**.
 - **Housing and insurance** — disparate-impact exposure and rating regulation apply regardless of intent.
-- **EU** — these are Annex III high-risk categories under the AI Act, with obligations from Dec 2027 **[V]**.
+- **EU** — these are Annex III high-risk categories under the AI Act, with obligations from 2 Dec 2027 (Reg 2026/1744) **[V]**.
 
 ---
 
@@ -149,7 +149,7 @@ Product descriptions or code signals → regime → the one-line warning to show
 | "loot box", "gacha" | Consumer-protection and gambling rules | Disclose real-money value and drop rates; cash-out crosses into gambling. |
 | "users upload photos/videos" | DMCA, CSAM reporting, NCII takedown | Register a DMCA agent, build a CSAM reporting path, and ship a 48-hour NCII takedown flow. |
 | "voice clone of [celebrity]", "sounds like [artist]" | Right of publicity, digital-replica laws | Cloning an identifiable voice without consent is actionable in a growing number of states. |
-| "nudify", "undress", sexualised image of a real person | Federal criminal statutes, NCII law, EU AI Act Art 5 | Criminal territory, not a grey area. Refuse. |
+| "nudify", "undress", sexualised image of a real person | Federal criminal statutes, NCII law, EU AI Act Art 5(1)(ba) (from 2 Dec 2026, per Reg 2026/1744) **[V]** | Criminal territory, not a grey area. Refuse. |
 | "we scrape LinkedIn" or any logged-in source | Anti-hacking statutes, contract, GDPR | Authenticated scraping revives criminal-statute exposure, and EU personal data needs a documented lawful basis. |
 | "train on scraped user photos/posts" | GDPR, TDM opt-outs, AI Act | Public availability is not consent; machine-readable opt-outs must be honoured and a training-data summary published for the EU. |
 | "under 13", kids' game, school rollout | COPPA, FERPA, state student-privacy laws | Verifiable parental consent or a signed school agreement is required before any collection, and no ad SDKs. |

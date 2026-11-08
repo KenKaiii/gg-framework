@@ -1,6 +1,6 @@
 # lint, check, snapshot
 
-Motion's `motion_check` tool already runs `check`, including lint, runtime, layout and contrast, and returns rendered images. Do not run the commands below as additional delivery gates. Use them only for targeted debugging of a concrete failure. `snapshot` captures still frames and zoomed crops; `validate`, `inspect` and `layout` are deprecated because `check` covers them.
+Motion does not run these as delivery gates. Use them only for targeted debugging of a concrete failure. `snapshot` captures still frames and zoomed crops; `validate`, `inspect` and `layout` are deprecated because `check` covers them.
 
 ## Discipline (motion-heavy work)
 
@@ -9,7 +9,7 @@ For a concrete problem during authoring or editing:
 - Use `lint` for a static-code failure or `check --snapshots` for runtime/layout evidence, not both by default.
 - Look at the returned images before changing the animation: a diagnostic must not become an alternative art direction.
 - Treat layout errors as defects unless a snapshot proves the layering is intentional, in which case mark it with `data-layout-allow-overflow` / `data-layout-allow-overlap` / `data-layout-allow-occlusion` / `data-layout-allow-caption-zone` (caption band only).
-- Existing meaningful motion assertions may remain, but GG does not require a new `*.motion.json` sidecar for every video. Use rendered-pixel checks and the `video-qa` evidence process for liveness, especially for canvas/WebGL. No detector or screenshot proves playback was watched.
+- Existing meaningful motion assertions may remain, but GG does not require a new `*.motion.json` sidecar for every video. Use stills of the render for liveness, especially for canvas/WebGL. No detector or screenshot proves playback was watched.
 
 ## lint
 
@@ -68,7 +68,7 @@ hf check --frame-check     # media (img/svg/video/canvas) out-of-frame detection
 
 `--caption-zone` takes fractional band geometry (`x0/y0/x1/y1` required, 0-1 fractions of the composition's own canvas, portrait included) with optional `severity` and comma-separated `seek` fractions; it flags a text element's DOM box (`getBoundingClientRect`) that overlaps the band. Waive intentional lower-third copy with `data-layout-allow-caption-zone` on the element or its nearest wrapper (see Escape hatches). `--frame-check` reports media elements breaching the canvas beyond `max(120px, 6% of the min canvas dimension)`.
 
-**Fixing contrast errors** — thresholds are 4.5:1 for normal text, 3:1 for large text (24px+, or 19px+ bold). The finding's `suggestedColor` already picks the nearest compliant color in the right direction (brighten on dark backgrounds, darken on light); apply an allowed correction, or resolve a conflict with locked source/brand colours before changing them. Recheck the changed output through `motion_check`; do not duplicate the full diagnostic checklist.
+**Fixing contrast errors** — thresholds are 4.5:1 for normal text, 3:1 for large text (24px+, or 19px+ bold). The finding's `suggestedColor` already picks the nearest compliant color in the right direction (brighten on dark backgrounds, darken on light); apply an allowed correction, or resolve a conflict with locked source/brand colours before changing them. Look at a still of the changed moment; do not run the full diagnostic checklist.
 
 ## Motion verification (`*.motion.json` sidecar)
 

@@ -1,8 +1,7 @@
 # GG runtime inputs and assets
 
-This is implementation support, not a creative workflow. The video's plan in
-`frame.md` sets the design. Bind approved text, fonts, colours, logos and media
-without adding a second look-selection process.
+This is implementation support, not a creative workflow. Bind approved text,
+fonts, colours, logos and media without adding a second look-selection process.
 
 `hf` in these references is shorthand for the exact bundled launcher command
 in the system prompt; expand it, never run bare `hf` or `npx hyperframes`.
@@ -14,10 +13,9 @@ package installs, cloud rendering or publishing without explicit permission.
 - Keep original captures/uploads in `sources/`; use local `assets/` for the
   files consumed by the composition. Never overwrite originals or finished renders.
 - A reusable kit lives at `brand-kits/<slug>/Motion.md` in the Motion workspace.
-  Keep it read-only for ordinary video work. Record the selected kit and permitted
-  bindings in `frame.md`; preserve legacy briefs rather than duplicating plans.
-- Record fit, crop and in-point choices in `frame.md`. A longer title or a
-  different aspect ratio calls for a deliberate layout adjustment, not a silent
+  Keep it read-only for ordinary video work; preserve legacy briefs rather than
+  duplicating plans.
+- A longer title or a different aspect ratio calls for a deliberate layout adjustment, not a silent
   crop.
 - Root output duration is a static composition contract. If an input changes
   the duration, update the authored root explicitly; a runtime variable cannot
@@ -55,8 +53,5 @@ Preserve credits, cue maps and SFX analysis. Copy only used
 assets into the video project. The plan or user determines whether
 sound belongs in the video; do not automatically add music or hits.
 
-Use `motion_check` once on the current render as specified by `video-qa`; it
-runs the media helpers and returns images for this agent to inspect. Do not
-repeat its checks as a separate checklist. Request permission before
-installing missing FFmpeg/browser software; a detector setup failure does not
-justify skipping validation. Never upload user files to resolve a local blocker.
+Request permission before installing missing FFmpeg/browser software. Never
+upload user files to resolve a local blocker.

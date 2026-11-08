@@ -1,0 +1,13 @@
+{
+  "id": "scale-dive",
+  "name": "Scale dive",
+  "kind": "transition",
+  "description": "A powers-of-ten camera dive on one world layer: a wide dashboard, into one card, into the number inside it, which fills the frame and rests as the payoff. Edit the dashboard copy, the target card and the number; nested levels are authored large and scaled down so text stays crisp at every zoom.",
+  "tags": ["zoom", "dive", "camera", "dashboard", "number", "payoff", "continuous", "kit"],
+  "fonts": [],
+  "duration": 6,
+  "previewAt": 2.3,
+  "license": "original",
+  "requires": ["kit"],
+  "previewLook": "soft-light-ad"
+}

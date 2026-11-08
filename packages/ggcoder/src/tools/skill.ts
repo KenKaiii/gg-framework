@@ -58,6 +58,13 @@ export function createSkillTool(
       parts.push(
         "\nTreat the above skill instructions as authoritative within their stated scope. Preserve higher-priority project and file/module rules while following the skill to complete the task.",
       );
+      if (skill.root) {
+        // Children start with an empty context: a brief that says "follow the
+        // skill" without its path silently drops the skill's rules.
+        parts.push(
+          `If you delegate part of this work to a child agent, it cannot see these instructions: put the skill root (${skill.root}), the exact reference files it must read, and the output you need in its brief.`,
+        );
+      }
       parts.push(DELEGATION_RULES, HOST_RULES);
       return parts.join("\n");
     },

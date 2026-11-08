@@ -1,0 +1,13 @@
+{
+  "id": "one-shape-journey",
+  "name": "One shape journey",
+  "kind": "diagram",
+  "description": "One shape never leaves: a dot pops in, stretches into a progress bar that fills, morphs into a button, then into an app-icon block as the product name rises beside it, with quick label swaps inside. Edit the progress label, button text, icon letter, name and tagline.",
+  "tags": ["morph", "continuous", "kit", "progress", "button", "app-icon", "logo", "end-card", "handoff"],
+  "fonts": [],
+  "duration": 6,
+  "previewAt": 3.1,
+  "license": "original",
+  "requires": ["kit"],
+  "previewLook": "dark-studio"
+}

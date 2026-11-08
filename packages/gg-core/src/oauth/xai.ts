@@ -33,6 +33,7 @@
  *    API-key method as a fallback (see AuthStorage's dual-auth resolution).
  */
 
+import { oauthRequestSignal } from "./request-timeout.js";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "./types.js";
 
 /**
@@ -140,6 +141,7 @@ async function postForm(
       "User-Agent": `grok-cli/${grokCliVersion()}`,
     },
     body: new URLSearchParams(params).toString(),
+    signal: oauthRequestSignal(),
   });
   let data: Record<string, unknown> = {};
   try {

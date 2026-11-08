@@ -3,6 +3,9 @@ import type { HookKind } from "./useAgentEvents";
 import type { SubAgentLine } from "./SubAgentFeed";
 import type { ChatErrorItem } from "./chat-error";
 
+/** What the user did with a reviewed plan. */
+export type PlanDecision = "accepted" | "feedback" | "rejected";
+
 // ── Transcript model ───────────────────────────────────────
 // Tool activity lives in the pinned LiveToolPanel, never in the transcript.
 // Exported (type-only) so the Ken mentor hook can produce/typecheck ken + error
@@ -57,9 +60,11 @@ export type Item =
   | { kind: "images"; id: number; images: TranscriptImage[]; caption?: string }
   // Image generation in progress — a shimmering square placeholder that gets
   // replaced by the final image when the tool result arrives.
-  | { kind: "generating_image"; id: number; prompt: string }
+  | { kind: "generating_image"; id: number; prompt: string; toolCallId: string }
   // Plan-mode entry banner (ASCII logo + optional reason).
   | { kind: "plan"; id: number; reason: string }
+  // What the user did with a reviewed plan.
+  | { kind: "plan_decision"; id: number; decision: PlanDecision }
   // A question from the `ask_user` tool — clickable options rendered in the
   // thread. The turn is blocked until the answers are sent, or until the run
   // ends without them (`cancelled`, which closes the band).
@@ -71,6 +76,8 @@ export type Item =
       answers?: Record<string, string | string[]>;
       /** The complete set reached the blocked tool call. */
       sent?: boolean;
+      /** Answered in this window just now (it moved to the end as a new row). */
+      answeredLive?: boolean;
       cancelled?: boolean;
       /** Soft deadline passed: the agent went on; an answer is still delivered late. */
       deferred?: boolean;

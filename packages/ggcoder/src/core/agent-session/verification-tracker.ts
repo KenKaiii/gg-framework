@@ -1,8 +1,6 @@
-import path from "node:path";
 import type { AgentToolCallEndEvent, AgentToolCallStartEvent } from "@kleio/agent";
 import type { BackgroundProcess } from "../process-manager.js";
 import {
-  extractAddedLines,
   isCheckOwnFile,
   isCodeFilePath,
   isVerificationCommand,
@@ -13,27 +11,6 @@ import { captureVerificationSnapshot } from "../verification-snapshot.js";
 import { resolveShell } from "../shell.js";
 import { autoBackgroundedId, REVIEW_REJECTED_BEFORE_START } from "../../tools/bash.js";
 import { editTargetPaths } from "../../tools/edit-targets.js";
-import { resolvePath, toPosixPath } from "../../tools/path-utils.js";
-
-/**
- * One section per file of an edit diff, keyed by the cwd-relative POSIX path.
- * A multi-file edit joins one `--- a/<path>` + `+++ b/<path>` section per file,
- * so each file is checked only for the lines it added.
- */
-function diffSectionsByFile(diff: string): Map<string, string> {
-  const lines = diff.split("\n");
-  const starts: Array<{ file: string; at: number }> = [];
-  for (let i = 0; i + 1 < lines.length; i++) {
-    const file = /^--- a\/(.+)$/.exec(lines[i] ?? "")?.[1];
-    if (file !== undefined && lines[i + 1] === `+++ b/${file}`) starts.push({ file, at: i });
-  }
-  const sections = new Map<string, string>();
-  starts.forEach(({ file, at }, n) => {
-    const end = starts[n + 1]?.at ?? lines.length;
-    sections.set(toPosixPath(file), lines.slice(at, end).join("\n"));
-  });
-  return sections;
-}
 
 /** A tool call observed between its start and end events. */
 export interface TrackedToolCall {
@@ -70,8 +47,7 @@ export interface RefusedCheck {
  * {@link VerificationGate}; persistence stays with the session.
  */
 export class VerificationTracker {
-  // Not private: the session's ideal-review gate reads the edited-file set.
-  readonly fileEditCounts = new Map<string, number>();
+  private readonly fileEditCounts = new Map<string, number>();
   private readonly toolCalls = new Map<string, TrackedToolCall>();
   private readonly backgroundVerification = new Map<string, BackgroundCheck>();
   private refusedCheck: RefusedCheck | null = null;
@@ -187,8 +163,7 @@ export class VerificationTracker {
         call.sourceSnapshot = await captureVerificationSnapshot(this.cwd, [
           ...this.fileEditCounts.keys(),
         ]);
-        if (call.sourceSnapshot === null)
-          this.gate.requireFreshVerification(true, event.args.command);
+        if (call.sourceSnapshot === null) this.gate.requireFreshVerification(true);
       } else if (
         (classification.accepted && event.args.persist !== true) ||
         (!classification.accepted && classification.mayMutate)
@@ -199,10 +174,7 @@ export class VerificationTracker {
         // or a persistent-shell run records nothing at the end, so
         // flagging it left verified work Unverified forever — and
         // autopilot silently refused every later turn.
-        this.gate.requireFreshVerification(
-          !classification.accepted && classification.mayMutate,
-          event.args.command,
-        );
+        this.gate.requireFreshVerification(!classification.accepted && classification.mayMutate);
       }
       return true;
     }
@@ -226,27 +198,12 @@ export class VerificationTracker {
     // it as a change left "unverified" work that blocked plan approval.
     if (!event.isError && args && !this.isPlanMode()) {
       if (name === "edit" || name === "write") {
-        const diff =
-          name === "edit"
-            ? ((event.details as { diff?: string } | undefined)?.diff ?? event.result)
-            : "";
-        const sections = name === "edit" ? diffSectionsByFile(diff) : undefined;
         // Check-owning files (tsconfig.json, pytest.ini, vitest.config.ts …)
-        // are tracked even when they are not source code: editing one is how
-        // a red suite is turned green without fixing anything. A multi-file
-        // edit records every file.
+        // are tracked even when they are not source code: editing one
+        // invalidates earlier check results. A multi-file edit records every file.
         for (const filePath of editTargetPaths(args as Record<string, unknown>)) {
           if (isCodeFilePath(filePath) || isCheckOwnFile(filePath)) {
-            // A path with no section of its own gets the whole diff: an added
-            // suppression is over-attributed rather than missed.
-            const section = sections?.get(
-              toPosixPath(path.relative(this.cwd, resolvePath(this.cwd, filePath))),
-            );
-            const addedText =
-              name === "write"
-                ? String((args as { content?: unknown }).content ?? "")
-                : extractAddedLines(section ?? diff);
-            this.gate.recordMutation(filePath, addedText);
+            this.gate.recordMutation(filePath);
             verificationChanged = true;
           }
         }
@@ -283,8 +240,7 @@ export class VerificationTracker {
                 ? { sourceSnapshot: call.sourceSnapshot ?? null }
                 : {}),
             });
-          else if (classification.snapshotEligible)
-            this.gate.requireFreshVerification(true, command);
+          else if (classification.snapshotEligible) this.gate.requireFreshVerification(true);
         } else if (args.persist === true) {
           // Persistent-shell checks are not bounded evidence (steering can
           // interleave): neither a pass nor a failure. A recorded failure
@@ -379,7 +335,7 @@ export class VerificationTracker {
       }
     };
     if (after === null || after !== check.sourceSnapshot) {
-      this.gate.requireFreshVerification(true, check.command);
+      this.gate.requireFreshVerification(true);
       this.gate.recordRejectedCheck(
         check.command,
         after === null

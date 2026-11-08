@@ -89,7 +89,7 @@ describe("GG App session asynchronous diagnostics", () => {
     expect(internal.lspManager.getLatestOutcome("a.ts")?.kind).toBe("timeout");
   }, 30_000);
 
-  it("summarizes multiple file timeouts once alongside final verification, never between steps", async () => {
+  it("never spends a turn on diagnostics timeouts, between steps or at the finish", async () => {
     const hooks: unknown[] = [];
     const diagnostics: unknown[] = [];
     internal.eventBus.on("hook", (event) => hooks.push(event));
@@ -128,13 +128,11 @@ describe("GG App session asynchronous diagnostics", () => {
       }
       expect(hooks).toEqual([]);
       expect(diagnostics).toEqual([]);
-      const followUp = JSON.stringify(await internal.getHookFollowUpMessages());
-      expect(followUp).toContain("a.ts: diagnostics timeout; not verified");
-      expect(followUp).toContain("b.ts: diagnostics timeout; not verified");
-      expect(followUp).toContain("Verification gate:");
-      expect(hooks).toEqual([{ kind: "verification" }]);
-      expect(diagnostics).toHaveLength(1);
+      // A timed-out server proves nothing either way: it never costs the
+      // model another turn at the finish line.
       expect(await internal.getHookFollowUpMessages()).toBeNull();
+      expect(hooks).toEqual([]);
+      expect(diagnostics).toEqual([]);
     } finally {
       internal.lspManager.shutdownAll();
       pool.shutdownAll();
@@ -142,7 +140,7 @@ describe("GG App session asynchronous diagnostics", () => {
     }
   }, 30_000);
 
-  it("returns the real write before diagnostics and checks errors before allowing completion", async () => {
+  it("returns the real write before diagnostics and sends real errors back before completion", async () => {
     const events: string[] = [];
     internal.eventBus.on("hook_armed", (event) =>
       events.push(`armed:${String(event.kind)}:${String(event.armed)}`),
@@ -160,13 +158,13 @@ describe("GG App session asynchronous diagnostics", () => {
     const followUp = await internal.getHookFollowUpMessages();
     expect(JSON.stringify(followUp)).toContain("Diagnostics in a.ts");
     expect(internal.lspManager.getLatestOutcome("a.ts")?.kind).toBe("diagnostics");
-    expect(events).toContain("hook:verification");
-    // Diagnostics share the real verification intervention, rather than falsely
-    // announcing one themselves and demanding a second model turn.
-    expect(JSON.stringify(followUp)).toContain("Verification gate:");
+    // Real errors come back to the model on their own, with no verification
+    // demand bolted on and no hook announcement.
+    expect(JSON.stringify(followUp)).not.toContain("Verification gate:");
     expect(diagnosticNotices).toHaveLength(1);
     expect(diagnosticNotices[0]).toContain("Diagnostics in a.ts");
-    expect(events.filter((event) => event === "hook:verification")).toHaveLength(1);
+    expect(events.filter((event) => event.startsWith("hook:"))).toEqual([]);
+    expect(events.at(-1)).toBe("armed:verification:false");
   }, 30_000);
 
   it("delivers the latest edit's errors through steering without an output-polling tool", async () => {

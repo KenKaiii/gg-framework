@@ -1,0 +1,13 @@
+{
+  "id": "open-from-subject",
+  "name": "Open from subject",
+  "kind": "transition",
+  "description": "A round mark with a label pops in and holds, then the next stage opens as a growing circle from the mark's centre onto a --field-2 scene where a headline rises. Edit the mark glyph, its label, and the stage's kicker and headline.",
+  "tags": ["handoff", "continuous", "kit", "iris", "circle", "reveal", "logo"],
+  "fonts": [],
+  "duration": 4,
+  "previewAt": 2.4,
+  "license": "original",
+  "requires": ["kit"],
+  "previewLook": "duotone-broadcast"
+}

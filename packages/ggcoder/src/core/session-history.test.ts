@@ -17,6 +17,7 @@ import {
   restoreAssistantTexts,
   detectPromptCommand,
   resolveRestoredCommand,
+  extractToolImagePaths,
 } from "./session-history.js";
 
 describe("reconstructCheckpointHistory", () => {
@@ -334,5 +335,34 @@ describe("replayMessagesInOrder", () => {
     );
 
     expect(replayed).toEqual(["assistant", "tool", "error-marker", "assistant"]);
+  });
+});
+
+describe("extractToolImagePaths", () => {
+  it.each([
+    ["read tool", "Read image file /Users/me/shot.png [image/png]", ["/Users/me/shot.png"]],
+    [
+      "read tool with resize note and spaces",
+      "Read image file /Users/me/My Shots/a b.png [image/jpeg] (resized from 10 to 5 bytes)",
+      ["/Users/me/My Shots/a b.png"],
+    ],
+    [
+      "screenshot tool",
+      "Captured http://localhost:3000 → /tmp/My Dir/shot.png [image/png] (1280×800)",
+      ["/tmp/My Dir/shot.png"],
+    ],
+    [
+      "generate_image single keeps a comma in the path",
+      "Generated image → /proj/out, final.png",
+      ["/proj/out, final.png"],
+    ],
+    [
+      "generate_image multiple, primary first",
+      "Generated 2 images → /proj/a-1.png, /proj/a-2.png",
+      ["/proj/a-1.png", "/proj/a-2.png"],
+    ],
+    ["unknown text", "something else entirely", []],
+  ])("%s", (_label, text, expected) => {
+    expect(extractToolImagePaths(text)).toEqual(expected);
   });
 });

@@ -17,15 +17,6 @@ import type {
   VideoContent,
 } from "@kleio/ai";
 import {
-  buildReviewCoverageEscalationMessage,
-  buildReviewCoverageMessage,
-  MAX_REVIEW_COVERAGE_INJECTIONS,
-  withReviewCoverageRequirements,
-  type IdealReviewStats,
-  type ReviewCoverageTracker,
-} from "../../core/ideal-review.js";
-import type { LspManager } from "../../core/lsp/manager.js";
-import {
   CycleDetector,
   detectTextRepetition,
   ToolCallProgressTracker,
@@ -106,31 +97,6 @@ export function shouldRetainThinkingDelta(): boolean {
   return false;
 }
 
-function withLspReviewEvidence(
-  message: Message,
-  files: readonly string[],
-  lspManager: LspManager | undefined,
-): Message {
-  const lowConfidence: string[] = [];
-  const missing: string[] = [];
-  for (const filePath of files) {
-    const outcome = lspManager?.getLatestOutcome(filePath);
-    if (outcome?.kind === "low_confidence") lowConfidence.push(filePath);
-    else if (outcome?.kind !== "clean" && outcome?.kind !== "diagnostics") missing.push(filePath);
-  }
-  if (lowConfidence.length === 0 && missing.length === 0) return message;
-  const notes = [
-    ...(lowConfidence.length > 0
-      ? [`Diagnostics are low confidence while indexing: ${lowConfidence.join(", ")}.`]
-      : []),
-    ...(missing.length > 0
-      ? [`Diagnostics evidence is unavailable or missing: ${missing.join(", ")}.`]
-      : []),
-    "Do not describe those files as compiler-clean without other evidence.",
-  ];
-  return { role: "user", content: `${String(message.content)}\n\n${notes.join(" ")}` };
-}
-
 export interface ActiveToolCall {
   toolCallId: string;
   name: string;
@@ -144,10 +110,7 @@ export interface AgentLoopOptions {
   model: string;
   tools: AgentTool[];
   /** Snapshot current project-bound resources at run time, including before React commits. */
-  getProjectRuntime?: () => Pick<
-    AgentLoopOptions,
-    "tools" | "lspManager" | "reviewCoverageTracker"
-  >;
+  getProjectRuntime?: () => Pick<AgentLoopOptions, "tools">;
   webSearch?: boolean;
   maxTokens: number;
   /** Whether the active model supports native image input. */
@@ -171,11 +134,6 @@ export interface AgentLoopOptions {
     messages: Message[],
     options: TransformContextOptions,
   ) => Message[] | Promise<Message[]>;
-  getIdealReviewMessage?: (stats: IdealReviewStats, touchedFiles: string[]) => Message | null;
-  /** Harness-owned successful read/mutation evidence for fail-closed Ideal review. */
-  reviewCoverageTracker?: ReviewCoverageTracker;
-  /** Detailed diagnostics evidence shown only to the internal review turn. */
-  lspManager?: LspManager;
   /** Polled mid-loop when the agent appears stuck (repeated failures / calls /
    *  edits, or degenerate output). Return a user message to break the loop. */
   getLoopBreakMessage?: (stats: LoopBreakStats, stage: 1 | 2) => Message | null;
@@ -360,23 +318,10 @@ export function useAgentLoop(
   const lastResolvedApiKey = useRef<string | undefined>(undefined);
   const toolsUsedRef = useRef<Set<string>>(new Set());
   const toolCountsRef = useRef<Map<string, number>>(new Map());
-  const idealReviewStatsRef = useRef<IdealReviewStats>({
-    changedLines: 0,
-    toolCalls: 0,
-    toolFailures: 0,
-    turns: 0,
-    writeCalls: 0,
-    editCalls: 0,
-    bashCalls: 0,
-  });
-  const idealReviewPhaseRef = useRef<"idle" | "reviewing" | "complete">("idle");
-  /** Coverage follow-ups spent this run, capped by MAX_REVIEW_COVERAGE_INJECTIONS. */
-  const reviewCoverageInjectedRef = useRef(0);
   // ── Loop-breaker tracking ──
   const loopProgressTrackerRef = useRef(new ToolCallProgressTracker());
   const cycleDetectorRef = useRef(new CycleDetector());
   const cyclicPatternRef = useRef<CycleDetection | null>(null);
-  const fileEditCountsRef = useRef<Map<string, number>>(new Map());
   const consecutiveFailuresRef = useRef(0);
   const repeatedNoProgressCallsRef = useRef(0);
   // 0 = no loop-break injected yet; 1 = first nudge sent; 2 = final stop-and-
@@ -563,22 +508,9 @@ export function useAgentLoop(
         });
         toolsUsedRef.current = new Set();
         toolCountsRef.current = new Map();
-        idealReviewStatsRef.current = {
-          changedLines: 0,
-          toolCalls: 0,
-          toolFailures: 0,
-          turns: 0,
-          writeCalls: 0,
-          editCalls: 0,
-          bashCalls: 0,
-        };
-        idealReviewPhaseRef.current = "idle";
-        reviewCoverageInjectedRef.current = 0;
-        options.reviewCoverageTracker?.reset();
         loopProgressTrackerRef.current.reset();
         cycleDetectorRef.current.reset();
         cyclicPatternRef.current = null;
-        fileEditCountsRef.current = new Map();
         consecutiveFailuresRef.current = 0;
         repeatedNoProgressCallsRef.current = 0;
         loopBreakInjectedRef.current = 0;
@@ -798,66 +730,7 @@ export function useAgentLoop(
             // has incomplete steps. See App.tsx for the implementation.
             getFollowUpMessages: async () => {
               const followUp = (await getFollowUpMessages?.()) ?? null;
-              if (followUp && followUp.length > 0) return followUp;
-              const coverageTracker = options.reviewCoverageTracker;
-              if (idealReviewPhaseRef.current === "reviewing") {
-                const coverage = coverageTracker?.evidence() ?? {
-                  expected: [],
-                  covered: [],
-                  missing: [],
-                };
-                log("INFO", "ideal", "Ideal review coverage check", {
-                  covered: coverage.covered,
-                  missing: coverage.missing,
-                });
-                if (coverage.missing.length > 0) {
-                  if (reviewCoverageInjectedRef.current < MAX_REVIEW_COVERAGE_INJECTIONS) {
-                    reviewCoverageInjectedRef.current += 1;
-                    return [
-                      withLspReviewEvidence(
-                        buildReviewCoverageMessage(coverage.missing),
-                        coverage.expected,
-                        options.lspManager,
-                      ),
-                    ];
-                  }
-                  // Budget spent: close the gate rather than re-injecting the
-                  // same unreadable-file checklist for the rest of the run.
-                  idealReviewPhaseRef.current = "complete";
-                  log("INFO", "ideal", "Ideal review coverage escalated after retry budget", {
-                    injected: String(reviewCoverageInjectedRef.current),
-                    missing: coverage.missing,
-                  });
-                  return [buildReviewCoverageEscalationMessage(coverage.missing)];
-                }
-                idealReviewPhaseRef.current = "complete";
-                return null;
-              }
-              if (idealReviewPhaseRef.current === "complete" || !options.getIdealReviewMessage)
-                return null;
-              const idealReviewMessage = options.getIdealReviewMessage(
-                { ...idealReviewStatsRef.current },
-                [...fileEditCountsRef.current.keys()],
-              );
-              if (!idealReviewMessage) return null;
-              coverageTracker?.start();
-              idealReviewPhaseRef.current = "reviewing";
-              const coverage = coverageTracker?.evidence() ?? {
-                expected: [],
-                covered: [],
-                missing: [],
-              };
-              log("INFO", "ideal", "Ideal review coverage started", {
-                expected: coverage.expected,
-                missing: coverage.missing,
-              });
-              return [
-                withLspReviewEvidence(
-                  withReviewCoverageRequirements(idealReviewMessage, coverage.missing),
-                  coverage.expected,
-                  options.lspManager,
-                ),
-              ];
+              return followUp && followUp.length > 0 ? followUp : null;
             },
             // clearToolUses disabled — causes model to output unsolicited context
             // summaries ("KEY CONTEXT TO REMEMBER") when it sees gaps from stripped
@@ -1000,11 +873,6 @@ export function useAgentLoop(
                   event.details,
                   tc?.args,
                 );
-                idealReviewStatsRef.current.toolCalls += 1;
-                if (event.isError) idealReviewStatsRef.current.toolFailures += 1;
-                if (toolName === "write") idealReviewStatsRef.current.writeCalls += 1;
-                if (toolName === "edit") idealReviewStatsRef.current.editCalls += 1;
-                if (toolName === "bash") idealReviewStatsRef.current.bashCalls += 1;
                 // ── Loop-breaker signals ──
                 if (event.isError) {
                   consecutiveFailuresRef.current += 1;
@@ -1023,13 +891,6 @@ export function useAgentLoop(
                   event.result,
                   event.isError,
                 );
-                if (!event.isError && (toolName === "edit" || toolName === "write") && tc?.args) {
-                  const filePath = (tc.args as { file_path?: unknown }).file_path;
-                  if (typeof filePath === "string") {
-                    const next = (fileEditCountsRef.current.get(filePath) ?? 0) + 1;
-                    fileEditCountsRef.current.set(filePath, next);
-                  }
-                }
                 // Track lines changed for edit tools
                 if (toolName === "edit" && !event.isError) {
                   const diff =
@@ -1037,7 +898,6 @@ export function useAgentLoop(
                   const addedLines = (diff.match(/^\+[^+]/gm) ?? []).length;
                   const removedLines = (diff.match(/^-[^-]/gm) ?? []).length;
                   if (addedLines > 0 || removedLines > 0) {
-                    idealReviewStatsRef.current.changedLines += addedLines + removedLines;
                     setLinesChanged((prev) => ({
                       added: prev.added + addedLines,
                       removed: prev.removed + removedLines,
@@ -1152,7 +1012,6 @@ export function useAgentLoop(
                 }
                 flushStreamState();
                 setRetryInfo(null);
-                idealReviewStatsRef.current.turns = event.turn;
                 onTurnEnd?.(event.turn, event.stopReason, event.usage, event.timing);
                 setCurrentTurn(event.turn);
                 setTotalTokens((prev) => ({

@@ -9,6 +9,7 @@ Label every finding and every fix with how you know:
 - **RUNTIME** — you executed something and observed the result. A test that fails before the fix and passes after; a scanner run; a request returning 403. Strongest.
 - **CODE** — you read the code path end to end and the conclusion follows from what is written. Normal for most review work. Say so.
 - **DEDUCED** — inferred from framework behavior, convention, or documentation without reading every hop. Acceptable if labelled, never presented as confirmed.
+- **SNAPSHOT** — rests on a dated external fact (a version, default, advisory) from the references. State the date; re-verify before calling it current.
 
 Never upgrade a label. "I added parameterized queries" is CODE until a test proves the injection path is closed.
 
@@ -47,6 +48,7 @@ Pick one per row. Running one scanner in CI beats evaluating five.
 - **Backend-as-a-service**: query the REST layer directly with the public anon key as an unauthenticated client and as a second user. The dashboard's "enabled" badge is not evidence — a permissive policy shows the same badge [S].
 - **Mobile**: inspect the built artifact, not the source — extract the bundle and grep for keys; check the manifest's exported components and network security config as they appear in the built app.
 - **Desktop**: read fuses from the **packaged** application; confirm loopback endpoints reject a request with no token and a wrong `Origin`; confirm the updater rejects an unsigned or downgraded payload.
+- **Supply chain / CI**: `grep -rn 'uses:' .github/workflows | grep -v '@[0-9a-f]\{40\}'` returns nothing; no workflow uses `pull_request_target` with a PR-head checkout; `npm config get allow-scripts`/the allowlist is what you expect; `git log --all -- .claude/settings.json .vscode/tasks.json` shows only commits you made.
 - **CLI/dev tools**: run against a deliberately hostile fixture repository containing a path-traversal archive entry, a symlink pointing outside the tree, a file name with terminal escape sequences, and a config file with a plugin path. Assert the tool refuses each.
 - **Contracts**: invariant tests plus a storage-layout diff on every upgradeable deploy.
 - **ML**: attempt to load a non-safetensors artifact and confirm rejection; confirm inference endpoints are unreachable from outside the private network.

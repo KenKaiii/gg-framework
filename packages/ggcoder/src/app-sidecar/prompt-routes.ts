@@ -362,9 +362,6 @@ export function handlePromptRoutes(
         return;
       }
       ctx.autopilot = enabled;
-      // A toggle-off during an active cycle takes effect after Ken finishes;
-      // until then, injected build runs must not re-enable Ideal self-review.
-      ctx.session.setIdealReviewSuppressed(enabled || ctx.autopilotActive);
       await saveAutopilot(ctx.cwd, enabled);
       log("INFO", "app-sidecar", "autopilot toggled", { enabled: String(enabled) });
       ctx.broadcast("autopilot", { autopilot: enabled });

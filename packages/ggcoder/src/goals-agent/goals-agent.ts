@@ -326,10 +326,5 @@ export function createGoalsAgentSession(options: GoalsAgentOptions): AgentSessio
       syncRunMarker();
     }
   };
-  // Fork-only until 223830dc removes Ideal self-review: upstream's coordinator
-  // never ran it, so autopilot toggles must not switch it back on either.
-  const suppressIdealReview = session.setIdealReviewSuppressed.bind(session);
-  session.setIdealReviewSuppressed = () => suppressIdealReview(true);
-  suppressIdealReview(true);
   return session;
 }

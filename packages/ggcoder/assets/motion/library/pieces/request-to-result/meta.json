@@ -1,0 +1,13 @@
+{
+  "id": "request-to-result",
+  "name": "Request to result",
+  "kind": "ui",
+  "description": "A request types into a prompt box, a cursor presses Send, and the same box grows into the result card as rows land one by one with drawn checks; one element carries the scene, no crossfade. Edit the request text, the result header and the rows.",
+  "tags": ["prompt", "cursor", "typing", "morph", "result", "checklist", "ai", "continuous", "kit"],
+  "fonts": [],
+  "duration": 7,
+  "previewAt": 5.2,
+  "license": "original",
+  "requires": ["kit"],
+  "previewLook": "soft-light-ad"
+}

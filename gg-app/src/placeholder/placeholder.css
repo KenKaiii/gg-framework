@@ -82,3 +82,16 @@
   padding: 0.25rem 1rem;
   color: var(--text);
 }
+.placeholder-jump {
+  position: absolute;
+  right: 0;
+  bottom: 0.75rem;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+.placeholder-jump > button {
+  pointer-events: auto;
+}

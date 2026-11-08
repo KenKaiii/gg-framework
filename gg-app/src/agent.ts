@@ -736,6 +736,24 @@ export async function openProjectPath(path: string): Promise<void> {
   }
 }
 
+/**
+ * Open an in-memory chat image (a `data:<type>;base64,...` URL from a paste or
+ * attachment) in the default image viewer. It has no file of its own, so the
+ * app writes a copy into its cache folder and opens that.
+ */
+export async function openImageDataUrl(src: string): Promise<void> {
+  const match = /^data:([^;,]+);base64,(.+)$/s.exec(src);
+  if (!match) {
+    await logError("open_image_data skipped: not a base64 data URL");
+    return;
+  }
+  try {
+    await invoke("open_image_data", { mediaType: match[1], data: match[2] });
+  } catch (e) {
+    await logError(`open_image_data failed: ${String(e)}`);
+  }
+}
+
 export interface DroppedPathInfo {
   path: string;
   isDir: boolean;

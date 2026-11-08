@@ -10,6 +10,7 @@ import {
   type CacheExpiryStatus,
   type WorkspaceMode,
   type PromptSegment,
+  openImageDataUrl,
 } from "./agent";
 import { focusesComposerOnOpen } from "./composer-refocus";
 import { returnSends } from "./phone-viewport";
@@ -203,7 +204,11 @@ export function Composer({
           onHover={setFileIndex}
         />
       )}
-      <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
+      <AttachmentBar
+        attachments={attachments}
+        onRemove={removeAttachment}
+        onOpenImage={(src) => void openImageDataUrl(src)}
+      />
       <ReferencedFiles paths={mentionedPaths} onRemove={removeMentionChip} />
       <CacheExpiryNotice expiry={cacheExpiry} running={running} onCompact={onCompactFirst} />
       <QueuedBar messages={visibleQueuedMessages} onCancel={handleCancelQueued} />

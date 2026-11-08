@@ -91,9 +91,8 @@ function smokeMotionBundle(node) {
     join("skills", "motion", "SKILL.md"),
     join("skills", "brand-kit", "SKILL.md"),
     join("skills", "source-ingest", "SKILL.md"),
-    join("skills", "video-qa", "SKILL.md"),
     join("references", "runtime", "minimal-composition.md"),
-    join("references", "motion-language.md"),
+    join("references", "build-sheet.md"),
     join("assets", "sfx", "sfx-analysis.md"),
   ]) {
     if (!existsSync(join(motion, rel))) fail(`bundled Motion file missing: ${rel}`);
@@ -101,7 +100,17 @@ function smokeMotionBundle(node) {
   const skillNames = readdirSync(join(motion, "skills")).sort();
   if (
     JSON.stringify(skillNames) !==
-    JSON.stringify(["brand-kit", "motion", "source-ingest", "video-qa"])
+    JSON.stringify([
+      "app-walkthrough",
+      "before-after",
+      "brand-kit",
+      "dev-tool-video",
+      "launch-video",
+      "match-reference",
+      "motion",
+      "source-ingest",
+      "website-video",
+    ])
   ) {
     fail(`unexpected Motion skill catalog: ${skillNames.join(", ")}`);
   }
@@ -131,6 +140,32 @@ function smokeMotionBundle(node) {
     fail("bundled motion verification gate failed to load or accepted missing evidence");
   }
   console.log("smoke: bundled motion verification gate rejects missing evidence");
+
+  const blurStep = spawnSync(node, [join(motion, "bin", "motion-blur.mjs")], {
+    encoding: "utf8",
+    timeout: 10_000,
+  });
+  if (blurStep.status !== 1 || !blurStep.stderr?.includes("usage: motion-blur.mjs")) {
+    fail("bundled motion-blur render step failed to load");
+  }
+  console.log("smoke: bundled motion-blur render step loads");
+
+  for (const [script, usage] of [
+    ["cues.mjs", "usage: cues.mjs"],
+    ["reference-study.mjs", "usage: reference-study.mjs"],
+    ["music-fit.mjs", "usage: music-fit.mjs"],
+    ["flash-check.mjs", "usage: flash-check.mjs"],
+  ]) {
+    const helper = spawnSync(node, [join(motion, "bin", script)], {
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+    // Some helpers print their usage as a JSON error on stdout, others on stderr.
+    if (helper.status !== 1 || !`${helper.stdout}${helper.stderr}`.includes(usage)) {
+      fail(`bundled ${script} failed to load`);
+    }
+  }
+  console.log("smoke: bundled sound-cue export, reference study, music fit and flash check load");
 
   // The font library ships as plain files; a packaging filter dropping woff2
   // would silently fall back to generic fonts in every video.
@@ -173,8 +208,12 @@ function smokeMotionBundle(node) {
     const source = join(motion, "library", "pieces", piece.id, "piece.html");
     if (!existsSync(source)) fail(`style library piece missing: ${piece.id}`);
   }
+  // Kit pieces call the move kit, which `library.mjs add` copies from here.
+  if (!existsSync(join(motion, "library", "kit", "moves.js"))) {
+    fail("bundled Motion move kit missing: library/kit/moves.js");
+  }
   console.log(
-    `smoke: style library with ${library.looks.length} looks and ${library.pieces.length} pieces`,
+    `smoke: style library with ${library.looks.length} looks, ${library.pieces.length} pieces and the move kit`,
   );
 }
 

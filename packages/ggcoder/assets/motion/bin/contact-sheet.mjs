@@ -17,7 +17,9 @@ function fail(message) {
 }
 
 const args = process.argv.slice(2);
-const positional = args.filter((a, i) => !a.startsWith("--") && !args[i - 1]?.match(/^--(cols|width)$/));
+const positional = args.filter(
+  (a, i) => !a.startsWith("--") && !args[i - 1]?.match(/^--(cols|width)$/),
+);
 const [framesArg, outArg] = positional;
 if (!framesArg || !outArg) {
   fail("usage: contact-sheet.mjs <frames-dir> <out.jpg> [--cols 4] [--width 1600] [--phone]");
@@ -39,13 +41,17 @@ try {
   const hfPkg = require.resolve("hyperframes/package.json");
   sharp = createRequire(hfPkg)("sharp");
 } catch {
-  fail("Contact sheets need the HyperFrames bundled with GG. Reinstall GG Coder to restore Motion mode.");
+  fail(
+    "Contact sheets need the HyperFrames bundled with Kleio. Reinstall Kleio to restore Motion mode.",
+  );
 }
 
 const framesDir = resolve(framesArg);
 const names = await readdir(framesDir).catch(() => fail(`Frames folder not found: ${framesDir}`));
 // Skip sheets from earlier runs (snapshot writes contact-sheet.jpg beside its frames).
-const entries = names.filter((n) => /\.(png|jpe?g|webp)$/i.test(n) && !/contact-sheet|phone-strip/i.test(n));
+const entries = names.filter(
+  (n) => /\.(png|jpe?g|webp)$/i.test(n) && !/contact-sheet|phone-strip/i.test(n),
+);
 if (entries.length === 0) fail(`No frame images in ${framesDir}`);
 const order = (name) => {
   const m = basename(name, extname(name)).match(/(\d+(?:\.\d+)?)(?!.*\d)/);

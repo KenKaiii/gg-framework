@@ -107,7 +107,6 @@ import {
 } from "../tools/index.js";
 import { partitionToolsByTier } from "../tools/tool-tiers.js";
 import type { BackgroundProcess } from "./process-manager.js";
-import { formatImpactForVerification, type TestImpactIndex } from "./test-impact.js";
 import type { DebugManager } from "../tools/debug.js";
 import { buildProcessCompletionFollowUp } from "./process-gate.js";
 import { PLAN_SUBMISSION_NUDGE, shouldNudgePlanSubmission } from "./plan-submission-gate.js";
@@ -116,7 +115,6 @@ import {
   type ChildModelPick,
   type SubAgentManager,
   type SubAgentSnapshot,
-  type SubAgentState,
 } from "./subagent-manager.js";
 import { applyAsyncSubagentPolicy } from "./subagent-policy.js";
 import {
@@ -167,17 +165,6 @@ import { pruneStaleToolResults, shouldPruneToolResults } from "./compaction/tool
 import { discoverAgents, type AgentDefinition } from "./agents.js";
 import { enhancePrompt, type EnhanceResult } from "../utils/prompt-enhancer.js";
 import { detectLanguages, detectProjectStack, type LanguageId } from "./language-detector.js";
-import {
-  type IdealReviewDecision,
-  evaluateIdealReview,
-  buildIdealReviewMessage,
-  buildReviewCoverageEscalationMessage,
-  buildReviewCoverageMessage,
-  MAX_REVIEW_COVERAGE_INJECTIONS,
-  withReviewCoverageRequirements,
-  detectTestDrift,
-  ReviewCoverageTracker,
-} from "./ideal-review.js";
 import { buildLoopBreakMessage } from "./loop-breaker.js";
 import { buildRegroundingMessage, requestTextForRegrounding } from "./regrounding.js";
 import {
@@ -187,15 +174,6 @@ import {
   SEMANTIC_LOOP_JUDGE_TIMEOUT_MS,
   withJudgeTimeout,
 } from "./semantic-loop-check.js";
-import {
-  buildIndependentReviewMessage,
-  buildReviewerTask,
-  INDEPENDENT_REVIEW_SCORE_THRESHOLD,
-  parseReviewerFindings,
-  REVIEWER_TOOLS,
-  REVIEWER_TURN_TIMEOUT_MS,
-  REVIEWER_WAIT_MS,
-} from "./ideal-review-subagent.js";
 import { buildEnvDeltaMessage, buildLanguageUpdateMessage } from "./env-delta.js";
 import { listProjectFiles, type ProjectFileList } from "./project-files.js";
 import {
@@ -304,17 +282,6 @@ export interface SessionAttachment {
   data: string;
   name: string;
   path?: string;
-}
-
-/** Terminal subagent states — mirrors SubAgentManager's private isTerminal. */
-function isTerminalSubAgentState(state: SubAgentState): boolean {
-  return (
-    state === "completed" ||
-    state === "failed" ||
-    state === "interrupted" ||
-    state === "closed" ||
-    state === "reaped"
-  );
 }
 
 /** Per-prompt run controls. */
@@ -501,7 +468,7 @@ export interface AgentSessionOptions {
   sessionRootDir?: string;
   /** Register GG Coder built-in/prompt/custom slash commands. Defaults to true. */
   coderSlashCommands?: boolean;
-  /** Enable loop-break, re-grounding, and Ideal review hooks. Defaults to true. */
+  /** Enable loop-break and re-grounding hooks. Defaults to true. */
   selfCorrectionHooks?: boolean;
   /** Override the semantic-loop judge LLM call (tests). Receives the finished
    *  prompt, returns the model's raw reply. Default: one-shot `stream()` call
@@ -700,25 +667,9 @@ export class AgentSession {
   private cacheKeyLogged = false;
   // ── Self-correction hook state (mirrors the TUI's useAgentLoop refs) ──
   // Reset at the start of every run; observed from the event stream; read by
-  // the loop-break (mid-loop) and ideal-review (pre-stop) callbacks.
+  // the loop-break (mid-loop) callback.
   private readonly loopMonitor = new RunLoopMonitor();
-  private idealReviewPhase: "idle" | "reviewing" | "complete" = "idle";
-  /** Runtime-only suppression while Ken owns verification in autopilot mode. */
-  private idealReviewSuppressed = false;
-  /** Mirror of the last `hook_armed` value broadcast this run, so the event
-   *  fires only on a real edge. */
-  private idealReviewArmed = false;
-  /** Cached test-drift probe, keyed by the size of the edited-file set. Drift
-   *  depends only on WHICH files were edited and that set only grows, so this
-   *  keeps the arming check off the filesystem on most tool results — the probe
-   *  is several sync existsSync calls per edited file. */
-  private idealDriftProbe: { files: number; drifted: boolean } | null = null;
-  private readonly reviewCoverage: ReviewCoverageTracker;
-  /** Coverage follow-ups spent this run, capped by MAX_REVIEW_COVERAGE_INJECTIONS. */
-  private reviewCoverageInjected = 0;
   private regroundingInjected = false;
-  /** Independent Ideal reviewer spawned once per run (score-gated). */
-  private independentReviewStarted = false;
   /**
    * The environment as the cached system prompt currently describes it.
    * Re-recorded on every prompt build, so a rebuild (e.g. `/add-dir`) needs no
@@ -733,13 +684,13 @@ export class AgentSession {
   private processGateInjected = 0;
   /** Plan-submission reminders spent this run (plan-submission-gate.ts). */
   private planSubmissionNudges = 0;
-  /** Verification gate: code edited this run, nothing proved it since. */
+  /** Verification evidence: code edited this run, and what has proved it since.
+   *  Passive tracking only — it feeds run status and autopilot, never a turn. */
   private readonly verificationGate = new VerificationGate();
   /** Host-observed evidence (edited files, in-flight and background checks) feeding the gate. */
   private readonly verificationTracker: VerificationTracker;
-  /** Mirror of the last verification `hook_armed` value, so the event fires
-   *  only on a real edge. */
-  private verificationArmed = false;
+  /** Mirror of the last `hook_armed` value, so the event fires only on an edge. */
+  private preFinalArmed = false;
   private compactionOccurred = false;
   /**
    * Re-grounding carry-over for post-turn compaction. `resetHookState` clears
@@ -794,7 +745,6 @@ export class AgentSession {
   private steeringListeners = new Set<() => void>();
   private processManager?: ProcessManager;
   private lspManager?: LspManager;
-  private testImpact?: TestImpactIndex;
   private debugManager?: DebugManager;
   private subAgentManager?: SubAgentManager;
   /**
@@ -909,7 +859,6 @@ export class AgentSession {
     this.provider = options.provider;
     this.model = options.model;
     this.cwd = options.cwd;
-    this.reviewCoverage = new ReviewCoverageTracker(this.cwd);
     this.baseUrl = options.baseUrl;
     this.maxTokens = this.resolveMaxTokens(options.model);
     this.thinkingLevel = options.thinkingLevel;
@@ -1022,7 +971,6 @@ export class AgentSession {
       clearReadTracker,
       recordBashReads,
       lspManager,
-      testImpact,
       debugManager,
       subAgentManager,
     } = await createTools(this.cwd, {
@@ -1061,11 +1009,9 @@ export class AgentSession {
       getUseExternalGrep: () => this.settingsManager.get("grepUseRipgrep"),
       sideWebSearch: (request) => this.runSideWebSearch(request),
       authStorage: this.authStorage,
-      onFileRead: (filePath) => this.reviewCoverage.recordRead(filePath),
       onFileMutated: (filePath) => {
         const relative = path.relative(this.cwd, filePath) || path.basename(filePath);
         this.verificationTracker.recordFileMutated(relative);
-        this.reviewCoverage.recordChanged(filePath);
       },
       // Lazy — sessionId/model/provider can change after createTools() runs, so
       // sub-agent spawns read the current parent state at execution time.
@@ -1150,7 +1096,6 @@ export class AgentSession {
     this.recordBashReads = recordBashReads;
     this.processManager = processManager;
     this.lspManager = lspManager;
-    this.testImpact = testImpact;
     this.debugManager = debugManager;
     this.subAgentManager = subAgentManager;
     this.bindManagerCancellation(this.opts.signal);
@@ -1731,15 +1676,7 @@ export class AgentSession {
     this.loopMonitor.reset();
     this.securityRowsThisRun.clear();
     this.verificationTracker.resetRun();
-    this.reviewCoverage.reset();
-    this.reviewCoverageInjected = 0;
-    this.idealReviewPhase = "idle";
-    // No event here: clients reset their own hold on run_start.
-    this.idealReviewArmed = false;
-    this.verificationArmed = false;
-    this.idealDriftProbe = null;
     this.regroundingInjected = false;
-    this.independentReviewStarted = false;
     this.runStartedAt = Date.now();
     this.processGateInjected = 0;
     this.planSubmissionNudges = 0;
@@ -1759,8 +1696,8 @@ export class AgentSession {
 
   /**
    * Fold one agent event into the hook stat accumulators. Pure bookkeeping —
-   * the same signals the TUI's useAgentLoop collects, so the loop-break and
-   * ideal-review decisions match across the CLI and the app.
+   * the same signals the TUI's useAgentLoop collects, so loop-break decisions
+   * match across the CLI and the app.
    */
   private async trackHookEvent(event: AgentEvent): Promise<void> {
     if (this.opts.completionReview) {
@@ -1784,12 +1721,6 @@ export class AgentSession {
         const safetyRule = parseSafetyBlock(event.result);
         if (safetyRule) this.recordSafetyBlock(safetyRule, name, args, event.details);
         this.loopMonitor.recordToolEnd(name, args, event.result, event.isError);
-        if (name === "edit" && !event.isError) {
-          const diff = (event.details as { diff?: string } | undefined)?.diff ?? event.result;
-          const added = (diff.match(/^\+[^+]/gm) ?? []).length;
-          const removed = (diff.match(/^-[^-]/gm) ?? []).length;
-          this.loopMonitor.stats.changedLines += added + removed;
-        }
         const verificationChanged = await this.verificationTracker.recordToolCallEnd(event, call);
         if (verificationChanged) await this.persistVerificationState();
         // Tool results are what push the run over the review gate, and they all
@@ -1910,7 +1841,7 @@ export class AgentSession {
       { deferUnverified: true },
     );
     if (diagnosticText) this.eventBus.emit("diagnostics", { text: diagnosticText });
-    this.refreshVerificationArmed();
+    this.refreshHookArming();
     const notified = this.notifications.drain();
     const notificationMessage: Message | null =
       notified.length > 0 || diagnosticText
@@ -1974,6 +1905,7 @@ export class AgentSession {
       ];
     }
     if (this.opts.selfCorrectionHooks === false) return null;
+    // Legacy key: the user-facing switch for loop-break and re-grounding nudges.
     if (!this.settingsManager.get("idealReviewEnabled")) return null;
     // Deterministic stuck verdict, computed once and shared: the semantic
     // judge must not spend tokens on a burst the deterministic breaker is
@@ -2138,79 +2070,6 @@ export class AgentSession {
       : "";
   }
 
-  /** Independent fresh-context review of the finished work (Codex Guardian
-   *  pattern). Spawns a READ-ONLY child on the ACTIVE model, waits bounded,
-   * and returns findings for the acting agent to address — or nothing when
-   *  the review passes, is unavailable, or fails (in-thread review remains the
-   *  fallback; the feature degrades, never blocks).
-   *
-   *  Runs inside the pre-stop poll, so the candidate final answer is already
-   *  held by arming and this wait cannot race a streamed answer. */
-  private async runIndependentReview(decision: IdealReviewDecision): Promise<Message[]> {
-    if (!this.subAgentManager) return [];
-    if (this.independentReviewStarted) return [];
-    // An allow-listed session (a subagent worker itself) must not spawn
-    // harness-owned grandchildren the tool policy never granted.
-    if (this.opts.allowedTools && !this.opts.allowedTools.includes("spawn_agent")) return [];
-    if (decision.score < INDEPENDENT_REVIEW_SCORE_THRESHOLD) return [];
-    this.independentReviewStarted = true;
-
-    const taskName = `ideal-reviewer-${Math.random().toString(36).slice(2, 8)}`;
-    let agentId: string | undefined;
-    try {
-      const task = buildReviewerTask({
-        originalRequest: this.originalRequest,
-        changedFiles: [...this.verificationTracker.fileEditCounts.keys()],
-        stats: this.loopMonitor.stats,
-        triggerReasons: decision.reasons,
-      });
-      // Active model forced at spawn time — never routed to a fast/review model.
-      // The reviewer's own time limit ends it with a verdict on what it read;
-      // the wait below is only a backstop against a hung child.
-      const snapshot = await this.subAgentManager.spawn(taskName, task, undefined, {
-        model: this.model,
-        tools: REVIEWER_TOOLS,
-        turnTimeoutMs: REVIEWER_TURN_TIMEOUT_MS,
-      });
-      agentId = snapshot.agent_id;
-      const waited = await this.subAgentManager.wait([agentId], "all", REVIEWER_WAIT_MS);
-      const agent = waited.agents[0];
-      if (!agent || !isTerminalSubAgentState(agent.state)) {
-        // Timeout: collect the straggler so the completion gate cannot fire on
-        // it later, then fall back to the in-thread review.
-        await this.subAgentManager.interrupt(agentId, true).catch(() => {});
-        log("WARN", "ideal", "Independent reviewer timed out; falling back to in-thread review", {
-          agentId,
-        });
-        return [];
-      }
-      const findings = parseReviewerFindings(agent.output ?? "");
-      if (!findings) {
-        log("WARN", "ideal", "Independent reviewer output unparseable; falling back", {
-          agentId,
-          state: agent.state,
-          ...(agent.error ? { error: agent.error } : {}),
-        });
-        return [];
-      }
-      if (findings.clean) {
-        log("INFO", "ideal", "Independent reviewer verdict: clean", { agentId });
-        return [];
-      }
-      log("INFO", "ideal", "Independent reviewer flagged findings", {
-        agentId,
-        count: String(findings.findings.length),
-      });
-      return [buildIndependentReviewMessage(findings.findings)];
-    } catch (error) {
-      if (agentId) await this.subAgentManager.interrupt(agentId, true).catch(() => {});
-      log("WARN", "ideal", "Independent reviewer failed; falling back to in-thread review", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return [];
-    }
-  }
-
   /**
    * Turn-budget extension gate. The loop consults this instead of stopping
    * mid-task when it exhausts `maxTurns`. Grant ONLY on evidence of progress —
@@ -2239,94 +2098,28 @@ export class AgentSession {
     return granted;
   }
 
-  /**
-   * Would the stop AFTER the current turn inject the Ideal review? Same inputs
-   * as the pre-stop gate below, evaluated early so clients know a candidate
-   * final answer is a review draft BEFORE it streams.
-   *
-   * The turn count is looked ahead by one on purpose. `loopMonitor.stats.turns` only
-   * advances at `turn_end`, so while the model is writing the draft the counter
-   * still reads the PREVIOUS turn; the real gate sees one more. Without the
-   * lookahead a run sitting on score 3 crosses to 4 on the draft's own
-   * `turn_end` — after the text already streamed — which is precisely the
-   * appear-then-vanish flash. Over-arming by one turn point costs only live
-   * token streaming on a final answer that then shows whole; under-arming costs
-   * the flash, so this errs toward arming.
-   */
-  private wouldInjectIdealReview(): boolean {
+  /** Would a stop right now inject a pre-final follow-up? Only queued LSP
+   *  diagnostics (real errors injected below) or a mode-owned completion
+   *  review can, so clients hold the candidate answer only then. */
+  private wouldInjectBeforeFinal(): boolean {
     if (this.opts.completionReview?.armed) return true;
-    if (this.opts.selfCorrectionHooks === false || this.idealReviewSuppressed) return false;
-    // Mid-review a stop still injects: the coverage follow-up while files are
-    // unread, or its escalation once the budget is spent. Both make the model
-    // answer again, so the candidate answer is a draft exactly as it is before
-    // the review starts — without arming here it paints and the reviewed answer
-    // lands under it as a duplicate.
-    if (this.idealReviewPhase === "reviewing") {
-      return this.reviewCoverage.evidence().missing.length > 0;
-    }
-    if (this.idealReviewPhase !== "idle") return false;
-    if (!this.settingsManager.get("idealReviewEnabled")) return false;
-    if (
-      evaluateIdealReview({ ...this.loopMonitor.stats, turns: this.loopMonitor.stats.turns + 1 })
-        .shouldReview
-    ) {
-      return true;
-    }
-    const files = this.verificationTracker.fileEditCounts.size;
-    if (files === 0) return false;
-    if (this.idealDriftProbe?.files !== files) {
-      this.idealDriftProbe = {
-        files,
-        drifted:
-          detectTestDrift(this.verificationTracker.fileEditCounts.keys(), this.cwd).length > 0,
-      };
-    }
-    return this.idealDriftProbe.drifted;
-  }
-
-  /** Would a stop right now inject the verification gate? Same conditions as
-   *  the pre-stop branch below, so arming and injection cannot disagree. */
-  private wouldInjectVerification(): boolean {
-    if (this.lspManager?.hasQueuedDiagnostics()) return true;
-    if (this.opts.selfCorrectionHooks === false) return false;
-    if (!this.settingsManager.get("verificationGateEnabled")) return false;
-    if (this.opts.allowedTools && !this.opts.allowedTools.includes("bash")) return false;
-    return this.verificationGate.willInject();
+    return this.lspManager?.hasQueuedDiagnostics() ?? false;
   }
 
   /** Broadcast pre-final hook arming on change. Both edges matter: armed=false
-   *  after the hook fires is what lets a client stream the REVIEWED final
-   *  answer live again.
-   *
-   *  Callable before `initialize()`: the sidecar sets Ken's review suppression
-   *  on a freshly constructed session, and every arming predicate below reads
-   *  settings that `initialize()` has not loaded yet. Nothing can be armed
-   *  before the session can run a turn, and the first `tool_result`/`turn_end`
-   *  recomputes both edges — so skipping is the correct answer, not a patch. */
+   *  after the hook fires is what lets a client stream the final answer live
+   *  again. Callable before `initialize()`, when no manager exists yet. */
   private refreshHookArming(): void {
-    if (!this.settingsManager) return;
-    this.refreshIdealReviewArmed();
-    this.refreshVerificationArmed();
-  }
-
-  private refreshVerificationArmed(): void {
-    if (!this.settingsManager) return;
-    const armed = this.wouldInjectVerification();
-    if (armed === this.verificationArmed) return;
-    this.verificationArmed = armed;
+    const armed = this.wouldInjectBeforeFinal();
+    if (armed === this.preFinalArmed) return;
+    this.preFinalArmed = armed;
     this.eventBus.emit("hook_armed", { kind: "verification", armed });
   }
 
-  private refreshIdealReviewArmed(): void {
-    const armed = this.wouldInjectIdealReview();
-    if (armed === this.idealReviewArmed) return;
-    this.idealReviewArmed = armed;
-    this.eventBus.emit("hook_armed", { kind: "ideal", armed });
-  }
-
   /**
-   * Pre-stop Ideal review phase machine. Once review starts, completion is
-   * blocked until harness-owned post-injection reads cover every changed file.
+   * Pre-stop follow-ups: LSP errors, unread child agents and background
+   * processes, and a mode-owned completion review. Verification evidence is
+   * tracked passively for run status; it never forces another turn.
    */
   private async getHookFollowUpMessages(): Promise<Message[] | null> {
     // Exit notifications and task_output refer to the same host process record.
@@ -2334,14 +2127,14 @@ export class AgentSession {
     const backgroundChanged = await this.verificationTracker.settleFinishedBackground();
     if (backgroundChanged) await this.persistVerificationState();
     // Edits return immediately; only the completion boundary waits for remaining
-    // checks. Queued timeouts stay explicitly unverified, never a false all-clear.
+    // checks. Only real errors cost another turn: a timed-out or unavailable
+    // server proves nothing either way, and run status already reports
+    // unverified changes without making the model answer twice.
     await this.lspManager?.flushDiagnostics(this.opts.signal);
     if (this.opts.signal?.aborted) return null;
-    const diagnosticText = this.lspManager?.drainDiagnostics(
-      this.getVerificationProblem() !== null,
-    );
+    const diagnosticText = this.lspManager?.drainDiagnostics(false);
     if (diagnosticText) this.eventBus.emit("diagnostics", { text: diagnosticText });
-    this.refreshVerificationArmed();
+    this.refreshHookArming();
     const diagnosticMessages: Message[] = diagnosticText
       ? [
           {
@@ -2370,61 +2163,9 @@ export class AgentSession {
       return [...diagnosticMessages, ...processFollowUp];
     }
 
-    // Ahead of the gate, so a check that passes on its own costs no extra turn.
-    if (diagnosticMessages.length === 0) {
-      await this.rerunRefusedCheck();
-      // A pass can clear the gate; release a client holding the draft.
-      this.refreshVerificationArmed();
-    }
-
-    // Verification gate: code was edited but nothing verified since the last
-    // edit. Above the Ideal review so checks RUN before the read-based review
-    // starts; off for allow-listed sessions that cannot run commands at all.
-    if (
-      this.opts.selfCorrectionHooks !== false &&
-      this.settingsManager.get("verificationGateEnabled") &&
-      (!this.opts.allowedTools || this.opts.allowedTools.includes("bash"))
-    ) {
-      const verificationReason = this.verificationGate.pendingReason();
-      const pendingFiles = this.verificationGate.pendingFiles();
-      const verificationFollowUp = this.verificationGate.followUp();
-      if (verificationFollowUp) {
-        // Name the tests that actually reach the unverified files, with the
-        // command that runs exactly those, so the check is targeted rather
-        // than guessed. Best-effort: no index or no runner leaves it unchanged.
-        if (
-          this.testImpact &&
-          (verificationReason === "initial" || verificationReason === "recheck")
-        ) {
-          const impactLine = await this.testImpact
-            .impactFor(pendingFiles)
-            .then(formatImpactForVerification)
-            .catch(() => "");
-          const first = verificationFollowUp[0];
-          if (impactLine && first?.role === "user" && typeof first.content === "string") {
-            verificationFollowUp[0] = { ...first, content: first.content + impactLine };
-          }
-        }
-        log("INFO", "verification-gate", "Injecting verification follow-up", {});
-        // Announce, THEN disarm: clients release held text on disarm, so the
-        // reverse order paints the draft and immediately deletes it — the exact
-        // flash arming exists to prevent.
-        this.eventBus.emit("hook", {
-          kind: "verification",
-          ...(verificationReason === "tamper"
-            ? { verificationReason: "check_review" as const }
-            : verificationReason === "recheck"
-              ? { verificationReason }
-              : {}),
-        });
-        this.refreshHookArming();
-        return [...diagnosticMessages, ...verificationFollowUp];
-      }
-    }
-
-    // Address real errors before review; unavailable checks share the existing
-    // verification demand above instead of manufacturing a separate hook.
     if (diagnosticMessages.length > 0) return diagnosticMessages;
+
+    await this.rerunRefusedCheck();
 
     if (
       shouldNudgePlanSubmission({
@@ -2464,100 +2205,7 @@ export class AgentSession {
       }
       this.refreshHookArming();
     }
-    if (this.opts.selfCorrectionHooks === false || this.idealReviewSuppressed) return null;
-
-    if (this.idealReviewPhase === "reviewing") {
-      const coverage = this.reviewCoverage.evidence();
-      const lspEvidence = this.reviewLspEvidence(coverage.expected);
-      log("INFO", "ideal", "Ideal review coverage check", {
-        covered: coverage.covered,
-        missing: coverage.missing,
-        lspLowConfidence: lspEvidence.lowConfidence,
-        lspMissing: lspEvidence.missing,
-      });
-      if (coverage.missing.length > 0) {
-        // Announce like any other pre-final injection: this follow-up makes the
-        // model answer again, so the answer it interrupts is a draft and the
-        // hook event is what tells clients to discard it. Injecting silently is
-        // what let the pre-coverage answer paint above the reviewed one.
-        this.eventBus.emit("hook", {
-          kind: "ideal",
-          coverageExpected: coverage.expected,
-          coverageMissing: coverage.missing,
-        });
-        if (this.reviewCoverageInjected < MAX_REVIEW_COVERAGE_INJECTIONS) {
-          this.reviewCoverageInjected += 1;
-          // Stays armed (coverage is still outstanding) — this call is here so a
-          // client that missed the earlier edge is armed before the next draft.
-          this.refreshIdealReviewArmed();
-          return [
-            this.withReviewLspEvidence(buildReviewCoverageMessage(coverage.missing), lspEvidence),
-          ];
-        }
-        // Budget spent: close the gate so the run cannot spin on a file that
-        // never becomes readable, and require the gap be reported to the user.
-        this.idealReviewPhase = "complete";
-        // The gate is shut, so this is the real disarm: the answer to the
-        // escalation is final and streams live.
-        this.refreshIdealReviewArmed();
-        log("INFO", "ideal", "Ideal review coverage escalated after retry budget", {
-          injected: String(this.reviewCoverageInjected),
-          missing: coverage.missing,
-        });
-        return [buildReviewCoverageEscalationMessage(coverage.missing)];
-      }
-      this.idealReviewPhase = "complete";
-      return null;
-    }
-    if (this.idealReviewPhase === "complete") return null;
-    if (!this.settingsManager.get("idealReviewEnabled")) return null;
-
-    const decision = evaluateIdealReview(this.loopMonitor.stats);
-    // Test drift fires the review even on a small change the score would skip:
-    // a green-but-stale test is exactly what the volume gate sleeps through.
-    const driftedFiles = detectTestDrift(
-      this.verificationTracker.fileEditCounts.keys(),
-      this.cwd,
-    ).slice(0, 5);
-    if (!decision.shouldReview && driftedFiles.length === 0) return null;
-
-    // Independent reviewer first (async, bounded): its findings ride in the
-    // SAME follow-up batch as the in-thread review + coverage requirements, so
-    // addressing everything still costs one extra turn.
-    this.reviewCoverage.start(this.verificationTracker.fileEditCounts.keys());
-    this.idealReviewPhase = "reviewing";
-    const coverage = this.reviewCoverage.evidence();
-    const lspEvidence = this.reviewLspEvidence(coverage.expected);
-    this.eventBus.emit("hook", {
-      kind: "ideal",
-      coverageExpected: coverage.expected,
-      coverageMissing: coverage.missing,
-    });
-    // Recompute strictly AFTER the hook event: clients release held text on
-    // disarm, so the reverse order would paint the draft and then delete it —
-    // the exact flash arming exists to prevent. Arming normally PERSISTS here,
-    // because review starts with every changed file uncovered and a stop while
-    // coverage is outstanding injects again. Disarm lands later, on the read
-    // that closes the last gap (or when the retry budget escalates).
-    this.refreshIdealReviewArmed();
-    // Announce the phase before the reviewer starts, not after its bounded wait.
-    const independentMessages = await this.runIndependentReview(decision);
-    log("INFO", "ideal", "Injecting ideal review before final response", {
-      coverageExpected: coverage.expected,
-      coverageMissing: coverage.missing,
-      lspLowConfidence: lspEvidence.lowConfidence,
-      lspMissing: lspEvidence.missing,
-    });
-    return [
-      ...independentMessages,
-      this.withReviewLspEvidence(
-        withReviewCoverageRequirements(
-          buildIdealReviewMessage(decision.reasons, driftedFiles),
-          coverage.missing,
-        ),
-        lspEvidence,
-      ),
-    ];
+    return null;
   }
 
   /**
@@ -2597,41 +2245,6 @@ export class AgentSession {
       durationMs: String(Date.now() - startedAt),
     });
     await this.persistVerificationState();
-  }
-
-  private reviewLspEvidence(files: readonly string[]): {
-    lowConfidence: string[];
-    missing: string[];
-  } {
-    const lowConfidence: string[] = [];
-    const missing: string[] = [];
-    for (const filePath of files) {
-      const outcome = this.lspManager?.getLatestOutcome(filePath);
-      if (outcome?.kind === "low_confidence") lowConfidence.push(filePath);
-      else if (outcome?.kind !== "clean" && outcome?.kind !== "diagnostics") missing.push(filePath);
-    }
-    return { lowConfidence, missing };
-  }
-
-  private withReviewLspEvidence(
-    message: Message,
-    evidence: { lowConfidence: string[]; missing: string[] },
-  ): Message {
-    if (evidence.lowConfidence.length === 0 && evidence.missing.length === 0) return message;
-    const notes = [
-      ...(evidence.lowConfidence.length > 0
-        ? [`Diagnostics are low confidence while indexing: ${evidence.lowConfidence.join(", ")}.`]
-        : []),
-      ...(evidence.missing.length > 0
-        ? [`Diagnostics evidence is unavailable or missing: ${evidence.missing.join(", ")}.`]
-        : []),
-      "Do not describe those files as compiler-clean without other evidence.",
-    ];
-    return {
-      role: "user",
-      provenance: message.provenance,
-      content: `${String(message.content)}\n\n${notes.join(" ")}`,
-    };
   }
 
   /** Wraps the real run: cancels an in-flight cache prewarm and tracks run
@@ -4123,22 +3736,6 @@ export class AgentSession {
 
   getPlanMode(): boolean {
     return this.planModeRef.current;
-  }
-
-  /**
-   * Suppress only the pre-final Ideal self-review for this live session.
-   * Autopilot uses this while Ken independently owns verification; loop-break
-   * and post-compaction re-grounding remain active.
-   */
-  setIdealReviewSuppressed(suppressed: boolean): void {
-    this.idealReviewSuppressed = suppressed;
-    if (suppressed) {
-      this.idealReviewPhase = "idle";
-      this.reviewCoverage.reset();
-    }
-    // Suppression flips mid-run (autopilot takes over verification), so a client
-    // holding a draft under a stale arming must be released.
-    this.refreshHookArming();
   }
 
   /** Queue a user message (optionally with attachments) to be injected mid-run

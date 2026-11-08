@@ -48,7 +48,9 @@ async function readMeta(dir, id, type) {
   if (meta.id !== id) problem(id, `meta.json id "${meta.id}" does not match its folder`);
   if (type === "piece" && !KINDS.includes(meta.kind)) problem(id, `unknown kind "${meta.kind}"`);
   for (const need of meta.requires ?? []) {
-    if (need !== "three") problem(id, `unknown requirement "${need}" (only "three")`);
+    if (need !== "three" && need !== "kit") {
+      problem(id, `unknown requirement "${need}" (only "three" or "kit")`);
+    }
   }
   if (type === "piece" && meta.license !== "original" && !meta.source?.url) {
     problem(id, "third-party piece needs source.url and source.author");
@@ -91,6 +93,10 @@ async function stage(files, fonts, lookId, requires = []) {
   if (requires.includes("three")) {
     execFileSync(process.execPath, [join(BIN, "three.mjs"), "add", project], { encoding: "utf8" });
   }
+  if (requires.includes("kit")) {
+    await mkdir(join(project, "assets", "kit"), { recursive: true });
+    await cp(join(LIBRARY, "kit", "moves.js"), join(project, "assets", "kit", "moves.js"));
+  }
   return project;
 }
 
@@ -121,6 +127,8 @@ async function preview(project, at, out, id) {
 const THREE_IMPORTMAP =
   '<script type="importmap">{ "imports": { "three": "./assets/vendor/three/build/three.module.min.js", "three/addons/": "./assets/vendor/three/addons/" } }</script>';
 
+const KIT_SCRIPT = '<script src="assets/kit/moves.js"></script>';
+
 /** Harness that mounts one piece full-frame, styled by a look's tokens. */
 function harness(piece, lookId) {
   return `<!doctype html>
@@ -129,6 +137,7 @@ function harness(piece, lookId) {
 <link rel="stylesheet" href="assets/looks/${lookId}.css" />
 ${(piece.requires ?? []).includes("three") ? THREE_IMPORTMAP : ""}
 <script src="${GSAP_PREFIX}gsap.min.js"></script>
+${(piece.requires ?? []).includes("kit") ? KIT_SCRIPT : ""}
 <style>html,body{margin:0;width:1920px;height:1080px;overflow:hidden}
 #root{position:relative;width:1920px;height:1080px;background:var(--field)}</style>
 </head><body>
@@ -138,6 +147,11 @@ ${(piece.requires ?? []).includes("three") ? THREE_IMPORTMAP : ""}
 <script>const tl=gsap.timeline({paused:true});tl.to({},{duration:${piece.duration}});window.__timelines={main:tl};</script>
 </body></html>
 `;
+}
+
+// The move kit ships to every kit project: hold it to the same determinism rules.
+for (const issue of auditSource(await readFile(join(LIBRARY, "kit", "moves.js"), "utf8"))) {
+  problem("kit", issue);
 }
 
 const looks = [];

@@ -26,7 +26,7 @@ interface Internals {
     }>;
   };
   trackHookEvent(event: AgentEvent): Promise<void>;
-  refreshIdealReviewArmed(): void;
+  refreshHookArming(): void;
   getHookFollowUpMessages(): Promise<Message[] | null>;
   callCompletionReviewer(
     request: CompletionReviewRequest,
@@ -84,7 +84,7 @@ describe("optional completion-review seam", () => {
       name: "write",
       args: { file_path: "index.html" },
     });
-    internal.refreshIdealReviewArmed();
+    internal.refreshHookArming();
     const messages = await internal.getHookFollowUpMessages();
     expect(messages?.[0]?.content).toBe("Deliver only a draft");
     expect(messages?.[0]?.provenance?.visibility).toBe("hidden");

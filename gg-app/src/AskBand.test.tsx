@@ -37,6 +37,76 @@ describe("AskBand", () => {
     expect(onAnswer).toHaveBeenCalledWith({ flag: "yes" });
   });
 
+  it("sweeps the answer's shimmer when answered live, not when restored answered", () => {
+    const flag = prompt({
+      id: "flag",
+      question: "Flip the flag for everyone now?",
+      kind: "confirm",
+      options: [
+        { label: "Yes, flip it", value: "yes" },
+        { label: "Not yet", value: "no" },
+      ],
+    });
+    const band = (sent: boolean): React.ReactElement => (
+      <AskBand
+        prompt={flag}
+        answers={sent ? { flag: "yes" } : {}}
+        sent={sent}
+        onAnswer={vi.fn()}
+        onTypeInstead={onTypeInstead}
+      />
+    );
+    const live = render(band(false));
+    live.rerender(band(true));
+    // Answered live: the answer bubble sweeps its shimmer (CSS runs it twice).
+    expect(live.container.querySelector(".ask-answered-bubble")?.classList).toContain("is-live");
+    cleanup();
+
+    const restored = render(band(true));
+    expect(restored.container.querySelector(".ask-answered-bubble")?.classList).not.toContain(
+      "is-live",
+    );
+    cleanup();
+
+    // Answered just now, then moved to the end of the chat as a new row: it
+    // mounts already sent, yet its shimmer still marks the moment.
+    const moved = render(
+      <AskBand
+        prompt={flag}
+        answers={{ flag: "yes" }}
+        sent
+        answeredLive
+        onAnswer={vi.fn()}
+        onTypeInstead={onTypeInstead}
+      />,
+    );
+    expect(moved.container.querySelector(".ask-answered-bubble")?.classList).toContain("is-live");
+  });
+
+  it("marks an open band with its prompt id, for the jump to an unanswered question", () => {
+    const ask = prompt({
+      id: "ship",
+      question: "Ship it?",
+      kind: "confirm",
+      options: [{ label: "Yes" }],
+    });
+    const { container, rerender } = render(
+      <AskBand prompt={ask} onAnswer={vi.fn()} onTypeInstead={onTypeInstead} />,
+    );
+    expect(container.querySelector(`.ask-band[data-ask-prompt="${ask.id}"]`)).not.toBeNull();
+    // Answered: no longer a question to jump to.
+    rerender(
+      <AskBand
+        prompt={ask}
+        answers={{ ship: "Yes" }}
+        sent
+        onAnswer={vi.fn()}
+        onTypeInstead={onTypeInstead}
+      />,
+    );
+    expect(container.querySelector("[data-ask-prompt]")).toBeNull();
+  });
+
   it("marks the recommendation without preselecting it", () => {
     render(
       <AskBand
@@ -170,10 +240,52 @@ describe("AskBand", () => {
     const send = screen.getByRole("button", { name: /Choose at least one/ });
     expect(send).toHaveProperty("disabled", true);
 
+    // Every row shows an empty checkbox before anything is picked, so it reads
+    // as "pick several" rather than as single-choice rows.
+    expect(document.querySelectorAll(".ask-box")).toHaveLength(3);
+    expect(document.querySelectorAll(".ask-box.is-on")).toHaveLength(0);
+
     fireEvent.click(screen.getByRole("button", { name: /Typecheck/ }));
     fireEvent.click(screen.getByRole("button", { name: /Windows smoke/ }));
+    expect(document.querySelectorAll(".ask-box.is-on")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: /Confirm 2 selected/ }));
     expect(onAnswer).toHaveBeenCalledWith({ steps: ["Typecheck", "Windows smoke"] });
+  });
+
+  it("tells the user how to answer from the keyboard, for the first open question", () => {
+    const band = (answers: Record<string, string>, allowOther?: boolean): React.ReactElement => (
+      <AskBand
+        prompt={prompt(
+          {
+            id: "ship",
+            question: "Ship it?",
+            kind: "choice",
+            options: [{ label: "Yes" }, { label: "No" }, { label: "Later" }],
+            ...(allowOther === undefined ? {} : { allowOther }),
+          },
+          { id: "checks", question: "Which checks?", kind: "multi", options: [{ label: "A" }] },
+        )}
+        answers={answers}
+        onAnswer={vi.fn()}
+        onTypeInstead={onTypeInstead}
+      />
+    );
+    const view = render(band({}));
+    expect(
+      screen.getByText("Press 1–3 to choose, or start typing to answer in your own words."),
+    ).toBeTruthy();
+
+    // The first question answered: the hint follows the keyboard to the next.
+    view.rerender(band({ ship: "Yes" }));
+    expect(
+      screen.getByText(
+        "Pick any that apply, then confirm, or start typing to answer in your own words.",
+      ),
+    ).toBeTruthy();
+
+    // No free text allowed: the hint doesn't offer it.
+    view.rerender(band({}, false));
+    expect(screen.getByText("Press 1–3 to choose.")).toBeTruthy();
   });
 
   it("sends the user to the composer instead of a second input in the transcript", () => {
@@ -625,6 +737,8 @@ describe("AskBand", () => {
     expect(bubble).toBeTruthy();
     expect(bubble?.classList.contains("user-msg")).toBe(true);
     expect(bubble?.querySelector(".shimmer-text")).toBeTruthy();
+    // Restored already answered: the shimmer rests rather than sweeping.
+    expect(bubble?.classList.contains("is-live")).toBe(false);
     expect(screen.queryByRole("button", { name: "Yes" })).toBeNull();
     expect(screen.getByText("Yes")).toBeTruthy();
   });

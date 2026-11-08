@@ -57,7 +57,7 @@ Failure modes:
 
 | Code                       | Meaning                                                                    |
 | -------------------------- | -------------------------------------------------------------------------- |
-| `preview-not-running`      | Start Studio first with `hf preview --background`.            |
+| `preview-not-running`      | Start Studio first with `hf preview --background`.                         |
 | `ambiguous-preview-server` | Multiple matching Studio servers are open; rerun with one listed `--port`. |
 | `preview-port-mismatch`    | The requested `--port` is not one of the matching Studio servers.          |
 | `no-selection`             | Studio is open, but the user has not selected an element yet.              |
@@ -99,7 +99,7 @@ Validation runs before any server boots, so an invalid value exits cleanly witho
 
 ## render
 
-> A clear video request authorizes a new, versioned local render. Preview is available when useful, not a mandatory approval checkpoint. Ask only for unresolved inputs, material choices or permission to overwrite an existing export; check the result once through `motion_check`.
+> A clear video request authorizes a new, versioned local render. Preview is available when useful, not a mandatory approval checkpoint. Ask only for unresolved inputs, material choices or permission to overwrite an existing export. The final render screens itself for harmful flashing.
 
 ```bash
 hf render                                # standard MP4 from cwd

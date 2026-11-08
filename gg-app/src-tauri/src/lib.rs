@@ -282,6 +282,7 @@ pub fn run() {
             paths::open_permissions_settings,
             commands::files::read_dropped_file_attachment,
             commands::files::open_project_path,
+            commands::files::open_image_data,
             commands::files::open_url,
             commands::agent::agent_state,
             commands::agent::agent_memories,

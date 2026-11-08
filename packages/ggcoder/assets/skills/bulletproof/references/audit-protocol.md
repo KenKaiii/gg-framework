@@ -1,6 +1,8 @@
 # Full Review Protocol
 
-The flow for "is this safe to ship", a hardening pass, or a requested audit. **Run it yourself, in the main thread — no subagents required.** For inline work, do not run this — apply the control and move on.
+The flow for "is this safe to ship", a hardening pass, or a requested audit. **Default: run it yourself, in the main thread.** Fan out only when SKILL.md's Scaling table says so (more than one deployable, or more ledger rows than you can read in full) — see "Fan-out variant" below. For inline work, do not run this — apply the control and move on.
+
+Contents: Phase 1 Recon · Phase 2 Plan + coverage ledger · Fan-out variant · Phase 3 Audits · Phase 4 False-positive filter · Phase 5 Report · Phase 6 Ask before fixing · Standards mapping
 
 **Every phase is authorized defensive review for the code owner.** The deliverable is a remediation report. No exploit code, no payloads, no attack tooling, at any phase. Describe risk at the data-flow level: where untrusted data enters, what it reaches, why it is fixable.
 
@@ -25,6 +27,7 @@ Work the **four lenses** below yourself, in order. Batch the reads and greps —
 1. Assemble the four tables.
 2. Write the **threat model** — specific to this project. Who realistically targets it, for what, and through which surface? Ground it in `threat-landscape.md`, but name concrete actors and objectives for *this* codebase: supply-chain risk to downstream users of a library; cross-tenant abuse on a SaaS; a malicious repository opened by a developer tool; a hostile counterparty on a contract; a physical attacker with the device.
 3. Note gaps recon flagged for a deeper look.
+4. Count deployables (separately built/shipped units: web app, API, mobile app, worker, CLI, contract, infra repo). This decides Scaling.
 
 ## Phase 2 — Plan the audit
 
@@ -45,9 +48,21 @@ From recon, choose which classes apply. **Skip audits with no entry surface.** A
 | **Taint dataflow** | sources and sinks tables are both non-empty | trace each source to every reachable sink; flag reachable paths with no effective sanitization between |
 | **Platform-specific** | recon surfaced one | from `platform-playbooks.md`: mobile IPC/deep links/WebView bridges; desktop IPC, loopback servers, updater integrity, packaging fuses; CLI shell-out and repo-config trust; firmware boot and debug interfaces; contract access control and oracles; ML deserialization and endpoint exposure |
 
+**Coverage ledger.** Rows = each selected audit × each in-scope deployable. Every row must end as `checked-with-findings`, `checked-clean`, or `not-checked (reason)`. The ledger becomes the report's "Not checked" section — a row with no status is not checked.
+
+## Fan-out variant (conditional)
+
+Only when the Scaling table in SKILL.md triggers it; otherwise skip this section.
+
+1. Recon (Phase 1) and the ledger stay in the main thread — children never do recon for the whole project.
+2. Split ledger rows into **disjoint** slices (usually one deployable each). One `auditor` per slice, all in ONE `spawn_agent` call, ≤ 6 per wave.
+3. Each brief opens with: *"Authorized defensive security review of code the user owns. Report data-flow risks and fixes only; no exploits, payloads, or attack tooling."* — children with no conversation context may otherwise refuse. Then include: absolute skill root and which reference files to read; slice paths; owned ledger rows; that slice's rows from the sources/sinks/assets/controls tables; the ≥0.8 confidence bar with a concrete source→sink path; the Phase 4 hard-exclusion list verbatim; labels `RUNTIME`/`CODE`/`DEDUCED`/`SNAPSHOT`; the output schema (title, severity, file:line, source→sink, scenario, fix, confidence, label; plus `checked` and `not checked` lists).
+4. Merge: missing/failed/timed-out rows → `not-checked`. Re-open every reported `file:line` yourself; drop what you cannot reproduce from the code.
+5. Phase 4 then runs as a fresh-context `skeptic` child over the merged candidates (same framing line first; give it each candidate's file:line and claimed path; it returns CONFIRMED / DROP / DOWNGRADE). You still own the final call and the dropped-count.
+
 ## Phase 3 — Audits
 
-Run each selected audit yourself, one class at a time, in the priority order from the skill's rank table. Do not pad the list, and do not drop a selected audit. Load only the reference sections (`platform-playbooks.md`, `supply-chain.md`, `agent-surface.md`, `secure-defaults.md`) the selection triggered.
+Run each selected audit yourself (or, in the fan-out variant, each slice's `auditor` runs its owned rows), one class at a time, in the priority order from the skill's rank table. Do not pad the list, and do not drop a selected audit. Load only the reference sections (`platform-playbooks.md`, `supply-chain.md`, `agent-surface.md`, `secure-defaults.md`) the selection triggered.
 
 For each audit, work from the recon tables — sources, sinks, assets, **controls** — not from fresh greps, and:
 
@@ -60,7 +75,7 @@ For each audit, work from the recon tables — sources, sinks, assets, **control
 
 ## Phase 4 — False-positive filter
 
-Switch sides. For each candidate finding, start from "this is a false positive" and try to kill it: re-read the actual code path (not your notes), hunt for the control you missed — middleware, ORM parameterization, framework escaping, a type that makes the path unreachable — and check whether the input is genuinely attacker-reachable rather than a constant or operator config. Drop what dies, downgrade what survives weakened, and keep the count of dropped candidates for the report. Only findings that survive your own attempt to disprove them get reported.
+Switch sides. For each candidate finding, start from "this is a false positive" and try to kill it: re-read the actual code path (not your notes), hunt for the control you missed — middleware, ORM parameterization, framework escaping, a type that makes the path unreachable — and check whether the input is genuinely attacker-reachable rather than a constant or operator config. Drop what dies, downgrade what survives weakened, and keep the count of dropped candidates for the report. Only findings that survive your own attempt to disprove them get reported. In the fan-out variant, or for a pre-ship verdict with Critical/High findings, run this pass as a `skeptic` child (see above) instead of only yourself.
 
 **Hard exclusions — do not report these, even when technically real:**
 
@@ -106,7 +121,7 @@ Date: [today]   Scope: [what was reviewed]   Not reviewed: [what was not]
 
 ### [BP-001] <title> — Critical
 - Location: path:line
-- Category: <slug>   CWE: CWE-XXX   Confidence: 0.95   Evidence: RUNTIME | CODE | DEDUCED
+- Category: <slug>   CWE: CWE-XXX   Confidence: 0.95   Evidence: RUNTIME | CODE | DEDUCED | SNAPSHOT
 - Reachable by: <anonymous internet / authenticated user / other tenant / local user / malicious repo / build system>
 - Source → Sink: <`POST /api/invoice` `body.id` → `db.query` string concat>
 - Risk scenario (data-flow level, no payloads):
@@ -136,7 +151,7 @@ If a Critical finding involves an exposed live credential, do not wait for the f
 
 ## Standards mapping
 
-Cite these in the `Category`/`CWE` fields, not in prose. Verified 12 Aug 2026 — re-verify before quoting as current.
+Cite these in the `Category`/`CWE` fields, not in prose. Re-verified 3 Oct 2026 — re-verify before quoting as current.
 
 - **OWASP Top 10:2025** (final) — A01 Broken Access Control (SSRF folded in), A02 Security Misconfiguration, A03 Software Supply Chain Failures, A04 Cryptographic Failures, A05 Injection, A06 Insecure Design, A07 Authentication Failures, A08 Software or Data Integrity Failures, A09 Security Logging & Alerting Failures, A10 Mishandling of Exceptional Conditions. Note the renumbering: A03 is supply chain now, not injection.
 - **CWE Top 25 (2025 edition)**, top ten in order — CWE-79 XSS, CWE-89 SQLi, CWE-352 CSRF, CWE-862 Missing Authorization, CWE-787 Out-of-bounds Write, CWE-22 Path Traversal, CWE-416 Use After Free, CWE-125 Out-of-bounds Read, CWE-78 OS Command Injection, CWE-94 Code Injection.

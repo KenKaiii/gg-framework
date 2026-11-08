@@ -154,6 +154,42 @@ describe("skill routing prompts", () => {
     expect(result).toContain("Skill root directory: /skills/evidence-led-ui");
     expect(result).toContain("authoritative within their stated scope");
     expect(result).toContain("Preserve higher-priority project and file/module rules");
+    // Child agents see none of the conversation; the parent must hand over the
+    // skill path or the delegated slice runs without the skill's rules.
+    expect(result).toContain("it cannot see these instructions");
+    expect(result).toContain("(/skills/evidence-led-ui)");
+  });
+
+  it("keeps every bundled skill routable and its reference paths real", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bundled-skills-"));
+    try {
+      const skills = await discoverSkills({ globalSkillsDir: path.join(root, "global") });
+      const bundled = skills.filter((candidate) => candidate.source === "bundled");
+      expect(bundled.length).toBeGreaterThan(0);
+
+      for (const candidate of bundled) {
+        // Twelve-plus skills share a 16 KB catalog; a bloated description
+        // crowds the others out of the routing surface.
+        expect(
+          Buffer.byteLength(candidate.description, "utf8"),
+          `${candidate.name} description bytes`,
+        ).toBeLessThanOrEqual(700);
+
+        // The skill routes the model to references by path; a dangling path
+        // silently drops the guidance it promised.
+        const referenced = [...candidate.content.matchAll(/`(references\/[\w.-]+\.md)`/g)].map(
+          (match) => match[1] ?? "",
+        );
+        for (const relative of new Set(referenced)) {
+          await expect(
+            fs.access(path.join(candidate.root ?? "", ...relative.split("/"))),
+            `${candidate.name}: ${relative}`,
+          ).resolves.toBeUndefined();
+        }
+      }
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   it("appends one shared delegation protocol instead of per-skill copies", async () => {
@@ -351,7 +387,12 @@ describe("skill catalog byte budgets", () => {
       description: `Use for UI work. ${"😀".repeat(600)}`, // ~2.4KB, multibyte
     };
     const prompt = formatSkillsForPrompt([bloated]);
-    expect(Buffer.byteLength(prompt, "utf8")).toBeLessThan(2000);
+    // Measure the description's share, not the whole prompt, so routing-text
+    // growth in the header cannot mask or fake a clamp failure.
+    const baseline = formatSkillsForPrompt([{ ...skill, description: "x" }]);
+    const descriptionShare =
+      Buffer.byteLength(prompt, "utf8") - Buffer.byteLength(baseline, "utf8");
+    expect(descriptionShare).toBeLessThanOrEqual(resolveContextLimits().skillDescriptionBytes);
     expect(prompt).toContain("evidence-led-ui");
     expect(prompt).toContain("\u2026");
     expect(prompt).not.toContain("\ufffd");

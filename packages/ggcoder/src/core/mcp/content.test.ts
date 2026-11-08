@@ -135,6 +135,24 @@ describe("toToolResult", () => {
     expect(parts[0]).toMatchObject({ type: "image", mediaType: "image/png" });
   });
 
+  // The chat renders tool images only from `details.imagePreviews`; without
+  // them an MCP screenshot stayed invisible until the session was reloaded.
+  it("attaches a chat preview for each forwarded image", async () => {
+    const data = await pngBase64(8, 8);
+    const result = await toToolResult(
+      [
+        { type: "text", text: "two shots" },
+        { type: "image", data, mimeType: "image/png" },
+        { type: "image", data, mimeType: "image/png" },
+      ],
+      "mcp__s__t",
+    );
+
+    const details = (result as { details?: { imagePreviews?: unknown[] } }).details;
+    expect(details?.imagePreviews).toHaveLength(2);
+    expect(details?.imagePreviews?.[0]).toMatchObject({ mediaType: "image/png" });
+  });
+
   it("puts text before images so it frames them", async () => {
     const data = await pngBase64(8, 8);
     const result = await toToolResult(

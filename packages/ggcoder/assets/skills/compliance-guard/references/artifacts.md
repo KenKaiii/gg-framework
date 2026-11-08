@@ -1,6 +1,6 @@
 # Artifacts
 
-What each required document or flow must actually contain, as a skeleton to generate against. Snapshot **11 Aug 2026**.
+What each required document or flow must actually contain, as a skeleton to generate against. Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 (see `provenance.md`).
 
 **Rule for every document here:** generate it with `[PLACEHOLDER]` fields for facts only the user has, never invent entity names, addresses, retention periods, or vendor lists, and mark the output as a template that needs review. State plainly which artifacts a competent developer can safely template and which genuinely need a lawyer.
 

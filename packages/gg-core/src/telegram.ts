@@ -4,6 +4,10 @@
  */
 
 const TELEGRAM_API = "https://api.telegram.org";
+/** Server-side wait for getUpdates; the client timeout sits a little above it. */
+const LONG_POLL_SECONDS = 30;
+/** Every other Bot API call (sends, edits, file downloads metadata). */
+const API_TIMEOUT_MS = 30_000;
 const MAX_MESSAGE_LENGTH = 4096;
 
 export interface TelegramConfig {
@@ -61,6 +65,8 @@ export class TelegramBot {
   private allowedUserId: number;
   private offset = 0;
   private running = false;
+  /** Aborts the in-flight long poll so stop() takes effect immediately. */
+  private pollAbort: AbortController | null = null;
 
   private onMessage: ((msg: TelegramMessage) => void) | null = null;
   private onVoiceMessage: ((msg: TelegramVoiceMessage) => void) | null = null;
@@ -125,6 +131,7 @@ export class TelegramBot {
   /** Stop long polling. */
   stop(): void {
     this.running = false;
+    this.pollAbort?.abort();
   }
 
   /** Send a text message to a specific chat. Converts markdown and splits long messages. */
@@ -182,13 +189,30 @@ export class TelegramBot {
   // ── Private ───────────────────────────────────────────
 
   private async getUpdates(): Promise<TelegramUpdate[]> {
-    const result = await this.apiCall("getUpdates", {
-      offset: this.offset,
-      timeout: 30,
-      allowed_updates: ["message", "callback_query", "my_chat_member"],
-    });
+    const poll = new AbortController();
+    this.pollAbort = poll;
+    let result: { ok: boolean; result?: unknown };
+    try {
+      result = await this.apiCall(
+        "getUpdates",
+        {
+          offset: this.offset,
+          timeout: LONG_POLL_SECONDS,
+          allowed_updates: ["message", "callback_query", "my_chat_member"],
+        },
+        // A half-open socket would otherwise hang the poll forever.
+        AbortSignal.any([poll.signal, AbortSignal.timeout((LONG_POLL_SECONDS + 15) * 1000)]),
+      );
+    } finally {
+      if (this.pollAbort === poll) this.pollAbort = null;
+    }
 
-    if (!result.ok || !Array.isArray(result.result)) return [];
+    // Throw rather than return [] so start() backs off: an HTTP error (409 from
+    // a second bot instance, 401 revoked token, 429) otherwise comes straight
+    // back and the loop re-polls with no pause, spinning CPU and network.
+    if (!result.ok || !Array.isArray(result.result)) {
+      throw new Error(`getUpdates failed: ${JSON.stringify(result)}`);
+    }
 
     const updates = result.result as TelegramUpdate[];
     if (updates.length > 0) {
@@ -251,6 +275,7 @@ export class TelegramBot {
   private async apiCall(
     method: string,
     body?: Record<string, unknown>,
+    signal: AbortSignal = AbortSignal.timeout(API_TIMEOUT_MS),
   ): Promise<{ ok: boolean; result?: unknown }> {
     const url = `${TELEGRAM_API}/bot${this.token}/${method}`;
 
@@ -258,6 +283,7 @@ export class TelegramBot {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
+      signal,
     });
 
     if (!response.ok) {

@@ -1669,7 +1669,7 @@ async function createSession(
   session.eventBus.on("security_notice", (d) => broadcast("security_notice", d));
   session.eventBus.on("security_block", (d) => broadcast("security_block", d));
   // Fires BEFORE the candidate final answer streams. The webview holds assistant
-  // text back while armed, so an Ideal review supersedes a draft that was never
+  // text back while armed, so an injected follow-up supersedes a draft that was never
   // painted instead of deleting one the user already started reading.
   session.eventBus.on("hook_armed", (d) => broadcast("hook_armed", d));
   session.eventBus.on("subagent_state", (d) => broadcast("subagent_state", d));
@@ -1745,10 +1745,8 @@ async function createSession(
   // Autopilot (auto-review) toggle for THIS window's project. Loaded from
   // gg-app.json on boot; flipped via POST /autopilot. When on, POST /prompt runs
   // runAutopilotCycle after the user's turn settles — Ken auto-reviews the work
-  // and drives the review→prompt→review loop. Ken is the sole verification
-  // owner in this mode, so suppress the build session's redundant Ideal hook.
+  // and drives the review→prompt→review loop.
   let autopilot = mode === "code" && (await loadAutopilot(cwd));
-  session.setIdealReviewSuppressed(autopilot);
   // True while an autopilot review is in flight (used to defer kenAuto model
   // switches, like kenRunning does for chat Ken, and to drive the spinner).
   let autopilotReviewing = false;
@@ -2011,9 +2009,6 @@ async function createSession(
       // (often >5 min) regardless of the user's global speedProfile pick.
       forceLongCacheRetention: true,
     });
-    // Ken is already the independent autopilot reviewer; recursively running
-    // his own Ideal self-review adds latency and can corrupt the verdict shape.
-    ken.setIdealReviewSuppressed(true);
     await ken.initialize();
     // Keep review text/tools silent; report usage only for whole-task accounting.
     ken.eventBus.on("turn_end", (d) => {

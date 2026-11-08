@@ -1,0 +1,13 @@
+{
+  "id": "camera-rig",
+  "name": "Camera rig",
+  "kind": "frame",
+  "description": "An operated camera over one world layer, built on the move kit: starts wide, whips to a card with a little overshoot, floats by hand, whips on and holds dead still for a rest, pushes in as a stamp lands with one shake on contact, then glides back out, over a parallax backdrop that slides slower than the cards. Replace the cards with your scenes and edit the camera keys.",
+  "tags": ["camera", "whip", "handheld", "shake", "push-in", "zoom", "rest", "parallax", "continuous", "kit"],
+  "fonts": [],
+  "duration": 8,
+  "previewAt": 5.9,
+  "license": "original",
+  "requires": ["kit"],
+  "previewLook": "swiss-grid"
+}

@@ -8,13 +8,16 @@ import {
   getHistoryMessageVisibility,
   resolveRestoredCommand,
   restoreAssistantTexts,
+  extractToolImagePaths,
 } from "../core/session-history.js";
 import { spawnedTasks } from "../tools/subagent-shared.js";
 import { detectHookKind, type HistoryEntryForWire } from "./history.js";
 import { restoreAppErrorPayload } from "../app-error.js";
 import type { ToolResultContent } from "@kleio/ai";
 import type { KenTurnPayload, AppMarkerPayload } from "../core/session-manager.js";
-import { appToolImageRefs, appToolImages } from "../utils/image.js";
+import path from "node:path";
+import { appToolImageRefs, appToolImages, IMAGE_MEDIA_TYPES } from "../utils/image.js";
+import { readFileBounded } from "../tools/operations.js";
 import { json } from "./http.js";
 import type { SessionRouteContext } from "./route-context.js";
 import type http from "node:http";
@@ -93,7 +96,15 @@ export function handleHistoryRoutes(
       // Pre-index tool results by toolCallId so we can pair tool calls with
       // their results (for sub-agent status + image extraction).
       const toolResultMap = new Map<string, { content: ToolResultContent; isError: boolean }>();
+      // Tool name per call, so restore only trusts generate_image's own text
+      // when it reads extra images from disk (an MCP server could fake it).
+      const toolNameById = new Map<string, string>();
       for (const msg of messages) {
+        if (msg.role === "assistant" && typeof msg.content !== "string") {
+          for (const c of msg.content) {
+            if (c.type === "tool_call") toolNameById.set(c.id, c.name);
+          }
+        }
         if (msg.role !== "tool") continue;
         for (const tr of msg.content) {
           toolResultMap.set(tr.toolCallId, {
@@ -262,22 +273,52 @@ export function handleHistoryRoutes(
               if (typeof tr.content === "string") continue;
               const imageBlocks = tr.content.filter((c) => c.type === "image");
               if (imageBlocks.length === 0) continue;
-              // Extract the path from the text block (e.g. "Generated image → /path").
+              // Extract the path from the text block so the restored image
+              // stays clickable (read / screenshot / generate_image formats).
               const textBlock = tr.content.find(
                 (c) => c.type === "text" && "text" in c && typeof c.text === "string",
               );
               const textContent = textBlock && textBlock.type === "text" ? textBlock.text : "";
-              const pathMatch = textContent.match(/→\s*(\S+)/);
-              const imgPath = pathMatch?.[1];
+              const imgPaths = extractToolImagePaths(textContent);
+
+              // Paths pair with image blocks in order (a tool saves one file
+              // per image).
+              const images: Array<{ block: { data: string; mediaType: string }; path?: string }> =
+                imageBlocks.flatMap((block) => (block.type === "image" ? [{ block }] : []));
+              images.forEach((image, index) => (image.path = imgPaths[index]));
+              // generate_image persists only its first image's pixels; the
+              // rest exist only on disk, so preview them from their files.
+              // Skip silently if a file was moved or deleted since.
+              const extraPaths =
+                toolNameById.get(tr.toolCallId) === "generate_image"
+                  ? imgPaths.slice(images.length)
+                  : [];
+              for (const extraPath of extraPaths) {
+                const mediaType = IMAGE_MEDIA_TYPES[path.extname(extraPath).toLowerCase()];
+                if (!mediaType) continue;
+                const raw = await readFileBounded(extraPath).catch(() => null);
+                if (!raw) continue;
+                images.push({
+                  block: { data: raw.toString("base64"), mediaType },
+                  path: extraPath,
+                });
+              }
 
               // The app's preview of each image (WebP, 480 px wide), as the
               // live tool_call_end event carries it, or its ref.
-              const blocks = imageBlocks.flatMap((block) =>
-                block.type === "image" ? [block] : [],
-              );
               const toolImages = imagesByRef
-                ? await appToolImageRefs(blocks, imgPath, listedImages)
-                : await appToolImages(blocks, imgPath);
+                ? (
+                    await Promise.all(
+                      images.map((image) =>
+                        appToolImageRefs([image.block], image.path, listedImages),
+                      ),
+                    )
+                  ).flat()
+                : (
+                    await Promise.all(
+                      images.map((image) => appToolImages([image.block], image.path)),
+                    )
+                  ).flat();
               if (toolImages.length > 0) {
                 history.push({
                   role: "assistant",

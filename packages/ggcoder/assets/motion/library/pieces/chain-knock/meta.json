@@ -1,0 +1,13 @@
+{
+  "id": "chain-knock",
+  "name": "Chain knock",
+  "kind": "diagram",
+  "description": "A ball hops in from the left, hits the first of five process blocks and knocks the whole row like dominoes; the last block stamps a result. Edit the step labels, the result word and the hop timing.",
+  "tags": ["chain-reaction", "process", "steps", "cause-and-effect", "hop", "stamp", "continuous", "kit"],
+  "fonts": [],
+  "duration": 5,
+  "previewAt": 1.72,
+  "license": "original",
+  "requires": ["kit"],
+  "previewLook": "swiss-grid"
+}

@@ -139,6 +139,20 @@ describe("Motion review session", { timeout: MEDIA_TEST_MS }, () => {
     expect(await session.followUp(reviewer)).toContain("no_delivery");
     expect(reviewer).not.toHaveBeenCalled();
   });
+  it("counts a multi-file edit as work when any target is a work file", async () => {
+    await session.track({
+      type: "tool_call_start",
+      name: "edit",
+      toolCallId: "multi-edit",
+      args: {
+        files: [
+          { file_path: "qa/notes.md", edits: [] },
+          { file_path: "index.html", edits: [] },
+        ],
+      },
+    });
+    expect(session.armed).toBe(true);
+  });
   it("attaches actual rendered images, reviews once, stores provenance and invalidates edits", async () => {
     expect(await prepare()).toContain('"technical":true');
     const reviewer = vi.fn(async (request: CompletionReviewRequest) => {

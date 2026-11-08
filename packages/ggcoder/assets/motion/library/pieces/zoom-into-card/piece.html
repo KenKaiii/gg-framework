@@ -1,0 +1,179 @@
+<!doctype html>
+<!--
+  zoom-into-card: six cards pop in on a world layer; one card is picked
+  (it takes the next scene's colour and its words clear), then the camera
+  pushes straight through it until its fill is the whole frame, and that
+  fill is the next scene: a title drops in on it. The dived card and the
+  next scene share one colour (--ink), so the handoff has no seam.
+  Needs the move kit: `library.mjs add` installs it; put its <script> in the
+  root head after GSAP.
+  Params (script top): TARGET (index 0-5 of the card to dive into), POP_AT /
+  POP_STAGGER (cards arrive), PICK_AT (target highlights), DIVE_AT /
+  DIVE_DUR / DIVE_ZOOM (the push), TITLE_DELAY (dive end -> title).
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  </head>
+  <body>
+    <div
+      id="zoom-into-card-root"
+      data-composition-id="zoom-into-card"
+      data-start="0"
+      data-duration="5"
+      data-width="1920"
+      data-height="1080"
+    >
+      <style>
+        [data-composition-id="zoom-into-card"] {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          color: var(--ink, #111);
+          font-family: var(--text, sans-serif);
+        }
+        [data-composition-id="zoom-into-card"] .zc-world {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 1920px;
+          height: 1080px;
+        }
+        [data-composition-id="zoom-into-card"] .zc-grid {
+          position: absolute;
+          left: 210px;
+          top: 230px;
+          display: grid;
+          grid-template-columns: repeat(3, 460px);
+          grid-template-rows: repeat(2, 280px);
+          gap: 60px;
+        }
+        [data-composition-id="zoom-into-card"] .zc-card {
+          position: relative;
+          box-sizing: border-box;
+          padding: 34px 38px;
+          border-radius: var(--radius, 18px);
+          background: var(--field, #fff);
+          border: 2px solid var(--line, rgba(0, 0, 0, 0.18));
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+        }
+        [data-composition-id="zoom-into-card"] .zc-fill {
+          position: absolute;
+          inset: -2px;
+          border-radius: inherit;
+          background: var(--ink, #111);
+          opacity: 0;
+        }
+        [data-composition-id="zoom-into-card"] .zc-num {
+          position: relative;
+          font-family: var(--mono, monospace);
+          font-size: 24px;
+          letter-spacing: 0.08em;
+          color: var(--muted, #666);
+        }
+        [data-composition-id="zoom-into-card"] .zc-name {
+          position: relative;
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          font-stretch: var(--display-stretch, 100%);
+          letter-spacing: var(--display-tracking, -0.02em);
+          font-size: 54px;
+          line-height: 1;
+        }
+        [data-composition-id="zoom-into-card"] .zc-next {
+          position: absolute;
+          inset: 0;
+          background: var(--ink, #111);
+          color: var(--field, #fff);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 36px;
+        }
+        [data-composition-id="zoom-into-card"] .zc-kicker {
+          font-family: var(--mono, monospace);
+          font-size: 28px;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          opacity: 0;
+        }
+        [data-composition-id="zoom-into-card"] .zc-title {
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          font-stretch: var(--display-stretch, 100%);
+          letter-spacing: var(--display-tracking, -0.02em);
+          font-size: 170px;
+          line-height: 1;
+          white-space: nowrap;
+        }
+      </style>
+      <div class="zc-world">
+        <div class="zc-grid">
+          <!-- edit: the six cards (number + name); the dived one is picked by TARGET -->
+          <div class="zc-card"><div class="zc-num">01</div><div class="zc-name">Plan</div></div>
+          <div class="zc-card"><div class="zc-num">02</div><div class="zc-name">Draft</div></div>
+          <div class="zc-card"><div class="zc-num">03</div><div class="zc-name">Review</div></div>
+          <div class="zc-card"><div class="zc-num">04</div><div class="zc-name">Test</div></div>
+          <div class="zc-card"><div class="zc-num">05</div><div class="zc-name">Launch</div></div>
+          <div class="zc-card"><div class="zc-num">06</div><div class="zc-name">Learn</div></div>
+        </div>
+      </div>
+      <div class="zc-next">
+        <!-- edit: next scene kicker and title -->
+        <div class="zc-kicker">Step 05</div>
+        <div class="zc-title">Launch</div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        const TARGET = 4;
+        const POP_AT = 0.15;
+        const POP_STAGGER = 0.08;
+        const PICK_AT = 1.2;
+        const DIVE_AT = 2.0;
+        const DIVE_DUR = 0.95;
+        const DIVE_ZOOM = 14;
+        const TITLE_DELAY = 0.1;
+
+        const kit = window.GGMotionKit;
+        const root = document.querySelector('[data-composition-id="zoom-into-card"]');
+        const world = root.querySelector(".zc-world");
+        const cards = [...root.querySelectorAll(".zc-card")];
+        const next = root.querySelector(".zc-next");
+        const kicker = root.querySelector(".zc-kicker");
+        const title = root.querySelector(".zc-title");
+        const target = cards[TARGET];
+        const tl = gsap.timeline({ paused: true });
+
+        // A fill layer under the target's words: same colour as the next scene.
+        const fill = document.createElement("div");
+        fill.className = "zc-fill";
+        target.insertBefore(fill, target.firstChild);
+        const words = target.querySelectorAll(".zc-num, .zc-name");
+
+        cards.forEach((card, i) => kit.pop(tl, card, POP_AT + i * POP_STAGGER, { spring: "snappy", from: 0.6 }));
+
+        // Pick: the target fills with the next scene's colour, the rest step back.
+        tl.to(fill, { opacity: 1, duration: 0.3, ease: "power2.out" }, PICK_AT);
+        tl.set(words, { color: "var(--field, #fff)" }, PICK_AT + 0.12);
+        tl.to(target, { scale: 1.05, duration: 0.5, ease: kit.ease.whip }, PICK_AT);
+        tl.to(cards.filter((c) => c !== target), { opacity: 0.45, duration: 0.4, ease: "none" }, PICK_AT);
+        tl.to(words, { opacity: 0, y: -10, duration: 0.22, ease: "power2.in", stagger: 0.04 }, DIVE_AT - 0.28);
+
+        // Push through the card's centre; its fill becomes the next scene.
+        const c = kit.centerOf(target, world);
+        const end = kit.diveThrough(tl, world, DIVE_AT, { x: c.x, y: c.y, zoom: DIVE_ZOOM, duration: DIVE_DUR, next });
+
+        kit.dropLetters(tl, title, end + TITLE_DELAY, { height: 220, stagger: 0.05 });
+        tl.fromTo(kicker, { opacity: 0, y: 14 }, { opacity: 0.75, y: 0, duration: 0.4, ease: kit.ease.snap }, end + TITLE_DELAY + 0.35);
+
+        window.__timelines = window.__timelines || {};
+        window.__timelines["zoom-into-card"] = tl;
+      })();
+    </script>
+  </body>
+</html>

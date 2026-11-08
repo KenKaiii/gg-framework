@@ -1,0 +1,173 @@
+<!doctype html>
+<!--
+  morph-carry: the box becomes the next frame. A pill button sits mid-frame;
+  a cursor travels to it and presses; on the press the button's own
+  rectangle morphs (spring) into the full 1920x1080 frame with square
+  corners. Its label leaves early and the next scene's headline rises inside
+  the growing box. One element changes; nothing crossfades.
+  Needs the move kit: `library.mjs add` installs it; put its <script> in the
+  root head after GSAP.
+  Params (script top): CURSOR_FROM (start point, px), MOVE_AT (cursor
+  leaves), MORPH_DELAY (press -> morph start), MORPH_EASE / MORPH_DUR
+  (kit ease name and seconds for the box-to-frame morph), HEADLINE_DELAY (morph start -> headline rise). Button size and
+  place: --mc-w / --mc-h / --mc-x / --mc-y (centre).
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  </head>
+  <body>
+    <div
+      id="morph-carry-root"
+      data-composition-id="morph-carry"
+      data-start="0"
+      data-duration="5"
+      data-width="1920"
+      data-height="1080"
+    >
+      <style>
+        [data-composition-id="morph-carry"] {
+          --mc-w: 460px;
+          --mc-h: 124px;
+          --mc-x: 960px;
+          --mc-y: 540px;
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          color: var(--ink, #111);
+          font-family: var(--text, sans-serif);
+        }
+        [data-composition-id="morph-carry"] .mc-hint {
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: calc(var(--mc-y) - 190px);
+          text-align: center;
+          font-family: var(--mono, monospace);
+          font-size: 26px;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: var(--muted, #666);
+        }
+        [data-composition-id="morph-carry"] .mc-box {
+          position: absolute;
+          left: calc(var(--mc-x) - var(--mc-w) / 2);
+          top: calc(var(--mc-y) - var(--mc-h) / 2);
+          width: var(--mc-w);
+          height: var(--mc-h);
+          border-radius: calc(var(--mc-h) / 2);
+          background: var(--ink, #111);
+          color: var(--field, #fff);
+          overflow: hidden;
+          box-shadow: 0 18px 40px -16px rgba(0, 0, 0, 0.35);
+        }
+        [data-composition-id="morph-carry"] .mc-label,
+        [data-composition-id="morph-carry"] .mc-scene {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          white-space: nowrap;
+        }
+        [data-composition-id="morph-carry"] .mc-label {
+          font-size: 40px;
+          font-weight: 600;
+          gap: 18px;
+        }
+        [data-composition-id="morph-carry"] .mc-scene {
+          flex-direction: column;
+          gap: 34px;
+        }
+        [data-composition-id="morph-carry"] .mc-kicker {
+          font-family: var(--mono, monospace);
+          font-size: 28px;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          opacity: 0;
+        }
+        [data-composition-id="morph-carry"] .mc-head {
+          font-family: var(--display, sans-serif);
+          font-weight: var(--display-weight, 700);
+          font-stretch: var(--display-stretch, 100%);
+          letter-spacing: var(--display-tracking, -0.02em);
+          font-size: 150px;
+          line-height: 1;
+        }
+        [data-composition-id="morph-carry"] .mc-cursor {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 56px;
+          height: 56px;
+          filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
+        }
+      </style>
+      <!-- edit: line above the button -->
+      <div class="mc-hint">Step 1 of 2</div>
+      <div class="mc-box">
+        <div class="mc-label">
+          <!-- edit: button label -->
+          <span>Get started</span>
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+        </div>
+        <div class="mc-scene">
+          <!-- edit: next scene kicker and headline -->
+          <div class="mc-kicker">Chapter two</div>
+          <div class="mc-head">Now it's yours</div>
+        </div>
+      </div>
+      <svg class="mc-cursor" viewBox="0 0 28 28">
+        <path d="M5 3.2v19.6c0 .8 1 1.2 1.5.6l4.6-5.1 3.4 7.6c.3.6 1 .9 1.6.6l2.3-1c.6-.3.9-1 .6-1.6l-3.4-7.5h6.8c.8 0 1.2-1 .6-1.6L6.5 2.6C6 2.1 5 2.4 5 3.2z" fill="var(--ink, #111)" stroke="var(--field, #fff)" stroke-width="1.6" stroke-linejoin="round" />
+      </svg>
+    </div>
+    <script>
+      (function () {
+        const CURSOR_FROM = { x: 1560, y: 900 };
+        const MOVE_AT = 0.35;
+        const MORPH_DELAY = 0.12;
+        const MORPH_EASE = "travel";
+        const MORPH_DUR = 0.9;
+        const HEADLINE_DELAY = 0.55;
+
+        const kit = window.GGMotionKit;
+        const root = document.querySelector('[data-composition-id="morph-carry"]');
+        const box = root.querySelector(".mc-box");
+        const label = root.querySelector(".mc-label");
+        const hint = root.querySelector(".mc-hint");
+        const kicker = root.querySelector(".mc-kicker");
+        const head = root.querySelector(".mc-head");
+        const cursor = root.querySelector(".mc-cursor");
+        const tl = gsap.timeline({ paused: true });
+
+        const target = kit.centerOf(box, root);
+        const { presses } = kit.cursorPath(tl, cursor, MOVE_AT, [
+          CURSOR_FROM,
+          { x: target.x + 40, y: target.y + 14, click: true, hold: 0.3 },
+        ]);
+        const press = presses[0];
+
+        // The press itself: the pill gives a little, then the cursor lets go.
+        tl.to(box, { scale: 0.96, duration: 0.09, ease: "power1.out" }, press);
+        tl.to(box, { scale: 1, duration: 0.3, ease: kit.ease.firm }, press + 0.09);
+        tl.to(cursor, { opacity: 0, duration: 0.2, ease: "none" }, press + 0.2);
+
+        // Label leaves early; the box becomes the frame.
+        const morphAt = press + MORPH_DELAY;
+        tl.to(label, { opacity: 0, y: -16, duration: 0.18, ease: "power2.in" }, morphAt);
+        tl.to(hint, { opacity: 0, duration: 0.2, ease: "none" }, morphAt);
+        tl.to(box, { boxShadow: "0 0 0 0 rgba(0,0,0,0)", duration: 0.4, ease: "none" }, morphAt);
+        kit.reshape(tl, box, morphAt, { x: 0, y: 0, w: 1920, h: 1080, r: 0 }, { ease: MORPH_EASE, duration: MORPH_DUR });
+
+        // Next scene arrives inside it.
+        const riseAt = morphAt + HEADLINE_DELAY;
+        kit.liftWords(tl, head, riseAt, { stagger: 0.09 });
+        tl.fromTo(kicker, { opacity: 0, y: 14 }, { opacity: 0.75, y: 0, duration: 0.4, ease: kit.ease.snap }, riseAt + 0.25);
+
+        window.__timelines = window.__timelines || {};
+        window.__timelines["morph-carry"] = tl;
+      })();
+    </script>
+  </body>
+</html>

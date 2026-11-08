@@ -1,0 +1,13 @@
+{
+  "id": "gather-to-logo",
+  "name": "Gather to logo",
+  "kind": "transition",
+  "description": "Feature chips pop in scattered around the frame, then travel on arcs into the centre, and the moment the last one lands a logo mark and wordmark stamp in as the end card. Edit the chip words, their positions, the mark letter and the wordmark.",
+  "tags": ["logo", "end-card", "gather", "converge", "outro", "continuous", "kit"],
+  "fonts": [],
+  "duration": 5,
+  "previewAt": 2.6,
+  "license": "original",
+  "requires": ["kit"],
+  "previewLook": "sunlit-consumer"
+}

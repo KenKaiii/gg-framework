@@ -1,6 +1,6 @@
 # EU / EEA / UK
 
-Snapshot **11 Aug 2026**. Markers: **[V]** verified against a primary/first-tier source · **[S]** snapshot, re-verify · **[U]** contested or in flux.
+Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 (see `provenance.md`). Markers: **[V]** verified against a primary/first-tier source · **[S]** snapshot, re-verify · **[U]** contested or in flux.
 
 **Territorial reality:** GDPR applies to anyone offering goods or services to, or *monitoring the behaviour of*, people in the EU/EEA — regardless of where the developer sits **[V]**. Monitoring includes analytics cookies, session replay, ad pixels, and behavioural profiling. A US solo dev with an open signup form and Google Analytics is in scope. Blocking EU traffic is a legitimate engineering answer and should be offered as an option.
 
@@ -38,7 +38,7 @@ Snapshot **11 Aug 2026**. Markers: **[V]** verified against a primary/first-tier
 
 ## 2. ePrivacy — cookies and device storage
 
-Consent is required **before** any non-essential storage or access on the user's device, under the ePrivacy Directive as transposed by each Member State — 27 variants, and harmonisation is not coming **[V]**. Scope is technology-neutral and expressly reaches pixels, local storage, and similar techniques **[V]**. This applies **whether or not** the data is personal, which is why "we only use anonymous analytics" is not an answer.
+Consent is required **before** any non-essential storage or access on the user's device, under the ePrivacy Directive as transposed by each Member State — 27 variants **[V]**. The Digital Omnibus proposal to move cookie rules into the GDPR (Art 88a/88b: one-click refuse, no re-asking for six months, browser signals) is **not law** — as of September 2026 it was still in first reading with no Council negotiating mandate and no trilogue **[S]**. Do not build to it; one-click reject is already the defensible design anyway. Scope is technology-neutral and expressly reaches pixels, local storage, and similar techniques **[V]**. This applies **whether or not** the data is personal, which is why "we only use anonymous analytics" is not an answer.
 
 **Banner technical spec** (this is the implementable contract):
 - No third-party script, pixel, or network request before an affirmative choice.
@@ -60,19 +60,19 @@ Consent is required **before** any non-essential storage or access on the user's
 
 ---
 
-## 3. EU AI Act — verified timeline
+## 3. EU AI Act — timeline
 
-The Digital Omnibus on AI (Reg (EU) 2026/1744) was published on 24 July 2026 and entered into force on 27 July 2026 **[V]**. **Any guidance dated before mid-2026 saying high-risk obligations apply from 2 August 2026 is now wrong.**
+The Digital Omnibus on AI (Reg (EU) 2026/1744 of 8 July 2026) was published in the OJ on 24 July 2026 and entered into force on the third day after publication **[V]** (EUR-Lex OJ text opened 3 Oct 2026). Dates below marked **[V]** were read in that text; 2 Feb 2027 was not located there **[U]**. **Any guidance dated before mid-2026 saying high-risk obligations apply from 2 August 2026 is now wrong.**
 
 | Date | Status |
 |---|---|
-| 2 Feb 2025 | Prohibited practices and AI literacy — **in force** |
-| 2 Aug 2025 | GPAI models, governance, penalties — **in force** |
-| **2 Aug 2026** | **Article 50 transparency obligations — in force now** (Art 50(2) not applying to systems already on the market at that date) |
-| 2 Dec 2026 | Art 50(2) marking for legacy systems; new prohibited practices added (AI-generated NCII and CSAM) |
-| 2 Feb 2027 | Watermark-detection interoperability deadline for providers |
-| **2 Dec 2027** | High-risk obligations for standalone Annex III systems — **deferred** |
-| 2 Aug 2028 | High-risk obligations for embedded Annex I systems |
+| 2 Feb 2025 | Prohibited practices and AI literacy — **in force** **[V]** |
+| 2 Aug 2025 | GPAI models, governance, penalties — **in force** **[S]** |
+| **2 Aug 2026** | **Article 50 transparency obligations — in force now** (general application date) **[V]** |
+| 2 Dec 2026 | Art 50(2) marking for generative systems placed on the market before 2 Aug 2026; new Art 5(1)(ba)/(bb) prohibitions incl. non-consensual sexual deepfakes of identifiable people **[V]** |
+| 2 Feb 2027 | Watermark-detection interoperability deadline for providers **[U]** |
+| **2 Dec 2027** | High-risk obligations for standalone Annex III systems — **deferred** **[V]** |
+| 2 Aug 2028 | High-risk obligations for embedded Annex I systems **[V]** |
 
 **Provider vs deployer is the consequential classification.** Providers develop an AI system, or have it developed, and place it on the market or into service **under their own name or trademark**, regardless of establishment **[V]**. Wrapping a foundation model in your own product and shipping it under your brand generally makes you a provider of that AI system — not merely a deployer.
 
@@ -114,10 +114,10 @@ Penalties for Art 50 breaches reach €15M or 3% of global turnover; prohibited 
 ## 4. Other EU acts
 
 - **Digital Services Act** — triggered by *hosting information provided by a recipient*: user uploads, comments, profiles, public pastes, shared docs. Single-tenant B2B SaaS with no third-party-visible content is generally out **[V]**. All hosting providers regardless of size owe a point of contact for authorities and users, a notice-and-action mechanism, statements of reasons for removals, and terms describing moderation. Micro and small enterprises are exempt from several heavier duties but **not** from the basics.
-- **European Accessibility Act** — applies to **service categories**, not all software: e-commerce (any consumer-facing online sale), consumer banking, e-books, electronic communications, transport ticketing, and access to audiovisual media **[V]**. In force since 28 June 2025 for new products and services. A B2B-only SaaS is out of scope; a B2C app with a checkout is in. Technical standard is EN 301 549 (WCAG 2.1 AA today; a WCAG 2.2-aligned version is expected **[U]** — build to 2.2 AA now, it is backwards-compatible). Microenterprise exemptions apply to services but the detail varies by transposition **[U]**.
+- **European Accessibility Act (Directive (EU) 2019/882)** — applies to **service categories**, not all software: e-commerce (any consumer-facing online sale), consumer banking, e-books, electronic communications, transport ticketing, and access to audiovisual media **[V]**. Applies since 28 June 2025 to products placed on the market and services provided to consumers after that date (Art 31(2)) **[V]**. Art 32 transitional rules: service contracts agreed before 28 June 2025 may run unaltered until expiry but no later than **28 June 2030**; products already used to deliver services may continue until 28 June 2030; self-service terminals up to 20 years **[S]** (Article text as quoted by secondary sources; EUR-Lex not opened). None of this exempts a new or changed web checkout. A B2B-only SaaS is out of scope; a B2C app with a checkout is in. Technical standard is EN 301 549 (WCAG 2.1 AA today; a WCAG 2.2-aligned revision is in progress **[U]** — build to 2.2 AA now, it is backwards-compatible). Microenterprises (<10 staff and ≤€2M turnover) are exempt for services, but the detail varies by transposition **[S]**.
 - **Cyber Resilience Act** — applies to *manufacturers* of products with digital elements placed on the EU market: downloadable or installable software, desktop and mobile apps, browser extensions, firmware, monetised libraries **[V]**. Main obligations from 11 December 2027, but **reporting obligations from 11 September 2026** — actively exploited vulnerabilities and severe incidents must be reported on a short clock. Pure SaaS is generally outside, but the SaaS boundary is exactly where small products get caught unexpectedly; re-read the Commission's practical guidance **[U]**.
 - **NIS2** — sector plus size; cloud, data-centre, managed-service and managed-security providers are in scope, but the size cap generally means ≥50 staff or >€10M turnover **[S]**. A small SaaS is normally out unless designated.
-- **Data Act** — applies to providers of data processing services (expressly including SaaS, PaaS, IaaS) with EU customers, with no carve-out for small providers **[V]**. Practical duties: contractual switching and egress terms, no unreasonable exit barriers, and data-porting support.
+- **Data Act (Regulation (EU) 2023/2854)** — applicable since **12 September 2025** (Art 50) **[S]**. Two developer-relevant parts: (1) providers of data processing services (expressly including SaaS, PaaS, IaaS) with EU customers, with no carve-out for small providers, owe contractual switching and egress terms, no unreasonable exit barriers, and data-porting support; switching charges must be abolished from **12 January 2027** **[S]**. (2) Makers of **connected products** (IoT devices, wearables, connected cars) and their companion apps owe user access to product and related-service data; from **12 September 2026** products placed on the market must be designed so users can access that data directly where relevant and technically feasible (Art 3(1)) **[S]**. Chapter IV unfair-terms rules apply to B2B data contracts concluded after 12 Sept 2025 **[S]**.
 - **DORA** — only if you are a financial entity or a contracted ICT provider to one; for a small dev it arrives as customer contract terms **[S]**.
 - **PSD2 SCA** — use a PSP with 3-D Secure rather than building card flows; exemptions belong to the PSP **[S]**.
 - **MiCA** — issuing a token or providing crypto-asset services to EU users requires authorisation; merely accepting crypto payment through a licensed processor generally does not **[S]**.
@@ -128,8 +128,8 @@ Penalties for Art 50 breaches reach €15M or 3% of global turnover; prohibited 
 
 ## 5. UK specifics
 
-- **Data (Use and Access) Act 2025** — principal data-protection provisions in force from 5 February 2026 **[V]**. Code-relevant changes: the new DSAR clock (Art 12A), recognised legitimate interests, a permission-plus-safeguards model for automated decision-making replacing the old prohibition, and the PECR analytics/functionality cookie exemption.
-- **Online Safety Act** — triggered by **user-to-user** services (anywhere users can encounter content uploaded by others — comments, DMs, forums, shared galleries, multiplayer chat), search services, and pornography publishers, with UK links. **There is no small-service exemption from the core duties**, and the regulator runs a dedicated "small but risky" supervision function **[V]**. Duties include illegal-content and children's-access risk assessments, proportionate safety measures, reporting and complaints mechanisms, and highly effective age assurance where required. Treat any UK-reachable UGC product as in scope and produce the risk assessments — their absence is itself the enforceable failure.
+- **Data (Use and Access) Act 2025** — Royal Assent 19 June 2025; commenced in stages. The principal data-protection provisions came into force on **5 February 2026** under SI 2026/82 (legislation.gov.uk): ss. 70, 76, 80, 112 and Schedules 4, 6, 11, 12 **[V]**. Code-relevant changes: the new DSAR clock (Art 12A UK GDPR), recognised legitimate interests (no balancing test), Arts 22A–22D replacing the automated-decision prohibition with permission plus safeguards (information, representations, human intervention, contest) for non-special-category data, and the PECR analytics/functionality cookie exemption. The complaints-handling duty (new s. 164A DPA 2018) followed on **19 June 2026** **[V]**. Remaining stages (ICO restructuring into the Information Commission) are institutional and do not change code **[S]**.
+- **Online Safety Act** — triggered by **user-to-user** services (anywhere users can encounter content uploaded by others — comments, DMs, forums, shared galleries, multiplayer chat), search services, and pornography publishers, with UK links. **There is no small-service exemption from the core duties**, and the regulator runs a dedicated "small but risky" supervision function **[V]**. Duties include illegal-content and children's-access risk assessments, proportionate safety measures, reporting and complaints mechanisms, and highly effective age assurance where required. Ofcom has been fining since late 2025 — mostly for missing highly effective age assurance on pornographic services, and in one case for a missing illegal-content risk assessment and deficient terms — with penalties up to £18M or 10% of qualifying worldwide revenue **[S]**. The register of categorised services (Category 1, 2A, 2B; extra duties) was published in July 2026 **[S]**; small services are not categorised, but the core duties still apply. Treat any UK-reachable UGC product as in scope and produce the risk assessments — their absence is itself the enforceable failure.
 - **Children's Code** — applies to services *likely to be accessed* by under-18s, a much lower bar than "aimed at children": high-privacy defaults, geolocation off by default, no nudges toward weaker privacy, a DPIA covering children, minimised profiling **[V]**.
 - **Accessibility** — no private-sector EAA equivalent; exposure runs through the Equality Act duty to make reasonable adjustments, with WCAG 2.1 AA as the de facto benchmark **[S]**.
 
@@ -148,4 +148,4 @@ Penalties for Art 50 breaches reach €15M or 3% of global turnover; prohibited 
 
 ## 7. Verify before relying
 
-AI Act fine tiers post-Omnibus · the EAA transitional date for pre-2025 service contracts (sources conflict between 2027 and 2030) · EN 301 549 version status · the GDPR/ePrivacy half of the Digital Omnibus (**still in negotiation — not law**) · consent-or-pay scope broadening · CRA SaaS boundary · NIS2 small-provider designation practice · UK adequacy status.
+AI Act fine tiers post-Omnibus · EN 301 549 version status · the GDPR/ePrivacy half of the Digital Omnibus (**not law**: as of Sept 2026 still in first reading, no Council mandate, no trilogue) · Ofcom's categorised-services duties consultation outcome · consent-or-pay scope broadening · CRA SaaS boundary · NIS2 small-provider designation practice · UK adequacy status.

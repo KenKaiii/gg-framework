@@ -1,6 +1,5 @@
 import type { AgentTool } from "@kleio/agent";
 import { CheckpointStore } from "../core/checkpoint-store.js";
-import { ReviewCoverageTracker } from "../core/ideal-review.js";
 import type { LspManager } from "../core/lsp/manager.js";
 import { MCPClientManager } from "../core/mcp/client.js";
 import type { MCPServerConfig } from "../core/mcp/types.js";
@@ -24,7 +23,6 @@ export interface ProjectRuntime {
   debugManager?: DebugManager;
   mcpManager?: MCPClientManager;
   checkpointStore?: CheckpointStore;
-  reviewCoverageTracker?: ReviewCoverageTracker;
 }
 
 export interface ProjectRuntimePreparation {
@@ -86,14 +84,11 @@ export async function prepareProjectRuntime(
       cwd: options.cwd,
       baseDir: options.checkpointBaseDir,
     });
-    const reviewCoverageTracker = new ReviewCoverageTracker(options.cwd);
     const rebuilt = await createTools(options.cwd, {
       ...options.toolOptions,
       agents,
       skills,
       onPreFileMutation: (filePath) => checkpointStore.recordPreMutation(filePath),
-      onFileRead: (filePath) => reviewCoverageTracker.recordRead(filePath),
-      onFileMutated: (filePath) => reviewCoverageTracker.recordChanged(filePath),
     });
     const mcpManager = new MCPClientManager();
     const next: ProjectRuntime = {
@@ -101,7 +96,6 @@ export async function prepareProjectRuntime(
       cwd: options.cwd,
       skills,
       checkpointStore,
-      reviewCoverageTracker,
       mcpManager,
     };
     if (options.pending) options.pending.current = next;

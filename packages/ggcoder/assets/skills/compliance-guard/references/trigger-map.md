@@ -2,7 +2,7 @@
 
 Observable fact → what it triggers → what to actually do. This is the routing index; depth lives in the jurisdiction and vector files.
 
-Status markers: **[V]** verified against a primary source in the 11 Aug 2026 snapshot · **[S]** snapshot claim, re-verify date/threshold before asserting · **[U]** uncertain or contested, present as uncertain.
+Status markers: **[V]** verified against a primary source (11 Aug 2026 snapshot, spot re-verified 3 Oct 2026 — see `provenance.md`) · **[S]** snapshot claim, re-verify date/threshold before asserting · **[U]** uncertain or contested, present as uncertain.
 
 ---
 
@@ -100,15 +100,15 @@ Status markers: **[V]** verified against a primary source in the 11 Aug 2026 sna
 
 | Observed fact | Triggers | Do this |
 |---|---|---|
-| User-facing chatbot | EU AI Act Art 50 disclosure **[V]**; several US state chatbot-disclosure laws **[V]** | Persistent "you are talking to an AI" disclosure, not buried in terms |
-| Companion / emotional / therapy-adjacent chatbot | Companion-AI laws + AI-therapy bans **[V]** | **Gate** — crisis protocol, minor protections, and in some states you cannot offer therapy at all |
+| User-facing chatbot | EU AI Act Art 50 disclosure **[V]**; several US state chatbot-disclosure laws **[V]** | Persistent "you are talking to an AI" disclosure, not buried in terms. See `eu-uk.md` §3 (Art 50) and `us.md` §5 |
+| Companion / emotional / therapy-adjacent chatbot | Companion-AI laws + AI-therapy bans **[V]** | **Gate** — `sector-gates.md` §1 and §5, `us.md` §2 (CA SB 243, PRA) and §5. Crisis protocol, minor protections, and in some states you cannot offer therapy at all |
 | Scoring emotion, confidence, engagement or sincerity from face/voice in **hiring, work, or education** | EU AI Act Art 5(1)(f) **prohibited practice** **[V]** | **ILLEGAL in the EU — remove the feature.** Not curable by disclosure or consent. See `eu-uk.md` Art 5 |
 | Inferring race, ethnicity, gender, religion, union membership or sexual orientation from a photo, face or voice | EU AI Act Art 5(1)(g) **prohibited** **[V]**; discrimination law everywhere | **ILLEGAL in the EU — delete the field and the model.** Also a discrimination claim if it touches any decision |
 | Building a face database by scraping images from the web or CCTV | EU AI Act Art 5(1)(e) **prohibited** **[V]** | **ILLEGAL in the EU.** Also BIPA and scraping exposure |
 | Cross-context "trust score" or "reputation score" affecting unrelated treatment | EU AI Act Art 5(1)(c) social scoring **[V]** | **Gate** — narrow the score to the context it was collected for |
-| Generated images/audio/video | Synthetic-content marking duties **[V]** | Machine-readable provenance (C2PA-style) + visible label where required |
+| Generated images/audio/video | Synthetic-content marking duties **[V]** | Machine-readable provenance (C2PA-style) + visible label where required. EU: Art 50(2)/(4), legacy systems by 2 Dec 2026 — `eu-uk.md` §3. CA SB 942/AB 853 if >1M monthly users — `us.md` §2. Sexual deepfakes of real people: `sector-gates.md` §6 |
 | AI in hiring, lending, housing, insurance, education, essential services | High-risk/ADS regimes **[V]** | Notice, human review, bias testing, records, adverse-action reasons. LAWYER item |
-| Training or fine-tuning on user data | Lawful basis, notice, opt-in expectations, training-data disclosure laws **[S]** | Default to opt-out-by-default = off; document data sources; check vendor terms |
+| Training or fine-tuning on user data | Lawful basis, notice, opt-in expectations, training-data disclosure laws **[S]** | Default to opt-out-by-default = off; document data sources; check vendor terms. CA AB 2013 (no size threshold) — `us.md` §2 |
 | Agent with tool access / code execution | Prompt injection, exfiltration, cost abuse | See `security-baseline.md` §9 — this is a security blocker, not a policy item |
 | Sending user PII to an LLM vendor | Processor relationship, transfers, retention | Sign the DPA, use zero/limited-retention endpoints, redact before send, disclose the vendor |
 | Marketing claims like "AI-powered", "99% accurate", "fully automated" | Deceptive-claims enforcement **[V]** | Keep a dated substantiation file mapping each claim to evidence |

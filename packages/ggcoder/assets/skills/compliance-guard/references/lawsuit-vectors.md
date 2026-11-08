@@ -1,6 +1,6 @@
 # Lawsuit & Demand-Letter Vectors
 
-How a small app actually gets sued or extorted, ranked by real base rate rather than statutory maximum. Snapshot **11 Aug 2026** — verify any date, amount, or case posture before stating it as current.
+How a small app actually gets sued or extorted, ranked by real base rate rather than statutory maximum. Snapshot **11 Aug 2026**, spot re-verified 3 Oct 2026 (see `provenance.md`) — verify any date, amount, or case posture before stating it as current.
 
 **The core asymmetry:** most regulators do not chase solo developers. Private plaintiffs and demand-letter mills do, because the process is automated: a bot scans public sites for a technical fingerprint, a letter goes out, and settling is cheaper than defending. Optimise against *fingerprints*, not against theoretical liability.
 
@@ -8,7 +8,7 @@ How a small app actually gets sued or extorted, ranked by real base rate rather 
 
 ## 1. Web accessibility demand letters — highest base rate
 
-**Who:** serial plaintiff firms filing thousands of federal suits a year, plus a much larger volume of pre-suit letters. Filings have grown year over year **[V]**; small e-commerce is the primary target.
+**Who:** serial plaintiff firms filing thousands of federal suits a year, plus a much larger volume of pre-suit letters. Federal website-accessibility filings were 3,117 in 2025, up 27% on 2024, and over 5,000 counting state courts **[S]**; e-commerce is the primary target, and pro se filings drafted with AI tools are rising **[S]**.
 
 **Fingerprint they scan for:** automated scanners on the homepage and checkout. Missing `alt`, unlabeled form inputs, missing form `<label>`/`aria-label`, low contrast, no visible focus indicator, keyboard traps in modals and menus, inaccessible custom dropdowns, images of text, missing page language, empty links/buttons with icon-only content, and — the defect generated code produces most reliably — **a clickable `<div>` or `<span>` carrying an `onClick` with no `<button>`, no `role`, no `tabIndex`, and no key handler**, which is simply invisible to keyboard and screen-reader users.
 
@@ -35,7 +35,7 @@ How a small app actually gets sued or extorted, ranked by real base rate rather 
 
 **Scale:** pen-register-style claims have become a dominant share of active privacy litigation, driven by ordinary analytics and ad tools **[V]**. Statutory damages of **$5,000 per violation** are the leverage **[V]**.
 
-**Relief status:** California SB 690 would strip private rights of action for the pen-register sections only, and as amended in July 2026 it does **not** touch §631 wiretap claims **[V]**. Do not plan around it; re-verify its status before advising.
+**Relief status:** California SB 690 was signed on 30 September 2026 and is operative 1 January 2027: private suits under the pen-register/trap-and-trace section (§638.51) over a website or app are removed (Attorney General only), with retroactive reach to pending claims filed within the prior two years **[U]** (consistent across law-firm reports; the leginfo text was not retrieved). It does **not** touch §631/§632 wiretap claims, which remain the main pixel/session-replay/chat-widget theory **[S]**. The fix is unchanged: consent-gate every third-party request.
 
 **Fingerprint:** any third-party request firing on page load before consent — Meta/TikTok/LinkedIn pixels, GA, session replay, chat widgets, A/B tools. Server-side tagging does **not** cure it if the third party still receives the data.
 
@@ -53,7 +53,7 @@ How a small app actually gets sued or extorted, ranked by real base rate rather 
 
 **Trigger:** collecting a face geometry, fingerprint, voiceprint, iris, or similar identifier from a person in Illinois — with **no volume threshold**, so a single user creates exposure. Consent must be a **written release obtained before collection**, and you must publish a retention and destruction schedule **[V]**.
 
-**Damages:** $1,000 negligent / $5,000 intentional **per person**, plus fees. A 2024 amendment limits recovery to a single accrual per person rather than per scan, which materially reduced exposure but not filing volume **[V]**.
+**Damages:** $1,000 negligent / $5,000 intentional **per person**, plus fees. The August 2024 amendment (SB 2979) limits recovery to one per person per collection method rather than per scan, and the Seventh Circuit held on 1 Apr 2026 (*Clay v. Union Pacific*) that it applies to cases already pending **[S]**. Exposure dropped, filing volume did not: a class of thousands is still serious money.
 
 **Fingerprint in code:** face detection or recognition SDKs, `face_embedding`/`descriptor`/`template` columns, voice embeddings, liveness checks, photo auto-tagging, avatar generation from a selfie. Face *detection* without identification is contested **[U]** — do not rely on it as a defence.
 
@@ -73,7 +73,7 @@ How a small app actually gets sued or extorted, ranked by real base rate rather 
 
 ## 5. Subscription / auto-renewal class actions
 
-**Trigger:** auto-renewal or free-trial conversion with disclosures that are not clear and conspicuous *adjacent to the enrolment control*, no separate affirmative consent, or a cancellation path harder than the signup path **[V]**. California's amended auto-renewal law broadened what is actionable **[V]**; a federal click-to-cancel rule was vacated in 2025, so **state law and general deception rules are the live risk** — do not tell a user the federal rule saves them **[V]**.
+**Trigger:** auto-renewal or free-trial conversion with disclosures that are not clear and conspicuous *adjacent to the enrolment control*, no separate affirmative consent, or a cancellation path harder than the signup path **[V]**. California's amended auto-renewal law broadened what is actionable **[V]**; the federal click-to-cancel rule was vacated in July 2025 and the FTC only restarted rulemaking with an advance notice in March 2026, so **state law and general deception rules are the live risk** — do not tell a user the federal rule saves them **[S]**.
 
 **Fingerprint:** trial logic with no reminder job; a cancel flow that emails support; terms shown behind a link rather than adjacent to the button; no stored record of what the user was shown.
 

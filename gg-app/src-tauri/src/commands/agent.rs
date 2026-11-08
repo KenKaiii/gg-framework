@@ -324,6 +324,9 @@ pub(crate) async fn sidecar_get_json(
     let res = client
         .get(format!("{}{}", sidecar_base(port), path))
         .header("x-gg-session", &gg_sid)
+        // Local reads (history, export): bounded so a wedged daemon surfaces
+        // an error instead of an endless spinner.
+        .timeout(std::time::Duration::from_secs(60))
         .send()
         .await
         .map_err(|e| e.to_string())?;
