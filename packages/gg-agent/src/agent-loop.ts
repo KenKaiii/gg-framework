@@ -51,7 +51,7 @@ const DEFAULT_TOOL_TIMEOUT_MS = 300_000;
  * interruptible tool that ignores its AbortSignal gets this long to settle
  * before the loop records it as interrupted and moves on without it.
  */
-const PREEMPT_GRACE_MS = 500;
+export const PREEMPT_GRACE_MS = 500;
 
 /** Result text for a tool call cut short by a mid-run steering message. */
 export const STEER_INTERRUPTED_TEXT = "Interrupted: the user sent a new message.";
@@ -62,12 +62,12 @@ export const STEER_INTERRUPTED_TEXT = "Interrupted: the user sent a new message.
  */
 const ATOMIC_TOOL_NAMES = new Set(["edit", "write", "multi_edit", "apply_patch", "notebook_edit"]);
 
-function isInterruptibleTool(tool: AgentTool | undefined, name: string): boolean {
+export function isInterruptibleTool(tool: AgentTool | undefined, name: string): boolean {
   if (tool?.interruptible !== undefined) return tool.interruptible;
   return !ATOMIC_TOOL_NAMES.has(name);
 }
 
-function markSteerInterrupted(record: ToolExecutionRecord): ToolExecutionRecord {
+export function markSteerInterrupted(record: ToolExecutionRecord): ToolExecutionRecord {
   const content = record.content;
   let next: ToolResultContent;
   if (typeof content === "string") {
@@ -2260,7 +2260,7 @@ function canonicalToolArgs(value: unknown): unknown {
   return value;
 }
 
-interface ToolExecutionRecord {
+export interface ToolExecutionRecord {
   toolCallId: string;
   content: ToolResultContent;
   isError: boolean;

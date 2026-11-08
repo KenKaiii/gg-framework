@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   query as sdkQuery,
   type EffortLevel,
@@ -263,10 +264,16 @@ export class ClaudeCodeLiveSession {
     // Steering not yet placed in our transcript, and how many of those went to Claude Code.
     let unplaced: Message[] = [];
     let unplacedSent = 0;
+    // Sends Claude Code hasn't answered yet: each result lists the uuids it consumed.
+    // A send that misses the running turn gets a turn (and result) of its own.
+    const unanswered = new Set<string>();
+    const push = (message: SDKUserMessage) => {
+      const uuid = randomUUID();
+      unanswered.add(uuid);
+      this.input.push({ ...message, uuid } as SDKUserMessage);
+    };
     const sendUser = (message: Message) => {
-      this.input.push(
-        toSdkUserMessage(toSdkUserContent(message.content as UserMessage["content"])),
-      );
+      push(toSdkUserMessage(toSdkUserContent(message.content as UserMessage["content"])));
     };
     const placeSteering = function* (): Generator<AgentEvent> {
       for (const message of unplaced) {
@@ -312,7 +319,7 @@ export class ClaudeCodeLiveSession {
       await bridge.syncToolList();
     }
     const q = this.q!;
-    this.input.push(toSdkUserMessage(first));
+    push(toSdkUserMessage(first));
 
     let graceTimer: ReturnType<typeof setTimeout> | undefined;
     let stopTimedOut = false;
@@ -342,7 +349,10 @@ export class ClaudeCodeLiveSession {
     const unsubscribeSteering = options.onSteeringAvailable?.(() => {
       steeringTimer ??= setTimeout(() => {
         steeringTimer = undefined;
-        void drainSteering();
+        // After the message is in Claude Code's queue, so it folds in with the cut-short result.
+        void drainSteering().then(() => {
+          if (unplaced.length > 0) bridge.preempt();
+        });
       }, 0);
     });
 
@@ -422,10 +432,21 @@ export class ClaudeCodeLiveSession {
           yield* placeSteering();
           break;
         }
-        // Claude Code still owes a turn for steering queued behind this result.
-        // Older CLIs don't report the count; then only unplaced sent steering says so.
-        const queuedTurns = message.queued_turn_count;
-        if (queuedTurns !== undefined ? queuedTurns > 0 : unplacedSent > 0) {
+        // Claude Code still owes a turn for a send queued behind this result.
+        // (`queued_turn_count` reads 0 even then, so it can't be trusted.)
+        const consumed =
+          message.user_message_uuids ??
+          (message.user_message_uuid ? [message.user_message_uuid] : undefined);
+        let owed: boolean;
+        if (consumed) {
+          for (const uuid of consumed) unanswered.delete(uuid);
+          owed = unanswered.size > 0;
+        } else {
+          // Older CLIs don't echo uuids; then only unplaced sent steering says so.
+          unanswered.clear();
+          owed = unplacedSent > 0;
+        }
+        if (owed) {
           yield* placeSteering();
           continue;
         }

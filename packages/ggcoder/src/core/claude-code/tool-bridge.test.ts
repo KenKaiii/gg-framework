@@ -237,6 +237,54 @@ describe("createToolBridge", () => {
     expect((await request("ping")).result).toEqual({});
   });
 
+  it("cuts running tools short when the user steers, sparing edits", async () => {
+    // Regression: on Claude Code a message sent during a long wait (task_output)
+    // sat queued until the tool finished on its own.
+    const waiter: AgentTool = {
+      name: "task_output",
+      description: "",
+      parameters: z.object({}),
+      execute: (_args, ctx) =>
+        new Promise((resolve) => {
+          ctx.signal.addEventListener("abort", () => resolve("partial log"));
+        }),
+    };
+    const stuck: AgentTool = {
+      name: "stuck",
+      description: "",
+      parameters: z.object({}),
+      execute: () => new Promise(() => {}),
+    };
+    let finishEdit: (value: string) => void = () => {};
+    const edit: AgentTool = {
+      name: "edit",
+      description: "",
+      parameters: z.object({}),
+      execute: () => new Promise<string>((resolve) => (finishEdit = resolve)),
+    };
+    const { bridge, call } = await connect({ tools: [waiter, stuck, edit] });
+    const waiting = call("task_output", {}, "toolu_wait");
+    const ignoring = call("stuck", {}, "toolu_stuck");
+    const editing = call("edit", {}, "toolu_edit");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    bridge.preempt();
+
+    const waited = await waiting;
+    expect(waited.result!.isError).toBe(true);
+    expect(waited.result!.content).toEqual([
+      {
+        type: "text",
+        text: "Interrupted: the user sent a new message.\nPartial output:\npartial log",
+      },
+    ]);
+    // A tool that ignores its signal is abandoned after the grace period.
+    expect((await ignoring).result!.content).toEqual([
+      { type: "text", text: "Interrupted: the user sent a new message." },
+    ]);
+    finishEdit("edited");
+    expect((await editing).result!.content).toEqual([{ type: "text", text: "edited" }]);
+  });
+
   it("resolves deferred tools by name, streams updates and reports endRun", async () => {
     let ended = 0;
     const deferred: AgentTool = {

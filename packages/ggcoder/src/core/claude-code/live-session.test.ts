@@ -257,20 +257,65 @@ describe("ClaudeCodeLiveSession steering", () => {
   it("stays for the turn Claude Code queued behind a result", async () => {
     // Regression: steering that missed the running turn got its own turn after
     // the result; the run ended at the first result, so that reply went nowhere
-    // and the idle output killed the process.
+    // and the idle output killed the process. The real CLI reports
+    // queued_turn_count 0 here; only the consumed uuids tell.
+    let wake: (() => void) | undefined;
+    const queue: Message[] = [];
     let secondResult = false;
     const { query } = fakeQuery(async function* (ctx) {
       yield init;
-      await ctx.nextInput();
-      yield result({ queued_turn_count: 1 });
+      const first = await ctx.nextInput();
+      queue.push(user("Also say OKAPI."));
+      wake!();
+      const second = await ctx.nextInput();
+      yield result({ queued_turn_count: 0, user_message_uuids: [first!.uuid] });
       secondResult = true;
-      yield result({ queued_turn_count: 0 });
+      yield result({ queued_turn_count: 0, user_message_uuids: [second!.uuid] });
       await ctx.nextInput();
     });
     const live = new ClaudeCodeLiveSession();
-    await drain(live, [user("Start")], options(query));
+    const events = await drain(
+      live,
+      [user("Start")],
+      options(query, {
+        getSteeringMessages: () => (queue.length > 0 ? queue.splice(0) : null),
+        onSteeringAvailable: (listener) => {
+          wake = listener;
+          return () => {};
+        },
+      }),
+    );
     expect(secondResult).toBe(true);
+    expect(events.filter((e) => e.type === "steering_message")).toHaveLength(1);
     await tick();
+    expect(live.alive).toBe(true);
+    live.close();
+  });
+
+  it("ends at the result that consumed steering folded into the turn", async () => {
+    let wake: (() => void) | undefined;
+    const queue: Message[] = [];
+    const { query } = fakeQuery(async function* (ctx) {
+      yield init;
+      const first = await ctx.nextInput();
+      queue.push(user("Also say OKAPI."));
+      wake!();
+      const second = await ctx.nextInput();
+      yield result({ user_message_uuids: [first!.uuid, second!.uuid] });
+      await ctx.nextInput();
+    });
+    const live = new ClaudeCodeLiveSession();
+    await drain(
+      live,
+      [user("Start")],
+      options(query, {
+        getSteeringMessages: () => (queue.length > 0 ? queue.splice(0) : null),
+        onSteeringAvailable: (listener) => {
+          wake = listener;
+          return () => {};
+        },
+      }),
+    );
     expect(live.alive).toBe(true);
     live.close();
   });
@@ -305,6 +350,49 @@ describe("ClaudeCodeLiveSession steering", () => {
     expect(calls.inputs).toHaveLength(1);
     expect(events.filter((e) => e.type === "steering_message")).toHaveLength(1);
     expect(messages).toContain(reply);
+    live.close();
+  });
+});
+
+describe("ClaudeCodeLiveSession preempt", () => {
+  it("interrupts a long tool when the user sends a message", async () => {
+    let wake: (() => void) | undefined;
+    const queue: Message[] = [];
+    const waiter: AgentTool = {
+      name: "task_output",
+      description: "",
+      parameters: z.object({}),
+      execute: (_args, ctx) =>
+        new Promise((resolve) => ctx.signal.addEventListener("abort", () => resolve("log so far"))),
+    };
+    let toolReply: unknown;
+    const { query, calls } = fakeQuery(async function* (ctx) {
+      yield init;
+      const first = await ctx.nextInput();
+      const pending = ctx.callTool("task_output", {}, "toolu_wait");
+      await tick();
+      queue.push(user("Stop waiting, do X."));
+      wake!();
+      toolReply = (await pending).result;
+      const steer = await ctx.nextInput();
+      yield result({ user_message_uuids: [first!.uuid, steer!.uuid] });
+      await ctx.nextInput();
+    });
+    const live = new ClaudeCodeLiveSession();
+    await drain(
+      live,
+      [user("Start")],
+      options(query, {
+        tools: [waiter],
+        getSteeringMessages: () => (queue.length > 0 ? queue.splice(0) : null),
+        onSteeringAvailable: (listener) => {
+          wake = listener;
+          return () => {};
+        },
+      }),
+    );
+    expect(JSON.stringify(toolReply)).toContain("Interrupted: the user sent a new message.");
+    expect(textOf(calls.inputs[1])).toContain("Stop waiting, do X.");
     live.close();
   });
 });

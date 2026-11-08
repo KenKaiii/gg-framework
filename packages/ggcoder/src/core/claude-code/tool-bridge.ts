@@ -2,6 +2,10 @@ import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-
 import {
   argumentHints,
   capToolResults,
+  isInterruptibleTool,
+  markSteerInterrupted,
+  PREEMPT_GRACE_MS,
+  STEER_INTERRUPTED_TEXT,
   unknownToolMessage,
   type AgentEvent,
   type AgentOptions,
@@ -58,6 +62,8 @@ export interface ToolBridge {
   update(next: Partial<Omit<ToolBridgeOptions, "relistWaitMs">>): void;
   /** Tell Claude Code about tools added since it last listed them, and wait for its re-list. */
   syncToolList(): Promise<void>;
+  /** The user sent a message: cut running interruptible tools short, as the agent loop does. */
+  preempt(): void;
 }
 
 /** Run-scoped options a tool call reads when it starts. */
@@ -119,6 +125,17 @@ export function toMcpContent(content: ToolResultContent): McpContent[] {
   });
 }
 
+const ABANDONED = Symbol("abandoned");
+
+/** Resolves to ABANDONED once `signal` has been aborted for the grace period. */
+function abandonAfterGrace(signal: AbortSignal): Promise<typeof ABANDONED> {
+  return new Promise((resolve) => {
+    const start = () => setTimeout(() => resolve(ABANDONED), PREEMPT_GRACE_MS).unref?.();
+    if (signal.aborted) start();
+    else signal.addEventListener("abort", start, { once: true });
+  });
+}
+
 function normalize(raw: ToolExecuteResult): Exclude<ToolExecuteResult, string> {
   return typeof raw === "string" ? { content: raw } : raw;
 }
@@ -134,6 +151,7 @@ export function createToolBridge(initial: ToolBridgeOptions): ToolBridge {
   const results = new Map<string, ToolResult>();
   const invalidCounts = new Map<string, number>();
   const extraTools = new Map<string, AgentTool>();
+  const preemptible = new Set<AbortController>();
 
   const listTools = (): AgentTool[] => {
     const byName = new Map<string, AgentTool>();
@@ -166,6 +184,7 @@ export function createToolBridge(initial: ToolBridgeOptions): ToolBridge {
     let isError = false;
     let endRun = false;
     let invalidArgAttempt: number | undefined;
+    let preempt: AbortController | undefined;
 
     const tool = findTool(name);
     if (!tool) {
@@ -189,13 +208,27 @@ export function createToolBridge(initial: ToolBridgeOptions): ToolBridge {
         }
         const signals = [cancel, AbortSignal.timeout(tool.timeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS)];
         if (options.signal) signals.push(options.signal);
-        const normalized = normalize(
-          await tool.execute(parsed, {
+        if (isInterruptibleTool(tool, name)) {
+          preempt = new AbortController();
+          preemptible.add(preempt);
+          signals.push(preempt.signal);
+        }
+        const execution = Promise.resolve(
+          tool.execute(parsed, {
             signal: AbortSignal.any(signals),
             toolCallId,
             onUpdate: (update) => options.onEvent({ type: "tool_call_update", toolCallId, update }),
           }),
         );
+        // A tool that ignores its signal is abandoned after the grace period.
+        const raw = preempt
+          ? await Promise.race([execution, abandonAfterGrace(preempt.signal)])
+          : await execution;
+        if (raw === ABANDONED) {
+          execution.catch(() => {});
+          throw new Error(STEER_INTERRUPTED_TEXT);
+        }
+        const normalized = normalize(raw);
         endRun = normalized.endRun === true;
         content = redactValue(normalized.content, redactionOptions());
         details = redactValue(normalized.details, redactionOptions());
@@ -227,6 +260,14 @@ export function createToolBridge(initial: ToolBridgeOptions): ToolBridge {
       }
     }
 
+    if (preempt) {
+      preemptible.delete(preempt);
+      if (preempt.signal.aborted) {
+        const partial = content === STEER_INTERRUPTED_TEXT ? "" : content;
+        ({ content, isError } = markSteerInterrupted({ toolCallId, content: partial, isError }));
+        endRun = false;
+      }
+    }
     content = redactValue(content, redactionOptions());
     details = redactValue(details, redactionOptions());
     options.onEvent({
@@ -383,6 +424,9 @@ export function createToolBridge(initial: ToolBridgeOptions): ToolBridge {
     },
     async syncToolList() {
       if (connected) await announceToolList(connected);
+    },
+    preempt() {
+      for (const controller of preemptible) controller.abort();
     },
   };
 }

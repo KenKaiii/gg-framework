@@ -1,5 +1,6 @@
 import type http from "node:http";
 import {
+  NotLoggedInError,
   OPENAI_CHATGPT_KEY,
   apiKeyStorageKeys,
   dualAuthProvider,
@@ -12,6 +13,8 @@ import { AUTH_PROVIDERS, type AuthMethod } from "../core/auth-providers.js";
 import type { ElicitResult } from "@modelcontextprotocol/client";
 import type { AskUserResult } from "../core/ask-user.js";
 import { readBody, json } from "./http.js";
+import { desktopGuidance } from "./desktop-guidance.js";
+import { log } from "../core/logger.js";
 import {
   CatalogSyncError,
   openRouterCatalogStatus,
@@ -176,9 +179,19 @@ export function handleAuthRoutes(
           // Deliberately session-scoped: this is the outcome of ONE window's
           // attempt. Another window that never pressed Connect has nothing to
           // show an error about, and its modal correctly still offers login.
+          const message = err instanceof Error ? err.message : String(err);
+          log("WARN", "auth", "sign-in failed", {
+            provider,
+            message,
+            ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
+          });
+          // Shown inside the sign-in dialog: "not logged in" there means the sign-in didn't take.
           ctx.broadcast("auth_error", {
             provider,
-            message: err instanceof Error ? err.message : String(err),
+            message:
+              err instanceof NotLoggedInError
+                ? `${meta.label} sign-in didn't finish. Try again.`
+                : desktopGuidance(message),
           });
         } finally {
           ctx.oauthInFlight = false;

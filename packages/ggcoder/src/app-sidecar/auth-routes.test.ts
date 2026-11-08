@@ -3,6 +3,7 @@ import type http from "node:http";
 import { describe, expect, it, vi } from "vitest";
 import type * as GgCore from "@kenkaiiii/gg-core";
 import type { OAuthLoginCallbacks } from "../core/oauth/types.js";
+import * as GgCoreActual from "@kenkaiiii/gg-core";
 import { handleAuthRoutes } from "./auth-routes.js";
 import type { SessionRouteContext } from "./route-context.js";
 
@@ -114,6 +115,27 @@ describe("Anthropic sign-in route (Claude Code)", () => {
         data: { provider: "anthropic", message: "Claude Code download failed (HTTP 503)." },
       },
     ]);
+  });
+
+  it("never shows CLI login advice in the sign-in dialog", async () => {
+    // Regression: the dialog showed `Not logged in to anthropic. Run "ggcoder login"…`.
+    signIn.mockRejectedValue(new GgCoreActual.NotLoggedInError("anthropic"));
+    const { ctx, events } = authContext();
+    await call(ctx, "/auth/oauth/start", { provider: "anthropic" });
+    await vi.waitFor(() => expect(ctx.oauthInFlight).toBe(false));
+    expect(events).toEqual([
+      {
+        scope: "one",
+        type: "auth_error",
+        data: { provider: "anthropic", message: "Anthropic sign-in didn't finish. Try again." },
+      },
+    ]);
+
+    signIn.mockRejectedValue(new Error('Token expired. Run "ggcoder login" to re-authenticate.'));
+    events.length = 0;
+    await call(ctx, "/auth/oauth/start", { provider: "anthropic" });
+    await vi.waitFor(() => expect(ctx.oauthInFlight).toBe(false));
+    expect(JSON.stringify(events)).not.toContain("ggcoder");
   });
 
   it("signs out of Claude Code but keeps the API key when only the sign-in is removed", async () => {
