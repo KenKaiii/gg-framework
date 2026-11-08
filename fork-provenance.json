@@ -337,8 +337,9 @@
       "upstreamTipDesktopVersion": "0.102.2",
       "reviewedCommits": 290,
       "importedAt": "2026-11-08",
-      "status": "open",
+      "status": "merged",
       "pullRequest": "https://github.com/fmckie/gg-framework/pull/79",
+      "mergeCommit": "993018a43e33cec5f1262ad371f90e47db7e5450",
       "rule": "upstream.lastImportedCommit stays 3f2bb6bc because the fork does not contain everything up to any later upstream commit; a later full sync must treat these commits as already applied",
       "picked": [
         {"upstream": "afc41586246693406640155e54ca7d20c5caf9c7", "downstream": "55b6d8b71692f882539482712840e2058996d341"},
@@ -352,7 +353,7 @@
         {"upstream": "21adf9451460b367aef6d880dcce0c7a2aac8771", "downstream": "265dca7b9df70f144663e2e8e598dc023e40564c", "scope": "the skill-root brief in skill.ts and the 'keeps every bundled skill routable' test, held back from PR 3b"},
         {"upstream": "dd9eec26e78bf83a026870368cc4e73c3ccf53fd", "downstream": "b30f0150b1f829c33071773646fe7b1e43a8c768", "scope": "the motion hunks held back from PR 3b: the motion skill and six job skills, motion-prompt.ts and motion-agent.test.ts"},
         {"upstream": "7ecf304cfdb4389c7a19e03518b71f9ee563fd61", "downstream": "d91cb7331d88bd2cc659b50195649ddef3374d6a", "scope": "the motion-review-session.ts hunk held back from PR 3a, with a fork-only regression test"},
-        {"upstream": "bd2be639345578b9f312a00e90b04502e883121a", "downstream": "7ae50f6aecf9ed3081c9821fc65baa767fdfad90", "scope": "generate_image on Codex's image endpoints and convertImageFormat; CODEX_CLIENT_VERSION exported with the fork's value 0.159.1 (upstream's 0.161.0 came with 4f763ed2, taken for structure only); supersedes the fork's 7fe46751 route fix and the Flare/Sunburst choice"},
+        {"upstream": "bd2be639345578b9f312a00e90b04502e883121a", "downstream": "7ae50f6aecf9ed3081c9821fc65baa767fdfad90", "scope": "generate_image on Codex's image endpoints and convertImageFormat; CODEX_CLIENT_VERSION exported with the fork's value 0.159.1 (upstream's 0.161.0 came with 4f763ed2, taken for structure only); supersedes the fork's 7fe46751 route fix; removing the gpt-image-2.5 Flare/Sunburst model choice is a deliberate fork decision beyond the PR 4 plan, so a future sync must not restore it"},
         {"upstream": "f178b72e6effaf734d29f3ea4b328e6d253c7379", "downstream": "b506adf56475f4b661b61a276a0caceb9692f5ab", "scope": "delivered-size reports (imageDimensions) and the Codex retry policy"}
       ],
       "skipped": []

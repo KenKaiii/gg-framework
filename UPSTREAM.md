@@ -1047,14 +1047,17 @@ warnings` passes, and `rustfmt --check` passes on the five Rust files this impor
   as are the excluded packages, the `three` lines and `upstream.lastImportedCommit`.
 - The critter-art checks match nothing.
 
-## Motion from upstream (open)
+## Motion from upstream (merged)
 
 - Upstream tip reviewed: `296df256b164ec18a4cc72ec7a824633da245bcb` (engine **5.91.2**,
   desktop **0.102.2**), as for #77 and #78. Upstream has since moved to `57d1e7ed`; every
   later commit follows the relicense and is not reviewed.
 - Branch: `sync/upstream-motion`, based on `main` at `31597ce2`.
-- PR: [#79](https://github.com/fmckie/gg-framework/pull/79), opened as a draft on
-  2026-11-08
+- PR: [#79](https://github.com/fmckie/gg-framework/pull/79), merged at `993018a4` on
+  2026-11-08; all nine CI jobs passed on `98469686` (run **42532174394**). GitHub
+  squashed the branch, so the downstream SHAs below are on `sync/upstream-motion`; the
+  squash commit keeps all 10 trailers (8 `Ported from upstream`, 2
+  `cherry picked from commit`).
 - PR 4b of PR 4 in `.gg/plans/upstream-selective-import-phased.md`, as re-planned in
   `.gg/plans/upstream-pr4-goals-motion.md`. Its first commit, `0a2e1fb7`, records #78 as
   merged. Then `4a0f2dbd`'s motion slice (which `223830dc` builds on), the motion hunks PR 3a
@@ -1081,7 +1084,7 @@ because its held-back hunks land with the code they touch.
 | `063bb557d24d9a119c7e55d77f8046c68103d141` | `eb0a2cb4` | Pick         | Cue export drives Chrome over DevTools, and the e2e test runs on every runner                                                                                                                                                                                                                                                                                                       |
 | `dd9eec26e78bf83a026870368cc4e73c3ccf53fd` | `b30f0150` | Partial port | The motion hunks PR 3b held back: the motion and job skills, the motion prompt and its test                                                                                                                                                                                                                                                                                         |
 | `7ecf304cfdb4389c7a19e03518b71f9ee563fd61` | `d91cb733` | Partial port | The motion hunk PR 3a held back: a multi-file edit arms the Motion review (plus a fork-only regression test)                                                                                                                                                                                                                                                                        |
-| `bd2be639345578b9f312a00e90b04502e883121a` | `7ae50f6a` | Port         | `generate_image` on Codex's image endpoints. `CODEX_CLIENT_VERSION` is exported with the fork's value                                                                                                                                                                                                                                                                               |
+| `bd2be639345578b9f312a00e90b04502e883121a` | `7ae50f6a` | Port         | `generate_image` on Codex's image endpoints. `CODEX_CLIENT_VERSION` is exported with the fork's value. The Flare/Sunburst model choice is removed, a deliberate fork decision beyond the plan                                                                                                                                                                                       |
 | `f178b72e6effaf734d29f3ea4b328e6d253c7379` | `b506adf5` | Port         | Delivered image sizes and the Codex retry policy                                                                                                                                                                                                                                                                                                                                    |
 
 How the engine half was placed:
@@ -1099,8 +1102,10 @@ How the engine half was placed:
   prompt's batching and scripted-edit rules (later upstream rewrites carry them). The golden
   prompt and the tool catalog snapshot are unchanged.
 - `bd2be639` replaces the fork's `7fe46751` fix for the old `codex/responses` route (a chat
-  model driving the hosted tool) and its Flare/Sunburst model choice; upstream's new route
-  has no model choice.
+  model driving the hosted tool); upstream's new route has no model choice.
+- Removing the `gpt-image-2.5` Flare/Sunburst image model choice from `generate_image` is a
+  deliberate fork decision, beyond the PR 4 plan, accepted when #79 merged. A future sync
+  must not bring the choice back.
 - `CODEX_CLIENT_VERSION` stays `0.159.1`: upstream's `0.161.0` came with `4f763ed2`, which
   PR 1 took for structure only.
 
@@ -1118,6 +1123,20 @@ Not taken:
 - Every hunk to the seven skills #77 deleted, and `CONTEXT.md`'s "See ADR 0003" (upstream's
   ADR 0003 came with `4f763ed2`'s docs; the fork's 0003 is about link pairing).
 - The upstream changesets.
+
+Upstream after the reviewed tip, checked at PR 4's close-out (`git fetch upstream` on
+2026-11-08): 57 commits, `296df256..57d1e7ed` (engine 5.92.0 to 5.95.4, desktop 0.102.3 to
+0.107.1). Every one descends from the relicense commit `12da5c3a`, so none is taken. Flagged
+for a future decision: `64fecfee` (GPT Image 2.6 GIFs, Codex client 0.166.0, a Windows
+file-lock race fix), `c3a3e3c6` (unreferenced Coder modules removed), `5092ebc2` and
+`f5d115b0` (provider sign-in moved to official routes, removing CLI-impersonating OAuth; a
+compliance question for the fork's own OAuth), `88c1bec0` (`[DONE:n]` inside tool calls) and
+`d2abf696`/`402e99d6` (Claude Code route fixes). The rest are design, GG World, docs, CI,
+Dependabot and version commits.
+
+Still flagged and not taken, all under MIT: `9403d456` (macOS 27 crash guard), the rest of
+`856bf0eb` (duplicate sub-agent completion notices and desktop checkpoint pruning),
+`a2ca7720`, `c73b1866`, `adea7972`, and `c86b56db` (SDK major bumps).
 
 Changesets: `.changeset/upstream-motion-coder.md`, `-core.md` and `-ai.md` (patch);
 `@kleio/agent` and `@kleio/manager` follow through the fixed group. gg-app is not a
