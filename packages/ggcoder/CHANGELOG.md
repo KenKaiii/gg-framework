@@ -1,5 +1,16 @@
 # @kenkaiiii/ggcoder
 
+## 5.95.3
+
+### Patch Changes
+
+- Claude Code chats keep one live Claude Code process across messages (closed after 15 idle minutes, restarted when wedged) instead of spawning a fresh one per run, and messages queued mid-run are delivered into the running turn. The approved-plan prompt now asks for `[DONE:n]` markers in reply text, so progress no longer stays at 0 when a model echoes them from a tool call.
+- a17ea1e: The app daemon serves Home's weekly feature poll: `GET /poll` reads the open poll and its counts, and `POST /poll/vote` votes or moves a vote under a salted SHA-256 of the OS machine id (so deleting `~/.gg` or reinstalling doesn't add a vote), falling back to a random id in `~/.gg/poll.json`.
+- a17ea1e: GG World is retired. The app no longer has the World game, its online save or its live multiplayer link, and the app daemon no longer serves the `/world/*` routes.
+  - @kenkaiiii/gg-ai@5.95.3
+  - @kenkaiiii/gg-agent@5.95.3
+  - @kenkaiiii/gg-core@5.95.3
+
 ## 5.95.2
 
 ### Patch Changes
