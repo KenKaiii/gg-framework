@@ -17,6 +17,8 @@ export type Provider =
   | "palsu"
   /** Hugging Face Inference Providers router (OpenAI-compatible). */
   | "huggingface"
+  /** Nous Portal subscription, reached through the Hermes Agent subscription proxy. */
+  | "nous"
   /** Locally hosted OpenAI-compatible server (Ollama, LM Studio, llama.cpp, vLLM). */
   | "local";
 

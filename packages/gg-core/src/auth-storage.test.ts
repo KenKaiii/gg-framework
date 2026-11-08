@@ -15,6 +15,7 @@ import {
   readStoredBaseUrlSync,
 } from "./auth-storage.js";
 import { CLAUDE_CODE_AUTH_KEY, CLAUDE_CODE_AUTH_MARKER } from "./claude-code/runtime.js";
+import { HERMES_PROXY_BASE_URL, NOUS_AUTH_KEY, hermesProxyCredential } from "./hermes/runtime.js";
 
 const refreshChatGPTToken = vi.hoisted(() => vi.fn());
 vi.mock("./oauth/openai.js", () => ({ refreshChatGPTToken }));
@@ -835,6 +836,15 @@ describe("AuthStorage — clearRejectedApiKey", () => {
     expect(await storage.hasCredentials("glm")).toBe(false);
     expect((await storage.getCredentials("local:custom-gw"))?.accessToken).toBe("sk-gateway");
     expect(await storage.hasProviderAuth("local")).toBe(true);
+  });
+
+  it("keeps the Nous Portal connection: it is the Hermes proxy's address, not a key", async () => {
+    const storage = await makeStorage();
+    await storage.setCredentials(NOUS_AUTH_KEY, hermesProxyCredential());
+
+    expect(await storage.clearRejectedApiKey(NOUS_AUTH_KEY)).toBe(false);
+    expect(await storage.hasProviderAuth("nous")).toBe(true);
+    expect((await storage.resolveCredentials("nous")).baseUrl).toBe(HERMES_PROXY_BASE_URL);
   });
 });
 

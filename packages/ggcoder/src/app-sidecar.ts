@@ -56,6 +56,7 @@ import { cleanupToolOutputs } from "./tools/overflow.js";
 import { pruneDiagnosticsRecords } from "./core/internal-diagnostics.js";
 import { pruneCheckpointSessions } from "./core/checkpoint-store.js";
 import {
+  NOUS_AUTH_KEY,
   dualAuthProvider,
   discoverLocalModels,
   findProbedModel,
@@ -75,6 +76,8 @@ import {
   syncEndpointCredentials,
 } from "./core/local-endpoint-store.js";
 import { loadOpenRouterCatalog } from "./core/openrouter-catalog-store.js";
+import { loadNousCatalog, syncNousCatalog } from "./core/nous-catalog-store.js";
+import { HermesProxySupervisor } from "./core/hermes-proxy.js";
 import type { OAuthLoginCallbacks } from "./core/oauth/types.js";
 import {
   AUTH_PROVIDERS,
@@ -325,6 +328,25 @@ async function main(): Promise<void> {
       });
     });
 
+  // Nous Portal runs through Hermes's subscription proxy, which this daemon
+  // keeps up while Nous is connected. The cached plan list shows at once; the
+  // live one replaces it as soon as the proxy answers. Never fatal.
+  const hermesProxy = new HermesProxySupervisor({
+    isConnected: () => auth.hasProviderAuth("nous"),
+  });
+  void loadNousCatalog()
+    .then(async (cached) => {
+      if (cached > 0) broadcastAll("models_change", {});
+      if (!(await auth.hasProviderAuth("nous"))) return;
+      await hermesProxy.ensure();
+      if ((await syncNousCatalog(auth)) > 0) broadcastAll("models_change", {});
+    })
+    .catch((err: unknown) => {
+      log("WARN", "app-sidecar", "Nous Portal startup failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+
   const sessionIdsAt = (cwd: string): string[] => {
     const target = path.resolve(cwd);
     return [...sessions.values()]
@@ -469,6 +491,7 @@ async function main(): Promise<void> {
               jiwaStore,
               broadcastAll,
               oauthInFlightProviders,
+              hermesProxy,
               repoPolls,
               sessionIdsAt,
               busyAt,
@@ -634,6 +657,7 @@ async function main(): Promise<void> {
       // group, and the app force-kills that group after 3 s. If a slow session
       // teardown is still pending then, these would never be stopped.
       for (const c of sessions.values()) c.stopBackgroundProcesses();
+      hermesProxy.stop();
       clearInterval(parentWatch);
       // Radio playback is app-wide (one stream across all windows), so it stops
       // at the daemon level, not per session.
@@ -655,6 +679,7 @@ async function main(): Promise<void> {
     },
   });
   process.once("exit", stopRadio);
+  process.once("exit", () => hermesProxy.stop());
 
   // Tauri can disappear without delivering a signal (force-quit, dev runner
   // teardown, crash). Detect reparenting or a dead shell so the daemon and its
@@ -695,6 +720,8 @@ async function createSession(
      * because a login writes the shared auth file — see `/auth/oauth/start`.
      */
     oauthInFlightProviders: Set<string>;
+    /** Daemon-wide: the Hermes proxy Nous Portal runs through. */
+    hermesProxy: HermesProxySupervisor;
     /** Daemon-wide repo pollers shared by windows on the same repo. */
     repoPolls: RepoPolls;
     /** Ids of every live window session whose cwd is `cwd` (resolved). */
@@ -718,6 +745,7 @@ async function createSession(
     jiwaStore,
     broadcastAll,
     oauthInFlightProviders,
+    hermesProxy,
     repoPolls,
     sessionIdsAt,
     busyAt,
@@ -2385,7 +2413,13 @@ async function createSession(
         const oauthKey = dual?.oauthKey;
         const hasOAuth = oauthKey
           ? await auth.hasCredentials(oauthKey)
-          : p.value === "anthropic" && (await auth.hasClaudeCodeLogin());
+          : p.value === "anthropic"
+            ? await auth.hasClaudeCodeLogin()
+            : // Nous Portal's sign-in record lives under its own key (the
+              // Hermes proxy address), like a plan credential.
+              p.value === "nous"
+              ? await auth.hasCredentials(NOUS_AUTH_KEY)
+              : false;
         const hasApiKey = p.methods.includes("apikey") && (await auth.hasApiKey(p.value));
         const connectedMethods: AuthMethod[] = [];
         if (p.methods.includes("oauth") && hasOAuth) connectedMethods.push("oauth");
@@ -2757,6 +2791,7 @@ async function createSession(
       oauthInFlight = v;
     },
     oauthInFlightProviders,
+    hermesProxy,
     authCallbacks,
     get pendingCode() {
       return pendingCode;

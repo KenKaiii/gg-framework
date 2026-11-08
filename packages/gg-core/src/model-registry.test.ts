@@ -32,6 +32,7 @@ const PROVIDERS = [
   "deepseek",
   "openrouter",
   "huggingface",
+  "nous",
   "sakana",
   "xai",
 ] as const;

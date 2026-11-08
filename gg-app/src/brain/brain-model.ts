@@ -52,6 +52,7 @@ const ANCHOR_DIRS: Record<string, Vec3> = {
   sakana: [0.45, 0.35, -0.9],
   openrouter: [-0.45, 0.35, -0.9],
   huggingface: [0.75, -0.25, -0.6],
+  nous: [0.15, -0.45, -0.85],
 };
 
 export function rng(seed: number): () => number {

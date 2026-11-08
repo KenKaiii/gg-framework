@@ -105,6 +105,8 @@ import {
 } from "./core/model-registry.js";
 import { MCPClientManager, getAllMcpServers } from "./core/mcp/index.js";
 import { runLogin, runLogout, runDoctor } from "./cli/auth.js";
+import { loadNousCatalog } from "./core/nous-catalog-store.js";
+import { HermesProxySupervisor } from "./core/hermes-proxy.js";
 import { runMcp } from "./cli/mcp.js";
 import {
   CLI_VERSION,
@@ -173,7 +175,7 @@ function printHelp(): void {
     ["-v, --version", "Show version number"],
     [
       "--provider <name>",
-      "AI provider (anthropic, xiaomi, openai, gemini, glm, moonshot, minimax, deepseek, openrouter, sakana, xai)",
+      "AI provider (anthropic, xiaomi, openai, gemini, glm, moonshot, minimax, deepseek, openrouter, huggingface, nous, sakana, xai)",
     ],
     ["--model <name>", "Model to use (e.g. claude-sonnet-5, gpt-6-astra)"],
     ["--max-turns <n>", "Maximum agent turns per prompt"],
@@ -400,6 +402,7 @@ function main(): void {
     if (p === "minimax") return "MiniMax-M3.1-Flash";
     if (p === "deepseek") return "deepseek-v4-pro";
     if (p === "huggingface") return "moonshotai/Kimi-K2.7-Code";
+    if (p === "nous") return "nous/z-ai/glm-5.3";
     if (p === "openrouter") return "qwen/qwen3.8-max";
     if (p === "sakana") return "fugu";
     if (p === "xai") return "grok-4.7";
@@ -1050,6 +1053,7 @@ async function runSessions(): Promise<void> {
     if (p === "minimax") return "MiniMax-M3.1-Flash";
     if (p === "deepseek") return "deepseek-v4-pro";
     if (p === "huggingface") return "moonshotai/Kimi-K2.7-Code";
+    if (p === "nous") return "nous/z-ai/glm-5.3";
     if (p === "sakana") return "fugu";
     if (p === "xai") return "grok-4.7";
     return "claude-opus-5-5";
@@ -1503,6 +1507,9 @@ async function runAgentHome(): Promise<void> {
  * This prevents the CLI from crashing with "Not logged in" on startup just
  * because settings.json remembers a provider the user later logged out of.
  */
+// The Hermes subscription proxy Nous Portal runs through; one per CLI process.
+let nousProxy: HermesProxySupervisor | undefined;
+
 async function resolveActiveProvider(
   authStorage: AuthStorage,
   preferred: Provider,
@@ -1518,6 +1525,8 @@ async function resolveActiveProvider(
     "minimax",
     "deepseek",
     "openrouter",
+    "huggingface",
+    "nous",
     "sakana",
     "xai",
   ];
@@ -1534,6 +1543,21 @@ async function resolveActiveProvider(
 
   if (loggedInProviders.length === 0) {
     throw new Error('Not logged in to any provider. Run "ggcoder login" to authenticate.');
+  }
+
+  // Nous Portal runs through Hermes's subscription proxy: load the cached plan
+  // list and keep a proxy up for the life of this process.
+  if (loggedInProviders.includes("nous")) {
+    void loadNousCatalog().catch(() => 0);
+    nousProxy ??= new HermesProxySupervisor({
+      isConnected: () => authStorage.hasProviderAuth("nous"),
+    });
+    process.once("exit", () => nousProxy?.stop());
+    void nousProxy.ensure().catch((err: unknown) =>
+      log("WARN", "auth", "Hermes proxy start failed", {
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
   }
 
   if (loggedInProviders.includes(preferred)) {

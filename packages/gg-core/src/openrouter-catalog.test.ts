@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { parseOpenRouterCatalog } from "./openrouter-catalog.js";
+import { parseNousCatalog, parseOpenRouterCatalog } from "./openrouter-catalog.js";
 import {
   getAllModels,
   getModel,
@@ -44,7 +44,10 @@ const BODY = {
   ],
 };
 
-afterEach(() => setProviderCatalog("openrouter", undefined));
+afterEach(() => {
+  setProviderCatalog("openrouter", undefined);
+  setProviderCatalog("nous", undefined);
+});
 
 describe("parseOpenRouterCatalog", () => {
   it("maps the live schema: tools, image input, effort ladder, output cap", () => {
@@ -106,6 +109,27 @@ describe("setProviderCatalog", () => {
 
     expect(installed).toEqual([]);
     expect(getModel(foreign.id)?.provider).toBe(foreign.provider);
+  });
+
+  it("keeps Nous Portal rows apart from OpenRouter's identical ids", () => {
+    const { models } = parseNousCatalog(BODY);
+    expect(models.map((m) => [m.id, m.provider])).toEqual([
+      ["nous/tencent/hy4", "nous"],
+      ["nous/openrouter/auto", "nous"],
+    ]);
+
+    setProviderCatalog("openrouter", parseOpenRouterCatalog(BODY).models);
+    setProviderCatalog("nous", models);
+
+    expect(getModel("tencent/hy4")?.provider).toBe("openrouter");
+    expect(getModel("nous/tencent/hy4")?.provider).toBe("nous");
+    expect(getSupportedThinkingLevels("nous", "nous/tencent/hy4")).toEqual(["low", "high"]);
+    // The synced plan list replaces the pre-sync seeds; the default still resolves.
+    expect(getModelsForProvider("nous").map((m) => m.id)).toEqual([
+      "nous/tencent/hy4",
+      "nous/openrouter/auto",
+    ]);
+    expect(getModel("nous/z-ai/glm-5.3")?.provider).toBe("nous");
   });
 
   it("restores the static list when cleared", () => {

@@ -19,6 +19,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   huggingface: "Hugging Face",
   sakana: "Sakana (Fugu)",
   openrouter: "OpenRouter",
+  nous: "Nous Portal",
   local: "Local",
 };
 
@@ -40,6 +41,7 @@ const PROVIDER_ORDER = [
   "huggingface",
   "sakana",
   "openrouter",
+  "nous",
 ];
 
 export function providerLabel(provider: string): string {

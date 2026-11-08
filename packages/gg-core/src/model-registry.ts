@@ -897,6 +897,44 @@ export const MODELS: ModelInfo[] = [
     costTier: "low",
     maxThinkingLevel: "high",
   },
+  // ── Nous Portal (through the Hermes subscription proxy) ─────
+  // The plan's full list is synced from the Portal's `/models` (OpenRouter's
+  // schema) once connected and REPLACES these rows in listings; they are the
+  // pre-sync list and the default. Ids carry `nous/` because the Portal serves
+  // OpenRouter's exact ids. Metadata mirrors the live catalog (2026-11-08).
+  {
+    // Hermes's own default Portal model. Thinking is mandatory; the Portal
+    // declares low/high/max effort (default max).
+    id: "nous/z-ai/glm-5.3",
+    name: "Z.ai: GLM 5.3",
+    provider: "nous",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: false,
+    supportsVideo: false,
+    costTier: "medium",
+    maxThinkingLevel: "max",
+    thinkingLevels: ["low", "high", "max"],
+    defaultThinkingLevel: "max",
+  },
+  {
+    // The Portal's usage basis (`usage_basis` on /models): what plan usage is
+    // measured against. Image input; no published output cap, so the catalog
+    // parser's 16K default applies.
+    id: "nous/deepseek/deepseek-v4.1-flash",
+    name: "DeepSeek: DeepSeek V4.1 Flash",
+    provider: "nous",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 16_384,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: false,
+    costTier: "low",
+    maxThinkingLevel: "max",
+    thinkingLevels: ["low", "high", "xhigh", "max"],
+    defaultThinkingLevel: "high",
+  },
 ];
 
 /**
@@ -1069,6 +1107,7 @@ const DEFAULT_MODEL_IDS: Partial<Record<Provider, string>> = {
   minimax: "MiniMax-M3.1-Flash",
   deepseek: "deepseek-v4-pro",
   huggingface: "moonshotai/Kimi-K2.7-Code",
+  nous: "nous/z-ai/glm-5.3",
   openrouter: "qwen/qwen3.8-max",
   sakana: "fugu",
   xai: "grok-4.7",

@@ -131,6 +131,7 @@ export function displayName(provider: Provider): string {
   if (provider === "deepseek") return "DeepSeek";
   if (provider === "openrouter") return "OpenRouter";
   if (provider === "huggingface") return "Hugging Face";
+  if (provider === "nous") return "Nous Portal";
   if (provider === "sakana") return "Sakana (Fugu)";
   if (provider === "xai") return "xAI (Grok)";
   return "OpenAI";

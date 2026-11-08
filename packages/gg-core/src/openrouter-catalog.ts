@@ -1,5 +1,6 @@
-import type { ThinkingLevel } from "@kenkaiiii/gg-ai";
+import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import type { ModelInfo } from "./model-registry.js";
+import { NOUS_MODEL_PREFIX } from "./hermes/runtime.js";
 
 /** gg-ai's OPENROUTER_BASE_URL — where the openrouter transport goes with no override. */
 export const OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
@@ -42,9 +43,16 @@ function costTier(prompt: unknown): ModelInfo["costTier"] {
  * Turn an OpenRouter-style `/models` body into registry rows. Field mapping is
  * the live schema: tools from `supported_parameters`, image input from
  * `architecture.input_modalities`, the effort ladder from
- * `reasoning.supported_efforts`, output cap from `top_provider`.
+ * `reasoning.supported_efforts`, output cap from `top_provider`. Gateways that
+ * clone the schema (Nous Portal) pass their own `provider` and an `idPrefix`
+ * that keeps their ids apart from OpenRouter's identical ones.
  */
-export function parseOpenRouterCatalog(body: unknown): ParsedOpenRouterCatalog {
+export function parseOpenRouterCatalog(
+  body: unknown,
+  options: { provider?: Provider; idPrefix?: string } = {},
+): ParsedOpenRouterCatalog {
+  const provider = options.provider ?? "openrouter";
+  const idPrefix = options.idPrefix ?? "";
   const data = (body as { data?: unknown } | null)?.data;
   if (!Array.isArray(data)) return { models: [], skipped: 0 };
   const models: ModelInfo[] = [];
@@ -68,9 +76,9 @@ export function parseOpenRouterCatalog(body: unknown): ParsedOpenRouterCatalog {
     const maxOutput =
       positiveInt(raw.top_provider?.max_completion_tokens) ?? Math.min(contextWindow, 16_384);
     models.push({
-      id,
+      id: idPrefix + id,
       name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : id,
-      provider: "openrouter",
+      provider,
       contextWindow,
       maxOutputTokens: Math.min(maxOutput, contextWindow),
       supportsThinking,
@@ -86,4 +94,9 @@ export function parseOpenRouterCatalog(body: unknown): ParsedOpenRouterCatalog {
     });
   }
   return { models, skipped };
+}
+
+/** Nous Portal's `/models` (OpenRouter's schema) as `nous/`-prefixed registry rows. */
+export function parseNousCatalog(body: unknown): ParsedOpenRouterCatalog {
+  return parseOpenRouterCatalog(body, { provider: "nous", idPrefix: NOUS_MODEL_PREFIX });
 }

@@ -150,6 +150,31 @@ providerRegistry.register("huggingface", {
     }),
 });
 
+/**
+ * Nous Portal model ids are namespaced (`nous/<rawId>`) because the Portal
+ * serves the same `vendor/model` ids as OpenRouter, and the registry resolves
+ * models by bare id. The Portal only knows the raw id, so strip the prefix at
+ * the wire. Counterpart to gg-core's `NOUS_MODEL_PREFIX`.
+ */
+export function nousWireModelId(id: string): string {
+  return id.startsWith("nous/") ? id.slice("nous/".length) : id;
+}
+
+providerRegistry.register("nous", {
+  // A Nous Portal subscription through the Hermes Agent subscription proxy
+  // (`hermes proxy start`): Hermes holds the Portal sign-in and attaches it to
+  // each request, so the bearer sent here is ignored. OpenAI-compatible Chat
+  // Completions with OpenRouter's model schema. The baseUrl comes from the
+  // stored credential; the default is the proxy's documented address.
+  stream: (options) =>
+    streamOpenAI({
+      ...options,
+      baseUrl: options.baseUrl ?? "http://127.0.0.1:8645/v1",
+      model: nousWireModelId(options.model),
+      webSearch: false,
+    }),
+});
+
 providerRegistry.register("sakana", {
   // Sakana Fugu is a multi-agent system exposed as a standard LLM through the
   // OpenAI-compatible Sakana API. We ride the Chat Completions transport (the

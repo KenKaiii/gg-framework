@@ -3208,6 +3208,27 @@ describe("local-backend first-event watchdog", () => {
     await loopPromise;
     vi.useRealTimers();
   }, 30_000);
+
+  it("treats Nous Portal behind Hermes's loopback proxy as a remote stream", async () => {
+    vi.useFakeTimers();
+    mockStream.mockImplementation((opts: StreamOptions) => stallingStream(opts));
+
+    const controller = new AbortController();
+    const loopPromise = collectLoop(messages, {
+      provider: "nous",
+      model: "nous/z-ai/glm-5.3",
+      baseUrl: "http://127.0.0.1:8645/v1",
+      signal: controller.signal,
+    }).catch(() => undefined);
+
+    await vi.advanceTimersByTimeAsync(200_000);
+    expect(mockStream.mock.calls.length).toBeGreaterThan(1);
+
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await loopPromise;
+    vi.useRealTimers();
+  }, 30_000);
 });
 
 describe("agentLoop — per-turn credential resolution", () => {

@@ -17,6 +17,7 @@ import { LOCAL_NO_API_KEY } from "@kenkaiiii/gg-ai";
 import { detectMiniMaxBaseUrl } from "./minimax-region.js";
 import { detectXiaomiTokenPlanBaseUrl } from "./xiaomi-region.js";
 import { KIMI_CODE_DEFAULT_BASE_URL, detectKimiCodeBaseUrl } from "./kimi-region.js";
+import { NOUS_AUTH_KEY } from "./hermes/runtime.js";
 
 type AuthData = Record<string, OAuthCredentials>;
 
@@ -724,8 +725,10 @@ export class AuthStorage {
   }
 
   // Keeps local-endpoint keys: they're the user's own config, and a 401 there is often a busy gateway.
+  // Keeps the Nous Portal connection: it holds the Hermes proxy's address, not a
+  // key, so a 401 means Hermes's Portal sign-in lapsed, which Hermes fixes.
   async clearRejectedApiKey(storageKey: string): Promise<boolean> {
-    if (storageKey.startsWith(LOCAL_AUTH_KEY_PREFIX)) return false;
+    if (storageKey.startsWith(LOCAL_AUTH_KEY_PREFIX) || storageKey === NOUS_AUTH_KEY) return false;
     await this.clearCredentials(storageKey);
     return true;
   }

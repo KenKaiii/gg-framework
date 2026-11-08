@@ -67,14 +67,17 @@ function positiveInt(value: unknown): boolean {
 }
 
 /** A cached row is only trusted if it still has the shape the parser writes. */
-function cachedModel(raw: unknown): ModelInfo | undefined {
+export function cachedCatalogModel(
+  raw: unknown,
+  provider: "openrouter" | "nous" = "openrouter",
+): ModelInfo | undefined {
   const m = raw as Partial<ModelInfo> | null;
   if (
     !m ||
     typeof m.id !== "string" ||
     !m.id ||
     typeof m.name !== "string" ||
-    m.provider !== "openrouter" ||
+    m.provider !== provider ||
     !positiveInt(m.contextWindow) ||
     !positiveInt(m.maxOutputTokens) ||
     typeof m.supportsThinking !== "boolean" ||
@@ -90,7 +93,7 @@ function cachedModel(raw: unknown): ModelInfo | undefined {
   return {
     id: m.id,
     name: m.name,
-    provider: "openrouter",
+    provider,
     contextWindow: m.contextWindow!,
     maxOutputTokens: m.maxOutputTokens!,
     supportsThinking: m.supportsThinking,
@@ -107,7 +110,9 @@ async function readFile(file: string): Promise<CatalogFile | undefined> {
   try {
     const parsed = JSON.parse(await fs.readFile(file, "utf8")) as Partial<CatalogFile>;
     if (typeof parsed.baseUrl !== "string" || !Array.isArray(parsed.models)) return undefined;
-    const models = parsed.models.map(cachedModel).filter((m): m is ModelInfo => m !== undefined);
+    const models = parsed.models
+      .map((m) => cachedCatalogModel(m))
+      .filter((m): m is ModelInfo => m !== undefined);
     return { baseUrl: parsed.baseUrl, syncedAt: Number(parsed.syncedAt) || 0, models };
   } catch {
     return undefined;

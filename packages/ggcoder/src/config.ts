@@ -70,6 +70,7 @@ const VALID_PROVIDERS = new Set<Provider>([
   "deepseek",
   "openrouter",
   "huggingface",
+  "nous",
   "sakana",
   "xai",
 ]);

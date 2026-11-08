@@ -20,6 +20,7 @@ import huggingface from "./assets/providers/huggingface.svg";
 import sakana from "./assets/providers/sakana.png";
 import ollama from "./assets/providers/ollama.png";
 import openrouter from "./assets/providers/openrouter.svg";
+import nous from "./assets/providers/nous.svg";
 
 export const PROVIDER_LOGOS: Record<string, string> = {
   anthropic,
@@ -35,6 +36,7 @@ export const PROVIDER_LOGOS: Record<string, string> = {
   sakana,
   ollama,
   openrouter,
+  nous,
 };
 
 export function providerLogo(value: string): string | undefined {

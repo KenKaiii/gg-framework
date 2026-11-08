@@ -67,16 +67,25 @@ describe("hidden providers", () => {
 });
 
 describe("allowed sign-in methods", () => {
-  it("offers a real sign-in only for Claude and ChatGPT", () => {
+  it("offers a sign-in only for Claude, ChatGPT and Nous Portal through Hermes", () => {
     const withOAuth = AUTH_PROVIDERS.filter((p) => p.methods.includes("oauth")).map((p) => p.value);
-    expect(withOAuth).toEqual(["anthropic", "openai"]);
+    expect(withOAuth).toEqual(["anthropic", "openai", "nous"]);
   });
 
-  it("offers a pay-per-token key for every provider", () => {
-    for (const p of AUTH_PROVIDERS) {
+  it("offers a pay-per-token key for every provider that issues one", () => {
+    // Nous Portal issues no API keys; Hermes's subscription proxy is the route.
+    for (const p of AUTH_PROVIDERS.filter((p) => p.value !== "nous")) {
       expect(p.methods, p.value).toContain("apikey");
       expect(p.methodDetails.apikey, p.value).toBeDefined();
     }
+  });
+
+  it("connects Nous Portal only by signing in with Hermes", () => {
+    const methods = describeAuthMethods("nous");
+    expect(methods.map((m) => m.method)).toEqual(["oauth"]);
+    expect(methods[0]!.label).toBe("Sign in with Hermes");
+    expect(methods[0]!.requires).toMatch(/Hermes Agent/);
+    expect(authPriorityNote("nous")).toBeUndefined();
   });
 
   it("labels the OpenAI sign-in Continue with ChatGPT and adds an OpenAI API key", () => {

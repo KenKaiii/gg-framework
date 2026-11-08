@@ -1,17 +1,21 @@
 import type http from "node:http";
 import {
+  NOUS_AUTH_KEY,
   OPENAI_CHATGPT_KEY,
   apiKeyStorageKeys,
   dualAuthProvider,
   signInWithClaudeCode,
+  signInWithHermes,
   signOutOfClaudeCode,
 } from "@kenkaiiii/gg-core";
+import { resetNousCatalog, syncNousCatalog } from "../core/nous-catalog-store.js";
 import { loginChatGPT, revokeChatGPTSignIn } from "../core/oauth/openai.js";
 import type { OAuthCredentials } from "../core/oauth/types.js";
 import { AUTH_PROVIDERS, type AuthMethod } from "../core/auth-providers.js";
 import type { ElicitResult } from "@modelcontextprotocol/client";
 import type { AskUserResult } from "../core/ask-user.js";
 import { readBody, json } from "./http.js";
+import { log } from "../core/logger.js";
 import {
   CatalogSyncError,
   openRouterCatalogStatus,
@@ -162,6 +166,19 @@ export function handleAuthRoutes(
             const previous = await ctx.auth.getCredentials(OPENAI_CHATGPT_KEY);
             const creds = await loginChatGPT(cb, previous ? { previous } : {});
             await ctx.auth.setCredentials(OPENAI_CHATGPT_KEY, creds);
+          } else if (provider === "nous") {
+            // Hermes holds the Portal sign-in; GG Coder keeps its proxy running
+            // and lists every model on the plan.
+            await signInWithHermes(ctx.auth, cb);
+            cb.onStatus("Starting the Hermes proxy…");
+            await ctx.hermesProxy.ensure();
+            cb.onStatus("Loading your Nous Portal models…");
+            // The built-in Nous rows still work if the list can't be read.
+            await syncNousCatalog(ctx.auth).catch((err: unknown) =>
+              log("WARN", "auth", "Nous Portal model list sync failed", {
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
           } else {
             throw new Error(`Sign-in not implemented for ${provider}`);
           }
@@ -323,7 +340,13 @@ export function handleAuthRoutes(
       // versa. Omitting `method` clears everything (the plain "Disconnect").
       if (logoutMethod !== "apikey") {
         if (provider === "anthropic") await signOutOfClaudeCode(ctx.auth);
-        else if (dual) {
+        else if (provider === "nous") {
+          // Disconnects GG Coder only: Hermes keeps its Portal sign-in.
+          ctx.hermesProxy.stop();
+          await ctx.auth.clearCredentials(NOUS_AUTH_KEY);
+          await resetNousCatalog();
+          ctx.broadcastAll("models_change", {});
+        } else if (dual) {
           const plan = await ctx.auth.getCredentials(dual.oauthKey);
           // End the renewable session at OpenAI before dropping it locally.
           if (provider === "openai" && plan) revoked = await revokeChatGPTSignIn(plan);
