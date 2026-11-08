@@ -799,8 +799,7 @@ export async function* agentLoop(
   // retry that prefills from cold again, so the first-event watchdog is off for
   // loopback hosts entirely — the 90s inter-event timer still arms as soon as
   // the first event lands, and the caller's abort signal is untouched.
-  // Nous Portal is reached through Hermes's loopback proxy but runs on hosted
-  // backends, so it keeps the hosted watchdog.
+  // Nous runs on hosted backends behind Hermes's loopback proxy — keep watchdogs.
   const localBackend = options.provider !== "nous" && isLocalBackendUrl(options.baseUrl);
   const baseFirstEventTimeoutMs = localBackend
     ? Number.POSITIVE_INFINITY

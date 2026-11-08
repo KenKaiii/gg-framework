@@ -139,7 +139,7 @@ export interface SessionRouteContext {
   readonly broadcastAll: (type: string, data: unknown) => void;
   oauthInFlight: boolean;
   readonly oauthInFlightProviders: Set<string>;
-  /** Daemon-wide: keeps the Hermes proxy Nous Portal runs through. */
+  /** Daemon-wide: the Hermes proxy behind the `nous` provider. */
   readonly hermesProxy: HermesProxySupervisor;
   readonly authCallbacks: () => OAuthLoginCallbacks;
   pendingCode: ((code: string) => void) | null;

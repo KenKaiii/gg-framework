@@ -1507,7 +1507,7 @@ async function runAgentHome(): Promise<void> {
  * This prevents the CLI from crashing with "Not logged in" on startup just
  * because settings.json remembers a provider the user later logged out of.
  */
-// The Hermes subscription proxy Nous Portal runs through; one per CLI process.
+// The Hermes proxy Nous Portal runs through; one per CLI process.
 let nousProxy: HermesProxySupervisor | undefined;
 
 async function resolveActiveProvider(
@@ -1545,8 +1545,7 @@ async function resolveActiveProvider(
     throw new Error('Not logged in to any provider. Run "ggcoder login" to authenticate.');
   }
 
-  // Nous Portal runs through Hermes's subscription proxy: load the cached plan
-  // list and keep a proxy up for the life of this process.
+  // Nous runs through Hermes's proxy: load the cached plan list and keep one up.
   if (loggedInProviders.includes("nous")) {
     void loadNousCatalog().catch(() => 0);
     nousProxy ??= new HermesProxySupervisor({

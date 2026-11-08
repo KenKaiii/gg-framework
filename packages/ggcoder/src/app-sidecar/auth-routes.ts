@@ -167,13 +167,12 @@ export function handleAuthRoutes(
             const creds = await loginChatGPT(cb, previous ? { previous } : {});
             await ctx.auth.setCredentials(OPENAI_CHATGPT_KEY, creds);
           } else if (provider === "nous") {
-            // Hermes holds the Portal sign-in; GG Coder keeps its proxy running
-            // and lists every model on the plan.
+            // Hermes holds the Portal sign-in; GG Coder keeps its proxy running.
             await signInWithHermes(ctx.auth, cb);
             cb.onStatus("Starting the Hermes proxy…");
             await ctx.hermesProxy.ensure();
             cb.onStatus("Loading your Nous Portal models…");
-            // The built-in Nous rows still work if the list can't be read.
+            // Seed rows still work if the plan list can't be read.
             await syncNousCatalog(ctx.auth).catch((err: unknown) =>
               log("WARN", "auth", "Nous Portal model list sync failed", {
                 error: err instanceof Error ? err.message : String(err),
@@ -341,7 +340,7 @@ export function handleAuthRoutes(
       if (logoutMethod !== "apikey") {
         if (provider === "anthropic") await signOutOfClaudeCode(ctx.auth);
         else if (provider === "nous") {
-          // Disconnects GG Coder only: Hermes keeps its Portal sign-in.
+          // GG Coder disconnects only; Hermes keeps its Portal sign-in.
           ctx.hermesProxy.stop();
           await ctx.auth.clearCredentials(NOUS_AUTH_KEY);
           await resetNousCatalog();

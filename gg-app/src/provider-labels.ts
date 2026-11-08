@@ -19,7 +19,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   huggingface: "Hugging Face",
   sakana: "Sakana (Fugu)",
   openrouter: "OpenRouter",
-  nous: "Nous Portal",
+  nous: "Hermes Nous Portal",
   local: "Local",
 };
 

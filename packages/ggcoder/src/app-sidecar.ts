@@ -328,9 +328,8 @@ async function main(): Promise<void> {
       });
     });
 
-  // Nous Portal runs through Hermes's subscription proxy, which this daemon
-  // keeps up while Nous is connected. The cached plan list shows at once; the
-  // live one replaces it as soon as the proxy answers. Never fatal.
+  // Keep the Hermes proxy up while Nous is connected; the cached plan list
+  // shows at once and the live one replaces it. Never fatal.
   const hermesProxy = new HermesProxySupervisor({
     isConnected: () => auth.hasProviderAuth("nous"),
   });
@@ -720,7 +719,7 @@ async function createSession(
      * because a login writes the shared auth file — see `/auth/oauth/start`.
      */
     oauthInFlightProviders: Set<string>;
-    /** Daemon-wide: the Hermes proxy Nous Portal runs through. */
+    /** Daemon-wide: the Hermes proxy behind `nous`. */
     hermesProxy: HermesProxySupervisor;
     /** Daemon-wide repo pollers shared by windows on the same repo. */
     repoPolls: RepoPolls;
@@ -2415,10 +2414,8 @@ async function createSession(
           ? await auth.hasCredentials(oauthKey)
           : p.value === "anthropic"
             ? await auth.hasClaudeCodeLogin()
-            : // Nous Portal's sign-in record lives under its own key (the
-              // Hermes proxy address), like a plan credential.
-              p.value === "nous"
-              ? await auth.hasCredentials(NOUS_AUTH_KEY)
+            : p.value === "nous"
+              ? await auth.hasCredentials(NOUS_AUTH_KEY) // the proxy address is the sign-in record
               : false;
         const hasApiKey = p.methods.includes("apikey") && (await auth.hasApiKey(p.value));
         const connectedMethods: AuthMethod[] = [];

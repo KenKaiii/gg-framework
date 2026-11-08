@@ -30,7 +30,7 @@ const PROVIDER_LABEL: Record<string, string> = {
   deepseek: "DeepSeek",
   openrouter: "OpenRouter",
   huggingface: "Hugging Face",
-  nous: "Nous Portal",
+  nous: "Hermes Nous Portal",
   sakana: "Sakana",
   xai: "xAI",
 };

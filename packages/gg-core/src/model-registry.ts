@@ -897,14 +897,10 @@ export const MODELS: ModelInfo[] = [
     costTier: "low",
     maxThinkingLevel: "high",
   },
-  // ── Nous Portal (through the Hermes subscription proxy) ─────
-  // The plan's full list is synced from the Portal's `/models` (OpenRouter's
-  // schema) once connected and REPLACES these rows in listings; they are the
-  // pre-sync list and the default. Ids carry `nous/` because the Portal serves
-  // OpenRouter's exact ids. Metadata mirrors the live catalog (2026-11-08).
+  // ── Nous Portal (via the Hermes subscription proxy) ─────────
+  // Pre-sync seeds; the plan's synced catalog replaces them. Ids carry `nous/`
+  // because the Portal serves OpenRouter's exact ids.
   {
-    // Hermes's own default Portal model. Thinking is mandatory; the Portal
-    // declares low/high/max effort (default max).
     id: "nous/z-ai/glm-5.3",
     name: "Z.ai: GLM 5.3",
     provider: "nous",
@@ -919,9 +915,7 @@ export const MODELS: ModelInfo[] = [
     defaultThinkingLevel: "max",
   },
   {
-    // The Portal's usage basis (`usage_basis` on /models): what plan usage is
-    // measured against. Image input; no published output cap, so the catalog
-    // parser's 16K default applies.
+    // The Portal's usage basis; no published output cap, so 16K applies.
     id: "nous/deepseek/deepseek-v4.1-flash",
     name: "DeepSeek: DeepSeek V4.1 Flash",
     provider: "nous",

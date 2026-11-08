@@ -478,11 +478,9 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     },
     ProviderMeta {
         value: "nous",
-        label: "Nous Portal",
+        label: "Hermes Nous Portal",
         description: "GLM 5.3, DeepSeek V4.1 Flash · every model on your Nous Portal plan",
-        // The sign-in lives in Hermes Agent, which also runs the subscription
-        // proxy GG Coder routes through; auth.json keeps the proxy address
-        // under `nous` (mirrors gg-core's NOUS_AUTH_KEY).
+        // Sign-in lives in Hermes Agent; auth.json keeps the proxy address.
         methods: &["oauth"],
         oauth_key: Some("nous"),
         oauth_label: None,
@@ -1051,10 +1049,8 @@ pub(crate) async fn app_auth_logout(
         }
     }
     let app = webview.app_handle().clone();
-    // Claude Code holds the Claude login itself, a ChatGPT sign-out must
-    // revoke the session at OpenAI, and a Nous disconnect must stop the Hermes
-    // proxy and drop the plan's model list; only the sidecar does those.
-    // Best effort: with no daemon the local credential still goes.
+    // Claude Code and ChatGPT sign-outs, and a Nous disconnect (stop the Hermes
+    // proxy, drop the plan's models), need the sidecar; best effort only.
     let signs_out = method.is_none() || method.as_deref() == Some("oauth");
     if (provider == "anthropic" || provider == "openai" || provider == "nous") && signs_out {
         if let (Some(port), Some(sid)) = (

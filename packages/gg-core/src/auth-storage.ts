@@ -725,8 +725,7 @@ export class AuthStorage {
   }
 
   // Keeps local-endpoint keys: they're the user's own config, and a 401 there is often a busy gateway.
-  // Keeps the Nous Portal connection: it holds the Hermes proxy's address, not a
-  // key, so a 401 means Hermes's Portal sign-in lapsed, which Hermes fixes.
+  // Keeps the Nous connection: it holds the Hermes proxy's address, not a key.
   async clearRejectedApiKey(storageKey: string): Promise<boolean> {
     if (storageKey.startsWith(LOCAL_AUTH_KEY_PREFIX) || storageKey === NOUS_AUTH_KEY) return false;
     await this.clearCredentials(storageKey);

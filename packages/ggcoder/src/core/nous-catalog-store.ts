@@ -13,9 +13,8 @@ import { atomicWrite } from "./session-storage.js";
 import { cachedCatalogModel } from "./openrouter-catalog-store.js";
 
 /**
- * Every model on the user's Nous Portal plan, read from the Portal's `/models`
- * through the Hermes proxy and cached so the picker has it at the next start
- * before the proxy is up. Synced automatically on sign-in and at startup.
+ * The plan's model list, read from the proxy's `/models` and cached so the
+ * picker has it at the next start before the proxy is up.
  */
 interface CatalogFile {
   syncedAt: number;

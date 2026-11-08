@@ -278,11 +278,9 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
     ),
   },
   {
-    // Connects through Hermes Agent's subscription proxy, the route Nous
-    // documents for other apps: Hermes holds the Portal sign-in, and the
-    // Portal issues no API keys or tokens to third-party clients.
+    // Via Hermes Agent's subscription proxy — the Portal issues no keys.
     value: "nous",
-    label: "Nous Portal",
+    label: "Hermes Nous Portal",
     description: "GLM 5.3, DeepSeek V4.1 Flash · every model on your Nous Portal plan",
     methods: ["oauth"],
     methodDetails: {

@@ -36,8 +36,7 @@ function defaultBaseUrl(provider: Provider): string | undefined {
       return "https://router.huggingface.co/v1";
     case "sakana":
       return "https://api.sakana.ai/v1";
-    // The Hermes subscription proxy runs on loopback: no handshake worth saving.
-    case "nous":
+    case "nous": // loopback proxy — nothing to preconnect
     case "local":
     case "palsu":
       return undefined;

@@ -4,12 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "../oauth/types.js";
 
-// Nous Portal through Hermes Agent, the way Nous documents for other apps:
-// Hermes keeps the Portal sign-in, and its subscription proxy
-// (`hermes proxy start`) serves the subscription as an OpenAI-compatible
-// endpoint on loopback, attaching the real credential to each request. The
-// Portal only issues tokens to its own allowlisted clients, so GG Coder never
-// holds a Nous token: auth.json gets the proxy address.
+// Nous Portal via Hermes Agent's subscription proxy (`hermes proxy start`):
+// Hermes keeps the Portal sign-in and attaches it to each request on loopback,
+// so GG Coder never holds a Nous token — auth.json gets the proxy address.
 // https://hermes-agent.nousresearch.com/docs/user-guide/features/subscription-proxy
 
 /** auth.json key of the Nous Portal connection (the proxy address, not a token). */

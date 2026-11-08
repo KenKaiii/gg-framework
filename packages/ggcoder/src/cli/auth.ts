@@ -172,8 +172,7 @@ export async function runLogin(): Promise<void> {
       return;
     }
 
-    // Nous Portal: the sign-in lives in Hermes Agent, which also owns the
-    // subscription proxy GG Coder routes through.
+    // Nous Portal signs in through Hermes, which also owns the proxy.
     if (provider === "nous") {
       await signInWithHermes(authStorage, callbacks);
       endProgressLine();
