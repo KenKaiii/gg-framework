@@ -34,6 +34,13 @@ export interface CacheTtlInput {
 
 const MINUTE = 60_000;
 
+/** A Claude subscription runs through Claude Code, which writes 1-hour cache entries. */
+export const CLAUDE_CODE_CACHE_TTL: CacheTtlPolicy = {
+  ttlMs: 60 * MINUTE,
+  confidence: "may_be_cold",
+  source: "Claude Code writes ephemeral_1h cache entries (its own transcripts)",
+};
+
 /** Resolve the cache TTL our provider code requests for this route. */
 export function resolveCacheTtl(input: CacheTtlInput): CacheTtlPolicy | null {
   if (input.cacheRetention === "none") return null;

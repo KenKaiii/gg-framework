@@ -84,7 +84,7 @@ import {
   type AuthMethodMeta,
   type AuthProviderMeta,
 } from "./core/auth-providers.js";
-import { VERSION, ensureAppDirs, loadSavedSettings } from "./config.js";
+import { ensureAppDirs, loadSavedSettings } from "./config.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import {
   getModel,
@@ -136,7 +136,7 @@ import {
 } from "./app-sidecar/app-settings.js";
 import { KEN_ALLOWED_TOOLS } from "./app-sidecar/ken-context.js";
 import { type ProgressManager, createProgressManager } from "./app-sidecar/progress-manager.js";
-import { createWorldLink } from "./app-sidecar/royale.js";
+import { createPollClient } from "./app-sidecar/poll.js";
 import { type TrophyManager, createTrophyManager } from "./app-sidecar/trophy-manager.js";
 import { localTrophyDate } from "./core/trophies/engine.js";
 import { handleSessionRoutes } from "./app-sidecar/session-routes.js";
@@ -360,8 +360,8 @@ async function main(): Promise<void> {
   // XP/rank progress — loaded once per daemon; awards fan out to every window.
   // Each frame is tagged `origin: true` only for the session that earned the
   // XP, so that window alone plays sounds/chips while the rest just re-render.
-  // GG World online save + live tickets (opt-in; one device link in ~/.gg/royale.json).
-  const world = createWorldLink({ agentDir: paths.agentDir, version: VERSION });
+  // Home's weekly poll (daemon-level; one random voter id in ~/.gg/poll.json).
+  const poll = createPollClient({ agentDir: paths.agentDir });
   const progress = await createProgressManager(paths.agentDir, (snapshot, originId) => {
     for (const ctx of sessions.values())
       ctx.broadcast("progress", { ...snapshot, origin: ctx.id === originId });
@@ -556,40 +556,27 @@ async function main(): Promise<void> {
       return;
     }
 
-    // GG World online save (one device link, app-wide so no session header). Always 200 with the World
-    // server's { status, body } so the app can tell 409/400/unreachable apart.
-    if (url === "/world/live" && method === "POST") {
-      void daemonReadBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        daemonJson(res, 200, await world.worldLive());
-      });
+    // The weekly poll is app-wide, so no session header. Always 200 with the poll state; its
+    // `status` tells the app the poll server's answer (0 = unreachable).
+    if (method === "GET" && url === "/poll") {
+      void poll.current().then((state) => daemonJson(res, 200, state));
       return;
     }
-    if (url === "/world/save" && (method === "GET" || method === "PUT" || method === "DELETE")) {
+    if (method === "POST" && url === "/poll/vote") {
       void daemonReadBody(req, res).then(async (raw) => {
         if (raw === null) return;
-        if (method === "GET") {
-          daemonJson(res, 200, await world.worldGet());
-        } else if (method === "DELETE") {
-          daemonJson(res, 200, await world.worldDelete());
-        } else {
-          let parsed: { ver?: unknown; patch?: unknown };
-          try {
-            parsed = JSON.parse(raw || "{}") as { ver?: unknown; patch?: unknown };
-          } catch {
-            daemonJson(res, 400, { error: "invalid JSON" });
-            return;
-          }
-          const ver = typeof parsed.ver === "number" ? parsed.ver : 0;
-          daemonJson(res, 200, await world.worldPut(ver, parsed.patch ?? {}));
+        let parsed: { pollId?: unknown; choice?: unknown };
+        try {
+          parsed = JSON.parse(raw || "{}") as { pollId?: unknown; choice?: unknown };
+        } catch {
+          daemonJson(res, 400, { error: "invalid JSON" });
+          return;
         }
-      });
-      return;
-    }
-    if (method === "DELETE" && url === "/world/account") {
-      void daemonReadBody(req, res).then(async (raw) => {
-        if (raw === null) return;
-        daemonJson(res, 200, await world.accountDelete());
+        if (typeof parsed.pollId !== "string" || typeof parsed.choice !== "number") {
+          daemonJson(res, 400, { error: "pollId and choice are required" });
+          return;
+        }
+        daemonJson(res, 200, await poll.vote(parsed.pollId, parsed.choice));
       });
       return;
     }

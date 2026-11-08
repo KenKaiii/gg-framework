@@ -139,7 +139,12 @@ import {
 } from "./internal-diagnostics.js";
 import { log } from "./logger.js";
 import { CacheDiagnostics } from "./cache-diagnostics.js";
-import { assessCacheExpiry, resolveCacheTtl, type CacheExpiryStatus } from "./cache-expiry.js";
+import {
+  assessCacheExpiry,
+  CLAUDE_CODE_CACHE_TTL,
+  resolveCacheTtl,
+  type CacheExpiryStatus,
+} from "./cache-expiry.js";
 import {
   setEstimatorModel,
   calibrateEstimatorFromUsage,
@@ -164,7 +169,7 @@ import {
 import { discoverAgents, type AgentDefinition } from "./agents.js";
 import { enhancePrompt, type EnhanceResult } from "../utils/prompt-enhancer.js";
 import { assistantText, renderTranscript } from "./claude-code/events.js";
-import { claudeCodeLoop } from "./claude-code/loop.js";
+import { ClaudeCodeLiveSession, systemPrompt } from "./claude-code/live-session.js";
 import {
   CLAUDE_CODE_SEED_CHARS,
   CLAUDE_CODE_SESSION_KIND,
@@ -771,6 +776,9 @@ export class AgentSession {
   // every turn boundary, so an index captured by the UI can point at a
   // different message (or past the end) by the time the cancel arrives.
   private userQueue: Array<{ id: string; text: string; attachments: SessionAttachment[] }> = [];
+  // Taken into the run but not yet in the transcript. Claude Code takes queued
+  // messages at once but reads them at its next turn, so they still show as queued.
+  private deliveringQueue: Array<{ id: string; text: string; content: unknown }> = [];
   private queueSeq = 0;
   /** Monotonic count of human-originated prompts; idle-wake budgets reset on it. */
   private humanPromptSeq = 0;
@@ -1504,15 +1512,17 @@ export class AgentSession {
     }
     let sessionId = resume;
     const title = this.sessionPreview?.trim().slice(0, 80);
-    const generator = claudeCodeLoop(loopMessages, {
+    const thinking =
+      this.planModeRef.current || options.capThinking
+        ? clampThinkingForPlanMode(this.thinkingLevel)
+        : this.thinkingLevel;
+    const live = await this.claudeCodeLiveFor(process, loopMessages, resume, thinking, options);
+    const generator = live.run(loopMessages, {
       provider: this.provider,
       model: this.model,
       tools: options.disableTools ? [] : this.tools,
       maxTurns: this.opts.maxTurns,
-      thinking:
-        this.planModeRef.current || options.capThinking
-          ? clampThinkingForPlanMode(this.thinkingLevel)
-          : this.thinkingLevel,
+      thinking,
       signal: this.opts.signal,
       maxToolResultChars: resolveSessionToolResultCharLimit(this.model, this.provider, undefined),
       transformToolResult: flagUntrustedToolResult,
@@ -1540,10 +1550,24 @@ export class AgentSession {
     try {
       for await (const event of generator) {
         await this.trackHookEvent(event);
+        // Claude Code sends the requests, so the cache-diagnostics pass never
+        // sees them; without a touch every idle chat read as an expired cache.
+        if (event.type === "turn_end" && event.stopReason !== "error") {
+          this.cacheDiagnostics.noteCacheTouch({
+            at: Date.now(),
+            provider: this.provider,
+            model: this.model,
+            policy: CLAUDE_CODE_CACHE_TTL,
+          });
+        }
         this.eventBus.forwardAgentEvent(event);
       }
     } finally {
+      // The SDK counts maxTurns per process, so a capped session runs one process per run.
+      if (live !== this.claudeCodeLive?.session) live.close("one-shot");
       this.activeLoopMessages = null;
+      // A stopped run records unplaced messages without an event.
+      this.settleDeliveredMessages(() => true);
       this.messages = loopMessages;
       for (let i = this.lastPersistedIndex; i < this.messages.length; i++) {
         await this.persistMessage(this.messages[i]);
@@ -1551,6 +1575,63 @@ export class AgentSession {
       this.lastPersistedIndex = this.messages.length;
       if (sessionId) await this.recordClaudeCodeSession(sessionId);
     }
+  }
+
+  /**
+   * The Claude Code process for this run: the chat's live one when it holds
+   * exactly our history with the same settings, else a new one (the old one is
+   * closed first, so a chat never keeps two).
+   */
+  private async claudeCodeLiveFor(
+    process: ClaudeCodeProcess,
+    messages: readonly Message[],
+    resume: string | undefined,
+    thinking: ThinkingLevel | undefined,
+    options: PromptRunOptions,
+  ): Promise<ClaudeCodeLiveSession> {
+    const hash = (value: unknown) =>
+      crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16);
+    const key: Record<string, string> = {
+      executable: process.executable,
+      cwd: process.cwd,
+      model: this.model,
+      system: hash(systemPrompt(messages, undefined)),
+      thinking: thinking ? "on" : "off",
+      tools: options.disableTools ? "off" : "on",
+    };
+    // Per variable, so a restart log names what moved (names only, never values).
+    for (const [name, value] of Object.entries(process.env)) {
+      // The SDK writes this into the daemon's env on its first query(); it sets it for the child anyway.
+      if (name !== "CLAUDE_AGENT_SDK_VERSION") key[`env:${name}`] = hash(value);
+    }
+    const current = this.claudeCodeLive;
+    const changed = current
+      ? [...new Set([...Object.keys(key), ...Object.keys(current.key)])].filter(
+          (name) => current.key[name] !== key[name],
+        )
+      : [];
+    if (
+      current &&
+      changed.length === 0 &&
+      current.session.alive &&
+      !current.session.busy &&
+      resume !== undefined &&
+      resume === current.session.sessionId &&
+      (await current.session.setEffort(thinking))
+    ) {
+      return current.session;
+    }
+    this.closeClaudeCodeLive(
+      changed.length > 0 ? `changed: ${changed.join(",")}` : "history or effort changed",
+    );
+    const session = new ClaudeCodeLiveSession();
+    if (!this.opts.maxTurns) this.claudeCodeLive = { session, key };
+    return session;
+  }
+
+  private closeClaudeCodeLive(reason: string): void {
+    this.claudeCodeLive?.session.close(reason);
+    this.claudeCodeLive = null;
   }
 
   private async recordClaudeCodeSession(sessionId: string): Promise<void> {
@@ -1920,6 +2001,9 @@ export class AgentSession {
         // The assistant message for this turn is now in the array.
         await this.flushPendingMessages();
         break;
+      case "steering_message":
+        this.settleDeliveredMessages((m) => m.content === event.content);
+        break;
       case "checkpoint":
         // Tool results for this step are in the array and their side effects
         // already hit the filesystem. Flushing here is what makes a crash lose
@@ -1927,6 +2011,15 @@ export class AgentSession {
         await this.creditBashReads();
         await this.flushPendingMessages();
         break;
+    }
+  }
+
+  /** Drop delivered queued messages and announce the new queue depth. */
+  private settleDeliveredMessages(delivered: (m: { content: unknown }) => boolean): void {
+    const before = this.deliveringQueue.length;
+    this.deliveringQueue = this.deliveringQueue.filter((m) => !delivered(m));
+    if (this.deliveringQueue.length !== before) {
+      this.eventBus.emit("queue_drained", { count: this.userQueue.length });
     }
   }
 
@@ -2047,11 +2140,9 @@ export class AgentSession {
     // agent sees them mid-loop instead of after it stops.
     if (this.userQueue.length > 0) {
       const queued = this.userQueue.splice(0);
-      // The agent has now consumed these. Announce the new depth immediately so
-      // clients can drop the "queued" affordance at the turn boundary rather
-      // than holding it until the whole run ends — the message is already in
-      // the loop, and showing it as still-pending for minutes is a lie.
-      this.eventBus.emit("queue_drained", { count: this.userQueue.length });
+      // `queue_drained` fires when each lands in the transcript (its
+      // steering_message event), not here, so clients drop the "queued" look
+      // when the agent reads it, not minutes later at run end.
       // Frame each queued item as concurrent steering — without this wrapper
       // the model treats a mid-run message as a fresh request that supersedes
       // the original task and silently drops it. ONE message per queued item
@@ -2073,6 +2164,10 @@ export class AgentSession {
           ...this.buildAttachmentParts(m.text, m.attachments),
         ];
         return { role: "user", content: parts, provenance };
+      });
+      steeringMessages.forEach((message, index) => {
+        const { id, text } = queued[index]!;
+        this.deliveringQueue.push({ id, text, content: message.content });
       });
       const userShell = this.takeUserShellContext();
       return [
@@ -2516,6 +2611,8 @@ export class AgentSession {
       await this.runClaudeCodeLoop(claudeCode, options);
       return;
     }
+    // Left the Claude subscription route (provider switch, sign-out).
+    this.closeClaudeCodeLive("route changed");
 
     // Resolve OAuth credentials and run agent loop.
     // On 401, force-refresh the token and retry once — the provider may have
@@ -2876,6 +2973,7 @@ export class AgentSession {
         }
       } finally {
         this.activeLoopMessages = null;
+        this.settleDeliveredMessages(() => true);
         // An in-flight compaction rebinds `this.messages` to the compacted array
         // while the loop keeps appending to `loopMessages`. Resync on every exit
         // — a failed or aborted run included — or the session silently drops
@@ -3663,6 +3761,7 @@ export class AgentSession {
     // into the fresh session (e.g. an accepted plan's build would inherit the
     // whole planning conversation and lose the approved-plan prompt).
     await this.settlePostTurnCompaction();
+    this.closeClaudeCodeLive("new session");
     this.cacheDiagnostics.reset();
     // Approved-plan execution is a clean checkpoint of the same conversation;
     // explicit new sessions reset the conversation identity.
@@ -3710,6 +3809,7 @@ export class AgentSession {
   }
 
   async loadSession(sessionPath: string): Promise<void> {
+    this.closeClaudeCodeLive("session loaded");
     await this.loadExistingSession(sessionPath);
     this.cacheDiagnostics.reset();
     if (this.sessionId) await this.subAgentManager?.hydrate(this.sessionId);
@@ -4008,9 +4108,13 @@ export class AgentSession {
     await this.persistMessage(message);
   }
 
-  /** Pending queued messages (id + text), oldest first, for client display. */
-  listQueuedMessages(): Array<{ id: string; text: string }> {
-    return this.userQueue.map((m) => ({ id: m.id, text: m.text }));
+  /** Pending queued messages (id + text), oldest first, for client display.
+   *  `delivering` ones are already with the agent and can no longer be cancelled. */
+  listQueuedMessages(): Array<{ id: string; text: string; delivering?: true }> {
+    return [
+      ...this.deliveringQueue.map((m) => ({ id: m.id, text: m.text, delivering: true as const })),
+      ...this.userQueue.map((m) => ({ id: m.id, text: m.text })),
+    ];
   }
 
   /** Cancel one pending message by id. Returns true if it was still queued.
@@ -4154,6 +4258,8 @@ export class AgentSession {
    */
   stopBackgroundProcesses(): void {
     this.processManager?.shutdownAll();
+    // Synchronous, so app quit stops Claude Code even when later teardown hangs.
+    this.closeClaudeCodeLive("shutdown");
   }
 
   /** Replace a host-owned system prompt in place without resetting conversation history. */
@@ -4878,6 +4984,9 @@ export class AgentSession {
   private prewarmController: AbortController | null = null;
   /** Claude Code session that has seen this history (Claude subscription route). */
   private claudeCodeSession: ClaudeCodeSessionState | null = null;
+  /** This chat's running Claude Code process, reused while `key` (its start settings) matches. */
+  private claudeCodeLive: { session: ClaudeCodeLiveSession; key: Record<string, string> } | null =
+    null;
 
   /**
    * Best-effort Anthropic prompt-cache prewarm before the user's next turn

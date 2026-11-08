@@ -52,11 +52,16 @@ export interface ToolBridgeOptions {
 
 export interface ToolBridge {
   config: McpSdkServerConfigWithInstance;
-  /** Every tool name the model may call without a permission prompt. */
-  allowedTools(): string[];
   /** The result exactly as the model received it, for our transcript. */
   takeResult(toolCallId: string): ToolResult | undefined;
+  /** Re-point the run-scoped options (a long-lived Claude Code process serves many runs). */
+  update(next: Partial<Omit<ToolBridgeOptions, "relistWaitMs">>): void;
+  /** Tell Claude Code about tools added since it last listed them, and wait for its re-list. */
+  syncToolList(): Promise<void>;
 }
+
+/** Run-scoped options a tool call reads when it starts. */
+type RunScoped = Omit<ToolBridgeOptions, "relistWaitMs">;
 
 interface JsonRpcMessage {
   jsonrpc: "2.0";
@@ -124,7 +129,8 @@ function normalize(raw: ToolExecuteResult): Exclude<ToolExecuteResult, string> {
  * parsed with our full Zod schemas (pipes and preprocessors included), so
  * nothing depends on the SDK's bundled zod converting our schemas.
  */
-export function createToolBridge(options: ToolBridgeOptions): ToolBridge {
+export function createToolBridge(initial: ToolBridgeOptions): ToolBridge {
+  let options: RunScoped = initial;
   const results = new Map<string, ToolResult>();
   const invalidCounts = new Map<string, number>();
   const extraTools = new Map<string, AgentTool>();
@@ -135,6 +141,8 @@ export function createToolBridge(options: ToolBridgeOptions): ToolBridge {
     for (const tool of extraTools.values()) if (!byName.has(tool.name)) byName.set(tool.name, tool);
     return [...byName.values()];
   };
+
+  const runOptions = () => options;
 
   const findTool = (name: string): AgentTool | undefined => {
     const tool = listTools().find((t) => t.name === name) ?? options.resolveTool?.(name);
@@ -148,6 +156,8 @@ export function createToolBridge(options: ToolBridgeOptions): ToolBridge {
     toolCallId: string,
     cancel: AbortSignal,
   ): Promise<ToolResult> {
+    // A call still finishing after Stop must report to its own run, not the next one.
+    const options = runOptions();
     const startTime = Date.now();
     options.onEvent({ type: "tool_call_start", toolCallId, name, args });
 
@@ -242,7 +252,7 @@ export function createToolBridge(options: ToolBridgeOptions): ToolBridge {
   let relistWaiters: (() => void)[] = [];
   const waitForRelist = (): Promise<void> =>
     new Promise((resolve) => {
-      const timer = setTimeout(resolve, options.relistWaitMs ?? RELIST_WAIT_MS);
+      const timer = setTimeout(resolve, initial.relistWaitMs ?? RELIST_WAIT_MS);
       relistWaiters.push(() => {
         clearTimeout(timer);
         resolve();
@@ -252,13 +262,26 @@ export function createToolBridge(options: ToolBridgeOptions): ToolBridge {
     listTools()
       .map((t) => t.name)
       .join("\n");
+  let connected: McpTransport | undefined;
+  /** Send list_changed when the list moved since Claude Code read it; resolves once it re-lists. */
+  const announceToolList = (transport: McpTransport): Promise<void> | undefined => {
+    if (listedNames === undefined || toolNames() === listedNames) return undefined;
+    listedNames = toolNames();
+    const relisted = waitForRelist();
+    void transport
+      .send({ jsonrpc: "2.0", method: "notifications/tools/list_changed" })
+      .catch(() => {});
+    return relisted;
+  };
   const instance = {
     async connect(transport: McpTransport): Promise<void> {
+      connected = transport;
       const inFlight = new Map<string | number, AbortController>();
       const reply = (id: JsonRpcMessage["id"], body: Pick<JsonRpcMessage, "result" | "error">) =>
         void transport.send({ jsonrpc: "2.0", id, ...body }).catch(() => {});
 
       transport.onclose = () => {
+        if (connected === transport) connected = undefined;
         for (const controller of inFlight.values()) controller.abort();
         inFlight.clear();
       };
@@ -315,18 +338,11 @@ export function createToolBridge(options: ToolBridgeOptions): ToolBridge {
             void callTool(String(params.name), args, toolCallId, controller.signal)
               .then(async (result) => {
                 results.set(toolCallId, result);
-                if (listedNames !== undefined && toolNames() !== listedNames) {
-                  listedNames = toolNames();
-                  // Hold this result until Claude Code has the new list: it
-                  // checks every call against its own copy, so the model's
-                  // next call to the promoted tool failed with "No such tool
-                  // available" when the result arrived first.
-                  const relisted = waitForRelist();
-                  void transport
-                    .send({ jsonrpc: "2.0", method: "notifications/tools/list_changed" })
-                    .catch(() => {});
-                  await relisted;
-                }
+                // Hold this result until Claude Code has the new list: it
+                // checks every call against its own copy, so the model's
+                // next call to the promoted tool failed with "No such tool
+                // available" when the result arrived first.
+                await announceToolList(transport);
                 reply(id, {
                   result: {
                     content: toMcpContent(result.content),
@@ -347,7 +363,7 @@ export function createToolBridge(options: ToolBridgeOptions): ToolBridge {
 
   const longestTimeout = Math.max(
     DEFAULT_TOOL_TIMEOUT_MS,
-    ...options.tools.map((t) => t.timeoutMs ?? 0),
+    ...initial.tools.map((t) => t.timeoutMs ?? 0),
   );
 
   return {
@@ -357,11 +373,16 @@ export function createToolBridge(options: ToolBridgeOptions): ToolBridge {
       instance: instance as unknown as McpSdkServerConfigWithInstance["instance"],
       timeout: longestTimeout + SERVER_TIMEOUT_MARGIN_MS,
     } as McpSdkServerConfigWithInstance,
-    allowedTools: () => listTools().map((t) => claudeCodeToolName(t.name)),
     takeResult(toolCallId) {
       const result = results.get(toolCallId);
       results.delete(toolCallId);
       return result;
+    },
+    update(next) {
+      options = { ...options, ...next };
+    },
+    async syncToolList() {
+      if (connected) await announceToolList(connected);
     },
   };
 }

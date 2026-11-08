@@ -1200,7 +1200,8 @@ select {
 .home > .home-title,
 .home > .home-version-row,
 .home > .home-tagline,
-.home > .home-actions {
+.home > .home-actions,
+.home > .home-poll {
   position: relative;
   z-index: 1;
 }
@@ -1210,6 +1211,7 @@ select {
 .home > .home-version-row,
 .home > .home-tagline,
 .home > .home-actions,
+.home > .home-poll,
 .home > .home-settings,
 .home > .home-version-corner {
   animation: reveal-up 460ms var(--ease-out) both;
@@ -1234,6 +1236,7 @@ select {
   .home > .home-version-row,
   .home > .home-tagline,
   .home > .home-actions,
+  .home > .home-poll,
   .home > .home-settings,
   .home > .home-version-corner {
     animation: none;
@@ -1693,73 +1696,208 @@ select {
 .home-actions .plate-button {
   --plate-scale: var(--plate-step);
 }
-/* A plate with a tag pinned to the middle of its top edge (Royale's "New").
-   The tag is out of flow, so the plates stay level and the home column keeps
-   its centring; clicks fall through it to the button. */
-.home-action-slot {
+/* ── Weekly poll (HomePoll.tsx) ──
+   The What's new board on Home's art-pixel grid (--home-px): the dark board
+   with its ink outline, ring and drop, the title in Alagard, the question and
+   answers in m5x7. Answers are the board's rows; once voted each fills to its
+   share in the plates' felt green, and your pick gets the gold tag and ring.
+   m5x7 sits on a tight 11/16 line with the slack in split padding (3 above,
+   5 below), as the What's new rows do. Hidden in short windows, where it
+   would run into the critters. */
+.home-poll {
+  /* Type follows What's new (2px art pixels, 1px was too small to read), not
+     --home-step; the board's width still follows the plates row. */
+  --poll-px: 2px;
+  --poll-ink: #1e0c1f;
+  --poll-gold: #f5bd63;
+  box-sizing: border-box;
+  /* At least the plates row (four 100-art-px plates, three 8px gaps), and
+     wide enough for two columns of answers at the board's own type size. */
+  width: min(max(calc(424 * var(--home-px)), calc(320 * var(--poll-px))), 100%);
+  padding: calc(6 * var(--poll-px)) calc(9 * var(--poll-px)) calc(7 * var(--poll-px));
+  background: #251c22;
+  color: #e6dcd0;
+  border-radius: calc(3 * var(--poll-px));
+  box-shadow:
+    0 0 0 var(--poll-px) var(--poll-ink),
+    inset 0 0 0 var(--poll-px) #4e343f,
+    0 calc(3 * var(--poll-px)) 0 var(--poll-px) var(--poll-ink);
+  font-family: "m5x7", monospace;
+  font-size: calc(16 * var(--poll-px));
+  line-height: calc(11 * var(--poll-px));
+  -webkit-font-smoothing: none;
+  text-align: left;
+}
+.home-poll-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: calc(6 * var(--poll-px));
+}
+.home-poll-title {
+  margin: 0;
+  font-family: "Alagard", serif;
+  font-size: calc(16 * var(--poll-px));
+  font-weight: 400;
+  line-height: calc(16 * var(--poll-px));
+  color: #f6d0a8;
+  text-shadow: 0 var(--poll-px) 0 var(--poll-ink);
+}
+.home-poll-closes {
+  flex: none;
+  color: #c9a08c;
+}
+.home-poll-question {
+  margin: calc(3 * var(--poll-px)) 0 calc(5 * var(--poll-px));
+  color: #e6dcd0;
+}
+.home-poll-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(3 * var(--poll-px));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Three answers: the last one takes the full row. */
+.home-poll.is-3 .home-poll-options > li:last-child {
+  grid-column: 1 / -1;
+}
+.home-poll-option {
   position: relative;
   display: flex;
+  align-items: baseline;
+  gap: calc(4 * var(--poll-px));
+  width: 100%;
+  min-height: calc(19 * var(--poll-px));
+  padding: calc(3 * var(--poll-px)) calc(5 * var(--poll-px)) calc(5 * var(--poll-px));
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: #2e2029;
+  color: #e6dcd0;
+  box-shadow: inset 0 calc(-1 * var(--poll-px)) 0 #221820;
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    background-color var(--t-fast),
+    color var(--t-fast),
+    translate var(--dur-press) var(--ease-out),
+    box-shadow var(--dur-press) var(--ease-out);
 }
-/* The tag: a little GG Royale label, m5x7 on the game's red with an ink
-   outline and a shaded foot, drawn in --tag-px art pixels (Home's step). */
-.home-actions {
-  --tag-px: var(--home-px);
+.home-poll-option:hover:not(:disabled) {
+  background: #3a2934;
+  color: #f2ead2;
 }
-.home-loading-dots {
-  display: inline-flex;
-  gap: calc(2 * var(--tag-px));
-  align-items: center;
-  height: calc(5 * var(--tag-px));
+.home-poll-option:active:not(:disabled) {
+  translate: 0 var(--poll-px);
+  box-shadow: none;
 }
-.home-loading-dots i {
-  width: calc(2 * var(--tag-px));
-  height: calc(2 * var(--tag-px));
-  background: currentColor;
-  animation: home-loading-dot 900ms steps(2, end) infinite;
-  animation-play-state: var(--loop-play-state, running);
+.home-poll-option:focus-visible {
+  outline: var(--poll-px) solid var(--poll-gold);
+  outline-offset: var(--poll-px);
 }
-.home-loading-dots i:nth-child(2) {
-  animation-delay: 150ms;
+/* While a vote is saving, the other answers are inert (disabled), not dimmed. */
+.home-poll-option:disabled {
+  cursor: default;
 }
-.home-loading-dots i:nth-child(3) {
-  animation-delay: 300ms;
+.home-poll-option[aria-busy="true"] {
+  cursor: progress;
+  background: #3a2934;
 }
-@keyframes home-loading-dot {
-  0%,
-  100% {
-    opacity: 0.35;
+.home-poll-option.is-mine .home-poll-pct {
+  color: var(--poll-gold);
+}
+.home-poll-option.is-mine {
+  box-shadow:
+    inset 0 0 0 var(--poll-px) var(--poll-gold),
+    inset 0 calc(-1 * var(--poll-px)) 0 #221820;
+}
+.home-poll-bar {
+  position: absolute;
+  inset: 0;
+  background: #395653;
+  transform-origin: left center;
+  pointer-events: none;
+  transition: transform 420ms var(--ease-out);
+}
+.home-poll-label,
+.home-poll-pick,
+.home-poll-pct {
+  position: relative;
+}
+/* One line per answer, so rows stay even; the full text is the row's title. */
+.home-poll-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Your pick: a gold pixel check beside its share (the row also gets the ring). */
+.home-poll-pick {
+  flex: none;
+  align-self: center;
+  width: calc(7 * var(--poll-px));
+  height: calc(6 * var(--poll-px));
+  fill: var(--poll-gold);
+}
+.home-poll-pct {
+  flex: none;
+  min-width: calc(17 * var(--poll-px));
+  color: #f6d0a8;
+  text-align: right;
+}
+.home-poll-foot {
+  margin: calc(5 * var(--poll-px)) 0 0;
+  color: #c9a08c;
+}
+/* Big windows, where Home's plates go 2x: a step up, matching their row. */
+@media (min-width: 1600px) and (min-height: 1000px) {
+  .home-poll {
+    --poll-px: 2.5px;
   }
-  50% {
-    opacity: 1;
+}
+/* Narrow or short windows: a step smaller type, and in narrow ones the
+   answers stack so each keeps its line. */
+@media (max-width: 699px), (max-height: 699px) {
+  .home-poll {
+    --poll-px: 1.5px;
+  }
+}
+@media (max-width: 599px) {
+  .home-poll-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* With the board, Home centres its stack over the space above the critters'
+   lane (sprites and their speech bubbles), not over the whole window. */
+.home:has(> .home-poll) {
+  padding-bottom: max(var(--space-12), var(--home-above-critters));
+}
+/* Short windows: Home's blocks pull closer together to make room for it. */
+@media (max-height: 699px) {
+  .home:has(> .home-poll) {
+    gap: var(--space-7);
+  }
+}
+/* Too short to clear the critters (the stacked list needs more height). */
+@media (max-height: 519px), (max-width: 599px) and (max-height: 579px) {
+  .home-poll {
+    display: none;
+  }
+  .home:has(> .home-poll) {
+    padding-bottom: var(--space-12);
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .home-loading-dots i {
-    animation: none;
-    opacity: 0.8;
+  .home-poll-bar,
+  .home-poll-option {
+    transition: none;
   }
 }
-.home-action-beta {
-  position: absolute;
-  top: calc(-2 * var(--tag-px));
-  left: 50%;
-  z-index: 1;
-  transform: translate(-50%, -50%);
-  padding: 0 calc(3 * var(--tag-px)) calc(2 * var(--tag-px));
-  border-radius: calc(2 * var(--tag-px));
-  background: #c2444d;
-  color: #fff0e0;
-  box-shadow:
-    0 0 0 var(--tag-px) #1e0c1f,
-    inset 0 calc(-1 * var(--tag-px)) 0 #921f25;
-  font-family: "m5x7", monospace;
-  font-size: calc(16 * var(--tag-px));
-  font-weight: 400;
-  line-height: calc(11 * var(--tag-px));
-  -webkit-font-smoothing: none;
-  white-space: nowrap;
-  pointer-events: none;
-}
+
 /* The padding is hit area: the gear itself sits 16px down, 20px in. */
 .home-settings {
   position: absolute;
@@ -2159,403 +2297,6 @@ select {
   display: flex;
   flex-direction: column;
   height: 100%;
-}
-/* World: the game fills the WHOLE window, under the title bar too. The
-   header floats over it (no fill, no border): Back on the left beside the
-   traffic lights, the title centred in the window. The bar stays a drag
-   region; the game below it takes every pointer event it isn't covering. */
-.world-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-overlay);
-}
-.world-screen {
-  position: relative;
-  min-height: 0;
-  height: 100%;
-}
-.world-stage {
-  position: absolute;
-  inset: 0;
-  background: #000;
-}
-.world-frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  display: block;
-  /* Hidden until the game's curtain is painted shut, then faded in on it
-     (WorldScreen.tsx). Opacity only: no filter over a live page. */
-  opacity: 0;
-  transition: opacity 260ms var(--ease-out);
-}
-.world-frame.is-shown {
-  opacity: 1;
-}
-/* The in-game computer (WorldScreen.tsx): this window's own GG Coder over
-   World, no frame. The app lays itself out at the FULL window size (so every
-   header, row and breakpoint is exactly the normal app's) and is then scaled
-   down into the space between World's top bar and Stand up (--mon-tf, set by
-   App.tsx). Popovers and modals are portaled to <body>, so they still land on
-   their anchors. The window's traffic lights aren't over the app here, so the
-   macOS gutters beside them are dropped. */
-.app.app-in-monitor {
-  position: fixed;
-  inset: 0;
-  height: auto;
-  z-index: calc(var(--z-overlay) + 2);
-  transform-origin: 50% 50%;
-  transform: var(--mon-tf, scale(0.88));
-  border-radius: var(--radius-card);
-  overflow: hidden;
-  box-shadow: 0 24px 80px rgb(0 0 0 / 0.55);
-  animation: world-monitor-in 520ms var(--ease-expo);
-}
-.platform-macos .app-in-monitor .picker-head {
-  padding-left: var(--page-pad);
-}
-.platform-macos .app-in-monitor .chat-head-lead {
-  padding-left: 0;
-}
-.platform-macos .app-in-monitor .plan-review-head {
-  padding-left: var(--rail);
-}
-.platform-macos .app-in-monitor .titlebar {
-  padding-top: var(--space-5);
-}
-.world-monitor {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-/* Stand up. World's own leave buttons (every game, TV and screen in it) copy
-   this look exactly (packages/gg-world act/overlay.js .act .x), so its colours
-   are set here rather than left to the browser's button default. */
-.world-monitor-leave {
-  position: absolute;
-  left: 50%;
-  bottom: 18px;
-  translate: -50% 0;
-  pointer-events: auto;
-  background: rgb(255 255 255 / 0.25);
-  color: rgb(255 255 255 / 0.85);
-}
-.world-monitor-leave:hover:not(:disabled) {
-  background: rgb(255 255 255 / 0.33);
-  color: #fff;
-}
-/* the camera has leaned onto the in-game monitor: GG Coder grows out of its screen */
-@keyframes world-monitor-in {
-  from {
-    opacity: 0;
-    transform: var(--mon-tf, scale(0.88)) scale(0.22);
-  }
-  35% {
-    opacity: 1;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .app.app-in-monitor {
-    animation: none;
-  }
-}
-/* World's TV video (WorldTv.tsx), laid over the TV's glass in the game. Hidden
-   until the player is up, so the game's "tuning in" screen shows meanwhile. */
-.world-tv {
-  position: absolute;
-  border: 0;
-  display: block;
-  background: #000;
-  opacity: 0;
-  transition: opacity 400ms var(--ease-out);
-}
-.world-tv.is-ready {
-  opacity: 1;
-}
-/* The way in: World's loading screen shows from the click (.is-open), and the
-   game fades in over it once it has drawn (.is-visible on the screen,
-   .is-shown on the frame). The way out is a plain screen change. */
-.world-screen {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--dur-dissolve) var(--ease-out);
-}
-/* On screen from the click: the loading screen shows straight away (WorldLoading.tsx). */
-.world-screen.is-open {
-  opacity: 1;
-  pointer-events: auto;
-  animation: world-open var(--dur-enter) var(--ease-out);
-}
-@keyframes world-open {
-  from {
-    opacity: 0;
-  }
-}
-/* World's loading screen (WorldLoading.tsx). Everything that moves animates transform or opacity only, so WebKit runs
-   it on the compositor and it keeps moving while World is busy building on the main thread. */
-.world-loading {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-8);
-  background: radial-gradient(ellipse 60% 55% at 50% 42%, #2a2140 0%, #15121f 55%, #0b0a12 100%);
-  color: var(--text-secondary);
-  transition: opacity var(--dur-dissolve) var(--ease-out);
-}
-.world-loading.is-gone {
-  opacity: 0;
-  pointer-events: none;
-}
-.world-loading-scene {
-  position: relative;
-  width: 220px;
-  height: 190px;
-  display: grid;
-  place-items: center;
-}
-.world-loading-float {
-  animation: world-loading-float 2.8s var(--ease-in-out) infinite;
-  animation-play-state: var(--loop-play-state, running);
-}
-.world-loading-house {
-  display: block;
-  overflow: visible;
-}
-@keyframes world-loading-float {
-  50% {
-    transform: translateY(-8px);
-  }
-}
-.world-loading-shadow {
-  position: absolute;
-  left: 50%;
-  bottom: var(--space-4);
-  width: 110px;
-  height: 18px;
-  margin-left: -55px;
-  border-radius: var(--radius-pill);
-  background: radial-gradient(closest-side, rgb(0 0 0 / 0.55), rgb(0 0 0 / 0));
-  animation: world-loading-shadow 2.8s var(--ease-in-out) infinite;
-  animation-play-state: var(--loop-play-state, running);
-}
-@keyframes world-loading-shadow {
-  50% {
-    transform: scale(0.82);
-    opacity: 0.7;
-  }
-}
-.world-loading-glass {
-  fill: #1c1830;
-  transition: fill var(--dur-dissolve) var(--ease-out);
-}
-.world-loading-pane.is-lit .world-loading-glass {
-  fill: #ffcf8a;
-}
-.world-loading-halo {
-  opacity: 0;
-  transition: opacity var(--dur-dissolve) var(--ease-out);
-}
-.world-loading-pane.is-lit .world-loading-halo {
-  opacity: 1;
-  animation: world-loading-glow 2.4s var(--ease-in-out) infinite;
-  animation-play-state: var(--loop-play-state, running);
-}
-@keyframes world-loading-glow {
-  50% {
-    opacity: 0.55;
-  }
-}
-.world-loading-star {
-  position: absolute;
-  width: 3px;
-  height: 3px;
-  border-radius: var(--radius-pill);
-  background: #ffe7c2;
-  opacity: 0.2;
-  animation: world-loading-twinkle 3.2s var(--ease-in-out) infinite;
-  animation-play-state: var(--loop-play-state, running);
-}
-.world-loading-star.s1 {
-  left: 18%;
-  top: 14%;
-}
-.world-loading-star.s2 {
-  right: 16%;
-  top: 22%;
-  animation-delay: 0.8s;
-}
-.world-loading-star.s3 {
-  left: 8%;
-  top: 52%;
-  animation-delay: 1.6s;
-}
-.world-loading-star.s4 {
-  right: 6%;
-  top: 60%;
-  animation-delay: 2.4s;
-}
-@keyframes world-loading-twinkle {
-  50% {
-    opacity: 0.9;
-    transform: scale(1.6);
-  }
-}
-.world-loading-text {
-  font-family: var(--sans);
-  font-size: var(--fs-base);
-  line-height: 1.3;
-  font-weight: 500;
-  color: var(--text-secondary);
-  min-height: 1.3em;
-}
-.world-loading-bar {
-  position: relative;
-  width: 220px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-  background: rgb(255 255 255 / 0.08);
-}
-.world-loading-fill {
-  position: absolute;
-  inset: 0;
-  transform-origin: 0 50%;
-  border-radius: var(--radius-pill);
-  background: linear-gradient(90deg, #f2a35a, #ffd29a);
-  transition: transform 0.45s var(--ease-out);
-}
-/* a soft highlight sweeping along the bar: always moving, so it never reads as stuck */
-.world-loading-sheen {
-  position: absolute;
-  inset: 0;
-  width: 40%;
-  background: linear-gradient(
-    90deg,
-    rgb(255 255 255 / 0),
-    rgb(255 255 255 / 0.35),
-    rgb(255 255 255 / 0)
-  );
-  transform: translateX(-120%);
-  animation: world-loading-sheen 1.6s var(--ease-in-out) infinite;
-  animation-play-state: var(--loop-play-state, running);
-}
-@keyframes world-loading-sheen {
-  to {
-    transform: translateX(300%);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .world-loading-float,
-  .world-loading-shadow,
-  .world-loading-star,
-  .world-loading-sheen,
-  .world-loading-pane.is-lit .world-loading-halo {
-    animation: none;
-  }
-  .world-screen.is-open {
-    animation: none;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .world-frame,
-  .world-screen {
-    transition: none;
-  }
-}
-.picker-head.world-head {
-  position: absolute;
-  inset: 0 0 auto 0;
-  z-index: 1;
-  justify-content: center;
-  background: linear-gradient(rgb(0 0 0 / 0.45), rgb(0 0 0 / 0));
-  border-bottom: 0;
-}
-.picker-head.world-head > .btn-icon {
-  position: absolute;
-  left: var(--page-pad);
-  top: 50%;
-  translate: 0 -50%;
-}
-.platform-macos .picker-head.world-head > .btn-icon {
-  left: 84px;
-}
-/* Centred on the WINDOW, not on what's left beside the traffic lights and
-   Back: pinned to the bar's middle, so nothing else can nudge it. */
-.picker-head.world-head > .picker-title {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  translate: -50% -50%;
-  max-width: calc(100% - 2 * 140px);
-  text-transform: none;
-  letter-spacing: -0.01em;
-  color: var(--text);
-  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
-  pointer-events: none;
-}
-/* Online save: the cloud key beside Back, and its small panel. */
-/* The online-save menu: opened from the cloud button in the game's bottom-right icon bar, placed just above it
-   (right and bottom are set inline from the button's position). */
-.world-cloud-panel {
-  position: fixed;
-  z-index: calc(var(--z-overlay) + 3);
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-2);
-  min-width: 220px;
-  padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-button);
-  background: var(--surface-2);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
-}
-.world-cloud-panel .btn {
-  justify-content: flex-start;
-}
-.world-cloud-status {
-  padding: var(--space-2) var(--space-3);
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-}
-.world-cloud-danger {
-  color: var(--error);
-}
-.modal.world-consent {
-  width: min(440px, calc(100vw - 32px));
-}
-.world-consent-body {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-4);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-}
-.world-consent-body p {
-  margin: 0;
-}
-.world-consent-tick {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-.world-status {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-6);
-  color: var(--text);
-  font-size: var(--fs-sm);
 }
 .picker-head {
   position: relative;
@@ -10034,8 +9775,17 @@ select {
   line-height: calc(11 * var(--home-px));
   -webkit-font-smoothing: none;
   cursor: pointer;
+  /* Eased like the plates: a springy lift in, a slower settle out, a short dip. */
+  transition:
+    translate var(--t-out),
+    background-color var(--t-out),
+    box-shadow var(--t-out);
 }
 .home-whatsnew:hover {
+  transition:
+    translate 220ms var(--ease-pop),
+    background-color var(--t-in),
+    box-shadow 220ms var(--ease-pop);
   translate: 0 calc(-1 * var(--home-px));
   background: #e4ecff;
   box-shadow:
@@ -10044,6 +9794,8 @@ select {
     0 calc(2 * var(--home-px)) 0 var(--home-px) #1e0c1f;
 }
 .home-whatsnew:active {
+  transition-duration: var(--dur-press);
+  transition-timing-function: var(--ease-out);
   translate: 0 var(--home-px);
   box-shadow:
     0 0 0 var(--home-px) #1e0c1f,
@@ -10074,13 +9826,21 @@ select {
   width: 100%;
   height: 100%;
   image-rendering: pixelated;
+  transition:
+    translate var(--t-out),
+    filter var(--t-out);
 }
 .pixel-icon-button:hover > canvas {
+  transition:
+    translate 220ms var(--ease-pop),
+    filter var(--t-in);
   translate: 0 calc(-1 * var(--icon-px));
   filter: drop-shadow(var(--icon-px) 0 0 #d0cbb1) drop-shadow(calc(-1 * var(--icon-px)) 0 0 #d0cbb1)
     drop-shadow(0 var(--icon-px) 0 #d0cbb1) drop-shadow(0 calc(-1 * var(--icon-px)) 0 #d0cbb1);
 }
 .pixel-icon-button:active > canvas {
+  transition-duration: var(--dur-press);
+  transition-timing-function: var(--ease-out);
   translate: 0 var(--icon-px);
 }
 .pixel-icon-button:focus-visible {
@@ -10090,6 +9850,15 @@ select {
 @media (max-width: 679px), (max-height: 560px) {
   .pixel-icon-button {
     --icon-px: 1px;
+  }
+}
+/* Less motion: the tag and icons still change colour, they just don't travel. */
+@media (prefers-reduced-motion: reduce) {
+  .home-whatsnew,
+  .home-whatsnew:hover,
+  .pixel-icon-button > canvas,
+  .pixel-icon-button:hover > canvas {
+    transition: none;
   }
 }
 

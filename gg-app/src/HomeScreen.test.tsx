@@ -41,7 +41,6 @@ describe("HomeScreen", () => {
         onGoals={vi.fn()}
         onChat={vi.fn()}
         onMotion={vi.fn()}
-        onWorld={vi.fn()}
         onSettings={vi.fn()}
       />,
     );
@@ -63,7 +62,6 @@ describe("HomeScreen", () => {
         onGoals={vi.fn()}
         onChat={vi.fn()}
         onMotion={onMotion}
-        onWorld={vi.fn()}
         onSettings={vi.fn()}
       />,
     );
@@ -89,7 +87,6 @@ describe("HomeScreen", () => {
         onGoals={onGoals}
         onChat={vi.fn()}
         onMotion={vi.fn()}
-        onWorld={vi.fn()}
         onSettings={vi.fn()}
       />,
     );
@@ -118,7 +115,6 @@ describe("HomeScreen", () => {
         onGoals={vi.fn()}
         onChat={vi.fn()}
         onMotion={vi.fn()}
-        onWorld={vi.fn()}
         onSettings={vi.fn()}
       />,
     );
@@ -141,7 +137,6 @@ describe("HomeScreen", () => {
         onGoals={vi.fn()}
         onChat={vi.fn()}
         onMotion={vi.fn()}
-        onWorld={vi.fn()}
         onSettings={vi.fn()}
       />,
     );
@@ -161,50 +156,5 @@ describe("HomeScreen", () => {
     expect(screen.getByRole("button", { name: "Chat" }).hasAttribute("aria-describedby")).toBe(
       false,
     );
-  });
-
-  it("offers World after Motion, never dimmed, and enters it", async () => {
-    // No folder and no provider: the workspace modes are dimmed, World isn't.
-    vi.mocked(getSettings).mockResolvedValue({ projectsRoot: "", configured: false });
-    vi.mocked(hasModelSource).mockResolvedValue(false);
-    const onWorld = vi.fn();
-    render(
-      <HomeScreen
-        onProjects={vi.fn()}
-        onGoals={vi.fn()}
-        onChat={vi.fn()}
-        onMotion={vi.fn()}
-        onWorld={onWorld}
-        onSettings={vi.fn()}
-      />,
-    );
-    const motion = screen.getByRole("button", { name: "Motion" });
-    const world = screen.getByRole("button", { name: "World" });
-    expect(motion.compareDocumentPosition(world) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    await waitFor(() => expect(motion.getAttribute("aria-disabled")).toBe("true"));
-    expect(world.getAttribute("aria-disabled")).toBeNull();
-    fireEvent.click(world);
-    await waitFor(() => expect(onWorld).toHaveBeenCalledOnce());
-  });
-
-  it("holds the World plate down from the click until World is on screen", async () => {
-    vi.mocked(getSettings).mockResolvedValue({ projectsRoot: "", configured: false });
-    vi.mocked(hasModelSource).mockResolvedValue(false);
-    const props = {
-      onProjects: vi.fn(),
-      onGoals: vi.fn(),
-      onChat: vi.fn(),
-      onMotion: vi.fn(),
-      onWorld: vi.fn(),
-      onSettings: vi.fn(),
-    };
-    const { rerender } = render(<HomeScreen {...props} />);
-    const world = screen.getByRole("button", { name: "World" });
-    expect(world.getAttribute("aria-busy")).toBeNull();
-    fireEvent.click(world);
-    await waitFor(() => expect(props.onWorld).toHaveBeenCalledOnce());
-    expect(world.getAttribute("aria-busy")).toBe("true");
-    rerender(<HomeScreen {...props} worldShown />);
-    await waitFor(() => expect(world.getAttribute("aria-busy")).toBeNull());
   });
 });

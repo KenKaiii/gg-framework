@@ -213,6 +213,12 @@ describe("QueuedBar", () => {
     expect(document.querySelector(".queued-list")).toBeNull();
   });
 
+  it("offers no cancel for a message already handed to the agent", () => {
+    render(<QueuedBar messages={[{ ...ONE[0]!, delivering: true }]} onCancel={vi.fn()} />);
+    expect(screen.getByText("check the railway logs")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cancel queued message" })).toBeNull();
+  });
+
   it("truncates a long message but keeps the full text as a tooltip", () => {
     const long = "a".repeat(200);
     render(<QueuedBar messages={[{ id: "q1", text: long }]} onCancel={vi.fn()} />);

@@ -236,16 +236,6 @@ importers:
         specifier: ^1.7.5
         version: 1.7.5
 
-  packages/gg-world:
-    dependencies:
-      three:
-        specifier: ^0.186.1
-        version: 0.186.1
-    devDependencies:
-      esbuild:
-        specifier: 0.28.2
-        version: 0.28.2
-
   packages/ggcoder:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':

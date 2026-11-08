@@ -603,59 +603,35 @@ export async function getTrophies(): Promise<TrophySnapshot> {
   return invoke<TrophySnapshot>("agent_trophies");
 }
 
-/**
- * A GG World online-save reply, as the World server sent it: `status` is its
- * HTTP status (409 stale ver, 400 with `body.error`), or 0 when it couldn't be
- * reached or online save isn't available. Never throws.
- */
-export interface WorldSaveResult {
+// ── Weekly poll (Home) ───────────────────────────────────────────────────
+
+export interface Poll {
+  id: string;
+  question: string;
+  options: string[];
+  closesAt: number;
+}
+
+/** The open poll as the sidecar sees it. `status` is the poll server's HTTP status (0 = unreachable);
+ *  `poll` is null when none is open; `myChoice` is this install's pick. */
+export interface PollState {
   status: number;
-  body: unknown;
+  poll: Poll | null;
+  counts: number[];
+  total: number;
+  myChoice: number | null;
+  error?: string;
 }
 
-function worldSaveResult(r: unknown): WorldSaveResult {
-  const o = typeof r === "object" && r !== null ? (r as Record<string, unknown>) : {};
-  return { status: typeof o.status === "number" ? o.status : 0, body: o.body ?? null };
+export async function getPoll(): Promise<PollState> {
+  await waitForReady();
+  return invoke<PollState>("agent_poll_get");
 }
 
-async function worldSaveCall(
-  command: string,
-  args?: Record<string, unknown>,
-): Promise<WorldSaveResult> {
-  try {
-    await waitForReady();
-    return worldSaveResult(await invoke<unknown>(command, args));
-  } catch {
-    return { status: 0, body: null };
-  }
-}
-
-/** Read the GG World online save (links this device on first use). */
-export function worldSaveGet(): Promise<WorldSaveResult> {
-  return worldSaveCall("agent_world_get");
-}
-
-/** Write the GG World online save: `patch` on top of server version `ver`. */
-export function worldSavePut(
-  ver: number,
-  patch: Record<string, unknown>,
-): Promise<WorldSaveResult> {
-  return worldSaveCall("agent_world_put", { ver, patch });
-}
-
-/** A one-time GG World live ticket: body `{ world, ticket, url }` on 200 (403 = consent off / banned). */
-export function worldLive(): Promise<WorldSaveResult> {
-  return worldSaveCall("agent_world_live");
-}
-
-/** Delete the whole GG World account; the sidecar forgets this device's link on success. */
-export function worldAccountDelete(): Promise<WorldSaveResult> {
-  return worldSaveCall("agent_world_account_delete");
-}
-
-/** Delete the GG World online save. */
-export function worldSaveDelete(): Promise<WorldSaveResult> {
-  return worldSaveCall("agent_world_delete");
+/** Vote, or move this install's vote, in the open poll. */
+export async function votePoll(pollId: string, choice: number): Promise<PollState> {
+  await waitForReady();
+  return invoke<PollState>("agent_poll_vote", { pollId, choice });
 }
 
 /** Non-2xx sidecar errors throw from the proxy; also reject a malformed body. */
@@ -1552,6 +1528,8 @@ export async function setRadioVolume(volume: number): Promise<number> {
 export interface QueuedMessage {
   id: string;
   text: string;
+  /** Already handed to the agent, which reads it at its next turn: no longer cancellable. */
+  delivering?: boolean;
 }
 
 /**

@@ -144,7 +144,6 @@ const GoalPicker = lazy(() =>
 );
 import { BackButton } from "./BackButton";
 import { HomeScreen } from "./HomeScreen";
-import { WorldScreen } from "./WorldScreen";
 import { SettingsModal } from "./SettingsModal";
 import { initialEntryView, type EntryView } from "./app-entry-view";
 import {
@@ -511,40 +510,9 @@ function App(): React.ReactElement {
   const [restoreChecked, setRestoreChecked] = useState(false);
   // Every window starts from the mode-neutral home screen before choosing Code or Chat.
   const [entryView, setEntryView] = useState<EntryView>(initialEntryView(isSecondaryWindow));
-  // World has faded in over Home (Home holds its World plate down until then).
-  const [worldShown, setWorldShown] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>("general");
   // Re-open the matching session picker over an already-open workspace.
   const [showPicker, setShowPicker] = useState(false);
-  // World over whatever this window shows (Home, a picker or a workspace); Back returns to it. ONE World layer for
-  // every screen (see worldLayer below), so switching screens under it (the in-game computer opening a project)
-  // never reloads the game.
-  const [showWorld, setShowWorld] = useState(false);
-  // The in-game computer: this window's own GG Coder over World (WorldScreen.tsx).
-  const [worldComputer, setWorldComputer] = useState(false);
-  // In the computer the app keeps its full-window layout and is scaled into the space between World's top bar and
-  // Stand up (.app-in-monitor reads --mon-tf).
-  const monitorOpen = showWorld && worldComputer;
-  useEffect(() => {
-    if (!monitorOpen) return;
-    const root = document.documentElement;
-    const fit = (): void => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      const top = 52;
-      const bottom = 64;
-      const k = Math.max(0.5, Math.min((w - 40) / w, (h - top - bottom) / h));
-      // scaled about the window's centre (.app-in-monitor's transform-origin), then shifted into the free band
-      const dy = top + (h - top - bottom - k * h) / 2 - (h - k * h) / 2;
-      root.style.setProperty("--mon-tf", `translateY(${dy.toFixed(1)}px) scale(${k.toFixed(4)})`);
-    };
-    fit();
-    window.addEventListener("resize", fit);
-    return () => {
-      window.removeEventListener("resize", fit);
-      root.style.removeProperty("--mon-tf");
-    };
-  }, [monitorOpen]);
   // Bumped on each workspace/session choice to force re-hydration.
   const [hydrateNonce, setHydrateNonce] = useState(0);
   const { activity, handleActivityEvent } = useTaskActivity(hydrateNonce);
@@ -2633,53 +2601,14 @@ function App(): React.ReactElement {
     );
   }
 
-  // World (one layer for every screen, so changing screen under it never reloads the game) and the in-game
-  // computer: while it's open this window's GG Coder sits inside a monitor over World (.app-in-monitor).
-  // World's Back always lands on GG Coder's Home screen (owner), never on whatever the in-game computer was last
-  // showing. A session opened there keeps running and is one click away from Home.
-  const closeWorld = (): void =>
-    showScreen(() => {
-      setShowWorld(false);
-      setWorldShown(false);
-      setWorldComputer(false);
-      setShowPicker(false);
-      setNeedsProject(true);
-      setEntryView("home");
-    });
-  const onWorldComputer = (open: boolean): void => {
-    setWorldComputer(open);
-    // The computer always boots to GG Coder's Home screen (owner), whatever this window was showing: the same way
-    // the app's own Back gets there (a running session carries on underneath and is one click away again).
-    if (open) {
-      setShowPicker(false);
-      setNeedsProject(true);
-      setEntryView("home");
-    }
-  };
-  const inMonitor = monitorOpen ? " app-in-monitor" : "";
-  const worldLayer = showWorld ? (
-    <div className="world-overlay">
-      <WorldScreen
-        player={progress}
-        onShown={() => setWorldShown(true)}
-        onClose={closeWorld}
-        computer={worldComputer}
-        onComputer={onWorldComputer}
-      />
-    </div>
-  ) : null;
-
   if (needsProject) {
     return (
       <>
         <div
-          className={`app${windowFocused ? " window-focused" : ""}${inMonitor}`}
+          className={`app${windowFocused ? " window-focused" : ""}`}
           style={{ background: theme.background }}
         >
-          {/* World opens OVER Home (as it does over a workspace), so Home
-            stays put underneath while the game fades in, and Back fades
-            straight back to it. */}
-          {entryView === "home" || entryView === "world" ? (
+          {entryView === "home" ? (
             <HomeScreen
               onProjects={() =>
                 showScreen(() => {
@@ -2705,11 +2634,6 @@ function App(): React.ReactElement {
                   setEntryView("motion");
                 })
               }
-              // On the in-game computer World is already open behind it: World just stands the player up.
-              onWorld={() =>
-                worldComputer ? setWorldComputer(false) : showScreen(() => setShowWorld(true))
-              }
-              worldShown={worldShown}
               onSettings={(tab) =>
                 showScreen(() => {
                   setSettingsTab(tab ?? "general");
@@ -2757,7 +2681,6 @@ function App(): React.ReactElement {
           {showTraySettings && <SettingsModal onClose={closeTraySettings} />}
           <Toaster />
         </div>
-        {worldLayer}
       </>
     );
   }
@@ -2781,7 +2704,7 @@ function App(): React.ReactElement {
     return (
       <>
         <div
-          className={`app${windowFocused ? " window-focused" : ""}${inMonitor}`}
+          className={`app${windowFocused ? " window-focused" : ""}`}
           style={{ background: theme.background }}
         >
           {workspaceMode === "chat" ? (
@@ -2799,7 +2722,6 @@ function App(): React.ReactElement {
           {/* Tray Settings can toast a save failure over the picker. */}
           <Toaster />
         </div>
-        {worldLayer}
       </>
     );
   }
@@ -2824,7 +2746,7 @@ function App(): React.ReactElement {
   return (
     <>
       <div
-        className={`app${isFileDragOver ? " app-file-dragover" : ""}${windowFocused ? " window-focused" : ""}${goalWorldOpen ? " goal-world-open" : ""}${inMonitor}`}
+        className={`app${isFileDragOver ? " app-file-dragover" : ""}${windowFocused ? " window-focused" : ""}${goalWorldOpen ? " goal-world-open" : ""}`}
         data-glow={glowState}
         style={{ background: theme.background, ...glowStyle }}
         onDragEnter={handleWindowDragEnter}
@@ -3200,7 +3122,6 @@ function App(): React.ReactElement {
               }}
               progress={progress}
               trophies={trophies.snapshot}
-              onOpenWorld={() => showScreen(() => setShowWorld(true))}
               usageExtras={
                 windowTotal > 1 &&
                 windowIndex !== null && (
@@ -3404,7 +3325,6 @@ function App(): React.ReactElement {
           />
         )}
       </div>
-      {worldLayer}
     </>
   );
 }

@@ -47,6 +47,5 @@ Third-party components
 Bundled third-party code, fonts and media keep their own licenses, listed in:
   gg-app/src/assets/fonts/THIRD-PARTY.md
   packages/ggcoder/assets/motion/THIRD-PARTY.md
-  packages/gg-world/CREDITS.md
 and in the LICENSE / OFL.txt files beside each component. npm and Cargo
 dependencies are installed under their own licenses.

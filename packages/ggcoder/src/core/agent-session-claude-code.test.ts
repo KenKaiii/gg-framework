@@ -6,11 +6,14 @@ import type { Message } from "@kenkaiiii/gg-ai";
 import type * as GgAgentModule from "@kenkaiiii/gg-agent";
 import type * as GgCoreModule from "@kenkaiiii/gg-core";
 import type * as McpModule from "./mcp/index.js";
-import type { ClaudeCodeLoopOptions } from "./claude-code/loop.js";
+import type * as LiveSessionModule from "./claude-code/live-session.js";
+import type { ClaudeCodeLoopOptions } from "./claude-code/live-session.js";
 import { useFakeHome } from "../test-support/fake-home.js";
 
 const agentLoopMock = vi.hoisted(() => vi.fn());
 const claudeCodeLoopMock = vi.hoisted(() => vi.fn());
+/** Every Claude Code process the session started, with why each was closed. */
+const processes = vi.hoisted(() => [] as { closed: string[] }[]);
 
 vi.mock("@kenkaiiii/gg-agent", async () => {
   const actual = await vi.importActual<typeof GgAgentModule>("@kenkaiiii/gg-agent");
@@ -20,7 +23,37 @@ vi.mock("@kenkaiiii/gg-core", async () => {
   const actual = await vi.importActual<typeof GgCoreModule>("@kenkaiiii/gg-core");
   return { ...actual, resolveClaudeCodeBinary: () => "/fake/claude" };
 });
-vi.mock("./claude-code/loop.js", () => ({ claudeCodeLoop: claudeCodeLoopMock }));
+vi.mock("./claude-code/live-session.js", async () => {
+  const actual = await vi.importActual<typeof LiveSessionModule>("./claude-code/live-session.js");
+  class FakeLiveSession {
+    closed: string[] = [];
+    busy = false;
+    sessionId: string | undefined;
+    constructor() {
+      processes.push(this);
+    }
+    get alive() {
+      return this.closed.length === 0;
+    }
+    async setEffort() {
+      return true;
+    }
+    close(reason: string) {
+      this.closed.push(reason);
+    }
+    run(messages: Message[], opts: ClaudeCodeLoopOptions) {
+      const onSessionId = (id: string) => {
+        this.sessionId = id;
+        opts.claudeCode.onSessionId?.(id);
+      };
+      return claudeCodeLoopMock(messages, {
+        ...opts,
+        claudeCode: { ...opts.claudeCode, onSessionId },
+      });
+    }
+  }
+  return { ...actual, ClaudeCodeLiveSession: FakeLiveSession };
+});
 vi.mock("./mcp/index.js", async () => {
   const actual = await vi.importActual<typeof McpModule>("./mcp/index.js");
   return {
@@ -58,6 +91,7 @@ beforeEach(async () => {
   restoreHome = useFakeHome(tmpHome);
   agentLoopMock.mockReset();
   claudeCodeLoopMock.mockReset();
+  processes.length = 0;
   await writeJson(path.join(tmpHome, ".gg", "auth.json"), {
     "anthropic-claude-code": { via: "claude-code" },
   });
@@ -132,9 +166,69 @@ describe("AgentSession on a Claude subscription", () => {
     await session.dispose();
   }, 20_000);
 
+  it("keeps the cache warm for Claude Code's hour after a turn", async () => {
+    // Regression: Claude Code turns never recorded a cache touch, so the
+    // "This chat's cache expired" notice showed right after every run.
+    const session = await newSession();
+    claudeCodeLoopMock.mockImplementationOnce(claudeCodeRun("cc-3", "answer"));
+    await session.prompt("question");
+    const now = Date.now();
+    expect(session.getCacheExpiryStatus(now)).toMatchObject({ expired: false, ttlMs: 3_600_000 });
+    expect(session.getCacheExpiryStatus(now + 61 * 60_000)).toMatchObject({
+      expired: true,
+      reason: "idle",
+    });
+    await session.dispose();
+  }, 20_000);
+
   it("skips prewarm", async () => {
     const session = await newSession();
     expect(await session.prewarm()).toEqual({ ok: false, reason: "claude_code" });
     await session.dispose();
   });
+
+  it("keeps one Claude Code process across prompts until history or settings change", async () => {
+    const session = await newSession();
+    claudeCodeLoopMock.mockImplementation(claudeCodeRun("cc-4", "answer"));
+    await session.prompt("one");
+    await session.prompt("two");
+    expect(processes).toHaveLength(1);
+    expect(processes[0]!.closed).toEqual([]);
+
+    await session.branch(2);
+    await session.prompt("three");
+    expect(processes).toHaveLength(2);
+    expect(processes[0]!.closed).toEqual(["history or effort changed"]);
+
+    await session.switchModel("anthropic", "claude-haiku-5-5");
+    await session.prompt("four");
+    expect(processes).toHaveLength(3);
+    expect(processes[1]!.closed).toEqual(["changed: model"]);
+
+    await session.newSession();
+    expect(processes[2]!.closed).toEqual(["new session"]);
+    await session.prompt("five");
+    expect(processes).toHaveLength(4);
+    await session.dispose();
+    expect(processes[3]!.closed).toEqual(["shutdown"]);
+  }, 20_000);
+
+  it("reuses the process after the SDK stamps its version into the env", async () => {
+    // Regression: the SDK sets process.env.CLAUDE_AGENT_SDK_VERSION on its first
+    // query(), which read as an env change and restarted every chat's second message.
+    const saved = process.env.CLAUDE_AGENT_SDK_VERSION;
+    delete process.env.CLAUDE_AGENT_SDK_VERSION;
+    try {
+      const session = await newSession();
+      claudeCodeLoopMock.mockImplementation(claudeCodeRun("cc-5", "answer"));
+      await session.prompt("one");
+      process.env.CLAUDE_AGENT_SDK_VERSION = "0.0.0-test";
+      await session.prompt("two");
+      expect(processes).toHaveLength(1);
+      await session.dispose();
+    } finally {
+      if (saved === undefined) delete process.env.CLAUDE_AGENT_SDK_VERSION;
+      else process.env.CLAUDE_AGENT_SDK_VERSION = saved;
+    }
+  }, 20_000);
 });

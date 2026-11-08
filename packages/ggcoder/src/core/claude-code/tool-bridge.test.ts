@@ -90,7 +90,7 @@ describe("tool names", () => {
 describe("createToolBridge", () => {
   it("answers the MCP handshake and lists our JSON schemas, including the edit pipe schema", async () => {
     const edit = createEditTool(dir);
-    const { bridge, request } = await connect({ tools: [echo, edit as AgentTool] });
+    const { request } = await connect({ tools: [echo, edit as AgentTool] });
 
     const init = await request("initialize", { protocolVersion: "2025-11-25" });
     expect(init.result).toMatchObject({
@@ -114,7 +114,6 @@ describe("createToolBridge", () => {
       properties: { file_path: {}, edits: {}, files: {} },
     });
     expect(tools[1]._meta["anthropic/alwaysLoad"]).toBe(true);
-    expect(bridge.allowedTools()).toEqual(["mcp__gg__echo", "mcp__gg__edit"]);
 
     expect((await request("resources/list")).error?.code).toBe(-32601);
   });
@@ -249,7 +248,7 @@ describe("createToolBridge", () => {
         return { content: "done", endRun: true };
       },
     };
-    const { call, events, bridge } = await connect({
+    const { call, events, request } = await connect({
       tools: [echo],
       resolveTool: (name) => (name === "later" ? deferred : undefined),
       onEndRun: () => ended++,
@@ -261,7 +260,8 @@ describe("createToolBridge", () => {
       "tool_call_end",
     ]);
     expect(ended).toBe(1);
-    expect(bridge.allowedTools()).toContain("mcp__gg__later");
+    const listed = (await request("tools/list")).result!.tools as { name: string }[];
+    expect(listed.map((t) => t.name)).toContain("later");
   });
 
   it("tells Claude Code to re-list tools after tool_search promotes one", async () => {
@@ -331,5 +331,40 @@ describe("createToolBridge — promotion without a re-list", () => {
     const result = await call("tool_search", {});
     expect(result.result).toBeDefined();
     expect(Date.now() - started).toBeLessThan(2_000);
+  });
+});
+
+describe("createToolBridge — across runs", () => {
+  it("reports each call to the run that was current when it started", async () => {
+    const { bridge, call, events } = await connect({ tools: [echo] });
+    await call("echo", { text: "a" });
+    const next: AgentEvent[] = [];
+    bridge.update({ onEvent: (e) => next.push(e) });
+    await call("echo", { text: "b" });
+    expect(events.map((e) => e.type)).toEqual(["tool_call_start", "tool_call_end"]);
+    expect(next.map((e) => e.type)).toEqual(["tool_call_start", "tool_call_end"]);
+  });
+
+  it("re-lists tools added between runs before the next prompt", async () => {
+    const tools: AgentTool[] = [echo];
+    const { bridge, request, sent } = await connect({ tools }, { relistOnChange: true });
+    const listChanged = () =>
+      sent.filter((m) => m.method === "notifications/tools/list_changed").length;
+    // Nothing to announce before Claude Code has listed, or while the list is unchanged.
+    await bridge.syncToolList();
+    await request("tools/list");
+    await bridge.syncToolList();
+    expect(listChanged()).toBe(0);
+
+    tools.push({ ...echo, name: "later" });
+    await bridge.syncToolList();
+    expect(listChanged()).toBe(1);
+    const relisted = sent.filter((m) => Array.isArray((m.result as { tools?: unknown })?.tools));
+    expect((relisted.at(-1)!.result!.tools as { name: string }[]).map((t) => t.name)).toEqual([
+      "echo",
+      "later",
+    ]);
+    await bridge.syncToolList();
+    expect(listChanged()).toBe(1);
   });
 });

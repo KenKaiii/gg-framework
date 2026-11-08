@@ -23,5 +23,3 @@ dist-ssr
 *.sln
 *.sw?
 
-# GG World build output (packages/gg-world/build.mjs)
-public/world/

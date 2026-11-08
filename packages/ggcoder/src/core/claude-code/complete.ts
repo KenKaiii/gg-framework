@@ -107,7 +107,6 @@ export async function claudeCodeComplete(
     model: opts.model,
     systemPrompt: { type: "custom", prompt: system },
     tools: builtins,
-    allowedTools: builtins,
     canUseTool: async (toolName, toolInput) =>
       builtins.includes(toolName)
         ? { behavior: "allow", updatedInput: toolInput }

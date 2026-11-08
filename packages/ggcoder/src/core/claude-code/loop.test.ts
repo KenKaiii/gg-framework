@@ -1,12 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type {
-  Options as SdkOptions,
-  Query,
-  SDKMessage,
-  SDKUserMessage,
-} from "@anthropic-ai/claude-agent-sdk";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Message, ToolResult } from "@kenkaiiii/gg-ai";
 import type { AgentEvent, AgentResult, AgentTool } from "@kenkaiiii/gg-agent";
 import { describe, expect, it, vi } from "vitest";
@@ -14,6 +9,7 @@ import type * as GgCore from "@kenkaiiii/gg-core";
 import { z } from "zod";
 import { effortForThinking, renderTranscript, toUsage } from "./events.js";
 import { claudeCodeLoop, type ClaudeCodeLoopOptions } from "./loop.js";
+import { fakeQuery, result, type ScriptContext } from "./__fixtures__/fake-query.js";
 
 // Rate-limit reports go to ~/.gg/claude-code/usage.json; never touch the real one here.
 const recorded = vi.hoisted(() => [] as unknown[]);
@@ -31,90 +27,6 @@ const fixture = JSON.parse(
 const SESSION_ID = "2bb23d04-02a4-4d70-b3ad-15640c7dfeef";
 const TOOL_USE_ID = "toolu_01K5B459VK61GntsTQqe6XG1";
 
-interface Rpc {
-  jsonrpc: "2.0";
-  id?: number;
-  method?: string;
-  params?: Record<string, unknown>;
-  result?: Record<string, unknown>;
-}
-
-interface ScriptContext {
-  nextInput(): Promise<SDKUserMessage | undefined>;
-  callTool(name: string, args: unknown, toolUseId: string): Promise<Rpc>;
-  interrupted: Promise<void>;
-}
-
-function fakeQuery(script: (ctx: ScriptContext) => AsyncGenerator<SDKMessage>) {
-  const calls = {
-    options: undefined as SdkOptions | undefined,
-    inputs: [] as SDKUserMessage[],
-    interrupts: 0,
-    closes: 0,
-  };
-  const query = ({
-    prompt,
-    options,
-  }: {
-    prompt: AsyncIterable<SDKUserMessage>;
-    options: SdkOptions;
-  }): Query => {
-    calls.options = options;
-    const inputs = prompt[Symbol.asyncIterator]();
-    let markInterrupted!: () => void;
-    let rpc: ((method: string, params: Record<string, unknown>) => Promise<Rpc>) | undefined;
-    const connect = async () => {
-      const pending = new Map<number, (msg: Rpc) => void>();
-      const transport = {
-        onmessage: undefined as ((m: Rpc) => void) | undefined,
-        async send(msg: Rpc) {
-          pending.get(msg.id!)?.(msg);
-        },
-      };
-      const server = options.mcpServers!.gg as unknown as {
-        instance: { connect(t: unknown): Promise<void> };
-      };
-      await server.instance.connect(transport);
-      let nextId = 0;
-      return (method: string, params: Record<string, unknown>) =>
-        new Promise<Rpc>((resolve) => {
-          const id = ++nextId;
-          pending.set(id, resolve);
-          transport.onmessage!({ jsonrpc: "2.0", id, method, params });
-        });
-    };
-    const ctx: ScriptContext = {
-      async nextInput() {
-        const next = await inputs.next();
-        if (next.done) return undefined;
-        calls.inputs.push(next.value);
-        return next.value;
-      },
-      async callTool(name, args, toolUseId) {
-        rpc ??= await connect();
-        return rpc("tools/call", {
-          name,
-          arguments: args,
-          _meta: { "claudecode/toolUseId": toolUseId },
-        });
-      },
-      interrupted: new Promise<void>((resolve) => (markInterrupted = resolve)),
-    };
-    const generator = script(ctx);
-    return Object.assign(generator, {
-      interrupt: async () => {
-        calls.interrupts++;
-        markInterrupted();
-        return undefined;
-      },
-      close: () => {
-        calls.closes++;
-      },
-    }) as unknown as Query;
-  };
-  return { query, calls };
-}
-
 /** The recorded run, with the tool call routed through our bridge. */
 async function* replayFixture(ctx: ScriptContext): AsyncGenerator<SDKMessage> {
   await ctx.nextInput();
@@ -125,9 +37,6 @@ async function* replayFixture(ctx: ScriptContext): AsyncGenerator<SDKMessage> {
     yield message;
   }
 }
-
-const result = (extra: Record<string, unknown>): SDKMessage =>
-  ({ type: "result", subtype: "success", is_error: false, result: "", ...extra }) as SDKMessage;
 
 const readTool: AgentTool = {
   name: "read",
@@ -241,9 +150,11 @@ describe("claudeCodeLoop", () => {
       pathToClaudeCodeExecutable: "/bin/claude",
     });
     expect(o.resume).toBeUndefined();
-    expect(o.allowedTools).toContain("mcp__gg__read");
+    // allowedTools would skip canUseTool (SDK warning CLAUDE_SDK_CAN_USE_TOOL_SHADOWED).
+    expect(o.allowedTools).toBeUndefined();
     const canUse = o.canUseTool!;
     const sig = { signal: new AbortController().signal } as Parameters<typeof canUse>[2];
+    expect((await canUse("mcp__gg__read", {}, sig))?.behavior).toBe("allow");
     expect((await canUse("mcp__gg__later", {}, sig))?.behavior).toBe("allow");
     expect((await canUse("Bash", {}, sig))?.behavior).toBe("deny");
   });
@@ -375,6 +286,43 @@ describe("claudeCodeLoop", () => {
       [{ type: "text", text: "first" }],
       [{ type: "text", text: "second" }],
     ]);
+  });
+
+  it("stops Claude Code right after a tool that ends the run (submitted plan)", async () => {
+    // Regression: endRun was only checked at Claude Code's final `result`, so the
+    // model kept going after exit_plan, got the "plan mode off" note as steering,
+    // and asked for approval in chat before the real review box opened.
+    const queue: Message[] = [user("Also, be brief.")];
+    let steeringPolls = 0;
+    const exitPlan: AgentTool = {
+      ...readTool,
+      execute: () => ({ content: "Plan submitted for user review.", endRun: true }),
+    };
+    const { query, calls } = fakeQuery(replayFixture);
+    const messages = [user("Plan it")];
+    const { events } = await run(
+      messages,
+      options(query, {
+        tools: [exitPlan],
+        getSteeringMessages: () => {
+          steeringPolls++;
+          return queue.splice(0);
+        },
+      }),
+    );
+    expect(events.map((e) => e.type).filter((t) => t !== "toolcall_delta")).toEqual([
+      "turn_end",
+      "tool_call_start",
+      "tool_call_end",
+      "checkpoint",
+      "agent_done",
+    ]);
+    expect(messages.map((m) => m.role)).toEqual(["user", "assistant", "tool"]);
+    // The queued message was not taken: it belongs to the next run.
+    expect(steeringPolls).toBe(0);
+    expect(queue).toHaveLength(1);
+    expect(calls.inputs).toHaveLength(1);
+    expect(calls.closes).toBe(1);
   });
 
   it("treats Stop as a clean end and pairs the interrupted tool call", async () => {

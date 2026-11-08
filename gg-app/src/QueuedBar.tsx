@@ -93,6 +93,7 @@ export function QueuedBar({ messages, onCancel }: Props): React.ReactElement | n
   if (empty) return null;
 
   const single = currentQueue.length === 1 ? currentQueue[0] : null;
+  const anyCancellable = currentQueue.some((m) => !m.delivering);
 
   return (
     <div
@@ -109,32 +110,36 @@ export function QueuedBar({ messages, onCancel }: Props): React.ReactElement | n
               {preview(single.text)}
             </span>
             <span className="queued-bar-when">queued for the next turn</span>
-            <button
-              className="queued-cancel"
-              style={{ color: theme.textDim }}
-              title="Cancel this queued message"
-              aria-label="Cancel queued message"
-              onClick={() => onCancel(single.id)}
-            >
-              <XIcon size={12} weight="bold" aria-hidden="true" />
-            </button>
+            {!single.delivering && (
+              <button
+                className="queued-cancel"
+                style={{ color: theme.textDim }}
+                title="Cancel this queued message"
+                aria-label="Cancel queued message"
+                onClick={() => onCancel(single.id)}
+              >
+                <XIcon size={12} weight="bold" aria-hidden="true" />
+              </button>
+            )}
           </>
         ) : (
           <>
             <span className="queued-bar-text">
               {currentQueue.length} messages queued for the next turn
             </span>
-            <button
-              className="queued-toggle"
-              style={{ color: theme.textDim }}
-              aria-expanded={expanded}
-              onClick={() => {
-                capture();
-                setOpen((o) => !o);
-              }}
-            >
-              {expanded ? "hide" : "cancel\u2026"}
-            </button>
+            {anyCancellable && (
+              <button
+                className="queued-toggle"
+                style={{ color: theme.textDim }}
+                aria-expanded={expanded}
+                onClick={() => {
+                  capture();
+                  setOpen((o) => !o);
+                }}
+              >
+                {expanded ? "hide" : "cancel\u2026"}
+              </button>
+            )}
           </>
         )}
       </div>
@@ -161,15 +166,17 @@ export function QueuedBar({ messages, onCancel }: Props): React.ReactElement | n
                 <span className="queued-list-text" title={m.text}>
                   {preview(m.text)}
                 </span>
-                <button
-                  className="queued-cancel"
-                  style={{ color: theme.textDim }}
-                  title="Cancel this queued message"
-                  aria-label={`Cancel queued message ${i + 1}`}
-                  onClick={() => onCancel(m.id)}
-                >
-                  <XIcon size={12} weight="bold" aria-hidden="true" />
-                </button>
+                {!m.delivering && (
+                  <button
+                    className="queued-cancel"
+                    style={{ color: theme.textDim }}
+                    title="Cancel this queued message"
+                    aria-label={`Cancel queued message ${i + 1}`}
+                    onClick={() => onCancel(m.id)}
+                  >
+                    <XIcon size={12} weight="bold" aria-hidden="true" />
+                  </button>
+                )}
               </div>
             ))}
           </div>

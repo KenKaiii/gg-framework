@@ -79,7 +79,6 @@ describe("claudeCodeComplete", () => {
     expect(seen.options).toMatchObject({
       systemPrompt: { type: "custom", prompt: "Be terse." },
       tools: [],
-      allowedTools: [],
       settingSources: [],
       mcpServers: {},
       persistSession: false,
@@ -125,6 +124,8 @@ describe("claudeCodeComplete", () => {
       maxTurns: 2,
       thinking: { type: "disabled" },
     });
+    // allowedTools would skip canUseTool (SDK warning CLAUDE_SDK_CAN_USE_TOOL_SHADOWED).
+    expect(seen.options!.allowedTools).toBeUndefined();
     const sig = { signal: new AbortController().signal } as Parameters<
       NonNullable<SdkOptions["canUseTool"]>
     >[2];
