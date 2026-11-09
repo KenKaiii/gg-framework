@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.96.2
+
+### Patch Changes
+
+- Claude subscription sessions (via Claude Code) now use GG's own auto-compaction before and after each run, so long chats compact at the same limit as every other route instead of growing until Claude Code's near-full fallback.
+  - @kenkaiiii/gg-ai@5.96.2
+  - @kenkaiiii/gg-agent@5.96.2
+  - @kenkaiiii/gg-core@5.96.2
+
 ## 5.96.1
 
 ### Patch Changes

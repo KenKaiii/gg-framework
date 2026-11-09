@@ -1,5 +1,11 @@
 # @kenkaiiii/gg-agent
 
+## 5.96.2
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.96.2
+
 ## 5.96.1
 
 ### Patch Changes
