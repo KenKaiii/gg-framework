@@ -1497,6 +1497,88 @@ export class AgentSession {
     });
   }
 
+  // No creds = Claude subscription route; compact() then summarizes through Claude Code.
+  private async maybeCompactPreRun(creds?: {
+    accessToken: string;
+    accountId?: string;
+    baseUrl?: string;
+  }): Promise<void> {
+    if (this.settingsManager.get("autoCompact") && Date.now() >= this.compactionRetryAfter) {
+      // A post-turn compaction may still be running in the background. Let it
+      // settle first: it usually already compacted this history, so the
+      // decision below turns into a no-op instead of duplicate work.
+      if (this.postTurnCompaction) await this.postTurnCompaction;
+      const contextWindow = getContextWindow(this.model, {
+        provider: this.provider,
+        accountId: creds?.accountId,
+      });
+      const policy = resolveCompactionPolicy({
+        provider: this.provider,
+        model: this.model,
+        contextWindow,
+        threshold: this.settingsManager.get("compactThreshold"),
+        compactAtTokens: this.settingsManager.get("compactAtTokens"),
+        accountId: creds?.accountId,
+        approvedPlanPath: this.approvedPlanPath,
+      });
+      let activeTokens: number | undefined;
+      if (this.providerContext) {
+        const anchorIndex = this.messages.lastIndexOf(this.providerContext.anchor);
+        if (anchorIndex >= 0) {
+          activeTokens = calculateActiveContextTokens(this.messages, {
+            usage: this.providerContext.usage,
+            pendingMessages: this.messages.slice(anchorIndex + 1),
+          });
+        } else {
+          this.providerContext = null;
+        }
+      }
+      log("INFO", "compaction", "Pre-run compaction decision", {
+        provider: this.provider,
+        model: this.model,
+        transport: this.compactionTransport(creds),
+        contextWindow: String(contextWindow),
+        activeTokens: activeTokens === undefined ? "estimated" : String(activeTokens),
+        triggerLimit: String(policy.targetTokens),
+      });
+      if (
+        shouldCompact(
+          this.messages,
+          contextWindow,
+          policy.threshold,
+          activeTokens,
+          policy.targetTokens,
+        )
+      ) {
+        try {
+          await this.compact(creds, "automatic");
+          if (this.lastCompactionCompacted) {
+            // Re-grounding hook keys off this — the context was just summarized.
+            this.compactionOccurred = true;
+            this.compactionRetryAfter = 0;
+          } else {
+            this.compactionRetryAfter = Date.now() + 30_000;
+          }
+        } catch (error) {
+          this.compactionRetryAfter = Date.now() + 30_000;
+          if (isAbortError(error) || this.opts.signal?.aborted) throw error;
+          log(
+            "WARN",
+            "compaction",
+            `Pre-run compaction failed; cooling down for 30s: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+    }
+  }
+
+  private compactionTransport(creds?: { accountId?: string }): string {
+    if (!creds) return "claude_code";
+    return this.provider === "openai" && creds.accountId ? "codex_oauth" : "public_api";
+  }
+
   /** One run on the Claude subscription route: Claude Code drives the loop with our prompt and tools. */
   private async runClaudeCodeLoop(
     process: ClaudeCodeProcess,
@@ -2623,11 +2705,12 @@ export class AgentSession {
       .find((m) => m.role === "user" && m.provenance?.kind !== "notification");
     this.resetHookState(requestTextForRegrounding(lastUser));
 
-    // A Claude subscription runs through Claude Code, which does its own
-    // retries, compaction and caching.
+    // A Claude subscription only connects through Claude Code; compaction stays ours.
     const claudeCode = await this.claudeCodeProcess();
     if (claudeCode) {
+      await this.maybeCompactPreRun();
       await this.runClaudeCodeLoop(claudeCode, options);
+      this.maybeCompactPostTurn();
       return;
     }
     // Left the Claude subscription route (provider switch, sign-out).
@@ -2649,77 +2732,8 @@ export class AgentSession {
 
     // Auto-compact if needed. This must happen after credential resolution so
     // OpenAI OAuth/Codex sessions use the Codex product context window instead
-    // of the public API model window. Failed/no-op attempts cool down across
-    // prompts; provider overflow recovery still bypasses this path entirely.
-    if (this.settingsManager.get("autoCompact") && Date.now() >= this.compactionRetryAfter) {
-      // A post-turn compaction may still be running in the background. Let it
-      // settle first: it usually already compacted this history, so the
-      // decision below turns into a no-op instead of duplicate work.
-      if (this.postTurnCompaction) await this.postTurnCompaction;
-      const contextWindow = getContextWindow(this.model, {
-        provider: this.provider,
-        accountId: creds.accountId,
-      });
-      const policy = resolveCompactionPolicy({
-        provider: this.provider,
-        model: this.model,
-        contextWindow,
-        threshold: this.settingsManager.get("compactThreshold"),
-        compactAtTokens: this.settingsManager.get("compactAtTokens"),
-        accountId: creds.accountId,
-        approvedPlanPath: this.approvedPlanPath,
-      });
-      let activeTokens: number | undefined;
-      if (this.providerContext) {
-        const anchorIndex = this.messages.lastIndexOf(this.providerContext.anchor);
-        if (anchorIndex >= 0) {
-          activeTokens = calculateActiveContextTokens(this.messages, {
-            usage: this.providerContext.usage,
-            pendingMessages: this.messages.slice(anchorIndex + 1),
-          });
-        } else {
-          this.providerContext = null;
-        }
-      }
-      log("INFO", "compaction", "Pre-run compaction decision", {
-        provider: this.provider,
-        model: this.model,
-        transport: this.provider === "openai" && creds.accountId ? "codex_oauth" : "public_api",
-        contextWindow: String(contextWindow),
-        activeTokens: activeTokens === undefined ? "estimated" : String(activeTokens),
-        triggerLimit: String(policy.targetTokens),
-      });
-      if (
-        shouldCompact(
-          this.messages,
-          contextWindow,
-          policy.threshold,
-          activeTokens,
-          policy.targetTokens,
-        )
-      ) {
-        try {
-          await this.compact(creds, "automatic");
-          if (this.lastCompactionCompacted) {
-            // Re-grounding hook keys off this — the context was just summarized.
-            this.compactionOccurred = true;
-            this.compactionRetryAfter = 0;
-          } else {
-            this.compactionRetryAfter = Date.now() + 30_000;
-          }
-        } catch (error) {
-          this.compactionRetryAfter = Date.now() + 30_000;
-          if (isAbortError(error) || this.opts.signal?.aborted) throw error;
-          log(
-            "WARN",
-            "compaction",
-            `Pre-run compaction failed; cooling down for 30s: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        }
-      }
-    }
+    // of the public API model window.
+    await this.maybeCompactPreRun(creds);
 
     const loopMessages = await this.prepareDynamicContext();
     // Re-read every run so rule-file edits apply on the next turn; a few small files.
@@ -3490,7 +3504,7 @@ export class AgentSession {
    * completed approved-plan step may compact when the cache-cost rule in
    * compaction/plan-step-policy.ts says the shrink pays for itself.
    */
-  private maybeCompactPostTurn(creds: {
+  private maybeCompactPostTurn(creds?: {
     accessToken: string;
     accountId?: string;
     baseUrl?: string;
@@ -3502,7 +3516,7 @@ export class AgentSession {
     if (Date.now() < this.compactionRetryAfter) return;
     const contextWindow = getContextWindow(this.model, {
       provider: this.provider,
-      accountId: creds.accountId,
+      accountId: creds?.accountId,
     });
     // One compaction per turn boundary: a pre-run, in-flight or overflow
     // compaction already shrank this run's history — re-probing right after
@@ -3518,7 +3532,7 @@ export class AgentSession {
       contextWindow,
       threshold: this.settingsManager.get("compactThreshold"),
       compactAtTokens: this.settingsManager.get("compactAtTokens"),
-      accountId: creds.accountId,
+      accountId: creds?.accountId,
       approvedPlanPath: this.approvedPlanPath,
     });
     let activeTokens: number | undefined;
@@ -3547,7 +3561,7 @@ export class AgentSession {
       trigger: planStep?.compact ? `plan-step (${planStep.reason})` : "size",
       provider: this.provider,
       model: this.model,
-      transport: this.provider === "openai" && creds.accountId ? "codex_oauth" : "public_api",
+      transport: this.compactionTransport(creds),
       contextWindow: String(contextWindow),
       activeTokens: activeTokens === undefined ? "estimated" : String(activeTokens),
       triggerLimit: String(policy.targetTokens),
