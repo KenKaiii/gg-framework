@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.109.0",
+    date: "2026-11-10",
+    items: [
+      "`Claude Fable 5.2` is here, and it is cheaper and faster to pick up. I added it with a full `1M` context window, and there is a `Fable 5.2 Fast` option when you want answers up to `2.5x` quicker. It replaces Fable 5.1 in the picker, and `xhigh` thinking now works on it.",
+      "Updates can no longer fail in silence. If an install does not go through, I now show an `Update failed` bar with `Retry` and a one-click manual download, so you are never left staring at nothing.",
+    ],
+  },
+  {
     version: "0.108.2",
     date: "2026-11-09",
     items: [
