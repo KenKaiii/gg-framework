@@ -23,6 +23,8 @@ export interface UpdateInfo {
   phase: UpdatePhase;
   /** Download progress 0–100 while installing (null otherwise). */
   progress: number | null;
+  /** Why the last install failed (null unless phase is "error"). */
+  error: string | null;
   /** Kick off download → install → relaunch. No-op unless an update is pending. */
   install: () => Promise<void>;
 }
@@ -60,6 +62,7 @@ export function useAppUpdate(): UpdateInfo {
   const [update, setUpdate] = useState<Update | null>(null);
   const [phase, setPhase] = useState<UpdatePhase>("idle");
   const [progress, setProgress] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [fakeVersion, setFakeVersion] = useState<string | null>(null);
 
   const hasUpdateRef = useRef(false);
@@ -143,6 +146,7 @@ export function useAppUpdate(): UpdateInfo {
     if (!update) return;
     setPhase("installing");
     setProgress(0);
+    setError(null);
     try {
       let total = 0;
       let downloaded = 0;
@@ -162,6 +166,7 @@ export function useAppUpdate(): UpdateInfo {
     } catch (e) {
       setPhase("error");
       setProgress(null);
+      setError(e instanceof Error ? e.message : String(e));
       logError(`Update install failed: ${String(e)}`);
     }
   }, [update]);
@@ -171,6 +176,7 @@ export function useAppUpdate(): UpdateInfo {
     version: update?.version ?? fakeVersion,
     phase,
     progress,
+    error,
     install,
   };
 }

@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "./agent";
 import type { UpdateInfo } from "./update";
 import { KEY_ART_STYLE, PixelText, UpdateArrow, UpdateBurst, UpdateMeter } from "./UpdateKeyParts";
 import { PCT_COLS } from "./update-key-art";
 import "./UpdateBanner.css";
+
+const RELEASES_URL = "https://github.com/KenKaiii/gg-framework/releases/latest";
 
 /**
  * The workspace's update bar, its own row under the footer: the same arcade
@@ -18,9 +21,9 @@ import "./UpdateBanner.css";
 export function UpdateBanner({
   appUpdate,
 }: {
-  appUpdate: Pick<UpdateInfo, "phase" | "version" | "progress" | "install">;
+  appUpdate: Pick<UpdateInfo, "phase" | "version" | "progress" | "error" | "install">;
 }): React.ReactElement | null {
-  const { phase, version, progress } = appUpdate;
+  const { phase, version, progress, error } = appUpdate;
   const [current, setCurrent] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,6 +38,28 @@ export function UpdateBanner({
     };
   }, []);
 
+  // A failed install must say so: hiding the bar read as "nothing happened".
+  if (phase === "error" && appUpdate.version) {
+    return (
+      <div className="update-banner-slot" style={KEY_ART_STYLE}>
+        <div className="update-banner update-banner-error" role="alert">
+          <span className="ub-error-text" title={error ?? undefined}>
+            Update failed
+          </span>
+          <button type="button" className="ub-error-btn" onClick={() => void appUpdate.install()}>
+            Retry
+          </button>
+          <button
+            type="button"
+            className="ub-error-btn"
+            onClick={() => void openUrl(RELEASES_URL).catch(() => {})}
+          >
+            Download manually
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (phase !== "available" && phase !== "installing") return null;
   const pct = Math.max(0, Math.min(100, Math.round(progress ?? 0)));
   const done = phase === "installing" && pct >= 100;

@@ -153,3 +153,33 @@
     border-image: none;
   }
 }
+
+/* Failed install: same strip and rim, plain text so the error stays readable. */
+.update-banner-error {
+  gap: var(--space-4);
+  cursor: default;
+  font-size: var(--fs-sm);
+}
+.ub-error-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ub-error-btn {
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-4);
+  border: 1px solid #e9af54;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #f6d0a8;
+  font: inherit;
+  cursor: pointer;
+}
+.ub-error-btn:hover {
+  background: rgba(233, 175, 84, 0.18);
+}
+.ub-error-btn:focus-visible {
+  outline: 2px solid #f5bd63;
+  outline-offset: 2px;
+}

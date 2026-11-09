@@ -6,6 +6,8 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: vi.fn(async () => "1.1.0") }));
+const openUrl = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("./agent", () => ({ openUrl }));
 
 import { UpdateBanner } from "./UpdateBanner";
 import type { UpdatePhase } from "./update";
@@ -14,6 +16,7 @@ const update = (phase: UpdatePhase, progress: number | null = null) => ({
   phase,
   version: "1.2.0",
   progress,
+  error: null as string | null,
   install: vi.fn(async () => {}),
 });
 
@@ -27,7 +30,7 @@ async function settle(): Promise<void> {
 
 describe("UpdateBanner", () => {
   it("renders nothing until an update is ready", () => {
-    for (const phase of ["idle", "checking", "error"] as const) {
+    for (const phase of ["idle", "checking"] as const) {
       const { container } = render(<UpdateBanner appUpdate={update(phase)} />);
       expect(container.innerHTML).toBe("");
       cleanup();
@@ -74,5 +77,21 @@ describe("UpdateBanner", () => {
     expect(bar.classList.contains("is-done")).toBe(true);
     expect(bar.querySelectorAll(".lvl-burst i").length).toBeGreaterThan(0);
     expect(bar.querySelector(".lvl-meter")).toBeNull();
+  });
+
+  it("says when the install failed, and offers retry and a manual download", () => {
+    const appUpdate = { ...update("error"), error: "Permission denied" };
+    render(<UpdateBanner appUpdate={appUpdate} />);
+    const alert = screen.getByRole("alert");
+
+    expect(alert.textContent).toContain("Update failed");
+    expect(alert.textContent).not.toContain("Permission denied");
+    expect(alert.querySelector(".ub-error-text")?.getAttribute("title")).toBe("Permission denied");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(appUpdate.install).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Download manually" }));
+    expect(openUrl).toHaveBeenCalledWith(
+      "https://github.com/KenKaiii/gg-framework/releases/latest",
+    );
   });
 });
