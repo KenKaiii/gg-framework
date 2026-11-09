@@ -22,10 +22,12 @@
   <a href="https://www.npmjs.com/package/@kenkaiiii/ggcoder"><img src="https://img.shields.io/npm/v/@kenkaiiii/ggcoder?style=for-the-badge&label=CLI&color=blue" alt="ggcoder npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=for-the-badge" alt="AGPL-3.0 License"></a>
   <a href="https://youtube.com/@kenkaidoesai"><img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube"></a>
-  <a href="https://skool.com/kenkai"><img src="https://img.shields.io/badge/Skool-Community-b0b6ff?style=for-the-badge" alt="Skool"></a>
+  <a href="https://www.skool.com/raid"><img src="https://img.shields.io/badge/Skool-Free%20community-b0b6ff?style=for-the-badge" alt="Free Skool community"></a>
 </p>
 
 GG Coder is a desktop coding agent that gets more out of the AI subscription you already pay for.
+
+> **New to this, or never used a terminal?** The step-by-step GG Coder setup, a free 7-day build challenge and 20+ more projects are in my free community: **[skool.com/raid](https://www.skool.com/raid)**
 
 > ⭐ **If GG Coder saves you time or money, give it a star.** It's the main way other developers find it.
 
@@ -113,7 +115,11 @@ Bug reports, ideas and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIB
 
 ## Learn with me
 
-Come build with me in my [Skool community](https://skool.com/kenkai). Get help, share what you're making, and learn how to get more out of AI.
+New to building with AI? Start in **[RAID](https://www.skool.com/raid)**, my free community:
+
+- Step-by-step setup for GG Coder (Mac and Windows)
+- A free 7-day challenge: build your first app, one short lesson a day
+- 20+ more projects you can build yourself
 
 ## Star history
 
