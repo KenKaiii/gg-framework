@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.108.1",
+    date: "2026-11-09",
+    items: [
+      "Skip a question card and just reply with a `screenshot`, and Claude reads it all in one go. No more stray `Awaiting the user's next message` lines sneaking into your chat before the real answer.",
+    ],
+  },
+  {
     version: "0.108.0",
     date: "2026-11-09",
     items: [
