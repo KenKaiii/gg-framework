@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.108.0",
+    date: "2026-11-09",
+    items: [
+      "Every mode now has its own skills. Drop one into `GG Chat` and all three chat agents can use it, drop one into `GG Motion` for your videos, and your coding skills stay in code. Just ask for a new skill: the agent knows exactly where it goes, and in code mode it asks whether it's for `this project` or every project.",
+      "Your chats now live in their own tidy `GG Chat` folder, and every chat window is named after what you asked, so you can tell your conversations apart at a glance. Your older chats are all still right there.",
+      "Replies never run into each other anymore. When Claude answers twice in a row, each answer gets its own clean bubble instead of mashing together mid-sentence.",
+    ],
+  },
+  {
     version: "0.107.1",
     date: "2026-11-09",
     items: [
