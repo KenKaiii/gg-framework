@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.96.0
+
+### Minor Changes
+
+- Give Code, Chat and Motion their own skills: Chat and Motion load only skills from their own `.gg/skills` folder, each agent's prompt says where new skills go, and chats now live in a `GG Chat` folder inside the projects root.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.96.0
+- @kenkaiiii/gg-agent@5.96.0
+- @kenkaiiii/gg-core@5.96.0
+
 ## 5.95.4
 
 ### Patch Changes
