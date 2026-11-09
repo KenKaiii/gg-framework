@@ -3,6 +3,8 @@
  * plain interactive run). Past it the tool stops blocking: the agent proceeds
  * on its best guess while the question stays answerable in the app.
  */
+import type { ImageContent, TextContent, ToolResultContent, VideoContent } from "@kenkaiiii/gg-ai";
+
 export const ASK_USER_INTERACTIVE_DEADLINE_MS = 10 * 60_000;
 
 /**
@@ -65,7 +67,13 @@ export type AskUserResult =
    * No answer. `superseded` means the user replied with a message of their own
    * instead of picking — the question is moot, but they are still talking.
    */
-  | { action: "cancel"; superseded?: boolean; message?: string }
+  | {
+      action: "cancel";
+      superseded?: boolean;
+      message?: string;
+      /** The reply's attachments as model-ready blocks (images, file notes). */
+      attachments?: Array<TextContent | ImageContent | VideoContent>;
+    }
   /**
    * The soft deadline passed with no answer. The question stays open; a later
    * answer is delivered to the agent as a message (see `onLateAnswer`).
@@ -228,11 +236,19 @@ export function formatAskResult(questions: AskQuestion[], result: AskUserResult)
       // The message itself, not a promise that it follows: a transport that
       // queues it behind the current turn (Claude Code) would leave the model
       // waiting on a message it can't see yet.
+      const attached = (result.attachments?.length ?? 0) > 0;
       if (result.message?.trim()) {
         return (
           "The user skipped the question and replied with this message instead:\n\n" +
           `<user_message>\n${result.message.trim()}\n</user_message>\n\n` +
+          (attached ? "Their attachments follow. " : "") +
           "Treat it as their answer and continue. Do not ask this again."
+        );
+      }
+      if (attached) {
+        return (
+          "The user skipped the question and replied with the attachments below instead. " +
+          "Treat them as their answer and continue. Do not ask this again."
         );
       }
       return (
@@ -251,6 +267,16 @@ export function formatAskResult(questions: AskQuestion[], result: AskUserResult)
     return `${q.question}\n→ ${text?.trim() ? text.trim() : "(no answer)"}`;
   });
   return `The user answered:\n\n${lines.join("\n\n")}`;
+}
+
+/** The tool result: {@link formatAskResult}'s text, plus a reply's attachments. */
+export function askResultContent(
+  questions: AskQuestion[],
+  result: AskUserResult,
+): ToolResultContent {
+  const text = formatAskResult(questions, result);
+  const attachments = result.action === "cancel" ? (result.attachments ?? []) : [];
+  return attachments.length > 0 ? [{ type: "text", text }, ...attachments] : text;
 }
 
 /**

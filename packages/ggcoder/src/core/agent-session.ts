@@ -1840,6 +1840,13 @@ export class AgentSession {
     await this.runLoop();
   }
 
+  /** A typed reply's attachments as blocks for the question it answers (ask_user). */
+  askReplyAttachmentParts(
+    attachments: SessionAttachment[],
+  ): Array<TextContent | ImageContent | VideoContent> {
+    return this.buildAttachmentParts("", attachments);
+  }
+
   /**
    * Build the native content blocks (text + image/video notes + file notes) for
    * a user message with attachments. Shared by {@link promptWithAttachments} and

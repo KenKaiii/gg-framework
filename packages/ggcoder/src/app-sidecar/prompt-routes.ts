@@ -171,13 +171,21 @@ export function handlePromptRoutes(
         // message sits behind it as steering that only drains once the tool
         // returns, so the turn looks frozen. The webview closes the band on
         // send; a racing /ask POST just 409s.
-        // A text-only reply also goes into the question's result, so the model
-        // reads it there instead of waiting for it to arrive as steering.
-        const answersAsk = ctx.asks.pendingCount > 0 && attachments.length === 0;
+        // The reply, attachments included, also goes into the question's result,
+        // so the model reads it there instead of waiting for it to arrive as
+        // steering (on Claude Code that only lands after another turn).
+        const answersAsk = ctx.asks.pendingCount > 0;
+        const preparedForAsk =
+          answersAsk && attachments.length > 0
+            ? await prepareAttachments(ctx.cwd, attachments)
+            : null;
         ctx.asks.cancelAll({
           action: "cancel",
           superseded: true,
           ...(answersAsk ? { message: text } : {}),
+          ...(preparedForAsk?.length
+            ? { attachments: ctx.session.askReplyAttachmentParts(preparedForAsk) }
+            : {}),
         });
         if (
           ctx.runLifecycle.running &&
@@ -203,7 +211,8 @@ export function handlePromptRoutes(
           // .gg/uploads first so the queued media rides the same native-block
           // path as a non-queued attachment prompt when it drains.
           const prepared =
-            attachments.length > 0 ? await prepareAttachments(ctx.cwd, attachments) : [];
+            preparedForAsk ??
+            (attachments.length > 0 ? await prepareAttachments(ctx.cwd, attachments) : []);
           const count = ctx.session.queueMessage(text, prepared, { answeredAsk: answersAsk });
           ctx.broadcast("queued", { count, messages: ctx.session.listQueuedMessages() });
           json(res, 202, { queued: true, count });

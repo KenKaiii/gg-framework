@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import {
   ASK_USER_TIMEOUT_MS,
-  formatAskResult,
+  askResultContent,
   type AskQuestion,
   type AskUserRequest,
   type AskUserResult,
@@ -114,7 +114,8 @@ export function createAskUserTool(ask: AskUserHandler): AgentTool<typeof AskUser
         );
       }
       const normalized = questions.map(normalize);
-      return formatAskResult(normalized, await ask({ questions: normalized }));
+      const content = askResultContent(normalized, await ask({ questions: normalized }));
+      return typeof content === "string" ? content : { content };
     },
   };
 }

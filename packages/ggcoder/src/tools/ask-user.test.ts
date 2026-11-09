@@ -192,6 +192,33 @@ describe("ask_user", () => {
     expect(text).not.toContain("arrives next");
   });
 
+  it("puts a reply's attachments in the result too, so nothing is left to arrive later", async () => {
+    // Regression: a reply with a screenshot kept the "arrives next" wording, and on
+    // Claude Code the model filled the gap with "[Awaiting the user's next message.]".
+    const { bridge, call, prompt } = harness();
+    const result = call({
+      questions: [{ id: "layout", question: "Header layout?", kind: "confirm" }],
+    });
+    await prompt();
+    const image = { type: "image" as const, mediaType: "image/png", data: "AAAA" };
+    bridge.cancelAll({
+      action: "cancel",
+      superseded: true,
+      message: "Course title + step title",
+      attachments: [image, { type: "text", text: "[Image saved at /tmp/a.png]" }],
+    });
+    const { content } = (await result) as unknown as { content: unknown[] };
+    expect(content[0]).toMatchObject({ type: "text" });
+    const text = (content[0] as { text: string }).text;
+    expect(text).toContain("<user_message>\nCourse title + step title\n</user_message>");
+    expect(text).toContain("Their attachments follow.");
+    expect(text).not.toContain("arrives next");
+    expect(content.slice(1)).toEqual([
+      image,
+      { type: "text", text: "[Image saved at /tmp/a.png]" },
+    ]);
+  });
+
   it("reports a question that cannot be rendered instead of parking the turn", async () => {
     const { call, broadcast } = harness();
     await expect(
