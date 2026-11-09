@@ -22,7 +22,7 @@
   <a href="https://www.npmjs.com/package/@kenkaiiii/ggcoder"><img src="https://img.shields.io/npm/v/@kenkaiiii/ggcoder?style=for-the-badge&label=CLI&color=blue" alt="ggcoder npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=for-the-badge" alt="AGPL-3.0 License"></a>
   <a href="https://youtube.com/@kenkaidoesai"><img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube"></a>
-  <a href="https://skool.com/kenkai"><img src="https://img.shields.io/badge/Skool-Community-b0b6ff?style=for-the-badge" alt="Skool"></a>
+  <a href="https://www.skool.com/raid"><img src="https://img.shields.io/badge/Skool-Free%20community-b0b6ff?style=for-the-badge" alt="Free Skool community"></a>
 </p>
 
 <sub>本页为翻译版本，内容可能晚于英文版更新。如有出入，以 [English README](README.md) 为准。</sub>
@@ -115,7 +115,7 @@ npm install @kenkaiiii/gg-ai @kenkaiiii/gg-agent
 
 ## 跟我一起学
 
-来我的 [Skool 社区](https://skool.com/kenkai)一起构建。获取帮助、分享你的作品，学习如何更好地利用 AI。
+来我的 [Skool 社区](https://www.skool.com/raid)一起构建。获取帮助、分享你的作品，学习如何更好地利用 AI。
 
 ## Star 历史
 

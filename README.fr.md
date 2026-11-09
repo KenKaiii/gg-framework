@@ -22,7 +22,7 @@
   <a href="https://www.npmjs.com/package/@kenkaiiii/ggcoder"><img src="https://img.shields.io/npm/v/@kenkaiiii/ggcoder?style=for-the-badge&label=CLI&color=blue" alt="ggcoder npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=for-the-badge" alt="AGPL-3.0 License"></a>
   <a href="https://youtube.com/@kenkaidoesai"><img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube"></a>
-  <a href="https://skool.com/kenkai"><img src="https://img.shields.io/badge/Skool-Community-b0b6ff?style=for-the-badge" alt="Skool"></a>
+  <a href="https://www.skool.com/raid"><img src="https://img.shields.io/badge/Skool-Free%20community-b0b6ff?style=for-the-badge" alt="Free Skool community"></a>
 </p>
 
 <sub>Ceci est une traduction qui peut être en retard sur la version anglaise. En cas de différence, le [README en anglais](README.md) fait foi.</sub>
@@ -115,7 +115,7 @@ Les rapports de bugs, les idées et les pull requests sont les bienvenus. Lisez 
 
 ## Apprenez avec moi
 
-Venez construire avec moi dans ma [communauté Skool](https://skool.com/kenkai). Obtenez de l'aide, partagez ce que vous créez et apprenez à tirer davantage de l'IA.
+Venez construire avec moi dans ma [communauté Skool](https://www.skool.com/raid). Obtenez de l'aide, partagez ce que vous créez et apprenez à tirer davantage de l'IA.
 
 ## Historique des étoiles
 

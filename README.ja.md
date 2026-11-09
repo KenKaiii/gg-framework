@@ -22,7 +22,7 @@
   <a href="https://www.npmjs.com/package/@kenkaiiii/ggcoder"><img src="https://img.shields.io/npm/v/@kenkaiiii/ggcoder?style=for-the-badge&label=CLI&color=blue" alt="ggcoder npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=for-the-badge" alt="AGPL-3.0 License"></a>
   <a href="https://youtube.com/@kenkaidoesai"><img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube"></a>
-  <a href="https://skool.com/kenkai"><img src="https://img.shields.io/badge/Skool-Community-b0b6ff?style=for-the-badge" alt="Skool"></a>
+  <a href="https://www.skool.com/raid"><img src="https://img.shields.io/badge/Skool-Free%20community-b0b6ff?style=for-the-badge" alt="Free Skool community"></a>
 </p>
 
 <sub>このページは翻訳版のため、英語版より更新が遅れる場合があります。内容に違いがある場合は [English README](README.md) が優先されます。</sub>
@@ -115,7 +115,7 @@ npm install @kenkaiiii/gg-ai @kenkaiiii/gg-agent
 
 ## 一緒に学ぼう
 
-[Skool コミュニティ](https://skool.com/kenkai)で一緒に作りましょう。サポートを受けたり、作ったものを共有したり、AI をもっと活用する方法を学べます。
+[Skool コミュニティ](https://www.skool.com/raid)で一緒に作りましょう。サポートを受けたり、作ったものを共有したり、AI をもっと活用する方法を学べます。
 
 ## スター履歴
 
