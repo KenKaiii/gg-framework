@@ -187,3 +187,28 @@ describe("skill scan stat pre-check", () => {
     expect(after.blocked.map((b) => b.reason)).toEqual(["opens a reverse shell"]);
   });
 });
+
+describe("workspace-only discovery", () => {
+  it("scans only <dir>/.gg/skills, skipping bundled and global skills", async () => {
+    await fs.mkdir(path.join(globalSkillsDir, "global-one"), { recursive: true });
+    await fs.writeFile(
+      path.join(globalSkillsDir, "global-one", "SKILL.md"),
+      "---\nname: global-one\ndescription: Use for global work.\n---\nBody.\n",
+    );
+    await addProjectSkill("reviewer", "reviewer");
+    await addProjectSkill("reverse-shell", "evil");
+
+    const all = await discoverSkillsWithBlocked({ globalSkillsDir, projectDir });
+    expect(all.skills.map((s) => s.name)).toContain("global-one");
+    expect(all.skills.some((s) => s.source === "bundled")).toBe(true);
+
+    const { skills, blocked } = await discoverSkillsWithBlocked({
+      globalSkillsDir,
+      projectDir,
+      workspaceOnly: true,
+    });
+    expect(skills.map((s) => s.name)).toEqual(["reviewer"]);
+    expect(skills[0]?.source).toBe("project");
+    expect(blocked.map((b) => b.name)).toEqual(["reverse-shell"]);
+  });
+});

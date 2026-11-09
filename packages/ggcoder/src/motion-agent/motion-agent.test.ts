@@ -19,6 +19,7 @@ import {
   createMotionAgentSession,
   MOTION_SKILL_CATALOG_BYTES,
   MOTION_TOOL_NAMES,
+  mergeMotionSkills,
   motionCliCommand,
   motionMusicDir,
   motionSessionsDir,
@@ -563,6 +564,36 @@ describe("Motion agent", () => {
     ])
       expect(options.allowedTools).toContain(name);
     expect((options.skills ?? []).map((skill) => skill.name)).toEqual(EXPECTED_SKILLS);
+  });
+
+  it("adds the user's GG Motion skills after built-in ones, which win name clashes", async () => {
+    const userSkill = (name: string) => ({
+      name,
+      description: `User ${name}.`,
+      content: "User body.",
+      source: "project",
+    });
+    const blocked = { name: "evil", path: "/x", scope: "project", reason: "r", hash: "h" };
+    const agent = await createMotionAgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: "/tmp/workspace",
+      sessionsDir: "/tmp/gg/sessions",
+      workspaceSkills: [userSkill("my-intro"), userSkill("Motion")],
+      blockedSkills: [blocked],
+    });
+    const options = optionsOf(agent);
+    const skills = options.skills ?? [];
+    expect(skills.map((skill) => skill.name)).toEqual([...EXPECTED_SKILLS, "my-intro"]);
+    expect(skills.find((skill) => skill.name === "motion")?.source).toBe("motion");
+    expect(options.agentPrompt).toContain(
+      `New skills go in \`${path.join("/tmp/workspace", ".gg", "skills")}\` as \`<name>/SKILL.md\``,
+    );
+    expect(options.agentPrompt).toContain(
+      "cannot replace them; GG Coder and GG Chat cannot use them",
+    );
+    expect(options.blockedSkills).toEqual([blocked]);
+    expect(mergeMotionSkills([], undefined)).toEqual([]);
   });
 
   it("refuses to resume a session outside the Motion namespace", async () => {

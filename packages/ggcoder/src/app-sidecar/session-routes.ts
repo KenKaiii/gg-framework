@@ -49,6 +49,8 @@ export function handleSessionRoutes(
       ...st,
       mode: ctx.mode,
       chatAgent: ctx.chatAgent,
+      // A chat window is titled by its first prompt; compaction can drop it from history.
+      sessionTitle: ctx.session.getSessionPreview() || undefined,
       goal: goalStatePayload(ctx),
       // Skills the safety scan kept out; the app shows each once (toast).
       blockedSkills: ctx.session.getBlockedSkills(),

@@ -36,6 +36,10 @@ describe("General chat agent", () => {
     );
     expect(options.systemPrompt).toContain("- Active agent: general");
     expect(options.systemPrompt).toContain("- Workspace root: /tmp/workspace");
+    expect(options.systemPrompt).toContain(
+      `New skills go in ${path.join("/tmp/workspace", ".gg", "skills")} as <name>/SKILL.md`,
+    );
+    expect(options.systemPrompt).toContain("GG Coder and GG Motion cannot");
     expect(options.promptCacheKeyPrefix).toBe("ggchat:general");
     expect(options.sessionRootDir).toBe(path.resolve("/tmp/gg/chat-sessions/general"));
     expect(options.coderSlashCommands).toBe(false);

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { AgentTool } from "@kenkaiiii/gg-agent";
 import type { AgentSessionOptions } from "../core/agent-session.js";
-import { createChatAgent, parseChatAgentId } from "./index.js";
+import { CHAT_FOLDER_NAME, chatWorkspaceDir, createChatAgent, parseChatAgentId } from "./index.js";
 import { RESEARCH_CHAT_SYSTEM_PROMPT } from "./research.js";
 import { THERAPIST_CHAT_SYSTEM_PROMPT } from "./therapist.js";
 import path from "node:path";
@@ -41,6 +41,35 @@ describe("specialist chat agents", () => {
     expect(options.sessionRootDir).toBe(path.resolve("/tmp/gg/chat-sessions/research"));
     expect(options.allowedTools).toBeUndefined();
     expect(options.additionalTools?.map((tool) => tool.name)).toContain("delegate_to_agent");
+  });
+
+  it("moves a chat at the projects root into the GG Chat folder, once", () => {
+    const root = path.resolve("/tmp/gg-projects");
+    const chatFolder = path.join(root, CHAT_FOLDER_NAME);
+    expect(chatWorkspaceDir(root)).toBe(chatFolder);
+    expect(chatWorkspaceDir(chatFolder)).toBe(chatFolder);
+  });
+
+  it("passes a caller-discovered skill set through to the session", () => {
+    const skill = {
+      name: "trip-planner",
+      description: "Plan trips",
+      content: "Plan the trip.",
+      source: "project",
+      filePath: "/tmp/workspace/.gg/skills/trip-planner/SKILL.md",
+    } as unknown as NonNullable<AgentSessionOptions["skills"]>[number];
+    const agent = createChatAgent("general", {
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: "/tmp/workspace",
+      sessionsDir: "/tmp/gg/sessions",
+      skills: [skill],
+      blockedSkills: [],
+    });
+    const options = (agent as unknown as { opts: AgentSessionOptions }).opts;
+    expect(options.skills).toEqual([skill]);
+    expect(options.blockedSkills).toEqual([]);
+    expect(options.projectCustomization).toBe(false);
   });
 
   it("retains memory tools and dynamic context when handoff is disabled", () => {

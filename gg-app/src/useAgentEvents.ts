@@ -190,6 +190,9 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
 
   // ── Event-machine private refs (used nowhere outside this hook) ──
   const streamingIdRef = useRef<number | null>(null);
+  // A model turn ended: its text is complete, so the next turn's text gets its
+  // own bubble instead of running on ("…skills.**Next reply**") in one run.
+  const turnEndedRef = useRef(false);
   const pendingChunksRef = useRef<string>("");
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Transcript id of the active sub-agent group for this run (null until the
@@ -621,6 +624,7 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           runOpenRef.current = true;
           runErroredRef.current = false;
           runFromItemRef.current = lastIssuedId();
+          turnEndedRef.current = false;
 
           tokensRef.current = 0;
           turnsRef.current = 0;
@@ -651,6 +655,10 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
         case "text_delta": {
           finalizeThinking();
           const chunk = String(d.text ?? "");
+          if (turnEndedRef.current) {
+            turnEndedRef.current = false;
+            endStreamingText();
+          }
           appendAssistant(chunk);
           // Track plan-step completion for the activity bar. Accumulate the
           // run's assistant text (markers can split across deltas) and union in
@@ -865,6 +873,7 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
               }
             | undefined;
           turnsRef.current += 1;
+          turnEndedRef.current = true;
           if (usage && typeof usage.outputTokens === "number") {
             tokensRef.current += usage.outputTokens;
             setTokens(tokensRef.current);
@@ -880,6 +889,10 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           }
           break;
         }
+        case "truncated":
+          // A reply cut off at the output limit continues mid-sentence: keep one bubble.
+          if (d.continued === true) turnEndedRef.current = false;
+          break;
         case "agent_done": {
           // The loop stopped and no review was injected, so anything held under
           // arming was the real final answer after all — paint it.

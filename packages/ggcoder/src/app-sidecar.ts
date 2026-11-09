@@ -33,7 +33,9 @@ import {
   PLAN_SUBMITTED_FOR_REVIEW,
   shouldOfferPendingPlan,
 } from "./core/plan-handoff.js";
+import { discoverSkillsWithBlocked } from "./core/skills.js";
 import {
+  chatWorkspaceDir,
   createChatAgent,
   parseChatAgentId,
   switchChatAgent,
@@ -726,10 +728,12 @@ async function createSession(
   const paths = deps.paths;
   const mode = opts.mode;
   let chatAgent = opts.chatAgent;
-  const cwd = opts.cwd;
+  const cwd = mode === "chat" ? chatWorkspaceDir(opts.cwd) : opts.cwd;
   // Motion's workspace is a dedicated folder the app names inside the projects
   // root; create it on first use so a fresh install can start a video at once.
-  if (mode === "motion") await fs.mkdir(cwd, { recursive: true });
+  // GG Chat's folder likewise; both get a ready skills folder.
+  if (mode === "motion" || mode === "chat")
+    await fs.mkdir(path.join(cwd, ".gg", "skills"), { recursive: true });
   // A coding session whose cwd is a Goal folder is that goal's coordinator.
   let goal =
     mode === "code" && isGoalDir(goalsRoot(paths.agentDir), cwd)
@@ -979,9 +983,17 @@ async function createSession(
   };
   let session!: AgentSession;
   if (mode === "chat") {
+    // Only GG Chat's own skills: GG Coder's global and built-in ones stay in code mode.
+    const chatSkills = await discoverSkillsWithBlocked({
+      globalSkillsDir: paths.skillsDir,
+      projectDir: cwd,
+      workspaceOnly: true,
+    });
     session = createChatAgent(chatAgent, {
       ...baseSessionOptions,
       sessionsDir: paths.sessionsDir,
+      skills: chatSkills.skills,
+      blockedSkills: chatSkills.blocked,
       additionalTools: [
         askUserTool,
         ...buildMemoryTools(memoryStore),
@@ -1000,9 +1012,17 @@ async function createSession(
       },
     });
   } else if (mode === "motion") {
+    // Only GG Motion's own skills, added to the built-in Motion ones.
+    const motionSkills = await discoverSkillsWithBlocked({
+      globalSkillsDir: paths.skillsDir,
+      projectDir: cwd,
+      workspaceOnly: true,
+    });
     session = await createMotionAgentSession({
       ...baseSessionOptions,
       sessionsDir: paths.sessionsDir,
+      workspaceSkills: motionSkills.skills,
+      blockedSkills: motionSkills.blocked,
       additionalTools: [askUserTool],
     });
   } else if (goal) {

@@ -623,10 +623,12 @@ describe("buildSystemPrompt", () => {
     // faster, 19% cheaper; bench/h2h/arena/RESULTS-2026-10-24-haiku55.md).
     // +100 for the light-comments rule (Haiku 5.5 arena 2026-10-28, 160/160 pass:
     // added comment lines −60%, output tokens −5.5%; RESULTS-2026-10-28-haiku55.md).
-    expect(measurements.normal.characters).toBeLessThan(3_200);
+    // +~200 for where new skills go (project vs global, ask when unsaid), 2026-11.
+    expect(measurements.normal.characters).toBeLessThan(3_400);
     // Plan mode +300 for the 2026-11 refresh: research callers/tests, ask when
     // a requirement is unclear, keep the plan out of chat, verification commands.
-    expect(measurements.planMode.characters).toBeLessThan(3_900);
+    // +~200 for the new-skills line, as for normal above.
+    expect(measurements.planMode.characters).toBeLessThan(4_100);
     // +~120 for the parallel-calls fact shown with bash (agent-race, 2026-11-03).
     expect(measurements.typescriptProjectContextToolsSkills.characters).toBeLessThan(4_400);
     expect(measurements.planMode.characters).toBeGreaterThan(measurements.normal.characters);

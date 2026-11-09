@@ -145,6 +145,8 @@ export async function discoverSkillsWithBlocked(options: {
   projectDir?: string;
   cacheFile?: string;
   cache?: SkillScanCache;
+  /** Only `<projectDir>/.gg/skills`: no bundled or global skills (Chat, Motion). */
+  workspaceOnly?: boolean;
 }): Promise<SkillDiscovery> {
   const ctx = newLoadContext(options.cache);
   // Under vitest only an explicit file is used: many suites discover skills
@@ -162,8 +164,10 @@ export async function discoverSkillsWithBlocked(options: {
 
   // Bundled defaults ship with GG Coder. Global and project definitions with
   // the same name override them, preserving user control.
-  addSkills(await loadBundledSkills(ctx));
-  addSkills(await loadSkillsFromDir(options.globalSkillsDir, "global", ctx));
+  if (!options.workspaceOnly) {
+    addSkills(await loadBundledSkills(ctx));
+    addSkills(await loadSkillsFromDir(options.globalSkillsDir, "global", ctx));
+  }
 
   if (options.projectDir) {
     const projectSkillsDir = path.join(options.projectDir, ".gg", "skills");

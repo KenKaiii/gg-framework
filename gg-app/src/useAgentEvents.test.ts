@@ -713,6 +713,31 @@ describe("useAgentEvents", () => {
     expect(items[0]).toMatchObject({ kind: "assistant", text: "Hello world" });
   });
 
+  it("gives each model turn's text its own bubble, but keeps an auto-continued reply in one", () => {
+    const { hook, getItems } = setup();
+    act(() => {
+      hook.result.current.handleEvent(ev("text_delta", { text: "those skills." }));
+      hook.result.current.handleEvent(ev("turn_end", { usage: { outputTokens: 5 } }));
+      // A mid-run message (e.g. a status update) starts another turn in the same run.
+      hook.result.current.handleEvent(ev("text_delta", { text: "**Dev isn't stuck.**" }));
+      hook.result.current.endStreamingText();
+    });
+    expect(getItems()).toMatchObject([
+      { kind: "assistant", text: "those skills." },
+      { kind: "assistant", text: "**Dev isn't stuck.**" },
+    ]);
+
+    act(() => {
+      hook.result.current.handleEvent(ev("text_delta", { text: "Cut off mid" }));
+      hook.result.current.handleEvent(ev("turn_end", { usage: { outputTokens: 5 } }));
+      hook.result.current.handleEvent(ev("truncated", { reason: "max_tokens", continued: true }));
+      hook.result.current.handleEvent(ev("text_delta", { text: "-sentence." }));
+      hook.result.current.endStreamingText();
+    });
+    expect(getItems()[2]).toMatchObject({ kind: "assistant", text: "Cut off mid-sentence." });
+    expect(getItems()).toHaveLength(3);
+  });
+
   it("grows a streaming reply in the live-text store, not the transcript, until it ends", () => {
     vi.useFakeTimers();
     try {

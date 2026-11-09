@@ -499,6 +499,8 @@ export interface AgentSessionOptions {
    * its skills stay invisible to every other mode, and vice versa.
    */
   skills?: readonly Skill[];
+  /** Skills the caller's own discovery refused, shown alongside `skills`. */
+  blockedSkills?: readonly BlockedSkill[];
   /**
    * Background check of the project's lockfiles for packages flagged as
    * malware after install. Default on, except under vitest.
@@ -1002,6 +1004,7 @@ export class AgentSession {
     }
     if (this.opts.skills) {
       this.skills = [...this.opts.skills];
+      this.blockedSkills = [...(this.opts.blockedSkills ?? [])];
     } else if (projectCustomization) {
       const discovery = await discoverSkillsWithBlocked({
         globalSkillsDir: paths.skillsDir,
@@ -3878,6 +3881,11 @@ export class AgentSession {
     const loaded = await this.sessionManager.load(this.sessionPath);
     this.setSessionPath(loaded.path);
     return this.sessionManager.listBranches(loaded.entries);
+  }
+
+  /** The session's first user-authored prompt, or "" before there is one. */
+  getSessionPreview(): string {
+    return this.sessionPreview;
   }
 
   /** Skills the safety scan kept out of this session, for the app/CLI to show. */

@@ -35,6 +35,21 @@ describe("WorkspaceHeader", () => {
     expect(screen.queryByRole("button", { name: /nav buttons/ })).toBeNull();
   });
 
+  it("titles a chat window by its conversation, not its folder", () => {
+    render(
+      <WorkspaceHeader
+        workspaceMode="chat"
+        cwd="/work/GG Chat"
+        title={"Plan my tr\u2026"}
+        subtitle="Research"
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Plan my tr\u2026. Open the folder" })).toBeDefined();
+    expect(screen.queryByText("GG Chat")).toBeNull();
+    expect(screen.getByText("Research")).toBeDefined();
+  });
+
   it("formats clean, dirty, and pre-commit project context for the tooltip", () => {
     expect(formatWorkspaceTitle("/work/app", "main", "GG Coder")).toBe("app · main");
     expect(formatWorkspaceTitle("/work/app", "main", "GG Coder", 3)).toBe(

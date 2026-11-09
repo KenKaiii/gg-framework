@@ -86,6 +86,9 @@ export const DELEGATION_RULES =
 export const HOST_RULES =
   "If your host instructions say not to ask the user right now (e.g. a running goal), use the default or recommended answer the skill gives for each question and report what you chose. Host rules on branches, commits and installs override the skill.";
 
+const LAUNCH_SKILLS = ["durable", "compliance-guard"];
+const LAUNCH_READINESS = `Launch-readiness asks ("ready to ship?"): cover every in-scope skill (${LAUNCH_SKILLS.join(", ")}), one report-only child each in one spawn_agent call where delegation is available.\n`;
+
 function generateSkillDescription(skills: Skill[], limits: ContextLimits = CONTEXT_LIMITS): string {
   if (!skills.some((s) => !s.hidden)) {
     return "Invoke a skill by name. No skills are currently available.";
@@ -95,6 +98,9 @@ function generateSkillDescription(skills: Skill[], limits: ContextLimits = CONTE
   const { lines, dropped } = renderSkillLines(skills, limits);
   const overflow =
     dropped.length > 0 ? `\n_Skills omitted (catalog byte budget): ${dropped.join(", ")}_` : "";
+  // Chat and Motion lists lack these skills; naming them there would invite a failed load.
+  const visible = new Set(skills.filter((s) => !s.hidden).map((s) => s.name.toLowerCase()));
+  const launch = LAUNCH_SKILLS.every((name) => visible.has(name)) ? LAUNCH_READINESS : "";
 
   return (
     // Replay-tested on gpt-6-astra (Codex head-to-head): the previous "Before
@@ -108,7 +114,6 @@ function generateSkillDescription(skills: Skill[], limits: ContextLimits = CONTE
     `Specialised method checklists. When the work is in a skill's scope below, load it before writing code, and before giving a review or a safety verdict. Match the work, not the topic: routine fixes and renames need none. Respect exclusions; never reload one.\n` +
     // Previously only in the no-skill-tool fallback prompt, so normal sessions
     // never saw it and launch checks picked one skill and skipped the rest.
-    `Launch-readiness asks ("ready to ship?"): cover every in-scope skill (durable, compliance-guard), one report-only child each in one spawn_agent call where delegation is available.\n\n` +
-    `${lines.join("\n")}${overflow}`
+    `${launch}\n${lines.join("\n")}${overflow}`
   );
 }

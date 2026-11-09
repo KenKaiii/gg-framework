@@ -1,6 +1,11 @@
 import path from "node:path";
 import { AgentSession, type AgentSessionOptions } from "../core/agent-session.js";
-import { findMotionBundle, loadMotionSkills, type MotionBundle } from "../core/skills.js";
+import {
+  findMotionBundle,
+  loadMotionSkills,
+  type MotionBundle,
+  type Skill,
+} from "../core/skills.js";
 import { MOTION_SYSTEM_PROMPT } from "./motion-prompt.js";
 import { motionStudioPrompt, readMotionStudioContext } from "./motion-studio-context.js";
 
@@ -65,6 +70,8 @@ export type MotionAgentOptions = Omit<
 > & {
   /** Coder's sessions dir; Motion's store is derived beside it. */
   sessionsDir: string;
+  /** The user's skills from `GG Motion/.gg/skills`; built-in Motion skills win name clashes. */
+  workspaceSkills?: readonly Skill[];
 };
 
 /**
@@ -84,14 +91,25 @@ export function motionCliCommand(bundle: MotionBundle, nodePath = process.execPa
   return `${shellQuote(nodePath)} ${shellQuote(bundle.launcher)}`;
 }
 
+/** Where new GG Motion user skills go; empty without a workspace. */
+function motionSkillsPrompt(workspaceDir: string | undefined): string {
+  if (!workspaceDir) return "";
+  return `\n\n## User skills\n\nNew skills go in \`${path.join(workspaceDir, ".gg", "skills")}\` as \`<name>/SKILL.md\` with \`name\` and \`description\` frontmatter. They add to the built-in skills and cannot replace them; GG Coder and GG Chat cannot use them. A new skill loads in the next session.`;
+}
+
 /** Motion's prompt with this install's concrete launcher paths filled in. */
-export function buildMotionAgentPrompt(bundle: MotionBundle, nodePath = process.execPath): string {
-  return MOTION_SYSTEM_PROMPT.replaceAll("{{HF}}", motionCliCommand(bundle, nodePath))
+export function buildMotionAgentPrompt(
+  bundle: MotionBundle,
+  nodePath = process.execPath,
+  workspaceDir?: string,
+): string {
+  const prompt = MOTION_SYSTEM_PROMPT.replaceAll("{{HF}}", motionCliCommand(bundle, nodePath))
     .replaceAll("{{NODE}}", shellQuote(nodePath))
     .replaceAll("{{MOTION_BIN}}", path.join(bundle.root, "bin"))
     .replaceAll("{{MUSIC_DIR}}", motionMusicDir(bundle))
     .replaceAll("{{SFX_DIR}}", motionSfxDir(bundle))
     .replaceAll("{{HF_VERSION}}", bundle.version);
+  return prompt + motionSkillsPrompt(workspaceDir);
 }
 
 /** Shared licensed music, independent of the creative skill catalog. */
@@ -105,17 +123,26 @@ export function motionSfxDir(bundle: MotionBundle): string {
 }
 
 /**
- * Create a Motion session: focused tools, Motion's own prompt, and only
- * the bundled Motion skills. Project/global skills, extensions and coder
- * slash commands stay out so the mode is predictable for every user.
+ * Built-in Motion skills plus the user's GG Motion skills. The prompt names
+ * built-in skills (`motion`, `launch-video`, …), so a user skill never replaces one.
+ */
+export function mergeMotionSkills(builtIn: Skill[], workspace: readonly Skill[] = []): Skill[] {
+  const taken = new Set(builtIn.map((skill) => skill.name.toLowerCase()));
+  return [...builtIn, ...workspace.filter((skill) => !taken.has(skill.name.toLowerCase()))];
+}
+
+/**
+ * Create a Motion session: focused tools, Motion's own prompt, the bundled
+ * Motion skills and the user's GG Motion skills. GG Coder's global skills,
+ * extensions and coder slash commands stay out so the mode is predictable.
  */
 export async function createMotionAgentSession(options: MotionAgentOptions): Promise<AgentSession> {
   const bundle = await findMotionBundle();
   if (!bundle) {
     throw new Error("Motion mode is unavailable: this GG install is missing its Motion bundle.");
   }
-  const skills = await loadMotionSkills(bundle);
-  const { sessionsDir, ...sessionOptions } = options;
+  const { sessionsDir, workspaceSkills, ...sessionOptions } = options;
+  const skills = mergeMotionSkills(await loadMotionSkills(bundle), workspaceSkills);
   const sessionRootDir = motionSessionsDir(sessionsDir);
   const requestedSession = sessionOptions.sessionId ? path.resolve(sessionOptions.sessionId) : null;
   const resumableSession =
@@ -131,7 +158,7 @@ export async function createMotionAgentSession(options: MotionAgentOptions): Pro
     allowedTools: [...MOTION_TOOL_NAMES],
     allowedMcpServers: [],
     sessionId: resumableSession,
-    agentPrompt: buildMotionAgentPrompt(bundle) + studioPrompt,
+    agentPrompt: buildMotionAgentPrompt(bundle, process.execPath, options.cwd) + studioPrompt,
     agentRole: "primary",
     // Motion folders hold videos, not codebases; coder conventions do not apply.
     agentContext: "none",

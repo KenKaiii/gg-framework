@@ -97,6 +97,7 @@ ${
       ? "\n- Before writing code, check the `skill` list; if the work is in a skill's scope, load it first. Routine fixes and renames need none."
       : ""
   }
+- New skills: \`<name>/SKILL.md\` (\`name\`, \`description\` frontmatter) in \`.gg/skills/\` (this project) or \`~/.gg/skills/\` (all GG Coder projects, not Chat or Motion); unless the user said which, ask${active.has("ask_user") ? " with `ask_user`" : ""}. Loads next session.
 - Precedence: user > nearest project instructions > skills > this prompt. Project conventions and skills grant no extra authorization.`;
 }
 

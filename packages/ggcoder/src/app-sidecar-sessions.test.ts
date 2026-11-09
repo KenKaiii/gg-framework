@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { chatAgentSessionsDir } from "./chat-agents/index.js";
+import { CHAT_FOLDER_NAME, chatAgentSessionsDir } from "./chat-agents/index.js";
 import { listSidecarSessions } from "./app-sidecar-sessions.js";
 import { motionSessionsDir } from "./motion-agent/motion-agent.js";
 import { encodeCwd } from "./core/encode-cwd.js";
@@ -205,6 +205,21 @@ describe("gg-app sidecar session listings", () => {
       "motion-0",
     ]);
     expect(chatSessions.some((session) => session.id.startsWith("motion"))).toBe(false);
+  });
+
+  it("lists chats saved in the GG Chat folder alongside older ones saved against the projects root", async () => {
+    const chatRoot = chatAgentSessionsDir(coderSessionsDir, "general");
+    const chatFolder = path.join(cwd, CHAT_FOLDER_NAME);
+    await writeSessions(chatRoot, cwd, "legacy", 1);
+    await writeSessions(chatRoot, chatFolder, "current", 1);
+
+    const all = await listSidecarSessions(chatFolder, "all", coderSessionsDir);
+    const general = await listSidecarSessions(chatFolder, "general", coderSessionsDir);
+    const legacyRoot = await listSidecarSessions(cwd, "all", coderSessionsDir);
+
+    expect(all.map((session) => session.id).sort()).toEqual(["current-0", "legacy-0"]);
+    expect(general.map((session) => session.id).sort()).toEqual(["current-0", "legacy-0"]);
+    expect(legacyRoot.map((session) => session.id)).toEqual(["legacy-0"]);
   });
 
   it("does not mix foreign sessions into a chat-agent listing", async () => {

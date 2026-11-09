@@ -179,6 +179,8 @@ export interface AgentState {
   cwd: string;
   mode: WorkspaceMode;
   chatAgent?: ChatAgentId;
+  /** The session's first user prompt; a chat window's title. Absent until there is one. */
+  sessionTitle?: string;
   running: boolean;
   runState?: "idle" | "running" | "cancelling";
   /** Current reasoning level, or null when thinking is off. May be absent on

@@ -12,7 +12,7 @@ import {
 import { parseChatAgentId, type ChatAgentId } from "./types.js";
 
 export { CHAT_AGENT_IDS, parseChatAgentId, type ChatAgentId } from "./types.js";
-export { chatAgentSessionsDir } from "./shared.js";
+export { CHAT_FOLDER_NAME, chatAgentSessionsDir, chatWorkspaceDir } from "./shared.js";
 
 export const CHAT_AGENT_LABELS: Record<ChatAgentId, string> = {
   general: "General Agent",

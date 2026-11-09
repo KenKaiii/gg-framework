@@ -157,6 +157,7 @@ import { ScorecardPanel } from "./Scorecard";
 import { useWindowFocused } from "./useWindowFocused";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { formatWorkspaceTitle } from "./workspace-title";
+import { chatTitle, firstUserPrompt } from "./chat-title";
 import { useProgress } from "./useProgress";
 import { useTrophies } from "./useTrophies";
 import { TrophyUnlock } from "./TrophyUnlock";
@@ -814,24 +815,32 @@ function App(): React.ReactElement {
       addFiles,
     });
 
+  // A chat is titled by its first prompt: the saved one survives compaction,
+  // the transcript's covers a new chat before the next state refresh.
+  const chatHeaderTitle =
+    workspaceMode === "chat" ? chatTitle(state?.sessionTitle ?? firstUserPrompt(items)) : null;
+
   // Keep the native window title aligned with the visible title-bar context.
   useEffect(() => {
     const fallbackTitle = workspaceProductName(workspaceMode, Boolean(state?.goal));
     const title =
-      !needsProject && !showPicker && state?.goal
-        ? `${state.goal.name} · ${fallbackTitle}`
-        : !needsProject && !showPicker
-          ? formatWorkspaceTitle(
-              state?.cwd,
-              state?.gitBranch,
-              fallbackTitle,
-              state?.gitDirtyFileCount,
-              state?.gitHubIssues ?? null,
-              state?.gitHubPRs ?? null,
-            )
-          : fallbackTitle;
+      chatHeaderTitle !== null && !needsProject && !showPicker
+        ? `${chatHeaderTitle} · ${fallbackTitle}`
+        : !needsProject && !showPicker && state?.goal
+          ? `${state.goal.name} · ${fallbackTitle}`
+          : !needsProject && !showPicker
+            ? formatWorkspaceTitle(
+                state?.cwd,
+                state?.gitBranch,
+                fallbackTitle,
+                state?.gitDirtyFileCount,
+                state?.gitHubIssues ?? null,
+                state?.gitHubPRs ?? null,
+              )
+            : fallbackTitle;
     setWindowTitle(title);
   }, [
+    chatHeaderTitle,
     needsProject,
     showPicker,
     state?.cwd,
@@ -2761,6 +2770,7 @@ function App(): React.ReactElement {
           workspaceMode={workspaceMode}
           cwd={state?.cwd}
           goalName={state?.goal?.name ?? null}
+          title={chatHeaderTitle}
           gitBranch={state?.gitBranch}
           gitDirtyFileCount={state?.gitDirtyFileCount}
           gitHubIssues={state?.gitHubIssues}

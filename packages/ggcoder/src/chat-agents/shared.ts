@@ -20,6 +20,14 @@ export type ChatAgentOptions = Omit<
   onAgentChange?: (agentId: ChatAgentId) => void | Promise<void>;
 };
 
+/** Folder name of GG Chat's workspace inside the projects root. */
+export const CHAT_FOLDER_NAME = "GG Chat";
+
+/** The chat folder for a chat cwd: older windows still point at the projects root. */
+export function chatWorkspaceDir(cwd: string): string {
+  return path.basename(cwd) === CHAT_FOLDER_NAME ? cwd : path.join(cwd, CHAT_FOLDER_NAME);
+}
+
 export function chatAgentSessionsDir(coderSessionsDir: string, agentId: ChatAgentId): string {
   return path.resolve(coderSessionsDir, "..", "chat-sessions", agentId);
 }
@@ -43,6 +51,7 @@ export function buildChatAgentSystemPrompt(
   const handoffInstructions = handoffEnabled
     ? `\n\nAgent handoff:\nYou can call delegate_to_agent to hand the entire conversation to a better-suited agent. Hand off to Therapist when the conversation primarily needs emotional support, reflection, coping, relationships, or wellbeing. Hand off to Research when it primarily needs evidence gathering, source verification, comparisons, current information, or deep analysis. Hand off to General when the conversation becomes broad or no longer needs a specialist. A handoff changes the active agent for this conversation; it is not a one-off subtask. Use it when the conversation's primary need clearly shifts, not for a brief side question or work you can handle naturally.`
     : "";
+  const skillsInstructions = `\n\nSkills:\nNew skills go in ${path.join(cwd, ".gg", "skills")} as <name>/SKILL.md with name and description frontmatter. Every GG Chat session and all three chat agents can use them; GG Coder and GG Motion cannot. A new skill loads in the next chat.`;
   const runtimeContext = [
     "Runtime context:",
     `- Active agent: ${agentId}`,
@@ -51,7 +60,7 @@ export function buildChatAgentSystemPrompt(
     "- Conversation history and tool results are the authoritative changing context for this session.",
   ].join("\n");
 
-  return `${rolePrompt}${MEMORY_CURATION_INSTRUCTIONS}${JIWA_CURATION_INSTRUCTIONS}${handoffInstructions}\n\n${runtimeContext}`;
+  return `${rolePrompt}${MEMORY_CURATION_INSTRUCTIONS}${JIWA_CURATION_INSTRUCTIONS}${handoffInstructions}${skillsInstructions}\n\n${runtimeContext}`;
 }
 
 /** Create a chat agent on the shared caching/compaction spine without GG Coder behavior. */
