@@ -27,6 +27,7 @@
 
 GG Coder is a desktop coding agent that gets more out of the AI subscription you already pay for.
 
+> [!TIP]
 > **New to this, or never used a terminal?** The step-by-step GG Coder setup, a free 7-day build challenge and 20+ more projects are in my free community: **[skool.com/raid](https://www.skool.com/raid)**
 
 > ⭐ **If GG Coder saves you time or money, give it a star.** It's the main way other developers find it.
