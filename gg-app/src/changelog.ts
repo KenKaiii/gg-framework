@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.108.2",
+    date: "2026-11-09",
+    items: [
+      "Marathon chats on your `Claude subscription` now stay lean. I taught GG Coder to tidy up long conversations at `400k` tokens, just like every other model, so your sessions stay fast and focused instead of ballooning until they are nearly full.",
+    ],
+  },
+  {
     version: "0.108.1",
     date: "2026-11-09",
     items: [
