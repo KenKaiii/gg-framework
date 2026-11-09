@@ -78,7 +78,7 @@ gg-ai makes one model call. To run the tools and send results back until the mod
 
 | Provider      | Built-in models                                                 | Notes                                                                                     |
 | ------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `anthropic`   | Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5               | Extended thinking, prompt caching, server-side compaction                                 |
+| `anthropic`   | Claude Fable 5.2, Opus 5.5, Sonnet 5.5, Haiku 5.5               | Extended thinking, prompt caching, server-side compaction                                 |
 | `openai`      | GPT-6 Astra, GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Luna             | Responses API. API key, or a ChatGPT plan token plus `accountId` (Sign in with ChatGPT)   |
 | `gemini`      | Gemini 3.1 Pro (Preview), 3.8 / 3.5 Flash, 3.5 / 3.1 Flash Lite | Google AI Studio key on the public Gemini API. Native video input                         |
 | `xai`         | Grok 4.7                                                        | API key                                                                                   |

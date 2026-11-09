@@ -80,7 +80,7 @@ describe("formatError Mythos access", () => {
     expect(formatted.guidance).toContain(
       "platform.claude.com/docs/en/about-claude/models/overview",
     );
-    expect(formatted.guidance).toContain("Claude Fable 5.1");
+    expect(formatted.guidance).toContain("Claude Fable 5.2");
   });
 
   it("does not hijack not_found errors for other models", () => {

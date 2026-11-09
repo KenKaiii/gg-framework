@@ -109,7 +109,7 @@ describe("enhancePrompt", () => {
     respond("Fix the bug.");
     const active = {
       provider: "anthropic" as const,
-      model: "claude-fable-5-1",
+      model: "claude-fable-5-2",
       maxTokens: 128000,
       thinking: "high" as const,
       baseUrl: "https://provider.example/v1",

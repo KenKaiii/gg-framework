@@ -45,7 +45,7 @@ Switch any time with `/model`.
 
 | Provider         | Models                                                                             | Sign-in                                |
 | ---------------- | ---------------------------------------------------------------------------------- | -------------------------------------- |
-| **Anthropic**    | Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5                                  | Claude or API key                      |
+| **Anthropic**    | Claude Fable 5.2, Opus 5.5, Sonnet 5.5, Haiku 5.5                                  | Claude or API key                      |
 | **OpenAI**       | GPT-6 Astra, GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Luna                                | Continue with ChatGPT or API key       |
 | **Gemini**       | Gemini 3.8 Flash, 3.5 Flash Lite, 3.1 Flash Lite, 3.5 Flash, 3.1 Pro (Preview)     | API key (Google AI Studio)             |
 | **xAI**          | Grok 4.7                                                                           | API key                                |

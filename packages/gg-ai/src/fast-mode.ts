@@ -10,16 +10,16 @@ export const FAST_MODE_SUFFIX = "-fast";
 
 /**
  * Base models that accept a fast speed tier, per provider:
- *  - Anthropic: `speed: "fast"` + `fast-mode-2026-02-01` beta. Opus 5.5 is the
- *    only supported model we register (Sonnet/Haiku/Fable reject it). On a
- *    Claude subscription it bills usage credits, never included plan usage.
+ *  - Anthropic: `speed: "fast"` + `fast-mode-2026-02-01` beta. Fable 5.2 and
+ *    Opus 5.5 are the supported models we register (Sonnet/Haiku reject it). On
+ *    a Claude subscription it bills usage credits, never included plan usage.
  *  - OpenAI: `service_tier: "priority"` (what the Codex CLI sends for Fast mode;
  *    the ChatGPT backend rejects the literal "fast"). Every model listed here
  *    advertises the priority tier in openai/codex models.json; on a ChatGPT
  *    plan it draws included limits at 2.5x the standard rate.
  */
 const FAST_MODE_BASE_MODELS: Readonly<Partial<Record<Provider, readonly string[]>>> = {
-  anthropic: ["claude-opus-5-5"],
+  anthropic: ["claude-fable-5-2", "claude-opus-5-5"],
   openai: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"],
 };
 
@@ -59,7 +59,7 @@ const FAST_MODE_REJECTION_PREFIX = "Fast mode unavailable";
 
 const USAGE_PAGE = "claude.ai/settings/usage";
 const STANDARD_SPEED_FALLBACK =
-  "or switch to Claude Opus 5.5 (standard speed), which uses your plan";
+  "or switch to the same model without Fast (standard speed), which uses your plan";
 
 export interface FastModeRejection {
   /** Anthropic's reason code (`unknown` when it sent none). */

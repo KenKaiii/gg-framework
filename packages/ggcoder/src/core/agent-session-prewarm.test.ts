@@ -85,7 +85,7 @@ async function createSession(historyChars: number) {
   const { AgentSession } = await import("./agent-session.js");
   const session = new AgentSession({
     provider: "anthropic",
-    model: "claude-fable-5-1",
+    model: "claude-fable-5-2",
     cwd: process.cwd(),
     systemPrompt: "stable role prompt",
     thinkingLevel: "high",
@@ -153,7 +153,7 @@ describe("AgentSession.prewarm", () => {
     const { AgentSession } = await import("./agent-session.js");
     const session = new AgentSession({
       provider: "anthropic",
-      model: "claude-fable-5-1",
+      model: "claude-fable-5-2",
       cwd: project,
       thinkingLevel: "high",
       transient: true,

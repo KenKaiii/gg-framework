@@ -919,7 +919,7 @@ describe("AgentSession mid-turn compaction", () => {
     const { AgentSession } = await import("./agent-session.js");
     const session = new AgentSession({
       provider: "anthropic",
-      model: "claude-fable-5-1",
+      model: "claude-fable-5-2",
       cwd: tmpProject,
       systemPrompt: "system prompt",
       transient: true,
@@ -985,7 +985,7 @@ describe("AgentSession mid-turn compaction", () => {
     const { AgentSession } = await import("./agent-session.js");
     const session = new AgentSession({
       provider: "anthropic",
-      model: "claude-fable-5-1",
+      model: "claude-fable-5-2",
       cwd: tmpProject,
       systemPrompt: "system prompt",
       transient: true,

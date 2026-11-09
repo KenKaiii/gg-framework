@@ -34,6 +34,7 @@ const HIGHLIGHT_TERMS = [
   "Gemini 3.5 Flash",
   "Gemini 3.1 Pro",
   "Claude Sonnet 5",
+  "Claude Fable 5.2",
   "Claude Fable 5.1",
   "Claude Fable 5",
   "Sakana Fugu",

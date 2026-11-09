@@ -201,7 +201,7 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     ProviderMeta {
         value: "anthropic",
         label: "Anthropic",
-        description: "Claude Fable 5.1, Opus 5.5, Opus 5.5 Fast, Sonnet 5.5, Haiku 5.5",
+        description: "Claude Fable 5.2, Fable 5.2 Fast, Opus 5.5, Opus 5.5 Fast, Sonnet 5.5, Haiku 5.5",
         // Sign in with Claude runs through Claude Code, which holds the token;
         // auth.json keeps only a marker under its own key. The API key lives
         // under `anthropic`.

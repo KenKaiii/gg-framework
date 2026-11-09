@@ -97,15 +97,18 @@ describe("thinking-level helpers", () => {
     expect(getNextThinkingLevel("anthropic", "claude-haiku-5-5", "max")).toBeUndefined();
   });
 
-  it("cycles Claude Fable 5.1 through the adaptive ladder without xhigh", () => {
-    expect(getSupportedThinkingLevels("anthropic", "claude-fable-5-1")).toEqual([
-      "low",
-      "medium",
-      "high",
-      "max",
-    ]);
-    expect(getNextThinkingLevel("anthropic", "claude-fable-5-1", "high")).toBe("max");
-    expect(isThinkingLevelSupported("anthropic", "claude-fable-5-1", "xhigh")).toBe(false);
+  it("cycles Claude Fable 5.2 (and its fast tier) through the full adaptive ladder, including xhigh", () => {
+    for (const model of ["claude-fable-5-2", "claude-fable-5-2-fast"]) {
+      expect(getSupportedThinkingLevels("anthropic", model)).toEqual([
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+      ]);
+      expect(getNextThinkingLevel("anthropic", model, "high")).toBe("xhigh");
+      expect(isThinkingLevelSupported("anthropic", model, "xhigh")).toBe(true);
+    }
   });
 
   it("cycles xAI Grok 4.7 through low, medium, high, and its xhigh rung", () => {

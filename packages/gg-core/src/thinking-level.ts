@@ -22,7 +22,7 @@ const DEEPSEEK_THINKING_LEVELS: readonly ThinkingLevel[] = ["low", "high", "max"
 // rung (docs: low/medium/high default/xhigh); each model slices this ladder
 // by its registry maxThinkingLevel.
 const XAI_THINKING_LEVELS: readonly ThinkingLevel[] = ["low", "medium", "high", "xhigh"];
-// Opus 5.x / 4.7, Sonnet 5.5 and Haiku 5.5 expose the full ladder including xhigh.
+// Fable/Mythos 5.x, Opus 5.x / 4.7, Sonnet 5.5 and Haiku 5.5 expose the full ladder including xhigh.
 // Other adaptive Anthropic models omit xhigh and would 400.
 const ANTHROPIC_XHIGH_THINKING_LEVELS: readonly ThinkingLevel[] = [
   "low",
@@ -95,7 +95,8 @@ function isMiniMaxEffortModel(provider: Provider, model: string): boolean {
 
 function isAnthropicXhighModel(provider: Provider, model: string): boolean {
   return (
-    provider === "anthropic" && /opus-5|opus-4-8|opus-4-7|sonnet-5[-.]5|haiku-5[-.]5/.test(model)
+    provider === "anthropic" &&
+    /fable-5|mythos-5|opus-5|opus-4-8|opus-4-7|sonnet-5[-.]5|haiku-5[-.]5/.test(model)
   );
 }
 

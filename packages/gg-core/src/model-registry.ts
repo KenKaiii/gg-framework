@@ -47,7 +47,7 @@ export interface ModelInfo {
    *   - OpenAI GPT-6 Astra / GPT-6.1 Sol: `ultra` (Codex orchestration preset above `max`)
    *   - OpenAI GPT-6 Luna: `max`
    *   - OpenAI Pro/Codex/old: clamped to what the model accepts
-   *   - Claude Fable 5.1 / Fable 5 / Mythos 5, Opus 5.5, Sonnet 5.5 and
+   *   - Claude Fable 5.2 / Fable 5.1 / Mythos 5, Opus 5.5, Sonnet 5.5 and
    *     Haiku 5.5: `max` (the Fable / Mythos line uses always-on adaptive
    *     thinking, low→max)
    *   - Kimi K3: `max` (always-on reasoning; currently the only API effort)
@@ -115,6 +115,15 @@ const CLAUDE_FAST_BILLING: ModelBilling = {
   standardModel: "claude-opus-5-5",
 };
 
+/** Claude Fable 5.2 fast mode: usage credits at double Fable's standard rate. */
+const CLAUDE_FABLE_FAST_BILLING: ModelBilling = {
+  label: "bills usage credits",
+  detail:
+    "Fast mode bills your Claude usage credits ($16 in / $80 out per million tokens) from the first token, never your plan's included usage.",
+  paid: true,
+  standardModel: "claude-fable-5-2",
+};
+
 /** MiMo UltraSpeed: API Credits only, billed per token, never the Token Plan. */
 const XIAOMI_ULTRASPEED_BILLING: ModelBilling = {
   label: "bills API Credits",
@@ -142,18 +151,18 @@ const KIMI_AUTH_KEYS = [KIMI_CODE_KEY, "moonshot"];
 
 export const MODELS: ModelInfo[] = [
   // ── Anthropic ──────────────────────────────────────────
-  // NOTE: Claude Mythos 5.1 (`claude-mythos-5-1`, 2026-09-01) is kept commented
-  // out — it's a Project Glasswing model, still "Active (invite only)" in
-  // Anthropic's docs and unavailable to most users. Re-enable once it's
-  // generally available.
+  // NOTE: Claude Mythos 5.2 (`claude-mythos-5-2`, 2026-11-09) is kept commented
+  // out — it's only for organizations verified through Anthropic's verification
+  // programs and unavailable to most users. Re-enable once it's generally
+  // available.
   {
-    // Released 2026-09-01 — replaces Fable 5 at the same $10/$50 MTok (cache
-    // reads drop to $0.25). Always-on adaptive thinking steered by effort;
-    // forced tool use is rejected with a 400, which gg-ai never sends on the
-    // Anthropic path. Fable 5 is retired here — a session that still has it
-    // saved falls back to the provider default on next start.
-    id: "claude-fable-5-1",
-    name: "Claude Fable 5.1",
+    // Released 2026-11-09 — replaces Fable 5.1 at $8/$40 MTok (down from
+    // $10/$50; cache reads $0.20). Same API surface as 5.1: always-on adaptive
+    // thinking steered by effort, forced tool use rejected with a 400 (gg-ai
+    // never sends it on the Anthropic path). Fable 5.1 is retired here — a
+    // session that still has it saved falls back to the provider default.
+    id: "claude-fable-5-2",
+    name: "Claude Fable 5.2",
     provider: "anthropic",
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
@@ -163,12 +172,28 @@ export const MODELS: ModelInfo[] = [
     costTier: "high",
     maxThinkingLevel: "max",
   },
+  {
+    // Fable 5.2 in fast mode: the same model at up to 2.5x output tokens/sec,
+    // $16/$80 MTok. Sent as `claude-fable-5-2` + `speed: "fast"`; on a Claude
+    // subscription it bills usage credits only, like Opus 5.5 Fast.
+    id: "claude-fable-5-2-fast",
+    name: "Claude Fable 5.2 Fast",
+    provider: "anthropic",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: false,
+    costTier: "high",
+    maxThinkingLevel: "max",
+    billing: CLAUDE_FABLE_FAST_BILLING,
+  },
   // {
   //   // Mythos-class model offered through Project Glasswing (limited
-  //   // availability, invitation-only). Same underlying model as Fable 5.1 with
-  //   // some safeguards lifted; kept here so approved accounts can select it.
-  //   id: "claude-mythos-5-1",
-  //   name: "Claude Mythos 5.1",
+  //   // availability, verified organizations only). Same specs and pricing as
+  //   // Fable 5.2; kept here so approved accounts can select it.
+  //   id: "claude-mythos-5-2",
+  //   name: "Claude Mythos 5.2",
   //   provider: "anthropic",
   //   contextWindow: 1_000_000,
   //   maxOutputTokens: 128_000,

@@ -91,7 +91,7 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
   {
     value: "anthropic",
     label: "Anthropic",
-    description: "Claude Fable 5.1, Opus 5.5, Opus 5.5 Fast, Sonnet 5.5, Haiku 5.5",
+    description: "Claude Fable 5.2, Fable 5.2 Fast, Opus 5.5, Opus 5.5 Fast, Sonnet 5.5, Haiku 5.5",
     methods: ["oauth", "apikey"],
     apiKeyLabel: "Anthropic",
     methodDetails: {

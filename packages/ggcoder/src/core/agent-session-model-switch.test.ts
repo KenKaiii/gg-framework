@@ -135,7 +135,7 @@ describe("AgentSession model switch", () => {
     try {
       for (const [provider, model] of [
         ["openai", "gpt-6.1-sol"],
-        ["anthropic", "claude-fable-5-1"],
+        ["anthropic", "claude-fable-5-2"],
         ["gemini", "gemini-3.1-pro-preview"],
         ["openai", "custom-future-model"],
       ]) {
@@ -227,7 +227,7 @@ describe("AgentSession model switch", () => {
     try {
       session.setThinkingLevel("high");
       const enhancement = session.enhancePrompt("fix bug");
-      await session.switchModel("anthropic", "claude-fable-5-1");
+      await session.switchModel("anthropic", "claude-fable-5-2");
       session.setThinkingLevel("low");
       release();
       await enhancement;

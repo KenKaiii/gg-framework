@@ -427,7 +427,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   // Caller-supplied provider-specific body fields; they only fill unset fields.
   const params = mergeProviderOptions(baseParams, options.providerOptions);
 
-  // Adaptive thinking models (Fable 5.1, Opus 5.5/5, Opus 4.8/4.7/4.6, Sonnet 5.5/5, Haiku 5.5)
+  // Adaptive thinking models (Fable 5.2/5.1, Opus 5.5/5, Opus 4.8/4.7/4.6, Sonnet 5.5/5, Haiku 5.5)
   // don't need the interleaved-thinking beta — they have it built in.
   const hasAdaptiveThinking = isAdaptiveThinkingModel(options.model);
 

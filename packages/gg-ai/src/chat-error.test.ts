@@ -62,7 +62,7 @@ describe("formatChatError", () => {
     expect(error.reason).toBe(row.reason);
     expect(error.headline).toBe(row.headline);
     expect(error.guidance).toMatch(row.guidance);
-    expect(error.guidance).toMatch(/Claude Opus 5\.5 \(standard speed\)/);
+    expect(error.guidance).toMatch(/same model without Fast \(standard speed\)/);
   });
 
   it("does not tell an empty balance to wait for a subscription reset", () => {

@@ -88,6 +88,7 @@ describe("model registry invariants", () => {
   it("registers fast-mode entries as the same model as their base, wired in gg-ai", () => {
     const fastIds = MODELS.filter((m) => m.id.endsWith(FAST_MODE_SUFFIX)).map((m) => m.id);
     expect(fastIds).toEqual([
+      "claude-fable-5-2-fast",
       "claude-opus-5-5-fast",
       "gpt-6-astra-fast",
       "gpt-6.1-sol-fast",
@@ -111,6 +112,8 @@ describe("model registry invariants", () => {
     // Only a real-money tier is ever stripped back to the standard model.
     expect(isPaidModel("claude-opus-5-5-fast")).toBe(true);
     expect(withoutPaidTier("claude-opus-5-5-fast")).toBe("claude-opus-5-5");
+    expect(isPaidModel("claude-fable-5-2-fast")).toBe(true);
+    expect(withoutPaidTier("claude-fable-5-2-fast")).toBe("claude-fable-5-2");
     expect(withoutPaidTier("gpt-6.1-sol-fast")).toBe("gpt-6.1-sol-fast");
     expect(withoutPaidTier("claude-sonnet-5-5")).toBe("claude-sonnet-5-5");
     expect(withoutPaidTier("not-a-model")).toBe("not-a-model");
