@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.96.1
+
+### Patch Changes
+
+- Fix filler "[Awaiting the user's next message.]" replies: a typed answer to a question card now hands its attachments to the agent along with the text.
+  - @kenkaiiii/gg-ai@5.96.1
+  - @kenkaiiii/gg-agent@5.96.1
+  - @kenkaiiii/gg-core@5.96.1
+
 ## 5.96.0
 
 ### Minor Changes
