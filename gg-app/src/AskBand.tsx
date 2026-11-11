@@ -482,7 +482,13 @@ export function AskBand({
   // that has picks.
   const isSettled = (q: AskQuestion): boolean =>
     shown[q.id] !== undefined || (q.kind === "multi" && picksOf(q).length > 0);
-  const hint = keyHint(questions.find((q) => !isSettled(q)));
+  // From the answers already sent, not the pick being committed: dropping the
+  // hint on that pick shrank the card a line and dropped the chat with it.
+  const hint = keyHint(
+    questions.find(
+      (q) => answers[q.id] === undefined && !(q.kind === "multi" && picksOf(q).length > 0),
+    ),
+  );
 
   // The footer exists only when the band holds a multi-select: that is the one
   // kind whose selection cannot commit itself ("Tests and Build" and "Tests,

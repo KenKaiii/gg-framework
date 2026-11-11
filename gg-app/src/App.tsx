@@ -184,7 +184,7 @@ import { useTrayIntents } from "./useTrayIntents";
 import { useAttachments } from "./useAttachments";
 import { useDragOverlay, useWindowFileDrop } from "./useFileDrop";
 import { DeckMenu, TitleBarActions } from "./WorkspaceHeaderActions";
-import { nextDockHeight } from "./dock-height";
+import { dockStepped, nextDockHeight } from "./dock-height";
 import { finishEntrances } from "./finish-entrances";
 import { Deck, type DeckPanelId } from "./Deck";
 import { ProjectHealthPanel } from "./ProjectHealthBadge";
@@ -259,7 +259,28 @@ const SCHEDULE_COMMAND: SlashCommand = {
 export type { Item, TranscriptImage } from "./transcript-item";
 
 function App(): React.ReactElement {
-  const [items, setItems] = useState<Item[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const liveRegionRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const chatLayout = useMemo(
+    () =>
+      createChatLayoutMotion(() => ({
+        transcript: scrollRef.current,
+        surfaces: [liveRegionRef.current, composerRef.current],
+      })),
+    [],
+  );
+  const [items, updateItems] = useState<Item[]>([]);
+  // Every change to the rows is captured first, whoever makes it (the agent,
+  // Ken, autopilot, a shell run, an answered question), so the rows it moves
+  // glide to their new place instead of landing there in one frame.
+  const setItems = useCallback(
+    (update: Parameters<typeof updateItems>[0]) => {
+      chatLayout.capture();
+      updateItems(update);
+    },
+    [chatLayout],
+  );
   // Text of the reply streaming right now, grown outside `items` so each chunk
   // re-renders only that row (live-text.ts). One store for the window's life.
   const [liveText] = useState(createLiveTextStore);
@@ -395,17 +416,6 @@ function App(): React.ReactElement {
     });
   }, [cancelling]);
   const [status, setStatus] = useState("connecting to agent\u2026");
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const liveRegionRef = useRef<HTMLDivElement>(null);
-  const composerRef = useRef<HTMLDivElement>(null);
-  const chatLayout = useMemo(
-    () =>
-      createChatLayoutMotion(() => ({
-        transcript: scrollRef.current,
-        surfaces: [liveRegionRef.current, composerRef.current],
-      })),
-    [],
-  );
   const [liveToolFeed, updateLiveToolFeed] = useState<LiveToolEntry[]>([]);
   const setLiveToolFeed = useCallback(
     (update: Parameters<typeof updateLiveToolFeed>[0]) => {
@@ -706,6 +716,15 @@ function App(): React.ReactElement {
   const transcriptFrameRef = useRef<HTMLDivElement>(null);
   const dockElRef = useRef<HTMLDivElement | null>(null);
   const dockRoRef = useRef<ResizeObserver | null>(null);
+  const syncDockHeight = useCallback((): boolean => {
+    const dock = dockElRef.current;
+    const frame = transcriptFrameRef.current;
+    if (!dock || !frame) return false;
+    const height = nextDockHeight(dock, frame.style.getPropertyValue("--dock-h"));
+    if (height === null) return false;
+    frame.style.setProperty("--dock-h", height);
+    return true;
+  }, []);
   const dockRef = useCallback(
     (dock: HTMLDivElement | null) => {
       dockRoRef.current?.disconnect();
@@ -715,10 +734,18 @@ function App(): React.ReactElement {
       const apply = (): void => {
         const frame = transcriptFrameRef.current;
         if (!frame) return;
-        const height = nextDockHeight(dock, frame.style.getPropertyValue("--dock-h"));
-        if (height === null) return;
-        frame.style.setProperty("--dock-h", height);
-        maybeScrollToBottom();
+        const current = frame.style.getPropertyValue("--dock-h");
+        const next = nextDockHeight(dock, current);
+        if (next === null) return;
+        // A step nobody captured (a panel opening, a draft wrapping or being
+        // deleted). The transcript has not heard yet, so its rows are still
+        // where they were: capture them here and glide, instead of following.
+        const glide = dockStepped(current, next) && !chatLayout.capturing();
+        if (glide) chatLayout.capture();
+        frame.style.setProperty("--dock-h", next);
+        if (!glide) maybeScrollToBottom();
+        else if (chatLayout.commit(stickToBottomRef.current, scrollToBottom) && scrollRef.current)
+          lastScrollTopRef.current = scrollRef.current.scrollTop;
       };
       apply();
       if (typeof ResizeObserver === "undefined") return;
@@ -726,7 +753,7 @@ function App(): React.ReactElement {
       observer.observe(dock);
       dockRoRef.current = observer;
     },
-    [maybeScrollToBottom],
+    [chatLayout, lastScrollTopRef, maybeScrollToBottom, scrollToBottom, stickToBottomRef],
   );
 
   // Settle the scroll position after a session hydrates. The single layout-effect
@@ -856,8 +883,9 @@ function App(): React.ReactElement {
   // intact across the measurement (see composer-autosize.ts for why both
   // halves matter).
   const autosizeInput = useCallback(() => {
-    chatLayout.settle();
-    autosizeComposer(inputRef.current, scrollRef.current, stickToBottomRef.current);
+    chatLayout.still(() =>
+      autosizeComposer(inputRef.current, scrollRef.current, stickToBottomRef.current),
+    );
   }, [chatLayout, stickToBottomRef]);
 
   // useLayoutEffect (not useEffect) so the height is recomputed BEFORE the
@@ -882,6 +910,10 @@ function App(): React.ReactElement {
       chatLayout.cancel();
       return;
     }
+    // The dock's new height reaches the transcript here, not a frame later
+    // through its observer: the transaction has to measure where rows will
+    // really rest, or it finds nothing to move and the observer snaps them.
+    if (chatLayout.capturing()) syncDockHeight();
     if (chatLayout.commit(stickToBottomRef.current, scrollToBottom) && scrollRef.current) {
       lastScrollTopRef.current = scrollRef.current.scrollTop;
     }
@@ -1282,7 +1314,7 @@ function App(): React.ReactElement {
       setLiveFromId(lastIssuedId() + 1);
       setHydrated(true);
     }
-  }, [stickToBottomRef, refreshShellTrust]);
+  }, [stickToBottomRef, refreshShellTrust, setItems]);
 
   useEffect(() => {
     const unsub = subscribe(handleEvent);
@@ -1911,7 +1943,7 @@ function App(): React.ReactElement {
         return false;
       }
     },
-    [pushItem, endStreamingText, dismissOpenAsks, stickToBottomRef],
+    [pushItem, endStreamingText, dismissOpenAsks, stickToBottomRef, setItems],
   );
 
   // Record answers for an `ask_user` band, and settle the parked tool call once

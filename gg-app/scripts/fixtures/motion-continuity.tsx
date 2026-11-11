@@ -8,7 +8,6 @@ import "../../src/App.css";
 import { Markdown } from "../../src/Markdown";
 import { ChatErrorNotice } from "../../src/ChatErrorNotice";
 import { QueuedBar } from "../../src/QueuedBar";
-import { BackgroundTasksButton } from "../../src/BackgroundTasksButton";
 import { SettingsTabBar } from "../../src/SettingsTabBar";
 import { ConfirmModal } from "../../src/ConfirmModal";
 import { Dropdown } from "../../src/Dropdown";
@@ -83,17 +82,6 @@ function Components(): React.ReactElement {
             </Markdown>
           </>
         )}
-        <BackgroundTasksButton
-          tasks={[
-            {
-              id: "fictional-task",
-              pid: 0,
-              command: "Fictional task, not executed",
-              startedAt: 0,
-              exitCode: null,
-            },
-          ]}
-        />
         <RunningSchedulesButton
           schedules={
             scheduled

@@ -741,6 +741,9 @@ describe("AskBand", () => {
       expect(screen.getByRole("button", { name: "No", hidden: true }).className).toContain(
         "btn-primary",
       );
+      // Regression: the key hint left on the pick, so the card lost a line and
+      // the chat dropped with it before the card had started to dissolve.
+      expect(document.querySelector(".ask-band.is-committing .ask-hint")).toBeTruthy();
       // A second pick mid-beat cannot change the answer.
       fireEvent.click(screen.getByRole("button", { name: "Yes", hidden: true }));
       vi.advanceTimersByTime(379);

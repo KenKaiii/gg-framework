@@ -133,6 +133,26 @@ describe("claudeCodeComplete", () => {
     expect((await seen.options!.canUseTool!("Bash", {}, sig))?.behavior).toBe("deny");
   });
 
+  it("reports activity for every SDK message, partial deltas included", async () => {
+    const { query, seen } = fakeQuery([
+      { type: "stream_event", event: { type: "content_block_delta" } } as unknown as SDKMessage,
+      { type: "stream_event", event: { type: "content_block_delta" } } as unknown as SDKMessage,
+      assistant("m1", [{ type: "text", text: "Paris" }]),
+      result(),
+    ]);
+    let beats = 0;
+    const reply = await claudeCodeComplete({
+      ...proc,
+      query,
+      model: "claude-sonnet-5",
+      messages: [{ role: "user", content: "Capital of France?" }],
+      onActivity: () => beats++,
+    });
+    expect(beats).toBe(4);
+    expect(seen.options?.includePartialMessages).toBe(true);
+    expect(reply.message.content).toEqual([{ type: "text", text: "Paris" }]);
+  });
+
   it("throws Claude Code's error instead of returning an empty reply", async () => {
     const { query } = fakeQuery([
       assistant("x", [{ type: "text", text: "API Error: 401 invalid credentials" }], "<synthetic>"),

@@ -45,13 +45,16 @@ export function useTranscriptScroll({
   // and grow the content after this fires, so it's also called from each image's
   // onLoad to keep the newest content visible.
   const scrollToBottom = useCallback(() => {
-    chatLayout.settle();
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight });
-    // A reader's scroll landing in this same frame shares one scroll event with
-    // this jump; measuring it from the pre-jump offset would read up as down.
-    lastScrollTopRef.current = el.scrollTop;
+    // Lifted, not cancelled: this also runs every frame the dock resizes, and
+    // ending a glide there snapped the chat the rest of the way in one frame.
+    chatLayout.still(() => {
+      el.scrollTo({ top: el.scrollHeight });
+      // A reader's scroll landing in this same frame shares one scroll event with
+      // this jump; measuring it from the pre-jump offset would read up as down.
+      lastScrollTopRef.current = el.scrollTop;
+    });
   }, [chatLayout, scrollRef]);
 
   // Same as scrollToBottom, but a no-op while the user has scrolled up to read.

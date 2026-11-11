@@ -5937,6 +5937,11 @@ select {
       visibility 0s;
   }
 }
+/* Rows gliding to a new place are displaced by a transform. Scroll anchoring
+   takes that for a layout shift and scrolls to undo it (chat-layout-motion.ts). */
+.transcript[data-gliding] {
+  overflow-anchor: none;
+}
 .transcript {
   flex: 1 1 auto;
   /* Required so this scrollable flex child actually shrinks (default min-height
@@ -11212,9 +11217,10 @@ select {
      jumping the moment a message queues. */
   animation: ggqueuedin var(--dur-strip-in) var(--ease-out);
 }
-/* Chat queue insertion joins App's layout transaction. Its final space lands
-   once; an independent max-height entrance would fight transcript following.
-   Other strips sharing the generic queued styles keep their existing motion. */
+/* Outside the deck the chat queue lands at its full height and only fades in.
+   In the deck it grows open instead (`deck-notice-in`, Deck.css): the chat
+   follows that growth frame by frame without ending a glide already under way
+   (chat-layout-motion.ts `still`). */
 /* A fixed composer corner keeps expanded-list controls inside the pointer clip. */
 .chat-queue {
   border-radius: var(--radius-input);

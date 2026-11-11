@@ -37,7 +37,7 @@ import {
   toModelInfo,
   DEFAULT_LOCAL_ENDPOINTS,
 } from "@kenkaiiii/gg-core";
-import type { Message, ContentPart, ToolResult } from "@kenkaiiii/gg-ai";
+import type { Message, ContentPart, StreamResponse, ToolResult } from "@kenkaiiii/gg-ai";
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -799,6 +799,54 @@ describe("compact", () => {
       { model: expect.any(String), maxTokens: expect.any(Number) },
     ]);
     expect(result.messages[1]!.content as string).toContain("Summary from the hook.");
+  });
+
+  it("keeps a `complete` summary alive past the deadline while it reports activity", async () => {
+    vi.useFakeTimers();
+    try {
+      const beatGap = SUMMARY_ATTEMPT_TIMEOUT_MS * 0.66;
+      const totalDuration = SUMMARY_ATTEMPT_TIMEOUT_MS * 2.5;
+      const complete = vi.fn(
+        ({ onActivity }: { onActivity: () => void }) =>
+          new Promise<StreamResponse>((resolve) => {
+            const beat = setInterval(onActivity, beatGap);
+            setTimeout(() => {
+              clearInterval(beat);
+              resolve({
+                message: { role: "assistant", content: "Slow summary from the hook." },
+                stopReason: "end_turn",
+                usage: { inputTokens: 10, outputTokens: 5 },
+              });
+            }, totalDuration);
+          }),
+      );
+      const promise = compact(buildConversation(30), { ...baseOptions, complete });
+      await vi.advanceTimersByTimeAsync(totalDuration + 1);
+      const result = await promise;
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(result.messages[1]!.content as string).toContain("Slow summary from the hook.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still times out a `complete` summary that goes silent", async () => {
+    vi.useFakeTimers();
+    try {
+      let signal: AbortSignal | undefined;
+      const complete = vi.fn((request: { signal: AbortSignal }) => {
+        signal = request.signal;
+        return new Promise<StreamResponse>(() => {});
+      });
+      const promise = compact(buildConversation(30), { ...baseOptions, complete });
+      await vi.advanceTimersByTimeAsync(SUMMARY_ATTEMPT_TIMEOUT_MS + 1);
+      const result = await promise;
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(signal?.aborted).toBe(true);
+      expect(result.messages[1]!.content as string).toContain("## Goal");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("produces summary message with LLM response", async () => {

@@ -151,6 +151,19 @@ export async function resolveEnrichedPath(
   return cached;
 }
 
+/** How many directories `after` has that `before` did not. */
+export function countAddedPathDirs(before: string, after: string): number {
+  const dirs = (value: string) =>
+    new Set(
+      value
+        .split(path.delimiter)
+        .map((dir) => dir.trim())
+        .filter(Boolean),
+    );
+  const had = dirs(before);
+  return [...dirs(after)].filter((dir) => !had.has(dir)).length;
+}
+
 /**
  * Enrich `process.env.PATH` in place so every later spawn/execFile (the bash
  * tool, background tasks, LSP servers, git helpers) inherits a working PATH.
@@ -163,7 +176,7 @@ export async function enrichProcessPath(): Promise<void> {
   if (enriched && enriched !== before) {
     process.env.PATH = enriched;
     log("INFO", "shell-path", "enriched PATH for tools", {
-      added: enriched.length - before.length,
+      addedDirs: countAddedPathDirs(before, enriched),
     });
   }
 }

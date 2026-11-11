@@ -22,3 +22,19 @@ export function nextDockHeight(
   const next = `${px}px`;
   return next === current ? null : next;
 }
+
+// Below this a height change is one frame of something easing (a strip opening,
+// a draft growing a line): the chat follows it as it goes.
+const DOCK_STEP_PX = 24;
+
+/**
+ * Whether the dock changed height in one step (a panel opening, a draft
+ * wrapping to its own row, a draft deleted). Followed directly, that moves
+ * every message the whole way in a single frame; the caller glides it instead.
+ * The first measurement is not a step: there is no earlier height to leave.
+ */
+export function dockStepped(current: string, next: string): boolean {
+  const from = parseFloat(current);
+  const to = parseFloat(next);
+  return Number.isFinite(from) && Number.isFinite(to) && Math.abs(to - from) >= DOCK_STEP_PX;
+}

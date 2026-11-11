@@ -349,7 +349,10 @@ export function handlePromptRoutes(
           if (!ctx.autopilotCancelled) void ctx.trophies.count("autopilotReviews", ctx.sessionId);
         } else {
           ctx.broadcast("autopilot_ignored", { reason: decision.reason });
-          log("INFO", "app-sidecar", "autopilot skipped", { reason: decision.reason });
+          // Autopilot off is the normal case, not an event worth a line per turn.
+          if (decision.reason !== "disabled") {
+            log("INFO", "app-sidecar", "autopilot skipped", { reason: decision.reason });
+          }
         }
         // A prompt sent while Ken was reviewing (build idle) queued but had no
         // run to steer into — run it now as a fresh turn so it never strands.

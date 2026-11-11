@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -6,6 +7,7 @@ import type { Message } from "@kenkaiiii/gg-ai";
 import type * as GgAgentModule from "@kenkaiiii/gg-agent";
 import type * as McpModule from "./mcp/index.js";
 import { useFakeHome } from "../test-support/fake-home.js";
+import { SessionManager } from "./session-manager.js";
 
 const agentLoopMock = vi.hoisted(() => vi.fn());
 
@@ -249,6 +251,54 @@ describe("step-boundary persistence", () => {
     expect(reopened.getAppMarkers().filter((m) => m.kind === "interrupted_run")).toHaveLength(1);
     await reopened.dispose();
   }, 20_000);
+
+  it("leaves a run open when another live process owns it, and reports a dead or unknown owner", async () => {
+    const { AgentSession } = await import("./agent-session.js");
+    const options = {
+      provider: "anthropic" as const,
+      model: "claude-test",
+      cwd: tmpProject,
+      systemPrompt: "test system prompt",
+    };
+    const session = new AgentSession(options);
+    await session.initialize();
+    const sessionPath = session.getState().sessionPath!;
+    await session.dispose();
+
+    const journal = new SessionManager(path.dirname(sessionPath));
+    const start = (generation: number, pid?: number) =>
+      journal.appendRunStarted(sessionPath, {
+        version: 1,
+        generation,
+        startedAt: new Date().toISOString(),
+        afterMessageCount: 0,
+        ...(pid !== undefined ? { pid } : {}),
+      });
+    const interruptedAfterReload = async () => {
+      const resumed = new AgentSession({ ...options, sessionId: sessionPath });
+      await resumed.initialize();
+      const generations = resumed
+        .getAppMarkers()
+        .filter((m) => m.kind === "interrupted_run")
+        .map((m) => m.data.generation);
+      await resumed.dispose();
+      return generations;
+    };
+
+    // The test runner's parent is a live process that is not this one.
+    await start(1, process.ppid);
+    expect(await interruptedAfterReload()).toEqual([]);
+    // Still open, so it is reported once its owner is gone.
+    expect(journal.getUnfinishedRuns((await journal.load(sessionPath)).entries)).toHaveLength(1);
+
+    const deadPid = spawnSync(process.execPath, ["-e", ""]).pid;
+    await start(2, deadPid);
+    expect(await interruptedAfterReload()).toEqual([2]);
+
+    // Journals written before the pid existed keep the old behaviour.
+    await start(3);
+    expect(await interruptedAfterReload()).toEqual([2, 3]);
+  }, 30_000);
 
   it("writes nothing for a transient session", async () => {
     const { AgentSession } = await import("./agent-session.js");

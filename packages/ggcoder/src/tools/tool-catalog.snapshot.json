@@ -582,17 +582,17 @@
             "type": "boolean"
           },
           "wait_ms": {
-            "description": "Block until exit or a wake fires (max 600000)",
+            "description": "Block until exit or a wake fires (max 300000)",
             "type": "integer",
             "minimum": 1000,
-            "maximum": 600000
+            "maximum": 300000
           }
         },
         "required": [
           "id"
         ]
       },
-      "hash": "ec5e60d8eb2d3f09cff4ef9929a308bd7f2b8f967bdb5f410a27ab7e10aafa11"
+      "hash": "f6bdb9c86b756b1bd14d074068190940af83368c034d8c775161989673a9a82c"
     },
     {
       "name": "task_send",

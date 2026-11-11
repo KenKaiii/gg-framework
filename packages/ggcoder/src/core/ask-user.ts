@@ -5,7 +5,7 @@
  */
 import type { ImageContent, TextContent, ToolResultContent, VideoContent } from "@kenkaiiii/gg-ai";
 
-export const ASK_USER_INTERACTIVE_DEADLINE_MS = 10 * 60_000;
+export const ASK_USER_INTERACTIVE_DEADLINE_MS = 5 * 60_000;
 
 /**
  * Soft deadline when nobody is watching — autopilot (Ken), task run-all

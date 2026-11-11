@@ -269,76 +269,6 @@ async function contentChecks(page, traces) {
   }
 }
 
-async function checklistChecks(page, traces) {
-  const input = page.locator("textarea.input");
-  await input.fill("Fictional selected draft stays intact");
-  await input.evaluate((el) => el.setSelectionRange(10, 18));
-  await page.locator(".transcript").evaluate((el) => {
-    el.dispatchEvent(new WheelEvent("wheel", { deltaY: -400, bubbles: true }));
-    el.scrollTop = el.scrollHeight / 3;
-  });
-  await page.evaluate(() => new Promise(requestAnimationFrame));
-  const before = await chatGeometry(page);
-  for (const mode of ["loading", "error", "loaded"]) {
-    await page.evaluate((mode) => {
-      window.motionBridge.checklist = mode;
-    }, mode);
-    await page.getByRole("button", { name: "Checklist", exact: true }).click();
-    await page
-      .getByText(
-        mode === "loading"
-          ? "Reading project setup…"
-          : mode === "error"
-            ? "Couldn't read the checklist."
-            : "Git & GitHub",
-        { exact: true },
-      )
-      .waitFor();
-    await page.evaluate(() =>
-      window.motionBridge.emit({
-        type: "text_delta",
-        data: { text: " Fictional hidden streaming continuation." },
-      }),
-    );
-    // useAgentEvents buffers later deltas for 100ms. Deliver to the live store
-    // while Activity is hidden, rather than testing an event still in transit.
-    await page.waitForTimeout(120);
-    await page.getByRole("button", { name: "Back to chat" }).click();
-    // View Transition commits asynchronously; compare visible layout, not the
-    // zero geometry of Activity's still-hidden DOM during snapshot capture.
-    await input.waitFor({ state: "visible" });
-    assert.equal(await input.inputValue(), "Fictional selected draft stays intact");
-    assert.deepEqual(await input.evaluate((el) => [el.selectionStart, el.selectionEnd]), [10, 18]);
-    const after = await chatGeometry(page);
-    assert(
-      Math.abs(after.top - before.top) <= 1,
-      `${mode}: reader anchor preserved: ${JSON.stringify({ before, after })}`,
-    );
-    const rows = await page.locator(".row").evaluateAll((rows) =>
-      rows.map((row) => ({
-        filter: getComputedStyle(row).filter,
-        entrance: row.classList.contains("row-enter"),
-      })),
-    );
-    assert(
-      rows.every((row) => row.filter === "none" && !row.entrance),
-      `${mode}: hidden content returns settled`,
-    );
-    const returnedText = await page.locator(".transcript").evaluate((el) => ({
-      text: el.textContent,
-      enteringWords: [...el.querySelectorAll(".md-word")]
-        .flatMap((word) => word.getAnimations())
-        .filter((a) => a.playState === "running" || a.playState === "paused").length,
-    }));
-    assert(
-      returnedText.text.includes("Fictional hidden streaming continuation."),
-      `${mode}: hidden stream content is already revealed: ${JSON.stringify({ tail: returnedText.text.slice(-700), enteringWords: returnedText.enteringWords })}`,
-    );
-    assert.equal(returnedText.enteringWords, 0, `${mode}: old word entrances cannot replay`);
-    traces.push({ name: `checklist-${mode}`, before, after, returnedText });
-  }
-}
-
 async function fallbackChecks(page, url, traces) {
   for (const mode of ["reduced-motion", "missing-apis"]) {
     await page.emulateMedia({
@@ -388,16 +318,54 @@ async function fallbackChecks(page, url, traces) {
             ).length,
       );
     assert.equal(traveling, 0, `${mode}: no layout travel`);
-    await input.fill("Fictional preserved fallback draft");
-    await page.getByRole("button", { name: "Checklist", exact: true }).click();
-    await page.getByRole("button", { name: "Back to chat" }).click();
-    assert.equal(await input.inputValue(), "Fictional preserved fallback draft");
     assert.deepEqual(await page.evaluate(() => window.motionBridge.unknown), []);
     traces.push({ name: mode, passed: true });
   }
 }
 
-async function toolTransaction(page, events, traces) {
+// The dock floats over the chat and hands its height to the transcript through
+// an observer. A glide has to outlive that: one that is cut short, or never
+// starts, moves the rows the rest of the way in a single frame.
+async function dockGlide(page, name, act, traces, duration = 600) {
+  const sampling = page.evaluate(async (duration) => {
+    const transcript = document.querySelector(".transcript");
+    const rows = [...transcript.children].slice(-4);
+    const sample = (start) => ({
+      time: performance.now() - start,
+      tops: rows.map((row) => (row.isConnected ? row.getBoundingClientRect().top : null)),
+      gliding: transcript
+        .getAnimations({ subtree: true })
+        .filter((a) => a.effect?.getKeyframes().some((frame) => frame.translate !== undefined))
+        .length,
+    });
+    const start = performance.now();
+    const frames = [sample(start)];
+    while (performance.now() - start < duration) {
+      await new Promise(requestAnimationFrame);
+      // After the frame's observers and paint, not before them.
+      await new Promise((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = resolve;
+        channel.port2.postMessage(0);
+      });
+      frames.push(sample(start));
+    }
+    return frames;
+  }, duration);
+  await act();
+  const frames = await sampling;
+  traces.push({ name, frames });
+  if (record) return;
+  const row = frames[0].tops.findIndex((_, i) => frames.every((frame) => frame.tops[i] !== null));
+  const travel = Math.abs(frames.at(-1).tops[row] - frames[0].tops[row]);
+  const gliding = frames.filter((frame) => frame.gliding > 0);
+  const lasted = gliding.length ? gliding.at(-1).time - gliding[0].time : 0;
+  assert(travel > 20, `${name}: the chat has somewhere to go (${travel}px)`);
+  assert(lasted >= 120, `${name}: rows glide the whole way, not ${Math.round(lasted)}ms of it`);
+  assert(Math.abs((await chatGeometry(page)).bottom) <= 2, `${name}: ends pinned to the bottom`);
+}
+
+async function toolTransaction(page, events, traces, moves = true) {
   const result = await page.evaluate(async (events) => {
     const transcript = document.querySelector(".transcript");
     const row = transcript.lastElementChild;
@@ -407,13 +375,15 @@ async function toolTransaction(page, events, traces) {
     const animations = document
       .getAnimations()
       .filter((a) => a.effect?.getKeyframes().some((frame) => frame.translate !== undefined));
-    for (const animation of animations) {
-      animation.pause();
-      animation.currentTime = 0;
-    }
+    // Read live, then paused where they are. Not rewound: a glide already
+    // under way takes the new destination on its own clock, so its time 0 is
+    // not this moment. Not paused first either: WebKit's styles run on a live
+    // clock inside a task while pause() holds the frame's earlier time.
     const first = row.getBoundingClientRect().top;
+    for (const animation of animations) animation.pause();
     const scroll = transcript.scrollTop;
-    for (const animation of animations) animation.currentTime = 75;
+    for (const animation of animations)
+      animation.currentTime = Number(animation.currentTime ?? 0) + 75;
     const middle = row.getBoundingClientRect().top;
     for (const animation of animations) animation.finish();
     const last = row.getBoundingClientRect().top;
@@ -431,9 +401,15 @@ async function toolTransaction(page, events, traces) {
   }, events);
   traces.push({ name: "tool-layout", ...result });
   if (!record) {
-    assert(result.count > 0, "Tool geometry uses a coordinated transition");
+    // The tool line is one row that changes in place: only its arrival, its
+    // leaving and the tools toggle move the chat.
+    if (moves) assert(result.count > 0, "Tool geometry uses a coordinated transition");
+    else assert(Math.abs(result.last - result.before) <= 1, "A later tool leaves the chat still");
+    // Never back from where it was, and at most a frame's worth on toward
+    // where it is going: a snap covers the whole way at once.
+    const ahead = (result.first - result.before) * Math.sign(result.last - result.before || 1);
     assert(
-      Math.abs(result.first - result.before) <= 1,
+      ahead >= -1 && ahead <= Math.abs(result.last - result.before) * 0.35 + 1,
       `First tool frame must be continuous: ${JSON.stringify(result)}`,
     );
     assert(Math.abs(result.finalScroll - result.scroll) <= 1, "No late tool scroll correction");
@@ -495,8 +471,8 @@ try {
         });
         try {
           await page.goto(url);
-          await page.getByRole("button", { name: "Checklist", exact: true }).waitFor();
           const input = page.locator("textarea.input");
+          await input.waitFor();
           await input.fill(
             Array.from({ length: 18 }, (_, i) => `Fictional draft line ${i}`).join("\n"),
           );
@@ -538,19 +514,101 @@ try {
               },
             })),
             traces,
+            false,
           );
           await toolTransaction(page, "toggle", traces);
           await toolTransaction(page, "toggle", traces);
-          await toolTransaction(
+          // A message sent mid-run: its glide is under way when the sidecar's
+          // answer opens the queue strip, which resizes the dock every frame.
+          const queuedPrompt = { id: "queued-1", text: "Fictional queued prompt" };
+          await input.fill(queuedPrompt.text);
+          await dockGlide(
             page,
-            [
-              {
-                type: "queued",
-                data: { count: 1, messages: [{ id: "queued-1", text: "Fictional queued prompt" }] },
-              },
-            ],
+            "queued-send-glide",
+            async () => {
+              await input.press("Enter");
+              await page.waitForTimeout(30);
+              await page.evaluate(
+                (message) =>
+                  window.motionBridge.emit({
+                    type: "queued",
+                    data: { count: 1, messages: [message] },
+                  }),
+                queuedPrompt,
+              );
+            },
             traces,
           );
+          await dockGlide(
+            page,
+            "queued-cancel-glide",
+            () =>
+              page.evaluate(
+                (id) =>
+                  window.motionBridge.emit({
+                    type: "queued",
+                    data: { count: 0, messages: [], cancelledId: id },
+                  }),
+                queuedPrompt.id,
+              ),
+            traces,
+          );
+          await dockGlide(
+            page,
+            "first-reply-glide",
+            () =>
+              page.evaluate(async () => {
+                await window.motionBridge.emit({ type: "turn_end", data: {} });
+                await window.motionBridge.emit({
+                  type: "text_delta",
+                  data: { text: "Fictional first words of a reply." },
+                });
+              }),
+            traces,
+          );
+          // An answered question holds, dissolves, then leaves its place for a
+          // one-line answer at the end of the chat.
+          await page.evaluate(() =>
+            window.motionBridge.emit({
+              type: "ask_user",
+              data: {
+                id: "fixture-ask",
+                questions: [
+                  {
+                    id: "fixture-question",
+                    question: "Fictional question?",
+                    kind: "choice",
+                    options: [{ label: "Fictional one" }, { label: "Fictional two" }],
+                  },
+                ],
+              },
+            }),
+          );
+          await page.waitForTimeout(400);
+          await dockGlide(
+            page,
+            "answered-question-glide",
+            () => page.getByText("Fictional one", { exact: true }).click(),
+            traces,
+            1100,
+          );
+          // Steps in the dock's own height that no state setter announces: a
+          // Deck panel taking the message box's place, and a draft deleted.
+          await dockGlide(
+            page,
+            "deck-panel-open-glide",
+            () => page.getByRole("button", { name: "More", exact: true }).click(),
+            traces,
+          );
+          await dockGlide(
+            page,
+            "deck-panel-close-glide",
+            () => page.keyboard.press("Escape"),
+            traces,
+          );
+          await input.fill(Array.from({ length: 6 }, (_, i) => `Fictional draft ${i}`).join("\n"));
+          await page.waitForTimeout(400);
+          await dockGlide(page, "draft-cleared-glide", () => input.fill(""), traces);
           await input.fill("Fictional short queued send");
           await trace(
             page,
@@ -615,31 +673,6 @@ try {
               Math.abs((await chatGeometry(page)).bottom) <= 2,
               "Returning to the bottom resumes streaming follow",
             );
-          await input.fill("Preserved fictional draft");
-          await trace(
-            page,
-            "checklist-open",
-            () => page.getByRole("button", { name: "Checklist", exact: true }).click(),
-            ".transcript > :last-child",
-            traces,
-          );
-          await trace(
-            page,
-            "checklist-return",
-            () => page.getByRole("button", { name: "Back to chat" }).click(),
-            ".transcript > :last-child",
-            traces,
-          );
-          assert.equal(await input.inputValue(), "Preserved fictional draft");
-          if (!record)
-            assert(
-              traces
-                .at(-1)
-                .frames.every((f) =>
-                  f.elements.every((e) => e.filter === "none" || e.filter === "blur(0px)"),
-                ),
-              "Checklist return must stay sharp",
-            );
           for (const zoom of [0.5, 0.95, 1, 1.25, 1.5, 2]) {
             await page.evaluate((zoom) => {
               document.documentElement.style.zoom = String(zoom);
@@ -672,16 +705,16 @@ try {
                 Math.abs(height - finalHeight) <= 1 && Math.abs(height - naturalHeight) <= 1,
                 `Composer settles to its empty intrinsic height at zoom ${zoom}: ${height}/${finalHeight}/${naturalHeight}`,
               );
+              const pinned = await chatGeometry(page);
               assert(
-                Math.abs((await chatGeometry(page)).bottom) <= 2,
-                `Zoom ${zoom} send retains bottom pin`,
+                Math.abs(pinned.bottom) <= 2,
+                `Zoom ${zoom} send retains bottom pin: ${JSON.stringify(pinned)}`,
               );
             }
           }
           await page.evaluate(() => {
             document.documentElement.style.zoom = "1";
           });
-          await checklistChecks(page, traces);
           // Record the resting screen as well as the timed intermediate traces.
           await page.waitForTimeout(350);
           await page.screenshot({ path: path.join(evidence, `${name}-${width}-chat.png`) });
@@ -745,7 +778,10 @@ try {
                   const animations = document
                     .getAnimations()
                     .filter((a) => a.effect?.pseudoElement?.includes("view-transition"));
-                  const exits = animations.filter((a) => a.animationName === "surface-out");
+                  // Menus shrink back toward their trigger (pop-out); dialogs fade (surface-out).
+                  const exits = animations.filter((a) =>
+                    ["surface-out", "pop-out"].includes(a.animationName),
+                  );
                   for (const a of exits) {
                     a.pause();
                     a.currentTime = 75;
@@ -765,20 +801,6 @@ try {
               return transition;
             };
           });
-          await trace(
-            page,
-            "background-open",
-            () => page.getByTitle("Background tasks", { exact: true }).click(),
-            ".bgtasks-menu",
-            traces,
-          );
-          await trace(
-            page,
-            "background-close",
-            () => page.getByTitle("Background tasks", { exact: true }).click(),
-            ".bgtasks-menu",
-            traces,
-          );
           for (const method of ["toggle", "escape", "outside", "select"]) {
             await page.getByRole("button", { name: "Fixture choice", exact: true }).click();
             await trace(
@@ -807,7 +829,7 @@ try {
           await trace(
             page,
             "schedule-last-stop",
-            () => page.getByRole("button", { name: "stop", exact: true }).click(),
+            () => page.getByTitle("Stop this schedule", { exact: true }).click(),
             ".schedules-menu",
             traces,
           );
@@ -869,9 +891,16 @@ try {
               assert.equal(exit.exits, 1, `Dialog ${method} retains a visual exit`);
             }
           }
-          await page.locator(".app").evaluate(el => { el.scrollTop = 0; });
+          await page.locator(".app").evaluate((el) => {
+            el.scrollTop = 0;
+          });
           await page.waitForTimeout(350);
-          assert(await page.locator(".chat-error-copy").evaluate(el => el.getBoundingClientRect().width > 200), "Fixture uses the real error-notice grid, including a valid critter");
+          assert(
+            await page
+              .locator(".chat-error-copy")
+              .evaluate((el) => el.getBoundingClientRect().width > 200),
+            "Fixture uses the real error-notice grid, including a valid critter",
+          );
           await page.screenshot({ path: path.join(evidence, `${name}-${width}-components.png`) });
           await contentChecks(page, traces);
           await fallbackChecks(page, url, traces);

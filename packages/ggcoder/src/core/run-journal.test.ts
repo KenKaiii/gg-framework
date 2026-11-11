@@ -140,6 +140,14 @@ describe("run journal reconstruction", () => {
     expect(unfinished[0]).toMatchObject({ generation: 2, afterMessageCount: 6 });
   });
 
+  it("carries the owning pid when the start entry has one", () => {
+    const withPid = startedEntry(2);
+    (withPid as { data: Record<string, unknown> }).data.pid = 4242;
+    const [legacy, owned] = manager.getUnfinishedRuns([startedEntry(1), withPid]);
+    expect(legacy).not.toHaveProperty("pid");
+    expect(owned).toMatchObject({ generation: 2, pid: 4242 });
+  });
+
   it("counts a duplicated start line once, not twice", () => {
     // A replayed/re-persisted log must not manufacture phantom crashed runs.
     const entries = [startedEntry(3), startedEntry(3), startedEntry(3)];

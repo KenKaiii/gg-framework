@@ -118,6 +118,23 @@ mockIPC(
       case "agent_prompt":
         bridge.prompts.push(payload);
         return null;
+      case "agent_trophies":
+        return {
+          trophies: [],
+          categories: [],
+          earned: 0,
+          total: 0,
+          unlocked: [],
+          eventNonce: null,
+        };
+      case "agent_shell_trust":
+        return { trusted: false };
+      case "agent_cancel_queued":
+        return { cancelled: true };
+      case "agent_ask_user":
+        return null;
+      case "plugin:app|version":
+        return "0.0.0";
       case "plugin:log|log":
       case "plugin:window|set_title":
         return null;

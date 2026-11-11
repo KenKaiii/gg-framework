@@ -2,11 +2,11 @@
  * Blocking wait on a background process: the alternative to a guessed
  * `sleep N`, so the agent resumes the instant the process actually exits.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ProcessManager } from "./process-manager.js";
+import { MAX_PROCESS_WAIT_MS, ProcessManager } from "./process-manager.js";
 
 const managers: ProcessManager[] = [];
 const tempDirs: string[] = [];
@@ -45,6 +45,23 @@ describe("ProcessManager.waitForExitOrWake", () => {
 
     expect(await pm.waitForExitOrWake(id, 1000)).toBe("timeout");
     expect((await pm.readOutput(id)).isRunning).toBe(true);
+  });
+
+  it("caps one blocking wait at 5 minutes, however long was asked for", async () => {
+    expect(MAX_PROCESS_WAIT_MS).toBe(300_000);
+    const pm = await manager();
+    const { id } = await pm.start("sleep 30", process.cwd());
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      let result: string | undefined;
+      void pm.waitForExitOrWake(id, 3_600_000).then((reason) => (result = reason));
+      await vi.advanceTimersByTimeAsync(MAX_PROCESS_WAIT_MS - 1);
+      expect(result).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(result).toBe("timeout");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("returns immediately for an already-exited process and unknown ids", async () => {

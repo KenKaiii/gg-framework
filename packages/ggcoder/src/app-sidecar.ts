@@ -676,6 +676,9 @@ async function main(): Promise<void> {
   parentWatch.unref?.();
 }
 
+/** Daemon-wide: the last local-model scan result that was logged. */
+let lastLocalScanSummary: string | undefined;
+
 /**
  * Build one in-process agent session: its AgentSession, SSE client set, event
  * bridge, task runner, auth/login bridge, and the full HTTP route table exposed
@@ -1162,10 +1165,13 @@ async function createSession(
     );
     clearRuntimeModels((m) => m.provider === "local");
     registerRuntimeModels(models);
-    log("INFO", "app-sidecar", "local model scan", {
-      reachable: probes.filter((p) => p.reachable).length + "/" + probes.length,
-      models: String(models.length),
-    });
+    const reachable = probes.filter((p) => p.reachable).length + "/" + probes.length;
+    // Every window re-scans; only a changed result is news.
+    const summary = `${reachable} ${models.length}`;
+    if (summary !== lastLocalScanSummary) {
+      lastLocalScanSummary = summary;
+      log("INFO", "app-sidecar", "local model scan", { reachable, models: String(models.length) });
+    }
     return probes;
   }
 

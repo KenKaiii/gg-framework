@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { buildSystemPrompt } from "./system-prompt.js";
+import { buildSubAgentSystemPrompt, buildSystemPrompt } from "./system-prompt.js";
 import { createTools } from "./tools/index.js";
 import { buildToolSteering } from "./tools/prompt-hints.js";
 import {
@@ -69,6 +69,52 @@ describe("tool tiering in the system prompt", () => {
       expect(countOccurrences(prompt, `- **${name}**:`), `index line for ${name}`).toBe(expected);
     }
     expect(prompt).toContain("On demand (call by name;");
+  });
+
+  it("tells Claude Code sessions to search before calling a deferred tool", async () => {
+    const cwd = await makeProject();
+    const core = ["read", "edit", "bash", "tool_search"];
+    const deferred = ["web_fetch", "web_search"];
+    const native = await buildSystemPrompt(
+      cwd,
+      undefined,
+      false,
+      undefined,
+      core,
+      undefined,
+      "anthropic",
+      undefined,
+      deferred,
+    );
+    const claudeCode = await buildSystemPrompt(
+      cwd,
+      undefined,
+      false,
+      undefined,
+      core,
+      undefined,
+      "anthropic",
+      undefined,
+      deferred,
+      undefined,
+      true,
+    );
+    const searchFirst =
+      "On demand (not loaded yet: run `tool_search` with the name first, then call it;";
+    expect(native).toContain("On demand (call by name;");
+    expect(native).not.toContain("not loaded yet");
+    expect(claudeCode).toContain(searchFirst);
+    expect(claudeCode).not.toContain("call by name");
+    // Only the lead-in differs, so the tool index is the same on both routes.
+    expect(claudeCode.replace(searchFirst, "On demand (call by name;")).toBe(native);
+
+    const child = { cwd, toolNames: core, deferredToolNames: deferred, context: "none" as const };
+    expect(await buildSubAgentSystemPrompt("You are Owl.", child)).toContain(
+      "On demand (call by name;",
+    );
+    expect(
+      await buildSubAgentSystemPrompt("You are Owl.", { ...child, deferredNeedSearch: true }),
+    ).toContain(searchFirst);
   });
 
   it("tells the agent it can make images and GIFs only when OpenAI is connected", async () => {

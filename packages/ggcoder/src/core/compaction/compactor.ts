@@ -151,7 +151,8 @@ class SummaryTimeoutError extends Error {
 }
 
 async function awaitSummaryResponseWithTimeout<T>(
-  response: Promise<T>,
+  // A function receives `touch`, which resets the deadline like a stream event does.
+  response: Promise<T> | ((touch: () => void) => Promise<T>),
   timeoutMs: number,
   signal?: AbortSignal,
   onTimeout?: () => void,
@@ -194,7 +195,7 @@ async function awaitSummaryResponseWithTimeout<T>(
         })();
       }
 
-      response.then(resolve, reject);
+      (typeof response === "function" ? response(arm) : response).then(resolve, reject);
     });
   } finally {
     settled = true;
@@ -1195,6 +1196,8 @@ export async function compact(
       messages: Message[];
       maxTokens: number;
       signal: AbortSignal;
+      /** Call on any sign of life; a summary silent past the attempt timeout is dropped. */
+      onActivity: () => void;
     }) => Promise<StreamResponse>;
   },
 ): Promise<{ messages: Message[]; result: CompactionResult }> {
@@ -1421,13 +1424,16 @@ export async function compact(
 
     try {
       if (options.complete) {
+        const complete = options.complete;
         const response = await awaitSummaryResponseWithTimeout(
-          options.complete({
-            model: request.modelId,
-            messages: request.summaryMessages,
-            maxTokens: request.outputTokens,
-            signal: attemptController.signal,
-          }),
+          (touch) =>
+            complete({
+              model: request.modelId,
+              messages: request.summaryMessages,
+              maxTokens: request.outputTokens,
+              signal: attemptController.signal,
+              onActivity: touch,
+            }),
           SUMMARY_ATTEMPT_TIMEOUT_MS,
           options.signal,
           () => attemptController.abort(),

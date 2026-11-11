@@ -372,9 +372,11 @@ export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRun
           await runAutopilotCycle(next.text);
         } else {
           ctx.broadcast("autopilot_ignored", { reason: decision.reason });
-          log("INFO", "app-sidecar", "autopilot skipped (queued turn)", {
-            reason: decision.reason,
-          });
+          if (decision.reason !== "disabled") {
+            log("INFO", "app-sidecar", "autopilot skipped (queued turn)", {
+              reason: decision.reason,
+            });
+          }
         }
       }
     } finally {

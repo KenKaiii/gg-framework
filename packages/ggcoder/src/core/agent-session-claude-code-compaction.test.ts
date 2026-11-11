@@ -11,6 +11,7 @@ import { useFakeHome } from "../test-support/fake-home.js";
 const shouldCompactMock = vi.hoisted(() => vi.fn());
 const compactMock = vi.hoisted(() => vi.fn());
 const liveRunMock = vi.hoisted(() => vi.fn());
+const claudeCodeCompleteMock = vi.hoisted(() => vi.fn());
 
 vi.mock("./compaction/compactor.js", async () => {
   const actual = await vi.importActual<typeof CompactorModule>("./compaction/compactor.js");
@@ -21,6 +22,7 @@ vi.mock("./claude-code/complete.js", async () => {
   const actual = await vi.importActual<typeof CompleteModule>("./claude-code/complete.js");
   return {
     ...actual,
+    claudeCodeComplete: claudeCodeCompleteMock,
     resolveClaudeCodeProcess: vi.fn(async (_auth: unknown, _provider: string, cwd: string) => ({
       executable: "/fake/claude",
       cwd,
@@ -118,6 +120,43 @@ describe("AgentSession compaction on the Claude subscription route", () => {
     );
     expect(liveRunMock).toHaveBeenCalledWith(
       expect.arrayContaining([{ role: "user", content: "[compacted]\n\nnext" }]),
+    );
+  });
+
+  it("forwards the summary heartbeat to Claude Code", async () => {
+    const onActivity = vi.fn();
+    const signal = new AbortController().signal;
+    claudeCodeCompleteMock.mockResolvedValue({
+      message: { role: "assistant", content: "summary" },
+      stopReason: "end_turn",
+      usage: { inputTokens: 1, outputTokens: 1 },
+      toolOutputs: [],
+    });
+    compactMock.mockImplementation(
+      async (
+        messages: Message[],
+        options: { complete: (request: Record<string, unknown>) => Promise<unknown> },
+      ) => {
+        await options.complete({ model: "claude-test", messages: [], signal, onActivity });
+        return {
+          messages,
+          result: {
+            compacted: false,
+            originalCount: messages.length,
+            newCount: messages.length,
+            tokensBeforeEstimate: 10,
+            tokensAfterEstimate: 10,
+          },
+        };
+      },
+    );
+
+    const session = await newSession();
+    await session.compact();
+    await session.dispose();
+
+    expect(claudeCodeCompleteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ executable: "/fake/claude", model: "claude-test", onActivity }),
     );
   });
 

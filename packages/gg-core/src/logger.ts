@@ -7,9 +7,10 @@ export type LogLevel = "INFO" | "ERROR" | "WARN" | "DEBUG";
 
 // Cross-session log retention: the log is appended across launches so you can
 // grep back through prior sessions. Rotated at MAX_BYTES to keep it bounded; we
-// keep one generation (debug.log.1) — enough to survive one rotation's worth of
-// scrollback while bounding disk usage.
+// keep three generations (debug.log.1 newest … .3 oldest). One generation held
+// under a day of a busy app daemon, too little to review a week's incident.
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+const ROTATED_GENERATIONS = 3;
 
 /**
  * Rotate when fewer than this many bytes remain, instead of only at/over the cap.
@@ -48,6 +49,21 @@ function rotateIfNeeded(filePath: string, force = false): void {
     const st = fs.statSync(filePath);
     if (!force && st.size <= MAX_BYTES - MIN_HEADROOM_BYTES) return;
     const rotated = `${filePath}.1`;
+    // Age the older generations first: .2 → .3, then .1 → .2. A step that fails
+    // (no such generation, or a Windows sharing violation) is skipped.
+    for (let generation = ROTATED_GENERATIONS - 1; generation >= 1; generation--) {
+      const older = `${filePath}.${generation + 1}`;
+      try {
+        fs.unlinkSync(older);
+      } catch {
+        // Nothing that old yet
+      }
+      try {
+        fs.renameSync(`${filePath}.${generation}`, older);
+      } catch {
+        // No such generation
+      }
+    }
     // Replace prior rotation (fs.renameSync overwrites on POSIX; on Windows it
     // fails if dest exists, so unlink first defensively).
     try {

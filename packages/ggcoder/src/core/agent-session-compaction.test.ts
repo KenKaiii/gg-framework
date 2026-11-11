@@ -132,6 +132,53 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
+describe("AgentSession compaction credentials", () => {
+  const unchanged = (messages: Message[]) => ({
+    messages,
+    result: {
+      compacted: false,
+      originalCount: messages.length,
+      newCount: messages.length,
+      tokensBeforeEstimate: 10,
+      tokensAfterEstimate: 10,
+    },
+  });
+
+  async function compactWithCapturedToken() {
+    compactMock.mockImplementation(async (messages: Message[]) => unchanged(messages));
+    const { AgentSession } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "anthropic",
+      model: "claude-test",
+      cwd: tmpProject,
+      systemPrompt: "system prompt",
+      transient: true,
+    });
+    await session.initialize();
+    await session.compact(
+      { accessToken: "token-from-run-start", accountId: "acct", baseUrl: "https://example.test" },
+      "automatic",
+    );
+    await session.dispose();
+    return compactMock.mock.calls.at(-1)?.[1];
+  }
+
+  it("summarizes with the token on disk now, not the one captured at run start", async () => {
+    expect(await compactWithCapturedToken()).toMatchObject({
+      apiKey: "test-anthropic-token",
+      accountId: "acct",
+      baseUrl: "https://example.test",
+    });
+  });
+
+  it("keeps the passed token when credentials cannot be resolved", async () => {
+    await writeJson(path.join(tmpHome, ".gg", "auth.json"), {});
+    expect(await compactWithCapturedToken()).toMatchObject({
+      apiKey: "token-from-run-start",
+    });
+  });
+});
+
 describe("AgentSession worker auto-compaction", () => {
   it("auto-compacts transient JSON-mode worker sessions before the agent loop runs", async () => {
     const compactedMessages: Message[] = [

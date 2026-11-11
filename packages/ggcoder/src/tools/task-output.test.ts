@@ -43,6 +43,12 @@ afterEach(async () => {
 });
 
 describe("task_output readiness", () => {
+  it("accepts a wait of up to 5 minutes and no longer", async () => {
+    const { tool, id } = await start();
+    expect(tool.parameters.safeParse({ id, wait_ms: 300_000 }).success).toBe(true);
+    expect(tool.parameters.safeParse({ id, wait_ms: 300_001 }).success).toBe(false);
+  });
+
   it("retains a wake fired before waiting, but does not replay it after reading", async () => {
     const { manager, tool, notifications, id } = await start({ pattern: /READY/ });
     expect(await manager.waitForExitOrWake(id, 15_000)).toBe("pattern");

@@ -164,9 +164,9 @@ describe("ask_user soft deadline", () => {
     await expect(interactive).resolves.toBe(ASK_DEFERRED_RESULT);
   });
 
-  it("uses 2 minutes unattended and 10 minutes interactive", () => {
+  it("uses 2 minutes unattended and 5 minutes interactive", () => {
     expect(askSoftDeadlineMs(true)).toBe(2 * 60_000);
-    expect(askSoftDeadlineMs(false)).toBe(10 * 60_000);
+    expect(askSoftDeadlineMs(false)).toBe(5 * 60_000);
   });
 });
 

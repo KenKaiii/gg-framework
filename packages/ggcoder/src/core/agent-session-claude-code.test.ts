@@ -7,6 +7,7 @@ import type * as GgAgentModule from "@kenkaiiii/gg-agent";
 import type * as GgCoreModule from "@kenkaiiii/gg-core";
 import type * as McpModule from "./mcp/index.js";
 import type * as LiveSessionModule from "./claude-code/live-session.js";
+import type * as LoggerModule from "./logger.js";
 import type { ClaudeCodeLoopOptions } from "./claude-code/live-session.js";
 import { useFakeHome } from "../test-support/fake-home.js";
 
@@ -14,6 +15,12 @@ const agentLoopMock = vi.hoisted(() => vi.fn());
 const claudeCodeLoopMock = vi.hoisted(() => vi.fn());
 /** Every Claude Code process the session started, with why each was closed. */
 const processes = vi.hoisted(() => [] as { closed: string[] }[]);
+const logMock = vi.hoisted(() => vi.fn());
+
+vi.mock("./logger.js", async () => {
+  const actual = await vi.importActual<typeof LoggerModule>("./logger.js");
+  return { ...actual, log: logMock };
+});
 
 vi.mock("@kenkaiiii/gg-agent", async () => {
   const actual = await vi.importActual<typeof GgAgentModule>("@kenkaiiii/gg-agent");
@@ -75,10 +82,17 @@ async function writeJson(filePath: string, value: unknown): Promise<void> {
   await fs.writeFile(filePath, JSON.stringify(value, null, 2), "utf-8");
 }
 
-/** A Claude Code run: reports `id`, answers `reply`. */
+/** Where Claude Code keeps its copy of session `id`. */
+function transcriptPath(id: string): string {
+  return path.join(tmpHome, ".gg", "claude-code", "config", "projects", "-proj", `${id}.jsonl`);
+}
+
+/** A Claude Code run: reports `id`, saves its transcript, answers `reply`. */
 function claudeCodeRun(id: string, reply: string) {
   return async function* (messages: Message[], opts: ClaudeCodeLoopOptions) {
     opts.claudeCode.onSessionId?.(id);
+    await fs.mkdir(path.dirname(transcriptPath(id)), { recursive: true });
+    await fs.writeFile(transcriptPath(id), "{}\n");
     messages.push({ role: "assistant", content: [{ type: "text", text: reply }] });
     yield { type: "turn_end", turn: 1, stopReason: "end_turn", usage, timing };
     yield { type: "agent_done", totalTurns: 1, totalUsage: usage };
@@ -144,6 +158,72 @@ describe("AgentSession on a Claude subscription", () => {
     await reopened.dispose();
   }, 20_000);
 
+  it("lists the on-demand tools a restored conversation already used", async () => {
+    // Regression: a new process listed only the core tools, so Claude Code
+    // refused the restored conversation's next `task_output` call.
+    const names = (call: number) =>
+      (claudeCodeLoopMock.mock.calls[call] as [Message[], ClaudeCodeLoopOptions])[1].tools?.map(
+        (tool) => tool.name,
+      );
+    const session = await newSession();
+    const sessionPath = session.getState().sessionPath;
+    claudeCodeLoopMock.mockImplementationOnce(async function* (
+      messages: Message[],
+      opts: ClaudeCodeLoopOptions,
+    ) {
+      opts.claudeCode.onSessionId?.("cc-1");
+      await fs.mkdir(path.dirname(transcriptPath("cc-1")), { recursive: true });
+      await fs.writeFile(transcriptPath("cc-1"), "{}\n");
+      messages.push(
+        {
+          role: "assistant",
+          content: [{ type: "tool_call", id: "call-1", name: "task_output", args: { id: "p1" } }],
+        },
+        {
+          role: "tool",
+          content: [{ type: "tool_result", toolCallId: "call-1", content: "still running" }],
+        },
+        { role: "assistant", content: [{ type: "text", text: "the server is up" }] },
+      );
+      yield { type: "turn_end", turn: 1, stopReason: "end_turn", usage, timing };
+      yield { type: "agent_done", totalTurns: 1, totalUsage: usage };
+    });
+    await session.prompt("start the server");
+    expect(names(0)).not.toContain("task_output");
+    await session.dispose();
+
+    const reopened = await newSession();
+    await reopened.loadSession(sessionPath);
+    claudeCodeLoopMock.mockImplementationOnce(claudeCodeRun("cc-1", "second answer"));
+    await reopened.prompt("is it still up?");
+    expect(names(1)).toContain("task_output");
+    expect(names(1)?.slice(0, names(0)?.length)).toEqual(names(0));
+    await reopened.dispose();
+  }, 20_000);
+
+  it("seeds a fresh Claude Code session when the transcript to resume is gone", async () => {
+    // Regression guard for the transcript retention pass: Claude Code fails a
+    // resume it has no transcript for, so GG's own history must seed it instead.
+    const session = await newSession();
+    claudeCodeLoopMock.mockImplementationOnce(claudeCodeRun("cc-old", "first answer"));
+    await session.prompt("first question");
+    await fs.rm(transcriptPath("cc-old"));
+
+    claudeCodeLoopMock.mockImplementationOnce(claudeCodeRun("cc-new", "second answer"));
+    await session.prompt("second question");
+    const [messages, opts] = claudeCodeLoopMock.mock.calls[1] as [Message[], ClaudeCodeLoopOptions];
+    expect(opts.claudeCode.resume).toBeUndefined();
+    // The whole history goes along, for the fresh session's seed.
+    expect(messages.map((m) => m.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+    await session.dispose();
+  }, 20_000);
+
   it("starts a fresh Claude Code session after a branch rewrites history", async () => {
     const session = await newSession();
     claudeCodeLoopMock.mockImplementation(claudeCodeRun("cc-2", "answer"));
@@ -179,6 +259,44 @@ describe("AgentSession on a Claude subscription", () => {
       reason: "idle",
     });
     await session.dispose();
+  }, 20_000);
+
+  it("logs cache health and retries per turn, as the public-API route does", async () => {
+    const session = await newSession();
+    claudeCodeLoopMock.mockImplementationOnce(async function* (messages: Message[]) {
+      messages.push({ role: "assistant", content: [{ type: "text", text: "answer" }] });
+      yield { type: "retry", reason: "overloaded", attempt: 1, maxAttempts: 10, delayMs: 500 };
+      yield {
+        type: "turn_end",
+        turn: 1,
+        stopReason: "end_turn",
+        usage: { inputTokens: 100, outputTokens: 40, cacheRead: 700, cacheWrite: 200 },
+        timing: { startedAt: 1_000, completedAt: 4_000, providerDurationMs: 3_000, ttftMs: 800 },
+      };
+      yield { type: "agent_done", totalTurns: 1, totalUsage: usage };
+    });
+    await session.prompt("question");
+    await session.dispose();
+
+    expect(logMock).toHaveBeenCalledWith("INFO", "stream", "cache_health", {
+      promptTokens: 1_000,
+      cacheRead: 700,
+      cacheWrite: 200,
+      ratio: 0.7,
+      ttftMs: 800,
+      providerDurationMs: 3_000,
+      outputTokens: 40,
+      provider: "anthropic",
+      model: expect.any(String),
+      transport: "claude_code",
+    });
+    expect(logMock).toHaveBeenCalledWith("INFO", "stream", "retry", {
+      reason: "overloaded",
+      attempt: 1,
+      maxAttempts: 10,
+      delayMs: 500,
+      transport: "claude_code",
+    });
   }, 20_000);
 
   it("skips prewarm", async () => {

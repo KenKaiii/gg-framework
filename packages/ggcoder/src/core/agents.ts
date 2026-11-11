@@ -66,11 +66,16 @@ const MCP_TOOL_PATTERN = /^mcp__(.+?)__(.+)$/;
  *
  * @returns the unrecognized names, for tests and callers that want to report.
  */
+const warnedUnknownTools = new Set<string>();
+
 export function validateAgentTools(agent: AgentDefinition, origin: string): string[] {
   const unknown = agent.tools.filter(
     (tool) => !BUILTIN_TOOL_NAME_SET.has(tool) && !MCP_TOOL_PATTERN.test(tool),
   );
-  if (unknown.length > 0) {
+  // Agents are re-discovered for every session; an unchanged file warns once per process.
+  const warning = `${origin}\n${agent.name}\n${unknown.join(",")}`;
+  if (unknown.length > 0 && !warnedUnknownTools.has(warning)) {
+    warnedUnknownTools.add(warning);
     log("WARN", "agents", "Agent lists unknown tools; they will be ignored", {
       agent: agent.name,
       origin,
