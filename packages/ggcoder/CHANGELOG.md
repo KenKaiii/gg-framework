@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.98.1
+
+### Patch Changes
+
+- Fix the run-all task sweep letting a prompt or new session start between two tasks: the sweep now holds the run claim from first task to last, and `/tasks/run` and `/new-session` refuse while a run is starting or Autopilot is active.
+  - @kenkaiiii/gg-ai@5.98.1
+  - @kenkaiiii/gg-agent@5.98.1
+  - @kenkaiiii/gg-core@5.98.1
+
 ## 5.98.0
 
 ### Minor Changes
