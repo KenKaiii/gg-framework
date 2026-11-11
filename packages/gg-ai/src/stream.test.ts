@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { localWireModelId, stream } from "./stream.js";
+import { localWireModelId, openCodeWireModelId, stream } from "./stream.js";
 import { GGAIError } from "./errors.js";
 import { providerRegistry } from "./provider-registry.js";
 import { continuesTurn } from "./utils/turn-continuation.js";
 import type { StreamOptions } from "./types.js";
+import {
+  reasoningFieldKey,
+  rememberReasoningField,
+  resetReasoningFieldCache,
+} from "./providers/reasoning-field.js";
 
 describe("localWireModelId", () => {
   it("strips the endpoint routing prefix so the server sees its own id", () => {
@@ -211,6 +216,120 @@ describe("provider wire boundary", () => {
       ]);
     } finally {
       providerRegistry.unregister("wire-capture");
+    }
+  });
+});
+
+describe("OpenCode providers", () => {
+  async function capture(
+    provider: "opencode" | "opencode-go",
+    extra: Partial<StreamOptions> = {},
+  ): Promise<{ url: string; headers: Headers; body: Record<string, unknown> }> {
+    let seen: { url: string; headers: Headers; body: Record<string, unknown> } | undefined;
+    const fetch: typeof globalThis.fetch = async (url, init) => {
+      seen = {
+        url: String(url),
+        headers: new Headers(init?.headers),
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      };
+      return new Response("{}", { status: 401 });
+    };
+    const result = stream({
+      provider,
+      model: `${provider}/kimi-k3`,
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "oc_sk_test",
+      fetch,
+      ...extra,
+    });
+    await expect(result).rejects.toThrow();
+    return seen!;
+  }
+
+  it("strips the plan prefix so the gateway sees its own model id", () => {
+    expect(openCodeWireModelId("opencode-go/kimi-k3")).toBe("kimi-k3");
+    expect(openCodeWireModelId("opencode/claude-sonnet-5-5")).toBe("claude-sonnet-5-5");
+    expect(openCodeWireModelId("kimi-k3")).toBe("kimi-k3");
+  });
+
+  it.each([
+    ["opencode-go", "https://opencode.ai/inference/go/openai/v1/chat/completions"],
+    ["opencode", "https://opencode.ai/inference/openai/v1/chat/completions"],
+  ] as const)("sends %s to its plan's endpoint as GG Coder, with the session", async (p, url) => {
+    const seen = await capture(p, { transportSessionId: "3f0c6a1e-9d2b-4c55-8a51-0b7d2f1e6a90" });
+    expect(seen.url).toBe(url);
+    expect(seen.body.model).toBe("kimi-k3");
+    expect(seen.headers.get("authorization")).toBe("Bearer oc_sk_test");
+    expect(seen.headers.get("user-agent")).toMatch(/^ggcoder/);
+    expect(seen.headers.get("x-opencode-session")).toBe("3f0c6a1e-9d2b-4c55-8a51-0b7d2f1e6a90");
+  });
+
+  // Go answers HTTP 400 to any request without the header, so summaries and
+  // other calls made outside a conversation must still carry one.
+  it("falls back to one stable session id when the caller has none", async () => {
+    const first = await capture("opencode-go");
+    const second = await capture("opencode-go", { transportSessionId: "bad\nvalue" });
+    const fallback = first.headers.get("x-opencode-session");
+    expect(fallback).toMatch(/^ses_[0-9a-f]{32}$/);
+    expect(second.headers.get("x-opencode-session")).toBe(fallback);
+  });
+});
+
+describe("OpenCode request shape", () => {
+  async function body(extra: Partial<StreamOptions>): Promise<Record<string, unknown>> {
+    let seen: Record<string, unknown> | undefined;
+    const fetch: typeof globalThis.fetch = async (_url, init) => {
+      seen = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("{}", { status: 401 });
+    };
+    const result = stream({
+      provider: "opencode-go",
+      model: "opencode-go/kimi-k3",
+      messages: [{ role: "user", content: "hi" }],
+      apiKey: "oc_sk_test",
+      fetch,
+      ...extra,
+    });
+    await expect(result).rejects.toThrow();
+    return seen!;
+  }
+
+  // The gateway silently ignores max_completion_tokens, leaving output uncapped.
+  it("caps output with max_tokens, the only name the gateway reads", async () => {
+    const sent = await body({ maxTokens: 4096 });
+    expect(sent.max_tokens).toBe(4096);
+    expect(sent).not.toHaveProperty("max_completion_tokens");
+  });
+
+  // Kimi on OpenCode answers 400 "reasoning_content is missing in assistant
+  // tool call message" when earlier thinking comes back under another name.
+  it("returns earlier thinking as reasoning_content even after a `reasoning` stream", async () => {
+    rememberReasoningField(
+      reasoningFieldKey("opencode-go", "https://opencode.ai/inference/go/openai/v1", "kimi-k3"),
+      "reasoning",
+    );
+    try {
+      const sent = await body({
+        messages: [
+          { role: "user", content: "read it" },
+          {
+            role: "assistant",
+            content: [
+              { type: "thinking", text: "I should read the file" },
+              { type: "tool_call", id: "call_1", name: "read", args: { path: "a.ts" } },
+            ],
+          },
+          {
+            role: "tool",
+            content: [{ type: "tool_result", toolCallId: "call_1", content: "ok" }],
+          },
+        ],
+      });
+      const assistant = (sent.messages as Record<string, unknown>[])[1]!;
+      expect(assistant.reasoning_content).toBe("I should read the file");
+      expect(assistant).not.toHaveProperty("reasoning");
+    } finally {
+      resetReasoningFieldCache();
     }
   });
 });

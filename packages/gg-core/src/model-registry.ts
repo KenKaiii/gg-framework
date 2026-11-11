@@ -859,6 +859,93 @@ export const MODELS: ModelInfo[] = [
     costTier: "medium",
     maxThinkingLevel: "high",
   },
+  // ── OpenCode Console (Go subscription, then pay-as-you-go) ────────
+  // One Console API key reaches many labs' models through opencode.ai. Ids
+  // carry the plan prefix (`opencode-go/kimi-k3`) because the gateway reuses
+  // the vendors' own ids; gg-ai strips it at the wire. These rows are only the
+  // offline fallback: the desktop app replaces them with each plan's live,
+  // public model list (core/opencode-catalog-store.ts). Limits, image input
+  // and effort ladders are from GET /inference[/go]/v1/models (2026-11-11);
+  // all three speak Chat Completions natively.
+  {
+    // Go declares `max` as K3's only effort; pay-as-you-go adds low and high.
+    id: "opencode-go/kimi-k3",
+    name: "Kimi K3",
+    provider: "opencode-go",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: false,
+    costTier: "high",
+    maxThinkingLevel: "max",
+    thinkingLevels: ["max"],
+  },
+  {
+    id: "opencode-go/glm-5.3",
+    name: "GLM-5.3",
+    provider: "opencode-go",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: false,
+    supportsVideo: false,
+    costTier: "medium",
+    maxThinkingLevel: "max",
+    thinkingLevels: ["low", "high", "max"],
+  },
+  {
+    id: "opencode-go/glm-5.3-flash",
+    name: "GLM-5.3-Flash",
+    provider: "opencode-go",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: false,
+    costTier: "low",
+    maxThinkingLevel: "max",
+    thinkingLevels: ["low", "high", "max"],
+  },
+  {
+    id: "opencode/kimi-k3",
+    name: "Kimi K3",
+    provider: "opencode",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: false,
+    costTier: "high",
+    maxThinkingLevel: "max",
+    thinkingLevels: ["low", "high", "max"],
+  },
+  {
+    id: "opencode/glm-5.3",
+    name: "GLM-5.3",
+    provider: "opencode",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: false,
+    supportsVideo: false,
+    costTier: "medium",
+    maxThinkingLevel: "max",
+    thinkingLevels: ["low", "high", "max"],
+  },
+  {
+    id: "opencode/glm-5.3-flash",
+    name: "GLM-5.3-Flash",
+    provider: "opencode",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: false,
+    costTier: "low",
+    maxThinkingLevel: "max",
+    thinkingLevels: ["low", "high", "max"],
+  },
   // ── Hugging Face (Inference Providers router) ────────
   // One HF token (hf.co/settings/tokens, "Make calls to Inference Providers"
   // permission) routes to whichever hosted backend serves each open model;
@@ -952,7 +1039,7 @@ export function clearRuntimeModels(predicate?: (model: ModelInfo) => boolean): v
 }
 
 /**
- * A provider's model list synced from its own endpoint (OpenRouter today).
+ * A provider's model list synced from its own endpoint (OpenRouter, OpenCode).
  * While set it REPLACES that provider's static rows in listings; the static
  * rows still resolve by id so a session saved on one keeps working.
  */
@@ -1094,6 +1181,8 @@ const DEFAULT_MODEL_IDS: Partial<Record<Provider, string>> = {
   minimax: "MiniMax-M3.1-Flash",
   deepseek: "deepseek-v4-pro",
   huggingface: "moonshotai/Kimi-K2.7-Code",
+  opencode: "opencode/kimi-k3",
+  "opencode-go": "opencode-go/kimi-k3",
   openrouter: "qwen/qwen3.8-max",
   sakana: "fugu",
   xai: "grok-4.7",

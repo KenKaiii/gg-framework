@@ -57,6 +57,8 @@ Switch any time with `/model`.
 | **Sakana**       | Fugu, Fugu Max, Fugu Ultra                                                         | API key                                |
 | **OpenRouter**   | Qwen3.8 Max                                                                        | API key                                |
 | **Hugging Face** | Kimi K2.7 Code, DeepSeek V4.1 Flash, GPT-OSS 120B                                  | API key                                |
+| **OpenCode Go**  | Kimi K3, GLM-5.3, GLM-5.3-Flash and more Go models                                 | OpenCode API key (Go subscription)     |
+| **OpenCode**     | Kimi K3, GLM-5.3, GLM-5.3-Flash and more paid Console models                       | OpenCode API key (pay-per-token)       |
 | **Local**        | Anything on Ollama, LM Studio, llama.cpp, vLLM or another OpenAI-compatible server | None                                   |
 
 Every model above except GLM-5.3, DeepSeek V4 Pro and GPT-OSS 120B accepts images. Paste, drag or type a path to attach images or video. Models that can't watch video get it as a file to inspect with their own tools.

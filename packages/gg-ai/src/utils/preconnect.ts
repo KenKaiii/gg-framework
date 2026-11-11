@@ -34,6 +34,10 @@ function defaultBaseUrl(provider: Provider): string | undefined {
       return "https://api.x.ai/v1";
     case "huggingface":
       return "https://router.huggingface.co/v1";
+    case "opencode":
+      return "https://opencode.ai/inference/openai/v1";
+    case "opencode-go":
+      return "https://opencode.ai/inference/go/openai/v1";
     case "sakana":
       return "https://api.sakana.ai/v1";
     case "local":

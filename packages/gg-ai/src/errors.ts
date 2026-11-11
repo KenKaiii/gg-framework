@@ -161,6 +161,8 @@ const PROVIDER_DISPLAY: Record<string, string> = {
   sakana: "Sakana",
   xai: "xAI (Grok)",
   huggingface: "Hugging Face",
+  opencode: "OpenCode",
+  "opencode-go": "OpenCode Go",
   xiaomi: "Xiaomi (MiMo)",
   minimax: "MiniMax",
 };

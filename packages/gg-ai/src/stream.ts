@@ -11,7 +11,7 @@ import {
   embedOpenAICompatible,
   rerankCohereCompatible,
 } from "./providers/openai-compat-retrieval.js";
-import { providerRegistry } from "./provider-registry.js";
+import { providerRegistry, type ProviderStreamFn } from "./provider-registry.js";
 import {
   clampProviderContextImages,
   dropInvalidToolCalls,
@@ -148,6 +148,53 @@ providerRegistry.register("huggingface", {
       ...options,
       baseUrl: options.baseUrl ?? "https://router.huggingface.co/v1",
     }),
+});
+
+/**
+ * OpenCode model ids are namespaced by plan (`opencode-go/kimi-k3`,
+ * `opencode/kimi-k3`) because the gateway reuses the vendors' own ids, which
+ * the registry already holds for the first-party providers. The gateway only
+ * knows the bare id, so strip the prefix at the wire.
+ */
+export function openCodeWireModelId(id: string): string {
+  const match = /^opencode(?:-go)?\/(.+)$/.exec(id);
+  return match?.[1] ?? id;
+}
+
+/** Calls made outside a conversation (summaries, the prompt enhancer) share this id. */
+const OPENCODE_FALLBACK_SESSION = `ses_${crypto.randomUUID().replace(/-/g, "")}`;
+
+/**
+ * OpenCode asks every client for its own User-Agent and a stable session id
+ * per conversation; Go answers HTTP 400 without the session header
+ * (opencode.ai/docs/console/go#where-can-i-use-it).
+ */
+function openCodeStream(defaultBaseUrl: string): ProviderStreamFn {
+  return (options) => {
+    const session = options.transportSessionId;
+    return streamOpenAI({
+      ...options,
+      baseUrl: options.baseUrl ?? defaultBaseUrl,
+      model: openCodeWireModelId(options.model),
+      webSearch: false,
+      defaultHeaders: {
+        "User-Agent": GG_CODER_USER_AGENT,
+        "x-opencode-session":
+          session && /^[\w.:-]{1,128}$/.test(session) ? session : OPENCODE_FALLBACK_SESSION,
+        ...options.defaultHeaders,
+      },
+    });
+  };
+}
+
+// Chat Completions only: a Console model whose own API is Responses, Messages
+// or Gemini isn't reliably served here, so gg-core's catalog leaves those out.
+providerRegistry.register("opencode", {
+  stream: openCodeStream("https://opencode.ai/inference/openai/v1"),
+});
+
+providerRegistry.register("opencode-go", {
+  stream: openCodeStream("https://opencode.ai/inference/go/openai/v1"),
 });
 
 providerRegistry.register("sakana", {

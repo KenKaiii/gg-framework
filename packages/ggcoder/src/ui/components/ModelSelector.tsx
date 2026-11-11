@@ -30,6 +30,8 @@ const PROVIDER_LABEL: Record<string, string> = {
   deepseek: "DeepSeek",
   openrouter: "OpenRouter",
   huggingface: "Hugging Face",
+  opencode: "OpenCode",
+  "opencode-go": "OpenCode Go",
   sakana: "Sakana",
   xai: "xAI",
 };

@@ -259,6 +259,30 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
     methodDetails: apiKeyDetails("Sakana API key", "Pay-per-token from your Sakana API account."),
   },
   {
+    value: "opencode-go",
+    label: "OpenCode Go",
+    description: "Kimi K3, GLM-5.3, GLM-5.3-Flash and more Go models",
+    methods: ["apikey"],
+    apiKeyLabel: "OpenCode",
+    methodDetails: apiKeyDetails(
+      "OpenCode API key",
+      "Uses your OpenCode Go subscription.",
+      "Create a personal API key in the OpenCode Console, in a workspace subscribed to Go.",
+    ),
+  },
+  {
+    value: "opencode",
+    label: "OpenCode",
+    description: "Kimi K3, GLM-5.3, GLM-5.3-Flash and more paid Console models",
+    methods: ["apikey"],
+    apiKeyLabel: "OpenCode",
+    methodDetails: apiKeyDetails(
+      "OpenCode API key",
+      "Pay-per-token from your OpenCode Console credits.",
+      "Free-tier models only run inside OpenCode, so they are not listed here.",
+    ),
+  },
+  {
     value: "openrouter",
     label: "OpenRouter",
     description: "Qwen3.8 Max · multi-provider gateway",

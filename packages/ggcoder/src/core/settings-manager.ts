@@ -30,6 +30,8 @@ const SettingsSchema = z.object({
       "deepseek",
       "openrouter",
       "huggingface",
+      "opencode",
+      "opencode-go",
       "sakana",
       "xai",
       // The desktop app's local endpoints. Rejecting it reset the whole file (#133).

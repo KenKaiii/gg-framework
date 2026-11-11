@@ -33,6 +33,7 @@ import { supportsStrictToolSampling } from "../utils/strict-tool-schema.js";
 import { normalizePromptCacheKey } from "./prompt-cache-key.js";
 import { uploadMoonshotVideos } from "./moonshot-video.js";
 import {
+  DEFAULT_REASONING_FIELD,
   getReasoningField,
   readReasoning,
   reasoningFieldKey,
@@ -163,6 +164,7 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   // top-level `reasoning_effort`; the managed endpoint keeps the official
   // CLI's nested shape.
   const isLocal = options.provider === "local";
+  const isOpenCode = options.provider === "opencode" || options.provider === "opencode-go";
   // K2.8 Preview (`kimi-for-coding`) shares K3's effort ladder and wire shape.
   const isKimiK3 =
     options.provider === "moonshot" &&
@@ -206,7 +208,9 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     // official CLI: reasoning is preserved only while thinking is enabled).
     thinking: isKimiK27 || !!options.thinking,
     supportsImages: options.supportsImages,
-    reasoningField: getReasoningField(endpointKey),
+    // OpenCode can stream thinking as `reasoning`, but its Kimi backends 400
+    // unless it comes back as `reasoning_content`.
+    reasoningField: isOpenCode ? DEFAULT_REASONING_FIELD : getReasoningField(endpointKey),
   });
 
   // GLM models default to 0.6 temperature when not in thinking mode
@@ -220,7 +224,9 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
     ...(options.maxTokens
       ? options.provider === "deepseek" ||
         options.provider === "glm" ||
-        options.provider === "moonshot"
+        options.provider === "moonshot" ||
+        // OpenCode's gateway reads only max_tokens and ignores the newer name.
+        isOpenCode
         ? { max_tokens: options.maxTokens }
         : { max_completion_tokens: options.maxTokens }
       : {}),

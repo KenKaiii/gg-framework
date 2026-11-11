@@ -94,7 +94,7 @@ describe("resolveCompactionPolicy", () => {
   });
 
   it("applies the conservative default cap only to providers with no evidence", () => {
-    for (const provider of ["sakana", "huggingface"] as const) {
+    for (const provider of ["sakana", "huggingface", "opencode-go", "opencode"] as const) {
       expect(resolveLatencyWindowCap(provider), provider).toBe(400_000);
     }
     const policy = resolveCompactionPolicy({
@@ -166,7 +166,7 @@ describe("resolveCompactionPolicy", () => {
   it("gives every registered model a trigger inside its window, from a sourced rule", () => {
     // Providers verified to have NO evidence either way. Adding a provider
     // means adding a sourced rule to policy.ts, or listing it here on purpose.
-    const unverified = new Set(["sakana", "huggingface"]);
+    const unverified = new Set(["sakana", "huggingface", "opencode-go", "opencode"]);
     for (const model of MODELS) {
       const contextWindow = getContextWindow(model.id, { provider: model.provider });
       const { targetTokens } = resolveCompactionPolicy({

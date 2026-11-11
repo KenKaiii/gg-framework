@@ -10,7 +10,7 @@
   <a href="https://github.com/KenKaiii/gg-framework/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=for-the-badge" alt="AGPL-3.0 License"></a>
 </p>
 
-gg-ai streams chat, tool calls and reasoning from Anthropic, OpenAI, Gemini, xAI, Moonshot, GLM, MiniMax, Xiaomi, DeepSeek, Sakana, OpenRouter, Hugging Face and local servers. To switch provider, change one string. There are no adapters or wrapper classes. It also does embeddings and reranking.
+gg-ai streams chat, tool calls and reasoning from Anthropic, OpenAI, Gemini, xAI, Moonshot, GLM, MiniMax, Xiaomi, DeepSeek, Sakana, OpenRouter, Hugging Face, OpenCode and local servers. To switch provider, change one string. There are no adapters or wrapper classes. It also does embeddings and reranking.
 
 It's the provider layer under [GG Coder](https://github.com/KenKaiii/gg-framework), a desktop coding agent.
 
@@ -90,6 +90,8 @@ gg-ai makes one model call. To run the tools and send results back until the mod
 | `sakana`      | Fugu, Fugu Max, Fugu Ultra                                      |                                                                                           |
 | `openrouter`  | Qwen3.8 Max, or any OpenRouter model id                         | Gateway to hundreds of models                                                             |
 | `huggingface` | Kimi K2.7 Code, DeepSeek V4.1 Flash, GPT-OSS 120B               | Inference Providers router                                                                |
+| `opencode-go` | Kimi K3, GLM-5.3, GLM-5.3-Flash                                 | OpenCode Go subscription, Chat Completions models only. Ids are `opencode-go/<id>`        |
+| `opencode`    | Kimi K3, GLM-5.3, GLM-5.3-Flash                                 | OpenCode pay-as-you-go, Chat Completions models only. Ids are `opencode/<id>`             |
 | `local`       | Whatever your server runs                                       | Ollama, LM Studio, llama.cpp, vLLM or any OpenAI-compatible server. `baseUrl` is required |
 
 "Built-in models" are the ones GG Coder lists (from [`@kenkaiiii/gg-core`](https://www.npmjs.com/package/@kenkaiiii/gg-core)). `model` is passed straight to the provider, so any model id the provider accepts works. Every default endpoint can be changed with `baseUrl`, and `providerRegistry.register()` adds your own provider.

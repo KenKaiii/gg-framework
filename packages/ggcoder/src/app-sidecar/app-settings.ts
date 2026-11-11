@@ -22,6 +22,9 @@ export const ALL_PROVIDERS: Provider[] = [
   "deepseek",
   // Open-community gateway, before the provider-agnostic one
   "huggingface",
+  // OpenCode Console: the Go subscription, then pay-as-you-go
+  "opencode-go",
+  "opencode",
   // Japan, then provider-agnostic gateway last
   "sakana",
   "openrouter",

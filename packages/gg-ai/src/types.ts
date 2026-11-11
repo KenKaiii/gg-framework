@@ -17,6 +17,10 @@ export type Provider =
   | "palsu"
   /** Hugging Face Inference Providers router (OpenAI-compatible). */
   | "huggingface"
+  /** OpenCode Console gateway, pay-as-you-go (opencode.ai/inference). */
+  | "opencode"
+  /** OpenCode Go subscription gateway (opencode.ai/inference/go). */
+  | "opencode-go"
   /** Locally hosted OpenAI-compatible server (Ollama, LM Studio, llama.cpp, vLLM). */
   | "local";
 

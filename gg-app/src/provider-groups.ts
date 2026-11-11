@@ -34,6 +34,8 @@ const COUNTRY: Record<string, ProviderGroupId> = {
   sakana: "jp",
   openrouter: "gw",
   huggingface: "gw",
+  "opencode-go": "gw",
+  opencode: "gw",
 };
 
 export function providerGroupOf(value: string): ProviderGroupId {

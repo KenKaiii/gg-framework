@@ -15,6 +15,7 @@ import {
   isThinkingLevelSupported,
 } from "../core/thinking-level.js";
 import { log } from "../core/logger.js";
+import { openCodeCatalogs } from "../core/opencode-catalog-store.js";
 import { readBody, json } from "./http.js";
 import {
   ALL_PROVIDERS,
@@ -123,6 +124,11 @@ export function handleRunControlRoutes(
       for (const p of ALL_PROVIDERS) {
         if (await ctx.auth.hasProviderAuth(p)) loggedIn.push(p);
       }
+      // A connected OpenCode plan's list is read again in the background once
+      // stale; the pickers reload when it changed.
+      void openCodeCatalogs.refreshStale(loggedIn).then((changed) => {
+        if (changed) ctx.broadcastAll("models_change", {});
+      });
       // Just the names, grouped by provider in registry order — the UI shows
       // a clean multi-column list of model ids. Local models come from the
       // runtime registry (populated by the background scan) and are always

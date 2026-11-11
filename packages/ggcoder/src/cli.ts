@@ -400,6 +400,8 @@ function main(): void {
     if (p === "minimax") return "MiniMax-M3.1-Flash";
     if (p === "deepseek") return "deepseek-v4-pro";
     if (p === "huggingface") return "moonshotai/Kimi-K2.7-Code";
+    if (p === "opencode") return "opencode/kimi-k3";
+    if (p === "opencode-go") return "opencode-go/kimi-k3";
     if (p === "openrouter") return "qwen/qwen3.8-max";
     if (p === "sakana") return "fugu";
     if (p === "xai") return "grok-4.7";
@@ -1050,6 +1052,8 @@ async function runSessions(): Promise<void> {
     if (p === "minimax") return "MiniMax-M3.1-Flash";
     if (p === "deepseek") return "deepseek-v4-pro";
     if (p === "huggingface") return "moonshotai/Kimi-K2.7-Code";
+    if (p === "opencode") return "opencode/kimi-k3";
+    if (p === "opencode-go") return "opencode-go/kimi-k3";
     if (p === "sakana") return "fugu";
     if (p === "xai") return "grok-4.7";
     return "claude-opus-5-5";
@@ -1518,6 +1522,8 @@ async function resolveActiveProvider(
     "minimax",
     "deepseek",
     "openrouter",
+    "opencode-go",
+    "opencode",
     "sakana",
     "xai",
   ];

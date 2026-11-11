@@ -19,6 +19,12 @@ describe("providerLabel", () => {
     expect(providerRank("deepseek")).toBeLessThan(providerRank("huggingface"));
     expect(providerRank("huggingface")).toBeLessThan(providerRank("sakana"));
   });
+
+  it("labels both OpenCode plans and lists Go first", () => {
+    expect(providerLabel("opencode-go")).toBe("OpenCode Go");
+    expect(providerLabel("opencode")).toBe("OpenCode");
+    expect(providerRank("opencode-go")).toBeLessThan(providerRank("opencode"));
+  });
 });
 
 describe("providerRank", () => {

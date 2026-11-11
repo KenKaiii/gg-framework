@@ -86,8 +86,9 @@ const MODEL_WINDOW_CAPS: Readonly<Record<string, number>> = {
   "gemini-3.1-pro-preview": 200_000,
 };
 
-/** Conservative ceiling for providers with NO evidence either way (Sakana, the
- *  Hugging Face router — whose served window and caching vary by backend).
+/** Conservative ceiling for providers with NO evidence either way (Sakana, and
+ *  the Hugging Face and OpenCode gateways — whose served window, caching and
+ *  long-context price tiers vary by backend).
  *  Only bites windows above ~470K; 200–272K windows are unaffected. */
 const DEFAULT_LATENCY_WINDOW_CAP = 400_000;
 

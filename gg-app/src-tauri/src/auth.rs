@@ -457,6 +457,46 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
         api_key_variants: &[],
     },
     ProviderMeta {
+        value: "opencode-go",
+        label: "OpenCode Go",
+        description: "Kimi K3, GLM-5.3, GLM-5.3-Flash and more Go models",
+        methods: &["apikey"],
+        oauth_key: None,
+        oauth_label: None,
+        method_details: &[
+            MethodDetail {
+                method: "apikey",
+                label: "OpenCode API key",
+                billing: "Uses your OpenCode Go subscription.",
+                when: "Create a personal API key in the OpenCode Console, in a workspace subscribed to Go.",
+                requires: None,
+            },
+        ],
+        api_key_label: Some("OpenCode"),
+        api_key_base_url: None,
+        api_key_variants: &[],
+    },
+    ProviderMeta {
+        value: "opencode",
+        label: "OpenCode",
+        description: "Kimi K3, GLM-5.3, GLM-5.3-Flash and more paid Console models",
+        methods: &["apikey"],
+        oauth_key: None,
+        oauth_label: None,
+        method_details: &[
+            MethodDetail {
+                method: "apikey",
+                label: "OpenCode API key",
+                billing: "Pay-per-token from your OpenCode Console credits.",
+                when: "Free-tier models only run inside OpenCode, so they are not listed here.",
+                requires: None,
+            },
+        ],
+        api_key_label: Some("OpenCode"),
+        api_key_base_url: None,
+        api_key_variants: &[],
+    },
+    ProviderMeta {
         value: "openrouter",
         label: "OpenRouter",
         description: "Qwen3.8 Max · multi-provider gateway",
@@ -1090,6 +1130,8 @@ mod tests {
                 "xiaomi",
                 "deepseek",
                 "sakana",
+                "opencode-go",
+                "opencode",
                 "openrouter",
             ]
         );

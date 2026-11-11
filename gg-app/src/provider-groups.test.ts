@@ -16,6 +16,7 @@ describe("groupProviders", () => {
 
   it("puts an unknown provider in Other instead of dropping it", () => {
     expect(providerGroupOf("newlab")).toBe("other");
+    expect(["opencode-go", "opencode"].map(providerGroupOf)).toEqual(["gw", "gw"]);
     expect(groupProviders([{ value: "newlab" }]).map((g) => g.group.name)).toEqual(["Other"]);
   });
 });

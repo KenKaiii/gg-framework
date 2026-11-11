@@ -1,6 +1,7 @@
 // @kenkaiiii/gg-core — provider-agnostic, UI-free shared foundation.
 export * from "./model-registry.js";
 export * from "./openrouter-catalog.js";
+export * from "./opencode-catalog.js";
 export * from "./thinking-level.js";
 export * from "./local-models.js";
 export * from "./paths.js";
