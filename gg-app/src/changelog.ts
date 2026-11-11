@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.109.1",
+    date: "2026-11-11",
+    items: [
+      "The chat now moves like one smooth sheet. When the message box grows, a `Deck` panel opens, or you answer a question, your messages glide to their new spot instead of jumping there in a single frame. I also fixed a sneaky bug that could nudge a pinned chat up by `330px` and stop it following the reply.",
+      "Chats on your `Claude` subscription pick up where you left off far more reliably. If an old conversation's saved state has gone missing, I now rebuild it from your own history instead of failing, the tools that chat was using come back with it, and long summaries no longer get cut off mid-stream.",
+      "Long sessions waste fewer tokens. I made the cleanup of old tool output much pickier about when it runs, so your cache stays warm for longer and you spend less re-reading the same conversation.",
+    ],
+  },
+  {
     version: "0.109.0",
     date: "2026-11-10",
     items: [

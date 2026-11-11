@@ -2,7 +2,7 @@
   "name": "gg-app",
   "private": true,
   "license": "AGPL-3.0-only",
-  "version": "0.109.0",
+  "version": "0.109.1",
   "description": "GG Coder desktop app: Tauri + React workspace for code, chat and motion agents",
   "type": "module",
   "scripts": {
