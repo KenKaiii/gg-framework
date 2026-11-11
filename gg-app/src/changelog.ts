@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.110.0",
+    date: "2026-11-11",
+    items: [
+      "Your `OpenCode Go` subscription now plugs straight into GG Coder. Paste your OpenCode API key under AI Providers and pick from models like `Kimi K3` and `GLM-5.3`, with the model list keeping itself fresh. Pay-as-you-go OpenCode credits work the same way. This one is brand new, so tell me if a model misbehaves.",
+    ],
+  },
+  {
     version: "0.109.1",
     date: "2026-11-11",
     items: [
