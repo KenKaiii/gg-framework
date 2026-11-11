@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual re-run of ordinary CI (no inputs) for when a push run is lost, as
+  # one was in the 2026-11-11 Actions outage and could not be cancelled or re-run.
+  workflow_dispatch:
   workflow_call:
     inputs:
       base_sha:
@@ -24,7 +27,8 @@ permissions:
   contents: read
 
 # Cancel the superseded run when a branch gets rapid successive pushes/PR
-# updates. Keyed on head_ref for PRs, run_id (never collides) for main pushes.
+# updates. Keyed on head_ref for PRs, run_id (never collides) for main pushes
+# and manual runs.
 concurrency:
   group: ${{ toJSON(inputs) != '{}' && 'kleio-reusable-ci' || github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
