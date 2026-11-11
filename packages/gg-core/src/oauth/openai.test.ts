@@ -1,11 +1,13 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CHATGPT_PLAN_BASE_URL,
   ChatGPTPlanNotEnabledError,
+  ChatGPTSignInError,
   getChatGPTHostId,
   loginChatGPT,
   refreshChatGPTToken,
@@ -35,6 +37,8 @@ interface FakeAuthServer {
 function fakeAuthServer(opts: {
   scope?: string;
   idTokenClaims?: (nonce: string) => Record<string, unknown>;
+  /** How many code exchanges to refuse with `invalid_grant` before accepting. */
+  refuseExchanges?: number;
 }): { server: FakeAuthServer; setNonce: (nonce: string) => void } {
   let nonce = "";
   const posts = new Map<string, URLSearchParams[]>();
@@ -47,6 +51,12 @@ function fakeAuthServer(opts: {
     const form = new URLSearchParams(String(init?.body ?? ""));
     posts.set(url.pathname, [...(posts.get(url.pathname) ?? []), form]);
     if (url.pathname === "/api/accounts/oauth/revoke") return new Response("", { status: 200 });
+    if (form.get("grant_type") === "authorization_code") {
+      const exchanges = posts.get(url.pathname)!.length;
+      if (exchanges <= (opts.refuseExchanges ?? 0)) {
+        return new Response(JSON.stringify({ error: "invalid_grant" }, null, 2), { status: 400 });
+      }
+    }
     const clientId = form.get("client_id")!;
     const claims = opts.idTokenClaims?.(nonce) ?? {
       iss: "https://auth.openai.com",
@@ -74,18 +84,31 @@ function fakeAuthServer(opts: {
 function pasteCallbacks(
   query: (auth: URL) => string,
   setNonce: (nonce: string) => void,
-): { callbacks: OAuthLoginCallbacks; authUrl: () => URL; prompts: string[] } {
+): {
+  callbacks: OAuthLoginCallbacks;
+  authUrl: () => URL;
+  authUrls: URL[];
+  prompts: string[];
+  statuses: string[];
+} {
   let opened: URL | undefined;
+  const authUrls: URL[] = [];
   const prompts: string[] = [];
+  const statuses: string[] = [];
   return {
     prompts,
+    statuses,
+    authUrls,
     authUrl: () => opened!,
     callbacks: {
       onOpenUrl: (url) => {
         opened = new URL(url);
+        authUrls.push(opened);
         setNonce(opened.searchParams.get("nonce")!);
       },
-      onStatus: () => {},
+      onStatus: (message) => {
+        statuses.push(message);
+      },
       onPromptCode: async (message) => {
         prompts.push(message);
         return `${opened!.searchParams.get("redirect_uri")}?${query(opened!)}`;
@@ -241,6 +264,90 @@ describe("Continue with ChatGPT", () => {
       setNonce,
     );
     await expect(loginChatGPT(holder.callbacks, files)).rejects.toThrow(/didn't finish/);
+  }, 20_000);
+});
+
+// Regression for Roamies #17: `ChatGPT token exchange failed (400): { "error": "invalid_grant" }`.
+describe("Continue with ChatGPT when OpenAI refuses the code", () => {
+  it("authorizes once more with the issued app ID, then saves the registration", async () => {
+    const { server, setNonce } = fakeAuthServer({ refuseExchanges: 1 });
+    const holder = pasteCallbacks(firstRegistration, setNonce);
+
+    const creds = await loginChatGPT(holder.callbacks, files);
+
+    expect(holder.authUrls).toHaveLength(2);
+    const [first, second] = holder.authUrls as [URL, URL];
+    expect(first.searchParams.get("client_id")).toBe("dynamic_agent_client");
+    expect(second.searchParams.get("client_id")).toBe("oaiapp_issued");
+    expect(second.searchParams.get("agent_name_hint")).toBeNull();
+    for (const fresh of ["state", "nonce", "code_challenge"]) {
+      expect(second.searchParams.get(fresh)).not.toBe(first.searchParams.get(fresh));
+    }
+    expect(holder.statuses.at(-1)).toMatch(/once more/);
+
+    const exchanges = server.posts.get("/api/accounts/oauth/token")!;
+    expect(exchanges).toHaveLength(2);
+    expect(exchanges[1]!.get("code_verifier")).not.toBe(exchanges[0]!.get("code_verifier"));
+    expect(creds.clientId).toBe("oaiapp_issued");
+    expect(JSON.parse(await fs.readFile(files.registrationFile, "utf-8"))).toEqual({
+      clientId: "oaiapp_issued",
+      subject: "user-sub-1",
+    });
+  }, 20_000);
+
+  it("gives up after the second refusal with a typed error and no JSON in the message", async () => {
+    const { server, setNonce } = fakeAuthServer({ refuseExchanges: 2 });
+    const holder = pasteCallbacks(firstRegistration, setNonce);
+
+    const err = await loginChatGPT(holder.callbacks, files).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ChatGPTSignInError);
+    expect(err).toMatchObject({
+      reason: "invalid_grant",
+      status: 400,
+      returning: false,
+      retried: true,
+    });
+    expect((err as Error).message).toBe("ChatGPT token exchange failed (400): invalid_grant");
+    expect((err as Error).message).not.toMatch(/[{}"]/);
+    expect(holder.authUrls).toHaveLength(2);
+    expect(server.posts.get("/api/accounts/oauth/token")).toHaveLength(2);
+    await expect(fs.stat(files.registrationFile)).rejects.toThrow();
+  }, 20_000);
+
+  it("frees the callback port at once when the sign-in is cancelled", async () => {
+    fakeAuthServer({});
+    // A saved registration lets the listener take any free port, so this runs
+    // even where the documented port is busy.
+    await fs.writeFile(
+      files.registrationFile,
+      JSON.stringify({ clientId: "oaiapp_issued", subject: "user-sub-1" }),
+    );
+    const controller = new AbortController();
+    let opened: (url: URL) => void = () => {};
+    const authUrl = new Promise<URL>((resolve) => (opened = resolve));
+    const login = loginChatGPT(
+      {
+        onOpenUrl: (url) => opened(new URL(url)),
+        onStatus: () => {},
+        onPromptCode: () => new Promise<string>(() => {}),
+      },
+      { ...files, signal: controller.signal },
+    );
+    const failure = login.catch((e: unknown) => e);
+    const port = Number(new URL((await authUrl).searchParams.get("redirect_uri")!).port);
+
+    const canBind = () =>
+      new Promise<boolean>((resolve) => {
+        const probe = http.createServer();
+        probe.once("error", () => resolve(false));
+        probe.listen(port, "127.0.0.1", () => probe.close(() => resolve(true)));
+      });
+    expect(await canBind()).toBe(false);
+
+    controller.abort();
+    expect(await failure).toMatchObject({ name: "AbortError" });
+    expect(await canBind()).toBe(true);
   }, 20_000);
 });
 

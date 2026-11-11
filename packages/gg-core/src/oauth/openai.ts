@@ -45,6 +45,31 @@ export class ChatGPTPlanNotEnabledError extends Error {
   }
 }
 
+/**
+ * OpenAI refused the one-time code at the token endpoint. `reason` is its
+ * OAuth error (`invalid_grant`, `invalid_client`, ...) and `detail` its
+ * `error_description`; the message never carries the raw response body.
+ */
+export class ChatGPTSignInError extends Error {
+  readonly reason: string;
+  readonly status: number;
+  readonly detail: string;
+  /** Whether a saved app registration was used, rather than a first registration. */
+  returning = false;
+  /** Whether this was the second refusal, after the one automatic retry. */
+  retried = false;
+  /** Milliseconds from the browser callback to the token endpoint's answer. */
+  callbackToExchangeMs?: number;
+
+  constructor(reason: string, status: number, detail = "") {
+    super(`ChatGPT token exchange failed (${status}): ${reason}`);
+    this.name = "ChatGPTSignInError";
+    this.reason = reason;
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
 interface ChatGPTRegistration {
   clientId: string;
   subject: string;
@@ -57,6 +82,14 @@ export interface ChatGPTLoginOptions {
   registrationFile?: string;
   /** The current sign-in, if any: its ID token skips the account picker. */
   previous?: Pick<OAuthCredentials, "idToken">;
+  /** Aborting closes the callback listener at once and rejects with an `AbortError`. */
+  signal?: AbortSignal;
+}
+
+function cancelled(): Error {
+  const err = new Error("ChatGPT sign-in was cancelled.");
+  err.name = "AbortError";
+  return err;
 }
 
 function defaultHostIdFile(): string {
@@ -107,91 +140,135 @@ async function readRegistration(file: string): Promise<ChatGPTRegistration | und
  * Continue with ChatGPT. Registers GG Coder for this ChatGPT account on first
  * use (the user names and approves it in the browser), then reuses the issued
  * client ID. Throws {@link ChatGPTPlanNotEnabledError} when the user signed in
- * but didn't allow plan use.
+ * but didn't allow plan use, and {@link ChatGPTSignInError} when OpenAI refuses
+ * the one-time code twice.
  */
 export async function loginChatGPT(
   callbacks: OAuthLoginCallbacks,
   options: ChatGPTLoginOptions = {},
 ): Promise<OAuthCredentials> {
+  const { signal } = options;
   const hostId = await getChatGPTHostId(options.hostIdFile);
   const registrationFile = options.registrationFile ?? defaultRegistrationFile();
   const registration = await readRegistration(registrationFile);
-  const { verifier, challenge } = await generatePKCE();
-  const state = crypto.randomBytes(16).toString("hex");
-  const nonce = crypto.randomBytes(16).toString("hex");
+  // The app ID OpenAI issued in a first registration whose code it then refused.
+  let issuedClientId: string | undefined;
 
-  const listener = await startCallbackListener(state, Boolean(registration));
+  const signIn = async (status: string): Promise<OAuthCredentials> => {
+    if (signal?.aborted) throw cancelled();
+    const knownClientId = registration?.clientId ?? issuedClientId;
+    const { verifier, challenge } = await generatePKCE();
+    const state = crypto.randomBytes(16).toString("hex");
+    const nonce = crypto.randomBytes(16).toString("hex");
+
+    const listener = await startCallbackListener(state, Boolean(knownClientId));
+    try {
+      const redirectUri = `http://127.0.0.1:${listener.port}${CALLBACK_PATH}`;
+      const url = new URL(AUTHORIZE_URL);
+      url.searchParams.set("client_id", knownClientId ?? REGISTRATION_CLIENT_ID);
+      if (!knownClientId) url.searchParams.set("agent_name_hint", AGENT_NAME);
+      url.searchParams.set("ext_agent_host_id", hostId);
+      if (registration && options.previous?.idToken) {
+        url.searchParams.set("id_token_hint", options.previous.idToken);
+      }
+      url.searchParams.set("response_type", "code");
+      url.searchParams.set("redirect_uri", redirectUri);
+      url.searchParams.set("scope", SCOPES);
+      url.searchParams.set("resource", RESOURCE);
+      url.searchParams.set("state", state);
+      url.searchParams.set("nonce", nonce);
+      url.searchParams.set("code_challenge_method", "S256");
+      url.searchParams.set("code_challenge", challenge);
+
+      const callback = await acquireCallback(url.toString(), state, listener, callbacks, {
+        status,
+        signal,
+      });
+      const callbackAt = Date.now();
+      if (callback.get("error")) {
+        if (callback.get("error") === "access_denied") throw new ChatGPTPlanNotEnabledError();
+        throw new Error(
+          `ChatGPT sign-in failed: ${callback.get("error_description") ?? callback.get("error")}`,
+        );
+      }
+      const code = callback.get("code");
+      if (!code) throw new Error("ChatGPT sign-in returned no authorization code.");
+      const issued = callback.get("client_id") ?? undefined;
+      if (knownClientId && issued && issued !== knownClientId) {
+        throw new Error("ChatGPT returned a different app registration. Start the sign-in again.");
+      }
+      const clientId = knownClientId ?? issued;
+      if (!clientId || clientId === REGISTRATION_CLIENT_ID) {
+        throw new Error(
+          "ChatGPT didn't finish registering GG Coder. Start the sign-in again, and paste the full callback URL if you're on another machine.",
+        );
+      }
+      issuedClientId = clientId;
+
+      const tokens = await exchangeCode({ code, verifier, clientId, redirectUri, signal }).catch(
+        (err: unknown) => {
+          if (err instanceof ChatGPTSignInError) {
+            err.returning = Boolean(registration);
+            err.callbackToExchangeMs = Date.now() - callbackAt;
+          }
+          throw err;
+        },
+      );
+      const claims = await verifyIdToken(tokens.idToken, { clientId, nonce });
+      const subject = String(claims.sub ?? "");
+      if (!subject) throw new Error("ChatGPT ID token has no subject.");
+      if (registration && registration.subject !== subject) {
+        // The saved registration belongs to another account; register afresh next time.
+        await fs.unlink(registrationFile).catch(() => {});
+        await revokeChatGPTSignIn({ refreshToken: tokens.refreshToken, clientId });
+        throw new Error(
+          "That was a different ChatGPT account. Continue with ChatGPT again to connect it.",
+        );
+      }
+      if (!tokens.scopes.includes(CHATGPT_PLAN_SCOPE)) {
+        await revokeChatGPTSignIn({ refreshToken: tokens.refreshToken, clientId });
+        throw new ChatGPTPlanNotEnabledError();
+      }
+      if (!registration) {
+        await writePrivateFile(registrationFile, JSON.stringify({ clientId, subject }));
+      }
+
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: Date.now() + tokens.expiresIn * 1000,
+        expiresIn: tokens.expiresIn,
+        accountId: subject,
+        clientId,
+        idToken: tokens.idToken,
+        scopes: tokens.scopes,
+        baseUrl: CHATGPT_PLAN_BASE_URL,
+      };
+    } finally {
+      listener.close();
+    }
+  };
+
   try {
-    const redirectUri = `http://127.0.0.1:${listener.port}${CALLBACK_PATH}`;
-    const url = new URL(AUTHORIZE_URL);
-    url.searchParams.set("client_id", registration?.clientId ?? REGISTRATION_CLIENT_ID);
-    if (!registration) url.searchParams.set("agent_name_hint", AGENT_NAME);
-    url.searchParams.set("ext_agent_host_id", hostId);
-    if (registration && options.previous?.idToken) {
-      url.searchParams.set("id_token_hint", options.previous.idToken);
+    try {
+      return await signIn("Waiting for ChatGPT sign-in in your browser...");
+    } catch (err) {
+      if (!(err instanceof ChatGPTSignInError) || err.reason !== "invalid_grant") throw err;
+      if (signal?.aborted) throw err;
     }
-    url.searchParams.set("response_type", "code");
-    url.searchParams.set("redirect_uri", redirectUri);
-    url.searchParams.set("scope", SCOPES);
-    url.searchParams.set("resource", RESOURCE);
-    url.searchParams.set("state", state);
-    url.searchParams.set("nonce", nonce);
-    url.searchParams.set("code_challenge_method", "S256");
-    url.searchParams.set("code_challenge", challenge);
-
-    const callback = await acquireCallback(url.toString(), state, listener, callbacks);
-    if (callback.get("error")) {
-      if (callback.get("error") === "access_denied") throw new ChatGPTPlanNotEnabledError();
-      throw new Error(
-        `ChatGPT sign-in failed: ${callback.get("error_description") ?? callback.get("error")}`,
+    // OpenAI's documented recovery: drop the refused code and authorize again
+    // with the app ID it just issued.
+    try {
+      return await signIn(
+        "ChatGPT didn't accept that sign-in. Trying once more in your browser...",
       );
+    } catch (err) {
+      if (err instanceof ChatGPTSignInError) err.retried = true;
+      throw err;
     }
-    const code = callback.get("code");
-    if (!code) throw new Error("ChatGPT sign-in returned no authorization code.");
-    const issued = callback.get("client_id") ?? undefined;
-    if (registration && issued && issued !== registration.clientId) {
-      throw new Error("ChatGPT returned a different app registration. Start the sign-in again.");
-    }
-    const clientId = registration?.clientId ?? issued;
-    if (!clientId || clientId === REGISTRATION_CLIENT_ID) {
-      throw new Error(
-        "ChatGPT didn't finish registering GG Coder. Start the sign-in again, and paste the full callback URL if you're on another machine.",
-      );
-    }
-
-    const tokens = await exchangeCode({ code, verifier, clientId, redirectUri });
-    const claims = await verifyIdToken(tokens.idToken, { clientId, nonce });
-    const subject = String(claims.sub ?? "");
-    if (!subject) throw new Error("ChatGPT ID token has no subject.");
-    if (registration && registration.subject !== subject) {
-      // The saved registration belongs to another account; register afresh next time.
-      await fs.unlink(registrationFile).catch(() => {});
-      await revokeChatGPTSignIn({ refreshToken: tokens.refreshToken, clientId });
-      throw new Error(
-        "That was a different ChatGPT account. Continue with ChatGPT again to connect it.",
-      );
-    }
-    if (!tokens.scopes.includes(CHATGPT_PLAN_SCOPE)) {
-      await revokeChatGPTSignIn({ refreshToken: tokens.refreshToken, clientId });
-      throw new ChatGPTPlanNotEnabledError();
-    }
-    if (!registration) {
-      await writePrivateFile(registrationFile, JSON.stringify({ clientId, subject }));
-    }
-
-    return {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      expiresAt: Date.now() + tokens.expiresIn * 1000,
-      expiresIn: tokens.expiresIn,
-      accountId: subject,
-      clientId,
-      idToken: tokens.idToken,
-      scopes: tokens.scopes,
-      baseUrl: CHATGPT_PLAN_BASE_URL,
-    };
-  } finally {
-    listener.close();
+  } catch (err) {
+    if (signal?.aborted) throw cancelled();
+    throw err;
   }
 }
 
@@ -304,12 +381,16 @@ async function acquireCallback(
   expectedState: string,
   listener: CallbackListener,
   callbacks: OAuthLoginCallbacks,
+  options: { status: string; signal?: AbortSignal },
 ): Promise<URLSearchParams> {
   callbacks.onOpenUrl(authUrl);
-  callbacks.onStatus("Waiting for ChatGPT sign-in in your browser...");
+  callbacks.onStatus(options.status);
   const done = new AbortController();
+  let onAbort: (() => void) | undefined;
   try {
     return await new Promise<URLSearchParams>((resolve, reject) => {
+      onAbort = () => reject(cancelled());
+      options.signal?.addEventListener("abort", onAbort, { once: true });
       let listenerFailed = false;
       let pasteError: unknown;
       const failIfExhausted = (): void => {
@@ -332,6 +413,7 @@ async function acquireCallback(
       });
     });
   } finally {
+    if (onAbort) options.signal?.removeEventListener("abort", onAbort);
     done.abort();
     listener.close();
   }
@@ -398,13 +480,42 @@ interface TokenResponse {
   scope?: string;
 }
 
-async function postForm(url: string, form: Record<string, string>): Promise<Response> {
+async function postForm(
+  url: string,
+  form: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<Response> {
   return fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(form),
-    signal: oauthRequestSignal(),
+    signal: signal ? AbortSignal.any([oauthRequestSignal(), signal]) : oauthRequestSignal(),
   });
+}
+
+/** The token endpoint's refusal as a typed error, whatever shape the body took. */
+function signInError(status: number, body: string): ChatGPTSignInError {
+  let reason = "";
+  let detail = "";
+  try {
+    const data = JSON.parse(body) as { error?: unknown; error_description?: unknown };
+    if (typeof data.error === "string") {
+      reason = data.error;
+    } else if (data.error && typeof data.error === "object") {
+      const nested = data.error as { code?: unknown; type?: unknown; message?: unknown };
+      reason = String(nested.code ?? nested.type ?? "");
+      if (typeof nested.message === "string") detail = nested.message;
+    }
+    if (typeof data.error_description === "string") detail = data.error_description;
+  } catch {
+    // Not JSON (a proxy or an outage page): keep the start of it for the log.
+    detail = body.replace(/\s+/g, " ").trim();
+  }
+  return new ChatGPTSignInError(
+    /^[\w.-]{1,60}$/.test(reason) ? reason : "unknown_error",
+    status,
+    detail.slice(0, 300),
+  );
 }
 
 async function exchangeCode(input: {
@@ -412,18 +523,22 @@ async function exchangeCode(input: {
   verifier: string;
   clientId: string;
   redirectUri: string;
+  signal?: AbortSignal;
 }): Promise<TokenSet> {
-  const response = await postForm(TOKEN_URL, {
-    grant_type: "authorization_code",
-    client_id: input.clientId,
-    code: input.code,
-    code_verifier: input.verifier,
-    redirect_uri: input.redirectUri,
-    resource: RESOURCE,
-  });
+  const response = await postForm(
+    TOKEN_URL,
+    {
+      grant_type: "authorization_code",
+      client_id: input.clientId,
+      code: input.code,
+      code_verifier: input.verifier,
+      redirect_uri: input.redirectUri,
+      resource: RESOURCE,
+    },
+    input.signal,
+  );
   if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`ChatGPT token exchange failed (${response.status}): ${text.slice(0, 300)}`);
+    throw signInError(response.status, await response.text().catch(() => ""));
   }
   const data = (await response.json()) as TokenResponse;
   if (!data.access_token || !data.refresh_token || !data.id_token) {
