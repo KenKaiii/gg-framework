@@ -63,9 +63,9 @@ pub(crate) fn restore_sibling_windows(window: &tauri::Window) {
     }
 }
 
-/// App background (#111317) painted on the native window + webview BEFORE the
+/// App background (#111217) painted on the native window + webview BEFORE the
 /// first frame, so opening a new window never flashes white.
-pub(crate) const APP_BG: tauri::window::Color = tauri::window::Color(15, 17, 21, 255);
+pub(crate) const APP_BG: tauri::window::Color = tauri::window::Color(17, 18, 23, 255);
 
 /// Per-OS window chrome decision. macOS uses the Overlay title bar (webview
 /// draws under the traffic lights); every other OS keeps native decorations.

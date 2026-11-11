@@ -33,43 +33,53 @@
 @property --glow-live {
   syntax: "<color>";
   inherits: true;
-  initial-value: #3a4fb8;
+  initial-value: #4b505c;
 }
 
 :root,
 :root[data-theme="dark"] {
-  /* Alloy. Brushed graphite surfaces separated by lightness, keys raised off
-     them, and one cobalt accent. Every colour has a light twin below; nothing
-     outside these two blocks names a raw colour for chrome. */
-  --bg: #15171a;
-  --surface-1: #1f2226;
-  --surface-2: #2a2e33;
-  --surface-3: #33383e;
-  --border: rgba(255, 255, 255, 0.07);
-  --border-strong: rgba(255, 255, 255, 0.16);
+  /* Obsidian. Near-black surfaces separated by lightness, Ice Grey (#dfe5eb)
+     ink and hairlines, and one Racing Red accent. Every colour has a light
+     twin below; nothing outside these two blocks names a raw colour for
+     chrome. */
+  --bg: #111217;
+  /* The obsidian sheen behind the shell: a soft pool of light high in the
+     window, a low band near the floor, over a top-to-bottom falloff. Peaks
+     below --surface-2, so text keeps its measured contrast. */
+  --bg-wash:
+    radial-gradient(62% 40% at 50% 22%, rgb(223 229 235 / 0.055), transparent 72%),
+    radial-gradient(56% 10% at 50% 94%, rgb(223 229 235 / 0.05), transparent 76%),
+    linear-gradient(180deg, #15161c 0%, #111217 42%, #0c0d11 100%);
+  --surface-1: #181a21;
+  --surface-2: #20232b;
+  --surface-3: #2a2d37;
+  --border: rgba(223, 229, 235, 0.08);
+  --border-strong: rgba(223, 229, 235, 0.17);
   /* The ink overlays are drawn in (hover washes, hairlines): white on dark,
      deep navy on light. Used as `rgb(var(--ink-rgb) / <alpha>)`. */
-  --ink-rgb: 255 255 255;
+  --ink-rgb: 223 229 235;
 
-  /* Text — one ink at four levels. --text-dim is the floor: 4.87:1 on
+  /* Text — Ice Grey at four levels. --text-dim is the floor: 5.26:1 on
      --surface-2; on --surface-3 use --text-muted. */
-  --text: #e8ebef;
-  --text-secondary: #c2c7ce;
-  --text-muted: #a1a8b1;
-  --text-dim: #949ba5;
+  --text: #dfe5eb;
+  --text-secondary: #bcc3cc;
+  --text-muted: #9da5af;
+  --text-dim: #8e96a1;
 
-  /* Accent — cobalt, light enough to carry the dark --on-primary label on a
-     fill (8.1:1) and to read as text on every surface. */
-  --primary: #8fa3ff;
-  --primary-hi: #a9b8ff;
-  --on-primary: #050a2e;
-  /* Filled accent controls (send, Commit, the home buttons): the same
-     periwinkle and dark ink in both themes, so a primary button looks the
-     same in light and dark. --primary itself darkens in light mode, for
-     accent text and icons on light surfaces. */
-  --primary-fill: #8fa3ff;
-  --primary-fill-hi: #a9b8ff;
-  --on-primary-fill: #050a2e;
+  /* Accent text, icons and rings — Racing Red lifted a step, because the
+     exact red is only 3.7:1 as text on --surface-2 (this is 4.5:1+ on every
+     surface). */
+  --primary: #ff5d6e;
+  --primary-hi: #ff7c89;
+  --on-primary: #14060a;
+  /* Filled accent controls (send, Commit, the home buttons): Racing Red
+     itself with white ink, a requested look (4.08:1, under the 4.5:1 a small
+     label needs). The white is a hair warm because pure #fff is kept for
+     decorative literals. Hover deepens rather than lifts, so the ink gains
+     contrast there (4.94:1). */
+  --primary-fill: #ef233c;
+  --primary-fill-hi: #d61f36;
+  --on-primary-fill: #fffafa;
 
   --success: #7fdc95;
   --on-success: #04180b;
@@ -83,17 +93,17 @@
   /* Between warning and error: "improving, not there yet" (Project Health). */
   --caution: #ff9f5c;
   --on-error: #240704;
-  --secondary: #8fa3ff;
+  --secondary: #dfe5eb;
   --info: #62e8d8;
 
-  /* Ambient glow behind the window. Alloy keeps it faint: the material, not a
-     wash, carries the look. */
-  --glow: #3a4fb8;
+  /* Ambient glow behind the window at rest: neutral slate, so red only shows
+     while the agent works. */
+  --glow: #4b505c;
 
   --user-text: var(--text);
   --user-bg: var(--surface-2);
   /* Code blocks: a panel sunk below the message surface. */
-  --code-bg: #0e1013;
+  --code-bg: #0b0c10;
 
   /* Ken Kai (mentor agent) — must match theme.ken in theme.ts. */
   --ken: #62e8d8;
@@ -109,15 +119,15 @@
 
   /* Keys: the raised controls of the deck and title bar. A lit top edge, a
      dark lip below, and a recessed well for the value a key reads out. */
-  --key: #2c3035;
-  --key-hi: rgba(255, 255, 255, 0.09);
-  --key-edge: #0b0c0e;
+  --key: #262932;
+  --key-hi: rgba(223, 229, 235, 0.09);
+  --key-edge: #08090c;
   --key-shadow: rgba(0, 0, 0, 0.6);
-  --well: #23272c;
+  --well: #1b1d24;
   --well-shadow: rgba(0, 0, 0, 0.55);
-  --led-off: #3a3f46;
+  --led-off: #363a45;
   --deck-shadow: 0 1px 0 rgba(0, 0, 0, 0.6), 0 14px 30px -16px rgba(0, 0, 0, 0.9);
-  --mark: rgba(143, 163, 255, 0.28);
+  --mark: rgba(239, 35, 60, 0.3);
 
   /* Elevation: neutral black so depth never tints a surface. */
   --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.45);
@@ -127,6 +137,7 @@
 
 :root[data-theme="light"] {
   --bg: #dde1e6;
+  --bg-wash: none;
   --surface-1: #eaedf0;
   --surface-2: #f5f7f9;
   --surface-3: #ffffff;
@@ -142,6 +153,9 @@
   --primary: #2848d8;
   --primary-hi: #3a5af0;
   --on-primary: #ffffff;
+  --primary-fill: #8fa3ff;
+  --primary-fill-hi: #a9b8ff;
+  --on-primary-fill: #050a2e;
   /* A light theme's links and accent text: the dark cobalt. */
   --link: #2848d8;
 
@@ -410,7 +424,7 @@
      drawn on it (text and the typing cursor). Fixed dark ink: --bg is light
      in the light theme, which left the words white on white. */
   --speech-bg: #ffffff;
-  --on-speech: #15171a;
+  --on-speech: #111217;
 
   /* Shimmer highlight — the default moving bright spot of ShimmerText, a step
      brighter than --text so the sweep reads. */
@@ -443,28 +457,28 @@
   /* The dark palette by name, for night scenes (Home's forest, a Goal's
      farm) that stay dark in the light theme: see the end of Deck.css. Same
      values as the dark theme above. */
-  --night-bg: #15171a;
-  --night-surface-1: #1f2226;
-  --night-surface-2: #2a2e33;
-  --night-surface-3: #33383e;
-  --night-border: rgba(255, 255, 255, 0.07);
-  --night-border-strong: rgba(255, 255, 255, 0.16);
-  --night-ink-rgb: 255 255 255;
-  --night-text: #e8ebef;
-  --night-text-secondary: #c2c7ce;
-  --night-text-muted: #a1a8b1;
-  --night-text-dim: #949ba5;
-  --night-primary: #8fa3ff;
-  --night-primary-hi: #a9b8ff;
-  --night-on-primary: #050a2e;
+  --night-bg: #111217;
+  --night-surface-1: #181a21;
+  --night-surface-2: #20232b;
+  --night-surface-3: #2a2d37;
+  --night-border: rgba(223, 229, 235, 0.08);
+  --night-border-strong: rgba(223, 229, 235, 0.17);
+  --night-ink-rgb: 223 229 235;
+  --night-text: #dfe5eb;
+  --night-text-secondary: #bcc3cc;
+  --night-text-muted: #9da5af;
+  --night-text-dim: #8e96a1;
+  --night-primary: #ff5d6e;
+  --night-primary-hi: #ff7c89;
+  --night-on-primary: #14060a;
   --night-success: #7fdc95;
   --night-warning: #f0c75e;
   --night-error: #ff7d70;
-  --night-key: #2c3035;
-  --night-key-hi: rgba(255, 255, 255, 0.09);
-  --night-key-edge: #0b0c0e;
+  --night-key: #262932;
+  --night-key-hi: rgba(223, 229, 235, 0.09);
+  --night-key-edge: #08090c;
   --night-key-shadow: rgba(0, 0, 0, 0.6);
-  --night-well: #23272c;
+  --night-well: #1b1d24;
   --night-well-shadow: rgba(0, 0, 0, 0.55);
 }
 
@@ -927,7 +941,7 @@ select {
   position: relative;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: var(--bg-wash), var(--bg);
   isolation: isolate;
   /* 100% (not 100vh): vh resolves against the unzoomed layout viewport, so under
      CSS `zoom` < 1 the shell came up short and the footer floated up. % chains
