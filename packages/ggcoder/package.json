@@ -1,6 +1,6 @@
 {
   "name": "@kenkaiiii/ggcoder",
-  "version": "5.97.1",
+  "version": "5.98.0",
   "type": "module",
   "description": "The engine and CLI behind the GG Coder desktop app: a lean coding agent for Claude, ChatGPT, Grok, Kimi, 12 providers and local models.",
   "author": "Ken Kai",
