@@ -51,7 +51,12 @@ uuid = { version = "1", features = ["v4"] }
 # Updater + process (relaunch) are desktop-only — the updater plugin doesn't
 # build for mobile targets.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-updater = "2.11.0"
+# No `zip` feature: it only unpacks .zip-wrapped Windows updates (and
+# .tar.gz-wrapped AppImages), but createUpdaterArtifacts=true publishes the raw
+# .exe/.msi, and the feature pulls in zip 4.x, which has open advisories
+# (GHSA-m665-v7pm-7grj, GHSA-q7v9-x93c-xqv3). macOS's .app.tar.gz unpacking
+# doesn't depend on it.
+tauri-plugin-updater = { version = "2.11.0", default-features = false, features = ["rustls-tls", "system-proxy"] }
 tauri-plugin-process = "2"
 
 [target.'cfg(unix)'.dependencies]

@@ -20,7 +20,7 @@
     "@types/better-sqlite3": "^7.6.12",
     "better-sqlite3": "^12.10.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.4",
+    "vitest": "^4.1.12",
     "wrangler": "^3.99.0"
   }
 }

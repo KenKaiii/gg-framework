@@ -32,7 +32,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const srcTauri = join(here, "..", "src-tauri");
 const binDir = join(srcTauri, "binaries");
 
-const NODE_VERSION = process.env.GG_NODE_VERSION || "22.12.0";
+// Stay on 22.x: native addons are built for its ABI (127). 22.23.4 bundles
+// undici 6.29.1, which fixes the global fetch advisories 22.12.0 (6.21.0) has.
+const NODE_VERSION = process.env.GG_NODE_VERSION || "22.23.4";
 
 // A single dropped connection to nodejs.org once failed a whole release build
 // (connect timeout on the macOS runner), so the download retries with backoff:

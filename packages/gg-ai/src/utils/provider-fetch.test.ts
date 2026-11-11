@@ -179,7 +179,7 @@ describe("createProviderFetch", () => {
     expect(uses(on)).toBe(true);
     expect(uses(on, "24.0.0")).toBe(true);
     expect(uses(on, "22.21.0")).toBe(true);
-    // Older Node ignores the variable — including the app's bundled 22.12.
+    // Older Node ignores the variable.
     expect(uses(on, "22.12.0")).toBe(false);
     expect(uses(on, "23.11.0")).toBe(false);
     expect(uses({ NODE_OPTIONS: "--trace-warnings --use-env-proxy" })).toBe(true);
