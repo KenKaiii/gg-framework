@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import type { Provider, MessageProvenance } from "@kenkaiiii/gg-ai";
 import type { AgentSession } from "../core/agent-session.js";
+import type { RunClaim } from "../core/run-claim.js";
 import type { RunLifecycle } from "../core/run-lifecycle.js";
 import { buildKenAutopilotContext, buildKenAutopilotPlanContext } from "../core/ken-context.js";
 import { parseAutopilotVerdict, type AutopilotVerdict } from "../core/autopilot-verdict.js";
@@ -53,6 +54,7 @@ export interface AutopilotRunnerContext {
   pendingPlanContent: string;
   autopilot: boolean;
   readonly runLifecycle: RunLifecycle;
+  readonly runClaim: RunClaim;
   readonly abortOwnedWork: () => void;
   pendingCancelDrain: { generation: number; text: string } | null;
   autopilotActive: boolean;
@@ -413,21 +415,32 @@ export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRun
   }
 
   async function runTasks(startId: string | null, all: boolean): Promise<void> {
+    // Held for the whole sweep: `running` drops between tasks, and a prompt or
+    // session reset landing in that gap would collide with the next task.
+    if (!ctx.runClaim.claim()) return;
     ctx.taskRunAll = all;
-    let currentId: string | null = startId ?? getNextPendingTask(ctx.cwd)?.id ?? null;
-    while (currentId) {
-      const ran = await runTaskById(currentId);
-      if (!ran || !ctx.taskRunAll) break;
-      const next = getNextPendingTask(ctx.cwd);
-      currentId = next ? next.id : null;
-      // Brief pause between tasks (mirrors the CLI cadence).
-      if (currentId) await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      let currentId: string | null = startId ?? getNextPendingTask(ctx.cwd)?.id ?? null;
+      while (currentId) {
+        const ran = await runTaskById(currentId);
+        if (!ran || !ctx.taskRunAll) break;
+        const next = getNextPendingTask(ctx.cwd);
+        currentId = next ? next.id : null;
+        // Brief pause between tasks (mirrors the CLI cadence).
+        if (currentId) await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      // A message that queued during the sweep and was never steered in.
+      await runStrandedQueue();
+    } catch (err) {
+      ctx.broadcastError("error", "task run failed", err);
+    } finally {
+      ctx.taskRunAll = false;
+      ctx.runClaim.release();
+      ctx.broadcast("tasks_run_done", {});
+      // Task runs never start an autopilot cycle; a plan a task submitted goes
+      // straight to the user.
+      ctx.offerPendingPlan();
     }
-    ctx.taskRunAll = false;
-    ctx.broadcast("tasks_run_done", {});
-    // Task runs never start an autopilot cycle; a plan a task submitted goes
-    // straight to the user.
-    ctx.offerPendingPlan();
   }
 
   return {

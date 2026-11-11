@@ -149,7 +149,7 @@ export function handleTaskRoutes(
         json(res, 400, { error: "invalid JSON body" });
         return;
       }
-      if (ctx.running) {
+      if (ctx.running || ctx.runClaim.active || ctx.autopilotActive) {
         json(res, 409, { error: "cannot run a task while the agent is running" });
         return;
       }

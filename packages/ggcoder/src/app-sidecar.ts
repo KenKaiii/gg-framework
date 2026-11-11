@@ -2300,6 +2300,9 @@ async function createSession(
     set taskRunAll(v) {
       taskRunAll = v;
     },
+    get runClaim() {
+      return runClaim;
+    },
   });
 
   // ── Idle wake for background alerts ────────────────────────

@@ -521,7 +521,7 @@ export function handleRunControlRoutes(
   }
 
   if (method === "POST" && url === "/new-session") {
-    if (ctx.running) {
+    if (ctx.running || ctx.runClaim.active || ctx.autopilotActive) {
       json(res, 409, { error: "cannot start a new session while running" });
       return true;
     }
