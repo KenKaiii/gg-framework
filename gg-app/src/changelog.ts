@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.110.1",
+    date: "2026-11-11",
+    items: [
+      "Dark mode has a brand new look, and I call it `Obsidian`. Deep near-black surfaces with a soft sheen, cool `Ice Grey` text, and a bold `Racing Red` accent on the buttons that matter. Light mode stays exactly as you know it.",
+      "Running all your `Tasks` in one go is now rock solid. A message you send between two tasks waits its turn and runs right after the last one, instead of crashing into the next task, and a new session can no longer cut in halfway.",
+    ],
+  },
+  {
     version: "0.110.0",
     date: "2026-11-11",
     items: [
