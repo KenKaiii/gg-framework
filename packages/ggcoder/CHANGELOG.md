@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.99.0
+
+### Minor Changes
+
+- Add `!claude mcp …` / `!ggcoder mcp …` server management in the app with live MCP loading in open windows, any pasted Claude Code `mcp add` line, the bundled gg-guide skill, Add/Remove folder sidecar routes, and a short answer before every ask_user card.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.99.0
+- @kenkaiiii/gg-agent@5.99.0
+- @kenkaiiii/gg-core@5.99.0
+
 ## 5.98.2
 
 ### Patch Changes
