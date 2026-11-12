@@ -4,10 +4,9 @@
 //   dist:ggcoder — total bytes of packages/ggcoder/dist (the shipped CLI).
 //   frontend:initial — entry JS + static imports, excluding on-demand chunks.
 //   sidecar      — app-sidecar.mjs + bundled skills bytes (gg-app/src-tauri/sidecar).
-//                  Deliberately EXCLUDES node_modules: it carries platform-
-//                  conditional binaries (sharp, onnxruntime), so one baseline
-//                  cannot hold across the CI matrix's three OSes. Dependency-
-//                  tree churn is still caught by the dist:ggcoder artifact.
+//   sidecar:deps — the sidecar's copied node_modules. Its native binaries differ
+//                  per OS/arch, so it is baselined per platform
+//                  (e.g. sidecar:deps:darwin-arm64).
 // Usage:
 //   node .github/ci/size-gate.mjs                 # check all artifacts against baseline
 //   node .github/ci/size-gate.mjs --only sidecar  # check one artifact
@@ -57,7 +56,9 @@ const ARTIFACTS = {
   sidecar: () =>
     dirBytes(path.join(REPO_ROOT, "gg-app/src-tauri/sidecar/app-sidecar.mjs")) +
     dirBytes(path.join(REPO_ROOT, "gg-app/src-tauri/sidecar/skills")),
+  "sidecar:deps": () => dirBytes(path.join(REPO_ROOT, "gg-app/src-tauri/sidecar/node_modules")),
 };
+const PER_PLATFORM = new Set(["sidecar:deps"]);
 
 const fmt = (bytes) => `${(bytes / 1024).toFixed(1)}KB`;
 const args = process.argv.slice(2);
@@ -87,21 +88,22 @@ for (const [name, measure] of Object.entries(ARTIFACTS)) {
     failed = true;
     continue;
   }
-  const entry = baseline.artifacts[name];
-  baseline.artifacts[name] = { bytes, recorded_at: new Date().toISOString() };
+  const key = PER_PLATFORM.has(name) ? `${name}:${process.platform}-${process.arch}` : name;
+  const entry = baseline.artifacts[key];
+  baseline.artifacts[key] = { bytes, recorded_at: new Date().toISOString() };
 
   if (!entry) {
-    rows.push([name, "—", fmt(bytes), "—", "no baseline"]);
+    rows.push([key, "—", fmt(bytes), "—", "no baseline"]);
     continue;
   }
   const absoluteTolerance = name === "frontend:initial" ? 10 * 1024 : TOLERANCE.absoluteBytes;
   const allowed = entry.bytes + Math.max(entry.bytes * TOLERANCE.relative, absoluteTolerance);
   const delta = bytes - entry.bytes;
   const verdict = bytes > allowed ? "growth (informational)" : delta < 0 ? "smaller" : "ok";
-  rows.push([name, fmt(entry.bytes), fmt(bytes), `${delta >= 0 ? "+" : ""}${fmt(delta)}`, verdict]);
+  rows.push([key, fmt(entry.bytes), fmt(bytes), `${delta >= 0 ? "+" : ""}${fmt(delta)}`, verdict]);
 }
 
-const widths = [18, 12, 12, 12, 28];
+const widths = [28, 12, 12, 12, 28];
 const header = ["artifact", "baseline", "current", "change", "note"];
 console.log(
   rows

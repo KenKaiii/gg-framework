@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { findMotionBundle } from "../core/skills.js";
+import { missingSystemTools } from "../test-support/system-tools.js";
 
 const run = promisify(execFile);
 const SR = 48000;
@@ -121,7 +122,9 @@ afterEach(async () => {
   await fs.rm(tmp, { recursive: true, force: true });
 });
 
-describe("music-fit", () => {
+const noMedia = missingSystemTools("motion-music-fit.test.ts", "ffmpeg");
+
+describe.skipIf(noMedia)("music-fit", () => {
   it("detects the tempo and downbeat phase of a click track", async () => {
     // Arrange
     const out = path.join(tmp, "out");

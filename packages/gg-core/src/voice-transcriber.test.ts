@@ -100,5 +100,4 @@ describe("decodeOggOpus", () => {
   });
 });
 
-// Integration tests for transcribeVoice require network access and ~75MB model download.
-// Run the standalone e2e test instead: node test-voice.mjs
+// transcribeVoice itself isn't tested here: it needs network access and a ~75MB model download.

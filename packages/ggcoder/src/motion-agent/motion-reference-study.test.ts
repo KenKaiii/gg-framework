@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { findMotionBundle } from "../core/skills.js";
+import { missingSystemTools } from "../test-support/system-tools.js";
 
 const exec = promisify(execFile);
 // Real FFmpeg encodes; the Windows CI runner can be slow to start processes.
@@ -149,8 +150,10 @@ describe("reference study figures", () => {
   });
 });
 
+const noMedia = missingSystemTools("motion-reference-study.test.ts", "ffmpeg");
+
 describe("reference study on a rendered fixture", () => {
-  it(
+  it.skipIf(noMedia)(
     "measures a real video and writes the report, sheets and frames",
     async () => {
       const size = "size=320x180:rate=24";

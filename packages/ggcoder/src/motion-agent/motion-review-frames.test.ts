@@ -6,6 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { findMotionBundle } from "../core/skills.js";
+import { missingSystemTools } from "../test-support/system-tools.js";
 
 const run = promisify(execFile);
 let tmp = "";
@@ -54,7 +55,9 @@ async function extract(
   });
   return result.stdout;
 }
-describe("review-frames real media evidence", () => {
+const noMedia = missingSystemTools("motion-review-frames.test.ts", "ffmpeg", "ffprobe");
+
+describe.skipIf(noMedia)("review-frames real media evidence", () => {
   it("extracts the actual early red and late blue pixels at labeled times", async () => {
     const video = path.join(tmp, "colors.mp4");
     await run(

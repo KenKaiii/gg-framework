@@ -14,6 +14,8 @@ describe("Tauri binding versions", () => {
   it.each([
     ["api", "tauri"],
     ["plugin-dialog", "tauri-plugin-dialog"],
+    // Not called from JS; installed so Tauri sees the transitive crate matched.
+    ["plugin-fs", "tauri-plugin-fs"],
     ["plugin-log", "tauri-plugin-log"],
     ["plugin-opener", "tauri-plugin-opener"],
     ["plugin-process", "tauri-plugin-process"],

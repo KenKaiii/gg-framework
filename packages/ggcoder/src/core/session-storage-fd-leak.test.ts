@@ -8,6 +8,7 @@ import { createGzip } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { openSessionReadStream } from "./session-storage.js";
+import { missingSystemTools } from "../test-support/system-tools.js";
 
 /**
  * Regression cover for a file-descriptor leak in archived session reads.
@@ -26,12 +27,15 @@ import { openSessionReadStream } from "./session-storage.js";
  * the bug is precisely that the stream object *looks* destroyed while its fd
  * is not.
  */
+const noLsof =
+  process.platform === "win32" || missingSystemTools("session-storage-fd-leak.test.ts", "lsof");
+
 describe("openSessionReadStream fd hygiene", () => {
   let dir: string;
   let archivePath: string;
 
   const openFdCount = (): number => {
-    // lsof is POSIX-only; the suite skips elsewhere.
+    // lsof is POSIX-only; these tests skip on Windows or where it is not installed.
     const out = execFileSync("lsof", ["-p", String(process.pid)], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
@@ -64,55 +68,49 @@ describe("openSessionReadStream fd hygiene", () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it.skipIf(process.platform === "win32")(
-    "leaves no descriptor behind when a partial read stops early",
-    async () => {
-      const before = openFdCount();
+  it.skipIf(noLsof)("leaves no descriptor behind when a partial read stops early", async () => {
+    const before = openFdCount();
 
-      for (let i = 0; i < 40; i++) {
-        const { stream, close } = await openSessionReadStream(archivePath);
-        const rl = createInterface({ input: stream, crlfDelay: Infinity });
-        try {
-          let lines = 0;
-          for await (const _line of rl) {
-            if (++lines > 5) break;
-          }
-        } finally {
-          rl.close();
-          close();
+    for (let i = 0; i < 40; i++) {
+      const { stream, close } = await openSessionReadStream(archivePath);
+      const rl = createInterface({ input: stream, crlfDelay: Infinity });
+      try {
+        let lines = 0;
+        for await (const _line of rl) {
+          if (++lines > 5) break;
         }
+      } finally {
+        rl.close();
+        close();
       }
+    }
 
-      // Destroy is synchronous to request but the 'close' event is not.
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    // Destroy is synchronous to request but the 'close' event is not.
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
-      expect(openFdCount()).toBe(before);
-    },
-  );
+    expect(openFdCount()).toBe(before);
+  });
 
-  it.skipIf(process.platform === "win32")(
-    "leaves no descriptor behind when the whole archive is read",
-    async () => {
-      const before = openFdCount();
+  it.skipIf(noLsof)("leaves no descriptor behind when the whole archive is read", async () => {
+    const before = openFdCount();
 
-      for (let i = 0; i < 10; i++) {
-        const { stream, close } = await openSessionReadStream(archivePath);
-        const rl = createInterface({ input: stream, crlfDelay: Infinity });
-        try {
-          for await (const _line of rl) {
-            // Drain.
-          }
-        } finally {
-          rl.close();
-          close(); // Idempotent after a natural end-of-stream.
+    for (let i = 0; i < 10; i++) {
+      const { stream, close } = await openSessionReadStream(archivePath);
+      const rl = createInterface({ input: stream, crlfDelay: Infinity });
+      try {
+        for await (const _line of rl) {
+          // Drain.
         }
+      } finally {
+        rl.close();
+        close(); // Idempotent after a natural end-of-stream.
       }
+    }
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
-      expect(openFdCount()).toBe(before);
-    },
-  );
+    expect(openFdCount()).toBe(before);
+  });
 
   it("yields the archive's decompressed contents", async () => {
     const { stream, close } = await openSessionReadStream(archivePath);

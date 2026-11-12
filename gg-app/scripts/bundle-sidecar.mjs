@@ -23,6 +23,7 @@ import {
 } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { pruneOnnxRuntimePayloads } from "./prune-native-payloads.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..");
@@ -211,32 +212,6 @@ function copyPackage(name, fromRequire, fromDir, copied) {
   }
 }
 
-/**
- * Native packages can publish binaries for every supported OS/architecture in
- * one npm tarball. Keep only this build runner's payload: shipping dormant Intel
- * Mach-O files makes an arm64 app look Intel-based to macOS inventory scanners
- * and adds roughly 180 MB of unused files before compression.
- */
-function pruneForeignNativePayloads() {
-  const runtimes = join(nodeModulesOut, "onnxruntime-node", "bin", "napi-v3");
-  if (!existsSync(runtimes)) return;
-
-  const selected = join(runtimes, process.platform, process.arch);
-  if (!existsSync(selected)) {
-    throw new Error(
-      `onnxruntime-node has no native payload for ${process.platform}/${process.arch}`,
-    );
-  }
-
-  const keep = join(outDir, `.gg-onnxruntime-${process.pid}`);
-  cpSync(selected, keep, { recursive: true });
-  rmSync(runtimes, { recursive: true, force: true });
-  mkdirSync(join(runtimes, process.platform), { recursive: true });
-  cpSync(keep, selected, { recursive: true });
-  rmSync(keep, { recursive: true, force: true });
-  console.log(`pruned onnxruntime-node payloads to ${process.platform}/${process.arch}`);
-}
-
 const mb = (bytes) => `${(bytes / 1048576).toFixed(1)} MB`;
 
 /** Recursive non-symlink walk; visit(absPath, dirent) gets files and dirs. */
@@ -371,7 +346,9 @@ async function main() {
   for (const name of EXTERNAL) {
     copyPackage(name, ggcoderRequire, ggcoderRoot, copied);
   }
-  pruneForeignNativePayloads();
+  for (const abi of pruneOnnxRuntimePayloads(nodeModulesOut)) {
+    console.log(`pruned onnxruntime-node ${abi} payloads to ${process.platform}/${process.arch}`);
+  }
   pruneBrowserOnnxPayloads();
   stripSourceMaps();
   console.log(

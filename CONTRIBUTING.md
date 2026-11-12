@@ -13,7 +13,7 @@ By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Set up
 
-You need Node.js 22+, pnpm 10 (the version comes from `packageManager` in `package.json`), and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for the desktop app.
+You need Node.js 22+, pnpm 10 (the version comes from `packageManager` in `package.json`), and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for the desktop app. Some tests also need `ffmpeg`/`ffprobe` (Motion media checks) and `lsof` (macOS/Linux). They skip with a note when these are missing locally; CI installs them and runs every test.
 
 ```bash
 git clone https://github.com/KenKaiii/gg-framework.git

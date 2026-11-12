@@ -11,6 +11,10 @@
     "frontend:initial": {
       "bytes": 971248,
       "recorded_at": "2026-09-28T09:53:36.215Z"
+    },
+    "sidecar:deps:darwin-arm64": {
+      "bytes": 276277838,
+      "recorded_at": "2026-11-12T13:11:57.267Z"
     }
   },
   "startup": {

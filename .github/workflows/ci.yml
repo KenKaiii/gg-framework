@@ -239,11 +239,12 @@ jobs:
         run: node gg-app/scripts/smoke-sidecar.mjs
         shell: bash
 
-      # OS-independent slice of the sidecar bundle (app-sidecar.mjs + skills;
-      # node_modules carries platform-conditional binaries so one baseline
-      # cannot hold across the matrix).
+      # app-sidecar.mjs + skills share one baseline; the copied node_modules
+      # carries native binaries, so size-gate baselines it per OS/arch.
       - name: Sidecar size report
-        run: node .github/ci/size-gate.mjs --only sidecar
+        run: |
+          node .github/ci/size-gate.mjs --only sidecar
+          node .github/ci/size-gate.mjs --only sidecar:deps
         shell: bash
 
       - name: Frontend build + initial JavaScript size report
