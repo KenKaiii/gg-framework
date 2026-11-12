@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.111.1",
+    date: "2026-11-13",
+    items: [
+      "I tightened up the engine under the hood. When you add a tool server, every open window now picks it up in a steady, predictable order, and the `web_fetch` engine got a new safety hook that checks every redirect before following it. Same GG Coder, just more solid.",
+    ],
+  },
+  {
     version: "0.111.0",
     date: "2026-11-13",
     items: [
