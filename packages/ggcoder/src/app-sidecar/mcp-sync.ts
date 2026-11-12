@@ -34,20 +34,20 @@ export async function syncMcpServerAcross(
   name: string,
   settingsFile: string,
 ): Promise<Map<string, McpServerChange | null>> {
-  const results = new Map<string, McpServerChange | null>();
-  await Promise.all(
-    [...targets].map(async (target) => {
+  // Entries keep the targets' order, not the order the sessions finish in.
+  const entries = await Promise.all(
+    [...targets].map(async (target): Promise<[string, McpServerChange | null]> => {
       try {
         const config = await effectiveMcpServer(name, target.cwd, settingsFile);
-        results.set(target.id, await target.session.applyMcpServerChange(name, config));
+        return [target.id, await target.session.applyMcpServerChange(name, config)];
       } catch (err) {
         log("WARN", "app-sidecar", "mcp live sync failed", {
           name,
           message: err instanceof Error ? err.message : String(err),
         });
-        results.set(target.id, null);
+        return [target.id, null];
       }
     }),
   );
-  return results;
+  return new Map(entries);
 }

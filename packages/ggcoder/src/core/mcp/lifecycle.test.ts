@@ -225,12 +225,14 @@ describe("idle shutdown", () => {
 describe("progress-aware call timeout", () => {
   it("lets a call that reports progress run past its timeout", async () => {
     const m = manager();
-    const tools = await connect(m, server({ timeout: 400 }));
+    // Timeout well above the 100 ms progress interval: at 400 ms a stalled
+    // macOS CI runner let it fire between two progress ticks.
+    const tools = await connect(m, server({ timeout: 1_000 }));
     const updates: unknown[] = [];
     const result = await call(
       tools,
       "progress",
-      { ms: 1_500, every: 100 },
+      { ms: 2_500, every: 100 },
       ctx((u) => updates.push(u)),
     );
     expect(result).toBe("done");
