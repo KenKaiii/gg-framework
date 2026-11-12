@@ -52,12 +52,19 @@ export function autosizeComposer(
   const written = el.style.height;
   const live = getComputedStyle(el).height;
   const before = live && live !== "auto" ? live : written;
-  el.style.height = "auto";
   // One line keeps the caret beside the paperclip; past that the field claims
   // the whole row and the circles drop beneath it, moving the text up and left.
   // Decide this BEFORE measuring the height: the class changes the field's
   // WIDTH, so measuring first sizes the box to a width it is about to lose.
   const row = el.closest(".inputrow");
+  // The composer's painted size, read before the collapse below changes it.
+  const box = row?.classList.contains("is-multiline")
+    ? el.closest<HTMLElement>(".inputwrap")
+    : null;
+  const boxRect = box?.getBoundingClientRect();
+  const paintedStack = box ? el.parentElement?.getBoundingClientRect() : undefined;
+  let hold = 0;
+  el.style.height = "auto";
   if (row) {
     const cs = getComputedStyle(el);
     const line = parseFloat(cs.lineHeight) || 0;
@@ -92,12 +99,24 @@ export function autosizeComposer(
         // let the reflow happen, then translate it back to the old position and
         // release, so CSS animates the offset away. The browser only ever paints
         // the smooth path.
+        //
+        // Going back to one line also drops the circles' row, so the box's top
+        // edge would jump down in one frame while the text eases after it (the
+        // flash when deleting). Hold the box at its painted height through the
+        // reflow; it eases down to its new height below.
+        if (was && !snap && box && boxRect && boxRect.height > 0) {
+          hold = boxRect.height / viewportScale(box, boxRect);
+          box.style.minHeight = `${hold}px`;
+        }
         row.classList.toggle("is-multiline", multiline);
         const last = stack?.getBoundingClientRect();
-        if (stack && first && last && !snap) {
+        // The held box keeps its painted layout, so measure the move from where
+        // the field was painted, not from where the collapse just put it.
+        const from = hold && paintedStack ? paintedStack : first;
+        if (stack && from && last && !snap) {
           const scale = viewportScale(stack, last);
-          const dx = (first.left - last.left) / scale;
-          const dy = (first.top - last.top) / scale;
+          const dx = (from.left - last.left) / scale;
+          const dy = (from.top - last.top) / scale;
           if (dx || dy) {
             stack.style.transition = "none";
             stack.style.transform = `translate(${dx}px, ${dy}px)`;
@@ -136,6 +155,23 @@ export function autosizeComposer(
   // where scrollHeight rounds down to an integer of unzoomed px and leaves the
   // content a hair taller than the height just set.
   if (content > max) el.style.overflowY = "auto";
+  if (box && hold) {
+    box.style.minHeight = "";
+    const field = getComputedStyle(el);
+    const duration = parseFloat(field.transitionDuration) * 1000 || 0;
+    if (duration > 0 && typeof box.animate === "function") {
+      // Where the box lands once the field's own height transition finishes.
+      const rect = box.getBoundingClientRect();
+      const settled =
+        rect.height / viewportScale(box, rect) + parseFloat(next) - parseFloat(field.height);
+      if (settled < hold) {
+        box.animate([{ minHeight: `${hold}px` }, { minHeight: `${settled}px` }], {
+          duration,
+          easing: field.transitionTimingFunction,
+        });
+      }
+    }
+  }
   if (!transcript || savedTop === undefined) return;
   // Where the transcript belongs now that the composer has its final height.
   // While pinned that is the true bottom, NOT the snapshot: a grown composer

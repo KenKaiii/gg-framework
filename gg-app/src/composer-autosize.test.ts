@@ -577,3 +577,64 @@ describe("emptied draft (send)", () => {
     expect(writes).toEqual([]);
   });
 });
+
+// Regression: deleting back to one line dropped the circles' row in one reflow,
+// so the composer's top edge jumped down a frame before the text eased after it.
+describe("leaving the wrapped row", () => {
+  function wrapped(value: string) {
+    const box = document.createElement("div");
+    box.className = "inputwrap";
+    const row = document.createElement("div");
+    row.className = "inputrow is-multiline";
+    const stack = document.createElement("div");
+    const el = document.createElement("textarea");
+    stack.appendChild(el);
+    row.appendChild(stack);
+    box.appendChild(row);
+    document.body.appendChild(box);
+    el.value = value;
+    Object.defineProperty(el, "scrollHeight", { get: () => 30 });
+    el.style.lineHeight = "21px";
+    el.style.paddingTop = "4.5px";
+    el.style.paddingBottom = "4.5px";
+    el.style.transitionDuration = "0.16s";
+    el.style.transitionTimingFunction = "ease-out";
+    el.style.height = "30px";
+    const minHeights: string[] = [];
+    let minHeight = "";
+    Object.defineProperty(box.style, "minHeight", {
+      configurable: true,
+      get: () => minHeight,
+      set: (v: string) => {
+        minHeights.push(v);
+        minHeight = v;
+      },
+    });
+    // 100px wrapped (or held there), 64px once the circles share the line.
+    box.getBoundingClientRect = () =>
+      ({ height: minHeight || row.classList.contains("is-multiline") ? 100 : 64 }) as DOMRect;
+    const animate = vi.fn();
+    box.animate = animate;
+    return { row, box, el, animate, minHeights };
+  }
+
+  it("holds the box at its painted height and eases it down", () => {
+    const { row, box, el, animate, minHeights } = wrapped("one");
+    autosizeComposer(el, null);
+    expect(row.classList.contains("is-multiline")).toBe(false);
+    // Held through the reflow, released in the same task: never painted.
+    expect(minHeights).toEqual(["100px", ""]);
+    expect(box.style.minHeight).toBe("");
+    expect(animate).toHaveBeenCalledWith([{ minHeight: "100px" }, { minHeight: "64px" }], {
+      duration: 160,
+      easing: "ease-out",
+    });
+  });
+
+  it("still snaps when the draft is emptied", () => {
+    const { el, animate, minHeights } = wrapped("");
+    autosizeComposer(el, null);
+    expect(minHeights).toEqual([]);
+    expect(animate).not.toHaveBeenCalled();
+  });
+});
