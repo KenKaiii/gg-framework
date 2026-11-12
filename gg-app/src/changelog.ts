@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.110.3",
+    date: "2026-11-13",
+    items: [
+      "Typing in the composer feels smoother than ever. When you delete back down to `one line`, the box now glides down in a single smooth motion instead of jumping for a split second. Pure butter.",
+      "Your download just went on a diet. GG Coder was quietly carrying about `180 MB` of AI engine files built for other kinds of computers. I now keep only the ones your machine actually runs, so installs are leaner and Apple silicon Macs see a true native app.",
+    ],
+  },
+  {
     version: "0.110.2",
     date: "2026-11-12",
     items: [
