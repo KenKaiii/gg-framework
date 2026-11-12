@@ -22,6 +22,16 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.111.0",
+    date: "2026-11-13",
+    items: [
+      "Adding tools from Claude Code is now pure copy and paste. Put a `!` in front of any `claude mcp add` line, send it, and GG Coder sets the server up for itself. It loads straight into every open window, no restart needed.",
+      "`Add folder` and `Remove folder` now live right in the More panel, in both Code and Chat. Point GG Coder at a second folder, like your docs or another repo, and drop it again with one click.",
+      "GG Coder now knows its own app inside out. Ask it how anything works, from `Autopilot` to your settings, and you get a straight answer in Code or Chat.",
+      "When GG Coder asks you to pick, it now gives you the answer first. A line or two of real context, then the choices, so you always know what you're clicking.",
+    ],
+  },
+  {
     version: "0.110.3",
     date: "2026-11-13",
     items: [
