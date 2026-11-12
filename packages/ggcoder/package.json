@@ -99,6 +99,10 @@
       "import": "./dist/core/auth/index.js",
       "types": "./dist/core/auth/index.d.ts"
     },
+    "./web": {
+      "import": "./dist/web.js",
+      "types": "./dist/web.d.ts"
+    },
     "./utils/open-browser": {
       "import": "./dist/utils/open-browser.js",
       "types": "./dist/utils/open-browser.d.ts"

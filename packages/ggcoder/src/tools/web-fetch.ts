@@ -399,6 +399,14 @@ interface LlmsCandidate {
   priority: number;
 }
 
+/** Resolves to a refusal message to block `url`, or null to allow it. */
+export type GuardUrl = (url: string) => Promise<string | null>;
+
+export interface WebFetchToolOptions {
+  /** Extra check run before the first request and before every redirect hop. */
+  guardUrl?: GuardUrl;
+}
+
 interface FetchOptions {
   maxLength: number;
   format: FetchFormat;
@@ -409,6 +417,7 @@ interface FetchOptions {
   preferLlmsTxt: boolean;
   /** Network allowlist policy, read lazily (undefined = unrestricted). */
   getNetworkPolicy?: GetNetworkPolicy;
+  guardUrl?: GuardUrl;
   /** Link-number allocator shared by every page rendered in one tool call. */
   numbers?: LinkNumbers;
   /** Called with each finished outline render so the caller can cache it. */
@@ -466,6 +475,7 @@ async function fetchOne(
   format: FetchFormat,
   getNetworkPolicy?: GetNetworkPolicy,
   onHop?: (url: string) => void,
+  guardUrl?: GuardUrl,
 ): Promise<FetchOneResult> {
   let currentUrl = url;
 
@@ -476,6 +486,9 @@ async function fetchOne(
     // a redirect can never carry the fetch to a disallowed host.
     const blocked = checkUrlPolicy(currentUrl, getNetworkPolicy);
     if (blocked) return { ok: false, error: `Error: ${blocked}` };
+    const guarded = guardUrl ? await guardUrl(currentUrl) : null;
+    if (guarded) return { ok: false, error: guarded };
+    signal.throwIfAborted();
 
     let response = await requestHop(currentUrl, signal, format);
     if (response.status === 403 && response.headers.get("cf-mitigated") === "challenge") {
@@ -731,7 +744,14 @@ async function fetchAndProcess(
       opts.getNetworkPolicy,
       signal,
       async (guardSignal, onHop) => {
-        const result = await fetchOne(url, guardSignal, opts.format, opts.getNetworkPolicy, onHop);
+        const result = await fetchOne(
+          url,
+          guardSignal,
+          opts.format,
+          opts.getNetworkPolicy,
+          onHop,
+          opts.guardUrl,
+        );
         if (!result.ok) return result.error;
 
         const { response } = result;
@@ -928,6 +948,7 @@ async function tryLlmsResource(
             "markdown",
             opts.getNetworkPolicy,
             onHop,
+            opts.guardUrl,
           );
           if (!result.ok) return null;
           const { response } = result;
@@ -1017,6 +1038,9 @@ async function fetchPage(
   if (isBlockedUrl(url)) return BLOCKED_URL_MESSAGE;
   const policyError = checkUrlPolicy(url, opts.getNetworkPolicy);
   if (policyError) return `Error: ${policyError}`;
+  // Before the cache, so a cached render never outlives the caller's guard.
+  const guarded = opts.guardUrl ? await opts.guardUrl(url) : null;
+  if (guarded) return guarded;
 
   const requestKey = cacheKey(url, opts.maxLength);
   const hit = cacheGet(cache, requestKey);
@@ -1044,7 +1068,9 @@ async function fetchPage(
 
 export function createWebFetchTool(
   getNetworkPolicy?: GetNetworkPolicy,
+  options: WebFetchToolOptions = {},
 ): AgentTool<typeof parameters> {
+  const { guardUrl } = options;
   // Per-session state, both bounded: the render cache evicts least-recently
   // used pages past MAX_CACHED_PAGES, and the follow map is replaced (not
   // grown) by each outline call, itself capped at MAX_OUTLINE_LINKS entries.
@@ -1105,6 +1131,7 @@ export function createWebFetchTool(
           section: null,
           preferLlmsTxt,
           getNetworkPolicy,
+          guardUrl,
           numbers,
         };
         const sections = await runPool(urls, MAX_CONCURRENCY, (u) =>
@@ -1125,6 +1152,7 @@ export function createWebFetchTool(
         section: null,
         preferLlmsTxt,
         getNetworkPolicy,
+        guardUrl,
         numbers,
       };
       return remember(await fetchPage(url, opts, context.signal, pageCache)) + capNote;

@@ -1265,3 +1265,83 @@ describe("web_fetch page windows", () => {
     expect(result).toContain("`offset` continues one page");
   });
 });
+
+describe("web_fetch guardUrl", () => {
+  const page = () =>
+    new Response("<html><body><article><h1>Fine</h1><p>Page body.</p></article></body></html>", {
+      status: 200,
+      headers: { "content-type": "text/html" },
+    });
+
+  it("blocks the first URL before any request", async () => {
+    const fetchMock = vi.fn(async () => page());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const guardUrl = vi.fn(async (url: string) =>
+      url.includes("inside.example") ? "Refused: private address" : null,
+    );
+
+    const result = await createWebFetchTool(undefined, { guardUrl }).execute(
+      { url: "https://inside.example/page", prefer_llms_txt: false },
+      context(),
+    );
+
+    expect(result).toBe("Refused: private address");
+    expect(guardUrl).toHaveBeenCalledWith("https://inside.example/page");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks a redirect hop without requesting it", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.startsWith("https://public.example")) {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://inside.example/secret" },
+        });
+      }
+      return page();
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const guardUrl = async (url: string) =>
+      url.includes("inside.example") ? "Refused: private address" : null;
+
+    const result = await createWebFetchTool(undefined, { guardUrl }).execute(
+      { url: "https://public.example/start", prefer_llms_txt: false },
+      context(),
+    );
+
+    expect(result).toBe("Refused: private address");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("guards outline fetches before the page cache", async () => {
+    globalThis.fetch = vi.fn(async () => page()) as unknown as typeof fetch;
+    let refuse = false;
+    const tool = createWebFetchTool(undefined, {
+      guardUrl: async () => (refuse ? "Refused" : null),
+    });
+
+    const first = await tool.execute(
+      { url: "https://public.example/a", format: "outline" },
+      context(),
+    );
+    expect(first).toContain("Fine");
+    refuse = true;
+    const second = await tool.execute(
+      { url: "https://public.example/a", format: "outline" },
+      context(),
+    );
+    expect(second).toBe("Refused");
+  });
+
+  it("fetches as before when no guard is given", async () => {
+    globalThis.fetch = vi.fn(async () => page()) as unknown as typeof fetch;
+
+    const result = await createWebFetchTool().execute(
+      { url: "https://public.example/page", prefer_llms_txt: false },
+      context(),
+    );
+
+    expect(result).toContain("Page body.");
+  });
+});
