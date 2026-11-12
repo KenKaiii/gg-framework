@@ -897,6 +897,45 @@ pub(crate) async fn agent_shell_run(
     sidecar_json(res).await
 }
 
+/// Proxy: "Add folder" from the More panel. Returns `{ root, additionalRoots }`;
+/// a folder that can't be added comes back as the sidecar's error message.
+#[tauri::command]
+pub(crate) async fn agent_add_dir(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = session_for(&webview).ok_or("session not ready")?;
+    let res = client
+        .post(format!("{}/workspace/add-dir", sidecar_base(port)))
+        .header("x-gg-session", &gg_sid)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    sidecar_json(res).await
+}
+
+/// Proxy: "Remove folder" from the More panel. Returns `{ root, additionalRoots }`.
+#[tauri::command]
+pub(crate) async fn agent_remove_dir(
+    webview: WebviewWindow,
+    client: State<'_, reqwest::Client>,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    let port = port_for(&webview).ok_or("daemon not ready")?;
+    let gg_sid = session_for(&webview).ok_or("session not ready")?;
+    let res = client
+        .post(format!("{}/workspace/remove-dir", sidecar_base(port)))
+        .header("x-gg-session", &gg_sid)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    sidecar_json(res).await
+}
+
 /// Proxy: stop a running `!cmd` and everything it started.
 #[tauri::command]
 pub(crate) async fn agent_shell_cancel(

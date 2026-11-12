@@ -45,7 +45,11 @@ function renderTitleBar(
   );
 }
 
-function renderMenu(workspaceMode: WorkspaceMode, isGoal = false): void {
+function renderMenu(
+  workspaceMode: WorkspaceMode,
+  isGoal = false,
+  extra: { onAddFolder?: () => void; onRemoveFolder?: () => void; hasHealth?: boolean } = {},
+): void {
   render(
     <DeckMenu
       workspaceMode={workspaceMode}
@@ -63,6 +67,10 @@ function renderMenu(workspaceMode: WorkspaceMode, isGoal = false): void {
       onOpenChecklist={vi.fn()}
       onOpenRadio={vi.fn()}
       onOpenGoalSettings={isGoal ? vi.fn() : undefined}
+      onAddFolder={extra.onAddFolder ?? vi.fn()}
+      onRemoveFolder={extra.onRemoveFolder}
+      hasHealth={extra.hasHealth}
+      onOpenHealth={vi.fn()}
       onArrange={vi.fn()}
       onBack={vi.fn()}
       backLabel="Back"
@@ -183,6 +191,43 @@ describe("DeckMenu", () => {
     expect(screen.getByRole("button", { name: "New chat" })).toBeDefined();
     expect(screen.queryByRole("button", { name: "Checklist" })).toBeNull();
     expect(screen.queryByRole("switch", { name: "Autopilot" })).toBeNull();
+  });
+
+  it("offers Add folder fifth in a code window, and runs it from the button", () => {
+    const onAddFolder = vi.fn();
+    renderMenu("code", false, { onAddFolder, hasHealth: true });
+    // Every key in on-screen order (Autopilot is a switch, not a button).
+    const keys = [...document.querySelectorAll("button")].map((b) => b.textContent);
+    expect(keys.slice(0, 6)).toEqual([
+      "New session",
+      "Autopilot",
+      "Checklist",
+      "Project Health",
+      "Add folder",
+      "Notes",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
+    expect(onAddFolder).toHaveBeenCalledOnce();
+  });
+
+  it("offers Remove folder right after Add folder only once a folder is added", () => {
+    renderMenu("code");
+    expect(screen.queryByRole("button", { name: "Remove folder" })).toBeNull();
+    cleanup();
+    const onRemoveFolder = vi.fn();
+    renderMenu("chat", false, { onRemoveFolder });
+    const keys = [...document.querySelectorAll("button")].map((b) => b.textContent);
+    expect(keys[keys.indexOf("Add folder") + 1]).toBe("Remove folder");
+    fireEvent.click(screen.getByRole("button", { name: "Remove folder" }));
+    expect(onRemoveFolder).toHaveBeenCalledOnce();
+  });
+
+  it("offers Add folder in a chat window too, but not in Motion or a Goal", () => {
+    renderMenu("chat");
+    expect(screen.getByRole("button", { name: "Add folder" })).toBeDefined();
+    cleanup();
+    renderMenu("motion");
+    expect(screen.queryByRole("button", { name: "Add folder" })).toBeNull();
   });
 
   it("keeps a Goal window to its settings, radio, layout and the way back", () => {

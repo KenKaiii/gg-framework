@@ -33,6 +33,8 @@ import {
   isSwitchModelError,
   switchKenModel,
   listCommands,
+  addWorkspaceFolder,
+  removeWorkspaceFolder,
   cancelQueued,
   type PromptMeta,
   type QueuedMessage,
@@ -123,6 +125,7 @@ import { TasksModal } from "./TasksModal";
 import { ChecklistScreen } from "./ChecklistScreen";
 import { parseProjectHealth } from "./project-health";
 import { NotesModal } from "./NotesModal";
+import { FoldersPanel } from "./FoldersPanel";
 import { MemoryModal } from "./MemoryModal";
 import { GoalSettingsModal } from "./GoalSettingsModal";
 import { isHiddenScroller } from "./transcript-pin";
@@ -529,6 +532,8 @@ function App(): React.ReactElement {
   const { activity, handleActivityEvent } = useTaskActivity(hydrateNonce);
   // New-session confirmation modal + in-flight guard.
   const [confirmNewSession, setConfirmNewSession] = useState(false);
+  /** The added folder being removed right now (Remove folder panel). */
+  const [removingFolder, setRemovingFolder] = useState<string | null>(null);
   const { toolsHidden, setToolsHiddenPersisted, toggleTools } = useChromeToggles(chatLayout);
   const [newSessionBusy, setNewSessionBusy] = useState(false);
   const { exporting, exportTranscript } = useTranscriptExport();
@@ -1641,13 +1646,6 @@ function App(): React.ReactElement {
   }
 
   function pickSlashCommand(cmd: SlashCommand): void {
-    if (cmd.name === "add-dir" || cmd.name === "remove-dir") {
-      setInput("");
-      setSlashIndex(0);
-      void pickWorkspaceDirectory(cmd.name);
-      return;
-    }
-
     // Fill the input with the command; the user can add args or press Enter.
     const next = `/${cmd.name} `;
     setInput(next);
@@ -1658,17 +1656,36 @@ function App(): React.ReactElement {
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
-  async function pickWorkspaceDirectory(command: "add-dir" | "remove-dir"): Promise<void> {
+  /** "Remove folder": drop one of the folders added with "Add folder". */
+  async function removeFolder(root: string): Promise<void> {
+    setRemovingFolder(root);
+    try {
+      const { additionalRoots } = await removeWorkspaceFolder(root);
+      const name = root.split(/[\\/]/).filter(Boolean).pop() ?? root;
+      toast(`Removed ${name}. GG no longer works in it.`, "success");
+      if (additionalRoots.length === 0) closeDeckPanel("folders");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "error");
+    } finally {
+      setRemovingFolder(null);
+    }
+  }
+
+  /** "Add folder" in the More panel: one more folder GG can work in. */
+  async function addFolder(): Promise<void> {
     const selected = await open({
       directory: true,
       multiple: false,
-      title:
-        command === "add-dir"
-          ? "Add project folder to workspace"
-          : "Remove project folder from workspace",
+      title: "Add a folder GG can work in",
     });
     if (typeof selected !== "string") return;
-    submitText(`/${command} ${selected}`, command === "add-dir" ? "/add-dir" : "/remove-dir");
+    try {
+      const { root } = await addWorkspaceFolder(selected);
+      const name = root.split(/[\\/]/).filter(Boolean).pop() ?? root;
+      toast(`Added ${name}. GG can work in it now.`, "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "error");
+    }
   }
 
   // Detect an active `@`-mention token at the caret: a `@` that starts at a word
@@ -3067,6 +3084,20 @@ function App(): React.ReactElement {
               projectHealth={projectHealth}
               onReviewHealth={reviewProjectHealth}
               tools={{
+                folders:
+                  (state?.additionalRoots?.length ?? 0) > 0
+                    ? {
+                        title: "Added folders",
+                        meta: `${state?.additionalRoots?.length ?? 0} added`,
+                        body: (
+                          <FoldersPanel
+                            roots={state?.additionalRoots ?? []}
+                            busy={removingFolder}
+                            onRemove={(root) => void removeFolder(root)}
+                          />
+                        ),
+                      }
+                    : undefined,
                 notes: {
                   title: "Notes",
                   meta: "Saved on this Mac",
@@ -3198,6 +3229,12 @@ function App(): React.ReactElement {
                   onOpenHealth={() => setDeckPanel("health")}
                   onOpenRadio={() => setDeckPanel("radio")}
                   onOpenGoalSettings={state?.goal ? () => setDeckPanel("goal") : undefined}
+                  onAddFolder={closeDeckThen(() => void addFolder())}
+                  onRemoveFolder={
+                    (state?.additionalRoots?.length ?? 0) > 0
+                      ? () => setDeckPanel("folders")
+                      : undefined
+                  }
                   canExport={items.length > 0}
                   exporting={exporting}
                   onExport={closeDeckThen(() => void exportTranscript())}

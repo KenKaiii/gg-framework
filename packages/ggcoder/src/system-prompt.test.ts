@@ -228,7 +228,7 @@ describe("buildSystemPrompt", () => {
 
   it.each([
     [[], "6d6afd179a5aa52c7b06f957c2eb580eed552e35ad7205f97a965a67543c4ab3"],
-    [["ask_user"], "e073f364f6534f17ffa443772b6a6cd0471ccd78ff8efb69f0ea3dc625d36a3c"],
+    [["ask_user"], "abec6221b1c924545c0bd219008c9f68fc46f718b6a240359120911f61f3612a"],
   ] as const)(
     "preserves the message-aware takeaway policy with tools %j",
     async (toolNames, hash) => {
@@ -294,6 +294,11 @@ describe("buildSystemPrompt", () => {
     );
     // Optional follow-up offers are questions too, so they also go on the card.
     expect(prompt).toContain('a blocker or an optional "want me to also…?"');
+    // A bare card left the user choosing without the answer or context; a short
+    // lead-in fixes that without turning every question into a full report.
+    expect(prompt).toContain(
+      "Before the card, write just enough to choose: the direct answer or what you found, in one to three plain sentences, not a full report.",
+    );
     expect(prompt).toContain("No question? Just end.");
     expect(prompt).not.toContain("is the last line");
     expect(prompt.match(/`> \*\*/g) ?? []).toHaveLength(0);

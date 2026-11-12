@@ -45,4 +45,10 @@ export interface MCPServerConfig {
    *  fallback); "sse" connects via the legacy SSE transport directly. When
    *  unset, both are tried (Streamable HTTP → SSE). */
   transport?: "http" | "sse";
+  /**
+   * Pre-registered OAuth client for an HTTP server (Claude Code's `oauth`
+   * field). Without it, sign-in registers a client dynamically. The secret,
+   * if any, lives in the OAuth store, never here.
+   */
+  oauth?: { clientId?: string; callbackPort?: number };
 }

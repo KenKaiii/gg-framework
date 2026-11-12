@@ -33,7 +33,7 @@ import {
   PLAN_SUBMITTED_FOR_REVIEW,
   shouldOfferPendingPlan,
 } from "./core/plan-handoff.js";
-import { discoverSkillsWithBlocked } from "./core/skills.js";
+import { discoverSkillsWithBlocked, loadBundledSkill } from "./core/skills.js";
 import {
   chatWorkspaceDir,
   createChatAgent,
@@ -169,6 +169,7 @@ import { handleIntegrationRoutes } from "./app-sidecar/integration-routes.js";
 import { handleMcpRoutes } from "./app-sidecar/mcp-routes.js";
 import { finishShellRun, handleShellRoutes } from "./app-sidecar/shell-routes.js";
 import { ShellRunner } from "./app-sidecar/shell-runs.js";
+import { syncMcpServerAcross } from "./app-sidecar/mcp-sync.js";
 import type { SessionRouteContext } from "./app-sidecar/route-context.js";
 import { createHfPullManager } from "./app-sidecar/hf-pull-manager.js";
 import { keepAwake } from "./app-sidecar/keep-awake.js";
@@ -341,6 +342,9 @@ async function main(): Promise<void> {
       .map((ctx) => ctx.id)
       .sort();
   };
+  /** Apply a saved MCP server change to every open window, no restart needed. */
+  const syncMcpServer = (name: string) =>
+    syncMcpServerAcross(sessions.values(), name, paths.settingsFile);
   /** Whether any live window session in `cwd` is working right now. */
   const busyAt = (cwd: string): boolean => {
     const target = path.resolve(cwd);
@@ -481,6 +485,7 @@ async function main(): Promise<void> {
               repoPolls,
               sessionIdsAt,
               busyAt,
+              syncMcpServer,
             },
             { id, mode, chatAgent, cwd: sessionCwd, sessionPath },
           );
@@ -713,6 +718,7 @@ async function createSession(
     sessionIdsAt: (cwd: string) => string[];
     /** Whether any live window session in `cwd` is working right now. */
     busyAt: (cwd: string) => boolean;
+    syncMcpServer: SessionRouteContext["syncMcpServer"];
   },
   opts: {
     id: string;
@@ -733,6 +739,7 @@ async function createSession(
     repoPolls,
     sessionIdsAt,
     busyAt,
+    syncMcpServer,
   } = deps;
   const paths = deps.paths;
   const mode = opts.mode;
@@ -998,10 +1005,15 @@ async function createSession(
       projectDir: cwd,
       workspaceOnly: true,
     });
+    // GG's own guide is the one built-in skill Chat gets: people ask it how the app works.
+    // A workspace skill with the same name still wins.
+    const guide = chatSkills.skills.some((s) => s.name === "gg-guide")
+      ? undefined
+      : await loadBundledSkill("gg-guide");
     session = createChatAgent(chatAgent, {
       ...baseSessionOptions,
       sessionsDir: paths.sessionsDir,
-      skills: chatSkills.skills,
+      skills: guide ? [...chatSkills.skills, guide] : chatSkills.skills,
       blockedSkills: chatSkills.blocked,
       additionalTools: [
         askUserTool,
@@ -2618,6 +2630,7 @@ async function createSession(
     sessionId: opts.id,
     sessionIdsAt,
     busyAt,
+    syncMcpServer,
     get goal() {
       return goal;
     },

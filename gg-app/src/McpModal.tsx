@@ -32,8 +32,8 @@ interface Props {
  *
  * Scope: Global writes to ~/.gg/mcp.json (all sessions). Project writes to a
  * chosen project's `.gg/mcp.json` — a project picker appears when Project is
- * selected, since the modal has no inherent project context. Like the CLI, a
- * newly-added server needs an app restart to load (MCP connects once at startup).
+ * selected, since the modal has no inherent project context. Open windows load
+ * an added/removed server right away (the sidecar syncs every session).
  */
 /** Most hidden-tool lines shown under a row; the rest are counted. */
 const MAX_NOTE_LINES = 3;
@@ -333,7 +333,7 @@ export function McpModal({ onClose }: Props): React.ReactElement {
           <SettingsSection
             title="Add a server"
             dialogTitle="Add an MCP"
-            description="Paste a claude mcp add command. Loads after a restart."
+            description="Paste a claude mcp add command. Open windows load it right away."
           >
             <input
               className="modal-input"
@@ -394,7 +394,7 @@ export function McpModal({ onClose }: Props): React.ReactElement {
               className="modal-hint"
               style={{ color: theme.textDim, marginTop: "var(--space-6)" }}
             >
-              New servers load on next app restart.
+              Open windows load new servers right away.
             </div>
           )}
 

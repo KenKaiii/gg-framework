@@ -798,6 +798,25 @@ export async function runShellCommand(
   }
 }
 
+/**
+ * Add another folder GG can work in ("Add folder" in the More panel). Throws
+ * with a user-facing message when the folder can't be added.
+ */
+export async function addWorkspaceFolder(
+  path: string,
+): Promise<{ root: string; additionalRoots: string[] }> {
+  await waitForReady();
+  return invoke<{ root: string; additionalRoots: string[] }>("agent_add_dir", { path });
+}
+
+/** Drop a folder added with "Add folder". Throws with a user-facing message. */
+export async function removeWorkspaceFolder(
+  path: string,
+): Promise<{ root: string; additionalRoots: string[] }> {
+  await waitForReady();
+  return invoke<{ root: string; additionalRoots: string[] }>("agent_remove_dir", { path });
+}
+
 /** Stop a running `!cmd` and everything it started. */
 export async function cancelShellCommand(id: string): Promise<void> {
   try {

@@ -1,6 +1,6 @@
 import type { JiwaStore } from "../chat-agents/jiwa.js";
 import type { MemoryStore } from "../chat-agents/memory.js";
-import type { AgentSession } from "../core/agent-session.js";
+import type { AgentSession, McpServerChange } from "../core/agent-session.js";
 import type { AskUserBridge } from "../core/ask-user.js";
 import type { AuthMethod, AuthMethodMeta, AuthProviderMeta } from "../core/auth-providers.js";
 import type { WorkflowCommandSpec } from "../core/autopilot-gate.js";
@@ -72,6 +72,8 @@ export interface SessionRouteContext {
   readonly sessionId: string;
   /** Ids of every live window session whose cwd is `cwd`, this one included. */
   readonly sessionIdsAt: (cwd: string) => string[];
+  /** Apply a saved MCP server change to every open window; result per session id. */
+  readonly syncMcpServer: (name: string) => Promise<Map<string, McpServerChange | null>>;
   /** Whether any live window session in `cwd` is working right now (see goal list status). */
   readonly busyAt: (cwd: string) => boolean;
   /** Set when this session's cwd is a Goal folder; null for every other session. */

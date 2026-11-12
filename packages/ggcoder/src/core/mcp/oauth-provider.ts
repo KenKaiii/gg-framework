@@ -19,8 +19,8 @@ export const MCP_OAUTH_CALLBACK_PORT = 41999;
 export const MCP_OAUTH_CALLBACK_PATH = "/oauth/callback";
 
 /** The exact redirect URI registered with the authorization server. */
-export function mcpOAuthRedirectUrl(): string {
-  return `http://localhost:${MCP_OAUTH_CALLBACK_PORT}${MCP_OAUTH_CALLBACK_PATH}`;
+export function mcpOAuthRedirectUrl(port = MCP_OAUTH_CALLBACK_PORT): string {
+  return `http://localhost:${port}${MCP_OAUTH_CALLBACK_PATH}`;
 }
 
 /**
@@ -42,6 +42,8 @@ export class McpOAuthProvider implements OAuthClientProvider {
   private readonly serverName: string;
   private readonly onRedirect?: (url: URL) => void;
   private readonly scope?: string;
+  private readonly clientId?: string;
+  private readonly callbackPort?: number;
 
   constructor(opts: {
     serverName: string;
@@ -49,7 +51,13 @@ export class McpOAuthProvider implements OAuthClientProvider {
     /** When set, the server is allowed to drive an interactive browser login. */
     onRedirect?: (url: URL) => void;
     scope?: string;
+    /** A pre-registered client (`--client-id`): skips dynamic registration. */
+    clientId?: string;
+    /** Redirect port the pre-registered client expects (`--callback-port`). */
+    callbackPort?: number;
   }) {
+    this.clientId = opts.clientId;
+    this.callbackPort = opts.callbackPort;
     this.serverName = opts.serverName;
     this.store = opts.store ?? new McpOAuthStore();
     this.onRedirect = opts.onRedirect;
@@ -57,7 +65,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
   }
 
   get redirectUrl(): string {
-    return mcpOAuthRedirectUrl();
+    return mcpOAuthRedirectUrl(this.callbackPort);
   }
 
   get clientMetadata(): OAuthClientMetadata {
@@ -82,7 +90,10 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
   async clientInformation(): Promise<OAuthClientInformationFull | undefined> {
     const entry = await this.store.get(this.serverName);
-    return entry.clientInformation;
+    if (!this.clientId || entry.clientInformation?.client_id === this.clientId) {
+      return entry.clientInformation;
+    }
+    return { client_id: this.clientId } as OAuthClientInformationFull;
   }
 
   async saveClientInformation(info: OAuthClientInformation): Promise<void> {

@@ -36,6 +36,8 @@ describe("ask_user", () => {
   it("routes soft follow-up offers through the card, not just blocking decisions", async () => {
     const { description } = createAskUserTool(vi.fn());
     expect(description).toContain("instead of a prose question");
+    // Chat and Goals see only this description, so the short lead-in rule lives here too.
+    expect(description).toContain("First write one to three sentences answering what they asked");
     // The routing rule now lives in the system prompt (rendered whenever this
     // tool is registered) rather than repeated in the schema.
     const prompt = await buildSystemPrompt(os.tmpdir(), undefined, false, undefined, ["ask_user"]);

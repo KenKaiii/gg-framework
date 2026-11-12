@@ -25,6 +25,7 @@ import {
   removeServer,
   getServer,
   fromStoredEntry,
+  toStoredEntry,
   globalMcpPath,
   projectMcpPath,
 } from "./store.js";
@@ -126,6 +127,16 @@ describe("mcp store", () => {
     await fs.mkdir(path.dirname(globalMcpPath()), { recursive: true });
     await fs.writeFile(globalMcpPath(), "{ not valid json", "utf-8");
     expect(await loadServers(tmpProject)).toEqual([]);
+  });
+
+  it("round-trips Claude's oauth field on http servers", () => {
+    const config = fromStoredEntry("o", {
+      type: "http",
+      url: "https://o.dev/mcp",
+      oauth: { clientId: "cid", callbackPort: 8080 },
+    });
+    expect(config.oauth).toEqual({ clientId: "cid", callbackPort: 8080 });
+    expect(toStoredEntry(config)).toMatchObject({ oauth: { clientId: "cid", callbackPort: 8080 } });
   });
 
   it("parses Claude's .mcp.json type field for http and sse", () => {

@@ -272,3 +272,31 @@ describe("progress-aware call timeout", () => {
     expect(tool(tools, "echo").timeoutMs).toBe(1_200);
   }, 30_000);
 });
+
+describe("disconnect", () => {
+  it("drops one server mid-session and makes its handed-out tools refuse calls", async () => {
+    const m = manager();
+    const tools = await connect(m, server());
+    expect(m.isServerRunning("life")).toBe(true);
+
+    await m.disconnect("life");
+    expect(m.isServerRunning("life")).toBe(false);
+    await expect(call(tools, "echo", { text: "hi" })).rejects.toThrow(/was removed/);
+    expect(await m.whenConnected("life", 50)).toEqual({
+      ok: false,
+      error: "the server was removed",
+    });
+
+    // Adding it back revives it.
+    const again = await connect(m, server());
+    expect(await call(again, "echo", { text: "back" })).toContain("back");
+  }, 20_000);
+
+  it("releases a pooled server's claim", async () => {
+    const pool = new SharedMcpPool();
+    const m = manager({ sharedPool: pool });
+    const tools = await connect(m, server({ shared: true }));
+    await m.disconnect("life");
+    await expect(call(tools, "echo", { text: "hi" })).rejects.toThrow(/was removed/);
+  }, 20_000);
+});

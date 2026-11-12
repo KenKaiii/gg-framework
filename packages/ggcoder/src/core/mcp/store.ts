@@ -31,10 +31,31 @@ const StoredServerEntrySchema = z
     maxTotalTimeout: z.number().optional(),
     enabled: z.boolean().optional(),
     keepAlive: z.boolean().optional(),
+    oauth: z
+      .object({
+        clientId: z.string().optional(),
+        callbackPort: z.number().int().min(1).max(65535).optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 
 export type StoredServerEntry = z.infer<typeof StoredServerEntrySchema>;
+
+/** Validate one Claude-style server entry (e.g. the JSON in `claude mcp add-json`). */
+export function parseStoredEntry(
+  raw: unknown,
+): { ok: true; value: StoredServerEntry } | { ok: false; error: string } {
+  const parsed = StoredServerEntrySchema.safeParse(raw);
+  if (parsed.success) return { ok: true, value: parsed.data };
+  const issue = parsed.error.issues[0];
+  const where = issue?.path.length ? ` at "${issue.path.join(".")}"` : "";
+  return {
+    ok: false,
+    error: `The server JSON is invalid${where}: ${issue?.message ?? "bad shape"}.`,
+  };
+}
 
 const McpFileSchema = z.object({
   mcpServers: z.record(z.string(), StoredServerEntrySchema).default({}),
@@ -94,6 +115,13 @@ export function fromStoredEntry(name: string, entry: StoredServerEntry): MCPServ
     // Streamable HTTP or go straight to legacy SSE.
     if (entry.type === "sse") config.transport = "sse";
     else if (entry.type === "http" || entry.type === "streamable-http") config.transport = "http";
+    const { clientId, callbackPort } = entry.oauth ?? {};
+    if (clientId || callbackPort) {
+      config.oauth = {
+        ...(clientId ? { clientId } : {}),
+        ...(callbackPort ? { callbackPort } : {}),
+      };
+    }
   } else if (entry.command) {
     config.command = entry.command;
     if (entry.args) config.args = entry.args;
@@ -113,6 +141,7 @@ export function toStoredEntry(config: MCPServerConfig): StoredServerEntry {
     entry.type = config.transport ?? "http";
     entry.url = config.url;
     if (config.headers) entry.headers = config.headers;
+    if (config.oauth) entry.oauth = config.oauth;
   } else if (config.command) {
     entry.type = "stdio";
     entry.command = config.command;

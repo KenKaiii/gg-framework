@@ -18,6 +18,25 @@ describe("McpOAuthStore", () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
+  it("uses a pre-registered client, its secret and callback port for sign-in", async () => {
+    const store = new McpOAuthStore(file);
+    await store.patch("s", { tokens: { access_token: "old", token_type: "bearer" } });
+    await store.setClient("s", "cid", "shh");
+    const provider = new McpOAuthProvider({
+      serverName: "s",
+      store,
+      clientId: "cid",
+      callbackPort: 8080,
+    });
+    expect(await provider.clientInformation()).toEqual({ client_id: "cid", client_secret: "shh" });
+    expect(await provider.tokens()).toBeUndefined();
+    expect(provider.redirectUrl).toBe(mcpOAuthRedirectUrl(8080));
+    expect(provider.redirectUrl).toContain(":8080/");
+    // A configured client id wins over a stale dynamic registration.
+    await store.patch("s", { clientInformation: { client_id: "dyn" } as never });
+    expect(await provider.clientInformation()).toEqual({ client_id: "cid" });
+  });
+
   it("returns an empty entry for an unknown server", async () => {
     const store = new McpOAuthStore(file);
     expect(await store.get("nope")).toEqual({});

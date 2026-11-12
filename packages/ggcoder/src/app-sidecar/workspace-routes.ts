@@ -18,6 +18,41 @@ export function handleWorkspaceRoutes(
   url: string,
   method: string,
 ): boolean {
+  // "Add folder" / "Remove folder" in the More panel: another folder GG can
+  // work in, in Code and Chat windows. The model hears from the environment note.
+  if (method === "POST" && (url === "/workspace/add-dir" || url === "/workspace/remove-dir")) {
+    void readBody(req, res).then(async (raw) => {
+      if (raw === null) return;
+      let dir: unknown;
+      try {
+        dir = (JSON.parse(raw) as { path?: unknown }).path;
+      } catch {
+        json(res, 400, { error: "invalid JSON body" });
+        return;
+      }
+      if (typeof dir !== "string" || !dir.trim()) {
+        json(res, 400, { error: "path is required" });
+        return;
+      }
+      if (ctx.mode !== "code" && ctx.mode !== "chat") {
+        json(res, 403, { error: "folders can be changed only in Code and Chat windows" });
+        return;
+      }
+      const result =
+        url === "/workspace/add-dir"
+          ? await ctx.session.addDirectory(dir)
+          : await ctx.session.removeDirectory(dir);
+      if (!result.ok) {
+        json(res, 400, { error: result.error });
+        return;
+      }
+      // The header's root badge and the `/` menu follow the extras.
+      ctx.broadcast("extras", ctx.footerExtras());
+      json(res, 200, { root: result.root, additionalRoots: ctx.session.getAdditionalRoots() });
+    });
+    return true;
+  }
+
   // Dismiss a project from the picker (or restore it with hidden:false). The
   // path is kept rather than the row: sessions in scratch dirs keep
   // re-surfacing, so the user's decision has to outlive any one scan.

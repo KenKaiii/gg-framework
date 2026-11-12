@@ -56,6 +56,7 @@ export type DeckPanelId =
   | "health"
   | "scorecard"
   | "goal"
+  | "folders"
   | "trophies";
 
 /** A tool that used to be a pop-up dialog, now shown in the deck. */
@@ -64,7 +65,8 @@ export interface DeckTool {
   meta?: ReactNode;
   body: ReactNode;
 }
-export type DeckToolId = "notes" | "todo" | "brain" | "checklist" | "health" | "scorecard" | "goal";
+export type DeckToolId =
+  "notes" | "todo" | "brain" | "checklist" | "health" | "scorecard" | "goal" | "folders";
 
 export interface DeckProps {
   state: AgentState | null;
@@ -212,6 +214,7 @@ const PANEL_NAMES: Readonly<Record<DeckPanelId, string>> = {
   health: "Project Health",
   scorecard: "Scorecard",
   goal: "Goal settings",
+  folders: "Added folders",
   trophies: "Trophies",
 };
 
@@ -400,7 +403,8 @@ function PanelBody(
     case "checklist":
     case "health":
     case "scorecard":
-    case "goal": {
+    case "goal":
+    case "folders": {
       const tool = props.tools[props.panel];
       return tool ? <ToolPanel tool={tool} onClose={close} /> : null;
     }
@@ -415,7 +419,8 @@ function isTool(panel: DeckPanelId): panel is DeckToolId {
     panel === "checklist" ||
     panel === "health" ||
     panel === "scorecard" ||
-    panel === "goal"
+    panel === "goal" ||
+    panel === "folders"
   );
 }
 

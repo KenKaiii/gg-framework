@@ -26,6 +26,8 @@ export class McpToolRegistry {
   /** Server name for each cached-only tool, so a stub knows what to wait on. */
   private readonly cachedToolServers = new Map<string, string>();
   private readonly catalogCache = new McpCatalogCache();
+  /** Each configured server's config (as JSON) and whether it connected. */
+  private readonly serverStates = new Map<string, { config: string; ok: boolean }>();
 
   constructor(
     private readonly getTools: () => AgentTool[],
@@ -59,8 +61,38 @@ export class McpToolRegistry {
     return this.catalog?.promote(names) ?? [];
   }
 
+  /** Remember what was connected, so a later config change can tell what moved. */
+  recordServers(configs: MCPServerConfig[], results: Array<{ name: string; ok: boolean }>): void {
+    for (const config of configs) {
+      const ok = results.find((r) => r.name === config.name)?.ok ?? false;
+      this.serverStates.set(config.name, { config: JSON.stringify(config), ok });
+    }
+  }
+
+  serverState(name: string): { config: string; ok: boolean } | undefined {
+    return this.serverStates.get(name);
+  }
+
+  /**
+   * Forget one server's tools. Ones the model already promoted stay in the
+   * tools array (removing them would break the cached prefix); the manager
+   * makes them refuse calls instead.
+   */
+  removeServer(name: string): void {
+    const prefix = `mcp__${name}__`;
+    this.catalog?.removeWhere((toolName) => toolName.startsWith(prefix));
+    for (const toolName of [...this.liveTools.keys()]) {
+      if (toolName.startsWith(prefix)) this.liveTools.delete(toolName);
+    }
+    for (const toolName of [...this.cachedToolServers.keys()]) {
+      if (toolName.startsWith(prefix)) this.cachedToolServers.delete(toolName);
+    }
+    this.serverStates.delete(name);
+  }
+
   /** Forget every MCP tool before a provider-switch reconnect re-adds them. */
   clearMcpTools(): void {
+    this.serverStates.clear();
     this.catalog?.removeWhere((name) => name.startsWith("mcp__"));
     this.liveTools.clear();
     this.cachedToolServers.clear();

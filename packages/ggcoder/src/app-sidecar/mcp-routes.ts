@@ -86,6 +86,15 @@ export function handleMcpRoutes(
         if (scope === "project") {
           await ctx.session.trustProject(targetCwd);
         }
+        if (config.oauth?.clientId) {
+          await new McpOAuthStore().setClient(
+            config.name,
+            config.oauth.clientId,
+            parsed.value.clientSecret,
+          );
+        }
+        // Open windows load it now; the reply doesn't wait on a second connect.
+        void ctx.syncMcpServer(config.name);
         void ctx.trophies.count("mcpServersAdded", ctx.sessionId);
         json(res, 200, {
           ok: true,
@@ -136,6 +145,7 @@ export function handleMcpRoutes(
       const removed = await removeServer(name, scope, targetCwd);
       // Drop any saved OAuth tokens for this server so a re-add starts clean.
       await new McpOAuthStore().clear(name).catch(() => {});
+      if (removed) await ctx.syncMcpServer(name);
       json(res, 200, { removed });
     });
     return true;
@@ -184,6 +194,8 @@ export function handleMcpRoutes(
         });
         if (result.ok) {
           ctx.broadcast("mcp_auth_done", { name, toolCount: result.toolCount });
+          // Signed in: sessions that couldn't connect before retry now.
+          void ctx.syncMcpServer(name);
         } else {
           ctx.broadcast("mcp_auth_error", { name, message: result.error ?? "Login failed." });
         }

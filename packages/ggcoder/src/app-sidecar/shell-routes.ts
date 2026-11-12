@@ -4,6 +4,7 @@ import { readBody, json } from "./http.js";
 import { loadShellTrusted, saveShellTrusted } from "./app-settings.js";
 import { formatShellContext, parseShellRunBody, type ShellRunEnd } from "./shell-runs.js";
 import { recordShellCommand, shellSuggestions } from "./shell-suggestions.js";
+import { isMcpShellCommand, runMcpShell } from "./mcp-shell-command.js";
 import type { SessionRouteContext } from "./route-context.js";
 
 /** Saved with the session so a reopened window shows the same row. */
@@ -107,6 +108,12 @@ export function handleShellRoutes(
       }
       if (!parsed.confirmed && !(await loadShellTrusted(ctx.cwd).catch(() => false))) {
         json(res, 403, { error: "confirmation_required" });
+        return;
+      }
+      if (isMcpShellCommand(parsed.command)) {
+        // Manages GG Coder's own MCP servers in-process; never reaches a shell.
+        json(res, 202, { started: true, cwd: ctx.cwd });
+        void runMcpShell(ctx, parsed.runId, parsed.command, finishShellRun);
         return;
       }
       const started = ctx.shell.start(parsed.runId, parsed.command, ctx.cwd);

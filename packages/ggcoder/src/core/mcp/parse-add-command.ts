@@ -1,5 +1,5 @@
 import type { MCPServerConfig } from "./types.js";
-import type { MCPScope } from "./store.js";
+import { fromStoredEntry, parseStoredEntry, type MCPScope } from "./store.js";
 
 /** Zero-dep discriminated-union result for expected parse failures. */
 export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
@@ -8,16 +8,18 @@ export interface ParsedAddCommand {
   config: MCPServerConfig;
   /** Requested scope, if the input carried a --scope flag. */
   scope?: MCPScope;
+  /** OAuth client secret (`--client-secret`, read from MCP_CLIENT_SECRET). Never written to mcp.json. */
+  clientSecret?: string;
 }
 
 const NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
-const PREFIX_PATTERN = /^(claude|ggcoder)\s+mcp\s+add\s+/i;
+const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=([\s\S]*)$/;
 
 /**
  * Shell-style tokenizer: splits on whitespace but respects single/double
  * quotes and backslash escapes. Good enough for `claude mcp add …` lines.
  */
-function tokenize(input: string): Result<string[], string> {
+export function tokenize(input: string): Result<string[], string> {
   const tokens: string[] = [];
   let current = "";
   let inSingle = false;
@@ -28,6 +30,11 @@ function tokenize(input: string): Result<string[], string> {
     const ch = input[i];
     if (ch === "\\" && !inSingle) {
       const next = input[i + 1];
+      // Backslash-newline is a line continuation, as in a shell.
+      if (next === "\n" || (next === "\r" && input[i + 2] === "\n")) {
+        i += next === "\n" ? 1 : 2;
+        continue;
+      }
       if (next !== undefined) {
         current += next;
         hasToken = true;
@@ -82,35 +89,121 @@ function mapScope(value: string): Result<MCPScope, string> {
   return { ok: false, error: `Unknown scope "${value}". Use local, project, or user.` };
 }
 
+/** A pasted `claude mcp …` / `ggcoder mcp …` line, split into words. */
+export interface McpCommandLine {
+  /** `VAR=value` assignments in front of the command (e.g. MCP_CLIENT_SECRET). */
+  env: Record<string, string>;
+  /** Whether the line started with `claude mcp` / `ggcoder mcp`. */
+  prefixed: boolean;
+  /** The words after `mcp` (or every word, when not prefixed). */
+  args: string[];
+}
+
 /**
- * Parse a pasted `claude mcp add …` / `ggcoder mcp add …` line (or just the
- * args after `add`) into an MCPServerConfig + requested scope.
+ * Split a line the way a shell would, dropping a pasted `$ ` prompt and
+ * collecting leading `VAR=value` assignments.
+ */
+export function splitMcpCommandLine(input: string): Result<McpCommandLine, string> {
+  const tokenized = tokenize(input.trim().replace(/^\$\s+/, ""));
+  if (!tokenized.ok) return tokenized;
+  const tokens = tokenized.value;
+  const env: Record<string, string> = {};
+  while (tokens.length > 0) {
+    const match = ASSIGNMENT.exec(tokens[0]!);
+    if (!match) break;
+    env[match[1]!] = match[2]!;
+    tokens.shift();
+  }
+  const prefixed =
+    tokens.length >= 2 && /^(claude|ggcoder)$/i.test(tokens[0]!) && tokens[1] === "mcp";
+  return { ok: true, value: { env, prefixed, args: prefixed ? tokens.slice(2) : tokens } };
+}
+
+/**
+ * Parse a pasted `claude mcp add …` / `claude mcp add-json …` line (or just
+ * the args after `add`) into an MCPServerConfig + requested scope.
  *
  * Grammar matches Claude Code:
  *   add [--transport t] [--env K=V]… [--header "K: V"]… [--scope s] <name> -- <command> [args…]
+ *   add [options] <name> <command> [args…]          (stdio without `--`)
  *   add --transport http|sse <name> <url> [--header "K: V"]…
+ *       [--client-id id] [--client-secret] [--callback-port n]
+ *   add-json [--scope s] [--client-secret] <name> '<json>'
+ * `--client-secret` takes the secret from MCP_CLIENT_SECRET=… in front of the
+ * command, which is how Claude Code skips its interactive prompt.
  */
 export function parseMcpAddCommand(input: string): Result<ParsedAddCommand, string> {
-  const stripped = input.trim().replace(PREFIX_PATTERN, "");
-  if (!stripped.trim()) {
+  const line = splitMcpCommandLine(input);
+  if (!line.ok) return line;
+  const { env, prefixed, args } = line.value;
+  if (!prefixed) return parseAddArgs(args, env);
+  if (args[0] === "add") return parseAddArgs(args.slice(1), env);
+  if (args[0] === "add-json") return parseAddJsonArgs(args.slice(1), env);
+  return { ok: false, error: 'Expected "mcp add" or "mcp add-json".' };
+}
+
+function checkName(name: string | undefined): Result<string, string> {
+  if (!name) return { ok: false, error: "Missing server name." };
+  if (!NAME_PATTERN.test(name)) {
+    return {
+      ok: false,
+      error: `Invalid server name "${name}". Use only letters, numbers, hyphens, and underscores.`,
+    };
+  }
+  return { ok: true, value: name };
+}
+
+function clientSecretFrom(env: Record<string, string>): Result<string, string> {
+  const secret = env.MCP_CLIENT_SECRET;
+  if (secret) return { ok: true, value: secret };
+  return {
+    ok: false,
+    error:
+      "--client-secret needs the secret. Put it in front of the command: " +
+      "MCP_CLIENT_SECRET=<secret> claude mcp add …",
+  };
+}
+
+function finish(
+  config: MCPServerConfig,
+  scope: MCPScope | undefined,
+  clientSecret: string | undefined,
+): Result<ParsedAddCommand, string> {
+  if (clientSecret && !config.oauth?.clientId) {
+    return { ok: false, error: "--client-secret needs --client-id." };
+  }
+  return {
+    ok: true,
+    value: {
+      config,
+      ...(scope === undefined ? {} : { scope }),
+      ...(clientSecret ? { clientSecret } : {}),
+    },
+  };
+}
+
+function parseAddArgs(
+  tokens: string[],
+  lineEnv: Record<string, string>,
+): Result<ParsedAddCommand, string> {
+  if (tokens.length === 0) {
     return { ok: false, error: "Nothing to parse — provide a server name and command or URL." };
   }
-
-  const tokenized = tokenize(stripped);
-  if (!tokenized.ok) return tokenized;
-  const tokens = tokenized.value;
 
   let transport: Transport | "ws" | undefined;
   const env: Record<string, string> = {};
   const headers: Record<string, string> = {};
   let scope: MCPScope | undefined;
   let timeout: number | undefined;
+  let clientId: string | undefined;
+  let callbackPort: number | undefined;
+  let wantsSecret = false;
   let name: string | undefined;
   const positionals: string[] = [];
   let commandArgv: string[] | undefined;
 
   for (let i = 0; i < tokens.length; i++) {
-    const tok = tokens[i];
+    const tok = tokens[i]!;
 
     // `--` ends option parsing; remainder is the literal spawn argv.
     if (tok === "--") {
@@ -169,36 +262,66 @@ export function parseMcpAddCommand(input: string): Result<ParsedAddCommand, stri
       timeout = n;
       continue;
     }
+    if (tok === "--client-id") {
+      const next = needNext(tok);
+      if (!next.ok) return next;
+      clientId = next.value;
+      continue;
+    }
+    if (tok === "--callback-port") {
+      const next = needNext(tok);
+      if (!next.ok) return next;
+      const port = Number(next.value);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        return { ok: false, error: `Invalid --callback-port "${next.value}".` };
+      }
+      callbackPort = port;
+      continue;
+    }
+    if (tok === "--client-secret") {
+      wantsSecret = true;
+      continue;
+    }
     if (tok.startsWith("-")) {
       return { ok: false, error: `Unknown option "${tok}".` };
     }
 
-    // First non-flag token is the name; the rest are positionals (e.g. url).
+    // First non-flag token is the name.
     if (name === undefined) {
       name = tok;
-    } else {
-      positionals.push(tok);
+      continue;
     }
+    // `add <name> <command> [args…]` without `--`: like Claude Code, the rest
+    // is the server's own command line, flags included.
+    if (
+      positionals.length === 0 &&
+      (transport === undefined || transport === "stdio") &&
+      !/^https?:\/\//i.test(tok)
+    ) {
+      commandArgv = tokens.slice(i);
+      break;
+    }
+    positionals.push(tok);
   }
 
-  if (!name) {
-    return { ok: false, error: "Missing server name." };
-  }
-  if (!NAME_PATTERN.test(name)) {
-    return {
-      ok: false,
-      error: `Invalid server name "${name}". Use only letters, numbers, hyphens, and underscores.`,
-    };
-  }
+  const named = checkName(name);
+  if (!named.ok) return named;
 
   if (transport === "ws") {
     return { ok: false, error: "WebSocket transport isn't supported yet." };
   }
 
+  let clientSecret: string | undefined;
+  if (wantsSecret) {
+    const secret = clientSecretFrom(lineEnv);
+    if (!secret.ok) return secret;
+    clientSecret = secret.value;
+  }
+
   const effectiveTransport: Transport =
     transport ?? (commandArgv ? "stdio" : positionals.length > 0 ? "http" : "stdio");
 
-  const config: MCPServerConfig = { name };
+  const config: MCPServerConfig = { name: named.value };
   if (timeout !== undefined) config.timeout = timeout;
 
   if (effectiveTransport === "http" || effectiveTransport === "sse") {
@@ -212,6 +335,12 @@ export function parseMcpAddCommand(input: string): Result<ParsedAddCommand, stri
     config.url = url;
     config.transport = effectiveTransport;
     if (Object.keys(headers).length > 0) config.headers = headers;
+    if (clientId || callbackPort) {
+      config.oauth = {
+        ...(clientId ? { clientId } : {}),
+        ...(callbackPort ? { callbackPort } : {}),
+      };
+    }
   } else {
     // stdio
     if (!commandArgv || commandArgv.length === 0) {
@@ -225,7 +354,57 @@ export function parseMcpAddCommand(input: string): Result<ParsedAddCommand, stri
     if (Object.keys(env).length > 0) config.env = env;
   }
 
-  return scope === undefined
-    ? { ok: true, value: { config } }
-    : { ok: true, value: { config, scope } };
+  return finish(config, scope, clientSecret);
+}
+
+function parseAddJsonArgs(
+  tokens: string[],
+  lineEnv: Record<string, string>,
+): Result<ParsedAddCommand, string> {
+  let scope: MCPScope | undefined;
+  let wantsSecret = false;
+  const positionals: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i]!;
+    if (tok === "--scope" || tok === "-s") {
+      const value = tokens[++i];
+      if (value === undefined) return { ok: false, error: `${tok} expects a value.` };
+      const s = mapScope(value);
+      if (!s.ok) return s;
+      scope = s.value;
+    } else if (tok === "--client-secret") {
+      wantsSecret = true;
+    } else if (tok.startsWith("-") && !tok.startsWith("-{")) {
+      return { ok: false, error: `Unknown option "${tok}".` };
+    } else {
+      positionals.push(tok);
+    }
+  }
+  const named = checkName(positionals[0]);
+  if (!named.ok) return named;
+  const json = positionals[1];
+  if (!json) return { ok: false, error: "add-json needs the server's JSON after the name." };
+  if (positionals.length > 2) {
+    return { ok: false, error: "Wrap the JSON in single quotes so it stays one argument." };
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return { ok: false, error: "The server JSON isn't valid JSON." };
+  }
+  const entry = parseStoredEntry(raw);
+  if (!entry.ok) return entry;
+  if (entry.value.type === "sse" || entry.value.type === "http" || entry.value.url) {
+    if (!entry.value.url) return { ok: false, error: 'An http/sse server needs a "url".' };
+  } else if (!entry.value.command) {
+    return { ok: false, error: 'The server JSON needs a "command" or a "url".' };
+  }
+  let clientSecret: string | undefined;
+  if (wantsSecret) {
+    const secret = clientSecretFrom(lineEnv);
+    if (!secret.ok) return secret;
+    clientSecret = secret.value;
+  }
+  return finish(fromStoredEntry(named.value, entry.value), scope, clientSecret);
 }

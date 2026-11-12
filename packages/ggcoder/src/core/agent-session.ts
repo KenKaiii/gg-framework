@@ -296,6 +296,16 @@ export class PaidModelConfirmationError extends Error {
 /** A chat attachment (image / video / other file) prepared for the model. The
  *  raw base64 `data` rides native blocks; `path` (when persisted to disk) lets
  *  the agent's tools open the file directly. */
+/** What applying one MCP config change did in a session. */
+export interface McpServerChange {
+  name: string;
+  removed: boolean;
+  connected: boolean;
+  toolCount: number;
+  error?: string;
+  requiresAuth?: boolean;
+}
+
 export interface SessionAttachment {
   kind: "image" | "video" | "file";
   mediaType: string;
@@ -909,6 +919,8 @@ export class AgentSession {
    */
   /** Commands the user ran themselves, held until their next message. */
   private pendingUserShell: Array<{ runId: string; text: string }> = [];
+  /** MCP servers the user added or removed mid-session, not yet told to the model. */
+  private pendingMcpNotices: string[] = [];
 
   private persistedTranscriptCount(): number {
     return this.messages.slice(0, this.lastPersistedIndex).filter((m) => m.role !== "system")
@@ -1376,7 +1388,9 @@ export class AgentSession {
       // capabilities that genuinely exist — a wrong answer, not a slow one.
       await this.seedMcpCatalogFromCache(servers);
 
-      const connected = await mcpManager.connectAll(servers);
+      const results = await mcpManager.connectAllDetailed(servers);
+      this.mcp.recordServers(servers, results);
+      const connected = results.flatMap((r) => r.tools);
       // Defense-in-depth: even from a whitelisted server, only push tools that
       // pass the allow-list (no-op when there's no allow-list).
       const mcpTools = this.opts.allowedTools
@@ -1404,6 +1418,89 @@ export class AgentSession {
         `MCP initialization failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+  }
+
+  /**
+   * The user added, changed or removed one MCP server mid-session: connect,
+   * reconnect or drop just that server, without a restart. `config` is its
+   * current effective config, or undefined when it is gone (or not allowed).
+   *
+   * Append-only for the prompt cache: new tools go into the tool_search
+   * catalog (or are appended when deferral is off), and the model learns about
+   * the change from a hidden note with the next message, never from a
+   * re-rendered system prompt. Returns null when nothing changed here.
+   */
+  async applyMcpServerChange(
+    name: string,
+    config: MCPServerConfig | undefined,
+  ): Promise<McpServerChange | null> {
+    const manager = this.mcp.manager;
+    if (!manager) return null;
+    const whitelist = this.opts.allowedMcpServers;
+    if (this.opts.allowedTools && !whitelist?.includes(name)) return null;
+    const wanted = config && config.enabled !== false ? config : undefined;
+    const previous = this.mcp.serverState(name);
+    // Same config still connected: nothing to do. Same config that failed
+    // (e.g. before an OAuth sign-in) is retried.
+    if (wanted && previous?.ok && previous.config === JSON.stringify(wanted)) return null;
+    if (!wanted && !previous) return null;
+
+    if (previous) {
+      await manager.disconnect(name);
+      this.mcp.removeServer(name);
+    }
+    if (!wanted) {
+      this.pendingMcpNotices.push(
+        `- MCP server "${name}" was removed by the user. Its mcp__${name}__* tools no longer work; don't call them.`,
+      );
+      log("INFO", "mcp", `Removed MCP server "${name}" mid-session`);
+      return { name, removed: true, connected: false, toolCount: 0 };
+    }
+
+    const [result] = await manager.connectAllDetailed([wanted]);
+    const ok = result?.ok ?? false;
+    this.mcp.recordServers([wanted], result ? [result] : []);
+    const tools = (result?.tools ?? []).filter(
+      (t) => !this.opts.allowedTools || this.isToolAllowed(t.name),
+    );
+    this.addMcpTools(tools);
+    if (ok) {
+      const deferred = !this.opts.allowedTools && this.settingsManager.get("deferredMcpTools");
+      const names = tools.map((t) => t.name);
+      const shown = names.slice(0, 20).join(", ") + (names.length > 20 ? ", …" : "");
+      this.pendingMcpNotices.push(
+        `- The user connected MCP server "${name}" with ${tools.length} tool${tools.length === 1 ? "" : "s"}` +
+          (names.length > 0 ? `: ${shown}.` : ".") +
+          (deferred
+            ? " Load them with tool_search (e.g. by capability or the server name) when they help."
+            : " They are in your tool list now."),
+      );
+    }
+    log("INFO", "mcp", `Applied MCP server "${name}" mid-session`, {
+      ok: String(ok),
+      tools: String(tools.length),
+    });
+    return {
+      name,
+      removed: false,
+      connected: ok,
+      toolCount: tools.length,
+      ...(result?.error ? { error: result.error } : {}),
+      ...(result?.requiresAuth ? { requiresAuth: true } : {}),
+    };
+  }
+
+  private takeMcpNotice(): Message | null {
+    if (this.pendingMcpNotices.length === 0) return null;
+    const lines = this.pendingMcpNotices.splice(0);
+    return {
+      role: "user",
+      provenance: { source: "runtime", kind: "notification", visibility: "hidden" },
+      content:
+        "MCP update. The user changed MCP servers during this session:\n" +
+        lines.join("\n") +
+        "\nTrust this over anything earlier that disagrees. Do not restate this note; just proceed.",
+    };
   }
 
   /** Persist `cwd` as a trusted project for project-scope MCP. Called by the
@@ -2264,6 +2361,7 @@ export class AgentSession {
     if (planNotice) {
       log("INFO", "session", "Injecting plan state update instead of rebuilding the prompt");
     }
+    const mcpNotice = this.takeMcpNotice();
     if (environmentDelta) {
       // The model has now been told; only a further change re-triggers this.
       this.renderedEnvironment = this.promptEnvironment();
@@ -2339,15 +2437,17 @@ export class AgentSession {
       return [
         ...(environmentDelta ? [environmentDelta] : []),
         ...(planNotice ? [planNotice] : []),
+        ...(mcpNotice ? [mcpNotice] : []),
         ...(userShell ? [userShell] : []),
         ...steeringMessages,
         ...(notificationMessage ? [notificationMessage] : []),
       ];
     }
-    if (environmentDelta || planNotice || notificationMessage) {
+    if (environmentDelta || planNotice || mcpNotice || notificationMessage) {
       return [
         ...(environmentDelta ? [environmentDelta] : []),
         ...(planNotice ? [planNotice] : []),
+        ...(mcpNotice ? [mcpNotice] : []),
         ...(notificationMessage ? [notificationMessage] : []),
       ];
     }
@@ -3343,11 +3443,13 @@ export class AgentSession {
           const servers = await getAllMcpServers(this.provider, apiKey, this.cwd, {
             allowProjectScope: this.settingsManager.isProjectTrusted(this.cwd),
           });
-          const mcpTools = await mcpManager.connectAll(servers);
+          const results = await mcpManager.connectAllDetailed(servers);
+          const mcpTools = results.flatMap((r) => r.tools);
           // Drop stale MCP tools from both the live set and deferred catalog before
           // re-adding. Some tools may already have been promoted out of the catalog.
           this.tools = this.tools.filter((t) => !t.name.startsWith("mcp__"));
           this.mcp.clearMcpTools();
+          this.mcp.recordServers(servers, results);
           this.addMcpTools(mcpTools);
         } catch (err) {
           log(
@@ -4665,6 +4767,12 @@ export class AgentSession {
    * update is saved in order with the rest of the conversation.
    */
   private async announceNewLanguages(): Promise<void> {
+    const mcpNotice = this.takeMcpNotice();
+    if (mcpNotice) {
+      this.messages.push(mcpNotice);
+      await this.persistMessage(mcpNotice);
+      this.lastPersistedIndex = this.messages.length;
+    }
     const planNotice = this.takePlanNotice();
     if (planNotice) {
       this.messages.push(planNotice);

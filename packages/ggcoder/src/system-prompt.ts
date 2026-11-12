@@ -53,7 +53,7 @@ function renderTalkSection(toolNames: readonly string[] | undefined): string {
   // ending the reply while the card the user can click never got built. The
   // fallback only renders for hosts with no one to answer a question.
   const askRule = (toolNames ?? DEFAULT_TOOL_NAMES).includes("ask_user")
-    ? `Every question — a blocker or an optional "want me to also…?" — is an \`ask_user\` call with your pick marked \`recommended\`, never prose. No question? Just end.`
+    ? `Every question — a blocker or an optional "want me to also…?" — is an \`ask_user\` call with your pick marked \`recommended\`, never prose. Before the card, write just enough to choose: the direct answer or what you found, in one to three plain sentences, not a full report. No question? Just end.`
     : `Any question — a blocker or an optional "want me to also…?" — is the last line: \`> **<question>?** <your next step>\`. No question? Just end.`;
   return (
     `## Replies\n\n` +

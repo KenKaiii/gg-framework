@@ -199,3 +199,29 @@ describe("ShellRunner", () => {
     expect(end.durationMs).toBeLessThan(15_000);
   }, 20_000);
 });
+
+describe("POST /shell/run with an mcp command", () => {
+  it("handles `claude mcp …` in-process instead of starting a shell", async () => {
+    const { ctx, start } = routeCtx();
+    const finished = new Promise<unknown>((resolve) => {
+      Object.assign(ctx, {
+        broadcast: vi.fn(),
+        session: {
+          addUserShellContext: vi.fn(),
+          persistAppMarker: vi.fn(async () => {}),
+        },
+      });
+      (ctx.broadcast as ReturnType<typeof vi.fn>).mockImplementation((type: string, data) => {
+        if (type === "shell_end") resolve(data);
+      });
+    });
+    const reply = await post(ctx, "/shell/run", {
+      id: "m1",
+      command: "claude mcp help",
+      confirmed: true,
+    });
+    expect(reply.status).toBe(202);
+    expect(await finished).toMatchObject({ id: "m1", exitCode: 0 });
+    expect(start).not.toHaveBeenCalled();
+  });
+});

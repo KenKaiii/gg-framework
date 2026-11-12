@@ -182,6 +182,12 @@ export async function discoverSkillsWithBlocked(options: {
   return { skills: [...skillsByName.values()], blocked };
 }
 
+/** One bundled skill by name (e.g. `gg-guide` for Chat, which skips the rest). */
+export async function loadBundledSkill(name: string): Promise<Skill | undefined> {
+  const skills = await loadBundledSkills(newLoadContext());
+  return skills.find((s) => s.name === name);
+}
+
 async function loadBundledSkills(ctx: LoadContext): Promise<Skill[]> {
   for (const dir of BUNDLED_SKILLS_DIRS) {
     const skills = await loadSkillsFromDir(dir, "bundled", ctx);

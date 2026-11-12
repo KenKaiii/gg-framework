@@ -11,6 +11,7 @@ import {
   projectMcpPath,
   parseMcpAddCommand,
   hiddenToolMessage,
+  McpOAuthStore,
   type MCPScope,
   type MCPServerConfig,
 } from "../core/mcp/index.js";
@@ -57,8 +58,8 @@ export async function runMcp(): Promise<void> {
       await runRemove(rest, cwd);
       return;
     }
-    if (sub === "add") {
-      await runAdd(rest, cwd);
+    if (sub === "add" || sub === "add-json") {
+      await runAdd(sub, rest, cwd);
       return;
     }
     if (sub) {
@@ -83,6 +84,7 @@ Usage:
   ggcoder mcp list                         List servers with live connection status
   ggcoder mcp get <name>                   Show one server's config
   ggcoder mcp add <args…>                  Add a server (claude-compatible grammar)
+  ggcoder mcp add-json <name> '<json>'     Add a server from Claude-style JSON
   ggcoder mcp remove <name> [--scope s]    Remove a server
 
 Add examples:
@@ -246,8 +248,18 @@ function parseScopeArgValue(rest: string[]): string | undefined {
   return idx === -1 ? undefined : rest[idx + 1];
 }
 
-async function runAdd(rest: string[], cwd: string): Promise<void> {
-  const parsed = parseMcpAddCommand(rest.join(" "));
+/** Re-quote argv for the parser, so arguments with spaces or JSON survive. */
+function shellQuote(arg: string): string {
+  return /^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
+async function runAdd(sub: "add" | "add-json", rest: string[], cwd: string): Promise<void> {
+  const secretPrefix = process.env.MCP_CLIENT_SECRET
+    ? `MCP_CLIENT_SECRET=${shellQuote(process.env.MCP_CLIENT_SECRET)} `
+    : "";
+  const parsed = parseMcpAddCommand(
+    `${secretPrefix}ggcoder mcp ${sub} ${rest.map(shellQuote).join(" ")}`,
+  );
   if (!parsed.ok) {
     process.stderr.write(bad(`✗ ${parsed.error}\n`));
     process.exit(1);
@@ -270,6 +282,13 @@ async function runAdd(rest: string[], cwd: string): Promise<void> {
   if (!result.ok) {
     process.stderr.write(bad(`✗ ${result.error}\n`));
     process.exit(1);
+  }
+  if (config.oauth?.clientId) {
+    await new McpOAuthStore().setClient(
+      config.name,
+      config.oauth.clientId,
+      parsed.value.clientSecret,
+    );
   }
   const file = scope === "global" ? globalMcpPath() : projectMcpPath(cwd);
   console.log(good(`✓ Added "${config.name}" to ${scope} scope`) + dim(` (${file})`));
@@ -372,6 +391,13 @@ async function runInteractiveAdd(cwd: string): Promise<void> {
     console.log(bad(`✗ ${result.error}`));
     await pause();
     return;
+  }
+  if (config.oauth?.clientId) {
+    await new McpOAuthStore().setClient(
+      config.name,
+      config.oauth.clientId,
+      parsed.value.clientSecret,
+    );
   }
   console.log(good(`✓ Added "${config.name}" to ${scope} scope.`));
   console.log(dim("  Restart ggcoder to load the new server."));

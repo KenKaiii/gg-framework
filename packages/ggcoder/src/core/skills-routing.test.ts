@@ -95,7 +95,7 @@ describe("skill routing prompts", () => {
         .filter((s) => !s.hidden)
         .map((s) => s.name)
         .sort();
-      expect(visible).toEqual(["compliance-guard", "durable"]);
+      expect(visible).toEqual(["compliance-guard", "durable", "gg-guide"]);
       expect(
         skills
           .filter((s) => s.hidden)

@@ -175,6 +175,8 @@ export function DeckMenu({
   onOpenHealth,
   onOpenRadio,
   onOpenGoalSettings,
+  onAddFolder,
+  onRemoveFolder,
   canExport = false,
   exporting = false,
   onExport,
@@ -200,6 +202,10 @@ export function DeckMenu({
   onOpenHealth?: () => void;
   onOpenRadio: () => void;
   onOpenGoalSettings?: () => void;
+  /** Code and Chat windows: add another folder GG can work in. */
+  onAddFolder?: () => void;
+  /** Set only once a folder has been added: pick one to drop. */
+  onRemoveFolder?: () => void;
   /** The chat has something to save. */
   canExport?: boolean;
   exporting?: boolean;
@@ -262,6 +268,26 @@ export function DeckMenu({
           onClick={onOpenHealth}
         >
           Project Health
+        </button>
+      )}
+      {onAddFolder && !isGoal && (workspaceMode === "code" || workspaceMode === "chat") && (
+        <button
+          type="button"
+          className="key"
+          title="Add another folder GG can work in"
+          onClick={onAddFolder}
+        >
+          Add folder
+        </button>
+      )}
+      {onRemoveFolder && !isGoal && (workspaceMode === "code" || workspaceMode === "chat") && (
+        <button
+          type="button"
+          className="key"
+          title="Remove a folder you added"
+          onClick={onRemoveFolder}
+        >
+          Remove folder
         </button>
       )}
       {!isGoal && (

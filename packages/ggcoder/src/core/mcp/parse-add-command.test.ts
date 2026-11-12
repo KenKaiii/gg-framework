@@ -98,3 +98,91 @@ describe("parseMcpAddCommand", () => {
     expect(r.ok).toBe(false);
   });
 });
+
+describe("pasted Claude Code lines", () => {
+  it("treats `add <name> <command> [args…]` without `--` as stdio (Playwright README)", () => {
+    const r = parseMcpAddCommand("claude mcp add playwright npx @playwright/mcp@latest");
+    expect(r.ok && r.value.config).toEqual({
+      name: "playwright",
+      command: "npx",
+      args: ["@playwright/mcp@latest"],
+    });
+    // The server's own flags pass through untouched.
+    const flags = parseMcpAddCommand("claude mcp add -s user ctx npx -y @upstash/context7-mcp");
+    expect(flags.ok && flags.value).toEqual({
+      config: { name: "ctx", command: "npx", args: ["-y", "@upstash/context7-mcp"] },
+      scope: "global",
+    });
+    // A URL without --transport is still a remote server.
+    const url = parseMcpAddCommand("claude mcp add notion https://mcp.notion.com/mcp");
+    expect(url.ok && url.value.config.url).toBe("https://mcp.notion.com/mcp");
+  });
+
+  it("drops a pasted $ prompt and joins \\-continued lines", () => {
+    const r = parseMcpAddCommand(
+      "$ claude mcp add ctx \\\n  -- npx -y \\\r\n  @upstash/context7-mcp",
+    );
+    expect(r.ok && r.value.config).toEqual({
+      name: "ctx",
+      command: "npx",
+      args: ["-y", "@upstash/context7-mcp"],
+    });
+  });
+
+  it("parses add-json for http and stdio servers", () => {
+    const http = parseMcpAddCommand(
+      `claude mcp add-json weather '{"type":"http","url":"https://w.dev/mcp","headers":{"Authorization":"Bearer t"}}' -s user`,
+    );
+    expect(http.ok && http.value).toEqual({
+      config: {
+        name: "weather",
+        url: "https://w.dev/mcp",
+        transport: "http",
+        headers: { Authorization: "Bearer t" },
+      },
+      scope: "global",
+    });
+    const stdio = parseMcpAddCommand(
+      `claude mcp add-json gh '{"command":"npx","args":["-y","@modelcontextprotocol/server-github"],"env":{"TOKEN":"x"}}'`,
+    );
+    expect(stdio.ok && stdio.value.config).toEqual({
+      name: "gh",
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-github"],
+      env: { TOKEN: "x" },
+    });
+  });
+
+  it("rejects bad add-json input with a clear reason", () => {
+    expect(parseMcpAddCommand(`claude mcp add-json w '{nope'`)).toMatchObject({ ok: false });
+    expect(parseMcpAddCommand(`claude mcp add-json w '{"args":[]}'`)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('"command"'),
+    });
+    expect(parseMcpAddCommand(`claude mcp add-json w {"a": 1}`)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("single quotes"),
+    });
+  });
+
+  it("keeps OAuth client options, taking the secret from MCP_CLIENT_SECRET", () => {
+    const r = parseMcpAddCommand(
+      "MCP_CLIENT_SECRET=shh claude mcp add --client-id cid --client-secret --callback-port 8080 --transport http s https://s.dev/mcp",
+    );
+    expect(r.ok && r.value).toEqual({
+      config: {
+        name: "s",
+        url: "https://s.dev/mcp",
+        transport: "http",
+        oauth: { clientId: "cid", callbackPort: 8080 },
+      },
+      clientSecret: "shh",
+    });
+    expect(
+      parseMcpAddCommand("claude mcp add --client-id c --client-secret -t http s https://s.dev"),
+    ).toMatchObject({ ok: false, error: expect.stringContaining("MCP_CLIENT_SECRET=") });
+    expect(
+      parseMcpAddCommand("claude mcp add --callback-port 99999 -t http s https://s.dev"),
+    ).toMatchObject({ ok: false });
+  });
+});
