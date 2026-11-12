@@ -26,7 +26,6 @@ updates:
     ignore:
       - dependency-name: hyperframes
       - dependency-name: border-beam
-      - dependency-name: metal-fx
       # Tauri JS bindings must share major.minor with their Rust crates
       # (scripts/tauri-version-alignment.test.mjs), and Dependabot can't bump
       # npm and cargo in one PR. Patches flow; bump minors by hand on both

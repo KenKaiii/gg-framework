@@ -1,7 +1,3 @@
-export interface RuntimeModeRefs {
-  planModeRef?: { current: boolean };
-}
-
 /**
  * True when this process is the gg-app sidecar. Tauri always spawns it with
  * `GG_APP_PORT` set (even to "0"); the plain `ggcoder` CLI never sets it.

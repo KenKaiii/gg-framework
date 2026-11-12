@@ -1496,35 +1496,6 @@ export function bookcase(seed: number): Sprite {
   );
 }
 
-/** A carpenter's bench with a plane, a saw on the wall-peg and shavings. */
-export function carpentryBench(): Sprite {
-  return sprite(
-    30,
-    22,
-    15,
-    20,
-    (b) => {
-      b.rect(2, 8, 26, 4, W.hi);
-      b.rect(2, 11, 26, 2, W.face);
-      for (const x of [4, 24]) b.rect(x, 12, 3, 8, W.base);
-      b.rect(4, 16, 23, 1, W.base);
-      b.rect(9, 5, 8, 3, W.warm);
-      b.rect(10, 4, 3, 1, 0x3c3430);
-      b.rect(19, 6, 6, 2, 0xc8c1b8);
-      b.rect(19, 5, 2, 1, W.base);
-      for (const [x, y] of [
-        [6, 19],
-        [12, 20],
-        [20, 19],
-        [16, 21],
-      ] as const) {
-        b.rect(x, y, 2, 1, 0xf0d0a0);
-      }
-    },
-    { a: 0.3 },
-  );
-}
-
 /** A clay kamado stove with two fire mouths glowing and a pot steaming on top. */
 export function kamado(): Sprite {
   return sprite(
@@ -1548,60 +1519,6 @@ export function kamado(): Sprite {
       b.ellipse(15, 7, 7, 2.6, 0x3c3430);
       b.ellipse(15, 6, 5.6, 1.8, 0x5a524c);
       b.rect(13, 3, 4, 2, 0x3c3430);
-    },
-    { a: 0.3 },
-  );
-}
-
-/** A wooden board under a little roof, with notes, a plan and a red seal pinned to it. */
-export function notesBoard(seed: number): Sprite {
-  return sprite(
-    30,
-    32,
-    15,
-    30,
-    (b) => {
-      for (const x of [5, 23]) b.rect(x, 8, 2, 22, W.base);
-      b.rect(3, 9, 24, 15, W.warm);
-      b.rect(3, 9, 24, 1, W.hi);
-      b.rect(4, 10, 22, 13, 0xd8b884);
-      const rnd = stream(seed);
-      for (let i = 0; i < 4; i++) {
-        const nx = 5 + i * 5 + Math.round(rnd() * 2);
-        const ny = 11 + Math.round(rnd() * 4);
-        b.rect(nx, ny, 4, 6, PAPER.lit);
-        b.rect(nx + 1, ny + 2, 2, 1, 0x8a8a9a);
-        b.rect(nx + 1, ny + 4, 2, 1, 0x8a8a9a);
-        b.set(nx + 1, ny, 0xc84a3a);
-      }
-      b.ellipse(22, 20, 1.6, 1.6, 0xd8394a);
-      for (let y = 0; y < 8; y++) {
-        const half = Math.round(6 + y * 1.4);
-        for (let x = 15 - half; x <= 15 + half; x++)
-          b.set(x, y + 1, y === 7 ? W.base : x > 15 ? W.face : W.hi);
-      }
-    },
-    { a: 0.3 },
-  );
-}
-
-/** A red Japanese pillar post box, with a white slot plate. */
-export function postBox(): Sprite {
-  return sprite(
-    14,
-    24,
-    7,
-    22,
-    (b) => {
-      b.ellipse(7, 4, 5, 2.6, 0xe0403a);
-      b.ellipse(6.5, 3.4, 3.4, 1.4, 0xf87a6a);
-      b.rect(2, 4, 10, 17, 0xc8302c);
-      b.rect(2, 4, 2, 17, 0xe85a50);
-      b.rect(10, 4, 2, 17, 0x8a1e1c);
-      b.rect(4, 8, 6, 2, 0x2a1408);
-      b.rect(4, 12, 6, 4, PAPER.lit);
-      b.rect(5, 13, 4, 1, 0xc8302c);
-      b.rect(1, 20, 12, 2, 0x5a524c);
     },
     { a: 0.3 },
   );
@@ -1658,36 +1575,6 @@ export function fishingSpot(): Sprite {
       }
     },
     { a: 0.28 },
-  );
-}
-
-/** A long bench with a red felt cloth, a tea tray and a red parasol: the place to wait. */
-export function teaBench(): Sprite {
-  return sprite(
-    44,
-    40,
-    22,
-    38,
-    (b) => {
-      b.rect(4, 26, 36, 5, 0xc8302c);
-      b.rect(4, 26, 36, 1, 0xe85a50);
-      b.rect(4, 30, 36, 1, 0x8a1e1c);
-      for (const x of [6, 36]) b.rect(x, 31, 3, 7, W.base);
-      b.rect(26, 23, 9, 3, W.warm);
-      b.ellipse(29, 22, 2, 1.6, 0x5a7a4a);
-      b.rect(32, 22, 2, 1, PAPER.lit);
-      // The parasol: a wide, shallow red cone on a bamboo pole.
-      b.rect(12, 6, 1, 22, 0xc8a868);
-      for (let y = 0; y < 8; y++) {
-        const half = Math.round(4 + y * 2.2);
-        for (let x = 12 - half; x <= 12 + half; x++) {
-          const rib = (x - 12 + 30) % 5 === 0;
-          b.set(x, y, rib ? 0xa82838 : x < 12 ? 0xe85a50 : 0xc8302c);
-        }
-      }
-      b.rect(-6 + 12, 7, 25, 1, 0x8a1e1c);
-    },
-    { a: 0.3 },
   );
 }
 

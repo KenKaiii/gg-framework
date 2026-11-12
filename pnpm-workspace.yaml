@@ -43,6 +43,5 @@ overrides:
   picomatch: ^2.3.2
 
 patchedDependencies:
-  metal-fx@2.0.10: patches/metal-fx@2.0.10.patch
   border-beam@1.3.0: patches/border-beam@1.3.0.patch
   hyperframes@0.8.82: patches/hyperframes@0.8.82.patch

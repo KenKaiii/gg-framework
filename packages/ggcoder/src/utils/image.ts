@@ -271,18 +271,6 @@ export interface ImageAttachment {
   data: string; // base64 for images/video, raw text for text files
 }
 
-/** Check if a file path points to an image based on extension. */
-export function isImagePath(filePath: string): boolean {
-  const ext = path.extname(filePath).toLowerCase();
-  return IMAGE_EXTENSIONS.has(ext);
-}
-
-/** Check if a file path points to a video based on extension. */
-export function isVideoPath(filePath: string): boolean {
-  const ext = path.extname(filePath).toLowerCase();
-  return VIDEO_EXTENSIONS.has(ext);
-}
-
 /** Check if a file path points to an attachable file (image or text). */
 export function isAttachablePath(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();

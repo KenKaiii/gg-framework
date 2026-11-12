@@ -55,7 +55,6 @@ export const GLYPHS: Readonly<Record<string, readonly string[]>> = {
 };
 
 export const GLYPH_W = 3;
-export const GLYPH_H = 5;
 /** Cells between letters. */
 const GAP = 1;
 

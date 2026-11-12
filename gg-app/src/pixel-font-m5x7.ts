@@ -8,10 +8,6 @@ export interface PixelGlyph {
   readonly rows: readonly string[];
 }
 
-/** Rows in every glyph: ascenders to descenders. */
-export const M5X7_HEIGHT = 11;
-/** Row of the baseline, counted from the top of the band. */
-export const M5X7_BASELINE = 9;
 /** Width of a space. */
 export const M5X7_SPACE = 5;
 

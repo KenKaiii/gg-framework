@@ -1,5 +1,4 @@
 import { LANGUAGE_DISPLAY_NAMES } from "../../core/language-detector.js";
-import { BLACK_CIRCLE } from "../constants/figures.js";
 import { formatDuration } from "../duration-format.js";
 import type {
   DurationItem,
@@ -7,7 +6,6 @@ import type {
   InfoItem,
   ModelTransitionItem,
   PlanEventItem,
-  PlanTransitionItem,
   QueuedItem,
   StepDoneItem,
   StoppedItem,
@@ -87,10 +85,6 @@ export function presentInfo(item: InfoItem): StatusPresentation {
 
 export function presentTask(item: TaskItem): StatusPresentation {
   return { glyph: "▸ ", label: "Task: ", text: item.title, bold: true };
-}
-
-export function presentPlanTransition(item: PlanTransitionItem): StatusPresentation {
-  return { glyph: `${BLACK_CIRCLE} `, text: normalizeTranscriptStatusText(item.text), bold: true };
 }
 
 export function presentModelTransition(item: ModelTransitionItem): StatusPresentation {

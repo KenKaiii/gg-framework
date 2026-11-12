@@ -1,7 +1,6 @@
 import type { FooterStatusLayoutDecision } from "./components/BackgroundTasksBar.js";
 import type { CompletedItem } from "./app-items.js";
 import {
-  isTranscriptSpacingItem,
   shouldTopSpaceAfterPrintedTranscriptBoundary,
   shouldTopSpaceAssistantAfterToolBoundary as shouldTopSpaceAssistantAfterToolBoundaryFromTranscript,
   shouldTopSpaceStreamingAssistant as shouldTopSpaceStreamingAssistantFromTranscript,
@@ -52,19 +51,6 @@ export function getDoneFlushDecision({
     showDoneStatus: !planOverlayPending,
     flushLiveItems: true,
   };
-}
-
-export function shouldResetUIForSetupPaneTransition({
-  hasResetUI,
-  hasSessionStore,
-}: {
-  hasResetUI: boolean;
-  hasSessionStore: boolean;
-}): boolean {
-  // Opening a review pane is a full-screen state transition. A bare React state
-  // flip hides history in the virtual tree, but it does not reset Ink/log-update's
-  // already-written terminal frame, so the pane can render below prior chat.
-  return hasResetUI && hasSessionStore;
 }
 
 export interface ScrollStabilizationDecision {
@@ -125,10 +111,6 @@ const COLLAPSED_FOOTER_STATUS_ROWS = 1;
 const MAX_EXPANDED_BACKGROUND_TASK_ROWS = 7;
 /** Rolling window the LiveToolPanel renders at most (see LIVE_TOOL_PANEL_ROWS). */
 const MAX_LIVE_TOOL_PANEL_ROWS = 3;
-
-export function isAgentSpacingItem(item: CompletedItem): boolean {
-  return isTranscriptSpacingItem(item);
-}
 
 export const shouldTopSpaceAfterPrintedAgentBoundary = shouldTopSpaceAfterPrintedTranscriptBoundary;
 export const shouldTopSpaceAssistantAfterToolBoundary =

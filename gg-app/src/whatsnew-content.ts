@@ -13,8 +13,6 @@ import { CRITTERS, type CritterDef } from "./critter-sprites";
 export const WHATSNEW_MODES = ["hype", "calm"] as const;
 export type WhatsNewMode = (typeof WHATSNEW_MODES)[number];
 
-/** Log palette: outline, lit top, wood, grain. Art colours, not theme roles. */
-export const LOG_PALETTE = { O: "#2a1408", H: "#c98a4a", L: "#8f5a2c", M: "#6b3f1f" };
 /** A log's cross-section from its outer edge in: outline, highlight, wood, shade, outline. */
 const LOG_RINGS = ["O", "H", "L", "M", "O"] as const;
 /** Frame grid edge, in cells: two 5-cell corners and a 6-cell repeating middle. */

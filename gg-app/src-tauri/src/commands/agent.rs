@@ -1087,24 +1087,6 @@ pub(crate) async fn agent_prewarm(
     Ok(())
 }
 
-/// Proxy: cycle the reasoning/thinking level to the next supported value.
-/// Returns the new `{ thinkingLevel, supportedThinkingLevels }`.
-#[tauri::command]
-pub(crate) async fn agent_cycle_thinking(
-    webview: WebviewWindow,
-    client: State<'_, reqwest::Client>,
-) -> Result<serde_json::Value, String> {
-    let port = port_for(&webview).ok_or("daemon not ready")?;
-    let gg_sid = session_for(&webview).ok_or("session not ready")?;
-    let res = client
-        .post(format!("{}/thinking", sidecar_base(port)))
-        .header("x-gg-session", &gg_sid)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    sidecar_json(res).await
-}
-
 /// Proxy: set the reasoning level directly. `level: None` turns thinking off.
 /// The sidecar refuses a level the current model doesn't support (400).
 #[tauri::command]
@@ -1123,75 +1105,6 @@ pub(crate) async fn agent_set_thinking(
         .await
         .map_err(|e| e.to_string())?;
     sidecar_json(res).await
-}
-
-#[tauri::command]
-pub(crate) async fn agent_plugins(
-    webview: WebviewWindow,
-    client: State<'_, reqwest::Client>,
-) -> Result<serde_json::Value, String> {
-    let port = port_for(&webview).ok_or("daemon not ready")?;
-    let gg_sid = session_for(&webview).ok_or("session not ready")?;
-    let res = client
-        .get(format!("{}/plugins", sidecar_base(port)))
-        .header("x-gg-session", &gg_sid)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    res.error_for_status()
-        .map_err(|e| e.to_string())?
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub(crate) async fn agent_install_plugin(
-    webview: WebviewWindow,
-    client: State<'_, reqwest::Client>,
-    bundle_path: String,
-) -> Result<serde_json::Value, String> {
-    let port = port_for(&webview).ok_or("daemon not ready")?;
-    let gg_sid = session_for(&webview).ok_or("session not ready")?;
-    let res = client
-        .post(format!("{}/plugins/install", sidecar_base(port)))
-        .header("x-gg-session", &gg_sid)
-        .json(&serde_json::json!({ "bundlePath": bundle_path }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    res.error_for_status()
-        .map_err(|e| e.to_string())?
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub(crate) async fn agent_remove_plugin(
-    webview: WebviewWindow,
-    client: State<'_, reqwest::Client>,
-    plugin_id: String,
-) -> Result<serde_json::Value, String> {
-    let port = port_for(&webview).ok_or("daemon not ready")?;
-    let gg_sid = session_for(&webview).ok_or("session not ready")?;
-    let mut endpoint = reqwest::Url::parse(&format!("{}/plugins/", sidecar_base(port)))
-        .map_err(|e| e.to_string())?;
-    endpoint
-        .path_segments_mut()
-        .map_err(|_| "invalid sidecar URL".to_string())?
-        .push(&plugin_id);
-    let res = client
-        .delete(endpoint)
-        .header("x-gg-session", &gg_sid)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    res.error_for_status()
-        .map_err(|e| e.to_string())?
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

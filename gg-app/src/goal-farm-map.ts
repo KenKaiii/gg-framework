@@ -1332,11 +1332,3 @@ function addCountryside(
     }
   }
 }
-
-/** Where a critter stands at `station` in its `slot`-th place (places repeat, nudged). */
-export function farmSpot(farm: Farm, station: StationKind, slot: number): Spot {
-  const spots = farm.stations[station];
-  const base = spots[slot % spots.length] ?? farm.stations.lounge[0] ?? { x: 0, y: 0 };
-  const lap = Math.floor(slot / Math.max(1, spots.length));
-  return lap === 0 ? base : { x: base.x + lap * 6, y: base.y + lap * 3 };
-}

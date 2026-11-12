@@ -10,12 +10,10 @@ import type { Message } from "@kenkaiiii/gg-ai";
 
 export const MAX_PERSISTED_TOOL_TEXT_CHARS = 40_000;
 export const COLD_SESSION_AGE_DAYS = 7;
-export const SESSION_GZIP_VERSION = 1;
 export const SESSION_REDIRECT_VERSION = 1;
 export const SESSION_MEDIA_MARKER_VERSION = 1;
 export const SESSION_PLAIN_SUFFIX = ".jsonl";
 export const SESSION_ARCHIVE_SUFFIX = ".jsonl.gz";
-export const SESSION_ASSET_SUFFIX = ".jsonl.assets";
 export const SESSION_TEMP_MARKER = ".gg-session-tmp-";
 
 const REDIRECT_TYPE = "gg_session_redirect";

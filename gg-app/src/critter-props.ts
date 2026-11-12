@@ -197,16 +197,6 @@ function renderGrid(rows: readonly string[], seed: number): string {
   );
 }
 
-/** A prop's raw pixel rows and palette, for callers that draw to a canvas. */
-export function propGrid(name: PropName): {
-  readonly f0: readonly string[];
-  readonly f1: readonly string[] | null;
-  readonly palette: Readonly<Record<string, string>>;
-} {
-  const grid = PROP_GRIDS[name];
-  return { f0: grid.f0, f1: grid.f1 ?? null, palette: PROP_PALETTE };
-}
-
 /** Render a prop's frames. Pure; callers cache the result. */
 export function renderProp(name: PropName): PropArt {
   const grid = PROP_GRIDS[name];

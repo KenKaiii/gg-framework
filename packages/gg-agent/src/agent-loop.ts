@@ -387,10 +387,6 @@ export function classifyOverload(
   return null;
 }
 
-export function isOverloaded(err: unknown): boolean {
-  return classifyOverload(err) !== null;
-}
-
 /**
  * Detect malformed-stream errors — the SDK's SSE decoder threw a JSON parse
  * error mid-stream, typically because a chunk was truncated or corrupted by

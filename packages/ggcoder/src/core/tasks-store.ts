@@ -84,10 +84,6 @@ export function saveTasksSync(cwd: string, tasks: readonly TaskRecord[]): void {
   writeFileSync(taskFilePath(cwd), JSON.stringify(tasks, null, 2) + "\n", "utf-8");
 }
 
-export function getTaskCount(cwd: string): number {
-  return loadTasksSync(cwd).filter((task) => task.status !== "done").length;
-}
-
 export function getNextPendingTask(cwd: string): PendingTaskInfo | null {
   const pending = loadTasksSync(cwd).find((task) => task.status === "pending");
   if (!pending) return null;

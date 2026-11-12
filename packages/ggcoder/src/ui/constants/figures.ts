@@ -13,23 +13,11 @@ export const BLACK_CIRCLE = isMac ? "\u23FA" : "\u25CF";
 /** Tool result bracket — ⎿ (U+23BF). */
 export const RETURN_SYMBOL = "\u23BF";
 
-/** Plan mode prefix — ⊞ (U+229E). */
-export const PLAN_SYMBOL = "\u229E";
-
-/** Light dashed horizontal line — ╌ (U+254C). */
-export const DASHED_H = "\u254C";
-
 /** Light shade block — ░ (U+2591). */
 export const LIGHT_SHADE = "\u2591";
 
-/** Bullet operator — ∙ (U+2219). */
-export const BULLET_OPERATOR = "\u2219";
-
 /** Down arrow — ↓ for token flow. */
 export const DOWN_ARROW = "\u2193";
-
-/** Up arrow — ↑ for output tokens. */
-export const UP_ARROW = "\u2191";
 
 /**
  * Partial block characters for gauge bars, from empty (index 0) to full

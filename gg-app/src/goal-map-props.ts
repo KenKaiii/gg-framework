@@ -205,20 +205,6 @@ const LEAVES: Tones = {
   dark: E.green1,
   deep: E.teal0,
 };
-const FIR: Tones = {
-  hi: mix(E.green2, E.green3, 0.3),
-  light: mix(E.green1, E.green2, 0.55),
-  base: E.green1,
-  dark: mix(E.green1, E.teal0, 0.6),
-  deep: E.deep,
-};
-const AUTUMN: Tones = {
-  hi: E.yellow,
-  light: E.gold,
-  base: E.amber,
-  dark: E.orange,
-  deep: E.rust,
-};
 
 /** One rounded clump of leaves, shaded on its own so a canopy looks bumpy. */
 function clump(b: PixelBuffer, cx: number, cy: number, r: number, t: Tones, seed: number): void {
@@ -246,157 +232,6 @@ function clump(b: PixelBuffer, cx: number, cy: number, r: number, t: Tones, seed
       b.set(x, y, c);
     }
   }
-}
-
-function trunk(b: PixelBuffer, x: number, y: number, w: number, h: number, seed: number): void {
-  for (let yy = y; yy < y + h; yy++) {
-    for (let xx = x; xx < x + w; xx++) {
-      const rel = xx - x;
-      let c: Rgb = rel === 0 ? E.bark3 : rel >= w - 2 ? E.bark1 : E.bark2;
-      if (hash(xx, Math.floor(yy / 3), seed) < 0.18 && rel > 0 && rel < w - 1) c = E.bark1;
-      b.set(xx, yy, c);
-    }
-  }
-  // Roots splay at the foot.
-  b.set(x - 1, y + h - 1, E.bark2);
-  b.set(x + w, y + h - 1, E.bark1);
-  b.set(x - 2, y + h - 1, E.bark2);
-}
-
-export function oakTree(seed: number, large = true, tones: Tones = LEAVES): Sprite {
-  const R = large ? 15 : 11;
-  const w = R * 2 + 8;
-  const cy = R + 3;
-  const trunkW = large ? 6 : 4;
-  const trunkTop = Math.round(cy + R * 0.4);
-  const trunkH = large ? 15 : 11;
-  const h = trunkTop + trunkH + 2;
-  const cx = w / 2;
-  const rnd = stream(seed);
-  return make(
-    w,
-    h,
-    Math.round(cx),
-    trunkTop + trunkH,
-    (b) => {
-      trunk(b, Math.round(cx - trunkW / 2), trunkTop, trunkW, trunkH, seed);
-      const blobs: Array<[number, number, number]> = [
-        [0, 0, R * 0.66],
-        [0, -R * 0.52, R * 0.5],
-        [-R * 0.44, -R * 0.24, R * 0.5],
-        [R * 0.44, -R * 0.24, R * 0.5],
-        [-R * 0.56, R * 0.2, R * 0.47],
-        [R * 0.56, R * 0.2, R * 0.47],
-        [-R * 0.24, R * 0.47, R * 0.5],
-        [R * 0.26, R * 0.48, R * 0.48],
-      ];
-      blobs.sort((a, bb) => a[1] - bb[1]);
-      for (const [ox, oy, r] of blobs) {
-        clump(b, cx + ox + (rnd() - 0.5) * 2, cy + oy + (rnd() - 0.5) * 2, r, tones, seed + 17);
-      }
-    },
-    { a: 0.32, canopy: true },
-  );
-}
-
-export function autumnTree(seed: number): Sprite {
-  return oakTree(seed, false, AUTUMN);
-}
-
-export function pineTree(seed: number): Sprite {
-  const w = 30;
-  const h = 46;
-  return make(
-    w,
-    h,
-    15,
-    43,
-    (b) => {
-      trunk(b, 13, 36, 4, 7, seed);
-      // Four tiers, widest at the bottom, each a soft dome with a ragged hem.
-      const tiers: Array<[number, number, number]> = [
-        [6, 5, 6],
-        [13, 8, 8],
-        [21, 10, 10],
-        [29, 12, 11],
-      ];
-      for (const [ty, ry, rx] of tiers) {
-        for (let y = ty - ry; y <= ty + 3; y++) {
-          for (let x = 15 - rx - 1; x <= 15 + rx + 1; x++) {
-            const nx = (x + 0.5 - 15) / rx;
-            const ny = (y + 0.5 - ty) / ry;
-            const hem = y >= ty ? (x % 3 === 0 ? 2 : x % 3 === 1 ? 3 : 1) : 0;
-            if (nx * nx + Math.max(0, -ny) ** 2 > 1 || y > ty + hem) continue;
-            let shade = -nx * 0.75 - ny * 0.2 + (noise(x, y * 1.6, 1.8, seed) - 0.5) * 0.8;
-            if (y >= ty) shade -= 0.55;
-            const c =
-              shade > 0.55
-                ? FIR.hi
-                : shade > 0.15
-                  ? FIR.light
-                  : shade > -0.35
-                    ? FIR.base
-                    : shade > -0.8
-                      ? FIR.dark
-                      : FIR.deep;
-            b.set(x, y, c);
-          }
-        }
-      }
-    },
-    { a: 0.32, canopy: true },
-  );
-}
-
-export function palmTree(lean = 1): Sprite {
-  const w = 36;
-  const h = 50;
-  return make(
-    w,
-    h,
-    18,
-    47,
-    (b) => {
-      // A curved, ringed trunk.
-      for (let i = 0; i < 30; i++) {
-        const t = i / 30;
-        const x = 18 + Math.sin(t * 1.5) * 5 * lean - 2;
-        const y = 47 - i;
-        for (let dx = 0; dx < 4; dx++) {
-          const ring = i % 4 === 0;
-          const c = ring ? E.bark2 : dx === 0 ? E.sand : dx === 3 ? E.bark3 : E.tan;
-          b.set(Math.round(x) + dx, y, c);
-        }
-      }
-      const topX = 18 + Math.sin(1.5) * 5 * lean;
-      const topY = 17;
-      // Fronds arc out and droop.
-      const fronds: Array<[number, number]> = [
-        [-1, -0.4],
-        [1, -0.45],
-        [-1, 0.25],
-        [1, 0.2],
-        [-0.25, -1],
-        [0.45, -0.9],
-      ];
-      for (const [fx, fy] of fronds) {
-        for (let s = 0; s < 15; s++) {
-          const t = s / 15;
-          const x = topX + fx * s * 1.05;
-          const y = topY + fy * s * 0.8 + t * t * 9;
-          const width = s < 3 ? 1 : s < 11 ? 2 : 1;
-          for (let k = -width; k <= width; k++) {
-            const c = k < 0 ? E.green3 : k === 0 ? E.green2 : E.green1;
-            b.set(Math.round(x), Math.round(y + k), c);
-          }
-        }
-      }
-      b.ellipse(topX - 1, topY + 2, 2, 2, E.bark1);
-      b.ellipse(topX + 2, topY + 3, 2, 2, E.bark2);
-      b.set(Math.round(topX) - 2, topY + 1, E.bark3);
-    },
-    { a: 0.3 },
-  );
 }
 
 export function bush(seed: number, berries: Rgb | null = null): Sprite {
@@ -452,37 +287,6 @@ export function rock(seed: number, size: 1 | 2 | 3 = 2, mossy = false): Sprite {
       }
     },
     { a: 0.3 },
-  );
-}
-
-export function stump(): Sprite {
-  return make(14, 12, 7, 10, (b) => {
-    b.rect(2, 4, 10, 6, E.bark2);
-    b.rect(2, 4, 2, 6, E.bark3);
-    b.rect(10, 4, 2, 6, E.bark1);
-    b.ellipse(7, 4, 5, 2.5, E.sand);
-    b.ellipse(7, 4, 3, 1.5, E.tan);
-    b.set(7, 4, E.bark3);
-    b.set(1, 9, E.bark2);
-    b.set(12, 9, E.bark1);
-  });
-}
-
-export function logSeat(): Sprite {
-  return make(
-    20,
-    10,
-    10,
-    8,
-    (b) => {
-      b.rect(3, 2, 14, 6, E.bark2);
-      b.rect(3, 2, 14, 2, E.bark3);
-      b.rect(3, 7, 14, 1, E.bark1);
-      for (let x = 5; x < 16; x += 4) b.set(x, 4, E.bark1);
-      b.ellipse(3, 5, 2, 3, E.sand);
-      b.set(3, 5, E.bark3);
-    },
-    { a: 0.25 },
   );
 }
 
@@ -718,129 +522,6 @@ export function shed(width: number, roof: RoofStyle = "shingle"): Sprite {
   );
 }
 
-export function lighthouse(): Sprite {
-  const w = 30;
-  const h = 70;
-  return make(
-    w,
-    h,
-    15,
-    66,
-    (b) => {
-      // A tapering tower with red and white bands.
-      for (let y = 22; y < 66; y++) {
-        const t = (y - 22) / 44;
-        const half = 5 + t * 3.5;
-        for (let x = Math.round(15 - half); x <= Math.round(15 + half); x++) {
-          const band = Math.floor((y - 22) / 8) % 2 === 0;
-          let c: Rgb = band ? E.white : E.red;
-          const nx = (x - 15) / half;
-          if (nx < -0.55) c = band ? E.white : E.coral;
-          else if (nx > 0.45) c = band ? E.mist : E.crimson;
-          b.set(x, y, c);
-        }
-      }
-      b.rect(12, 58, 6, 8, E.bark1);
-      b.rect(13, 59, 4, 7, E.bark2);
-      b.rect(13, 40, 3, 4, E.blue1);
-      // Gallery, lamp room, glow and cap.
-      b.rect(7, 20, 16, 3, E.slate1);
-      b.rect(7, 20, 16, 1, E.steel0);
-      b.rect(10, 10, 10, 10, E.slate1);
-      b.rect(11, 11, 8, 9, E.ice);
-      b.rect(13, 13, 4, 5, E.yellow);
-      b.rect(14, 14, 2, 3, E.white);
-      b.rect(11, 11, 1, 9, E.slate1);
-      b.rect(18, 11, 1, 9, E.slate1);
-      for (let y = 3; y < 10; y++) {
-        const half = (y - 2) * 1.0 + 1;
-        b.rect(15 - half, y, half * 2, 1, y < 5 ? E.coral : E.red);
-      }
-      b.set(15, 2, E.slate1);
-      b.set(15, 1, E.slate1);
-    },
-    { a: 0.3 },
-  );
-}
-
-export function observatory(): Sprite {
-  const w = 44;
-  const h = 46;
-  return make(
-    w,
-    h,
-    22,
-    44,
-    (b) => {
-      // A round stone tower under a dome, a telescope peeking out of its slit.
-      for (let y = 22; y < 44; y++) {
-        for (let x = 6; x < 38; x++) {
-          const nx = (x - 22) / 16;
-          let c = wallColor("stone", x, y, w, 9);
-          if (nx < -0.7) c = mix(c, E.white, 0.15);
-          if (nx > 0.6) c = darken(c, 0.3);
-          b.set(x, y, c);
-        }
-      }
-      b.rect(18, 30, 8, 14, E.bark1);
-      b.rect(19, 31, 6, 13, E.bark2);
-      b.set(23, 38, E.gold);
-      for (let y = 4; y < 23; y++) {
-        for (let x = 4; x < 40; x++) {
-          const nx = (x + 0.5 - 22) / 18;
-          const ny = (y + 0.5 - 23) / 19;
-          if (nx * nx + ny * ny > 1) continue;
-          const shade = lit(nx, ny);
-          const c =
-            shade > 0.45 ? E.white : shade > 0 ? E.mist : shade > -0.4 ? E.steel1 : E.steel0;
-          b.set(x, y, c);
-        }
-      }
-      b.rect(19, 6, 6, 17, E.slate0);
-      b.rect(20, 7, 4, 16, E.dusk);
-      for (let i = 0; i < 14; i++) {
-        b.set(24 + i, 13 - Math.floor(i * 0.55), E.ochre);
-        b.set(24 + i, 14 - Math.floor(i * 0.55), E.amber);
-        b.set(24 + i, 15 - Math.floor(i * 0.55), E.bark3);
-      }
-      b.rect(37, 4, 3, 4, E.gold);
-      b.rect(4, 21, 36, 2, E.slate1);
-    },
-    { a: 0.3 },
-  );
-}
-
-export function fountain(): Sprite {
-  const w = 40;
-  const h = 32;
-  return make(
-    w,
-    h,
-    20,
-    29,
-    (b) => {
-      b.ellipse(20, 21, 18, 8, E.steel0);
-      b.ellipse(20, 20, 18, 7.5, E.mist);
-      b.ellipse(20, 20, 15, 5.5, E.blue2);
-      b.ellipse(19, 19, 11, 3.5, E.sky);
-      b.rect(2, 21, 36, 6, E.steel1);
-      b.rect(2, 21, 36, 1, E.mist);
-      b.rect(30, 21, 8, 6, E.steel0);
-      b.rect(17, 7, 6, 14, E.steel1);
-      b.rect(17, 7, 2, 14, E.mist);
-      b.rect(21, 7, 2, 14, E.steel0);
-      b.ellipse(20, 7, 7, 2.5, E.mist);
-      b.ellipse(20, 7, 5, 1.5, E.blue2);
-      for (let i = 0; i < 9; i++) {
-        b.set(13 + i * 2, 2 + Math.abs(4 - i), E.ice);
-        b.set(14 + i * 2, 3 + Math.abs(4 - i), E.white);
-      }
-      b.rect(19, 0, 2, 5, E.ice);
-    },
-    { a: 0.25 },
-  );
-}
-
 export function well(): Sprite {
   return make(
     26,
@@ -870,31 +551,6 @@ export function well(): Sprite {
       b.rect(3, 25, 20, 1, E.slate1);
     },
     { a: 0.3 },
-  );
-}
-
-export function boat(): Sprite {
-  return make(
-    36,
-    18,
-    18,
-    14,
-    (b) => {
-      for (let y = 3; y < 14; y++) {
-        const t = (y - 3) / 11;
-        const half = 15 - Math.abs(t - 0.4) * 14;
-        for (let x = Math.round(18 - half); x <= Math.round(18 + half); x++) {
-          const edge = x <= Math.round(18 - half) + 1 || x >= Math.round(18 + half) - 1 || y <= 4;
-          b.set(x, y, edge ? E.bark2 : y > 11 ? E.bark1 : E.bark3);
-        }
-      }
-      b.rect(10, 6, 2, 6, E.tan);
-      b.rect(24, 6, 2, 6, E.tan);
-      b.rect(4, 8, 28, 1, E.bark1);
-      b.rect(15, 2, 1, 10, E.bark1);
-      b.rect(13, 1, 5, 2, E.mist);
-    },
-    { a: 0.25 },
   );
 }
 
@@ -993,75 +649,6 @@ export function forge(): Sprite {
   );
 }
 
-export function anvil(): Sprite {
-  return make(
-    18,
-    14,
-    9,
-    12,
-    (b) => {
-      b.rect(5, 7, 8, 5, E.bark2);
-      b.rect(5, 7, 2, 5, E.bark3);
-      b.ellipse(9, 7, 4, 1.5, E.sand);
-      b.rect(3, 2, 13, 3, E.slate1);
-      b.rect(3, 2, 13, 1, E.steel0);
-      b.rect(1, 2, 2, 2, E.slate1);
-      b.rect(7, 5, 5, 2, E.slate0);
-      b.set(5, 2, E.steel1);
-      b.set(9, 2, E.steel1);
-    },
-    { a: 0.3 },
-  );
-}
-
-export function mapTable(): Sprite {
-  return make(
-    28,
-    18,
-    14,
-    16,
-    (b) => {
-      b.rect(1, 3, 26, 8, E.bark3);
-      b.rect(1, 3, 26, 1, E.tan);
-      b.rect(1, 11, 26, 2, E.bark2);
-      b.rect(3, 13, 2, 3, E.bark1);
-      b.rect(23, 13, 2, 3, E.bark1);
-      // The map: parchment, a coast, a dotted route and an X.
-      b.rect(4, 2, 18, 8, E.cream);
-      b.rect(4, 9, 18, 1, E.sand);
-      b.rect(5, 3, 6, 4, E.sky);
-      b.rect(5, 6, 3, 2, E.sky);
-      b.rect(10, 4, 4, 3, E.green3);
-      for (let x = 12; x < 19; x += 2) b.set(x, 7, E.bark2);
-      b.set(19, 5, E.red);
-      b.set(20, 6, E.red);
-      b.set(20, 5, E.red);
-      b.set(19, 6, E.red);
-      b.rect(22, 4, 3, 5, E.sand);
-      b.rect(22, 4, 3, 1, E.tan);
-    },
-    { a: 0.3 },
-  );
-}
-
-export function telescope(): Sprite {
-  return make(18, 22, 9, 20, (b) => {
-    for (let i = 0; i < 9; i++) {
-      b.set(9 - Math.floor(i / 2), 11 + i, E.bark2);
-      b.set(9 + Math.floor(i / 2), 11 + i, E.bark1);
-      b.set(9, 11 + i, E.bark2);
-    }
-    for (let i = 0; i < 11; i++) {
-      const y = 11 - Math.floor(i * 0.7);
-      b.set(4 + i, y, E.amber);
-      b.set(4 + i, y - 1, E.gold);
-      b.set(4 + i, y + 1, E.ochre);
-    }
-    b.rect(14, 2, 3, 4, E.slate1);
-    b.set(15, 3, E.sky);
-  });
-}
-
 export function computer(): Sprite {
   return make(
     30,
@@ -1089,35 +676,6 @@ export function computer(): Sprite {
       b.ellipse(25, 6, 4, 3, E.mist);
       b.ellipse(25.5, 6.5, 2.5, 1.8, E.steel1);
       b.set(25, 2, E.red);
-    },
-    { a: 0.3 },
-  );
-}
-
-export function noticeBoard(seed: number): Sprite {
-  return make(
-    28,
-    28,
-    14,
-    26,
-    (b) => {
-      b.rect(3, 6, 2, 20, E.bark2);
-      b.rect(23, 6, 2, 20, E.bark1);
-      b.rect(1, 2, 26, 3, E.bark1);
-      b.rect(1, 2, 26, 1, E.bark2);
-      b.rect(2, 5, 24, 15, E.bark2);
-      b.rect(3, 6, 22, 13, E.bark3);
-      const rnd = stream(seed);
-      const papers = [E.cream, E.pink, E.yellow, E.ice, E.cream];
-      for (let i = 0; i < 5; i++) {
-        const x = 4 + Math.floor(rnd() * 15);
-        const y = 7 + Math.floor(rnd() * 6);
-        const color = papers[i] ?? E.cream;
-        b.rect(x, y, 5, 5, color);
-        b.rect(x + 1, y + 2, 3, 1, E.steel1);
-        b.rect(x + 1, y + 3, 2, 1, E.steel1);
-        b.set(x + 2, y, E.red);
-      }
     },
     { a: 0.3 },
   );
@@ -1203,60 +761,6 @@ export function fence(posts: number): Sprite {
   );
 }
 
-export function lampPost(): Sprite {
-  return make(
-    12,
-    30,
-    6,
-    28,
-    (b) => {
-      b.rect(5, 9, 2, 19, E.slate1);
-      b.rect(5, 9, 1, 19, E.steel0);
-      b.rect(3, 26, 6, 2, E.slate1);
-      b.rect(3, 3, 6, 7, E.slate1);
-      b.rect(4, 4, 4, 5, E.gold);
-      b.rect(5, 5, 2, 3, E.yellow);
-      b.rect(2, 2, 8, 2, E.slate0);
-      b.set(6, 1, E.slate0);
-    },
-    { a: 0.25 },
-  );
-}
-
-export function signpost(): Sprite {
-  return make(18, 22, 8, 20, (b) => {
-    b.rect(7, 4, 2, 16, E.bark2);
-    b.rect(2, 4, 13, 4, E.tan);
-    b.rect(2, 7, 13, 1, E.bark2);
-    b.set(15, 5, E.tan);
-    b.set(15, 6, E.tan);
-    b.rect(3, 10, 12, 4, E.tan);
-    b.rect(3, 13, 12, 1, E.bark2);
-    b.set(2, 11, E.tan);
-    b.set(2, 12, E.tan);
-    b.rect(4, 5, 7, 1, E.bark2);
-    b.rect(6, 11, 6, 1, E.bark2);
-  });
-}
-
-export function hayBale(): Sprite {
-  return make(
-    18,
-    14,
-    9,
-    12,
-    (b) => {
-      b.rect(1, 2, 16, 10, E.gold);
-      b.rect(1, 2, 16, 3, E.yellow);
-      b.rect(1, 9, 16, 3, E.ochre);
-      for (let x = 2; x < 17; x += 3) b.set(x, 6, E.ochre);
-      b.rect(5, 2, 1, 10, E.bark3);
-      b.rect(12, 2, 1, 10, E.bark3);
-    },
-    { a: 0.3 },
-  );
-}
-
 export function crate(): Sprite {
   return make(
     14,
@@ -1271,25 +775,6 @@ export function crate(): Sprite {
       b.rect(1, 11, 12, 1, E.bark3);
       b.rect(1, 6, 12, 1, E.bark3);
       for (let i = 0; i < 10; i++) b.set(2 + i, 1 + Math.floor(i * 1.0), E.bark3);
-    },
-    { a: 0.3 },
-  );
-}
-
-export function barrel(): Sprite {
-  return make(
-    14,
-    16,
-    7,
-    14,
-    (b) => {
-      b.rect(2, 2, 10, 12, E.bark2);
-      b.rect(3, 2, 3, 12, E.bark3);
-      b.rect(10, 2, 2, 12, E.bark1);
-      b.rect(2, 4, 10, 1, E.steel0);
-      b.rect(2, 11, 10, 1, E.steel0);
-      b.ellipse(7, 2, 5, 1.6, E.bark3);
-      b.ellipse(7, 2, 3, 0.8, E.bark1);
     },
     { a: 0.3 },
   );
@@ -1331,29 +816,6 @@ export function crops(kind: "cabbage" | "carrot" | "wheat" | "berry", seed: numb
     },
     { a: 0.25 },
   );
-}
-
-export function pumpkin(): Sprite {
-  return make(14, 12, 7, 10, (b) => {
-    b.ellipse(7, 7, 6, 4, E.orange);
-    b.ellipse(5, 6, 2, 3, E.amber);
-    b.rect(7, 4, 1, 6, E.rust);
-    b.rect(10, 4, 1, 6, E.rust);
-    b.rect(6, 1, 2, 3, E.green1);
-  });
-}
-
-export function reeds(seed: number): Sprite {
-  return make(12, 16, 6, 14, (b) => {
-    const rnd = stream(seed);
-    for (let i = 0; i < 3; i++) {
-      const x = 2 + i * 3 + Math.floor(rnd() * 2);
-      const top = 2 + Math.floor(rnd() * 4);
-      b.rect(x, top + 3, 1, 14 - top - 3, E.green1);
-      b.rect(x, top, 1, 3, E.bark2);
-      b.set(x + 1, top + 6, E.green3);
-    }
-  });
 }
 
 export function lilyPad(flower: boolean): Sprite {
@@ -1426,28 +888,6 @@ export function desk(): Sprite {
   );
 }
 
-export function serverRack(seed: number): Sprite {
-  return make(
-    16,
-    30,
-    8,
-    28,
-    (b) => {
-      b.rect(1, 1, 14, 27, E.slate0);
-      b.rect(1, 1, 14, 1, E.steel0);
-      b.rect(1, 1, 1, 27, E.slate1);
-      const rnd = stream(seed);
-      for (let y = 3; y < 26; y += 3) {
-        b.rect(3, y, 10, 2, E.dusk);
-        b.set(4, y, rnd() > 0.4 ? E.green3 : E.amber);
-        b.set(6, y, rnd() > 0.6 ? E.sky : E.dusk);
-        b.rect(9, y + 1, 3, 1, E.slate1);
-      }
-    },
-    { a: 0.3 },
-  );
-}
-
 export function whiteboard(): Sprite {
   return make(
     30,
@@ -1470,69 +910,6 @@ export function whiteboard(): Sprite {
       b.rect(2, 17, 26, 2, E.steel0);
       b.rect(6, 17, 3, 1, E.red);
       b.rect(10, 17, 3, 1, E.blue1);
-    },
-    { a: 0.3 },
-  );
-}
-
-export function sofa(): Sprite {
-  return make(
-    38,
-    20,
-    19,
-    18,
-    (b) => {
-      b.rect(3, 2, 32, 8, E.plum);
-      b.rect(3, 2, 32, 2, E.violet);
-      b.rect(1, 6, 36, 10, E.violet);
-      b.rect(1, 6, 5, 10, E.plum);
-      b.rect(32, 6, 5, 10, E.wine);
-      b.rect(6, 7, 13, 6, E.orchid);
-      b.rect(19, 7, 13, 6, E.orchid);
-      b.rect(19, 7, 1, 6, E.violet);
-      b.rect(1, 15, 36, 1, E.wine);
-      b.rect(3, 16, 2, 2, E.bark1);
-      b.rect(33, 16, 2, 2, E.bark1);
-    },
-    { a: 0.3 },
-  );
-}
-
-export function plantPot(seed: number): Sprite {
-  return make(
-    16,
-    22,
-    8,
-    20,
-    (b) => {
-      clump(b, 8, 7, 5, LEAVES, seed);
-      clump(b, 5, 9, 3.5, LEAVES, seed + 1);
-      clump(b, 11, 9, 3.5, LEAVES, seed + 2);
-      b.rect(4, 13, 8, 7, E.rust);
-      b.rect(3, 13, 10, 2, E.orange);
-      b.rect(10, 15, 2, 5, E.brick);
-    },
-    { a: 0.3 },
-  );
-}
-
-export function coffeeBar(): Sprite {
-  return make(
-    26,
-    22,
-    13,
-    20,
-    (b) => {
-      b.rect(1, 10, 24, 10, E.bark2);
-      b.rect(1, 10, 24, 2, E.bark3);
-      b.rect(1, 10, 24, 1, E.tan);
-      b.rect(4, 2, 8, 9, E.slate1);
-      b.rect(5, 3, 6, 3, E.steel0);
-      b.set(7, 4, E.red);
-      b.rect(6, 7, 3, 2, E.cream);
-      b.rect(15, 7, 3, 3, E.white);
-      b.rect(19, 7, 3, 3, E.rose);
-      b.rect(14, 12, 9, 6, E.bark1);
     },
     { a: 0.3 },
   );
@@ -1565,21 +942,3 @@ export interface Icon {
   readonly rows: readonly string[];
   readonly palette: Readonly<Record<string, Rgb>>;
 }
-
-const ICON_PALETTE: Readonly<Record<string, Rgb>> = {
-  o: E.bark1,
-  r: E.crimson,
-  b: E.blue1,
-  w: E.cream,
-  g: E.steel0,
-  y: E.gold,
-  s: E.slate1,
-};
-
-export const ICONS = {
-  book: { rows: ["rrr.bbb", "rwr.bwb", "rwr.bwb", "rrrobbb"], palette: ICON_PALETTE },
-  hammer: { rows: ["ggggg..", "ggggg..", "..o....", "..o....", "..o...."], palette: ICON_PALETTE },
-  letter: { rows: ["wwwwwww", "wrw.wrw", "ww.r.ww", "wwwwwww"], palette: ICON_PALETTE },
-  star: { rows: ["...y...", "..yyy..", "yyyyyyy", ".yy.yy.", "y.....y"], palette: ICON_PALETTE },
-  gear: { rows: [".s.s.", "sssss", "ss.ss", "sssss", ".s.s."], palette: ICON_PALETTE },
-} as const satisfies Record<string, Icon>;

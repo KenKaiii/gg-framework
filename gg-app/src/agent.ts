@@ -1610,16 +1610,6 @@ export async function prewarmCache(): Promise<void> {
   }
 }
 
-/** Cycle the reasoning/thinking level to the next supported value (or off). */
-export async function cycleThinking(): Promise<ThinkingState | null> {
-  try {
-    return await invoke<ThinkingState>("agent_cycle_thinking");
-  } catch (e) {
-    await logError(`agent_cycle_thinking failed: ${String(e)}`);
-    return null;
-  }
-}
-
 /**
  * Set the reasoning level directly (null turns thinking off). Throws with the
  * sidecar's message when the run is busy or the model doesn't support it.
@@ -1767,37 +1757,6 @@ export async function getSettings(): Promise<AppSettings | null> {
  */
 export async function saveSettings(projectsRoot: string): Promise<void> {
   await invoke("app_settings_save", { projectsRoot });
-}
-
-export interface InstalledPlugin {
-  schemaVersion: 1;
-  id: string;
-  name: string;
-  version: string;
-  entry: string;
-  description?: string;
-  commands?: string[];
-  installPath: string;
-}
-
-export async function listPlugins(): Promise<InstalledPlugin[]> {
-  await waitForReady();
-  const result = await invoke<{ plugins: InstalledPlugin[] }>("agent_plugins");
-  return result.plugins;
-}
-
-export async function installPluginBundle(
-  bundlePath: string,
-): Promise<{ plugin: InstalledPlugin; restartRequired: boolean }> {
-  await waitForReady();
-  return invoke("agent_install_plugin", { bundlePath });
-}
-
-export async function removePluginBundle(
-  pluginId: string,
-): Promise<{ removed: string; restartRequired: boolean }> {
-  await waitForReady();
-  return invoke("agent_remove_plugin", { pluginId });
 }
 
 export interface PermissionsStatus {

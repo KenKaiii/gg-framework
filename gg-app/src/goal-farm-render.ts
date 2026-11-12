@@ -63,11 +63,6 @@ const KOI_HEX = Object.fromEntries(
   Object.entries(KOI_COLORS).map(([k, c]) => [k, `#${c.toString(16).padStart(6, "0")}`]),
 ) as Record<keyof typeof KOI_COLORS, string>;
 
-/** Compose the farm's static map into an offscreen canvas, once per size. */
-export function paintFarm(farm: Farm): HTMLCanvasElement {
-  return canvasOf(composeMap(farm.scene));
-}
-
 /** Things that sway when poked (see stir in playItems). */
 const SWAYS: ReadonlySet<string> = new Set(["tree", "sakura", "camellia", "yuzu", "bush"]);
 

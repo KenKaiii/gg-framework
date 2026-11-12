@@ -331,11 +331,6 @@ export function cooldownFailureHint(output: string, days: number): string | null
   return null;
 }
 
-/** Test hook. */
-export function clearManagerVersionCache(): void {
-  versionCache.clear();
-}
-
 /** Cooldown env for an MCP stdio launch (`npx …`/`uvx …`); {} for anything else. */
 export async function launchCooldownEnv(
   command: string,

@@ -1,9 +1,6 @@
 export const MAX_LINES = 2000;
 export const MAX_BYTES = 50 * 1024; // 50KB
 
-/** @deprecated Use MAX_BYTES instead. Kept for backwards compatibility with tests. */
-export const MAX_CHARS = MAX_BYTES;
-
 export interface TruncateResult {
   content: string;
   truncated: boolean;

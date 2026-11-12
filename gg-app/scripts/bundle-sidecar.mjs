@@ -48,9 +48,6 @@ const EXTERNAL = [
   "turndown",
   "turndown-plugin-gfm",
   "@mozilla/readability",
-  // The Codex transport loads this package's zstd.wasm by path at runtime.
-  // Keep the package external so the WASM asset survives the sidecar bundle.
-  "@bokuweb/zstd-wasm",
   // LSP servers run as child processes from their real package entry points.
   // The server resolver also needs a physical tsserver.js path. Neither package
   // is imported by the sidecar, so esbuild would otherwise omit both and every

@@ -34,12 +34,3 @@ it("authorizes the real lazy beam styles using the current window nonce", async 
   rerender(<WorkingBeam active size="sm" />);
   expect(container.querySelector("style")?.nonce).toBe(nonceStyle.nonce);
 });
-
-it("authorizes metal's import-time stylesheet before it enters the document", async () => {
-  await import("metal-fx");
-  const styles = [...document.head.querySelectorAll("style")].filter((style) =>
-    style.textContent?.includes(".metal-fx-root"),
-  );
-  expect(styles.length).toBeGreaterThan(0);
-  for (const style of styles) expect(style.nonce).toBe(nonceStyle.nonce);
-});

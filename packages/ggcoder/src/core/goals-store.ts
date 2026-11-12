@@ -112,12 +112,6 @@ export function isGoalDir(root: string, dir: string): boolean {
   );
 }
 
-/** True when `target` is `root` or anything beneath it. */
-export function isInsideGoalsRoot(root: string, target: string): boolean {
-  const relative = path.relative(path.resolve(root), path.resolve(target));
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
 /** Read and validate one goal folder's record; null when absent or invalid. */
 export async function readGoal(dir: string): Promise<GoalRecord | null> {
   let raw: string;

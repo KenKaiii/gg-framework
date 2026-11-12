@@ -1,11 +1,6 @@
 import type http from "node:http";
 import path from "node:path";
 import { sessionToMarkdown, defaultExportFilename } from "../core/session-export.js";
-import {
-  installPlugin,
-  listInstalledPlugins,
-  removePlugin,
-} from "../core/extensions/plugin-bundles.js";
 import { discoverProjects } from "../core/project-discovery.js";
 import { goalsRoot } from "../core/goals-store.js";
 import { listSidecarSessions } from "../app-sidecar-sessions.js";
@@ -23,43 +18,6 @@ export function handleWorkspaceRoutes(
   url: string,
   method: string,
 ): boolean {
-  if (method === "GET" && url === "/plugins") {
-    void listInstalledPlugins(ctx.paths.extensionsDir)
-      .then((plugins) => json(res, 200, { plugins }))
-      .catch((error) => {
-        json(res, 500, { error: error instanceof Error ? error.message : String(error) });
-      });
-    return true;
-  }
-
-  if (method === "POST" && url === "/plugins/install") {
-    void readBody(req, res).then(async (raw) => {
-      if (raw === null) return;
-      try {
-        const bundlePath = (JSON.parse(raw) as { bundlePath?: unknown }).bundlePath;
-        if (typeof bundlePath !== "string" || !path.isAbsolute(bundlePath)) {
-          json(res, 400, { error: "bundlePath must be an absolute path" });
-          return;
-        }
-        const plugin = await installPlugin(bundlePath, ctx.paths.extensionsDir);
-        json(res, 200, { plugin, restartRequired: true });
-      } catch (error) {
-        json(res, 400, { error: error instanceof Error ? error.message : String(error) });
-      }
-    });
-    return true;
-  }
-
-  if (method === "DELETE" && url.startsWith("/plugins/")) {
-    const pluginId = decodeURIComponent(url.slice("/plugins/".length));
-    void removePlugin(pluginId, ctx.paths.extensionsDir)
-      .then(() => json(res, 200, { removed: pluginId, restartRequired: true }))
-      .catch((error) => {
-        json(res, 400, { error: error instanceof Error ? error.message : String(error) });
-      });
-    return true;
-  }
-
   // Dismiss a project from the picker (or restore it with hidden:false). The
   // path is kept rather than the row: sessions in scratch dirs keep
   // re-surfacing, so the user's decision has to outlive any one scan.
