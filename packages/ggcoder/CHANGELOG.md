@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.100.0
+
+### Minor Changes
+
+- 4175416: Add a light `@kenkaiiii/ggcoder/web` entry point (web_search, web_fetch and the side search, with no UI code) and an optional `guardUrl` hook on `createWebFetchTool` that checks the first URL and every redirect hop.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.100.0
+- @kenkaiiii/gg-agent@5.100.0
+- @kenkaiiii/gg-core@5.100.0
+
 ## 5.99.0
 
 ### Minor Changes
