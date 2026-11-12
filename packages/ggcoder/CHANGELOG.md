@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.98.2
+
+### Patch Changes
+
+- Fix "Continue with ChatGPT" sign-in failing with `invalid_grant`: when OpenAI refuses the one-time code after a first registration, sign-in now retries once with the app ID it just issued, reports refusals as a typed `ChatGPTSignInError`, and frees the callback port immediately when cancelled. Also removes dead code and the unused `@bokuweb/zstd-wasm` dependency.
+  - @kenkaiiii/gg-ai@5.98.2
+  - @kenkaiiii/gg-agent@5.98.2
+  - @kenkaiiii/gg-core@5.98.2
+
 ## 5.98.1
 
 ### Patch Changes
