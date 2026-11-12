@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.110.2",
+    date: "2026-11-12",
+    items: [
+      "`Continue with ChatGPT` now signs you in on the first go. If OpenAI turns down the very first sign-in code, I quietly retry once the way OpenAI recommends, so you land straight in your chat instead of on an `invalid_grant` error. Cancelling now frees things up instantly, so you can try again right away.",
+      "I gave GG Coder a deep spring clean. Nearly `3,000` lines of old code and two unused libraries are gone, so the app you download is leaner and there's less that can ever go wrong.",
+    ],
+  },
+  {
     version: "0.110.1",
     date: "2026-11-11",
     items: [
