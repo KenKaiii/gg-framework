@@ -53,7 +53,7 @@ export function pinSize(el: HTMLElement | null): void {
 /**
  * List-level enter/exit presence: the rendered list lags the live one so a
  * removed item can play its exit animation before it unmounts (the same idea
- * QueuedBar and Toaster use, generalised to a keyed list). Items are dropped
+ * Toaster uses, generalised to a keyed list). Items are dropped
  * `exitMs` after they leave — keep that in step with the CSS exit duration.
  *
  * Changing `flush` drops every leaving item in that same render, with no exit.

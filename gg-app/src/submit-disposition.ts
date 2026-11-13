@@ -42,25 +42,3 @@ export function showsQueuedBubble(
 ): boolean {
   return disposition === "queue" && !supersedesQuestion;
 }
-
-/**
- * Hide the same message from the queued strip above the composer.
- *
- * Same reason as the bubble, but the cost is worse: the strip is a SIBLING of
- * the transcript, so opening it (260ms) steals height from the thread and
- * closing it (220ms) gives it back. A message that supersedes a question is
- * consumed almost immediately, so the strip played open-then-shut in about half
- * a second and shoved the whole transcript up and back down with it.
- *
- * Matched by text and only ONE copy dropped: the sidecar assigns queue ids the
- * webview never sees, and messages the user genuinely queued — including an
- * identical repeat — must still be listed and cancellable.
- */
-export function withoutSupersedingMessage<T extends { text: string }>(
-  messages: readonly T[],
-  supersedingText: string | null,
-): readonly T[] {
-  if (supersedingText === null) return messages;
-  const index = messages.findIndex((m) => m.text === supersedingText);
-  return index === -1 ? messages : [...messages.slice(0, index), ...messages.slice(index + 1)];
-}

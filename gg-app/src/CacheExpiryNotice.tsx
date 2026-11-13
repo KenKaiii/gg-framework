@@ -16,7 +16,7 @@ import { pinSize, usePresenceList } from "./usePresenceList";
  * cache) and a later lapse show the notice again — but a re-render, a /state
  * poll, or a remount for the same lapse does not.
  *
- * Reuses QueuedBar's `.queued-bar*` classes so both strips share one look and
+ * Uses the `.queued-bar*` strip classes so both strips share one look and
  * one motion: it grows open when shown and folds shut when hidden (dismiss,
  * compact, or a run starting), held mounted for EXIT_MS so the exit can play.
  * Sending a message hides it at once instead: the send is the choice the

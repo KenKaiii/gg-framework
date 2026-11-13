@@ -96,7 +96,6 @@ const normalizeCurve = (value) => value.replace(/\s+/g, "");
 const MIRRORS = [
   ["AttachmentBar.tsx", "EXIT_MS", "--dur-strip-out", "equal"],
   ["ReferencedFiles.tsx", "EXIT_MS", "--dur-strip-out", "equal"],
-  ["QueuedBar.tsx", "EXIT_MS", "--dur-strip-out", "equal"],
   ["CacheExpiryNotice.tsx", "EXIT_MS", "--dur-strip-out", "equal"],
   ["Toaster.tsx", "EXIT_MS", "--dur-toast-out", "equal"],
   ["TooltipLayer.tsx", "EXIT_MS", "--dur-exit", "equal"],

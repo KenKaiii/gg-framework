@@ -27,8 +27,8 @@ A Code-mode window is one session on one project folder. You type in the compose
 ## Sending while GG is busy
 
 - You can keep typing during a run. Enter queues the message instead of interrupting.
-- A queued message goes to GG at the next turn boundary, not after the whole run ends. The strip above the input says **queued for the next turn**.
-- To cancel one queued message, click its x (**Cancel this queued message**). If several are queued, the strip shows how many. Open it with **cancel…** and cancel them one by one. A message that is already being delivered can't be cancelled.
+- A queued message goes to GG at the next turn boundary, not after the whole run ends. It shows in the chat dimmed, with a **queued** label above it.
+- To cancel a queued message, click the x next to its label (**Cancel this queued message**). Each queued message has its own x. A message that is already being delivered can't be cancelled.
 
 ## Stopping a run
 

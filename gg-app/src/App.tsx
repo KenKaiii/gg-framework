@@ -149,11 +149,7 @@ import { BackButton } from "./BackButton";
 import { HomeScreen } from "./HomeScreen";
 import { SettingsModal } from "./SettingsModal";
 import { initialEntryView, type EntryView } from "./app-entry-view";
-import {
-  showsQueuedBubble,
-  submitDisposition,
-  withoutSupersedingMessage,
-} from "./submit-disposition";
+import { showsQueuedBubble, submitDisposition } from "./submit-disposition";
 import { Toaster } from "./Toaster";
 import { Confetti } from "./Confetti";
 import { ScorecardPanel } from "./Scorecard";
@@ -204,6 +200,7 @@ import { usePromptEnhance } from "./usePromptEnhance";
 import { shellCommandFromInput, shellItemFromHistory, useShellRuns } from "./useShellRuns";
 import { filterShellSuggestions, shellEnterPicks } from "./shell-menu";
 import "./App.css";
+import { queueIdsForBubbles } from "./queued-bubble";
 import "./Deck.css";
 import "./Trophies.css";
 
@@ -1640,11 +1637,6 @@ function App(): React.ReactElement {
     });
   }
 
-  /** Ordered queue events own both pending rows and cancelled transcript bubbles. */
-  function handleCancelQueued(id: string): void {
-    void cancelQueued(id);
-  }
-
   function pickSlashCommand(cmd: SlashCommand): void {
     // Fill the input with the command; the user can add args or press Enter.
     const next = `/${cmd.name} `;
@@ -1780,11 +1772,9 @@ function App(): React.ReactElement {
     markShellShared();
     // A send that supersedes an open question is consumed the moment it lands
     // (the sidecar releases the parked call), so it must not wear the queued
-    // look for the one frame before that, nor open the queued strip below the
-    // transcript — see showsQueuedBubble / withoutSupersedingMessage.
+    // look for the one frame before that — see showsQueuedBubble.
     const supersedesQuestion = hasOpenAsk();
     const queued = showsQueuedBubble(disposition, supersedesQuestion);
-    if (disposition === "queue" && supersedesQuestion) noteSupersedingSend(trimmed);
     dismissOpenAsks();
     // A user send always re-pins to the bottom — they want to see their message.
     stickToBottomRef.current = true;
@@ -1880,39 +1870,14 @@ function App(): React.ReactElement {
     typingAskRef.current = null;
   }, [setItems]);
 
-  // Text of the prompt that superseded a question and is now briefly sitting in
-  // the sidecar's steering queue. Kept out of the queued strip until the agent
-  // consumes it — see withoutSupersedingMessage.
-  const supersedingTextRef = useRef<string | null>(null);
-  const [supersedingText, setSupersedingText] = useState<string | null>(null);
-  const supersedeClearRef = useRef<number | null>(null);
-  const noteSupersedingSend = useCallback((text: string) => {
-    supersedingTextRef.current = text;
-    setSupersedingText(text);
-    // Safety net: if the message never shows up in a queue broadcast at all
-    // (the run ended between typing and sending, so it started a fresh turn),
-    // nothing would ever clear the filter and a later identical message would
-    // be missing from the strip.
-    if (supersedeClearRef.current !== null) window.clearTimeout(supersedeClearRef.current);
-    supersedeClearRef.current = window.setTimeout(() => {
-      supersedingTextRef.current = null;
-      setSupersedingText(null);
-    }, 5000);
-  }, []);
-  useEffect(() => {
-    const text = supersedingTextRef.current;
-    if (text === null) return;
-    // Gone from the queue: the agent took it, so stop filtering — otherwise a
-    // later identical message would be hidden from the strip forever.
-    if (!queuedMessages.some((m) => m.text === text)) {
-      supersedingTextRef.current = null;
-      setSupersedingText(null);
-    }
-  }, [queuedMessages]);
-  const visibleQueuedMessages = useMemo(
-    () => withoutSupersedingMessage(queuedMessages, supersedingText),
-    [queuedMessages, supersedingText],
+  // Which sidecar queue entry each queued bubble is, so the bubble can cancel it.
+  const queuedBubbleIds = useMemo(
+    () => queueIdsForBubbles(items, queuedMessages),
+    [items, queuedMessages],
   );
+  // Stable, so passing it doesn't defeat the transcript rows' memo. Queue events
+  // own the outcome: a confirmed cancel removes the bubble (useAgentEvents).
+  const cancelQueuedMessage = useCallback((id: string) => void cancelQueued(id), []);
   // Sub-agent groups for the critter floor. Recomputed with `items`, but the
   // floor compares group identities and ignores token-only re-renders.
   const critterGroups = useMemo(
@@ -2419,9 +2384,8 @@ function App(): React.ReactElement {
     recordHistory(trimmed);
     markShellShared();
     // Read BEFORE the dismissal clears the band: a prompt that supersedes a
-    // question is consumed as soon as it lands, so it must neither flash the
-    // queued look on the way in nor open the queued strip below the transcript
-    // (see showsQueuedBubble / withoutSupersedingMessage).
+    // question is consumed as soon as it lands, so it must not flash the
+    // queued look on the way in (see showsQueuedBubble).
     const supersedesQuestion = hasOpenAsk();
     dismissOpenAsks();
     // A user send always re-pins to the bottom — they want to see their message.
@@ -2447,7 +2411,6 @@ function App(): React.ReactElement {
     // the same native-block path when the queue drains. Queued rows render
     // dimmed until run_end clears the flag.
     if (running) {
-      if (supersedesQuestion) noteSupersedingSend(prompt);
       const queuedWire = attachments.map(toWire);
       const queuedImgs = attachments.flatMap((a) => (a.previewUrl ? [a.previewUrl] : []));
       pushItem({
@@ -2992,6 +2955,8 @@ function App(): React.ReactElement {
                               ) : undefined
                             }
                             onContentGrow={maybeScrollToBottom}
+                            queueId={queuedBubbleIds.get(it.id)}
+                            onCancelQueued={cancelQueuedMessage}
                             onAskAnswer={answerAsk}
                             onAskType={typeAskInstead}
                             shellActions={shellActions}
@@ -3311,9 +3276,7 @@ function App(): React.ReactElement {
                   fileInputRef={fileInputRef}
                   mentionedPaths={mentionedPaths}
                   removeMentionChip={removeMentionChip}
-                  visibleQueuedMessages={visibleQueuedMessages}
                   sendCount={sendCount}
-                  handleCancelQueued={handleCancelQueued}
                   enhanceAnim={enhanceAnim}
                   onEnhanceAnimDone={onEnhanceAnimDone}
                   enhancement={enhancement}

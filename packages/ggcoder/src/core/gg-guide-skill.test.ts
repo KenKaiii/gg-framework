@@ -149,7 +149,6 @@ const COVERAGE: Record<string, string> = {
   Composer: "code-mode.md",
   FileMentionMenu: "code-mode.md",
   AttachmentBar: "code-mode.md",
-  QueuedBar: "code-mode.md",
   SlashMenu: "code-mode.md",
   ShellBlock: "code-mode.md",
   ShellCommandMenu: "code-mode.md",

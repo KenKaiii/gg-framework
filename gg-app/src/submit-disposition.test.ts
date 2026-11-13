@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  showsQueuedBubble,
-  submitDisposition,
-  withoutSupersedingMessage,
-} from "./submit-disposition";
+import { showsQueuedBubble, submitDisposition } from "./submit-disposition";
 
 describe("submitDisposition", () => {
   it("queues a folder picked while the agent is running instead of dropping it", () => {
@@ -49,36 +45,5 @@ describe("showsQueuedBubble", () => {
   it("never marks a fresh run as queued", () => {
     expect(showsQueuedBubble("send", false)).toBe(false);
     expect(showsQueuedBubble("send", true)).toBe(false);
-  });
-});
-
-describe("withoutSupersedingMessage", () => {
-  const msg = (id: string, text: string) => ({ id, text });
-
-  it("hides the superseding message so the strip never opens for it", () => {
-    // The regression: the strip is a sibling of the transcript, so it opening
-    // (260ms) and shutting again (220ms) shoved the whole thread up and back
-    // down within half a second.
-    expect(
-      withoutSupersedingMessage([msg("q1", "do it differently")], "do it differently"),
-    ).toEqual([]);
-  });
-
-  it("keeps messages the user genuinely queued", () => {
-    const messages = [msg("q1", "check the logs"), msg("q2", "do it differently")];
-    expect(withoutSupersedingMessage(messages, "do it differently")).toEqual([
-      msg("q1", "check the logs"),
-    ]);
-    expect(withoutSupersedingMessage(messages, null)).toBe(messages);
-  });
-
-  it("drops only one copy, so an identical queued message stays cancellable", () => {
-    const messages = [msg("q1", "again"), msg("q2", "again")];
-    expect(withoutSupersedingMessage(messages, "again")).toEqual([msg("q2", "again")]);
-  });
-
-  it("leaves the list untouched once the agent has consumed it", () => {
-    const messages = [msg("q1", "check the logs")];
-    expect(withoutSupersedingMessage(messages, "do it differently")).toBe(messages);
   });
 });

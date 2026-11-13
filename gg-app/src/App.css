@@ -288,9 +288,9 @@
   /* Things that resolve out of a blur (transcript rows, swapped labels, the
      tool panel): long enough that the blur reads as a dissolve, not a flicker. */
   --dur-dissolve: 340ms;
-  /* Composer strips and chip bars (attachments, mentions, queued message, cache
-     notice) growing open and folding shut. --dur-strip-out is mirrored by
-     EXIT_MS in AttachmentBar, ReferencedFiles, QueuedBar and CacheExpiryNotice,
+  /* Composer strips and chip bars (attachments, mentions, cache notice)
+     growing open and folding shut. --dur-strip-out is mirrored by
+     EXIT_MS in AttachmentBar, ReferencedFiles and CacheExpiryNotice,
      and also times an answered ask_user card dissolving out (AskBand's EXIT_MS),
      so everything in the chat column leaves at one speed. */
   --dur-strip-in: 260ms;
@@ -6097,7 +6097,6 @@ select {
    the promote a continuous start, and composites a 14px label instead of the
    whole bubble on every frame for as long as the message sits in the queue. ── */
 .user-msg.queued {
-  position: relative;
   opacity: 0.5;
   border-style: dashed;
   border-color: var(--border);
@@ -6127,45 +6126,48 @@ select {
     border-color: transparent;
   }
 }
+/* The label and its cancel sit in the turn gap just above the bubble, out of
+   flow, so the queued look adds no height. In flow it did: the agent taking the
+   message collapsed it, shrank the bubble and dragged the pinned chat back down
+   right after the send had pushed it up. Now promotion only fades it. */
+.user-msg.queued,
+.user-msg.promoted {
+  position: relative;
+}
+.queued-tag {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  /* Right-anchored: the bubble hugs the column's right edge and can be
+     narrower than the tag ("hi"), which must grow into the free space. */
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+/* Buttons don't inherit ink; take the bubble's, so the dimmed queued bubble
+   dims its cancel with it. Hover turns it the error red (.queued-cancel:hover). */
+.queued-tag .queued-cancel {
+  color: inherit;
+}
 .queued-pill {
-  display: block;
   font-family: var(--sans);
   font-size: var(--fs-xs);
-  /* Explicit line-height so the collapse below starts at the pill's REAL height.
-     `max-height: 2em` overshot the rendered 13.9px by 22%, and that slack is
-     dead time: the label sits still through the first fifth of the beat, then
-     drops. Pinning both to the same number makes the collapse start moving on
-     frame one. Unitless (1.28 x 11px = 14px) so the label still fits when the
-     user enlarges text; the max-heights below use the same 1.28em. */
   line-height: 1.28;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  margin-bottom: var(--space-3);
   /* Resting value under the pulse, so the label still reads as secondary when
      the animation is suppressed for reduced motion. */
   opacity: 0.52;
-  /* Collapsed by height (not unmounted) on promotion, so the bubble shrinks
-     over the beat instead of losing a whole line in one frame. */
-  overflow: hidden;
-  max-height: 1.28em;
   animation: ggqueuedpulse 2s ease-in-out infinite;
   animation-play-state: var(--loop-play-state, running);
 }
-.user-msg.promoted .queued-pill {
-  animation: ggqueuedpillout 300ms var(--ease-out) forwards;
+.user-msg.promoted .queued-tag {
+  animation: ggqueuedtagout 300ms var(--ease-out) forwards;
 }
-@keyframes ggqueuedpillout {
-  from {
-    /* Midpoint of the pulse it takes over from, so the handoff is at worst half
-       an amplitude rather than a jump to full brightness. */
-    opacity: 0.52;
-    max-height: 1.28em;
-    margin-bottom: var(--space-3);
-  }
+@keyframes ggqueuedtagout {
   to {
     opacity: 0;
-    max-height: 0;
-    margin-bottom: 0;
   }
 }
 @keyframes ggqueuedpulse {
@@ -11079,19 +11081,8 @@ select {
      jumping the moment a message queues. */
   animation: ggqueuedin var(--dur-strip-in) var(--ease-out);
 }
-/* Outside the deck the chat queue lands at its full height and only fades in.
-   In the deck it grows open instead (`deck-notice-in`, Deck.css): the chat
-   follows that growth frame by frame without ending a glide already under way
-   (chat-layout-motion.ts `still`). */
-/* A fixed composer corner keeps expanded-list controls inside the pointer clip. */
-.chat-queue {
-  border-radius: var(--radius-input);
-}
-.chat-queue:not(.leaving) {
-  animation: fade-in var(--dur-row) var(--ease-out);
-}
 /* Exit: reverse, and collapse the box so the composer glides back down instead
-   of snapping. Held on screen for EXIT_MS by QueuedBar before it unmounts. */
+   of snapping. Held on screen for EXIT_MS by the strip before it unmounts. */
 .queued-bar.leaving {
   animation: ggqueuedout var(--dur-strip-out) var(--ease-in) forwards;
   pointer-events: none;
@@ -11151,11 +11142,6 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.queued-bar-when {
-  flex: 0 0 auto;
-  font-size: var(--fs-xs);
-  opacity: 0.7;
-}
 .queued-toggle,
 .queued-cancel {
   flex: 0 0 auto;
@@ -11183,51 +11169,18 @@ select {
 .queued-cancel:hover {
   color: var(--error);
 }
-.queued-list-shell {
-  display: flow-root;
-  overflow: hidden;
-}
-.queued-list {
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  animation: fade-in var(--dur-row) var(--ease-out) both;
-}
-.queued-list.leaving {
-  animation: queued-list-out var(--dur-row) var(--ease-in) both;
-}
-@keyframes queued-list-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-/* The measured shell owns disclosure motion; rows do not compete with it. */
-.queued-list-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  min-width: 0;
-}
 /* Respect reduced-motion: keep the state changes, drop the movement. */
 @media (prefers-reduced-motion: reduce) {
   .queued-bar,
   .queued-bar.leaving,
-  .queued-list,
-  .queued-list.leaving,
-  .queued-list-item,
   .user-msg.promoted,
-  .queued-pill {
+  .queued-pill,
+  .queued-tag {
     animation: none;
   }
-  /* No animation means no `forwards` fill, so collapse the pill outright —
+  /* No animation means no `forwards` fill, so hide the tag outright —
      otherwise a promoted bubble keeps its "queued" label forever. */
-  .user-msg.promoted .queued-pill {
+  .user-msg.promoted .queued-tag {
     animation: none;
     display: none;
   }
@@ -11236,21 +11189,6 @@ select {
     display: none;
   }
 }
-.queued-index {
-  flex: 0 0 auto;
-  font-family: var(--sans);
-  font-size: var(--fs-xs);
-  width: 12px;
-}
-.queued-list-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-family: var(--sans);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* ── ask_user question band ──
    The agent's question, inside the reply it belongs to. Deliberately built from
    the app's existing vocabulary rather than a look of its own: every option is a

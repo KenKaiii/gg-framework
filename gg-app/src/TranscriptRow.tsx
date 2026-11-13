@@ -1,5 +1,5 @@
 import { memo, useLayoutEffect, useRef, useState } from "react";
-import { AtIcon, FileTextIcon, FilmStripIcon } from "@phosphor-icons/react";
+import { AtIcon, FileTextIcon, FilmStripIcon, XIcon } from "@phosphor-icons/react";
 import { theme } from "./theme";
 import { ChatErrorNotice } from "./ChatErrorNotice";
 import { openImageDataUrl, openProjectPath } from "./agent";
@@ -157,6 +157,8 @@ export const TranscriptRow = memo(function TranscriptRow({
   errorActive = false,
   errorModelPicker,
   onContentGrow,
+  queueId,
+  onCancelQueued,
   onAskAnswer,
   onAskType,
   shellActions,
@@ -171,6 +173,8 @@ export const TranscriptRow = memo(function TranscriptRow({
   errorActive?: boolean;
   errorModelPicker?: React.ReactNode;
   onContentGrow?: () => void;
+  queueId?: string;
+  onCancelQueued?: (id: string) => void;
   onAskAnswer?: (
     itemId: number,
     promptId: string,
@@ -200,6 +204,8 @@ export const TranscriptRow = memo(function TranscriptRow({
       errorActive={errorActive}
       errorModelPicker={errorModelPicker}
       onContentGrow={onContentGrow}
+      queueId={queueId}
+      onCancelQueued={onCancelQueued}
       onAskAnswer={onAskAnswer}
       onAskType={onAskType}
       shellActions={shellActions}
@@ -220,6 +226,8 @@ function TranscriptRowBody({
   errorActive = false,
   errorModelPicker,
   onContentGrow,
+  queueId,
+  onCancelQueued,
   onAskAnswer,
   onAskType,
   shellActions,
@@ -230,6 +238,9 @@ function TranscriptRowBody({
   errorActive?: boolean;
   errorModelPicker?: React.ReactNode;
   onContentGrow?: () => void;
+  /** The sidecar queue entry this queued bubble is, while it can still be cancelled. */
+  queueId?: string;
+  onCancelQueued?: (id: string) => void;
   /** Record answers for an `ask_user` band (App settles the tool call). */
   onAskAnswer?: (
     itemId: number,
@@ -273,14 +284,27 @@ function TranscriptRowBody({
             item.promoted ? " promoted" : ""
           }${item.ken ? " user-ken" : ""}`}
         >
-          {/* Kept mounted through the promotion beat so it can collapse
-              smoothly; unmounting it outright shrinks the bubble in a single
-              frame and shunts the whole transcript. Hidden from screen readers
-              as soon as the message stops actually being queued, since the
-              remaining frames are decoration. */}
+          {/* Kept mounted through the promotion beat so it can fade out. Hidden
+              from screen readers as soon as the message stops actually being
+              queued, since the remaining frames are decoration. */}
           {(item.queued || item.promoted) && (
-            <span className="queued-pill" aria-hidden={item.promoted}>
-              queued
+            <span
+              className="queued-tag"
+              aria-hidden={item.promoted}
+              title="Sends at the agent's next turn"
+            >
+              <span className="queued-pill">queued</span>
+              {item.queued && queueId !== undefined && onCancelQueued && (
+                <button
+                  type="button"
+                  className="queued-cancel"
+                  title="Cancel this queued message"
+                  aria-label="Cancel queued message"
+                  onClick={() => onCancelQueued(queueId)}
+                >
+                  <XIcon size={12} weight="bold" aria-hidden="true" />
+                </button>
+              )}
             </span>
           )}
           {item.images && item.images.length > 0 && (

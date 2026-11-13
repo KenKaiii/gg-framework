@@ -135,7 +135,6 @@ async function disclosureChecks(page, traces, immediate = false) {
     const samples = [];
     for (const [selector, toggle] of [
       [".chat-error-details", ".chat-error-details-toggle"],
-      [".queued-list-shell", ".queued-toggle"],
       [".code-block", ".code-expand"],
     ]) {
       const el = document.querySelector(selector);
@@ -186,8 +185,6 @@ async function disclosureChecks(page, traces, immediate = false) {
       Math.abs(sample.final - sample.folded) <= 1,
       `No final padding/height snap: ${sample.selector}`,
     );
-    if (sample.selector === ".queued-list-shell")
-      assert(sample.expanded > 180, "12 queue rows are not capped at 180px");
     for (const step of sample.steps) {
       assert(step.oldCancelled, `Previous height animation is cancelled: ${sample.selector}`);
       assert.equal(step.filter, "none", "Reading text stays sharp");
@@ -220,10 +217,7 @@ async function contentChecks(page, traces) {
         [...document.querySelectorAll("button")].find((b) => b.textContent === text).click(),
       );
     const sizes = [];
-    for (const [selector, toggle, grow] of [
-      [".code-block", ".code-expand", "Grow fixture code"],
-      [".queued-list-shell", ".queued-toggle", "Grow fixture queue"],
-    ]) {
+    for (const [selector, toggle, grow] of [[".code-block", ".code-expand", "Grow fixture code"]]) {
       const el = document.querySelector(selector);
       window.motionCommit(() => document.querySelector(toggle).click());
       for (const a of el.getAnimations()) a.finish();
@@ -246,15 +240,10 @@ async function contentChecks(page, traces) {
         count: motions.length,
       });
     }
-    press("Drain fixture queue");
-    const shell = document.querySelector(".queued-list-shell");
-    for (const a of shell.getAnimations()) a.finish();
-    const drained = shell.getBoundingClientRect().height;
-    const hidden = shell.inert && shell.getAttribute("aria-hidden") === "true";
     window.motionCommit(() => document.querySelector(".code-expand").click());
     const running = document.querySelector(".code-block").getAnimations();
     press("Unmount fixture disclosures");
-    return { sizes, drained, hidden, cancelled: running.every((a) => a.playState === "idle") };
+    return { sizes, cancelled: running.every((a) => a.playState === "idle") };
   });
   traces.push({ name: "content-growth-drain-unmount", ...result });
   if (!record) {
@@ -263,8 +252,6 @@ async function contentChecks(page, traces) {
       assert(Math.abs(size.first - size.before) <= 1, "Content growth starts at its old size");
       assert(size.after > size.before, "Content growth reaches its natural height");
     }
-    assert.equal(result.drained, 0, "One remaining queued item collapses the list");
-    assert(result.hidden, "Collapsed queue list is inert");
     assert(result.cancelled, "Unmount cancels owned motion");
   }
 }
@@ -282,12 +269,6 @@ async function fallbackChecks(page, url, traces) {
     await page.goto(`${url}?components`);
     await page.getByRole("button", { name: "Show error details" }).waitFor();
     await disclosureChecks(page, traces, true);
-    await page.getByRole("button", { name: "Empty fixture queue" }).click();
-    assert.equal(
-      await page.locator(".queued-bar").count(),
-      0,
-      `${mode}: final queue removal is immediate`,
-    );
     const trigger = page.getByRole("button", { name: "Fixture choice", exact: true });
     await trigger.click();
     await page.getByRole("option", { name: "Two", exact: true }).click();
@@ -519,7 +500,7 @@ try {
           await toolTransaction(page, "toggle", traces);
           await toolTransaction(page, "toggle", traces);
           // A message sent mid-run: its glide is under way when the sidecar's
-          // answer opens the queue strip, which resizes the dock every frame.
+          // answer marks the bubble queued.
           const queuedPrompt = { id: "queued-1", text: "Fictional queued prompt" };
           await input.fill(queuedPrompt.text);
           await dockGlide(
@@ -735,23 +716,6 @@ try {
             "details-close",
             () => page.getByRole("button", { name: "Hide error details" }).click(),
             ".chat-error-details",
-            traces,
-          );
-          await trace(
-            page,
-            "queue-open",
-            () => page.locator(".queued-toggle").click(),
-            ".queued-list",
-            traces,
-          );
-          await trace(
-            page,
-            "queue-close",
-            () =>
-              record
-                ? page.locator(".queued-toggle").press("Enter")
-                : page.locator(".queued-toggle").click(),
-            ".queued-list",
             traces,
           );
           await trace(

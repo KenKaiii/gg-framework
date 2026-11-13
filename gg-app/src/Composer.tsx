@@ -10,7 +10,6 @@ import {
   type AgentState,
   type FileHit,
   type PromptSegment,
-  type QueuedMessage,
   type SlashCommand,
   type WorkspaceMode,
 } from "./agent";
@@ -20,7 +19,6 @@ import { CacheExpiryNotice } from "./CacheExpiryNotice";
 import { EnhanceDissolve } from "./EnhanceDissolve";
 import { FileMentionMenu } from "./FileMentionMenu";
 import { FloatingSurface } from "./FloatingSurface";
-import { QueuedBar } from "./QueuedBar";
 import { ReferencedFiles } from "./ReferencedFiles";
 import { ScheduleHint } from "./ScheduleHint";
 import { ShimmerText } from "./ShimmerText";
@@ -67,10 +65,8 @@ export interface ComposerProps {
   fileInputRef: RefObject<HTMLInputElement | null>;
   mentionedPaths: string[];
   removeMentionChip: (p: string) => void;
-  visibleQueuedMessages: readonly QueuedMessage[];
   /** Bumped by every send; the strips a send clears leave in that same commit. */
   sendCount: number;
-  handleCancelQueued: (id: string) => void;
   enhanceAnim: { oldText: string; newText: string | null } | null;
   onEnhanceAnimDone: () => void;
   enhancement: { plain: string; segments: PromptSegment[] } | null;
@@ -153,9 +149,7 @@ export function Composer({
   fileInputRef,
   mentionedPaths,
   removeMentionChip,
-  visibleQueuedMessages,
   sendCount,
-  handleCancelQueued,
   enhanceAnim,
   onEnhanceAnimDone,
   enhancement,
@@ -239,7 +233,6 @@ export function Composer({
           )
         }
       />
-      <QueuedBar messages={visibleQueuedMessages} onCancel={handleCancelQueued} />
       <div className="inputrow">
         <input
           ref={fileInputRef}
