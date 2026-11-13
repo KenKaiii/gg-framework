@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.100.1
+
+### Patch Changes
+
+- Update the gg-guide skill: queued messages are cancelled from the x on each queued bubble, not a strip above the input
+  - @kenkaiiii/gg-ai@5.100.1
+  - @kenkaiiii/gg-agent@5.100.1
+  - @kenkaiiii/gg-core@5.100.1
+
 ## 5.100.0
 
 ### Minor Changes
