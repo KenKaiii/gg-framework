@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.111.2",
+    date: "2026-11-13",
+    items: [
+      "Your chat now stays perfectly still when you send a message while I'm working. No more jumping up and snapping back. The `queued` label floats calmly above your message and fades away the moment I pick it up, and every queued message gets its own `x` right there in the chat, so cancelling the exact one you want takes a single click.",
+    ],
+  },
+  {
     version: "0.111.1",
     date: "2026-11-13",
     items: [
