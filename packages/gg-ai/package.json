@@ -49,10 +49,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.4.0",
-    "openai": "^7.50.0",
+    "@anthropic-ai/sdk": "^1.7.0",
+    "openai": "^7.54.0",
     "undici": "7.25.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
