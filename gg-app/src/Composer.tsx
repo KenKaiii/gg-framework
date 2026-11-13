@@ -9,7 +9,6 @@ import {
   sendPrompt,
   type AgentState,
   type FileHit,
-  type PromptSegment,
   type SlashCommand,
   type WorkspaceMode,
 } from "./agent";
@@ -19,6 +18,7 @@ import { CacheExpiryNotice } from "./CacheExpiryNotice";
 import { EnhanceDissolve } from "./EnhanceDissolve";
 import { FileMentionMenu } from "./FileMentionMenu";
 import { FloatingSurface } from "./FloatingSurface";
+import { type DraftEnhancement, followDraftEdit } from "./PromptEnhancement";
 import { ReferencedFiles } from "./ReferencedFiles";
 import { ScheduleHint } from "./ScheduleHint";
 import { ShimmerText } from "./ShimmerText";
@@ -69,8 +69,8 @@ export interface ComposerProps {
   sendCount: number;
   enhanceAnim: { oldText: string; newText: string | null } | null;
   onEnhanceAnimDone: () => void;
-  enhancement: { plain: string; segments: PromptSegment[] } | null;
-  setEnhancement: Dispatch<SetStateAction<{ plain: string; segments: PromptSegment[] } | null>>;
+  enhancement: DraftEnhancement | null;
+  setEnhancement: Dispatch<SetStateAction<DraftEnhancement | null>>;
   enhancing: boolean;
   enhanceHintVisible: boolean;
   runEnhance: () => Promise<void>;
@@ -309,9 +309,10 @@ export function Composer({
               setCaret(e.target.selectionStart ?? e.target.value.length);
               // Typing exits history-recall mode so ↑/↓ start fresh next time.
               if (historyIndex !== null) setHistoryIndex(null);
-              // Drop the enhancement the instant the text diverges from it, so
-              // the highlighted preview/bubble never misalign with edited text.
-              if (enhancement && e.target.value !== enhancement.plain) setEnhancement(null);
+              // Re-anchor the corrected terms onto the edited text so their
+              // highlights survive edits; terms the edit touched are dropped.
+              if (enhancement && e.target.value !== enhancement.plain)
+                setEnhancement(followDraftEdit(enhancement, input, e.target.value));
               updateMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
             }}
             onClick={(e) => {
