@@ -241,6 +241,16 @@ async function download(
   }
 }
 
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(/[.-]/).map((n) => Number.parseInt(n, 10) || 0);
+  const pb = b.split(/[.-]/).map((n) => Number.parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
 async function removeOldVersions(home: string, keep: string): Promise<void> {
   let entries: fs.Dirent[];
   try {
@@ -251,6 +261,9 @@ async function removeOldVersions(home: string, keep: string): Promise<void> {
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name === keep || entry.name === "config") continue;
     if (!/^\d+\.\d+\.\d+/.test(entry.name)) continue;
+    // Other GG Coder builds (or apps on gg-core) may pin a newer version here; deleting it
+    // makes them re-download, which in turn deletes ours — they'd ping-pong forever.
+    if (compareVersions(entry.name, keep) > 0) continue;
     // A window may still run the old binary; Windows refuses (EBUSY) until it exits.
     await fsp.rm(path.join(home, entry.name), { recursive: true, force: true }).catch(() => {});
   }

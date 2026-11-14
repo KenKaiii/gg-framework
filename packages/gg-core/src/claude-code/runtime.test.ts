@@ -225,6 +225,20 @@ describe("ensureClaudeCodeBinary", () => {
     expect(fs.readdirSync(home).sort()).toEqual(["9.9.9", "config"]);
   });
 
+  it("keeps newer versions another app pinned", async () => {
+    fs.mkdirSync(path.join(home, "9.9.10"));
+    fs.mkdirSync(path.join(home, "10.0.0"));
+    fs.mkdirSync(path.join(home, "9.9.8"));
+    const archive = tgz(entry("package/claude", Buffer.from("x")));
+    await ensureClaudeCodeBinary({
+      home,
+      manifest: manifestFor(archive),
+      platformKey: "test-x64",
+      fetch: fetchServing(archive, { n: 0 }),
+    });
+    expect(fs.readdirSync(home).sort()).toEqual(["10.0.0", "9.9.10", "9.9.9"]);
+  });
+
   it("refuses platforms the manifest has no build for", async () => {
     const archive = tgz(entry("package/claude", Buffer.from("x")));
     await expect(

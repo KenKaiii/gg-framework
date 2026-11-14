@@ -4,7 +4,14 @@ import type {
   SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { describe, expect, it } from "vitest";
+import type * as GgCore from "@kenkaiiii/gg-core";
+import { describe, expect, it, vi } from "vitest";
+
+// Keep the real ~/.gg install out of these tests: the binary always looks missing.
+vi.mock("@kenkaiiii/gg-core", async (importOriginal) => ({
+  ...(await importOriginal<typeof GgCore>()),
+  resolveClaudeCodeBinary: () => null,
+}));
 import { claudeCodeSearchHits } from "../../tools/side-web-search.js";
 import { claudeCodeComplete, resolveClaudeCodeProcess } from "./complete.js";
 
@@ -175,5 +182,28 @@ describe("resolveClaudeCodeProcess", () => {
     const signedOut = { hasClaudeCodeLogin: async () => false };
     expect(await resolveClaudeCodeProcess(signedIn, "openai", "/tmp")).toBeNull();
     expect(await resolveClaudeCodeProcess(signedOut, "anthropic", "/tmp")).toBeNull();
+  });
+
+  it("downloads a missing binary instead of asking to sign in again", async () => {
+    const signedIn = { hasClaudeCodeLogin: async () => true };
+    let installs = 0;
+    const install = async () => {
+      installs++;
+      return "/fresh/claude";
+    };
+    const proc = await resolveClaudeCodeProcess(signedIn, "anthropic", "/tmp", install);
+    expect(installs).toBe(1);
+    expect(proc?.executable).toBe("/fresh/claude");
+    expect(proc?.cwd).toBe("/tmp");
+  });
+
+  it("explains a failed download", async () => {
+    const signedIn = { hasClaudeCodeLogin: async () => true };
+    const install = async () => {
+      throw new Error("Claude Code download failed (HTTP 503).");
+    };
+    await expect(resolveClaudeCodeProcess(signedIn, "anthropic", "/tmp", install)).rejects.toThrow(
+      "Couldn't download Claude Code: Claude Code download failed (HTTP 503).",
+    );
   });
 });
