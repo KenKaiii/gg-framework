@@ -126,7 +126,9 @@ describe("HomeCritters", () => {
   });
 
   it("keeps the crew out playing without thinking pauses, and cleans up on unmount", async () => {
-    // jsdom's window isn't focused, so the floor rests and the crew stays as it is.
+    // A window nobody is looking at: the floor rests and the crew stays as it is.
+    // Said outright, because whether jsdom's window counts as focused changed in 31.
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
     const { container, unmount } = render(<HomeCritters biome={MEADOW} />);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(6000);
@@ -192,6 +194,8 @@ describe("HomeCritters", () => {
   });
 
   it("shows the critter's name and what it's up to on hover", async () => {
+    // Resting, so every critter is standing still and the slip reads the same.
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
     const { container } = render(<HomeCritters biome={MEADOW} />);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(6000);
