@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.100.3
+
+### Patch Changes
+
+- Fix Claude Code going missing: a missing pinned binary is now re-downloaded instead of asking you to sign in again, and installing one version no longer deletes newer versions that other apps on gg-core pinned.
+  - @kenkaiiii/gg-ai@5.100.3
+  - @kenkaiiii/gg-agent@5.100.3
+  - @kenkaiiii/gg-core@5.100.3
+
 ## 5.100.2
 
 ### Patch Changes
