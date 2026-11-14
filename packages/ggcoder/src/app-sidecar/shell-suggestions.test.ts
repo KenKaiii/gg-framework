@@ -54,7 +54,8 @@ describe("shell history", () => {
     const history = await loadShellHistory(project);
     expect(history).toHaveLength(SHELL_HISTORY_MAX);
     expect(history[0]?.command).toBe("keep");
-  }, 20_000);
+    // 107 locked, fsynced writes: a slow Windows runner disk turns ~1s into 20s+.
+  }, 60_000);
 });
 
 describe("project suggestions", () => {
