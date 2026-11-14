@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.100.2
+
+### Patch Changes
+
+- Refresh dependencies and the Claude Code manifest (claude-agent-sdk 0.3.321), and update the GG Coder guide for the new critter name tags, Home crew and Goals farm visitors.
+  - @kenkaiiii/gg-ai@5.100.2
+  - @kenkaiiii/gg-agent@5.100.2
+  - @kenkaiiii/gg-core@5.100.2
+
 ## 5.100.1
 
 ### Patch Changes
