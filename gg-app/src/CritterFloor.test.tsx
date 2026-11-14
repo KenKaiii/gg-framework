@@ -1,13 +1,27 @@
 // @vitest-environment jsdom
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { CritterFloor, collectFloorAgents, type CritterGroup } from "./CritterFloor";
+import {
+  CritterFloor as StagedCritterFloor,
+  collectFloorAgents,
+  type CritterGroup,
+} from "./CritterFloor";
 import type { SubAgentLine } from "./SubAgentFeed";
+import { art } from "./critter-art";
 import { TERRAIN_CLOSE_MS } from "./critter-terrain";
 
-/** A finished critter's goodbye + beam-out (~2.05s), then the lane waits for
- *  the terrain to pack away before it shuts. */
-const LEAVE_AND_CLOSE_MS = 2100 + TERRAIN_CLOSE_MS;
+/** Leavers are gathered for a moment (so a group goes together), then the
+ *  goodbye + beam-out (~2.3s in all), then the lane waits for the terrain to
+ *  pack away before it shuts. */
+const LEAVE_AND_CLOSE_MS = 2400 + TERRAIN_CLOSE_MS;
+
+// The engine, with the stage held to the classic beam in and out and nothing
+// happening by itself: what these tests time. The stage's own arrivals, exits
+// and happenings are covered in critter-stage.test.ts.
+const CLASSIC = { arrival: "beam", exit: "beam", happenings: false } as const;
+function CritterFloor(props: Parameters<typeof StagedCritterFloor>[0]): React.ReactElement {
+  return <StagedCritterFloor stage={CLASSIC} {...props} />;
+}
 
 // jsdom has no Web Animations API; the floor only needs the calls to exist.
 beforeAll(() => {
@@ -63,6 +77,9 @@ function lane(container: HTMLElement): HTMLElement {
   return el;
 }
 const critters = (container: HTMLElement): number => container.querySelectorAll(".critter").length;
+/** The lane's children, bottom to top, by their first class. */
+const layers = (container: HTMLElement): string[] =>
+  [...lane(container).children].map((el) => el.classList[0] ?? "");
 const terrain = (container: HTMLElement): string | undefined =>
   container.querySelector<HTMLElement>(".critter-lane > .critter-terrain")?.dataset.terrain;
 
@@ -147,8 +164,8 @@ describe("CritterFloor", () => {
     const { container, rerender } = render(<CritterFloor groups={[]} random={roll} />);
     const first = terrain(container);
     expect(first).toBeDefined();
-    // Painted before (under) the floor the engine appends.
-    expect(lane(container).firstElementChild?.classList.contains("critter-terrain")).toBe(true);
+    // Painted over its horizon, and before (under) the floor the engine appends.
+    expect(layers(container)).toEqual(["critter-backdrop", "critter-terrain", "critter-floor"]);
 
     // First opening keeps the terrain that was already there.
     rerender(<CritterFloor groups={[group(1, [line("a", "running")])]} random={roll} />);
@@ -170,7 +187,7 @@ describe("CritterFloor", () => {
     expect(lane(container).classList.contains("open")).toBe(true);
     expect(terrain(container)).toBeDefined();
     expect(terrain(container)).not.toBe(first);
-    expect(lane(container).firstElementChild?.classList.contains("critter-terrain")).toBe(true);
+    expect(layers(container)).toEqual(["critter-backdrop", "critter-terrain", "critter-floor"]);
   });
 
   it("teleports out a background agent that finishes as idle, and tips a failed one over", async () => {
@@ -183,8 +200,11 @@ describe("CritterFloor", () => {
     expect(critters(container)).toBe(2);
 
     rerender(<CritterFloor groups={[group(1, [line("a", "idle"), line("b", "error")])]} />);
-    expect(container.querySelector(".critter.leaving .critter-badge-ok")).not.toBeNull();
-    expect(container.querySelector(".critter.fallen .critter-badge-err")).not.toBeNull();
+    // A tick over the one that finished, a cross over the one that failed.
+    const emote = (state: string): string | null | undefined =>
+      container.querySelector(`.critter.${state} .critter-emote img`)?.getAttribute("src");
+    expect(emote("leaving")).toBe(art().emotes.ok.url);
+    expect(emote("fallen")).toBe(art().emotes.no.url);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(LEAVE_AND_CLOSE_MS);
     });
@@ -254,10 +274,17 @@ describe("CritterFloor", () => {
     });
     // Every read variant puts a book, scroll or page in its paws/on the floor.
     expect(container.querySelector(".critter-prop")).not.toBeNull();
-    // No tool text in a speech bubble any more; the hover card has it instead.
+    // No tool text in a speech bubble; its name tag has it (shortened) instead.
     expect(container.querySelector(".critter-bubble")?.textContent ?? "").not.toContain(
       "session.ts",
     );
+    const critter = container.querySelector(".critter");
+    if (!critter) throw new Error("no critter");
+    fireEvent.mouseEnter(critter);
+    expect(container.querySelector(".critter-tag-name")?.textContent).toBe("researcher");
+    expect(container.querySelector(".critter-tag-text")?.textContent).toBe("Reading session.ts");
+    fireEvent.mouseLeave(critter);
+    expect(container.querySelector(".critter-tag")).toBeNull();
 
     // A different tool kind (read → search) queues behind the current action.
     rerender(

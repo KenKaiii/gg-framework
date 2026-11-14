@@ -57,6 +57,12 @@ export interface Actor {
   /** The last thing it said about its work, and when (so it never repeats itself or chatters). */
   lastLine: string | null;
   lastLineAt: number;
+  /**
+   * Off the farm for a moment (aboard the saucer on its way in, or GG Goals
+   * away seeing a monster off; see goal-farm-stage.ts): it keeps its place but
+   * isn't stepped, drawn or poked until it's back.
+   */
+  offstage?: boolean;
 }
 
 export interface FarmWorld {
@@ -344,6 +350,7 @@ function settle(actor: Actor, now: number, farm?: Farm): void {
  */
 export function stepFarm(world: FarmWorld, now: number, instant = false): void {
   for (const actor of [...world.actors.values()]) {
+    if (actor.offstage) continue;
     if (actor.trip) {
       const pose = tripPose(actor.trip, now, actor.facing);
       actor.facing = pose.facing;
@@ -407,7 +414,10 @@ function chatter(world: FarmWorld, now: number): void {
   if (now < world.nextChatAt) return;
   world.nextChatAt = now + 3500 + world.random() * 3500;
   const lounging = [...world.actors.values()]
-    .filter((actor) => actor.state === "idle" && actor.station === "lounge" && !actor.bubble)
+    .filter(
+      (actor) =>
+        actor.state === "idle" && actor.station === "lounge" && !actor.bubble && !actor.offstage,
+    )
     .sort((a, b) => a.key.localeCompare(b.key));
   if (lounging.length >= 2) {
     const first = Math.floor(world.random() * lounging.length);
@@ -428,6 +438,7 @@ function chatter(world: FarmWorld, now: number): void {
 /** True while anyone is travelling, arriving or leaving: worth drawing smoothly. */
 export function farmIsMoving(world: FarmWorld): boolean {
   for (const actor of world.actors.values()) {
+    if (actor.offstage) continue;
     if (actor.trip || actor.state === "arriving" || actor.state === "leaving") return true;
   }
   return false;

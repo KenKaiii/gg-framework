@@ -7,7 +7,7 @@ import { useRandomBiome } from "./use-random-biome";
 
 /** Enough company to feel alive without turning the plan into a playground. */
 const CREW_SIZE = 4;
-/** Land after the pane has dissolved in, so the beams are the second beat. */
+/** Land after the pane has dissolved in, so the arrivals are the second beat. */
 const ENTRY_DELAY_MS = 420;
 
 /** A random handful of the roster (Fisher-Yates over `random`). */
@@ -52,6 +52,8 @@ export function PlanCritters({
       landAfterMs: TERRAIN_LAND_MS,
       closeAfterMs: TERRAIN_CLOSE_MS,
       random,
+      // A plan is being read: they come and go, but nothing else happens.
+      stage: { happenings: false },
     });
     const entry = window.setTimeout(() => controller.sync(planCrew(random)), ENTRY_DELAY_MS);
     return () => {

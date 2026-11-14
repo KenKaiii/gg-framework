@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
+import { CritterBackdrop } from "./CritterBackdrop";
 import { createCritterFloor, type CritterFloorController, type FloorAgent } from "./critter-floor";
 import { CritterTerrain } from "./CritterTerrain";
 import { TERRAIN_CLOSE_MS, TERRAIN_LAND_MS } from "./critter-terrain";
+import type { StageOptions } from "./critter-types";
 import { displayName, formatSubAgentTokens, type SubAgentLine } from "./SubAgentFeed";
 import { useRandomBiome } from "./use-random-biome";
 
@@ -46,6 +48,8 @@ interface Props {
   groups: readonly CritterGroup[];
   /** Injected for tests; defaults to Math.random. */
   random?: () => number;
+  /** How the stage plays this floor (read once, when the floor is built). */
+  stage?: StageOptions;
 }
 
 const sameGroups = (a: readonly CritterGroup[], b: readonly CritterGroup[]): boolean =>
@@ -59,12 +63,12 @@ const sameGroups = (a: readonly CritterGroup[], b: readonly CritterGroup[]): boo
  * the transcript's resize observer keeps the newest message pinned meanwhile.
  * The critters stand on a pixel terrain (meadow, beach, desert…), a fresh random
  * one each time the lane opens: it rises out of the floor, the first critter
- * beams in once the ground is up, and it sinks back after the last one leaves.
+ * arrives once the ground is up, and it sinks back after the last one leaves.
  *
  * Decorative: the chat line and the activity bar carry the same information
  * for assistive tech, so the lane is hidden from it.
  */
-export function CritterFloor({ groups, random = Math.random }: Props): React.ReactElement {
+export function CritterFloor({ groups, random = Math.random, stage }: Props): React.ReactElement {
   const laneRef = useRef<HTMLDivElement>(null);
   // rerollBiome is stable, so the floor below is still created only once.
   const [biome, rerollBiome] = useRandomBiome(random);
@@ -77,6 +81,7 @@ export function CritterFloor({ groups, random = Math.random }: Props): React.Rea
   // down and the floor rebuilt on return; those critters come straight back
   // instead of being summoned all over again.
   const hereRef = useRef<Set<string>>(new Set());
+  const stageRef = useRef(stage);
 
   useEffect(() => {
     const lane = laneRef.current;
@@ -88,6 +93,7 @@ export function CritterFloor({ groups, random = Math.random }: Props): React.Rea
       reducedMotion,
       landAfterMs: TERRAIN_LAND_MS,
       closeAfterMs: TERRAIN_CLOSE_MS,
+      stage: stageRef.current,
       onLaneOpen: () => {
         if (openedRef.current) rerollBiome();
         openedRef.current = true;
@@ -118,10 +124,11 @@ export function CritterFloor({ groups, random = Math.random }: Props): React.Rea
     controller.sync(collectFloorAgents(groups));
   }, [groups]);
 
-  // The terrain is the lane's first child, so the floor the engine appends
-  // after it (critters, tooltip) paints on top.
+  // The horizon and the terrain come first, so the floor the engine appends
+  // after them (the critters) paints on top.
   return (
     <div className="critter-lane with-terrain" ref={laneRef} aria-hidden="true">
+      <CritterBackdrop biome={biome} />
       <CritterTerrain biome={biome} />
     </div>
   );

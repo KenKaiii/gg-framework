@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CritterTerrain } from "./CritterTerrain";
-import { CRITTER_CELLS, CRITTERS, renderCritterFrame, type CritterDef } from "./critter-sprites";
+import { CRITTER_CELLS, CRITTERS, renderCritterFrame, withEyesClosed } from "./critter-sprites";
+
+export { withEyesClosed };
 import {
   DECOR_COLS,
   TERRAIN_FLOOR_ROW,
@@ -149,76 +151,6 @@ export function patchOffset(spot: number): number {
   while (offset > 0) offset -= DECOR_COLS;
   while (offset <= -DECOR_COLS) offset += DECOR_COLS;
   return Math.round(offset);
-}
-
-/**
- * The same critter with its eyes shut, for blinks. An eye is a clump of
- * shine (W) and pupil (K) cells: it fills with the skin round it, and its
- * bottom row becomes the lid line. Critters with glowing eyes and no shine
- * (the robot's screen, the wizard and knight under their hats) dim their top
- * row of glow (E) instead.
- */
-export function withEyesClosed(critter: CritterDef): CritterDef {
-  const grid = critter.rows.map((row) => [...row]);
-  const h = grid.length;
-  const at = (x: number, y: number): string => grid[y]?.[x] ?? ".";
-  const seen = new Set<string>();
-  let changed = false;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < (grid[y]?.length ?? 0); x++) {
-      if (at(x, y) !== "W" || seen.has(`${x},${y}`)) continue;
-      // The eye: W and K cells joined to this shine.
-      const eye: [number, number][] = [];
-      const stack: [number, number][] = [[x, y]];
-      seen.add(`${x},${y}`);
-      while (stack.length) {
-        const [cx, cy] = stack.pop() ?? [0, 0];
-        eye.push([cx, cy]);
-        for (const [nx, ny] of [
-          [cx + 1, cy],
-          [cx - 1, cy],
-          [cx, cy + 1],
-          [cx, cy - 1],
-        ] as const) {
-          const k = at(nx, ny);
-          if ((k === "W" || k === "K") && !seen.has(`${nx},${ny}`)) {
-            seen.add(`${nx},${ny}`);
-            stack.push([nx, ny]);
-          }
-        }
-      }
-      // The skin round it: its commonest neighbour that's part of the face.
-      const count = new Map<string, number>();
-      for (const [cx, cy] of eye) {
-        for (const [nx, ny] of [
-          [cx + 1, cy],
-          [cx - 1, cy],
-          [cx, cy + 1],
-          [cx, cy - 1],
-        ] as const) {
-          const k = at(nx, ny);
-          if (!"WKOCMN.".includes(k)) count.set(k, (count.get(k) ?? 0) + 1);
-        }
-      }
-      const skin = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "B";
-      const bottom = Math.max(...eye.map(([, ey]) => ey));
-      for (const [cx, cy] of eye) {
-        const row = grid[cy];
-        if (row) row[cx] = cy === bottom ? "O" : skin;
-      }
-      changed = true;
-    }
-  }
-  if (!changed) {
-    // Glowing eyes: the top row of glow goes dark.
-    const top = grid.findIndex((row) => row.includes("E"));
-    const row = grid[top];
-    if (row) {
-      for (let x = 0; x < row.length; x++) if (row[x] === "E") row[x] = "K";
-      changed = true;
-    }
-  }
-  return changed ? { ...critter, rows: grid.map((row) => row.join("")) } : critter;
 }
 
 /**

@@ -1136,6 +1136,55 @@ describe("goal farm play", () => {
     expect(frame(until + 1)).toBe(1);
   });
 
+  it("plays a clicked critter's reaction: its wave says what it's doing", () => {
+    // Regression: a click was filed under the critter's target id
+    // ("critter:…") but the painter looked for "actor:…", so a poked critter
+    // never waved, hopped or showed a heart.
+    const w = createFarmWorld(farm, () => 0.9);
+    const workersOnly = collectWorldAgents({
+      running: true,
+      liveTools: [],
+      waitingOnUser: false,
+      workers: [worker({ status: "running" })],
+    }).filter((a) => !a.coordinator);
+    for (let t = 0; t <= 30_000; t += 100) {
+      syncFarm(w, workersOnly, t);
+      stepFarm(w, t);
+    }
+    const play = createPlay();
+    const critter = farmTargets(w, play, 30_000, 30_000).find((t) => t.kind === "critter");
+    if (!critter) throw new Error("no critter");
+    // A speech bubble is the only thing on this farm painted in bubble paper.
+    const PAPER = "#cedbf9";
+    const fills = new Set<string>();
+    let style = "";
+    const ctx = new Proxy(
+      {},
+      {
+        get: (_target, key) =>
+          key === "fillRect"
+            ? () => fills.add(style)
+            : key === "fillStyle"
+              ? style
+              : () => undefined,
+        set: (_target, key, value) => {
+          if (key === "fillStyle") style = String(value);
+          return true;
+        },
+      },
+    ) as unknown as CanvasRenderingContext2D;
+    const speaks = (now: number): boolean => {
+      fills.clear();
+      drawFarm(ctx, {} as CanvasImageSource, w, now, now, [], null, null, null, play);
+      return fills.has(PAPER);
+    };
+    expect(speaks(30_000)).toBe(false);
+    const { x, y } = critter.anchor;
+    poke(play, { target: critter.id, kind: critter.kind, name: critter.name, x, y }, 30_000, 1);
+    expect(reactionOn(play, critter.id, 30_100)?.action).toBe("wave");
+    expect(speaks(30_100)).toBe(true);
+  });
+
   it("sways a poked tree smoothly and keeps its trunk's foot in the ground", () => {
     // Regressions: a poke shook the whole tree side to side, trunk and all;
     // then its leaves flickered a pixel each way every few frames.

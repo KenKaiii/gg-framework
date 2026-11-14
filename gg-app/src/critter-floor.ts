@@ -3,13 +3,15 @@
 // whole imperative side (DOM, per-frame movement, Web Animations effects) so
 // React only re-renders when the agent list changes, never per frame.
 //
-// Lifecycle per agent: summoned in with a beam of light → acts out each real
-// tool it runs (critter-work), fidgets between tools (critter-idle), notices
-// the critters it crosses paths with (critter-social) → waves and teleports
-// out once its work is finished (done, or idle and ready for follow-up), or
-// tips over and fades when it fails while teammates check on it. A follow-up
-// that sets an idle agent running again summons it back. Clicking a critter
-// spooks it (critter-scare).
+// Lifecycle per agent: it arrives (a beam of light, a saucer, a parachute…) →
+// acts out each real tool it runs (critter-work), fidgets between tools
+// (critter-idle), notices the critters it crosses paths with (critter-social)
+// → leaves once its work is finished (done, or idle and ready for follow-up),
+// or tips over and fades when it fails while teammates check on it. A
+// follow-up that sets an idle agent running again brings it back. Clicking a
+// critter spooks it (critter-scare). How they arrive and leave, what they
+// wear, the name tag and the things that happen to the floor are the stage's
+// (critter-stage.ts); this engine only calls into it.
 //
 // Every behaviour runs as a "script" that owns the critter until it ends or
 // something more important (higher PRIO) interrupts it; `ok()` turns false
@@ -17,8 +19,10 @@
 
 import { discard, makeCritterFx, SIZE } from "./critter-fx";
 import { makeCritterIdle } from "./critter-idle";
+import { withEmotes } from "./critter-looks";
 import { makeCritterScare } from "./critter-scare";
 import { makeCritterSocial } from "./critter-social";
+import { makeCritterStage } from "./critter-stage";
 import { CRITTERS, pickCritter, renderCritterFrame } from "./critter-sprites";
 import type { CritterDef, CritterMove } from "./critter-sprites";
 import { toolKindOf } from "./critter-tool-kind";
@@ -32,6 +36,7 @@ import type {
   Liveliness,
   Priority,
   Script,
+  StageOptions,
   TraitName,
   Variant,
   VariantOwner,
@@ -49,10 +54,10 @@ export interface FloorAgent {
   readonly agentName: string | undefined;
   /** Pin a specific critter (the home screen's roster); wins over agentName. */
   readonly critterId?: string;
-  /** What the tooltip calls it. */
+  /** The name on its tag. */
   readonly label: string;
   readonly status: FloorAgentStatus;
-  /** Latest humanized tool activity: drives the work action, shown in the tooltip. */
+  /** Latest humanized tool activity: drives the work action, shown on its tag. */
   readonly activity: string | undefined;
   /** Preformatted token readout (↑ · ↻ cached · ↓), or null before any usage. */
   readonly tokens: string | null;
@@ -65,8 +70,8 @@ export interface CritterFloorOptions {
   readonly reducedMotion: boolean;
   /**
    * A showcase floor with no real agents behind it (the home screen): critters
-   * never stop to "think" between tools, and the hover card shows just the
-   * name instead of agent stats.
+   * never stop to "think" between tools, and the tag says what the critter
+   * itself is up to instead of an agent's activity.
    */
   readonly ambient?: boolean;
   /** Called each time the lane opens from closed (the chat rolls a new terrain). */
@@ -93,6 +98,8 @@ export interface CritterFloorOptions {
   readonly wasHere?: (key: string) => boolean;
   /** Told when a critter lands on the floor (true) or leaves it for good (false). */
   readonly onPresence?: (key: string, here: boolean) => void;
+  /** How the stage plays this floor (critter-stage.ts): pins, happenings, headroom. */
+  readonly stage?: StageOptions;
 }
 
 export interface CritterFloorController {
@@ -201,14 +208,6 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-function formatSeconds(ms: number): string {
-  const s = Math.max(0, Math.round(ms / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return r > 0 ? `${m}m ${r}s` : `${m}m`;
-}
-
 export function createCritterFloor(
   lane: HTMLElement,
   options: CritterFloorOptions,
@@ -226,9 +225,7 @@ export function createCritterFloor(
   const now = (): number => (resting ? restedAt : performance.now()) - restedTotal;
 
   const floor = el("div", "critter-floor");
-  const tooltip = el("div", "critter-tooltip");
-  tooltip.hidden = true;
-  lane.append(floor, tooltip);
+  lane.append(floor);
 
   const critters = new Map<string, Critter>();
   const pending = new Map<string, number>();
@@ -246,7 +243,6 @@ export function createCritterFloor(
   let collapseTimer = 0;
   let rafId = 0;
   let lastFrameTs = 0;
-  let tooltipKey: string | null = null;
   let destroyed = false;
 
   // Every script step, prop flicker and bubble timeout goes through `later`,
@@ -276,7 +272,8 @@ export function createCritterFloor(
   const live = (): readonly Critter[] => [...critters.values()];
   const clampX = (x: number): number => Math.max(4, Math.min(floorWidth - SIZE - 4, x));
 
-  const fx = makeCritterFx({ random, later, cancelLater, live });
+  // Pixel emotes where the text badges were.
+  const fx = withEmotes(makeCritterFx({ random, later, cancelLater, live }));
 
   const spritesFor = (def: CritterDef): SpriteSet => {
     const cached = sprites.get(def.id);
@@ -325,7 +322,8 @@ export function createCritterFloor(
     return Math.max(0, laneReadyAt - now());
   }
   function maybeCollapseLane(): void {
-    if (critters.size > 0 || pending.size > 0 || collapseTimer) return;
+    // A show still on (a monster crossing) keeps the lane open after the last critter.
+    if (critters.size > 0 || pending.size > 0 || collapseTimer || stage.busy()) return;
     lane.classList.remove("instant");
     if (resting) {
       // Its timer would be frozen: shut the empty lane now.
@@ -358,7 +356,7 @@ export function createCritterFloor(
     lastFrameTs = t;
     for (const c of critters.values()) tick(c, t, dt);
     if (!reduced) social.scan(t);
-    if (tooltipKey) positionTooltip();
+    stage.tick(t, dt);
     startLoop();
   }
 
@@ -564,6 +562,7 @@ export function createCritterFloor(
       }
     }
     owner.recent.set(key, [...recent, chosen.id].slice(-3));
+    if (who) stage.noteAct(who, key, chosen.id);
     return chosen;
   }
   const isCritter = (o: VariantOwner): o is Critter => "agent" in o && "def" in o;
@@ -578,12 +577,14 @@ export function createCritterFloor(
     ms: number,
     ease: EaseName,
     walking: boolean,
+    // The stage walks critters in from, and out past, the lane's edges.
+    raw = false,
   ): Promise<void> {
     if (c.tween) c.tween.resolve();
     return new Promise((resolve) => {
       c.tween = {
         from: c.x,
-        to: clampX(to),
+        to: raw ? to : clampX(to),
         t0: now(),
         ms: Math.max(1, ms),
         ease: EASE[ease],
@@ -650,6 +651,19 @@ export function createCritterFloor(
   const idle = makeCritterIdle(api);
   const social = makeCritterSocial(api);
   const scares = makeCritterScare(api);
+  const stage = makeCritterStage({
+    api,
+    lane,
+    floor,
+    reduced,
+    ambient,
+    options: options.stage ?? {},
+    random,
+    later,
+    place: (c) => place(c),
+    tweenRaw: (c, to, ms, ease, walking) => tween(c, to, ms, ease, walking, true),
+    onQuiet: () => maybeCollapseLane(),
+  });
 
   // ── Work: real tool activity → acted-out work ──
   function makeJob(kind: JobKind, ms: number): Job {
@@ -720,6 +734,7 @@ export function createCritterFloor(
     c.el.classList.toggle("left", c.def.move !== "scuttle" && c.dir < 0);
     c.el.classList.toggle("frame1", c.frame === 1);
     c.el.style.transform = `translate(${c.x.toFixed(1)}px, ${c.y.toFixed(1)}px)`;
+    stage.ground(c);
     if (c.def.move === "squish" && c.mode !== "script") {
       const s = c.mode === "walk" ? Math.sin(c.phase * 9) : 0;
       c.body.style.transform = s === 0 ? "" : `scale(${1 + s * 0.08}, ${1 - s * 0.1})`;
@@ -814,11 +829,13 @@ export function createCritterFloor(
     } else if (c.legs > 0) {
       moving = true; // running in place (hamster wheel, tag…)
       stepFrame(c, dt, c.legs);
-    } else if (c.def.move === "hover") {
+    } else if (c.def.move === "hover" && !stage.downed(c)) {
       stepFrame(c, dt, move.frameMs); // bees keep buzzing no matter what
     }
 
-    if (c.def.move === "hover") c.y = reduced ? -8 : -8 + Math.sin(c.phase * 3) * 3;
+    // A downed critter drops to the ground and stays there.
+    if (stage.downed(c)) c.y = Math.min(0, c.y + dt * 70);
+    else if (c.def.move === "hover") c.y = reduced ? -8 : -8 + Math.sin(c.phase * 3) * 3;
     else if (c.def.move === "float") c.y = reduced ? -5 : -5 + Math.sin(c.phase * 2) * 2.5;
     else if (c.def.move === "hop" && moving) c.y = -Math.abs(Math.sin(c.phase * 7)) * 5;
     else if (moving && c.frame === 1 && c.def.move !== "squish") c.y = -1;
@@ -897,18 +914,20 @@ export function createCritterFloor(
       scareIndex: Math.floor(random() * 5),
     };
     c.target = c.x;
-    root.addEventListener("mouseenter", () => showTooltip(c));
-    root.addEventListener("mouseleave", () => hideTooltip(c.key));
+    root.addEventListener("mouseenter", () => stage.tag.show(c));
+    root.addEventListener("mouseleave", () => stage.tag.hide());
     root.addEventListener("click", () => onClick(c));
     critters.set(c.key, c);
+    stage.dress(c);
     place(c);
     summonIn(c, returning);
     options.onPresence?.(c.key, true);
     startLoop();
   }
 
-  /** Beam + ring, then a white silhouette grows out of the floor and fades
-   *  into the critter's colours. */
+  /** Bring it in: one of the stage's arrivals, or the classic one here (beam
+   *  + ring, then a white silhouette grows out of the floor and fades into the
+   *  critter's colours). */
   function summonIn(c: Critter, returning: boolean): void {
     const settle = (): void => {
       c.el.classList.remove("summoning");
@@ -933,6 +952,7 @@ export function createCritterFloor(
       later(300, settle);
       return;
     }
+    if (stage.arrive(c, settle)) return;
     beam(c, "in");
     c.shadow.animate(
       [
@@ -1013,7 +1033,7 @@ export function createCritterFloor(
     c.el.classList.remove("behind");
     fx.clearBubble(c);
     fx.setBadge(c, null);
-    if (tooltipKey === c.key) hideTooltip(c.key);
+    stage.tag.drop(c);
   }
 
   // Four ways to say goodbye before beaming out.
@@ -1065,7 +1085,7 @@ export function createCritterFloor(
     },
   ];
 
-  /** Say goodbye, then reverse the summon: light up, stretch thin, zip up the beam. */
+  /** Its work is over: off it goes, one of the stage's ways or the classic one. */
   function teleportOut(c: Critter, finished: boolean): void {
     if (resting) return leaveNow(c);
     beginLeaving(c);
@@ -1073,14 +1093,21 @@ export function createCritterFloor(
       fx.setBadge(c, "ok", "\u2713");
       if (!reduced) social.cheer(c);
     }
-    fx.say(c, finished ? fx.pick(FAREWELLS) : "Called back", 1300, true);
     if (reduced) {
+      fx.say(c, finished ? fx.pick(FAREWELLS) : "Called back", 1300, true);
       later(900, () => {
         c.el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 400, fill: "forwards" });
         later(420, () => remove(c));
       });
       return;
     }
+    const classic = (): void => classicOut(c, finished);
+    if (!stage.depart({ c, finished, done: () => remove(c), classic })) classic();
+  }
+
+  /** Say goodbye, then reverse the summon: light up, stretch thin, zip up the beam. */
+  function classicOut(c: Critter, finished: boolean): void {
+    fx.say(c, finished ? fx.pick(FAREWELLS) : "Called back", 1300, true);
     fx.pick(FAREWELL_MOVES)(c);
     later(1050, () => {
       fx.clearBubble(c);
@@ -1124,6 +1151,7 @@ export function createCritterFloor(
     c.x = Math.min(Math.max(c.x, SIZE * 0.8), floorWidth - SIZE * 1.2);
     place(c);
     c.el.classList.add("fallen");
+    stage.fall(c);
     if (reduced) {
       later(300, () => c.el.classList.add("fading"));
       later(1000, () => remove(c));
@@ -1144,7 +1172,7 @@ export function createCritterFloor(
     discard(c.el);
     critters.delete(c.key);
     options.onPresence?.(c.key, false);
-    if (tooltipKey === c.key) hideTooltip(c.key);
+    stage.tag.drop(c);
     if (critters.size === 0) stopLoop();
     // A follow-up landed while it was waving goodbye: bring it straight back.
     const current = latest.get(c.key);
@@ -1156,6 +1184,7 @@ export function createCritterFloor(
   const SCARE_BADGES = ["!", "!!", "?!", "!", "eep"];
   function onClick(c: Critter): void {
     if (c.leaving || c.mode === "summon") return;
+    stage.tag.pin(c);
     if (reduced) {
       fx.setBadge(c, "yikes", SCARE_BADGES[c.scareIndex % SCARE_BADGES.length] ?? "!");
       c.scareIndex++;
@@ -1165,70 +1194,6 @@ export function createCritterFloor(
       return;
     }
     scares.scare(c);
-  }
-
-  // ── Tooltip: the stats the old in-chat feed showed ──
-  function tooltipStatus(agent: FloorAgent, elapsedMs: number): string {
-    const time = formatSeconds(agent.durationMs ?? elapsedMs);
-    const tools = `${agent.toolUseCount} ${agent.toolUseCount === 1 ? "tool" : "tools"}`;
-    switch (agent.status) {
-      case "idle":
-        return `idle \u00b7 ready for follow-up \u00b7 ${time}`;
-      case "done":
-        return `done \u00b7 ${tools} \u00b7 ${time}`;
-      case "error":
-        return `failed \u00b7 ${time}`;
-      case "interrupted":
-        return `interrupted \u00b7 ${time}`;
-      default:
-        return `working \u00b7 ${tools} \u00b7 ${time}`;
-    }
-  }
-  function renderTooltip(c: Critter): void {
-    const head = el("div", "critter-tooltip-name");
-    const swatch = el("span", "critter-tooltip-swatch");
-    swatch.style.background = c.def.palette.B ?? "#ffffff";
-    const label = el("span", "");
-    label.textContent = c.agent.label;
-    head.append(swatch, label);
-    const lines: HTMLElement[] = [head];
-    if (ambient) {
-      tooltip.replaceChildren(...lines);
-      return;
-    }
-    const status = el("div", "critter-tooltip-dim");
-    status.textContent = `${c.def.name} \u00b7 ${tooltipStatus(c.agent, now() - c.startedAt)}`;
-    lines.push(status);
-    if (c.agent.tokens) {
-      const tokens = el("div", "critter-tooltip-dim");
-      tokens.textContent = c.agent.tokens;
-      lines.push(tokens);
-    }
-    if (c.agent.status === "running" && c.agent.activity) {
-      const activity = el("div", "critter-tooltip-activity");
-      activity.textContent = c.agent.activity;
-      lines.push(activity);
-    }
-    tooltip.replaceChildren(...lines);
-  }
-  function positionTooltip(): void {
-    const c = tooltipKey ? critters.get(tooltipKey) : undefined;
-    if (!c) return;
-    const width = tooltip.offsetWidth;
-    const left = Math.max(4, Math.min(floorWidth - width - 4, c.x + SIZE / 2 - width / 2));
-    tooltip.style.transform = `translateX(${left.toFixed(1)}px)`;
-  }
-  function showTooltip(c: Critter): void {
-    if (c.leaving) return;
-    tooltipKey = c.key;
-    renderTooltip(c);
-    tooltip.hidden = false;
-    positionTooltip();
-  }
-  function hideTooltip(key: string): void {
-    if (tooltipKey !== key) return;
-    tooltipKey = null;
-    tooltip.hidden = true;
   }
 
   // ── Reconcile with the agent list ──
@@ -1277,7 +1242,6 @@ export function createCritterFloor(
     const previous = c.agent;
     c.agent = agent;
     if (c.leaving) return;
-    if (tooltipKey === c.key) renderTooltip(c);
     // "idle" is how a background agent reports its work finished (ready for
     // follow-up), so it leaves exactly like a done one.
     if (agent.status === "done" || agent.status === "idle") return teleportOut(c, true);
@@ -1329,6 +1293,7 @@ export function createCritterFloor(
 
   function destroy(): void {
     destroyed = true;
+    stage.destroy();
     stopLoop();
     for (const c of critters.values()) {
       c.token++;
@@ -1343,7 +1308,6 @@ export function createCritterFloor(
     critters.clear();
     pending.clear();
     discard(floor);
-    discard(tooltip);
     lane.classList.remove("open", "closing");
   }
 

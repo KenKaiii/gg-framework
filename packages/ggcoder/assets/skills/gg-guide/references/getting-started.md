@@ -22,7 +22,7 @@
 - Bottom-right: the gear button (**Settings**) for AI providers, your projects folder and more.
 - Top-centre: an **Update** button, shown only while a new version is available.
 - Background: a pixel-art campfire clearing in the pines, lit for your local time of day (stars and moon at night, sunbeams by day, fireflies at dusk). It stops animating while the window isn't focused, and shows a still frame if your system asks for reduced motion.
-- Along the bottom edge, the whole critter crew beams in on a randomly picked terrain (meadow, beach, desert, snow or space) and wanders and plays. Clicking a critter spooks it.
+- Along the bottom edge, nine of the critter crew turn up on a randomly picked terrain (meadow, beach, desert, snow or space) and wander and play. Every so often one heads off and another arrives. Point at a critter to see its name and what it's up to. Clicking a critter spooks it.
 - The background can be switched off in **Settings** › **General** › **Effects** with the **Background on** / **Background off** button. With it off, Home shows a plain background (the critters stay).
 - To change mode from a workspace, go back to Home and pick another button. Other pages cover each mode in depth.
 

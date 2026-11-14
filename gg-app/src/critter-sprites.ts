@@ -663,6 +663,163 @@ export const CRITTERS: readonly CritterDef[] = [
       12: "BBBCCBBBBMMBBCCBBB",
     },
   },
+  {
+    id: "penguin",
+    name: "Penguin",
+    move: "walk",
+    palette: {
+      O: "#000",
+      B: "#3f5182",
+      L: "#f6f8ff",
+      A: "#ffa53a",
+      K: "#10142a",
+      W: "#ffffff",
+      C: "#ff9ab0",
+    },
+    materials: { A: "skin" },
+    rows: [
+      "......OOOOOO......",
+      "....OOBBBBBBOO....",
+      "...OBBBBBBBBBBO...",
+      "..OBBBBBBBBBBBBO..",
+      "..OBBLLBBBBLLBBO..",
+      ".OBBLLLLBBLLLLBBO.",
+      ".OBLLWKLLLLWKLLBO.",
+      ".OBLLKKLLLLKKLLBO.",
+      ".OBLCCLLAALLCCLBO.",
+      ".OBLLLLAAAALLLLBO.",
+      "OBOBLLLLAALLLLBOBO",
+      "OBBOLLLLLLLLLLOBBO",
+      "OBBOLLLLLLLLLLOBBO",
+      "OBOBLLLLLLLLLLBOBO",
+      ".O.OBLLLLLLLLBO.O.",
+      "...OBBLLLLLLBBO...",
+      "...OOAAOOOOAAOO...",
+      "...OAAAO..OAAAO...",
+    ],
+    alt: { 10: ".OBBLLLLAALLLLBBO.", 13: "OBBOLLLLLLLLLLOBBO", 17: "..OAAAO....OAAAO.." },
+  },
+  {
+    id: "bunny",
+    name: "Bunny",
+    move: "hop",
+    palette: {
+      O: "#000",
+      B: "#f3ece2",
+      L: "#ffffff",
+      I: "#ff9cc6",
+      P: "#f3ece2",
+      K: "#2a1418",
+      W: "#ffffff",
+      C: "#ff9ab0",
+      N: "#ff6fa8",
+      M: "#7a2e2a",
+    },
+    materials: { I: "skin" },
+    rows: [
+      "....OO......OO....",
+      "...OBBO....OBBO...",
+      "...OBIO....OBIO...",
+      "...OBIO....OBIO...",
+      "...OBIBOOOOBIBO...",
+      "...OBBBBBBBBBBO...",
+      "..OBBBBBBBBBBBBO..",
+      "..OBBWKBBBBWKBBO..",
+      "..OBBKKBBBBKKBBO..",
+      "..OBCCBBLNNLBCCO..",
+      "...OBBBLLMMLLBBO..",
+      "....OOBBLLLLBBOO..",
+      ".....OOOOOOOO.OO..",
+      "..OLOBBBLLLBBOPPO.",
+      ".OLLOBBLLLLLOPPPO.",
+      "..OOOBBLLLLLBOOO..",
+      "....OOOOOOOOOO....",
+      ".....OO....OO.....",
+    ],
+    alt: {
+      0: "....OO.......OO...",
+      1: "...OBBO.....OBBO..",
+      16: ".....OOOOOOOO.....",
+      17: "......OO..OO......",
+    },
+  },
+  {
+    id: "capybara",
+    name: "Capybara",
+    move: "walk",
+    palette: {
+      O: "#000",
+      B: "#b98152",
+      L: "#e6c39a",
+      D: "#7a4f2e",
+      Y: "#ffb020",
+      P: "#b98152",
+      K: "#2a1810",
+      C: "#f08a6a",
+      N: "#5e3b26",
+      M: "#5e3b26",
+    },
+    materials: { Y: "gel" },
+    rows: [
+      ".......OYYO.......",
+      "..OO..OYYYYO..OO..",
+      ".ODDOOOOYYOOOODDO.",
+      ".OBBBBBBBBBBBBBBO.",
+      "OBBBBBBBBBBBBBBBBO",
+      "OBBBBBBBBBBBBBBBBO",
+      "OBBBKKBBBBBBKKBBBO",
+      "OBBBBBBBBBBBBBBBBO",
+      "OBBCCBLLLLLLBCCBBO",
+      "OBBBBLLNNNNLLBBBBO",
+      ".OBBBLLLMMLLLBBBO.",
+      "..OOBBLLLLLLBBOO..",
+      "....OOOOOOOOOO.OO.",
+      "...OBBBBLLLBBBOPPO",
+      "...OBBBLLLLLBBOPPO",
+      "...OBBBLLLLLBBBOO.",
+      "...OOOOOOOOOOOO...",
+      "....OOO....OOO....",
+    ],
+    alt: { 16: "....OOOOOOOOOO....", 17: ".....OOO..OOO....." },
+  },
+  {
+    id: "alien",
+    name: "Alien",
+    move: "float",
+    palette: {
+      O: "#000",
+      B: "#8ae65a",
+      L: "#e3ffd0",
+      A: "#ff4f8b",
+      P: "#8ae65a",
+      K: "#0d1a12",
+      W: "#ffffff",
+      C: "#3fc58a",
+      M: "#1e5a2a",
+    },
+    materials: { B: "skin", L: "skin", P: "skin", A: "glow" },
+    rows: [
+      "..OO..........OO..",
+      ".OAAO........OAAO.",
+      "..OBO.OOOOOO.OBO..",
+      "...OBOBBBBBBOBO...",
+      "..OOBBBBBBBBBBOO..",
+      ".OBBBBBBBBBBBBBBO.",
+      "OBBBBBBBBBBBBBBBBO",
+      "OBBKKKKBBBBKKKKBBO",
+      "OBBKWKKBBBBKWKKBBO",
+      "OBBKKKKBBBBKKKKBBO",
+      ".OBBKKBBBBBBKKBBO.",
+      ".OBCCBBBMMBBBCCBO.",
+      "..OOBBBBBBBBBBOO..",
+      "....OOOOOOOOOO.OO.",
+      "....OBBLLLLBBOPPO.",
+      "....OBBLLLLBBBOO..",
+      "....OOOOOOOOOO....",
+      ".....OO....OO.....",
+    ],
+    alt: { 0: ".OO............OO.", 1: "OAAO..........OAAO", 2: ".OBO..OOOOOO..OBO." },
+  },
 ];
 
 /** Frame rows: the base grid with the second walk frame's changed rows swapped in. */
@@ -703,6 +860,77 @@ export function renderPixelGrid(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size.width} ${size.height}" ` +
     `shape-rendering="crispEdges">${rects.join("")}</svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * The same critter with its eyes shut, for blinks. An eye is a clump of
+ * shine (W) and pupil (K) cells: it fills with the skin round it, and its
+ * bottom row becomes the lid line. Critters with glowing eyes and no shine
+ * (the robot's screen, the wizard and knight under their hats) dim their top
+ * row of glow (E) instead. The floor's blinks and the wake screen's share it.
+ */
+export function withEyesClosed(critter: CritterDef): CritterDef {
+  const grid = critter.rows.map((row) => [...row]);
+  const h = grid.length;
+  const at = (x: number, y: number): string => grid[y]?.[x] ?? ".";
+  const seen = new Set<string>();
+  let changed = false;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < (grid[y]?.length ?? 0); x++) {
+      if (at(x, y) !== "W" || seen.has(`${x},${y}`)) continue;
+      // The eye: W and K cells joined to this shine.
+      const eye: [number, number][] = [];
+      const stack: [number, number][] = [[x, y]];
+      seen.add(`${x},${y}`);
+      while (stack.length) {
+        const [cx, cy] = stack.pop() ?? [0, 0];
+        eye.push([cx, cy]);
+        for (const [nx, ny] of [
+          [cx + 1, cy],
+          [cx - 1, cy],
+          [cx, cy + 1],
+          [cx, cy - 1],
+        ] as const) {
+          const k = at(nx, ny);
+          if ((k === "W" || k === "K") && !seen.has(`${nx},${ny}`)) {
+            seen.add(`${nx},${ny}`);
+            stack.push([nx, ny]);
+          }
+        }
+      }
+      // The skin round it: its commonest neighbour that's part of the face.
+      const count = new Map<string, number>();
+      for (const [cx, cy] of eye) {
+        for (const [nx, ny] of [
+          [cx + 1, cy],
+          [cx - 1, cy],
+          [cx, cy + 1],
+          [cx, cy - 1],
+        ] as const) {
+          const k = at(nx, ny);
+          if (!"WKOCMN.".includes(k)) count.set(k, (count.get(k) ?? 0) + 1);
+        }
+      }
+      const skin = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "B";
+      const bottom = Math.max(...eye.map(([, ey]) => ey));
+      for (const [cx, cy] of eye) {
+        const row = grid[cy];
+        if (row) row[cx] = cy === bottom ? "O" : skin;
+      }
+      changed = true;
+    }
+  }
+  if (!changed) {
+    // Glowing eyes: the top row of glow goes dark. Plain dots with no shine
+    // (the capybara's): they become lid lines.
+    const [from, to] = grid.some((row) => row.includes("E")) ? ["E", "K"] : ["K", "O"];
+    const row = grid[grid.findIndex((r) => r.includes(from))];
+    if (row) {
+      for (let x = 0; x < row.length; x++) if (row[x] === from) row[x] = to;
+      changed = true;
+    }
+  }
+  return changed ? { ...critter, rows: grid.map((row) => row.join("")) } : critter;
 }
 
 /** Shaded frames, so each grid is lit once (keyed by its pixels: a blink is its own grid). */
@@ -769,7 +997,7 @@ export function hashKey(key: string): number {
 /**
  * Choose the critter for an agent. A named agent gets its own critter when
  * that one is free; otherwise the id picks a starting point and the first
- * critter not already on the floor wins, so a crowd stays varied. Once all 15
+ * critter not already on the floor wins, so a crowd stays varied. Once all 19
  * are out, repeats are allowed.
  */
 export function pickCritter(

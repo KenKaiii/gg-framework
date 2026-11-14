@@ -1284,10 +1284,6 @@ select {
   right: 0;
   bottom: 0;
 }
-/* Ambient hover card: just the name, so no stats-sized minimum. */
-.home-critters .critter-tooltip {
-  min-width: 0;
-}
 /* Top centre, level with the Settings button (top 16px, 44px tall): the
    update button, only while an update is out. Spans the width and centres its
    content, rather than translate(-50%), since reveal-up owns transform; only
@@ -7097,7 +7093,7 @@ select {
 }
 
 /* With a terrain the lane opens taller by the ground's depth, and the
-   critters (and their hover card) stand on top of it. */
+   critters stand on top of it. */
 .critter-lane.with-terrain {
   --critter-ground: calc(var(--critter-px) * 8);
 }
@@ -7107,8 +7103,33 @@ select {
 .critter-lane.with-terrain > .critter-floor {
   bottom: var(--critter-ground);
 }
-.critter-lane.with-terrain > .critter-tooltip {
-  bottom: calc(var(--critter-size) + 14px + var(--critter-ground));
+
+/* A horizon behind the chat lane's ground (CritterBackdrop.tsx): it comes up
+   after the ground has risen and goes before the ground sinks. */
+.critter-backdrop {
+  position: absolute;
+  left: 0;
+  bottom: var(--critter-ground, 0px);
+  height: calc(var(--critter-px) * 42);
+  image-rendering: pixelated;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 260ms var(--ease-in),
+    transform 260ms var(--ease-in);
+}
+.critter-lane.open:not(.closing) > .critter-backdrop {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 420ms var(--ease-out) 240ms,
+    transform 420ms var(--ease-out) 240ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .critter-backdrop {
+    transform: none;
+  }
 }
 
 /* Packed away (shut or .closing), with the exit timings; then out (.open)
@@ -7550,9 +7571,8 @@ select {
   background: rgba(0, 0, 0, 0.55);
   filter: blur(1px);
 }
+/* The tip-over itself is keyframed (critter-looks.ts: fall): one clean drop. */
 .critter.fallen .critter-body {
-  transform: rotate(-90deg) translateX(30%);
-  transition: transform 260ms var(--ease-pop);
   filter: saturate(0.4) brightness(0.8);
 }
 .critter.fading {
@@ -7773,7 +7793,6 @@ select {
   width: var(--critter-px);
   height: var(--critter-px);
   background: var(--critter-pc, #fff);
-  box-shadow: 0 0 3px var(--critter-pc, #fff);
 }
 .critter-pt-txt {
   font-family: var(--mono);
@@ -7790,8 +7809,7 @@ select {
 .critter-pt-puff {
   width: calc(var(--critter-px) * 2);
   height: calc(var(--critter-px) * 2);
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.35);
+  background: #f3efe6;
 }
 .critter-pt-steam {
   background: rgba(225, 232, 245, 0.5);
@@ -8060,54 +8078,403 @@ select {
   scale: -1 1;
 }
 
-/* Hover card with the stats the old in-chat feed showed. */
-.critter-tooltip {
+/* ── The critter stage (critter-stage.ts): looks, emotes, the name tag and
+   the things that come and go. Everything sits on the critters' pixel grid
+   (--critter-px per art pixel) in GG Royale's paper, ink and gold: fixed art
+   colours, the same in both themes. ── */
+
+/* A pixel shadow that stays on the ground: critter-looks.ts slides it down
+   and narrows it as the critter rises. */
+.critter > .critter-shadow {
+  left: calc(var(--critter-px) * 2.5);
+  right: calc(var(--critter-px) * 2.5);
+  bottom: calc(var(--critter-px) * -1.5);
+  height: calc(var(--critter-px) * 3);
+  border-radius: 0;
+  filter: none;
+  opacity: 0.42;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 13 3' shape-rendering='crispEdges'%3E%3Cpath fill='%231e0c1f' d='M2 0h9v1H2zM0 1h13v1H0zM2 2h9v1H2z'/%3E%3C/svg%3E")
+    center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+  transform-origin: 50% 50%;
+}
+/* Breathing: one art pixel taller, in a step, each critter on its own beat. */
+.critter .critter-flip {
+  transform-origin: 50% 100%;
+  animation: critter-breathe 2.8s steps(1) infinite;
+  animation-delay: var(--critter-breath, 0s);
+  animation-play-state: var(--loop-play-state, running);
+}
+.critter.frame1 .critter-flip,
+.critter.leaving .critter-flip,
+.critter.summoning .critter-flip {
+  animation: none;
+}
+@keyframes critter-breathe {
+  0%,
+  58% {
+    scale: 1 1;
+  }
+  59%,
+  100% {
+    scale: 1 1.03;
+  }
+}
+/* The eyes-shut frames sit over the sprite and show for a blink. */
+.critter-flip img.critter-blink {
+  visibility: hidden;
+}
+.critter.blinking:not(.frame1) .critter-b0,
+.critter.blinking.frame1 .critter-b1 {
+  visibility: visible;
+}
+.critter-flip img.critter-hat {
+  inset: auto;
+  z-index: 1;
+}
+.critter-chute,
+.critter-balloon {
   position: absolute;
-  left: 0;
-  /* Just above the critters' heads (hovering bee included). */
-  bottom: calc(var(--critter-size) + 14px);
-  z-index: 3;
-  min-width: 190px;
-  max-width: 320px;
-  padding: var(--space-4) var(--space-5);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-md);
-  font-family: var(--sans);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-  color: var(--text-muted);
+  image-rendering: pixelated;
   pointer-events: none;
 }
-.critter-tooltip[hidden] {
-  display: none;
+.critter-balloon {
+  transform-origin: 50% 100%;
 }
-.critter-tooltip-name {
+.critter.shiver .critter-react {
+  animation: critter-shiver 90ms steps(2) infinite;
+  animation-play-state: var(--loop-play-state, running);
+}
+@keyframes critter-shiver {
+  50% {
+    translate: 1px 0;
+  }
+}
+
+/* Emotes: a pixel icon on a slip of bubble paper, where text badges were. */
+.critter-badge.critter-emote {
+  --bp: var(--critter-px);
+  bottom: calc(100% + 4 * var(--bp));
+  padding: calc(2 * var(--bp)) calc(3 * var(--bp)) calc(3 * var(--bp));
+  background: #cedbf9;
+  border-radius: calc(2 * var(--bp));
+  box-shadow:
+    0 0 0 var(--bp) #1e0c1f,
+    inset 0 calc(-1 * var(--bp)) 0 #a9b8e4,
+    0 var(--bp) 0 var(--bp) #1e0c1f;
+}
+.critter-emote img,
+.critter-thing-emote {
+  display: block;
+  image-rendering: pixelated;
+}
+.critter-emote::after {
+  content: "";
+  position: absolute;
+  top: calc(100% + 2 * var(--bp));
+  left: 50%;
+  width: calc(3 * var(--bp));
+  height: calc(2 * var(--bp));
+  margin-left: calc(-1.5 * var(--bp));
+  background: #1e0c1f;
+  clip-path: polygon(0 0, 100% 0, 100% 50%, 66% 50%, 66% 100%, 33% 100%, 33% 50%, 0 50%);
+}
+
+/* The name tag (critter-tag.ts): a gold name tab on a slip of bubble paper
+   saying what the critter is doing. In the bubble's type and on its grid. */
+.critter-tag {
+  --bp: var(--critter-px);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7 * var(--bp));
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  transform: translateX(calc(-50% + var(--critter-tag-shift, 0px)));
+  pointer-events: none;
+  font-family: "m5x7", monospace;
+  font-size: calc(16 * var(--bp));
+  font-weight: 400;
+  line-height: calc(11 * var(--bp));
+  -webkit-font-smoothing: none;
+  white-space: nowrap;
+  animation: critter-tag-in 140ms var(--ease-pop) both;
+}
+@keyframes critter-tag-in {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+.critter-tag-name {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 0 calc(4 * var(--bp));
+  padding: 0 calc(4 * var(--bp)) calc(2 * var(--bp));
+  text-transform: uppercase;
+  background: #e9af54;
+  color: #1e0c1f;
+  box-shadow:
+    0 0 0 var(--bp) #1e0c1f,
+    inset 0 var(--bp) 0 #f8d488,
+    inset 0 calc(-1 * var(--bp)) 0 #c47a3a;
+}
+.critter-tag-do {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  font-weight: 600;
-  color: var(--text);
+  gap: calc(4 * var(--bp));
+  max-width: calc(160 * var(--bp));
+  margin-top: var(--bp);
+  padding: var(--bp) calc(5 * var(--bp)) calc(4 * var(--bp));
+  background: #cedbf9;
+  color: #1e0c1f;
+  border-radius: calc(3 * var(--bp));
+  box-shadow:
+    0 0 0 var(--bp) #1e0c1f,
+    inset 0 calc(-2 * var(--bp)) 0 #a9b8e4,
+    0 calc(2 * var(--bp)) 0 var(--bp) #1e0c1f;
 }
-.critter-tooltip-swatch {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
+.critter-tag-icon {
+  flex: none;
+  image-rendering: pixelated;
 }
-.critter-tooltip-dim {
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-.critter-tooltip-activity {
-  margin-top: var(--space-1);
+.critter-tag-text {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-xs);
-  color: var(--text-secondary);
 }
+/* Its tail stays over the critter where the tag is pushed in from the lane's edge. */
+.critter-tag::after {
+  content: "";
+  position: absolute;
+  top: calc(100% + 3 * var(--bp));
+  left: calc(50% - var(--critter-tag-shift, 0px));
+  width: calc(5 * var(--bp));
+  height: calc(3 * var(--bp));
+  margin-left: calc(-2.5 * var(--bp));
+  background: #1e0c1f;
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% 33%,
+    80% 33%,
+    80% 66%,
+    60% 66%,
+    60% 100%,
+    40% 100%,
+    40% 66%,
+    20% 66%,
+    20% 33%,
+    0 33%
+  );
+}
+/* One thing over a critter's head at a time: the tag stands in for its bubble. */
+.critter.tagged {
+  z-index: 5;
+}
+.critter.tagged > .critter-bubble,
+.critter.tagged > .critter-badge {
+  display: none;
+}
+
+/* Things on the floor (critter-stage-kit.ts): the lane is a window, so they
+   leave through its sides (clipped there) or shrink away upward. */
+.critter-things {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  clip-path: inset(-900px 0 -60px 0);
+}
+.critter-things-front {
+  z-index: 3;
+}
+.critter-thing {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 2;
+  pointer-events: none;
+  will-change: transform;
+}
+.critter-thing-art {
+  position: absolute;
+  inset: 0;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+.critter-thing.critter-clip {
+  overflow: hidden;
+}
+.critter-ufo,
+.critter-ken {
+  z-index: 4;
+}
+.critter-ufo .critter-thing-art {
+  animation: critter-ufo-hover 700ms steps(2) infinite alternate;
+  animation-play-state: var(--loop-play-state, running);
+}
+@keyframes critter-ufo-hover {
+  to {
+    translate: 0 -2px;
+  }
+}
+.critter-ufo-beam {
+  position: absolute;
+  left: 50%;
+  top: calc(100% - 6px);
+  z-index: -1;
+  width: 56px;
+  margin-left: -28px;
+  clip-path: polygon(36% 0, 64% 0, 100% 100%, 0 100%);
+  background: repeating-linear-gradient(
+    to bottom,
+    rgb(125 249 255 / 0.6) 0 4px,
+    rgb(125 249 255 / 0.34) 4px 8px
+  );
+  opacity: 0;
+  transition: opacity 140ms steps(2);
+}
+.critter-ufo-beam.on {
+  opacity: 1;
+}
+.critter-ufo-beam.scan {
+  animation: critter-ufo-scan 200ms steps(2) infinite;
+  animation-play-state: var(--loop-play-state, running);
+}
+@keyframes critter-ufo-scan {
+  50% {
+    opacity: 0.35;
+  }
+}
+.critter-monster,
+.critter-ball {
+  z-index: 3;
+}
+.critter-ken.charging .critter-thing-art {
+  animation: critter-shiver 70ms steps(2) infinite;
+  animation-play-state: var(--loop-play-state, running);
+}
+.critter-carried {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  margin: -8px 0 0 -11px;
+  image-rendering: pixelated;
+}
+.critter-thing-emote {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  translate: -50% 0;
+  animation: critter-pop-plain 180ms var(--ease-pop) both;
+}
+.critter-soul {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 4;
+  width: var(--critter-size);
+  height: var(--critter-size);
+  transform-origin: 50% 100%;
+  pointer-events: none;
+}
+.critter-soul img {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.critter-halo {
+  position: absolute;
+  left: 8px;
+  top: -8px;
+  box-sizing: border-box;
+  width: 20px;
+  height: 6px;
+  border: 2px solid #ffe14d;
+}
+.critter-rain {
+  position: absolute;
+  z-index: 3;
+  width: 2px;
+  height: 6px;
+  background: #7ec8ff;
+  pointer-events: none;
+}
+.critter-bolt {
+  position: absolute;
+  z-index: 4;
+  width: 8px;
+  margin-left: -4px;
+  background: #fff7a8;
+  clip-path: polygon(50% 0, 100% 0, 50% 45%, 100% 45%, 25% 100%, 50% 55%, 0 55%);
+  pointer-events: none;
+}
+.critter-star {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 52px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, white);
+  pointer-events: none;
+}
+.critter-star::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  width: 6px;
+  height: 6px;
+  background: #fff7a8;
+}
+.critter-twinkle {
+  position: absolute;
+  z-index: 4;
+  width: 14px;
+  height: 14px;
+  margin: 0 0 -7px -7px;
+  background: white;
+  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+  pointer-events: none;
+}
+.critter-pow {
+  position: absolute;
+  z-index: 5;
+  background: radial-gradient(white 0 34%, #ffe14d 34%);
+  clip-path: polygon(
+    50% 0%,
+    59% 28%,
+    85% 15%,
+    72% 41%,
+    100% 50%,
+    72% 59%,
+    85% 85%,
+    59% 72%,
+    50% 100%,
+    41% 72%,
+    15% 85%,
+    28% 59%,
+    0% 50%,
+    28% 41%,
+    15% 15%,
+    41% 28%
+  );
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .critter .critter-flip,
+  .critter.shiver .critter-react,
+  .critter-tag,
+  .critter-ufo .critter-thing-art,
+  .critter-ufo-beam.scan,
+  .critter-ken.charging .critter-thing-art,
+  .critter-thing-emote {
+    animation: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .critter-lane {
     transition: none;
@@ -8115,10 +8482,6 @@ select {
   .critter-bubble,
   .critter-badge {
     animation: none;
-  }
-  .critter.fallen .critter-body {
-    transform: none;
-    transition: none;
   }
   .critter-react {
     transition: none;

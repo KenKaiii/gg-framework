@@ -63,7 +63,7 @@ export function stationThings(farm: Farm): ReadonlyMap<StationKind, Thing> {
 export function stationsInUse(world: FarmWorld): ReadonlySet<StationKind> {
   const out = new Set<StationKind>();
   for (const actor of world.actors.values()) {
-    if (actor.trip || actor.leaving) continue;
+    if (actor.trip || actor.leaving || actor.offstage) continue;
     if (actor.state === "working" || (actor.state === "idle" && actor.station === "lounge")) {
       out.add(actor.station);
     }

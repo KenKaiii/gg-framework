@@ -202,7 +202,7 @@ function critterDef(id: string): CritterDef {
 }
 
 /** A soft oval shadow on the ground. */
-function shadow(ctx: Ctx, x: number, y: number, rx: number, ry: number, a: number): void {
+export function shadow(ctx: Ctx, x: number, y: number, rx: number, ry: number, a: number): void {
   ctx.fillStyle = "#2a1406";
   ctx.globalAlpha = a;
   for (let dy = -ry; dy <= ry; dy++) {
@@ -210,6 +210,24 @@ function shadow(ctx: Ctx, x: number, y: number, rx: number, ry: number, a: numbe
     if (half > 0) ctx.fillRect(Math.round(x) - half, Math.round(y) + dy, half * 2, 1);
   }
   ctx.globalAlpha = 1;
+}
+
+/**
+ * A farm critter standing with its feet at (x, y), for whatever draws one
+ * that the sim isn't moving (see goal-farm-comings.ts).
+ */
+export function drawFarmCritter(
+  ctx: Ctx,
+  critterId: string,
+  x: number,
+  y: number,
+  facing: 1 | -1,
+  step: 0 | 1 = 0,
+): void {
+  const def = critterDef(critterId);
+  const lit = litFarmGrid(def, frameRows(def, step));
+  const left = Math.round(x) - CRITTER / 2;
+  drawGrid(ctx, lit.rows, lit.palette, left, Math.round(y) - CRITTER_H, facing === -1);
 }
 
 // ── Summon in, and back out ─────────────────────────────────
@@ -296,7 +314,7 @@ const SUMMON_PETALS = ["#ffffff", "#f8c8d4", "#fde58a", "#bfe08a"] as const;
 
 /** A 4×4 ordered (Bayer) dither threshold for a pixel, 0–1. */
 const BAYER_R = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
-function bayerAt(x: number, y: number): number {
+export function bayerAt(x: number, y: number): number {
   return ((BAYER_R[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16;
 }
 
@@ -408,7 +426,13 @@ const BUBBLE = { ink: "#1e0c1f", paper: "#cedbf9", shade: "#a9b8e4", text: "#1e0
  * a 2px shade along the bottom and a thick ink lip under it, and a tail that
  * runs out of the shade through the lip.
  */
-function drawBubble(ctx: Ctx, text: string, cx: number, top: number, mapWidth: number): void {
+export function drawBubble(
+  ctx: Ctx,
+  text: string,
+  cx: number,
+  top: number,
+  mapWidth: number,
+): void {
   const lines = wrapText(text, BUBBLE_TEXT_MAX);
   const w = Math.max(...lines.map(textWidth)) + 8;
   const h = lines.length * LINE_PITCH - 1 + 5;
@@ -581,7 +605,8 @@ function actorItems(
   ambientNow: number,
 ): void {
   const def = critterDef(actor.critterId);
-  const poked = reactionOn(play, `actor:${actor.key}`, now);
+  // Pokes are filed under the critter's target id (see farmTargets).
+  const poked = reactionOn(play, `critter:${actor.key}`, now);
   const pk = poked ? progress(poked, now) : 0;
   let x = actor.spot.x;
   let y = actor.spot.y;
@@ -1163,6 +1188,7 @@ export function drawFarm(
   const lanterns: FarmLamp[] = [];
   const bodies: LitBody[] = [];
   for (const actor of world.actors.values()) {
+    if (actor.offstage) continue;
     actorItems(ctx, world, actor, now, items, late, night, lanterns, bodies, play, ambientNow);
   }
   // A prop standing in front of someone (its base lower on the map than
@@ -2297,9 +2323,9 @@ export function farmTargets(
       outline: null,
     });
   }
-  // The critters (not while being summoned in or out).
+  // The critters (not while being summoned in or out, or off the farm).
   for (const actor of world.actors.values()) {
-    if (actor.state === "arriving" || actor.state === "leaving") continue;
+    if (actor.offstage || actor.state === "arriving" || actor.state === "leaving") continue;
     const { x, y, facing } = actorAt(actor, now);
     const def = critterDef(actor.critterId);
     const left = Math.round(x) - CRITTER / 2;

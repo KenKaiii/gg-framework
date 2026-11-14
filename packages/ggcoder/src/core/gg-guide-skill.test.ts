@@ -176,6 +176,7 @@ const COVERAGE: Record<string, string> = {
   CritterFloor: "ken-and-autopilot.md",
   CritterLine: "ken-and-autopilot.md",
   CritterTerrain: "ken-and-autopilot.md",
+  CritterBackdrop: "ken-and-autopilot.md",
   PopCritter: "ken-and-autopilot.md",
   Confetti: "ken-and-autopilot.md",
   TrophiesPanel: "ken-and-autopilot.md",

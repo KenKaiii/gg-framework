@@ -123,6 +123,7 @@ The goal world, and Chat | Workers:
 - Critters walk to the place for what they're doing: the bookcase to read, the laptop for the web, the notes board to plan, the carpenter's bench to edit, the stove to run things, the post box to ask you something, and the tea bench by the fire to wait.
 - A small status pill on the farm says what GG Goals is doing right now, with a timer.
 - You can click things on the farm to make them react and play a sound. Your sound setting mutes them.
+- Point at a critter on the farm to see its name and what it's doing. Workers come and go in different ways (through the gate's light, by saucer, on foot), and now and then a visitor turns up. It's decoration and needs no action.
 - The header switch flips between **Chat** (the conversation) and **Workers** (the farm). The **Chat** button is highlighted when a question is waiting for you.
 - The header also shows how many workers are working, how many tasks are done and how many failed. Next to it is a play/pause button: **Pause the goal**, **Resume the goal**, or "Not running. Carry the goal on" when the goal has stopped.
 

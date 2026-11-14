@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { CRITTER_CELLS, CRITTERS, pickCritter, renderCritterFrame } from "./critter-sprites";
 
 describe("critter roster", () => {
-  it("has 15 critters with unique ids", () => {
-    expect(CRITTERS).toHaveLength(15);
-    expect(new Set(CRITTERS.map((c) => c.id)).size).toBe(15);
+  it("has 19 critters with unique ids", () => {
+    expect(CRITTERS).toHaveLength(19);
+    expect(new Set(CRITTERS.map((c) => c.id)).size).toBe(19);
   });
 
   it.each(CRITTERS.map((c) => [c.id, c] as const))(
@@ -61,14 +61,14 @@ describe("pickCritter", () => {
     );
   });
 
-  it("avoids critters already on the floor until all 15 are out", () => {
+  it("avoids critters already on the floor until all 19 are out", () => {
     const taken = new Set<string>();
     for (let i = 0; i < CRITTERS.length; i++) {
       const critter = pickCritter("bee", `agent-${i}`, taken);
       expect(taken.has(critter.id)).toBe(false);
       taken.add(critter.id);
     }
-    expect(taken.size).toBe(15);
+    expect(taken.size).toBe(19);
     // Everyone is out: repeats are allowed, and a named agent keeps its own.
     expect(pickCritter("bee", "agent-99", taken).id).toBe("bee");
   });

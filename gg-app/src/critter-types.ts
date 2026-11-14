@@ -163,3 +163,52 @@ export interface CritterApi {
 }
 
 export type EaseName = "linear" | "ease-in" | "ease-out" | "ease-in-out";
+
+// ── The stage (critter-stage.ts): arrivals, exits and things that happen ──
+export const ARRIVALS = [
+  "beam",
+  "ufo",
+  "parachute",
+  "burrow",
+  "egg",
+  "bird",
+  "walk",
+  "comet",
+] as const;
+export const EXITS = [
+  "beam",
+  "ufo",
+  "monster",
+  "balloon",
+  "bird",
+  "hole",
+  "walk",
+  "poof",
+  "blast",
+] as const;
+export const HAPPENINGS = [
+  "ufo-scan",
+  "gift",
+  "ball",
+  "monster",
+  "ken",
+  "cloud",
+  "conga",
+  "star",
+  "rps",
+  "piggyback",
+] as const;
+export type ArrivalName = (typeof ARRIVALS)[number];
+export type ExitName = (typeof EXITS)[number];
+export type HappeningName = (typeof HAPPENINGS)[number];
+
+export interface StageOptions {
+  /** Everyone arrives this way (tests and previews); varied when unset. */
+  readonly arrival?: ArrivalName;
+  /** Everyone leaves this way; varied when unset. */
+  readonly exit?: ExitName;
+  /** false: nothing happens by itself. A list: only those do. */
+  readonly happenings?: boolean | readonly HappeningName[];
+  /** Open sky above the lane (the home screen): longer drops, higher jumps, monsters. */
+  readonly tall?: boolean;
+}

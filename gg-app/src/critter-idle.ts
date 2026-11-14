@@ -25,6 +25,28 @@ export const SIGNATURE_LABELS = {
 } as const satisfies Readonly<Record<string, string>>;
 
 type SignatureSpecies = keyof typeof SIGNATURE_LABELS;
+
+/** What a critter's tag says while it does its signature move (critter-tag.ts). */
+const SIGNATURE_DOING: Readonly<Record<SignatureSpecies, string>> = {
+  bee: "Doing a loop-de-loop",
+  fox: "Pouncing on nothing",
+  cat: "Being a cat",
+  owl: "Head swivel",
+  frog: "Catching a fly",
+  robot: "Beep boop scan",
+  wizard: "Casting a spell",
+  knight: "Sword practice",
+  builder: "Checking the floor",
+  crab: "Crab dance",
+  axolotl: "Blowing bubbles",
+  dino: "Tiny roar",
+  slime: "Jiggling",
+};
+
+/** The tag's words for a signature move; species without one just show off. */
+export function signatureDoing(id: string): string {
+  return isSignatureSpecies(id) ? SIGNATURE_DOING[id] : "Showing off";
+}
 type Move = (c: Critter, ok: Ok) => Promise<void>;
 
 interface Fidget extends Variant {

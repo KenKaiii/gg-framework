@@ -67,7 +67,7 @@ Ken is GG Coder's second agent in a Code window. GG does the building; Ken is a 
 
 ## Helper agents (critters)
 
-- When GG splits work across helper agents (sub-agents), each helper appears as a little pixel critter above the chat. They beam in, wander, hop when they get a new task and wave goodbye when done. Click one to see it react.
+- When GG splits work across helper agents (sub-agents), each helper appears as a little pixel critter above the chat, on a small patch of terrain with a horizon behind it. They arrive (in a beam of light, by saucer, under a parachute and so on), act out what they're doing, and leave when done. Point at one to see its name and what it's working on. Click one to see it react.
 - A line in the chat tracks the group, led by a critter, for example "Sent a critter off to help…" or "Launched 3 critters to dig in…".
 - The line's colour and wording show the state:
   - Pink and shimmering: still working ("One critter is still on the case…").

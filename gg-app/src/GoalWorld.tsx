@@ -60,6 +60,7 @@ import {
   syncFarm,
   type FarmWorld,
 } from "./goal-farm-sim";
+import { makeFarmStage, type FarmStage } from "./goal-farm-stage";
 import { TILE } from "./goal-map-ground";
 import type { LiveToolEntry } from "./LiveToolPanel";
 import { useMotionLevel, type MotionLevel } from "./window-motion";
@@ -221,6 +222,18 @@ export function GoalWorld({
       soundsRef.current = null;
     };
   }, []);
+  // What's drawn over the farm's frame (see goal-farm-stage): the name tag,
+  // the other ways workers come and go, and visitors.
+  const quietRef = useRef(false);
+  const farmStageRef = useRef<FarmStage | null>(null);
+  useEffect(() => {
+    farmStageRef.current = makeFarmStage(() => worldRef.current, {
+      quiet: () => quietRef.current,
+    });
+    return () => {
+      farmStageRef.current = null;
+    };
+  }, []);
   // Bumped when a light is switched, so the light is rebuilt without it.
   const [lightsVersion, setLightsVersion] = useState(0);
   // Which lights are off, for the buttons' labels (the play state holds the truth).
@@ -269,6 +282,10 @@ export function GoalWorld({
   // card) beats everything, Ken talking beats the status, and Ken holds his
   // next line while the user is reading the status.
   const signUp = Boolean(shownAsk) || Boolean(finish);
+  // No visitors while a sign is up: the user has something to read.
+  useEffect(() => {
+    quietRef.current = signUp;
+  }, [signUp]);
   const [kenTalking, setKenTalking] = useState(false);
   const [statusHovered, setStatusHovered] = useState(false);
   // The header's height, so the notice hangs just below it.
@@ -381,6 +398,9 @@ export function GoalWorld({
           Math.floor(Math.random() * 1e6),
         );
         if (LIGHTS.has(hit.kind)) setLightsVersion((v) => v + 1);
+        // A poked critter's tag stays up a moment.
+        if (standing && hit.id.startsWith("critter:"))
+          farmStageRef.current?.pin(hit.id.slice(8), now);
       } else {
         const i = Math.floor(y) * farm.width + Math.floor(x);
         const atmo = atmosphereRef.current;
@@ -565,6 +585,8 @@ export function GoalWorld({
       const world = worldRef.current;
       const background = backgroundRef.current;
       if (!world || !background) return;
+      // Reduced motion keeps the stage's tag and nothing else of it.
+      if (!reduced) farmStageRef.current?.before(now);
       stepFarm(world, now, reduced);
       // A change of light or weather fades over a few seconds (at once with reduced motion).
       const was = fadeRef.current;
@@ -590,12 +612,32 @@ export function GoalWorld({
         scratchRef.current,
         play,
       );
-      // The cursor and the name of whatever the pointer's over.
+      // The part of the map in view below the header, for the tag to keep inside.
+      const shown = canvas.clientWidth / canvas.width || 1;
+      const head = headerRef?.current?.offsetHeight ?? 0;
+      farmStageRef.current?.draw(
+        ctx,
+        now,
+        play,
+        {
+          x0: Math.max(0, -canvas.offsetLeft / shown),
+          x1: Math.min(
+            canvas.width,
+            ((canvas.parentElement?.clientWidth ?? 0) - canvas.offsetLeft) / shown,
+          ),
+          y0: Math.max(0, (head - canvas.offsetTop) / shown),
+        },
+        reduced,
+      );
+      // The cursor and the name of whatever the pointer's over. A critter
+      // wears its tag instead, so it gets no tooltip as well.
       canvas.style.cursor = play.hovered ? "pointer" : "";
-      const name = play.hovered
-        ? (farmTargets(world, play, now, ambientStill ? 0 : now).find((x) => x.id === play.hovered)
-            ?.name ?? null)
-        : null;
+      const name =
+        play.hovered && !play.hovered.startsWith("critter:")
+          ? (farmTargets(world, play, now, ambientStill ? 0 : now).find(
+              (x) => x.id === play.hovered,
+            )?.name ?? null)
+          : null;
       setHoverName((was) => (was === name ? was : name));
     };
     if (reduced) {
@@ -614,7 +656,8 @@ export function GoalWorld({
       const falling = !ambientStill && atmosphereRef.current?.look.falling;
       const fading = fadeRef.current !== null;
       const play = playRef.current;
-      const busy = playing(play, now) || play.hover !== null;
+      const busy =
+        playing(play, now) || play.hover !== null || farmStageRef.current?.busy() === true;
       // Something in use animates at the weather's rate: smooth enough for a
       // hammer or a scrolling screen, without the full rate's cost.
       const using = usesNeedPace(play, now);
@@ -627,7 +670,7 @@ export function GoalWorld({
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [motionLevel, reduced, seed]);
+  }, [motionLevel, reduced, seed, headerRef]);
 
   return (
     <section

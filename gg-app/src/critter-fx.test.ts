@@ -156,7 +156,13 @@ describe("critter floor in a background window", () => {
     vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
     const lane = document.createElement("div");
     document.body.appendChild(lane);
-    const floor = createCritterFloor(lane, { reducedMotion: false, random: () => 0.5 });
+    // The classic beam in and out, and nothing happening by itself: these
+    // tests are about resting, not the stage's shows (critter-stage.test.ts).
+    const floor = createCritterFloor(lane, {
+      reducedMotion: false,
+      random: () => 0.5,
+      stage: { arrival: "beam", exit: "beam", happenings: false },
+    });
     const blur = (): void => {
       state.focused = false;
       window.dispatchEvent(new Event("blur"));
