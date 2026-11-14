@@ -22,6 +22,17 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.112.0",
+    date: "2026-11-14",
+    items: [
+      "Your critters now put on a real show. They drop in by `parachute`, hatch out of eggs and tumble from a flying saucer, and when a mean monster stomps in, `Ken` himself turns up to knock it flat while the whole crowd cheers.",
+      "Hover any critter and a little `name tag` pops up with who it is and exactly what it's working on right now. Click one and the tag stays up for a moment, in your chat and on the farm.",
+      "Four new faces joined the gang: a penguin, a bunny, a capybara and an alien. That makes `19` critters, and your Home screen now rotates a fresh crew of `9`, so it never looks the same twice.",
+      "The `Goals` farm has visitors. A saucer swoops in to pinch a daikon, a monster rattles the gate, and little Ken powers up to send it packing. Your workers can now arrive by saucer and float home on a `lantern`.",
+      "The `Prompt Enhancer` keeps its highlights when you tweak the draft. Fix one word and every other corrected term stays lit, tooltip and all, right through to the message you send.",
+    ],
+  },
+  {
     version: "0.111.2",
     date: "2026-11-13",
     items: [
