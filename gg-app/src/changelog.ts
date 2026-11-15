@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.113.0",
+    date: "2026-11-15",
+    items: [
+      "`Autopilot` now handles its own questions. When GG Coder stops to ask you something, Ken answers it for you and you see exactly what he picked. Anything that really needs you, he leaves on the card with a one-line reason, so you never come back to a run that's stuck waiting.",
+      "`/init` now writes a lean, sharp project file. I cut it down to just the traps your agent would actually fall into, so every chat carries less baggage and stays focused on your task.",
+      "The `Checklist` git and CI checks now walk you through fixing branch protection and hardening your workflows right in the chat, and the slash command trophy unlocks after `3` commands instead of 5.",
+    ],
+  },
+  {
     version: "0.112.1",
     date: "2026-11-14",
     items: [
