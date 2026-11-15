@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.113.1",
+    date: "2026-11-15",
+    items: [
+      "Running models on `llama.cpp` now just works with images. I check whether your model can see before sending a screenshot or picture, so vision models get them and text-only ones never choke on them.",
+    ],
+  },
+  {
     version: "0.113.0",
     date: "2026-11-15",
     items: [
