@@ -289,6 +289,49 @@ describe("probeEndpoint — llama.cpp", () => {
   });
 });
 
+describe("probeEndpoint — image support", () => {
+  it("reads llama.cpp's vision modality from /props", async () => {
+    const endpoint = await endpointFor("llamacpp", {
+      "/v1/models": { data: [{ id: "qwen3-vl-8b" }] },
+      "/props": { default_generation_settings: { n_ctx: 32768 }, modalities: { vision: true } },
+    });
+    const probe = await probeEndpoint(endpoint, { timeoutMs: 2000 });
+    expect(probe.models[0]).toMatchObject({ supportsImages: true, contextWindow: 32768 });
+  });
+
+  it("reads the vision modality on a user-added llama.cpp-style server", async () => {
+    const endpoint = await endpointFor("custom", {
+      "/v1/models": { data: [{ id: "text-only" }] },
+      "/props": { default_generation_settings: { n_ctx: 8192 }, modalities: { vision: false } },
+    });
+    const probe = await probeEndpoint(endpoint, { timeoutMs: 2000 });
+    expect(probe.models[0]).toMatchObject({ supportsImages: false });
+  });
+
+  it("lets a pinned supportsImages win over what the server reports", async () => {
+    const endpoint = await endpointFor("vllm", {
+      "/v1/models": { data: [{ id: "Qwen/Qwen3-VL-32B-Instruct", max_model_len: 65536 }] },
+    });
+    const pinnedOn = await probeEndpoint(
+      { ...endpoint, supportsImages: true },
+      { timeoutMs: 2000 },
+    );
+    expect(pinnedOn.models[0]).toMatchObject({ supportsImages: true, contextWindow: 65536 });
+    const unpinned = await probeEndpoint(endpoint, { timeoutMs: 2000 });
+    expect(unpinned.models[0]).toMatchObject({ supportsImages: false });
+  });
+
+  it("re-probes when the pinned image support changes", async () => {
+    const endpoint = await endpointFor("vllm", { "/v1/models": { data: [{ id: "m" }] } });
+    const before = await discoverLocalModels([endpoint], { timeoutMs: 2000 });
+    expect(before.models[0]?.supportsImages).toBe(false);
+    const after = await discoverLocalModels([{ ...endpoint, supportsImages: true }], {
+      timeoutMs: 2000,
+    });
+    expect(after.models[0]?.supportsImages).toBe(true);
+  });
+});
+
 describe("probeEndpoint — generic / vLLM", () => {
   it("uses max_model_len from the model object when present", async () => {
     const endpoint = await endpointFor("vllm", {

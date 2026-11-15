@@ -4,6 +4,7 @@ export * from "./openrouter-catalog.js";
 export * from "./opencode-catalog.js";
 export * from "./thinking-level.js";
 export * from "./local-models.js";
+export * from "./point-scale.js";
 export * from "./paths.js";
 export * from "./logger.js";
 export * from "./file-lock.js";

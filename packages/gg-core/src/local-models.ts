@@ -8,11 +8,11 @@
  *
  *   - Ollama    → `/api/show` + `/api/ps` → capabilities + running context
  *   - LM Studio → `/api/v1/models` (v0 fallback) → capabilities + loaded context
- *   - llama.cpp → `GET /props`          → `default_generation_settings.n_ctx`
+ *   - llama.cpp → `GET /props`          → `default_generation_settings.n_ctx`, `modalities.vision`
  *   - vLLM/other → nothing; `max_model_len`, `context_length` or `meta.n_ctx`
  *                  sometimes rides the model object.
  *
- * A custom endpoint may pin `contextLength`, which wins over all of the above.
+ * A custom endpoint may pin `contextLength` and `supportsImages`, which win over all of the above.
  *
  * Probing never throws: an unreachable server is a normal state (the user just
  * doesn't have it running), not an error to surface.
@@ -39,6 +39,8 @@ export interface LocalEndpoint {
   custom?: boolean;
   /** User-pinned context window; wins over whatever the server reports. */
   contextLength?: number;
+  /** User-pinned image support (vLLM and most gateways never report it); wins over the server. */
+  supportsImages?: boolean;
 }
 
 /** One model as reported (and enriched) by a local server. */
@@ -250,6 +252,8 @@ interface LmStudioModelList {
 
 interface LlamaCppProps {
   default_generation_settings?: { n_ctx?: number };
+  /** Set when llama-server was started with a multimodal projector (`--mmproj`). */
+  modalities?: { vision?: boolean };
 }
 
 // ── Probing ────────────────────────────────────────────────
@@ -283,10 +287,12 @@ export async function probeEndpoint(
 
   const enriched = await enrich(endpoint, entries, { timeoutMs, signal });
   const pinned = contextLength(endpoint.contextLength);
-  const models =
-    pinned === undefined
-      ? enriched
-      : enriched.map((m) => ({ ...m, contextWindow: pinned, contextWindowKnown: true }));
+  const images = typeof endpoint.supportsImages === "boolean" ? endpoint.supportsImages : undefined;
+  const models = enriched.map((m) => ({
+    ...m,
+    ...(pinned === undefined ? {} : { contextWindow: pinned, contextWindowKnown: true }),
+    ...(images === undefined ? {} : { supportsImages: images }),
+  }));
   log("INFO", "local-models", `Probed ${endpoint.label}`, {
     baseUrl: endpoint.baseUrl,
     models: String(models.length),
@@ -322,7 +328,7 @@ async function enrichCustom(
   const root = endpointRoot(endpoint.baseUrl);
   const props = await fetchJson<LlamaCppProps>(`${root}/props`, endpoint, options);
   const nCtx = contextLength(props?.default_generation_settings?.n_ctx);
-  if (nCtx !== undefined) return llamaCppModels(endpoint, entries, nCtx);
+  if (nCtx !== undefined) return llamaCppModels(endpoint, entries, nCtx, props);
   const lmStudio = await fetchJson<LmStudioV1ModelList>(`${root}/api/v1/models`, endpoint, options);
   if (Array.isArray(lmStudio?.models)) return enrichLmStudio(endpoint, entries, options, lmStudio);
   return generic;
@@ -526,6 +532,7 @@ async function enrichLlamaCpp(
     endpoint,
     entries,
     contextLength(props?.default_generation_settings?.n_ctx),
+    props,
   );
 }
 
@@ -533,11 +540,13 @@ function llamaCppModels(
   endpoint: LocalEndpoint,
   entries: (OpenAIModelListEntry & { id: string })[],
   nCtx: number | undefined,
+  props: LlamaCppProps | undefined,
 ): LocalModel[] {
   return entries.map((entry) => ({
     ...genericModel(endpoint, entry),
     contextWindow: nCtx ?? FALLBACK_CONTEXT_WINDOW,
     contextWindowKnown: nCtx !== undefined,
+    supportsImages: props?.modalities?.vision === true,
   }));
 }
 
@@ -606,7 +615,9 @@ interface CacheEntry {
 let cache: CacheEntry | undefined;
 
 function cacheKey(endpoints: readonly LocalEndpoint[]): string {
-  return endpoints.map((e) => `${e.id}@${e.baseUrl}#${e.contextLength ?? ""}`).join("|");
+  return endpoints
+    .map((e) => `${e.id}@${e.baseUrl}#${e.contextLength ?? ""}#${e.supportsImages ?? ""}`)
+    .join("|");
 }
 
 export interface DiscoverOptions extends ProbeOptions {
