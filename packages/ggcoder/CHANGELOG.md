@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.101.0
+
+### Minor Changes
+
+- Autopilot Ken now answers ask_user cards in your place (or leaves them to you with a reason), /init writes much leaner context files, and CI tracks the cached system-prompt prefix size.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.101.0
+- @kenkaiiii/gg-agent@5.101.0
+- @kenkaiiii/gg-core@5.101.0
+
 ## 5.100.3
 
 ### Patch Changes
