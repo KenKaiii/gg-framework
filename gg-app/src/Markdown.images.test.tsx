@@ -10,6 +10,7 @@ const { openUrl, openProjectPath, readChatImage } = vi.hoisted(() => ({
 vi.mock("./agent", () => ({ openProjectPath, openUrl, readChatImage, sendPrompt: vi.fn() }));
 
 import { Markdown } from "./Markdown";
+import { closeFilePreview, subscribeFilePreview } from "./file-preview";
 
 const PNG = "data:image/png;base64,iVBORw0KGgo=";
 
@@ -25,8 +26,14 @@ describe("markdown images", () => {
     const img = await screen.findByRole("img", { name: "transcript" });
     expect(img.getAttribute("src")).toBe(PNG);
     expect(readChatImage).toHaveBeenCalledWith("/tmp/gg-shell-mock/transcript.png");
+    const shown = vi.fn();
+    const stop = subscribeFilePreview(shown);
     fireEvent.click(screen.getByRole("button", { name: "Open transcript" }));
-    expect(openProjectPath).toHaveBeenCalledWith("/tmp/gg-shell-mock/transcript.png");
+    // Opens in the app's own preview, not the OS viewer.
+    expect(shown).toHaveBeenLastCalledWith("/tmp/gg-shell-mock/transcript.png");
+    expect(openProjectPath).not.toHaveBeenCalled();
+    stop();
+    closeFilePreview();
   });
 
   it("keeps file:// sources instead of blanking them", async () => {
@@ -41,8 +48,13 @@ describe("markdown images", () => {
     render(<Markdown>{"![mock](/tmp/missing.png)"}</Markdown>);
     expect(await screen.findByText(/Couldn't show image/)).toBeTruthy();
     expect(screen.queryByRole("img")).toBeNull();
+    const shown = vi.fn();
+    const stop = subscribeFilePreview(shown);
     fireEvent.click(screen.getByText("mock"));
-    expect(openProjectPath).toHaveBeenCalledWith("/tmp/missing.png");
+    // The preview says why it can't show the file and offers the default app.
+    expect(shown).toHaveBeenLastCalledWith("/tmp/missing.png");
+    stop();
+    closeFilePreview();
   });
 
   it("falls back to a link for web images, which the app's CSP blocks", () => {

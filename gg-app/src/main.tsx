@@ -6,6 +6,7 @@ import { AppErrorBoundary } from "./AppErrorBoundary";
 import { ZoomController } from "./ZoomController";
 import { TooltipLayer } from "./TooltipLayer";
 import { WhatsNewModal } from "./WhatsNewModal";
+import { FilePreviewHost } from "./FilePreviewModal";
 import { tagPlatform } from "./platform";
 import { installColorScheme } from "./color-scheme";
 import { parseMode } from "./whatsnew-content";
@@ -75,6 +76,7 @@ if (params.get("whatsnew") === "1") {
       <ZoomController />
       <TooltipLayer />
       <WhatsNewModal />
+      <FilePreviewHost />
     </>,
   );
 }

@@ -12,7 +12,8 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { CheckIcon, CopyIcon, ArrowElbowDownLeftIcon } from "@phosphor-icons/react";
-import { openProjectPath, openUrl, readChatImage, sendPrompt } from "./agent";
+import { openUrl, readChatImage, sendPrompt } from "./agent";
+import { previewOrOpenPath } from "./file-preview";
 import { toast } from "./toast";
 import { ImageCard } from "./ImageCard";
 import { codeLanguage, codeNodeText } from "./markdown-prompt";
@@ -68,7 +69,7 @@ function ExternalLink({
         if (isExternalHref(href)) {
           void openUrl(href);
         } else {
-          void openProjectPath(href);
+          previewOrOpenPath(href);
         }
       }}
     >
@@ -138,7 +139,7 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }): React.Reac
       path={local}
       caption={local ? alt || fileName(local) : undefined}
       title={local}
-      onOpen={local ? () => void openProjectPath(local) : undefined}
+      onOpen={local ? () => previewOrOpenPath(local) : undefined}
       onError={() => setBroken(url)}
     />
   );
