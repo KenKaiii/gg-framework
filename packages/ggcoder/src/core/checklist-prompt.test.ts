@@ -65,7 +65,6 @@ describe("checklistRunPrompt", () => {
     const expected: [string, ChecklistId[]][] = [
       ["init", ["agent-setup"]],
       ["setup-commit", ["commit-gate"]],
-      ["setup-ci", ["ci", "git-github"]],
     ];
     for (const [name, ids] of expected) {
       const text = prompt(name);
@@ -80,9 +79,34 @@ describe("checklistRunPrompt", () => {
     const security = item("security");
 
     expect(checklistRunPrompt(ci)).toContain(ci.check);
-    expect(checklistRunPrompt(ci)).toContain("`/setup-ci` would fix most gaps");
+    // CI has no setup command: its own fix step handles gaps.
+    expect(checklistRunPrompt(ci)).not.toContain("would fix most gaps");
+    expect(checklistRunPrompt(item("commit-gate"))).toContain(
+      "`/setup-commit` would fix most gaps",
+    );
     expect(checklistRunPrompt(security)).toContain("Load the `bulletproof` skill");
     expect(checklistRunPrompt(item("docs"))).toContain("No skill applies; use your own judgment.");
+  });
+
+  it("carries the CI and branch-protection rules the old /setup-ci command held", () => {
+    const ci = checklistRunPrompt(item("ci"));
+    expect(ci).toContain("`permissions: contents: read`");
+    expect(ci).toContain("pinned to a full commit SHA");
+    expect(ci).toContain("never on publish, deploy or release workflows");
+    expect(ci).toContain("Never weaken, skip or delete a check to make CI pass");
+    expect(ci).toContain("No skill applies; follow the review guide above.");
+
+    const git = checklistRunPrompt(item("git-github"));
+    expect(git).toContain('`conditions.ref_name.include: ["~DEFAULT_BRANCH"]`');
+    expect(git).toContain("rules `deletion` and `non_fast_forward`");
+    expect(git).toContain("leave the finding open");
+  });
+
+  it("keeps every run prompt inside the app's 16000-character limit", () => {
+    // gg-app's checklist validator drops an entry whose runPrompt is longer.
+    for (const entry of ITEMS) {
+      expect(checklistRunPrompt(entry).length, entry.id).toBeLessThanOrEqual(16000);
+    }
   });
 
   it("renders the review guide for items that carry one", () => {

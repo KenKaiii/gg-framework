@@ -70,6 +70,13 @@ describe("buildKenAutopilotSystemPrompt — verdict contract", () => {
     expect(prompt).not.toContain("submitting a plan for approval");
   });
 
+  it("makes Ken answer question cards, leaving real decisions to the user", () => {
+    expect(prompt).toContain("Question cards are YOURS to answer");
+    expect(prompt).toContain("'Question for you' section");
+    expect(prompt).toContain("reply ANSWER plus the JSON of picks");
+    expect(prompt).toContain("Never PROMPT, ALL_CLEAR or IGNORE a question card");
+  });
+
   it("gives plan review a design bar: steps, boundaries, order, uncovered paths", () => {
     // Post-turn review deliberately cannot ask "is this shape right?" — it
     // judges a finished diff against the ask, and relitigating structure every

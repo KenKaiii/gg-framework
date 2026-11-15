@@ -27,7 +27,7 @@ Several items load a bundled skill first: Secrets kept out, Dependencies and Sec
 
 - Agent setup is the first item. It checks that a context file (AGENTS.md or CLAUDE.md) exists, matches the code today, and that the project has the skills its recurring work needs.
 - Its button runs `/init` (tooltip: "Run /init to create or update project instructions"). This is setup that writes project instructions, not an audit.
-- Git & GitHub and CI point to `/setup-ci`, and Commit checks points to `/setup-commit`, as the setup commands that fix most gaps.
+- Commit checks points to `/setup-commit` as the setup command that fixes most gaps. Git & GitHub and CI have no setup command: run the check, then pick a fix.
 
 ## Running a check
 

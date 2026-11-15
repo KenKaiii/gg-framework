@@ -62,7 +62,12 @@ export interface AskUserPrompt extends AskUserRequest {
 }
 
 export type AskUserResult =
-  | { action: "answer"; answers: Record<string, string | string[]> }
+  | {
+      action: "answer";
+      answers: Record<string, string | string[]>;
+      /** Autopilot Ken answered in the user's place. */
+      by?: "ken";
+    }
   /**
    * No answer. `superseded` means the user replied with a message of their own
    * instead of picking — the question is moot, but they are still talking.
@@ -266,8 +271,17 @@ export function formatAskResult(questions: AskQuestion[], result: AskUserResult)
     const text = Array.isArray(answer) ? answer.join(", ") : answer;
     return `${q.question}\n→ ${text?.trim() ? text.trim() : "(no answer)"}`;
   });
+  if (result.by === "ken") {
+    return `Autopilot Ken answered for the user:\n\n${lines.join("\n\n")}\n\n${KEN_ANSWER_SAFETY}`;
+  }
   return `The user answered:\n\n${lines.join("\n\n")}`;
 }
+
+/** Ken is not the user: his pick never licenses an action that can't be undone. */
+const KEN_ANSWER_SAFETY =
+  "This is Ken's call, not the user's. On it alone do NOT delete data, push, publish, deploy, " +
+  "pay, send messages or take any other destructive, costly or externally visible action — " +
+  "leave those for the user.";
 
 /** The tool result: {@link formatAskResult}'s text, plus a reply's attachments. */
 export function askResultContent(

@@ -3,7 +3,9 @@ import {
   answerAskItem,
   askItemFor,
   closeAsksNotIn,
+  completeAskFromSidecar,
   firstOpenAskId,
+  markAskLeftByKen,
   isAskUserPrompt,
   parseOpenAskPrompts,
   withOpenAsks,
@@ -174,5 +176,43 @@ describe("withOpenAsks", () => {
       prompt: { id: "x", questions: [q("a")] },
       deferred: true,
     });
+  });
+});
+
+describe("completeAskFromSidecar", () => {
+  const prompt = {
+    id: "ask-1",
+    questions: [{ id: "go", question: "Go?", kind: "confirm" as const }],
+  };
+
+  it("marks the open card answered by Ken and moves it to the end", () => {
+    const items = [
+      { kind: "ask", id: 1, prompt },
+      { kind: "text", id: 2 },
+    ];
+    expect(completeAskFromSidecar(items, "ask-1", { go: "yes" }, () => 9)).toEqual([
+      { kind: "text", id: 2 },
+      {
+        kind: "ask",
+        id: 9,
+        prompt,
+        answers: { go: "yes" },
+        sent: true,
+        answeredLive: true,
+        answeredBy: "ken",
+      },
+    ]);
+  });
+
+  it("leaves a card the user already answered alone", () => {
+    const items = [{ kind: "ask", id: 1, prompt, sent: true, answers: { go: "no" } }];
+    expect(completeAskFromSidecar(items, "ask-1", { go: "yes" }, () => 9)).toEqual(items);
+  });
+
+  it("notes when Ken leaves an open card to the user", () => {
+    const items = [{ kind: "ask", id: 1, prompt }];
+    expect(markAskLeftByKen(items, "ask-1", "Pricing is your call.")).toEqual([
+      { kind: "ask", id: 1, prompt, kenLeft: "Pricing is your call." },
+    ]);
   });
 });

@@ -115,21 +115,34 @@ If they answer with anything else, follow what they asked — specific features 
   {
     name: "init",
     aliases: [],
-    description: "Generate or update CLAUDE.md for this project",
-    prompt: `Generate or update the project context file with project-specific context only: what this project is, the non-obvious knowledge needed to change it safely, and the workflows that are unique to it.
+    description: "Generate or update AGENTS.md / CLAUDE.md for this project",
+    prompt: `Generate or update the project context file with project-specific context only: the few things an agent would get wrong in this project without being told.
 
-This file is injected verbatim into the **cached prefix of every request in every future session**, alongside the system prompt. Every line costs tokens forever. A line that repeats something the agent already has is worse than absent: it dilutes the lines that matter. So the bar is not "is this true?" — it is **"would a competent agent get this wrong without being told?"**
+This file is injected verbatim into the **cached prefix of every request in every future session**, alongside the system prompt. Every line costs tokens forever and takes attention from every task, relevant or not. Context files that describe a repo do not make agents more successful and do make them more expensive; the lines that help state what is *not* discoverable from the repo. So the bar is not "is this true?" — it is **"would a competent agent get this wrong without being told?"**
 
-## What is already in the agent's context — never restate any of it
+A short file is the goal, not a risk. There is no minimum: a simple project may need five lines.
 
-Read this list once and apply it to every step below. These are already supplied by the system prompt, so writing them into the context file is pure duplication:
+## What earns a line
+
+Only these, and only when specific to this project:
+
+- **A plausible default is wrong here** — the package manager, runner, helper, or fork that must be used instead of the obvious one.
+- **Misleading code** — a legacy pattern that is everywhere but must not be copied, a directory that looks dead but is live, generated files that must not be hand-edited.
+- **Silent or distant breakage** — a required order, a schema read from two places, a change that only fails on another OS, in CI, at release, or in production.
+- **Unenforced conventions and decisions** — what the project follows that no linter, type check, test, or CI step would catch.
+- **Commands that cannot be read off a manifest** — a multi-step sequence, a required order, a non-obvious flag, or how to run one test when the plain runner invocation does not work.
+- **Pointers** — one line naming the file that holds a procedure or glossary the agent would not think to open (\`Release: follow docs/release.md\`).
+
+## What never earns a line
+
+Read this list once and apply it to every step below. These are already in the agent's context or one tool call away, so writing them into the context file is pure duplication:
 
 1. **Agent behavior** — Do NOT add generic agent behavior already covered by the system prompt: read before edit/write, re-read after formatters, ask before destructive actions, no fake verification, generic code-quality advice, how to use tools, or how to talk to the user.
-2. **Generic conventions** — Do not add generic language style guides, generic verification rules, or boilerplate quality gates such as "After editing ANY file" / "Code Quality — Zero Tolerance". Record only conventions this project actually enforces.
-3. **Verify commands** — a Verification section is auto-generated from package scripts / manifests (lint, typecheck, format, test) with the correct runner already resolved from the lockfile. Only write a command down if it is NOT discoverable that way: an undocumented multi-step sequence, a required ordering, a non-obvious flag, or a command that lives outside the manifest. Never add guidance that requires running checks, builds, or the full quality suite after every edit or every file change, and never turn discovered commands into mandatory after-every-edit requirements unless local CI explicitly enforces that sequence.
-4. **The file tree** — the agent can list and grep the repo in one call. Do NOT embed generated symbol maps, exhaustive file indexes, auto-generated directory listings, or large trees. Do not add symbol indexes or auto-generated project inventories; the context file must remain durable, agent-focused project context.
-
-Include only project-specific overrides, stricter local requirements, or knowledge that cannot be derived by reading the code.
+2. **Generic conventions** — Do not add generic language style guides, generic verification rules, or boilerplate quality gates such as "After editing ANY file" / "Code Quality — Zero Tolerance". Skip any rule a linter, formatter, or type check already enforces: the tool reports it.
+3. **Verify commands** — a Verification section is auto-generated from package scripts / manifests (lint, typecheck, format, test) with the correct runner already resolved from the lockfile. Never add guidance that requires running checks, builds, or the full quality suite after every edit or every file change, and never turn discovered commands into mandatory after-every-edit requirements unless local CI explicitly enforces that sequence.
+4. **The repo's shape** — the agent can list and grep the repo in one call. No module-by-module overview, architecture summary, stack or dependency list, or directory tree: overviews do not help agents reach the right files any faster. Do NOT embed generated symbol maps, exhaustive file indexes, or auto-generated project inventories; the context file must remain durable, agent-focused project context.
+5. **Procedures** — a release, deploy, or migration walkthrough belongs in its own command, skill, or doc that is read on demand. Write the pointer, plus the one constraint that breaks things if missed.
+6. **History** — what once went wrong is not a rule. Keep a rule only if its cause is still in the code today.
 
 ## Step 1: Pick the target filename
 
@@ -149,52 +162,63 @@ All content you generate goes inside these exact fence markers:
 <!-- gg:init:end -->
 \`\`\`
 
-- If the file exists and already has the fence: **replace everything between the markers wholesale**. Text outside the fence is user-owned — do not touch it, do not reformat it, do not move it.
+- If the file exists and already has the fence: **replace everything between the markers wholesale**. The old block's lines are candidates, not content to keep: each must pass Step 3 again. Text outside the fence is user-owned — do not touch it, do not reformat it, do not move it.
 - If the file exists without the fence: read it, decide which content is hand-written knowledge worth keeping, move that above the fence untouched, and put your generated content inside a new fence. Remove generic guidance that is already covered by the system prompt (see the list above) unless it is a deliberate project-specific override.
 - If the file does not exist: create it with the fence.
 - A \`<!-- gg-safe:blocked-packages:start -->\` … \`<!-- gg-safe:blocked-packages:end -->\` block is maintained by the app (packages its safety checks blocked). Keep it outside your fence, exactly as it is.
 
-## Step 3: Analyze the project (sub-agents in parallel)
+## Step 3: Find candidates
 
-Derive every fact from the actual project — source code, entry points, manifests, config, and history. Treat README, docs, and code comments as unverified hints that are frequently stale: never copy claims from them, and only state things you can confirm from the code and config themselves.
+Derive every fact from the actual project — source code, entry points, manifests, config, CI, and history. Treat README, docs, and code comments as unverified hints that are frequently stale: never copy claims from them, and only state things you can confirm from the code and config themselves.
 
-Spawn 3 sub-agents ${spawnParallel(3)}:
+Size the search to the repo:
 
-1. **Purpose & Shape Agent**: What does this project actually do, and what are its top-level parts? Read entry points, main modules, exported/public APIs, CLI commands, routes, and manifests. Return: a one-sentence purpose, and for each package/app/module a one-line statement of what it *owns*. Do not rely on the README's description. Do not return a directory listing.
-2. **Gotchas & Invariants Agent**: Find the knowledge that is expensive to rediscover. Mine \`git log\` (especially revert/fix/hotfix commits), CI and release workflows, \`NOTE\`/\`HACK\`/\`IMPORTANT\`/\`WARNING\`/\`XXX\` comments, test names asserting surprising behavior, generated-file and build-order constraints, and any config with a non-default value. Return only: rules that are non-obvious from reading the code, ordering/sequencing constraints, things that silently break, and the *reason* each exists. Skip anything a careful reader would infer in 30 seconds.
-3. **Workflow & Stack Agent**: How is this project run, built, released, and deployed, from authoritative sources only — package scripts, manifests, Makefiles, CI config, deploy config. Return the workflows and any command that is NOT a plain single manifest script (multi-step sequences, required order, env vars, non-obvious flags, commands living outside the manifest). Do not return commands the auto-generated Verification section already covers (see item 3 above). Do not invent commands from convention, and do not trust README/doc command snippets unless a script or manifest confirms they still exist.
+- **Small repo** (one package; its manifests, entry points, CI config, and recent history fit in a handful of calls): search it yourself. No sub-agents.
+- **Larger repo or monorepo**: spawn 2 sub-agents ${spawnParallel(2)}. They see none of this conversation, so give each the "What earns a line" and "What never earns a line" lists in full.
+  1. **Traps Agent**: mine \`git log\` (especially revert/fix/hotfix commits), CI and release workflows, \`NOTE\`/\`HACK\`/\`IMPORTANT\`/\`WARNING\`/\`XXX\` comments, tests asserting surprising behavior, generated-file and build-order constraints, and config with a non-default value.
+  2. **Commands Agent**: from package scripts, manifests, Makefiles, CI config, and deploy config only, find the commands that are not a plain single manifest script, and the files where procedures (release, deploy, migrations) are already written down. Do not invent commands from convention, and do not trust README/doc command snippets unless a script or manifest confirms they still exist.
 
-Wait for all sub-agents to complete, then synthesize.
+Every candidate, yours or a sub-agent's, is three things: the rule in one line, the file or commit that proves it, and the mistake an agent makes without it. At most 10 per sub-agent. No description of what the project is or how it is laid out.
+
+Then drop a candidate when:
+
+- its cause is no longer in the code (the bug was fixed, the file is gone);
+- a check the agent runs anyway — lint, typecheck, a unit test — fails on it immediately and clearly. Keep it only if the failure is silent, late (CI on another OS, release, production), or misleading;
+- a careful reader would infer it in 30 seconds from the file they are editing.
 
 ## Step 4: Write the generated block
 
-Inside the fence, write only sections that add project-specific value. Prefer this order — drop any section that would be empty or obvious:
+Inside the fence:
 
-- Project name and one-sentence purpose
-- Key packages/apps/modules and what each owns (one line each, no tree)
-- Architecture or data-flow notes an agent could not infer quickly from the code
-- **Gotchas / invariants** — the highest-value section. Each entry states the rule *and* why it exists.
-- Project-specific commands and workflows that survived the Step 3 filter (required publish order, generated-file workflow, dev-server startup, deployment caveats, auth/secrets storage)
+- First line: the project name and one sentence on what it is. Nothing more about purpose.
+- Then the surviving candidates as flat bullets, one line each: the rule, concrete enough to check, with the reason as a short clause when it is not obvious.
+- Add a heading only when there are more than ~8 bullets and they split naturally (for example Gotchas, Commands). No "Overview", "Architecture", "Structure", "Code Quality", "Organization Rules", or "How to Work" sections.
+- No capitals or emphasis words for weight, no tables, and no code blocks except a command sequence whose order matters.
+- Do not repeat anything the user-owned text outside the fence, or a parent directory's context file, already says.
 
-Avoid generic sections named "Code Quality", "Organization Rules", or "How to Work" unless every bullet is specific to this project.
+If few candidates survive, write few lines. Do not pad to look thorough.
 
 ## Step 5: Budget and verify
 
-The combined budget for all project context files is 32KB, shared with any parent-directory context files. **Target 6KB or less for the generated block** — a tight 4KB file that gets read every time beats a 25KB file the agent skims.
+The combined budget for all project context files is 32KB, shared with any parent-directory context files. **Ceiling: 3KB for the generated block, with no minimum** — most projects need far less.
 
-After writing:
+1. Re-read the block line by line and name the mistake each line prevents. A line with no answer is cut, however true it is.
+2. Measure the block by piping the lines between the markers to \`wc -c\`. If it exceeds 3KB, cut the lines closest to "derivable by reading the code" until it fits.
 
-1. Run \`wc -c\` on the file and report the byte size. If the generated block exceeds ~6KB, cut the weakest sections (the ones closest to "derivable by reading the code") and rewrite.
-2. Re-read the file and confirm every remaining line passes the bar: **project-specific, supported by a local file you actually read, and not already in the agent's context per the list above.**
-3. Report in one line: which file, how many bytes, and how many lines you removed as redundant.
+## Step 6: Ask once for what the repo cannot show
 
-## Step 6: Update the checklist
+The most valuable lines are the ones only the user knows: corrections they keep repeating, decisions never written down. Say in one sentence how many lines you wrote, then ask one question with the \`ask_user\` tool: a \`choice\` question (\`id: "unwritten"\`, question "Anything I keep getting wrong in this project, or a rule that isn't written down anywhere?") with two options, "Nothing to add" and "Yes, I'll type it next", and the free-text escape left on.
+
+- If they answer with text, or send it after picking "Yes, I'll type it next": write it as one concrete line per rule in the user-owned text **above** the fence, so the next \`/init\` run keeps it. Keep their meaning; do not expand it.
+- If they pick "Nothing to add", or \`ask_user\` is unavailable: move on. Do not ask in prose and do not ask again.
+
+## Step 7: Update the checklist
 
 ${checklistSetupStep(["agent-setup"])}
 
-## Step 7: Restart Notice
+## Step 8: Report and restart notice
 
-End your reply with this exact notice so the user doesn't miss it:
+Report in one line: which file, the block's bytes and line count, and how many candidates you dropped. Then end your reply with this exact notice so the user doesn't miss it:
 
 ${CLAUDE_MD_RESTART_NOTICE}`,
   },
@@ -291,126 +315,6 @@ ${checklistSetupStep(["commit-gate"])}
 ## Step 4: Confirm
 
 Report that /commit is now available with quality checks, an agent code review gate, and AI-generated commit messages, and mention which local scripts/docs verified the commands.`,
-  },
-  {
-    name: "setup-ci",
-    aliases: [],
-    description: "Set up or harden CI for any stack",
-    prompt: `# /setup-ci — set up CI from scratch OR harden what exists, any stack
-
-You configure CI for THIS project. Completely stack-agnostic: manifests on disk decide
-everything — never assume a stack, never copy GitHub's starter workflows (they are stale
-and unhardened: no permissions, no concurrency, no timeouts, naive matrices).
-
-## Step 0: Preconditions
-
-- Not a git repository? STOP: tell the user to initialize git first (GG App's Initialize
-  Git button, or \`git init\` + a remote).
-- Look at \`git remote\`. Not GitHub? Adapt: GitLab -> \`.gitlab-ci.yml\` equivalents of the
-  same rules and skip the ruleset step. Other CI providers already configured -> leave
-  them alone and say so.
-
-## Step 1: Detect the stack (manifests only)
-
-- \`package.json\` -> Node; the lockfile picks the package manager (pnpm-lock.yaml ->
-  pnpm, yarn.lock -> yarn, package-lock.json -> npm, bun.lock/b -> bun).
-- \`pyproject.toml\` / \`requirements.txt\` / \`uv.lock\` / \`poetry.lock\` -> Python.
-- \`go.mod\` -> Go. \`Cargo.toml\` -> Rust. \`composer.json\` -> PHP. \`Gemfile\` -> Ruby.
-- \`*.csproj\`/\`*.sln\` -> .NET. \`pubspec.yaml\` -> Flutter/Dart. \`mix.exs\` -> Elixir.
-- \`Dockerfile\` and none of the above -> container build check.
-- Nothing detected -> static site: generate CI only if a build/lint tool exists;
-  otherwise say honestly that CI adds nothing and skip generation.
-
-## Step 2: Pick the mode
-
-- \`.github/workflows/\` empty (or no real CI) -> **Mode A: generate.**
-- Workflows exist -> **Mode B: audit + harden** (still add missing extras below).
-
-## Mode A — generate
-
-Write \`.github/workflows/ci.yml\`. EVERY rule is required:
-
-- \`on:\` push + pull_request targeting the default branch (detect it, don't assume main).
-- \`permissions:\n  contents: read\` at workflow level (least privilege).
-- ONE job on \`ubuntu-latest\` — never macOS (10x billing) or Windows (2x) unless the
-  project has OS-specific native code.
-- \`concurrency\` group \`\${{ github.workflow }}-\${{ github.head_ref || github.run_id }}\`
-  with \`cancel-in-progress: true\`.
-- \`timeout-minutes: 15\` on the job.
-- Install + build + test using ONLY commands that exist in the project's
-  manifest/scripts; no test command -> build only, and say so in the report.
-- Stack setup actions (verify the CURRENT major version against official docs before
-  writing): pnpm -> \`pnpm/action-setup\` + \`actions/setup-node\` with \`cache: pnpm\`;
-  npm/yarn/bun -> \`actions/setup-node\`/\`actions/setup-bun\` with cache for the lockfile;
-  Python -> \`astral-sh/setup-uv\` + \`uv sync\` (fall back to pip when there is no uv
-  lockfile); Go -> \`actions/setup-go\` (cache on by default); Rust -> minimal stable
-  toolchain + \`Swatinem/rust-cache\`; PHP / Ruby / .NET / Flutter -> the canonical setup
-  action for that stack, verified the same way.
-- \`paths-ignore\` for \`**/*.md\` and docs folders if the repo has them.
-- No artifact uploads.
-
-## Mode B — audit + harden existing workflows
-
-For EVERY file in \`.github/workflows/\`, apply and report one line per change:
-
-1. Add top-level \`permissions: contents: read\` if missing. A job that legitimately
-   needs more keeps its own narrower block — note why, never widen globally.
-2. Add \`concurrency\` + \`cancel-in-progress: true\` if missing — EXCEPT on
-   publish/deploy/release workflows, where cancelling mid-publish is worse than waiting.
-3. Add \`timeout-minutes\` if missing (15 for test jobs; more for release jobs).
-4. macOS/Windows matrix legs: keep ONLY if the project genuinely tests OS-specific
-   behavior (native modules, installers, cross-platform bugs). Otherwise collapse to
-   \`ubuntu-latest\` and state the minutes saved (macOS bills 10x, Windows 2x).
-5. Ensure the package manager's dependency cache is enabled.
-6. Bump actions to the current major version (verify against official docs). Do not
-   SHA-pin unless asked — Dependabot keeps majors fresh once added.
-7. NEVER weaken a check to make it pass. If an existing workflow is already stricter
-   than these rules (e.g. a release job needing \`contents: write\`), leave it and say so.
-
-## Both modes — extras
-
-- \`.github/dependabot.yml\` if missing: version updates for \`github-actions\` plus the
-  ecosystem from Step 1 (npm, pip, cargo, go, ...), weekly cadence.
-- Branch protection (GitHub repos only): if no ruleset protects the default branch, run
-  \`gh api -X POST /repos/{owner}/{repo}/rulesets\` with \`enforcement: active\`,
-  \`conditions.ref_name.include: ["~DEFAULT_BRANCH"]\`, and rules \`deletion\` +
-  \`non_fast_forward\`. Do NOT require pull requests. On failure (no admin, or private
-  repo on a free plan): one line, continue — not an error.
-- \`AGENTS.md\` at the repo root if missing: build/test/lint commands for this stack,
-  a pointer that CI lives in \`.github/workflows/\` and must stay green, and a rule to
-  never commit with \`--no-verify\`. If \`CLAUDE.md\` exists, keep AGENTS.md short and
-  point to it.
-
-## Update the checklist
-
-${checklistSetupStep(["ci", "git-github"])}
-
-## Finish
-
-- Do NOT commit anything — the user reviews the diff first. Point them at /commit.
-- Report bottom line first: mode chosen + stack detected, files written/changed, what CI
-  now runs, rough minutes impact, and anything skipped with the reason.`,
-  },
-  {
-    name: "compare",
-    aliases: [],
-    description: "Compare real-world code",
-    prompt: `Compare the code you just created or modified in this conversation against real-world implementations using the \`steroids\` tool (\`search\`, then \`show\` to read the full file).
-
-You already know what you just built. For each file you created or modified, use \`steroids\` \`search\` to find how real projects implement the same patterns. Look at the specific APIs, hooks, functions, and architecture you used.
-
-If you find something consistently done differently across real codebases, or something commonly included that you left out, report it:
-
-\`\`\`
-[MISSING/DIVERGENT/INCOMPLETE] file:line - What it is
-Wrote: What was implemented
-Real-world: What real projects do instead/additionally
-Evidence: steroids — pattern seen in X of Y repos
-\`\`\`
-
-Style preferences and subjective improvements are not valid findings. Only report things backed by clear steroids evidence across multiple repos.
-
-If the code aligns well with real-world patterns, say so. That's a good outcome.`,
   },
   {
     name: "steroids",

@@ -298,6 +298,8 @@ export function AskBand({
   answeredLive,
   cancelled,
   deferred,
+  answeredBy,
+  kenLeft,
   onAnswer,
   onTypeInstead,
 }: {
@@ -323,6 +325,10 @@ export function AskBand({
    * band stays fully answerable — a later answer is sent as a message.
    */
   deferred?: boolean;
+  /** Autopilot Ken answered it in the user's place. */
+  answeredBy?: "ken";
+  /** Autopilot Ken left it to the user, with this reason. */
+  kenLeft?: string;
   /** Report answered questions. App merges, then settles once none are left. */
   onAnswer: (delta: Answers) => void;
   /** The user wants to write their own answer: focus the composer, seeded. */
@@ -468,7 +474,10 @@ export function AskBand({
       .join(" · ");
     return (
       <div className={`ask-band is-done${settleClass}`}>
-        <AnsweredLine text={text} live={!settledAtMount || answeredLive === true} />
+        <AnsweredLine
+          text={answeredBy === "ken" ? `Ken: ${text}` : text}
+          live={!settledAtMount || answeredLive === true}
+        />
       </div>
     );
   }
@@ -525,6 +534,11 @@ export function AskBand({
       {deferred && (
         <p className="ask-deferred-note" role="status">
           Agent continued with its best guess — your answer will still be sent
+        </p>
+      )}
+      {kenLeft !== undefined && (
+        <p className="ask-ken-note" role="status">
+          {kenLeft ? `Ken left this one for you: ${kenLeft}` : "Ken left this one for you."}
         </p>
       )}
       {questions.map((q, i) => (

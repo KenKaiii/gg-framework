@@ -72,7 +72,11 @@ export const CHECKLIST_ITEMS = [
     description: "I use this to check the repo setup, ignore rules and protection for main.",
     check:
       "The project is a Git repo with a GitHub remote, .gitignore covers build output and local files, the main branch is protected (ruleset or branch protection, via `gh` when available), and no large binaries are committed.",
-    setupCommand: "setup-ci",
+    guide: [
+      "**Repo and remote.** Not a Git repo: stop and point to the app's Initialize Git button, or `git init` plus a remote. A remote on another host is not a finding; check that host's branch protection instead and say what you could not check.",
+      "**Protection.** Read it with `gh api repos/{owner}/{repo}/rulesets` and the default branch's protection. The default branch should refuse deletion and force pushes. Required pull requests are optional; don't flag a solo project for lacking them.",
+      '**Fixing protection.** Create a ruleset with `gh api -X POST repos/{owner}/{repo}/rulesets`: `enforcement: active`, `conditions.ref_name.include: ["~DEFAULT_BRANCH"]`, rules `deletion` and `non_fast_forward`. If GitHub refuses (no admin rights, or a private repo on a free plan), say so in one line and leave the finding open; don\'t retry or work around it.',
+    ],
   },
   {
     id: "secrets",
@@ -106,7 +110,15 @@ export const CHECKLIST_ITEMS = [
     description: "I use this to check that every pull request gets built and tested automatically.",
     check:
       "CI runs build, lint and tests on every pull request and push to main, and the workflows are hardened (pinned actions, least-privilege permissions, no untrusted input in run steps).",
-    setupCommand: "setup-ci",
+    guide: [
+      "**What CI runs.** Take the stack and commands from the manifests and lockfile on disk, never from assumption or a starter template. CI should run the build, lint and test scripts that exist, on pull requests and on pushes to the default branch (detect it; it may not be `main`). If the project has nothing to build, lint or test, record `not-applicable` instead of flagging missing CI.",
+      "**Permissions.** A top-level `permissions: contents: read`; a job that needs more carries its own narrower block with the reason. Widening permissions for the whole workflow is a finding.",
+      "**Untrusted input.** No `${{ github.event.* }}` values, branch names or PR titles interpolated into `run:` steps (they belong in `env`), and no `pull_request_target` workflow that checks out and runs the pull request's code.",
+      "**Actions.** Third-party actions pinned to a full commit SHA with the version in a comment; GitHub's own `actions/*` on a current major. `.github/dependabot.yml` covers `github-actions` and the project's package ecosystem so pins stay fresh.",
+      "**Cost and speed.** `concurrency` with `cancel-in-progress: true` on test workflows, but never on publish, deploy or release workflows, where cancelling mid-run is worse than waiting. `timeout-minutes` on every job. The package manager's dependency cache switched on. macOS and Windows runners cost a multiple of Linux, so those legs are a finding unless the project has OS-specific behaviour to test.",
+      "**Other hosts.** On GitLab or another provider, apply the same rules to its config and leave already-configured providers alone.",
+      "**Fixing.** With no CI at all, the fix is one workflow with one Linux job that installs, builds and tests using the project's own scripts. Look up each action's current major in its official docs before writing it. Never weaken, skip or delete a check to make CI pass, and leave anything stricter than this guide as it is.",
+    ],
   },
   {
     id: "commit-gate",

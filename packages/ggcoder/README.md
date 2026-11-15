@@ -98,8 +98,6 @@ Built-in workflows:
 | --------------- | ------------------------------------------------------- |
 | `/init`         | Write or update the project's `AGENTS.md` / `CLAUDE.md` |
 | `/setup-commit` | Create a `/commit` command with your project's checks   |
-| `/setup-ci`     | Set up or harden CI for any stack                       |
-| `/compare`      | Compare your code against real-world code               |
 | `/steroids`     | Index real repos similar to this project                |
 | `/expand`       | Suggest new features worth building                     |
 

@@ -60,12 +60,10 @@ A Code-mode window is one session on one project folder. You type in the compose
 Type `/` to open the menu. You only see commands in a Code-mode window.
 
 - `/schedule` (alias `/sched`): run a prompt on a repeating schedule (see Schedules below).
-- `/init`: create or update CLAUDE.md for this project.
+- `/init`: create or update the project's AGENTS.md / CLAUDE.md.
 - `/commit`: runs the project's checks and tests and fixes failures, has a helper review the diff, stages the changed files, commits with a one-line message and pushes if the branch has an upstream. If the review finds real issues, GG asks whether to fix them first or commit anyway. A project's own `.gg/commands/commit.md` takes precedence.
 - `/setup-commit`: writes a project-specific `.gg/commands/commit.md` with that project's checks.
-- `/setup-ci`: set up or harden CI for any stack.
 - `/expand`: researches similar products and reports a ranked table of user-facing features to add. Nothing is changed until you pick an option. Text after the command sets a focus.
-- `/compare`: compares the code GG just wrote in this chat with how real projects do it, using the Steroids code index.
 - `/steroids`: finds well-maintained repos like this project, shows them in a table, asks how many to index, then adds them to the Steroids index. It needs Agent Steroids installed.
 
 Custom commands: each Markdown file in the project's `.gg/commands/` folder becomes a `/<name>` command with its own description. Folders added with **Add folder** bring their `.gg/commands` too. A custom command can't take over a built-in name.

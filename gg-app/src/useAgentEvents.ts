@@ -18,8 +18,10 @@ import {
   askItemFor,
   closeAsks,
   closeAsksNotIn,
+  completeAskFromSidecar,
   isAskUserPrompt,
   markAskDeferred,
+  markAskLeftByKen,
   parseOpenAskPrompts,
   withOpenAsks,
 } from "./ask-user";
@@ -1134,6 +1136,28 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           if (typeof d.id === "string") {
             const promptId = d.id;
             setItems((prev) => markAskDeferred(prev, promptId));
+          }
+          break;
+        case "ask_user_answered":
+          // Autopilot Ken answered the card in the user's place.
+          if (typeof d.id === "string" && typeof d.answers === "object" && d.answers !== null) {
+            const promptId = d.id;
+            const answers: Record<string, string | string[]> = {};
+            for (const [key, value] of Object.entries(d.answers as Record<string, unknown>)) {
+              if (typeof value === "string") answers[key] = value;
+              else if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
+                answers[key] = value as string[];
+              }
+            }
+            setItems((prev) => completeAskFromSidecar(prev, promptId, answers, nextId));
+          }
+          break;
+        case "ask_user_left":
+          // Autopilot Ken left the card to the user; it stays open.
+          if (typeof d.id === "string") {
+            const promptId = d.id;
+            const reason = typeof d.reason === "string" ? d.reason : "";
+            setItems((prev) => markAskLeftByKen(prev, promptId, reason));
           }
           break;
         case "ask_user_closed":

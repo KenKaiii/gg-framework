@@ -5,7 +5,7 @@
  * Autopilot must NOT review every turn. The concrete leak cases this gate
  * closes (each has a matching unit test in autopilot-gate.test.ts):
  *
- * - Workflow slash commands (`/compare`, `/expand`, custom
+ * - Workflow slash commands (`/expand`, `/init`, custom
  *   `.gg/commands/*.md`) end with reports or A/B/C choices that are reserved
  *   for the USER. Ken reviewing them reads "findings" as "something real is
  *   wrong" and injects fix prompts the user never approved.

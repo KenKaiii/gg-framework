@@ -90,6 +90,35 @@ export function answerAskItem<
   };
 }
 
+/**
+ * The sidecar settled a question itself (Autopilot Ken answered it). Marks the
+ * open band sent and moves it to the end, like {@link answerAskItem}. No-op
+ * when no open band has that prompt id (the user answered first).
+ */
+export function completeAskFromSidecar<
+  T extends AskItemLike & { id: number; answers?: AskAnswers; answeredBy?: "ken" },
+>(items: readonly T[], promptId: string, answers: AskAnswers, nextId: () => number): T[] {
+  const ids = new Set([promptId]);
+  const index = items.findIndex((it) => isOpenAsk(it, ids));
+  const item = items[index];
+  if (index < 0 || item === undefined) return [...items];
+  const rest = items.filter((_, i) => i !== index);
+  return [
+    ...rest,
+    { ...item, id: nextId(), answers, sent: true, answeredLive: true, answeredBy: "ken" },
+  ];
+}
+
+/** Autopilot Ken left an open band to the user; `reason` says why. */
+export function markAskLeftByKen<T extends AskItemLike>(
+  items: readonly T[],
+  promptId: string,
+  reason: string,
+): T[] {
+  const ids = new Set([promptId]);
+  return items.map((it) => (isOpenAsk(it, ids) ? { ...it, kenLeft: reason } : it));
+}
+
 /** The oldest question band still waiting on an answer, if any. */
 export function firstOpenAskId<
   T extends { kind: string; id: number; sent?: boolean; cancelled?: boolean },

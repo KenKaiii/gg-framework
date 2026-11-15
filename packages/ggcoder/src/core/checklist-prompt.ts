@@ -58,7 +58,7 @@ Check this project for one item of its health checklist and report in plain word
 }
 
 /**
- * A closing step for setup commands (/init, /setup-ci, /setup-commit): re-check
+ * A closing step for setup commands (/init, /setup-commit): re-check
  * the checklist items the command set up and record them, so the list reflects
  * the new setup instead of an older result.
  */

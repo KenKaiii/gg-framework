@@ -450,6 +450,8 @@ function TranscriptRowBody({
           answeredLive={item.answeredLive}
           cancelled={item.cancelled}
           deferred={item.deferred}
+          answeredBy={item.answeredBy}
+          kenLeft={item.kenLeft}
           onAnswer={(delta) => onAskAnswer?.(item.id, item.prompt.id, delta)}
           onTypeInstead={(questionId, seed) =>
             onAskType?.(item.id, item.prompt.id, questionId, seed)

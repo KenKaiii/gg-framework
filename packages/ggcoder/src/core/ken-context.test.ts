@@ -4,6 +4,9 @@ import {
   buildKenDigest,
   buildKenAutopilotContext,
   buildKenAutopilotPlanContext,
+  buildKenAutopilotAskContext,
+  latestHumanRequest,
+  AUTOPILOT_ASK_INSTRUCTION,
   AUTOPILOT_REVIEW_INSTRUCTION,
   AUTOPILOT_PLAN_REVIEW_INSTRUCTION,
   KEN_RECENT_MESSAGE_LIMIT,
@@ -721,27 +724,27 @@ describe("buildKenDigest — workflow-command labeling", () => {
     gitBranch: null,
     platform: "darwin",
   };
-  const compare = PROMPT_COMMANDS.find((c) => c.name === "compare")!;
+  const expand = PROMPT_COMMANDS.find((c) => c.name === "expand")!;
 
   it("renders an expanded template as a short command note, not a user ask", () => {
     // AgentSession.prompt() stores the EXPANDED template as a plain user
     // message; the digest must not present 400 template lines as **User:**.
     const messages: Message[] = [
-      { role: "user", content: compare.prompt },
-      { role: "assistant", content: "Compared against 12 repos, all aligned." },
+      { role: "user", content: expand.prompt },
+      { role: "assistant", content: "Compared against 12 repos, found 6 features." },
     ];
     const digest = buildKenDigest({ ...base, messages, workflowCommands: PROMPT_COMMANDS });
-    expect(digest).toContain("**User:** [ran workflow command /compare]");
+    expect(digest).toContain("**User:** [ran workflow command /expand]");
     // The template body itself never leaks into the digest.
-    expect(digest).not.toContain("Compare the code you just created or modified");
+    expect(digest).not.toContain("Find the most exciting new features this project should add");
   });
 
   it("keeps the user's own args from an expanded command", () => {
     const messages: Message[] = [
-      { role: "user", content: `${compare.prompt}${USER_INSTRUCTIONS_HEADER}only src/auth.ts` },
+      { role: "user", content: `${expand.prompt}${USER_INSTRUCTIONS_HEADER}only src/auth.ts` },
     ];
     const digest = buildKenDigest({ ...base, messages, workflowCommands: PROMPT_COMMANDS });
-    expect(digest).toContain("[ran workflow command /compare]");
+    expect(digest).toContain("[ran workflow command /expand]");
     expect(digest).toContain("only src/auth.ts");
   });
 
@@ -749,5 +752,55 @@ describe("buildKenDigest — workflow-command labeling", () => {
     const messages: Message[] = [{ role: "user", content: "please compare my two branches" }];
     const digest = buildKenDigest({ ...base, messages, workflowCommands: PROMPT_COMMANDS });
     expect(digest).toContain("**User:** please compare my two branches");
+  });
+});
+
+describe("buildKenAutopilotAskContext", () => {
+  const questions = [
+    {
+      id: "store",
+      question: "Where should sessions live?",
+      kind: "choice" as const,
+      options: [{ label: "SQLite", value: "sqlite" }],
+    },
+  ];
+
+  it("puts the question section before the ask instruction", () => {
+    const digest = buildKenAutopilotAskContext({
+      cwd: "/tmp/proj",
+      gitBranch: "main",
+      platform: "darwin",
+      messages: [{ role: "user", content: "add session storage" }],
+      originalRequest: "add session storage",
+      questions,
+    });
+    const section = digest.indexOf("## Question for you");
+    const task = digest.lastIndexOf("## Your task");
+    expect(section).toBeGreaterThan(-1);
+    expect(task).toBeGreaterThan(section);
+    expect(digest.slice(section, task)).toContain('"id": "store"');
+    expect(digest.slice(task)).toContain(AUTOPILOT_ASK_INSTRUCTION);
+    expect(digest).toContain("add session storage");
+  });
+});
+
+describe("latestHumanRequest", () => {
+  it("skips injected prompts, automation and summaries", () => {
+    const fix = "Fix the failing test.";
+    const messages: Message[] = [
+      { role: "user", content: "build the login page" },
+      { role: "assistant", content: "on it" },
+      { role: "user", content: fix },
+      {
+        role: "user",
+        content: "background task finished",
+        provenance: { source: "runtime", kind: "automation", visibility: "hidden" },
+      },
+    ];
+    expect(latestHumanRequest(messages, [fix])).toBe("build the login page");
+    expect(latestHumanRequest(messages)).toBe(fix);
+    expect(
+      latestHumanRequest([{ role: "user", content: "[Previous conversation summary] x" }]),
+    ).toBe(undefined);
   });
 });

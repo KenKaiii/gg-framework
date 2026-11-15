@@ -21,6 +21,7 @@ import { matchExpandedCommand, type WorkflowCommandSpec } from "./autopilot-gate
 import { AUTOPILOT_INJECTION_PREAMBLE } from "./autopilot-cycle.js";
 import { collectVerificationEvidence, type VerificationEvidence } from "./verification-evidence.js";
 import { editTargetPaths } from "../tools/edit-targets.js";
+import type { AskQuestion } from "./ask-user.js";
 
 /** How many of the most recent build-session messages to inline verbatim. */
 export const KEN_RECENT_MESSAGE_LIMIT = 20;
@@ -378,6 +379,78 @@ export function buildKenAutopilotPlanContext(
   const idx = digest.lastIndexOf(marker);
   if (idx === -1) return `${digest}\n\n${planSection}`;
   return `${digest.slice(0, idx)}\n\n${planSection}${digest.slice(idx)}`;
+}
+
+/**
+ * The newest message the user actually wrote: skips runtime/agent messages,
+ * Ken's own injected prompts and compaction summaries. Undefined when none is
+ * retained (compacted or reset away).
+ */
+export function latestHumanRequest(
+  messages: readonly Message[],
+  injectedPrompts: readonly string[] = [],
+): string | undefined {
+  const opts: RenderMessageOptions = { injectedPrompts, workflowCommands: [] };
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== "user" || (m.provenance && m.provenance.source !== "human")) continue;
+    const text = userText(m);
+    if (!text.trim() || text.startsWith(COMPACTION_SUMMARY_MARKER) || isInjected(text, opts)) {
+      continue;
+    }
+    return text.trim();
+  }
+  return undefined;
+}
+
+const AUTOPILOT_ASK_FRAMING: DigestFraming = {
+  ...AUTOPILOT_FRAMING,
+  intro:
+    "## Your role\nYou are Ken Kai in autopilot. GG Coder is paused mid-turn on a question card for the user, and you answer it in the user's place. No user is in this conversation; a machine parses your reply. Below is the work so far.",
+};
+
+/** Max chars of the question JSON in an ask digest (at most a few questions). */
+const ASK_QUESTIONS_CAP = 6000;
+
+/**
+ * Fixed instruction for an autopilot ask digest: answer GG Coder's question
+ * card (the 'Question for you' section) or leave it to the user.
+ */
+export const AUTOPILOT_ASK_INSTRUCTION =
+  "GG Coder asked the user the question in the 'Question for you' section above and is " +
+  "waiting on the answer. Answer it in the user's place with the choice their original ask " +
+  "implies. Reply in exactly one of these formats, keyword on the first line, nothing before it:\n\n" +
+  "ANSWER\n" +
+  '{"<question id>": "<option value>", "<multi question id>": ["<value>", "<value>"]}\n\n' +
+  "HUMAN\n<one short line: why the user must decide>\n\n" +
+  "Answer every question. Use an option's value (or label); free text only where the question " +
+  "is kind text or allows other. Use HUMAN only for a real user-level decision: intent, " +
+  "preference or taste, a missing product requirement, credentials/secrets, external access, " +
+  "budget/cost, or destructive/irreversible approval. Never PROMPT, ALL_CLEAR or IGNORE here. " +
+  "No greetings, no reasoning.";
+
+/**
+ * Build the autopilot ASK digest: the autopilot digest plus a `## Question for
+ * you` section carrying the card's questions as JSON, with
+ * {@link AUTOPILOT_ASK_INSTRUCTION} as the trailing task. Pure — no I/O.
+ */
+export function buildKenAutopilotAskContext(
+  input: KenAutopilotContextInput & { questions: readonly AskQuestion[] },
+): string {
+  const { questions, ...rest } = input;
+  const digest = renderDigest(
+    { ...rest, question: AUTOPILOT_ASK_INSTRUCTION },
+    AUTOPILOT_ASK_FRAMING,
+  );
+  const section = `## Question for you\n${capContext(
+    JSON.stringify(questions, null, 2),
+    ASK_QUESTIONS_CAP,
+    "question card",
+  )}`;
+  const marker = `\n\n${AUTOPILOT_ASK_FRAMING.questionHeading}\n`;
+  const idx = digest.lastIndexOf(marker);
+  if (idx === -1) return `${digest}\n\n${section}`;
+  return `${digest.slice(0, idx)}\n\n${section}${digest.slice(idx)}`;
 }
 
 /**

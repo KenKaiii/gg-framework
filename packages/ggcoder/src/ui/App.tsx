@@ -2397,10 +2397,8 @@ export function App(props: AppProps) {
       // Project audits / one-shot analysis
       "init",
       "expand",
-      "compare",
       // Setup / installers
       "setup-commit",
-      "setup-ci",
     ];
     const orderedPromptCommands = promptOrder
       .map(fromPrompt)

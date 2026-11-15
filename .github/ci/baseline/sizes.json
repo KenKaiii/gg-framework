@@ -15,6 +15,10 @@
     "sidecar:deps:darwin-arm64": {
       "bytes": 276277838,
       "recorded_at": "2026-11-12T13:11:57.267Z"
+    },
+    "prompt:prefix": {
+      "bytes": 7435,
+      "recorded_at": "2026-11-15T04:03:38.834Z"
     }
   },
   "startup": {

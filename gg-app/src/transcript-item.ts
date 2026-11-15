@@ -91,6 +91,10 @@ export type Item =
       cancelled?: boolean;
       /** Soft deadline passed: the agent went on; an answer is still delivered late. */
       deferred?: boolean;
+      /** Autopilot Ken answered it in the user's place. */
+      answeredBy?: "ken";
+      /** Autopilot Ken left it to the user, with this reason. */
+      kenLeft?: string;
     }
   // A command the user ran themselves (`!cmd`). Its output streams through the
   // live-text store while it runs; `output` holds it once finished.

@@ -7,11 +7,13 @@
 //   sidecar:deps — the sidecar's copied node_modules. Its native binaries differ
 //                  per OS/arch, so it is baselined per platform
 //                  (e.g. sidecar:deps:darwin-arm64).
+//   prompt:prefix — the golden cached system-prompt prefix, sent on every request.
 // Usage:
 //   node .github/ci/size-gate.mjs                 # check all artifacts against baseline
 //   node .github/ci/size-gate.mjs --only sidecar  # check one artifact
 //   node .github/ci/size-gate.mjs --update        # re-baseline after an intentional change
-// Highlight growth above baseline + max(2%, 100KB; 10KB for initial frontend JS).
+// Highlight growth above baseline + max(2%, 100KB; 10KB for initial frontend JS,
+// 1KB for the prompt prefix).
 // Size growth never fails CI; missing or unreadable build artifacts still do.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
@@ -57,7 +59,10 @@ const ARTIFACTS = {
     dirBytes(path.join(REPO_ROOT, "gg-app/src-tauri/sidecar/app-sidecar.mjs")) +
     dirBytes(path.join(REPO_ROOT, "gg-app/src-tauri/sidecar/skills")),
   "sidecar:deps": () => dirBytes(path.join(REPO_ROOT, "gg-app/src-tauri/sidecar/node_modules")),
+  "prompt:prefix": () =>
+    dirBytes(path.join(REPO_ROOT, "packages/ggcoder/src/__golden__/system-prompt-prefix.md")),
 };
+const ABSOLUTE_TOLERANCE = { "frontend:initial": 10 * 1024, "prompt:prefix": 1024 };
 const PER_PLATFORM = new Set(["sidecar:deps"]);
 
 const fmt = (bytes) => `${(bytes / 1024).toFixed(1)}KB`;
@@ -96,7 +101,7 @@ for (const [name, measure] of Object.entries(ARTIFACTS)) {
     rows.push([key, "—", fmt(bytes), "—", "no baseline"]);
     continue;
   }
-  const absoluteTolerance = name === "frontend:initial" ? 10 * 1024 : TOLERANCE.absoluteBytes;
+  const absoluteTolerance = ABSOLUTE_TOLERANCE[name] ?? TOLERANCE.absoluteBytes;
   const allowed = entry.bytes + Math.max(entry.bytes * TOLERANCE.relative, absoluteTolerance);
   const delta = bytes - entry.bytes;
   const verdict = bytes > allowed ? "growth (informational)" : delta < 0 ? "smaller" : "ok";

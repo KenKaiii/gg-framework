@@ -176,10 +176,10 @@ const DEFS: readonly TrophyDef[] = [
     tier: "silver",
     category: "flow",
     description:
-      "Each slash command is a workflow you never have to type out again. Five different ones earns this.",
-    hint: "Use 5 different slash commands.",
+      "Each slash command is a workflow you never have to type out again. Three different ones earns this.",
+    hint: "Use 3 different slash commands.",
     stat: distinct("slashCommandNames"),
-    goal: 5,
+    goal: 3,
   },
   {
     id: "architect",

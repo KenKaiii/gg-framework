@@ -190,11 +190,10 @@ export const MORE_TROPHIES: readonly TrophyDef[] = [
     title: "The whole menu",
     tier: "gold",
     category: "flow",
-    description:
-      "Every built-in workflow: /init, /commit, /expand, /compare, /setup-commit, /setup-ci and /steroids.",
-    hint: "Run all 7 built-in slash commands at least once.",
+    description: "Every built-in workflow: /init, /commit, /expand, /setup-commit and /steroids.",
+    hint: "Run all 5 built-in slash commands at least once.",
     stat: distinct("slashCommandNames"),
-    goal: 7,
+    goal: 5,
   },
   {
     id: "plan-100",

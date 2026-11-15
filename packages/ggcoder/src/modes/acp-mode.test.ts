@@ -723,7 +723,9 @@ describe("ACP mode over stdio", () => {
     // Collisions resolve the way the session itself resolves them: a built-in
     // template beats a project file, and it is listed once.
     expect(commands.filter((command) => command.name === "init")).toHaveLength(1);
-    expect(byName.get("init")!.description).toBe("Generate or update CLAUDE.md for this project");
+    expect(byName.get("init")!.description).toBe(
+      "Generate or update AGENTS.md / CLAUDE.md for this project",
+    );
     // ...but a project file beats a REGISTRY command, because that is the order
     // `resolveSlashInput` uses. Advertising the registry's `/new` here would
     // describe something the agent would never run.

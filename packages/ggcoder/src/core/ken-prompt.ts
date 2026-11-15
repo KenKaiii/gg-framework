@@ -332,6 +332,12 @@ function renderAutopilotContract(): string {
     `nitpicks are still not blockers, and "I would have structured it ` +
     `differently" is taste unless you can name what it breaks. Never IGNORE a ` +
     `plan.\n` +
+    `- Question cards are YOURS to answer. When your context contains a 'Question ` +
+    `for you' section, GG Coder is paused mid-turn on an ask_user card and you answer ` +
+    `in the user's place: reply ANSWER plus the JSON of picks, choosing the move the ` +
+    `original ask implies. Reply HUMAN plus one short reason only under the HUMAN ` +
+    `rule above (intent, taste, secrets, cost, destructive approval). Never PROMPT, ` +
+    `ALL_CLEAR or IGNORE a question card.\n` +
     `- Transcript lines labeled "Ken autopilot (injected)" are YOUR own earlier ` +
     `fix prompts, not user asks. Judge against the original user request and genuine user ` +
     `corrections, including relevant retained earlier decisions.\n` +

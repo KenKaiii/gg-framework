@@ -422,6 +422,8 @@ describe("buildSystemPrompt", () => {
       "Leave changes you didn't make alone",
       "Find facts yourself",
       "Ask only about unclear requirements, real tradeoffs, secrets/access, cost, or anything destructive",
+      // #152: agents paused mid-task to ask "fix it or ignore it?".
+      "Fix broken things the task touches without asking; mention unrelated ones in the final reply",
       "Fix the root cause minimally",
       "Precedence: user > nearest project instructions > skills > this prompt",
       "Research only what's unresolved: local/installed source first",
@@ -633,7 +635,8 @@ describe("buildSystemPrompt", () => {
     // Plan mode +300 for the 2026-11 refresh: research callers/tests, ask when
     // a requirement is unclear, keep the plan out of chat, verification commands.
     // +~200 for the new-skills line, as for normal above.
-    expect(measurements.planMode.characters).toBeLessThan(4_100);
+    // +~100 for "fix broken things without asking" (#152: needless fix-or-ignore asks).
+    expect(measurements.planMode.characters).toBeLessThan(4_200);
     // +~120 for the parallel-calls fact shown with bash (agent-race, 2026-11-03).
     expect(measurements.typescriptProjectContextToolsSkills.characters).toBeLessThan(4_400);
     expect(measurements.planMode.characters).toBeGreaterThan(measurements.normal.characters);

@@ -3,7 +3,14 @@ import type { Provider, MessageProvenance } from "@kenkaiiii/gg-ai";
 import type { AgentSession } from "../core/agent-session.js";
 import type { RunClaim } from "../core/run-claim.js";
 import type { RunLifecycle } from "../core/run-lifecycle.js";
-import { buildKenAutopilotContext, buildKenAutopilotPlanContext } from "../core/ken-context.js";
+import {
+  buildKenAutopilotAskContext,
+  buildKenAutopilotContext,
+  buildKenAutopilotPlanContext,
+  latestHumanRequest,
+} from "../core/ken-context.js";
+import { parseKenAskAnswer, type KenAskAnswer } from "../core/ken-ask-answer.js";
+import type { AskUserPrompt } from "../core/ask-user.js";
 import { parseAutopilotVerdict, type AutopilotVerdict } from "../core/autopilot-verdict.js";
 import {
   isWorkflowCommandText,
@@ -83,6 +90,12 @@ export interface AutopilotRunnerContext {
 }
 
 export interface AutopilotRunnerContextApi {
+  /** Ask Autopilot Ken to answer a question card. Null when it was no longer
+   *  pending (or autopilot went off) by the time Ken's turn came. */
+  answerAskWithKen: (
+    prompt: AskUserPrompt,
+    isPending: () => boolean,
+  ) => Promise<KenAskAnswer | null>;
   runAutopilotReview: (originalRequest: string) => Promise<AutopilotVerdict | null>;
   runAutopilotPlanReview: (originalRequest: string) => Promise<AutopilotVerdict | null>;
   runAutopilotCycle: (originalRequest: string) => Promise<void>;
@@ -92,6 +105,52 @@ export interface AutopilotRunnerContextApi {
 }
 
 export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRunnerContextApi {
+  // Ken's answers to question cards, one at a time: parallel ask_user calls
+  // (and the reviews below) share the one kenAuto session, which takes a
+  // single prompt at a time.
+  let kenAskChain: Promise<unknown> = Promise.resolve();
+
+  function answerAskWithKen(
+    prompt: AskUserPrompt,
+    isPending: () => boolean,
+  ): Promise<KenAskAnswer | null> {
+    const run = kenAskChain.then(() => answerOneAsk(prompt, isPending));
+    kenAskChain = run.catch(() => {});
+    return run;
+  }
+
+  async function answerOneAsk(
+    prompt: AskUserPrompt,
+    isPending: () => boolean,
+  ): Promise<KenAskAnswer | null> {
+    if (!ctx.autopilot || !isPending()) return null;
+    ctx.autopilotReviewing = true;
+    try {
+      const ken = await ctx.ensureKenAutoSession();
+      const messages = ctx.session.getMessages();
+      const injectedPrompts = [...ctx.injectedAutopilotPrompts];
+      const digest = buildKenAutopilotAskContext({
+        cwd: ctx.cwd,
+        gitBranch: ctx.gitBranch,
+        messages,
+        verificationEvidence: ctx.session.getVerificationEvidence(),
+        verificationProblem: ctx.session.getVerificationProblem(),
+        originalRequest: latestHumanRequest(messages, injectedPrompts),
+        injectedPrompts,
+        workflowCommands: await ctx.loadWorkflowCommandSpecs(),
+        questions: prompt.questions,
+      });
+      await ken.prompt(digest);
+      return parseKenAskAnswer(lastAssistantText(ken.getMessages()), prompt.questions);
+    } finally {
+      ctx.autopilotReviewing = false;
+      // Apply any model switch that landed while Ken was answering.
+      const pending = ctx.pendingKenAutoModel;
+      ctx.pendingKenAutoModel = null;
+      if (pending) await ctx.syncKenAutoModel(pending.provider, pending.model);
+    }
+  }
+
   // ── Autopilot orchestration ─────────────────────────────────
   // One review = prompt the kenAuto session with the review digest, read its
   // final assistant text, parse a verdict. Returns null on failure (surfaced as
@@ -99,6 +158,7 @@ export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRun
   // `originalRequest` is the user prompt that started the turn under review —
   // pinned in the digest so it can't scroll out during multi-round cycles.
   async function runAutopilotReview(originalRequest: string): Promise<AutopilotVerdict | null> {
+    await kenAskChain;
     ctx.autopilotReviewing = true;
     ctx.broadcast("autopilot_review_start", {});
     try {
@@ -135,6 +195,7 @@ export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRun
   // (cancel or a manual Accept/Reject that bumped planGeneration) stays
   // SILENT — no autopilot_error — because the user's decision already won.
   async function runAutopilotPlanReview(originalRequest: string): Promise<AutopilotVerdict | null> {
+    await kenAskChain;
     const planPath = ctx.pendingPlanPath;
     if (planPath === null) return null;
     const genAtStart = ctx.planGeneration;
@@ -444,6 +505,7 @@ export function createAutopilotRunner(ctx: AutopilotRunnerContext): AutopilotRun
   }
 
   return {
+    answerAskWithKen,
     runAutopilotReview,
     runAutopilotPlanReview,
     runAutopilotCycle,

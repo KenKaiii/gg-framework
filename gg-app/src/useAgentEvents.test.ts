@@ -1723,5 +1723,29 @@ describe("models_change", () => {
       });
       expect(getItems()).toEqual([expect.not.objectContaining({ cancelled: true })]);
     });
+
+    it("shows Ken's answer and Ken leaving a card to the user", () => {
+      const { hook, getItems } = setup();
+      act(() => {
+        hook.result.current.handleEvent(ev("ask_user", { id: "ask-1", questions: [question] }));
+        hook.result.current.handleEvent(ev("ask_user", { id: "ask-2", questions: [question] }));
+        hook.result.current.handleEvent(
+          ev("ask_user_answered", { id: "ask-1", answers: { flag: "Yes" }, by: "ken" }),
+        );
+        hook.result.current.handleEvent(ev("ask_user_left", { id: "ask-2", reason: "Your call." }));
+      });
+      expect(getItems()).toEqual([
+        expect.objectContaining({
+          prompt: expect.objectContaining({ id: "ask-2" }),
+          kenLeft: "Your call.",
+        }),
+        expect.objectContaining({
+          prompt: expect.objectContaining({ id: "ask-1" }),
+          answers: { flag: "Yes" },
+          sent: true,
+          answeredBy: "ken",
+        }),
+      ]);
+    });
   });
 });

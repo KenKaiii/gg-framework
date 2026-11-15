@@ -65,7 +65,7 @@ describe("trophy catalog", () => {
     // Built-in workflows + add-dir/remove-dir, bundled skills, chat agents,
     // radio stations and checklist items, as shipped.
     const limits: Record<string, number> = {
-      slashCommandNames: 10,
+      slashCommandNames: 8,
       skillsUsed: 11,
       chatAgents: 3,
       radioStations: 19,
@@ -293,7 +293,7 @@ describe("runDelta reads tool arguments", () => {
 describe("prompt facts", () => {
   it("parses slash commands", () => {
     expect(slashCommandName("/commit fix the thing")).toBe("commit");
-    expect(slashCommandName("  /Setup-CI")).toBe("setup-ci");
+    expect(slashCommandName("  /Setup-Commit")).toBe("setup-commit");
     expect(slashCommandName("not /a command")).toBeNull();
     expect(slashCommandName("/")).toBeNull();
   });

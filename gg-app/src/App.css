@@ -11632,8 +11632,10 @@ select {
 /* "Agent continued with its best guess": a note about the run, not part of the
    question, so it is smaller and ruled off from it. `width: 0; min-width: 100%`
    keeps it out of the band's fit-content sizing — it wraps to the width the
-   question and options set instead of stretching the card. */
-.ask-deferred-note {
+   question and options set instead of stretching the card. "Ken left this one
+   for you" is the same kind of note. */
+.ask-deferred-note,
+.ask-ken-note {
   width: 0;
   min-width: 100%;
   margin: 0 0 var(--space-5);
