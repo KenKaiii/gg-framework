@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.103.0
+
+### Minor Changes
+
+- Add Live Preview: open a project's running dev server in the browser with GG's chat on the page and point-and-ask element picking; `review` on a command that can't carry one now runs the command with a skip note instead of rejecting it.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.103.0
+- @kenkaiiii/gg-agent@5.103.0
+- @kenkaiiii/gg-core@5.103.0
+
 ## 5.102.0
 
 ### Patch Changes
