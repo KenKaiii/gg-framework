@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.114.0",
+    date: "2026-11-17",
+    items: [
+      "Meet `Live Preview`. Open it from the `More` panel and your running web app pops up in your browser with GG's chat right on the page. Right-click any button, card or heading and ask GG to change it. No dev server running yet? I start it for you in one click.",
+      "Typing feels calmer. I fixed the tiny jump when you cleared your message, so the box stays perfectly still when you delete everything.",
+    ],
+  },
+  {
     version: "0.113.1",
     date: "2026-11-15",
     items: [
