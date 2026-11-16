@@ -126,6 +126,9 @@ import { ChecklistScreen } from "./ChecklistScreen";
 import { parseProjectHealth } from "./project-health";
 import { NotesModal } from "./NotesModal";
 import { FoldersPanel } from "./FoldersPanel";
+import { LivePreviewPanel } from "./LivePreviewPanel";
+import { livePreviewAvailable, START_DEV_SERVER_PROMPT } from "./livePreviewAvailable";
+import { useLivePreview } from "./useLivePreview";
 import { MemoryModal } from "./MemoryModal";
 import { GoalSettingsModal } from "./GoalSettingsModal";
 import { isHiddenScroller } from "./transcript-pin";
@@ -797,6 +800,8 @@ function App(): React.ReactElement {
   const sendDisabled =
     attachmentsLoading ||
     (!input.trim() && attachments.length === 0 && mentionedPaths.length === 0);
+  const canLivePreview = livePreviewAvailable(workspaceMode, needsProject, state);
+  const livePreview = useLivePreview(canLivePreview);
   // Cosmetic work only belongs to a focused, visible, empty code composer.
   const animatePlaceholder =
     windowFocused &&
@@ -3056,6 +3061,28 @@ function App(): React.ReactElement {
               projectHealth={projectHealth}
               onReviewHealth={reviewProjectHealth}
               tools={{
+                preview: canLivePreview
+                  ? {
+                      title: "Live preview",
+                      meta: livePreview.status?.running ? "Running" : undefined,
+                      fit: true,
+                      body: (
+                        <LivePreviewPanel
+                          preview={livePreview}
+                          onStartDevServer={() => {
+                            if (
+                              submitText(
+                                START_DEV_SERVER_PROMPT,
+                                "Start the dev server and open the live preview",
+                                { keepInput: true },
+                              )
+                            )
+                              setDeckPanel(null);
+                          }}
+                        />
+                      ),
+                    }
+                  : undefined,
                 folders:
                   (state?.additionalRoots?.length ?? 0) > 0
                     ? {
@@ -3197,6 +3224,15 @@ function App(): React.ReactElement {
                   onOpenTasks={openTasks}
                   showChecklist={showChecklist}
                   onOpenChecklist={openChecklist}
+                  onOpenLivePreview={
+                    canLivePreview
+                      ? () => {
+                          setDeckPanel("preview");
+                          void livePreview.start();
+                        }
+                      : undefined
+                  }
+                  livePreviewRunning={livePreview.status?.running ?? false}
                   hasHealth={projectHealth !== null}
                   onOpenHealth={() => setDeckPanel("health")}
                   onOpenRadio={() => setDeckPanel("radio")}

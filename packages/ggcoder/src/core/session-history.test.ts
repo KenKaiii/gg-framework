@@ -7,6 +7,7 @@ import type {
 } from "./session-manager.js";
 import { STEERING_PREFIX, buildNotificationSteeringText } from "./steering.js";
 import { frameAutopilotInjection } from "./autopilot-cycle.js";
+import { buildLivePreviewPrompt } from "./live-preview.js";
 import {
   normalizeAutopilotMarkersForHistory,
   normalizeAppMarkersForHistory,
@@ -154,6 +155,26 @@ describe("normalizeKenTurnsForHistory", () => {
 });
 
 describe("restoreUserRow", () => {
+  it("shows a live-preview message as the typed words plus the element chip, queued or not", () => {
+    const prompt = buildLivePreviewPrompt(
+      "Change to Spanish Latte",
+      {
+        url: "http://localhost:5173/",
+        element: { selector: "h2", html: "<h2>Iced latte</h2>", tag: "h2", text: "Iced latte" },
+      },
+      "/proj",
+    );
+    for (const content of [
+      prompt,
+      `${STEERING_PREFIX}${prompt}`,
+      [{ type: "text" as const, text: prompt }],
+    ]) {
+      const row = restoreUserRow(content);
+      expect(row.text).toBe("Change to Spanish Latte");
+      expect(row.attachments).toEqual([{ kind: "file", name: "<h2> Iced latte" }]);
+    }
+  });
+
   it("strips the mid-run steering wrapper so queued prompts resume clean", () => {
     const row = restoreUserRow(`${STEERING_PREFIX}also add dark mode`);
     expect(row.text).toBe("also add dark mode");

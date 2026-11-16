@@ -3,4 +3,5 @@
 pub(crate) mod agent;
 pub(crate) mod agent_admin;
 pub(crate) mod files;
+pub(crate) mod live_preview;
 pub(crate) mod poll;

@@ -180,3 +180,60 @@ describe("task run-all sweep", () => {
     expect(ctx.broadcast).toHaveBeenCalledWith("tasks_run_done", {});
   });
 });
+
+describe("live preview prompts", () => {
+  const livePreview = {
+    url: "http://localhost:5173/",
+    element: {
+      selector: "div.card > h2",
+      html: "<h2>Iced latte</h2>",
+      tag: "h2",
+      text: "Iced latte",
+    },
+  };
+
+  it("gives the agent the element context and announces only the typed words", async () => {
+    const { ctx, prompts } = harness([]);
+    const reply = await post(handlePromptRoutes, ctx, "/prompt", {
+      text: "Change to Spanish Latte",
+      meta: { livePreview },
+    });
+    expect(reply.status).toBe(202);
+    await vi.waitFor(() => expect(prompts).toHaveLength(1));
+    expect(prompts[0]).toMatch(
+      /^Change to Spanish Latte\n\n<live-preview url="http:\/\/localhost:5173\/"/,
+    );
+    expect(prompts[0]).toContain("<h2>Iced latte</h2>");
+    expect(ctx.broadcast).toHaveBeenCalledWith("live_preview_prompt", {
+      text: "Change to Spanish Latte",
+      element: "<h2> Iced latte",
+      queued: false,
+    });
+  });
+
+  it("announces a queued message as queued and queues the full context", async () => {
+    const { ctx, session } = harness([]);
+    ctx.running = true;
+    const reply = await post(handlePromptRoutes, ctx, "/prompt", {
+      text: "Make it bold",
+      meta: { livePreview },
+    });
+    expect(reply).toEqual({ status: 202, body: { queued: true, count: 1 } });
+    expect(session.listQueuedMessages()[0]?.text).toContain("<live-preview");
+    expect(ctx.broadcast).toHaveBeenCalledWith("live_preview_prompt", {
+      text: "Make it bold",
+      element: "<h2> Iced latte",
+      queued: true,
+    });
+  });
+
+  it("leaves ordinary prompts untouched", async () => {
+    const { ctx, prompts } = harness([]);
+    await post(handlePromptRoutes, ctx, "/prompt", {
+      text: "hello",
+      meta: { livePreview: "nope" },
+    });
+    await vi.waitFor(() => expect(prompts).toEqual(["hello"]));
+    expect(ctx.broadcast).not.toHaveBeenCalledWith("live_preview_prompt", expect.anything());
+  });
+});

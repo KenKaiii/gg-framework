@@ -171,6 +171,8 @@ export function DeckMenu({
   onOpenTasks,
   showChecklist,
   onOpenChecklist,
+  onOpenLivePreview,
+  livePreviewRunning = false,
   hasHealth = false,
   onOpenHealth,
   onOpenRadio,
@@ -197,6 +199,9 @@ export function DeckMenu({
   onOpenTasks: () => void;
   showChecklist: boolean;
   onOpenChecklist: () => void;
+  /** Code windows: open the project's running app in the browser, with the chat on it. */
+  onOpenLivePreview?: () => void;
+  livePreviewRunning?: boolean;
   /** A Project Health score exists for this project. */
   hasHealth?: boolean;
   onOpenHealth?: () => void;
@@ -258,6 +263,22 @@ export function DeckMenu({
           onClick={onOpenChecklist}
         >
           Checklist
+        </button>
+      )}
+      {code && onOpenLivePreview && (
+        <button
+          type="button"
+          className="key"
+          title="Open your running app in the browser, with GG Coder's chat on it"
+          aria-label={livePreviewRunning ? "Live preview, running" : "Live preview"}
+          onClick={onOpenLivePreview}
+        >
+          Live preview
+          <span
+            className="led"
+            data-state={livePreviewRunning ? "on" : undefined}
+            aria-hidden="true"
+          />
         </button>
       )}
       {code && hasHealth && onOpenHealth && (

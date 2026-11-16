@@ -55,6 +55,15 @@ A Code-mode window is one session on one project folder. You type in the compose
 - Commands in the added folder's `.gg/commands` show up in the `/` menu.
 - To drop one again, click **Remove folder** (it appears right after **Add folder** once a folder is added). The **Added folders** panel lists each folder with its own **Remove** key.
 
+## Live preview
+
+- Click **Live preview** in the **More** panel (the ⋯ key on the bottom bar). GG finds this project's running dev server, whether GG started it or you ran it in your own terminal, opens the app in your normal browser and puts its chat at the bottom of the page. Nothing to install. The key's light is on while the preview runs.
+- If no dev server is running for the project, click **Start dev server**: GG starts it in the background and opens the preview. **Other address** lets you type one instead, for example `localhost:3000`. https dev servers aren't supported yet.
+- Each window previews only its own project, so several projects can each have a preview open at once. When a project runs more than one server, such as a site and its API, GG picks the one that serves a web page.
+- On the page, click the pointer key next to the message box, then click any element, or just right-click it (Shift+right-click keeps the browser's menu). Your message goes to GG with that element. Esc drops the picked element and lets you pick another; Esc again leaves pick mode. The minus key tucks the chat away.
+- The preview has its own chat, separate from the window's conversation. The panel shows the link with **Open** and **Stop**. Closing the window stops it.
+- The preview runs on its own port, so sign-in redirects and saved browser data from your dev server's port don't carry over.
+
 ## Slash commands
 
 Type `/` to open the menu. You only see commands in a Code-mode window.
@@ -200,6 +209,8 @@ Q: How do I add tasks and run them?
 A: Ask GG to add tasks, then open **Tasks** in the deck and click **Run** or **Run all**.
 Q: How do I add my own slash command?
 A: Put a Markdown file in the project's `.gg/commands/` folder. Its file name becomes the command, unless a `name:` line at the top sets another name.
+Q: How do I see my web app and talk to GG from it?
+A: Click **Live preview** in the **More** panel (the ⋯ key). If your dev server isn't running yet, click **Start dev server**. Your app opens in the browser with GG's chat on it; right-click an element to ask about it.
 Q: How do I work on two folders at once?
 A: Click **Add folder** in the **More** panel (the ⋯ key on the bottom bar) and pick the folder. To drop it, click **Remove folder** and then **Remove** next to it.
 Q: Where can I keep private notes?

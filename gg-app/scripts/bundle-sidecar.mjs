@@ -37,6 +37,11 @@ const bundledSkillsOut = join(outDir, "skills");
 // `skills/` so its skills never enter coder or chat discovery.
 const motionBundleSource = join(repoRoot, "packages", "ggcoder", "assets", "motion");
 const motionBundleOut = join(outDir, "motion");
+// Live preview's overlay (page script + chat frame), served by the sidecar.
+// Built here, not taken from a previous app build, so it is never stale.
+const livePreviewConfig = join(here, "..", "vite.live-preview.config.ts");
+const livePreviewBuilt = join(here, "..", "dist-live-preview");
+const livePreviewOut = join(outDir, "live-preview");
 
 // Packages that must NOT be inlined: native addons, lazily-loaded optional
 // heavy deps, and child-process entry points that esbuild cannot discover.
@@ -314,6 +319,15 @@ async function main() {
       return !(parts.includes("__pycache__") || /\.(?:aep|aepx|pyc)$/i.test(source));
     },
   });
+
+  const { build: viteBuild } = await import("vite");
+  await viteBuild({ configFile: livePreviewConfig, logLevel: "warn" });
+  for (const file of ["page.js", "frame.html"]) {
+    if (!existsSync(join(livePreviewBuilt, file))) {
+      throw new Error(`live preview build missing ${file}: ${livePreviewBuilt}`);
+    }
+  }
+  cpSync(livePreviewBuilt, livePreviewOut, { recursive: true });
 
   await build({
     entryPoints: [sidecarEntry],

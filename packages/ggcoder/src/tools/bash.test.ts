@@ -8,6 +8,7 @@ import {
   BASH_INLINE_MAX_BYTES,
   createBashTool,
   renderBashOutput,
+  REVIEW_SKIPPED_NOTE,
 } from "./bash.js";
 import { clearPackageThreatCache } from "../core/package-threats.js";
 import { getToolOutputRoot } from "./overflow.js";
@@ -145,20 +146,18 @@ describe("foreground verification review", () => {
   });
 
   it.each([
-    { command: "npm test; git diff" },
-    { command: "npm test && git diff --check" },
+    { command: "echo edited > note.txt && npm test" },
     { command: "echo not-a-check" },
-    { command: "npm test", persist: true },
-    { command: "npm test", run_in_background: true },
-  ])("rejects unsupported review execution before spawning: %j", async (args) => {
-    const spawnSpy = vi.spyOn(localOperations, "spawn");
-    try {
-      const tool = createBashTool(tmpHome, new ProcessManager());
-      const result = await tool.execute({ ...args, review: true }, context());
-      expect(result).toContain("Nothing was run");
-      expect(spawnSpy).not.toHaveBeenCalled();
-    } finally {
-      spawnSpy.mockRestore();
+    { command: "echo bg", run_in_background: true },
+  ])("runs a command that cannot carry a review and skips only the review: %j", async (args) => {
+    const tool = createBashTool(tmpHome, new ProcessManager());
+    const result = await tool.execute({ ...args, review: true }, context());
+    // The edits used to be thrown away here, and the model re-sent them unreviewed.
+    expect(result).toContain(REVIEW_SKIPPED_NOTE);
+    expect(result).not.toContain("Independent read-only review");
+    expect(result).not.toContain("Nothing was run");
+    if (args.command.startsWith("echo edited")) {
+      expect(await fs.readFile(path.join(tmpHome, "note.txt"), "utf8")).toBe("edited\n");
     }
   });
 

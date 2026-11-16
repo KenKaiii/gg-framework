@@ -1018,6 +1018,11 @@ export interface PromptMeta {
   /** Plan feedback from the review box: the sidecar revises the plan back in
    *  read-only plan mode instead of with full write access. */
   planRevision?: boolean;
+  /** Sent from the live preview chat: the page and the element picked on it. */
+  livePreview?: {
+    url: string;
+    element: { selector: string; html: string; tag: string; text: string } | null;
+  };
 }
 
 export async function sendPrompt(
@@ -2412,6 +2417,35 @@ export async function startServe(): Promise<void> {
 export async function stopServe(): Promise<void> {
   await waitForReady();
   await invoke("agent_serve_stop");
+}
+
+/** This window's live preview: the running web app in the browser, with the chat on it. */
+export interface LivePreviewStatus {
+  running: boolean;
+  /** The link to open in the browser. */
+  url: string | null;
+  /** The dev server it shows. */
+  target: string | null;
+  /** No dev server was found: ask the user for its address. */
+  needsUrl?: boolean;
+  error?: string;
+}
+
+/** Start (or reuse) the live preview. `url` is a dev server address the user typed. */
+export async function startLivePreview(url?: string): Promise<LivePreviewStatus> {
+  await waitForReady();
+  return invoke<LivePreviewStatus>("live_preview_start", { url: url ?? null });
+}
+
+/** Stop the live preview and close its session. */
+export async function stopLivePreview(): Promise<LivePreviewStatus> {
+  await waitForReady();
+  return invoke<LivePreviewStatus>("live_preview_stop");
+}
+
+export async function getLivePreviewStatus(): Promise<LivePreviewStatus> {
+  await waitForReady();
+  return invoke<LivePreviewStatus>("live_preview_status");
 }
 
 // ── Agent Steroids (local code corpus) ────────────────────────

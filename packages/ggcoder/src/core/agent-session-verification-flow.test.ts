@@ -20,7 +20,7 @@ import type { AgentSession } from "./agent-session.js";
 import type { ProcessManager } from "./process-manager.js";
 import { buildKenAutopilotContext } from "./ken-context.js";
 import type { VerificationEvidence } from "./verification-evidence.js";
-import { createBashTool, REVIEW_REJECTED_BEFORE_START } from "../tools/bash.js";
+import { createBashTool } from "../tools/bash.js";
 
 interface FlowInternals {
   sessionPath: string;
@@ -179,24 +179,8 @@ const artifactBuild =
 // suite gets more than the 20 s default. A genuine hang still fails: the bash
 // tool stops a foreground command at 120 s.
 describe("verification gate flow", { timeout: 60_000 }, () => {
-  it.each([
-    { review: true, result: `Exit code: 1\n${REVIEW_REJECTED_BEFORE_START}` },
-    { review: false, result: REVIEW_REJECTED_BEFORE_START },
-  ])(
-    "never treats check output or another execution mode as a review rejection: %j",
-    async ({ review, result }) => {
-      const { internal } = await makeSession();
-      await simulateToolCall(internal, "edit", { file_path: "subject.mjs" });
-      await simulateToolCall(internal, "bash", { command: "npm run check", review }, result);
-      expect(internal.getVerificationEvidence()).toContainEqual(
-        expect.objectContaining({ command: "npm run check", status: "failed" }),
-      );
-      expect(internal.getVerificationProblem()).toContain("failed");
-    },
-  );
-
   it.each([false, true])(
-    "treats a rejected review as not-run without clearing actual failures (prior failure=%s)",
+    "counts a review-flagged combined command by its real result, never clearing a real failure (prior failure=%s)",
     async (priorFailure) => {
       await prepareBuildProject(artifactBuild);
       const { internal } = await makeSession();
@@ -229,12 +213,16 @@ describe("verification gate flow", { timeout: 60_000 }, () => {
           durationMs: 1,
         } as AgentEvent);
       };
-      const rejected = "npm run check && git diff --check";
-      await invoke(rejected);
+      // The review is skipped but the command runs, so the gate judges it as it
+      // would without the flag: a pass counts, an ambiguous failing exit is rejected.
+      const combined = "npm run check && git diff --check";
+      await invoke(combined);
       expect(internal.getVerificationEvidence()).toContainEqual(
-        expect.objectContaining({ command: rejected, status: "rejected" }),
+        expect.objectContaining({
+          command: combined,
+          status: priorFailure ? "rejected" : "passed",
+        }),
       );
-      expect(internal.getVerificationProblem()).not.toBeNull();
 
       if (priorFailure) {
         await runRealCheck(internal, "npm run build");

@@ -169,6 +169,13 @@ import { handleAuthRoutes } from "./app-sidecar/auth-routes.js";
 import { handleIntegrationRoutes } from "./app-sidecar/integration-routes.js";
 import { handleMcpRoutes } from "./app-sidecar/mcp-routes.js";
 import { finishShellRun, handleShellRoutes } from "./app-sidecar/shell-routes.js";
+import {
+  createLivePreviewManager,
+  findLivePreviewAssets,
+} from "./app-sidecar/live-preview/manager.js";
+import { handleLivePreviewRoutes } from "./app-sidecar/live-preview/routes.js";
+import { findProjectServers, probePort } from "./app-sidecar/live-preview/servers.js";
+import { createLivePreviewTool, type LivePreviewResult } from "./tools/live-preview.js";
 import { ShellRunner } from "./app-sidecar/shell-runs.js";
 import { syncMcpServerAcross } from "./app-sidecar/mcp-sync.js";
 import type { SessionRouteContext } from "./app-sidecar/route-context.js";
@@ -401,6 +408,74 @@ async function main(): Promise<void> {
 
   const { subscriptionUsage } = createUsageService(auth);
 
+  /** Create a session and register it under a fresh id (a window's, or a live preview's). */
+  const openSession = async (
+    opts: {
+      mode: ReturnType<typeof parseWorkspaceMode>;
+      chatAgent: ReturnType<typeof parseChatAgentId>;
+      cwd: string;
+      sessionPath?: string;
+    },
+    { preview = false }: { preview?: boolean } = {},
+  ): Promise<SessionContext> => {
+    const id = randomUUID();
+    const ctx = await createSession(
+      {
+        auth,
+        paths,
+        progress,
+        trophies,
+        memoryStore,
+        jiwaStore,
+        broadcastAll,
+        oauthInFlightProviders,
+        repoPolls,
+        sessionIdsAt,
+        busyAt,
+        syncMcpServer,
+        // The preview's own session has no window to preview from.
+        ...(preview
+          ? {}
+          : {
+              livePreview: async (sessionId: string, url: string | undefined) => {
+                const window = sessions.get(sessionId);
+                if (!window) throw new Error("This window's session is gone.");
+                return livePreview.start(window, url ? { url } : {});
+              },
+            }),
+      },
+      { id, ...opts },
+    );
+    sessions.set(id, ctx);
+    log("INFO", "app-sidecar", "session created", {
+      id,
+      mode: opts.mode,
+      chatAgent: opts.chatAgent,
+      cwd: opts.cwd,
+    });
+    return ctx;
+  };
+  const closeSession = async (id: string): Promise<void> => {
+    const ctx = sessions.get(id);
+    if (!ctx) return;
+    sessions.delete(id);
+    log("INFO", "app-sidecar", "session disposed", { id });
+    await ctx.dispose().catch(() => {});
+  };
+
+  // Live preview: one per window, each with its own session in the window's project.
+  const livePreview = createLivePreviewManager({
+    assetsDir: findLivePreviewAssets(),
+    scan: (cwd) => findProjectServers(cwd),
+    probe: (port) => probePort(port),
+    createSession: (cwd) =>
+      openSession({ mode: "code", chatAgent: parseChatAgentId(undefined), cwd }, { preview: true }),
+    closeSession,
+    usage: subscriptionUsage,
+    log: (message, fields) => log("INFO", "live-preview", message, fields),
+    onChange: (windowId, status) => sessions.get(windowId)?.broadcast("live_preview", status),
+  });
+
   // git status / GitHub counts / CI pollers, one per repo however many windows
   // have it open (each window used to run its own).
   const repoPolls = createRepoPolls();
@@ -471,37 +546,13 @@ async function main(): Promise<void> {
             : (process.env.GG_APP_CWD ?? process.cwd());
         const sessionPath =
           typeof body.sessionPath === "string" && body.sessionPath ? body.sessionPath : undefined;
-        const id = randomUUID();
         try {
-          const ctx = await createSession(
-            {
-              auth,
-              paths,
-              progress,
-              trophies,
-              memoryStore,
-              jiwaStore,
-              broadcastAll,
-              oauthInFlightProviders,
-              repoPolls,
-              sessionIdsAt,
-              busyAt,
-              syncMcpServer,
-            },
-            { id, mode, chatAgent, cwd: sessionCwd, sessionPath },
-          );
-          sessions.set(id, ctx);
-          log("INFO", "app-sidecar", "session created", {
-            id,
-            mode,
-            chatAgent,
-            cwd: sessionCwd,
-          });
+          const ctx = await openSession({ mode, chatAgent, cwd: sessionCwd, sessionPath });
           // The conversation file too, so the app can reopen this exact
           // session if the daemon restarts (a new session has no path yet
           // on the app's side).
           daemonJson(res, 200, {
-            sessionId: id,
+            sessionId: ctx.id,
             sessionPath: ctx.session.getState().sessionPath ?? null,
           });
         } catch (err) {
@@ -516,12 +567,9 @@ async function main(): Promise<void> {
     // Dispose a session: DELETE /session/:id.
     if (method === "DELETE" && url.startsWith("/session/")) {
       const id = decodeURIComponent(url.slice("/session/".length));
-      const ctx = sessions.get(id);
-      if (ctx) {
-        sessions.delete(id);
-        void ctx.dispose().catch(() => {});
-        log("INFO", "app-sidecar", "session disposed", { id });
-      }
+      // A closing window takes its live preview (and the preview's session) with it.
+      void livePreview.onSessionClosed(id);
+      void closeSession(id);
       daemonJson(res, 200, { ok: true });
       return;
     }
@@ -623,6 +671,7 @@ async function main(): Promise<void> {
       daemonJson(res, 404, { error: "unknown session" });
       return;
     }
+    if (handleLivePreviewRoutes(livePreview, ctx, req, res, url, method)) return;
     ctx.handle(req, res, url, method);
   }
   server.listen(port, host, () => {
@@ -657,6 +706,8 @@ async function main(): Promise<void> {
       keepAwake.dispose();
       // Close the ~/.gg progress fs.watch handle (baseline #8 leak fix).
       progress.dispose();
+      // Previews first: they close their own sessions, which then aren't disposed twice.
+      await livePreview.stopAll().catch(() => {});
       await Promise.all([...sessions.values()].map((c) => c.dispose().catch(() => {})));
       server.close();
     },
@@ -720,6 +771,8 @@ async function createSession(
     /** Whether any live window session in `cwd` is working right now. */
     busyAt: (cwd: string) => boolean;
     syncMcpServer: SessionRouteContext["syncMcpServer"];
+    /** Start this window's live preview (the `live_preview` tool); absent for the preview's own session. */
+    livePreview?: (sessionId: string, url: string | undefined) => Promise<LivePreviewResult>;
   },
   opts: {
     id: string;
@@ -1093,9 +1146,12 @@ async function createSession(
       additionalTools: [askUserTool],
     });
   } else {
+    const startLivePreview = deps.livePreview;
     session = new AgentSession({
       ...baseSessionOptions,
-      additionalTools: [askUserTool],
+      additionalTools: startLivePreview
+        ? [askUserTool, createLivePreviewTool((url) => startLivePreview(opts.id, url))]
+        : [askUserTool],
       // A run must not end mid-plan with nothing submitted: nobody could review it.
       planSubmissionGate: true,
       // Plan mode belongs only to the coding agent.

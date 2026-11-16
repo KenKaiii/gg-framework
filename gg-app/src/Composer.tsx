@@ -1,4 +1,4 @@
-import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from "react";
+import type { Dispatch, MutableRefObject, ReactNode, RefObject, SetStateAction } from "react";
 import { ArrowUpIcon, PaperclipIcon, SquareIcon } from "@phosphor-icons/react";
 import { ShellCommandMenu } from "./ShellCommandMenu";
 import type { ShellSuggestion } from "./agent";
@@ -88,6 +88,8 @@ export interface ComposerProps {
   navigateHistory: (dir: -1 | 1, el: HTMLTextAreaElement) => boolean;
   submit: () => void;
   requestCancel: () => void;
+  // Replaces the attach button (the live preview puts its element picker here).
+  leadAction?: ReactNode;
 }
 
 /** The `!` command picker's state; App owns it, the composer drives it. */
@@ -169,6 +171,7 @@ export function Composer({
   navigateHistory,
   submit,
   requestCancel,
+  leadAction,
 }: ComposerProps): React.ReactElement {
   const keyAction = sendKeyAction({ shellMode, running, kenRunning, autopilotReviewing });
   const stopping = keyAction !== "send";
@@ -234,23 +237,27 @@ export function Composer({
         }
       />
       <div className="inputrow">
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          style={{ display: "none" }}
-          onChange={(e) => {
-            if (e.target.files) void addFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-        <button
-          className="icon-circle"
-          title="Attach files"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <PaperclipIcon size={15} />
-        </button>
+        {leadAction ?? (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                if (e.target.files) void addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <button
+              className="icon-circle"
+              title="Attach files"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <PaperclipIcon size={15} />
+            </button>
+          </>
+        )}
         <div className="input-stack">
           {enhanceAnim && (
             <EnhanceDissolve

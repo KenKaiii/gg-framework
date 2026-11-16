@@ -8,6 +8,7 @@ import type {
 import { STEERING_PREFIX, isNotificationText } from "./steering.js";
 import { matchPromptCommand } from "./prompt-command-expansion.js";
 import { AUTOPILOT_INJECTION_PREAMBLE } from "./autopilot-cycle.js";
+import { splitLivePreviewPrompt } from "./live-preview.js";
 
 export type HistoryMessageVisibility = "transcript" | "hidden" | "summary";
 
@@ -426,6 +427,14 @@ function stripAttachedFilesBlock(text: string): string {
   return idx === -1 ? text : text.slice(0, idx);
 }
 
+/** A live-preview message shows the user's words, with the picked element as a chip. */
+function withLivePreview(text: string, attachments: RestoredAttachment[]): string {
+  const preview = splitLivePreviewPrompt(text);
+  if (!preview) return text;
+  if (preview.chip) attachments.push({ kind: "file", name: preview.chip });
+  return preview.text;
+}
+
 /** Rebuild the live user bubble from a persisted user message's content. */
 export function restoreUserRow(
   content: Message["content"],
@@ -434,10 +443,15 @@ export function restoreUserRow(
   if (typeof content === "string") {
     const unsteered = stripSteering(content);
     const legacy = !provenance;
+    const attachments = attachmentsInText(unsteered);
+    const text = withLivePreview(
+      stripAttachedFilesBlock(legacy ? stripAutopilotPreamble(unsteered) : unsteered).trim(),
+      attachments,
+    );
     return {
-      text: stripAttachedFilesBlock(legacy ? stripAutopilotPreamble(unsteered) : unsteered).trim(),
+      text,
       images: [],
-      attachments: attachmentsInText(unsteered),
+      attachments,
       videoWarning: false,
       autopilotInjected:
         provenance?.kind === "automation" || (legacy && hasAutopilotPreamble(unsteered)),
@@ -468,7 +482,7 @@ export function restoreUserRow(
     if (cleaned.trim()) textParts.push(cleaned);
   }
   return {
-    text: textParts.join("\n\n").trim(),
+    text: withLivePreview(textParts.join("\n\n").trim(), attachments),
     images,
     attachments,
     videoWarning,

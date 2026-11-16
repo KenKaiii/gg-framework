@@ -167,6 +167,7 @@ const COVERAGE: Record<string, string> = {
   ActivityBar: "code-mode.md",
   WorkingBeam: "code-mode.md",
   FoldersPanel: "code-mode.md",
+  LivePreviewPanel: "code-mode.md",
   // ken-and-autopilot.md
   KenActivityBar: "ken-and-autopilot.md",
   KenFace: "ken-and-autopilot.md",

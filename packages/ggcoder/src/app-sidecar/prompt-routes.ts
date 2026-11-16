@@ -18,6 +18,11 @@ import { lastAssistantText, buildKenContext } from "./ken-context.js";
 import { keepAwake } from "./keep-awake.js";
 import type { SessionRouteContext } from "./route-context.js";
 import { mentionedPaths, slashCommandName } from "../core/trophies/engine.js";
+import {
+  buildLivePreviewPrompt,
+  livePreviewChip,
+  parseLivePreviewMeta,
+} from "../core/live-preview.js";
 
 /**
  * Count a sent prompt toward trophies: a slash command (and whether it's the
@@ -120,6 +125,7 @@ export function handlePromptRoutes(
               enhancements?: unknown[];
               scheduled?: boolean;
               planRevision?: boolean;
+              livePreview?: unknown;
             }
           | undefined;
         try {
@@ -131,6 +137,7 @@ export function handlePromptRoutes(
               enhancements?: unknown[];
               scheduled?: boolean;
               planRevision?: boolean;
+              livePreview?: unknown;
             };
           };
           text = body.text ?? "";
@@ -144,8 +151,21 @@ export function handlePromptRoutes(
           json(res, 400, { error: "empty prompt" });
           return;
         }
+        // Live preview: the agent gets the picked element and short-reply rules,
+        // while every transcript shows only the typed words (core/live-preview.ts).
+        const livePreview = parseLivePreviewMeta(meta?.livePreview);
+        const typed = text;
+        if (livePreview) text = buildLivePreviewPrompt(text, livePreview, ctx.cwd);
+        const announceLivePreview = (queued: boolean): void => {
+          if (!livePreview) return;
+          ctx.broadcast("live_preview_prompt", {
+            text: typed,
+            element: livePreview.element ? livePreviewChip(livePreview.element) : null,
+            queued,
+          });
+        };
         // Before the run checks below, so the run claim stays synchronous with them.
-        if (meta?.scheduled !== true) await ctx.startGoalFromMessage(text);
+        if (meta?.scheduled !== true) await ctx.startGoalFromMessage(typed);
         // A typed prompt supersedes any question parked on the user: they
         // answered with a message of their own. Release the blocked tool call
         // NOW — otherwise it waits out its ten-minute timeout while this very
@@ -195,10 +215,11 @@ export function handlePromptRoutes(
             preparedForAsk ??
             (attachments.length > 0 ? await prepareAttachments(ctx.cwd, attachments) : []);
           const count = ctx.session.queueMessage(text, prepared, { answeredAsk: answersAsk });
+          announceLivePreview(true);
           ctx.broadcast("queued", { count, messages: ctx.session.listQueuedMessages() });
           json(res, 202, { queued: true, count });
           void recordPromptTrophies(ctx, {
-            text,
+            text: typed,
             attachments: attachments.length,
             enhanced: Array.isArray(meta?.enhancements) && meta.enhancements.length > 0,
             // A scheduled prompt that queued behind a run isn't the user steering.
@@ -233,7 +254,7 @@ export function handlePromptRoutes(
           void ctx.trophies.count("scheduledRuns", ctx.sessionId);
         } else {
           void recordPromptTrophies(ctx, {
-            text,
+            text: typed,
             attachments: attachments.length,
             enhanced: Array.isArray(meta?.enhancements) && meta.enhancements.length > 0,
             steer: false,
@@ -277,6 +298,7 @@ export function handlePromptRoutes(
         ctx.clearPendingPlan();
         const assistantsBefore = countAssistantMessages(ctx.session.getMessages());
         const messagesBefore = ctx.session.getMessages().length;
+        announceLivePreview(false);
         await ctx.runAgent(
           text,
           async () => {

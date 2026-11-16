@@ -48,7 +48,13 @@ function renderTitleBar(
 function renderMenu(
   workspaceMode: WorkspaceMode,
   isGoal = false,
-  extra: { onAddFolder?: () => void; onRemoveFolder?: () => void; hasHealth?: boolean } = {},
+  extra: {
+    onAddFolder?: () => void;
+    onRemoveFolder?: () => void;
+    hasHealth?: boolean;
+    onOpenLivePreview?: () => void;
+    livePreviewRunning?: boolean;
+  } = {},
 ): void {
   render(
     <DeckMenu
@@ -65,6 +71,8 @@ function renderMenu(
       onOpenTasks={vi.fn()}
       showChecklist={false}
       onOpenChecklist={vi.fn()}
+      onOpenLivePreview={extra.onOpenLivePreview}
+      livePreviewRunning={extra.livePreviewRunning}
       onOpenRadio={vi.fn()}
       onOpenGoalSettings={isGoal ? vi.fn() : undefined}
       onAddFolder={extra.onAddFolder ?? vi.fn()}
@@ -183,6 +191,18 @@ describe("DeckMenu", () => {
     expect(screen.getByRole("switch", { name: "Autopilot" }).getAttribute("aria-checked")).toBe(
       "false",
     );
+  });
+
+  it("offers Live preview in a code window, lit while it runs", () => {
+    const onOpenLivePreview = vi.fn();
+    renderMenu("code", false, { onOpenLivePreview, livePreviewRunning: true });
+    const key = screen.getByRole("button", { name: "Live preview, running" });
+    expect(key.querySelector(".led")?.getAttribute("data-state")).toBe("on");
+    fireEvent.click(key);
+    expect(onOpenLivePreview).toHaveBeenCalledOnce();
+    cleanup();
+    renderMenu("chat", false, { onOpenLivePreview });
+    expect(screen.queryByRole("button", { name: /Live preview/ })).toBeNull();
   });
 
   it("offers Brain and New chat in a chat window, and no project tools", () => {

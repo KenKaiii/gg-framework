@@ -8,6 +8,7 @@
 // Run AFTER `stage:node` + `bundle:sidecar`. Exits non-zero on any failure so
 // it can gate CI.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -389,6 +390,38 @@ async function main() {
     fail(`/state body missing "ready": ${JSON.stringify(body)}`);
   }
   console.log(`smoke: session ${sessionId.slice(0, 8)} /state 200 ready=${body.ready}`);
+
+  // Live preview must find its packaged overlay: start one against a stub dev
+  // server, load the page through the proxy and its page script from the frame server.
+  const dev = createServer((_req, r) =>
+    r.writeHead(200, { "content-type": "text/html" }).end("<html><head></head><body>ok</body></html>"),
+  );
+  await new Promise((r) => dev.listen(0, "127.0.0.1", r));
+  try {
+    const headers = { "x-gg-session": sessionId, "x-gg-token": token };
+    const started = await fetch(`http://127.0.0.1:${port}/live-preview/start`, {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({ url: `http://127.0.0.1:${dev.address().port}/` }),
+    }).then((r) => r.json());
+    if (!started.running) fail(`live preview didn't start: ${JSON.stringify(started)}`);
+    const page = await fetch(started.url, { headers: { "sec-fetch-dest": "document" } }).then((r) =>
+      r.text(),
+    );
+    const script = /<script defer src="(http:\/\/127\.0\.0\.1:\d+\/page\.js)">/.exec(page);
+    if (!script) fail(`live preview page has no overlay: ${page.slice(0, 200)}`);
+    const js = await fetch(script[1]);
+    if (js.status !== 200) fail(`live preview page.js returned ${js.status}`);
+    const frame = await fetch(script[1].replace("/page.js", "/frame"));
+    if (frame.status !== 200) fail(`live preview frame returned ${frame.status}`);
+    await fetch(`http://127.0.0.1:${port}/live-preview/stop`, { method: "POST", headers });
+    console.log(`smoke: live preview served ${started.url}`);
+  } catch (err) {
+    child.kill("SIGKILL");
+    fail(`live preview failed: ${err.message}`);
+  } finally {
+    dev.close();
+  }
 
   // A Motion session must build from the packaged bundle (skills + prompt).
   const motionCwd = mkdtempSync(join(tmpdir(), "gg-smoke-motion-"));

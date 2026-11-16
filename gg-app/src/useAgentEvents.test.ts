@@ -140,6 +140,26 @@ function setup(
 }
 
 describe("useAgentEvents", () => {
+  it("shows a live preview message as a user bubble with the picked element", () => {
+    const { hook, getItems } = setup();
+    act(() =>
+      hook.result.current.handleEvent(
+        ev("live_preview_prompt", {
+          text: "Change to Spanish Latte",
+          element: "<h2> Iced latte",
+          queued: false,
+        }),
+      ),
+    );
+    expect(getItems()).toEqual([
+      expect.objectContaining({
+        kind: "user",
+        text: "Change to Spanish Latte",
+        attachments: [{ kind: "file", name: "<h2> Iced latte" }],
+      }),
+    ]);
+  });
+
   it("updates task activity before an autopilot delegate consumes its event", () => {
     const { hook, deps } = setup(
       () => false,
