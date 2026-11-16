@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from "react";
 import { enhancePrompt, type PromptSegment } from "./agent";
 import type { DraftEnhancement } from "./PromptEnhancement";
@@ -18,7 +17,6 @@ export function usePromptEnhance({
   inputRef,
   enhancing,
   setEnhancing,
-  setEnhanceHintVisible,
   setEnhanceAnim,
   pendingEnhanceRef,
   enhancement,
@@ -33,7 +31,6 @@ export function usePromptEnhance({
   inputRef: RefObject<HTMLTextAreaElement | null>;
   enhancing: boolean;
   setEnhancing: Dispatch<SetStateAction<boolean>>;
-  setEnhanceHintVisible: Dispatch<SetStateAction<boolean>>;
   setEnhanceAnim: Dispatch<SetStateAction<EnhanceAnim>>;
   pendingEnhanceRef: MutableRefObject<{ enhanced: string; segments: PromptSegment[] } | null>;
   enhancement: Enhancement;
@@ -64,7 +61,6 @@ export function usePromptEnhance({
   async function runEnhance(): Promise<void> {
     const draft = input.trim();
     if (!draft || enhancing) return;
-    setEnhanceHintVisible(false);
     setEnhancing(true);
 
     const reduced =
@@ -122,32 +118,23 @@ export function usePromptEnhance({
     });
   }
 
-  // Show the corner "Enhance" pill whenever the input holds text — it stays put
-  // (no debounce) and only hides when the box is empty. Shows even while the agent
-  // is running, so a queued follow-up draft can be enhanced too: enhancePrompt is
-  // a standalone one-shot call, independent of the agent loop. Still skipped mid-
-  // enhance, with a menu open, or when the draft is already the current
-  // enhancement (nothing left to improve).
-  useEffect(() => {
-    if (enhancing || !hydrated) return setEnhanceHintVisible(false);
-    if (input.trim().length === 0) return setEnhanceHintVisible(false);
-    if (slashOpen || mentionOpen) return setEnhanceHintVisible(false);
-    // Never offer to rewrite a `/schedule` draft: the enhancer rewrites prose
-    // and would happily mangle the `| 15m` argument tail into something the
-    // parser rejects.
-    if (scheduleDraft) return setEnhanceHintVisible(false);
-    if (enhancement && enhancement.enhanced === input) return setEnhanceHintVisible(false);
-    setEnhanceHintVisible(true);
-  }, [
-    input,
-    enhancing,
-    hydrated,
-    slashOpen,
-    mentionOpen,
-    scheduleDraft,
-    enhancement,
-    setEnhanceHintVisible,
-  ]);
+  // Show the "Enhance" pill whenever the input holds text — no debounce; it
+  // hides only when the box is empty. Shows even while the agent is running, so
+  // a queued follow-up draft can be enhanced too: enhancePrompt is a standalone
+  // one-shot call, independent of the agent loop. Skipped mid-enhance, with a
+  // menu open, on a `/schedule` draft (the enhancer would mangle its `| 15m`
+  // tail), or when the draft is already the current enhancement.
+  // Derived in render, not an effect: a post-paint update left the pill in the
+  // row for the frame the input emptied, so the composer measured the empty
+  // field at the narrower width, where the placeholder wraps, and flashed taller.
+  const enhanceHintVisible =
+    !enhancing &&
+    hydrated &&
+    input.trim().length > 0 &&
+    !slashOpen &&
+    !mentionOpen &&
+    !scheduleDraft &&
+    !(enhancement && enhancement.enhanced === input);
 
-  return { runEnhance, onEnhanceAnimDone };
+  return { runEnhance, onEnhanceAnimDone, enhanceHintVisible };
 }

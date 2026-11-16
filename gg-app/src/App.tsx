@@ -353,9 +353,6 @@ function App(): React.ReactElement {
   // Composer sends so far: a change tells the composer strips (attachments,
   // @-files, cold-cache notice) to drop what the send cleared in that commit.
   const [sendCount, setSendCount] = useState(0);
-  // The floating "Enhance" pill is shown only after the user pauses typing for
-  // ~1s (and hidden again on the next keystroke / send / empty input).
-  const [enhanceHintVisible, setEnhanceHintVisible] = useState(false);
   // Drives the Matrix dissolve→decode animation over the input while enhancing.
   // `newText` is null until the enhancer returns (dissolve/scramble), then the
   // enhanced text (decode). Null when no animation is playing.
@@ -2226,13 +2223,12 @@ function App(): React.ReactElement {
     inputRef,
   });
 
-  const { runEnhance, onEnhanceAnimDone } = usePromptEnhance({
+  const { runEnhance, onEnhanceAnimDone, enhanceHintVisible } = usePromptEnhance({
     input,
     setInput,
     inputRef,
     enhancing,
     setEnhancing,
-    setEnhanceHintVisible,
     setEnhanceAnim,
     pendingEnhanceRef,
     enhancement,
