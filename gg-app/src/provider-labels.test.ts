@@ -37,7 +37,7 @@ describe("providerRank", () => {
 
 describe("groupByProvider", () => {
   const models = [
-    { id: "gpt-6.1-sol", provider: "openai" },
+    { id: "gpt-6.2-sol", provider: "openai" },
     { id: "claude-sonnet-5", provider: "anthropic" },
     { id: "local/ollama/qwen3", provider: "local" },
     { id: "claude-opus-5-5", provider: "anthropic" },

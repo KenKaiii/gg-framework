@@ -103,7 +103,7 @@ function owlTool() {
     process.cwd(),
     [owl, pinned],
     () => "openai",
-    () => "gpt-6.1-sol",
+    () => "gpt-6.2-sol",
     () => "parent-cache",
     undefined,
     () => "ultra",
@@ -134,7 +134,7 @@ describe("createSubAgentTool model and thinking routing", () => {
 
       await runAgent(agent);
 
-      expect(spawnedModels()).toEqual(["gpt-6.1-sol"]);
+      expect(spawnedModels()).toEqual(["gpt-6.2-sol"]);
       expect(spawnedFlag("--thinking")).toEqual(["ultra"]);
     },
   );
@@ -149,7 +149,7 @@ describe("createSubAgentTool model and thinking routing", () => {
     await expect(runAgent("pinned")).resolves.toMatchObject({
       content: "fallback succeeded\n\nReceipt (0 calls): no tool calls",
     });
-    expect(spawnedModels()).toEqual(["gpt-6-luna", "gpt-6.1-sol"]);
+    expect(spawnedModels()).toEqual(["gpt-6-luna", "gpt-6.2-sol"]);
     // The pinned model caps Ultra, but fallback restores the parent selection.
     expect(spawnedFlag("--thinking")).toEqual(["max", "ultra"]);
     expect(spawnedCacheKeys()).toEqual([
@@ -164,7 +164,7 @@ describe("createSubAgentTool model and thinking routing", () => {
       process.cwd(),
       [],
       () => "openai",
-      () => "gpt-6.1-sol",
+      () => "gpt-6.2-sol",
       undefined,
       undefined,
       () => thinking,
@@ -252,7 +252,7 @@ describe("createSubAgentTool model and thinking routing", () => {
         "Partial output before failure:\nI'll read both files now.\n\n" +
         "Receipt (0 calls): no tool calls",
     });
-    expect(spawnedModels()).toEqual(["gpt-6.1-sol"]);
+    expect(spawnedModels()).toEqual(["gpt-6.2-sol"]);
   });
 
   it("names the timeout instead of reporting a signal death as 'unknown error'", async () => {
@@ -307,7 +307,7 @@ describe("createSubAgentTool model and thinking routing", () => {
         process.cwd(),
         [owl],
         () => "openai",
-        () => "gpt-6.1-sol",
+        () => "gpt-6.2-sol",
       );
       await expect(
         tool.execute(

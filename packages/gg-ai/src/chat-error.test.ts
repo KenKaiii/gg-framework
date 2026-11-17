@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatChatError } from "./chat-error.js";
+import { chatGPTPlanError } from "./providers/openai-responses.js";
 import {
   GGAIError,
   ProviderError,
@@ -167,5 +168,28 @@ describe("formatChatError", () => {
     expect(
       formatError(new ResponseStalledError("stopped", { inToolCall: false })).headline,
     ).not.toMatch(/reach/i);
+  });
+});
+
+describe("ChatGPT plan usage errors", () => {
+  const planError = (code: string, status: number) =>
+    chatGPTPlanError({ code, message: "x" }, status, "req-1", "x", "gpt-6.2-sol");
+
+  it("sends a spent plan or GG Coder limit to Manage usage instead of waiting", () => {
+    const error = formatChatError(planError("subscription_sharing_usage_limit_exceeded", 429));
+    expect(error).toMatchObject({
+      reason: "usage_limit",
+      headline: "ChatGPT usage limit reached",
+      manageUsage: "chatgpt",
+    });
+    expect(error.guidance).toMatch(/Manage usage/);
+    expect(error.guidance).not.toMatch(/wait/i);
+  });
+
+  it("does not call an unavailable usage check a reached limit", () => {
+    const error = formatChatError(planError("subscription_sharing_usage_unavailable", 503));
+    expect(error.reason).toBe("provider");
+    expect(error.headline).not.toMatch(/limit reached/i);
+    expect(error.manageUsage).toBeUndefined();
   });
 });

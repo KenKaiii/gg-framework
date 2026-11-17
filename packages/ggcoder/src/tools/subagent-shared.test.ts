@@ -77,8 +77,8 @@ describe("selectSubAgent", () => {
   ])("keeps a %s agent on the parent model", (_label, definition) => {
     // Regression: `fast` (and, before that, inferred read-only agents) were
     // silently routed to a weaker sibling model (Haiku, Luna, flash-lite).
-    expect(selectSubAgent([definition], definition.name, "openai", "gpt-6.1-sol").model).toBe(
-      "gpt-6.1-sol",
+    expect(selectSubAgent([definition], definition.name, "openai", "gpt-6.2-sol").model).toBe(
+      "gpt-6.2-sol",
     );
   });
 
@@ -112,7 +112,7 @@ describe("selectSubAgent", () => {
         agent({ name: "worker", model: "inherit" }),
         agent({ name: "owl", model: "fast" }),
       ];
-      for (const model of ["gpt-6-astra", "gpt-6.1-sol"]) {
+      for (const model of ["gpt-6.2-astra", "gpt-6.2-sol"]) {
         for (const name of ["worker", "owl", undefined]) {
           expect(selectSubAgent(agents, name, "openai", model, thinkingLevel).thinkingLevel).toBe(
             thinkingLevel,
@@ -124,7 +124,7 @@ describe("selectSubAgent", () => {
 
   it("caps inherited Ultra for a pinned OpenAI model without Ultra", () => {
     const pinned = agent({ name: "pinned", model: "gpt-6-luna" });
-    expect(selectSubAgent([pinned], "pinned", "openai", "gpt-6.1-sol", "ultra")).toMatchObject({
+    expect(selectSubAgent([pinned], "pinned", "openai", "gpt-6.2-sol", "ultra")).toMatchObject({
       model: "gpt-6-luna",
       thinkingLevel: "max",
     });
@@ -132,7 +132,7 @@ describe("selectSubAgent", () => {
 
   it("uses the floor rather than the ceiling when a pinned model does not support low", () => {
     const pinned = agent({ name: "pinned", model: "gpt-5.5" });
-    expect(selectSubAgent([pinned], "pinned", "openai", "gpt-6.1-sol", "low").thinkingLevel).toBe(
+    expect(selectSubAgent([pinned], "pinned", "openai", "gpt-6.2-sol", "low").thinkingLevel).toBe(
       "medium",
     );
   });
@@ -163,7 +163,7 @@ describe("selectSubAgent", () => {
   });
 
   it("falls back to the parent model for an unnamed agent", () => {
-    expect(selectSubAgent([], undefined, "openai", "gpt-6.1-sol").model).toBe("gpt-6.1-sol");
+    expect(selectSubAgent([], undefined, "openai", "gpt-6.2-sol").model).toBe("gpt-6.2-sol");
   });
 });
 
@@ -211,7 +211,7 @@ describe("subAgentCacheKey", () => {
 
   it("partitions unrelated model and prompt families", () => {
     const owl = subAgentCacheKey("parent", "gpt-6-luna", "owl");
-    expect(subAgentCacheKey("parent", "gpt-6.1-sol", "owl")).not.toBe(owl);
+    expect(subAgentCacheKey("parent", "gpt-6.2-sol", "owl")).not.toBe(owl);
     expect(subAgentCacheKey("parent", "gpt-6-luna", "bee")).not.toBe(owl);
   });
 

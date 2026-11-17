@@ -24,6 +24,8 @@ export type ChatErrorReason =
 
 export interface FormattedChatError extends FormattedError {
   reason: ChatErrorReason;
+  /** The app offers a Manage usage button for this account's usage settings. */
+  manageUsage?: "chatgpt";
 }
 
 function causeCode(error: unknown): string {
@@ -83,6 +85,25 @@ export function formatChatError(error: unknown): FormattedChatError {
       fastRejection.kind === "billing" ? "billing" : "model_access",
       fastRejection.headline,
       fastRejection.guidance,
+    );
+  }
+  // OpenAI: the limit can be one the user set for GG Coder in ChatGPT settings,
+  // not an empty plan, so send them there instead of telling them to wait.
+  if (code === "subscription_sharing_usage_limit_exceeded") {
+    return {
+      ...present(
+        "usage_limit",
+        "ChatGPT usage limit reached",
+        "This can be your plan’s limit or the one ChatGPT sets for GG Coder. Check or raise it in Manage usage.",
+      ),
+      manageUsage: "chatgpt",
+    };
+  }
+  if (code === "subscription_sharing_usage_unavailable") {
+    return present(
+      "provider",
+      "ChatGPT couldn’t check your plan usage",
+      "Try again in a moment, or add an OpenAI API key to keep going.",
     );
   }
   // Check billing and entitlement BEFORE the canonical hard-stop token stamped by adapters.

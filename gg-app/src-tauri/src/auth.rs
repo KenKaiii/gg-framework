@@ -231,7 +231,7 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     ProviderMeta {
         value: "openai",
         label: "OpenAI",
-        description: "GPT-6 Astra, GPT-6 Astra Fast, GPT-6.1 Sol, GPT-6.1 Sol Fast, GPT-6.1 Terra, GPT-6.1 Terra Fast, GPT-6 Luna, GPT-6 Luna Fast",
+        description: "GPT-6.2 Astra, GPT-6.2 Astra Fast, GPT-6.2 Sol, GPT-6.2 Sol Fast, GPT-6.1 Terra, GPT-6.1 Terra Fast, GPT-6 Luna, GPT-6 Luna Fast",
         // The ChatGPT plan sign-in lives under `openai-chatgpt`, the API key
         // under `openai` — a dual-auth provider (gg-core DUAL_AUTH_PROVIDERS).
         methods: &["oauth", "apikey"],

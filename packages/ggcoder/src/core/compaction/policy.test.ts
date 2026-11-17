@@ -130,7 +130,7 @@ describe("resolveCompactionPolicy", () => {
     expect(
       resolveCompactionPolicy({
         provider: "openai",
-        model: "gpt-6.1-sol",
+        model: "gpt-6.2-sol",
         contextWindow: 1_050_000,
       }).targetTokens,
     ).toBe(231_200);

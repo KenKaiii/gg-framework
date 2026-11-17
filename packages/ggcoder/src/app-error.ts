@@ -15,6 +15,7 @@ const appErrorSchema = z.object({
   requestId: z.string().max(300).optional().catch(undefined),
   occurredAt: timestamp,
   resetsAt: timestamp,
+  manageUsage: z.literal("chatgpt").optional().catch(undefined),
 });
 export type AppErrorPayload = z.infer<typeof appErrorSchema>;
 
@@ -38,6 +39,7 @@ export function createAppErrorPayload(
       requestId: error.requestId,
       occurredAt,
       resetsAt: error.resetsAt,
+      manageUsage: error.manageUsage,
     },
     { secrets, maxStringLength: 8_000 },
   );

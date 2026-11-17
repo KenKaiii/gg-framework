@@ -250,8 +250,8 @@ describe("compaction thresholds across all models", () => {
   });
 
   const openAITransportCases = [
-    { id: "gpt-6-astra", publicWindow: 1_050_000, codexWindow: 272_000 },
-    { id: "gpt-6.1-sol", publicWindow: 1_050_000, codexWindow: 272_000 },
+    { id: "gpt-6.2-astra", publicWindow: 1_050_000, codexWindow: 272_000 },
+    { id: "gpt-6.2-sol", publicWindow: 1_050_000, codexWindow: 272_000 },
     { id: "gpt-6-luna", publicWindow: 1_050_000, codexWindow: 272_000 },
   ] as const;
 
@@ -882,7 +882,7 @@ describe("compact", () => {
 
   it.each([
     ["anthropic", "claude-opus-5-5", "claude-sonnet-5-5"],
-    ["openai", "gpt-6.1-sol", "gpt-6-luna"],
+    ["openai", "gpt-6.2-sol", "gpt-6-luna"],
     ["glm", "glm-5.3", "glm-5.3-flash"],
     ["deepseek", "deepseek-v4-pro", "deepseek-flash"],
   ] as const)(
@@ -989,7 +989,7 @@ describe("compact", () => {
       await compact(buildConversation(30), {
         ...baseOptions,
         provider: "openai",
-        model: "gpt-6.1-sol",
+        model: "gpt-6.2-sol",
       });
 
       expect(mockStream.mock.calls.map(([request]) => request.model)).toEqual(["gpt-6-luna"]);

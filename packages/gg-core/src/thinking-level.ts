@@ -2,7 +2,7 @@ import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import { getMaxThinkingLevel, getModel } from "./model-registry.js";
 
 const OPENAI_GPT_THINKING_LEVELS: readonly ThinkingLevel[] = ["medium", "high", "xhigh"];
-// GPT-5.6 and GPT-6.x (gpt-6-*, plus point releases like gpt-6.1-sol) share the
+// GPT-5.6 and GPT-6.x (gpt-6-*, plus point releases like gpt-6.2-sol) share the
 // six-rung Codex ladder (low → ultra); older GPT models only expose
 // medium/high/xhigh.
 const OPENAI_GPT_56_THINKING_LEVELS: readonly ThinkingLevel[] = [

@@ -1004,7 +1004,7 @@ describe("toAnthropicThinking", () => {
 });
 
 describe("toCodexReasoningEffort", () => {
-  it.each(["gpt-6-astra", "gpt-6.1-sol"])("resolves %s Ultra without changing Max", (model) => {
+  it.each(["gpt-6.2-astra", "gpt-6.2-sol"])("resolves %s Ultra without changing Max", (model) => {
     expect(toCodexReasoningEffort("ultra", model)).toBe("xhigh");
     expect(toCodexReasoningEffort("max", model)).toBe("max");
     expect(toCodexReasoningEffort("low", model)).toBe("low");
@@ -1019,7 +1019,7 @@ describe("toCodexReasoningEffort", () => {
 describe("toOpenAIReasoningEffort", () => {
   it("clamps client-only max and ultra levels to OpenAI's xhigh effort", () => {
     expect(toOpenAIReasoningEffort("max", "gpt-5.5")).toBe("xhigh");
-    expect(toOpenAIReasoningEffort("ultra", "gpt-6.1-sol")).toBe("xhigh");
+    expect(toOpenAIReasoningEffort("ultra", "gpt-6.2-sol")).toBe("xhigh");
   });
 });
 

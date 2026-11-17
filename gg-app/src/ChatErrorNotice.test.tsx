@@ -7,6 +7,8 @@ beforeEach(() => {
     value: vi.fn(() => ({ cancel: vi.fn() })),
   });
 });
+const openUrl = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("./agent", () => ({ openUrl }));
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ChatErrorNotice } from "./ChatErrorNotice";
 import {
@@ -208,5 +210,24 @@ describe("compact chat errors", () => {
         { id: 2, kind: "assistant" },
       ]),
     ).toBe(1);
+  });
+});
+
+describe("ChatGPT plan usage limit", () => {
+  const planLimit: ChatErrorData = { ...limit, manageUsage: "chatgpt" };
+
+  it("opens ChatGPT usage settings from the live notice", () => {
+    render(<ChatErrorNotice error={planLimit} active />);
+    fireEvent.click(screen.getByRole("button", { name: "Manage usage" }));
+    expect(openUrl).toHaveBeenCalledWith("https://chatgpt.com/settings/usage");
+  });
+
+  it("drops the action on earlier errors and on unknown values", () => {
+    render(<ChatErrorNotice error={planLimit} active={false} />);
+    expect(screen.queryByRole("button", { name: "Manage usage" })).toBeNull();
+    expect(readChatError({ headline: "x", manageUsage: "https://evil.example" }).manageUsage).toBe(
+      undefined,
+    );
+    expect(readChatError({ headline: "x", manageUsage: "chatgpt" }).manageUsage).toBe("chatgpt");
   });
 });

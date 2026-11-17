@@ -21,7 +21,7 @@ export interface ModelInfo {
   /**
    * Vendor-declared default reasoning level (Codex models.json
    * `default_reasoning_level`). When present, fresh sessions start here rather
-   * than at the ceiling: the deep-reasoning models (Astra and GPT-6.1 Sol ship
+   * than at the ceiling: the deep-reasoning models (Astra and GPT-6.2 Sol ship
    * "low", GPT-6 Luna "medium") think dramatically longer per rung, so defaulting to
    * `maxThinkingLevel` made new sessions pathologically slow.
    */
@@ -44,7 +44,7 @@ export interface ModelInfo {
   /**
    * The top reasoning tier this model genuinely uses. Used when thinking is
    * enabled to pick the strongest setting per model:
-   *   - OpenAI GPT-6 Astra / GPT-6.1 Sol: `ultra` (Codex orchestration preset above `max`)
+   *   - OpenAI GPT-6.2 Astra / GPT-6.2 Sol: `ultra` (Codex orchestration preset above `max`)
    *   - OpenAI GPT-6 Luna: `max`
    *   - OpenAI Pro/Codex/old: clamped to what the model accepts
    *   - Claude Fable 5.2 / Fable 5.1 / Mythos 5, Opus 5.5, Sonnet 5.5 and
@@ -292,17 +292,16 @@ export const MODELS: ModelInfo[] = [
   },
   // ── OpenAI (Codex) ─────────────────────────────────────
   {
-    // GPT-6 Astra — "Our most capable model for complex, demanding work."
-    // (Codex catalog priority 2, listed for every ChatGPT plan, requires a
-    // Codex client >= 0.153.0). Same split as 5.6:
-    // 1.05M on the public Responses API, 272K on the ChatGPT plan route
-    // (openai/codex models.json, `gpt-6-astra`). Reasoning ladder low → medium
+    // GPT-6.2 Astra (2026-11) — "Our most capable model for your hardest
+    // projects." Replaced GPT-6 Astra. $8/$40 MTok, cached input $0.40.
+    // 1.05M on the public Responses API (922K max input); 272K on the ChatGPT
+    // plan route, carried over from GPT-6 Astra. Reasoning ladder low → medium
     // → high → xhigh → max → ultra; `ultra` is the Codex orchestration preset
     // (multi_agent v2) and is Codex-only — the public API tops out at `max`.
     // OpenAI requires the Responses API for tool calling on Astra, so both
     // the ChatGPT plan and API keys ride gg-ai's Responses transport.
-    id: "gpt-6-astra",
-    name: "GPT-6 Astra",
+    id: "gpt-6.2-astra",
+    name: "GPT-6.2 Astra",
     provider: "openai",
     contextWindow: 1_050_000,
     codexContextWindow: 272_000,
@@ -316,11 +315,11 @@ export const MODELS: ModelInfo[] = [
   },
   {
     // Codex Fast mode for Astra (catalog `service_tiers: priority`, "2x speed,
-    // increased usage"). gg-ai's `stream()` sends it as `gpt-6-astra` +
+    // increased usage"). gg-ai's `stream()` sends it as `gpt-6.2-astra` +
     // `service_tier: "priority"`, exactly what the Codex CLI sends. On a
     // ChatGPT plan it draws included limits at 2.5x the standard rate.
-    id: "gpt-6-astra-fast",
-    name: "GPT-6 Astra Fast",
+    id: "gpt-6.2-astra-fast",
+    name: "GPT-6.2 Astra Fast",
     provider: "openai",
     contextWindow: 1_050_000,
     codexContextWindow: 272_000,
@@ -336,18 +335,20 @@ export const MODELS: ModelInfo[] = [
   // GPT-6 Sol + Luna — released 2026-09-22 below Astra, replacing the whole
   // GPT-5.6 family (Sol/Terra/Luna; there was no GPT-6 Terra — OpenAI's Codex
   // catalog upgrades 5.6 Terra to 6 Sol). GPT-6.1 Sol (2026-09-29) then replaced
-  // GPT-6 Sol, and GPT-6.1 Terra (2026-10-26) sits between Sol and Luna. Same window split as Astra: 1.05M on the public Responses API,
+  // GPT-6 Sol, GPT-6.1 Terra (2026-10-26) sits between Sol and Luna, and
+  // GPT-6.2 Sol (2026-11) replaced GPT-6.1 Sol. Same window split as Astra: 1.05M on the public Responses API,
   // 272K on the Codex route; 128K output, text+image input, freeform
-  // apply_patch, responses-lite transport. The GPT-5.6 ids and `gpt-6-sol` are
+  // apply_patch, responses-lite transport. The GPT-5.6 ids, `gpt-6-sol`,
+  // `gpt-6.1-sol` and `gpt-6-astra` are
   // retired — a saved session on one falls back to the provider default on
   // next start.
   {
-    // GPT-6.1 Sol — "Latest workhorse model for coding and everyday work."
-    // (Codex priority 1, default low). $2/$10 MTok, cached input $0.10. Ladder low →
+    // GPT-6.2 Sol — "Our go-to model for everyday work." $2/$10 MTok, cached
+    // input $0.10. Default low, carried over from 6.1 Sol. Ladder low →
     // medium → high → xhigh → max → ultra; ultra is the Codex orchestration
     // preset (xhigh effort on the wire + proactive local subagent delegation).
-    id: "gpt-6.1-sol",
-    name: "GPT-6.1 Sol",
+    id: "gpt-6.2-sol",
+    name: "GPT-6.2 Sol",
     provider: "openai",
     contextWindow: 1_050_000,
     codexContextWindow: 272_000,
@@ -360,10 +361,10 @@ export const MODELS: ModelInfo[] = [
     maxThinkingLevel: "ultra",
   },
   {
-    // Codex Fast mode for 6.1 Sol ("2x speed, increased usage") — see
-    // `gpt-6-astra-fast` for the wire mapping and billing.
-    id: "gpt-6.1-sol-fast",
-    name: "GPT-6.1 Sol Fast",
+    // Codex Fast mode for 6.2 Sol ("2x speed, increased usage") — see
+    // `gpt-6.2-astra-fast` for the wire mapping and billing.
+    id: "gpt-6.2-sol-fast",
+    name: "GPT-6.2 Sol Fast",
     provider: "openai",
     contextWindow: 1_050_000,
     codexContextWindow: 272_000,
@@ -394,7 +395,7 @@ export const MODELS: ModelInfo[] = [
     maxThinkingLevel: "ultra",
   },
   {
-    // Codex Fast mode for 6.1 Terra ("1.5x speed") — see `gpt-6-astra-fast`
+    // Codex Fast mode for 6.1 Terra ("1.5x speed") — see `gpt-6.2-astra-fast`
     // for the wire mapping and billing.
     id: "gpt-6.1-terra-fast",
     name: "GPT-6.1 Terra Fast",
@@ -428,7 +429,7 @@ export const MODELS: ModelInfo[] = [
     maxThinkingLevel: "max",
   },
   {
-    // Codex Fast mode for Luna ("1.5x speed") — see `gpt-6-astra-fast` for the
+    // Codex Fast mode for Luna ("1.5x speed") — see `gpt-6.2-astra-fast` for the
     // wire mapping and billing. Listed after Luna so compaction summaries
     // (first `low` OpenAI model) stay on standard-speed Luna.
     id: "gpt-6-luna-fast",
@@ -1174,7 +1175,7 @@ export function getVideoByteLimit(modelId: string): number | undefined {
 /** Default model per hosted provider. Providers not listed default to Anthropic's. */
 const DEFAULT_MODEL_IDS: Partial<Record<Provider, string>> = {
   xiaomi: "mimo-v2.6-pro",
-  openai: "gpt-6.1-sol",
+  openai: "gpt-6.2-sol",
   gemini: "gemini-3.1-flash-lite",
   glm: "glm-5.3",
   moonshot: "kimi-k3",

@@ -122,8 +122,8 @@ describe("ModelPanel — ChatGPT plan", () => {
   function renderOpenAI() {
     render(
       <ModelPanel
-        state={{ provider: "openai", model: "gpt-6.1-sol" } as AgentState}
-        models={[{ id: "gpt-6.1-sol", name: "GPT-6.1 Sol", provider: "openai" }]}
+        state={{ provider: "openai", model: "gpt-6.2-sol" } as AgentState}
+        models={[{ id: "gpt-6.2-sol", name: "GPT-6.2 Sol", provider: "openai" }]}
         modelsFailed={false}
         running={false}
         onSelectModel={vi.fn()}
@@ -168,8 +168,8 @@ describe("ModelPanel — models the user's plan or keys can't run", () => {
         models={[
           { id: "gpt-6-luna", name: "GPT-6 Luna", provider: "openai" },
           {
-            id: "gpt-6.1-sol",
-            name: "GPT-6.1 Sol",
+            id: "gpt-6.2-sol",
+            name: "GPT-6.2 Sol",
             provider: "openai",
             unavailable: "Not in your ChatGPT plan",
           },
@@ -181,7 +181,7 @@ describe("ModelPanel — models the user's plan or keys can't run", () => {
         onClose={vi.fn()}
       />,
     );
-    const sol = option(/GPT-6\.1 Sol/);
+    const sol = option(/GPT-6\.2 Sol/);
     expect(sol.textContent).toContain("Not in your ChatGPT plan");
     expect(sol.getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(sol);

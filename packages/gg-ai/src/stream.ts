@@ -325,7 +325,7 @@ function requireLocalBaseUrl(baseUrl: string | undefined): string {
  * ```
  */
 export function stream(requested: StreamOptions): StreamResult {
-  // Fast-mode ids (`claude-opus-5-5-fast`, `gpt-6.1-sol-fast`) are the base
+  // Fast-mode ids (`claude-opus-5-5-fast`, `gpt-6.2-sol-fast`) are the base
   // model at a faster speed tier — rewrite here so every call site (agent
   // loop, compaction, sub-agents) and every model-id check below sees the real id.
   const fastMode = resolveFastModeModel(requested.provider, requested.model);

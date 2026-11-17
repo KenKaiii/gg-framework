@@ -12,7 +12,7 @@ import type { ThinkingLevel } from "@kenkaiiii/gg-ai";
 describe("getLowestThinkingLevel", () => {
   it.each([
     ["anthropic", "claude-opus-5-5"],
-    ["openai", "gpt-6.1-sol"],
+    ["openai", "gpt-6.2-sol"],
     ["gemini", "gemini-3.8-flash"],
     ["glm", "glm-5.3"],
     ["deepseek", "deepseek-v4-pro"],
@@ -31,8 +31,8 @@ describe("getLowestThinkingLevel", () => {
 });
 
 describe("thinking-level helpers", () => {
-  it("cycles GPT-6 Astra through the full six-rung ladder up to ultra", () => {
-    expect(getSupportedThinkingLevels("openai", "gpt-6-astra")).toEqual([
+  it("cycles GPT-6.2 Astra through the full six-rung ladder up to ultra", () => {
+    expect(getSupportedThinkingLevels("openai", "gpt-6.2-astra")).toEqual([
       "low",
       "medium",
       "high",
@@ -40,9 +40,9 @@ describe("thinking-level helpers", () => {
       "max",
       "ultra",
     ]);
-    expect(getNextThinkingLevel("openai", "gpt-6-astra", undefined)).toBe("low");
-    expect(getNextThinkingLevel("openai", "gpt-6-astra", "max")).toBe("ultra");
-    expect(getNextThinkingLevel("openai", "gpt-6-astra", "ultra")).toBeUndefined();
+    expect(getNextThinkingLevel("openai", "gpt-6.2-astra", undefined)).toBe("low");
+    expect(getNextThinkingLevel("openai", "gpt-6.2-astra", "max")).toBe("ultra");
+    expect(getNextThinkingLevel("openai", "gpt-6.2-astra", "ultra")).toBeUndefined();
   });
 
   it("keeps the legacy medium/high ladder for unregistered custom GPT ids", () => {
@@ -52,10 +52,10 @@ describe("thinking-level helpers", () => {
 
   it("exposes Ultra only for GPT-6 models that support proactive delegation", () => {
     const baseLevels = ["low", "medium", "high", "xhigh", "max"];
-    expect(getSupportedThinkingLevels("openai", "gpt-6.1-sol")).toEqual([...baseLevels, "ultra"]);
+    expect(getSupportedThinkingLevels("openai", "gpt-6.2-sol")).toEqual([...baseLevels, "ultra"]);
     expect(getSupportedThinkingLevels("openai", "gpt-6-luna")).toEqual(baseLevels);
-    expect(getNextThinkingLevel("openai", "gpt-6.1-sol", "max")).toBe("ultra");
-    expect(getNextThinkingLevel("openai", "gpt-6.1-sol", "ultra")).toBeUndefined();
+    expect(getNextThinkingLevel("openai", "gpt-6.2-sol", "max")).toBe("ultra");
+    expect(getNextThinkingLevel("openai", "gpt-6.2-sol", "ultra")).toBeUndefined();
   });
 
   it("cycles Anthropic adaptive Opus models through max, including xhigh", () => {

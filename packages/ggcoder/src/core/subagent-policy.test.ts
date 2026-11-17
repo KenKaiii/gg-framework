@@ -22,9 +22,9 @@ describe("OpenAI skill-loading guidance", () => {
   });
 
   it("sits before orchestration guidance and never stacks across switches", () => {
-    let prompt = applyAsyncSubagentPolicy("base", "openai", "gpt-6.1-sol", "high", TOOLS);
-    prompt = applyAsyncSubagentPolicy(prompt, "openai", "gpt-6.1-sol", "ultra", TOOLS);
-    prompt = applyAsyncSubagentPolicy(prompt, "openai", "gpt-6.1-sol", "high", TOOLS);
+    let prompt = applyAsyncSubagentPolicy("base", "openai", "gpt-6.2-sol", "high", TOOLS);
+    prompt = applyAsyncSubagentPolicy(prompt, "openai", "gpt-6.2-sol", "ultra", TOOLS);
+    prompt = applyAsyncSubagentPolicy(prompt, "openai", "gpt-6.2-sol", "high", TOOLS);
     expect(prompt.split(OPENAI_SKILL_MARKER)).toHaveLength(2);
     expect(prompt.match(/## Async subagent orchestration/g)).toHaveLength(1);
     expect(prompt.indexOf(OPENAI_SKILL_MARKER)).toBeLessThan(

@@ -11,7 +11,7 @@ const supportsNativeMock = vi.mocked(supportsNativeSelectPopup);
 
 const MODELS: ModelOption[] = [
   { id: "claude-sonnet-5", name: "Claude Sonnet 5", provider: "anthropic" },
-  { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", provider: "openai" },
+  { id: "gpt-6.2-sol", name: "GPT-6.2 Sol", provider: "openai" },
   { id: "grok-4.5", name: "Grok 4.5", provider: "xai" },
   {
     id: "local/ollama/gemma4:e2b",

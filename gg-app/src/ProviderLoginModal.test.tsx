@@ -219,7 +219,7 @@ describe("ProviderLoginModal — what each key bills", () => {
     const openai: AuthProvider = {
       value: "openai",
       label: "OpenAI",
-      description: "GPT-6.1 Sol",
+      description: "GPT-6.2 Sol",
       methods: ["oauth", "apikey"],
       apiKeyLabel: "OpenAI",
       methodGuidance: [

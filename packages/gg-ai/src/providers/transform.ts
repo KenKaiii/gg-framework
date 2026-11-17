@@ -1683,7 +1683,7 @@ export function toCodexReasoningEffort(
   model: string,
 ): Exclude<ThinkingLevel, "ultra"> {
   if (level !== "ultra") return level;
-  return model === "gpt-6-astra" || model === "gpt-6.1-sol" || model === "gpt-6.1-terra"
+  return model === "gpt-6.2-astra" || model === "gpt-6.2-sol" || model === "gpt-6.1-terra"
     ? "xhigh"
     : "max";
 }

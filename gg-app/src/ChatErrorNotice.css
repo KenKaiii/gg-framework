@@ -55,7 +55,23 @@
   min-height: 28px;
   max-width: 100%;
 }
+.chat-error-recovery .chat-error-action {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-family: var(--sans);
+  cursor: pointer;
+  transition: filter var(--t-fast);
+}
+.chat-error-recovery .chat-error-action:hover {
+  filter: brightness(1.25);
+}
+.chat-error-recovery .chat-error-action:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 .chat-error-recovery .model-select-text,
+.chat-error-recovery .chat-error-action,
 .chat-error-recovery .model-button {
   font-size: var(--fs-base);
   font-weight: 400;

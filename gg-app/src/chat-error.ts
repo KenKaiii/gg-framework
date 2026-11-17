@@ -14,6 +14,9 @@ export const CHAT_ERROR_REASONS = [
 ] as const;
 export type ChatErrorReason = (typeof CHAT_ERROR_REASONS)[number];
 
+/** Where ChatGPT plan users review and raise what GG Coder may use. */
+export const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage";
+
 export interface ChatErrorData {
   text?: string;
   headline?: string;
@@ -29,6 +32,8 @@ export interface ChatErrorData {
   occurredAt?: number;
   /** Provider wire format is Unix seconds, not the usage meter's milliseconds. */
   resetsAt?: number;
+  /** A fixed settings page the notice links to; never a URL from the provider. */
+  manageUsage?: "chatgpt";
   historical?: boolean;
 }
 export type ChatErrorItem = ChatErrorData & { kind: "error"; id: number };
@@ -71,6 +76,7 @@ export function readChatError(
     requestId: text(value.requestId, 300),
     occurredAt: timestamp(value.occurredAt),
     resetsAt: timestamp(value.resetsAt),
+    manageUsage: value.manageUsage === "chatgpt" ? "chatgpt" : undefined,
     statusCode:
       typeof value.statusCode === "number" &&
       Number.isInteger(value.statusCode) &&

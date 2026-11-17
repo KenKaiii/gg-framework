@@ -51,7 +51,7 @@ const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage";
 
 /**
  * GPT-6 family (and gpt-5.6): reasoning can't be turned off, and the models
- * default to low verbosity. Point releases keep the dotted version (gpt-6.1-sol).
+ * default to low verbosity. Point releases keep the dotted version (gpt-6.2-sol).
  */
 export function usesResponsesLite(model: string): boolean {
   return model.startsWith("gpt-5.6-") || model.startsWith("gpt-6-") || model.startsWith("gpt-6.");

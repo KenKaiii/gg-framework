@@ -3,7 +3,8 @@ import { useAnimatedHeight } from "./animated-height";
 import { viewportScale } from "./motion-geometry";
 import { prefersReducedMotion } from "./transcript-motion";
 import { usePresenceList } from "./usePresenceList";
-import { chatErrorCopy, chatErrorTone, type ChatErrorData } from "./chat-error";
+import { openUrl } from "./agent";
+import { CHATGPT_USAGE_URL, chatErrorCopy, chatErrorTone, type ChatErrorData } from "./chat-error";
 import "./ChatErrorNotice.css";
 
 /** How long to keep the notice in view after Details: the fold, plus a frame. */
@@ -123,6 +124,15 @@ export function ChatErrorNotice({
         </div>
         <div className="chat-error-recovery">
           <span>{copy.guidance}</span>
+          {active && !error.historical && error.manageUsage === "chatgpt" && (
+            <button
+              type="button"
+              className="chat-error-action"
+              onClick={() => void openUrl(CHATGPT_USAGE_URL)}
+            >
+              Manage usage
+            </button>
+          )}
           {canChooseModel && modelPicker}
         </div>
       </div>

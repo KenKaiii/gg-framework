@@ -6,16 +6,16 @@ import {
 } from "./thinking-level.js";
 
 describe("getNextThinkingLevel", () => {
-  it("cycles GPT-6 Astra through low, medium, high, xhigh, max, ultra, then off", () => {
-    expect(getNextThinkingLevel("openai", "gpt-6-astra", undefined)).toBe("low");
-    expect(getNextThinkingLevel("openai", "gpt-6-astra", "low")).toBe("medium");
-    expect(getNextThinkingLevel("openai", "gpt-6-astra", "high")).toBe("xhigh");
-    expect(getNextThinkingLevel("openai", "gpt-6-astra", "max")).toBe("ultra");
-    expect(getNextThinkingLevel("openai", "gpt-6-astra", "ultra")).toBeUndefined();
+  it("cycles GPT-6.2 Astra through low, medium, high, xhigh, max, ultra, then off", () => {
+    expect(getNextThinkingLevel("openai", "gpt-6.2-astra", undefined)).toBe("low");
+    expect(getNextThinkingLevel("openai", "gpt-6.2-astra", "low")).toBe("medium");
+    expect(getNextThinkingLevel("openai", "gpt-6.2-astra", "high")).toBe("xhigh");
+    expect(getNextThinkingLevel("openai", "gpt-6.2-astra", "max")).toBe("ultra");
+    expect(getNextThinkingLevel("openai", "gpt-6.2-astra", "ultra")).toBeUndefined();
   });
 
   it("recognizes every OpenAI GPT cycle level as supported", () => {
-    expect(getSupportedThinkingLevels("openai", "gpt-6-astra")).toEqual([
+    expect(getSupportedThinkingLevels("openai", "gpt-6.2-astra")).toEqual([
       "low",
       "medium",
       "high",
@@ -23,9 +23,9 @@ describe("getNextThinkingLevel", () => {
       "max",
       "ultra",
     ]);
-    expect(isThinkingLevelSupported("openai", "gpt-6-astra", "medium")).toBe(true);
-    expect(isThinkingLevelSupported("openai", "gpt-6-astra", "xhigh")).toBe(true);
-    expect(isThinkingLevelSupported("openai", "gpt-6-astra", "ultra")).toBe(true);
+    expect(isThinkingLevelSupported("openai", "gpt-6.2-astra", "medium")).toBe(true);
+    expect(isThinkingLevelSupported("openai", "gpt-6.2-astra", "xhigh")).toBe(true);
+    expect(isThinkingLevelSupported("openai", "gpt-6.2-astra", "ultra")).toBe(true);
   });
 
   it("cycles Anthropic adaptive models through low, medium, high, xhigh, max, then off", () => {

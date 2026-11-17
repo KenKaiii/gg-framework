@@ -73,7 +73,7 @@ describe("model id round-trip", () => {
     expect(parseLocalModelId("local/ollama")).toBeUndefined();
     expect(parseLocalModelId("local/ollama/")).toBeUndefined();
     expect(parseLocalModelId("local//qwen")).toBeUndefined();
-    expect(isLocalModelId("gpt-6.1-sol")).toBe(false);
+    expect(isLocalModelId("gpt-6.2-sol")).toBe(false);
   });
 
   it("derives the auth storage key from the endpoint id", () => {

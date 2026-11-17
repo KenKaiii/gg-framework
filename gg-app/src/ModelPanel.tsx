@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { authStatus, openUrl, setThinkingLevel, type AgentState, type ModelOption } from "./agent";
+import { CHATGPT_USAGE_URL } from "./chat-error";
 import { PanelHead } from "./DeckPanelHead";
 import { Icon } from "./icons";
 import { modelDisplayName } from "./model-name";
@@ -24,7 +25,6 @@ export interface SecondAgent {
 }
 
 const FOLLOW_ID = "__follow__";
-const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage";
 
 interface Option {
   id: string;

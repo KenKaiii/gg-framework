@@ -14,6 +14,7 @@ describe("app error snapshots", () => {
         statusCode: 429,
         resetsAt: 1_800_000_000,
         requestId: "req-1",
+        manageUsage: "chatgpt",
       },
       "ken_error",
       1_799_999_000_000,
@@ -21,6 +22,7 @@ describe("app error snapshots", () => {
     );
     expect(restoreAppErrorPayload(JSON.parse(JSON.stringify(payload)))).toEqual(payload);
     expect(payload.resetsAt).toBe(1_800_000_000);
+    expect(payload.manageUsage).toBe("chatgpt");
     expect(payload.occurredAt).toBe(1_799_999_000_000);
   });
 

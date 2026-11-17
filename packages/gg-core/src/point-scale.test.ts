@@ -21,7 +21,7 @@ describe("pointScale", () => {
 
   it.each([
     "claude-opus-5-5",
-    "gpt-6.1-sol",
+    "gpt-6.2-sol",
     "gemini-3.8-flash",
     "qwen2.5vl:7b",
     "local/ollama/qwen2.5-vl:32b",

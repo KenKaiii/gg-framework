@@ -114,7 +114,7 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
     value: "openai",
     label: "OpenAI",
     description:
-      "GPT-6 Astra, GPT-6 Astra Fast, GPT-6.1 Sol, GPT-6.1 Sol Fast, GPT-6.1 Terra, GPT-6.1 Terra Fast, GPT-6 Luna, GPT-6 Luna Fast",
+      "GPT-6.2 Astra, GPT-6.2 Astra Fast, GPT-6.2 Sol, GPT-6.2 Sol Fast, GPT-6.1 Terra, GPT-6.1 Terra Fast, GPT-6 Luna, GPT-6 Luna Fast",
     methods: ["oauth", "apikey"],
     apiKeyLabel: "OpenAI",
     methodDetails: {

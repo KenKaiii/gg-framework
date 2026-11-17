@@ -55,7 +55,7 @@ function prompt(messages: { current: Message[] }): string {
 // Exercise the real hook across renders without mocking prompt policy or
 // rebuilding the prompt: this is the terminal thinking-toggle path.
 describe("useModeState Ultra policy", () => {
-  it.each(["gpt-6-astra", "gpt-6.1-sol"])(
+  it.each(["gpt-6.2-astra", "gpt-6.2-sol"])(
     "updates %s when Ultra is toggled both ways",
     async (model) => {
       const messages: { current: Message[] } = {
@@ -88,7 +88,7 @@ describe("useModeState Ultra policy", () => {
   it("removes stale Ultra guidance after a model or provider switch", async () => {
     const messages: { current: Message[] } = { current: [{ role: "system", content: "base" }] };
     const mounted = render(
-      <Harness messages={messages} provider="openai" model="gpt-6.1-sol" thinking="ultra" />,
+      <Harness messages={messages} provider="openai" model="gpt-6.2-sol" thinking="ultra" />,
       { patchConsole: false },
     );
     try {
@@ -98,7 +98,7 @@ describe("useModeState Ultra policy", () => {
       );
       await vi.waitFor(() => expect(prompt(messages)).toBe("base"));
       mounted.rerender(
-        <Harness messages={messages} provider="openai" model="gpt-6-astra" thinking="ultra" />,
+        <Harness messages={messages} provider="openai" model="gpt-6.2-astra" thinking="ultra" />,
       );
       await vi.waitFor(() => expect(prompt(messages)).toContain("Proactively use spawn_agent"));
       mounted.rerender(
