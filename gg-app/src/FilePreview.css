@@ -1,0 +1,58 @@
+/* In-app preview of generated documents (FilePreviewModal.tsx). */
+.modal.file-preview-modal {
+  width: min(1000px, 94vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+.file-preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: min(70vh, 760px);
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-button);
+  background: var(--surface-1);
+}
+.file-preview-body[data-kind="markdown"] {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+.file-preview-markdown {
+  width: 100%;
+  padding: var(--space-8) var(--space-12);
+  user-select: text;
+}
+.file-preview-image,
+.file-preview-video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.file-preview-pdf {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+.file-preview-note {
+  margin: 0;
+  color: var(--text-muted);
+}
+.file-preview-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
+}
+.file-preview-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}

@@ -2,7 +2,8 @@ import { memo, useLayoutEffect, useRef, useState } from "react";
 import { AtIcon, FileTextIcon, FilmStripIcon, XIcon } from "@phosphor-icons/react";
 import { theme } from "./theme";
 import { ChatErrorNotice } from "./ChatErrorNotice";
-import { openImageDataUrl, openProjectPath } from "./agent";
+import { openImageDataUrl } from "./agent";
+import { previewOrOpenPath } from "./file-preview";
 import { enterTranscriptRow } from "./transcript-motion";
 import { useLiveText } from "./live-text";
 import { StreamingMarkdown } from "./StreamingMarkdown";
@@ -424,7 +425,7 @@ function TranscriptRowBody({
                 path={path}
                 caption={path ? basename(path) : undefined}
                 title={path ? `Open ${path}` : undefined}
-                onOpen={path ? () => void openProjectPath(path) : undefined}
+                onOpen={path ? () => previewOrOpenPath(path) : undefined}
                 onLoad={onContentGrow}
               />
             );
