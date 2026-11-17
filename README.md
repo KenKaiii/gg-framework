@@ -23,12 +23,17 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=for-the-badge" alt="AGPL-3.0 License"></a>
   <a href="https://youtube.com/@kenkaidoesai"><img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube"></a>
   <a href="https://www.skool.com/raid"><img src="https://img.shields.io/badge/Skool-Free%20community-b0b6ff?style=for-the-badge" alt="Free Skool community"></a>
+  <a href="https://www.skool.com/kenkai"><img src="https://img.shields.io/badge/Skool-Raid%2B-b0b6ff?style=for-the-badge" alt="Raid+ on Skool"></a>
+  <a href="https://www.kenkais.com"><img src="https://img.shields.io/badge/Website-kenkais.com-b0b6ff?style=for-the-badge" alt="kenkais.com"></a>
 </p>
 
 GG Coder is a desktop coding agent that gets more out of the AI subscription you already pay for.
 
 > [!TIP]
-> **Want the step-by-step guide?** The full GG Coder setup, a free 7-day build challenge and 20+ more projects are in my free community: **[skool.com/raid](https://www.skool.com/raid)**
+> **Want the step-by-step guide?**
+> - **Free community:** the full GG Coder setup, a 7-day build challenge and 20+ projects: [skool.com/raid](https://www.skool.com/raid)
+> - **Raid+:** make money with AI, a sellable app in 30 days, live every Thursday: [skool.com/kenkai](https://www.skool.com/kenkai)
+> - **Want it built for you?** [work.kenkais.com](https://work.kenkais.com/)
 
 > ⭐ **If GG Coder saves you time or money, give it a star.** It's the main way other developers find it.
 
@@ -121,6 +126,10 @@ New to building with AI? Start in **[RAID](https://www.skool.com/raid)**, my fre
 - Step-by-step setup for GG Coder (Mac and Windows)
 - A free 7-day challenge: build your first app, one short lesson a day
 - 20+ more projects you can build yourself
+
+Want to make money with AI? **[Raid+](https://www.skool.com/kenkai)**: a sellable app in 30 days, live every Thursday.
+
+Want it built for you? **[work.kenkais.com](https://work.kenkais.com/)**
 
 ## Star history
 
