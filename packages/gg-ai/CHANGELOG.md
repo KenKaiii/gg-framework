@@ -1,5 +1,17 @@
 # @kenkaiiii/gg-ai
 
+## 5.104.0
+
+### Minor Changes
+
+- 7c90836: Replace GPT-6 Astra with GPT-6.2 Astra (`gpt-6.2-astra`) and GPT-6.1 Sol with GPT-6.2 Sol (`gpt-6.2-sol`), plus their Fast variants. Both have 1.05M context on the public Responses API (922K max input), 128K output and text+image input. Astra costs $8/$40 per MTok (cached input $0.40) and Sol $2/$10 (cached input $0.10). The 272K ChatGPT-plan window, the `low` default effort and the full ladder up to `ultra` carry over from the models they replace.
+
+  GPT-6.2 Sol is the new OpenAI default (registry, CLI, benchmarks). The login hub, footer names, READMEs, Fast mode, Ultra delegation and subagent policy now use the 6.2 ids. `gpt-6-astra` and `gpt-6.1-sol` are retired, so a saved session still on one falls back to the provider default on next start.
+
+### Patch Changes
+
+- 7c90836: When OpenAI stops ChatGPT plan requests with `subscription_sharing_usage_limit_exceeded`, the desktop error now says the limit can be the plan's or the one ChatGPT sets for GG Coder, and offers a Manage usage button that opens chatgpt.com/settings/usage. It used to say "Wait for the reset, or use another provider", which left users thinking GG Coder was broken. A `subscription_sharing_usage_unavailable` reply (OpenAI couldn't check usage) no longer shows as "usage limit reached".
+
 ## 5.103.0
 
 ## 5.102.0
