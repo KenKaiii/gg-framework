@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.115.0",
+    date: "2026-11-18",
+    items: [
+      "OpenAI's newest brains just landed. `GPT-6.2 Astra` is their most capable model yet, now cheaper to run, and `GPT-6.2 Sol` is your new OpenAI default for everyday coding. Both come with Fast mode and the full reasoning dial up to `ultra`, so just pick them and go.",
+      "Hit a ChatGPT usage wall that made no sense? I fixed that. ChatGPT lets you cap how much GG Coder can use, and when that cap stops you I now say so plainly and give you a `Manage usage` button that takes you straight to the switch. One click and you're coding again.",
+    ],
+  },
+  {
     version: "0.114.0",
     date: "2026-11-17",
     items: [
