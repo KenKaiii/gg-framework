@@ -4,6 +4,7 @@ export type {
   MCPElicitation,
   MCPElicitHandler,
   MCPLoginResult,
+  McpAgentTool,
 } from "./client.js";
 export { createElicitationBridge, MCP_ELICIT_TIMEOUT_MS } from "./elicitation-bridge.js";
 export type { ElicitationBridge, ElicitationPrompt } from "./elicitation-bridge.js";

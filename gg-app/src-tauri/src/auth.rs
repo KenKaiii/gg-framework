@@ -260,7 +260,7 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     ProviderMeta {
         value: "gemini",
         label: "Gemini",
-        description: "Gemini 3.8 Flash, 3.5 Flash Lite, 3.1 Flash Lite, 3.5 Flash, 3.1 Pro (Preview)",
+        description: "Gemini 4 Hydrogen, 4 Argon, 4 Carbon, 3.8 Flash, 3.6 Flash, 3.5 Flash Lite, 3.1 Flash Lite, 3.5 Flash, 3.1 Pro (Preview)",
         // Stored under `gemini-api`: `gemini` held the retired Google sign-in.
         methods: &["apikey"],
         oauth_key: None,

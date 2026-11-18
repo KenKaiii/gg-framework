@@ -592,12 +592,23 @@ describe("model registry context windows", () => {
     // New public GA releases are opt-in: retain the working OAuth default.
     expect(getModelsForProvider("gemini").map((model) => model.id)).toEqual([
       "gemini-3.1-flash-lite",
+      "gemini-4-hydrogen",
+      "gemini-4-argon",
+      "gemini-4-carbon",
       "gemini-3.8-flash",
+      "gemini-3.6-flash",
       "gemini-3.5-flash-lite",
       "gemini-3-flash",
       "gemini-3.1-pro-preview",
     ]);
-    for (const id of ["gemini-3.8-flash", "gemini-3.5-flash-lite"]) {
+    for (const id of [
+      "gemini-4-hydrogen",
+      "gemini-4-argon",
+      "gemini-4-carbon",
+      "gemini-3.8-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash-lite",
+    ]) {
       expect(getModel(id)).toMatchObject({
         contextWindow: 1_048_576,
         maxOutputTokens: 65_536,

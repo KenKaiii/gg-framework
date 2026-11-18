@@ -47,7 +47,7 @@ Switch any time with `/model`.
 | ---------------- | ---------------------------------------------------------------------------------- | -------------------------------------- |
 | **Anthropic**    | Claude Fable 5.2, Opus 5.5, Sonnet 5.5, Haiku 5.5                                  | Claude or API key                      |
 | **OpenAI**       | GPT-6.2 Astra, GPT-6.2 Sol, GPT-6.1 Terra, GPT-6 Luna                                | Continue with ChatGPT or API key       |
-| **Gemini**       | Gemini 3.8 Flash, 3.5 Flash Lite, 3.1 Flash Lite, 3.5 Flash, 3.1 Pro (Preview)     | API key (Google AI Studio)             |
+| **Gemini**       | Gemini 4 Hydrogen, 4 Argon, 4 Carbon, 3.8 Flash, 3.6 Flash, 3.5 Flash Lite, 3.1 Flash Lite, 3.5 Flash, 3.1 Pro (Preview)     | API key (Google AI Studio)             |
 | **xAI**          | Grok 4.7                                                                           | API key                                |
 | **Kimi**         | Kimi K3, K2.8 Preview, K2.7 Code, K2.7 Code HighSpeed                              | Kimi Code plan key or Moonshot API key |
 | **Z.AI**         | GLM-5.3, GLM-5.3-Flash                                                             | API key (pay-per-token)                |

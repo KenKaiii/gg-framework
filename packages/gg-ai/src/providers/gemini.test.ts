@@ -112,6 +112,36 @@ describe("streamGemini", () => {
     },
   );
 
+  // Gemini 3 and later take a thinking level (Ultra clamps to HIGH); 2.5 takes a token budget.
+  it.each([
+    ["gemini-4-hydrogen", "ultra", { includeThoughts: true, thinkingLevel: "HIGH" }],
+    ["gemini-4-carbon", "medium", { includeThoughts: true, thinkingLevel: "MEDIUM" }],
+    ["gemini-2.5-flash", "medium", { includeThoughts: true, thinkingBudget: 8_192 }],
+  ] as const)("sends %s at %s the thinking control it takes", async (model, thinking, config) => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }],
+          usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    globalThis.fetch = fetchMock;
+
+    await streamGemini({
+      provider: "gemini",
+      model,
+      apiKey: "access-token",
+      streaming: false,
+      messages: [{ role: "user", content: "hi" }],
+      thinking,
+    }).response;
+
+    const [, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(JSON.parse(init.body as string).generationConfig.thinkingConfig).toEqual(config);
+  });
+
   it("merges providerOptions into the generate request without overriding core fields", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

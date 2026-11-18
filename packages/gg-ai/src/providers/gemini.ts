@@ -342,8 +342,9 @@ function toGeminiToolConfig(
   return { functionCallingConfig: { mode: "ANY", allowedFunctionNames: [choice.name] } };
 }
 
-function isGemini3Model(model: string): boolean {
-  return /^gemini-3(?:\.|-|$)/.test(model);
+// Gemini 3 and later take a thinking level; 2.5 and earlier a token budget (a level 400s there).
+function usesThinkingLevel(model: string): boolean {
+  return /^gemini-(?:[3-9]|[1-9]\d)(?:\.|-|$)/.test(model);
 }
 
 function toGemini3ThinkingLevel(
@@ -381,7 +382,7 @@ function toThinkingConfig(
   level: StreamOptions["thinking"],
 ): GeminiGenerationConfig["thinkingConfig"] | undefined {
   if (!level) return undefined;
-  if (isGemini3Model(model)) {
+  if (usesThinkingLevel(model)) {
     return {
       includeThoughts: true,
       thinkingLevel: toGemini3ThinkingLevel(level),

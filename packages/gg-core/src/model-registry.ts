@@ -532,6 +532,54 @@ export const MODELS: ModelInfo[] = [
     authStorageKeys: GEMINI_AUTH_KEYS,
   },
   // Keep 3.1 Flash Lite first for the default and fast-model routing.
+  // Gemini 4 (GA Nov 2026, ai.google.dev/gemini-api/docs/changelog): a unified 1M window and
+  // 64K synchronous output. Hydrogen also takes an `xhigh` thinking level; the ladder here
+  // stops at `high` like the other Gemini models.
+  {
+    // The fast everyday model, on the free tier too ($1.50 / $7.50 per 1M paid).
+    id: "gemini-4-hydrogen",
+    name: "Gemini 4 Hydrogen",
+    provider: "gemini",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: true,
+    maxVideoBytes: 20 * 1024 * 1024,
+    costTier: "medium",
+    maxThinkingLevel: "high",
+    authStorageKeys: GEMINI_AUTH_KEYS,
+  },
+  {
+    // Paid tier only ($4 / $20 per 1M from Dec 1, 2026).
+    id: "gemini-4-argon",
+    name: "Gemini 4 Argon",
+    provider: "gemini",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: true,
+    maxVideoBytes: 20 * 1024 * 1024,
+    costTier: "high",
+    maxThinkingLevel: "high",
+    authStorageKeys: GEMINI_AUTH_KEYS,
+  },
+  {
+    // The strongest Gemini 4 reasoning model; paid tier only.
+    id: "gemini-4-carbon",
+    name: "Gemini 4 Carbon",
+    provider: "gemini",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: true,
+    maxVideoBytes: 20 * 1024 * 1024,
+    costTier: "high",
+    maxThinkingLevel: "high",
+    authStorageKeys: GEMINI_AUTH_KEYS,
+  },
   // Gemini 3.7
   // Flash is retired: Google deprecated it on 2026-10-08 and routes every
   // `gemini-3.7-flash` request to 3.8 Flash (ai.google.dev/gemini-api/docs/
@@ -539,6 +587,21 @@ export const MODELS: ModelInfo[] = [
   {
     id: "gemini-3.8-flash",
     name: "Gemini 3.8 Flash",
+    provider: "gemini",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: true,
+    maxVideoBytes: 20 * 1024 * 1024,
+    costTier: "low",
+    maxThinkingLevel: "high",
+    authStorageKeys: GEMINI_AUTH_KEYS,
+  },
+  {
+    // Replaced 3.5 Flash, which Google now routes here (changelog).
+    id: "gemini-3.6-flash",
+    name: "Gemini 3.6 Flash",
     provider: "gemini",
     contextWindow: 1_048_576,
     maxOutputTokens: 65_536,
