@@ -49,6 +49,24 @@
       "hash": "fb1336438cf245042ec08c5d854b3926e13b8e91a0e53aefc26f1af426dee718"
     },
     {
+      "name": "browser",
+      "description": "Test a web page in a real browser by running a short async JavaScript script that does several steps in one call. Return a value or log() what you want to see. New console errors and failed or slow requests are reported automatically; screenshots are attached. The page stays open between calls. Scripts run in a sandbox with only these functions, plus fetch (runs in the page).\nAPI (target = a ref like \"e12\", visible text, or {role, name} | {label} | {selector}, optional nth):\n  open(url) → controls with refs\n  snapshot({interactiveOnly}) → page tree with refs\n  click(target, {double}) → what changed on the page\n  fill({Label: value, ...} or [{...target, value, type: \"checkbox\"|\"radio\"|\"combobox\"}], {submit}) → what changed\n  check({text | texts | url | page_title | ...target, state, value, count, timeout_ms}) → {pass, detail}; retries until timeout_ms (default 3000)\n  resize(width, height) → elements that appeared or disappeared\n  screenshot({full_page, element}) → saved path; image attached\n  evaluate(fnOrExpression, arg) → value from the page\n  problems() → every console error and failed request so far\nOutput over 10,000 characters is cut: return only what you need.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Async function body; use await and return"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "hash": "7f734437dbea7917999099b7ddeeb97c69f048333b3631d1111cc12fc808a5cc"
+    },
+    {
       "name": "checklist",
       "description": "Project health checklist (.gg-checklist.json). `status`: every item; older than 30 days = due. `record`: save one item's check (date and commit auto-filled); `issues` needs findings, `pass` none; `evidence` = what you ran or read, incl. scope. Record completed reviews or requested checks; never start audits unasked. After fixing findings, re-check and record the item again. Findings the user chose to leave go in `accepted` with the reason, so the item can still pass.",
       "schema": {
@@ -465,87 +483,6 @@
         ]
       },
       "hash": "972ed7fe98bc03c3af8814949c4664418ace9fcff3a14c09576ff9e1f7d7f7f1"
-    },
-    {
-      "name": "screenshot",
-      "description": "Capture a PNG of a URL or dev server in headless Chromium to verify rendered output (optional selector wait, click/type/wait actions, viewport, full page); returns the image. Needs the optional 'playwright' dependency and 'npx playwright install chromium'.",
-      "schema": {
-        "type": "object",
-        "properties": {
-          "url": {
-            "type": "string",
-            "description": "URL to open, e.g. http://localhost:3000"
-          },
-          "out_path": {
-            "description": "Output PNG path (defaults to .gg/screenshots/<timestamp>.png)",
-            "type": "string"
-          },
-          "wait_for": {
-            "description": "CSS selector to wait for before capturing",
-            "type": "string"
-          },
-          "viewport": {
-            "description": "Viewport size in pixels (default 1280×800)",
-            "type": "object",
-            "properties": {
-              "width": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "height": {
-                "type": "integer",
-                "minimum": 1
-              }
-            },
-            "required": [
-              "width",
-              "height"
-            ]
-          },
-          "full_page": {
-            "description": "Capture the full scrollable page (default false)",
-            "type": "boolean"
-          },
-          "actions": {
-            "description": "Interactions run before capture",
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "click",
-                    "type",
-                    "wait"
-                  ],
-                  "description": "Action"
-                },
-                "selector": {
-                  "description": "CSS selector for click/type actions",
-                  "type": "string"
-                },
-                "text": {
-                  "description": "Text to type for the type action",
-                  "type": "string"
-                },
-                "ms": {
-                  "description": "Milliseconds to wait for the wait action",
-                  "type": "integer",
-                  "minimum": 0
-                }
-              },
-              "required": [
-                "type"
-              ]
-            }
-          }
-        },
-        "required": [
-          "url"
-        ]
-      },
-      "hash": "1f938e29e130f42bccb9c94a29bfb5ee83b0ac58a1c5c6fd118857d721e7855f"
     },
     {
       "name": "source_path",

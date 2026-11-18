@@ -37,7 +37,7 @@ import { createTasksTool } from "./tasks.js";
 import { createChecklistTool } from "./checklist.js";
 
 import { createSkillTool } from "./skill.js";
-import { createScreenshotTool } from "./screenshot.js";
+import { BrowserManager, createBrowserTool } from "./browser.js";
 import { createGenerateImageTool, type GenerateImageAuth } from "./generate-image.js";
 import { createEnterPlanTool } from "./enter-plan.js";
 import { createExitPlanTool } from "./exit-plan.js";
@@ -206,6 +206,8 @@ export interface CreateToolsResult {
   testImpact?: TestImpactIndex;
   /** Owner of the live `debug` session; callers `shutdown()` it on exit. Local only. */
   debugManager?: DebugManager;
+  /** The `browser` tool's Chromium; callers `shutdown()` it on exit. Local only. */
+  browserManager?: BrowserManager;
   subAgentManager?: SubAgentManager;
 }
 
@@ -233,6 +235,8 @@ export async function createTools(
   const testImpact =
     (opts?.editImpact ?? true) && ops === localOperations ? new TestImpactIndex(cwd) : undefined;
   const debugManager = ops === localOperations ? new DebugManager() : undefined;
+  // The browser runs on this machine, so it can only test pages this machine can reach.
+  const browserManager = ops === localOperations ? new BrowserManager() : undefined;
   const getDiagnostics =
     lspDiagnostics || testImpact
       ? async (filePath: string, content: string, source?: EditSource): Promise<string> => {
@@ -301,7 +305,7 @@ export async function createTools(
     createTaskStopTool(processManager),
     createTasksTool(cwd),
     createChecklistTool(cwd),
-    createScreenshotTool(cwd),
+    ...(browserManager ? [createBrowserTool(cwd, browserManager)] : []),
     // The debugger connects to a loopback inspector port, so the program must
     // run on this machine: local operations only, like LSP.
     ...(debugManager
@@ -431,6 +435,7 @@ export async function createTools(
     lspManager,
     ...(testImpact && { testImpact }),
     ...(debugManager && { debugManager }),
+    ...(browserManager && { browserManager }),
     subAgentManager,
   };
 }
@@ -451,7 +456,7 @@ export { createTaskStopTool } from "./task-stop.js";
 export { createTasksTool } from "./tasks.js";
 export { createChecklistTool } from "./checklist.js";
 export { createSkillTool } from "./skill.js";
-export { createScreenshotTool } from "./screenshot.js";
+export { BrowserManager, createBrowserTool } from "./browser.js";
 export { createGenerateImageTool, type GenerateImageAuth } from "./generate-image.js";
 export { createEnterPlanTool } from "./enter-plan.js";
 export { createExitPlanTool } from "./exit-plan.js";

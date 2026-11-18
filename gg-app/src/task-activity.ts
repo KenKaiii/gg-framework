@@ -179,7 +179,7 @@ function toolPhase(name: string, args: Record<string, unknown>): string {
   if (["edit", "write"].includes(name)) return "Making the changes…";
   if (["web_search", "web_fetch", "steroids"].includes(name)) return "Checking references…";
   if (["subagent", "spawn_agent", "wait_agent"].includes(name)) return "Coordinating agent work…";
-  if (name === "screenshot") return "Inspecting the app…";
+  if (name === "browser" || name === "screenshot") return "Inspecting the app…";
   if (name === "debug") return "Stepping through the code…";
   if (name === "bash")
     return typeof args.command === "string" &&

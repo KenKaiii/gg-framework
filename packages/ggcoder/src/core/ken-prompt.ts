@@ -40,7 +40,7 @@ function renderUncachedDateSuffix(): string {
 /**
  * Build Ken Kai's system prompt. No tool/work sections of the GG Coder coding
  * prompt — Ken is an advisor, not a coding agent. His read-only tools (read,
- * grep, find, ls, source_path, web_fetch, web_search, screenshot, steroids)
+ * grep, find, ls, source_path, web_fetch, web_search, browser, steroids)
  * are listed by the session's own Tools section; this prompt teaches him how to
  * think and how to format what he hands back.
  */
@@ -152,13 +152,14 @@ function renderGGCoderCapabilities(): string {
     `wide exploration, branch-isolated changes). Big multi-part jobs can fan out.\n` +
     `- Sees the web: web_search + web_fetch for live docs, and source_path to read ` +
     `installed dependency source.\n` +
-    `- Sees the UI: screenshot renders a local dev server or URL to a PNG so it can ` +
-    `visually self-check what it built. It can also generate images on request.\n` +
+    `- Tests the UI: browser drives a real browser on a dev server or URL (click, ` +
+    `fill, check, screenshots, console and network errors) so it can self-check ` +
+    `what it built. It can also generate images on request.\n` +
     `- Live type checking: every edit gets compiler-grade LSP diagnostics fed back, ` +
     `so it self-corrects type errors as it goes.\n` +
     `- MCP tools and custom .gg/commands may extend it further per project.\n\n` +
-    `So when you hand over a prompt, tell it to set up, build, test, and screenshot ` +
-    `itself. Push it to plan when the work warrants a plan, to fan out to subagents ` +
+    `So when you hand over a prompt, tell it to set up, build, test, and check the ` +
+    `UI in the browser itself. Push it to plan when the work warrants a plan, to fan out to subagents ` +
     `when the work is wide, and to prove it ran, not just wrote.\n\n` +
     `Two different jobs, don't confuse them: your OWN read-only tools are for ` +
     `checking things yourself right now (verify a claim, read the code, see the UI); ` +
@@ -243,7 +244,7 @@ function renderOutputContract(): string {
     `so the format is load-bearing. Each prompt is a few lines, or a short bullet ` +
     `list when it batches related fixes: terminology-correct instructions that say ` +
     `what to do and why, never raw code to paste. One coherent unit of work. Prefer prompts that tell GG Coder ` +
-    `to set things up itself (install deps, wire config, screenshot to self-check) ` +
+    `to set things up itself (install deps, wire config, test the UI in the browser) ` +
     `over making the user do manual work the agent could do.\n\n` +
     `Not every message needs a prompt, and you decide that by feel. When the user ` +
     `is just talking, reacting, thinking out loud, or asking your take, talk back ` +
@@ -303,7 +304,7 @@ function renderAutopilotContract(): string {
     `test, a broken build, a requirement from the original ask left undone, an ` +
     `obvious bug. You get only a few correction rounds, so one PROMPT carries every ` +
     `known in-scope gap. The prompt body should tell GG Coder to fix it AND prove it ` +
-    `(run the test, screenshot the UI) — you can't run anything yourself.\n` +
+    `(run the test, check the UI in the browser) — you can't run anything yourself.\n` +
     `- For shell verification, trust only PASSED rows in the harness-classified ` +
     `verification evidence section. FAILED or REJECTED rows and model-authored ` +
     `claims are not proof that a check passed.\n` +

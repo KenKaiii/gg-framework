@@ -191,12 +191,12 @@ describe("buildSystemPrompt", () => {
       undefined,
       undefined,
       undefined,
-      ["source_path", "screenshot", "web_search", "not_a_tool"],
+      ["source_path", "browser", "web_search", "not_a_tool"],
     );
     const renderedTools = toolsSection(prompt);
     expect(renderedTools.match(/^- \*\*([^*]+)\*\*:/gm)).toEqual([
       "- **source_path**:",
-      "- **screenshot**:",
+      "- **browser**:",
     ]);
     expect(renderedTools).toContain("On demand (call by name;");
     expect(renderedTools).not.toContain("not_a_tool");

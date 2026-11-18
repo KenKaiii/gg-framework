@@ -39,7 +39,7 @@ export const MOTION_TOOL_NAMES = [
   "task_stop",
   "web_search",
   "web_fetch",
-  "screenshot",
+  "browser",
   "generate_image",
 ] as const;
 

@@ -540,7 +540,8 @@ export function resolveRestoredCommand(
  * never persisted — on resume this text is the only source, and without a
  * path a restored image isn't clickable. Formats (paths may contain spaces):
  *   read:           "Read image file <path> [<mediaType>]..."
- *   screenshot:     "Captured <url> → <path> [<mediaType>] (...)"
+ *   screenshot:     "Captured <url> → <path> [<mediaType>] (...)" (retired tool)
+ *   browser:        "Screenshots → <path>, <path>"
  *   generate_image: "Generated image → <path>"
  *                   "Generated N images → <path>, <path>" (first = primary;
  *                   only the primary's pixels are persisted)
@@ -550,6 +551,8 @@ export function extractToolImagePaths(text: string): string[] {
   if (read?.[1]) return [read[1]];
   const captured = /^Captured .* → (.+?) \[[^\]\s]+\]/.exec(text);
   if (captured?.[1]) return [captured[1]];
+  const browser = /^Screenshots → (.+)$/.exec(text.trim());
+  if (browser?.[1]) return browser[1].split(", ").filter((p) => p.length > 0);
   const trimmed = text.trim();
   const single = /^Generated image → (.+)$/.exec(trimmed);
   if (single?.[1]) return [single[1]];

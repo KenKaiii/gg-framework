@@ -38,6 +38,7 @@ const VERBS: Record<string, VerbPair> = {
   tasks: { running: "Updating tasks", done: "Updated tasks" },
   checklist: { running: "Checking checklist", done: "Checked checklist" },
   screenshot: { running: "Capturing", done: "Captured" },
+  browser: { running: "Testing in browser", done: "Tested in browser" },
   enter_plan: { running: "Entering plan", done: "Entered plan" },
   exit_plan: { running: "Submitting plan", done: "Submitted plan" },
   steroids: { running: "Reading real code", done: "Read real code" },

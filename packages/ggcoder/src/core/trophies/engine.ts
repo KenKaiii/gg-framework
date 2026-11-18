@@ -267,7 +267,7 @@ export function runDelta(run: TrophyRunFacts): TrophyDelta {
   if (has(BACKGROUND_TOOLS) || bash.some((b) => b.background)) count.backgroundRuns = 1;
   if (used.has("skill")) count.skillRuns = 1;
   if (names.some((n) => n.startsWith("mcp__"))) count.mcpRuns = 1;
-  if (used.has("screenshot")) count.screenshots = 1;
+  if (used.has("browser")) count.screenshots = 1;
   if (used.has("debug")) count.debugRuns = 1;
   if (used.has("ui_adopt")) count.uiComponents = 1;
   if (has(MEMORY_TOOLS)) count.memoriesSaved = 1;

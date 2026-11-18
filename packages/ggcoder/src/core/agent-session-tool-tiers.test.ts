@@ -274,6 +274,21 @@ describe("AgentSession built-in tool tiering", () => {
     }
   }, 20_000);
 
+  it("keeps a deferred built-in's full description, unlike capped MCP descriptions", async () => {
+    // Regression: the browser tool's API list was cut at the MCP 1 KB cap, so the model probed for it.
+    const session = await createSession();
+    try {
+      const resolve = (
+        session as unknown as { promoteDeferredBuiltin(name: string): AgentTool | undefined }
+      ).promoteDeferredBuiltin.bind(session);
+      const browser = resolve("browser");
+      expect(Buffer.byteLength(browser?.description ?? "")).toBeGreaterThan(1024);
+      expect(browser?.description).toContain("problems()");
+    } finally {
+      await session.dispose();
+    }
+  }, 20_000);
+
   it("loads a deferred built-in called by name, and the task tools once bash backgrounds", async () => {
     const session = await createSession();
     try {
@@ -439,7 +454,7 @@ describe("AgentSession built-in tool tiering", () => {
   }, 20_000);
 
   it("gives allowedTools sessions every requested tool eagerly", async () => {
-    const requested = ["read", "grep", "source_path", "screenshot"];
+    const requested = ["read", "grep", "source_path", "browser"];
     const session = await createSession({ allowedTools: requested });
     try {
       const live = liveToolNames(session);
@@ -458,7 +473,7 @@ describe("AgentSession built-in tool tiering", () => {
     try {
       const live = liveToolNames(session);
       expect(live).toContain("source_path");
-      expect(live).toContain("screenshot");
+      expect(live).toContain("browser");
       expect(String(session.getMessages()[0]?.content ?? "")).not.toContain("Available on demand");
     } finally {
       await session.dispose();

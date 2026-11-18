@@ -51,8 +51,9 @@ export class McpToolRegistry {
   }
 
   /** Hold tools in the tool_search catalog and make sure tool_search exists. */
-  addDeferred(tools: AgentTool[]): void {
-    this.ensureCatalog().add(tools);
+  addDeferred(tools: AgentTool[], opts: { builtin?: boolean } = {}): void {
+    // Only third-party MCP descriptions are capped; a built-in keeps its own.
+    this.ensureCatalog().add(tools, { clamp: !opts.builtin });
     this.ensureToolSearchTool();
   }
 

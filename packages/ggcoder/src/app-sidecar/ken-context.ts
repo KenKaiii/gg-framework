@@ -13,7 +13,7 @@ export const KEN_ALLOWED_TOOLS = [
   "source_path",
   "web_fetch",
   "web_search",
-  "screenshot",
+  "browser",
   // Local corpus of real repos: lets Ken verify against code that ships
   // instead of assuming — core to how he's meant to work. Read-only.
   "steroids",

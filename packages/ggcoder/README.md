@@ -107,12 +107,12 @@ The agent always has `read`, `write`, `edit`, `bash`, `grep`, `skill`, `ask_user
 
 - **Files and search:** `find`, `ls`, `source_path` (the source of an installed dependency)
 - **Web:** `web_search`, `web_fetch`, `steroids` (current open-source code similar to yours)
-- **Checking work:** `screenshot` (opens a page in a headless browser), `debug` (Node debugger)
+- **Checking work:** `browser` (tests a page in a real browser: clicks, forms, checks, screenshots, console and network errors), `debug` (Node debugger)
 - **Planning:** `enter_plan` / `exit_plan`, `tasks`
 - **Helpers:** `subagent` for one focused job, or `spawn_agent` to run several in parallel
 - **Extras:** `generate_image`, `checklist`, UI component browsing
 
-`screenshot` needs Playwright: `npx playwright install chromium`. Without it, the tool explains how to install it.
+`browser` uses Playwright's Chromium (`npx playwright install chromium`) or an installed Google Chrome. Without either, the tool explains how to install one.
 
 ## Make it yours
 

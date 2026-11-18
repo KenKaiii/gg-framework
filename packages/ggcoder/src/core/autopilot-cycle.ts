@@ -48,7 +48,7 @@ export const AUTOPILOT_VERIFY_PROMPT =
 export const AUTOPILOT_INJECTION_PREAMBLE =
   "[Autopilot] This turn was triggered by Ken, GG Coder's automated reviewer — " +
   "not by a human, and no human is watching it land. So:\n" +
-  "- Prove your work before finishing: run the tests/build or screenshot the UI. " +
+  "- Prove your work before finishing: run the tests/build or check the UI with the browser tool. " +
   'Don\'t end on "should work" — nobody is here to catch a mistake, so verify it ' +
   "yourself.\n" +
   "- Don't stop to ask permission for work that's already implied by the original " +

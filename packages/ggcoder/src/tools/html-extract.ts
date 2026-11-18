@@ -59,7 +59,7 @@ let cached: ExtractorModules | null = null;
 
 /**
  * Lazily resolve the HTML→Markdown extraction stack (linkedom, Readability,
- * Turndown + GFM plugin). Mirrors `loadChromium()` in screenshot.ts: dynamic
+ * Turndown + GFM plugin). Mirrors `loadChromium()` in browser-session.ts: dynamic
  * imports behind a non-literal specifier so `tsc` does not statically require
  * the optional dependencies, with results cached. Throws `ExtractorUnavailable`
  * if any are missing so callers can degrade to the regex path.

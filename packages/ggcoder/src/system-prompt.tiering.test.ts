@@ -162,12 +162,12 @@ describe("tool tiering in the system prompt", () => {
       undefined,
       "anthropic",
       undefined,
-      ["source_path", "screenshot"],
+      ["source_path", "browser"],
     );
 
     // Live tools already carry their descriptions in schemas, not the deferred index.
     expect(countOccurrences(prompt, "- **source_path**:")).toBe(0);
-    expect(countOccurrences(prompt, "- **screenshot**:")).toBe(1);
+    expect(countOccurrences(prompt, "- **browser**:")).toBe(1);
   });
 
   it("does not advertise deferred tools without a loader", async () => {
@@ -181,11 +181,11 @@ describe("tool tiering in the system prompt", () => {
       undefined,
       "anthropic",
       undefined,
-      ["screenshot", "source_path"],
+      ["browser", "source_path"],
     );
     expect(prompt).not.toContain("Available on demand");
     expect(prompt).not.toContain("tool_search");
-    expect(prompt).not.toContain("**screenshot**");
+    expect(prompt).not.toContain("**browser**");
     expect(prompt).not.toContain("**source_path**");
   });
 

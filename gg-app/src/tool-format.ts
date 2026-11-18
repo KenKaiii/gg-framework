@@ -72,7 +72,9 @@ const VERBS: Record<string, VerbPair> = {
   skill: { running: "Loading skill", done: "Loaded skill" },
   source_path: { running: "Resolving", done: "Resolved" },
   tasks: { running: "Updating tasks", done: "Updated tasks" },
+  // Kept so older sessions that used the retired screenshot tool still read well.
   screenshot: { running: "Capturing", done: "Captured" },
+  browser: { running: "Testing in the browser", done: "Tested in the browser" },
   debug: { running: "Debugging", done: "Debugged" },
   enter_plan: { running: "Entering plan", done: "Entered plan" },
   exit_plan: { running: "Submitting plan", done: "Submitted plan" },

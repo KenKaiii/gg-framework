@@ -41,10 +41,10 @@ describe("tool tiers", () => {
   });
 
   it("partitions tools by tier, preserving order within each tier", () => {
-    const tools = ["read", "source_path", "edit", "screenshot", "bash"].map(stub);
+    const tools = ["read", "source_path", "edit", "browser", "bash"].map(stub);
     const { core, deferred } = partitionToolsByTier(tools);
     expect(core.map((t) => t.name)).toEqual(["read", "edit", "bash"]);
-    expect(deferred.map((t) => t.name)).toEqual(["source_path", "screenshot"]);
+    expect(deferred.map((t) => t.name)).toEqual(["source_path", "browser"]);
   });
 
   it("treats an unknown tool as core rather than hiding it", () => {

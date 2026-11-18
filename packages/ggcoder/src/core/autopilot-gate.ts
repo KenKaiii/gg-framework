@@ -19,7 +19,7 @@
  *   starts a background process (dev server, watcher), is read-only, or is a
  *   plain `git add`/`commit`/`push` workflow; a dedicated read-only tool
  *   (read/grep/find/ls/web_fetch/web_search/source_path/
- *   task_output/screenshot/skill); or NO tool calls at all (a plain-text
+ *   task_output/browser/skill); or NO tool calls at all (a plain-text
  *   answer with nothing built) — was always going to come back as Ken's
  *   IGNORE verdict (see the autopilot system prompt's "mechanical operation"
  *   / "plain question answered with no code touched" rules). Pre-filtering
@@ -184,7 +184,7 @@ export interface TurnToolCall {
 /** Dedicated tools that can never touch the repo/filesystem in a way worth
  *  reviewing: pure lookups (read/grep/find/ls/source_path),
  *  network research (web_fetch/web_search), reading a background process's
- *  output (task_output), a UI screenshot, or loading a skill definition. Any
+ *  output (task_output), checking the UI in the sandboxed browser, or loading a skill definition. Any
  *  call to one of these is mechanical regardless of its arguments — unlike
  *  bash, which needs isMechanicalBashCall to tell a read-only invocation from
  *  a mutating one. Deliberately excludes generate_image (produces a real
@@ -200,7 +200,7 @@ const READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "web_search",
   "source_path",
   "task_output",
-  "screenshot",
+  "browser",
   "skill",
 ]);
 

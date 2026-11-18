@@ -113,6 +113,7 @@ import {
 import { partitionToolsByTier } from "../tools/tool-tiers.js";
 import type { BackgroundProcess } from "./process-manager.js";
 import type { DebugManager } from "../tools/debug.js";
+import type { BrowserManager } from "../tools/browser.js";
 import { buildProcessCompletionFollowUp, mergeCompletionGateFollowUps } from "./process-gate.js";
 import { PLAN_SUBMISSION_NUDGE, shouldNudgePlanSubmission } from "./plan-submission-gate.js";
 import {
@@ -812,6 +813,7 @@ export class AgentSession {
   private processManager?: ProcessManager;
   private lspManager?: LspManager;
   private debugManager?: DebugManager;
+  private browserManager?: BrowserManager;
   private subAgentManager?: SubAgentManager;
   /**
    * Out-of-band push notifications (finished children, background-process
@@ -1055,6 +1057,7 @@ export class AgentSession {
       recordBashReads,
       lspManager,
       debugManager,
+      browserManager,
       subAgentManager,
     } = await createTools(this.cwd, {
       agents,
@@ -1173,7 +1176,7 @@ export class AgentSession {
         this.tools = core;
         this.deferredBuiltinToolNames = deferred.map((t) => t.name);
         this.deferredToolCatalog = [...deferred];
-        this.mcp.addDeferred(deferred);
+        this.mcp.addDeferred(deferred, { builtin: true });
       }
     }
     this.rebuildReadTool = rebuildReadTool;
@@ -1182,6 +1185,7 @@ export class AgentSession {
     this.processManager = processManager;
     this.lspManager = lspManager;
     this.debugManager = debugManager;
+    this.browserManager = browserManager;
     this.subAgentManager = subAgentManager;
     this.bindManagerCancellation(this.opts.signal);
 
@@ -5432,7 +5436,11 @@ export class AgentSession {
     this.stopBackgroundProcesses();
     this.lspManager?.shutdownAll();
     this.debugManager?.shutdown();
-    await Promise.all([this.subAgentManager?.shutdownAll(), this.mcp.manager?.dispose()]);
+    await Promise.all([
+      this.subAgentManager?.shutdownAll(),
+      this.mcp.manager?.dispose(),
+      this.browserManager?.shutdown(),
+    ]);
     await this.extensionLoader.deactivateAll();
     this.setSessionPath("");
     this.eventBus.removeAllListeners();

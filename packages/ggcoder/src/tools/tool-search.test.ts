@@ -21,6 +21,18 @@ async function search(tool: ReturnType<typeof createToolSearchTool>, query: stri
   return typeof result === "string" ? result : String(result.content);
 }
 
+describe("deferred catalog description cap", () => {
+  it("caps MCP descriptions but leaves built-ins whole", () => {
+    const long = "x".repeat(3000);
+    const catalog = new DeferredToolCatalog();
+    catalog.add([stub("mcp__srv__big", long)]);
+    catalog.add([stub("browser", long)], { clamp: false });
+    const [mcp, builtin] = catalog.promote(["mcp__srv__big", "browser"]);
+    expect(Buffer.byteLength(mcp!.description)).toBeLessThanOrEqual(1024 + 64);
+    expect(builtin!.description).toBe(long);
+  });
+});
+
 describe("tool_search", () => {
   it("answers correctly on turn 1 from a cache-seeded catalog", async () => {
     const catalog = new DeferredToolCatalog();

@@ -5,7 +5,7 @@
  * Ken never appears in GG Coder's transcript; on each question we read GG
  * Coder's `getMessages()`, distill it into a cheap text digest, and prepend it
  * to the user's question as Ken's prompt body. Ken's read-only tools fill any
- * gap the digest misses (he can read the actual files or screenshot the UI).
+ * gap the digest misses (he can read the actual files or check the UI in the browser).
  *
  * Kept pure + dependency-light so it's unit-testable without booting the sidecar
  * (which runs `main()` at import time).

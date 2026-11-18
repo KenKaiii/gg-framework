@@ -42,9 +42,13 @@ export class DeferredToolCatalog {
 
   constructor(private readonly limits: ContextLimits = CONTEXT_LIMITS) {}
 
-  add(tools: AgentTool[]): void {
+  /**
+   * `clamp: false` is for GG's own built-ins: their descriptions are written to
+   * fit and pinned by the tool-catalog test, and cutting one hides its API.
+   */
+  add(tools: AgentTool[], { clamp = true }: { clamp?: boolean } = {}): void {
     for (const tool of tools)
-      this.byName.set(tool.name, clampMcpToolDescription(tool, this.limits));
+      this.byName.set(tool.name, clamp ? clampMcpToolDescription(tool, this.limits) : tool);
   }
 
   /** Remove tools (e.g. when their MCP server is reloaded/removed). */

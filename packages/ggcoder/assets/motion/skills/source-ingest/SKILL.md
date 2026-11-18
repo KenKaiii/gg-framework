@@ -20,7 +20,7 @@ will do; GG rebuilds screens from screenshots.
 
 - **Website:** use `hf capture <url> -o sources/site`, expanding `hf` to the
   bundled launcher. Inspect the resulting copy, screenshots and assets. If a
-  capture fails, use `web_fetch` for facts and `screenshot` for visible material;
+  capture fails, use `web_fetch` for facts and `browser` screenshots for visible material;
   do not bypass login/paywalls. Capture only pages the video needs.
 - **PDF:** `<node> "<motion bin>/pdf-extract.mjs" <file.pdf> sources/pdf` yields
   `text.md`, `meta.json` and embedded images. Visually inspect scanned/vector

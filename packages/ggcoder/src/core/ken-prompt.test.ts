@@ -254,7 +254,7 @@ describe("GG Coder capabilities — both modes know what the executor can do", (
       expect(prompt).toContain("enter_plan");
       expect(prompt).toContain("subagents");
       expect(prompt).toContain("bash");
-      expect(prompt).toContain("screenshot");
+      expect(prompt).toContain("browser");
     }
   });
 
