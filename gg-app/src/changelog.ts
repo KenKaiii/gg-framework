@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.116.0",
+    date: "2026-11-18",
+    items: [
+      "Google's Gemini 4 family is here. `Gemini 4 Hydrogen` is the fast everyday one (free tier too), `Gemini 4 Argon` and `Gemini 4 Carbon` bring the heavy reasoning, and all three read a `1M` token window with images and video. `Gemini 3.6 Flash` joins them as the new Flash, so add your Gemini key and pick one.",
+    ],
+  },
+  {
     version: "0.115.0",
     date: "2026-11-18",
     items: [
