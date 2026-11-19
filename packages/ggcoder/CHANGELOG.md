@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 5.106.1
+
+### Patch Changes
+
+- Subagents now run at the parent's thinking level on every provider, the /commit reviewer must read the whole diff before CLEAR counts, and a question card never replaces a full answer.
+  - @kenkaiiii/gg-ai@5.106.1
+  - @kenkaiiii/gg-agent@5.106.1
+  - @kenkaiiii/gg-core@5.106.1
+
 ## 5.106.0
 
 ### Minor Changes
