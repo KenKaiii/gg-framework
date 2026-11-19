@@ -30,7 +30,7 @@ GG Coder is a desktop coding agent that gets more out of the AI subscription you
 
 > [!TIP]
 > **Want the step-by-step guide?**
-> - **Raid+:** make money with AI, a sellable app in 30 days, live every Thursday: [skool.com/kenkai](https://www.skool.com/kenkai)
+> - **Raid+:** land your first paying client in 90 days or your money back, plus private tools you won't find anywhere else: [skool.com/kenkai](https://www.skool.com/kenkai)
 > - **Want it built for you?** [work.kenkais.com](https://work.kenkais.com/)
 
 > ⭐ **If GG Coder saves you time or money, give it a star.** It's the main way other developers find it.
@@ -119,7 +119,7 @@ Bug reports, ideas and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIB
 
 ## Learn with me
 
-Want to make money with AI? **[Raid+](https://www.skool.com/kenkai)**: a sellable app in 30 days, live every Thursday.
+Want to make money with AI? **[Raid+](https://www.skool.com/kenkai)**: land your first paying client in 90 days or your money back, plus private tools you won't find anywhere else.
 
 Want it built for you? **[work.kenkais.com](https://work.kenkais.com/)**
 
