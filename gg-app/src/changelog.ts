@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.117.0",
+    date: "2026-11-19",
+    items: [
+      "GG Coder now tests your app in a real `browser`. It opens your dev server, clicks through, fills in forms, checks the results and grabs screenshots in a single go, and any console errors or failed requests get flagged automatically. I tuned it so a whole flow takes about `half the turns` it used to, so you get a checked, working UI back faster.",
+    ],
+  },
+  {
     version: "0.116.0",
     date: "2026-11-18",
     items: [
