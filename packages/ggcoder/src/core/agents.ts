@@ -7,8 +7,8 @@ import { BUILTIN_TOOL_NAMES } from "../tools/prompt-hints.js";
 import { BUNDLED_AGENTS } from "./bundled-agents.js";
 
 /**
- * Which model a sub-agent runs on. Every sub-agent runs at the LOWEST thinking
- * level of that model (never off), whatever the parent uses.
+ * Which model a sub-agent runs on. Every sub-agent runs at the parent's
+ * thinking level, fitted to that model's supported levels.
  *
  * - `"inherit"` (default) — the parent's model, so a delegated task is never
  *   moved to a weaker model.

@@ -51,9 +51,10 @@ function renderTalkSection(toolNames: readonly string[] | undefined): string {
   // concrete prose template for the ask is an invitation to use it, and the
   // measured failure was exactly that — a soft "want me to also…?" blockquote
   // ending the reply while the card the user can click never got built. The
-  // fallback only renders for hosts with no one to answer a question.
+  // fallback only renders for hosts with no one to answer a question. A capped
+  // lead-in once squeezed the user's answer into a teaser before the card.
   const askRule = (toolNames ?? DEFAULT_TOOL_NAMES).includes("ask_user")
-    ? `Every question — a blocker or an optional "want me to also…?" — is an \`ask_user\` call with your pick marked \`recommended\`, never prose. Before the card, write just enough to choose: the direct answer or what you found, in one to three plain sentences, not a full report. No question? Just end.`
+    ? `Every question — a blocker or an optional "want me to also…?" — is an \`ask_user\` call with your pick marked \`recommended\`, never prose. A card never stands in for an answer: if the user asked something, answer it in full before the card, so they know enough to choose. No question? Just end.`
     : `Any question — a blocker or an optional "want me to also…?" — is the last line: \`> **<question>?** <your next step>\`. No question? Just end.`;
   return (
     `## Replies\n\n` +

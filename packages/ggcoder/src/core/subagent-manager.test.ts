@@ -324,10 +324,14 @@ describe("SubAgentManager", () => {
     });
   });
 
-  it("uses the lowest thinking level of an overridden model, not the agent's own", async () => {
+  it("fits the parent's thinking level to an overridden model, not the agent's own", async () => {
     // The reviewer forces a model at spawn time; its rung must come from THAT
     // model's ladder.
-    const instance = manager({ provider: "anthropic", model: "claude-opus-5-5" });
+    const instance = manager({
+      provider: "anthropic",
+      model: "claude-opus-5-5",
+      getThinkingLevel: () => "low",
+    });
     const requestSpy = vi.spyOn(
       instance as unknown as {
         request: (...args: unknown[]) => Promise<unknown>;

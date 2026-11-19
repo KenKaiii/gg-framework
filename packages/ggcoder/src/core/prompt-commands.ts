@@ -241,11 +241,12 @@ ${CLAUDE_MD_RESTART_NOTICE}`,
     description: "Run checks, review, commit with AI message, and push",
     prompt: `# Commit: check, review, commit and push
 
-1. If \`.gg/commands/commit.md\` exists, read it and follow it instead of these steps: it is this project's own commit procedure. If it runs no tests while the project has some, run them too.
+1. If \`.gg/commands/commit.md\` exists, read it and follow it instead of these steps: it is this project's own commit procedure. If it runs no tests while the project has some, run them too. If its review step does not make the reviewer read the whole diff (for example it says "be fast"), run step 4 and its check in step 5 in place of that step.
 2. Run the project's checks: everything under Verification in your instructions, plus the tests. If none are listed, use the project's own scripts (package.json \`check\`/\`typecheck\`, \`lint\`, \`format:check\`, \`test\`; pyproject, go.mod or Cargo.toml equivalents). Run each standalone, unpiped. Fix every failure (auto-fix formatting/lint where the project has a fix script), then re-run what failed.
 3. Review changes: run \`git status\`, \`git diff --staged\` and \`git diff\`.
-4. Fast review gate: spawn ONE subagent with the full diff. Instructions: review ONLY the diff for real bugs, regressions, leftover debug code and unintended changes. Score each issue 0-100 confidence (pre-existing issues and stylistic nitpicks are false positives, score low). Report ONLY issues with confidence >= 80, with file:line and a one-line fix. If none, reply "CLEAR". This is a last check, not a deep audit - be fast.
-5. If CLEAR: continue to step 6 without asking anything.
+4. Review gate: write the full diff to a temp file (staged, unstaged, and each new file via \`git diff --no-index /dev/null <file>\`), then spawn ONE subagent. Brief it with the file path and the list of changed files only, never a summary of the changes. Instructions: read the WHOLE diff file, paging through it if long, and open the changed source where a hunk needs context. Review it for real bugs, regressions, leftover debug code and unintended changes. Score each issue 0-100 confidence (pre-existing issues and stylistic nitpicks are false positives, score low). Report ONLY issues with confidence >= 80, with file:line and a one-line fix. End with a \`Read:\` line naming every changed file you reviewed. If no issues, reply "CLEAR" plus that line.
+5. A CLEAR counts only if its \`Read:\` line names every changed file and its receipt shows it read the diff. Otherwise no review happened: read the diff yourself and judge it by the same bar before going on.
+   If CLEAR: continue to step 6 without asking anything.
    If issues >= 80 were reported: show them and ask with \`ask_user\` (one \`choice\` question, \`id: "land"\`) offering exactly:
    - "Fix it first, then commit & push" (recommended, hint: keeps the branch green)
    - "Commit & push anyway" (hint: issue stays open in the log)
@@ -288,13 +289,18 @@ description: Run checks, agent code review, commit with AI message, and push
 
 2. Review changes: run git status and git diff --staged and git diff
 
-3. Fast review gate: spawn ONE subagent with the full diff. Instructions: review ONLY
-   the diff for real bugs, regressions, leftover debug code, and unintended changes.
-   Score each issue 0-100 confidence (pre-existing issues and stylistic nitpicks = false
-   positives, score low). Report ONLY issues with confidence >= 80, with file:line and a
-   one-line fix. If none, reply "CLEAR". This is a last check, not a deep audit - be fast.
+3. Review gate: write the full diff to a temp file (staged, unstaged, and each new file
+   via git diff --no-index /dev/null <file>), then spawn ONE subagent briefed with that path
+   and the changed-file list only, never a summary. Instructions: read the WHOLE diff file,
+   paging if long, opening changed source for context; review it for real bugs,
+   regressions, leftover debug code and unintended changes. Score each issue 0-100
+   confidence (pre-existing issues and stylistic nitpicks = false positives, score low).
+   Report ONLY issues >= 80 with file:line and a one-line fix. End with a "Read:" line
+   naming every changed file reviewed. If no issues, reply "CLEAR" plus that line.
 
-4. If CLEAR: proceed straight to step 5 and push WITHOUT asking the user anything.
+4. A CLEAR counts only if "Read:" names every changed file and the receipt shows it read
+   the diff; otherwise review the diff yourself first.
+   If CLEAR: proceed straight to step 5 and push WITHOUT asking the user anything.
    If issues >= 80 were reported: STOP, show the issues, and ask with the \`ask_user\`
    tool — one \`choice\` question (\`id: "land"\`, question "Want me to fix this first, or commit and push anyway?") with:
    - "Fix it first, then commit & push" (recommended, hint: keeps the branch green)
@@ -315,7 +321,7 @@ description: Run checks, agent code review, commit with AI message, and push
 
 Replace [PROJECT-SPECIFIC LINT/TYPECHECK/TEST COMMANDS] with the actual commands, tests included: /commit is where this project's work gets verified.
 
-Keep the command file under 30 lines.
+Keep the command file under 40 lines.
 
 ## Step 3: Update the checklist
 

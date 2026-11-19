@@ -24,7 +24,7 @@ describe("prompt commands", () => {
     expect(cmd?.prompt).toContain("Verification in your instructions, plus the tests");
     expect(cmd?.prompt).toContain("Run each standalone, unpiped");
     expect(cmd?.prompt).toContain("Fix every failure");
-    expect(cmd?.prompt).toContain("spawn ONE subagent with the full diff");
+    expect(cmd?.prompt).toContain("write the full diff to a temp file");
     expect(cmd?.prompt).toContain("never `git add -A`");
     expect(cmd?.prompt).toContain("never with `--no-verify`");
     expect(cmd?.prompt).toContain("stop before committing");
@@ -38,6 +38,21 @@ describe("prompt commands", () => {
       "If `.gg/commands/commit.md` exists, read it and follow it instead of these steps",
     );
     expect(cmd?.prompt).toContain("If it runs no tests while the project has some, run them too");
+  });
+
+  // A reviewer told to "be fast" grepped the file list and replied CLEAR
+  // without reading a 2,385-line diff.
+  it("makes the commit reviewer read the whole diff and prove it before CLEAR counts", () => {
+    for (const name of ["commit", "setup-commit"]) {
+      const prompt = PROMPT_COMMANDS.find((command) => command.name === name)?.prompt ?? "";
+      expect(prompt, name).not.toContain("not a deep audit - be fast");
+      expect(prompt, name).toContain("read the WHOLE diff file");
+      expect(prompt, name).toContain("never a summary");
+      expect(prompt, name).toContain("A CLEAR counts only if");
+    }
+    const commit = PROMPT_COMMANDS.find((command) => command.name === "commit")?.prompt;
+    // Older generated commit.md files still say "be fast"; the built-in overrides that step.
+    expect(commit).toContain("run step 4 and its check in step 5 in place of that step");
   });
 
   it("makes /setup-commit include the project's tests", () => {

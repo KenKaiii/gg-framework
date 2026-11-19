@@ -182,7 +182,7 @@ describe("createSubAgentTool model and thinking routing", () => {
     expect(spawnedFlag("--thinking")).toEqual(["high", undefined]);
   });
 
-  it("re-resolves the lowest thinking level for the parent model on a retry", async () => {
+  it("re-resolves the parent's thinking level for the parent model on a retry", async () => {
     // A retired, unregistered model's ladder bottoms out at "high", Opus's at "low": the retry must
     // not carry the pinned model's rung over to the parent model.
     const pinnedLowest = getSupportedThinkingLevels("anthropic", "claude-retired-model")[0];
@@ -197,6 +197,9 @@ describe("createSubAgentTool model and thinking routing", () => {
       [{ ...pinned, model: "claude-retired-model" }],
       () => "anthropic",
       () => "claude-opus-5-5",
+      undefined,
+      undefined,
+      () => "low",
     ).execute(
       { agent: "pinned", task: "Inspect the registry." },
       { signal: new AbortController().signal, toolCallId: "test-call" },

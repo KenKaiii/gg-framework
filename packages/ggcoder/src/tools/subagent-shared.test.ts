@@ -88,19 +88,23 @@ describe("selectSubAgent", () => {
     ["glm", "glm-5.3"],
     ["deepseek", "deepseek-v4-pro"],
   ] as const)(
-    "runs every %s %s sub-agent at the model's lowest thinking level, never off",
+    "runs every %s %s sub-agent at the parent's thinking level, including off",
     (provider, parentModel) => {
-      const lowest = getSupportedThinkingLevels(provider, parentModel)[0];
+      const levels = getSupportedThinkingLevels(provider, parentModel);
       const agents = [
         agent({ name: "worker", tools: ["read", "bash"], model: "inherit" }),
         agent({ name: "researcher" }),
       ];
 
-      expect(lowest).toBeDefined();
+      expect(levels.length).toBeGreaterThan(0);
       for (const name of ["worker", "researcher", undefined]) {
-        expect(selectSubAgent(agents, name, provider, parentModel).thinkingLevel, name).toBe(
-          lowest,
-        );
+        for (const level of levels) {
+          expect(
+            selectSubAgent(agents, name, provider, parentModel, level).thinkingLevel,
+            `${name} ${level}`,
+          ).toBe(level);
+        }
+        expect(selectSubAgent(agents, name, provider, parentModel).thinkingLevel).toBeUndefined();
       }
     },
   );
@@ -137,10 +141,19 @@ describe("selectSubAgent", () => {
     );
   });
 
-  it("does not change other providers' child reasoning when the parent uses max", () => {
+  it("runs a Claude reviewer at the parent's level, not the lowest", () => {
+    // Children used to run Claude at "low", so a /commit reviewer skimmed the
+    // file list and replied CLEAR without reading the diff.
     expect(selectSubAgent([], undefined, "anthropic", "claude-opus-5-5", "max").thinkingLevel).toBe(
-      "low",
+      "max",
     );
+  });
+
+  it("steps a pinned model down to its nearest level, never above the parent", () => {
+    const pinned = agent({ name: "pinned", model: "claude-opus-4-6" });
+    expect(
+      selectSubAgent([pinned], "pinned", "anthropic", "claude-opus-5-5", "xhigh"),
+    ).toMatchObject({ model: "claude-opus-4-6", thinkingLevel: "high" });
   });
 
   it("gives a sub-agent on a model that cannot reason no thinking level", () => {
@@ -149,17 +162,19 @@ describe("selectSubAgent", () => {
     ).toBeUndefined();
   });
 
-  it("honours an explicit model id, at that model's lowest thinking level", () => {
+  it("honours an explicit model id, at its lowest level when the parent's is below it", () => {
     const pinned = agent({ name: "pinned", model: "claude-retired-model" });
     const pinnedLowest = getSupportedThinkingLevels("anthropic", "claude-retired-model")[0];
     // A retired model's ladder differs from Opus's, so this proves the rung follows the
     // model the child runs on, not the parent.
     expect(pinnedLowest).not.toBe(getSupportedThinkingLevels("anthropic", "claude-opus-5-5")[0]);
 
-    expect(selectSubAgent([pinned], "pinned", "anthropic", "claude-opus-5-5")).toMatchObject({
-      model: "claude-retired-model",
-      thinkingLevel: pinnedLowest,
-    });
+    expect(selectSubAgent([pinned], "pinned", "anthropic", "claude-opus-5-5", "low")).toMatchObject(
+      {
+        model: "claude-retired-model",
+        thinkingLevel: pinnedLowest,
+      },
+    );
   });
 
   it("falls back to the parent model for an unnamed agent", () => {

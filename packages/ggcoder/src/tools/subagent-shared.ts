@@ -95,23 +95,26 @@ export function resolveAgentModel(
   return preference;
 }
 
+const THINKING_RANK: readonly ThinkingLevel[] = ["low", "medium", "high", "xhigh", "max", "ultra"];
+
 /**
- * OpenAI children inherit the parent's selection, including Ultra (resolved
- * by the transport), as in Codex. A pinned model with a lower ceiling is
- * capped to its supported ladder. Other providers keep their lowest-rung
- * policy. Resolve again from the original parent selection on fallback.
+ * Every child runs at the parent's thinking level, on every provider; thinking
+ * off stays off. A model without that level gets its nearest level below it,
+ * else its lowest. Resolve again from the parent's level on fallback.
  */
 export function subAgentThinkingLevel(
   provider: Provider,
   model: string,
   parentThinkingLevel?: ThinkingLevel,
 ): ThinkingLevel | undefined {
-  if (provider !== "openai") return getLowestThinkingLevel(provider, model);
-  if (!parentThinkingLevel) return undefined;
+  if (!parentThinkingLevel || !getLowestThinkingLevel(provider, model)) return undefined;
   const levels = getSupportedThinkingLevels(provider, model);
   if (levels.includes(parentThinkingLevel)) return parentThinkingLevel;
-  // Older OpenAI models start at medium; never turn inherited low into xhigh.
-  return parentThinkingLevel === "low" ? levels[0] : levels.at(-1);
+  const rank = THINKING_RANK.indexOf(parentThinkingLevel);
+  const below = levels.filter((level) => THINKING_RANK.indexOf(level) <= rank);
+  return (
+    below.sort((a, b) => THINKING_RANK.indexOf(a) - THINKING_RANK.indexOf(b)).at(-1) ?? levels[0]
+  );
 }
 
 /**
