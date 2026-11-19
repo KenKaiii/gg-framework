@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.117.1",
+    date: "2026-11-20",
+    items: [
+      "The helpers GG Coder sends off now think as hard as you set it to. They used to drop to the `lowest` thinking level whatever you picked, so research, reviews and side tasks now get the same brainpower as your main chat.",
+      "`/commit` reviews are the real deal now. The reviewer reads every line of your changes and has to list each file it checked before it can call things clear. I put it through a change that used to sail through in `6 seconds`, and it caught a real bug.",
+      "Ask me a question and you get the full answer first. If I need to ask you something back, it comes after the answer, so you always have what you need to pick.",
+    ],
+  },
+  {
     version: "0.117.0",
     date: "2026-11-19",
     items: [
