@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 5.106.0
+
+### Minor Changes
+
+- Add a script-driven `browser` tool that tests web apps in a real browser (open, click, fill, check, screenshot) in one call, with console and network errors reported; it replaces the `screenshot` tool.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@5.106.0
+- @kenkaiiii/gg-agent@5.106.0
+- @kenkaiiii/gg-core@5.106.0
+
 ## 5.105.0
 
 ### Minor Changes
