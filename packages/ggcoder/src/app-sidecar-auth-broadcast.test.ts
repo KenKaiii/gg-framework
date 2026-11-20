@@ -674,8 +674,8 @@ describe("dual-auth providers (OAuth + API key)", () => {
     const reason = (id: string) => models.find((m) => m.id === id)?.unavailable;
     // K2.8 Preview is served on the Kimi Code plan endpoint only.
     expect(reason("kimi-for-coding")).toBe("Needs a Kimi Code plan key");
-    // UltraSpeed runs on API Credits only.
-    expect(reason("mimo-v2.6-pro-ultraspeed")).toBe("Needs an API Credits key");
+    // UltraSpeed runs on the Token Plan too, so a plan key is enough.
+    expect(reason("mimo-v2.6-pro-ultraspeed")).toBeUndefined();
     // Models any connected key runs carry no reason.
     expect(reason("kimi-k3")).toBeUndefined();
     expect(reason("mimo-v2.6-flash")).toBeUndefined();

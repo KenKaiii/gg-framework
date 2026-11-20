@@ -234,7 +234,7 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
         key: XIAOMI_CREDITS_KEY,
         label: "API Credits",
         kind: "payg",
-        billing: "Pay-per-token from MiMo API Credits. Required for UltraSpeed.",
+        billing: "Pay-per-token from MiMo API Credits.",
         baseUrl: "https://api.xiaomimimo.com/v1",
       },
     ],

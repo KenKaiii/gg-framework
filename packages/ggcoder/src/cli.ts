@@ -491,8 +491,8 @@ async function runInkTUI(opts: {
   // refresh token (preferredProvider expired) doesn't crash startup — we
   // fall back to whichever other provider actually resolved. Keyed by
   // auth-storage key (not always the provider id) — e.g. Xiaomi splits into
-  // "xiaomi" (Token Plan) and "xiaomi-credits" (API Credits, required for
-  // mimo-v2.6-pro-ultraspeed) since a user may hold either or both.
+  // "xiaomi" (Token Plan) and "xiaomi-credits" (API Credits) since a user may
+  // hold either or both.
   const credentialsByProvider: Record<
     string,
     { accessToken: string; accountId?: string; baseUrl?: string }

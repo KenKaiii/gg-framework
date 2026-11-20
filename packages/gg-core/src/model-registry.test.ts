@@ -124,8 +124,8 @@ describe("model registry invariants", () => {
     expect(getSummaryModel("anthropic", "claude-opus-5-5-fast").id).toBe("claude-sonnet-5-5");
   });
 
-  it("treats MiMo UltraSpeed as real money and strips it back to MiMo-V2.6-Pro", () => {
-    // UltraSpeed only runs on pay-per-token API Credits, never the Token Plan.
+  it("treats MiMo UltraSpeed as a paid tier and strips it back to MiMo-V2.6-Pro", () => {
+    // 10x Token Plan credits, or per-token API Credits: never carried silently.
     expect(isPaidModel("mimo-v2.6-pro-ultraspeed")).toBe(true);
     expect(withoutPaidTier("mimo-v2.6-pro-ultraspeed")).toBe("mimo-v2.6-pro");
     expect(isPaidModel("mimo-v2.6-pro")).toBe(false);
@@ -578,9 +578,12 @@ describe("model registry context windows", () => {
     expect(getAuthStorageKey("xiaomi", "mimo-v2.6-pro")).toBe("xiaomi");
   });
 
-  it("mimo-v2.6-pro-ultraspeed is API-Credits only, with no Token Plan fallback", () => {
-    expect(getAuthStorageKeys("xiaomi", "mimo-v2.6-pro-ultraspeed")).toEqual([XIAOMI_CREDITS_KEY]);
-    expect(getAuthStorageKey("xiaomi", "mimo-v2.6-pro-ultraspeed")).toBe(XIAOMI_CREDITS_KEY);
+  it("mimo-v2.6-pro-ultraspeed runs on the Token Plan, falling back to API Credits", () => {
+    expect(getAuthStorageKeys("xiaomi", "mimo-v2.6-pro-ultraspeed")).toEqual([
+      "xiaomi",
+      XIAOMI_CREDITS_KEY,
+    ]);
+    expect(getAuthStorageKey("xiaomi", "mimo-v2.6-pro-ultraspeed")).toBe("xiaomi");
   });
 
   it("registers a Code Assist-supported Gemini default", () => {

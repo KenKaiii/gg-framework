@@ -411,7 +411,7 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
                 key: "xiaomi-credits",
                 label: "API Credits",
                 kind: "payg",
-                billing: "Pay-per-token from MiMo API Credits. Required for UltraSpeed.",
+                billing: "Pay-per-token from MiMo API Credits.",
                 base_url: Some("https://api.xiaomimimo.com/v1"),
             },
         ],

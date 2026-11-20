@@ -69,11 +69,9 @@ export interface ModelInfo {
    * endpoints/keys (a plan key vs. a pay-per-token key). The first key with stored credentials wins, so a
    * model can both prefer one endpoint AND fall back to another the user has
    * configured instead:
-   *   - `mimo-v2.6-pro` / `mimo-v2.6-flash`: `["xiaomi", XIAOMI_CREDITS_KEY]` —
-   *     prefer the Token Plan, fall back to API Credits (API Credits serves
-   *     every MiMo model, so a Credits-only user still reaches these).
-   *   - `mimo-v2.6-pro-ultraspeed`: `[XIAOMI_CREDITS_KEY]` only — not served
-   *     over the Token Plan endpoint, so there's no fallback to it.
+   *   - every MiMo model: `["xiaomi", XIAOMI_CREDITS_KEY]` — prefer the Token
+   *     Plan, fall back to API Credits (API Credits serves every MiMo model, so
+   *     a Credits-only user still reaches these).
    *   - Kimi: `[KIMI_CODE_KEY, "moonshot"]` — the Kimi Code plan key first;
    *     K2.8 Preview is `[KIMI_CODE_KEY]` only (the plan endpoint serves it).
    *   - every Gemini model: `[GEMINI_API_KEY]` — the AI Studio key.
@@ -124,11 +122,11 @@ const CLAUDE_FABLE_FAST_BILLING: ModelBilling = {
   standardModel: "claude-fable-5-2",
 };
 
-/** MiMo UltraSpeed: API Credits only, billed per token, never the Token Plan. */
+// Kept `paid` even on the Token Plan: 10x credits drains a plan too fast to carry silently into helpers.
 const XIAOMI_ULTRASPEED_BILLING: ModelBilling = {
-  label: "bills API Credits",
+  label: "10x credits",
   detail:
-    "UltraSpeed runs only on your Xiaomi API Credits, billed per token at a higher rate than MiMo-V2.6-Pro, never on the Token Plan.",
+    "UltraSpeed uses your Token Plan credits at 10x MiMo-V2.6-Pro's rate (Pro and Max plans only), or bills your API Credits per token at a higher rate.",
   paid: true,
   standardModel: "mimo-v2.6-pro",
 };
@@ -849,9 +847,8 @@ export const MODELS: ModelInfo[] = [
     authStorageKeys: ["xiaomi", XIAOMI_CREDITS_KEY],
   },
   // UltraSpeed: lower-latency sibling of the Pro flagship, same full-modal
-  // capability surface, premium-priced for the throughput gain. API-only —
-  // not served over the Token Plan endpoint, so credentials resolve from the
-  // distinct API Credits key only (see authStorageKeys doc).
+  // capability surface, premium-priced for the throughput gain. On the Token
+  // Plan (Pro and Max tiers) since 2026-11 at 10x Pro's credit rate.
   {
     id: "mimo-v2.6-pro-ultraspeed",
     name: "MiMo-V2.6-Pro-UltraSpeed",
@@ -864,7 +861,7 @@ export const MODELS: ModelInfo[] = [
     maxVideoBytes: 36 * 1024 * 1024,
     costTier: "high",
     maxThinkingLevel: "high",
-    authStorageKeys: [XIAOMI_CREDITS_KEY],
+    authStorageKeys: ["xiaomi", XIAOMI_CREDITS_KEY],
     billing: XIAOMI_ULTRASPEED_BILLING,
   },
   // ── DeepSeek ───────────────────────────────────────────
@@ -1208,8 +1205,8 @@ export function withoutPaidTier(modelId: string): string {
  * `(provider, model)`, first match wins. Almost every model just uses its
  * provider id (one credential per provider). Models with `authStorageKeys`
  * set (currently only Xiaomi) can prefer one endpoint and fall back to
- * another — e.g. `mimo-v2.6-pro` prefers the Token Plan but falls back to API
- * Credits, while the API-only `mimo-v2.6-pro-ultraspeed` has no fallback.
+ * another — e.g. every MiMo model prefers the Token Plan but falls back to API
+ * Credits.
  */
 export function getAuthStorageKeys(provider: Provider, modelId: string): string[] {
   const model = getAllModels().find((m) => m.id === modelId && m.provider === provider);
