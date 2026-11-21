@@ -1,5 +1,20 @@
 # @kenkaiiii/ggcoder
 
+## 5.107.0
+
+### Minor Changes
+
+- 1d64d55: Continue with ChatGPT now works with more than one ChatGPT account or workspace. Choosing "Use a different account or workspace" (or option 2 in `ggcoder login`) sets GG Coder up for another one instead of failing with "This app is only available to members of its workspace".
+
+### Patch Changes
+
+- 621d402: Speed-up tasks finish sooner: GG Coder now proves the faster code gives identical output on many small inputs and times the slow original only once, instead of re-running it on huge inputs for minutes.
+- Updated dependencies [1d64d55]
+- Updated dependencies [1d64d55]
+  - @kenkaiiii/gg-core@5.107.0
+  - @kenkaiiii/gg-ai@5.107.0
+  - @kenkaiiii/gg-agent@5.107.0
+
 ## 5.106.1
 
 ### Patch Changes

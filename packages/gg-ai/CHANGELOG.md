@@ -1,5 +1,11 @@
 # @kenkaiiii/gg-ai
 
+## 5.107.0
+
+### Patch Changes
+
+- 1d64d55: Updated the bundled HTTP client (undici) to 7.30.2, which fixes its published security advisories, so installing GG Coder's packages no longer reports a high-severity `npm audit` warning for it.
+
 ## 5.106.1
 
 ## 5.106.0
