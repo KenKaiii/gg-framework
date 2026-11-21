@@ -8659,10 +8659,73 @@ select {
   flex: 0 0 auto;
   white-space: nowrap;
 }
+/* Lead: the step's pixel glyph in a sunk well (.well, Deck.css). While work
+   runs, one pixel marches along the well's floor. */
+.well.activity-glyph {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  overflow: hidden;
+}
+.activity-glyph-art {
+  display: block;
+  animation: fade-in var(--dur-row) var(--ease-out) backwards;
+}
+.activity-glyph[data-live]::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  bottom: 2px;
+  width: 2px;
+  height: 2px;
+  background: currentColor;
+  opacity: 0.8;
+  animation: activity-glyph-march 1.6s steps(8) infinite;
+  animation-play-state: var(--loop-play-state, running);
+}
+@keyframes activity-glyph-march {
+  to {
+    transform: translateX(16px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-glyph-art {
+    animation: none;
+  }
+  .activity-glyph[data-live]::after {
+    display: none;
+  }
+}
+/* Pinned right; each well is as wide as its longest value (the hidden
+   ::before), so a ticking clock never nudges the row. */
 .activity-meta {
   flex: 0 0 auto;
-  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
   white-space: nowrap;
+}
+.activity-meta .well {
+  display: inline-grid;
+  justify-items: end;
+}
+.activity-meta .well > span,
+.activity-meta .well::before {
+  grid-area: 1 / 1;
+}
+.activity-meta .well::before {
+  visibility: hidden;
+}
+.activity-elapsed::before {
+  content: "99m 59s";
+}
+.activity-token-count::before {
+  content: "999.9k tok";
 }
 @container (max-width: 480px) {
   .activity-token-count,

@@ -67,7 +67,7 @@ export const INITIAL_ACTIVITY: TaskActivity = {
 
 // Rotate on a new activity span, never on each streamed token. Each pool
 // describes the same observed activity; outcomes deliberately keep fixed wording.
-const PROGRESS_PHRASES: Record<string, readonly string[]> = {
+export const PROGRESS_PHRASES: Record<string, readonly string[]> = {
   "Thinking…": ["Thinking…", "Thinking it through…", "Reasoning through the next step…"],
   "Working on your request…": [
     "Working on your request…",

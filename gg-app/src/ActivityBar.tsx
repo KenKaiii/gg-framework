@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import type { TaskActivity } from "./task-activity";
-import { ThinkingOrb } from "thinking-orbs";
 import { theme } from "./theme";
+import { ActivityGlyph } from "./ActivityGlyph";
+import { activityGlyph } from "./activity-glyphs";
+import type { ActivityGlyphName } from "./pixel-glyphs";
 import { ShimmerText } from "./ShimmerText";
 import { outcomePhrase } from "./activity-copy";
 import { useMotionLevel } from "./window-motion";
@@ -62,6 +64,34 @@ export function formatTokenCount(n: number): string {
     return k % 1 === 0 ? `${k}k` : `${k.toFixed(1)}k`;
   }
   return String(n);
+}
+
+/**
+ * Elapsed time and output tokens, each in a sunk well sized (in CSS) for its
+ * longest value, so a ticking clock or a changing label never moves them.
+ */
+export function ActivityMeta({
+  elapsedMs,
+  tokens,
+}: {
+  elapsedMs: number;
+  tokens: number;
+}): React.ReactElement {
+  return (
+    <span className="activity-meta dissolve-in">
+      <span className="well activity-elapsed" title="Elapsed time">
+        <span>{formatElapsed(elapsedMs)}</span>
+      </span>
+      {/* Held in place before the first count, so its arrival moves nothing. */}
+      <span
+        className="well activity-token-count"
+        title="Output tokens"
+        style={tokens > 0 ? undefined : { visibility: "hidden" }}
+      >
+        <span>{`${formatTokenCount(tokens)} tok`}</span>
+      </span>
+    </span>
+  );
 }
 
 interface Props {
@@ -247,9 +277,20 @@ export function ActivityBar({
             ? "Response ready"
             : readyPhrase;
   const label =
-    (!active && outcomePhrase(fullLabel, activity?.startedAt ?? 0)) ||
+    (!active && outcomePhrase(fullLabel, activity?.startedAt ?? 0, activity?.verifiedChecks)) ||
     SHORT_LABELS[fullLabel] ||
     fullLabel;
+  const glyph: ActivityGlyphName = cancelling
+    ? "stop"
+    : starting
+      ? "start"
+      : hasActivity
+        ? activityGlyph(activity.label, activity.phase)
+        : active
+          ? "work"
+          : doneStatus
+            ? "write"
+            : "idle";
 
   return (
     <div className="task-activity" data-phase={activity?.phase ?? (running ? "working" : "idle")}>
@@ -262,18 +303,8 @@ export function ActivityBar({
             aria-atomic="true"
             title={activity?.detail || undefined}
           >
-            {/* Only work in progress gets a lead: the orb's motion. A settled
-                status is its words alone, coloured by outcome. */}
-            {active && (
-              <ThinkingOrb
-                state="listening"
-                size={20}
-                theme="auto"
-                paused={motion !== "full"}
-                aria-hidden="true"
-                style={{ flexShrink: 0 }}
-              />
-            )}
+            {/* Every state leads with its step's glyph, in the status colour. */}
+            <ActivityGlyph glyph={glyph} color={tone} live={active && motion === "full"} />
             {/* Remount only the label when its meaning changes. Timer/token
                 updates must not restart the reveal or the running orb. */}
             <span key={`${active}:${label}`} className="activity-label-reveal" title={label}>
@@ -292,14 +323,7 @@ export function ActivityBar({
             )}
           </span>
           {(active || hasActivity) && !starting && (
-            <span className="activity-meta dissolve-in">
-              {formatElapsed(elapsed)}
-              {totalTokens > 0 && (
-                <span className="activity-token-count" title="Output tokens">
-                  {` · ${formatTokenCount(totalTokens)} tok`}
-                </span>
-              )}
-            </span>
+            <ActivityMeta elapsedMs={elapsed} tokens={totalTokens} />
           )}
         </div>
         {active && planTotal > 0 && planDone < planTotal && (

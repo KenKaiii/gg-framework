@@ -15,7 +15,8 @@ describe("GG outcome wording", () => {
         Math.max(...phrases.map((p) => p.length)) - Math.min(...phrases.map((p) => p.length)),
       ).toBeLessThanOrEqual(10);
       for (let seed = 0; seed < phrases.length; seed++) {
-        expect(outcomePhrase(label, seed)).toBe(phrases[seed]);
+        const plain = phrases[seed]!.replace("{checks}", "checks");
+        expect(outcomePhrase(label, seed)).toBe(plain.charAt(0).toUpperCase() + plain.slice(1));
         expect(outcomePhrase(label, seed)).toBe(outcomePhrase(label, seed));
       }
     },
@@ -34,5 +35,20 @@ describe("GG outcome wording", () => {
       for (const phrase of OUTCOME_PHRASES[label]!)
         expect(phrase).not.toMatch(/passed|green|ready|success/i);
     }
+  });
+  it("says how many checks passed, so one lint never reads as a full suite", () => {
+    expect(outcomePhrase("Done · checks passed", 0, 1)).toBe("1 check passed. Nice.");
+    expect(outcomePhrase("Done · checks passed", 5, 3)).toBe("Green: 3 checks passed");
+    expect(outcomePhrase("Done · checks passed", 1)).toBe("Checks came back green");
+  });
+  it("never words a failed check, a stop or a broken review as more than is known", () => {
+    for (const phrase of [
+      ...OUTCOME_PHRASES["Checks failed"]!,
+      ...OUTCOME_PHRASES["Verification incomplete"]!,
+      ...OUTCOME_PHRASES["Stopped · unfinished"]!,
+      ...OUTCOME_PHRASES["Ken’s review failed"]!,
+      ...OUTCOME_PHRASES["Done · checks passed"]!,
+    ])
+      expect(phrase).not.toMatch(/fix|another look|this time|work remains|review failed|rejected/i);
   });
 });

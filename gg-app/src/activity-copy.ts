@@ -41,28 +41,32 @@ export const OUTCOME_PHRASES: Record<string, readonly string[]> = {
     "Background launch made",
     "Job launched backstage",
   ],
+  // "{checks}" becomes the recorded count ("1 check", "3 checks"): one passing
+  // lint must not read as a full suite.
   "Done · checks passed": [
-    "Checks passed. Nice.",
-    "Checks came back green",
-    "Green checks. Lovely.",
-    "Checks passed. GG.",
-    "Checks looking good",
-    "Checks green this time",
+    "{checks} passed. Nice.",
+    "{checks} came back green",
+    "{checks} passed. GG.",
+    "{checks} passed. Lovely.",
+    "{checks} passed cleanly",
+    "Green: {checks} passed",
   ],
+  // A failed check may be the environment, not the code: say what happened,
+  // not what to fix.
   "Checks failed": [
-    "Checks hit a snag",
+    "A check failed",
     "Checks came back red",
-    "Checks need a fix",
-    "Red checks. Next: fix",
-    "Checks found trouble",
-    "Checks failed. Fix next",
+    "Checks didn’t pass",
+    "Red checks. Take a look",
+    "Checks failed. See chat",
+    "A check came back red",
   ],
   "Verification incomplete": [
     "Checks still needed",
     "Not verified just yet",
     "Checks not confirmed",
     "Verification still owed",
-    "Checks need another look",
+    "No passing check yet",
     "Still needs a check",
   ],
   "Task failed": [
@@ -76,7 +80,7 @@ export const OUTCOME_PHRASES: Record<string, readonly string[]> = {
   "Stopped · unfinished": [
     "Stopped. Not finished",
     "Run stopped short",
-    "Stopped, work remains",
+    "Stopped mid-run",
     "Stopped before the end",
     "Run halted. Not done",
     "Stopped. Pick up later",
@@ -129,20 +133,26 @@ export const OUTCOME_PHRASES: Record<string, readonly string[]> = {
     "Review capped. Your move",
     "Review limit. Paused",
   ],
+  // The review errored; it never judged the work, so nothing here may sound
+  // like a rejection.
   "Ken’s review failed": [
-    "Ken’s review hit a snag",
-    "Ken’s review failed",
-    "Review error. Try again",
+    "Ken’s review hit an error",
     "Ken couldn’t review",
-    "Review failed. Retry",
-    "Review hit trouble",
+    "Review error. Try again",
+    "Ken’s review errored",
+    "Review errored. Retry",
+    "Ken’s review broke off",
   ],
 };
 OUTCOME_PHRASES["Changed · verification incomplete"] = OUTCOME_PHRASES["Verification incomplete"]!;
 
-export function outcomePhrase(label: string, seed: number): string | undefined {
+export function outcomePhrase(label: string, seed: number, checks = 0): string | undefined {
   const choices = OUTCOME_PHRASES[label];
   if (!choices) return undefined;
   const index = Number.isFinite(seed) ? Math.abs(Math.trunc(seed)) % choices.length : 0;
-  return choices[index];
+  const phrase = choices[index];
+  if (!phrase?.includes("{checks}")) return phrase;
+  const count = checks > 0 ? `${checks} check${checks === 1 ? "" : "s"}` : "checks";
+  const text = phrase.replace("{checks}", count);
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
