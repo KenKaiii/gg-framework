@@ -22,6 +22,18 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.118.0",
+    date: "2026-11-21",
+    items: [
+      '`Continue with ChatGPT` now works with every ChatGPT account and workspace you have. Pick `Use a different account or workspace` and I set GG Coder up for it, instead of hitting the old "only available to members of its workspace" wall.',
+      "The activity bar got a glow-up. Every step now has its own pixel glyph, from thinking to editing to running checks, and your token count is exact and rolls up live, like `25,734 tok`. The timer and token boxes never jump around, and a tick only shows when checks actually passed.",
+      "Speed-up jobs finish way sooner. When you ask me to make slow code fast, I now prove the new version matches on thousands of small inputs instead of re-running your slow original for minutes. My speed-up benchmark task usually took `150s` and now mostly wraps in under a minute.",
+      "`MiMo UltraSpeed` now runs on your Xiaomi Token Plan. Pro and Max plans use it at `10x` credits, and API Credits still work as a fallback.",
+      "Light mode now wears `Racing Red` to match dark mode, with deeper red text that stays easy to read on every surface.",
+      "Linux updates on Fedora and other `.rpm` installs just work again. I install them myself now, so newer RPM versions stop refusing the update.",
+    ],
+  },
+  {
     version: "0.117.1",
     date: "2026-11-20",
     items: [
