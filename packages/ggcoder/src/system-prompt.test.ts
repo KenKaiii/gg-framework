@@ -91,6 +91,7 @@ describe("buildSystemPrompt", () => {
   it("asks for one check after the edits and never a claimed one", async () => {
     const prompt = await buildSystemPrompt(await makeProject());
     expect(prompt).toContain("then run the relevant check once");
+    expect(prompt).toContain("run the slow original at most once");
     // The command shape is the host's job now (it re-runs a check whose exit
     // status could not count), so the prompt no longer teaches shell syntax,
     // and no longer defers checks to /commit, which left turns unverified.
@@ -632,12 +633,15 @@ describe("buildSystemPrompt", () => {
     // +100 for the light-comments rule (Haiku 5.5 arena 2026-10-28, 160/160 pass:
     // added comment lines −60%, output tokens −5.5%; RESULTS-2026-10-28-haiku55.md).
     // +~200 for where new skills go (project vs global, ask when unsaid), 2026-11.
-    expect(measurements.normal.characters).toBeLessThan(3_400);
+    // +~200 for the speed-up checking line (h2h perf, 2026-11-21: GG re-ran the
+    // slow original on huge inputs, 70-160s in 1 of 3 reps across gate runs).
+    expect(measurements.normal.characters).toBeLessThan(3_600);
     // Plan mode +300 for the 2026-11 refresh: research callers/tests, ask when
     // a requirement is unclear, keep the plan out of chat, verification commands.
     // +~200 for the new-skills line, as for normal above.
     // +~100 for "fix broken things without asking" (#152: needless fix-or-ignore asks).
-    expect(measurements.planMode.characters).toBeLessThan(4_200);
+    // +~200 for the speed-up checking line, as for normal above.
+    expect(measurements.planMode.characters).toBeLessThan(4_400);
     // +~120 for the parallel-calls fact shown with bash (agent-race, 2026-11-03).
     expect(measurements.typescriptProjectContextToolsSkills.characters).toBeLessThan(4_400);
     expect(measurements.planMode.characters).toBeGreaterThan(measurements.normal.characters);
