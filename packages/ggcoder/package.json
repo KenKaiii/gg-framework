@@ -161,7 +161,7 @@
     "playwright": "^1.65.0",
     "turndown": "^7.2.5",
     "turndown-plugin-gfm": "^1.0.2",
-    "unpdf": "^1.6.2"
+    "unpdf": "^2.2.1"
   },
   "devDependencies": {
     "@types/hast": "^3.0.4",
