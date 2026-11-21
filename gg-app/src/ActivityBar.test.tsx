@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { theme } from "./theme";
 import { INITIAL_ACTIVITY, type TaskActivity, type TaskPhase } from "./task-activity";
 import { describe, expect, it, vi } from "vitest";
-import { ActivityBar } from "./ActivityBar";
+import { ActivityBar, ActivityMeta } from "./ActivityBar";
 
 const baseProps = {
   running: true,
@@ -230,7 +230,7 @@ describe("ActivityBar task outcomes", () => {
     expect(screen.getByRole("status").textContent).toContain("No passing check yet");
     expect(screen.getByRole("status").textContent).not.toContain("tokens");
     expect(container.querySelector(".activity-elapsed")?.textContent).toBe("32s");
-    expect(screen.getByTitle("Output tokens").textContent).toBe("1.3k tok");
+    expect(screen.getByTitle("Output tokens").textContent).toBe("1,300 tok");
     expect(glyphOf(container)?.dataset.glyph).toBe("check");
     expect(screen.queryByRole("button", { name: "Details" })).toBeNull();
     expect(screen.queryByText("Run the missing tests before using the changes.")).toBeNull();
@@ -334,6 +334,58 @@ describe("ActivityBar check count", () => {
       />,
     );
     expect(screen.getByRole("status").textContent).toContain("3 checks passed. Nice.");
+  });
+});
+
+describe("ActivityMeta token count", () => {
+  const frames: FrameRequestCallback[] = [];
+  const runFrame = (at: number): void => {
+    for (const cb of frames.splice(0)) cb(at);
+  };
+  const setup = (focused: boolean) => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(focused);
+    vi.spyOn(performance, "now").mockReturnValue(0);
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  };
+  const teardown = (): void => {
+    frames.length = 0;
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  };
+
+  it("shows the exact total and rolls up to a new one", async () => {
+    const { act } = await import("@testing-library/react");
+    setup(true);
+    try {
+      const { rerender } = render(<ActivityMeta elapsedMs={1000} tokens={1000} />);
+      const count = (): string | null => screen.getByTitle("Output tokens").textContent;
+      expect(count()).toBe("1,000 tok");
+      rerender(<ActivityMeta elapsedMs={2000} tokens={25734} />);
+      act(() => runFrame(300));
+      const mid = Number(count()?.replace(/\D/g, ""));
+      expect(mid).toBeGreaterThan(1000);
+      expect(mid).toBeLessThan(25734);
+      // A clock tick mid-roll must not snap the count to its target.
+      rerender(<ActivityMeta elapsedMs={3000} tokens={25734} />);
+      expect(count()).not.toBe("25,734 tok");
+      act(() => runFrame(5000));
+      expect(count()).toBe("25,734 tok");
+    } finally {
+      teardown();
+    }
+  });
+
+  it("goes straight to the new total when the window isn't focused", () => {
+    setup(false);
+    try {
+      const { rerender } = render(<ActivityMeta elapsedMs={1000} tokens={1000} />);
+      rerender(<ActivityMeta elapsedMs={2000} tokens={25734} />);
+      expect(frames).toHaveLength(0);
+      expect(screen.getByTitle("Output tokens").textContent).toBe("25,734 tok");
+    } finally {
+      teardown();
+    }
   });
 });
 

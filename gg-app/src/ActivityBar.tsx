@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TaskActivity } from "./task-activity";
 import { theme } from "./theme";
 import { ActivityGlyph } from "./ActivityGlyph";
@@ -66,9 +66,33 @@ export function formatTokenCount(n: number): string {
   return String(n);
 }
 
+const TOKEN_TOTAL = new Intl.NumberFormat("en-US");
+
+/** An exact output-token total: "25,734 tok". */
+export function formatTokenTotal(n: number): string {
+  return `${TOKEN_TOTAL.format(Math.max(0, Math.round(n)))} tok`;
+}
+
+/** Keep a well at least as wide as the widest value it has shown this run. */
+function growWell(el: HTMLElement | null, widest: { current: number }): void {
+  if (!el) return;
+  el.style.minWidth = "";
+  const natural = Math.ceil(el.getBoundingClientRect().width);
+  // A hidden well (narrow window) measures 0; keep what it already had.
+  if (natural === 0) {
+    if (widest.current > 0) el.style.minWidth = `${widest.current}px`;
+    return;
+  }
+  widest.current = Math.max(widest.current, natural);
+  el.style.minWidth = `${widest.current}px`;
+}
+
 /**
- * Elapsed time and output tokens, each in a sunk well sized (in CSS) for its
- * longest value, so a ticking clock or a changing label never moves them.
+ * Elapsed time and output tokens, each in a sunk well pinned right. A well
+ * starts snug and only widens when its value needs more room, never shrinking
+ * back mid-run ("10m" after "9m 59s" would otherwise jump), so the row's right
+ * edge never moves. Tokens are exact and roll up to each new total, since
+ * they arrive a whole turn at a time.
  */
 export function ActivityMeta({
   elapsedMs,
@@ -77,18 +101,77 @@ export function ActivityMeta({
   elapsedMs: number;
   tokens: number;
 }): React.ReactElement {
+  const motion = useMotionLevel();
+  const timeRef = useRef<HTMLSpanElement>(null);
+  const tokRef = useRef<HTMLSpanElement>(null);
+  const tokText = useRef<HTMLSpanElement>(null);
+  const timeWidest = useRef(0);
+  const tokWidest = useRef(0);
+  const lastElapsed = useRef(elapsedMs);
+  const shown = useRef(tokens);
+  const shownLength = useRef(0);
+  // The count's text is written directly while it rolls; React only sets the
+  // first value, so a clock tick mid-roll never snaps it to the target.
+  const [initialTokens] = useState(() => formatTokenTotal(tokens));
+
+  useLayoutEffect(() => {
+    // A clock that went backwards is a new run: let both wells start snug again.
+    if (elapsedMs < lastElapsed.current) {
+      timeWidest.current = 0;
+      tokWidest.current = 0;
+      shownLength.current = 0;
+    }
+    lastElapsed.current = elapsedMs;
+    growWell(timeRef.current, timeWidest);
+    growWell(tokRef.current, tokWidest);
+  }, [elapsedMs]);
+
+  useEffect(() => {
+    const paint = (n: number): void => {
+      shown.current = n;
+      const text = formatTokenTotal(n);
+      if (tokText.current) tokText.current.textContent = text;
+      if (text.length !== shownLength.current) {
+        shownLength.current = text.length;
+        growWell(tokRef.current, tokWidest);
+      }
+    };
+    const from = shown.current;
+    const animate =
+      motion === "full" &&
+      tokens > from &&
+      !(typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches);
+    if (!animate) {
+      if (tokens < from) tokWidest.current = 0;
+      paint(tokens);
+      return;
+    }
+    // Bigger jumps roll a little longer, never past 1.6s.
+    const duration = Math.min(1600, 450 + Math.log10(tokens - from + 1) * 260);
+    const start = performance.now();
+    let frame = 0;
+    const step = (now: number): void => {
+      const t = Math.min(1, (now - start) / duration);
+      paint(from + (tokens - from) * (1 - Math.pow(1 - t, 3)));
+      if (t < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [tokens, motion]);
+
   return (
     <span className="activity-meta dissolve-in">
-      <span className="well activity-elapsed" title="Elapsed time">
-        <span>{formatElapsed(elapsedMs)}</span>
+      <span ref={timeRef} className="well activity-elapsed" title="Elapsed time">
+        {formatElapsed(elapsedMs)}
       </span>
       {/* Held in place before the first count, so its arrival moves nothing. */}
       <span
+        ref={tokRef}
         className="well activity-token-count"
         title="Output tokens"
         style={tokens > 0 ? undefined : { visibility: "hidden" }}
       >
-        <span>{`${formatTokenCount(tokens)} tok`}</span>
+        <span ref={tokText}>{initialTokens}</span>
       </span>
     </span>
   );

@@ -150,14 +150,16 @@
   --text-muted: #4f5761;
   --text-dim: #59616b;
 
-  --primary: #2848d8;
-  --primary-hi: #3a5af0;
+  /* Racing Red, as in dark. Accent text deepens the red to 4.75:1 on every
+     light surface; hover deepens it further (5.77:1). */
+  --primary: #c0122c;
+  --primary-hi: #a8102a;
   --on-primary: #ffffff;
-  --primary-fill: #8fa3ff;
-  --primary-fill-hi: #a9b8ff;
-  --on-primary-fill: #050a2e;
-  /* A light theme's links and accent text: the dark cobalt. */
-  --link: #2848d8;
+  /* Filled accent controls: the same Racing Red and ink as dark. */
+  --primary-fill: #ef233c;
+  --primary-fill-hi: #d61f36;
+  --on-primary-fill: #fffafa;
+  --link: #c0122c;
 
   --success: #1a6c33;
   --on-success: #ffffff;
@@ -168,10 +170,10 @@
   --stop-fill-hi: #cc2f22;
   --caution: #9c4700;
   --on-error: #ffffff;
-  --secondary: #2848d8;
+  --secondary: #14171b;
   --info: #0b6b62;
 
-  --glow: #8ea2e6;
+  --glow: #a9b0ba;
 
   --ken: #0b6b74;
   --ken-fill: #0b6b74;
@@ -192,7 +194,7 @@
   --well-shadow: rgba(30, 45, 70, 0.28);
   --led-off: #bfc6cf;
   --deck-shadow: 0 1px 0 rgba(10, 20, 40, 0.08), 0 14px 28px -16px rgba(30, 45, 70, 0.45);
-  --mark: rgba(40, 72, 216, 0.16);
+  --mark: rgba(239, 35, 60, 0.16);
 
   --shadow-sm: 0 2px 6px rgba(30, 45, 70, 0.18);
   --shadow-md: 0 8px 28px rgba(30, 45, 70, 0.2);
@@ -483,7 +485,7 @@
 }
 
 /* ── Button system (shared) ───────────────────────────────────────────────
-   .btn is the base; pair with .btn-primary (cobalt key) or .btn-ghost (alloy
+   .btn is the base; pair with .btn-primary (accent key) or .btn-ghost (alloy
    key). Alloy keys: a lit top edge and a dark lip below, so a control reads
    as raised off the surface it sits on. Hover changes the fill only — no
    movement. */
@@ -3687,7 +3689,7 @@ select {
     0 0 0 3px rgba(5, 117, 230, 0.5),
     0 2px 9px rgba(0, 0, 0, 0.72);
 }
-/* Modal actions are Alloy keys: neutral by default, .primary = cobalt. */
+/* Modal actions are Alloy keys: neutral by default, .primary = accent. */
 .modal-btn {
   display: inline-flex;
   align-items: center;
@@ -8700,8 +8702,8 @@ select {
     display: none;
   }
 }
-/* Pinned right; each well is as wide as its longest value (the hidden
-   ::before), so a ticking clock never nudges the row. */
+/* Pinned right. Each well grows (never shrinks) to its widest value this
+   run, set inline by ActivityMeta, with the value kept to its right edge. */
 .activity-meta {
   flex: 0 0 auto;
   display: flex;
@@ -8711,21 +8713,7 @@ select {
   white-space: nowrap;
 }
 .activity-meta .well {
-  display: inline-grid;
-  justify-items: end;
-}
-.activity-meta .well > span,
-.activity-meta .well::before {
-  grid-area: 1 / 1;
-}
-.activity-meta .well::before {
-  visibility: hidden;
-}
-.activity-elapsed::before {
-  content: "99m 59s";
-}
-.activity-token-count::before {
-  content: "999.9k tok";
+  text-align: right;
 }
 @container (max-width: 480px) {
   .activity-token-count,

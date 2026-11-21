@@ -43,7 +43,6 @@
     "rehype-highlight": "^7.0.0",
     "remark-gfm": "^4.0.0",
     "remend": "1.4.0",
-    "thinking-orbs": "0.3.2",
     "three": "0.187.0"
   },
   "devDependencies": {

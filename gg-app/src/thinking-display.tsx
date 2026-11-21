@@ -1,7 +1,7 @@
 /**
  * How a thinking level reads on screen: a word and a row of dots, one per level
  * the model supports, lit up to the current one. Off lights none. The colours
- * carry over from the old footer's "Thinking high" text: muted for low, cobalt
+ * carry over from the old footer's "Thinking high" text: muted for low, accent
  * for medium, amber for high, pink for the top rungs.
  */
 const LABELS: Readonly<Record<string, string>> = {

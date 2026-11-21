@@ -1119,7 +1119,7 @@
   border-top: 1px dashed var(--border-strong);
 }
 /* Play/pause is a key like every other: same size, corner and raised edge.
-   Its cobalt fill is what marks it as the main control. */
+   Its accent fill is what marks it as the main control. */
 .player .key-icon {
   flex: none;
   width: 30px;

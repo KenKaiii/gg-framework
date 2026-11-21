@@ -30,7 +30,7 @@
 }
 :root[data-theme="light"] .providers-bay {
   --bay-port-glow: 10%;
-  --bay-spark: #1b2d9e;
+  --bay-spark: #7a0d1c;
   --bay-dim: #8a93a1;
 }
 .login-scroll .providers-bay {

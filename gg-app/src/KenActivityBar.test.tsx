@@ -24,7 +24,7 @@ describe("KenActivityBar", () => {
   it("matches the main bar's running row, with Stop left to the composer's send key", () => {
     const { container } = render(<KenActivityBar {...baseProps} />);
     expect(container.querySelector(".task-activity > .statusrow.running")).toBeTruthy();
-    expect(screen.getByTitle("Output tokens").textContent).toBe("1.2k tok");
+    expect(screen.getByTitle("Output tokens").textContent).toBe("1,234 tok");
     expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /tool panel/ })).toBeNull();
   });
