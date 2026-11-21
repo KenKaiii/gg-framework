@@ -38,8 +38,11 @@ overrides:
   protobufjs: ^7.6.1
   tar: ^7.5.19
   ws: ^8.21.0
-  hono: ^4.13.1
-  fast-uri: ^3.1.5
+  hono: ^4.13.16
+  "@hono/node-server": ^2.1.6
+  node-forge: ^1.4.3
+  source-map-js: ^1.2.2
+  fast-uri: ^3.1.9
   picomatch: ^2.3.2
 
 patchedDependencies:

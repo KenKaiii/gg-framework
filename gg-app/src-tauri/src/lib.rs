@@ -156,6 +156,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             daemon::sidecar_port,
             daemon::retry_window_session,
+            commands::update::update_installs_rpm,
+            commands::update::install_rpm_update,
             commands::files::dropped_path_info,
             paths::permissions_status,
             paths::open_permissions_settings,

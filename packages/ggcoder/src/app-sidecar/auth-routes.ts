@@ -123,11 +123,14 @@ export function handleAuthRoutes(
   }
 
   if (method === "POST" && url === "/auth/oauth/start") {
-    void readBody(req, res).then((raw) => {
+    void readBody(req, res).then(async (raw) => {
       if (raw === null) return;
       let provider = "";
+      let account: string | undefined;
       try {
-        provider = (JSON.parse(raw) as { provider?: string }).provider ?? "";
+        const body = JSON.parse(raw) as { provider?: string; account?: string };
+        provider = body.provider ?? "";
+        account = body.account;
       } catch {
         json(res, 400, { error: "invalid JSON body" });
         return;
@@ -136,6 +139,14 @@ export function handleAuthRoutes(
       if (!meta || !meta.methods.includes("oauth")) {
         json(res, 400, { error: "provider does not support OAuth" });
         return;
+      }
+      // Another ChatGPT account or workspace, asked for while this window is
+      // still waiting on the browser (OpenAI's page may be a dead end saying
+      // the app is only for another workspace): end that wait and start over.
+      const newAccount = provider === "openai" && account === "new";
+      if (ctx.oauthInFlight && newAccount && ctx.oauthAttempt) {
+        ctx.oauthAttempt.abort.abort();
+        await ctx.oauthAttempt.done;
       }
       if (ctx.oauthInFlight) {
         json(res, 409, { error: "a login is already in progress" });
@@ -153,6 +164,9 @@ export function handleAuthRoutes(
       }
       ctx.oauthInFlight = true;
       ctx.oauthInFlightProviders.add(provider);
+      const abort = new AbortController();
+      let settle = (): void => {};
+      ctx.oauthAttempt = { abort, done: new Promise<void>((resolve) => (settle = resolve)) };
       json(res, 202, { accepted: true });
       void (async () => {
         const cb = ctx.authCallbacks();
@@ -162,8 +176,14 @@ export function handleAuthRoutes(
           else if (provider === "openai") {
             // Continue with ChatGPT: stored apart from the OpenAI API key so the
             // two coexist. The current sign-in's ID token skips the account picker.
-            const previous = await ctx.auth.getCredentials(OPENAI_CHATGPT_KEY);
-            const creds = await loginChatGPT(cb, previous ? { previous } : {});
+            const previous = newAccount
+              ? undefined
+              : await ctx.auth.getCredentials(OPENAI_CHATGPT_KEY);
+            const creds = await loginChatGPT(cb, {
+              ...(previous ? { previous } : {}),
+              ...(newAccount ? { newAccount } : {}),
+              signal: abort.signal,
+            });
             await ctx.auth.setCredentials(OPENAI_CHATGPT_KEY, creds);
           } else {
             throw new Error(`Sign-in not implemented for ${provider}`);
@@ -176,6 +196,8 @@ export function handleAuthRoutes(
           // The OAuth provider's models just became selectable everywhere.
           ctx.broadcastAll("models_change", {});
         } catch (err) {
+          // Replaced by a new attempt from this window: that one reports for both.
+          if (abort.signal.aborted) return;
           // Deliberately session-scoped: this is the outcome of ONE window's
           // attempt. Another window that never pressed Connect has nothing to
           // show an error about, and its modal correctly still offers login.
@@ -197,6 +219,8 @@ export function handleAuthRoutes(
           ctx.oauthInFlight = false;
           ctx.oauthInFlightProviders.delete(provider);
           ctx.pendingCode = null;
+          ctx.oauthAttempt = null;
+          settle();
         }
       })();
     });

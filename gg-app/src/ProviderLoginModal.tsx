@@ -227,14 +227,18 @@ export function ProviderLoginModal({
     }
   }
 
-  async function startOAuth(): Promise<void> {
-    if (busy) return;
+  // `account: "new"` registers another ChatGPT account or workspace, and may
+  // replace a sign-in that is still waiting on the browser.
+  async function startOAuth(account?: "new"): Promise<void> {
+    if (busy && account !== "new") return;
     setBusy(true);
     setError(null);
+    setNeedCode(false);
     setStatus("Starting login…");
     startedSignIn.current = true;
     try {
-      await authOAuthStart(provider.value);
+      if (account) await authOAuthStart(provider.value, { account });
+      else await authOAuthStart(provider.value);
     } catch (e) {
       startedSignIn.current = false;
       setError(e instanceof Error ? e.message : String(e));
@@ -482,6 +486,23 @@ export function ProviderLoginModal({
           {!busy && !status && (
             <div className="login-modal-desc">
               You'll be sent to {provider.label} in your browser to authorize access.
+            </div>
+          )}
+          {/* Each ChatGPT registration is bound to one account and workspace;
+              picking another in OpenAI's page ends on its "only available to
+              members of its workspace" error, with no way back to the app. */}
+          {provider.value === "openai" && (
+            <div className="login-method-note">
+              {busy || needCode
+                ? "ChatGPT says the app is only for another workspace? "
+                : "Switching ChatGPT accounts or workspaces? "}
+              <button
+                className="link-btn"
+                style={LINK_STYLE}
+                onClick={() => void startOAuth("new")}
+              >
+                Use a different account or workspace
+              </button>
             </div>
           )}
           {needCode && (

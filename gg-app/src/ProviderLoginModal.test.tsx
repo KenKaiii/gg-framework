@@ -278,6 +278,22 @@ describe("ProviderLoginModal — first ChatGPT sign-in", () => {
 
   beforeEach(() => localStorage.removeItem("gg-chatgpt-plan-welcomed"));
 
+  // GitHub #156: a sign-in stuck on OpenAI's "only available to members of
+  // its workspace" page needs a way to register another account.
+  it("offers a different account or workspace, even while waiting on the browser", async () => {
+    vi.mocked(subscribe).mockImplementation(() => () => {});
+    vi.mocked(authOAuthStart).mockResolvedValue(undefined);
+    render(<ProviderLoginModal provider={OPENAI} onClose={vi.fn()} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Connect" })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Continue with ChatGPT" }));
+    await waitFor(() => expect(authOAuthStart).toHaveBeenCalledWith("openai"));
+    expect(screen.getByText(/only for another workspace/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Use a different account or workspace" }));
+    await waitFor(() =>
+      expect(authOAuthStart).toHaveBeenLastCalledWith("openai", { account: "new" }),
+    );
+  });
+
   it("confirms plan use once, with Manage usage and Got it", async () => {
     const onClose = vi.fn();
     await signIn(onClose);

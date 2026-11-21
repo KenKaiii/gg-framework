@@ -12,6 +12,7 @@ import {
   loginChatGPT,
   refreshChatGPTToken,
   revokeChatGPTSignIn,
+  savedChatGPTAccounts,
 } from "./openai.js";
 import type { OAuthLoginCallbacks } from "./types.js";
 
@@ -171,8 +172,9 @@ describe("Continue with ChatGPT", () => {
     });
     expect(creds.scopes).toContain("chatgpt.tokens.use.direct");
     expect(JSON.parse(await fs.readFile(files.registrationFile, "utf-8"))).toEqual({
-      clientId: "oaiapp_issued",
-      subject: "user-sub-1",
+      registrations: [
+        { clientId: "oaiapp_issued", subject: "user-sub-1", usedAt: expect.any(Number) },
+      ],
     });
   }, 20_000);
 
@@ -267,6 +269,117 @@ describe("Continue with ChatGPT", () => {
   }, 20_000);
 });
 
+// Regression for GitHub #156: "This app is only available to members of its
+// workspace" on every sign-in once a registration from another account or
+// workspace was saved. OpenAI binds an issued client to the workspace it was
+// registered in and never redirects back from that page.
+describe("Continue with ChatGPT across accounts and workspaces", () => {
+  const withEmail =
+    (email: string, sub = "user-sub-1") =>
+    (nonce: string) => ({
+      iss: "https://auth.openai.com",
+      aud: "",
+      sub,
+      email,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      nonce,
+    });
+  const issued = (id: string) => (auth: URL) =>
+    `code=abc&state=${auth.searchParams.get("state")}&client_id=${id}&scope=${encodeURIComponent(PLAN_SCOPES)}`;
+  const returning = (auth: URL) => `code=def&state=${auth.searchParams.get("state")}`;
+  /** The fake server's claims need the audience the exchange used. */
+  const serverFor = (claims: (nonce: string) => Record<string, unknown>, client: string) =>
+    fakeAuthServer({ idTokenClaims: (nonce) => ({ ...claims(nonce), aud: client }) });
+
+  it("registers afresh for a different account or workspace and keeps both", async () => {
+    const a = serverFor(withEmail("work@example.com"), "oaiapp_work");
+    await loginChatGPT(pasteCallbacks(issued("oaiapp_work"), a.setNonce).callbacks, files);
+
+    const b = serverFor(withEmail("me@example.com", "user-sub-2"), "oaiapp_personal");
+    const two = pasteCallbacks(issued("oaiapp_personal"), b.setNonce);
+    const creds = await loginChatGPT(two.callbacks, { ...files, newAccount: true });
+
+    const auth = two.authUrl();
+    expect(auth.searchParams.get("client_id")).toBe("dynamic_agent_client");
+    expect(auth.searchParams.get("agent_name_hint")).toBe("GG Coder");
+    expect(auth.searchParams.get("login_hint")).toBeNull();
+    expect(creds.clientId).toBe("oaiapp_personal");
+    const saved = JSON.parse(await fs.readFile(files.registrationFile, "utf-8"));
+    expect(saved.registrations.map((r: { clientId: string }) => r.clientId)).toEqual([
+      "oaiapp_personal",
+      "oaiapp_work",
+    ]);
+  }, 20_000);
+
+  it("reuses the current sign-in's own registration, not just the newest", async () => {
+    const a = serverFor(withEmail("work@example.com"), "oaiapp_work");
+    const work = await loginChatGPT(
+      pasteCallbacks(issued("oaiapp_work"), a.setNonce).callbacks,
+      files,
+    );
+    const b = serverFor(withEmail("me@example.com", "user-sub-2"), "oaiapp_personal");
+    await loginChatGPT(pasteCallbacks(issued("oaiapp_personal"), b.setNonce).callbacks, {
+      ...files,
+      newAccount: true,
+    });
+
+    const c = serverFor(withEmail("work@example.com"), "oaiapp_work");
+    const three = pasteCallbacks(returning, c.setNonce);
+    await loginChatGPT(three.callbacks, { ...files, previous: work });
+
+    const auth = three.authUrl();
+    expect(auth.searchParams.get("client_id")).toBe("oaiapp_work");
+    expect(auth.searchParams.get("id_token_hint")).toBe(work.idToken);
+    expect(auth.searchParams.get("login_hint")).toBe("work@example.com");
+  }, 20_000);
+
+  it("pre-selects the last account on a fresh sign-in, without another account's ID token", async () => {
+    const a = serverFor(withEmail("work@example.com"), "oaiapp_work");
+    await loginChatGPT(pasteCallbacks(issued("oaiapp_work"), a.setNonce).callbacks, files);
+
+    const b = serverFor(withEmail("work@example.com"), "oaiapp_work");
+    const two = pasteCallbacks(returning, b.setNonce);
+    await loginChatGPT(two.callbacks, files);
+
+    const auth = two.authUrl();
+    expect(auth.searchParams.get("client_id")).toBe("oaiapp_work");
+    expect(auth.searchParams.get("login_hint")).toBe("work@example.com");
+    expect(auth.searchParams.get("id_token_hint")).toBeNull();
+  }, 20_000);
+
+  it("still reads the older single-registration file", async () => {
+    await fs.writeFile(
+      files.registrationFile,
+      JSON.stringify({ clientId: "oaiapp_old", subject: "user-sub-1" }),
+    );
+    const s = serverFor(withEmail("old@example.com"), "oaiapp_old");
+    const holder = pasteCallbacks(returning, s.setNonce);
+    await loginChatGPT(holder.callbacks, files);
+    expect(holder.authUrl().searchParams.get("client_id")).toBe("oaiapp_old");
+    expect(await savedChatGPTAccounts(files.registrationFile)).toEqual(["old@example.com"]);
+  }, 20_000);
+
+  it("drops only the registration that turned out to be another account's", async () => {
+    const a = serverFor(withEmail("work@example.com"), "oaiapp_work");
+    await loginChatGPT(pasteCallbacks(issued("oaiapp_work"), a.setNonce).callbacks, files);
+    const b = serverFor(withEmail("me@example.com", "user-sub-2"), "oaiapp_personal");
+    await loginChatGPT(pasteCallbacks(issued("oaiapp_personal"), b.setNonce).callbacks, {
+      ...files,
+      newAccount: true,
+    });
+
+    // The newest (personal) registration is reused, but a third account signs in.
+    const c = serverFor(withEmail("other@example.com", "user-sub-3"), "oaiapp_personal");
+    await expect(
+      loginChatGPT(pasteCallbacks(returning, c.setNonce).callbacks, files),
+    ).rejects.toThrow(/different account or workspace/);
+    const saved = JSON.parse(await fs.readFile(files.registrationFile, "utf-8"));
+    expect(saved.registrations.map((r: { clientId: string }) => r.clientId)).toEqual([
+      "oaiapp_work",
+    ]);
+  }, 20_000);
+});
+
 // Regression for Roamies #17: `ChatGPT token exchange failed (400): { "error": "invalid_grant" }`.
 describe("Continue with ChatGPT when OpenAI refuses the code", () => {
   it("authorizes once more with the issued app ID, then saves the registration", async () => {
@@ -290,8 +403,9 @@ describe("Continue with ChatGPT when OpenAI refuses the code", () => {
     expect(exchanges[1]!.get("code_verifier")).not.toBe(exchanges[0]!.get("code_verifier"));
     expect(creds.clientId).toBe("oaiapp_issued");
     expect(JSON.parse(await fs.readFile(files.registrationFile, "utf-8"))).toEqual({
-      clientId: "oaiapp_issued",
-      subject: "user-sub-1",
+      registrations: [
+        { clientId: "oaiapp_issued", subject: "user-sub-1", usedAt: expect.any(Number) },
+      ],
     });
   }, 20_000);
 

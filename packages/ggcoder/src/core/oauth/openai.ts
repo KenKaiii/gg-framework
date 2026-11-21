@@ -6,4 +6,5 @@ export {
   loginChatGPT,
   refreshChatGPTToken,
   revokeChatGPTSignIn,
+  savedChatGPTAccounts,
 } from "@kenkaiiii/gg-core";

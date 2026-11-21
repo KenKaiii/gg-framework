@@ -70,9 +70,18 @@ export class ChatGPTSignInError extends Error {
   }
 }
 
+/**
+ * One registration of GG Coder in a ChatGPT account. OpenAI binds each issued
+ * client ID to the account and workspace chosen when it was registered, so a
+ * machine keeps one per account/workspace it has signed in with.
+ */
 interface ChatGPTRegistration {
   clientId: string;
   subject: string;
+  /** Pre-selects the account in OpenAI's picker on a later sign-in. */
+  email?: string;
+  /** When it last completed a sign-in; the newest is the default. */
+  usedAt?: number;
 }
 
 export interface ChatGPTLoginOptions {
@@ -80,8 +89,15 @@ export interface ChatGPTLoginOptions {
   hostIdFile?: string;
   /** Defaults to `~/.gg/openai-chatgpt-client.json`. */
   registrationFile?: string;
-  /** The current sign-in, if any: its ID token skips the account picker. */
-  previous?: Pick<OAuthCredentials, "idToken">;
+  /** The current sign-in, if any: its registration is reused and its ID token skips the account picker. */
+  previous?: Pick<OAuthCredentials, "idToken" | "clientId">;
+  /**
+   * Register afresh for another ChatGPT account or workspace instead of
+   * reusing a saved registration. A saved one only works for the workspace it
+   * was registered in; OpenAI shows "only available to members of its
+   * workspace" for any other, without coming back to the app.
+   */
+  newAccount?: boolean;
   /** Aborting closes the callback listener at once and rejects with an `AbortError`. */
   signal?: AbortSignal;
 }
@@ -124,16 +140,63 @@ export async function getChatGPTHostId(file = defaultHostIdFile()): Promise<stri
   return (await fs.readFile(file, "utf-8")).trim();
 }
 
-async function readRegistration(file: string): Promise<ChatGPTRegistration | undefined> {
+function asRegistration(value: unknown): ChatGPTRegistration | undefined {
+  const v = value as Partial<ChatGPTRegistration> | null;
+  if (!v || typeof v.clientId !== "string" || typeof v.subject !== "string") return undefined;
+  return {
+    clientId: v.clientId,
+    subject: v.subject,
+    ...(typeof v.email === "string" && v.email ? { email: v.email } : {}),
+    ...(typeof v.usedAt === "number" ? { usedAt: v.usedAt } : {}),
+  };
+}
+
+/** Saved registrations, newest first. Reads the older single-registration file too. */
+async function readRegistrations(file: string): Promise<ChatGPTRegistration[]> {
   try {
-    const value = JSON.parse(await fs.readFile(file, "utf-8")) as Partial<ChatGPTRegistration>;
-    if (typeof value.clientId === "string" && typeof value.subject === "string") {
-      return { clientId: value.clientId, subject: value.subject };
-    }
+    const value = JSON.parse(await fs.readFile(file, "utf-8")) as {
+      registrations?: unknown[];
+    };
+    const list = Array.isArray(value.registrations)
+      ? value.registrations.map(asRegistration)
+      : [asRegistration(value)];
+    return list
+      .filter((r): r is ChatGPTRegistration => r !== undefined)
+      .sort((a, b) => (b.usedAt ?? 0) - (a.usedAt ?? 0));
   } catch {
     // Missing or unreadable: register again.
+    return [];
   }
-  return undefined;
+}
+
+async function writeRegistrations(file: string, list: ChatGPTRegistration[]): Promise<void> {
+  if (list.length === 0) {
+    await fs.unlink(file).catch(() => {});
+    return;
+  }
+  await writePrivateFile(file, JSON.stringify({ registrations: list }));
+}
+
+/** Emails of the ChatGPT accounts this machine has signed in with, newest first. */
+export async function savedChatGPTAccounts(file = defaultRegistrationFile()): Promise<string[]> {
+  return (await readRegistrations(file)).map((r) => r.email ?? "a ChatGPT account");
+}
+
+/**
+ * Which saved registration a sign-in should use: the current sign-in's own,
+ * else the most recently used (pre-selected in OpenAI's picker by its email).
+ * None for a new account or a machine that has never registered.
+ */
+function chooseRegistration(
+  saved: readonly ChatGPTRegistration[],
+  options: ChatGPTLoginOptions,
+): { registration?: ChatGPTRegistration; current: boolean } {
+  if (options.newAccount) return { current: false };
+  const own = options.previous?.clientId
+    ? saved.find((r) => r.clientId === options.previous?.clientId)
+    : undefined;
+  if (own) return { registration: own, current: true };
+  return { registration: saved[0], current: false };
 }
 
 /**
@@ -150,7 +213,8 @@ export async function loginChatGPT(
   const { signal } = options;
   const hostId = await getChatGPTHostId(options.hostIdFile);
   const registrationFile = options.registrationFile ?? defaultRegistrationFile();
-  const registration = await readRegistration(registrationFile);
+  const saved = await readRegistrations(registrationFile);
+  const { registration, current } = chooseRegistration(saved, options);
   // The app ID OpenAI issued in a first registration whose code it then refused.
   let issuedClientId: string | undefined;
 
@@ -168,9 +232,10 @@ export async function loginChatGPT(
       url.searchParams.set("client_id", knownClientId ?? REGISTRATION_CLIENT_ID);
       if (!knownClientId) url.searchParams.set("agent_name_hint", AGENT_NAME);
       url.searchParams.set("ext_agent_host_id", hostId);
-      if (registration && options.previous?.idToken) {
+      if (registration && current && options.previous?.idToken) {
         url.searchParams.set("id_token_hint", options.previous.idToken);
       }
+      if (registration?.email) url.searchParams.set("login_hint", registration.email);
       url.searchParams.set("response_type", "code");
       url.searchParams.set("redirect_uri", redirectUri);
       url.searchParams.set("scope", SCOPES);
@@ -218,20 +283,25 @@ export async function loginChatGPT(
       const subject = String(claims.sub ?? "");
       if (!subject) throw new Error("ChatGPT ID token has no subject.");
       if (registration && registration.subject !== subject) {
-        // The saved registration belongs to another account; register afresh next time.
-        await fs.unlink(registrationFile).catch(() => {});
+        // The saved registration belongs to another account; drop it so the next try registers afresh.
+        await writeRegistrations(
+          registrationFile,
+          saved.filter((r) => r.clientId !== registration.clientId),
+        );
         await revokeChatGPTSignIn({ refreshToken: tokens.refreshToken, clientId });
         throw new Error(
-          "That was a different ChatGPT account. Continue with ChatGPT again to connect it.",
+          "That was a different ChatGPT account. Choose Use a different account or workspace to connect it.",
         );
       }
       if (!tokens.scopes.includes(CHATGPT_PLAN_SCOPE)) {
         await revokeChatGPTSignIn({ refreshToken: tokens.refreshToken, clientId });
         throw new ChatGPTPlanNotEnabledError();
       }
-      if (!registration) {
-        await writePrivateFile(registrationFile, JSON.stringify({ clientId, subject }));
-      }
+      const email = typeof claims.email === "string" ? claims.email : undefined;
+      await writeRegistrations(registrationFile, [
+        { clientId, subject, ...(email ? { email } : {}), usedAt: Date.now() },
+        ...saved.filter((r) => r.clientId !== clientId),
+      ]);
 
       return {
         accessToken: tokens.accessToken,

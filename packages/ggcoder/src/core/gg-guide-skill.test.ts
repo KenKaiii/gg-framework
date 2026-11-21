@@ -165,6 +165,7 @@ const COVERAGE: Record<string, string> = {
   InitGitModal: "code-mode.md",
   HookNotice: "code-mode.md",
   ActivityBar: "code-mode.md",
+  ActivityGlyph: "code-mode.md",
   WorkingBeam: "code-mode.md",
   FoldersPanel: "code-mode.md",
   LivePreviewPanel: "code-mode.md",

@@ -2453,6 +2453,7 @@ async function createSession(
   // resolves when the webview POSTs /auth/oauth/code.
   let oauthInFlight = false;
   let pendingCode: ((code: string) => void) | null = null;
+  let oauthAttempt: SessionRouteContext["oauthAttempt"] = null;
 
   function authCallbacks(): OAuthLoginCallbacks {
     return {
@@ -2869,6 +2870,12 @@ async function createSession(
     },
     set pendingCode(v) {
       pendingCode = v;
+    },
+    get oauthAttempt() {
+      return oauthAttempt;
+    },
+    set oauthAttempt(v) {
+      oauthAttempt = v;
     },
     elicitations,
     localStatePayload,

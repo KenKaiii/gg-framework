@@ -1428,9 +1428,15 @@ export async function openRouterCatalog(
  * login hub the sidecar may still be booting, and invoking early throws the
  * "sidecar not ready" error users hit when clicking Continue.
  */
-export async function authOAuthStart(provider: string): Promise<void> {
+export async function authOAuthStart(
+  provider: string,
+  options: { account?: "new" } = {},
+): Promise<void> {
   await waitForReady();
-  await invoke("agent_auth_oauth_start", { provider });
+  await invoke("agent_auth_oauth_start", {
+    provider,
+    ...(options.account ? { account: options.account } : {}),
+  });
 }
 
 /** Submit a pasted OAuth code to an in-flight login. Sidecar-proxied like start. */

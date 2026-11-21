@@ -142,6 +142,8 @@ export interface SessionRouteContext {
   readonly oauthInFlightProviders: Set<string>;
   readonly authCallbacks: () => OAuthLoginCallbacks;
   pendingCode: ((code: string) => void) | null;
+  /** This window's sign-in in progress: aborting it ends the wait for the browser. */
+  oauthAttempt: { readonly abort: AbortController; readonly done: Promise<void> } | null;
   readonly elicitations: ElicitationBridge;
   readonly localStatePayload: () => {
     endpoints: {

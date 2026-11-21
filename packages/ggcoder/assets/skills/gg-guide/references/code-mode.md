@@ -149,6 +149,8 @@ Custom commands: each Markdown file in the project's `.gg/commands/` folder beco
 ## Activity bar and working beam
 
 - The activity bar above the composer shows what GG is doing. Idle, it shows lines like **Ready for work** or **Your move**. During a run it shows lines like **Working…** and a timer, then a short summary when it finishes.
+- A small pixel icon at the start of the bar shows the kind of step: thinking, writing, reading code, editing, running a command, running checks, agents and so on. A tick appears only when checks passed; a finished answer, edit or tool run shows its own icon instead.
+- On the right, the bar shows the elapsed time and the exact number of output tokens. The count rolls up each time the model reports a new total.
 - While GG, Ken or an Autopilot review is running, a light beam moves around the composer. It is decorative only.
 
 ## Sub-agents

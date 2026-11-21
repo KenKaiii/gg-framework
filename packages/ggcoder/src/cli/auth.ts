@@ -9,6 +9,7 @@ import {
   CHATGPT_USAGE_URL,
   ChatGPTPlanNotEnabledError,
   loginChatGPT,
+  savedChatGPTAccounts,
   revokeChatGPTSignIn,
 } from "../core/oauth/openai.js";
 import {
@@ -157,8 +158,25 @@ export async function runLogin(): Promise<void> {
 
     if (dual && useOAuth) {
       try {
-        const previous = await authStorage.getCredentials(OPENAI_CHATGPT_KEY);
-        const creds = await loginChatGPT(callbacks, previous ? { previous } : {});
+        // A registration only works for the account and workspace it was made
+        // in, so offer a fresh one whenever one is saved.
+        const [last] = await savedChatGPTAccounts();
+        const newAccount =
+          last !== undefined &&
+          (
+            await rl.question(
+              chalk.hex("#60a5fa")(
+                `Continue as (1) ${last} [default] or (2) a different ChatGPT account or workspace? `,
+              ),
+            )
+          ).trim() === "2";
+        const previous = newAccount
+          ? undefined
+          : await authStorage.getCredentials(OPENAI_CHATGPT_KEY);
+        const creds = await loginChatGPT(callbacks, {
+          ...(previous ? { previous } : {}),
+          ...(newAccount ? { newAccount } : {}),
+        });
         await authStorage.setCredentials(OPENAI_CHATGPT_KEY, creds);
       } catch (err) {
         if (!(err instanceof ChatGPTPlanNotEnabledError)) throw err;

@@ -69,6 +69,7 @@ function authContext() {
     oauthInFlight: false,
     oauthInFlightProviders: new Set<string>(),
     pendingCode: null,
+    oauthAttempt: null as { abort: AbortController; done: Promise<void> } | null,
     authCallbacks: (): OAuthLoginCallbacks => ({
       onOpenUrl: (url) => events.push({ scope: "one", type: "auth_url", data: { url } }),
       onStatus: (message) => events.push({ scope: "one", type: "auth_status", data: { message } }),
@@ -166,8 +167,53 @@ describe("Continue with ChatGPT route", () => {
     // The current sign-in's ID token goes back as a hint.
     expect(loginChatGPT).toHaveBeenCalledWith(expect.anything(), {
       previous: expect.objectContaining({ idToken: "old-id-token" }),
+      signal: expect.any(AbortSignal),
     });
     expect(auth.setCredentials).toHaveBeenCalledWith("openai-chatgpt", creds);
+  });
+
+  // GitHub #156: OpenAI's "only available to members of its workspace" page
+  // never comes back, so the waiting attempt must give way to a new account.
+  it("replaces a waiting sign-in with a new account or workspace", async () => {
+    const creds = { accessToken: "plan", refreshToken: "r", expiresAt: 1, clientId: "oaiapp_y" };
+    let firstSignal: AbortSignal | undefined;
+    loginChatGPT.mockImplementationOnce(
+      (_cb: unknown, opts: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          firstSignal = opts.signal;
+          opts.signal.addEventListener("abort", () =>
+            reject(Object.assign(new Error("cancelled"), { name: "AbortError" })),
+          );
+        }),
+    );
+    loginChatGPT.mockResolvedValueOnce(creds);
+    const { ctx, auth, events } = authContext();
+    auth.stored["openai-chatgpt"] = { ...creds, idToken: "old-id-token" };
+
+    await call(ctx, "/auth/oauth/start", { provider: "openai" });
+    await vi.waitFor(() => expect(firstSignal).toBeDefined());
+    const reply = await call(ctx, "/auth/oauth/start", { provider: "openai", account: "new" });
+
+    expect(reply.status).toBe(202);
+    expect(firstSignal!.aborted).toBe(true);
+    await vi.waitFor(() =>
+      expect(auth.setCredentials).toHaveBeenCalledWith("openai-chatgpt", creds),
+    );
+    // The new account starts clean: no saved sign-in, a fresh registration.
+    expect(loginChatGPT).toHaveBeenLastCalledWith(expect.anything(), {
+      newAccount: true,
+      signal: expect.any(AbortSignal),
+    });
+    // The replaced attempt reports nothing; only the new one finishes.
+    expect(events.some((e) => e.type === "auth_error")).toBe(false);
+  });
+
+  it("still refuses a second plain sign-in while one is waiting", async () => {
+    loginChatGPT.mockImplementationOnce(() => new Promise(() => {}));
+    const { ctx } = authContext();
+    await call(ctx, "/auth/oauth/start", { provider: "openai" });
+    const reply = await call(ctx, "/auth/oauth/start", { provider: "openai" });
+    expect(reply.status).toBe(409);
   });
 
   it("revokes the plan session at OpenAI before signing out, keeping the API key", async () => {

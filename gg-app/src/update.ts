@@ -4,6 +4,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { error as logError, info as logInfo } from "@tauri-apps/plugin-log";
 import { playSound } from "./sounds";
 import { announceUpdate } from "./update-announce";
+import { installUpdate } from "./update-install";
 import { claimUpdateCheck, recordUpdateCheck, versionFromStorageEvent } from "./update-schedule";
 
 /**
@@ -150,7 +151,7 @@ export function useAppUpdate(): UpdateInfo {
     try {
       let total = 0;
       let downloaded = 0;
-      await update.downloadAndInstall((event) => {
+      await installUpdate(update, (event) => {
         if (event.event === "Started") {
           total = event.data.contentLength ?? 0;
         } else if (event.event === "Progress") {

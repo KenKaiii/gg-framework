@@ -34,6 +34,7 @@ Click a card to open its "Connect" window. It lists the models that provider off
 
 - Anthropic: Sign in with Claude (your Claude Pro or Max plan), or an Anthropic API key (pay-per-token). The key is used only while you are not signed in with Claude.
 - OpenAI: **Continue with ChatGPT** (your ChatGPT plan), or an OpenAI API key (pay-per-token). The plan is used first; the key takes over while the plan's usage is out, then it switches back.
+- ChatGPT ties GG Coder to the account and workspace you first signed in with. To use another one, or if ChatGPT's page says the app is "only available to members of its workspace", click **Use a different account or workspace** in the sign-in box, even while it is still waiting. In the terminal, `ggcoder login` asks which one to use.
 - Kimi (Moonshot): key only. Key type "Kimi Code plan" (create it in the Kimi Code Console) or "Moonshot API" (pay-per-token). With both set, the plan key is used first and the Moonshot key covers models the plan doesn't include.
 - Xiaomi (MiMo): key only. Key type "Token Plan" or "API Credits". UltraSpeed needs API Credits.
 - MiniMax: one key box. An M Plan key bills your plan; a pay-as-you-go key is pay-per-token. The key you paste decides which.
