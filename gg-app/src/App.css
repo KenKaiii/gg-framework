@@ -290,9 +290,9 @@
   /* Things that resolve out of a blur (transcript rows, swapped labels, the
      tool panel): long enough that the blur reads as a dissolve, not a flicker. */
   --dur-dissolve: 340ms;
-  /* Composer strips and chip bars (attachments, mentions, cache notice)
+  /* Composer strips and chip bars (attachments, mentions)
      growing open and folding shut. --dur-strip-out is mirrored by
-     EXIT_MS in AttachmentBar, ReferencedFiles and CacheExpiryNotice,
+     EXIT_MS in AttachmentBar and ReferencedFiles,
      and also times an answered ask_user card dissolving out (AskBand's EXIT_MS),
      so everything in the chat column leaves at one speed. */
   --dur-strip-in: 260ms;
@@ -11504,7 +11504,7 @@ select {
 /* Collapsed state: no height, padding or border, and a bottom margin that also
    soaks up the composer's 8px flex gap, so the composer moves smoothly instead
    of snapping by the gap at the start of the enter / end of the exit. A strip
-   that pins its real size (pinSize → --pin-h; CacheExpiryNotice does) grows to
+   that pins its real size (pinSize → --pin-h) grows to
    and folds from it; otherwise the 220px cap is the fallback. --pin-h on mount
    is measured with padding and border already at 0, hence the +14px slack. */
 @keyframes ggqueuedin {

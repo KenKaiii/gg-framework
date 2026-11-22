@@ -10,7 +10,6 @@
 - The workspace header
 - The More panel
 - Context usage and compaction
-- Cache expiry notice
 - The transcript
 - Images in the transcript
 - Answering GG's questions
@@ -100,14 +99,6 @@ The deck runs along the bottom of the window. Its **More** key (shown as ⋯) op
 - While it works, a critter line appears in the transcript (for example "A critter is munching on the context…"), then a done line saying how many messages became how many.
 - Session titles survive compaction.
 
-## Cache expiry notice
-
-- Providers cache the start of a long conversation so it is cheaper to re-send. The cache lapses after the chat sits idle.
-- In a large chat whose cache has (or may have) expired, a strip above the composer says your next message re-reads that many tokens at full price.
-- **Compact first** summarises older history before you send, so the next message re-reads less.
-- **Dismiss** hides the strip; your next message sends as is.
-- If compaction can't start, a toast says "Couldn't start compaction. Try again."
-
 ## The transcript
 
 - Your messages and GG's replies, rendered as Markdown. Replies stream in as they are written.
@@ -185,9 +176,6 @@ A: Look at the ring in the deck, or click it to open **Usage** and read the **Co
 
 Q: How do I compact the conversation?
 A: Send `/compact`, optionally with a focus such as `/compact keep the API decisions`. It also happens automatically when the context is nearly full.
-
-Q: What does "This chat's cache expired" mean?
-A: The chat sat idle so the provider's cache lapsed, and the next message re-reads the whole history at full price. Click **Compact first** to shrink it, or **Dismiss** to send as is.
 
 Q: How do I answer GG's question?
 A: Click an option or press its number, or start typing to answer in your own words. For multi-choice, pick several and confirm.

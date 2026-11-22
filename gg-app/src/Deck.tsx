@@ -193,7 +193,7 @@ export function Deck(props: DeckProps): React.ReactElement {
       {/* While a panel has the deck, the status line and message box step
           aside, but stay laid out at their full width, just invisible and
           inert. Nothing inside re-measures, remounts or replays an entrance
-          on the way back (the cache notice, the draft's height), so returning
+          on the way back (the composer strips, the draft's height), so returning
           is a fade, never a jump. */}
       <div className="deck-main" data-away={panel !== null || undefined} inert={panel !== null}>
         <div className="deck-status">

@@ -351,7 +351,7 @@ function App(): React.ReactElement {
   const [enhancement, setEnhancement] = useState<DraftEnhancement | null>(null);
   const [enhancing, setEnhancing] = useState(false);
   // Composer sends so far: a change tells the composer strips (attachments,
-  // @-files, cold-cache notice) to drop what the send cleared in that commit.
+  // @-files) to drop what the send cleared in that commit.
   const [sendCount, setSendCount] = useState(0);
   // Drives the Matrix dissolve→decode animation over the input while enhancing.
   // `newText` is null until the enhancer returns (dissolve/scramble), then the
@@ -2384,7 +2384,7 @@ function App(): React.ReactElement {
     }
 
     chatLayout.capture();
-    // The strips this send clears (chips, the cold-cache notice) must leave in
+    // The strips this send clears (attachment and @-file chips) must leave in
     // the bubble's commit, or their fold resizes the transcript mid-move.
     setSendCount((n) => n + 1);
     recordHistory(trimmed);
@@ -3280,7 +3280,6 @@ function App(): React.ReactElement {
               composer={
                 <Composer
                   workspaceMode={workspaceMode}
-                  state={state}
                   composerRef={composerRef}
                   isFileDragOver={isFileDragOver}
                   scheduleInvalid={scheduleInvalid}

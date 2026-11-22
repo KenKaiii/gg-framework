@@ -1683,12 +1683,6 @@ async function createSession(
     broadcast("compaction_end", d);
     if (d.compacted) void trophies.count("compactions", opts.id);
   });
-  // Cold-prompt-cache notice: push the fresh TTL anchor + context size whenever
-  // a run or compaction settles. Expiry itself is time-based, so the webview
-  // also re-reads `cacheExpiry` from /state when the user returns or types.
-  for (const ev of ["agent_done", "compaction_end", "model_change"] as const) {
-    session.eventBus.on(ev, () => broadcast("cache_expiry", session.getCacheExpiryStatus()));
-  }
 
   // Keep the computer awake while this window's agent works: owned runs and
   // autopilot cycles (RunLifecycle state), Ken replies, and background

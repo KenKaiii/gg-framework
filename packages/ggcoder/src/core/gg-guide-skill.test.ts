@@ -141,7 +141,6 @@ const COVERAGE: Record<string, string> = {
   "image-gen/ImageGenCard": "sessions-and-history.md",
   AskBand: "sessions-and-history.md",
   CompactionNotice: "sessions-and-history.md",
-  CacheExpiryNotice: "sessions-and-history.md",
   ConfirmModal: "sessions-and-history.md",
   StreamingMarkdown: "sessions-and-history.md",
   Markdown: "sessions-and-history.md",

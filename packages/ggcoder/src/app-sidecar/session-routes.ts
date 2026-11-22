@@ -70,7 +70,6 @@ export function handleSessionRoutes(
       supportedThinkingLevels: getSupportedThinkingLevels(st.provider, st.model),
       supportsVideo: getModel(st.model)?.supportsVideo ?? false,
       autopilot: ctx.autopilot,
-      cacheExpiry: ctx.session.getCacheExpiryStatus(),
       ...ctx.kenStatePayload(),
       ...ctx.footerExtras(),
     });

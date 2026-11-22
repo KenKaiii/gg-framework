@@ -192,7 +192,6 @@ Custom commands: each Markdown file in the project's `.gg/commands/` folder beco
 ## Notices in the transcript
 
 - Compaction: when the context is compacted, a critter line shows it working and then done.
-- Cache expiry: in a large chat that has been idle, a strip warns that the next message will re-read the whole context at full price. **Compact first** shrinks the history before you send, and **Dismiss** hides the warning.
 - Hooks: when a project hook steps in, a shimmering pink critter line says what it's doing, for example "A critter is running the project's checks…". Others cover reviewing the work, re-checking new edits, checking that tests weren't weakened, breaking out of a loop, or re-reading the request after compaction. They are informational; no action is needed.
 
 ## Moving around the transcript

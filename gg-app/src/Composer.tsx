@@ -6,15 +6,12 @@ import {
   cancelKen,
   openImageDataUrl,
   prewarmCache,
-  sendPrompt,
-  type AgentState,
   type FileHit,
   type SlashCommand,
   type WorkspaceMode,
 } from "./agent";
 import { AttachmentBar } from "./AttachmentBar";
 import type { PendingAttachment } from "./attachments";
-import { CacheExpiryNotice } from "./CacheExpiryNotice";
 import { EnhanceDissolve } from "./EnhanceDissolve";
 import { FileMentionMenu } from "./FileMentionMenu";
 import { FloatingSurface } from "./FloatingSurface";
@@ -24,13 +21,11 @@ import { ScheduleHint } from "./ScheduleHint";
 import { ShimmerText } from "./ShimmerText";
 import { SlashMenu } from "./SlashMenu";
 import { theme } from "./theme";
-import { toast } from "./toast";
 import { WorkingBeam } from "./WorkingBeam";
 import { sendKeyAction } from "./send-key";
 
 export interface ComposerProps {
   workspaceMode: WorkspaceMode;
-  state: AgentState | null;
   composerRef: RefObject<HTMLDivElement | null>;
   isFileDragOver: boolean;
   scheduleInvalid: boolean;
@@ -116,7 +111,6 @@ export interface ShellMenu {
  */
 export function Composer({
   workspaceMode,
-  state,
   composerRef,
   isFileDragOver,
   scheduleInvalid,
@@ -226,16 +220,6 @@ export function Composer({
         sendCount={sendCount}
       />
       <ReferencedFiles paths={mentionedPaths} onRemove={removeMentionChip} sendCount={sendCount} />
-      <CacheExpiryNotice
-        expiry={state?.cacheExpiry}
-        running={running}
-        sendCount={sendCount}
-        onCompact={() =>
-          void sendPrompt("/compact").catch(() =>
-            toast("Couldn't start compaction. Try again.", "error"),
-          )
-        }
-      />
       <div className="inputrow">
         {leadAction ?? (
           <>
