@@ -1,4 +1,8 @@
+import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import path from "node:path";
 import type { Browser, BrowserContext, Page, Request, Response } from "playwright";
+import { log } from "../core/logger.js";
 
 export const BROWSER_INSTALL_HINT =
   "No browser available. Install Google Chrome, or add the optional dependency and download Chromium:\n" +
@@ -50,9 +54,13 @@ export interface CaptureMark {
   events: number;
 }
 
-interface Chromium {
+export interface Chromium {
   launch(opts: { headless: boolean; channel?: string }): Promise<Browser>;
 }
+
+// Longest one browser call waits on the download; it keeps going after that.
+export const INSTALL_WAIT_MS = 100_000;
+const INSTALL_TIMEOUT_MS = 15 * 60_000;
 
 let chromiumModule: Promise<Chromium> | undefined;
 function loadChromium(): Promise<Chromium> {
@@ -65,6 +73,58 @@ function loadChromium(): Promise<Chromium> {
   })();
   chromiumModule.catch(() => (chromiumModule = undefined));
   return chromiumModule;
+}
+
+let installing: Promise<void> | undefined;
+// Each Playwright release pins one Chromium build, so an upgrade orphans the old download.
+function installChromium(): Promise<void> {
+  installing ??= new Promise<void>((resolve, reject) => {
+    let cli: string;
+    try {
+      const require = createRequire(import.meta.url);
+      cli = path.join(path.dirname(require.resolve("playwright/package.json")), "cli.js");
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
+    log("INFO", "browser", "Downloading Chromium", { cli });
+    // --no-remove: other projects may still use older browser builds.
+    const child = spawn(
+      process.execPath,
+      [cli, "install", "--no-remove", "--no-progress", "chromium-headless-shell"],
+      { stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
+    );
+    let output = "";
+    const keep = (d: Buffer): void => {
+      output = (output + d.toString()).slice(-2000);
+    };
+    child.stdout.on("data", keep);
+    child.stderr.on("data", keep);
+    const timer = setTimeout(() => child.kill(), INSTALL_TIMEOUT_MS);
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        log("INFO", "browser", "Chromium downloaded");
+        resolve();
+        return;
+      }
+      const tail = output.trim().split("\n").slice(-5).join("\n");
+      log("WARN", "browser", "Chromium download failed", { code, tail });
+      reject(new Error(tail || `playwright install exited with ${code}`));
+    });
+  });
+  installing.catch(() => (installing = undefined));
+  return installing;
+}
+
+export interface BrowserManagerOptions {
+  loadChromium?: () => Promise<Chromium>;
+  installChromium?: () => Promise<void>;
+  installWaitMs?: number;
 }
 
 const isModuleNotFound = (err: unknown): boolean => {
@@ -105,6 +165,8 @@ export class BrowserManager {
   private launching: Promise<Page> | undefined;
   private idleTimer: NodeJS.Timeout | undefined;
   private closedWhileIdle = false;
+
+  constructor(private readonly opts: BrowserManagerOptions = {}) {}
 
   get isOpen(): boolean {
     return this.context !== undefined;
@@ -176,23 +238,31 @@ export class BrowserManager {
   private async launch(): Promise<Page> {
     let chromium: Chromium;
     try {
-      chromium = await loadChromium();
+      chromium = await (this.opts.loadChromium ?? loadChromium)();
     } catch (err) {
       if (isModuleNotFound(err)) throw new BrowserUnavailableError(BROWSER_INSTALL_HINT);
       const reason = err instanceof Error ? err.message : String(err);
       throw new BrowserUnavailableError(`${BROWSER_INSTALL_HINT}\n(load error: ${reason})`);
     }
-    let browser: Browser;
+    let browser: Browser | undefined;
+    let downloaded = false;
     try {
       browser = await chromium.launch({ headless: true });
     } catch (err) {
       if (!isBinaryMissing(err)) throw err;
       // Playwright's own Chromium isn't downloaded; an installed Chrome works as well.
-      browser = await chromium.launch({ headless: true, channel: "chrome" }).catch((): never => {
-        throw new BrowserUnavailableError(BROWSER_INSTALL_HINT);
+      browser = await chromium.launch({ headless: true, channel: "chrome" }).catch(() => undefined);
+    }
+    if (!browser) {
+      await this.download();
+      downloaded = true;
+      browser = await chromium.launch({ headless: true }).catch((err: unknown): never => {
+        const reason = err instanceof Error ? err.message : String(err);
+        throw new BrowserUnavailableError(`${BROWSER_INSTALL_HINT}\n(launch error: ${reason})`);
       });
     }
     this.reset();
+    if (downloaded) this.events.push("Downloaded Chromium for the browser tool (one-time setup).");
     if (this.closedWhileIdle) {
       this.closedWhileIdle = false;
       this.events.push(
@@ -209,6 +279,30 @@ export class BrowserManager {
     this.context = context;
     this.current = await context.newPage();
     return this.current;
+  }
+
+  private async download(): Promise<void> {
+    const install = (this.opts.installChromium ?? installChromium)();
+    let timer: NodeJS.Timeout | undefined;
+    const stillRunning = new Promise<"waiting">((r) => {
+      timer = setTimeout(() => r("waiting"), this.opts.installWaitMs ?? INSTALL_WAIT_MS);
+    });
+    try {
+      const done = await Promise.race([install.then(() => "done" as const), stillRunning]);
+      if (done === "waiting")
+        throw new BrowserUnavailableError(
+          "Chromium for the browser tool is still downloading (one-time, about 100 MB). " +
+            "Call browser again in a minute; do not look for another browser.",
+        );
+    } catch (err) {
+      if (err instanceof BrowserUnavailableError) throw err;
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new BrowserUnavailableError(
+        `Could not download Chromium automatically: ${reason}\n${BROWSER_INSTALL_HINT}`,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private attach(p: Page): void {
