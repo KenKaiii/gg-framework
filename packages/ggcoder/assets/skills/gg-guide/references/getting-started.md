@@ -1,5 +1,20 @@
 # Getting started with the GG Coder desktop app
 
+## Contents
+- First run and setup
+- The Home screen
+- Projects
+- Windows
+- Menu-bar (tray) menu
+- The welcome screen in a new session
+- Updates
+- What's new
+- About
+- Keep awake, sound and appearance
+- Zoom
+- Keyboard shortcuts
+- Common questions
+
 ## First run and setup
 
 - A new window opens on the Home screen.

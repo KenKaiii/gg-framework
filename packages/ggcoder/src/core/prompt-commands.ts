@@ -19,7 +19,7 @@ const IS_GG_APP = isGgApp();
 // (AGENTS.override.md > AGENTS.md > CLAUDE.md > …), so the notice stays
 // filename-agnostic — /init picks the winner at run time.
 const CLAUDE_MD_RESTART_NOTICE = IS_GG_APP
-  ? '> ⚠️ The project context file was created/updated. GG App loads it fresh per session, so start a **New Session** (click "+ New") before continuing. Without a new session, I won\'t see the new context.'
+  ? "> ⚠️ The project context file was created/updated. GG App loads it fresh per session, so start a new session (**New session** in the **More** panel) before continuing. Without a new session, I won't see the new context."
   : "> ⚠️ The project context file was created/updated. ggcoder loads it at startup, so **exit and restart ggcoder** (`/quit` then run `ggcoder` again) before continuing. Without a restart, I won't see the new context.";
 
 /**

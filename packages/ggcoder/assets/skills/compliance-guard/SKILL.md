@@ -1,6 +1,8 @@
 ---
 name: compliance-guard
 description: "Use for the legal side of shipping to real users: which laws apply, what cannot lawfully ship, and the consent, notices and policies the product owes. Do NOT use for bugs, data leaks or security hardening."
+metadata:
+  version: "2026.11.22"
 license: Apache-2.0. Content is engineering guidance, not legal advice. See references/provenance.md.
 compatibility: Static review works offline from the bundled references. Legal status changes constantly; date-sensitive claims must be re-verified with web access before being stated as current. Never certifies compliance.
 ---
@@ -13,7 +15,7 @@ Catch legal, privacy, and regulatory exposure in a shipped product before a regu
 
 1. **Exposure drives obligations, not stack.** What the product does, who can reach it, and whose data it touches decide what applies.
 2. **Never certify.** Never write "compliant", "GDPR compliant", "ADA compliant", "fully legal", or "you're covered". Produce risks, implemented controls, residual risk, and a *get a lawyer for this* list, labelled as engineering guidance, not legal advice.
-3. **Date-check before asserting.** References are a snapshot (11 Aug 2026, re-verified in part 3 Oct and 22 Oct 2026) with **[V]/[S]/[U]** markers (`references/provenance.md`). Re-verify dates, thresholds, and "in force" claims with web access; without it, say the claim is from a snapshot. Never invent a citation, section, or deadline.
+3. **Date-check before asserting.** References are a snapshot (11 Aug 2026, re-verified in part 3 Oct, 22 Oct and 22 Nov 2026) with **[V]/[S]/[U]** markers (`references/provenance.md`). Re-verify dates, thresholds, and "in force" claims with web access; without it, say the claim is from a snapshot. Never invent a citation, section, or deadline.
 4. **Say it plainly when it is illegal** — early, before code: the regime, the red line, the safe subset, and what authorisation would change the answer. Never soften it, never silently build it.
 5. **Fix, do not just flag.** Inline, build the control in. In a full review, report first, then fix what the user selects; fix straight away only when they asked for fixes ("fix it", "make it launch-ready"). Fix what code can fix (consent gating, security P0s via bulletproof's inline gate, opt-out plumbing, deletion propagation, disclosures, accessibility). Documents are templates with `[PLACEHOLDER]` fields; never invent entity name, address, DPO, retention periods, or vendor list.
 6. **Proportionality.** Launch-blocking first, rank by probability × severity, keep the tail as backlog. Sixty findings produce zero fixes.

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { discoverSkills, formatSkillsForPrompt, type Skill } from "./skills.js";
+import { discoverSkills, formatSkillsForPrompt, parseSkillFile, type Skill } from "./skills.js";
+import { parseFrontmatter } from "./frontmatter.js";
 import { createSkillTool, DELEGATION_RULES, HOST_RULES } from "../tools/skill.js";
 import { resolveContextLimits } from "./context-limits.js";
 import { buildSystemPrompt } from "../system-prompt.js";
@@ -468,5 +469,108 @@ describe("skill catalog byte budgets", () => {
       resolveContextLimits({ skillDescriptionBytes: 4096 }),
     );
     expect(prompt).toContain("x".repeat(2048));
+  });
+});
+
+describe("Agent Skills spec support", () => {
+  const BUNDLED = path.resolve(import.meta.dirname, "../../assets/skills");
+
+  it("hides a disable-model-invocation skill from the model but loads it by name", async () => {
+    const manual = parseSkillFile(
+      "---\nname: deploy\ndescription: Use to deploy.\ndisable-model-invocation: true\n---\nDeploy steps.",
+      "global",
+    );
+    expect(manual.hidden).toBe(true);
+    expect(formatSkillsForPrompt([skill, manual])).not.toContain("**deploy**");
+    const loaded = await createSkillTool([skill, manual]).execute(
+      { skill: "deploy" },
+      { signal: new AbortController().signal, toolCallId: "manual" },
+    );
+    expect(loaded).toContain('<skill_content name="deploy">');
+  });
+
+  it("reads metadata.version and keeps the other fields intact", () => {
+    const parsed = parseSkillFile(
+      '---\nname: x\ndescription: Use for x. Do NOT use for y.\nmetadata:\n  author: me\n  version: "2026.11.22"\nlicense: MIT\n---\nBody.',
+      "global",
+    );
+    expect(parsed.version).toBe("2026.11.22");
+    expect(parsed.description).toBe("Use for x. Do NOT use for y.");
+    expect(parsed.content).toBe("Body.");
+  });
+
+  it("loads shared .agents/skills folders, with GG's own folders winning clashes", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-shared-"));
+    const write = async (dir: string, name: string, description: string): Promise<void> => {
+      await fs.mkdir(path.join(dir, name), { recursive: true });
+      await fs.writeFile(
+        path.join(dir, name, "SKILL.md"),
+        `---\nname: ${name}\ndescription: ${description}\n---\n${description} body.`,
+      );
+    };
+    const shared = path.join(root, "home", ".agents", "skills");
+    const globalSkillsDir = path.join(root, "home", ".gg", "skills");
+    const projectDir = path.join(root, "project");
+    const projectShared = path.join(projectDir, ".agents", "skills");
+    const projectOwn = path.join(projectDir, ".gg", "skills");
+    try {
+      await write(shared, "only-shared", "shared");
+      await write(shared, "clash-global", "shared");
+      await write(globalSkillsDir, "clash-global", "global");
+      await write(projectShared, "only-project-shared", "project-shared");
+      await write(projectShared, "clash-project", "project-shared");
+      await write(projectOwn, "clash-project", "project-own");
+      await write(projectShared, "clash-global", "project-shared");
+
+      const skills = await discoverSkills({ globalSkillsDir, projectDir, sharedSkillsDir: shared });
+      const by = (name: string) => skills.find((s) => s.name === name)?.description;
+      expect(by("only-shared")).toBe("shared");
+      expect(by("clash-global")).toBe("project-shared");
+      expect(by("only-project-shared")).toBe("project-shared");
+      expect(by("clash-project")).toBe("project-own");
+
+      // Chat and Motion stay on their workspace's own .gg/skills only.
+      const workspace = await discoverSkills({
+        globalSkillsDir,
+        projectDir,
+        sharedSkillsDir: shared,
+        workspaceOnly: true,
+      });
+      expect(workspace.map((s) => s.name).sort()).toEqual(["clash-project"]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps every bundled skill within the spec and the refresh checklist's shape rules", async () => {
+    const names = (await fs.readdir(BUNDLED, { withFileTypes: true }))
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      const raw = await fs.readFile(path.join(BUNDLED, name, "SKILL.md"), "utf8");
+      const { fields, body } = parseFrontmatter(raw);
+      expect(fields.name, `${name}: name must match its folder`).toBe(name);
+      expect(name).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+      expect(name.length).toBeLessThanOrEqual(64);
+      expect((fields.compatibility ?? "").length, `${name} compatibility`).toBeLessThanOrEqual(500);
+      expect(body.split("\n").length, `${name} SKILL.md lines`).toBeLessThan(500);
+      // Bumped on every fact refresh, so a stale user copy can be told apart.
+      expect(parseSkillFile(raw, "bundled").version, `${name} metadata.version`).toMatch(
+        /^\d{4}\.\d{2}\.\d{2}$/,
+      );
+
+      const refsDir = path.join(BUNDLED, name, "references");
+      const refs = await fs.readdir(refsDir).catch(() => [] as string[]);
+      for (const ref of refs.filter((f) => f.endsWith(".md"))) {
+        const text = await fs.readFile(path.join(refsDir, ref), "utf8");
+        if (text.split("\n").length <= 100) continue;
+        // A partial read of a long reference must still show its scope.
+        const firstSection = text.split("\n").find((line) => line.startsWith("## "));
+        expect(firstSection, `${name}/${ref}: first section must be ## Contents`).toBe(
+          "## Contents",
+        );
+      }
+    }
   });
 });

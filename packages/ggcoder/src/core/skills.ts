@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { clampToBytes, CONTEXT_LIMITS, type ContextLimits } from "./context-limits.js";
@@ -80,11 +81,14 @@ export interface Skill {
   /** Directory used to resolve references linked from the skill content. */
   root?: string;
   /**
-   * `hidden: true` in frontmatter: left out of the skill catalog and the skill
-   * tool's list, so the model never picks it for routine work, but still
-   * loadable by exact name (the app's Checklist audits name bulletproof/lean).
+   * `hidden: true` (or the Agent Skills spec's `disable-model-invocation: true`)
+   * in frontmatter: left out of the skill catalog and the skill tool's list, so
+   * the model never picks it for routine work, but still loadable by exact name
+   * (the app's Checklist audits name bulletproof/lean).
    */
   hidden?: boolean;
+  /** `metadata.version` from frontmatter, when the skill declares one. */
+  version?: string;
 }
 
 /** A skill that discovery refused to load because the safety scan caught it. */
@@ -127,10 +131,9 @@ function newLoadContext(cache: SkillScanCache = defaultSkillScanCache): LoadCont
 /**
  * Discover skills from global and project-local skill directories.
  */
-export async function discoverSkills(options: {
-  globalSkillsDir: string;
-  projectDir?: string;
-}): Promise<Skill[]> {
+export async function discoverSkills(
+  options: Parameters<typeof discoverSkillsWithBlocked>[0],
+): Promise<Skill[]> {
   return (await discoverSkillsWithBlocked(options)).skills;
 }
 
@@ -145,8 +148,10 @@ export async function discoverSkillsWithBlocked(options: {
   projectDir?: string;
   cacheFile?: string;
   cache?: SkillScanCache;
-  /** Only `<projectDir>/.gg/skills`: no bundled or global skills (Chat, Motion). */
+  /** Only `<projectDir>/.gg/skills`: no bundled, global or shared skills (Chat, Motion). */
   workspaceOnly?: boolean;
+  /** The cross-agent `~/.agents/skills` folder; GG's own folders win name clashes. */
+  sharedSkillsDir?: string;
 }): Promise<SkillDiscovery> {
   const ctx = newLoadContext(options.cache);
   // Under vitest only an explicit file is used: many suites discover skills
@@ -159,17 +164,37 @@ export async function discoverSkillsWithBlocked(options: {
 
   const skillsByName = new Map<string, Skill>();
   const addSkills = (skills: Skill[]): void => {
-    for (const skill of skills) skillsByName.set(skill.name.toLowerCase(), skill);
+    for (const skill of skills) {
+      const key = skill.name.toLowerCase();
+      const replaced = skillsByName.get(key);
+      // A user copy of a built-in keeps whatever facts it was copied with.
+      if (replaced?.source === "bundled") {
+        log("INFO", "skills", `Skill "${skill.name}" (${skill.source}) replaces the built-in one`, {
+          builtInVersion: replaced.version ?? "",
+          version: skill.version ?? "",
+        });
+      }
+      skillsByName.set(key, skill);
+    }
   };
+  // Same rule as the scan cache: tests must never read the real home folder.
+  const sharedSkillsDir =
+    options.sharedSkillsDir ??
+    (process.env.VITEST ? undefined : path.join(os.homedir(), ".agents", "skills"));
 
-  // Bundled defaults ship with GG Coder. Global and project definitions with
-  // the same name override them, preserving user control.
+  // Later folders win name clashes: bundled < ~/.agents/skills < ~/.gg/skills
+  // < <project>/.agents/skills < <project>/.gg/skills, preserving user control.
   if (!options.workspaceOnly) {
     addSkills(await loadBundledSkills(ctx));
+    if (sharedSkillsDir) addSkills(await loadSkillsFromDir(sharedSkillsDir, "global", ctx));
     addSkills(await loadSkillsFromDir(options.globalSkillsDir, "global", ctx));
   }
 
   if (options.projectDir) {
+    if (!options.workspaceOnly) {
+      const sharedProjectDir = path.join(options.projectDir, ".agents", "skills");
+      addSkills(await loadSkillsFromDir(sharedProjectDir, "project", ctx));
+    }
     const projectSkillsDir = path.join(options.projectDir, ".gg", "skills");
     addSkills(await loadSkillsFromDir(projectSkillsDir, "project", ctx));
   }
@@ -309,12 +334,17 @@ export function parseSkillFile(rawInput: string, source: string): Skill {
     });
   }
 
+  const hidden = fields.hidden === "true" || fields["disable-model-invocation"] === "true";
+  // `metadata` is a nested map the reader keeps as raw text; only `version` is used.
+  const version = /(?:^|\s)version:\s*["']?([^"'\s]+)/.exec(fields.metadata ?? "")?.[1];
+
   return {
     name,
     description,
     content,
     source,
-    ...(fields.hidden === "true" ? { hidden: true } : {}),
+    ...(hidden ? { hidden: true } : {}),
+    ...(version ? { version } : {}),
   };
 }
 

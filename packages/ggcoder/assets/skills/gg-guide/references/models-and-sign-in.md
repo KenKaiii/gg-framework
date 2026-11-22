@@ -1,5 +1,25 @@
 # Models and sign-in
 
+## Contents
+- Where providers are connected
+- The providers brain
+- Connecting a provider
+- Providers and their routes
+- Using your Claude subscription
+- Using your ChatGPT plan
+- When plan usage runs out
+- Disconnecting
+- Retired sign-ins
+- The Model panel
+- Does my model choice stick?
+- Paid fast models
+- Thinking levels
+- Ken's and the Critters' model
+- Local models
+- Downloading from Hugging Face
+- Usage meter and Usage panel
+- Common questions
+
 How to connect AI providers in the GG Coder desktop app, choose a model and thinking level, use local models, and read your plan usage.
 
 ## Where providers are connected
@@ -36,7 +56,7 @@ Click a card to open its "Connect" window. It lists the models that provider off
 - OpenAI: **Continue with ChatGPT** (your ChatGPT plan), or an OpenAI API key (pay-per-token). The plan is used first; the key takes over while the plan's usage is out, then it switches back.
 - ChatGPT ties GG Coder to the account and workspace you first signed in with. To use another one, or if ChatGPT's page says the app is "only available to members of its workspace", click **Use a different account or workspace** in the sign-in box, even while it is still waiting. In the terminal, `ggcoder login` asks which one to use.
 - Kimi (Moonshot): key only. Key type "Kimi Code plan" (create it in the Kimi Code Console) or "Moonshot API" (pay-per-token). With both set, the plan key is used first and the Moonshot key covers models the plan doesn't include.
-- Xiaomi (MiMo): key only. Key type "Token Plan" or "API Credits". UltraSpeed needs API Credits.
+- Xiaomi (MiMo): key only. Key type "Token Plan" or "API Credits". UltraSpeed runs on the Token Plan (Pro and Max plans only) at 10x MiMo-V2.6-Pro's credit rate, or on API Credits at a higher per-token rate.
 - MiniMax: one key box. An M Plan key bills your plan; a pay-as-you-go key is pay-per-token. The key you paste decides which.
 - Z.AI (GLM): pay-per-token key only. GLM Coding Plan quota can't be used in GG Coder.
 - xAI (Grok): API key only. SuperGrok and X Premium usage can't be used.

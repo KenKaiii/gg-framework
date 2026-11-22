@@ -1,5 +1,11 @@
 # Chat, Motion and Goals
 
+## Contents
+- Chat
+- Motion
+- Goals
+- Common questions
+
 Home has four buttons: **Code**, **Goals**, **Chat** and **Motion**. Code is for working in a project folder. The other three are covered here. Chat and Motion both need a projects folder: set one in **Settings** first.
 
 ## Chat
@@ -87,7 +93,7 @@ How is it made and rendered?
 - It re-renders only to fix something visibly broken. For an edit, ask in the same session. Only what you asked for changes.
 
 Where are videos saved?
-- **Motion** sessions are listed like chats. The **More** panel has **New session**, **Notes**, **Radio** and the way back to the list.
+- **Motion** sessions are listed like chats. The **More** panel has **New session**, **Notes**, **Radio**, **Export chat**, **Arrange** and **Projects** to go back to the list.
 
 - Each video gets its own folder inside the `GG Motion` folder in your projects folder.
 - Finished files go in that video's `renders/` folder as versioned `.mp4` files, such as `name-v1.mp4`. Earlier exports are never overwritten.

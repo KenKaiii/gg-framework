@@ -1,6 +1,16 @@
 # Provenance
 
-**Snapshot date: 3 October 2026**, partially re-verified **22 October 2026** (previous full snapshot 12 August 2026). Items re-verified on either date are listed below; anything else carries its marker from the earlier snapshot. Security facts decay faster than any other content in this repository — a version number, a CVE, a default, or an incident detail that was accurate at snapshot time may be wrong by the time you read it.
+## Contents
+- Confidence markers
+- Re-verified 3 October 2026
+- Re-verified 22 October 2026
+- Re-verified 22 November 2026
+- Source classes
+- Known gaps in this snapshot
+- What this skill is not
+- When to escalate to a human specialist
+
+**Snapshot date: 3 October 2026**, partially re-verified **22 October 2026** and **22 November 2026** (previous full snapshot 12 August 2026). Items re-verified on either date are listed below; anything else carries its marker from the earlier snapshot. Security facts decay faster than any other content in this repository — a version number, a CVE, a default, or an incident detail that was accurate at snapshot time may be wrong by the time you read it.
 
 ## Confidence markers
 
@@ -56,9 +66,23 @@ Dropped as not re-verifiable this pass: specific breakout-time figures, the "38%
 
 Changed this pass: `threat-landscape.md` rewritten as technique + fingerprint (counts and statistics dropped); package-manager version minimums for release-age cooldowns replaced with a rule; the "~80 days to exploitation" figure dropped.
 
+## Re-verified 22 November 2026
+
+| Claim | Marker | Primary source |
+|---|---|---|
+| OWASP Top 10 for LLM Applications 2026 (4 Aug 2026), renumbered; every bare LLMxx ID rewritten as LLMxx:2026 | [V] | github.com/GenAI-Security-Project/GenAI-LLM-Top10 |
+| GitHub blocks `pull_request_target` by default in public repos from 2 Dec 2026 (brownouts 9 and 16 Nov) | [V] title/date; [S] scope | github.blog/changelog/2026-11-02-pull_request_target-blocked-by-default-december-2/ ; socket.dev |
+| Next.js 3 Nov 2026 security release (16.4.5 / 15.5.29), incl. `use cache` cross-tenant disclosure GHSA-mfr8-8qww-v76h | [V] | nextjs.org/blog/november-2026-security-release |
+| Node.js 11 Nov 2026 security releases (22.23.5, 24.22.3, 26.13.1) | [V] | nodejs.org/en/blog/vulnerability/november-2026-security-releases |
+| OAuth 2.1 at draft-ietf-oauth-v2-1-17, still an Internet-Draft | [V] | datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/ |
+| MCP: no spec revision after 2026-07-28 | [V] | blog.modelcontextprotocol.io |
+| CWE Top 25 2025 still the latest; CWE 5.0 (28 Oct 2026) deprecates CWE-377/391/613, none cited here | [V] | cwe.mitre.org/news/archives/news2026.html |
+
+Not added, unverified: React Server Components CVE-2026-126187 (date disputed, React advisory not reached); GitHub secret scanning of Actions logs and Agentic Workflows GA (changelog bodies not read); the OWASP Agent Control Standard (not read). No supply-chain incident from 22 Oct to 22 Nov 2026 could be confirmed from a primary source: that is "no hits", not "none happened".
+
 ## Source classes
 
-- **Standards and frameworks**: OWASP (Top 10:2025, ASVS 5.0.0, API Security Top 10 2023, MASVS 2.1.0 / MASTG 2.0.0, LLM Top 10 2025, Agentic Top 10 2026), MITRE (CWE Top 25 2025 edition, ATT&CK), NIST (SP 800-63B-4, SP 800-218 / 218A, SP 800-53 Rev 5, FIPS 203/204/205), SLSA, OpenSSF.
+- **Standards and frameworks**: OWASP (Top 10:2025, ASVS 5.0.0, API Security Top 10 2023, MASVS 2.1.0 / MASTG 2.0.0, LLM Top 10 2026, Agentic Top 10 2026), MITRE (CWE Top 25 2025 edition, ATT&CK), NIST (SP 800-63B-4, SP 800-218 / 218A, SP 800-53 Rev 5, FIPS 203/204/205), SLSA, OpenSSF.
 - **Vendor and platform documentation**: Apple, Google/Android, Microsoft, Electron, Tauri, PyTorch, Solidity, package registries.
 - **Incident reporting and threat intelligence**: model-provider security disclosures, national CERT and CISA advisories, established security-vendor research teams, and independent researchers with published methodology.
 - **Regulatory texts**: EU Cyber Resilience Act, UK PSTI.

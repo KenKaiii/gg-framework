@@ -84,8 +84,9 @@ describe("prompt commands", () => {
       const { PROMPT_COMMANDS: appPromptCommands } = await import("./prompt-commands.js");
       const init = appPromptCommands.find((command) => command.name === "init");
 
-      expect(init?.prompt).toContain("New Session");
-      expect(init?.prompt).toContain('click "+ New"');
+      // The app's real label; "+ New" never existed.
+      expect(init?.prompt).toContain("**New session** in the **More** panel");
+      expect(init?.prompt).not.toContain('"+ New"');
       expect(init?.prompt).not.toContain("restart ggcoder");
       expect(init?.prompt).not.toContain("/quit");
     } finally {

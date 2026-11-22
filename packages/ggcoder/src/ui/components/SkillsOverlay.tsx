@@ -186,6 +186,8 @@ export function SkillsOverlay({ cwd, onClose }: SkillsOverlayProps) {
             <Text color={theme.primary}>.md</Text>
             {" files to "}
             <Text color={theme.primary}>.gg/skills/</Text>
+            {" or "}
+            <Text color={theme.primary}>.agents/skills/</Text>
           </Text>
           <Text color={theme.textDim}>
             {"  "}

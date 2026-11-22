@@ -1,5 +1,23 @@
 # MCP servers and skills
 
+## Contents
+- What MCP servers are
+- The MCP panel
+- Adding a server in the panel
+- The `!` route: pasting a command into the chat input
+- When changes take effect
+- Project servers and trust
+- How the agent finds MCP tools
+- Guidance for the agent
+- MCP servers asking for input
+- Skills
+- Skills in Chat and Motion
+- Blocked skills
+- Built-in skills
+- Making a new skill
+- Steroids
+- Common questions
+
 ## What MCP servers are
 
 MCP servers give the agent extra tools, such as Notion, a database, or a browser. GG Coder keeps its own list of MCP servers. It is separate from Claude Code's list.
@@ -86,6 +104,8 @@ A skill is a set of instructions for one kind of work. The agent sees each skill
 Where to put your own skills:
 - Global, for all projects: `~/.gg/skills/`
 - This project only: `.gg/skills/` in the project. A project skill replaces a global one with the same name.
+- Skills shared with other coding agents load too: `~/.agents/skills/` for all projects and `.agents/skills/` in the project. If two skills share a name, the one in GG's own `.gg/skills/` folder wins.
+- A skill with `disable-model-invocation: true` (or `hidden: true`) in its frontmatter never loads on its own. Ask for it by name to use it.
 - Layout: either `<name>/SKILL.md` or a single `<name>.md` file, with `name` and `description` frontmatter. Adding `hidden: true` leaves it out of the list the agent sees, but it can still be loaded by name.
 
 When new skills load: skills are read when a session starts, so a new skill is available in the next new chat, not the current one.
@@ -106,7 +126,7 @@ Every user skill is scanned for safety when it loads. A skill that matches a mal
 
 ## Built-in skills
 
-GG Coder ships these skills for Coder mode. Each loads only when the task matches it:
+GG Coder ships these skills for Coder mode. `compliance-guard`, `durable` and `gg-guide` load on their own when the task matches. `bulletproof` and `lean` stay out of everyday work: a **Checklist** item runs them, or you can ask for one by name.
 - `bulletproof`: security for code an attacker can reach, such as logins, uploads, payments, secrets and other users' data. It reports what was checked, what was fixed and what is still open.
 - `compliance-guard`: the legal side of shipping to real users, such as which privacy laws apply and what consent, notices and policies the product needs.
 - `durable`: keeping stored data safe before anything that could delete, overwrite or reshape it, and checking backups and recovery.

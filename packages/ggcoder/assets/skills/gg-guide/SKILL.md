@@ -1,6 +1,8 @@
 ---
 name: gg-guide
 description: "Only when the user asks how to use GG Coder itself: how or where to do something in the app (models, sessions, settings, MCP, `!` and `/` commands, Checklist, safety, Goals, Motion, Chat, files, errors). Do NOT use for coding work."
+metadata:
+  version: "2026.11.22"
 ---
 
 # GG Coder guide

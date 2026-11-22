@@ -1,5 +1,31 @@
 # Working in a Code-mode window
 
+## Contents
+- The composer
+- Mentioning files with @
+- Attaching images and files
+- Sending while GG is busy
+- Stopping a run
+- Running your own commands with !
+- Working across more than one folder
+- Live preview
+- Testing in a real browser
+- Slash commands
+- Schedules
+- Prompt enhancement
+- Plan mode and plan review
+- Autopilot
+- Tasks
+- Notes
+- Checklist and project health
+- Git in the title bar
+- CI indicator
+- Activity bar and working beam
+- Sub-agents
+- Notices in the transcript
+- Moving around the transcript
+- Common questions
+
 A Code-mode window is one session on one project folder. You type in the composer at the bottom. GG works in the transcript above it, and the deck holds the tools.
 
 ## The composer
@@ -62,7 +88,13 @@ A Code-mode window is one session on one project folder. You type in the compose
 - Each window previews only its own project, so several projects can each have a preview open at once. When a project runs more than one server, such as a site and its API, GG picks the one that serves a web page.
 - On the page, click the pointer key next to the message box, then click any element, or just right-click it (Shift+right-click keeps the browser's menu). Your message goes to GG with that element. Esc drops the picked element and lets you pick another; Esc again leaves pick mode. The minus key tucks the chat away.
 - The preview has its own chat, separate from the window's conversation. The panel shows the link with **Open** and **Stop**. Closing the window stops it.
+- You can also just ask GG to open the live preview.
 - The preview runs on its own port, so sign-in redirects and saved browser data from your dev server's port don't carry over.
+
+## Testing in a real browser
+
+- Ask GG to test your web app in the browser (for example "check the signup flow works"). It opens pages in its own browser, clicks, fills in forms and takes screenshots, and reports console errors and failed or slow requests.
+- It runs on this computer, so it can only reach pages this computer can reach, such as your local dev server.
 
 ## Slash commands
 

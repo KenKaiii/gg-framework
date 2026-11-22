@@ -8,6 +8,7 @@
 - Using this with web access
 - Re-verification log — 3 October 2026
 - Re-verification log — 22 October 2026
+- Re-verification log — 22 November 2026
 
 
 ## Snapshot
@@ -31,7 +32,7 @@ Re-verify these before relying on them, in rough order of volatility:
 1. **US state AI laws** — effective dates have moved repeatedly, some are enjoined, some were repealed and replaced mid-cycle, and federal preemption efforts are active.
 2. **State privacy law scope** — new states take effect on 1 January and 1 July cycles; thresholds and cure periods change.
 3. **EU AI Act dates** — amended in July 2026; any guidance written before mid-2026 is unreliable on the high-risk timeline.
-4. **EU data/ePrivacy reform** — the data-protection half of the Digital Omnibus is **not law**; at 22 Oct 2026 Coreper had twice failed to vote a Council mandate (7 and 11 Oct) and no trilogue had begun. Do not build to proposed cookie or browser-signal provisions.
+4. **EU data/ePrivacy reform** — the data-protection half of the Digital Omnibus is **not law**; Coreper agreed a Council mandate on 21 Oct 2026, but at 22 Nov 2026 Parliament had no position and no trilogue had begun. The EU Digital Fairness Act (11 Nov 2026) is likewise only a proposal. Do not build to proposed cookie or browser-signal provisions.
 5. **EU–US transfer framework** — valid at snapshot, with an appeal pending.
 6. **Wiretap/pixel litigation** — statutory reform and appellate decisions are actively reshaping which theories survive.
 7. **Age-verification and minors' laws** — rapid state adoption plus constitutional litigation.
@@ -41,7 +42,7 @@ Re-verify these before relying on them, in rough order of volatility:
 
 ## Known gaps at snapshot
 
-- Jurisdictions outside the EU/UK/US are covered only where they surfaced incidentally (Australia, Canada, Brazil, India). **Do not extrapolate** — if the user targets another market, say the references do not cover it and research it before advising.
+- Jurisdictions outside the EU/UK/US are covered only where they surfaced incidentally (Australia, Canada, Brazil, India). **Do not extrapolate** — if the user targets another market, say the references do not cover it and research it before advising. Moving at 22 Nov 2026 **[S]**: India's DPDP Rules (main obligations 13 May 2027) and Australia's Privacy Act tranche 2 (exposure draft 31 Aug 2026, no start date).
 - Sector regimes are covered at gate-detection depth, not implementation depth. The purpose is to recognise the gate and route to counsel, not to compliance-engineer a regulated business.
 - Fine tiers, transitional dates, and standard versions were flagged individually where they could not be re-verified.
 
@@ -110,3 +111,25 @@ Web search plus the primary pages named below. **[V]** only where a primary sour
 | ADA Title II | Dates unchanged (26 Apr 2027 / 26 Apr 2028); NFB challenge reported, no ruling | [S] (ada.gov not opened) | titleii.org, consumerfinancialserviceslawmonitor.com | `us.md` |
 
 **Not re-checked on 22 Oct 2026:** everything in `sector-gates.md`, `artifacts.md`, `trigger-map.md`, `exposure-triage.md`; PCI DSS; COPPA; BIPA; MHMDA; Utah, Louisiana and Alabama app-store laws; CA SB 243 / SB 942 / AB 2013; Delete Act cadence beyond AB 883; DSA; NIS2; EAA; UK DUAA; consent-or-pay.
+
+## Re-verification log — 22 November 2026
+
+Web search plus primary pages where they loaded; same marker rule as above. Several primary pages blocked fetching this pass (consilium.europa.eu, federalregister.gov, ofcom.org.uk, legislature.vermont.gov), so their rows are **[S]**.
+
+| Item | Result | Marker | Source | File |
+|---|---|---|---|---|
+| Digital Omnibus (data) | Council mandate agreed by Coreper 21 Oct 2026 (doc 14756/26): cookies stay in ePrivacy 5(3), wider consent exemptions for audience and contextual-ad measurement, 4-month re-ask; no Parliament position, no trilogue; not law | [S] | consilium.europa.eu press release (title only), iapp.org, cuatrecasas.com | `eu-uk.md` |
+| Digital Fairness Act | Commission proposal 11 Nov 2026 (dark patterns, addictive design, trials into subscriptions, auto-renewal, cancellation, human contact); not law | [V] | commission.europa.eu "Review of EU consumer law" page | `eu-uk.md` |
+| AI Act Art 50 guidance | Final transparency Code of Practice 10 Jun 2026; Commission guidelines C(2026) 5054 adopted 20 Jul 2026; content not reviewed | [V] existence | digital-strategy.ec.europa.eu | `eu-uk.md` |
+| AI Act 2 Dec 2026 dates | No further amendment found | [V] (3 Oct OJ check) | — | `eu-uk.md` |
+| UK Information Commission | ICO functions passed to the Information Commission 30 Sep 2026 (Commencement No. 9) | [V] | gov.uk DUAA commencement plans (updated 12 Oct 2026) | `eu-uk.md` |
+| Ofcom Additional Safety Measures | Statement reported mid-Nov 2026; in-force date of the amended codes conflicting | [S] / [U] | ofcom.org.uk (snippets only) | `eu-uk.md` |
+| FCC 26-67 | Published 26 Oct 2026 (FR Doc 2026-21821), effective 25 Nov 2026; companion proposal 2026-21820 | [S] | federalregister.gov (search hit), womblebonddickinson.com | `us.md` |
+| Vermont privacy (Act 145) | Effective 1 Jan 2028 per statute page tags and most trackers | [S] | legislature.vermont.gov (snippet), venable.com, benesch.com | `us.md` |
+| Colorado HB 26-1263 | Chatbot-operator duties incl. age estimation and minor protections from 1 Jan 2027 | [V] | leg.colorado.gov/bills/hb26-1263 | `us.md` |
+| Texas SB 2420; Utah, Louisiana, CA AB 1043; Colorado SB 26-189 rules; CPPA ADMT; FTC negative option; ADA Title II; federal AI preemption; DPF appeal | No change found in the window | prior markers kept | — | `us.md`, `eu-uk.md` |
+| Outside scope | India DPDP main obligations 13 May 2027; Australia Privacy Act tranche 2 exposure draft 31 Aug 2026, no start date | [S] | tribuneindia.com, hsfkramer.com | provenance |
+
+Upcoming dates to re-check: 25 Nov 2026 (TCPA), 2 Dec 2026 (AI Act), 31 Dec 2026 (Utah app-store private right of action), 1 Jan 2027 (Colorado, California, Oklahoma, Louisiana, CPPA ADMT).
+
+**Not re-checked on 22 Nov 2026:** CRA guidance after 11 Sep; COPPA; CA SB 243, SB 690 and AB 1043 text; BIPA; NY laws; everything in `sector-gates.md`, `lawsuit-vectors.md`, `artifacts.md`, `trigger-map.md`, `exposure-triage.md`.

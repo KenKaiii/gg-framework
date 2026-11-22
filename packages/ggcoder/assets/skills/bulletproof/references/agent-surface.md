@@ -2,7 +2,7 @@
 
 Load this when the project calls a model, exposes tools to a model, runs an agent, serves or consumes MCP, or ships a chat feature. Also load it when hardening a developer tool, because a developer tool is an agent target.
 
-Standards [V]: **OWASP Top 10 for LLM Applications (2025)** — LLM01 Prompt Injection, LLM02 Sensitive Information Disclosure, LLM03 Supply Chain, LLM04 Data and Model Poisoning, LLM05 Improper Output Handling, LLM06 Excessive Agency, LLM07 System Prompt Leakage, LLM08 Vector and Embedding Weaknesses, LLM09 Misinformation, LLM10 Unbounded Consumption. **OWASP Top 10 for Agentic Applications (2026)**, published 9 Dec 2025 — ASI01 Goal Hijack, ASI02 Tool Misuse, ASI03 Identity & Privilege Abuse, ASI04 Agentic Supply Chain, ASI05 Unexpected Code Execution, ASI06 Memory & Context Poisoning, ASI07 Insecure Inter-Agent Communication, ASI08 Cascading Failures, ASI09 Human-Agent Trust Exploitation, ASI10 Rogue Agents. Its core principle is **least agency** — grant the minimum autonomy the task requires, not merely minimum permissions.
+Standards [V]: **OWASP Top 10 for LLM Applications 2026** (published 4 Aug 2026 and renumbered from 2025, so always cite an ID with its year) — LLM01:2026 Prompt Injection, LLM02:2026 Sensitive Information Disclosure, LLM03:2026 Excessive Agency, LLM04:2026 Supply Chain, LLM05:2026 Data and Model Poisoning, LLM06:2026 Unbounded Consumption, LLM07:2026 Misinformation, LLM08:2026 Hidden Context Exposure, LLM09:2026 Vector and Embedding Weaknesses, LLM10:2026 Improper Output Handling. **OWASP Top 10 for Agentic Applications (2026)**, published 9 Dec 2025 — ASI01 Goal Hijack, ASI02 Tool Misuse, ASI03 Identity & Privilege Abuse, ASI04 Agentic Supply Chain, ASI05 Unexpected Code Execution, ASI06 Memory & Context Poisoning, ASI07 Insecure Inter-Agent Communication, ASI08 Cascading Failures, ASI09 Human-Agent Trust Exploitation, ASI10 Rogue Agents. Its core principle is **least agency** — grant the minimum autonomy the task requires, not merely minimum permissions.
 
 ## Contents
 
@@ -45,7 +45,7 @@ Egress is the leg most often left intact and the easiest to close. Exfiltration 
 3. **Deterministic policy outside the model.** Enforce limits in code that intercepts before execution: allowlisted commands, path containment, spend caps, rate limits, recipient allowlists. No model in the decision loop.
 4. **Irreversibility gates.** Deleting data, moving money, sending messages to third parties, publishing artifacts, and changing permissions each need explicit confirmation, and should be unavailable in autonomous runs.
 5. **Audit trail.** Log every tool invocation with arguments and outcome. EDR sees execution, not intent — a legitimately-instructed agent doing destructive work looks entirely normal [U], so the tool log is your only forensic record.
-6. **Treat model output as untrusted input** (LLM05). Never feed it to `eval`, a shell, SQL, `innerHTML`, or a file path without the same validation you would apply to a web form.
+6. **Treat model output as untrusted input** (LLM10:2026). Never feed it to `eval`, a shell, SQL, `innerHTML`, or a file path without the same validation you would apply to a web form.
 7. **Isolate the workspace.** Run agent execution in a container or sandbox with no credentials mounted, no network by default, and a bounded filesystem.
 
 ## Sandbox escapes — the 2026 pattern
@@ -97,10 +97,10 @@ Applies to GG Coder itself and to any agent you build or run.
 
 ## RAG, memory & multi-agent
 
-- Poisoned documents in a vector store are persistent injections that fire on retrieval (LLM08, ASI06). Control write access to the index, record provenance per chunk, and prefer per-tenant indexes over one shared index with metadata filtering.
+- Poisoned documents in a vector store are persistent injections that fire on retrieval (LLM09:2026, ASI06). Control write access to the index, record provenance per chunk, and prefer per-tenant indexes over one shared index with metadata filtering.
 - Agent memory that persists across sessions is a persistence mechanism for an attacker. Scope memory per user, make it inspectable, make it clearable, and never let it carry tool permissions.
 - Agent-to-agent messages are untrusted input (ASI07). Authenticate the sender, validate the schema, cap the fan-out, and bound recursion depth — cascading failures (ASI08) are usually an unbounded loop, not an intrusion.
-- Cost and quota are a security property (LLM10). Cap tokens, tool calls, iterations, and spend per task. An unbounded agent loop is a self-inflicted denial of wallet.
+- Cost and quota are a security property (LLM06:2026). Cap tokens, tool calls, iterations, and spend per task. An unbounded agent loop is a self-inflicted denial of wallet.
 
 ## Reviewing an agent feature — the short list
 

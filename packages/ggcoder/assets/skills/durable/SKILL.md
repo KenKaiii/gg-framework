@@ -1,8 +1,10 @@
 ---
 name: durable
 description: "Use to keep stored data from being lost: before running or writing anything that could delete, overwrite or reshape it, and when asked whether data is backed up and recoverable. Do NOT use for read-only queries or query speed."
+metadata:
+  version: "2026.11.22"
 license: Data-durability engineering guidance, not a DBA certification. Sources and snapshot date are recorded at the foot of each reference file.
-compatibility: Snapshot dated 3 October 2026; Prisma 7/8 status and agent safeguards, PostgreSQL 19 status and the Neon, RDS and D1 retention rows re-verified 22 October 2026. Re-verify version behaviours and provider defaults before asserting them as current.
+compatibility: Snapshot dated 3 October 2026; Prisma 7/8 status and agent safeguards, PostgreSQL 19 status and the Neon, RDS and D1 retention rows re-verified 22 October 2026; PostgreSQL 19 GA and 14 EOL, Prisma 8 status and drop prompts, and the Supabase, D1, PlanetScale and PgBouncer rows re-verified 22 November 2026. Re-verify version behaviours and provider defaults before asserting them as current.
 ---
 
 # Durable
@@ -25,7 +27,7 @@ Coding agents have wiped production data during a natural-language code freeze (
 2. **On `may-hold-real-data`, read-only by default.** Inspect with `SELECT`/`EXPLAIN`/`\d`, a read-only role, or `BEGIN READ ONLY`. No DDL, no writes, no `migrate dev|reset`, `db push`, `--force`, `--accept-data-loss`, `flush`, `dropDatabase`, `TRUNCATE`, seed scripts.
 3. **Destructive or schema-changing commands on real data require all of:** (a) a backup or PITR point you verified exists *for this database* (`RUNTIME` or provider-console evidence, not assumption), (b) a dry-run count of affected rows shown to the user, (c) the exact command shown, and (d) the user's explicit go-ahead in this conversation for that command. "Go ahead and fix it" does not cover a `DROP`.
 4. **Experiment on a branch, not the original.** Use a provider branch, restored clone or local copy; prove the change there, then hand back the production step with evidence.
-5. **Never bypass a tool's safety interlock yourself.** If a CLI refuses because it detected an agent (e.g. Prisma 7's AI-consent check), a platform holds your request for the user's approval (e.g. Prisma Console agent approvals), or a prompt asks for confirmation: stop and ask. Never set a consent variable, approve your own request, or pass `--force`/`--yes` on your own initiative.
+5. **Never bypass a tool's safety interlock yourself.** If a CLI refuses because it detected an agent (e.g. Prisma 7's AI-consent check, Prisma 8's drop prompts), a platform holds your request for the user's approval (e.g. Prisma Console agent approvals), or a prompt asks for confirmation: stop and ask. Never set a consent variable, approve your own request, or pass `--force`/`--yes`/`--delete`/`--allow` on your own initiative.
 6. **Surprising results mean stop, not fix.** Empty tables, missing rows, failed restores: report what you observed and ask. Never "repair" by recreating, reseeding, or fabricating data, and never declare data unrecoverable without checking the provider's backups/PITR.
 7. **Report exactly what you ran** — every command that touched a database, its target, and its result, including mistakes, immediately.
 

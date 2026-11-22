@@ -157,7 +157,7 @@ Grep priorities in this order: privileged setters without timelock and multisig;
 | **Model provenance** | Sign at train time, verify **in the loader** at load time (OpenSSF Model Signing / sigstore) [V]; pin dataset revisions by content hash, not by a mutable hub tag | A README instruction to "verify the hash" is not verification |
 | **Endpoint exposure** | Anything bound to `0.0.0.0`: experiment trackers, notebook servers, inference servers, dashboards, job-submission APIs, local model runtimes | Several 2025–2026 critical CVEs in this class chain auth bypass with traversal to unauthenticated RCE [S]; some job APIs are unauthenticated by design and must be network-isolated |
 | **Default credentials** | Auth config files shipped with defaults; notebooks started with empty tokens and `--allow-root` | Generic credential-harvesting scanners find these incidentally, which is how most of these get popped [V] |
-| **Model output** | Treat as untrusted input to whatever consumes it — never straight into `eval`, a shell, SQL, or `innerHTML` | This is LLM05 Improper Output Handling, and it is how a prompt injection becomes code execution |
+| **Model output** | Treat as untrusted input to whatever consumes it — never straight into `eval`, a shell, SQL, or `innerHTML` | This is LLM10:2026 Improper Output Handling, and it is how a prompt injection becomes code execution |
 
 ---
 

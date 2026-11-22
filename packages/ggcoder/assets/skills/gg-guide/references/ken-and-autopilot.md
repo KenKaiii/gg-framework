@@ -1,5 +1,18 @@
 # Ken, helpers and extras
 
+## Contents
+- Who Ken is
+- Talking to Ken with @Ken
+- Ken's activity bar
+- Ken's model
+- Autopilot
+- Plan decisions
+- Helper agents (critters)
+- Level and Scorecard
+- Trophies
+- Radio
+- Common questions
+
 Ken is GG Coder's second agent in a Code window. GG does the building; Ken is a mentor and reviewer who reads what GG has been doing and gives you a second opinion. This page also covers helper agents (critters), trophies, your level, the radio and celebrations.
 
 ## Who Ken is
@@ -51,7 +64,8 @@ Ken is GG Coder's second agent in a Code window. GG does the building; Ken is a 
 - Ken checks for unfinished work and what you actually asked for; he doesn't chase optional polish.
 - Failed or unfinished checks stay marked Unverified; Ken won't paper over them.
 - Pressing Stop also stops an Autopilot review in progress.
-- If GG asks you a question while Autopilot is on and you don't answer within 2 minutes, it carries on with its best guess (10 minutes without Autopilot). Your later answer still gets sent.
+- In a Code window with Autopilot on, Ken answers GG's question cards for you: the card shows **Ken:** and his answer. When it's a call only you can make, the card says **Ken left this one for you** with his reason.
+- If a question is left to you and you don't answer within 2 minutes, GG carries on with its best guess (10 minutes without Autopilot). Your later answer still gets sent.
 
 ## Plan decisions
 

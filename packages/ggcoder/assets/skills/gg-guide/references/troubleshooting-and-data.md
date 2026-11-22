@@ -1,5 +1,14 @@
 # Troubleshooting and where GG Coder keeps data
 
+## Contents
+- What lives in `~/.gg/`
+- Files inside a project
+- Which log to read
+- Common problems
+- Reporting a bug
+- Resetting
+- Common questions
+
 GG Coder keeps its data in one folder in the user's home directory, `~/.gg/`. The desktop app and the `ggcoder` CLI share this folder, so a sign-in made in one also works in the other.
 
 ## What lives in `~/.gg/`

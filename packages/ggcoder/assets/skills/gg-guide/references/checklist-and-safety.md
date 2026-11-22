@@ -1,5 +1,22 @@
 # Checklist, project health and safety
 
+## Contents
+- The Checklist screen
+- Every group and item
+- Agent setup and `/init`
+- Running a check
+- Don't embarrass me
+- Project health badge and panel
+- How do I make sure my app is safe and ready to ship?
+- Commands you type with `!`
+- MCP servers and trust
+- Blocked skills
+- Package and command protection
+- Files, secrets and the network
+- macOS Full Disk Access
+- What the agent does without asking
+- Common questions
+
 This page covers two things: checking the user's own project (the Checklist and project health), and how GG Coder protects the user and their machine.
 
 ## The Checklist screen

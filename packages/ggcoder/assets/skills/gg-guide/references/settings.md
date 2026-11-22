@@ -1,5 +1,17 @@
 # Settings
 
+## Contents
+- Opening Settings
+- The tray Settings dialog
+- General
+- AI Providers
+- Remote
+- MCP
+- Steroids
+- About
+- What is not in Settings
+- Common questions
+
 Settings is where you set up GG Coder: how it looks, sounds and behaves, your project folder, your AI providers, your Telegram bot, extra tools (MCP servers) and Steroids. It also has an About page.
 
 ## Opening Settings
