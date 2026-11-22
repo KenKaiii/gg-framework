@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.119.0",
+    date: "2026-11-22",
+    items: [
+      "Your chat input is calm again. I removed the `cache may have expired` strip that kept nagging you after every restart and model switch. Compacting early never actually saved you anything there, so I now quietly trim old tool output on my own and leave your input alone.",
+      "Skills from your other coding agents now just work. I read the shared `.agents/skills` folders that Codex, Amp and friends use, and a skill marked manual-only stays put until you ask for it by name. Your own `.gg/skills` still win if two share a name.",
+      "My built-in safety skills got a fresh brain for December. They know the newest privacy and AI rules landing in the next few weeks, the new `OWASP 2026` AI security list and `Postgres 19`, so the guardrails I build into your app match today, not last month.",
+    ],
+  },
+  {
     version: "0.118.0",
     date: "2026-11-21",
     items: [
