@@ -1,5 +1,18 @@
 # @kenkaiiii/ggcoder
 
+## 5.108.0
+
+### Minor Changes
+
+- 814af6c: Skills follow the Agent Skills standard more closely. GG Coder now also loads skills from the shared `~/.agents/skills` and project `.agents/skills` folders that other coding agents use (GG's own `.gg/skills` folders win a name clash). A skill marked `disable-model-invocation: true` no longer loads on its own; ask for it by name. The built-in skills carry a version and have refreshed facts as of 22 November 2026. After `/init`, the app now points at the real **New session** key.
+
+### Patch Changes
+
+- 9c09aff: Removed the "This chat's cache may have expired" strip above the chat input. Its **Compact first** button couldn't save the full-price re-read (compacting re-reads the whole chat itself), and it also appeared after every restart or model switch, whatever the cache's real age. GG still prunes old tool output harder on its own when the cache is cold, and auto-compaction is unchanged.
+  - @kenkaiiii/gg-ai@5.108.0
+  - @kenkaiiii/gg-agent@5.108.0
+  - @kenkaiiii/gg-core@5.108.0
+
 ## 5.107.0
 
 ### Minor Changes
