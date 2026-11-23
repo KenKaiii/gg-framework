@@ -146,6 +146,8 @@ const COVERAGE: Record<string, string> = {
   Markdown: "sessions-and-history.md",
   // code-mode.md
   Composer: "code-mode.md",
+  BranchPicker: "code-mode.md",
+  ProjectWorktrees: "code-mode.md",
   FileMentionMenu: "code-mode.md",
   AttachmentBar: "code-mode.md",
   SlashMenu: "code-mode.md",

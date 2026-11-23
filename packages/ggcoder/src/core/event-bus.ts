@@ -59,6 +59,8 @@ export interface BusEventMap {
   security_notice: { key: string; message: string };
   /** A guard blocked something (or found an infected installed package): a chat row. */
   security_block: { rule: string; target: string };
+  /** The window opened in another checkout for its branch (shown as a chat row). */
+  checkout_notice: { text: string };
 
   // Agent self-correction hooks (ideal review / verification / loop-break /
   // re-grounding). Carries only the semantic kind; the presentation layer owns
@@ -136,6 +138,7 @@ function emptyListenerSets(): ListenerSets {
     diagnostics: new Set(),
     security_notice: new Set(),
     security_block: new Set(),
+    checkout_notice: new Set(),
     hook: new Set(),
     hook_armed: new Set(),
     subagent_state: new Set(),

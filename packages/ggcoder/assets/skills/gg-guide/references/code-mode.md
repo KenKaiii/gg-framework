@@ -171,6 +171,9 @@ Custom commands: each Markdown file in the project's `.gg/commands/` folder beco
 - When there is nothing to commit it shows **Clean** (tooltip **Nothing to commit**).
 - These buttons are disabled while GG is running.
 - The deck's **Git** panel shows the branch, uncommitted files, and pull requests and issues for GitHub projects.
+- Each window can be on its own branch. The Git panel's Branches tab filters, creates and picks branches. If no other window uses the folder, picking a branch switches it there. If other windows share the folder, this window moves to its own git worktree for that branch (under `~/.gg/worktrees`, with ignored `.env` files copied over) and keeps its conversation; the project's setup (for example its install) runs there once as a background task.
+- A reopened conversation comes back where its branch is checked out. If the branch isn't checked out anywhere, the chat says so; pick the branch in the Branches tab to continue on it.
+- Home lists a project's worktrees with their branch and status. You can open one, or remove one GG made (the branch stays). GG asks first when removing would lose uncommitted changes or commits no branch has, and waits for a setup that is still running.
 
 ## CI indicator
 

@@ -50,6 +50,7 @@ export interface SessionRouteContext {
     projectHealth: ProjectHealth | null;
     tasks: BackgroundProcess[];
     additionalRoots: string[];
+    worktreeOf: string | null;
   };
   readonly progress: ProgressManager;
   /** Commands the user runs themselves (`!cmd`). */
