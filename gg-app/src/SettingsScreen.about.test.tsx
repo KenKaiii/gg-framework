@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { SettingsScreen as SettingsScreenType } from "./SettingsScreen";
 
 // About is the one Settings page that loads on demand (it carries the whole
 // changelog), and a page is only ever loaded once. So every test here starts
@@ -23,7 +24,9 @@ vi.mock("./agent", () => ({
   onSteroidsChange: () => () => {},
 }));
 
-beforeEach(() => {
+let SettingsScreen: typeof SettingsScreenType;
+
+beforeEach(async () => {
   vi.resetModules();
   about.requested = false;
   // Not hoisted like the others: the factory has to run again for every test,
@@ -35,7 +38,10 @@ beforeEach(() => {
     });
     return { AboutPage: () => <p>about page</p> };
   });
-});
+  // The cold import of the whole screen is slow on Windows CI; keep it out of
+  // the tests' own 5s so a late render can't leak into the next test.
+  ({ SettingsScreen } = await import("./SettingsScreen"));
+}, 60_000);
 
 afterEach(cleanup);
 
@@ -45,7 +51,6 @@ function waiting(): boolean {
 
 /** A Settings screen that has never opened About. */
 async function openSettings(props: { initialTab?: "remote" } = {}): Promise<void> {
-  const { SettingsScreen } = await import("./SettingsScreen");
   render(<SettingsScreen onClose={() => {}} {...props} />);
   // Let the status loads settle.
   await act(async () => {
