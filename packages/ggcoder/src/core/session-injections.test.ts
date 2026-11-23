@@ -142,4 +142,32 @@ describe("model-visible injections persist to the session log", () => {
     const boomResults = persisted.filter((m) => textOf(m).includes("Unknown tool: boom"));
     expect(boomResults.length).toBe(3);
   }, 60_000);
+
+  it("never persists the live-run cache-anchor hint", async () => {
+    const { AgentSession } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "palsu",
+      model: "claude-sonnet-5",
+      cwd: tmpProject,
+      systemPrompt: "test system prompt",
+    });
+    await session.initialize();
+    palsu.appendResponses(palsuText("ok"));
+    await session.prompt("Do the task.");
+    const anchored: Message = { role: "user", content: "anchored", cacheAnchor: true };
+    // deliberate reach-in: the hint is set by the in-flight prune, not a public API
+    await (
+      session as unknown as { persistMessage(message: Message): Promise<void> }
+    ).persistMessage(anchored);
+    const sessionFile = session.getState().sessionPath;
+    await session.dispose();
+
+    const persisted = await readPersistedMessages(sessionFile);
+    expect(persisted.find((m) => textOf(m) === "anchored")).toEqual({
+      role: "user",
+      content: "anchored",
+    });
+    // The live message keeps its hint.
+    expect(anchored.cacheAnchor).toBe(true);
+  }, 60_000);
 });

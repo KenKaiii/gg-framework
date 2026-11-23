@@ -5,7 +5,9 @@ import {
   pruneMinimumTokens,
   pruneStaleToolResults,
   shouldPruneToolResults,
+  stablePrefixEnd,
 } from "./tool-result-pruner.js";
+import { estimateConversationTokens } from "./token-estimator.js";
 
 function toolTurn(
   id: string,
@@ -394,6 +396,72 @@ describe("pruneStaleToolResults", () => {
     expect(messages[3]).toBe(anchor);
     expect(messages[2]).toBe(toolMsg);
   });
+});
+
+describe("stablePrefixEnd", () => {
+  const opts = { protectTokens: 40_000, minimumTokens: 20_000, protectToolBatches: 2 };
+
+  it("is undefined until something was pruned for size", () => {
+    const messages: Message[] = [
+      { role: "user", content: "go" },
+      ...toolTurn("a", "read", { file_path: "a.ts" }, "x".repeat(1_000)),
+      ...toolTurn("b", "read", { file_path: "a.ts" }, "x".repeat(1_000)),
+      ...toolTurn("c", "bash", { command: "ls" }, "ok"),
+      ...toolTurn("d", "bash", { command: "ls" }, "ok"),
+    ];
+    // A superseded-read stub proves nothing about what lies behind it.
+    pruneStaleToolResults(messages, { ...opts, minimumTokens: 0 });
+    expect(resultOf(messages, "a").content).toContain("superseded");
+    expect(stablePrefixEnd(messages)).toBeUndefined();
+  });
+
+  // Flat floor, and main's warm-cache floor (35% of the context per prune).
+  it.each([
+    ["the flat floor", () => opts.minimumTokens],
+    [
+      "the warm-cache share",
+      (messages: Message[]) =>
+        pruneMinimumTokens(estimateConversationTokens(messages), false, 10_000_000),
+    ],
+  ])(
+    "points before the newest size stub, and later prunes never change anything up to it (%s)",
+    (_label, minimumTokens) => {
+      const messages: Message[] = [{ role: "user", content: "long run" }];
+      let checked = 0;
+      for (let batch = 1; batch <= 30; batch++) {
+        // re-reads (superseded stubs) and large write arguments (capped args) included
+        const turn =
+          batch % 5 === 0
+            ? toolTurn(
+                `w${batch}`,
+                "write",
+                { file_path: "out.ts", content: "y".repeat(40_000) },
+                "ok",
+              )
+            : toolTurn(`r${batch}`, "read", { file_path: `f${batch % 4}.ts` }, "z".repeat(60_000));
+        messages.push(...turn);
+        const end = stablePrefixEnd(messages);
+        const frozen = end && JSON.stringify(messages.slice(0, messages.indexOf(end) + 1));
+        pruneStaleToolResults(messages, { ...opts, minimumTokens: minimumTokens(messages) });
+        if (end && frozen) {
+          checked++;
+          expect(JSON.stringify(messages.slice(0, messages.indexOf(end) + 1))).toBe(frozen);
+        }
+      }
+      expect(checked).toBeGreaterThan(10);
+      const end = stablePrefixEnd(messages);
+      const stub = messages.findIndex(
+        (m, i) =>
+          i > messages.indexOf(end!) &&
+          m.role === "tool" &&
+          String(m.content[0]?.content).startsWith("[Pruned: old tool output"),
+      );
+      // the anchor is the user/tool message just before the newest size stub
+      expect(
+        messages.slice(messages.indexOf(end!) + 1, stub).every((m) => m.role === "assistant"),
+      ).toBe(true);
+    },
+  );
 });
 
 describe("shouldPruneToolResults", () => {
