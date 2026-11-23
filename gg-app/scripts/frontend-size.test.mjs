@@ -1,4 +1,11 @@
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -19,8 +26,11 @@ beforeEach(() => {
   );
   writeFileSync(
     path.join(root, ".github/ci/baseline/sizes.json"),
+    // The real file also carries the other artifacts and the startup gate's
+    // entry: a re-baseline here must leave those as they are.
     JSON.stringify({
-      artifacts: { "frontend:initial": { bytes: 35_000 } },
+      artifacts: { "frontend:initial": { bytes: 35_000 }, sidecar: { bytes: 1 } },
+      startup: { "cli-version": { ms: 12 } },
     }),
   );
   manifest = {
@@ -46,11 +56,16 @@ beforeEach(() => {
 
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-function runGate() {
+function runGate(...flags) {
   writeFileSync(path.join(dist, ".vite/manifest.json"), JSON.stringify(manifest));
   return spawnSync(
     process.execPath,
-    [path.join(root, ".github/ci/size-gate.mjs"), "--only", "frontend:initial"],
+    [
+      path.join(root, ".github/ci/size-gate.mjs"),
+      "--only",
+      "frontend:initial",
+      ...flags,
+    ],
     {
       encoding: "utf8",
       timeout: 10_000,
@@ -65,13 +80,55 @@ describe("bundle-size reporting", () => {
     expect(result.stdout).toContain("34.2KB");
   });
 
-  it("reports eager bundle growth without failing CI", () => {
+  // The budget is the baseline plus max(2%, 10KB): 35,000 + 10,240 here.
+  it.each([
+    [10_240, "ok"],
+    [10_241, "OVER BUDGET"],
+  ])("eager growth of %i bytes is %s", (extra, verdict) => {
+    manifest.extra = { file: "extra.js" };
+    manifest["index.html"].imports.push("extra");
+    writeFileSync(path.join(dist, "extra.js"), Buffer.alloc(extra));
+    const result = runGate();
+    expect(result.status).toBe(verdict === "ok" ? 0 : 1);
+    expect(result.stdout).toContain(verdict);
+  });
+
+  it("fails CI when the eager bundle outgrows its budget, and says how to re-baseline", () => {
     manifest["index.html"].imports.push("notes");
     const result = runGate();
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain("growth (informational)");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("OVER BUDGET");
     expect(result.stdout).toContain("+96.7KB");
-    expect(result.stderr).toBe("");
+    // 10,000 + 20,000 + 5,000 + 99,000 bytes, against 35,000 + 10,240.
+    expect(result.stderr).toContain(
+      "Budget exceeded for frontend:initial: 130.9KB against 44.2KB",
+    );
+    expect(result.stderr).toContain(
+      "node .github/ci/size-gate.mjs --update --only frontend:initial",
+    );
+  });
+
+  it("re-baselines instead of failing when asked to", () => {
+    manifest["index.html"].imports.push("notes");
+    const result = runGate("--update");
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Baseline updated");
+    const recorded = JSON.parse(
+      readFileSync(path.join(root, ".github/ci/baseline/sizes.json"), "utf8"),
+    );
+    expect(recorded.artifacts["frontend:initial"].bytes).toBe(134_000);
+    expect(recorded.artifacts.sidecar.bytes).toBe(1);
+    expect(recorded.startup["cli-version"].ms).toBe(12);
+  });
+
+  it("fails CI when the eager bundle has no baseline to measure against", () => {
+    writeFileSync(
+      path.join(root, ".github/ci/baseline/sizes.json"),
+      JSON.stringify({ artifacts: {} }),
+    );
+    const result = runGate();
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("no baseline (BLOCKING)");
   });
 
   it.each(["dist:ggcoder", "sidecar"])("reports %s growth without failing CI", (artifact) => {

@@ -296,8 +296,8 @@ pub(crate) async fn sidecar_get_json(
     let res = client
         .get(format!("{}{}", sidecar_base(port), path))
         .header("x-gg-session", &gg_sid)
-        // Local reads (history, export): bounded so a wedged daemon surfaces
-        // an error instead of an endless spinner.
+        // Local reads (history, export) can only be slow on this machine, so
+        // they are bounded far tighter than the client's default backstop.
         .timeout(std::time::Duration::from_secs(60))
         .send()
         .await

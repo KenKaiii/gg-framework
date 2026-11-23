@@ -6,6 +6,41 @@ pub(crate) fn sidecar_base(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
 }
 
+/// Total deadline on every proxied request that does not set its own. A
+/// backstop, not a speed target: nothing legitimate runs this long, so a
+/// request that reaches it belongs to a handler that will never answer, and the
+/// command fails with "operation timed out" instead of leaving the webview
+/// waiting for good. Call sites that can only be slow locally (history, export,
+/// the quit snapshot) bound themselves tighter.
+pub(crate) const SIDECAR_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// An HTTP client for the sidecar daemon: authenticated with the launch token
+/// and quick to give up connecting (the daemon is on loopback, so a connect
+/// that doesn't land fast never will). `total_timeout` bounds each request end
+/// to end, body reads included. Only the SSE bridge passes `None`, because its
+/// stream is long-lived by design. With a deadline set, reqwest starts its
+/// timer as `send` is called, so that call has to be made inside the runtime
+/// (an `async fn`, or `block_on(async { .. })`), as every call site does.
+pub(crate) fn sidecar_http_client(
+    daemon_token: &str,
+    total_timeout: Option<std::time::Duration>,
+) -> reqwest::Client {
+    let mut default_headers = reqwest::header::HeaderMap::new();
+    default_headers.insert(
+        "x-gg-token",
+        reqwest::header::HeaderValue::from_str(daemon_token)
+            .expect("daemon token is valid header ASCII"),
+    );
+    let builder = reqwest::Client::builder()
+        .default_headers(default_headers)
+        .connect_timeout(std::time::Duration::from_secs(5));
+    let builder = match total_timeout {
+        Some(timeout) => builder.timeout(timeout),
+        None => builder,
+    };
+    builder.build().unwrap_or_else(|_| reqwest::Client::new())
+}
+
 /// The shared daemon port (same for every window). Named `port_for` so the ~35
 /// proxy commands keep their call shape; the per-window routing is the session
 /// id (`session_for`), attached as the `x-gg-session` header.
@@ -670,6 +705,72 @@ pub(crate) fn restore_or_default_windows(app: &tauri::AppHandle) -> Result<(), S
     Ok(())
 }
 
+/// How long the quit snapshot waits, in total, for the daemon to answer.
+pub(crate) const QUIT_REFRESH_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(400);
+
+/// What one window's re-read `/state` said: `(label, session_path, cwd)`.
+type LiveSession = (String, Option<String>, Option<PathBuf>);
+
+/// Re-read every window's `/state` on the daemon at `port`, all at once: the
+/// whole round trip is bounded by one `deadline`, however many windows are
+/// open. A window the daemon does not answer for in time is simply left out.
+async fn read_live_sessions(
+    client: reqwest::Client,
+    port: u16,
+    targets: Vec<(String, String)>,
+    deadline: std::time::Duration,
+) -> Vec<LiveSession> {
+    let url = format!("{}/state", sidecar_base(port));
+    futures_util::future::join_all(targets.into_iter().map(|(label, sid)| {
+        let client = client.clone();
+        let url = url.clone();
+        async move {
+            let res = client
+                .get(&url)
+                .header("x-gg-session", &sid)
+                .timeout(deadline)
+                .send()
+                .await
+                .ok()?;
+            let body = res.json::<serde_json::Value>().await.ok()?;
+            let session_path = body
+                .get("sessionPath")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let cwd = body
+                .get("cwd")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from);
+            Some((label, session_path, cwd))
+        }
+    }))
+    .await
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+/// Record what `read_live_sessions` learned. A window keeps its last-known
+/// session wherever its `/state` had nothing to add, and one that closed
+/// meanwhile is skipped.
+fn record_live_sessions(
+    map: &mut HashMap<String, WindowSession>,
+    results: impl IntoIterator<Item = LiveSession>,
+) {
+    for (label, session_path, cwd) in results {
+        if let Some(inst) = map.get_mut(&label) {
+            if let Some(session_path) = session_path {
+                inst.session_path = Some(session_path);
+            }
+            if let Some(cwd) = cwd {
+                inst.cwd = Some(cwd);
+            }
+        }
+    }
+}
+
 /// Before the final exit snapshot, re-read each live session's `/state` (via the
 /// shared daemon, keyed by the window's `x-gg-session` header) so a window that
 /// started a new session mid-run (changing its session file) is recorded at its
@@ -691,56 +792,152 @@ pub(crate) fn refresh_live_sessions(app: &tauri::AppHandle) {
     }
     let client = app.state::<reqwest::Client>().inner().clone();
     // The exit callback runs on the main event-loop thread (outside the async
-    // runtime), so block_on is safe here. Each request is time-boxed so a hung
-    // session can't stall quit.
-    let results: Vec<(String, Option<String>, Option<PathBuf>)> =
-        tauri::async_runtime::block_on(async {
-            let mut out = Vec::with_capacity(targets.len());
-            for (label, sid) in targets {
-                let url = format!("{}/state", sidecar_base(port));
-                let req = client
-                    .get(&url)
-                    .header("x-gg-session", &sid)
-                    .timeout(std::time::Duration::from_millis(400))
-                    .send()
-                    .await;
-                let Ok(res) = req else {
-                    continue;
-                };
-                let Ok(body) = res.json::<serde_json::Value>().await else {
-                    continue;
-                };
-                let session_path = body
-                    .get("sessionPath")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.to_string());
-                let cwd = body
-                    .get("cwd")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-                    .map(PathBuf::from);
-                out.push((label, session_path, cwd));
-            }
-            out
-        });
+    // runtime), so block_on is safe here. Every window is asked at once, so a
+    // hung daemon costs one deadline at quit, not one per open window.
+    let results = tauri::async_runtime::block_on(read_live_sessions(
+        client,
+        port,
+        targets,
+        QUIT_REFRESH_TIMEOUT,
+    ));
     let state: State<Windows> = app.state();
     let mut map = state.map.lock_or_recover();
-    for (label, session_path, cwd) in results {
-        if let Some(inst) = map.get_mut(&label) {
-            if session_path.is_some() {
-                inst.session_path = session_path;
-            }
-            if let Some(cwd) = cwd {
-                inst.cwd = Some(cwd);
-            }
-        }
-    }
+    record_live_sessions(&mut map, results);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Quit snapshot: every window's /state is re-read at once ──────────────
+
+    #[test]
+    fn an_unanswered_or_closed_window_keeps_its_last_known_session() {
+        let mut map = HashMap::from([(
+            "main".to_string(),
+            WindowSession {
+                session_path: Some("old.jsonl".into()),
+                cwd: Some(PathBuf::from("/old")),
+                ..Default::default()
+            },
+        )]);
+        record_live_sessions(
+            &mut map,
+            [
+                // Answered, but without a session path: the old one stays.
+                ("main".to_string(), None, Some(PathBuf::from("/new"))),
+                // A window that closed meanwhile is skipped.
+                ("closed".to_string(), Some("x.jsonl".into()), None),
+            ],
+        );
+        assert_eq!(map["main"].session_path.as_deref(), Some("old.jsonl"));
+        assert_eq!(map["main"].cwd, Some(PathBuf::from("/new")));
+        assert_eq!(map.len(), 1);
+    }
+
+    /// A stand-in daemon on loopback taking three sessions. `slow` is answered
+    /// only once the other two have connected, so a caller that asks one window
+    /// at a time never sees it answered in time; the rest answer at once.
+    /// Returns the port, whether `slow` ever saw the others, and the server.
+    fn spawn_daemon_with_a_slow_window(
+    ) -> (u16, std::sync::Arc<AtomicBool>, std::thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+        use std::sync::atomic::AtomicUsize;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let port = listener.local_addr().expect("address").port();
+        let others = std::sync::Arc::new(AtomicUsize::new(0));
+        let slow_saw_the_others = std::sync::Arc::new(AtomicBool::new(false));
+        let mut handlers = Vec::new();
+        let flag = slow_saw_the_others.clone();
+        let server = std::thread::spawn(move || {
+            for _ in 0..3 {
+                let (mut conn, _) = listener.accept().expect("accept");
+                conn.set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                    .expect("read timeout");
+                let others = others.clone();
+                let slow_saw_the_others = flag.clone();
+                handlers.push(std::thread::spawn(move || {
+                    // Read the request head, then answer by session.
+                    let mut head = Vec::new();
+                    let mut byte = [0u8; 1];
+                    while !head.ends_with(b"\r\n\r\n") {
+                        match conn.read(&mut byte) {
+                            Ok(0) | Err(_) => break,
+                            Ok(_) => head.push(byte[0]),
+                        }
+                    }
+                    let head = String::from_utf8_lossy(&head).to_lowercase();
+                    let sid = head
+                        .lines()
+                        .find_map(|line| line.strip_prefix("x-gg-session: "))
+                        .unwrap_or_default()
+                        .to_string();
+                    if sid == "slow" {
+                        let give_up = std::time::Instant::now() + std::time::Duration::from_secs(3);
+                        while others.load(Ordering::SeqCst) < 2
+                            && std::time::Instant::now() < give_up
+                        {
+                            std::thread::sleep(std::time::Duration::from_millis(2));
+                        }
+                        slow_saw_the_others
+                            .store(others.load(Ordering::SeqCst) >= 2, Ordering::SeqCst);
+                    } else {
+                        others.fetch_add(1, Ordering::SeqCst);
+                    }
+                    let body =
+                        format!(r#"{{"sessionPath":"{sid}.jsonl","cwd":"/projects/{sid}"}}"#);
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                         Content-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    let _ = conn.write_all(response.as_bytes());
+                    let _ = conn.write_all(body.as_bytes());
+                    let _ = conn.flush();
+                }));
+            }
+            for handler in handlers {
+                let _ = handler.join();
+            }
+        });
+        (port, slow_saw_the_others, server)
+    }
+
+    #[test]
+    fn quit_asks_every_window_for_its_session_at_once() {
+        crate::install_rustls_provider();
+        let (port, slow_saw_the_others, server) = spawn_daemon_with_a_slow_window();
+        let results = tauri::async_runtime::block_on(read_live_sessions(
+            sidecar_http_client("token", None),
+            port,
+            vec![
+                ("main".to_string(), "slow".to_string()),
+                ("project-1".to_string(), "fast-a".to_string()),
+                ("project-2".to_string(), "fast-b".to_string()),
+            ],
+            std::time::Duration::from_secs(2),
+        ));
+        server.join().expect("server thread");
+        let session = |name: &str| {
+            Some((
+                Some(format!("{name}.jsonl")),
+                Some(PathBuf::from(format!("/projects/{name}"))),
+            ))
+        };
+        let mut by_label: HashMap<String, _> = results
+            .into_iter()
+            .map(|(label, path, cwd)| (label, (path, cwd)))
+            .collect();
+        assert_eq!(by_label.remove("main"), session("slow"));
+        assert_eq!(by_label.remove("project-1"), session("fast-a"));
+        assert_eq!(by_label.remove("project-2"), session("fast-b"));
+        assert!(by_label.is_empty());
+        assert!(
+            slow_saw_the_others.load(Ordering::SeqCst),
+            "one window's request waited alone: windows are asked one at a time"
+        );
+    }
 
     #[test]
     fn daemon_respawns_with_bounded_exponential_backoff() {

@@ -36,6 +36,7 @@ import {
 } from "../../core/claude-code/session-sync.js";
 import { flagUntrustedToolResult } from "../../core/injection-detect.js";
 import { log } from "../../core/logger.js";
+import { recordUserDecision } from "../../core/regrounding.js";
 import { wrapSteeringContent } from "../../core/steering.js";
 
 /** Extract plain text from this run's user input — the verbatim request that
@@ -147,7 +148,7 @@ export interface AgentLoopOptions {
   getLoopBreakMessage?: (stats: LoopBreakStats, stage: 1 | 2) => Message | null;
   /** Polled mid-loop after a compaction reduced the context. Return a user
    *  message that re-pins the original request. */
-  getRegroundingMessage?: (originalRequest: string) => Message | null;
+  getRegroundingMessage?: (originalRequest: string, decisions: string[]) => Message | null;
 }
 
 export type ActivityPhase = "waiting" | "thinking" | "generating" | "tools" | "retrying" | "idle";
@@ -351,6 +352,8 @@ export function useAgentLoop(
   // re-grounding hook re-pins; reading it post-compaction would re-inject the
   // summary itself.
   const originalRequestRef = useRef("");
+  // The user's own ask_user answers this run; they scope the pinned request.
+  const userDecisionsRef = useRef<string[]>([]);
   const phaseRef = useRef<ActivityPhase>("idle");
   const thinkingStartRef = useRef<number | null>(null);
   const thinkingAccumRef = useRef(0);
@@ -618,6 +621,7 @@ export function useAgentLoop(
         // ground truth — the task actually being executed — not the first
         // message of a long session (which may itself already be a summary).
         originalRequestRef.current = userContentText(content);
+        userDecisionsRef.current = [];
 
         try {
           // Resolve fresh credentials (handles OAuth token refresh)
@@ -681,6 +685,8 @@ export function useAgentLoop(
                   const result = await transformContext(msgs, opts);
                   if (result !== msgs && result.length < msgs.length) {
                     compactionOccurredRef.current = true;
+                    // Each compaction is its own drift point: re-arm the note.
+                    regroundingInjectedRef.current = false;
                   }
                   return result;
                 }
@@ -746,6 +752,7 @@ export function useAgentLoop(
               ) {
                 const regroundingMessage = options.getRegroundingMessage(
                   originalRequestRef.current,
+                  userDecisionsRef.current,
                 );
                 if (regroundingMessage) {
                   regroundingInjectedRef.current = true;
@@ -906,6 +913,12 @@ export function useAgentLoop(
                   event.details,
                   tc?.args,
                 );
+                if (toolName === "ask_user" && !event.isError) {
+                  userDecisionsRef.current = recordUserDecision(
+                    userDecisionsRef.current,
+                    event.result,
+                  );
+                }
                 // ── Loop-breaker signals ──
                 if (event.isError) {
                   consecutiveFailuresRef.current += 1;

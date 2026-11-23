@@ -9,8 +9,8 @@
       "recorded_at": "2026-09-28T09:53:36.217Z"
     },
     "frontend:initial": {
-      "bytes": 971248,
-      "recorded_at": "2026-09-28T09:53:36.215Z"
+      "bytes": 1412297,
+      "recorded_at": "2026-11-23T10:39:09.606Z"
     },
     "sidecar:deps:darwin-arm64": {
       "bytes": 276277838,

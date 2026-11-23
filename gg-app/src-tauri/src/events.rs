@@ -48,6 +48,28 @@ pub(crate) fn drain_sse_frames(buf: &mut Vec<u8>) -> Vec<String> {
     frames
 }
 
+/// Run `emit` only while `label` still shows `session_id`; says whether it ran.
+/// The registry is unlocked BEFORE `emit`: handing a frame to the webview is
+/// not instant, and holding the registry across it made every proxy command's
+/// `session_for` wait on stream traffic.
+pub(crate) fn emit_to_current_session(
+    map: &Mutex<HashMap<String, WindowSession>>,
+    label: &str,
+    session_id: &str,
+    emit: impl FnOnce(),
+) -> bool {
+    let current = map
+        .lock_or_recover()
+        .get(label)
+        .and_then(|w| w.session_id.as_deref())
+        == Some(session_id);
+    if !current {
+        return false;
+    }
+    emit();
+    true
+}
+
 /// Connect to a window's sidecar SSE stream and re-emit each frame ONLY to that
 /// window (`emit_to` the window label) as `agent-event`, so windows never see
 /// each other's agent activity. Rust has no mixed-content restriction, so the
@@ -59,9 +81,9 @@ pub(crate) fn start_event_bridge(
     port: u16,
     session_id: String,
 ) {
-    // Reuse the app's shared HTTP client (cheap Arc clone) so the SSE connect
-    // shares the connection pool with the proxy commands.
-    let client = app.state::<reqwest::Client>().inner().clone();
+    // Its own client, not the shared proxy one: that bounds every request
+    // (`SIDECAR_REQUEST_TIMEOUT`), and this stream is long-lived by design.
+    let client = app.state::<EventStreamClient>().inner().0.clone();
     tauri::async_runtime::spawn(async move {
         let mut retry_delay = SSE_RETRY_MIN;
         loop {
@@ -104,17 +126,21 @@ pub(crate) fn start_event_bridge(
                                         serde_json::from_str::<serde_json::Value>(payload)
                                     {
                                         let state: State<Windows> = app.state();
-                                        let map = state.map.lock_or_recover();
-                                        if map.get(&label).and_then(|w| w.session_id.as_deref())
-                                            != Some(session_id.as_str())
-                                        {
+                                        let emitted = emit_to_current_session(
+                                            &state.map,
+                                            &label,
+                                            &session_id,
+                                            || {
+                                                let _ = app.emit_to(
+                                                    EventTarget::webview_window(label.clone()),
+                                                    "agent-event",
+                                                    value,
+                                                );
+                                            },
+                                        );
+                                        if !emitted {
                                             return;
                                         }
-                                        let _ = app.emit_to(
-                                            EventTarget::webview_window(label.clone()),
-                                            "agent-event",
-                                            value,
-                                        );
                                     }
                                 }
                             }
@@ -130,17 +156,15 @@ pub(crate) fn start_event_bridge(
             // and never deliver an old session's disconnect to its replacement.
             {
                 let state: State<Windows> = app.state();
-                let map = state.map.lock_or_recover();
-                if map.get(&label).and_then(|w| w.session_id.as_deref())
-                    != Some(session_id.as_str())
-                {
+                if !emit_to_current_session(&state.map, &label, &session_id, || {
+                    let _ = app.emit_to(
+                        EventTarget::webview_window(label.clone()),
+                        "agent-event",
+                        serde_json::json!({ "type": "connection_lost", "data": {} }),
+                    );
+                }) {
                     return;
                 }
-                let _ = app.emit_to(
-                    EventTarget::webview_window(label.clone()),
-                    "agent-event",
-                    serde_json::json!({ "type": "connection_lost", "data": {} }),
-                );
             }
             tokio::time::sleep(retry_delay).await;
             retry_delay = next_sse_retry_delay(retry_delay);
@@ -172,6 +196,52 @@ mod tests {
             seen.push(delay.as_secs());
         }
         assert_eq!(seen, [1, 2, 4, 8, 16, 30, 30, 30, 30]);
+    }
+
+    // ── Frame delivery (emit_to_current_session) ─────────────────────────────
+
+    fn registry(session_id: Option<&str>) -> Mutex<HashMap<String, WindowSession>> {
+        Mutex::new(HashMap::from([(
+            "main".to_string(),
+            WindowSession {
+                session_id: session_id.map(str::to_string),
+                ..Default::default()
+            },
+        )]))
+    }
+
+    #[test]
+    fn a_frame_is_emitted_with_the_registry_unlocked() {
+        let map = registry(Some("sid-1"));
+        let mut emitted = false;
+        assert!(emit_to_current_session(&map, "main", "sid-1", || {
+            assert!(
+                map.try_lock().is_ok(),
+                "the window registry is locked while a frame is handed to the webview"
+            );
+            emitted = true;
+        }));
+        assert!(emitted);
+    }
+
+    #[test]
+    fn a_frame_for_a_window_that_changed_session_is_dropped() {
+        let map = registry(Some("sid-2"));
+        // The window moved to another session mid-run: the old stream's frames
+        // must not land in the new one.
+        assert!(!emit_to_current_session(&map, "main", "sid-1", || {
+            panic!("a frame for a retired session was emitted")
+        }));
+        // A window with no session yet, or one that is gone, is no target either.
+        assert!(!emit_to_current_session(
+            &registry(None),
+            "main",
+            "sid-1",
+            || { panic!("a frame was emitted for a window without a session") }
+        ));
+        assert!(!emit_to_current_session(&map, "closed", "sid-2", || {
+            panic!("a frame was emitted for a window that is gone")
+        }));
     }
 
     // ── SSE frame decoding (drain_sse_frames) ────────────────────────────────

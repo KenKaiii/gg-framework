@@ -249,7 +249,10 @@ jobs:
           node .github/ci/size-gate.mjs --only sidecar:deps
         shell: bash
 
-      - name: Frontend build + initial JavaScript size report
+      # Blocking: the initial JavaScript is what every window loads before it
+      # can render. Past baseline + max(2%, 10KB) the step fails; re-baseline
+      # with `--update --only frontend:initial` only for intended growth.
+      - name: Frontend build + initial JavaScript size gate
         shell: bash
         run: |
           pnpm --filter gg-app build

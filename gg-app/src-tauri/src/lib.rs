@@ -98,6 +98,17 @@ fn install_panic_log_hook() {
     }));
 }
 
+/// The two clients every request to the daemon goes through: the shared one,
+/// bounded by `SIDECAR_REQUEST_TIMEOUT` unless a call site bounds itself
+/// tighter, and the SSE bridge's, which has no total deadline because its
+/// stream is long-lived by design.
+fn daemon_clients(daemon_token: &str) -> (reqwest::Client, EventStreamClient) {
+    (
+        sidecar_http_client(daemon_token, Some(SIDECAR_REQUEST_TIMEOUT)),
+        EventStreamClient(sidecar_http_client(daemon_token, None)),
+    )
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     install_rustls_provider();
@@ -105,23 +116,11 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     macos_event_guard::install();
 
-    // Per-launch daemon auth token (see `Daemon::token`). The shared reqwest
-    // client attaches it as a default header so all ~60 proxy call sites are
-    // authenticated without per-site changes.
+    // Per-launch daemon auth token (see `Daemon::token`). The clients attach it
+    // as a default header so all ~60 proxy call sites are authenticated without
+    // per-site changes.
     let daemon_token = uuid::Uuid::new_v4().to_string();
-    let mut default_headers = reqwest::header::HeaderMap::new();
-    default_headers.insert(
-        "x-gg-token",
-        reqwest::header::HeaderValue::from_str(&daemon_token)
-            .expect("uuid v4 is valid header ASCII"),
-    );
-    let http_client = reqwest::Client::builder()
-        .default_headers(default_headers)
-        // The daemon is on loopback, so a connect that doesn't land quickly
-        // never will. No overall timeout here: the SSE stream is long-lived.
-        .connect_timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let (http_client, event_stream_client) = daemon_clients(&daemon_token);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -153,6 +152,7 @@ pub fn run() {
         .manage(TrayState::default())
         .manage(TrayIntents::default())
         .manage(http_client)
+        .manage(event_stream_client)
         .invoke_handler(tauri::generate_handler![
             daemon::sidecar_port,
             daemon::retry_window_session,
@@ -427,5 +427,205 @@ mod tests {
             reqwest::Client::builder().build().is_ok(),
             "shared client must build once the rustls provider is installed",
         );
+    }
+
+    /// A loopback server that holds its connections open without ever
+    /// answering: a wedged daemon. Dropping it ends the request.
+    struct SilentDaemon {
+        url: String,
+        addr: std::net::SocketAddr,
+        released: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        thread: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl SilentDaemon {
+        fn start() -> Self {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+            let addr = listener.local_addr().expect("address");
+            let released = std::sync::Arc::new(AtomicBool::new(false));
+            let flag = released.clone();
+            let thread = std::thread::spawn(move || {
+                if let Ok((conn, _)) = listener.accept() {
+                    // Keep the connection open and unread until the test is done.
+                    while !flag.load(Ordering::Acquire) {
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                    }
+                    drop(conn);
+                }
+            });
+            Self {
+                url: format!("http://{addr}/state"),
+                addr,
+                released,
+                thread: Some(thread),
+            }
+        }
+    }
+
+    impl Drop for SilentDaemon {
+        fn drop(&mut self) {
+            self.released
+                .store(true, std::sync::atomic::Ordering::Release);
+            // A connection of our own, so `accept` returns if no request came.
+            let _ = std::net::TcpStream::connect(self.addr);
+            if let Some(thread) = self.thread.take() {
+                let _ = thread.join();
+            }
+        }
+    }
+
+    /// A proxy command whose handler never answers used to leave the webview
+    /// awaiting for good (an endless spinner): nothing bounded the request.
+    #[test]
+    fn a_request_nobody_answers_fails_at_its_deadline() {
+        install_rustls_provider();
+        let daemon = SilentDaemon::start();
+        let client = sidecar_http_client("token", Some(std::time::Duration::from_millis(300)));
+        // `send` starts the deadline's timer itself, so it has to be called
+        // inside the runtime, as every call site does.
+        let outcome = tauri::async_runtime::block_on(async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                client.get(&daemon.url).send(),
+            )
+            .await
+            .expect("the backstop ended the request")
+        });
+        let error = outcome.expect_err("a request nobody answers must fail");
+        assert!(error.is_timeout(), "expected a timeout, got: {error}");
+    }
+
+    /// A call site's own deadline replaces the client's instead of racing it:
+    /// the quit snapshot gives each window a fraction of a second, however long
+    /// the backstop is.
+    #[test]
+    fn a_call_sites_own_deadline_wins_over_the_backstop() {
+        install_rustls_provider();
+        let daemon = SilentDaemon::start();
+        let client = sidecar_http_client("token", Some(SIDECAR_REQUEST_TIMEOUT));
+        let own = std::time::Duration::from_millis(300);
+        let outcome = tauri::async_runtime::block_on(async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                client.get(&daemon.url).timeout(own).send(),
+            )
+            .await
+            .expect("the request's own deadline ended it long before the backstop")
+        });
+        let error = outcome.expect_err("a request nobody answers must fail");
+        assert!(error.is_timeout(), "expected a timeout, got: {error}");
+    }
+
+    /// A deadline on the stream client would cut the event stream off a few
+    /// minutes into every session, which no unit test could afford to wait for.
+    /// reqwest prints a client's total deadline in its debug output, so the
+    /// pairing is checked the way `run` builds it.
+    #[test]
+    fn only_the_shared_client_carries_the_backstop() {
+        install_rustls_provider();
+        let (proxy, stream) = daemon_clients("token");
+        let has_backstop =
+            |client: &reqwest::Client| format!("{client:?}").contains("TotalTimeout");
+        assert!(has_backstop(&proxy), "proxy requests are no longer bounded");
+        assert!(
+            !has_backstop(&stream.0),
+            "the event stream would be cut off mid-stream"
+        );
+    }
+
+    /// The event stream stays open for as long as the daemon keeps talking. A
+    /// total deadline on its client would cut it off mid-stream instead.
+    #[test]
+    fn the_event_stream_client_carries_no_total_deadline() {
+        install_rustls_provider();
+        let daemon = SilentDaemon::start();
+        let stream = sidecar_http_client("token", None);
+        let url = daemon.url.clone();
+        let still_waiting = tauri::async_runtime::block_on(async {
+            tokio::time::timeout(
+                std::time::Duration::from_millis(700),
+                stream.get(&url).send(),
+            )
+            .await
+            .is_err()
+        });
+        assert!(
+            still_waiting,
+            "the event stream would be cut off mid-stream"
+        );
+    }
+
+    /// A loopback server that answers `200 {}` and hands back what each request
+    /// put on the wire, as raw text.
+    struct EchoDaemon {
+        url: String,
+        heads: std::sync::mpsc::Receiver<String>,
+    }
+
+    impl EchoDaemon {
+        fn start(requests: usize) -> Self {
+            use std::io::{Read, Write};
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+            let url = format!("http://{}/state", listener.local_addr().expect("address"));
+            let (heads, received) = std::sync::mpsc::channel();
+            // Not joined: it ends once it has answered, or with the test process.
+            std::thread::spawn(move || {
+                for _ in 0..requests {
+                    let Ok((mut conn, _)) = listener.accept() else {
+                        break;
+                    };
+                    let _ = conn.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                    let mut head = Vec::new();
+                    let mut buf = [0u8; 1024];
+                    loop {
+                        match conn.read(&mut buf) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                head.extend_from_slice(&buf[..n]);
+                                if head.windows(4).any(|w| w == b"\r\n\r\n") {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    let _ = conn.write_all(
+                        b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                         content-length: 2\r\nconnection: close\r\n\r\n{}",
+                    );
+                    let _ = heads.send(String::from_utf8_lossy(&head).into_owned());
+                }
+            });
+            Self {
+                url,
+                heads: received,
+            }
+        }
+    }
+
+    /// Every request to the daemon is authenticated by the client itself, so a
+    /// call site cannot forget the launch token; the split into two clients
+    /// must not lose it on either side.
+    #[test]
+    fn both_clients_send_the_launch_token() {
+        install_rustls_provider();
+        let daemon = EchoDaemon::start(2);
+        let proxy = sidecar_http_client("token", Some(SIDECAR_REQUEST_TIMEOUT));
+        let stream = sidecar_http_client("token", None);
+        for client in [proxy, stream] {
+            let response =
+                tauri::async_runtime::block_on(async { client.get(&daemon.url).send().await })
+                    .expect("the echo daemon answers");
+            assert!(response.status().is_success());
+            let head = daemon
+                .heads
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("the request reached the daemon");
+            assert!(
+                head.lines()
+                    .any(|line| line.eq_ignore_ascii_case("x-gg-token: token")),
+                "the launch token is missing from:\n{head}"
+            );
+        }
     }
 }
