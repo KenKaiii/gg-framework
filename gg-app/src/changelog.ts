@@ -22,6 +22,16 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.120.0",
+    date: "2026-11-23",
+    items: [
+      "`GLM-5.4` just landed and it is now your default GLM. Connect a `GLM Coding Plan` key and it runs on your plan, writing about half again as fast as 5.3 and reading your screenshots by itself. Pay-per-token Z.AI keys still work too, and the picker greys out whichever model your key can't run, so nothing fails by surprise.",
+      "GLM sessions start lighter. On GLM-5.4 and 5.3-Flash I skip the extra Z.AI helper servers entirely and use my own web search and fetch tools, so there is less to launch and less clutter for the model.",
+      "GLM-5.3 keeps working after Z.AI changed it under the hood. It now only takes `low`, `high` or `max` thinking, so I offer exactly those and quietly fix any older setting instead of letting it error.",
+      "The browser tool fixes itself after updates. If its Chromium build goes missing, I download the right one the first time you need it instead of failing.",
+    ],
+  },
+  {
     version: "0.119.0",
     date: "2026-11-22",
     items: [
