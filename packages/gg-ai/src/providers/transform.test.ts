@@ -18,6 +18,7 @@ import {
 import { supportsStrictToolSampling } from "../utils/strict-tool-schema.js";
 import type { Message, Tool } from "../types.js";
 import { markContinuesTurn } from "../utils/turn-continuation.js";
+import { markCacheAnchor } from "../utils/cache-anchor.js";
 
 const exampleTools: Tool[] = [
   {
@@ -369,6 +370,114 @@ describe("Anthropic transform", () => {
       const messages: Message[] = [{ role: "user", content: "fix it" }, call("a"), result("a")];
 
       expect(marks(messages, short)).toEqual([undefined, undefined, short]);
+    });
+
+    it("adds a 5-min breakpoint at a cache-anchor hint inside the run", () => {
+      // A prune after the hint then re-sends only what follows it (live Haiku 5.5:
+      // read 75.8K / wrote 18.3K after a prune, vs read 0 / wrote 94.1K without).
+      const messages: Message[] = [
+        { role: "user", content: "fix it" },
+        call("a"),
+        markCacheAnchor(result("a")),
+        call("b"),
+        result("b"),
+      ];
+
+      expect(marks(messages, short)).toEqual([undefined, undefined, short, undefined, short]);
+      // With system and tools that is 4 breakpoints, the API cap.
+      const { system, messages: wire } = toAnthropicMessages(
+        [{ role: "system", content: "sys" }, ...messages],
+        short,
+      );
+      const tools = toAnthropicTools(exampleTools, { cacheControl: short });
+      const count = (value: unknown) => JSON.stringify(value).split('"cache_control"').length - 1;
+      expect(count(system) + count(tools) + count(wire)).toBe(4);
+    });
+
+    it("ignores a cache-anchor hint on a 1-h route", () => {
+      // The hint would displace the 1-h opening anchor and, as a 1-h breakpoint,
+      // could not be built from the 5-min tail entries: a fresh 1-h write.
+      const messages: Message[] = [
+        { role: "user", content: "fix it" },
+        call("a"),
+        markCacheAnchor(result("a")),
+        call("b"),
+        result("b"),
+      ];
+
+      expect(marks(messages, long)).toEqual([long, undefined, undefined, undefined, short]);
+      const blocking: Message[] = [
+        ...messages,
+        {
+          role: "assistant",
+          content: [{ type: "tool_call", id: "w", name: "wait_agent", args: {} }],
+        },
+        result("w"),
+      ];
+      expect(marks(blocking, long)).toEqual([
+        long,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        long,
+      ]);
+    });
+
+    it("ignores a cache-anchor hint from an earlier turn or at the tail", () => {
+      const messages: Message[] = [
+        { role: "user", content: "fix it" },
+        call("a"),
+        markCacheAnchor(result("a")),
+        { role: "assistant", content: "done" },
+        { role: "user", content: "now test it" },
+        call("b"),
+        result("b"),
+      ];
+
+      // Settling the earlier turn stripped its thinking: the hint is behind the edit.
+      expect(marks(messages, short)).toEqual([
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        short,
+      ]);
+      // A turn-opening request has nothing inside its run to pin.
+      expect(marks(messages.slice(0, 5), short)).toEqual([
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        short,
+      ]);
+      // A hint on the tail is just the tail.
+      expect(
+        marks([{ role: "user", content: "go" }, call("a"), markCacheAnchor(result("a"))], short),
+      ).toEqual([undefined, undefined, short]);
+    });
+
+    it("keeps a hint across a mid-run message that continues the turn", () => {
+      const messages: Message[] = [
+        { role: "user", content: "fix it" },
+        call("a"),
+        markCacheAnchor(result("a")),
+        call("b"),
+        result("b"),
+        markContinuesTurn({ role: "user", content: "a worker finished" }),
+      ];
+
+      expect(marks(messages, short)).toEqual([
+        undefined,
+        undefined,
+        short,
+        undefined,
+        undefined,
+        short,
+      ]);
     });
   });
 

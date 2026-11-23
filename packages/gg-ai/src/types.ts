@@ -163,6 +163,16 @@ export interface MessageProvenance {
 
 interface MessageMetadata {
   provenance?: MessageProvenance;
+  /**
+   * Host hint, never sent: nothing up to and including this message will change
+   * again during the current run (for example, everything older was already
+   * pruned). On a 5-minute cache route the Anthropic encoder adds a cache
+   * breakpoint at the latest such user/tool message when it is newer than the
+   * turn's opening message, so a later edit after it re-sends only what follows
+   * instead of the whole conversation. `stream()` removes it before provider
+   * dispatch.
+   */
+  cacheAnchor?: boolean;
 }
 
 export interface SystemMessage extends MessageMetadata {

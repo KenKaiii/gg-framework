@@ -20,6 +20,7 @@ import { resolveToolSchema, zodToJsonSchema } from "../utils/zod-to-json-schema.
 import { makeStrictToolSchema, UnsupportedStrictSchemaError } from "../utils/strict-tool-schema.js";
 import { DEFAULT_REASONING_FIELD } from "./reasoning-field.js";
 import { opensTurn } from "../utils/turn-continuation.js";
+import { isCacheAnchor } from "../utils/cache-anchor.js";
 
 // ── Shared helpers ─────────────────────────────────────────
 
@@ -945,6 +946,8 @@ export function toAnthropicMessages(
   const out: Anthropic.MessageParam[] = [];
   // `out` indices of real user messages (not tool results), for cache anchors.
   const userTurnIdx: number[] = [];
+  // `out` index of the latest host cache-anchor hint (see Message.cacheAnchor).
+  let anchorHintIdx: number | undefined;
   const idMap = new Map<string, string>();
   const keepFallbackBlocks = options?.fallbackBlocks === true;
   // Client tool calls dropped by the fallback replay rules; their results go too.
@@ -984,6 +987,7 @@ export function toAnthropicMessages(
       }
       // A notice is not a turn opener for the 1-h cache anchors either.
       if (opensTurn(msg)) userTurnIdx.push(out.length);
+      if (isCacheAnchor(msg)) anchorHintIdx = out.length;
       out.push({
         role: "user",
         content:
@@ -1108,6 +1112,7 @@ export function toAnthropicMessages(
           is_error: undefined,
         };
       });
+      if (isCacheAnchor(msg)) anchorHintIdx = out.length;
       out.push({
         role: "user",
         // Cast covers the video and tool_reference blocks, which aren't in this
@@ -1133,6 +1138,23 @@ export function toAnthropicMessages(
   //    growing loop at the 5-min default, which the next request reads within
   //    seconds. Anthropic requires 1-h breakpoints before 5-min ones; this order
   //    holds. With tools and system that is at most 4 breakpoints, the API cap.
+  //
+  // A host cache-anchor hint (Message.cacheAnchor) newer than the turn's opening
+  // message marks a point inside the run that will not change again. On a
+  // 5-min route a tool-loop request adds a breakpoint there (the 4th, next to
+  // system, tools and tail), so a later history edit after it (pruning old tool
+  // output) re-sends only what follows it instead of everything after the last
+  // entry the tail's ~20-block lookback finds. All breakpoints share one TTL, so
+  // the hint's entry is created from the previous request's tail, which is read
+  // anyway; the hint never adds a write. Never on a turn-opening request:
+  // settling the previous turn strips its thinking, which changes everything
+  // after that turn's opening message.
+  //
+  // Not on a 1-h route: there the hint would have to replace the turn's 1-h
+  // opening anchor (cap of 4) and be a 1-h breakpoint, which never reads the
+  // 5-min tail entries (see below). It would then either cost a fresh 1-h write
+  // of the run or not exist when the next prune needs it, and the opening
+  // anchor the next turn reads would stop being refreshed.
   if (cacheControl && out.length > 0) {
     let tail = out.length - 1;
     while (tail >= 0 && out[tail]?.role !== "user") tail--;
@@ -1154,6 +1176,14 @@ export function toAnthropicMessages(
           markAnthropicCacheBreakpoint(out, tail, blocking ? cacheControl : { type: "ephemeral" });
         }
       } else {
+        const opening = userTurnIdx.at(-1);
+        if (
+          anchorHintIdx !== undefined &&
+          anchorHintIdx < tail &&
+          (opening === undefined || anchorHintIdx > opening)
+        ) {
+          markAnthropicCacheBreakpoint(out, anchorHintIdx, cacheControl);
+        }
         markAnthropicCacheBreakpoint(out, tail, cacheControl);
       }
     }
