@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { download } from "./stage-node.mjs";
 
-const NODE_URL = "https://nodejs.org/dist/v22.12.0/node-v22.12.0-darwin-arm64.tar.gz";
+const NODE_URL = "https://nodejs.org/dist/v24.22.3/node-v24.22.3-darwin-arm64.tar.gz";
 const tempDirs = [];
 
 afterEach(() => {

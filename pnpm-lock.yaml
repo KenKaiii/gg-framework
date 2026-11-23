@@ -296,8 +296,8 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
       typescript-language-server:
-        specifier: ^5.3.0
-        version: 5.3.0
+        specifier: ^6.1.0
+        version: 6.1.0
       wrap-ansi:
         specifier: ^10.0.2
         version: 10.0.2
@@ -352,8 +352,8 @@ importers:
         specifier: ^1.0.2
         version: 1.0.2
       unpdf:
-        specifier: ^1.6.2
-        version: 1.8.1
+        specifier: ^2.2.1
+        version: 2.2.1
 
 packages:
 
@@ -4003,9 +4003,9 @@ packages:
       eslint: ^8.57.0 || ^9.0.0 || ^10.0.0
       typescript: '>=4.8.4 <6.1.0'
 
-  typescript-language-server@5.3.0:
-    resolution: {integrity: sha512-5puofxZHgFdAYtfNpmwCAvgtaYgg8wrUnH30m7Ze3QuguId5RNRadKASpOpyDxTyUdAF51FjhTdjntLw/EuWcQ==}
-    engines: {node: '>=20'}
+  typescript-language-server@6.1.0:
+    resolution: {integrity: sha512-/O/dr2CbvDS1W9jKJcBQxk4WagUQ97oBb8k/eq9cOslsbtAuC2BDPpkcULxE2SEZiPIJvVNLeNjLZe9hQl1zCQ==}
+    engines: {node: '>=22.22.2'}
     hasBin: true
 
   typescript@5.8.3:
@@ -4066,13 +4066,16 @@ packages:
     resolution: {integrity: sha512-rBJeI5CXAlmy1pV+617WB9J63U6XcazHHF2f2dbJix4XzpUF0RS3Zbj0FGIOCAva5P/d/GBOYaACQ1w+0azUkg==}
     engines: {node: '>= 4.0.0'}
 
-  unpdf@1.8.1:
-    resolution: {integrity: sha512-xkURhy2SoGpOIH0a1gLHNkASPIQYonadDJs2AQwPEfUakafeD9EA1WTWWsaR++gfTCXJpV27W7tU1nXuk82UKQ==}
-    engines: {node: '>=22'}
+  unpdf@2.2.1:
+    resolution: {integrity: sha512-tstQpe/fhxkDGY1ZtpejwnU14QZ9w0SYLo9lIZooB1zQ7QXVE4t+SBQUN/2a9+EBg9UrrO2bWlqdzV+UtoebHw==}
+    engines: {node: '>=24'}
     peerDependencies:
       '@napi-rs/canvas': ^0.1.69 || ^1.0.0
+      pdfjs-dist: '*'
     peerDependenciesMeta:
       '@napi-rs/canvas':
+        optional: true
+      pdfjs-dist:
         optional: true
 
   unpipe@1.0.0:
@@ -8297,7 +8300,7 @@ snapshots:
       - '@typescript/native'
       - supports-color
 
-  typescript-language-server@5.3.0:
+  typescript-language-server@6.1.0:
     dependencies:
       vscode-jsonrpc: 5.0.1
       vscode-languageserver-protocol: 3.18.0
@@ -8369,7 +8372,7 @@ snapshots:
 
   universalify@0.1.2: {}
 
-  unpdf@1.8.1:
+  unpdf@2.2.1:
     optional: true
 
   unpipe@1.0.0: {}

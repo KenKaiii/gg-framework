@@ -20,7 +20,7 @@ It has no UI and no agent loop. Its only framework dependency is [`@kenkaiiii/gg
 npm install @kenkaiiii/gg-core
 ```
 
-Needs Node.js 22 or newer. Ships ESM and CommonJS builds with TypeScript types.
+Needs Node.js 24 or newer. Ships ESM and CommonJS builds with TypeScript types.
 
 ## Quick start
 

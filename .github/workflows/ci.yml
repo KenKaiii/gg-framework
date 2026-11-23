@@ -30,7 +30,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        node: [22.x]
+        node: [24.x]
     steps:
       - uses: actions/checkout@v7
 
@@ -197,7 +197,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22.x
+          node-version: 24.x
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable

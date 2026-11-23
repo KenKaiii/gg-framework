@@ -14,7 +14,7 @@
   ],
   "license": "AGPL-3.0-only",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "repository": {
     "type": "git",

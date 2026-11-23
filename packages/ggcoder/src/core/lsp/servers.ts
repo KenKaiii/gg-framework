@@ -179,7 +179,7 @@ const TS_LANGUAGE_IDS: Readonly<Record<string, string>> = {
 /**
  * tsserver tuning applied to every TypeScript/JavaScript project root.
  *
- * Shape verified against typescript-language-server 5.3.0's `initialize`
+ * Shape verified against typescript-language-server 6.1.0's `initialize`
  * handler: `disableAutomaticTypingAcquisition` and `maxTsServerMemory` are
  * read from the TOP level of initializationOptions, while `useSyntaxServer`
  * is read from the nested `tsserver` object.

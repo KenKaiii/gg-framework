@@ -37,7 +37,7 @@ ggcoder login   # pick a provider and sign in
 ggcoder         # start coding in the current folder
 ```
 
-Needs Node.js 22 or newer. Sign-ins are saved in `~/.gg/auth.json`, shared with the desktop app, and refreshed automatically.
+Needs Node.js 24 or newer. Sign-ins are saved in `~/.gg/auth.json`, shared with the desktop app, and refreshed automatically.
 
 ## Providers
 
