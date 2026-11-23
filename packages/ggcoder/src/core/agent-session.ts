@@ -54,7 +54,7 @@ import { loadWorkspaceCustomCommands, type CustomCommand } from "./custom-comman
 import { expandPromptCommand } from "./prompt-command-expansion.js";
 import { SettingsManager } from "./settings-manager.js";
 import { AuthStorage } from "./auth-storage.js";
-import { claudeCodeConfigDir, dualAuthProvider } from "@kenkaiiii/gg-core";
+import { apiKeyStorageKeys, claudeCodeConfigDir, dualAuthProvider } from "@kenkaiiii/gg-core";
 import {
   claudeCodeTranscriptExists,
   holdClaudeCodeTranscript,
@@ -125,7 +125,7 @@ import {
 import { applyAsyncSubagentPolicy } from "./subagent-policy.js";
 import { resolveStrictTools, type CodexShapeSetting } from "./codex-request-shape.js";
 import { subAgentDescription } from "../tools/subagent.js";
-import { getAllMcpServers } from "./mcp/index.js";
+import { getAllMcpServers, usesZaiMcpServers } from "./mcp/index.js";
 import type { MCPElicitHandler } from "./mcp/index.js";
 import type { MCPServerConfig } from "./mcp/types.js";
 import {
@@ -1368,9 +1368,11 @@ export class AgentSession {
     if (this.opts.allowedTools && (!mcpWhitelist || mcpWhitelist.length === 0)) return;
     try {
       let apiKey: string | undefined;
-      if (this.provider === "glm") {
+      if (usesZaiMcpServers(this.provider, this.model)) {
         try {
-          const glmCreds = await this.authStorage.resolveCredentials("glm");
+          const glmCreds = await this.authStorage.resolveCredentials("glm", {
+            storageKeys: apiKeyStorageKeys("glm"),
+          });
           apiKey = glmCreds.accessToken;
         } catch {
           // GLM not configured — skip Z.AI MCP servers
@@ -3417,51 +3419,54 @@ export class AgentSession {
           ),
         );
       }
+    }
 
-      // Reconnect MCP servers ONLY when GLM is involved on either side — GLM
-      // is the only provider with a different server set (Z.AI tools), so a
-      // non-GLM switch keeps the identical set. Skipping the dispose/reconnect
-      // there avoids tearing down a live stdio child and
-      // gambling on a `npx` re-spawn that could fail and drop the tools.
-      const glmInvolved = this.provider === "glm" || prevProvider === "glm";
-      const mcpManager = this.mcp.manager;
-      if (mcpManager && glmInvolved) {
-        // Remove old MCP tools
-        this.tools = this.tools.filter((t) => !t.name.startsWith("mcp__"));
+    // Reconnect MCP servers ONLY when the Z.AI server set flips on or off
+    // (GLM-5.3 ↔ anything else) — every other switch keeps the identical set.
+    // Skipping the dispose/reconnect there avoids tearing down a live stdio
+    // child and gambling on a `npx` re-spawn that could fail and drop the tools.
+    const zaiChanged =
+      usesZaiMcpServers(prevProvider as Provider, prevModel) !==
+      usesZaiMcpServers(this.provider, this.model);
+    const mcpManager = this.mcp.manager;
+    if (mcpManager && zaiChanged) {
+      // Remove old MCP tools
+      this.tools = this.tools.filter((t) => !t.name.startsWith("mcp__"));
 
-        // Disconnect old MCP servers
-        await mcpManager.dispose();
+      // Disconnect old MCP servers
+      await mcpManager.dispose();
 
-        // Connect new MCP servers for the new provider
-        try {
-          let apiKey: string | undefined;
-          if (this.provider === "glm") {
-            try {
-              const glmCreds = await this.authStorage.resolveCredentials("glm");
-              apiKey = glmCreds.accessToken;
-            } catch {
-              // GLM not configured — skip Z.AI MCP servers
-            }
+      // Connect new MCP servers for the new provider
+      try {
+        let apiKey: string | undefined;
+        if (usesZaiMcpServers(this.provider, this.model)) {
+          try {
+            const glmCreds = await this.authStorage.resolveCredentials("glm", {
+              storageKeys: apiKeyStorageKeys("glm"),
+            });
+            apiKey = glmCreds.accessToken;
+          } catch {
+            // GLM not configured — skip Z.AI MCP servers
           }
-          // Use getAllMcpServers so user-configured servers survive the reconnect.
-          const servers = await getAllMcpServers(this.provider, apiKey, this.cwd, {
-            allowProjectScope: this.settingsManager.isProjectTrusted(this.cwd),
-          });
-          const results = await mcpManager.connectAllDetailed(servers);
-          const mcpTools = results.flatMap((r) => r.tools);
-          // Drop stale MCP tools from both the live set and deferred catalog before
-          // re-adding. Some tools may already have been promoted out of the catalog.
-          this.tools = this.tools.filter((t) => !t.name.startsWith("mcp__"));
-          this.mcp.clearMcpTools();
-          this.mcp.recordServers(servers, results);
-          this.addMcpTools(mcpTools);
-        } catch (err) {
-          log(
-            "WARN",
-            "mcp",
-            `MCP reconnection failed: ${err instanceof Error ? err.message : String(err)}`,
-          );
         }
+        // Use getAllMcpServers so user-configured servers survive the reconnect.
+        const servers = await getAllMcpServers(this.provider, apiKey, this.cwd, {
+          allowProjectScope: this.settingsManager.isProjectTrusted(this.cwd),
+        });
+        const results = await mcpManager.connectAllDetailed(servers);
+        const mcpTools = results.flatMap((r) => r.tools);
+        // Drop stale MCP tools from both the live set and deferred catalog before
+        // re-adding. Some tools may already have been promoted out of the catalog.
+        this.tools = this.tools.filter((t) => !t.name.startsWith("mcp__"));
+        this.mcp.clearMcpTools();
+        this.mcp.recordServers(servers, results);
+        this.addMcpTools(mcpTools);
+      } catch (err) {
+        log(
+          "WARN",
+          "mcp",
+          `MCP reconnection failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
   }

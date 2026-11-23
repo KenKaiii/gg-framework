@@ -70,6 +70,7 @@ import { formatUserError } from "./utils/error-handler.js";
 import type { Message, Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import type { ThemeName } from "./ui/theme/theme.js";
 import { AuthStorage, readStoredBaseUrlSync } from "./core/auth-storage.js";
+import { apiKeyStorageKeys } from "@kenkaiiii/gg-core";
 import { SessionManager, type TurnMetricPayload } from "./core/session-manager.js";
 import { ensureAppDirs, getAppPaths, loadSavedSettings, projectScopeAllowed } from "./config.js";
 import { initLogger, log, closeLogger } from "./core/logger.js";
@@ -103,7 +104,7 @@ import {
   getModelsForProvider,
   isPaidModel,
 } from "./core/model-registry.js";
-import { MCPClientManager, getAllMcpServers } from "./core/mcp/index.js";
+import { MCPClientManager, getAllMcpServers, usesZaiMcpServers } from "./core/mcp/index.js";
 import { runLogin, runLogout, runDoctor } from "./cli/auth.js";
 import { runMcp } from "./cli/mcp.js";
 import {
@@ -395,7 +396,7 @@ function main(): void {
   function getHardcodedDefault(p: string): string {
     if (p === "openai") return "gpt-6.2-sol";
     if (p === "gemini") return "gemini-3.1-flash-lite";
-    if (p === "glm") return "glm-5.3";
+    if (p === "glm") return "glm-5.4";
     if (p === "moonshot") return "kimi-k3";
     if (p === "minimax") return "MiniMax-M3.1-Flash";
     if (p === "deepseek") return "deepseek-v4-pro";
@@ -673,8 +674,11 @@ async function runInkTUI(opts: {
   let initialMcpConnectPromise: Promise<AgentTool[]> | undefined;
   const connectInitialMcpTools = async (): Promise<AgentTool[]> => {
     initialMcpConnectPromise ??= (async () => {
-      const providerApiKey =
-        provider === "glm" ? credentialsByProvider["glm"]?.accessToken : undefined;
+      const providerApiKey = usesZaiMcpServers(provider, model)
+        ? apiKeyStorageKeys("glm")
+            .map((key) => credentialsByProvider[key]?.accessToken)
+            .find(Boolean)
+        : undefined;
       const servers = await getAllMcpServers(provider, providerApiKey, cwd, {
         allowProjectScope: projectScopeAllowed(
           savedSettings.trustProjectMcpServers,
@@ -1050,7 +1054,7 @@ async function runSessions(): Promise<void> {
   function getDefault(p: string): string {
     if (p === "openai") return "gpt-6.2-sol";
     if (p === "gemini") return "gemini-3.1-flash-lite";
-    if (p === "glm") return "glm-5.3";
+    if (p === "glm") return "glm-5.4";
     if (p === "moonshot") return "kimi-k3";
     if (p === "minimax") return "MiniMax-M3.1-Flash";
     if (p === "deepseek") return "deepseek-v4-pro";

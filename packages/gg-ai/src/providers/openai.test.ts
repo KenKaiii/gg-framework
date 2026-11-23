@@ -139,6 +139,31 @@ describe("streamOpenAI request shaping", () => {
     }
   });
 
+  it("snaps GLM effort to declared rungs and never disables GLM-5.3's thinking", async () => {
+    const send = async (thinking: "medium" | undefined) => {
+      createMock.mockResolvedValueOnce(createStreamingResult(""));
+      const result = streamOpenAI({
+        provider: "glm",
+        model: "glm-5.3",
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "token",
+        thinking,
+        thinkingLevels: ["low", "high", "max"],
+      });
+      for await (const _event of result) {
+        /* consume */
+      }
+      return createMock.mock.lastCall?.[0] as Record<string, unknown>;
+    };
+    expect(await send("medium")).toMatchObject({
+      thinking: { type: "enabled" },
+      reasoning_effort: "low",
+    });
+    const off = await send(undefined);
+    expect(off).not.toHaveProperty("thinking");
+    expect(off).not.toHaveProperty("reasoning_effort");
+  });
+
   it("merges providerOptions into the chat body without overriding gg-ai fields", async () => {
     createMock.mockResolvedValueOnce(createStreamingResult(""));
     const result = streamOpenAI({

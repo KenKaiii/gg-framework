@@ -50,7 +50,7 @@ Switch any time with `/model`.
 | **Gemini**       | Gemini 4 Hydrogen, 4 Argon, 4 Carbon, 3.8 Flash, 3.6 Flash, 3.5 Flash Lite, 3.1 Flash Lite, 3.5 Flash, 3.1 Pro (Preview)     | API key (Google AI Studio)             |
 | **xAI**          | Grok 4.7                                                                           | API key                                |
 | **Kimi**         | Kimi K3, K2.8 Preview, K2.7 Code, K2.7 Code HighSpeed                              | Kimi Code plan key or Moonshot API key |
-| **Z.AI**         | GLM-5.3, GLM-5.3-Flash                                                             | API key (pay-per-token)                |
+| **Z.AI**         | GLM-5.4 (Coding Plan), GLM-5.3 (API key), GLM-5.3-Flash                                | Coding Plan key or API key             |
 | **MiniMax**      | MiniMax M3.1 Flash, M3                                                             | M Plan key or API key                  |
 | **Xiaomi**       | MiMo-V2.6-Pro, MiMo-V2.6-Flash, MiMo-V2.6-Pro-UltraSpeed                           | Token Plan key or API Credits key      |
 | **DeepSeek**     | DeepSeek V4 Pro, V4.1 Flash                                                        | API key                                |

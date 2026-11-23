@@ -15,6 +15,7 @@ import { stream, StreamResult, type StreamEvent, type StreamResponse } from "@ke
 import { getModel } from "./model-registry.js";
 import { outputCapForRequest } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
+import { getAllMcpServers } from "./mcp/index.js";
 
 vi.mock("@kenkaiiii/gg-ai", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -32,8 +33,13 @@ vi.mock("./mcp/index.js", async () => {
   const actual = await vi.importActual<typeof McpModule>("./mcp/index.js");
   return {
     ...actual,
+    getAllMcpServers: vi.fn(actual.getAllMcpServers),
     MCPClientManager: vi.fn(function MCPClientManagerMock() {
-      return { connectAll: vi.fn(async () => []), dispose: vi.fn(async () => {}) };
+      return {
+        connectAll: vi.fn(async () => []),
+        connectAllDetailed: vi.fn(async () => []),
+        dispose: vi.fn(async () => {}),
+      };
     }),
   };
 });
@@ -84,6 +90,12 @@ beforeEach(async () => {
         baseUrl: "https://api.openai.com/v1",
       },
       moonshot: { accessToken: "t", refreshToken: "", expiresAt: Date.now() + 3_600_000 },
+      "glm-coding": {
+        accessToken: "glm-plan-key",
+        refreshToken: "",
+        expiresAt: Date.now() + 3_600_000,
+        baseUrl: "https://api.z.ai/api/coding/paas/v4",
+      },
     }),
   );
 });
@@ -130,6 +142,42 @@ function cachedPrefix(content: string): string {
 }
 
 describe("AgentSession model switch", () => {
+  it("connects Z.AI's MCP servers for GLM-5.3 only, never for GLM-5.4", async () => {
+    const { AgentSession } = await import("./agent-session.js");
+    const session = new AgentSession({
+      provider: "glm",
+      model: "glm-5.3",
+      cwd: process.cwd(),
+      systemPrompt: "stable role prompt",
+      transient: true,
+      selfCorrectionHooks: false,
+    });
+    const zaiNames = async () => {
+      await vi.waitFor(() => expect(vi.mocked(getAllMcpServers)).toHaveBeenCalled());
+      const servers = await vi.mocked(getAllMcpServers).mock.results.at(-1)!.value;
+      return (servers as { name: string }[])
+        .map((s) => s.name)
+        .filter((name) => name.startsWith("zai_"));
+    };
+    try {
+      await session.initialize();
+      expect(vi.mocked(getAllMcpServers).mock.lastCall?.[1]).toBe("glm-plan-key");
+      expect(await zaiNames()).toContain("zai_vision");
+
+      vi.mocked(getAllMcpServers).mockClear();
+      await session.switchModel("glm", "glm-5.4");
+      expect(vi.mocked(getAllMcpServers).mock.lastCall?.[1]).toBeUndefined();
+      expect(await zaiNames()).toEqual([]);
+
+      // Another model that sees images keeps the same (empty) Z.AI set: no reconnect.
+      vi.mocked(getAllMcpServers).mockClear();
+      await session.switchModel("glm", "glm-5.3-flash");
+      expect(vi.mocked(getAllMcpServers)).not.toHaveBeenCalled();
+    } finally {
+      await session.dispose();
+    }
+  }, 30_000);
+
   it("enhances with the active model and its settings after switching providers", async () => {
     const session = await createSession();
     try {

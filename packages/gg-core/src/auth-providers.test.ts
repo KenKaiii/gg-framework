@@ -106,8 +106,12 @@ describe("allowed sign-in methods", () => {
     }
   });
 
-  it("tells GLM users the Coding Plan can't be used here", () => {
-    expect(describeAuthMethods("glm")[0]!.when).toMatch(/Coding Plan/);
+  it("offers GLM a Coding Plan key first and a pay-per-token key second", () => {
+    expect(getAuthProvider("glm")?.apiKeyVariants?.map((v) => [v.key, v.kind])).toEqual([
+      ["glm-coding", "plan"],
+      ["glm", "payg"],
+    ]);
+    expect(describeAuthMethods("glm")[0]!.billing).toMatch(/Coding Plan/);
   });
 });
 
@@ -126,9 +130,11 @@ describe("requiredKeyLabel", () => {
   it("names the key a plan-only or credits-only model needs", () => {
     expect(requiredKeyLabel("moonshot", ["kimi-code"])).toBe("Needs a Kimi Code plan key");
     expect(requiredKeyLabel("xiaomi", ["xiaomi-credits"])).toBe("Needs an API Credits key");
+    expect(requiredKeyLabel("glm", ["glm-coding"])).toBe("Needs a GLM Coding Plan key");
   });
   it("is undefined when any of the provider's keys runs the model", () => {
     expect(requiredKeyLabel("moonshot", ["kimi-code", "moonshot"])).toBeUndefined();
-    expect(requiredKeyLabel("glm", ["glm"])).toBeUndefined();
+    expect(requiredKeyLabel("glm", ["glm-coding", "glm"])).toBeUndefined();
+    expect(requiredKeyLabel("deepseek", ["deepseek"])).toBeUndefined();
   });
 });

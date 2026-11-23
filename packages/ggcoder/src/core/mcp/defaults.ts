@@ -1,11 +1,22 @@
 import type { Provider } from "@kenkaiiii/gg-ai";
 import type { MCPServerConfig } from "./types.js";
 import { loadServers } from "./store.js";
+import { getModel } from "../model-registry.js";
 
 /** Servers every provider gets. Real-code research is the native `steroids`
  *  tool now, so nothing ships here by default; provider-specific servers are
  *  added in `getMCPServers`. */
 export const DEFAULT_MCP_SERVERS: MCPServerConfig[] = [];
+
+/**
+ * Whether a session on this model gets Z.AI's bundled servers. Only GLM models
+ * without native image input need them (GLM-5.3, for zai_vision); GLM-5.4 and
+ * 5.3-Flash read images themselves and use the built-in web_search, web_fetch
+ * and steroids tools instead. An unknown GLM id keeps the servers.
+ */
+export function usesZaiMcpServers(provider: Provider, model: string): boolean {
+  return provider === "glm" && getModel(model)?.supportsImages !== true;
+}
 
 /**
  * Get MCP servers for a specific provider.

@@ -177,6 +177,8 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
   const k3Effort = options.thinking ? toKimiK3Effort(options.thinking) : undefined;
   const isKimiK27 = options.provider === "moonshot" && options.model.startsWith("kimi-k2.7-code");
   const hasFixedKimiSampling = isKimiK3 || isKimiK27;
+  // GLM-5.3 always thinks: an explicit `disabled` toggle 400s, so "off" omits it.
+  const isGlmAlwaysThinking = options.provider === "glm" && options.model === "glm-5.3";
   const usesThinkingParam =
     options.provider === "deepseek" ||
     options.provider === "glm" ||
@@ -347,11 +349,13 @@ async function* runStream(options: StreamOptions): AsyncGenerator<StreamEvent, S
               ? "high"
               : "max";
       } else if (options.provider === "glm") {
-        (params as unknown as Record<string, unknown>).reasoning_effort = toGlmReasoningEffort(
-          options.thinking,
-        );
+        // A model with declared rungs (GLM-5.3: low/high/max) snaps down to one.
+        (params as unknown as Record<string, unknown>).reasoning_effort = options.thinkingLevels
+          ?.length
+          ? effortForRequest(options.thinking, options.model, options.thinkingLevels)
+          : toGlmReasoningEffort(options.thinking);
       }
-    } else {
+    } else if (!isGlmAlwaysThinking) {
       // The providers/models routed through this block support explicit disabled.
       // MiMo is an always-on reasoning model — without { type: "disabled" } it
       // returns reasoning_content and may produce thinking-only responses with

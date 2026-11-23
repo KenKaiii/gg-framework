@@ -19,7 +19,7 @@ vi.mock("../../config.js", async () => {
   };
 });
 
-import { getAllMcpServers, getMCPServers } from "./defaults.js";
+import { getAllMcpServers, getMCPServers, usesZaiMcpServers } from "./defaults.js";
 import { addServer } from "./store.js";
 
 beforeEach(async () => {
@@ -76,5 +76,14 @@ describe("getAllMcpServers project-scope trust gate", () => {
     const kept = servers.filter((s) => s.name === provided.name);
     expect(kept).toHaveLength(1);
     expect(kept[0]!.command).toBe(provided.command);
+  });
+});
+
+describe("usesZaiMcpServers", () => {
+  it("is true only for GLM models without native image input", () => {
+    expect(usesZaiMcpServers("glm", "glm-5.3")).toBe(true);
+    expect(usesZaiMcpServers("glm", "glm-5.4")).toBe(false);
+    expect(usesZaiMcpServers("glm", "glm-5.3-flash")).toBe(false);
+    expect(usesZaiMcpServers("anthropic", "claude-opus-5-5")).toBe(false);
   });
 });

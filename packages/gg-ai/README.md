@@ -83,7 +83,7 @@ gg-ai makes one model call. To run the tools and send results back until the mod
 | `gemini`      | Gemini 3.1 Pro (Preview), 3.8 / 3.5 Flash, 3.5 / 3.1 Flash Lite | Google AI Studio key on the public Gemini API. Native video input                         |
 | `xai`         | Grok 4.7                                                        | API key                                                                                   |
 | `moonshot`    | Kimi K3, K2.8 Preview, K2.7 Code, K2.7 Code HighSpeed           | Moonshot key, or a Kimi Code plan key with its `baseUrl`. Native video input              |
-| `glm`         | GLM-5.3, GLM-5.3-Flash                                          | Z.AI standard (pay-per-token) endpoint                                                    |
+| `glm`         | GLM-5.4, GLM-5.3, GLM-5.3-Flash                                 | Z.AI Coding Plan or standard (pay-per-token) endpoint                                     |
 | `minimax`     | MiniMax M3.1 Flash, M3                                          | Anthropic-compatible endpoint. Native video input                                         |
 | `xiaomi`      | MiMo-V2.6-Pro, MiMo-V2.6-Flash, MiMo-V2.6-Pro-UltraSpeed        | Native video input                                                                        |
 | `deepseek`    | DeepSeek V4 Pro, V4.1 Flash                                     |                                                                                           |

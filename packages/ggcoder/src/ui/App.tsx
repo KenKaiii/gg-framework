@@ -75,8 +75,9 @@ import {
   type PlanStep,
 } from "../utils/plan-steps.js";
 import type { MCPClientManager } from "../core/mcp/index.js";
-import { getAllMcpServers } from "../core/mcp/index.js";
+import { getAllMcpServers, usesZaiMcpServers } from "../core/mcp/index.js";
 import type { AuthStorage } from "../core/auth-storage.js";
+import { apiKeyStorageKeys } from "@kenkaiiii/gg-core";
 import { resolveClaudeCodeProcess } from "../core/claude-code/complete.js";
 import {
   trimFlushedItems,
@@ -2214,6 +2215,8 @@ export function App(props: AppProps) {
       const newProvider = value.slice(0, colonIdx) as Provider;
       const newModelId = value.slice(colonIdx + 1);
       log("INFO", "model", `Model changed`, { provider: newProvider, model: newModelId });
+      const prevProviderId = currentProviderRef.current;
+      const prevModelId = currentModelRef.current;
       // Keep the ref in sync before any prompt rebuild so the identity (Claude
       // Code vs GG Coder) reflects the newly selected provider immediately.
       currentProviderRef.current = newProvider;
@@ -2241,62 +2244,64 @@ export function App(props: AppProps) {
             rebuildPromptWithTools(next);
             return next;
           });
-
-          // Reconnect MCP servers ONLY when the resolved server set actually
-          // changes. GLM is the only provider with a different set (Z.AI
-          // servers), so a switch that doesn't involve GLM on either side
-          // keeps the identical set — tearing down a live stdio child and
-          // re-spawning `npx` there only risks a failed
-          // re-spawn that would silently drop the tools.
-          const glmInvolved = newProvider === "glm" || prevProvider === "glm";
-          const mcpManager = props.mcpManager;
-          if (mcpManager && glmInvolved) {
-            void (async () => {
-              // Disconnect old MCP servers
-              await mcpManager.dispose();
-
-              // Remove old MCP tools, connect new ones
-              let apiKey: string | undefined;
-              if (newProvider === "glm" && props.authStorage) {
-                try {
-                  const glmCreds = await props.authStorage.resolveCredentials("glm");
-                  apiKey = glmCreds.accessToken;
-                } catch {
-                  // GLM not configured — skip Z.AI MCP servers
-                }
-              } else if (newProvider === "glm") {
-                apiKey = props.credentialsByProvider?.["glm"]?.accessToken;
-              }
-              try {
-                // Use getAllMcpServers so user-configured servers (from
-                // ~/.gg/mcp.json and ./.gg/mcp.json) survive the reconnect —
-                // getMCPServers returns provider defaults only.
-                const servers = await getAllMcpServers(newProvider, apiKey, props.cwd);
-                const mcpTools = await mcpManager.connectAll(servers);
-                setCurrentTools((prev) => {
-                  const next = [...prev.filter((t) => !t.name.startsWith("mcp__")), ...mcpTools];
-                  rebuildPromptWithTools(next);
-                  return next;
-                });
-                log("INFO", "mcp", `MCP servers reconnected for provider ${newProvider}`);
-              } catch (err) {
-                log(
-                  "WARN",
-                  "mcp",
-                  `MCP reconnection failed: ${err instanceof Error ? err.message : String(err)}`,
-                );
-                // Still remove old MCP tools even if reconnection fails
-                setCurrentTools((prev) => {
-                  const next = prev.filter((t) => !t.name.startsWith("mcp__"));
-                  rebuildPromptWithTools(next);
-                  return next;
-                });
-              }
-            })();
-          }
         }
         return newProvider;
       });
+
+      // Reconnect MCP servers ONLY when the Z.AI server set flips on or off
+      // (GLM-5.3 ↔ anything else) — every other switch keeps the identical set,
+      // and tearing down a live stdio child to re-spawn `npx` only risks a
+      // failed re-spawn that would silently drop the tools.
+      const needsZai = usesZaiMcpServers(newProvider, newModelId);
+      const mcpManager = props.mcpManager;
+      if (mcpManager && needsZai !== usesZaiMcpServers(prevProviderId, prevModelId)) {
+        void (async () => {
+          // Disconnect old MCP servers
+          await mcpManager.dispose();
+
+          // Remove old MCP tools, connect new ones
+          let apiKey: string | undefined;
+          if (needsZai && props.authStorage) {
+            try {
+              const glmCreds = await props.authStorage.resolveCredentials("glm", {
+                storageKeys: apiKeyStorageKeys("glm"),
+              });
+              apiKey = glmCreds.accessToken;
+            } catch {
+              // GLM not configured — skip Z.AI MCP servers
+            }
+          } else if (needsZai) {
+            apiKey = apiKeyStorageKeys("glm")
+              .map((key) => props.credentialsByProvider?.[key]?.accessToken)
+              .find(Boolean);
+          }
+          try {
+            // Use getAllMcpServers so user-configured servers (from
+            // ~/.gg/mcp.json and ./.gg/mcp.json) survive the reconnect —
+            // getMCPServers returns provider defaults only.
+            const servers = await getAllMcpServers(newProvider, apiKey, props.cwd);
+            const mcpTools = await mcpManager.connectAll(servers);
+            setCurrentTools((prev) => {
+              const next = [...prev.filter((t) => !t.name.startsWith("mcp__")), ...mcpTools];
+              rebuildPromptWithTools(next);
+              return next;
+            });
+            log("INFO", "mcp", `MCP servers reconnected for provider ${newProvider}`);
+          } catch (err) {
+            log(
+              "WARN",
+              "mcp",
+              `MCP reconnection failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            // Still remove old MCP tools even if reconnection fails
+            setCurrentTools((prev) => {
+              const next = prev.filter((t) => !t.name.startsWith("mcp__"));
+              rebuildPromptWithTools(next);
+              return next;
+            });
+          }
+        })();
+      }
 
       // The `read` tool's video capability (its description + native-video
       // execute path) is baked in at creation from the model's `maxVideoBytes`.

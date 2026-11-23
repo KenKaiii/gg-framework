@@ -6,10 +6,13 @@ import {
   AuthStorage,
   GEMINI_API_KEY,
   GEMINI_API_KEY_BASE_URL,
+  GLM_CODING_PLAN_BASE_URL,
+  GLM_CODING_PLAN_KEY,
   KIMI_CODE_KEY,
   NotLoggedInError,
   OPENAI_CHATGPT_KEY,
   XIAOMI_CREDITS_KEY,
+  apiKeyStorageKeys,
   dualAuthProvider,
   providerStorageKeys,
   readStoredBaseUrlSync,
@@ -1019,5 +1022,30 @@ describe("AuthStorage — Claude Code sign-in marker", () => {
     const saved = JSON.parse(await fs.readFile(filePath, "utf-8")) as Record<string, unknown>;
     expect(saved.anthropic).toBeUndefined();
     expect(saved[CLAUDE_CODE_AUTH_KEY]).toEqual(CLAUDE_CODE_AUTH_MARKER);
+  });
+});
+
+describe("GLM Coding Plan key", () => {
+  it("connects GLM on a plan key alone and resolves it to the Coding Plan endpoint first", async () => {
+    expect(apiKeyStorageKeys("glm")).toEqual([GLM_CODING_PLAN_KEY, "glm"]);
+    const storage = await makeStorage();
+    await storage.setCredentials(GLM_CODING_PLAN_KEY, {
+      accessToken: "plan-key",
+      refreshToken: "",
+      expiresAt: Date.now() + 1_000_000,
+      baseUrl: GLM_CODING_PLAN_BASE_URL,
+    });
+    expect(await storage.hasProviderAuth("glm")).toBe(true);
+    expect(await storage.getStoredBaseUrl("glm")).toBe(GLM_CODING_PLAN_BASE_URL);
+
+    await storage.setCredentials("glm", {
+      accessToken: "payg-key",
+      refreshToken: "",
+      expiresAt: Date.now() + 1_000_000,
+    });
+    const creds = await storage.resolveCredentials("glm", {
+      storageKeys: apiKeyStorageKeys("glm"),
+    });
+    expect(creds.accessToken).toBe("plan-key");
   });
 });

@@ -1,6 +1,11 @@
 import type { Provider, ThinkingLevel } from "@kenkaiiii/gg-ai";
 import { isKimiCodingEndpoint } from "./kimi-region.js";
-import { GEMINI_API_KEY, KIMI_CODE_KEY, XIAOMI_CREDITS_KEY } from "./auth-storage.js";
+import {
+  GEMINI_API_KEY,
+  GLM_CODING_PLAN_KEY,
+  KIMI_CODE_KEY,
+  XIAOMI_CREDITS_KEY,
+} from "./auth-storage.js";
 import { isHiddenProvider } from "./hidden-providers.js";
 
 export { HIDDEN_PROVIDERS, isHiddenProvider } from "./hidden-providers.js";
@@ -146,6 +151,9 @@ const GEMINI_AUTH_KEYS = [GEMINI_API_KEY];
 
 /** Kimi credential order: a Kimi Code plan key first, then a Moonshot key. */
 const KIMI_AUTH_KEYS = [KIMI_CODE_KEY, "moonshot"];
+
+/** GLM credential order: a GLM Coding Plan key first, then a pay-per-token Z.AI key. */
+const GLM_AUTH_KEYS = [GLM_CODING_PLAN_KEY, "glm"];
 
 export const MODELS: ModelInfo[] = [
   // ── Anthropic ──────────────────────────────────────────
@@ -732,12 +740,29 @@ export const MODELS: ModelInfo[] = [
     authStorageKeys: KIMI_AUTH_KEYS,
   },
   // ── Z.AI (GLM) ─────────────────────────────────────────
-  // Two GLM entries, both live on the coding endpoint (verified against its
+  // All GLM entries are live on the coding endpoint (verified against its
   // /models list). The pre-5.3 ids stay retired: they routed to strictly worse
   // coding for the same plan quota, and the endpoint already answers `glm-5.2`
   // requests as glm-5.3.
   // `max` is both the ceiling and Z.AI's own default — the rungs below it live
   // in thinking-level.ts.
+  // GLM-5.4 (released 2026-11) runs on a Coding Plan key only: the standard
+  // endpoint answers "You do not have permission to access glm-5.4". Images
+  // are native (verified: base64 PNG read back exactly), so its attachments go
+  // inline rather than through the zai_vision MCP that 5.3 still needs.
+  {
+    id: "glm-5.4",
+    name: "GLM-5.4",
+    provider: "glm",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 131_072,
+    supportsThinking: true,
+    supportsImages: true,
+    supportsVideo: false,
+    costTier: "medium",
+    maxThinkingLevel: "max",
+    authStorageKeys: [GLM_CODING_PLAN_KEY],
+  },
   {
     id: "glm-5.3",
     name: "GLM-5.3",
@@ -749,6 +774,12 @@ export const MODELS: ModelInfo[] = [
     supportsVideo: false,
     costTier: "medium",
     maxThinkingLevel: "max",
+    // The Coding Plan endpoint stopped serving 5.3 when 5.4 landed ("Invalid
+    // API parameter" on a bare request, 2026-11-23); the standard endpoint still does.
+    authStorageKeys: ["glm"],
+    // Same day, 5.3's ladder shrank: medium/xhigh and thinking-off now 400 with
+    // "always engages in thinking … please use low, high, or max".
+    thinkingLevels: ["low", "high", "max"],
   },
   // GLM-5.3-Flash (released 2026-08-26): 320B-A18B natively multimodal sibling
   // at ~1/20th of 5.3's API price with 3× the coding-plan quota, so it is the
@@ -773,6 +804,7 @@ export const MODELS: ModelInfo[] = [
     supportsVideo: false,
     costTier: "low",
     maxThinkingLevel: "max",
+    authStorageKeys: GLM_AUTH_KEYS,
   },
   // ── MiniMax ────────────────────────────────────────────
   {
@@ -1237,7 +1269,7 @@ const DEFAULT_MODEL_IDS: Partial<Record<Provider, string>> = {
   xiaomi: "mimo-v2.6-pro",
   openai: "gpt-6.2-sol",
   gemini: "gemini-3.1-flash-lite",
-  glm: "glm-5.3",
+  glm: "glm-5.4",
   moonshot: "kimi-k3",
   minimax: "MiniMax-M3.1-Flash",
   deepseek: "deepseek-v4-pro",

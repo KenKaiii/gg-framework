@@ -166,22 +166,28 @@ describe("thinking-level helpers", () => {
     expect(isThinkingLevelSupported("moonshot", "kimi-k3", "medium")).toBe(false);
   });
 
-  it("cycles GLM-5.3 through the endpoint's declared effort ladder", () => {
+  it("cycles GLM-5.4 through the endpoint's declared effort ladder", () => {
     // Verified live: an unlisted effort 400s with `none, minimal, low, medium,
     // high, xhigh, max`. `none` is what the thinking toggle already does and
     // `minimal` has no ThinkingLevel counterpart, so five rungs are exposed.
-    expect(getSupportedThinkingLevels("glm", "glm-5.3")).toEqual([
+    expect(getSupportedThinkingLevels("glm", "glm-5.4")).toEqual([
       "low",
       "medium",
       "high",
       "xhigh",
       "max",
     ]);
-    expect(getNextThinkingLevel("glm", "glm-5.3", undefined)).toBe("low");
-    expect(getNextThinkingLevel("glm", "glm-5.3", "high")).toBe("xhigh");
-    expect(getNextThinkingLevel("glm", "glm-5.3", "xhigh")).toBe("max");
-    expect(getNextThinkingLevel("glm", "glm-5.3", "max")).toBeUndefined();
-    expect(isThinkingLevelSupported("glm", "glm-5.3", "ultra")).toBe(false);
+    expect(getNextThinkingLevel("glm", "glm-5.4", undefined)).toBe("low");
+    expect(getNextThinkingLevel("glm", "glm-5.4", "high")).toBe("xhigh");
+    expect(getNextThinkingLevel("glm", "glm-5.4", "xhigh")).toBe("max");
+    expect(getNextThinkingLevel("glm", "glm-5.4", "max")).toBeUndefined();
+    expect(isThinkingLevelSupported("glm", "glm-5.4", "ultra")).toBe(false);
+  });
+
+  it("offers GLM-5.3 only the low/high/max rungs its endpoint now accepts", () => {
+    expect(getSupportedThinkingLevels("glm", "glm-5.3")).toEqual(["low", "high", "max"]);
+    expect(getNextThinkingLevel("glm", "glm-5.3", "low")).toBe("high");
+    expect(isThinkingLevelSupported("glm", "glm-5.3", "medium")).toBe(false);
   });
 
   it("keeps non-cycling providers at their model's sole supported effort", () => {

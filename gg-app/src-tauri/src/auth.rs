@@ -344,7 +344,7 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
     ProviderMeta {
         value: "glm",
         label: "Z.AI (GLM)",
-        description: "GLM-5.3, GLM-5.3-Flash",
+        description: "GLM-5.4 (Coding Plan), GLM-5.3 (API key), GLM-5.3-Flash",
         methods: &["apikey"],
         oauth_key: None,
         oauth_label: None,
@@ -352,14 +352,29 @@ pub(crate) const AUTH_PROVIDERS: &[ProviderMeta] = &[
             MethodDetail {
                 method: "apikey",
                 label: "Z.AI API key",
-                billing: "Pay-per-token from your Z.AI account balance.",
-                when: "GLM Coding Plan quota can't be used here: Z.AI limits the plan to the tools it lists.",
+                billing: "A GLM Coding Plan key uses your plan; a Z.AI API key is pay-per-token.",
+                when: "",
                 requires: None,
             },
         ],
         api_key_label: Some("Z.AI"),
         api_key_base_url: None,
-        api_key_variants: &[],
+        api_key_variants: &[
+            ApiKeyVariant {
+                key: "glm-coding",
+                label: "GLM Coding Plan",
+                kind: "plan",
+                billing: "Uses your GLM Coding Plan.",
+                base_url: Some("https://api.z.ai/api/coding/paas/v4"),
+            },
+            ApiKeyVariant {
+                key: "glm",
+                label: "Z.AI API",
+                kind: "payg",
+                billing: "Pay-per-token from your Z.AI account balance.",
+                base_url: None,
+            },
+        ],
     },
     ProviderMeta {
         value: "minimax",
@@ -1194,10 +1209,22 @@ mod tests {
         );
         // Unknown provider → None.
         assert!(resolve_apikey_target("nope", None).is_none());
-        // API-key provider with no custom base URL, no variants.
+        // GLM defaults to the Coding Plan key; the pay-per-token key is the other variant.
         assert_eq!(
             resolve_apikey_target("glm", None),
+            Some((
+                "glm-coding".to_string(),
+                Some("https://api.z.ai/api/coding/paas/v4")
+            )),
+        );
+        assert_eq!(
+            resolve_apikey_target("glm", Some("glm")),
             Some(("glm".to_string(), None)),
+        );
+        // API-key provider with no custom base URL, no variants.
+        assert_eq!(
+            resolve_apikey_target("deepseek", None),
+            Some(("deepseek".to_string(), None)),
         );
         // Kimi defaults to the Kimi Code plan key; the Moonshot key is the other variant.
         assert_eq!(

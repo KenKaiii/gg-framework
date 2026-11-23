@@ -6,6 +6,8 @@
 import {
   GEMINI_API_KEY,
   GEMINI_API_KEY_BASE_URL,
+  GLM_CODING_PLAN_BASE_URL,
+  GLM_CODING_PLAN_KEY,
   KIMI_CODE_KEY,
   XIAOMI_CREDITS_KEY,
   dualAuthProvider,
@@ -193,13 +195,27 @@ const ALL_AUTH_PROVIDERS: AuthProviderMeta[] = [
   {
     value: "glm",
     label: "Z.AI (GLM)",
-    description: "GLM-5.3, GLM-5.3-Flash",
+    description: "GLM-5.4 (Coding Plan), GLM-5.3 (API key), GLM-5.3-Flash",
     methods: ["apikey"],
     apiKeyLabel: "Z.AI",
+    apiKeyVariants: [
+      {
+        key: GLM_CODING_PLAN_KEY,
+        label: "GLM Coding Plan",
+        kind: "plan",
+        billing: "Uses your GLM Coding Plan.",
+        baseUrl: GLM_CODING_PLAN_BASE_URL,
+      },
+      {
+        key: "glm",
+        label: "Z.AI API",
+        kind: "payg",
+        billing: "Pay-per-token from your Z.AI account balance.",
+      },
+    ],
     methodDetails: apiKeyDetails(
       "Z.AI API key",
-      "Pay-per-token from your Z.AI account balance.",
-      "GLM Coding Plan quota can't be used here: Z.AI limits the plan to the tools it lists.",
+      "A GLM Coding Plan key uses your plan; a Z.AI API key is pay-per-token.",
     ),
   },
   {
