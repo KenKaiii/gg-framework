@@ -1716,6 +1716,8 @@ export interface GitWorktree {
   dirty: number;
   /** Commits the main folder's branch doesn't have. */
   ahead: number;
+  /** On a detached HEAD: commits no branch has, lost if it is removed. 0 on a branch. */
+  unreferenced: number;
 }
 
 export interface GitWorktrees {

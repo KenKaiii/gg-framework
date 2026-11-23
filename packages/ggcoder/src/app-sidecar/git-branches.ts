@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { CheckoutRecord } from "../core/checkout-record.js";
-import { realpathNative, runBackgroundGit } from "../utils/git.js";
+import { realpathNative, resolveGitBinary, runBackgroundGit } from "../utils/git.js";
 
 /**
  * The Git panel's branch picker: list local branches, and switch this window
@@ -98,13 +98,23 @@ export async function listBranches(
   return { current, branches };
 }
 
-/** Run git as the user would (hooks and LFS filters apply): this is their own action. */
+/**
+ * Run git as the user would (hooks and LFS filters apply): this is their own
+ * action. Still the resolved binary, never a `git.exe` planted in the repo root
+ * (Windows searches the cwd first), and no console window.
+ */
 function userGit(args: readonly string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
-      "git",
+      resolveGitBinary(),
       [...args],
-      { cwd, timeout: WRITE_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, env: process.env },
+      {
+        cwd,
+        timeout: WRITE_TIMEOUT_MS,
+        maxBuffer: 8 * 1024 * 1024,
+        env: process.env,
+        windowsHide: true,
+      },
       (error, stdout, stderr) => {
         if (!error) return resolve(stdout);
         const detail = (stderr || stdout || error.message).trim().split("\n").slice(-6).join("\n");
@@ -255,20 +265,21 @@ export interface ResumeCheckout {
   note: string | null;
   /** What to show the user in the chat, or null (see `noteCheckout`). */
   notice?: string | null;
-  /** A worktree was created for it (and needs its setup run). */
-  created?: boolean;
 }
 
 /**
  * Where a resumed conversation should open so it is back on the branch it
- * recorded (`record`), given the folder the window asked for. Never switches
- * a folder other windows may be using: a branch not checked out anywhere gets
- * its own worktree. A record from another repository is ignored.
+ * recorded (`record`), given the folder the window asked for: the folder, or
+ * the worktree that has the branch checked out. Reopening a conversation never
+ * writes to git: it switches no folder (other windows may use it) and creates
+ * no worktree, since that runs the repo's hooks and a new worktree's setup
+ * (an install) without the user asking. A branch checked out nowhere opens in
+ * the folder, and the user is told to pick it in the Git panel, which makes its
+ * worktree. A record from another repository is ignored.
  */
 export async function resolveResumeCheckout(
   requestedCwd: string,
   record: CheckoutRecord,
-  worktreesRoot: string,
 ): Promise<ResumeCheckout> {
   const unchanged: ResumeCheckout = { cwd: requestedCwd, note: null };
   const common = await commonGitDir(requestedCwd);
@@ -304,19 +315,17 @@ export async function resolveResumeCheckout(
       note: `This conversation's branch \`${record.branch}\` is checked out in ${row.worktree}; it reopened there.`,
     };
   }
-  const outcome = await switchBranch({
-    dir: requestedCwd,
-    branch: record.branch,
-    create: false,
-    isolate: true,
-    worktreesRoot,
-  });
-  if (outcome.kind !== "moved") return unchanged;
+  const now = current ?? "another commit";
   return {
-    cwd: outcome.path,
-    note: worktreeMoveNote(requestedRoot, outcome),
-    notice: `Opened on branch ${record.branch} in its own worktree, because the project folder is on ${current ?? "another commit"} now.`,
-    created: outcome.created,
+    cwd: requestedCwd,
+    notice:
+      `This conversation was on branch ${record.branch}, but the project folder is on ${now} now. ` +
+      `To continue on ${record.branch}, pick it in the Git panel's Branches tab.`,
+    note:
+      `This conversation was on branch \`${record.branch}\`, which isn't checked out anywhere now. ` +
+      `It reopened in ${requestedRoot}${current ? ` on \`${current}\`` : ""}, so files may differ ` +
+      `from what you saw earlier; check git status before relying on them. The user can open ` +
+      `\`${record.branch}\` from the Git panel.`,
   };
 }
 

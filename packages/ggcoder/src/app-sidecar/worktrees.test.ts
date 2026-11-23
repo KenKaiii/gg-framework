@@ -1,10 +1,11 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   WorktreeRemoveError,
+  WorktreeSetups,
   listWorktrees,
   mainCheckoutOf,
   parseWorktreePorcelain,
@@ -66,8 +67,24 @@ describe("listWorktrees", () => {
     expect(list?.mainPath).toBe(repo);
     expect(list?.mainBranch).toBe("trunk");
     expect(list?.worktrees).toEqual([
-      { path: mine, branch: "feature", managed: true, missing: false, dirty: 1, ahead: 1 },
-      { path: own, branch: "own", managed: false, missing: false, dirty: 0, ahead: 0 },
+      {
+        path: mine,
+        branch: "feature",
+        managed: true,
+        missing: false,
+        dirty: 1,
+        ahead: 1,
+        unreferenced: 0,
+      },
+      {
+        path: own,
+        branch: "own",
+        managed: false,
+        missing: false,
+        dirty: 0,
+        ahead: 0,
+        unreferenced: 0,
+      },
     ]);
   });
 
@@ -116,6 +133,39 @@ describe("removeWorktree", () => {
     expect(fs.existsSync(own) && fs.existsSync(mine)).toBe(true);
   });
 
+  it("refuses a detached worktree holding commits no branch has, unless forced", async () => {
+    const detached = path.join(managed, "app-1234", "detached");
+    git(repo, "worktree", "add", "-q", "--detach", detached);
+    fs.writeFileSync(path.join(detached, "c.txt"), "c\n");
+    git(detached, "add", "-A");
+    git(detached, "commit", "-q", "-m", "only here");
+    const row = (await listWorktrees(repo, managed))?.worktrees.find((w) => w.path === detached);
+    expect(row).toMatchObject({ branch: null, dirty: 0, unreferenced: 1 });
+    const error = await removeWorktree(options(detached)).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(WorktreeRemoveError);
+    expect((error as WorktreeRemoveError).message).toMatch(/detached HEAD with 1 commit no branch/);
+    expect((error as WorktreeRemoveError).unreferenced).toBe(1);
+    expect(fs.existsSync(detached)).toBe(true);
+    await removeWorktree(options(detached, { force: true }));
+    expect(fs.existsSync(detached)).toBe(false);
+  });
+
+  it("removes a detached worktree whose commits a branch still has", async () => {
+    const detached = path.join(managed, "app-1234", "at-feature");
+    git(repo, "worktree", "add", "-q", "--detach", detached, "feature");
+    const row = (await listWorktrees(repo, managed))?.worktrees.find((w) => w.path === detached);
+    expect(row).toMatchObject({ branch: null, ahead: 1, unreferenced: 0 });
+    await removeWorktree(options(detached));
+    expect(fs.existsSync(detached)).toBe(false);
+  });
+
+  it("refuses while the worktree's setup still runs, even when forced", async () => {
+    await expect(
+      removeWorktree(options(mine, { setupRunning: true, force: true })),
+    ).rejects.toThrow(/setup is still running/);
+    expect(fs.existsSync(mine)).toBe(true);
+  });
+
   it("prunes a worktree whose folder was deleted", async () => {
     fs.rmSync(mine, { recursive: true, force: true });
     expect((await listWorktrees(repo, managed))?.worktrees[0]?.missing).toBe(true);
@@ -150,5 +200,50 @@ describe("resolveSetupCommand", () => {
     expect(setupNote(setup, "abc123")).toContain("background task abc123");
     expect(setupNote(setup, null)).toContain("could not start");
     expect(setupNote(null, null)).toContain("Install them");
+  });
+});
+
+describe("WorktreeSetups (removal waits for a worktree's setup)", () => {
+  let child: ChildProcess | null = null;
+
+  // Spawned outside the temp folder, and reaped before it is deleted, so
+  // Windows never holds the folder open (EBUSY).
+  const startSetup = (ms: number): ChildProcess =>
+    spawn(process.execPath, ["-e", `setTimeout(() => {}, ${ms})`], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+  const exited = (proc: ChildProcess): Promise<void> =>
+    proc.exitCode !== null || proc.signalCode !== null
+      ? Promise.resolve()
+      : new Promise((resolve) => proc.once("exit", () => resolve()));
+
+  afterEach(async () => {
+    if (child) {
+      child.kill();
+      await exited(child);
+      child = null;
+    }
+  });
+
+  it("has nothing to wait for in a worktree with no setup", async () => {
+    expect(await new WorktreeSetups().stillRunning(mine, 0)).toBe(false);
+  });
+
+  it("waits for a setup that finishes, and reports one that keeps running", async () => {
+    const setups = new WorktreeSetups();
+    child = startSetup(30_000);
+    await setups.started(mine, child.pid ?? 0);
+    expect(await setups.stillRunning(mine, 200, 20)).toBe(true);
+    const done = exited(child);
+    child.kill();
+    await done;
+    expect(await setups.stillRunning(mine, 5_000, 20)).toBe(false);
+
+    child = startSetup(300);
+    await setups.started(mine, child.pid ?? 0);
+    expect(await setups.stillRunning(mine, 10_000, 20)).toBe(false);
+    await exited(child);
+    expect(child.exitCode).toBe(0);
   });
 });

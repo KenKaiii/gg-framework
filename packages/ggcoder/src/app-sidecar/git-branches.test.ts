@@ -1,8 +1,10 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import type * as ChildProcess from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveGitBinary } from "../utils/git.js";
 import {
   BranchSwitchError,
   copyLocalFiles,
@@ -12,6 +14,12 @@ import {
   worktreeMoveNote,
   worktreePathFor,
 } from "./git-branches.js";
+
+// Spy on execFile (calls through) to see how the user's own git action is spawned.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof ChildProcess>();
+  return { ...actual, execFile: vi.fn(actual.execFile) };
+});
 
 function git(dir: string, ...args: string[]): string {
   return execFileSync(
@@ -85,6 +93,18 @@ describe("switchBranch", () => {
       previous: "trunk",
     });
     expect(current()).toBe("feature/login");
+  });
+
+  it("runs the resolved git binary with no console window, never one planted in the repo", async () => {
+    // Windows searches the cwd (the repo root) first for a bare "git".
+    vi.mocked(execFile).mockClear();
+    await switchBranch(req({ branch: "feature/login" }));
+    expect(current()).toBe("feature/login");
+    const call = vi
+      .mocked(execFile)
+      .mock.calls.find(([, args]) => Array.isArray(args) && args[0] === "switch");
+    expect(call?.[0]).toBe(resolveGitBinary());
+    expect(call?.[2]).toMatchObject({ cwd: repo, windowsHide: true });
   });
 
   it("creates a branch in place from the current commit", async () => {
@@ -188,7 +208,7 @@ describe("worktree helpers", () => {
 
 describe("resolveResumeCheckout (a resumed conversation keeps its branch)", () => {
   it("opens the main folder unchanged when it is still on the recorded branch", async () => {
-    expect(await resolveResumeCheckout(repo, { branch: "trunk", cwd: repo }, trees)).toEqual({
+    expect(await resolveResumeCheckout(repo, { branch: "trunk", cwd: repo })).toEqual({
       cwd: repo,
       note: null,
     });
@@ -204,42 +224,47 @@ describe("resolveResumeCheckout (a resumed conversation keeps its branch)", () =
     });
     if (moved.kind !== "moved") throw new Error("expected a move");
     const record = { branch: "feature/login", cwd: moved.path };
-    expect(await resolveResumeCheckout(repo, record, trees)).toEqual({
+    expect(await resolveResumeCheckout(repo, record)).toEqual({
       cwd: moved.path,
       note: null,
     });
   });
 
-  it("puts the branch in its own worktree when the folder moved on, leaving the folder alone", async () => {
-    // Switched in place earlier; the folder has since gone back to trunk.
-    const resumed = await resolveResumeCheckout(
-      repo,
-      { branch: "feature/login", cwd: repo },
-      trees,
+  it("never makes a worktree on resume: it reopens in the folder and says how to get the branch", async () => {
+    // Switched in place earlier; the folder has since gone back to trunk. A new
+    // worktree would run the repo's hooks and its setup (an install) unasked.
+    const hookRan = path.join(root, "hook-ran");
+    fs.writeFileSync(
+      path.join(repo, ".git", "hooks", "post-checkout"),
+      `#!/bin/sh\ntouch "${hookRan.replace(/\\/g, "/")}"\n`,
+      { mode: 0o755 },
     );
+    const resumed = await resolveResumeCheckout(repo, { branch: "feature/login", cwd: repo });
     expect(current()).toBe("trunk");
-    expect(resumed.cwd).not.toBe(repo);
-    expect(git(resumed.cwd, "branch", "--show-current").trim()).toBe("feature/login");
-    expect(resumed.note).toContain("feature/login");
-    // The user sees why the window opened somewhere new.
+    expect(resumed.cwd).toBe(repo);
+    expect(git(repo, "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1);
+    expect(fs.existsSync(trees)).toBe(false);
+    expect(fs.existsSync(hookRan)).toBe(false);
+    expect(resumed.note).toMatch(/`feature\/login`, which isn't checked out anywhere.*on `trunk`/);
+    // The user sees why, and where to pick the branch.
     expect(resumed.notice).toBe(
-      "Opened on branch feature/login in its own worktree, because the project folder is on trunk now.",
+      "This conversation was on branch feature/login, but the project folder is on trunk now. " +
+        "To continue on feature/login, pick it in the Git panel's Branches tab.",
     );
   });
 
   it("finds the branch in whichever worktree has it now", async () => {
     const elsewhere = path.join(root, "app-login");
     git(repo, "worktree", "add", "-q", elsewhere, "feature/login");
-    const resumed = await resolveResumeCheckout(
-      repo,
-      { branch: "feature/login", cwd: path.join(root, "gone") },
-      trees,
-    );
+    const resumed = await resolveResumeCheckout(repo, {
+      branch: "feature/login",
+      cwd: path.join(root, "gone"),
+    });
     expect(resumed.cwd).toBe(fs.realpathSync.native(elsewhere));
   });
 
   it("reopens in the folder, and says so, when the branch was deleted", async () => {
-    const resumed = await resolveResumeCheckout(repo, { branch: "deleted", cwd: repo }, trees);
+    const resumed = await resolveResumeCheckout(repo, { branch: "deleted", cwd: repo });
     expect(resumed.cwd).toBe(repo);
     expect(resumed.note).toMatch(/`deleted`, which no longer exists.*on `trunk`/);
     expect(resumed.notice).toBe(
@@ -251,7 +276,7 @@ describe("resolveResumeCheckout (a resumed conversation keeps its branch)", () =
     const other = path.join(root, "other");
     fs.mkdirSync(other);
     git(other, "init", "-q", "-b", "elsewhere");
-    expect(await resolveResumeCheckout(repo, { branch: "elsewhere", cwd: other }, trees)).toEqual({
+    expect(await resolveResumeCheckout(repo, { branch: "elsewhere", cwd: other })).toEqual({
       cwd: repo,
       note: null,
     });

@@ -42,6 +42,8 @@ export interface BranchRouteContext {
   windowsIn: (root: string) => Promise<number>;
   /** Whether another window on the checkout rooted at `root` is working. */
   othersBusyIn: (root: string) => Promise<boolean>;
+  /** Wait briefly for a worktree's setup to exit; true while it still runs. */
+  setupRunningIn: (worktreePath: string) => Promise<boolean>;
 }
 
 export interface BranchesResponse {
@@ -209,18 +211,25 @@ export function handleBranchRoutes(
       }
       try {
         const root = await checkoutRoot(body.path);
+        const openWindows = root ? await ctx.windowsIn(root) : 0;
         await removeWorktree({
           dir: typeof body.cwd === "string" && body.cwd ? body.cwd : ctx.gitDir(),
           target: body.path,
           managedRoot: ctx.worktreesRoot,
           force: body.force === true,
-          openWindows: root ? await ctx.windowsIn(root) : 0,
+          openWindows,
+          // Its window is closed, but a setup it started may still be stopping.
+          setupRunning: openWindows === 0 && (await ctx.setupRunningIn(body.path)),
         });
         log("INFO", "app-sidecar", "worktree removed", { path: body.path });
         json(res, 200, { ok: true });
       } catch (error) {
         if (error instanceof WorktreeRemoveError) {
-          json(res, 409, { error: error.message, dirty: error.dirty });
+          json(res, 409, {
+            error: error.message,
+            dirty: error.dirty,
+            unreferenced: error.unreferenced,
+          });
           return;
         }
         log("WARN", "app-sidecar", "worktree remove failed", { error: String(error) });

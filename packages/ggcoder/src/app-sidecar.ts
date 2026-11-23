@@ -173,7 +173,12 @@ import { handlePromptRoutes } from "./app-sidecar/prompt-routes.js";
 import { handleTaskRoutes } from "./app-sidecar/task-routes.js";
 import { handleBranchRoutes, type BranchRouteContext } from "./app-sidecar/branch-routes.js";
 import { resolveResumeCheckout } from "./app-sidecar/git-branches.js";
-import { mainCheckoutOf, resolveSetupCommand, setupNote } from "./app-sidecar/worktrees.js";
+import {
+  WorktreeSetups,
+  mainCheckoutOf,
+  resolveSetupCommand,
+  setupNote,
+} from "./app-sidecar/worktrees.js";
 import { readCheckoutRecord } from "./core/checkout-record.js";
 import { handleRunControlRoutes } from "./app-sidecar/run-control-routes.js";
 import { handleAuthRoutes } from "./app-sidecar/auth-routes.js";
@@ -331,6 +336,8 @@ async function main(): Promise<void> {
   const pendingMoveNotes = new Map<string, string>();
   // New worktrees (real paths) whose setup runs once a window opens in them.
   const pendingSetups = new Set<string>();
+  // Setups running (or still stopping) in new worktrees; removal waits on them.
+  const worktreeSetups = new WorktreeSetups();
   // Chat rows for conversations that reopened somewhere new for their branch.
   const pendingCheckoutNotices = new Map<string, string>();
 
@@ -472,6 +479,7 @@ async function main(): Promise<void> {
         otherWindowBusyOnCheckout,
         pendingMoveNotes,
         pendingSetups,
+        worktreeSetups,
         pendingCheckoutNotices,
         syncMcpServer,
         // The preview's own session has no window to preview from.
@@ -588,8 +596,9 @@ async function main(): Promise<void> {
         const sessionPath =
           typeof body.sessionPath === "string" && body.sessionPath ? body.sessionPath : undefined;
         try {
-          // A resumed conversation comes back on the branch it was last on,
-          // even if the project's folder has moved to another branch since.
+          // A resumed conversation comes back where its branch is checked out,
+          // even if the project's folder has moved to another branch since. It
+          // never creates a worktree (hooks, setup) on its own; see resolveResumeCheckout.
           let sessionCwd = requestedCwd;
           if (
             mode === "code" &&
@@ -598,20 +607,15 @@ async function main(): Promise<void> {
           ) {
             const record = await readCheckoutRecord(sessionPath);
             if (record) {
-              const resumed = await resolveResumeCheckout(
-                requestedCwd,
-                record,
-                path.join(paths.agentDir, "worktrees"),
-              ).catch((error: unknown) => {
-                log("WARN", "app-sidecar", "resume checkout failed", { error: String(error) });
-                return { cwd: requestedCwd, note: null, notice: null, created: false };
-              });
+              const resumed = await resolveResumeCheckout(requestedCwd, record).catch(
+                (error: unknown) => {
+                  log("WARN", "app-sidecar", "resume checkout failed", { error: String(error) });
+                  return { cwd: requestedCwd, note: null, notice: null };
+                },
+              );
               sessionCwd = resumed.cwd;
               if (resumed.note) pendingMoveNotes.set(sessionPath, resumed.note);
               if (resumed.notice) pendingCheckoutNotices.set(sessionPath, resumed.notice);
-              if (resumed.created) {
-                pendingSetups.add(await realpathNative(resumed.cwd).catch(() => resumed.cwd));
-              }
               if (sessionCwd !== requestedCwd) {
                 log("INFO", "app-sidecar", "resuming on its recorded branch", {
                   branch: record.branch,
@@ -855,6 +859,8 @@ async function createSession(
     pendingMoveNotes: Map<string, string>;
     /** New worktrees whose setup runs when a window opens in them. */
     pendingSetups: Set<string>;
+    /** Setups running in new worktrees, so removing one waits for its setup. */
+    worktreeSetups: WorktreeSetups;
     /** Chat rows for conversations that reopened somewhere new for their branch. */
     pendingCheckoutNotices: Map<string, string>;
   },
@@ -882,6 +888,7 @@ async function createSession(
     otherWindowBusyOnCheckout,
     pendingMoveNotes,
     pendingSetups,
+    worktreeSetups,
     pendingCheckoutNotices,
   } = deps;
   const paths = deps.paths;
@@ -3054,6 +3061,7 @@ async function createSession(
     },
     windowsIn: (root) => otherWindowsOnCheckout(root, ""),
     othersBusyIn: (root) => otherWindowBusyOnCheckout(root, opts.id),
+    setupRunningIn: (worktreePath) => worktreeSetups.stillRunning(worktreePath),
   };
 
   // A brand-new worktree runs its setup (install) once, as a background task
@@ -3069,6 +3077,7 @@ async function createSession(
         })
       : null;
     if (started) {
+      await worktreeSetups.started(real, started.pid);
       log("INFO", "app-sidecar", "worktree setup started", { command: setup?.command ?? "" });
     }
     session.notify("worktree-setup", setupNote(setup, started?.id ?? null));

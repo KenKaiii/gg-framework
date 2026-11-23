@@ -16,6 +16,7 @@ const tree = (over: Partial<GitWorktree>): GitWorktree => ({
   missing: false,
   dirty: 0,
   ahead: 0,
+  unreferenced: 0,
   ...over,
 });
 
@@ -67,6 +68,25 @@ describe("ProjectWorktrees", () => {
     await waitFor(() => expect(removeMock).toHaveBeenCalledWith("/r", "/w/dirty", true));
   });
 
+  it("asks first before removing a detached worktree with commits no branch has", async () => {
+    listMock.mockResolvedValue({
+      mainPath: "/r",
+      mainBranch: "trunk",
+      worktrees: [tree({ path: "/w/detached", branch: null, ahead: 2, unreferenced: 2 })],
+    });
+    removeMock.mockResolvedValue(undefined);
+    render(<ProjectWorktrees projectPath="/r" busy={false} onOpen={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove the detached worktree" }));
+    expect(
+      await screen.findByText(
+        "The detached worktree has 2 commits that no branch has that will be lost.",
+      ),
+    ).toBeDefined();
+    expect(removeMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(removeMock).toHaveBeenCalledWith("/r", "/w/detached", true));
+  });
+
   it("shows why a removal was refused", async () => {
     listMock.mockResolvedValue({ mainPath: "/r", mainBranch: "trunk", worktrees: [tree({})] });
     removeMock.mockRejectedValue(new Error("A window is open in this worktree. Close it first."));
@@ -82,6 +102,7 @@ describe("worktreeStatus", () => {
     [{ dirty: 1 }, "1 change"],
     [{ dirty: 2, ahead: 1 }, "2 changes · 1 commit ahead of trunk"],
     [{ missing: true, dirty: 4 }, "Folder deleted"],
+    [{ branch: null, ahead: 1, unreferenced: 1 }, "1 commit on no branch"],
   ])("%o → %s", (over, label) => {
     expect(worktreeStatus(tree(over), "trunk")).toBe(label);
   });

@@ -349,7 +349,7 @@ describe("two windows on one checkout", () => {
     expect(await waitFor(b.json.sessionId as string, "feature")).toBe("feature");
   }, 30_000);
 
-  it("reopens a conversation on the branch it picked, even after the folder moved on", async () => {
+  it("reopens a conversation in its folder, making no worktree, once the folder moved on", async () => {
     const running = daemon;
     daemon = undefined;
     await new Promise<void>((resolve) => {
@@ -406,22 +406,18 @@ describe("two windows on one checkout", () => {
       body: { mode: "code", cwd: repo, sessionPath: conversation },
     });
     expect(resumed.json.error ?? null).toBeNull();
+    // Reopening never runs git hooks or a setup install unasked: no worktree.
+    expect(resumed.json.cwd).toBe(repo);
     const state = await request("GET", "/state", { session: resumed.json.sessionId as string });
-    expect(state.json.gitBranch).toBe("feature/y");
-    expect(resumed.json.cwd).not.toBe(repo);
-    expect(g("branch", "--show-current").trim()).toBe("develop");
-    // The chat shows why it opened there, and keeps showing it on restore.
+    expect(state.json.gitBranch).toBe("develop");
+    expect(g("worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1);
+    expect(existsSync(path.join(tmpHome, ".gg", "worktrees"))).toBe(false);
+    // The chat says why, and where to pick the branch, and keeps saying it on restore.
     const history = await request("GET", "/history", { session: resumed.json.sessionId as string });
     expect(JSON.stringify(history.json)).toContain(
-      "Opened on branch feature/y in its own worktree, because the project folder is on develop now.",
+      "This conversation was on branch feature/y, but the project folder is on develop now. " +
+        "To continue on feature/y, pick it in the Git panel's Branches tab.",
     );
-
-    // Reopening again lands in the same place, not a second worktree.
-    await request("DELETE", `/session/${resumed.json.sessionId as string}`);
-    const again = await request("POST", "/session", {
-      body: { mode: "code", cwd: repo, sessionPath: conversation },
-    });
-    expect(again.json.cwd).toBe(resumed.json.cwd);
   }, 40_000);
 
   it("moves only the picking window onto a new branch, in its own worktree", async () => {

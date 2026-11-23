@@ -10,12 +10,31 @@ export function worktreeStatus(w: GitWorktree, mainBranch: string | null): strin
   if (w.missing) return "Folder deleted";
   const parts: string[] = [];
   if (w.dirty > 0) parts.push(`${w.dirty} ${w.dirty === 1 ? "change" : "changes"}`);
-  if (w.ahead > 0) {
+  if (w.unreferenced > 0) {
+    parts.push(`${w.unreferenced} ${w.unreferenced === 1 ? "commit" : "commits"} on no branch`);
+  } else if (w.ahead > 0) {
     parts.push(
       `${w.ahead} ${w.ahead === 1 ? "commit" : "commits"} ahead of ${mainBranch ?? "main folder"}`,
     );
   }
   return parts.length > 0 ? parts.join(" · ") : "Clean";
+}
+
+/** Removing it loses work: uncommitted changes, or detached commits no branch has. */
+function atRisk(w: GitWorktree): boolean {
+  return w.dirty > 0 || w.unreferenced > 0;
+}
+
+/** What removing `w` loses, for the confirmation. */
+export function removeWarning(w: GitWorktree): string {
+  const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+  const lost: string[] = [];
+  if (w.dirty > 0) lost.push(plural(w.dirty, "uncommitted change", "uncommitted changes"));
+  if (w.unreferenced > 0) {
+    lost.push(`${plural(w.unreferenced, "commit", "commits")} that no branch has`);
+  }
+  const kept = w.branch ? " Its branch and commits stay." : "";
+  return `The ${w.branch ?? "detached"} worktree has ${lost.join(" and ")} that will be lost.${kept}`;
 }
 
 /**
@@ -109,7 +128,7 @@ export function ProjectWorktrees({
                 aria-label={`Remove the ${w.branch ?? "detached"} worktree`}
                 title="Remove this worktree (the branch stays)"
                 disabled={removing !== null}
-                onClick={() => (w.dirty > 0 ? setConfirm(w) : void remove(w, false))}
+                onClick={() => (atRisk(w) ? setConfirm(w) : void remove(w, false))}
               >
                 <XIcon size={12} weight="bold" aria-hidden="true" />
               </button>
@@ -120,9 +139,7 @@ export function ProjectWorktrees({
       {confirm && (
         <ConfirmModal
           title="Remove worktree?"
-          message={`The ${confirm.branch ?? "detached"} worktree has ${confirm.dirty} uncommitted ${
-            confirm.dirty === 1 ? "change" : "changes"
-          } that will be lost. Its branch and commits stay.`}
+          message={removeWarning(confirm)}
           confirmLabel="Remove"
           busy={removing !== null}
           onConfirm={() => void remove(confirm, true)}

@@ -4519,10 +4519,13 @@ export class AgentSession {
    * Start a background process on the host's behalf (a new worktree's setup),
    * listed with the agent's own background tasks. Null without a process manager.
    */
-  async startBackgroundProcess(command: string, cwd = this.cwd): Promise<{ id: string } | null> {
+  async startBackgroundProcess(
+    command: string,
+    cwd = this.cwd,
+  ): Promise<{ id: string; pid: number } | null> {
     if (!this.processManager) return null;
     const started = await this.processManager.start(command, cwd);
-    return { id: started.id };
+    return { id: started.id, pid: started.pid };
   }
 
   /** Stop a background process by id. Returns a human-readable status string. */

@@ -25,6 +25,11 @@ export interface WorktreeRow {
   dirty: number;
   /** Commits on its branch that the main folder's branch doesn't have. */
   ahead: number;
+  /**
+   * On a detached HEAD: commits no branch, tag or remote branch has. Removing
+   * the worktree leaves them unreachable, so it asks first. 0 on a branch.
+   */
+  unreferenced: number;
 }
 
 export interface WorktreeList {
@@ -113,6 +118,7 @@ export async function listWorktrees(
       const missing = entry.prunable || !existsSync(real);
       let dirty = 0;
       let ahead = 0;
+      let unreferenced = 0;
       if (!missing) {
         dirty = await getGitDirtyFileCount(real).catch(() => 0);
         if (base && entry.head) {
@@ -122,6 +128,14 @@ export async function listWorktrees(
           ).catch(() => "0");
           ahead = Number.parseInt(count.trim(), 10) || 0;
         }
+        if (!entry.branch && entry.head) {
+          // Unknown counts as at risk: never let a failed count allow a removal.
+          const count = await git(
+            ["rev-list", "--count", entry.head, "--not", "--branches", "--tags", "--remotes"],
+            mainPath,
+          ).catch(() => "1");
+          unreferenced = Number.parseInt(count.trim(), 10) || 0;
+        }
       }
       return {
         path: real,
@@ -130,6 +144,7 @@ export async function listWorktrees(
         missing,
         dirty,
         ahead,
+        unreferenced,
       };
     }),
   );
@@ -144,6 +159,8 @@ export class WorktreeRemoveError extends Error {
     message: string,
     /** Uncommitted changes that removing would lose (confirm with `force`). */
     readonly dirty = 0,
+    /** Detached commits no branch has that removing would lose (confirm with `force`). */
+    readonly unreferenced = 0,
   ) {
     super(message);
   }
@@ -151,8 +168,10 @@ export class WorktreeRemoveError extends Error {
 
 /**
  * Remove a GG-made worktree's folder. The branch and its commits stay. Refuses
- * the user's own worktrees, one with uncommitted changes unless `force`, and
- * one a window is open in (`openWindows`).
+ * the user's own worktrees, one with uncommitted changes or (on a detached
+ * HEAD) commits no branch has unless `force`, one a window is open in
+ * (`openWindows`), and one whose setup is still running (`setupRunning`): it
+ * holds files open there, and Windows can't delete those (EBUSY).
  */
 export async function removeWorktree(options: {
   dir: string;
@@ -160,6 +179,7 @@ export async function removeWorktree(options: {
   managedRoot: string;
   force: boolean;
   openWindows: number;
+  setupRunning?: boolean;
 }): Promise<void> {
   const list = await listWorktrees(options.dir, options.managedRoot);
   const target = await realOr(options.target);
@@ -171,6 +191,11 @@ export async function removeWorktree(options: {
   if (options.openWindows > 0) {
     throw new WorktreeRemoveError("A window is open in this worktree. Close it first.");
   }
+  if (options.setupRunning) {
+    throw new WorktreeRemoveError(
+      "This worktree's setup is still running. Try again once it has finished.",
+    );
+  }
   if (row.missing) {
     await git(["worktree", "prune"], list.mainPath);
     return;
@@ -179,6 +204,15 @@ export async function removeWorktree(options: {
     throw new WorktreeRemoveError(
       `It has ${row.dirty} uncommitted ${row.dirty === 1 ? "change" : "changes"}.`,
       row.dirty,
+    );
+  }
+  if (row.unreferenced > 0 && !options.force) {
+    throw new WorktreeRemoveError(
+      `It's on a detached HEAD with ${row.unreferenced} ${
+        row.unreferenced === 1 ? "commit" : "commits"
+      } no branch has.`,
+      0,
+      row.unreferenced,
     );
   }
   try {
@@ -196,6 +230,54 @@ export async function removeWorktree(options: {
 }
 
 // ── Setup command ────────────────────────────────────────────────────────────
+
+/**
+ * Whether the process tree a setup started as `pid` still runs. A background
+ * task leads its own process group on POSIX, so the group answers for the
+ * install's children too; on Windows the stop kills the whole tree.
+ */
+export function processTreeRunning(pid: number): boolean {
+  if (pid <= 0) return false;
+  const probe = (target: number): boolean => {
+    try {
+      process.kill(target, 0);
+      return true;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "EPERM";
+    }
+  };
+  return (process.platform !== "win32" && probe(-pid)) || probe(pid);
+}
+
+/**
+ * The setup processes new worktrees run, daemon-wide (the window that started
+ * one may already be closed, its setup still stopping), so removing a worktree
+ * can wait for its setup to let go of the folder.
+ */
+export class WorktreeSetups {
+  private readonly pids = new Map<string, number>();
+
+  async started(worktree: string, pid: number): Promise<void> {
+    this.pids.set(await realOr(worktree), pid);
+  }
+
+  /**
+   * Wait up to `timeoutMs` for the setup running in `worktree` to exit. True
+   * when it still runs after that; false when it finished or there is none.
+   */
+  async stillRunning(worktree: string, timeoutMs = 10_000, pollMs = 100): Promise<boolean> {
+    const key = await realOr(worktree);
+    const pid = this.pids.get(key);
+    if (pid === undefined) return false;
+    const deadline = Date.now() + timeoutMs;
+    while (processTreeRunning(pid)) {
+      if (Date.now() >= deadline) return true;
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+    this.pids.delete(key);
+    return false;
+  }
+}
 
 export interface SetupCommand {
   command: string;
