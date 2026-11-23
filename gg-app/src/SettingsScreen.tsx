@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useLayoutEffect, useEffect, useState } from "react";
 import {
   GearSixIcon,
   InfoIcon,
@@ -16,7 +16,6 @@ import { TelegramSettingsModal } from "./TelegramSettingsModal";
 import { McpModal } from "./McpModal";
 import { SteroidsModal } from "./SteroidsModal";
 import { SettingsTabBar, type SettingsTab } from "./SettingsTabBar";
-import { AboutPage } from "./AboutPage";
 import { SettingsReadyProvider, useSettingsPageReady, useSettingsPageGate } from "./settings-ready";
 import {
   SettingsHeaderAction,
@@ -36,6 +35,12 @@ import {
 } from "./agent";
 import { theme } from "./theme";
 import { toast } from "./toast";
+
+// The About page carries the whole changelog, so it loads on demand: it adds
+// nothing to the app's start-up bundle and is only needed once it is opened.
+const AboutPage = lazy(() =>
+  import("./AboutPage").then((module) => ({ default: module.AboutPage })),
+);
 
 export type SettingsTabId = "general" | "providers" | "remote" | "mcp" | "steroids" | "about";
 
@@ -65,6 +70,18 @@ export function SettingsScreen({ onClose, initialTab = "general" }: Props): Reac
   const [switched, setSwitched] = useState(false);
   // Each page stays hidden until its first load lands (settings-ready.tsx).
   const gate = useSettingsPageGate(tab);
+  // True once the About chunk has mounted. It then keeps its own hold until its
+  // version is read (see AboutPage), so the screen's hold below covers only the
+  // download.
+  const [aboutMounted, setAboutMounted] = useState(false);
+  const aboutChunkMounted = useCallback(() => setAboutMounted(true), []);
+  const { hold } = gate;
+  useLayoutEffect(() => {
+    if (tab !== "about" || aboutMounted) return;
+    // From opening About until its chunk arrives, so the tab never paints
+    // empty and then fills in.
+    return hold();
+  }, [tab, aboutMounted, hold]);
 
   useEffect(() => {
     void waitForReady()
@@ -145,7 +162,12 @@ export function SettingsScreen({ onClose, initialTab = "general" }: Props): Reac
                   <SteroidsModal status={steroids} onStatus={setSteroids} onClose={stay} />
                 </EmbeddedModal>
               )}
-              {tab === "about" && <AboutPage />}
+              {tab === "about" && (
+                <Suspense fallback={null}>
+                  <AboutPage />
+                  <ChunkMounted onMounted={aboutChunkMounted} />
+                </Suspense>
+              )}
             </div>
           </SettingsHeaderProvider>
         </SettingsReadyProvider>
@@ -154,6 +176,14 @@ export function SettingsScreen({ onClose, initialTab = "general" }: Props): Reac
       <SettingsTabBar tabs={tabs} selected={tab} onSelect={selectTab} panelId={PANEL_ID} />
     </div>
   );
+}
+
+/** Reports that the lazy page rendered just before it has mounted. */
+function ChunkMounted({ onMounted }: { onMounted: () => void }): null {
+  // A lazy sibling suspends the whole boundary until it arrives, so this
+  // effect only ever runs once that page is in.
+  useLayoutEffect(() => onMounted(), [onMounted]);
+  return null;
 }
 
 /**

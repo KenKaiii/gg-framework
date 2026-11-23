@@ -238,3 +238,44 @@ describe("AgentSession semantic loop check", () => {
     expect(internal.loopMonitor.recentCalls[0]?.result.length).toBeLessThanOrEqual(400);
   });
 });
+
+describe("AgentSession re-grounding after compaction", () => {
+  it("carries the user's ask_user answer into the re-ground note", async () => {
+    const internal = makeSession(async () => '{"loop": false}') as SemanticInternals & {
+      compactionOccurred: boolean;
+      markCompacted(): void;
+    };
+    internal.resetHookState("Do a big overview of our GG App. Anything and everything");
+    await internal.trackHookEvent({
+      type: "tool_call_start",
+      toolCallId: "ask1",
+      name: "ask_user",
+      args: { questions: [] },
+    });
+    await internal.trackHookEvent({
+      type: "tool_call_end",
+      toolCallId: "ask1",
+      isError: false,
+      result: "The user answered:\n\nWhich scope?\n→ quick-wins",
+      durationMs: 5,
+    });
+    internal.compactionOccurred = true;
+
+    const content = internal.getHookSteeringMessages()?.[0]?.content as string;
+    expect(content).toContain("Do a big overview");
+    expect(content).toContain("quick-wins");
+    expect(content).toContain("current scope");
+
+    // A second compaction in the same run gets its own note, still scoped.
+    expect(internal.getHookSteeringMessages()).toBeNull();
+    internal.markCompacted();
+    const second = internal.getHookSteeringMessages()?.[0]?.content as string;
+    expect(second).toContain("quick-wins");
+
+    // The next run starts with no decisions.
+    internal.resetHookState("Something else");
+    internal.compactionOccurred = true;
+    const next = internal.getHookSteeringMessages()?.[0]?.content as string;
+    expect(next).not.toContain("quick-wins");
+  });
+});

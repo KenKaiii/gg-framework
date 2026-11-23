@@ -949,14 +949,14 @@ export function App(props: AppProps) {
         ]);
         return buildLoopBreakMessage(decision.reasons, stage === 2);
       },
-      getRegroundingMessage: (originalRequest) => {
+      getRegroundingMessage: (originalRequest, decisions) => {
         if (!idealReviewEnabledRef.current) return null;
         log("INFO", "reground", "Injecting re-grounding after compaction", {});
         setLiveItems((prev) => [
           ...prev,
           { kind: "ideal_hook", text: REGROUNDING_NOTICE_TEXT, tone: "info", id: getId() },
         ]);
-        return buildRegroundingMessage(originalRequest);
+        return buildRegroundingMessage(originalRequest, decisions);
       },
     },
     {

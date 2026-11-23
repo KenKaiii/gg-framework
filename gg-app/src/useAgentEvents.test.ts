@@ -19,6 +19,7 @@ import { listModels } from "./agent";
 import { playSound } from "./sounds";
 import { useAgentEvents, type AgentEventsDeps } from "./useAgentEvents";
 import { createLiveTextStore } from "./live-text";
+import * as planSteps from "./plan-steps";
 import type { Item } from "./App";
 import type { AgentState, SidecarEvent } from "./agent";
 import type { LiveToolEntry } from "./LiveToolPanel";
@@ -1275,6 +1276,32 @@ describe("useAgentEvents", () => {
     expect([...deps.planDoneRef.current].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
+  it("skips the plan-marker scan while no plan is being tracked", () => {
+    const scan = vi.spyOn(planSteps, "findCompletedSteps");
+    const { hook, deps } = setup();
+    try {
+      act(() => {
+        hook.result.current.handleEvent(ev("text_delta", { text: "Step 1 done. [DONE:1]" }));
+      });
+      // The scan reads everything the run has written so far; with no plan
+      // total there is no step to mark, so it must not run at all.
+      expect(scan).not.toHaveBeenCalled();
+      expect(deps.planDoneRef.current.size).toBe(0);
+
+      // A plan can be accepted mid-run: from then on the scan resumes over the
+      // whole run text, markers from before it included.
+      deps.planTotalRef.current = 3;
+      act(() => {
+        hook.result.current.handleEvent(ev("text_delta", { text: " On to step 2." }));
+      });
+      expect(scan).toHaveBeenCalledOnce();
+      expect(scan).toHaveBeenCalledWith("Step 1 done. [DONE:1] On to step 2.");
+      expect([...deps.planDoneRef.current]).toEqual([1]);
+    } finally {
+      scan.mockRestore();
+    }
+  });
+
   it("uses sidecar plan progress as the authoritative live-file snapshot", () => {
     const { hook, deps } = setup();
     deps.planTotalRef.current = 2;
@@ -1442,6 +1469,82 @@ describe("useAgentEvents", () => {
     expect(groups[1]?.kind === "subagent_group" ? groups[1].agents : []).toMatchObject([
       { toolCallId: "new-agent", status: "starting" },
     ]);
+  });
+
+  describe("tool_call_update", () => {
+    function openSubagentGroup() {
+      const opened = setup();
+      act(() =>
+        opened.hook.result.current.handleEvent(
+          ev("tool_call_start", {
+            toolCallId: "agent-1",
+            name: "subagent",
+            args: { agent: "owl" },
+          }),
+        ),
+      );
+      return opened;
+    }
+
+    const update = (hook: ReturnType<typeof setup>["hook"], payload: unknown): void => {
+      act(() =>
+        hook.result.current.handleEvent(
+          ev("tool_call_update", { toolCallId: "agent-1", update: payload }),
+        ),
+      );
+    };
+
+    const owl = (items: Item[]) => {
+      const group = items.find((item) => item.kind === "subagent_group");
+      return group?.kind === "subagent_group" ? group.agents[0] : undefined;
+    };
+
+    it("leaves the transcript as it is for progress from a tool outside the group", () => {
+      const { hook, getItems } = openSubagentGroup();
+      const before = getItems();
+      // A shell command reports every stdout chunk this way, and the last
+      // sub-agent group stays the active one for the rest of the run.
+      act(() =>
+        hook.result.current.handleEvent(
+          ev("tool_call_update", {
+            toolCallId: "bash-7",
+            update: { type: "bash_progress", output: "built in 3s\n", totalBytes: 14 },
+          }),
+        ),
+      );
+      expect(getItems()).toBe(before);
+    });
+
+    it("ignores a repeated update that changes nothing", () => {
+      const { hook, getItems } = openSubagentGroup();
+      const progress = {
+        toolUseCount: 2,
+        currentActivity: "reading auth.ts",
+        tokenUsage: { input: 10, output: 3 },
+      };
+      update(hook, progress);
+      expect(owl(getItems())).toMatchObject({
+        toolUseCount: 2,
+        activities: ["reading auth.ts"],
+        tokenUsage: { input: 10, output: 3 },
+      });
+      const applied = getItems();
+      update(hook, progress);
+      expect(getItems()).toBe(applied);
+    });
+
+    it("applies what is new in an update and keeps the rest of the row", () => {
+      const { hook, getItems } = openSubagentGroup();
+      update(hook, { toolUseCount: 1, currentActivity: "listing files" });
+      update(hook, { toolUseCount: 2, currentActivity: "listing files" });
+      update(hook, { toolUseCount: 3, currentActivity: "reading auth.ts" });
+      // No activity in this one: the feed stays as it was.
+      update(hook, { toolUseCount: 4 });
+      expect(owl(getItems())).toMatchObject({
+        toolUseCount: 4,
+        activities: ["listing files", "reading auth.ts"],
+      });
+    });
   });
 });
 

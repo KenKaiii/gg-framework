@@ -681,13 +681,17 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           // run's assistant text (markers can split across deltas) and union in
           // any [DONE:n] step numbers seen so far.
           assistantTextRef.current += chunk;
-          const done = findCompletedSteps(assistantTextRef.current);
-          if (done.length > 0) {
-            const next = new Set(planDoneRef.current);
-            for (const n of stepsDoneThrough(done, planTotalRef.current)) next.add(n);
-            if (next.size !== planDoneRef.current.size) {
-              planDoneRef.current = next;
-              setPlanDone(next);
+          // No approved plan, no step to mark: skip the marker scan, which
+          // reads everything the run has written so far, once per delta.
+          if (planTotalRef.current > 0) {
+            const done = findCompletedSteps(assistantTextRef.current);
+            if (done.length > 0) {
+              const next = new Set(planDoneRef.current);
+              for (const n of stepsDoneThrough(done, planTotalRef.current)) next.add(n);
+              if (next.size !== planDoneRef.current.size) {
+                planDoneRef.current = next;
+                setPlanDone(next);
+              }
             }
           }
           break;
@@ -792,26 +796,39 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           const groupId = subagentGroupIdRef.current;
           if (!update || groupId === null) break;
           const activity = update.currentActivity;
-          setItems((prev) =>
-            prev.map((it) => {
-              if (it.kind !== "subagent_group" || it.id !== groupId) return it;
-              return {
-                ...it,
-                agents: it.agents.map((a) => {
-                  if (a.toolCallId !== id) return a;
-                  const last = a.activities[a.activities.length - 1];
-                  const activities =
-                    activity && activity !== last ? [...a.activities, activity] : a.activities;
-                  return {
-                    ...a,
-                    toolUseCount: update.toolUseCount ?? a.toolUseCount,
-                    tokenUsage: update.tokenUsage ?? a.tokenUsage,
-                    activities: activities.slice(-12),
-                  };
-                }),
-              };
-            }),
-          );
+          setItems((prev) => {
+            const index = prev.findIndex((it) => it.kind === "subagent_group" && it.id === groupId);
+            if (index === -1) return prev;
+            const group = prev[index];
+            if (group.kind !== "subagent_group") return prev;
+            const agentIndex = group.agents.findIndex((a) => a.toolCallId === id);
+            if (agentIndex === -1) return prev;
+            const agent = group.agents[agentIndex];
+            const last = agent.activities[agent.activities.length - 1];
+            const activities =
+              activity && activity !== last ? [...agent.activities, activity] : agent.activities;
+            const toolUseCount = update.toolUseCount ?? agent.toolUseCount;
+            const tokenUsage = update.tokenUsage ?? agent.tokenUsage;
+            // Most updates are progress from some other tool (every stdout
+            // chunk of a shell command is one). One that changes nothing leaves
+            // the transcript as it is, so React has nothing to render.
+            const unchanged =
+              toolUseCount === agent.toolUseCount &&
+              tokenUsage === agent.tokenUsage &&
+              activities === agent.activities &&
+              agent.activities.length <= 12;
+            if (unchanged) return prev;
+            const next = [...prev];
+            next[index] = {
+              ...group,
+              agents: group.agents.map((a, i) =>
+                i === agentIndex
+                  ? { ...a, toolUseCount, tokenUsage, activities: activities.slice(-12) }
+                  : a,
+              ),
+            };
+            return next;
+          });
           break;
         }
         case "tool_call_end": {

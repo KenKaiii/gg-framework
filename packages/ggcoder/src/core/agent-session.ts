@@ -192,7 +192,11 @@ import {
 } from "./claude-code/complete.js";
 import { detectLanguages, detectProjectStack, type LanguageId } from "./language-detector.js";
 import { buildLoopBreakMessage } from "./loop-breaker.js";
-import { buildRegroundingMessage, requestTextForRegrounding } from "./regrounding.js";
+import {
+  buildRegroundingMessage,
+  recordUserDecision,
+  requestTextForRegrounding,
+} from "./regrounding.js";
 import {
   buildSemanticLoopJudgePrompt,
   buildSemanticLoopMessage,
@@ -786,6 +790,8 @@ export class AgentSession {
   /** See {@link toolDefinitionChars}. */
   private toolCharsCache: { count: number; chars: number } | null = null;
   private originalRequest = "";
+  /** The user's own ask_user answers this run; they scope the pinned request. */
+  private runUserDecisions: string[] = [];
   // Messages queued by the user while a run is in flight. Drained at the
   // mid-loop steering boundary (user steering wins over the hooks), mirroring
   // the TUI's getSteeringMessages. Each entry carries its own attachments so a
@@ -1663,8 +1669,7 @@ export class AgentSession {
         try {
           await this.compact(creds, "automatic");
           if (this.lastCompactionCompacted) {
-            // Re-grounding hook keys off this — the context was just summarized.
-            this.compactionOccurred = true;
+            this.markCompacted();
             this.compactionRetryAfter = 0;
           } else {
             this.compactionRetryAfter = Date.now() + 30_000;
@@ -2214,6 +2219,13 @@ export class AgentSession {
       this.compactionOccurred = true;
     }
     this.originalRequest = originalRequest;
+    this.runUserDecisions = [];
+  }
+
+  /** The context was just summarized: arm a fresh re-ground note, even if one already ran this run. */
+  private markCompacted(): void {
+    this.compactionOccurred = true;
+    this.regroundingInjected = false;
   }
 
   /**
@@ -2243,6 +2255,9 @@ export class AgentSession {
         const safetyRule = parseSafetyBlock(event.result);
         if (safetyRule) this.recordSafetyBlock(safetyRule, name, args, event.details);
         this.loopMonitor.recordToolEnd(name, args, event.result, event.isError);
+        if (name === "ask_user" && !event.isError) {
+          this.runUserDecisions = recordUserDecision(this.runUserDecisions, event.result);
+        }
         const verificationChanged = await this.verificationTracker.recordToolCallEnd(
           event,
           call,
@@ -2492,7 +2507,7 @@ export class AgentSession {
     if (!this.regroundingInjected && this.compactionOccurred) {
       this.regroundingInjected = true;
       this.eventBus.emit("hook", { kind: "regrounding" });
-      return [buildRegroundingMessage(this.originalRequest)];
+      return [buildRegroundingMessage(this.originalRequest, this.runUserDecisions)];
     }
     return null;
   }
@@ -3164,7 +3179,7 @@ export class AgentSession {
           }
 
           this.compactionRetryAfter = 0;
-          this.compactionOccurred = true;
+          this.markCompacted();
           return this.messages;
         },
       });

@@ -72,6 +72,10 @@ pub(crate) struct Windows {
     pub(crate) next_generation: AtomicU64,
 }
 
+/// The SSE bridge's HTTP client. Kept apart from the shared `reqwest::Client`,
+/// which bounds every request it sends: the event stream is long-lived by design.
+pub(crate) struct EventStreamClient(pub(crate) reqwest::Client);
+
 /// True once the app has begun quitting. Set on `ExitRequested` so the cascade
 /// of per-window `Destroyed` events during shutdown does NOT prune the workspace
 /// snapshot — the last full snapshot is what we restore next launch.

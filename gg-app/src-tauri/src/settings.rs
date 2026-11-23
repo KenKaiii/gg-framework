@@ -297,40 +297,64 @@ pub(crate) fn snapshot_workspace(app: &tauri::AppHandle) {
         .keys()
         .cloned()
         .collect();
-    let state: State<Windows> = app.state();
-    let map = state.map.lock_or_recover();
 
     // Deterministic order: main first, then project-N ascending, so the first
     // restored window reclaims the `main` label.
     let mut labels: Vec<String> = windows.keys().cloned().collect();
     labels.sort_by_key(|a| label_rank(a));
 
-    let mut entries: Vec<WorkspaceEntry> = Vec::new();
-    for label in &labels {
-        let Some(inst) = map.get(label) else { continue };
+    let entries = workspace_entries(
+        &app.state::<Windows>().map,
+        &labels,
+        &selected_labels,
+        |label| {
+            let (mut x, mut y, mut width, mut height) = (None, None, None, None);
+            if let Some(win) = windows.get(label) {
+                if let Ok(pos) = win.outer_position() {
+                    x = Some(pos.x);
+                    y = Some(pos.y);
+                }
+                if let Ok(size) = win.inner_size() {
+                    width = Some(size.width);
+                    height = Some(size.height);
+                }
+            }
+            (x, y, width, height)
+        },
+    );
+    write_workspace(&Workspace { windows: entries });
+}
+
+/// The snapshot's entries, in `labels` order, from each window's tracked
+/// session. `geometry` supplies a window's outer position and inner size; it is
+/// called with the registry UNLOCKED, since it talks to the window while proxy
+/// commands keep needing the registry (`session_for`).
+fn workspace_entries(
+    map: &Mutex<HashMap<String, WindowSession>>,
+    labels: &[String],
+    selected_labels: &HashSet<String>,
+    mut geometry: impl FnMut(&str) -> (Option<i32>, Option<i32>, Option<u32>, Option<u32>),
+) -> Vec<WorkspaceEntry> {
+    let tracked: Vec<Option<WindowSession>> = {
+        let map = map.lock_or_recover();
+        labels.iter().map(|label| map.get(label).cloned()).collect()
+    };
+
+    let mut entries = Vec::new();
+    for (label, tracked) in labels.iter().zip(tracked) {
+        let Some(inst) = tracked else { continue };
         let cwd = inst.cwd.as_deref();
         if !keep_for_snapshot(selected_labels.contains(label), cwd) {
             continue;
         }
-        let cwd = cwd
-            .expect("keep_for_snapshot returned true, so cwd is Some")
-            .to_string_lossy()
-            .to_string();
-        let (mut x, mut y, mut width, mut height) = (None, None, None, None);
-        if let Some(win) = windows.get(label) {
-            if let Ok(pos) = win.outer_position() {
-                x = Some(pos.x);
-                y = Some(pos.y);
-            }
-            if let Ok(size) = win.inner_size() {
-                width = Some(size.width);
-                height = Some(size.height);
-            }
-        }
+        let (x, y, width, height) = geometry(label);
         entries.push(WorkspaceEntry {
             mode: inst.mode,
             chat_agent: inst.chat_agent,
-            cwd,
+            cwd: cwd
+                .expect("keep_for_snapshot returned true, so cwd is Some")
+                .to_string_lossy()
+                .to_string(),
             session_path: inst.session_path.clone(),
             x,
             y,
@@ -338,8 +362,7 @@ pub(crate) fn snapshot_workspace(app: &tauri::AppHandle) {
             height,
         });
     }
-    drop(map);
-    write_workspace(&Workspace { windows: entries });
+    entries
 }
 
 /// Remove one window's entry from the snapshot (deliberate user close). Keyed by
@@ -419,6 +442,49 @@ mod tests {
         // Explicitly choosing that exact directory must still survive restart.
         assert!(keep_for_snapshot(true, Some(default)));
         assert!(keep_for_snapshot(true, Some(Path::new("/home/user/proj"))));
+    }
+
+    #[test]
+    fn snapshot_queries_a_window_with_the_registry_unlocked() {
+        let map = Mutex::new(HashMap::from([(
+            "main".to_string(),
+            WindowSession {
+                cwd: Some(PathBuf::from("/p/a")),
+                session_path: Some("/s/a.jsonl".into()),
+                ..Default::default()
+            },
+        )]));
+        let selected: HashSet<String> = ["main".to_string()].into_iter().collect();
+        let mut queried = Vec::new();
+        let entries = workspace_entries(
+            &map,
+            &["main".to_string(), "project-1".to_string()],
+            &selected,
+            |label| {
+                // A window whose query is slow must not hold up every proxy
+                // command's `session_for`.
+                assert!(
+                    map.try_lock().is_ok(),
+                    "the window registry is locked while a window is queried"
+                );
+                queried.push(label.to_string());
+                (Some(0), Some(25), Some(1280), Some(800))
+            },
+        );
+        // Only windows that stay in the snapshot are asked for their geometry.
+        assert_eq!(queried, vec!["main".to_string()]);
+        assert_eq!(
+            entries,
+            vec![WorkspaceEntry {
+                cwd: "/p/a".into(),
+                session_path: Some("/s/a.jsonl".into()),
+                x: Some(0),
+                y: Some(25),
+                width: Some(1280),
+                height: Some(800),
+                ..Default::default()
+            }]
+        );
     }
 
     #[test]
