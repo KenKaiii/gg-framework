@@ -1,5 +1,20 @@
 # @kenkaiiii/ggcoder
 
+## 6.0.0
+
+### Major Changes
+
+- Requires Node.js 24 or newer (all spine packages now declare `engines.node >=24`). This lets GG ship `unpdf` 2 (better PDF text and image extraction, CJK text without embedded mappings) and `typescript-language-server` 6. Also: after compaction or an `ask_user` answer, the agent re-grounds on the user's own decisions only (Autopilot answers and dismissals are no longer recorded as scope), and the desktop app's requests to the engine are bounded so a wedged engine can no longer leave an endless spinner.
+
+### Patch Changes
+
+- c1e0cd6: Stop three prompt-cache rewrites in long sessions. A message sent while the agent is still working (your own steering, or the agent's completion-gate, re-grounding, stream-recovery and review nudges) now continues the run instead of starting a new turn, so the run's reasoning is kept and its cached history is reused instead of re-sent. Cache prewarm now applies the stale tool-output prune the next request would make, and skips warming when that request (or a post-turn compaction) is going to compact anyway, so it no longer writes a whole history that is discarded on the very next request. On 5-minute cache routes, pruning old tool output now leaves a cache breakpoint at the point the prune made stable (new `Message.cacheAnchor` hint in gg-ai), so the next prune re-sends only what follows it instead of the whole conversation; 1-hour routes keep their existing breakpoints.
+- 6981bec: Each window can now be on its own branch. The Git panel (the branch key by the message box) has a Branches tab: filter, create or pick a branch. When no other window uses the folder, picking switches it in place; when other windows do, this window alone re-opens in its own git worktree for that branch (under `~/.gg/worktrees`, with ignored `.env` files or `.worktreeinclude` entries copied) and keeps its conversation, while the other windows stay where they are. When other windows share the folder you choose: its own worktree for this window (the default), or switch the folder for everyone. A new worktree runs the project's setup once as a visible background task (`setup` in `.gg/worktree.json`, otherwise the install command for its lockfile), and Home lists a project's worktrees with their branch and status, opens them, and removes GG-made ones (asking first when they have uncommitted changes or detached commits no branch has, and waiting for a running setup; the branch stays). Each conversation remembers its branch, so reopening it, from Home or after a restart, comes back where that branch is checked out; reopening never creates a worktree or runs a setup, and if the branch is checked out nowhere the chat says so and points to the Branches tab. Nothing assumes a branch named `main`. Agents can no longer switch the branch of a checkout another window, or their parent agent, also uses (`git switch`, `git checkout <branch>`, `gh pr checkout`); they are pointed to a worktree instead. Every window follows its branch live, including switches made in a terminal, and its agent is told when it changed.
+- Updated dependencies [c1e0cd6]
+  - @kenkaiiii/gg-ai@6.0.0
+  - @kenkaiiii/gg-agent@6.0.0
+  - @kenkaiiii/gg-core@6.0.0
+
 ## 5.109.0
 
 ### Minor Changes

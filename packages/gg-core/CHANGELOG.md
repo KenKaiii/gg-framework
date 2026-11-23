@@ -1,5 +1,12 @@
 # @kenkaiiii/gg-core
 
+## 6.0.0
+
+### Patch Changes
+
+- Updated dependencies [c1e0cd6]
+  - @kenkaiiii/gg-ai@6.0.0
+
 ## 5.109.0
 
 ### Minor Changes
