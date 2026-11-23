@@ -16,7 +16,7 @@
   ],
   "license": "AGPL-3.0-only",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "repository": {
     "type": "git",
@@ -148,7 +148,7 @@
     "strip-ansi": "^7.2.0",
     "tslib": "2.9.1",
     "typescript": "^6.0.3",
-    "typescript-language-server": "^5.3.0",
+    "typescript-language-server": "^6.1.0",
     "wrap-ansi": "^10.0.2",
     "zod": "^4.6.7"
   },
@@ -161,7 +161,7 @@
     "playwright": "^1.65.1",
     "turndown": "^7.2.5",
     "turndown-plugin-gfm": "^1.0.2",
-    "unpdf": "^1.6.2"
+    "unpdf": "^2.2.1"
   },
   "devDependencies": {
     "@types/hast": "^3.0.4",

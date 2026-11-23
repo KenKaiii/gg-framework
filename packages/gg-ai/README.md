@@ -20,7 +20,7 @@ It's the provider layer under [GG Coder](https://github.com/KenKaiii/gg-framewor
 npm install @kenkaiiii/gg-ai zod
 ```
 
-Needs Node.js 22 or newer. Ships ESM and CommonJS builds with TypeScript types.
+Needs Node.js 24 or newer. Ships ESM and CommonJS builds with TypeScript types.
 
 ## Quick start
 

@@ -32,7 +32,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const srcTauri = join(here, "..", "src-tauri");
 const binDir = join(srcTauri, "binaries");
 
-const NODE_VERSION = process.env.GG_NODE_VERSION || "22.12.0";
+const NODE_VERSION = process.env.GG_NODE_VERSION || "24.22.3";
 
 // A single dropped connection to nodejs.org once failed a whole release build
 // (connect timeout on the macOS runner), so the download retries with backoff:

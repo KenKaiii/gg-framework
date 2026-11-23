@@ -33,9 +33,8 @@ export const PROVIDER_KEEP_ALIVE_TIMEOUT_MS = 30_000;
  * Node turns that on for `--use-env-proxy` (command line or NODE_OPTIONS) or
  * `NODE_USE_ENV_PROXY=1`. A Node that doesn't know the flag refuses to start,
  * so a present flag is a supported one; the variable is silently ignored
- * before fetch support landed in 24.0.0 and 22.21.0. Node 22.12, which the
- * desktop app ships, therefore keeps provider requests direct like the rest
- * of its traffic.
+ * before fetch support landed in 24.0.0 and 22.21.0, so an older Node keeps
+ * provider requests direct like the rest of its traffic.
  */
 export function nodeUsesEnvProxy({
   env = process.env,
