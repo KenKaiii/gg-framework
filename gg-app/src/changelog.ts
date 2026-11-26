@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.121.1",
+    date: "2026-11-27",
+    items: [
+      'I finally learned when to just talk. While you are asking questions or thinking out loud, I answer and let you lead: no surprise `question cards`, no "want me to...?" nudges and no jumping into `plan mode` before you are ready. You decide when it is time to build.',
+    ],
+  },
+  {
     version: "0.121.0",
     date: "2026-11-24",
     items: [
