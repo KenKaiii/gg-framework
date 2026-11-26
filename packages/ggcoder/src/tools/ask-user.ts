@@ -84,7 +84,8 @@ export function createAskUserTool(ask: AskUserHandler): AgentTool<typeof AskUser
   return {
     name: "ask_user",
     description:
-      "Ask the user with clickable options instead of a prose question. Never instead of an answer: " +
+      "Ask the user with clickable options instead of a prose question, only when work they asked for is " +
+      "blocked on a decision only they can make; never while they are asking or discussing. Never instead of an answer: " +
       "if they asked something, answer it in full first, so they know enough to choose. Not for facts " +
       "you can look up. Plain words; each option a complete outcome (never 'Something else').",
     parameters: AskUserParams,

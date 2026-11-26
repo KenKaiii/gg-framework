@@ -9,6 +9,20 @@ import { describe, it, expect } from "vitest";
 import { EventBus } from "./event-bus.js";
 
 describe("EventBus.forwardAgentEvent", () => {
+  it("forwards a tool call's streaming arguments as tool_call_delta", () => {
+    const bus = new EventBus();
+    const seen: unknown[] = [];
+    bus.on("tool_call_delta", (d) => seen.push(d));
+    bus.forwardAgentEvent({
+      type: "toolcall_delta",
+      chars: 5,
+      toolCallId: "t1",
+      name: "write",
+      argsDelta: '{"fi',
+    });
+    expect(seen).toEqual([{ toolCallId: "t1", name: "write", chars: 5, argsDelta: '{"fi' }]);
+  });
+
   it("carries engine retry metadata through the real event bus", () => {
     const bus = new EventBus();
     const seen: unknown[] = [];

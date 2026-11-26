@@ -261,6 +261,8 @@ export class SdkMessageMapper {
   private firstEventAt: number | undefined;
   private stopReason: StopReason = "end_turn";
   private usage: Usage = { inputTokens: 0, outputTokens: 0 };
+  /** Tool-use blocks of the message streaming now, by block index: their deltas name them. */
+  private readonly toolBlocks = new Map<number, { id: string; name: string }>();
   private readonly now: () => number;
 
   constructor(private readonly options: SdkMessageMapperOptions) {
@@ -322,6 +324,19 @@ export class SdkMessageMapper {
         this.firstEventAt = this.now();
         this.stopReason = "end_turn";
         this.usage = toUsage((event.message as Block | undefined)?.usage);
+        this.toolBlocks.clear();
+        return [];
+      case "content_block_start": {
+        const block = (event.content_block ?? {}) as Block;
+        if (block.type === "tool_use")
+          this.toolBlocks.set(Number(event.index), {
+            id: String(block.id),
+            name: String(block.name),
+          });
+        return [];
+      }
+      case "content_block_stop":
+        this.toolBlocks.delete(Number(event.index));
         return [];
       case "content_block_delta": {
         const delta = (event.delta ?? {}) as Block;
@@ -330,8 +345,17 @@ export class SdkMessageMapper {
           return [{ type: "thinking_delta", text: String(delta.thinking) }];
         }
         if (delta.type === "input_json_delta") {
-          const chars = String(delta.partial_json ?? "").length;
-          return chars > 0 ? [{ type: "toolcall_delta", chars }] : [];
+          const argsDelta = String(delta.partial_json ?? "");
+          if (!argsDelta) return [];
+          const call = this.toolBlocks.get(Number(event.index));
+          return [
+            {
+              type: "toolcall_delta",
+              chars: argsDelta.length,
+              ...(call ? { toolCallId: call.id, name: call.name } : {}),
+              argsDelta,
+            },
+          ];
         }
         return [];
       }

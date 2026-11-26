@@ -91,7 +91,7 @@ export const TOOL_STEERING_CLAUSES: ReadonlyArray<{
   {
     // Planning costs a review round-trip, so it is for work that needs it.
     needs: ["enter_plan"],
-    text: "Call `enter_plan` first only when the request needs research and careful step-by-step work (several files, real risk, or an unclear approach). Go straight to work on small or clear changes; planning slows them down.",
+    text: "Call `enter_plan` first only when the request needs research and careful step-by-step work (several files, real risk, or an unclear approach). Go straight to work on small or clear changes; planning slows them down. Never while the user is still asking or discussing.",
   },
   {
     needs: ["read", "grep"],

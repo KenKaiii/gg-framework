@@ -42,7 +42,7 @@ describe("ask_user", () => {
     // The routing rule now lives in the system prompt (rendered whenever this
     // tool is registered) rather than repeated in the schema.
     const prompt = await buildSystemPrompt(os.tmpdir(), undefined, false, undefined, ["ask_user"]);
-    expect(prompt).toContain('Every question — a blocker or an optional "want me to also…?"');
+    expect(prompt).toContain("While the user is asking or discussing, answer and stop");
     expect(prompt).toContain("is an `ask_user` call");
     // …and never manufactures a question when none exists.
     expect(prompt).toContain("No question? Just end.");

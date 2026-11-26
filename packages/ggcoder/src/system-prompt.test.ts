@@ -229,7 +229,7 @@ describe("buildSystemPrompt", () => {
 
   it.each([
     [[], "6d6afd179a5aa52c7b06f957c2eb580eed552e35ad7205f97a965a67543c4ab3"],
-    [["ask_user"], "3f6df864bf0144f8eb51de4ad286a2dfb564044f68b2cd999734876ade4a610e"],
+    [["ask_user"], "891143b675b29d92d8d6125b0dac2aa8295ca51768ccc994bfeed896e5e70110"],
   ] as const)(
     "preserves the message-aware takeaway policy with tools %j",
     async (toolNames, hash) => {
@@ -293,13 +293,16 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain(
       "is an `ask_user` call with your pick marked `recommended`, never prose",
     );
-    // Optional follow-up offers are questions too, so they also go on the card.
-    expect(prompt).toContain('a blocker or an optional "want me to also…?"');
+    // Optional offers on cards turned every discussion reply into a question
+    // and a plan before the user had finished talking it through.
+    expect(prompt).toContain(
+      'While the user is asking or discussing, answer and stop: no question card, no "want me to…?" offer and no plan',
+    );
+    expect(prompt).not.toContain("an optional");
+    expect(prompt).toContain("(work they asked for is blocked on a decision only they can make)");
     // A capped lead-in cut the answer to three sentences, so the user had to
     // skip the card to learn what was going on before they could choose.
-    expect(prompt).toContain(
-      "A card never stands in for an answer: if the user asked something, answer it in full before the card, so they know enough to choose.",
-    );
+    expect(prompt).toContain("answer anything they asked in full before the card.");
     expect(prompt).not.toContain("one to three");
     expect(prompt).toContain("No question? Just end.");
     expect(prompt).not.toContain("is the last line");

@@ -9,6 +9,8 @@ export interface BusEventMap {
   thinking_delta: { text: string };
   tool_call_start: { toolCallId: string; name: string; args: Record<string, unknown> };
   tool_call_update: { toolCallId: string; update: unknown };
+  /** A tool call's arguments as they stream in, before it runs: a big write shows progress. */
+  tool_call_delta: { toolCallId?: string; name?: string; chars: number; argsDelta?: string };
   tool_call_end: {
     toolCallId: string;
     result: string;
@@ -123,6 +125,7 @@ function emptyListenerSets(): ListenerSets {
     thinking_delta: new Set(),
     tool_call_start: new Set(),
     tool_call_update: new Set(),
+    tool_call_delta: new Set(),
     tool_call_end: new Set(),
     turn_end: new Set(),
     checkpoint: new Set(),
@@ -201,6 +204,14 @@ export class EventBus {
           toolCallId: event.toolCallId,
           name: event.name,
           args: event.args,
+        });
+        break;
+      case "toolcall_delta":
+        this.emit("tool_call_delta", {
+          toolCallId: event.toolCallId,
+          name: event.name,
+          chars: event.chars,
+          argsDelta: event.argsDelta,
         });
         break;
       case "tool_call_update":

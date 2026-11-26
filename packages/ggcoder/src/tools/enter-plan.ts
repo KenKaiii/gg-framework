@@ -11,7 +11,8 @@ export function createEnterPlanTool(
   return {
     name: "enter_plan",
     description:
-      "Enter read-only plan mode: research, then write a plan for the user to approve before changing code.",
+      "Enter read-only plan mode: research, then write a plan for the user to approve before changing code. " +
+      "Only once the user has asked for the change, never while they are still asking or discussing.",
     parameters: EnterPlanParams,
     executionMode: "sequential",
     async execute({ reason }) {

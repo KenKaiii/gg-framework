@@ -53,8 +53,10 @@ function renderTalkSection(toolNames: readonly string[] | undefined): string {
   // ending the reply while the card the user can click never got built. The
   // fallback only renders for hosts with no one to answer a question. A capped
   // lead-in once squeezed the user's answer into a teaser before the card.
+  // Counting optional offers as card-worthy made nearly every discussion reply
+  // end on a card or a plan before the user had finished asking.
   const askRule = (toolNames ?? DEFAULT_TOOL_NAMES).includes("ask_user")
-    ? `Every question — a blocker or an optional "want me to also…?" — is an \`ask_user\` call with your pick marked \`recommended\`, never prose. A card never stands in for an answer: if the user asked something, answer it in full before the card, so they know enough to choose. No question? Just end.`
+    ? `While the user is asking or discussing, answer and stop: no question card, no "want me to…?" offer and no plan, even when the next step seems obvious; they decide when to move on. A question you truly need (work they asked for is blocked on a decision only they can make) is an \`ask_user\` call with your pick marked \`recommended\`, never prose; answer anything they asked in full before the card. No question? Just end.`
     : `Any question — a blocker or an optional "want me to also…?" — is the last line: \`> **<question>?** <your next step>\`. No question? Just end.`;
   return (
     `## Replies\n\n` +

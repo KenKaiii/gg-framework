@@ -254,6 +254,11 @@ export interface AgentStreamRuleTriggeredEvent {
 export interface AgentToolCallDeltaEvent {
   type: "toolcall_delta";
   chars: number;
+  /** The call whose arguments are streaming in, when the provider names it. */
+  toolCallId?: string;
+  name?: string;
+  /** This chunk of the call's arguments: partial JSON. */
+  argsDelta?: string;
 }
 
 export interface AgentErrorEvent {

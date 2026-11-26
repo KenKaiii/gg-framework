@@ -1298,6 +1298,9 @@ export async function* agentLoop(
             yield {
               type: "toolcall_delta" as const,
               chars: chunkChars,
+              toolCallId: event.id,
+              name: event.name,
+              argsDelta: event.argsJson ?? "",
             };
           }
           lastYieldEndTime = Date.now();
