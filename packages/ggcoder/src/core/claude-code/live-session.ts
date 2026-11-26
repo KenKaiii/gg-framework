@@ -39,6 +39,8 @@ export interface ClaudeCodeSessionOptions extends ClaudeCodeProcess {
   /** Character cap for the rendered transcript seed. */
   maxSeedChars?: number;
   title?: string;
+  /** Adaptive thinking's display: "summarized" returns readable thinking text. */
+  thinkingDisplay?: "summarized" | "omitted";
   onSessionId?: (sessionId: string) => void;
   onRateLimit?: (info: SDKRateLimitInfo) => void;
 }
@@ -521,7 +523,13 @@ export class ClaudeCodeLiveSession {
       ...(cc.title && !cc.resume ? { title: cc.title } : {}),
       ...(options.maxTurns ? { maxTurns: options.maxTurns } : {}),
       ...(this.effort
-        ? { thinking: { type: "adaptive" as const }, effort: this.effort }
+        ? {
+            thinking: {
+              type: "adaptive" as const,
+              ...(cc.thinkingDisplay ? { display: cc.thinkingDisplay } : {}),
+            },
+            effort: this.effort,
+          }
         : { thinking: { type: "disabled" as const } }),
     };
     const q = (cc.query ?? sdkQuery)({ prompt: this.input, options: sdkOptions });

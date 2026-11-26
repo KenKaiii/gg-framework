@@ -379,6 +379,12 @@ export interface AgentSessionOptions {
    */
   maxTurnExtensions?: number;
   thinkingLevel?: ThinkingLevel;
+  /**
+   * Whether Claude Code sessions return a readable summary of the model's
+   * thinking ("summarized") or none ("omitted", Claude Code's default). For
+   * hosts that show reasoning; GG Coder's own UI doesn't.
+   */
+  thinkingDisplay?: "summarized" | "omitted";
   signal?: AbortSignal;
   /** Prefix used for provider prompt-cache routing keys. */
   promptCacheKeyPrefix?: string;
@@ -878,6 +884,7 @@ export class AgentSession {
   private baseUrl?: string;
   private maxTokens: number;
   private thinkingLevel?: ThinkingLevel;
+  private readonly thinkingDisplay?: "summarized" | "omitted";
   private customSystemPrompt?: string;
   /** Sub-agent definition body composed into the standard prompt scaffolding. */
   private agentPrompt?: string;
@@ -970,6 +977,7 @@ export class AgentSession {
     this.baseUrl = options.baseUrl;
     this.maxTokens = this.resolveMaxTokens(options.model);
     this.thinkingLevel = options.thinkingLevel;
+    this.thinkingDisplay = options.thinkingDisplay;
     this.customSystemPrompt = options.systemPrompt;
     this.agentPrompt = options.agentPrompt;
   }
@@ -1766,6 +1774,7 @@ export class AgentSession {
       claudeCode: {
         ...process,
         maxSeedChars: CLAUDE_CODE_SEED_CHARS,
+        ...(this.thinkingDisplay ? { thinkingDisplay: this.thinkingDisplay } : {}),
         ...(resume ? { resume } : {}),
         ...(title ? { title } : {}),
         onSessionId: (id) => {

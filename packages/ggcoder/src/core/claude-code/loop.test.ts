@@ -74,6 +74,22 @@ async function run(messages: Message[], opts: ClaudeCodeLoopOptions) {
 const user = (text: string): Message => ({ role: "user", content: text });
 
 describe("claudeCodeLoop", () => {
+  it("asks Claude Code for summarized thinking when the host wants to show it", async () => {
+    const shown = fakeQuery(replayFixture);
+    await run(
+      [user("What is the secret word in hello.txt?")],
+      options(shown.query, { thinking: "high" }, { thinkingDisplay: "summarized" }),
+    );
+    expect(shown.calls.options?.thinking).toEqual({ type: "adaptive", display: "summarized" });
+
+    const hidden = fakeQuery(replayFixture);
+    await run(
+      [user("What is the secret word in hello.txt?")],
+      options(hidden.query, { thinking: "high" }),
+    );
+    expect(hidden.calls.options?.thinking).toEqual({ type: "adaptive" });
+  });
+
   it("replays a recorded tool run into our events and transcript", async () => {
     const { query, calls } = fakeQuery(replayFixture);
     const sessionIds: string[] = [];
