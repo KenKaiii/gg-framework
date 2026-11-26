@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 6.0.1
+
+### Patch Changes
+
+- Stream tool-call argument deltas through the event bus, stop question cards and plan mode while the user is still asking or discussing, and add a `thinkingDisplay` option so hosts can request summarized Claude Code thinking.
+  - @kenkaiiii/gg-ai@6.0.1
+  - @kenkaiiii/gg-agent@6.0.1
+  - @kenkaiiii/gg-core@6.0.1
+
 ## 6.0.0
 
 ### Major Changes
