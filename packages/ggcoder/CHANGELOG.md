@@ -1,5 +1,14 @@
 # @kenkaiiii/ggcoder
 
+## 6.0.2
+
+### Patch Changes
+
+- Sharper security audits: the bulletproof skill now checks webhooks, money and race bugs, cached private pages, account linking and derived data copies, separates "needs validation" items from findings, and carries a 27 Nov 2026 fact refresh. Claude Code tool-call deltas now report GG tool names without the mcp__gg__ prefix.
+  - @kenkaiiii/gg-ai@6.0.2
+  - @kenkaiiii/gg-agent@6.0.2
+  - @kenkaiiii/gg-core@6.0.2
+
 ## 6.0.1
 
 ### Patch Changes
