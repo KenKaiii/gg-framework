@@ -22,7 +22,14 @@ For a small team, four tests cover most real risk. Write these instead of a larg
 3. **Role boundary.** A normal user hits every admin route; expect denial.
 4. **The fix regression test.** For each finding fixed, a test that fails against the old code. If it passes both ways, you did not test the fix.
 
-Then, where the surface justifies it: property or fuzz tests over parsers and deserializers, invariant tests for financial and contract logic, and a test that the failure path denies (kill the auth dependency, expect denial, not a pass-through).
+Then, where the surface justifies it:
+
+- **Concurrent redemption:** send the same coupon, credit spend or invite acceptance many times in parallel; exactly one succeeds.
+- **Webhook rejection:** unsigned, wrongly signed and replayed events are rejected with no side effect.
+- **Revocation:** remove a member or change a password, then reuse the old session, refresh token and API key; all are denied.
+- **Derived copies:** as user B, search, export and count; none of user A's records appear.
+
+Beyond those: property or fuzz tests over parsers and deserializers, invariant tests for financial and contract logic, and a test that the failure path denies (kill the auth dependency, expect denial, not a pass-through).
 
 ## Free tooling by job
 

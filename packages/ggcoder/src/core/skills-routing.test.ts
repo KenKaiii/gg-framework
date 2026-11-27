@@ -374,6 +374,11 @@ describe("skill routing prompts", () => {
       // must not assert a stale CVE or version as current.
       expect(bulletproof?.content).toContain("Date-check before asserting");
 
+      // Self-impact and outside-the-repo facts must not be reported as findings.
+      expect(bulletproof?.content).toContain("harm users can only do to themselves");
+      expect(bulletproof?.content).toContain("**needs validation**");
+      expect(bulletproof?.content).toContain("`references/attack-classes.md`");
+
       // Every referenced file must exist, since the skill routes the model to them by path.
       const referenced = [...bulletproof!.content.matchAll(/`(references\/[\w.-]+\.md)`/g)].map(
         (match) => match[1]!,

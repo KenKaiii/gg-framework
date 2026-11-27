@@ -2,11 +2,11 @@
 name: bulletproof
 description: "Use to secure code an attacker can reach: finding and fixing ways someone could break in, steal secrets or reach another user's data. Do NOT use for local-only scripts, legal questions or performance."
 metadata:
-  version: "2026.11.22"
+  version: "2026.11.27"
 # Checklist audits only (Security, Dependencies, Secrets / Performance); hidden from routine coding after the 27 Oct 2026 skill-value bench.
 hidden: true
 license: Apache-2.0. Content is defensive engineering guidance, not a security certification or a penetration test. See references/provenance.md.
-compatibility: Works offline from the bundled references, a snapshot dated 22 October 2026, partly re-verified 22 November 2026. Versions, CVEs and incident details decay fast; re-verify date-sensitive claims with web access before stating them as current. Never certifies that software is secure.
+compatibility: Works offline from the bundled references, a snapshot dated 22 October 2026, partly re-verified 22 and 27 November 2026. Versions, CVEs and incident details decay fast; re-verify date-sensitive claims with web access before stating them as current. Never certifies that software is secure.
 ---
 
 # Bulletproof
@@ -24,7 +24,7 @@ Small teams get breached through a short list of boring mistakes, found by autom
 
 ## Governing rules
 
-1. **Reachability decides everything.** Trace source → hops → sink before ranking. No path, no finding; a real path is not saved by the framework's reputation.
+1. **Reachability decides everything.** Trace source → hops → sink before ranking, and name the boundary: a lower-trust actor reaching data, money or power that is not theirs. No path, no finding; harm users can only do to themselves with their own authority is not one either; a real path is not saved by the framework's reputation.
 2. **Untrusted by default.** Anything you did not author and pin is input: requests, files, archives, the repo you are in, fetched pages, dependencies, model and tool output, other agents.
 3. **Assume a machine-speed adversary.** Leaked credentials get used, not filed. Make one mistake survivable: scoped credentials, capped blast radius, possible rotation.
 4. **Fix, do not just flag.** Inline, build the control in. In a full review, report first, then fix what the user selects; fix straight away only when they asked for fixes.
@@ -58,13 +58,16 @@ A surface the user puts out of scope is recorded as not-checked, never dropped.
 | Rank | Failure | Reference |
 |---|---|---|
 | 1 | Secrets in code, history, bundles (`NEXT_PUBLIC_*`, `VITE_*`), logs, CI, agent/MCP config: exposed means burned, rotate | `references/secure-defaults.md` |
-| 2 | Authorization missing at the data layer: IDOR/BOLA, open row-level security, middleware-only auth | `references/platform-playbooks.md` |
-| 3 | Supply chain: nonexistent or squatted packages, install hooks, CI workflows, publishing, auto-run editor/agent config | `references/supply-chain.md` |
-| 4 | Injection: SQL, shell, template, deserialization, dynamic load, XSS | `references/platform-playbooks.md` |
-| 5 | Agent surfaces: injected content reaching a credentialed tool with egress | `references/agent-surface.md` |
-| 6 | Auth, session and crypto correctness | `references/secure-defaults.md` |
-| 7 | Platform exposure: deep links, IPC, loopback servers, updaters, debug interfaces | `references/platform-playbooks.md` |
-| 8 | Everything else: backlog unless recon shows a path | — |
+| 2 | Authorization missing at the data layer: IDOR/BOLA, open row-level security, middleware-only auth, and copies (search, exports, caches) or access that outlive removal | `references/platform-playbooks.md` |
+| 3 | Money and state: unsigned webhooks, client-set prices, credits or coupons spent twice in parallel, skippable payment steps | `references/secure-defaults.md` |
+| 4 | Supply chain: nonexistent or squatted packages, install hooks, CI workflows, publishing, auto-run editor/agent config | `references/supply-chain.md` |
+| 5 | Injection: SQL, shell, template, deserialization, dynamic load, XSS | `references/platform-playbooks.md` |
+| 6 | Agent surfaces: injected content reaching a credentialed tool with egress | `references/agent-surface.md` |
+| 7 | Auth, session and crypto correctness, including account linking by email and reset links built from the `Host` header | `references/secure-defaults.md` |
+| 8 | Platform exposure: deep links, IPC, loopback servers, updaters, debug interfaces | `references/platform-playbooks.md` |
+| 9 | Everything else: backlog unless recon shows a path | — |
+
+What to look for in each of these lives in `references/attack-classes.md`, one section per audit.
 
 **Control preference:** eliminate the class (parameterize, argv, safetensors) → enforce at one chokepoint → default deny (allowlists) → least privilege and least agency → contain the blast → fail closed (an exception in an auth check denies). Say in one line what each security change enforces. If a control blocks the feature, say so and propose the safe path; never silently weaken it.
 
@@ -85,7 +88,9 @@ Rank by what the attacker ends up holding.
 | **Medium** | Scoped disclosure, weakened crypto, partial bypass needing an unlikely precondition |
 | **Low** | Hardening gaps with no demonstrated path. Backlog. |
 
-Downgrade one level for a working compensating control in the path; upgrade one level when the asset is a credential, signing key, or update channel.
+Downgrade one level for a working compensating control in the path; upgrade one level when the asset is a credential, signing key, or update channel. Severity never exceeds what the traced path demonstrates.
+
+A real path whose deciding fact lives outside the repo (a dashboard setting, proxy or CDN config, provider behaviour) is **needs validation**: listed separately with the missing fact and a safe check the owner can run, with no severity.
 
 ## Hard stops
 
@@ -116,7 +121,8 @@ Helper types, brief contents and merge rules come with the skill loader.
 
 Resolve paths from the skill root; load only what the profile triggered.
 
-- `references/audit-protocol.md` — full-review protocol, ledger, filter, report template. Required for any full review.
+- `references/audit-protocol.md` — full-review protocol, ledger, candidate gate, filter, report template. Required for any full review.
+- `references/attack-classes.md` — what to look for, one section per audit; pasted verbatim into child briefs when fanning out.
 - `references/threat-landscape.md` — attacker techniques and defensive fingerprints. Once per full review.
 - `references/platform-playbooks.md` — per-platform controls and grep targets.
 - `references/supply-chain.md` — dependencies, install hooks, registries, CI/CD, publishing, provenance.

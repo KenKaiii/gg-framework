@@ -5,6 +5,8 @@
 - Re-verified 3 October 2026
 - Re-verified 22 October 2026
 - Re-verified 22 November 2026
+- Re-verified 27 November 2026
+- Methodology update 27 November 2026
 - Source classes
 - Known gaps in this snapshot
 - What this skill is not
@@ -78,7 +80,40 @@ Changed this pass: `threat-landscape.md` rewritten as technique + fingerprint (c
 | MCP: no spec revision after 2026-07-28 | [V] | blog.modelcontextprotocol.io |
 | CWE Top 25 2025 still the latest; CWE 5.0 (28 Oct 2026) deprecates CWE-377/391/613, none cited here | [V] | cwe.mitre.org/news/archives/news2026.html |
 
-Not added, unverified: React Server Components CVE-2026-126187 (date disputed, React advisory not reached); GitHub secret scanning of Actions logs and Agentic Workflows GA (changelog bodies not read); the OWASP Agent Control Standard (not read). No supply-chain incident from 22 Oct to 22 Nov 2026 could be confirmed from a primary source: that is "no hits", not "none happened".
+Not added, unverified: React Server Components CVE-2026-126187 (date disputed, React advisory not reached; resolved 27 Nov, below); GitHub secret scanning of Actions logs and Agentic Workflows GA (changelog bodies not read); the OWASP Agent Control Standard (not read). No supply-chain incident from 22 Oct to 22 Nov 2026 could be confirmed from a primary source: that is "no hits", not "none happened".
+
+## Re-verified 27 November 2026
+
+Unchanged and re-confirmed: MCP 2026-07-28 still current; OAuth 2.1 draft -17; RFC 9700; OWASP Top 10:2025, LLM Top 10 2026, API Top 10 2023, ASVS 5.0.0, MASVS 2.1.0 / MASTG 2.0.0; CWE Top 25 2025; NIST SP 800-63B-4; Node.js 11 Nov and Next.js 3 Nov releases still the latest security releases; npm 12 script blocking, staged publishing, 48-hour trusted-publishing expiry; GitGuardian 2026 figures; OpenSSL 3.5 and Firefox hybrid PQ defaults; CRA dates; UK PSTI; Electron fuse names.
+
+| Claim | Marker | Primary source |
+|---|---|---|
+| React RSC CVE-2026-126187 (GHSA-xqc2-xf4c-x3h3), published 14 Oct 2026, fixed in 19.0.9 / 19.1.10 / 19.2.9 / 19.3.1 | [V] | github.com/advisories/GHSA-xqc2-xf4c-x3h3 |
+| Solidity 0.8.39 (19 Nov 2026) current; 0.8.37–0.8.39 security fixes; 0.9.0-pre.1 (26 Nov 2026) | [V] | github.com/argotorg/solidity/releases |
+| Granular-token direct publishing removed January 2027 (was [U]) | [V] | docs.npmjs.com/about-access-tokens |
+| npm refuses trusted publishing from `issue_comment`; `strict-allow-scripts` (were [S]) | [V] | docs.npmjs.com/trusted-publishers; npm CLI config definitions |
+| `pull_request_target` default policy: public repos without their own event policy, enforced 2 Dec 2026; read-only default-branch cache unless `cache-mode` opts out | [V] | docs.github.com/en/actions/reference/security/securely-using-pull_request_target |
+| `actions/checkout` backports shipped 20 Jul 2026 (not 16 Jul); opt-out `allow-unsafe-pr-checkout` | [V] | github.com/actions/checkout/releases |
+| ChainDrop hooks pushed as GitHub-signed `github-actions[bot]` commits (previous author detail not supported by the source) | [V] | securitylabs.datadoghq.com (5 Aug 2026) |
+| Apple Developer ID G2 certificates last one year; original authority expires 1 Feb 2027; the 460-day cap is the CA/B code-signing rule (CSC-31), not Apple's | [V] | developer.apple.com/help/account/certificates; cabforum.org ballot CSC-31 |
+| Google Play: target API 36 since 31 Aug 2026, extensions to 1 Nov 2026 | [V] | support.google.com/googleplay/android-developer/answer/11926878 |
+| Apple OS 26 system TLS advertises X25519MLKEM768 | [V] | support.apple.com/en-us/122756 |
+| "The Attacker Moves Second": the "human red-teamers beat every scenario" wording is not in the abstract; rewritten to what the abstract states | [V] | arxiv.org/abs/2510.09023 |
+| MCP: binding local servers to 127.0.0.1 is a SHOULD, not a MUST | [V] | modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http |
+| OWASP Agentic Top 10 titles: two files disagreed; aligned to the commonly cited titles | [S] | official page not readable this pass; cite by ASI ID |
+| US Cyber Trust Mark: FCC sought comment on labeling rules in Oct 2026 | [S] | FCC DA-26-834A1; Oct notice via secondary reporting |
+
+Not added: a Vite advisory (GHSA-p4f5-76q4-ffq7) reported by search could not be opened; Django, Rails and Electron advisories from Oct–Nov 2026 are routine patch releases, covered by the "patch latency" rule. No supply-chain or AI-agent incident from 22 to 27 Nov 2026 could be confirmed from a primary source: "no hits", not "none happened".
+
+## Methodology update 27 November 2026
+
+This section changed no dated facts (those are logged above). The review method was compared with Cloudflare's open-source `security-audit` skill (github.com/cloudflare/security-audit-skill, MIT License, © 2025–2026 Cloudflare, Inc.), and these ideas were adapted, in new wording, for small teams and a single agent:
+
+- `attack-classes.md`: one section per audit in a fixed shape, pasted verbatim into child briefs; new audits for data lifecycle and derived copies, business logic and races, webhooks, the HTTP edge and caching, and denial of wallet.
+- `audit-protocol.md`: the six-field candidate gate, the self-impact exclusion, hunting depth (sibling paths, edge inputs), the needs-validation outcome, one coverage gap pass, root-cause merging, safe execution limits for code the user did not write, and the rule that a review ends complete or explicitly incomplete.
+- Controls for webhooks, account linking, reset-link host poisoning, private-response caching, IPC caller identity, privileged helpers and logout cleanup in `secure-defaults.md` and `platform-playbooks.md`.
+
+Not adopted: its multi-agent hunting waves, budget accounting, JSON schema and validators, and the descriptor-level artifact promotion procedure. They suit a security team's fleet, not a single-agent review.
 
 ## Source classes
 

@@ -9,6 +9,7 @@ Snapshot 3 October 2026. **[V]** verified, **[S]** snapshot-volatile, **[U]** un
 - Secrets
 - Authentication
 - Authorization
+- Money, quotas & webhooks
 - Cryptography
 - Input handling
 - Web response headers
@@ -45,6 +46,9 @@ Implementation:
 - Session tokens from a CSPRNG, ≥128 bits. Rotate the session identifier on login and on privilege change. Server-side revocation must exist — a stateless token you cannot revoke is an outage during an incident.
 - Constant-time comparison for tokens, signatures, and MFA codes — but **validate the shape before you compare**. A stored credential whose hex/base64 decodes to the wrong length, or whose scheme/salt/hash does not parse, must be rejected as malformed and fail closed; never fall through to the comparison. `timingSafeEqual` on two empty buffers returns true, so an unparsed record can verify any password.
 - Rate-limit and lock out on login, reset, MFA, and token exchange. Generic failure messages: never reveal whether the account exists.
+- **Account linking:** attach a social or SSO identity to an existing account only after the user signs in to that account, or when both emails are verified and the provider is trusted for that address. Never link by matching an unverified email; that is account takeover with one sign-up.
+- **Reset and magic links:** build the URL from a configured origin, never from the request's `Host` or `X-Forwarded-Host`. Tokens are single-use, short-lived (an hour at most), stored hashed, and voided by a password change or a newer token.
+- **Sensitive account changes** (email, password, MFA, passkeys, recovery codes, API keys) require recent re-authentication and notify the old address.
 - **JWTs, when used:** pin the verification algorithm from your own config — never read `alg` from the token header, reject `none`. HMAC secrets ≥256 bits from a CSPRNG, never a passphrase. Always set and validate `exp` (minutes, not days) and include `jti` so revocation is possible. In a browser, the token lives in an `HttpOnly`/`Secure`/`SameSite` cookie — localStorage is readable by any XSS. Rotate refresh tokens on use; a reused refresh token means theft — revoke the whole family.
 
 ## Authorization
@@ -57,7 +61,19 @@ Implementation:
 - **Removal is revocation.** Leaving an org, a role downgrade, or account deletion must invalidate that user's sessions, refresh tokens, and API keys immediately — not at next login.
 - Return the same 404 for "does not exist" and "not yours" — a 403 confirms the resource exists and invites enumeration. Non-guessable IDs (UUIDv4) are defense-in-depth on top; authorization is still the control.
 - Check the **parent chain**: accessing a comment means verifying ownership of the post it belongs to, not just that the comment ID resolves.
+- **Derived copies inherit the rule.** Search indexes, exports, reports, caches, analytics, notifications and model context apply the same owner or tenant filter as the main read, and soft-deleted rows are excluded everywhere.
 - Test it: the cross-user access test (user B requests user A's resource, expect 403/404) is the highest-value security test a small team can write.
+
+## Money, quotas & webhooks
+
+Where a bug turns directly into money, these are the defaults:
+
+- **The server sets the price.** Price, plan, currency and discount come from the server's catalog; the client sends an ID and a quantity, validated as a positive integer under a limit.
+- **Spend atomically.** Redeem, spend and claim with one conditional write (`UPDATE … SET balance = balance - :n WHERE id = :id AND balance >= :n`, then check the affected row count), a row lock, or a unique constraint on the one-time item. Never read, check, then write in application code.
+- **Idempotency keys** on every request that charges, grants or sends, and on outgoing calls to the payment provider.
+- **Entitlements come from the provider,** via a verified event or an API call, stored server-side. A success redirect or a client flag grants nothing.
+- **Webhooks:** verify the signature over the raw request body with the provider's library (or HMAC plus a constant-time compare); reject a missing signature; enforce the timestamp tolerance; dedupe by event ID; re-fetch the object from the provider before granting anything that matters; use a separate secret per environment.
+- **Multi-step flows** keep their state server-side and allow only valid transitions. On partial failure, roll back or compensate.
 
 ## Cryptography
 
@@ -74,7 +90,7 @@ Do not invent constructions. Use a vetted library's high-level API.
 | Transport | TLS 1.3, HSTS with a long max-age | TLS 1.0/1.1 gone; 1.2 only for legacy peers |
 | Tokens | Short-lived, audience-bound, revocable | Reject `alg: none`; pin the expected algorithm |
 
-**Post-quantum** [V]: FIPS 203 (ML-KEM), 204 (ML-DSA) and 205 (SLH-DSA) were finalised Aug 2024. Hybrid key exchange `X25519MLKEM768` is on by default in Chrome and Firefox [V] (Safari rollout [S]) and is the default TLS 1.3 group in **OpenSSL 3.5+** [V]. Certificates remain classical; only key exchange is PQ-protected. What a small team does: (1) if a CDN/PaaS terminates TLS, nothing — check it negotiates the hybrid; (2) if you run nginx/Apache/HAProxy yourself, run TLS 1.3 on OpenSSL 3.5+ and **delete or update any pinned curve list** (`ssl_ecdh_curve`, `Groups`) that omits `X25519MLKEM768`, which silently disables it; (3) don't touch PQ signatures or hand-roll PQC; (4) treat harvest-now-decrypt-later as material only for data that must stay secret for 10+ years.
+**Post-quantum** [V]: FIPS 203 (ML-KEM), 204 (ML-DSA) and 205 (SLH-DSA) were finalised Aug 2024. Hybrid key exchange `X25519MLKEM768` is on by default in Chrome and Firefox [V], and advertised by default in system TLS on iOS, iPadOS, macOS and visionOS 26 [V] (Safari specifically [S]); it is also the default TLS 1.3 group in **OpenSSL 3.5+** [V]. Certificates remain classical; only key exchange is PQ-protected. What a small team does: (1) if a CDN/PaaS terminates TLS, nothing — check it negotiates the hybrid; (2) if you run nginx/Apache/HAProxy yourself, run TLS 1.3 on OpenSSL 3.5+ and **delete or update any pinned curve list** (`ssl_ecdh_curve`, `Groups`) that omits `X25519MLKEM768`, which silently disables it; (3) don't touch PQ signatures or hand-roll PQC; (4) treat harvest-now-decrypt-later as material only for data that must stay secret for 10+ years.
 
 ## Input handling
 

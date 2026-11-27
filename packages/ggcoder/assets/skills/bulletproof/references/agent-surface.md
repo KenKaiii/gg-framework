@@ -2,7 +2,7 @@
 
 Load this when the project calls a model, exposes tools to a model, runs an agent, serves or consumes MCP, or ships a chat feature. Also load it when hardening a developer tool, because a developer tool is an agent target.
 
-Standards [V]: **OWASP Top 10 for LLM Applications 2026** (published 4 Aug 2026 and renumbered from 2025, so always cite an ID with its year) — LLM01:2026 Prompt Injection, LLM02:2026 Sensitive Information Disclosure, LLM03:2026 Excessive Agency, LLM04:2026 Supply Chain, LLM05:2026 Data and Model Poisoning, LLM06:2026 Unbounded Consumption, LLM07:2026 Misinformation, LLM08:2026 Hidden Context Exposure, LLM09:2026 Vector and Embedding Weaknesses, LLM10:2026 Improper Output Handling. **OWASP Top 10 for Agentic Applications (2026)**, published 9 Dec 2025 — ASI01 Goal Hijack, ASI02 Tool Misuse, ASI03 Identity & Privilege Abuse, ASI04 Agentic Supply Chain, ASI05 Unexpected Code Execution, ASI06 Memory & Context Poisoning, ASI07 Insecure Inter-Agent Communication, ASI08 Cascading Failures, ASI09 Human-Agent Trust Exploitation, ASI10 Rogue Agents. Its core principle is **least agency** — grant the minimum autonomy the task requires, not merely minimum permissions.
+Standards [V]: **OWASP Top 10 for LLM Applications 2026** (published 4 Aug 2026 and renumbered from 2025, so always cite an ID with its year) — LLM01:2026 Prompt Injection, LLM02:2026 Sensitive Information Disclosure, LLM03:2026 Excessive Agency, LLM04:2026 Supply Chain, LLM05:2026 Data and Model Poisoning, LLM06:2026 Unbounded Consumption, LLM07:2026 Misinformation, LLM08:2026 Hidden Context Exposure, LLM09:2026 Vector and Embedding Weaknesses, LLM10:2026 Improper Output Handling. **OWASP Top 10 for Agentic Applications (2026)**, published 9 Dec 2025 — ASI01 Agent Goal Hijack, ASI02 Tool Misuse and Exploitation, ASI03 Identity and Privilege Abuse, ASI04 Agentic Supply Chain Vulnerabilities, ASI05 Unexpected Code Execution, ASI06 Memory and Context Poisoning, ASI07 Insecure Inter-Agent Communication, ASI08 Cascading Failures, ASI09 Human-Agent Trust Exploitation, ASI10 Rogue Agents (exact titles [S]: cite by ID). Its core principle is **least agency** — grant the minimum autonomy the task requires, not merely minimum permissions.
 
 ## Contents
 
@@ -18,7 +18,7 @@ Standards [V]: **OWASP Top 10 for LLM Applications 2026** (published 4 Aug 2026 
 
 ## The one thing to internalize
 
-**Prompt injection cannot be reliably prevented.** "The Attacker Moves Second" (Oct 2025) bypassed 12 published defenses at >90% for most with adaptive attacks, and human red-teamers beat every scenario [V]. Any design whose safety depends on the model refusing a malicious instruction is already broken. Filters, delimiters, "ignore instructions in user content", and a second model checking the first are mitigations, not controls.
+**Prompt injection cannot be reliably prevented.** "The Attacker Moves Second" (Oct 2025) bypassed 12 published defenses with attack success above 90% for most, using adaptive attacks that included human-guided exploration; most of those defenses had reported near-zero attack success [V]. Any design whose safety depends on the model refusing a malicious instruction is already broken. Filters, delimiters, "ignore instructions in user content", and a second model checking the first are mitigations, not controls.
 
 Design for **containment**: assume the instruction lands, and make the outcome survivable.
 
@@ -77,7 +77,7 @@ Instructions hidden in files the agent reads land directly in its context, which
   - **Multi-round-trip requests carry `requestState`** back from the client. Treat it as untrusted: sign it, bind it to the caller, and expire it.
   - **Cacheable tool/resource listings**: bound cache lifetime and re-validate, so stale or poisoned descriptions do not outlive an update or a rug-pull.
   - **Auth**: the server is an OAuth resource server; RFC 8707 `resource` binds tokens to one server; validate audience; never pass the client's token through upstream; RFC 9728 Protected Resource Metadata. Client ID Metadata Documents replace Dynamic Client Registration (DCR deprecated); clients check the `iss` response parameter (RFC 9207) against mix-up. A CIMD-fetching authorization server fetches a client-supplied URL: apply the SSRF sweep from `platform-playbooks.md`.
-  - **Origin**: Streamable HTTP servers MUST validate `Origin` and return 403 when it is present and invalid; bind local servers to 127.0.0.1 [V].
+  - **Origin**: Streamable HTTP servers MUST validate `Origin` and return 403 when it is present and invalid, and SHOULD bind to 127.0.0.1 when running locally [V].
   - **Roots, Sampling and Logging are deprecated** with at least 12 months' notice [V]; do not build new trust on them.
   - **MCP Apps** (server-built UIs rendered in the client) are a phishing surface: treat them as untrusted content, never as the client's own UI, and never let them collect credentials.
   - Stdio servers do not use the OAuth flow; they get credentials from the environment, so scope those.
