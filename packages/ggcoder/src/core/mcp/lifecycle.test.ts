@@ -270,8 +270,9 @@ describe("progress-aware call timeout", () => {
 
   it("declares the progress budget to the agent loop", async () => {
     const m = manager();
-    const tools = await connect(m, server({ timeout: 400, maxTotalTimeout: 800 }));
-    expect(tool(tools, "echo").timeoutMs).toBe(1_200);
+    // `timeout` also bounds the connect handshake: 400 ms failed on a slow macOS runner.
+    const tools = await connect(m, server({ timeout: 4_000, maxTotalTimeout: 8_000 }));
+    expect(tool(tools, "echo").timeoutMs).toBe(12_000);
   }, 30_000);
 });
 

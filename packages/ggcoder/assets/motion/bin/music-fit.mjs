@@ -388,11 +388,12 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const audio = await decode(resolve(opts.track));
   const trackDur = audio.n / SR;
+  // Reject a bad --land before the beat analysis, which is the slow part.
+  if (opts.land && !(opts.land.track >= 0 && opts.land.track < trackDur))
+    throw new FitError(`--land track time must be inside the track (0-${trackDur.toFixed(2)} s)`);
   const grid = beatGrid(onsetEnvelopes(audio));
   const bar = grid.beatSec * 4;
   const d0 = grid.firstDownbeat - Math.floor(grid.firstDownbeat / bar) * bar;
-  if (opts.land && !(opts.land.track >= 0 && opts.land.track < trackDur))
-    throw new FitError(`--land track time must be inside the track (0-${trackDur.toFixed(2)} s)`);
   const fit = plan({ duration: opts.duration, trackDur, bar, d0, land: opts.land });
   const outDir = resolve(opts.out);
   await mkdir(outDir, { recursive: true });
