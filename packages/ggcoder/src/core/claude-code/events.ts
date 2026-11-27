@@ -331,7 +331,8 @@ export class SdkMessageMapper {
         if (block.type === "tool_use")
           this.toolBlocks.set(Number(event.index), {
             id: String(block.id),
-            name: String(block.name),
+            // Our tool's name, as in tool_call_start, not Claude Code's mcp__gg__ one.
+            name: stripClaudeCodeToolPrefix(String(block.name)),
           });
         return [];
       }

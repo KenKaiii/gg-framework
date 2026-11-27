@@ -13,7 +13,7 @@ describe("SdkMessageMapper tool-call deltas", () => {
       stream({
         type: "content_block_start",
         index: 1,
-        content_block: { type: "tool_use", id: "toolu_1", name: "write", input: {} },
+        content_block: { type: "tool_use", id: "toolu_1", name: "mcp__gg__write", input: {} },
       }),
     );
     const events = mapper.handle(
