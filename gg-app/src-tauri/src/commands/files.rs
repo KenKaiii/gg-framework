@@ -362,6 +362,139 @@ pub(crate) async fn save_chat_image(
     Ok(Some(target.to_string_lossy().into_owned()))
 }
 
+/// What the in-app preview can show, decided from the file's name and content.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum PreviewKind {
+    Markdown,
+    Image,
+    Pdf,
+    Video,
+}
+
+impl PreviewKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            PreviewKind::Markdown => "markdown",
+            PreviewKind::Image => "image",
+            PreviewKind::Pdf => "pdf",
+            PreviewKind::Video => "video",
+        }
+    }
+
+    /// Size cap per kind: bytes travel to the webview as base64 over IPC, so
+    /// video and PDF stay smaller than the 100 MB attachment cap.
+    fn max_bytes(self) -> u64 {
+        match self {
+            PreviewKind::Markdown => 5 * 1024 * 1024,
+            PreviewKind::Image => MAX_CHAT_IMAGE_BYTES,
+            PreviewKind::Pdf => 50 * 1024 * 1024,
+            PreviewKind::Video => 80 * 1024 * 1024,
+        }
+    }
+}
+
+/// Kind and media type from the extension alone. Content is checked after
+/// reading (`preview_media_type`), so a renamed file is refused, not shown.
+pub(crate) fn preview_kind_for(path: &Path) -> Option<(PreviewKind, &'static str)> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "md" | "markdown" | "mdx" => (PreviewKind::Markdown, "text/markdown"),
+        "png" => (PreviewKind::Image, "image/png"),
+        "jpg" | "jpeg" => (PreviewKind::Image, "image/jpeg"),
+        "gif" => (PreviewKind::Image, "image/gif"),
+        "webp" => (PreviewKind::Image, "image/webp"),
+        "bmp" => (PreviewKind::Image, "image/bmp"),
+        "svg" => (PreviewKind::Image, "image/svg+xml"),
+        "pdf" => (PreviewKind::Pdf, "application/pdf"),
+        "mp4" | "m4v" => (PreviewKind::Video, "video/mp4"),
+        "mov" => (PreviewKind::Video, "video/quicktime"),
+        "webm" => (PreviewKind::Video, "video/webm"),
+        _ => return None,
+    })
+}
+
+/// Confirm the bytes match the kind the extension claimed; returns the media
+/// type to hand the webview.
+pub(crate) fn preview_media_type(
+    kind: PreviewKind,
+    by_extension: &'static str,
+    bytes: &[u8],
+) -> Result<&'static str, String> {
+    match kind {
+        PreviewKind::Markdown => std::str::from_utf8(bytes)
+            .map(|_| by_extension)
+            .map_err(|_| "not a UTF-8 text file".to_string()),
+        PreviewKind::Image if by_extension == "image/svg+xml" => {
+            let head =
+                String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]).to_ascii_lowercase();
+            if head.contains("<svg") {
+                Ok(by_extension)
+            } else {
+                Err("not an SVG image".into())
+            }
+        }
+        PreviewKind::Image => sniff_image_type(bytes).ok_or_else(|| "not an image".to_string()),
+        PreviewKind::Pdf => {
+            if bytes.starts_with(b"%PDF-") {
+                Ok(by_extension)
+            } else {
+                Err("not a PDF".into())
+            }
+        }
+        PreviewKind::Video => {
+            let is_mp4 = bytes.len() >= 12 && &bytes[4..8] == b"ftyp";
+            let is_webm = bytes.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]);
+            if is_mp4 || is_webm {
+                Ok(by_extension)
+            } else {
+                Err("not a video the viewer can play".into())
+            }
+        }
+    }
+}
+
+/// Read a generated document (Markdown, image, PDF, video) for the in-app
+/// preview. Resolves the path like other chat links, refuses anything that is
+/// not a regular file of a known kind whose content matches, and caps the size.
+/// Text is returned as `text`; everything else as base64 `data`.
+#[tauri::command]
+pub(crate) fn read_preview_file(
+    webview: WebviewWindow,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    let cwd = cwd_for(&webview).ok_or("sidecar not ready")?;
+    let file = resolve_chat_path(&cwd, &path)?;
+    let (kind, by_extension) =
+        preview_kind_for(&file).ok_or_else(|| format!("no preview for this file type: {path}"))?;
+    let metadata = std::fs::metadata(&file).map_err(|e| e.to_string())?;
+    if !metadata.is_file() {
+        return Err(format!("not a file: {path}"));
+    }
+    if metadata.len() > kind.max_bytes() {
+        return Err(format!(
+            "too large to preview ({} MB): {path}",
+            metadata.len() / (1024 * 1024)
+        ));
+    }
+    let bytes = std::fs::read(&file).map_err(|e| e.to_string())?;
+    let media_type = preview_media_type(kind, by_extension, &bytes)?;
+    let name = file
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let path_text = file.to_string_lossy().into_owned();
+    if kind == PreviewKind::Markdown {
+        let text = String::from_utf8(bytes).map_err(|_| "not a UTF-8 text file".to_string())?;
+        return Ok(serde_json::json!({
+            "kind": kind.as_str(), "mediaType": media_type, "name": name, "path": path_text, "text": text
+        }));
+    }
+    let data = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Ok(serde_json::json!({
+        "kind": kind.as_str(), "mediaType": media_type, "name": name, "path": path_text, "data": data
+    }))
+}
+
 /// Open a web/mail/phone link in the user's default app (chat links, title-bar
 /// GitHub links, OAuth pages). Scheme-validated so the webview can't turn this
 /// into a local-file opener.
@@ -377,6 +510,51 @@ pub(crate) fn open_url(url: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preview_kinds_come_from_the_extension() {
+        assert_eq!(
+            preview_kind_for(Path::new("a/Report.MD")).map(|k| k.0),
+            Some(PreviewKind::Markdown)
+        );
+        assert_eq!(
+            preview_kind_for(Path::new("x.pdf")).map(|k| k.0),
+            Some(PreviewKind::Pdf)
+        );
+        assert_eq!(
+            preview_kind_for(Path::new("x.mov")).map(|k| k.0),
+            Some(PreviewKind::Video)
+        );
+        assert_eq!(
+            preview_kind_for(Path::new("x.svg")).map(|k| k.0),
+            Some(PreviewKind::Image)
+        );
+        assert_eq!(preview_kind_for(Path::new("x.sh")), None);
+        assert_eq!(preview_kind_for(Path::new("noext")), None);
+    }
+
+    #[test]
+    fn preview_refuses_content_that_does_not_match_the_extension() {
+        assert!(preview_media_type(PreviewKind::Pdf, "application/pdf", b"%PDF-1.7 x").is_ok());
+        assert!(preview_media_type(PreviewKind::Pdf, "application/pdf", b"<html>").is_err());
+        assert!(
+            preview_media_type(PreviewKind::Image, "image/png", b"\x89PNG\r\n\x1a\nrest").is_ok()
+        );
+        assert!(preview_media_type(PreviewKind::Image, "image/png", b"hello").is_err());
+        assert!(
+            preview_media_type(PreviewKind::Image, "image/svg+xml", b"<?xml?><svg></svg>").is_ok()
+        );
+        assert!(preview_media_type(PreviewKind::Image, "image/svg+xml", b"<html></html>").is_err());
+        assert!(preview_media_type(PreviewKind::Video, "video/mp4", b"\0\0\0\x18ftypmp42").is_ok());
+        assert!(
+            preview_media_type(PreviewKind::Video, "video/mp4", b"not a video at all").is_err()
+        );
+        assert!(preview_media_type(PreviewKind::Markdown, "text/markdown", b"# hi").is_ok());
+        assert!(
+            preview_media_type(PreviewKind::Markdown, "text/markdown", &[0xFF, 0xFE, 0x00])
+                .is_err()
+        );
+    }
 
     #[test]
     fn open_image_data_only_writes_known_image_extensions() {

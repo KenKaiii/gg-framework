@@ -880,6 +880,41 @@ export async function readChatImage(path: string): Promise<string | null> {
   }
 }
 
+/** A document loaded for the in-app preview (see file-preview.ts). */
+export interface PreviewFile {
+  kind: "markdown" | "image" | "pdf" | "video";
+  mediaType: string;
+  name: string;
+  /** Resolved absolute path. */
+  path: string;
+  /** Markdown: the file's text. */
+  text?: string;
+  /** Everything else: base64, no `data:` prefix. */
+  data?: string;
+}
+
+/**
+ * Read a generated document (Markdown, image, PDF, video) so the app can show
+ * it in a preview. Throws with a user-facing reason (too large, not found, the
+ * content doesn't match its name) so the preview can say why and offer to open
+ * the file in its default app instead.
+ */
+export async function readPreviewFile(path: string): Promise<PreviewFile> {
+  let decoded = path;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    // Keep the original string if the model emitted a malformed `%` escape.
+  }
+  try {
+    return await invoke<PreviewFile>("read_preview_file", { path: decoded });
+  } catch (e) {
+    await logError(`read_preview_file failed for ${decoded}: ${String(e)}`);
+    // Tauri rejects with the Rust error text; the preview shows it as is.
+    throw e;
+  }
+}
+
 /**
  * Open an in-memory chat image (a `data:<type>;base64,...` URL from a paste or
  * attachment) in the default image viewer. It has no file of its own, so the

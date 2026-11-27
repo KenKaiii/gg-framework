@@ -34,6 +34,7 @@ import { type SubAgentLine } from "./SubAgentFeed";
 import { playSound } from "./sounds";
 import { takeNewSecurityNotices, withSecurityRow } from "./security-notices";
 import { toast } from "./toast";
+import { autoPreviewEnabled, generatedPreviewPaths, openFilePreview } from "./file-preview";
 import { findCompletedSteps, countPlanSteps, stepsDoneThrough } from "./plan-steps";
 import type { PendingAttachment } from "./attachments";
 import type { Item } from "./App";
@@ -190,6 +191,12 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
   } = deps;
 
   // ── Event-machine private refs (used nowhere outside this hook) ──
+  // Tool calls in flight (name + args) and the documents this run generated, so
+  // the newest can open in the preview when the run ends.
+  const toolCallsRef = useRef<Map<string, { name: string; args: Record<string, unknown> }>>(
+    new Map(),
+  );
+  const generatedDocsRef = useRef<string[]>([]);
   const streamingIdRef = useRef<number | null>(null);
   // A model turn ended: its text is complete, so the next turn's text gets its
   // own bubble instead of running on ("…skills.**Next reply**") in one run.
@@ -730,6 +737,7 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           const toolCallId = String(d.toolCallId ?? "");
           const name = String(d.name ?? "tool");
           const args = (d.args as Record<string, unknown>) ?? {};
+          toolCallsRef.current.set(toolCallId, { name, args });
 
           // Tools live ONLY in the pinned panel, never in the transcript. Keep a
           // bounded tail so memory stays flat across long sessions; the panel
@@ -836,6 +844,13 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           const isError = Boolean(d.isError);
           const result = typeof d.result === "string" ? d.result : undefined;
           const details = d.details;
+          const started = toolCallsRef.current.get(id);
+          toolCallsRef.current.delete(id);
+          if (started && !isError) {
+            generatedDocsRef.current.push(
+              ...generatedPreviewPaths(started.name, started.args, result),
+            );
+          }
           // Finalize a sub-agent's in-chat row: flip status + record duration.
           const groupId = subagentGroupIdRef.current;
           if (groupId !== null) {
@@ -931,6 +946,13 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           // The loop stopped and no review was injected, so anything held under
           // arming was the real final answer after all — paint it.
           releaseHeldText();
+          // Open the newest document the run generated, unless the user turned
+          // that off or a dialog is already up (never cover a question).
+          const generated = generatedDocsRef.current.pop();
+          generatedDocsRef.current = [];
+          if (generated && autoPreviewEnabled() && !document.querySelector(".modal-backdrop")) {
+            openFilePreview(generated);
+          }
           const usage = d.totalUsage as { outputTokens?: number } | undefined;
           if (usage && typeof usage.outputTokens === "number") {
             // Authoritative final total — set rather than add to avoid
