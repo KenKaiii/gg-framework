@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.121.2",
+    date: "2026-11-27",
+    items: [
+      "Your `Security audit` just got a serious upgrade. I now hunt the bugs that actually cost small teams money: unsigned webhooks, coupons and credits spent twice, private pages a CDN can cache for strangers, and sign-ins that hijack accounts by email. Anything I cannot prove from your code alone goes on a separate `needs validation` list with the exact check to run, so your report stays real findings only.",
+      "Running me on your `Claude` sign-in? You now watch files take shape live as I write them, just like on every other model.",
+    ],
+  },
+  {
     version: "0.121.1",
     date: "2026-11-27",
     items: [
