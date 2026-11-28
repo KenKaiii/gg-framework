@@ -2,6 +2,7 @@
 // EventSource) so the request carries the header that proves it's the frame.
 import type { SidecarEvent } from "../../src/agent";
 import { LIVE_HEADER } from "./shims/invoke";
+import { frameTabId, TAB_HEADER } from "./tab-id";
 
 /** Split an SSE buffer into complete `data:` payloads and the unfinished rest. */
 export function takeFrames(buf: string): { events: SidecarEvent[]; rest: string } {
@@ -31,6 +32,7 @@ export function streamEvents(
   onEvent: (e: SidecarEvent) => void,
   onConnect: () => void,
   fetchImpl: typeof fetch = fetch,
+  tabId: () => Promise<string> = frameTabId,
 ): () => void {
   let stopped = false;
   let abort = new AbortController();
@@ -38,8 +40,9 @@ export function streamEvents(
     while (!stopped) {
       abort = new AbortController();
       try {
+        const tab = await tabId();
         const res = await fetchImpl("/api/events", {
-          headers: { [LIVE_HEADER]: "1" },
+          headers: { [LIVE_HEADER]: "1", [TAB_HEADER]: tab },
           signal: abort.signal,
           credentials: "omit",
         });

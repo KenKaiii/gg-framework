@@ -9,6 +9,7 @@ import {
   type AgentState,
   type BackgroundTask,
   type ModelOption,
+  type AttachmentChip,
   type ProjectTask,
   type QueuedMessage,
   type SlashCommand,
@@ -616,13 +617,24 @@ export function useAgentEvents(deps: AgentEventsDeps): AgentEvents {
           // receives (core/live-preview.ts in ggcoder).
           const text = typeof d.text === "string" ? d.text : "";
           const element = typeof d.element === "string" && d.element ? d.element : null;
-          if (!text.trim() && !element) break;
+          const chips: AttachmentChip[] = element ? [{ kind: "file", name: element }] : [];
+          if (Array.isArray(d.attachments))
+            for (const a of d.attachments as Array<{ kind?: unknown; name?: unknown }>)
+              if (typeof a?.name === "string")
+                chips.push({ kind: a.kind === "video" ? "video" : "file", name: a.name });
+          const images = Array.isArray(d.images)
+            ? d.images.filter(
+                (src): src is string => typeof src === "string" && src.startsWith("data:image/"),
+              )
+            : [];
+          if (!text.trim() && chips.length === 0 && images.length === 0) break;
           stickToBottomRef.current = true;
           pushItem({
             kind: "user",
             id: nextId(),
             text,
-            ...(element ? { attachments: [{ kind: "file" as const, name: element }] } : {}),
+            ...(images.length > 0 ? { images } : {}),
+            ...(chips.length > 0 ? { attachments: chips } : {}),
           });
           break;
         }

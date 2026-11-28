@@ -1,15 +1,16 @@
-/* The live preview frame. Everything else comes from gg-app's own App.css and
-   Deck.css. The frame is sized to its content by the page, so nothing here may
-   depend on the frame's own viewport: vw/vh would chase the frame's size.
+/* The live preview frame: a small chat window in the page's bottom-right
+   corner. Everything else comes from gg-app's own App.css and Deck.css. The
+   frame is sized to its content by the page, so nothing here may depend on the
+   frame's own viewport: vw/vh would chase the frame's size.
    --host-vw/--host-vh are the previewed page's viewport, sent by the page. */
 :root {
   --host-vw: 1280px;
   --host-vh: 800px;
-  /* A fixed reading size: gg-app's clamp() follows the window, which here is the frame. */
+  /* A fixed reading size for a narrow window: gg-app's clamp() follows the
+     window, which here is the frame. */
   --fs-read: 15.5px;
-  --glass: rgb(17 18 23 / 0.74);
-  --glass-user: rgb(32 35 43 / 0.86);
-  --dock-w: min(760px, calc(var(--host-vw) - 32px));
+  --win-w: min(420px, calc(var(--host-vw) - 32px));
+  --win-h: max(300px, min(560px, calc(var(--host-vh) - 32px)));
   --dur-fade: 220ms;
   --pick: #4c5bf0;
   --pick-rgb: 76 91 240;
@@ -30,43 +31,132 @@ body {
   text-align: left;
 }
 
-/* Measured by the frame and mirrored onto the iframe's clip (page.ts). The
-   padding leaves room for shadows, which the clip would otherwise cut. Centred
-   on the iframe's bottom edge: the page moves the clip a frame or two late, and
-   anchored at the top the composer would jump while the chip row animates. */
+/* Measured by the frame and mirrored onto the iframe's clip (page.ts), which
+   is anchored to the bottom-right corner. The padding leaves room for the
+   window's shadow, which the clip would otherwise cut. */
 .lp-root {
   position: fixed;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  width: max-content;
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+/* The window: a small copy of the app's chat view, on the app's own shell
+   (.app: its background and ambient glow, App.css). Solid, so the page never
+   shows through; the conversation scrolls up under the app's frosted title
+   bar (.chat-head, Deck.css) and down under the deck's frost, as in the app. */
+.lp-window {
+  position: relative;
+  isolation: isolate;
+  width: var(--win-w);
+  height: var(--win-h);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  /* Reaches at most 12px sideways: past .lp-root's 16px the clip would cut it. */
+  box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.6);
+  animation: lp-fade var(--dur-fade) ease;
+}
+.lp-window[hidden] {
+  display: none;
+}
+/* Conversation hidden (the activity bar's toggle): just the title bar and deck. */
+.lp-window:not(:has(> .thread)) {
+  height: auto;
+  padding-top: 40px;
+}
+
+.thread {
+  /* Positioned, so it paints above the glow (.app::before), like .transcript-frame. */
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Clear of the title bar at rest, like .transcript under .chat-head. */
+  padding: calc(40px + var(--space-4)) var(--space-8) var(--space-4);
+  scroll-padding-top: 48px;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--ink-rgb) / 0.2) transparent;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.thread > :first-child {
+  margin-top: 0;
+}
+.lp-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  margin: 0;
+  padding: 0 var(--space-8);
+  color: var(--text-muted);
+  font: 400 var(--fs-md) / 1.4 var(--sans);
+  text-align: center;
+  white-space: normal;
+}
+
+/* The deck and its frost rising over the conversation: .app > .dock (Deck.css). */
+.lp-dock {
+  --dock-rise: var(--space-12);
+  position: relative;
+  z-index: 3;
+  flex: none;
+  isolation: isolate;
+}
+.lp-dock::before,
+.lp-dock::after {
+  content: "";
+  position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  margin-inline: auto;
-  box-sizing: border-box;
-  width: max-content;
-  padding: 24px 24px var(--space-8);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  top: calc(-1 * var(--dock-rise));
+  z-index: -1;
+  pointer-events: none;
 }
-
-.dock {
-  width: var(--dock-w);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  animation: lp-fade var(--dur-fade) ease;
+.lp-dock::before {
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--bg) 82%, transparent),
+    color-mix(in srgb, var(--bg) 60%, transparent) 70%,
+    transparent
+  );
+  -webkit-backdrop-filter: blur(2px) saturate(140%);
+  backdrop-filter: blur(2px) saturate(140%);
+  -webkit-mask-image: linear-gradient(to top, rgb(0 0 0) 75%, transparent);
+  mask-image: linear-gradient(to top, rgb(0 0 0) 75%, transparent);
 }
-.dock[hidden] {
-  display: none;
+.lp-dock::after {
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  -webkit-mask-image: linear-gradient(to top, rgb(0 0 0) 60%, transparent 95%);
+  mask-image: linear-gradient(to top, rgb(0 0 0) 60%, transparent 95%);
 }
-.dock .deck {
-  margin: 0;
-  /* Fades out within 16px sideways, inside .lp-root's 24px: wider would be cut
-     off at the iframe's edge. */
-  box-shadow:
-    inset 0 1px 0 var(--key-hi),
-    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+@media (prefers-reduced-transparency: reduce) {
+  .lp-dock::before {
+    background: var(--bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+    top: 0;
+  }
+  .lp-dock::after {
+    display: none;
+  }
 }
-.dock .livetoolpanel {
+.lp-window .deck {
+  margin: 0 var(--space-4) var(--space-4);
+}
+.lp-window .livetoolpanel {
   position: static;
   transform: none;
   margin: 0 auto;
@@ -81,111 +171,18 @@ body {
 }
 .input,
 .enh-diss {
-  max-height: calc(var(--host-vh) * 0.4);
+  max-height: calc(var(--host-vh) * 0.3);
 }
 
-.thread {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  max-height: min(calc(var(--host-vh) * 0.56), calc(var(--host-vh) - 260px));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
-  white-space: pre-wrap;
-  word-break: break-word;
-  /* No mask: a masked ancestor turns off the bubbles' backdrop blur. */
-}
-.thread:empty {
-  display: none;
-}
-.thread::-webkit-scrollbar {
-  display: none;
-}
-.thread > * {
-  flex-shrink: 0;
-}
-.thread .user-msg {
-  margin: 0 0 0 auto;
-  background: var(--glass-user);
-  border: 1px solid var(--border);
-  backdrop-filter: blur(18px) saturate(1.3);
-  -webkit-backdrop-filter: blur(18px) saturate(1.3);
-}
-.gg-bubble {
-  align-self: flex-start;
-  max-width: min(40em, 92%);
-  max-height: calc(var(--host-vh) * 0.46);
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgb(var(--ink-rgb) / 0.2) transparent;
-  padding: var(--space-5) var(--space-7);
-  border-radius: var(--radius-bubble);
-  border: 1px solid var(--border);
-  background: var(--glass);
-  color: var(--text);
-  backdrop-filter: blur(18px) saturate(1.3);
-  -webkit-backdrop-filter: blur(18px) saturate(1.3);
-  animation: lp-rise 260ms var(--ease-out);
-}
-.gg-bubble > :first-child {
-  margin-top: 0;
-  padding-top: 0;
-}
-.gg-bubble > :last-child {
-  margin-bottom: 0;
-  padding-bottom: 0;
-}
-.gg-bubble + .user-msg {
-  margin-top: var(--space-8);
-}
-@keyframes lp-rise {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-}
-@keyframes lp-fade {
-  from {
-    opacity: 0;
-  }
-}
-
-.earlier,
+/* A send that failed, just above the deck. */
 .lp-note {
-  align-self: center;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: 5px var(--space-6) 6px;
+  margin: 0 var(--space-4) var(--space-3);
+  padding: var(--space-3) var(--space-6);
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--glass);
-  backdrop-filter: blur(18px) saturate(1.3);
-  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  border-radius: var(--radius-button);
+  background: var(--surface-1);
   color: var(--text-secondary);
-  font: 500 var(--fs-sm) / 1.3 var(--sans);
-}
-.earlier {
-  cursor: pointer;
-  transition:
-    color var(--t-out),
-    border-color var(--t-out);
-}
-.earlier:hover {
-  color: var(--text);
-  border-color: var(--border-strong);
-  transition:
-    color var(--t-in),
-    border-color var(--t-in);
-}
-/* With a key inside, the pill tightens around it and the key takes its rounded end. */
-.lp-note:has(> .key) {
-  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-6);
-}
-.lp-note > .key {
-  flex: none;
-  border-radius: var(--radius-pill);
+  font: 500 var(--fs-sm) / 1.35 var(--sans);
 }
 
 .deck .pick-toggle[aria-pressed="true"],
@@ -194,44 +191,7 @@ body {
   background: rgb(var(--ink-rgb) / 0.08);
 }
 
-/* Minimised: the dock tucks away and leaves a pill to bring it back. */
-.deck-holder {
-  position: relative;
-}
-.minimise {
-  position: absolute;
-  top: -11px;
-  right: -11px;
-  z-index: 4;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  color: var(--text-muted);
-  background: var(--surface-1);
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.5);
-  cursor: pointer;
-  transition:
-    color var(--t-out),
-    background-color var(--t-out);
-}
-.minimise:hover {
-  color: var(--text);
-  background: var(--surface-2);
-  transition:
-    color var(--t-in),
-    background-color var(--t-in);
-}
-.minimise:focus-visible,
-.pill:focus-visible,
-.earlier:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
+/* Minimised: the window tucks away and leaves a pill to bring it back. */
 .pill {
   display: flex;
   align-items: center;
@@ -273,10 +233,14 @@ body {
     box-shadow: 0 0 0 5px rgb(var(--pick-rgb) / 0);
   }
 }
+@keyframes lp-fade {
+  from {
+    opacity: 0;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .dock,
-  .gg-bubble,
+  .lp-window,
   .pill,
   .pill-live {
     transition: none;

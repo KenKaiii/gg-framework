@@ -8,6 +8,7 @@ import "../../src/Trophies.css";
 import "./live.css";
 import {
   StrictMode,
+  type DragEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -29,6 +30,8 @@ import { createLiveTextStore, LiveTextContext } from "../../src/live-text";
 import { createEntranceLifetime } from "../../src/transcript-motion";
 import { INITIAL_ACTIVITY, reduceTaskActivity, type TaskActivity } from "../../src/task-activity";
 import { usePromptEnhance } from "../../src/usePromptEnhance";
+import { WorkspaceHeader } from "../../src/WorkspaceHeader";
+import { glowPlacement, glowStateFor, glowVars } from "../../src/window-glow";
 import {
   cancel,
   getState,
@@ -39,7 +42,13 @@ import {
   type ModelOption,
   type SidecarEvent,
 } from "../../src/agent";
-import type { PendingAttachment } from "../../src/attachments";
+import {
+  attachmentBytes,
+  MAX_ATTACHMENT_BYTES,
+  toWire,
+  type PendingAttachment,
+} from "../../src/attachments";
+import { useAttachments } from "../../src/useAttachments";
 import type { DraftEnhancement } from "../../src/PromptEnhancement";
 import { chipName, toDevUrl, type PickedElement } from "../protocol";
 import { createParentBridge } from "./bridge";
@@ -53,7 +62,6 @@ interface FrameConfig {
 
 const bridge = createParentBridge();
 const UI_KEY = "gg-live-ui";
-const NOTE_KEY = "gg-live-port-note";
 const DRAFT_KEY = "gg-live-draft";
 
 const readJson = <T,>(storage: Storage, key: string, fallback: T): T => {
@@ -189,9 +197,11 @@ function LiveApp() {
   );
 
   // ── Open/minimised, remembered across page loads ──
-  const [open, setOpen] = useState<boolean>(
-    () => readJson(sessionStorage, UI_KEY, { open: true }).open,
-  );
+  // The page's memory (in the hash) wins: it survives where the frame's storage may not.
+  const [open, setOpen] = useState<boolean>(() => {
+    const fromPage = /^#open=([01])$/.exec(location.hash)?.[1];
+    return fromPage ? fromPage === "1" : readJson(sessionStorage, UI_KEY, { open: true }).open;
+  });
 
   // ── The page: its address, viewport and picked element ──
   const [pageUrl, setPageUrl] = useState("");
@@ -344,33 +354,49 @@ function LiveApp() {
     scheduleDraft: false,
   } as Parameters<typeof usePromptEnhance>[0]);
 
+  // Pasted files, plus the picked element shown as one more chip.
+  const pasted = useAttachments();
+  const PICK_CHIP_ID = -1;
   const attachments: PendingAttachment[] = picked
     ? [
         {
-          id: 1,
+          id: PICK_CHIP_ID,
           kind: "file",
           name: chipName(picked) + (pickMissing ? " · not on this page" : ""),
           mediaType: "text/html",
           data: "",
         },
+        ...pasted.attachments,
       ]
-    : [];
+    : pasted.attachments;
 
   const [sendError, setSendError] = useState<string | null>(null);
   const submit = () => {
     const text = input.trim();
-    if (!text || !config) return;
+    const files = pasted.attachments;
+    if ((!text && files.length === 0) || !config || pasted.attachmentsLoading) return;
+    const wire = files.map(toWire);
+    const totalBytes = attachmentBytes(wire);
+    if (totalBytes > MAX_ATTACHMENT_BYTES) {
+      const mb = (bytes: number): number => Math.ceil(bytes / (1024 * 1024));
+      setSendError(
+        `Attachments are too big to send (${mb(totalBytes)} MB). The limit is ${mb(MAX_ATTACHMENT_BYTES)} MB per message.`,
+      );
+      return;
+    }
     const element =
       picked && !pickMissing
         ? { selector: picked.selector, html: picked.html, tag: picked.tag, text: picked.text }
         : null;
     const url = toDevUrl(pageUrl || config.devUrl, config.devUrl, config.proxyOrigins);
     setSendError(null);
-    void sendPrompt(text, [], { livePreview: { url, element } }).catch((err: unknown) => {
+    void sendPrompt(text, wire, { livePreview: { url, element } }).catch((err: unknown) => {
       setSendError(typeof err === "string" ? err : String(err));
       setInput(text);
+      pasted.setAttachments((now) => [...files, ...now]);
     });
     setInput("");
+    pasted.clearAttachments();
     setEnhancement(null);
     setSendCount((n) => n + 1);
   };
@@ -421,39 +447,34 @@ function LiveApp() {
     return () => removeEventListener("keydown", onKey, true);
   }, [picking, picked, panel]);
 
+  // The app's ambient glow: idle, working, then done until the next run starts.
+  const [hasFinishedRun, setHasFinishedRun] = useState(false);
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (running) {
+      wasRunning.current = true;
+      setHasFinishedRun(false);
+    } else if (wasRunning.current) {
+      wasRunning.current = false;
+      setHasFinishedRun(true);
+    }
+  }, [running]);
+  const glowStyle = useMemo(
+    () => glowVars(glowPlacement(state?.cwd ?? "live-preview")),
+    [state?.cwd],
+  );
+
   const contextPct =
     state?.contextWindow && contextTokens > 0
       ? Math.min(100, Math.round((contextTokens / state.contextWindow) * 100))
       : 0;
 
-  // Collapsed thread: only the latest exchange. Replies (every row between two of
-  // your messages) share one glass bubble; your messages are gg-app's own bubbles.
-  const [expanded, setExpanded] = useState(false);
-  let from = 0;
-  if (!expanded)
-    for (let i = items.length - 1; i >= 0; i--)
-      if (items[i].kind === "user") {
-        from = i;
-        break;
-      }
-  const shown = items.slice(from);
-  const earlier = items.slice(0, from).filter((it) => it.kind === "user").length;
-  const userCount = items.filter((it) => it.kind === "user").length;
-  const groups: Array<{ user: Item } | { rows: Item[] }> = [];
-  for (const it of shown) {
-    if (it.kind === "user") groups.push({ user: it });
-    else {
-      const last = groups[groups.length - 1];
-      if (last && "rows" in last) last.rows.push(it);
-      else groups.push({ rows: [it] });
-    }
-  }
   const threadRef = useRef<HTMLDivElement>(null);
   const scrollToBottom = useCallback(() => {
     const t = threadRef.current;
     if (t) t.scrollTop = t.scrollHeight;
   }, []);
-  useEffect(scrollToBottom, [items, expanded, scrollToBottom]);
+  useEffect(scrollToBottom, [items, toolsHidden, scrollToBottom]);
   const chatView = useMemo(() => ({ visible: true }), []);
   const entrances = useMemo(() => createEntranceLifetime(0), []);
   const row = (it: Item) => (
@@ -467,16 +488,32 @@ function LiveApp() {
     />
   );
 
-  // The preview runs on its own port: say once what that means.
-  const [noteSeen, setNoteSeen] = useState(() => localStorage.getItem(NOTE_KEY) === "1");
-  const dismissNote = () => {
-    localStorage.setItem(NOTE_KEY, "1");
-    setNoteSeen(true);
+  // Files dropped anywhere on the chat attach, as in the app; a stray drop must not open the file.
+  const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
+  const onDragOver = (e: DragEvent) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    pasted.setIsFileDragOver(true);
+  };
+  const onDragLeave = (e: DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) pasted.setIsFileDragOver(false);
+  };
+  const onDrop = (e: DragEvent) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    pasted.setIsFileDragOver(false);
+    if (open && e.dataTransfer.files.length > 0) void pasted.addFiles(e.dataTransfer.files);
   };
 
   const noop = () => {};
   return (
-    <div className="lp-root" ref={rootRef}>
+    <div
+      className="lp-root"
+      ref={rootRef}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       {!open && (
         <button
           type="button"
@@ -495,63 +532,50 @@ function LiveApp() {
           <span>{running ? "GG Coder is working" : "Ask GG Coder"}</span>
         </button>
       )}
-      <section className="dock" aria-label="GG Coder" hidden={!open}>
-        {!noteSeen && (
-          <p className="lp-note" role="note">
-            This preview has its own port, so sign-ins and saved data won't carry over.
-            <button type="button" className="key key-sm" onClick={dismissNote}>
-              Got it
+      <section
+        className="app lp-window"
+        aria-label="GG Coder"
+        hidden={!open}
+        data-glow={glowStateFor(running, hasFinishedRun)}
+        style={glowStyle}
+      >
+        {/* The app's own title bar: the project's name and colour, centred, over a frost. */}
+        <WorkspaceHeader
+          workspaceMode="code"
+          cwd={state?.cwd}
+          gitBranch={state?.gitBranch}
+          openable={false}
+          trailing={
+            <button
+              type="button"
+              className="btn btn-ghost btn-icon"
+              aria-label="Minimise GG Coder chat"
+              title="Minimise"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                if (picking) togglePicking();
+                setOpen(false);
+              }}
+            >
+              <MinusIcon size={14} weight="bold" aria-hidden />
             </button>
-          </p>
-        )}
-        {sendError && (
-          <p className="lp-note" role="alert">
-            {sendError}
-          </p>
-        )}
+          }
+        />
+        {/* Always there, so the window keeps its size from the first message on. */}
         {!toolsHidden && (
           <div className="thread" ref={threadRef} aria-live="polite">
-            {userCount > 1 && (
-              <button
-                className="earlier"
-                type="button"
-                aria-expanded={expanded}
-                onClick={() => setExpanded((x) => !x)}
-              >
-                {expanded
-                  ? "Hide earlier messages"
-                  : `${earlier} earlier message${earlier === 1 ? "" : "s"}`}
-              </button>
-            )}
+            {items.length === 0 && <p className="lp-empty">Pick an element, or just ask.</p>}
             <PromptSendProvider value={sendFromReply}>
-              <LiveTextContext.Provider value={liveText}>
-                {groups.map((g) =>
-                  "user" in g ? (
-                    row(g.user)
-                  ) : (
-                    <div key={`r${g.rows[0].id}`} className="gg-bubble">
-                      {g.rows.map(row)}
-                    </div>
-                  ),
-                )}
-              </LiveTextContext.Provider>
+              <LiveTextContext.Provider value={liveText}>{items.map(row)}</LiveTextContext.Provider>
             </PromptSendProvider>
           </div>
         )}
-        <div className="deck-holder">
-          <button
-            type="button"
-            className="minimise"
-            aria-label="Minimise GG Coder chat"
-            title="Minimise"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              if (picking) togglePicking();
-              setOpen(false);
-            }}
-          >
-            <MinusIcon size={13} weight="bold" aria-hidden />
-          </button>
+        <div className="lp-dock">
+          {sendError && (
+            <p className="lp-note" role="alert">
+              {sendError}
+            </p>
+          )}
           <Deck
             state={state}
             hydrated={state !== null}
@@ -578,14 +602,18 @@ function LiveApp() {
               <Composer
                 workspaceMode="code"
                 composerRef={composerRef}
-                isFileDragOver={false}
+                isFileDragOver={pasted.isFileDragOver}
                 scheduleInvalid={false}
                 scheduleDraft={false}
                 running={running}
                 kenRunning={false}
                 autopilotReviewing={false}
                 cancelling={cancelling}
-                sendDisabled={!input.trim() || !config}
+                sendDisabled={
+                  (!input.trim() && pasted.attachments.length === 0) ||
+                  !config ||
+                  pasted.attachmentsLoading
+                }
                 input={input}
                 setInput={setInput}
                 caret={caret}
@@ -605,13 +633,17 @@ function LiveApp() {
                 setFileIndex={noop}
                 updateMention={noop}
                 attachments={attachments}
-                attachmentsLoading={false}
-                removeAttachment={() => {
+                attachmentsLoading={pasted.attachmentsLoading}
+                removeAttachment={(id) => {
+                  if (id !== PICK_CHIP_ID) {
+                    pasted.removeAttachment(id);
+                    return;
+                  }
                   setPicked(null);
                   bridge.post({ type: "gg-live:clear-pick" });
                   focusInput();
                 }}
-                addFiles={async () => {}}
+                addFiles={pasted.addFiles}
                 fileInputRef={fileInputRef}
                 mentionedPaths={[]}
                 removeMentionChip={noop}

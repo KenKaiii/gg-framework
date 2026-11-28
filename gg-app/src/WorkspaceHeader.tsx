@@ -24,6 +24,8 @@ interface WorkspaceHeaderProps {
   leading?: ReactNode;
   /** Right end: Commit, a Goal's view switch. Always visible. */
   trailing?: ReactNode;
+  /** The name opens the project folder; off where nothing can open it (the live preview). */
+  openable?: boolean;
 }
 
 /**
@@ -46,6 +48,7 @@ export function WorkspaceHeader({
   subtitle = null,
   leading,
   trailing,
+  openable = true,
 }: WorkspaceHeaderProps): React.ReactElement {
   const fallbackTitle = workspaceProductName(workspaceMode, goalName !== null);
   const directory = title ?? goalName ?? cwd?.split(/[\\/]/).filter(Boolean).pop();
@@ -80,7 +83,7 @@ export function WorkspaceHeader({
           )}
         >
           {accent && <span className="chat-head-accent-dot" aria-hidden="true" />}
-          {directory ? (
+          {directory && openable ? (
             <button
               type="button"
               className="chat-head-cwd chat-head-link"
@@ -92,7 +95,7 @@ export function WorkspaceHeader({
             </button>
           ) : (
             <span className="chat-head-cwd" data-tauri-drag-region>
-              {fallbackTitle}
+              {directory ?? fallbackTitle}
             </span>
           )}
           {subtitle && (

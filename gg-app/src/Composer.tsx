@@ -83,7 +83,7 @@ export interface ComposerProps {
   navigateHistory: (dir: -1 | 1, el: HTMLTextAreaElement) => boolean;
   submit: () => void;
   requestCancel: () => void;
-  // Replaces the attach button (the live preview puts its element picker here).
+  // An extra button after the attach button (the live preview's element picker).
   leadAction?: ReactNode;
 }
 
@@ -221,27 +221,24 @@ export function Composer({
       />
       <ReferencedFiles paths={mentionedPaths} onRemove={removeMentionChip} sendCount={sendCount} />
       <div className="inputrow">
-        {leadAction ?? (
-          <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              style={{ display: "none" }}
-              onChange={(e) => {
-                if (e.target.files) void addFiles(e.target.files);
-                e.target.value = "";
-              }}
-            />
-            <button
-              className="icon-circle"
-              title="Attach files"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <PaperclipIcon size={15} />
-            </button>
-          </>
-        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files) void addFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <button
+          className="icon-circle"
+          title="Attach files"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <PaperclipIcon size={15} />
+        </button>
+        {leadAction}
         <div className="input-stack">
           {enhanceAnim && (
             <EnhanceDissolve

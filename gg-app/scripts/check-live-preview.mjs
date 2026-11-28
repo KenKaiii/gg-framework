@@ -102,10 +102,14 @@ function fakeSession(cwd) {
           prompts.push(body);
           json(res, { ok: true });
           const el = body.meta?.livePreview?.element;
+          const images = (body.attachments ?? [])
+            .filter((a) => a.kind === "image")
+            .map((a) => `data:${a.mediaType};base64,${a.data}`);
           broadcast("live_preview_prompt", {
             text: body.text,
             element: el ? `<${el.tag}> ${el.text}` : null,
             queued: false,
+            ...(images.length > 0 ? { images } : {}),
           });
           broadcast("run_start", { text: body.text });
           broadcast("text_delta", { text: "Done, the heading is blue now." });
@@ -171,13 +175,36 @@ try {
   const box = await frameBox();
   assert.ok(box.w > 400 && box.w <= 1280, `frame width ${box.w}`);
   assert.ok(Math.abs(box.bottom - 800) < 2, `frame sits at the bottom (${box.bottom})`);
-  assert.ok(box.y > 300, `frame covers only the chat, not the page (top ${box.y})`);
+  assert.ok(box.y > 150, `frame covers only the chat, not the page (top ${box.y})`);
+  assert.ok(box.h > 400, `the window opens tall enough to read a chat (${box.h})`);
+  await page.waitForFunction(
+    (name) =>
+      document
+        .querySelector("gg-live-preview")
+        ?.shadowRoot?.querySelector("iframe")
+        ?.getBoundingClientRect().width > 0 && name.length > 0,
+    path.basename(root),
+  );
+  assert.equal(
+    (await chat.locator(".chat-head-title .chat-head-cwd").textContent())?.trim(),
+    path.basename(root),
+    "the title bar names the project",
+  );
+  assert.ok(box.w < 520, `the chat is a small window, not a page-wide bar (${box.w})`);
+  assert.ok(Math.abs(box.x + box.w - 1280) < 2, `the window sits bottom-right (${box.x})`);
   assert.equal(await chat.getByRole("button", { name: "More", exact: true }).count(), 0);
+  assert.equal(await chat.getByText("its own port").count(), 0, "no port notice");
   step("overlay loads through the proxy despite the page's CSP, sized to the chat");
 
   // The page above the chat still takes clicks.
   await page.click("h1");
   assert.equal(await page.evaluate(() => window.__h1Clicks), 1);
+  // And scrolls under the wheel along the bottom edge, outside the window.
+  await page.mouse.move(400, 760);
+  await page.mouse.wheel(0, 300);
+  await page.waitForFunction(() => scrollY > 0);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  step("the page scrolls and takes clicks everywhere outside the window");
 
   // ── Pick and hover ──
   await chat.getByRole("button", { name: "Pick an element on the page" }).click();
@@ -229,9 +256,16 @@ try {
   await chat.getByRole("button", { name: "Minimise GG Coder chat" }).click();
   await chat.getByRole("button", { name: "Open GG Coder chat" }).waitFor();
   await page.waitForFunction((src) => (0, eval)(`(${src})`)()?.h < 120, VISIBLE.toString());
+  // A reload keeps it minimised, even where the browser drops the frame's own storage.
+  assert.equal(await page.evaluate(() => sessionStorage.getItem("__gg_live_open")), "0");
+  await chat.locator("body").evaluate(() => sessionStorage.removeItem("gg-live-ui"));
+  await page.reload();
+  await chat.getByRole("button", { name: "Open GG Coder chat" }).waitFor({ timeout: 15000 });
+  await page.waitForTimeout(800);
+  assert.equal(await chat.locator(".lp-window:not([hidden])").count(), 0, "still minimised");
   await chat.getByRole("button", { name: "Open GG Coder chat" }).click();
   await input.waitFor();
-  step("minimise leaves a small pill, and it reopens");
+  step("minimise leaves a small pill that survives a reload, and it reopens");
 
   // ── A modal dialog: the chat moves inside it and stays usable ──
   await input.fill("draft kept");
@@ -258,6 +292,18 @@ try {
   assert.equal(await chat.getByText("not on this page").count(), 0);
   step("a hot update keeps the pick on the replaced element");
 
+  // ── Paste an image: it stages with a thumbnail and goes out with the prompt ──
+  const PNG =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+  await chat.locator("textarea").evaluate((ta, b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const data = new DataTransfer();
+    data.items.add(new File([bytes], "shot.png", { type: "image/png" }));
+    ta.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  }, PNG);
+  await chat.locator(".inputwrap img").first().waitFor();
+  step("a pasted image stages in the composer with a thumbnail");
+
   // ── Send ──
   await chat.locator("textarea").fill("Make the heading blue");
   await chat.locator("textarea").press("Enter");
@@ -268,7 +314,17 @@ try {
   assert.equal(sent.meta.livePreview.url, devUrl, "the agent hears the dev server's address");
   assert.equal(sent.meta.livePreview.element.tag, "h1");
   assert.match(sent.meta.livePreview.element.html, /Hello preview/);
-  step("sending carries the element and the dev URL; the reply shows in the chat");
+  assert.deepEqual(
+    sent.attachments.map((a) => [a.kind, a.name, a.mediaType, a.data]),
+    [["image", "shot.png", "image/png", PNG]],
+  );
+  await chat.locator(".thread img").first().waitFor();
+  assert.equal(
+    await chat.locator(".inputwrap img").count(),
+    0,
+    "sent attachments leave the composer",
+  );
+  step("sending carries the element, the image and the dev URL; the bubble shows the image");
 
   // ── Esc drops the pick and goes back to picking; Esc again leaves pick mode ──
   const isPicking = () =>
@@ -293,7 +349,8 @@ try {
   assert.ok(Math.max(...gaps) - Math.min(...gaps) < 1, `composer moved: ${gaps.join(",")}`);
   assert.equal(await isPicking(), true, "Esc in the chat keeps pick mode on");
   await chat.locator("textarea").press("Escape");
-  assert.equal(await isPicking(), false, "a second Esc leaves pick mode");
+  // The page hears it by postMessage, a moment later.
+  await page.waitForFunction(() => !document.documentElement.classList.contains("gg-live-picking"));
   // The same from the page itself, after a right-click pick.
   await page.click("#list li:first-child", { button: "right" });
   await chat.locator(".inputwrap").getByText("<li> Latte").waitFor();
@@ -303,7 +360,7 @@ try {
   await chat.locator(".inputwrap").getByText("<li> Latte").waitFor({ state: "detached" });
   assert.equal(await isPicking(), true, "Esc on the page keeps pick mode on");
   await page.keyboard.press("Escape");
-  assert.equal(await isPicking(), false);
+  await page.waitForFunction(() => !document.documentElement.classList.contains("gg-live-picking"));
   step("Esc drops the picked element, keeps pick mode on, and the composer holds still");
 
   // ── The page's own scripts can't reach the agent ──
@@ -372,6 +429,23 @@ try {
   await chat.getByText("Make the heading blue").waitFor({ timeout: 15000 });
   await chat.getByText("Done, the heading is blue now.").waitFor();
   step("a reload replays the conversation");
+
+  // ── Another tab: a chat of its own ──
+  const page2 = await context.newPage();
+  page2.on("pageerror", (e) => errors.push(`page 2: ${e.message}`));
+  await page2.goto(status.url);
+  const chat2 = page2.frameLocator('iframe[title="GG Coder chat"]');
+  await chat2.locator("textarea").waitFor({ timeout: 15000 });
+  await page2.waitForTimeout(600);
+  assert.equal(await chat2.getByText("Make the heading blue").count(), 0, "tab 2 starts empty");
+  await chat2.locator("textarea").fill("Only in the second tab");
+  await chat2.locator("textarea").press("Enter");
+  await chat2.getByText("Only in the second tab").waitFor();
+  await page.waitForTimeout(500);
+  assert.equal(await chat.getByText("Only in the second tab").count(), 0, "tab 1 never sees it");
+  await chat.getByText("Make the heading blue").waitFor();
+  await page2.close();
+  step("each browser tab has its own chat");
 
   // Let the entrance fades settle so the capture shows the resting chat.
   await page.waitForTimeout(800);

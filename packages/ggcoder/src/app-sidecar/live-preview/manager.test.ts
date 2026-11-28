@@ -3,7 +3,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BackgroundProcess } from "../../core/process-manager.js";
 import type { SessionContext, SseClient } from "../session-types.js";
 import {
@@ -27,6 +27,7 @@ function fakeCtx(id: string, cwd: string, processes: BackgroundProcess[] = []): 
     cwd,
     clients,
     session: { listBackgroundProcesses: () => processes },
+    isBusy: () => false,
     broadcast: (type: string, data: unknown) => {
       for (const c of clients) c.res.write(`data: ${JSON.stringify({ type, data })}\n\n`);
     },
@@ -59,6 +60,38 @@ function get(port: number, pathname: string, headers: Record<string, string> = {
     );
     req.on("error", reject);
   });
+}
+
+// One tab's event stream: what it got up to `until` (or just its `ready` frame).
+function tabEvents(framePort: number, tab: string, until = "ready") {
+  return new Promise<string>((resolve, reject) => {
+    const req = http.get(
+      {
+        host: "127.0.0.1",
+        port: framePort,
+        path: "/api/events",
+        headers: { host: `127.0.0.1:${framePort}`, "x-gg-live": "1", "x-gg-live-tab": tab },
+      },
+      (res) => {
+        let body = "";
+        res.on("data", (c: Buffer) => {
+          body += c.toString();
+          // Past `ready` the replay is written in the same tick: give it a beat to arrive.
+          if (body.includes(until))
+            setTimeout(() => {
+              req.destroy();
+              resolve(body);
+            }, 20);
+        });
+      },
+    );
+    req.on("error", (e) => (e.message.includes("socket hang up") ? undefined : reject(e)));
+  });
+}
+
+async function framePortOf(status: { url: string | null }): Promise<number> {
+  const page = await get(Number(new URL(status.url!).port), "/", { "sec-fetch-dest": "document" });
+  return Number(/127\.0\.0\.1:(\d+)/.exec(page.body)![1]);
 }
 
 beforeEach(async () => {
@@ -184,45 +217,86 @@ describe("live preview manager", () => {
     ]);
   });
 
-  it("stops when its window or its own session closes", async () => {
-    await manager.start(fakeCtx("w1", "/a"), { url: devUrl });
+  it("stops when its window closes; a tab's own session closing resets only that tab", async () => {
+    const status = await manager.start(fakeCtx("w1", "/a"), { url: devUrl });
     await manager.start(fakeCtx("w2", "/b"), { url: devUrl });
+    await tabEvents(await framePortOf(status), "tab-aaaaaaaa");
+    expect(manager.isPreviewSession("preview-1")).toBe(true);
+    await manager.onSessionClosed("preview-1");
+    expect(manager.status("w1").running).toBe(true);
+    expect(manager.isPreviewSession("preview-1")).toBe(false);
     await manager.onSessionClosed("w1");
     expect(manager.status("w1").running).toBe(false);
-    expect(closed).toEqual(["preview-1"]);
-    await manager.onSessionClosed("preview-2");
-    expect(manager.status("w2").running).toBe(false);
+    await manager.onSessionClosed("w2");
+    expect(closed.sort()).toEqual(["preview-1", "preview-2"]);
   });
 
-  it("replays what the session said to a page that loads later", async () => {
+  it("gives every browser tab its own chat, and replays a tab's own chat after a reload", async () => {
     const status = await manager.start(fakeCtx("w1", "/proj"), { url: devUrl });
+    const framePort = await framePortOf(status);
+    // The first tab takes the session made at start.
+    await tabEvents(framePort, "tab-aaaaaaaa");
+    expect(created).toHaveLength(1);
     created[0].broadcast("live_preview_prompt", { text: "make it blue" });
-    const page = await get(Number(new URL(status.url!).port), "/", {
-      "sec-fetch-dest": "document",
+    const other = await tabEvents(framePort, "tab-bbbbbbbb");
+    expect(created.map((c) => c.cwd)).toEqual(["/proj", "/proj"]);
+    expect(other).not.toContain("make it blue");
+    created[1].broadcast("live_preview_prompt", { text: "make it red" });
+    const reloaded = await tabEvents(framePort, "tab-aaaaaaaa", "make it blue");
+    expect(reloaded).toContain("ready");
+    expect(reloaded).not.toContain("make it red");
+    expect(created).toHaveLength(2);
+    expect(manager.isPreviewSession("preview-2")).toBe(true);
+  });
+
+  it("past the tab limit, closes the oldest idle tab and gives a new tab's parallel requests one session", async () => {
+    const status = await manager.start(fakeCtx("w1", "/proj"), { url: devUrl });
+    const framePort = await framePortOf(status);
+    for (let i = 0; i < 8; i++) await tabEvents(framePort, `tab-old-000${i}`);
+    expect(created).toHaveLength(8);
+    // Each stream closed above: give the server a beat to count them gone.
+    await new Promise((r) => setTimeout(r, 50));
+    const state = (tab: string) =>
+      get(framePort, "/api/state", {
+        host: `127.0.0.1:${framePort}`,
+        "x-gg-live": "1",
+        "x-gg-live-tab": tab,
+      });
+    const replies = await Promise.all([state("tab-new-0000"), state("tab-new-0000")]);
+    expect(replies.map((r) => r.status)).toEqual([200, 200]);
+    expect(created).toHaveLength(9);
+    expect(closed).toEqual(["preview-1"]);
+    // The tab that was closed starts over on its next request, and the next-oldest makes room.
+    await state("tab-old-0000");
+    expect(created).toHaveLength(10);
+    expect(closed).toEqual(["preview-1", "preview-2"]);
+  });
+
+  it("closes a tab's session once the tab has been gone a while, unless it's working", async () => {
+    let busy = true;
+    const idle = createLivePreviewManager({
+      assetsDir: dir,
+      createSession: async (cwd) => {
+        const ctx = fakeCtx(`idle-${created.length + 1}`, cwd);
+        ctx.isBusy = () => busy;
+        created.push(ctx);
+        return ctx;
+      },
+      closeSession: async (id) => void closed.push(id),
+      usage: async () => ({}),
+      tabIdleMs: 30,
     });
-    const framePort = Number(/127\.0\.0\.1:(\d+)/.exec(page.body)![1]);
-    const events = await new Promise<string>((resolve) => {
-      const req = http.get(
-        {
-          host: "127.0.0.1",
-          port: framePort,
-          path: "/api/events",
-          headers: { host: `127.0.0.1:${framePort}`, "x-gg-live": "1" },
-        },
-        (res) => {
-          let body = "";
-          res.on("data", (c: Buffer) => {
-            body += c.toString();
-            if (body.includes("make it blue")) {
-              req.destroy();
-              resolve(body);
-            }
-          });
-        },
-      );
-    });
-    expect(events).toContain("ready");
-    expect(events).toContain("make it blue");
+    try {
+      const status = await idle.start(fakeCtx("w1", "/proj"), { url: devUrl });
+      await tabEvents(await framePortOf(status), "tab-aaaaaaaa");
+      await new Promise((r) => setTimeout(r, 120));
+      expect(closed).toEqual([]);
+      busy = false;
+      await vi.waitFor(() => expect(closed).toEqual(["idle-1"]));
+      expect(idle.status("w1").running).toBe(true);
+    } finally {
+      await idle.stopAll();
+    }
   });
 
   it("says so when the overlay isn't in the build", async () => {

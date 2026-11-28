@@ -23,6 +23,12 @@ vi.mock("../core/tasks-store.js", () => ({
   },
 }));
 
+// Attachments are saved under the project; these tests have no real project.
+vi.mock("./attachments.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  prepareAttachments: async () => [],
+}));
+
 interface Reply {
   status: number;
   body: unknown;
@@ -72,6 +78,9 @@ function harness(tasks: TaskRecord[]) {
     prompt: vi.fn(async (text: string) => {
       prompts.push(text);
       await new Promise((resolve) => setTimeout(resolve, 5));
+    }),
+    promptWithAttachments: vi.fn(async (text: string) => {
+      prompts.push(text);
     }),
     queueMessage: (text: string) => queue.push({ text, attachments: [] }),
     takeNextQueuedMessage: () => queue.shift() ?? null,
@@ -225,6 +234,27 @@ describe("live preview prompts", () => {
       element: "<h2> Iced latte",
       queued: true,
     });
+  });
+
+  it("announces pasted images as thumbnails and other files by name", async () => {
+    const { ctx } = harness([]);
+    await post(handlePromptRoutes, ctx, "/prompt", {
+      text: "Match this",
+      attachments: [
+        { kind: "image", name: "shot.png", mediaType: "image/png", data: "iVBORw0K" },
+        { kind: "file", name: "spec.pdf", mediaType: "application/pdf", data: "JVBERi0x" },
+      ],
+      meta: { livePreview },
+    });
+    await vi.waitFor(() =>
+      expect(ctx.broadcast).toHaveBeenCalledWith("live_preview_prompt", {
+        text: "Match this",
+        element: "<h2> Iced latte",
+        queued: false,
+        images: ["data:image/png;base64,iVBORw0K"],
+        attachments: [{ kind: "file", name: "spec.pdf" }],
+      }),
+    );
   });
 
   it("leaves ordinary prompts untouched", async () => {

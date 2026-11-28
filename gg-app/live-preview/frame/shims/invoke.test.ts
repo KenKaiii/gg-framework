@@ -46,11 +46,13 @@ describe("frame invoke shim", () => {
         extra: 1,
       },
       fetchImpl,
+      async () => "tab-1234abcd",
     );
     const [url, init] = vi.mocked(fetchImpl).mock.calls[0];
     expect(url).toBe("/api/prompt");
     expect(init?.method).toBe("POST");
     expect((init?.headers as Record<string, string>)["x-gg-live"]).toBe("1");
+    expect((init?.headers as Record<string, string>)["x-gg-live-tab"]).toBe("tab-1234abcd");
     expect(JSON.parse(String(init?.body))).toEqual({
       text: "make it blue",
       attachments: [],
@@ -64,7 +66,7 @@ describe("frame invoke shim", () => {
       async () =>
         new Response(JSON.stringify({ error: "Live preview has stopped." }), { status: 503 }),
     ) as unknown as typeof fetch;
-    await expect(frameInvoke("agent_state", {}, fetchImpl)).rejects.toBe(
+    await expect(frameInvoke("agent_state", {}, fetchImpl, async () => "t")).rejects.toBe(
       "Live preview has stopped.",
     );
   });

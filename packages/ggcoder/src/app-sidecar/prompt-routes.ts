@@ -156,12 +156,32 @@ export function handlePromptRoutes(
         const livePreview = parseLivePreviewMeta(meta?.livePreview);
         const typed = text;
         if (livePreview) text = buildLivePreviewPrompt(text, livePreview, ctx.cwd);
+        const images = attachments.flatMap((a) =>
+          a.kind === "image" && typeof a.data === "string"
+            ? [
+                `data:${/^image\/[\w.+-]+$/.test(a.mediaType) ? a.mediaType : "image/png"};base64,${a.data}`,
+              ]
+            : [],
+        );
+        const chips = attachments.flatMap((a) =>
+          a.kind === "image"
+            ? []
+            : [
+                {
+                  kind: a.kind === "video" ? "video" : "file",
+                  name: typeof a.name === "string" ? a.name : "attachment",
+                },
+              ],
+        );
         const announceLivePreview = (queued: boolean): void => {
           if (!livePreview) return;
           ctx.broadcast("live_preview_prompt", {
             text: typed,
             element: livePreview.element ? livePreviewChip(livePreview.element) : null,
             queued,
+            // Like the app's own bubble: images as thumbnails, other files as name chips.
+            ...(images.length > 0 ? { images } : {}),
+            ...(chips.length > 0 ? { attachments: chips } : {}),
           });
         };
         // Before the run checks below, so the run claim stays synchronous with them.

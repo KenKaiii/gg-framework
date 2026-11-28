@@ -2,6 +2,8 @@
 // preview chat uses, each mapped to the frame server's matching route. Any
 // other command fails closed, the same way it would if it didn't exist.
 
+import { frameTabId, TAB_HEADER } from "../tab-id";
+
 export const LIVE_HEADER = "x-gg-live";
 
 type Args = Record<string, unknown>;
@@ -45,6 +47,7 @@ export async function frameInvoke<T>(
   cmd: string,
   args: Args = {},
   fetchImpl: typeof fetch = fetch,
+  tabId: () => Promise<string> = frameTabId,
 ): Promise<T> {
   const route = Object.prototype.hasOwnProperty.call(FRAME_COMMANDS, cmd)
     ? FRAME_COMMANDS[cmd]
@@ -53,10 +56,12 @@ export async function frameInvoke<T>(
   if (!route) throw `${cmd} isn't available in the live preview`;
   const call = route(args);
   if ("local" in call) return call.local as T;
+  const tab = await tabId();
   const res = await fetchImpl(call.path, {
     method: call.method,
     headers: {
       [LIVE_HEADER]: "1",
+      [TAB_HEADER]: tab,
       ...(call.body !== undefined ? { "content-type": "application/json" } : {}),
     },
     body: call.body !== undefined ? JSON.stringify(call.body) : undefined,

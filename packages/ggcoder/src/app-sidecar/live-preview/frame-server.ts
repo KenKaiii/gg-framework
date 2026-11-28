@@ -11,6 +11,17 @@ import path from "node:path";
 import type { SessionContext } from "../session-types.js";
 
 export const LIVE_HEADER = "x-gg-live";
+/** Which browser tab the frame is in: each tab chats with its own session. */
+export const TAB_HEADER = "x-gg-live-tab";
+const TAB_ID = /^[A-Za-z0-9-]{8,64}$/;
+
+/** One tab's chat: its session and what that session said before the tab connected. */
+export interface FrameTab {
+  session: SessionContext;
+  replay: readonly string[];
+  /** An event stream opened; call the result when it closes. */
+  watch: () => () => void;
+}
 
 export interface FrameConfig {
   /** The dev server the agent is told about (not the proxy). */
@@ -21,10 +32,9 @@ export interface FrameConfig {
 
 export interface FrameServerOptions {
   assetsDir: string;
-  session: () => SessionContext | null;
+  /** The tab's chat, started on its first request; an error to send when there can't be one. */
+  tab: (id: string) => Promise<FrameTab | { status: number; error: string }>;
   config: () => FrameConfig;
-  /** SSE frames broadcast so far, so a reloaded page rebuilds its transcript. */
-  replay: () => readonly string[];
   usage: (provider: "anthropic" | "moonshot") => Promise<unknown>;
 }
 
@@ -153,16 +163,31 @@ export function createFrameServer(opts: FrameServerOptions): FrameServer {
       send(res, 404, { error: `${url.pathname} isn't available in the live preview` });
       return;
     }
-    const ctx = opts.session();
-    if (!ctx) {
-      send(res, 503, { error: "Live preview has stopped. Start it again from GG Coder." });
+    const tabId = req.headers[TAB_HEADER];
+    if (typeof tabId !== "string" || !TAB_ID.test(tabId)) {
+      send(res, 400, { error: "Reload the page to reconnect GG Coder." });
       return;
     }
-    req.url = route.to;
-    ctx.handle(req, res, route.to, route.method);
-    // The events route answers synchronously with its `ready` frame; what the
-    // session said before this page loaded follows it, then live events.
-    if (route.to === "/events") for (const frame of opts.replay()) res.write(frame);
+    // A first request waits for the tab's session; the browser may leave meanwhile.
+    let gone = false;
+    res.once("close", () => (gone = true));
+    opts.tab(tabId).then(
+      (tab) => {
+        if (gone) return;
+        if ("error" in tab) {
+          send(res, tab.status, { error: tab.error });
+          return;
+        }
+        req.url = route.to;
+        tab.session.handle(req, res, route.to, route.method);
+        if (route.to !== "/events") return;
+        // The events route answers synchronously with its `ready` frame; what the
+        // session said before this page loaded follows it, then live events.
+        for (const frame of tab.replay) res.write(frame);
+        res.once("close", tab.watch());
+      },
+      () => send(res, 500, { error: "GG Coder couldn't start a chat for this tab." }),
+    );
   }
 
   const server = http.createServer((req, res) => {

@@ -107,6 +107,9 @@ const MARKS_CSS = `:host { --pick: #4c5bf0; --pick-rgb: 76 91 240; --ease: cubic
 const HOST_CSS = `iframe { display: block; border: 0; width: 100%; height: 100%; background: transparent; color-scheme: dark; pointer-events: auto; clip-path: inset(100% 0 0 0); }`;
 
 const PICK_KEY = "__gg_live_pick";
+// Open or minimised, kept by the page (first-party storage): browsers may drop
+// or partition what the cross-origin frame stores.
+const OPEN_KEY = "__gg_live_open";
 const PAD = 6;
 
 type Box = { x: number; y: number; w: number; h: number; viewTop: number };
@@ -233,21 +236,28 @@ function mount(frameOrigin: string): void {
   const iframe = document.createElement("iframe");
   iframe.title = "GG Coder chat";
   iframe.allow = "clipboard-write";
-  iframe.src = `${frameOrigin}/frame`;
+  let savedOpen: string | null = null;
+  try {
+    savedOpen = sessionStorage.getItem(OPEN_KEY);
+  } catch {
+    /* storage off: the frame's own memory decides */
+  }
+  // In the hash, so the frame starts minimised instead of flashing open first.
+  iframe.src = `${frameOrigin}/frame${savedOpen === "0" || savedOpen === "1" ? `#open=${savedOpen}` : ""}`;
   shadow.append(hostStyle, iframe);
   document.documentElement.appendChild(host);
   keepOnTop(host);
 
   const post = (msg: PageToFrame) => iframe.contentWindow?.postMessage(msg, frameOrigin);
   const viewport = () => ({ width: innerWidth, height: innerHeight });
-  // The chat sits centred on the bottom edge of the iframe (frame/live.css .lp-root).
+  // The chat sits in the iframe's bottom-right corner (frame/live.css .lp-root).
   let chatSize = { width: 0, height: 0 };
   const clipToChat = () => {
     const w = host.clientWidth;
     const h = host.clientHeight;
-    const side = Math.max(0, (w - Math.ceil(chatSize.width)) / 2);
+    const left = Math.max(0, w - Math.ceil(chatSize.width));
     const top = Math.max(0, h - Math.ceil(chatSize.height));
-    iframe.style.clipPath = `inset(${top}px ${side}px 0px ${side}px)`;
+    iframe.style.clipPath = `inset(${top}px 0px 0px ${left}px)`;
   };
 
   // ── Picked element ──
@@ -464,6 +474,11 @@ function mount(frameOrigin: string): void {
         break;
       case "gg-live:open":
         chatOpen = msg.open;
+        try {
+          sessionStorage.setItem(OPEN_KEY, msg.open ? "1" : "0");
+        } catch {
+          /* the frame still remembers it where it can */
+        }
         if (!chatOpen) setPicking(false);
         sync(false);
         break;

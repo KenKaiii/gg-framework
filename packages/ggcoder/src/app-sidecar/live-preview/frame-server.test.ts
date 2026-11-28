@@ -2,21 +2,23 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionContext } from "../session-types.js";
 import { createFrameServer, frameCsp, type FrameServer } from "./frame-server.js";
 
 let dir: string;
 let frame: FrameServer;
 let port: number;
-let calls: Array<{ url: string; method: string }>;
-let session: SessionContext | null;
+let calls: Array<{ url: string; method: string; session?: string }>;
+let stopped: boolean;
+let watching: Record<string, number>;
+let tabDelay: Promise<void> | null;
 
-const fakeSession = (): SessionContext =>
+const fakeSession = (id = "preview"): SessionContext =>
   ({
-    id: "preview",
+    id,
     handle: (_req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => {
-      calls.push({ url, method });
+      calls.push({ url, method, ...(id === "preview" ? {} : { session: id }) });
       if (url === "/events") {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(`data: {"type":"ready"}\n\n`);
@@ -34,12 +36,27 @@ beforeEach(async () => {
   await fs.writeFile(path.join(dir, "assets", "frame-abc.js"), "/* frame */");
   await fs.writeFile(path.join(os.tmpdir(), "gg-frame-secret.txt"), "secret");
   calls = [];
-  session = fakeSession();
+  stopped = false;
+  watching = {};
+  tabDelay = null;
+  const sessions = new Map<string, SessionContext>();
   frame = createFrameServer({
     assetsDir: dir,
-    session: () => session,
+    tab: async (id) => {
+      if (tabDelay) await tabDelay;
+      if (stopped) return { status: 503, error: "Live preview has stopped." };
+      const session = id === TAB ? fakeSession() : (sessions.get(id) ?? fakeSession(`s-${id}`));
+      sessions.set(id, session);
+      return {
+        session,
+        replay: [`data: {"type":"old"}\n\n`],
+        watch: () => {
+          watching[id] = (watching[id] ?? 0) + 1;
+          return () => void watching[id]--;
+        },
+      };
+    },
     config: () => ({ devUrl: "http://localhost:5173/", proxyOrigins: ["http://localhost:4100"] }),
-    replay: () => [`data: {"type":"old"}\n\n`],
     usage: async (provider) => ({ provider }),
   });
   port = await frame.listen(0);
@@ -83,15 +100,21 @@ function request(
   });
 }
 
-const frameHeaders = () => ({ "x-gg-live": "1", origin: `http://127.0.0.1:${port}` });
+const TAB = "tab-00000001";
+const frameHeaders = (tab = TAB) => ({
+  "x-gg-live": "1",
+  "x-gg-live-tab": tab,
+  origin: `http://127.0.0.1:${port}`,
+});
+const getHeaders = (tab = TAB) => ({ "x-gg-live": "1", "x-gg-live-tab": tab });
 
 describe("live preview frame server", () => {
   it("maps the allowed routes onto the preview session", async () => {
     const r = await request("/api/prompt", { method: "POST", headers: frameHeaders() });
     expect(r.status).toBe(200);
     expect(JSON.parse(r.body)).toEqual({ url: "/prompt" });
-    await request("/api/state", { headers: { "x-gg-live": "1", "sec-fetch-site": "same-origin" } });
-    await request("/api/git/overview", { headers: { "x-gg-live": "1" } });
+    await request("/api/state", { headers: { ...getHeaders(), "sec-fetch-site": "same-origin" } });
+    await request("/api/git/overview", { headers: getHeaders() });
     expect(calls).toEqual([
       { url: "/prompt", method: "POST" },
       { url: "/state", method: "GET" },
@@ -104,7 +127,7 @@ describe("live preview frame server", () => {
       expect((await request(p, { method: "POST", headers: frameHeaders() })).status).toBe(404);
     }
     // Right path, wrong method.
-    expect((await request("/api/prompt", { headers: { "x-gg-live": "1" } })).status).toBe(404);
+    expect((await request("/api/prompt", { headers: getHeaders() })).status).toBe(404);
     expect(calls).toEqual([]);
   });
 
@@ -140,8 +163,47 @@ describe("live preview frame server", () => {
   });
 
   it("streams events with what the session said before the page loaded", async () => {
-    const r = await request("/api/events", { headers: { "x-gg-live": "1" }, until: "old" });
+    const r = await request("/api/events", { headers: getHeaders(), until: "old" });
     expect(r.body.indexOf("ready")).toBeLessThan(r.body.indexOf("old"));
+    // The open stream keeps the tab's session; closing it lets the session go idle.
+    await vi.waitFor(() => expect(watching[TAB]).toBe(0));
+  });
+
+  it("drops a stream whose browser left while its tab's session was starting", async () => {
+    let start!: () => void;
+    tabDelay = new Promise<void>((r) => (start = r));
+    const req = http.request({
+      host: "127.0.0.1",
+      port,
+      path: "/api/events",
+      headers: { host: `127.0.0.1:${port}`, ...getHeaders() },
+    });
+    req.on("error", () => {});
+    req.end();
+    await new Promise((r) => setTimeout(r, 30));
+    req.destroy();
+    await new Promise((r) => setTimeout(r, 30));
+    start();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(calls).toEqual([]);
+    expect(watching[TAB]).toBeUndefined();
+  });
+
+  it("sends each tab to its own session, and needs to know the tab", async () => {
+    await request("/api/prompt", { method: "POST", headers: frameHeaders("tab-aaaaaaaa") });
+    await request("/api/prompt", { method: "POST", headers: frameHeaders("tab-bbbbbbbb") });
+    await request("/api/state", { headers: getHeaders("tab-aaaaaaaa") });
+    expect(calls).toEqual([
+      { url: "/prompt", method: "POST", session: "s-tab-aaaaaaaa" },
+      { url: "/prompt", method: "POST", session: "s-tab-bbbbbbbb" },
+      { url: "/state", method: "GET", session: "s-tab-aaaaaaaa" },
+    ]);
+    for (const tab of [undefined, "short", "../../etc/passwd-x"]) {
+      const headers: Record<string, string> = { "x-gg-live": "1" };
+      if (tab) headers["x-gg-live-tab"] = tab;
+      expect((await request("/api/state", { headers })).status).toBe(400);
+    }
+    expect(calls).toHaveLength(3);
   });
 
   it("serves config and usage, and 503s once the preview stopped", async () => {
@@ -152,8 +214,8 @@ describe("live preview frame server", () => {
     expect(
       (await request("/api/usage?provider=openai", { headers: { "x-gg-live": "1" } })).status,
     ).toBe(400);
-    session = null;
-    expect((await request("/api/state", { headers: { "x-gg-live": "1" } })).status).toBe(503);
+    stopped = true;
+    expect((await request("/api/state", { headers: getHeaders() })).status).toBe(503);
   });
 
   it("serves the frame with frame-ancestors locked to the proxy, and nothing outside its folder", async () => {

@@ -161,6 +161,28 @@ describe("useAgentEvents", () => {
     ]);
   });
 
+  it("shows files pasted into the live preview chat on its bubble, even with no text", () => {
+    const { hook, getItems } = setup();
+    act(() =>
+      hook.result.current.handleEvent(
+        ev("live_preview_prompt", {
+          text: "",
+          element: null,
+          queued: false,
+          images: ["data:image/png;base64,iVBORw0K", "javascript:alert(1)"],
+          attachments: [{ kind: "file", name: "spec.pdf" }],
+        }),
+      ),
+    );
+    expect(getItems()).toEqual([
+      expect.objectContaining({
+        kind: "user",
+        images: ["data:image/png;base64,iVBORw0K"],
+        attachments: [{ kind: "file", name: "spec.pdf" }],
+      }),
+    ]);
+  });
+
   it("updates task activity before an autopilot delegate consumes its event", () => {
     const { hook, deps } = setup(
       () => false,
