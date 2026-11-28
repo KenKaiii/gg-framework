@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { removeWhenReleased } from "../core/lsp/test-support.js";
 import { findMotionBundle } from "../core/skills.js";
 import { missingSystemTools } from "../test-support/system-tools.js";
 
@@ -18,7 +19,8 @@ beforeEach(async () => {
   helper = path.join(bundle.root, "bin", "review-frames.mjs");
 });
 afterEach(async () => {
-  await fs.rm(tmp, { recursive: true, force: true });
+  // Windows keeps the video locked until an ffmpeg the helper started has exited.
+  await removeWhenReleased(tmp, { attempts: 200 });
 });
 async function clip(): Promise<string> {
   const video = path.join(tmp, "clip.mp4");
@@ -49,8 +51,9 @@ async function extract(
 ): Promise<string> {
   const config = path.join(tmp, `windows-${out.replace(/\W/g, "")}.json`);
   await fs.writeFile(config, JSON.stringify(windows));
+  // Above what the helper needs on a loaded Windows runner (30s was hit); it caps itself at 180s.
   const result = await run(process.execPath, [helper, video, path.join(tmp, out), config], {
-    timeout: 30_000,
+    timeout: 120_000,
     signal,
   });
   return result.stdout;
@@ -58,7 +61,7 @@ async function extract(
 const noMedia = missingSystemTools("motion-review-frames.test.ts", "ffmpeg", "ffprobe");
 
 // Covers the inner ffmpeg/extract budgets; loaded Windows runners run these 4x slower.
-describe.skipIf(noMedia)("review-frames real media evidence", { timeout: 90_000 }, () => {
+describe.skipIf(noMedia)("review-frames real media evidence", { timeout: 180_000 }, () => {
   it("extracts the actual early red and late blue pixels at labeled times", async () => {
     const video = path.join(tmp, "colors.mp4");
     await run(
