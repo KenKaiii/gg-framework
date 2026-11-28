@@ -22,6 +22,15 @@ export interface ChangelogEntry {
 /** Newest first. Prepended by the `/release` flow. */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.122.0",
+    date: "2026-11-28",
+    items: [
+      "The `Live preview` chat is now a proper little window tucked into the bottom-right corner of your app. It wears the same title bar, project colour and glow as GG Coder itself, your page scrolls and clicks freely around it, and if you minimise it, it stays minimised through every refresh.",
+      "Show me instead of telling me. Paste a screenshot, drop in a file or hit the paperclip right inside the `Live preview` chat, and your images show up as thumbnails in the conversation, exactly like in the app.",
+      "Open your app in as many browser tabs as you like. Every tab now gets its own `Live preview` chat, so a fix you are making on one page never spills into another.",
+    ],
+  },
+  {
     version: "0.121.2",
     date: "2026-11-27",
     items: [
