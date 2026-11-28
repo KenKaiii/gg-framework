@@ -1,5 +1,17 @@
 # @kenkaiiii/ggcoder
 
+## 6.1.0
+
+### Minor Changes
+
+- Live preview: every browser tab gets its own chat session, pasted and dropped files reach the agent with image thumbnails in the chat, and music-fit rejects an out-of-range `--land` before beat analysis.
+
+### Patch Changes
+
+- @kenkaiiii/gg-ai@6.1.0
+- @kenkaiiii/gg-agent@6.1.0
+- @kenkaiiii/gg-core@6.1.0
+
 ## 6.0.2
 
 ### Patch Changes
